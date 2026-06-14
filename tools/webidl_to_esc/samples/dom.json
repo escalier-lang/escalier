@@ -1,0 +1,7351 @@
+{
+  "spec": "dom",
+  "interfaces": [
+    {
+      "name": "Event",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": [
+            {
+              "name": "type",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "eventInitDict",
+              "type": {
+                "union": false,
+                "name": "EventInit",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "attribute",
+          "name": "type",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "target",
+          "type": {
+            "union": false,
+            "name": "EventTarget",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "srcElement",
+          "type": {
+            "union": false,
+            "name": "EventTarget",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "currentTarget",
+          "type": {
+            "union": false,
+            "name": "EventTarget",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "composedPath",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "sequence",
+            "args": [
+              {
+                "union": false,
+                "name": "EventTarget",
+                "args": [],
+                "nullable": false
+              }
+            ],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "const",
+          "name": "NONE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "0"
+        },
+        {
+          "kind": "const",
+          "name": "CAPTURING_PHASE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "1"
+        },
+        {
+          "kind": "const",
+          "name": "AT_TARGET",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "2"
+        },
+        {
+          "kind": "const",
+          "name": "BUBBLING_PHASE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "3"
+        },
+        {
+          "kind": "attribute",
+          "name": "eventPhase",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "stopPropagation",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "attribute",
+          "name": "cancelBubble",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "stopImmediatePropagation",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "attribute",
+          "name": "bubbles",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "cancelable",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "returnValue",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "preventDefault",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "attribute",
+          "name": "defaultPrevented",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "composed",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "isTrusted",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "timeStamp",
+          "type": {
+            "union": false,
+            "name": "DOMHighResTimeStamp",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "initEvent",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "type",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "bubbles",
+              "type": {
+                "union": false,
+                "name": "boolean",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            },
+            {
+              "name": "cancelable",
+              "type": {
+                "union": false,
+                "name": "boolean",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Window",
+      "inheritance": null,
+      "partial": true,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "event",
+          "type": {
+            "union": true,
+            "name": "",
+            "args": [
+              {
+                "union": false,
+                "name": "Event",
+                "args": [],
+                "nullable": false
+              },
+              {
+                "union": false,
+                "name": "undefined",
+                "args": [],
+                "nullable": false
+              }
+            ],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "CustomEvent",
+      "inheritance": "Event",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": [
+            {
+              "name": "type",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "eventInitDict",
+              "type": {
+                "union": false,
+                "name": "CustomEventInit",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "attribute",
+          "name": "detail",
+          "type": {
+            "union": false,
+            "name": "any",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "initCustomEvent",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "type",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "bubbles",
+              "type": {
+                "union": false,
+                "name": "boolean",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            },
+            {
+              "name": "cancelable",
+              "type": {
+                "union": false,
+                "name": "boolean",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            },
+            {
+              "name": "detail",
+              "type": {
+                "union": false,
+                "name": "any",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "EventTarget",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "addEventListener",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "type",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "callback",
+              "type": {
+                "union": false,
+                "name": "EventListener",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "options",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "AddEventListenerOptions",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "boolean",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "removeEventListener",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "type",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "callback",
+              "type": {
+                "union": false,
+                "name": "EventListener",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "options",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "EventListenerOptions",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "boolean",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "dispatchEvent",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "event",
+              "type": {
+                "union": false,
+                "name": "Event",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AbortController",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": []
+        },
+        {
+          "kind": "attribute",
+          "name": "signal",
+          "type": {
+            "union": false,
+            "name": "AbortSignal",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "abort",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "reason",
+              "type": {
+                "union": false,
+                "name": "any",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AbortSignal",
+      "inheritance": "EventTarget",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "operation",
+          "name": "abort",
+          "static": true,
+          "special": "static",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "AbortSignal",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "reason",
+              "type": {
+                "union": false,
+                "name": "any",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "timeout",
+          "static": true,
+          "special": "static",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "AbortSignal",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "milliseconds",
+              "type": {
+                "union": false,
+                "name": "unsigned long long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "any",
+          "static": true,
+          "special": "static",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "AbortSignal",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "signals",
+              "type": {
+                "union": false,
+                "name": "sequence",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "AbortSignal",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "attribute",
+          "name": "aborted",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "reason",
+          "type": {
+            "union": false,
+            "name": "any",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "throwIfAborted",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "attribute",
+          "name": "onabort",
+          "type": {
+            "union": false,
+            "name": "EventHandler",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "NonElementParentNode",
+      "inheritance": null,
+      "partial": false,
+      "mixin": true,
+      "members": [
+        {
+          "kind": "operation",
+          "name": "getElementById",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "elementId",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "DocumentOrShadowRoot",
+      "inheritance": null,
+      "partial": false,
+      "mixin": true,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "customElementRegistry",
+          "type": {
+            "union": false,
+            "name": "CustomElementRegistry",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "ParentNode",
+      "inheritance": null,
+      "partial": false,
+      "mixin": true,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "children",
+          "type": {
+            "union": false,
+            "name": "HTMLCollection",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "firstElementChild",
+          "type": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "lastElementChild",
+          "type": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "childElementCount",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "prepend",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "nodes",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "Node",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": true
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "append",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "nodes",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "Node",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": true
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "replaceChildren",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "nodes",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "Node",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": true
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "moveBefore",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "child",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "querySelector",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "selectors",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "querySelectorAll",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "NodeList",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "selectors",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "NonDocumentTypeChildNode",
+      "inheritance": null,
+      "partial": false,
+      "mixin": true,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "previousElementSibling",
+          "type": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "nextElementSibling",
+          "type": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "ChildNode",
+      "inheritance": null,
+      "partial": false,
+      "mixin": true,
+      "members": [
+        {
+          "kind": "operation",
+          "name": "before",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "nodes",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "Node",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": true
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "after",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "nodes",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "Node",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": true
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "replaceWith",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "nodes",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "Node",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": true
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "remove",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "Slottable",
+      "inheritance": null,
+      "partial": false,
+      "mixin": true,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "assignedSlot",
+          "type": {
+            "union": false,
+            "name": "HTMLSlotElement",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "NodeList",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "operation",
+          "name": "item",
+          "static": false,
+          "special": "getter",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "index",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "attribute",
+          "name": "length",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "unsupported",
+          "memberType": "iterable"
+        }
+      ]
+    },
+    {
+      "name": "HTMLCollection",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "length",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "item",
+          "static": false,
+          "special": "getter",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "index",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "namedItem",
+          "static": false,
+          "special": "getter",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "name",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MutationObserver",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": [
+            {
+              "name": "callback",
+              "type": {
+                "union": false,
+                "name": "MutationCallback",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "observe",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "target",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "options",
+              "type": {
+                "union": false,
+                "name": "MutationObserverInit",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "disconnect",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "takeRecords",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "sequence",
+            "args": [
+              {
+                "union": false,
+                "name": "MutationRecord",
+                "args": [],
+                "nullable": false
+              }
+            ],
+            "nullable": false
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "MutationRecord",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "type",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "target",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "addedNodes",
+          "type": {
+            "union": false,
+            "name": "NodeList",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "removedNodes",
+          "type": {
+            "union": false,
+            "name": "NodeList",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "previousSibling",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "nextSibling",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "attributeName",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "attributeNamespace",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "oldValue",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "Node",
+      "inheritance": "EventTarget",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "const",
+          "name": "ELEMENT_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "1"
+        },
+        {
+          "kind": "const",
+          "name": "ATTRIBUTE_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "2"
+        },
+        {
+          "kind": "const",
+          "name": "TEXT_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "3"
+        },
+        {
+          "kind": "const",
+          "name": "CDATA_SECTION_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "4"
+        },
+        {
+          "kind": "const",
+          "name": "ENTITY_REFERENCE_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "5"
+        },
+        {
+          "kind": "const",
+          "name": "ENTITY_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "6"
+        },
+        {
+          "kind": "const",
+          "name": "PROCESSING_INSTRUCTION_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "7"
+        },
+        {
+          "kind": "const",
+          "name": "COMMENT_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "8"
+        },
+        {
+          "kind": "const",
+          "name": "DOCUMENT_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "9"
+        },
+        {
+          "kind": "const",
+          "name": "DOCUMENT_TYPE_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "10"
+        },
+        {
+          "kind": "const",
+          "name": "DOCUMENT_FRAGMENT_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "11"
+        },
+        {
+          "kind": "const",
+          "name": "NOTATION_NODE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "12"
+        },
+        {
+          "kind": "attribute",
+          "name": "nodeType",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "nodeName",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "baseURI",
+          "type": {
+            "union": false,
+            "name": "USVString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "isConnected",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "ownerDocument",
+          "type": {
+            "union": false,
+            "name": "Document",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "getRootNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "options",
+              "type": {
+                "union": false,
+                "name": "GetRootNodeOptions",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "attribute",
+          "name": "parentNode",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "parentElement",
+          "type": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "hasChildNodes",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "attribute",
+          "name": "childNodes",
+          "type": {
+            "union": false,
+            "name": "NodeList",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "firstChild",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "lastChild",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "previousSibling",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "nextSibling",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "nodeValue",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "textContent",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "normalize",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "cloneNode",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "subtree",
+              "type": {
+                "union": false,
+                "name": "boolean",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "isEqualNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "otherNode",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "isSameNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "otherNode",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "const",
+          "name": "DOCUMENT_POSITION_DISCONNECTED",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "0x01"
+        },
+        {
+          "kind": "const",
+          "name": "DOCUMENT_POSITION_PRECEDING",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "0x02"
+        },
+        {
+          "kind": "const",
+          "name": "DOCUMENT_POSITION_FOLLOWING",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "0x04"
+        },
+        {
+          "kind": "const",
+          "name": "DOCUMENT_POSITION_CONTAINS",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "0x08"
+        },
+        {
+          "kind": "const",
+          "name": "DOCUMENT_POSITION_CONTAINED_BY",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "0x10"
+        },
+        {
+          "kind": "const",
+          "name": "DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "0x20"
+        },
+        {
+          "kind": "operation",
+          "name": "compareDocumentPosition",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "other",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "contains",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "other",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "lookupPrefix",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "lookupNamespaceURI",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "prefix",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "isDefaultNamespace",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "insertBefore",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "child",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "appendChild",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "replaceChild",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "child",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "removeChild",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "child",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Document",
+      "inheritance": "Node",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": []
+        },
+        {
+          "kind": "attribute",
+          "name": "implementation",
+          "type": {
+            "union": false,
+            "name": "DOMImplementation",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "URL",
+          "type": {
+            "union": false,
+            "name": "USVString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "documentURI",
+          "type": {
+            "union": false,
+            "name": "USVString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "compatMode",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "characterSet",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "charset",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "inputEncoding",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "contentType",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "doctype",
+          "type": {
+            "union": false,
+            "name": "DocumentType",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "documentElement",
+          "type": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "getElementsByTagName",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "HTMLCollection",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getElementsByTagNameNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "HTMLCollection",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getElementsByClassName",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "HTMLCollection",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "classNames",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createElement",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "options",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "ElementCreationOptions",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createElementNS",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "options",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "ElementCreationOptions",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createDocumentFragment",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "DocumentFragment",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "createTextNode",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Text",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createCDATASection",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "CDATASection",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createComment",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Comment",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createProcessingInstruction",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "ProcessingInstruction",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "target",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "importNode",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "options",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "boolean",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "ImportNodeOptions",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "adoptNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createAttribute",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createAttributeNS",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createEvent",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Event",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "interface",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createRange",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Range",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "createNodeIterator",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "NodeIterator",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "root",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "whatToShow",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            },
+            {
+              "name": "filter",
+              "type": {
+                "union": false,
+                "name": "NodeFilter",
+                "args": [],
+                "nullable": true
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createTreeWalker",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "TreeWalker",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "root",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "whatToShow",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            },
+            {
+              "name": "filter",
+              "type": {
+                "union": false,
+                "name": "NodeFilter",
+                "args": [],
+                "nullable": true
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "XMLDocument",
+      "inheritance": "Document",
+      "partial": false,
+      "mixin": false,
+      "members": []
+    },
+    {
+      "name": "DOMImplementation",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "operation",
+          "name": "createDocumentType",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "DocumentType",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "name",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "publicId",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "systemId",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createDocument",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "XMLDocument",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "doctype",
+              "type": {
+                "union": false,
+                "name": "DocumentType",
+                "args": [],
+                "nullable": true
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createHTMLDocument",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Document",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "title",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "hasFeature",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "DocumentType",
+      "inheritance": "Node",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "name",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "publicId",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "systemId",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "DocumentFragment",
+      "inheritance": "Node",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "ShadowRoot",
+      "inheritance": "DocumentFragment",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "mode",
+          "type": {
+            "union": false,
+            "name": "ShadowRootMode",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "delegatesFocus",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "slotAssignment",
+          "type": {
+            "union": false,
+            "name": "SlotAssignmentMode",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "clonable",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "serializable",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "host",
+          "type": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "onslotchange",
+          "type": {
+            "union": false,
+            "name": "EventHandler",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "Element",
+      "inheritance": "Node",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "namespaceURI",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "prefix",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "localName",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "tagName",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "id",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "className",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "classList",
+          "type": {
+            "union": false,
+            "name": "DOMTokenList",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": "value"
+        },
+        {
+          "kind": "attribute",
+          "name": "slot",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "hasAttributes",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "attribute",
+          "name": "attributes",
+          "type": {
+            "union": false,
+            "name": "NamedNodeMap",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "getAttributeNames",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "sequence",
+            "args": [
+              {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              }
+            ],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "getAttribute",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getAttributeNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setAttribute",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "value",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "TrustedType",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setAttributeNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "value",
+              "type": {
+                "union": true,
+                "name": "",
+                "args": [
+                  {
+                    "union": false,
+                    "name": "TrustedType",
+                    "args": [],
+                    "nullable": false
+                  },
+                  {
+                    "union": false,
+                    "name": "DOMString",
+                    "args": [],
+                    "nullable": false
+                  }
+                ],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "removeAttribute",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "removeAttributeNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "toggleAttribute",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "force",
+              "type": {
+                "union": false,
+                "name": "boolean",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "hasAttribute",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "hasAttributeNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getAttributeNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getAttributeNodeNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setAttributeNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "attr",
+              "type": {
+                "union": false,
+                "name": "Attr",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setAttributeNodeNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "attr",
+              "type": {
+                "union": false,
+                "name": "Attr",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "removeAttributeNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "attr",
+              "type": {
+                "union": false,
+                "name": "Attr",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "attachShadow",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "ShadowRoot",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "init",
+              "type": {
+                "union": false,
+                "name": "ShadowRootInit",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "attribute",
+          "name": "shadowRoot",
+          "type": {
+            "union": false,
+            "name": "ShadowRoot",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "customElementRegistry",
+          "type": {
+            "union": false,
+            "name": "CustomElementRegistry",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "closest",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "selectors",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "matches",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "selectors",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "webkitMatchesSelector",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "selectors",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getElementsByTagName",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "HTMLCollection",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getElementsByTagNameNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "HTMLCollection",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getElementsByClassName",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "HTMLCollection",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "classNames",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "insertAdjacentElement",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "where",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "element",
+              "type": {
+                "union": false,
+                "name": "Element",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "insertAdjacentText",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "where",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "NamedNodeMap",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "length",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "item",
+          "static": false,
+          "special": "getter",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "index",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getNamedItem",
+          "static": false,
+          "special": "getter",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getNamedItemNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setNamedItem",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "attr",
+              "type": {
+                "union": false,
+                "name": "Attr",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setNamedItemNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "attr",
+              "type": {
+                "union": false,
+                "name": "Attr",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "removeNamedItem",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "qualifiedName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "removeNamedItemNS",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Attr",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespace",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": true
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Attr",
+      "inheritance": "Node",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "namespaceURI",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "prefix",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "localName",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "name",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "value",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "ownerElement",
+          "type": {
+            "union": false,
+            "name": "Element",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "specified",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "CharacterData",
+      "inheritance": "Node",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "data",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "length",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "substringData",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "offset",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "count",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "appendData",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "insertData",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "offset",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "deleteData",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "offset",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "count",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "replaceData",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "offset",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "count",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Text",
+      "inheritance": "CharacterData",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": [
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "splitText",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Text",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "offset",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "attribute",
+          "name": "wholeText",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "CDATASection",
+      "inheritance": "Text",
+      "partial": false,
+      "mixin": false,
+      "members": []
+    },
+    {
+      "name": "ProcessingInstruction",
+      "inheritance": "CharacterData",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "target",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "Comment",
+      "inheritance": "CharacterData",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": [
+            {
+              "name": "data",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AbstractRange",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "startContainer",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "startOffset",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "endContainer",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "endOffset",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "collapsed",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        }
+      ]
+    },
+    {
+      "name": "StaticRange",
+      "inheritance": "AbstractRange",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": [
+            {
+              "name": "init",
+              "type": {
+                "union": false,
+                "name": "StaticRangeInit",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Range",
+      "inheritance": "AbstractRange",
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": []
+        },
+        {
+          "kind": "attribute",
+          "name": "commonAncestorContainer",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "setStart",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "offset",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setEnd",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "offset",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setStartBefore",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setStartAfter",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setEndBefore",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setEndAfter",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "collapse",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "toStart",
+              "type": {
+                "union": false,
+                "name": "boolean",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "selectNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "selectNodeContents",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "const",
+          "name": "START_TO_START",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "0"
+        },
+        {
+          "kind": "const",
+          "name": "START_TO_END",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "1"
+        },
+        {
+          "kind": "const",
+          "name": "END_TO_END",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "2"
+        },
+        {
+          "kind": "const",
+          "name": "END_TO_START",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "3"
+        },
+        {
+          "kind": "operation",
+          "name": "compareBoundaryPoints",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "short",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "how",
+              "type": {
+                "union": false,
+                "name": "unsigned short",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "sourceRange",
+              "type": {
+                "union": false,
+                "name": "Range",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "deleteContents",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "extractContents",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "DocumentFragment",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "cloneContents",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "DocumentFragment",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "insertNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "surroundContents",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "newParent",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "cloneRange",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "Range",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "detach",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "isPointInRange",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "offset",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "comparePoint",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "short",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "offset",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "intersectsNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "node",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "NodeIterator",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "root",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "referenceNode",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "pointerBeforeReferenceNode",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "whatToShow",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "filter",
+          "type": {
+            "union": false,
+            "name": "NodeFilter",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "nextNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "previousNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "detach",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "TreeWalker",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "root",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": true,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "whatToShow",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "filter",
+          "type": {
+            "union": false,
+            "name": "NodeFilter",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "currentNode",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "parentNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "firstChild",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "lastChild",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "previousSibling",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "nextSibling",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "previousNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "nextNode",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "DOMTokenList",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "attribute",
+          "name": "length",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "item",
+          "static": false,
+          "special": "getter",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "index",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "contains",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "token",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "add",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "tokens",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": true
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "remove",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "tokens",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": true
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "toggle",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "token",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "force",
+              "type": {
+                "union": false,
+                "name": "boolean",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "replace",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "token",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "newToken",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "supports",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "token",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "attribute",
+          "name": "value",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": false,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "unsupported",
+          "memberType": "iterable"
+        }
+      ]
+    },
+    {
+      "name": "XPathResult",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "const",
+          "name": "ANY_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "0"
+        },
+        {
+          "kind": "const",
+          "name": "NUMBER_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "1"
+        },
+        {
+          "kind": "const",
+          "name": "STRING_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "2"
+        },
+        {
+          "kind": "const",
+          "name": "BOOLEAN_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "3"
+        },
+        {
+          "kind": "const",
+          "name": "UNORDERED_NODE_ITERATOR_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "4"
+        },
+        {
+          "kind": "const",
+          "name": "ORDERED_NODE_ITERATOR_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "5"
+        },
+        {
+          "kind": "const",
+          "name": "UNORDERED_NODE_SNAPSHOT_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "6"
+        },
+        {
+          "kind": "const",
+          "name": "ORDERED_NODE_SNAPSHOT_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "7"
+        },
+        {
+          "kind": "const",
+          "name": "ANY_UNORDERED_NODE_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "8"
+        },
+        {
+          "kind": "const",
+          "name": "FIRST_ORDERED_NODE_TYPE",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "value": "9"
+        },
+        {
+          "kind": "attribute",
+          "name": "resultType",
+          "type": {
+            "union": false,
+            "name": "unsigned short",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "numberValue",
+          "type": {
+            "union": false,
+            "name": "unrestricted double",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "stringValue",
+          "type": {
+            "union": false,
+            "name": "DOMString",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "booleanValue",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "singleNodeValue",
+          "type": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "invalidIteratorState",
+          "type": {
+            "union": false,
+            "name": "boolean",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "attribute",
+          "name": "snapshotLength",
+          "type": {
+            "union": false,
+            "name": "unsigned long",
+            "args": [],
+            "nullable": false
+          },
+          "readonly": true,
+          "static": false,
+          "sameObject": false,
+          "newObject": false,
+          "putForwards": null
+        },
+        {
+          "kind": "operation",
+          "name": "iterateNext",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "snapshotItem",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": true
+          },
+          "args": [
+            {
+              "name": "index",
+              "type": {
+                "union": false,
+                "name": "unsigned long",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "XPathExpression",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "operation",
+          "name": "evaluate",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "XPathResult",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "contextNode",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "type",
+              "type": {
+                "union": false,
+                "name": "unsigned short",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            },
+            {
+              "name": "result",
+              "type": {
+                "union": false,
+                "name": "XPathResult",
+                "args": [],
+                "nullable": true
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "XPathEvaluatorBase",
+      "inheritance": null,
+      "partial": false,
+      "mixin": true,
+      "members": [
+        {
+          "kind": "operation",
+          "name": "createExpression",
+          "static": false,
+          "special": "",
+          "newObject": true,
+          "return": {
+            "union": false,
+            "name": "XPathExpression",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "expression",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "resolver",
+              "type": {
+                "union": false,
+                "name": "XPathNSResolver",
+                "args": [],
+                "nullable": true
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "createNSResolver",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Node",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "nodeResolver",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "evaluate",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "XPathResult",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "expression",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "contextNode",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "resolver",
+              "type": {
+                "union": false,
+                "name": "XPathNSResolver",
+                "args": [],
+                "nullable": true
+              },
+              "optional": true,
+              "variadic": false
+            },
+            {
+              "name": "type",
+              "type": {
+                "union": false,
+                "name": "unsigned short",
+                "args": [],
+                "nullable": false
+              },
+              "optional": true,
+              "variadic": false
+            },
+            {
+              "name": "result",
+              "type": {
+                "union": false,
+                "name": "XPathResult",
+                "args": [],
+                "nullable": true
+              },
+              "optional": true,
+              "variadic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "XPathEvaluator",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": []
+        }
+      ]
+    },
+    {
+      "name": "XSLTProcessor",
+      "inheritance": null,
+      "partial": false,
+      "mixin": false,
+      "members": [
+        {
+          "kind": "constructor",
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "importStylesheet",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "style",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "transformToFragment",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "DocumentFragment",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "source",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "output",
+              "type": {
+                "union": false,
+                "name": "Document",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "transformToDocument",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "Document",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "source",
+              "type": {
+                "union": false,
+                "name": "Node",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "setParameter",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespaceURI",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "value",
+              "type": {
+                "union": false,
+                "name": "any",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "getParameter",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "any",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespaceURI",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "removeParameter",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": [
+            {
+              "name": "namespaceURI",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            },
+            {
+              "name": "localName",
+              "type": {
+                "union": false,
+                "name": "DOMString",
+                "args": [],
+                "nullable": false
+              },
+              "optional": false,
+              "variadic": false
+            }
+          ]
+        },
+        {
+          "kind": "operation",
+          "name": "clearParameters",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        },
+        {
+          "kind": "operation",
+          "name": "reset",
+          "static": false,
+          "special": "",
+          "newObject": false,
+          "return": {
+            "union": false,
+            "name": "undefined",
+            "args": [],
+            "nullable": false
+          },
+          "args": []
+        }
+      ]
+    }
+  ],
+  "includes": [
+    {
+      "target": "Document",
+      "mixin": "NonElementParentNode"
+    },
+    {
+      "target": "DocumentFragment",
+      "mixin": "NonElementParentNode"
+    },
+    {
+      "target": "Document",
+      "mixin": "DocumentOrShadowRoot"
+    },
+    {
+      "target": "ShadowRoot",
+      "mixin": "DocumentOrShadowRoot"
+    },
+    {
+      "target": "Document",
+      "mixin": "ParentNode"
+    },
+    {
+      "target": "DocumentFragment",
+      "mixin": "ParentNode"
+    },
+    {
+      "target": "Element",
+      "mixin": "ParentNode"
+    },
+    {
+      "target": "Element",
+      "mixin": "NonDocumentTypeChildNode"
+    },
+    {
+      "target": "CharacterData",
+      "mixin": "NonDocumentTypeChildNode"
+    },
+    {
+      "target": "DocumentType",
+      "mixin": "ChildNode"
+    },
+    {
+      "target": "Element",
+      "mixin": "ChildNode"
+    },
+    {
+      "target": "CharacterData",
+      "mixin": "ChildNode"
+    },
+    {
+      "target": "Element",
+      "mixin": "Slottable"
+    },
+    {
+      "target": "Text",
+      "mixin": "Slottable"
+    },
+    {
+      "target": "Document",
+      "mixin": "XPathEvaluatorBase"
+    },
+    {
+      "target": "XPathEvaluator",
+      "mixin": "XPathEvaluatorBase"
+    }
+  ]
+}
