@@ -68,3 +68,74 @@ func TestInferMemberAssignSameFieldTwice(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (obj: mut {x: number}) -> void", values["foo"])
 }
+
+// A written field and a read-only field that ESCAPES (is returned) fold into one
+// `mut` object: the written `x` is `number`, while the returned `y` becomes a real
+// type parameter rather than collapsing to `unknown`, because it occurs in an output
+// position. This is the key interplay between the C3 mut-merge and generalization.
+func TestInferMemberAssignWrittenAndEscapingReadField(t *testing.T) {
+	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n return obj.y }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(obj: mut {x: number, y: T0}) -> T0", values["foo"])
+}
+
+// Write-after-read on the SAME field needs no `written`-map support: the read mints
+// `T0` and constrains `obj <: {x: T0}`, the later write adds `obj <: mut {x: number}`,
+// and the two upper bounds merge so the field folds to `T0 & number`. The read's
+// value (returned `x`) stays `T0`. This pins the plan's claim that write-after-read
+// falls out of ordinary constraint accumulation, the reverse of read-after-write.
+func TestInferMemberAssignWriteAfterRead(t *testing.T) {
+	values, _, errs := inferSource(t, "fn foo(obj) { val x = obj.x\n obj.x = 5\n return x }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(obj: mut {x: T0 & number}) -> T0", values["foo"])
+}
+
+// A write through a nested receiver wraps only the INNER object in `mut`: `obj` is
+// read for `.p` but never written, so it stays immutable, while `obj.p` is the
+// mutable cell that field `x` is written through. The mut wrap is per-receiver.
+func TestInferMemberAssignNestedReceiver(t *testing.T) {
+	values, _, errs := inferSource(t, "fn foo(obj) { obj.p.x = 5 }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn (obj: {p: mut {x: number}}) -> void", values["foo"])
+}
+
+// An `open` param's written object stays row-polymorphic: the C3 fold passes the
+// var's Open flag to mergeObjectGroup, so the merged `mut` object is inexact and
+// callers may pass an object with extra fields.
+func TestInferMemberAssignOpenParam(t *testing.T) {
+	values, _, errs := inferSource(t, "fn foo(open obj) { obj.x = 5 }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn (obj: mut {x: number, ...}) -> void", values["foo"])
+}
+
+// A written receiver that ESCAPES (the whole object is returned) is not sealed: it
+// occurs in an output position, so the param keeps an open row and renders as the
+// written requirement intersected with the returned type parameter.
+func TestInferMemberAssignWrittenObjectEscapes(t *testing.T) {
+	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n return obj }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(obj: mut {x: number} & T0) -> T0", values["foo"])
+}
+
+// KNOWN LIMITATION: writing a parameter's value into a field does NOT link their
+// types. Both `obj`'s field var and `v` occur only in negative position, so
+// single-polarity elimination inlines each to `unknown` independently rather than
+// sharing one type parameter — so this is `(obj: mut {x: unknown}, v: unknown)`, not
+// the tighter `fn <T0>(obj: mut {x: T0}, v: T0)`. Pinned so a future change that
+// connects them is a visible, intentional diff.
+func TestInferMemberAssignVariableValueNotLinked(t *testing.T) {
+	values, _, errs := inferSource(t, "fn foo(obj, v) { obj.x = v }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn (obj: mut {x: unknown}, v: unknown) -> void", values["foo"])
+}
+
+// KNOWN GAP: two writes of INCOMPATIBLE types to one field produce an uninhabited
+// `number & string` rather than an error — each write is an independent upper bound
+// on the receiver var with no constraint relating them. Pinned so the gap is
+// explicit; a future soundness pass over conflicting writes should surface an error
+// here and update this assertion.
+func TestInferMemberAssignConflictingWritesNoError(t *testing.T) {
+	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n obj.x = \"hi\" }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn (obj: mut {x: number & string}) -> void", values["foo"])
+}
