@@ -305,21 +305,15 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 		if !occHas(o, soltype.Negative) || occHas(o, soltype.Positive) {
 			continue // unused, or escapes to an output position — keep the open row
 		}
-		var objs []*soltype.ObjectType
-		var others []soltype.Type
-		for _, b := range v.UpperBounds {
-			if ob, ok := b.(*soltype.ObjectType); ok && ob.Inexact {
-				objs = append(objs, ob)
-			} else {
-				others = append(others, b)
-			}
-		}
-		if len(objs) == 0 {
-			continue
-		}
-		// mergeObjectGroup folds the per-access objects into one exact object (the
-		// same fold display uses); the closed object replaces the inexact ones.
-		v.UpperBounds = append(others, mergeObjectGroup(objs, false))
+		// foldUsageBounds folds this var's inexact member-access objects into ONE
+		// object and writes the result back to the stored upper bounds. This is the
+		// OPERATIVE half of the fold: freshenAbove copies these sealed bounds at each
+		// call site, so the closed requirement rejects a caller passing extra fields.
+		// coalesce's combine runs the same foldUsageBounds for display on the vars
+		// this loop skips. v.Open is always false here since open vars are skipped
+		// above; passing it keeps the operative and display folds on one exactness
+		// rule. A var with no inexact object bound folds to itself, a no-op.
+		v.UpperBounds = foldUsageBounds(v.UpperBounds, v.Open)
 	}
 }
 
