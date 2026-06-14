@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -251,7 +252,14 @@ func emptyOf(pol soltype.Polarity) soltype.Type {
 // (Negative) of parts, returning the sole element directly when only one
 // remains. The UnionType/IntersectionType nodes ship in M1 (soltype/type.go) so
 // combine can always return a native soltype.Type.
+//
+// In Negative position the object parts are first folded into a single exact
+// object (mergeObjects, B1) so member-access requirements on one receiver render
+// as one compact object rather than an intersection of one-property objects.
 func combine(pol soltype.Polarity, parts []soltype.Type) soltype.Type {
+	if pol == soltype.Negative {
+		parts = mergeObjects(parts)
+	}
 	if len(parts) == 1 {
 		return parts[0]
 	}
@@ -259,6 +267,71 @@ func combine(pol soltype.Polarity, parts []soltype.Type) soltype.Type {
 		return &soltype.UnionType{Types: parts}
 	}
 	return &soltype.IntersectionType{Types: parts}
+}
+
+// mergeObjects folds the ObjectType parts of a negative-position (intersection)
+// bound list into a single exact object — the meet — leaving every non-object
+// part untouched. It runs only in Negative position, where the parts are a
+// variable's coalesced upper bounds.
+//
+// Member-access requirements on one receiver arrive as separate inexact
+// one-property objects: A1's inferMember lowers `obj.a; obj.b` to the upper bounds
+// `{a: β, ...}` and `{b: γ, ...}` on the receiver var. Folding them yields
+// `{a: β, b: γ}` instead of the non-compact `{a: β, ...} & {b: γ, ...}`. A
+// property appearing in several parts becomes the intersection of its types,
+// because `obj <: {a: β}` and `obj <: {a: γ}` together require `obj.a <: β & γ`.
+//
+// Policy A (exact-types spec §8.1): the folded usage object closes to EXACT. The
+// per-access requirements stay inexact (A1); only this coalesced result is sealed,
+// once body inference has produced every selection on the receiver. `open` (B2) is
+// the opt-out that leaves the result inexact for row-polymorphic params.
+//
+// Mut-object merging (`mut {x} & mut {y}` ⇒ `mut {x, y}`) is deferred to C3, once
+// the field-write path produces mut receivers.
+func mergeObjects(parts []soltype.Type) []soltype.Type {
+	var objs []*soltype.ObjectType
+	var others []soltype.Type
+	for _, p := range parts {
+		if o, ok := p.(*soltype.ObjectType); ok {
+			objs = append(objs, o)
+			continue
+		}
+		others = append(others, p)
+	}
+	if len(objs) == 0 {
+		return parts // nothing to fold; leave the bound list as-is
+	}
+	return append([]soltype.Type{mergeObjectGroup(objs)}, others...)
+}
+
+// mergeObjectGroup folds object types into one exact object: the property sets are
+// unioned and a property shared by several objects becomes the intersection of its
+// types. Property order is alphabetical for stable rendering. A property is
+// optional in the result only when it is optional in every object that carries it.
+func mergeObjectGroup(objs []*soltype.ObjectType) *soltype.ObjectType {
+	byName := map[string]*soltype.PropertyElem{}
+	var order []string
+	for _, o := range objs {
+		for _, elem := range o.Elems {
+			pe := soltype.AsProperty(elem)
+			if existing, dup := byName[pe.Name]; dup {
+				byName[pe.Name] = &soltype.PropertyElem{
+					Name:     pe.Name,
+					Type:     &soltype.IntersectionType{Types: []soltype.Type{existing.Type, pe.Type}},
+					Optional: existing.Optional && pe.Optional,
+				}
+			} else {
+				byName[pe.Name] = &soltype.PropertyElem{Name: pe.Name, Type: pe.Type, Optional: pe.Optional}
+				order = append(order, pe.Name)
+			}
+		}
+	}
+	sort.Strings(order)
+	elems := make([]soltype.ObjTypeElem, len(order))
+	for i, name := range order {
+		elems[i] = byName[name]
+	}
+	return &soltype.ObjectType{Elems: elems} // Inexact: false ⇒ closed (Policy A)
 }
 
 // dedup removes structurally-equal parts, preserving first-occurrence order.
