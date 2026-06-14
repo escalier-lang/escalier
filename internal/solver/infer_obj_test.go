@@ -229,3 +229,48 @@ func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
 		require.Equal(t, "{b: 2}", spanText(src, errs[0].Span()))
 	})
 }
+
+// --- IndexExpr (value receiver, constant string key) ---
+
+// obj["foo-bar"] is the bracket form of property access: a constant string key
+// reads the same property a dot access would, and lets the source name a key that
+// is not a valid identifier. The receiver here is a value, not a namespace.
+func TestInferIndexValueConstStringKey(t *testing.T) {
+	c := newChecker()
+	// {"foo-bar": 5, b: "hi"}["foo-bar"]
+	fooBar := ast.NewProperty(ast.NewString("foo-bar", testSpan()), false, false, numExpr(5), testSpan())
+	recv := objExpr(fooBar, prop("b", strExpr("hi")))
+	e := ast.NewIndex(recv, strExpr("foo-bar"), false, testSpan())
+
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, "5", render(got))
+	require.Same(t, got, c.info.TypeOf(e))
+}
+
+// Reading a constant string key the receiver lacks fails with a
+// MissingPropertyError, the same as the dot form — the index path shares
+// valueProp's blame.
+func TestInferIndexValueMissingProperty(t *testing.T) {
+	c := newChecker()
+	// {a: 5}["foo-bar"]
+	e := ast.NewIndex(objExpr(prop("a", numExpr(5))), strExpr("foo-bar"), false, testSpan())
+
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Equal(t, "never", render(got)) // the fresh result var picks up no lower bound
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "object is missing property: foo-bar", c.errs[0].Message())
+	require.Equal(t, testSpan(), c.errs[0].Span())
+}
+
+// End-to-end through the parser: `obj["foo-bar"]` parses to an IndexExpr and
+// reads the property whose key is not a valid identifier.
+func TestInferIndexValueConstStringKeySource(t *testing.T) {
+	src := `
+		val obj = {"foo-bar": 5}
+		val x = obj["foo-bar"]
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "5", values["x"])
+}

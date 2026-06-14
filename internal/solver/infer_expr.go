@@ -742,8 +742,9 @@ func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.
 	return c.demandValue(c.resolveMemberPath(scope, lvl, e), e)
 }
 
-// inferIndex types `obj[index]` in value position — today only namespace index
-// access (Foo["bar"]); value indexing is M7.
+// inferIndex types `obj[index]` in value position — namespace index access
+// (Foo["bar"]) and the constant-string bracket form of property access
+// (obj["foo-bar"]); dynamic value indexing is M7.
 func (c *checker) inferIndex(scope *Scope, lvl int, e *ast.IndexExpr) soltype.Type {
 	return c.demandValue(c.resolveIndexPath(scope, lvl, e), e)
 }
@@ -801,25 +802,40 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pa
 // matching property (so res coalesces to that property's type); a receiver missing
 // the property surfaces as a MissingPropertyError stamped with the member's span.
 func (c *checker) valueMember(lvl int, e *ast.MemberExpr, recv soltype.Type) pathResult {
-	res := c.freshAt(lvl)
 	// Record the fresh result var against the .prop IDENTIFIER (not the whole
 	// MemberExpr), so a missing-property read blames the property (.foo), not the
-	// receiver. The member-requirement record {prop: res} is deliberately NOT
-	// recorded — MissingPropertyError blames this inner res var, so the record
-	// would be a dead entry (§3.3).
-	c.recordProv(res, e.Prop, MemberAccess)
-	c.constrain(e, recv, &soltype.ObjectType{
-		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: e.Prop.Name, Type: res}},
+	// receiver.
+	return c.valueProp(lvl, e, e.Prop, e.Prop.Name, recv)
+}
+
+// valueProp is the shared core of property access off a value receiver, used by
+// both dot access (obj.prop) and constant-string index access (obj["foo-bar"]).
+// blame is the node a constraint failure points at — the whole access expression;
+// provNode is the node the fresh result var's provenance is recorded against —
+// the property identifier for dot access, the string-literal key for index access
+// — so a missing-property read blames the property, not the receiver. name is the
+// property key being read.
+func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name string, recv soltype.Type) pathResult {
+	res := c.freshAt(lvl)
+	// The member-requirement record {prop: res} is deliberately NOT recorded —
+	// MissingPropertyError blames this inner res var, so the record would be a dead
+	// entry (§3.3).
+	c.recordProv(res, provNode, MemberAccess)
+	c.constrain(blame, recv, &soltype.ObjectType{
+		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: res}},
 		Inexact: true, // "has at least this property" — width tolerance is inexactness
 	})
-	c.recordType(e, res)
+	c.recordType(blame, res)
 	return pathResult{value: res}
 }
 
 // resolveIndexPath resolves `obj[index]`. A namespace object is indexed by a
 // constant string key — Foo["bar"] is the bracket form of Foo.bar — while a
-// dynamic key (Foo[k]) is rejected. A value object indexed is array/index-type
-// territory (M7), so it stays unsupported here.
+// dynamic key (Foo[k]) is rejected. A value object indexed by a constant string
+// key is the bracket form of property access — obj["foo-bar"] reads the same
+// property as obj.foo would, and lets the source name a property whose key is not
+// a valid identifier. A dynamic key over a value (array element / index-signature
+// read) needs Array and index types from M7, so it stays unsupported here.
 func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr) pathResult {
 	if e.OptChain {
 		c.reportUnsupportedFeature(e, "OptionalChain")
@@ -837,9 +853,12 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr) path
 		}
 		return c.resolveNamespaceMember(lvl, e, obj.ns, name)
 	}
-	// Indexing a value (array element / index-signature read) needs Array and index
-	// types, which land in M7; until then the index form over a value is outside the
-	// supported subset.
+	if name, ok := constStringKey(e.Index); ok {
+		return c.valueProp(lvl, e, e.Index, name, obj.value)
+	}
+	// A dynamic key over a value (array element / index-signature read) needs Array
+	// and index types, which land in M7; until then it is outside the supported
+	// subset.
 	c.reportUnsupported(e)
 	return pathResult{err: true}
 }
