@@ -50,3 +50,43 @@ func TestInferOpenParam(t *testing.T) {
 		require.Equal(t, "fn <T0>(open: T0) -> T0", values["f"])
 	})
 }
+
+// TestInferOpenParamNested pins the DEEP semantics of `open`: it makes the param's
+// whole inferred shape row-polymorphic, every nested object included — not just the
+// top object. The un-`open` peer seals every level to exact. So a closed param
+// rejects an extra field at ANY depth, while an open param accepts one at any depth.
+func TestInferOpenParamNested(t *testing.T) {
+	t.Run("open renders inexact at every level", func(t *testing.T) {
+		values, _, errs := inferSource(t, "fn foo(open p) { p.a.b }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn (p: {a: {b: unknown, ...}, ...}) -> void", values["foo"])
+	})
+
+	t.Run("closed seals every level to exact", func(t *testing.T) {
+		values, _, errs := inferSource(t, "fn foo(p) { p.a.b }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn (p: {a: {b: unknown}}) -> void", values["foo"])
+	})
+
+	t.Run("open accepts an extra field on the nested object", func(t *testing.T) {
+		_, _, errs := inferSource(t, "fn foo(open p) { p.a.b }\nval r = foo({a: {b: 1, c: 2}})")
+		require.Empty(t, errs)
+	})
+
+	t.Run("open accepts an extra field on the outer object", func(t *testing.T) {
+		_, _, errs := inferSource(t, "fn foo(open p) { p.a.b }\nval r = foo({a: {b: 1}, d: 2})")
+		require.Empty(t, errs)
+	})
+
+	t.Run("closed rejects an extra field on the nested object", func(t *testing.T) {
+		_, _, errs := inferSource(t, "fn foo(p) { p.a.b }\nval r = foo({a: {b: 1, c: 2}})")
+		require.Len(t, errs, 1)
+		require.Equal(t, "object has extra property: c", errs[0].Message())
+	})
+
+	t.Run("closed rejects an extra field on the outer object", func(t *testing.T) {
+		_, _, errs := inferSource(t, "fn foo(p) { p.a.b }\nval r = foo({a: {b: 1}, d: 2})")
+		require.Len(t, errs, 1)
+		require.Equal(t, "object has extra property: d", errs[0].Message())
+	})
+}

@@ -287,6 +287,16 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 	occ := map[int]occPolarity{}
 	t.Accept(&symOccVisitor{m: m, occ: occ, seen: set.NewSet[occKey]()}, soltype.Positive)
 
+	// `open` is DEEP: it makes a param's whole inferred shape row-polymorphic, not
+	// just its top object. The nested receiver vars are created lazily during body
+	// inference, so they are not marked when inferFunc sets the param var's Open
+	// flag; propagate it to them now, before the seal loop, by walking each open
+	// var's inexact member-access objects and opening every property-type var
+	// reachable through them. Without this, `fn f(open p) { p.a.b }` would accept an
+	// extra field on p but seal `p.a` and reject an extra field there — the same
+	// "richer object" request answered differently by depth.
+	propagateOpen(vars)
+
 	for id, v := range vars {
 		if v.Open || v.Level <= lvl || len(v.LowerBounds) > 0 {
 			continue
@@ -310,5 +320,38 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 		// mergeObjectGroup folds the per-access objects into one exact object (the
 		// same fold display uses); the closed object replaces the inexact ones.
 		v.UpperBounds = append(others, mergeObjectGroup(objs, false))
+	}
+}
+
+// propagateOpen marks the transitive closure of `open` over nested receivers: from
+// every open var, it opens each property-type var reachable through that var's
+// inexact member-access objects, so an open param opens its whole inferred shape.
+// It reads only the inexact object upper bounds — the member-access requirements
+// whose property types are the nested receiver vars (`p.a`'s var is the type of
+// `p`'s `a` property). Opening a var that carries no object bound is inert, so the
+// closure never widens anything that was not already a usage shape.
+func propagateOpen(vars map[int]*soltype.TypeVarType) {
+	work := make([]*soltype.TypeVarType, 0, len(vars))
+	for _, v := range vars {
+		if v.Open {
+			work = append(work, v)
+		}
+	}
+	for len(work) > 0 {
+		v := work[len(work)-1]
+		work = work[:len(work)-1]
+		for _, b := range v.UpperBounds {
+			ob, ok := b.(*soltype.ObjectType)
+			if !ok || !ob.Inexact {
+				continue
+			}
+			for _, elem := range ob.Elems {
+				pv, ok := soltype.AsProperty(elem).Type.(*soltype.TypeVarType)
+				if ok && !pv.Open {
+					pv.Open = true
+					work = append(work, pv)
+				}
+			}
+		}
 	}
 }
