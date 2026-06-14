@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -73,7 +74,7 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	if len(bounds) == 0 {
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	return soltype.EnterResult{Type: combine(pol, dedup(bounds)), SkipChildren: true}
+	return soltype.EnterResult{Type: combine(pol, dedup(bounds), v.Open), SkipChildren: true}
 }
 
 func (c *coalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
@@ -196,7 +197,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		// already leave parts=[rep]. Collapse to the polarity identity.
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	return soltype.EnterResult{Type: combine(pol, dedup(parts)), SkipChildren: true}
+	return soltype.EnterResult{Type: combine(pol, dedup(parts), v.Open), SkipChildren: true}
 }
 
 func (c *schemeCoalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
@@ -251,7 +252,17 @@ func emptyOf(pol soltype.Polarity) soltype.Type {
 // (Negative) of parts, returning the sole element directly when only one
 // remains. The UnionType/IntersectionType nodes ship in M1 (soltype/type.go) so
 // combine can always return a native soltype.Type.
-func combine(pol soltype.Polarity, parts []soltype.Type) soltype.Type {
+//
+// In Negative position the object parts are first folded into a single object by
+// foldUsageBounds (B1) so member-access requirements on one receiver render as one
+// compact object rather than an intersection of one-property objects. The folded
+// object closes to exact unless `open` is set — an `open` parameter (B2) stays
+// row-polymorphic (inexact). This is the DISPLAY fold; sealUsageObjects runs the
+// same foldUsageBounds operatively on the stored bounds at generalization.
+func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type {
+	if pol == soltype.Negative {
+		parts = foldUsageBounds(parts, open)
+	}
 	if len(parts) == 1 {
 		return parts[0]
 	}
@@ -259,6 +270,103 @@ func combine(pol soltype.Polarity, parts []soltype.Type) soltype.Type {
 		return &soltype.UnionType{Types: parts}
 	}
 	return &soltype.IntersectionType{Types: parts}
+}
+
+// foldUsageBounds folds the INEXACT ObjectType parts of an upper-bound list into a
+// single object — the meet of the member-access requirements — leaving every other
+// part untouched. The folded object is exact unless `open`.
+//
+// Two callers fold with this one helper, so the exactness rule lives in one place:
+//   - sealUsageObjects (poly.go) is the OPERATIVE seal. It writes the fold back
+//     into a closed usage var's stored upper bounds at generalization, so
+//     freshenAbove copies a sealed exact requirement at each call site and a caller
+//     passing extra fields is rejected.
+//   - combine (above) is the DISPLAY fold. It runs during coalescing on a var's
+//     already-coalesced upper bounds, folding the vars sealUsageObjects skipped
+//     such as open params, for a compact rendered type.
+//
+// Both pass the var's Open flag, so the operative and display folds agree on
+// exactness.
+//
+// Only inexact objects fold: an inexact object is a member-access requirement
+// ("has at least these fields"), and merging several is the receiver's combined
+// width requirement. An EXACT object on the bounds is an already-closed shape, not
+// a width requirement, so it passes through unchanged — folding it would be wrong
+// (`{x} & {y}` over exact objects is uninhabited, not `{x, y}`) and would feed a
+// non-member object to mergeObjectGroup/AsProperty.
+//
+// Member-access requirements on one receiver arrive as separate inexact
+// one-property objects: A1's inferMember lowers `obj.a; obj.b` to the upper bounds
+// `{a: β, ...}` and `{b: γ, ...}` on the receiver var. Folding them yields
+// `{a: β, b: γ}` instead of the non-compact `{a: β, ...} & {b: γ, ...}`. A
+// property appearing in several parts becomes the intersection of its types,
+// because `obj <: {a: β}` and `obj <: {a: γ}` together require `obj.a <: β & γ`.
+//
+// Policy A (exact-types spec §8.1): the folded usage object closes to EXACT once
+// body inference has produced every selection on the receiver. The per-access
+// requirements stay inexact (A1); only this folded result is sealed. The `open`
+// parameter marker (B2) is the opt-out: when set, the folded object stays inexact
+// so the param is row-polymorphic and callers may pass objects with extra fields.
+//
+// Mut-object merging (`mut {x} & mut {y}` ⇒ `mut {x, y}`) is deferred to C3, once
+// the field-write path produces mut receivers.
+//
+// This is NOT recursive: it folds the objects of ONE var's bound list and does not
+// descend into property types. Nesting (`p.a.b`) is reached by the callers' walks
+// over the var graph — sealUsageObjects's loop over every collected var for the
+// operative seal, and coalesce / coalesceScheme's recursive bound coalescing for
+// display.
+func foldUsageBounds(parts []soltype.Type, open bool) []soltype.Type {
+	var objs []*soltype.ObjectType
+	var others []soltype.Type
+	for _, p := range parts {
+		if o, ok := p.(*soltype.ObjectType); ok && o.Inexact {
+			objs = append(objs, o)
+			continue
+		}
+		others = append(others, p)
+	}
+	if len(objs) == 0 {
+		return parts // nothing to fold; leave the bound list as-is
+	}
+	return append([]soltype.Type{mergeObjectGroup(objs, open)}, others...)
+}
+
+// mergeObjectGroup is the property-union step inside foldUsageBounds: it folds the
+// already-selected inexact objects into one object. The property sets are unioned
+// and a property shared by several objects becomes the intersection of its types.
+// Property order is alphabetical for stable rendering. A property is optional in
+// the result only when it is optional in every object that carries it. The result
+// is exact (closed) unless `open`, in which case it stays inexact.
+//
+// This is NOT recursive: each property's type is copied through verbatim, never
+// descended into. Nesting is handled by the var-graph walks in sealUsageObjects,
+// coalesce, and coalesceScheme — see foldUsageBounds.
+func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType {
+	byName := map[string]*soltype.PropertyElem{}
+	var order []string
+	for _, o := range objs {
+		for _, elem := range o.Elems {
+			pe := soltype.AsProperty(elem)
+			if existing, dup := byName[pe.Name]; dup {
+				byName[pe.Name] = &soltype.PropertyElem{
+					Name:     pe.Name,
+					Type:     &soltype.IntersectionType{Types: []soltype.Type{existing.Type, pe.Type}},
+					Optional: existing.Optional && pe.Optional,
+				}
+			} else {
+				byName[pe.Name] = &soltype.PropertyElem{Name: pe.Name, Type: pe.Type, Optional: pe.Optional}
+				order = append(order, pe.Name)
+			}
+		}
+	}
+	sort.Strings(order)
+	elems := make([]soltype.ObjTypeElem, len(order))
+	for i, name := range order {
+		elems[i] = byName[name]
+	}
+	// Closed (Inexact: false) by Policy A; an `open` param leaves it inexact (B2).
+	return &soltype.ObjectType{Elems: elems, Inexact: open}
 }
 
 // dedup removes structurally-equal parts, preserving first-occurrence order.

@@ -698,14 +698,15 @@ these arms it must add.
     `{b: γ}`), the rendered type is the non-compact `{a: β} & {b: γ}` instead of
     `{a: β, b: γ}`.
   - **Algorithm — port the spike's `mergeObjects`** into the negative
-    (`Negative` polarity) path of `combine`: before wrapping parts in an
-    `IntersectionType`, fold all `ObjectType` parts into one object (union the
-    property sets; a property appearing in several parts becomes the intersection
-    of its types). This is the production analogue of `simplesub/coalesce.go`'s
-    `mergeObjects`/`mergeObjectGroup`, rewritten over `soltype.ObjectType`'s
-    element list and `Prop(name)` lookup, using the existing `combine`/`dedup`
-    structure. Mut-object merging (`mut {x} & mut {y}` ⇒ `mut {x, y}`) is
-    deferred to C3 once `RefType` exists.
+    (`Negative` polarity) path of `combine` as `foldUsageBounds`: before wrapping
+    parts in an `IntersectionType`, fold all `ObjectType` parts into one object
+    (union the property sets; a property appearing in several parts becomes the
+    intersection of its types). This is the production analogue of
+    `simplesub/coalesce.go`'s `mergeObjects`/`mergeObjectGroup`, landing as
+    `solver`'s `foldUsageBounds`/`mergeObjectGroup`, rewritten over
+    `soltype.ObjectType`'s element list and `Prop(name)` lookup, using the existing
+    `combine`/`dedup` structure. Mut-object merging (`mut {x} & mut {y}` ⇒
+    `mut {x, y}`) is deferred to C3 once `RefType` exists.
   - **Algorithm — Policy-A close:** the merged usage object closes to **exact**
     (`Inexact: false`) at this display-time fold — the row is sealed once body
     inference completes (spec §8.1). The per-access requirements stay inexact
@@ -865,7 +866,7 @@ these arms it must add.
     already works, and an incompatible read-then-write surfaces as a normal
     constrain error.
   - **Algorithm — whole-object `mut` merge (follows `internal/checker`, not the
-    spike's partition):** extend B1's `mergeObjects` fold over the receiver's
+    spike's partition):** extend B1's `foldUsageBounds` fold over the receiver's
     accumulated selections so that **if any field was written, every selection —
     reads and writes alike — folds into one `mut` object**; with no write, the
     reads fold into a bare (immutable) object. So `obj.x = 5; obj.y = 10` ⇒
@@ -1169,13 +1170,13 @@ these arms it must add.
 ### Dependency graph
 
 ```
-✓ = landed on main.  Done so far: A1 (#728), C1+C2 (#731), F1 (#730).
+✓ = landed on main.  Done so far: A1 (#728), B1+B2 (#732), C1+C2 (#731), F1 (#730).
 
 A1✓ → A2
-A1✓ → A3 ───────────────────┐  (A3's mut/lifetime arms un-gated by C1)
-A1✓ → B1 → B2               │  (annotation-side acceptance tests)
-      B1 → B3               │
-      B1, B3 ───────────┐   │  (C3 reuses B1's mergeObjects fold + B3's widen)
+A1✓ → A3 ─────────────────────┐  (A3's mut/lifetime arms un-gated by C1)
+A1✓ → B1✓ → B2✓               │  (annotation-side acceptance tests)
+      B1✓ → B3                │
+      B1✓, B3 ────────────┐   │  (C3 reuses B1's foldUsageBounds fold + B3's widen)
 A1✓ → C1✓ → C2✓(GATE) →  C3 → D1 → D2 → D3 → D4 → G1 → G2
 A1✓ → E1 → E2   (independent of C/D; E1's RefType peel via carrierOf needs C1)
 F1✓             (independent; any time — only M2's Namespace)
@@ -1183,7 +1184,7 @@ F1✓             (independent; any time — only M2's Namespace)
 
 Critical path to the gate: **A1 → C1 → C2** — three PRs. B, E, F are parallel
 tracks off A1; nothing downstream of the gate starts before C2 clears. B1's
-`mergeObjects` fold is reused by C3 (whole-object mut merge) and the `widen` helper
+`foldUsageBounds` fold is reused by C3 (whole-object mut merge) and the `widen` helper
 authored in B3 is reused by C3, so land B before C3 even though B is otherwise
 independent of the gate. Total ≈ 3.0k non-test LoC across 17 PRs, with the
 single highest-risk change (C2) isolated to ~180 reviewable lines.

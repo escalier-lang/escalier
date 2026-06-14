@@ -752,6 +752,22 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 // <pattern>?
 // <pattern>
 func (p *Parser) param() *ast.Param {
+	// `open` is a provisional, context-sensitive keyword: it marks a
+	// row-polymorphic parameter only when a parameter pattern follows (`open p`,
+	// `open mut p`, `open {x}`). Otherwise it is an ordinary identifier — a param
+	// literally named `open`, or `open: T` / `open = e` — so back the lexer up.
+	open := false
+	if tok := p.lexer.peek(); tok.Type == Identifier && tok.Value == "open" {
+		saved := p.lexer.saveState()
+		p.lexer.consume() // tentatively consume `open`
+		switch p.lexer.peek().Type {
+		case Identifier, Mut, OpenBrace, OpenBracket:
+			open = true
+		default:
+			p.lexer.restoreState(saved)
+		}
+	}
+
 	pat := p.pattern(true, false)
 	if pat == nil {
 		return nil
@@ -795,6 +811,7 @@ func (p *Parser) param() *ast.Param {
 		Pattern:  pat,
 		TypeAnn:  typeAnn,
 		Optional: opt,
+		Open:     open,
 	}
 
 	return &param

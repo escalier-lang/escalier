@@ -95,6 +95,115 @@ func TestCoalesceMultiBound(t *testing.T) {
 	})
 }
 
+// TestCoalesceNegativeObjectMerge pins B1: a negative variable carrying several
+// member-access requirements as separate inexact one-property objects coalesces to
+// a single EXACT object (Policy A), not an intersection of one-property objects.
+// This is the receiver of `fn (p) { p.a; p.b }`, whose body lands `{a: …, ...}` and
+// `{b: …, ...}` on p's upper bounds.
+func TestCoalesceNegativeObjectMerge(t *testing.T) {
+	// Two distinct one-property requirements fold into one exact two-property object.
+	t.Run("distinct properties fold to one exact object", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.UpperBounds = []soltype.Type{
+			inexactObj(propElem("a", num())),
+			inexactObj(propElem("b", str())),
+		}
+		got := coalesce(p, soltype.Negative)
+		want := exactObj(propElem("a", num()), propElem("b", str()))
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+
+	// A single member-access requirement closes to exact too — the row is sealed
+	// once body inference completes, so `{a, ...}` becomes `{a}`.
+	t.Run("single requirement closes to exact", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.UpperBounds = []soltype.Type{inexactObj(propElem("a", num()))}
+		got := coalesce(p, soltype.Negative)
+		require.True(t, equalType(exactObj(propElem("a", num())), got), "got %s", soltype.Print(got))
+	})
+
+	// A property required on several of the merged objects becomes the intersection
+	// of its per-requirement types: p <: {a: number} and p <: {a: string} ⇒ p.a is
+	// number & string.
+	t.Run("shared property becomes intersection", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.UpperBounds = []soltype.Type{
+			inexactObj(propElem("a", num())),
+			inexactObj(propElem("a", str())),
+		}
+		got := coalesce(p, soltype.Negative)
+		want := exactObj(&soltype.PropertyElem{
+			Name: "a",
+			Type: &soltype.IntersectionType{Types: []soltype.Type{num(), str()}},
+		})
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+
+	// Non-object upper bounds are left untouched alongside the folded object, so a
+	// mixed bound list still renders as an intersection of the merged object and the
+	// other parts.
+	t.Run("non-object bounds survive the fold", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.UpperBounds = []soltype.Type{
+			inexactObj(propElem("a", num())),
+			num(),
+		}
+		got := coalesce(p, soltype.Negative)
+		want := &soltype.IntersectionType{Types: []soltype.Type{
+			exactObj(propElem("a", num())),
+			num(),
+		}}
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+}
+
+// TestCoalesceOpenVarStaysInexact pins B2: an `open` parameter var's folded usage
+// object stays inexact (row-polymorphic) instead of closing to exact. The Open flag
+// on the var is the opt-out from B1's Policy-A close.
+func TestCoalesceOpenVarStaysInexact(t *testing.T) {
+	// An open var with two member-access requirements folds to one INEXACT object.
+	t.Run("open var folds to inexact object", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.Open = true
+		p.UpperBounds = []soltype.Type{
+			inexactObj(propElem("x", num())),
+			inexactObj(propElem("y", str())),
+		}
+		got := coalesce(p, soltype.Negative)
+		want := inexactObj(propElem("x", num()), propElem("y", str()))
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+
+	// A single requirement on an open var also stays inexact.
+	t.Run("open var single requirement stays inexact", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.Open = true
+		p.UpperBounds = []soltype.Type{inexactObj(propElem("x", num()))}
+		got := coalesce(p, soltype.Negative)
+		require.True(t, equalType(inexactObj(propElem("x", num())), got), "got %s", soltype.Print(got))
+	})
+
+	// The un-open peer closes to exact (the B1 baseline), so the flag is what
+	// distinguishes them.
+	t.Run("closed peer folds to exact object", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0) // Open defaults to false
+		p.UpperBounds = []soltype.Type{
+			inexactObj(propElem("x", num())),
+			inexactObj(propElem("y", str())),
+		}
+		got := coalesce(p, soltype.Negative)
+		want := exactObj(propElem("x", num()), propElem("y", str()))
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+}
+
 func TestCoalesceStructuralRecursion(t *testing.T) {
 	// The identity function `fn (x) -> x` is built with one variable used both as
 	// the parameter type (negative) and the return type (positive). With empty

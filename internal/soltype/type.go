@@ -22,6 +22,11 @@ type TypeVarType struct {
 	Level       int
 	LowerBounds []Type
 	UpperBounds []Type
+	// Open marks the variable of an `open` parameter (M4 B2). It is read only at
+	// display-time coalescing: a usage-inferred object on an open var's upper
+	// bounds stays inexact (row-polymorphic) instead of closing to exact. It has
+	// no effect on constraint solving.
+	Open bool
 }
 
 // BoundsAt returns the bounds relevant to a polarity: lowers in Positive
