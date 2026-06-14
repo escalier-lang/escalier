@@ -180,6 +180,15 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	params := make([]*soltype.FuncParam, len(sig.Params))
 	for i, p := range sig.Params {
 		pt := c.paramType(p, lvl)
+		// An `open` un-annotated param keeps its usage-inferred object inexact at
+		// display time (B2). The marker only makes sense for an inferred var; an
+		// annotated param's exactness is fixed by its annotation, and paramType
+		// returns the resolved annotation (not a var) in that case.
+		if p.Open {
+			if v, ok := pt.(*soltype.TypeVarType); ok {
+				v.Open = true
+			}
+		}
 		name, ok := identPatName(p.Pattern)
 		var sources []provenance.Provenance
 		if !ok {

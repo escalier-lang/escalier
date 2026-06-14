@@ -101,7 +101,12 @@ func (d *VarDecl) SetProvenance(p provenance.Provenance) {
 type Param struct {
 	Pattern  Pat
 	Optional bool
-	TypeAnn  TypeAnn // optional
+	// Open marks an `open p` parameter: its usage-inferred object stays
+	// row-polymorphic (inexact) instead of closing to exact, so callers may pass
+	// objects with extra fields. The provisional `open` keyword is recognized only
+	// before a parameter pattern; elsewhere `open` is an ordinary identifier.
+	Open    bool
+	TypeAnn TypeAnn // optional
 }
 
 func (p *Param) Span() Span {

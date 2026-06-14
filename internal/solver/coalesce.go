@@ -74,7 +74,7 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	if len(bounds) == 0 {
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	return soltype.EnterResult{Type: combine(pol, dedup(bounds)), SkipChildren: true}
+	return soltype.EnterResult{Type: combine(pol, dedup(bounds), v.Open), SkipChildren: true}
 }
 
 func (c *coalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
@@ -197,7 +197,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		// already leave parts=[rep]. Collapse to the polarity identity.
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	return soltype.EnterResult{Type: combine(pol, dedup(parts)), SkipChildren: true}
+	return soltype.EnterResult{Type: combine(pol, dedup(parts), v.Open), SkipChildren: true}
 }
 
 func (c *schemeCoalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
@@ -253,12 +253,14 @@ func emptyOf(pol soltype.Polarity) soltype.Type {
 // remains. The UnionType/IntersectionType nodes ship in M1 (soltype/type.go) so
 // combine can always return a native soltype.Type.
 //
-// In Negative position the object parts are first folded into a single exact
-// object (mergeObjects, B1) so member-access requirements on one receiver render
-// as one compact object rather than an intersection of one-property objects.
-func combine(pol soltype.Polarity, parts []soltype.Type) soltype.Type {
+// In Negative position the object parts are first folded into a single object
+// (mergeObjects, B1) so member-access requirements on one receiver render as one
+// compact object rather than an intersection of one-property objects. The folded
+// object closes to exact unless `open` is set — an `open` parameter (B2) stays
+// row-polymorphic (inexact).
+func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type {
 	if pol == soltype.Negative {
-		parts = mergeObjects(parts)
+		parts = mergeObjects(parts, open)
 	}
 	if len(parts) == 1 {
 		return parts[0]
@@ -281,14 +283,15 @@ func combine(pol soltype.Polarity, parts []soltype.Type) soltype.Type {
 // property appearing in several parts becomes the intersection of its types,
 // because `obj <: {a: β}` and `obj <: {a: γ}` together require `obj.a <: β & γ`.
 //
-// Policy A (exact-types spec §8.1): the folded usage object closes to EXACT. The
-// per-access requirements stay inexact (A1); only this coalesced result is sealed,
-// once body inference has produced every selection on the receiver. `open` (B2) is
-// the opt-out that leaves the result inexact for row-polymorphic params.
+// Policy A (exact-types spec §8.1): the folded usage object closes to EXACT once
+// body inference has produced every selection on the receiver. The per-access
+// requirements stay inexact (A1); only this coalesced result is sealed. The `open`
+// parameter marker (B2) is the opt-out: when set, the folded object stays inexact
+// so the param is row-polymorphic and callers may pass objects with extra fields.
 //
 // Mut-object merging (`mut {x} & mut {y}` ⇒ `mut {x, y}`) is deferred to C3, once
 // the field-write path produces mut receivers.
-func mergeObjects(parts []soltype.Type) []soltype.Type {
+func mergeObjects(parts []soltype.Type, open bool) []soltype.Type {
 	var objs []*soltype.ObjectType
 	var others []soltype.Type
 	for _, p := range parts {
@@ -301,14 +304,15 @@ func mergeObjects(parts []soltype.Type) []soltype.Type {
 	if len(objs) == 0 {
 		return parts // nothing to fold; leave the bound list as-is
 	}
-	return append([]soltype.Type{mergeObjectGroup(objs)}, others...)
+	return append([]soltype.Type{mergeObjectGroup(objs, open)}, others...)
 }
 
-// mergeObjectGroup folds object types into one exact object: the property sets are
+// mergeObjectGroup folds object types into one object: the property sets are
 // unioned and a property shared by several objects becomes the intersection of its
 // types. Property order is alphabetical for stable rendering. A property is
 // optional in the result only when it is optional in every object that carries it.
-func mergeObjectGroup(objs []*soltype.ObjectType) *soltype.ObjectType {
+// The result is exact (closed) unless `open`, in which case it stays inexact.
+func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType {
 	byName := map[string]*soltype.PropertyElem{}
 	var order []string
 	for _, o := range objs {
@@ -331,7 +335,8 @@ func mergeObjectGroup(objs []*soltype.ObjectType) *soltype.ObjectType {
 	for i, name := range order {
 		elems[i] = byName[name]
 	}
-	return &soltype.ObjectType{Elems: elems} // Inexact: false ⇒ closed (Policy A)
+	// Closed (Inexact: false) by Policy A; an `open` param leaves it inexact (B2).
+	return &soltype.ObjectType{Elems: elems, Inexact: open}
 }
 
 // dedup removes structurally-equal parts, preserving first-occurrence order.

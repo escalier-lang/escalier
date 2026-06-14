@@ -161,6 +161,49 @@ func TestCoalesceNegativeObjectMerge(t *testing.T) {
 	})
 }
 
+// TestCoalesceOpenVarStaysInexact pins B2: an `open` parameter var's folded usage
+// object stays inexact (row-polymorphic) instead of closing to exact. The Open flag
+// on the var is the opt-out from B1's Policy-A close.
+func TestCoalesceOpenVarStaysInexact(t *testing.T) {
+	// An open var with two member-access requirements folds to one INEXACT object.
+	t.Run("open var folds to inexact object", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.Open = true
+		p.UpperBounds = []soltype.Type{
+			inexactObj(propElem("x", num())),
+			inexactObj(propElem("y", str())),
+		}
+		got := coalesce(p, soltype.Negative)
+		want := inexactObj(propElem("x", num()), propElem("y", str()))
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+
+	// A single requirement on an open var also stays inexact.
+	t.Run("open var single requirement stays inexact", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.Open = true
+		p.UpperBounds = []soltype.Type{inexactObj(propElem("x", num()))}
+		got := coalesce(p, soltype.Negative)
+		require.True(t, equalType(inexactObj(propElem("x", num())), got), "got %s", soltype.Print(got))
+	})
+
+	// The un-open peer closes to exact (the B1 baseline), so the flag is what
+	// distinguishes them.
+	t.Run("closed peer folds to exact object", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0) // Open defaults to false
+		p.UpperBounds = []soltype.Type{
+			inexactObj(propElem("x", num())),
+			inexactObj(propElem("y", str())),
+		}
+		got := coalesce(p, soltype.Negative)
+		want := exactObj(propElem("x", num()), propElem("y", str()))
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+}
+
 func TestCoalesceStructuralRecursion(t *testing.T) {
 	// The identity function `fn (x) -> x` is built with one variable used both as
 	// the parameter type (negative) and the return type (positive). With empty
