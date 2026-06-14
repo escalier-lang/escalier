@@ -840,19 +840,22 @@ now resolve to real `soltype` structures rather than opaque placeholders.
   seal for objects: `inferMember` lowers `recv.prop` to an inexact one-property
   requirement, and `sealUsageObjects` (M4 B2, `solver/poly.go`) folds those
   requirements into one exact object at generalization unless the var escapes to an
-  output position or is marked `open`. **Index reads got none of this** — the
-  `inferExpr` dispatch (`solver/infer.go`) sends `*ast.IndexExpr` to the
-  `reportUnsupported` default, because the read shape depends on whether the
-  receiver is a tuple or an `Array`, and `Array` only exists at this milestone. Wire
-  it here:
-    - **`inferIndex` (NEW), constant numeric key.** `recv[0]` lowers to an inexact
-      *tuple* requirement "has at least a slot at this index" — the positional twin
-      of `inferMember`'s `{prop: β, ...}` object requirement. So `recv[0]; recv[1]`
-      lands two inexact tuple upper bounds on the receiver var, mirroring the
-      object path. The result type is the element var β. This is the new-checker
-      port of the reference checker's "single literal index infers a tuple"
-      behavior (`checker/tests/row_types_test.go` `NumericIndex` /
-      `ArrayElementReadAccess`).
+  output position or is marked `open`. F1 (#730) extended that to a constant STRING
+  index: `recv["bar"]` routes through `valueProp` to the same inexact object
+  requirement, so it already gets the object seal. **What index reads still lack is
+  the TUPLE path** — `resolveIndexPath` (`solver/infer_expr.go`) sends a constant
+  NUMERIC index `recv[0]` and any dynamic key to `reportUnsupported`, because the
+  read shape there depends on whether the receiver is a tuple or an `Array`, and
+  `Array` only exists at this milestone. Wire it here:
+    - **`inferIndex` tuple arm (NEW), constant numeric key.** `recv[0]` lowers to an
+      inexact *tuple* requirement "has at least a slot at this index" — the
+      positional twin of the `{prop: β, ...}` object requirement `valueProp` already
+      builds. So `recv[0]; recv[1]` lands two inexact tuple upper bounds on the
+      receiver var, mirroring the object path. The result type is the element var β.
+      This is the new-checker port of the reference checker's "single literal index
+      infers a tuple" behavior (`checker/tests/row_types_test.go` `NumericIndex` /
+      `ArrayElementReadAccess`). It slots into `resolveIndexPath`'s value-index
+      branch beside the existing constant-string-key `valueProp` call.
     - **Tuple merge-by-position.** Where the object fold (`mergeObjectGroup`) unions
       properties by NAME, the tuple fold unions slots by INDEX: `recv[0]; recv[2]`
       requires length ≥ 3, with index 1 a hole filled by a fresh var, and a slot
