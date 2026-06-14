@@ -184,6 +184,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 				return []SolverError{&TupleLengthMismatchError{Sub: sub, Super: sup}}
 			}
 			var errs []SolverError
+			// Range over sup.Elems, not sub.Elems: an inexact super (`[A, ...]`) lets
+			// the sub be longer, so sup is the shorter side. This walks the shared
+			// prefix and keeps sup.Elems[i] in bounds.
 			for i := range sup.Elems {
 				errs = append(errs, c.constrain(sub.Elems[i], sup.Elems[i], seen)...) // covariant
 			}

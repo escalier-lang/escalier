@@ -743,6 +743,11 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 // and equalType rely on ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). Shared by inferObject
 // (object literals) and resolveObjectTypeAnn (object type annotations) so the dedup
 // rule lives in one place.
+//
+// It is NOT recursive: it accumulates the direct properties of ONE object level.
+// Each property's type arrives already built — inferObject computes it with
+// inferExpr, resolveObjectTypeAnn with resolveTypeAnn — so a nested object is built
+// by that caller's recursion before add stores it.
 type objElemBuilder struct {
 	elems []soltype.ObjTypeElem
 	pos   map[string]int // property name → index in elems
