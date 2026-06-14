@@ -61,11 +61,12 @@ name heuristics.
   extended attributes are the analogous machine-readable signals; that
   is a separate extractor for `web:*`. Node builtins have neither and
   stay hand-authored.
-- **Fully automatic `throws` annotations.** ECMA-262 abrupt completions
-  do seed `throws`, and this workstream emits the candidate set (FR10,
-  FR11). But the raw set over-approximates badly, so the spec output is a
-  starting point a human prunes, not a final annotation. This refines
-  rather than replaces the builtins workstream's hand-curation plan
+- **Throws as a finished, unreviewed annotation.** Emitting the throw
+  set is an in-scope deliverable (FR10, FR11), but it ships as a reviewed
+  candidate set, not a trusted final annotation. The raw set
+  over-approximates, and the coercion filter is a heuristic, so a human
+  prunes before the throws are committed. This refines the builtins
+  workstream's hand-curation plan rather than replacing it
   ([../builtins/requirements.md](../builtins/requirements.md), FR10
   "throws annotations are hand-curated for now"): the spec generates the
   ~50 high-value entries instead of hand-curating them from scratch.
