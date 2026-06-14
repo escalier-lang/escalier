@@ -18,6 +18,7 @@ func TestParseOpenParamMarker(t *testing.T) {
 	paramsOf := func(t *testing.T, src string) []*ast.Param {
 		decls, errs := ParseDecls(ctx, &ast.Source{ID: 0, Path: "t.esc", Contents: src})
 		require.Empty(t, errs)
+		require.NotEmpty(t, decls) // guard decls[0] so a parse miss reports here, not a panic
 		fd, ok := decls[0].(*ast.FuncDecl)
 		require.True(t, ok)
 		return fd.Params

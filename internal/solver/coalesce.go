@@ -271,10 +271,17 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 	return &soltype.IntersectionType{Types: parts}
 }
 
-// mergeObjects folds the ObjectType parts of a negative-position (intersection)
-// bound list into a single exact object — the meet — leaving every non-object
-// part untouched. It runs only in Negative position, where the parts are a
+// mergeObjects folds the INEXACT ObjectType parts of a negative-position
+// (intersection) bound list into a single exact object — the meet — leaving every
+// other part untouched. It runs only in Negative position, where the parts are a
 // variable's coalesced upper bounds.
+//
+// Only inexact objects fold, matching sealUsageObjects: an inexact object is a
+// member-access requirement ("has at least these fields"), and merging several is
+// the receiver's combined width requirement. An EXACT object on the bounds is an
+// already-closed shape, not a width requirement, so it passes through unchanged —
+// folding it would be wrong (`{x} & {y}` over exact objects is uninhabited, not
+// `{x, y}`) and would feed a non-member object to mergeObjectGroup/AsProperty.
 //
 // Member-access requirements on one receiver arrive as separate inexact
 // one-property objects: A1's inferMember lowers `obj.a; obj.b` to the upper bounds
@@ -295,7 +302,7 @@ func mergeObjects(parts []soltype.Type, open bool) []soltype.Type {
 	var objs []*soltype.ObjectType
 	var others []soltype.Type
 	for _, p := range parts {
-		if o, ok := p.(*soltype.ObjectType); ok {
+		if o, ok := p.(*soltype.ObjectType); ok && o.Inexact {
 			objs = append(objs, o)
 			continue
 		}
