@@ -16,6 +16,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 2   | Node extractor + JSON IR                | ✅      | 1          | [tools/webidl_to_esc/extract.mjs](../../tools/webidl_to_esc/extract.mjs); IR schema in [internal/webidl/ir.go](../../internal/webidl/ir.go). |
 | 3   | Go converter (`internal/webidl`)        | ✅      | 2          | [internal/webidl/convert.go](../../internal/webidl/convert.go). |
 | 4   | CLI + samples + tests                   | ✅      | 3          | [tools/webidl_to_esc/main.go](../../tools/webidl_to_esc/main.go), `samples/dom.{json,esc}`, `convert_test.go`. |
+| 4b  | `throws` from spec algorithms           | 🚧      | 3          | [tools/webidl_to_esc/extract_throws.mjs](../../tools/webidl_to_esc/extract_throws.mjs); converter renders clauses via `-throws`. Prototype done; cross-spec + terse-method gaps open. |
 | 5   | Coverage: dictionaries, enums, typedefs | ⬜      | 3          | New IR node kinds + render functions. |
 | 6   | `iterable`/`maplike`/`setlike`          | ⬜      | 5          | Expand to protocol members. |
 | 7   | Cross-spec references + routing table   | ⬜      | 3          | `Universe` merge + spec→package routing. |
@@ -123,6 +124,71 @@ and the positional artifact paths. Each file is unmarshalled into a
 For each path: read, `json.Unmarshal` into `Artifact`, `ConvertArtifact`, then
 write to stdout, alongside the artifact, or under `-o`. Tests build in-memory
 `Artifact`s and assert the full rendered class.
+
+## 4b. `throws` from spec algorithms — prototype done
+
+### Data structures
+
+The throws map is the contract between the new extractor and the converter:
+
+```go
+// keyed "Interface.method"; value is the sorted exception name set.
+type ThrowsMap map[string][]string
+```
+
+The extractor's internal graph state, in `extract_throws.mjs`:
+
+```js
+byHref  : Map<href, algorithm>   // every algorithm across all loaded specs
+direct  : Map<href, Set<string>> // exceptions a step throws directly
+edges   : Map<href, Set<href>>   // call edges: hrefs that are themselves algorithms
+closure : Map<href, Set<string>> // transitive throw set (the fixpoint result)
+```
+
+`Member` gains nothing — the converter reads the external `ThrowsMap`, so the
+IDL IR and the throws data stay decoupled. The render path threads a small
+`renderCtx{iface, throws}` through `writeClass` →
+`writeInstanceMember`/`writeStaticMember` → `writeOperation`, and
+`throwsClause` looks up `throws[iface+"."+name]`.
+
+### Algorithm
+
+In [extract_throws.mjs](../../tools/webidl_to_esc/extract_throws.mjs):
+
+1. **Load + index.** Parse each `ed/algorithms/<spec>.json`; index every
+   algorithm by `href` into `byHref`.
+2. **Per-algorithm projection.** Flatten nested steps. A step throws when it
+   carries a throw marker (`#dfn-throw` or a `throw` link); its exceptions are
+   the `data-link-type="exception"` link texts plus literal `TypeError` /
+   `RangeError`. A step's hrefs that hit `byHref` become call edges; the rest
+   are counted as unresolved external edges for the coverage report.
+3. **Transitive closure.** Seed `closure[h] = direct[h]`, then iterate a
+   worklist `closure[h] ∪= closure[e]` for every edge `e` until no set
+   changes. The call graph has cycles, so a fixpoint over all nodes is the
+   simplest correct approach.
+4. **Operation map.** For each algorithm whose `name` matches
+   `Interface/method`, emit `Interface.method -> sorted(closure[href])` when
+   non-empty. Print a coverage report: operation count, throwing count,
+   exception frequency, unresolved external edges.
+
+The converter side (landed): `ConvertArtifactThrows(a, throws)` and the
+`-throws map.json` CLI flag. `writeOperation`/`writeStaticMember` append the
+`throws` clause from `throwsClause`.
+
+### Remaining work to close the gaps
+
+- **Cross-spec helpers.** Load the full `ed/algorithms/*` set, not just a hand
+  list, so helper algorithms in any spec resolve. The fixpoint already
+  handles a larger graph; this is a fetch/index change. Track the unresolved
+  external-edge count to zero on the target specs.
+- **Terse method association.** Bridge a one-line delegating method to the
+  concept it delegates to using `ed/dfns/<spec>.json`: the dfn entry for
+  `dom-node-removechild` plus the method prose's single concept link gives the
+  `method → algorithm` edge that the `algorithms` extract omits. Add this edge
+  to the graph before computing the closure.
+- **Binding-layer `TypeError`.** Union the IDL `[EnforceRange]` / coercion
+  signal (from the §2 IR) into each operation's throw set so binding-thrown
+  `TypeError`s appear alongside the algorithm-derived exceptions.
 
 ## 5. Coverage: dictionaries, enums, typedefs
 
@@ -382,8 +448,10 @@ type WebIDLResult struct {
 
 ## Estimated effort
 
-Phases 1–4 are done. Phases 5–6 are a few days each of IR and converter work.
-Phase 7 is the largest remaining chunk — the `Universe` merge and the routing
-table. Phase 8 is small. Phase 9 is small once unblocked but gated on parser
-work owned by another workstream. Phases 10–11 are paced by the builtins
-workstream's `web:*` layout decisions.
+Phases 1–4 are done and phase 4b's prototype is done. Closing 4b's two gaps —
+full `ed/algorithms/*` loading and the `ed/dfns/*` method bridge — is a few
+days. Phases 5–6 are a few days each of IR and converter work. Phase 7 is the
+largest remaining chunk — the `Universe` merge and the routing table. Phase 8
+is small. Phase 9 is small once unblocked but gated on parser work owned by
+another workstream. Phases 10–11 are paced by the builtins workstream's
+`web:*` layout decisions.

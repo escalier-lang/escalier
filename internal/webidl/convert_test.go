@@ -44,8 +44,8 @@ func TestConvertArtifact(t *testing.T) {
 	}
 
 	want := `// Generated from WebIDL spec "sample" by internal/webidl.
-// Prototype output: receiver mutability is heuristic and ownership
-// annotations come from [NewObject] / [SameObject]. Review before use.
+// Prototype output: receiver mutability is heuristic; ownership comes
+// from [NewObject]/[SameObject]; throws come from spec algorithms.
 
 declare class Widget extends Node {
     get children(self) -> NodeList,  // [SameObject] result borrows from self; candidate for a self lifetime
@@ -60,6 +60,36 @@ declare class Widget extends Node {
 `
 
 	require.Equal(t, want, ConvertArtifact(artifact))
+}
+
+// TestConvertArtifactThrows checks that a throws map keyed "Iface.method"
+// renders a `throws` clause on the matching operation and leaves others bare.
+// The exceptions come from the spec-algorithm extractor, not the WebIDL.
+func TestConvertArtifactThrows(t *testing.T) {
+	t.Parallel()
+
+	artifact := Artifact{
+		Spec: "sample",
+		Interfaces: []Interface{{
+			Name: "Doc",
+			Members: []Member{
+				{Kind: "operation", Name: "createElement", NewObject: true, Return: scalar("Element", false),
+					Args: []Arg{{Name: "name", Type: scalar("DOMString", false)}}},
+				{Kind: "operation", Name: "hasFeature", Return: scalar("boolean", false)},
+			},
+		}},
+	}
+	throws := map[string][]string{
+		"Doc.createElement": {"InvalidCharacterError", "NotSupportedError"},
+	}
+
+	got := ConvertArtifactThrows(artifact, throws)
+	require.Contains(t, got,
+		"createElement(mut self, name: string) -> mut Element throws InvalidCharacterError | NotSupportedError,")
+	// hasFeature has no throws-map entry, so no clause. `has` is a
+	// non-mutating prefix, so the receiver is `self`.
+	require.Contains(t, got, "hasFeature(self) -> boolean,")
+	require.NotContains(t, got, "hasFeature(self) -> boolean throws")
 }
 
 // TestMapType covers the WebIDL->Escalier type mapping: scalars, generics,

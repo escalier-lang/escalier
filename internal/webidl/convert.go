@@ -19,13 +19,28 @@ import (
 // The output is a review aid, not a drop-in: it stamps the hard-to-infer
 // signals for a human to confirm, exactly as the dts_to_esc converter does.
 func ConvertArtifact(a Artifact) string {
+	return ConvertArtifactThrows(a, nil)
+}
+
+// renderCtx threads the per-class state the member emitters need: the
+// enclosing interface name and the optional throws map keyed by
+// "Interface.method" (produced by tools/webidl_to_esc/extract_throws.mjs).
+type renderCtx struct {
+	iface  string
+	throws map[string][]string
+}
+
+// ConvertArtifactThrows is ConvertArtifact plus an exception map: when
+// throws["Iface.method"] is set, that operation renders a `throws` clause.
+// The map comes from the spec-algorithm extractor, not from the WebIDL.
+func ConvertArtifactThrows(a Artifact, throws map[string][]string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "// Generated from WebIDL spec %q by internal/webidl.\n", a.Spec)
-	b.WriteString("// Prototype output: receiver mutability is heuristic and ownership\n")
-	b.WriteString("// annotations come from [NewObject] / [SameObject]. Review before use.\n\n")
+	b.WriteString("// Prototype output: receiver mutability is heuristic; ownership comes\n")
+	b.WriteString("// from [NewObject]/[SameObject]; throws come from spec algorithms.\n\n")
 
 	for _, iface := range merged(a) {
-		writeClass(&b, iface)
+		writeClass(&b, iface, renderCtx{iface: iface.Name, throws: throws})
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -70,7 +85,7 @@ func merged(a Artifact) []Interface {
 	return out
 }
 
-func writeClass(b *strings.Builder, iface Interface) {
+func writeClass(b *strings.Builder, iface Interface, ctx renderCtx) {
 	header := "declare class " + iface.Name
 	if iface.Inheritance != nil {
 		header += " extends " + *iface.Inheritance
@@ -83,23 +98,23 @@ func writeClass(b *strings.Builder, iface Interface) {
 		if m.Static {
 			continue
 		}
-		writeInstanceMember(b, m)
+		writeInstanceMember(b, m, ctx)
 	}
 	for _, m := range iface.Members {
 		if !m.Static {
 			continue
 		}
-		writeStaticMember(b, m)
+		writeStaticMember(b, m, ctx)
 	}
 	b.WriteString("}\n")
 }
 
-func writeInstanceMember(b *strings.Builder, m Member) {
+func writeInstanceMember(b *strings.Builder, m Member, ctx renderCtx) {
 	switch m.Kind {
 	case "attribute":
 		writeAttribute(b, m)
 	case "operation":
-		writeOperation(b, m, false)
+		writeOperation(b, m, ctx)
 	case "constructor":
 		fmt.Fprintf(b, "    constructor(%s),\n", renderArgs(m.Args))
 	case "const":
@@ -109,7 +124,7 @@ func writeInstanceMember(b *strings.Builder, m Member) {
 	}
 }
 
-func writeStaticMember(b *strings.Builder, m Member) {
+func writeStaticMember(b *strings.Builder, m Member, ctx renderCtx) {
 	switch m.Kind {
 	case "attribute":
 		ro := ""
@@ -124,10 +139,21 @@ func writeStaticMember(b *strings.Builder, m Member) {
 			ret = "mut " + ret
 			note = "  // [NewObject] caller owns a fresh value"
 		}
-		fmt.Fprintf(b, "    static %s(%s) -> %s,%s\n", m.Name, renderArgs(m.Args), ret, note)
+		fmt.Fprintf(b, "    static %s(%s) -> %s%s,%s\n", m.Name, renderArgs(m.Args), ret, throwsClause(m.Name, ctx), note)
 	case "const":
 		fmt.Fprintf(b, "    readonly static %s: %s,\n", m.Name, MapType(m.Type))
 	}
+}
+
+// throwsClause returns a ` throws E1 | E2` suffix when the throws map has an
+// entry for this interface/method, or "" otherwise. The exceptions come from
+// the spec-algorithm extractor, since WebIDL carries no exception info.
+func throwsClause(name string, ctx renderCtx) string {
+	excs := ctx.throws[ctx.iface+"."+name]
+	if len(excs) == 0 {
+		return ""
+	}
+	return " throws " + strings.Join(excs, " | ")
 }
 
 // writeAttribute renders a WebIDL attribute as a getter, plus a setter when
@@ -148,7 +174,7 @@ func writeAttribute(b *strings.Builder, m Member) {
 	}
 }
 
-func writeOperation(b *strings.Builder, m Member, _ bool) {
+func writeOperation(b *strings.Builder, m Member, ctx renderCtx) {
 	mut, ok := interop.ClassifyMethodByName(m.Name)
 	if !ok {
 		// No name tier matched: fall to the tier-7 default (mutating) and
@@ -176,7 +202,7 @@ func writeOperation(b *strings.Builder, m Member, _ bool) {
 		note = "  // [NewObject] caller owns result"
 	}
 
-	fmt.Fprintf(b, "    %s(%s) -> %s,%s\n", m.Name, joinReceiver(recv, m.Args), ret, note)
+	fmt.Fprintf(b, "    %s(%s) -> %s%s,%s\n", m.Name, joinReceiver(recv, m.Args), ret, throwsClause(m.Name, ctx), note)
 }
 
 func joinReceiver(recv string, args []Arg) string {

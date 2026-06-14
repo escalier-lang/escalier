@@ -36,12 +36,24 @@ func run(args []string) error {
 	fs := flag.NewFlagSet("webidl_to_esc", flag.ContinueOnError)
 	outDir := fs.String("o", "", "output directory for .esc files (default: alongside each artifact)")
 	toStdout := fs.Bool("stdout", false, "write to stdout instead of files")
+	throwsPath := fs.String("throws", "", "throws map JSON from extract_throws.mjs (keyed Iface.method)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	paths := fs.Args()
 	if len(paths) == 0 {
-		return fmt.Errorf("usage: webidl_to_esc [-o dir] [-stdout] <artifact.json> [more.json ...]")
+		return fmt.Errorf("usage: webidl_to_esc [-o dir] [-stdout] [-throws map.json] <artifact.json> [more.json ...]")
+	}
+
+	var throws map[string][]string
+	if *throwsPath != "" {
+		raw, err := os.ReadFile(*throwsPath)
+		if err != nil {
+			return fmt.Errorf("reading throws map %s: %w", *throwsPath, err)
+		}
+		if err := json.Unmarshal(raw, &throws); err != nil {
+			return fmt.Errorf("parsing throws map %s: %w", *throwsPath, err)
+		}
 	}
 
 	for _, path := range paths {
@@ -53,7 +65,7 @@ func run(args []string) error {
 		if err := json.Unmarshal(raw, &artifact); err != nil {
 			return fmt.Errorf("parsing %s: %w", path, err)
 		}
-		esc := webidl.ConvertArtifact(artifact)
+		esc := webidl.ConvertArtifactThrows(artifact, throws)
 
 		if *toStdout {
 			fmt.Print(esc)

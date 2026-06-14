@@ -1,6 +1,6 @@
 // Generated from WebIDL spec "dom" by internal/webidl.
-// Prototype output: receiver mutability is heuristic and ownership
-// annotations come from [NewObject] / [SameObject]. Review before use.
+// Prototype output: receiver mutability is heuristic; ownership comes
+// from [NewObject]/[SameObject]; throws come from spec algorithms.
 
 declare class Event {
     constructor(type: string, eventInitDict?: EventInit),
@@ -44,7 +44,7 @@ declare class EventTarget {
     constructor(),
     addEventListener(mut self, type: string, callback: EventListener | null, options?: AddEventListenerOptions | boolean) -> undefined,
     removeEventListener(mut self, type: string, callback: EventListener | null, options?: EventListenerOptions | boolean) -> undefined,
-    dispatchEvent(mut self, event: Event) -> boolean,
+    dispatchEvent(mut self, event: Event) -> boolean throws InvalidStateError,
 }
 
 declare class AbortController {
@@ -78,7 +78,7 @@ declare class HTMLCollection {
 
 declare class MutationObserver {
     constructor(callback: MutationCallback),
-    observe(mut self, target: Node, options?: MutationObserverInit) -> undefined,  // receiver-mut uncertain (tier-7 default)
+    observe(mut self, target: Node, options?: MutationObserverInit) -> undefined throws TypeError,  // receiver-mut uncertain (tier-7 default)
     disconnect(mut self) -> undefined,  // receiver-mut uncertain (tier-7 default)
     takeRecords(mut self) -> Array<MutationRecord>,  // receiver-mut uncertain (tier-7 default)
 }
@@ -126,8 +126,8 @@ declare class Node extends EventTarget {
     set nodeValue(mut self, value: string | null),
     get textContent(self) -> string | null,
     set textContent(mut self, value: string | null),
-    normalize(mut self) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    cloneNode(self, subtree?: boolean) -> mut Node,  // [NewObject] caller owns result
+    normalize(mut self) -> undefined throws IndexSizeError,  // receiver-mut uncertain (tier-7 default)
+    cloneNode(self, subtree?: boolean) -> mut Node throws NotSupportedError,  // [NewObject] caller owns result
     isEqualNode(self, otherNode: Node | null) -> boolean,
     isSameNode(self, otherNode: Node | null) -> boolean,
     readonly DOCUMENT_POSITION_DISCONNECTED: number,
@@ -162,18 +162,18 @@ declare class Document extends Node {
     getElementsByTagName(self, qualifiedName: string) -> HTMLCollection,
     getElementsByTagNameNS(self, namespace: string | null, localName: string) -> HTMLCollection,
     getElementsByClassName(self, classNames: string) -> HTMLCollection,
-    createElement(mut self, localName: string, options?: string | ElementCreationOptions) -> mut Element,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createElement(mut self, localName: string, options?: string | ElementCreationOptions) -> mut Element throws InvalidCharacterError | NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createElementNS(mut self, namespace: string | null, qualifiedName: string, options?: string | ElementCreationOptions) -> mut Element,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createDocumentFragment(mut self) -> mut DocumentFragment,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createTextNode(mut self, data: string) -> mut Text,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    createCDATASection(mut self, data: string) -> mut CDATASection,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createCDATASection(mut self, data: string) -> mut CDATASection throws InvalidCharacterError | NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createComment(mut self, data: string) -> mut Comment,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    createProcessingInstruction(mut self, target: string, data: string) -> mut ProcessingInstruction,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    importNode(mut self, node: Node, options?: boolean | ImportNodeOptions) -> mut Node,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    adoptNode(mut self, node: Node) -> Node,  // receiver-mut uncertain (tier-7 default)
-    createAttribute(mut self, localName: string) -> mut Attr,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    createAttributeNS(mut self, namespace: string | null, qualifiedName: string) -> mut Attr,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    createEvent(mut self, interface: string) -> mut Event,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createProcessingInstruction(mut self, target: string, data: string) -> mut ProcessingInstruction throws InvalidCharacterError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    importNode(mut self, node: Node, options?: boolean | ImportNodeOptions) -> mut Node throws NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    adoptNode(mut self, node: Node) -> Node throws HierarchyRequestError | NotSupportedError,  // receiver-mut uncertain (tier-7 default)
+    createAttribute(mut self, localName: string) -> mut Attr throws InvalidCharacterError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createAttributeNS(mut self, namespace: string | null, qualifiedName: string) -> mut Attr throws NamespaceError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createEvent(mut self, interface: string) -> mut Event throws NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createRange(mut self) -> mut Range,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createNodeIterator(mut self, root: Node, whatToShow?: number, filter?: NodeFilter | null) -> mut NodeIterator,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createTreeWalker(mut self, root: Node, whatToShow?: number, filter?: NodeFilter | null) -> mut TreeWalker,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
@@ -199,8 +199,8 @@ declare class XMLDocument extends Document {
 
 declare class DOMImplementation {
     createDocumentType(mut self, name: string, publicId: string, systemId: string) -> mut DocumentType,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    createDocument(mut self, namespace: string | null, qualifiedName: string, doctype?: DocumentType | null) -> mut XMLDocument,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    createHTMLDocument(mut self, title?: string) -> mut Document,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createDocument(mut self, namespace: string | null, qualifiedName: string, doctype?: DocumentType | null) -> mut XMLDocument throws NamespaceError | NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createHTMLDocument(mut self, title?: string) -> mut Document throws NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     hasFeature(self) -> boolean,
 }
 
@@ -259,29 +259,29 @@ declare class Element extends Node {
     getAttributeNames(self) -> Array<string>,
     getAttribute(self, qualifiedName: string) -> string | null,
     getAttributeNS(self, namespace: string | null, localName: string) -> string | null,
-    setAttribute(mut self, qualifiedName: string, value: TrustedType | string) -> undefined,
-    setAttributeNS(mut self, namespace: string | null, qualifiedName: string, value: TrustedType | string) -> undefined,
+    setAttribute(mut self, qualifiedName: string, value: TrustedType | string) -> undefined throws InvalidCharacterError,
+    setAttributeNS(mut self, namespace: string | null, qualifiedName: string, value: TrustedType | string) -> undefined throws NamespaceError,
     removeAttribute(mut self, qualifiedName: string) -> undefined,
     removeAttributeNS(mut self, namespace: string | null, localName: string) -> undefined,
-    toggleAttribute(mut self, qualifiedName: string, force?: boolean) -> boolean,  // receiver-mut uncertain (tier-7 default)
+    toggleAttribute(mut self, qualifiedName: string, force?: boolean) -> boolean throws InvalidCharacterError,  // receiver-mut uncertain (tier-7 default)
     hasAttribute(self, qualifiedName: string) -> boolean,
     hasAttributeNS(self, namespace: string | null, localName: string) -> boolean,
     getAttributeNode(self, qualifiedName: string) -> Attr | null,
     getAttributeNodeNS(self, namespace: string | null, localName: string) -> Attr | null,
     setAttributeNode(mut self, attr: Attr) -> Attr | null,
     setAttributeNodeNS(mut self, attr: Attr) -> Attr | null,
-    removeAttributeNode(mut self, attr: Attr) -> Attr,
-    attachShadow(mut self, init: ShadowRootInit) -> ShadowRoot,  // receiver-mut uncertain (tier-7 default)
+    removeAttributeNode(mut self, attr: Attr) -> Attr throws NotFoundError,
+    attachShadow(mut self, init: ShadowRootInit) -> ShadowRoot throws NotSupportedError,  // receiver-mut uncertain (tier-7 default)
     get shadowRoot(self) -> ShadowRoot | null,
     get customElementRegistry(self) -> CustomElementRegistry | null,
-    closest(mut self, selectors: string) -> Element | null,  // receiver-mut uncertain (tier-7 default)
-    matches(self, selectors: string) -> boolean,
+    closest(mut self, selectors: string) -> Element | null throws SyntaxError,  // receiver-mut uncertain (tier-7 default)
+    matches(self, selectors: string) -> boolean throws SyntaxError,
     webkitMatchesSelector(mut self, selectors: string) -> boolean,  // receiver-mut uncertain (tier-7 default)
     getElementsByTagName(self, qualifiedName: string) -> HTMLCollection,
     getElementsByTagNameNS(self, namespace: string | null, localName: string) -> HTMLCollection,
     getElementsByClassName(self, classNames: string) -> HTMLCollection,
     insertAdjacentElement(mut self, where: string, element: Element) -> Element | null,
-    insertAdjacentText(mut self, where: string, data: string) -> undefined,
+    insertAdjacentText(mut self, where: string, data: string) -> undefined throws HierarchyRequestError | NotFoundError | SyntaxError,
     get children(self) -> HTMLCollection,  // [SameObject] result borrows from self; candidate for a self lifetime
     get firstElementChild(self) -> Element | null,
     get lastElementChild(self) -> Element | null,
@@ -308,8 +308,8 @@ declare class NamedNodeMap {
     getNamedItemNS(self, namespace: string | null, localName: string) -> Attr | null,
     setNamedItem(mut self, attr: Attr) -> Attr | null,
     setNamedItemNS(mut self, attr: Attr) -> Attr | null,
-    removeNamedItem(mut self, qualifiedName: string) -> Attr,
-    removeNamedItemNS(mut self, namespace: string | null, localName: string) -> Attr,
+    removeNamedItem(mut self, qualifiedName: string) -> Attr throws NotFoundError,
+    removeNamedItemNS(mut self, namespace: string | null, localName: string) -> Attr throws NotFoundError,
 }
 
 declare class Attr extends Node {
@@ -375,27 +375,27 @@ declare class Range extends AbstractRange {
     get commonAncestorContainer(self) -> Node,
     setStart(mut self, node: Node, offset: number) -> undefined,
     setEnd(mut self, node: Node, offset: number) -> undefined,
-    setStartBefore(mut self, node: Node) -> undefined,
-    setStartAfter(mut self, node: Node) -> undefined,
-    setEndBefore(mut self, node: Node) -> undefined,
-    setEndAfter(mut self, node: Node) -> undefined,
+    setStartBefore(mut self, node: Node) -> undefined throws IndexSizeError | InvalidNodeTypeError,
+    setStartAfter(mut self, node: Node) -> undefined throws IndexSizeError | InvalidNodeTypeError,
+    setEndBefore(mut self, node: Node) -> undefined throws IndexSizeError | InvalidNodeTypeError,
+    setEndAfter(mut self, node: Node) -> undefined throws IndexSizeError | InvalidNodeTypeError,
     collapse(mut self, toStart?: boolean) -> undefined,  // receiver-mut uncertain (tier-7 default)
     selectNode(mut self, node: Node) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    selectNodeContents(mut self, node: Node) -> undefined,  // receiver-mut uncertain (tier-7 default)
+    selectNodeContents(mut self, node: Node) -> undefined throws InvalidNodeTypeError,  // receiver-mut uncertain (tier-7 default)
     readonly START_TO_START: number,
     readonly START_TO_END: number,
     readonly END_TO_END: number,
     readonly END_TO_START: number,
-    compareBoundaryPoints(mut self, how: number, sourceRange: Range) -> number,  // receiver-mut uncertain (tier-7 default)
-    deleteContents(mut self) -> undefined,
+    compareBoundaryPoints(mut self, how: number, sourceRange: Range) -> number throws NotSupportedError | WrongDocumentError,  // receiver-mut uncertain (tier-7 default)
+    deleteContents(mut self) -> undefined throws IndexSizeError,
     extractContents(mut self) -> mut DocumentFragment,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     cloneContents(self) -> mut DocumentFragment,  // [NewObject] caller owns result
     insertNode(mut self, node: Node) -> undefined,
-    surroundContents(mut self, newParent: Node) -> undefined,  // receiver-mut uncertain (tier-7 default)
+    surroundContents(mut self, newParent: Node) -> undefined throws HierarchyRequestError | IndexSizeError | InvalidNodeTypeError | InvalidStateError | NotFoundError | NotSupportedError,  // receiver-mut uncertain (tier-7 default)
     cloneRange(self) -> mut Range,  // [NewObject] caller owns result
     detach(mut self) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    isPointInRange(self, node: Node, offset: number) -> boolean,
-    comparePoint(mut self, node: Node, offset: number) -> number,  // receiver-mut uncertain (tier-7 default)
+    isPointInRange(self, node: Node, offset: number) -> boolean throws IndexSizeError | InvalidNodeTypeError,
+    comparePoint(mut self, node: Node, offset: number) -> number throws IndexSizeError | InvalidNodeTypeError | WrongDocumentError,  // receiver-mut uncertain (tier-7 default)
     intersectsNode(mut self, node: Node) -> boolean,  // receiver-mut uncertain (tier-7 default)
 }
 
@@ -429,11 +429,11 @@ declare class DOMTokenList {
     get length(self) -> number,
     item(mut self, index: number) -> string | null,  // receiver-mut uncertain (tier-7 default)
     contains(self, token: string) -> boolean,
-    add(mut self, ...tokens: Array<string>) -> undefined,
-    remove(mut self, ...tokens: Array<string>) -> undefined,
-    toggle(mut self, token: string, force?: boolean) -> boolean,  // receiver-mut uncertain (tier-7 default)
-    replace(mut self, token: string, newToken: string) -> boolean,
-    supports(mut self, token: string) -> boolean,  // receiver-mut uncertain (tier-7 default)
+    add(mut self, ...tokens: Array<string>) -> undefined throws InvalidCharacterError | SyntaxError,
+    remove(mut self, ...tokens: Array<string>) -> undefined throws InvalidCharacterError | SyntaxError,
+    toggle(mut self, token: string, force?: boolean) -> boolean throws InvalidCharacterError | SyntaxError,  // receiver-mut uncertain (tier-7 default)
+    replace(mut self, token: string, newToken: string) -> boolean throws InvalidCharacterError | SyntaxError,
+    supports(mut self, token: string) -> boolean throws TypeError,  // receiver-mut uncertain (tier-7 default)
     get value(self) -> string,
     set value(mut self, value: string),
     // TODO: unsupported WebIDL member "iterable"

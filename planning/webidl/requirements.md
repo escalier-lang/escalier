@@ -58,6 +58,30 @@ The conclusion that shapes every requirement below: **WebIDL is a
 lifetime/ownership seed, not a mutability oracle.** The two mutability axes
 remain heuristic; lifetimes gain real signal.
 
+### A fourth question: which exceptions does an operation throw?
+
+WebIDL has no `[Throws]` in the standard grammar — a survey of all 325 spec
+files in `@webref/idl` found zero. Exceptions live in the specs' prose
+*algorithms*, not the IDL. But webref publishes those algorithms as
+structured JSON at `ed/algorithms/<spec>.json` in the `w3c/webref` repo, and
+the data is well-shaped for extraction:
+
+- A throwing step links the exception with `data-link-type="exception"`, so
+  `(SyntaxError, …)` extracts deterministically rather than by prose
+  matching. `TypeError`/`RangeError` are referenced by name.
+- Each algorithm is named `Interface/method(args)`, mapping it straight back
+  to the IDL operation.
+- A method's throw usually lives in a helper algorithm it calls. Steps link
+  to those helpers by href, so the **transitive throw closure** over the
+  algorithm call graph yields each operation's full throw set.
+
+A prototype confirmed this end to end: extracting from the DOM dependency
+specs produced correct `throws` clauses such as
+`createElement(...) throws InvalidCharacterError | NotSupportedError` and
+`dispatchEvent(...) throws InvalidStateError`. So a fourth signal —
+exceptions — is recoverable, from the algorithm corpus rather than the IDL.
+Two coverage gaps are documented under FR12.
+
 ## Goals
 
 - Use WebIDL as the authoritative source for the ownership and identity
@@ -67,6 +91,9 @@ remain heuristic; lifetimes gain real signal.
 - Reuse `interop.ClassifyMethodByName` for receiver mutability so the WebIDL
   path and the `.d.ts` path make identical name-based decisions, and a fix
   to one fixes both.
+- Auto-seed `throws` clauses from webref's structured spec algorithms, turning
+  exception annotations from a pure hand-edit into a reviewable generated
+  default.
 - Produce `.esc` output that is a *review aid* — it stamps the
   hard-to-infer signals for a human to confirm, exactly as
   `tools/dts_to_esc` does. Generated files are committed, then hand-edited;
@@ -191,6 +218,40 @@ hand-maintained table, the same model as
 `internal/interop/partition.go`'s `.d.ts` routing. A spec with no mapping
 entry aborts the run rather than guessing a package.
 
+### FR12. `throws` extraction from spec algorithms
+
+A second extractor consumes `ed/algorithms/<spec>.json` from `w3c/webref` and
+emits a map keyed `Interface.method` to a sorted exception list. The
+algorithm:
+
+1. Load the algorithm files for the target spec and its cross-spec helpers.
+   Index every algorithm by `href`.
+2. Per algorithm, extract directly-thrown exceptions from throwing steps and
+   the call edges to other algorithms it invokes.
+3. Compute the transitive throw closure over the call graph to a fixpoint.
+4. For each operation-named algorithm, emit its closed throw set.
+
+The Go converter accepts this map and renders a `throws E1 | E2` clause on the
+matching operation. WebIDL supplies no exception data, so this map is the only
+source. Two coverage gaps are accepted for the first cut and tracked for
+follow-up:
+
+- **Cross-spec helpers.** A throw reachable only through an algorithm in a spec
+  that was not loaded is missed. Loading the full `ed/algorithms/*` set closes
+  it. The extractor reports the count of unresolved external edges so the gap
+  is visible.
+- **Terse method definitions.** webref captures algorithms written as explicit
+  step lists. A one-line delegating method — "the `removeChild(child)` method
+  steps are to return the result of pre-removing child" — is not captured as
+  an operation-named node, so its throws are not attributed. Bridging
+  method → concept needs the `ed/dfns/<spec>.json` extract, deferred to the
+  follow-up. The proven closure machinery is unaffected; only the
+  method-to-algorithm association is incomplete.
+
+The full throw set for an operation is the union of these algorithm-derived
+exceptions and the binding-layer `TypeError` that `[EnforceRange]` and
+argument coercion imply (FR2's IDL signal).
+
 ## Non-functional requirements
 
 - **Determinism.** Running either stage twice on the same inputs produces
@@ -223,6 +284,12 @@ entry aborts the run rather than guessing a package.
   spec's interface references types defined in another. The per-spec
   artifact model defers this; the routing table (FR11) and the builtins
   workstream's open-registry augmentation are where it is resolved.
+- **Incomplete `throws` coverage.** The algorithm extractor misses throws in
+  unloaded specs and throws on terse delegating methods (FR12). A generated
+  `throws` clause is therefore a floor, not a guarantee — under-reporting is
+  possible until both gaps close. This argues for hand-review of the
+  generated clauses and for never treating an absent clause as "cannot
+  throw".
 
 ## Testing strategy
 
