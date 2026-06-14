@@ -708,8 +708,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 // property at its first position ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). This keeps
 // property names unique, the invariant ObjectType.Prop / equalType rely on.
 func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.Type {
-	elems := make([]soltype.ObjTypeElem, 0, len(e.Elems))
-	pos := make(map[string]int, len(e.Elems)) // property name → index in elems, for last-wins dedup
+	b := newObjElemBuilder(len(e.Elems))
 	for _, elem := range e.Elems {
 		prop, ok := elem.(*ast.PropertyExpr)
 		if !ok {
@@ -730,17 +729,45 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			continue
 		}
 		ft := c.inferExpr(scope, lvl, prop.Value)
-		if i, dup := pos[name]; dup {
-			elems[i] = &soltype.PropertyElem{Name: name, Type: ft} // last value wins, first position kept
-			continue
-		}
-		pos[name] = len(elems)
-		elems = append(elems, &soltype.PropertyElem{Name: name, Type: ft})
+		b.add(name, ft, false) // a literal property is never optional
 	}
-	t := &soltype.ObjectType{Elems: elems}
+	t := &soltype.ObjectType{Elems: b.elems}
 	c.recordType(e, t)
 	c.recordProv(t, e, ObjectField)
 	return t
+}
+
+// objElemBuilder accumulates object PropertyElems under JavaScript's last-wins,
+// first-position dedup: a repeated key updates the value in place at the key's
+// original position, so property names stay unique — the invariant ObjectType.Prop
+// and equalType rely on ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). Shared by inferObject
+// (object literals) and resolveObjectTypeAnn (object type annotations) so the dedup
+// rule lives in one place.
+//
+// It is NOT recursive: it accumulates the direct properties of ONE object level.
+// Each property's type arrives already built — inferObject computes it with
+// inferExpr, resolveObjectTypeAnn with resolveTypeAnn — so a nested object is built
+// by that caller's recursion before add stores it.
+type objElemBuilder struct {
+	elems []soltype.ObjTypeElem
+	pos   map[string]int // property name → index in elems
+}
+
+func newObjElemBuilder(capacity int) *objElemBuilder {
+	return &objElemBuilder{
+		elems: make([]soltype.ObjTypeElem, 0, capacity),
+		pos:   make(map[string]int, capacity),
+	}
+}
+
+func (b *objElemBuilder) add(name string, t soltype.Type, optional bool) {
+	pe := &soltype.PropertyElem{Name: name, Type: t, Optional: optional}
+	if i, dup := b.pos[name]; dup {
+		b.elems[i] = pe // last value wins, first position kept
+		return
+	}
+	b.pos[name] = len(b.elems)
+	b.elems = append(b.elems, pe)
 }
 
 // inferMember types a field read (recv.prop) in value position: it resolves the

@@ -61,6 +61,63 @@ func parseTypeAnn(t *testing.T, input string) ast.TypeAnn {
 
 // The trailing `...` inexact marker round-trips through the printer on function
 // declarations, expressions, and type annotations (#677 §4.1).
+// TestPrintInexactObjectAndTupleAnnotations covers the trailing `...` marker on
+// object and tuple type annotations (M4 A3) round-tripping through the printer.
+func TestPrintInexactObjectAndTupleAnnotations(t *testing.T) {
+	opts := DefaultOptions()
+
+	tupleTests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"inexact tuple", "[number, string, ...]", "[number, string, ...]"},
+		{"inexact unary tuple", "[number, ...]", "[number, ...]"},
+		{"exact tuple unchanged", "[number, string]", "[number, string]"},
+	}
+	for _, tt := range tupleTests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Print(parseTypeAnn(t, tt.input), opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+
+	// The object printer is multiline, so assert the `...` marker appears (an exact
+	// object must not grow one).
+	t.Run("inexact object has trailing ...", func(t *testing.T) {
+		result, err := Print(parseTypeAnn(t, "{x: number, ...}"), opts)
+		if err != nil {
+			t.Fatalf("Print error: %v", err)
+		}
+		if !strings.Contains(result, "...") {
+			t.Errorf("Expected an inexact marker in %q", result)
+		}
+	})
+	t.Run("exact object has no ...", func(t *testing.T) {
+		result, err := Print(parseTypeAnn(t, "{x: number}"), opts)
+		if err != nil {
+			t.Fatalf("Print error: %v", err)
+		}
+		if strings.Contains(result, "...") {
+			t.Errorf("Did not expect an inexact marker in %q", result)
+		}
+	})
+	t.Run("inexact-only object round-trips", func(t *testing.T) {
+		result, err := Print(parseTypeAnn(t, "{...}"), opts)
+		if err != nil {
+			t.Fatalf("Print error: %v", err)
+		}
+		if result != "{...}" {
+			t.Errorf("Expected %q, got %q", "{...}", result)
+		}
+	})
+}
+
 func TestPrintInexactFunctions(t *testing.T) {
 	opts := DefaultOptions()
 

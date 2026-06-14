@@ -53,6 +53,13 @@ func TestPrintRoundTrips(t *testing.T) {
 		// Tuples.
 		{"empty tuple", &TupleType{}, "[]"},
 		{"pair tuple", &TupleType{Elems: []Type{numP(), strP()}}, "[number, string]"},
+		{
+			// An inexact tuple renders a trailing `...`, mirroring inexact objects.
+			"inexact tuple renders trailing ...",
+			&TupleType{Elems: []Type{numP()}, Inexact: true},
+			"[number, ...]",
+		},
+		{"inexact empty tuple", &TupleType{Inexact: true}, "[...]"},
 
 		// Objects.
 		{"empty object", &ObjectType{}, "{}"},

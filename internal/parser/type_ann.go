@@ -420,14 +420,18 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			typeAnn = ast.NewTypeOfTypeAnn(qualIdent, qualIdent.Span())
 		case OpenBracket: // tuple type
 			p.lexer.consume()
-			elemTypes := parseDelimSeq(p, CloseBracket, Comma, p.typeAnn)
+			elemTypes, tupleInexact := parseDelimSeqInexact(p, CloseBracket, Comma, p.typeAnn)
 			end := p.expect(CloseBracket, AlwaysConsume)
-			typeAnn = ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+			tupleAnn := ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+			tupleAnn.Inexact = tupleInexact
+			typeAnn = tupleAnn
 		case OpenBrace: // object type
 			p.lexer.consume() // consume '{'
-			elems := parseDelimSeq(p, CloseBrace, Comma, p.objTypeAnnElem)
+			elems, objInexact := parseDelimSeqInexact(p, CloseBrace, Comma, p.objTypeAnnElem)
 			end := p.expect(CloseBrace, AlwaysConsume)
-			typeAnn = ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+			objAnn := ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+			objAnn.Inexact = objInexact
+			typeAnn = objAnn
 		case Identifier:
 			p.lexer.consume()
 			typeAnn = p.parseTypeRef(token)

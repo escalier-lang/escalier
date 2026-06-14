@@ -89,10 +89,81 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// initializer type instead (error recovery).
 		if annT, ok := c.resolveTypeAnn(d.TypeAnn, lvl); ok {
 			c.constrain(d.Init, initT, annT)
+			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
 	}
 	return initT, true
+}
+
+// checkExcessLiteralMembers is the construction-site excess check (M4 A3): a
+// syntactic object/tuple LITERAL checked against an object/tuple annotation may
+// not carry members the target does not declare, EVEN when the target is inexact
+// (`{x, ...}` / `[number, ...]`). It is the construction-site twin of the
+// direct-call extra-arg rule: a non-literal source takes ordinary width
+// subtyping (an inexact target admits extras), but a literal spells out its
+// members, so an undeclared one is a construction error.
+//
+// SCOPE (M4 A3): it is wired here, at annotated `val`/`var` bindings, only. The
+// twin sites the rule will eventually cover — literal call arguments and return
+// positions checked against an inexact annotation — defer to the milestone work
+// that adds annotated call/return checking; until then a literal flowing into an
+// inexact target through those paths takes ordinary width subtyping.
+//
+// It fires only for an INEXACT target. An exact target already rejects extras
+// through the ordinary ObjectType/TupleType constrain arm (ExtraPropertyError /
+// TupleLengthMismatchError run by the c.constrain call above), so checking it here
+// too would double-report. The errors reuse A1's ExtraPropertyError for objects
+// and the parallel ExtraElementError for tuples, wired with the same Prov table /
+// site as the constraint path so blame resolves to the offending member.
+//
+// A `mut T` annotation resolves to a RefType wrapping the object/tuple, so peel
+// the borrow first: the excess rule is about the literal's SHAPE versus the
+// target's declared members, which is independent of the borrow's mutability. The
+// literal source itself is never a borrow, so only the annotation needs peeling.
+func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) {
+	switch ann := soltype.CarrierOf(annT).(type) {
+	case *soltype.ObjectType:
+		if !ann.Inexact {
+			return
+		}
+		obj, isLit := e.(*ast.ObjectExpr)
+		subObj, isObj := sub.(*soltype.ObjectType)
+		if !isLit || !isObj {
+			return
+		}
+		for _, elem := range obj.Elems {
+			prop, ok := elem.(*ast.PropertyExpr)
+			if !ok || prop.Value == nil {
+				continue
+			}
+			name, ok := objKeyName(prop.Name)
+			if !ok {
+				continue
+			}
+			if _, declared := ann.Prop(name); declared {
+				continue
+			}
+			err := &ExtraPropertyError{Sub: subObj, Super: ann, Name: name}
+			err.prov, err.site = c.prov, prop
+			c.errs = append(c.errs, err)
+		}
+	case *soltype.TupleType:
+		if !ann.Inexact {
+			return
+		}
+		tup, isLit := e.(*ast.TupleExpr)
+		subTup, isTup := sub.(*soltype.TupleType)
+		if !isLit || !isTup {
+			return
+		}
+		// Elements beyond the target's declared prefix are excess on the literal.
+		for i := len(ann.Elems); i < len(tup.Elems) && i < len(subTup.Elems); i++ {
+			err := &ExtraElementError{Sub: subTup, Super: ann, Index: i}
+			err.prov, err.site = c.prov, tup.Elems[i]
+			c.errs = append(c.errs, err)
+		}
+	}
 }
 
 // inferVarDecl types a body-level `val`/`var` into a GENERALIZED ValueBinding —

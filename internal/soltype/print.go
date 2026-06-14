@@ -217,9 +217,12 @@ func (p *namedPrinter) printType(t Type) string {
 	case *Void:
 		return "void"
 	case *TupleType:
-		elems := make([]string, len(t.Elems))
-		for i, e := range t.Elems {
-			elems[i] = p.printType(e)
+		elems := make([]string, 0, len(t.Elems)+1)
+		for _, e := range t.Elems {
+			elems = append(elems, p.printType(e))
+		}
+		if t.Inexact {
+			elems = append(elems, "...")
 		}
 		return "[" + strings.Join(elems, ", ") + "]"
 	case *ObjectType:

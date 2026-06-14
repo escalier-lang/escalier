@@ -51,6 +51,23 @@ func (p *Parser) parseFuncParams() (params []*ast.Param, inexact bool) {
 	}
 }
 
+// parseDelimSeqInexact parses a separator-delimited sequence up to (but not
+// consuming) the terminator, additionally recognizing a bare trailing `...` before
+// the terminator as an inexact marker — the object/tuple type-annotation analogue
+// of parseFuncParams' `fn(a, ...)`. A `...` immediately before the terminator
+// returns inexact=true; anything else after `...` (a rest-spread element `...T`) is
+// left for parserCombinator to parse, so the lexer is restored before falling
+// through. Comma handling matches parseDelimSeq, including a tolerated trailing
+// comma (the top-of-loop terminator check exits after the separator is consumed).
+func parseDelimSeqInexact[T any](
+	p *Parser,
+	terminator TokenType,
+	separator TokenType,
+	parserCombinator func() T,
+) (items []T, inexact bool) {
+	return parseDelimSeqHelper(p, terminator, separator, true, parserCombinator)
+}
+
 func parseDelimSeq[T any](
 	p *Parser,
 	terminator TokenType,
@@ -59,49 +76,68 @@ func parseDelimSeq[T any](
 	// is no item
 	parserCombinator func() T,
 ) []T {
-	items := []T{}
+	items, _ := parseDelimSeqHelper(p, terminator, separator, false, parserCombinator)
+	return items
+}
 
-	// Empty sequence
-	token := p.lexer.peek()
-	if token.Type == terminator {
-		return items
-	}
-
-	item := parserCombinator()
-	if any(item) == nil {
-		return items
-	}
-	items = append(items, item)
-
+// parseDelimSeqHelper is the shared loop behind parseDelimSeq and
+// parseDelimSeqInexact. It parses a separator-delimited sequence up to (but not
+// consuming) the terminator, tolerating a trailing separator before the terminator.
+//
+// When recognizeInexact is set, a bare `...` immediately before the terminator is
+// consumed and returned as inexact=true; anything else after `...` is a rest-spread
+// element left for parserCombinator, so the lexer is restored before falling
+// through. When recognizeInexact is false the `...` is left untouched and inexact is
+// always false.
+//
+// recognizeInexact also selects the EOF behavior, the one other point the two forms
+// differ. The inexact form stops cleanly at EOF. The plain form instead runs
+// parserCombinator at EOF so it reports the expected-item / expected-terminator
+// error at the truncation point — e.g. `foo(a,` yields a trailing ErrorExpr and an
+// "Expected an expression" diagnostic.
+func parseDelimSeqHelper[T any](
+	p *Parser,
+	terminator TokenType,
+	separator TokenType,
+	recognizeInexact bool,
+	parserCombinator func() T,
+) (items []T, inexact bool) {
+	items = []T{}
 	for {
-		// Check if context has been cancelled (timeout or cancellation)
 		select {
 		case <-p.ctx.Done():
-			// Return what we have so far when context is done
-			return items
+			return items, inexact
 		default:
-			// continue
 		}
 
-		token = p.lexer.peek()
-		if token.Type == EndOfFile {
-			// If we hit EOF before finding terminator, return what we have
-			return items
-		} else if token.Type == separator {
-			p.lexer.consume() // consume separator
-
-			token = p.lexer.peek()
-			if token.Type == terminator {
-				return items
-			}
-
-			item := parserCombinator()
-			if interface{}(item) == nil {
-				return items
-			}
-			items = append(items, item)
-		} else {
-			return items
+		tok := p.lexer.peek()
+		if tok.Type == terminator {
+			return items, inexact
 		}
+		// Only the inexact form treats EOF as a clean stop; the plain form falls
+		// through to parserCombinator so it reports the truncation error.
+		if tok.Type == EndOfFile && recognizeInexact {
+			return items, inexact
+		}
+
+		if recognizeInexact && tok.Type == DotDotDot {
+			saved := p.lexer.saveState()
+			p.lexer.consume() // tentatively consume '...'
+			if p.lexer.peek().Type == terminator {
+				return items, true
+			}
+			p.lexer.restoreState(saved)
+		}
+
+		item := parserCombinator()
+		if any(item) == nil {
+			return items, inexact
+		}
+		items = append(items, item)
+
+		if p.lexer.peek().Type != separator {
+			return items, inexact
+		}
+		p.lexer.consume() // consume separator
 	}
 }
