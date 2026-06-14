@@ -40,6 +40,24 @@ type checker struct {
 	// one. Off in production (a span bug must never crash the compiler); flipped on
 	// by tests that exercise the guard. See recordProv.
 	debugProv bool
+
+	// written records the widened type stored into a receiver variable's field by a
+	// field-write `recv.prop = source` (M4 C3), keyed by the receiver var's ID and
+	// the property name. A later read of the same field returns this concrete type
+	// instead of minting a fresh var, so `obj.x = 5; obj.x` is `number`
+	// (read-after-write). It is purely a precision win: write-after-read already
+	// works through ordinary bound accumulation. The receiver and read reference the
+	// same binding within one function body, so they share a var ID; distinct
+	// functions get distinct IDs from the fresh-var counter, so the map never
+	// collides across bodies.
+	written map[fieldKey]soltype.Type
+}
+
+// fieldKey identifies a written field by the receiver variable's ID and the
+// property name — the key into the checker's `written` map (M4 C3).
+type fieldKey struct {
+	recvID int
+	field  string
 }
 
 // funcCtx is the per-function inference context — pushed by inferFunc on entry to
@@ -84,7 +102,7 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // newChecker returns a checker with a fresh Context, an empty Info table, and an
 // empty Prov side table.
 func newChecker() *checker {
-	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}}
+	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, written: map[fieldKey]soltype.Type{}}
 }
 
 // freshAt allocates a fresh inference variable at the given level. Provenance for

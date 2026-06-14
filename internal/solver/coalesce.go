@@ -330,8 +330,17 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 // parameter marker (B2) is the opt-out: when set, the folded object stays inexact
 // so the param is row-polymorphic and callers may pass objects with extra fields.
 //
-// Mut-object merging (`mut {x} & mut {y}` ⇒ `mut {x, y}`) is deferred to C3, once
-// the field-write path produces mut receivers.
+// Whole-object `mut` merge (M4 C3): the field-write path records a write `obj.x =
+// 5` as a MUTABLE inexact requirement `mut {x: number, ...}` on the receiver var,
+// alongside the bare inexact reads. When ANY write is present, every selection —
+// reads and writes alike — folds into ONE object wrapped in `mut`, following
+// internal/checker rather than the spike's per-field partition: `obj.x = 5; obj.y =
+// 10` ⇒ `mut {x, y}` and the mixed `val x = obj.bar; obj.baz = 5` ⇒
+// `mut {bar, baz}` — a single object, not `{bar} & mut {baz}`. With
+// no write the reads fold into a bare (immutable) object, the pre-C3 behavior. The
+// tradeoff: wrapping the whole object in `mut` makes read-only fields invariant
+// rather than covariant; for a generalized function this is invisible because each
+// read-only field is a fresh-per-call type parameter.
 //
 // This is NOT recursive: it folds the objects of ONE var's bound list and does not
 // descend into property types. Nesting (`p.a.b`) is reached by the callers' walks
@@ -341,54 +350,89 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 func foldUsageBounds(parts []soltype.Type, open bool) []soltype.Type {
 	var objs []*soltype.ObjectType
 	var others []soltype.Type
+	mut := false
 	for _, p := range parts {
 		if o, ok := p.(*soltype.ObjectType); ok && o.Inexact {
 			objs = append(objs, o)
 			continue
+		}
+		// A mutable inexact one-property requirement is a field write (C3). Its inner
+		// object joins the read requirements in the fold, and its presence makes the
+		// whole merged object `mut`.
+		if r, ok := p.(*soltype.RefType); ok && r.Mut {
+			if o, ok := r.Inner.(*soltype.ObjectType); ok && o.Inexact {
+				objs = append(objs, o)
+				mut = true
+				continue
+			}
 		}
 		others = append(others, p)
 	}
 	if len(objs) == 0 {
 		return parts // nothing to fold; leave the bound list as-is
 	}
-	return append([]soltype.Type{mergeObjectGroup(objs, open)}, others...)
+	mergedObj := mergeObjectGroup(objs, open)
+	merged := soltype.Type(mergedObj)
+	if mut {
+		// NewRef does not collapse a (true, nil) cell — an owned-mutable object — so
+		// the wrapper survives. mergeObjectGroup returns a *ObjectType, a RefInner.
+		merged = soltype.NewRef(true, nil, mergedObj)
+	}
+	return append([]soltype.Type{merged}, others...)
 }
 
 // mergeObjectGroup is the property-union step inside foldUsageBounds: it folds the
 // already-selected inexact objects into one object. The property sets are unioned
-// and a property shared by several objects becomes the intersection of its types.
-// Property order is alphabetical for stable rendering. A property is optional in
-// the result only when it is optional in every object that carries it. The result
-// is exact (closed) unless `open`, in which case it stays inexact.
+// and a property shared by several objects becomes the intersection of its types,
+// after dropping structurally-equal duplicates — so two writes of the same widened
+// primitive (`obj.x = 5; obj.x = 10`, both `number`) give `x: number`, not the
+// redundant `x: number & number`, while two distinct requirements still intersect.
+// Property order is alphabetical for stable rendering. A property is optional in the
+// result only when it is optional in every object that carries it. The result is
+// exact (closed) unless `open`, in which case it stays inexact.
 //
 // This is NOT recursive: each property's type is copied through verbatim, never
 // descended into. Nesting is handled by the var-graph walks in sealUsageObjects,
 // coalesce, and coalesceScheme — see foldUsageBounds.
 func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType {
-	byName := map[string]*soltype.PropertyElem{}
+	types := map[string][]soltype.Type{}
+	allOptional := map[string]bool{}
 	var order []string
 	for _, o := range objs {
 		for _, elem := range o.Elems {
 			pe := soltype.AsProperty(elem)
-			if existing, dup := byName[pe.Name]; dup {
-				byName[pe.Name] = &soltype.PropertyElem{
-					Name:     pe.Name,
-					Type:     &soltype.IntersectionType{Types: []soltype.Type{existing.Type, pe.Type}},
-					Optional: existing.Optional && pe.Optional,
-				}
-			} else {
-				byName[pe.Name] = &soltype.PropertyElem{Name: pe.Name, Type: pe.Type, Optional: pe.Optional}
+			if _, seen := allOptional[pe.Name]; !seen {
 				order = append(order, pe.Name)
+				allOptional[pe.Name] = true
 			}
+			types[pe.Name] = appendDistinct(types[pe.Name], pe.Type)
+			allOptional[pe.Name] = allOptional[pe.Name] && pe.Optional
 		}
 	}
 	sort.Strings(order)
 	elems := make([]soltype.ObjTypeElem, len(order))
 	for i, name := range order {
-		elems[i] = byName[name]
+		ts := types[name]
+		ty := ts[0]
+		if len(ts) > 1 {
+			ty = &soltype.IntersectionType{Types: ts}
+		}
+		elems[i] = &soltype.PropertyElem{Name: name, Type: ty, Optional: allOptional[name]}
 	}
 	// Closed (Inexact: false) by Policy A; an `open` param leaves it inexact (B2).
 	return &soltype.ObjectType{Elems: elems, Inexact: open}
+}
+
+// appendDistinct appends t to parts unless a structurally-equal type is already
+// present, so a property folded from several requirements with the same type does
+// not accumulate redundant intersection members (mergeObjectGroup).
+func appendDistinct(parts []soltype.Type, t soltype.Type) []soltype.Type {
+	for _, p := range parts {
+		if equalType(p, t) {
+			return parts
+		}
+	}
+	return append(parts, t)
 }
 
 // dedup removes structurally-equal parts, preserving first-occurrence order.
