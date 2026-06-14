@@ -356,6 +356,11 @@ func equalType(a, b soltype.Type) bool {
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
 		return ok && equalType(a.Inner, b.Inner)
+	case *soltype.RefType:
+		b, ok := b.(*soltype.RefType)
+		// Mut must match — a mutable borrow never equals an immutable one. Lifetime
+		// equality joins in D1; Lt is always nil here.
+		return ok && a.Mut == b.Mut && equalType(a.Inner, b.Inner)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
 		return ok && equalTypeSlice(a.Types, b.Types)

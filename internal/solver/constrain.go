@@ -247,6 +247,58 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// CannotConstrainError below, matching the function/tuple/record arms.
 			return c.constrain(sub.Inner, sup.Inner, seen)
 		}
+	case *soltype.RefType:
+		// THE GATE (M4 C2): the single RefType <: RefType rule. The mut-driven inner
+		// invariance is the highest-risk encoding in the migration — see the M4 plan.
+		if sup, ok := super.(*soltype.RefType); ok {
+			// 1. Mutability compatibility: an immutable source cannot fill a mutable
+			//    slot (writing through the target would mutate a read-only borrow). The
+			//    reverse, mut-decay (mut sub, immutable super), is allowed and falls
+			//    through to the covariant read view below.
+			if !sub.Mut && sup.Mut {
+				return []SolverError{&MutabilityMismatchError{Sub: sub, Super: sup}}
+			}
+			// 2. Inner variance: the read view is always covariant; a mutable target
+			//    also takes a contravariant write view, and read + write together IS
+			//    invariance. So `mut {x, y} <: mut {x, ...}` rejects (the write view's
+			//    `{x, ...} <: {x, y}` is missing y), while `{x, y} <: {x, ...}` as bare
+			//    objects width-succeeds.
+			//
+			//    The write view gates on `sup.Mut`, which is load-bearing-equivalent to
+			//    `sub.Mut && sup.Mut`: the mutability check above already returned for
+			//    `!sub.Mut && sup.Mut`, so reaching here with sup.Mut implies sub.Mut.
+			//    If that earlier gate is ever weakened, re-gate the write view explicitly
+			//    or it would impose a spurious contravariant constraint on an immutable
+			//    source.
+			errs := c.constrain(sub.Inner, sup.Inner, seen)
+			if sup.Mut {
+				errs = append(errs, c.constrain(sup.Inner, sub.Inner, seen)...)
+			}
+			// 3. Lifetime outlives, covariant. Written now, INERT in C2 because Lt is
+			//    always nil until the lifetime sort lands (D1); constrainLt wires the
+			//    var-to-var case in D2. The escape branch's error is unreachable until
+			//    borrows carry lifetimes.
+			switch {
+			case sub.Lt != nil && sup.Lt != nil:
+				// D2: c.constrainLt(sup.Lt, sub.Lt)
+			case sub.Lt == nil && sup.Lt != nil:
+				// An owned source satisfies any borrow slot — no lifetime constraint.
+			case sub.Lt != nil && sup.Lt == nil:
+				errs = append(errs, &BorrowEscapeError{Sub: sub, Super: sup})
+			}
+			return errs
+		}
+		// RefType <: a concrete non-borrow: peel to the inner. An owned value (Lt nil)
+		// satisfies a bare slot; a borrow escaping into an owned slot is a
+		// BorrowEscapeError (inert in C2). When super is a VARIABLE, fall through to the
+		// var arm so the WHOLE borrow is recorded as a bound — peeling there would drop
+		// its mutability.
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			if sub.Lt != nil {
+				return []SolverError{&BorrowEscapeError{Sub: sub, Super: super}}
+			}
+			return c.constrain(sub.Inner, super, seen)
+		}
 	case *soltype.Void:
 		if _, ok := super.(*soltype.Void); ok {
 			return nil
@@ -293,6 +345,21 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 				lastErrs = errs
 			}
 			return lastErrs
+		}
+	}
+
+	// bare <: RefType: wrap a borrowable owned source as an immutable, no-lifetime
+	// view and re-dispatch into the RefType <: RefType branch above. Build the struct
+	// literal DIRECTLY — NewRef would collapse the (false, nil) cell back to the bare
+	// inner and recurse forever. A source that is not a RefInner (a primitive,
+	// function, promise) is not borrowable, so it falls through to CannotConstrainError
+	// naming the borrow. A variable source is excluded here so the subVar arm below
+	// records the borrow as an upper bound instead.
+	if sup, ok := super.(*soltype.RefType); ok {
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
+			if inner, ok := sub.(soltype.RefInner); ok {
+				return c.constrain(&soltype.RefType{Mut: false, Lt: nil, Inner: inner}, sup, seen)
+			}
 		}
 	}
 

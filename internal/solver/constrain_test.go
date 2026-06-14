@@ -348,6 +348,27 @@ func propElem(name string, t soltype.Type) *soltype.PropertyElem {
 	return &soltype.PropertyElem{Name: name, Type: t}
 }
 
+// mutRef builds an owned-mutable borrow for the RefType constrain tests (C2). Lt is
+// always nil in C2 — the lifetime sort lands in D1 — so the owned-mutable wrapper is
+// the only meaningful borrow constructible here. A real immutable borrow needs a
+// lifetime (`Mut: false, Lt: 'a`), so its helper arrives in D2; the bare <: RefType
+// arm mints the degenerate `Mut: false, Lt: nil` view internally with a struct
+// literal, not through a helper.
+func mutRef(inner soltype.RefInner) *soltype.RefType {
+	return &soltype.RefType{Mut: true, Inner: inner}
+}
+
+// TestConstrainDescribesRefOperand pins review finding 2: describe must NAME a
+// RefType operand in a constraint failure, not render it as `?`. A non-borrowable
+// source (a primitive) against a mut-borrow target is not wrappable by the
+// bare <: RefType arm, so it falls through to CannotConstrainError carrying the
+// borrow as its Super — exactly the path describe was missing an arm for.
+func TestConstrainDescribesRefOperand(t *testing.T) {
+	c := &Context{}
+	errs := c.Constrain(num(), mutRef(exactObj(propElem("x", num()))))
+	require.Equal(t, []string{"cannot constrain number <: mut object"}, Messages(errs))
+}
+
 // exactObj / inexactObj build object types so the tests show which arm they
 // exercise. Exact is the zero value of Inexact, so exactObj sets no flag.
 func exactObj(elems ...soltype.ObjTypeElem) *soltype.ObjectType {
@@ -571,6 +592,140 @@ func TestConstrainObject(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestConstrainRef exercises the single RefType <: RefType rule — THE GATE (C2).
+// The headline property is mut-driven inner invariance: a mutable target takes both
+// a covariant read view and a contravariant write view, so the inner is invariant.
+func TestConstrainRef(t *testing.T) {
+	tests := []struct {
+		name       string
+		sub, super soltype.Type
+		want       []string
+		check      func(t *testing.T, sub, super soltype.Type, errs []SolverError)
+	}{
+		{
+			// mut {x} <: mut {x}: identical inner satisfies both the read and write
+			// view, so invariance holds.
+			name:  "mut <: mut, identical inner",
+			sub:   mutRef(exactObj(propElem("x", num()))),
+			super: mutRef(exactObj(propElem("x", num()))),
+		},
+		{
+			// mut {x: 5} <: mut {x: number}: the read view 5 <: number holds, but the
+			// write view requires number <: 5, which fails — invariance in one message.
+			name:  "mut inner is invariant: literal depth rejected on the write view",
+			sub:   mutRef(exactObj(propElem("x", numLit(5)))),
+			super: mutRef(exactObj(propElem("x", num()))),
+			want:  []string{"cannot constrain number <: 5"},
+		},
+		{
+			// mut {x, y} <: mut {x, ...}: the read view width-succeeds (inexact super),
+			// but the write view {x, ...} <: {x, y} is missing y and is inexact-into-
+			// exact — the plan's headline invariance rejection.
+			name:  "mut wider <: mut inexact rejects on the write view",
+			sub:   mutRef(exactObj(propElem("x", num()), propElem("y", num()))),
+			super: mutRef(inexactObj(propElem("x", num()))),
+			want: []string{
+				"object is missing property: y",
+				"cannot constrain inexact object <: exact object",
+			},
+		},
+		{
+			// The same two object inners as bare (immutable) values width-succeed: an
+			// immutable borrow is covariant, so the missing-on-write-view problem never
+			// arises. This is the contrast the plan draws against the mut case above.
+			name:  "immutable width succeeds where mut invariance rejects",
+			sub:   exactObj(propElem("x", num()), propElem("y", num())),
+			super: inexactObj(propElem("x", num())),
+		},
+		{
+			// mut {x} <: {x}: mut-decay. A mutable source satisfies a bare (owned,
+			// immutable) target; the borrow peels and the inner is checked covariantly.
+			name:  "mut-decay: mut <: bare allowed",
+			sub:   mutRef(exactObj(propElem("x", num()))),
+			super: exactObj(propElem("x", num())),
+		},
+		{
+			// {x} <: mut {x}: the reverse is rejected. The bare source is wrapped as an
+			// immutable view, and an immutable source cannot fill a mutable slot.
+			name:  "bare <: mut rejected (mutability)",
+			sub:   exactObj(propElem("x", num())),
+			super: mutRef(exactObj(propElem("x", num()))),
+			want:  []string{"cannot constrain immutable object <: mutable object"},
+			check: func(t *testing.T, sub, super soltype.Type, errs []SolverError) {
+				mm, ok := errs[0].(*MutabilityMismatchError)
+				require.True(t, ok)
+				// The sub is the wrapped immutable view; its inner is the bare source.
+				require.Same(t, sub, mm.Sub.Inner)
+				require.Same(t, super, soltype.Type(mm.Super))
+			},
+		},
+		{
+			// mut {x} <: number: an owned borrow peels and the inner object is checked
+			// against the non-object super, falling through to CannotConstrainError.
+			name:  "mut <: non-borrow peels to the inner",
+			sub:   mutRef(exactObj(propElem("x", num()))),
+			super: num(),
+			want:  []string{"cannot constrain object <: number"},
+		},
+		{
+			// number <: mut {x}: a non-borrowable source cannot be wrapped, so it falls
+			// through to CannotConstrainError naming the borrow (review finding 2).
+			name:  "non-borrowable source <: borrow names the borrow",
+			sub:   num(),
+			super: mutRef(exactObj(propElem("x", num()))),
+			want:  []string{"cannot constrain number <: mut object"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			errs := c.Constrain(tt.sub, tt.super)
+			require.Equal(t, tt.want, Messages(errs))
+			if tt.check != nil {
+				tt.check(t, tt.sub, tt.super, errs)
+			}
+		})
+	}
+}
+
+// A borrow on either side of a constraint against a type VARIABLE records the WHOLE
+// borrow as a bound (peeling would drop its mutability), so the variable coalesces
+// back to the borrow. This pins the var-arm fall-through both directions.
+func TestConstrainRefAgainstVar(t *testing.T) {
+	t.Run("RefType <: var records the borrow as a lower bound", func(t *testing.T) {
+		c := &Context{}
+		a := c.freshVar(0)
+		ref := mutRef(exactObj(propElem("x", num())))
+		require.Empty(t, c.Constrain(ref, a))
+		require.True(t, equalType(ref, coalesce(a, soltype.Positive)))
+	})
+
+	t.Run("var <: RefType records the borrow as an upper bound", func(t *testing.T) {
+		c := &Context{}
+		a := c.freshVar(0)
+		ref := mutRef(exactObj(propElem("x", num())))
+		require.Empty(t, c.Constrain(a, ref))
+		require.True(t, equalType(ref, coalesce(a, soltype.Negative)))
+	})
+}
+
+// TestConstrainRefInnerInvariantViaBounds is the gate's load-bearing property: a
+// variable INSIDE a mutable inner is invariant, pinned from BOTH directions through
+// the ordinary bound machinery with no special journaling. `mut {x: β} <: mut {x:
+// number}` adds number as β's upper bound (the covariant read view) AND as its lower
+// bound (the contravariant write view), so β coalesces to number in either polarity.
+// This is what "encodes cleanly against the journal" means for the gate.
+func TestConstrainRefInnerInvariantViaBounds(t *testing.T) {
+	c := &Context{}
+	b := c.freshVar(0)
+	require.Empty(t, c.Constrain(
+		mutRef(exactObj(propElem("x", b))),
+		mutRef(exactObj(propElem("x", num()))),
+	))
+	require.True(t, equalType(num(), coalesce(b, soltype.Positive)), "lower bound (write view)")
+	require.True(t, equalType(num(), coalesce(b, soltype.Negative)), "upper bound (read view)")
 }
 
 func TestConstrainVoid(t *testing.T) {

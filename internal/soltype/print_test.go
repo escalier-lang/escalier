@@ -120,6 +120,19 @@ func TestPrintRoundTrips(t *testing.T) {
 		// Promises (M3).
 		{"promise of prim", &PromiseType{Inner: numP()}, "Promise<number>"},
 		{"nested promise", &PromiseType{Inner: &PromiseType{Inner: strP()}}, "Promise<Promise<string>>"},
+
+		// Borrows (M4). Lt is always nil in C1, so only the owned-mutable form
+		// renders; the inner object/tuple is brace/bracket-delimited, so no parens.
+		{
+			"mut object",
+			&RefType{Mut: true, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
+			"mut {x: number}",
+		},
+		{
+			"mut tuple",
+			&RefType{Mut: true, Inner: &TupleType{Elems: []Type{numP(), strP()}}},
+			"mut [number, string]",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -270,6 +283,20 @@ func TestPrintScheme(t *testing.T) {
 			&PropertyElem{Name: "b", Type: b},
 		}}}
 		require.Equal(t, "fn <T0, T1>() -> {a: T0, b: T1}", PrintAsScheme(ty))
+	})
+
+	t.Run("a borrowed generic survives generalization", func(t *testing.T) {
+		a := &TypeVarType{ID: 1, Level: 1}
+		// fn (p: mut {x: a}) -> a: freeTypeVars must descend through the RefType
+		// wrapper into its inner object to find a, so the borrowed param and the
+		// return share the one type parameter T0. This is the realistic C3 shape — a
+		// field-write makes the receiver a `mut` object — surviving M3 generalization.
+		ty := &FuncType{
+			Params: []*FuncParam{identP("p", &RefType{Mut: true,
+				Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: a}}}})},
+			Ret: a,
+		}
+		require.Equal(t, "fn <T0>(p: mut {x: T0}) -> T0", PrintAsScheme(ty))
 	})
 }
 
