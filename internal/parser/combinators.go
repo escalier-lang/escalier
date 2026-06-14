@@ -51,6 +51,55 @@ func (p *Parser) parseFuncParams() (params []*ast.Param, inexact bool) {
 	}
 }
 
+// parseDelimSeqInexact parses a separator-delimited sequence up to (but not
+// consuming) the terminator, additionally recognizing a bare trailing `...` before
+// the terminator as an inexact marker — the object/tuple type-annotation analogue
+// of parseFuncParams' `fn(a, ...)`. A `...` immediately before the terminator
+// returns inexact=true; anything else after `...` (a rest-spread element `...T`) is
+// left for parserCombinator to parse, so the lexer is restored before falling
+// through. Comma handling matches parseDelimSeq, including a tolerated trailing
+// comma (the top-of-loop terminator check exits after the separator is consumed).
+func parseDelimSeqInexact[T any](
+	p *Parser,
+	terminator TokenType,
+	separator TokenType,
+	parserCombinator func() T,
+) (items []T, inexact bool) {
+	items = []T{}
+	for {
+		select {
+		case <-p.ctx.Done():
+			return items, inexact
+		default:
+		}
+
+		tok := p.lexer.peek()
+		if tok.Type == terminator || tok.Type == EndOfFile {
+			return items, inexact
+		}
+
+		if tok.Type == DotDotDot {
+			saved := p.lexer.saveState()
+			p.lexer.consume() // tentatively consume '...'
+			if p.lexer.peek().Type == terminator {
+				return items, true
+			}
+			p.lexer.restoreState(saved)
+		}
+
+		item := parserCombinator()
+		if any(item) == nil {
+			return items, inexact
+		}
+		items = append(items, item)
+
+		if p.lexer.peek().Type != separator {
+			return items, inexact
+		}
+		p.lexer.consume() // consume separator
+	}
+}
+
 func parseDelimSeq[T any](
 	p *Parser,
 	terminator TokenType,

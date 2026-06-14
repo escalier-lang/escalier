@@ -107,8 +107,7 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 // recovery — so the binding still checks structurally. The arm therefore always
 // returns ok=true: any unsupported sub-part has already reported its own error.
 func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
-	elems := make([]soltype.ObjTypeElem, 0, len(ta.Elems))
-	pos := make(map[string]int, len(ta.Elems)) // property name → index, for last-wins dedup
+	b := newObjElemBuilder(len(ta.Elems))
 	unsupported := false
 	for _, elem := range ta.Elems {
 		prop, ok := elem.(*ast.PropertyTypeAnn)
@@ -121,29 +120,20 @@ func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.
 			c.reportUnsupported(prop.Name)
 			continue
 		}
-		var ft soltype.Type
-		switch {
-		case prop.Value == nil:
-			ft = c.freshAt(lvl)
-		default:
+		// A missing or unsupported value annotation recovers to a fresh var, keeping
+		// the object shape cascade-safe — mirroring the Promise<bad> recovery.
+		var ft soltype.Type = c.freshAt(lvl)
+		if prop.Value != nil {
 			if t, ok := c.resolveTypeAnn(prop.Value, lvl); ok {
 				ft = t
-			} else {
-				ft = c.freshAt(lvl)
 			}
 		}
-		pe := &soltype.PropertyElem{Name: name, Type: ft, Optional: prop.Optional}
-		if i, dup := pos[name]; dup {
-			elems[i] = pe // last value wins, first position kept
-			continue
-		}
-		pos[name] = len(elems)
-		elems = append(elems, pe)
+		b.add(name, ft, prop.Optional)
 	}
 	if unsupported {
 		c.reportUnsupportedFeature(ta, "object type member other than a property")
 	}
-	t := &soltype.ObjectType{Elems: elems, Inexact: ta.Inexact}
+	t := &soltype.ObjectType{Elems: b.elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }

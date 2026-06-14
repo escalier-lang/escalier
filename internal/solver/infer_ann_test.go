@@ -84,6 +84,31 @@ func TestInferInexactTupleAnnotationVariableWidthSubtyping(t *testing.T) {
 	require.Empty(t, errs)
 }
 
+// The construction-site excess check looks THROUGH a `mut` borrow: an inexact
+// object/tuple wrapped in `mut` still rejects undeclared literal members, so the
+// rule is consistent whether or not the annotation is a borrow. The mutability
+// mismatch (an immutable literal into a mut slot) fires too — both are real,
+// independent problems — so the excess diagnostic must appear alongside it.
+func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
+	t.Run("object", func(t *testing.T) {
+		_, _, errs := inferSource(t, `val r: mut {x: number, ...} = {x: 1, y: 2}`)
+		msgs := make([]string, len(errs))
+		for i, e := range errs {
+			msgs[i] = e.Message()
+		}
+		require.Contains(t, msgs, "object has extra property: y")
+	})
+	t.Run("tuple", func(t *testing.T) {
+		_, _, errs := inferSource(t, `val t: mut [number, ...] = [1, 2, 3]`)
+		msgs := make([]string, len(errs))
+		for i, e := range errs {
+			msgs[i] = e.Message()
+		}
+		require.Contains(t, msgs, "tuple has extra element at index 1")
+		require.Contains(t, msgs, "tuple has extra element at index 2")
+	})
+}
+
 // A `mut T` annotation lowers to an owned-mutable borrow (RefType{Mut: true}); a
 // function parameter typed `mut {x: number}` renders with the `mut` prefix and a
 // member read through it resolves the inner property.
