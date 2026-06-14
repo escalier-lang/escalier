@@ -135,7 +135,7 @@ func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
 
 	ty, _ := c.inferFuncDecl(NewScope(), 0, d)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: BigintTypeAnn", c.errs[0].Message())
+	require.Equal(t, "Unsupported: BigintTypeAnn", c.errs[0].Message())
 	require.Equal(t, "fn () -> unknown", render(ty))
 }
 
@@ -162,7 +162,7 @@ func TestInferFuncExprDestructuringParamUnsupported(t *testing.T) {
 
 	c.inferExpr(NewScope(), 0, e)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: TuplePat", c.errs[0].Message())
+	require.Equal(t, "Unsupported: TuplePat", c.errs[0].Message())
 }
 
 // A generic function (fn <T>() { ... }) is diagnosed rather than silently erased
@@ -176,7 +176,7 @@ func TestInferFuncExprGenericUnsupported(t *testing.T) {
 
 	c.inferExpr(NewScope(), 0, e)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: TypeParam", c.errs[0].Message())
+	require.Equal(t, "Unsupported: TypeParam", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 

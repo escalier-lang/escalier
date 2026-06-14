@@ -43,6 +43,6 @@ func TestInferUnsupportedExprRecoversWithoutCascade(t *testing.T) {
 	// One error for the spread itself; `xs` is never walked (so no extra
 	// unknown-identifier), and the broken element does not cascade.
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: ArraySpreadExpr", errs[0].Message())
+	require.Equal(t, "Unsupported: ArraySpreadExpr", errs[0].Message())
 	require.Equal(t, "[error]", values["t"])
 }

@@ -150,5 +150,5 @@ func TestInferValueIndexUnsupported(t *testing.T) {
 	got := c.inferExpr(scope, 0, e)
 	require.IsType(t, &soltype.ErrorType{}, got)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: IndexExpr", c.errs[0].Message())
+	require.Equal(t, "Unsupported: IndexExpr", c.errs[0].Message())
 }

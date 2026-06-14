@@ -669,8 +669,8 @@ func TestConstrainRef(t *testing.T) {
 			super: mutRef(inexactObj(propElem("x", num()))),
 		},
 		{
-			// mut {x: 5, y} <: mut {x: number, ...}: width is still tolerated, but the
-			// named field x stays invariant — the write view number <: 5 fails. The
+			// mut {x: 5, y: number} <: mut {x: number, ...}: width is still tolerated, but
+			// the named field x stays invariant — the write view number <: 5 fails. The
 			// relaxation is width-only; it does not weaken depth invariance.
 			name:  "mut wider <: mut inexact still pins the named field's depth",
 			sub:   mutRef(exactObj(propElem("x", numLit(5)), propElem("y", num()))),

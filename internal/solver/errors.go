@@ -675,13 +675,13 @@ func (e *NotEnoughArgsError) Message() string {
 func (e *UnsupportedNodeError) Span() ast.Span      { return e.Node.Span() }
 func (e *UnsupportedNodeError) Related() []ast.Span { return nil }
 func (e *UnsupportedNodeError) Message() string {
-	return "Unsupported in M2: " + astKind(e.Node)
+	return "Unsupported: " + astKind(e.Node)
 }
 
 func (e *UnsupportedFeatureError) Span() ast.Span      { return e.Node.Span() }
 func (e *UnsupportedFeatureError) Related() []ast.Span { return nil }
 func (e *UnsupportedFeatureError) Message() string {
-	return "Unsupported in M2: " + e.Feature
+	return "Unsupported: " + e.Feature
 }
 
 func (e *BodyDeclNotAllowedError) Span() ast.Span      { return e.Decl.Span() }

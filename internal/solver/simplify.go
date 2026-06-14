@@ -163,6 +163,28 @@ func (m *mirror) effectiveBounds(v *soltype.TypeVarType, pol soltype.Polarity) [
 	return slices.Concat(stored, mirrored)
 }
 
+// recordMutWriteView reflects a `mut` borrow's INVARIANCE into a polarity-recording
+// visitor (#737). The C2 constrain rule makes every field a `mut` target names
+// invariant — it adds a covariant read view and a contravariant write view
+// (constrainWriteBack) — but RefType.Accept walks the inner only covariantly (the
+// read view; see visitor.go). So a variable that appears only inside a `mut` field,
+// such as the `v` in `fn (obj, v) { obj.x = v }`, would be seen in one polarity and
+// dropped by single-polarity elimination, severing the link between the field and
+// the value written into it.
+//
+// This adds the missing write view: for a `mut` borrow it walks the inner in the
+// FLIPPED polarity and returns true, signalling the caller to return the default
+// EnterResult so Accept still performs the covariant walk. The inner ends up
+// recorded in BOTH polarities, so such a variable is retained as a type parameter.
+// Shared by the occurrence and co-occurrence visitors so both agree.
+func recordMutWriteView(v soltype.TypeVisitor, t soltype.Type, pol soltype.Polarity) bool {
+	if rt, ok := t.(*soltype.RefType); ok && rt.Mut {
+		rt.Inner.Accept(v, pol.Flip())
+		return true
+	}
+	return false
+}
+
 // symOccVisitor records which polarities each variable occurs in. It walks the
 // symmetric bound graph through mirror.effectiveBounds, so a variable reached only
 // through a one-sided edge is still seen in that polarity.
@@ -175,6 +197,9 @@ type symOccVisitor struct {
 }
 
 func (o *symOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if recordMutWriteView(o, t, pol) {
+		return soltype.EnterResult{} // let Accept do the covariant read-view walk
+	}
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
 		return soltype.EnterResult{} // structural / atom node: let Accept descend
@@ -231,6 +256,9 @@ type coOccVisitor struct {
 }
 
 func (c *coOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if recordMutWriteView(c, t, pol) {
+		return soltype.EnterResult{} // let Accept do the covariant read-view walk
+	}
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
 		return soltype.EnterResult{} // structural / atom node: let Accept descend

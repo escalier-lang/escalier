@@ -36,12 +36,14 @@ func TestInferMemberAssignReadAfterWrite(t *testing.T) {
 
 // A mixed read and write folds into ONE `mut` object rather than the spike's
 // `{bar: …} & mut {baz: …}` intersection: the presence of any write makes every
-// selection — the read-only `bar` included — fold into the mutable object. The
-// read-only field is unconstrained, so it renders `unknown`.
+// selection — the read-only `bar` included — fold into the mutable object. Folding
+// `bar` into the `mut` object makes it invariant (#737), so its var occurs in both
+// polarities and is retained as a type parameter `T0` the caller picks, rather than
+// inlined to `unknown`. The written `baz` is the widened `number`.
 func TestInferMemberAssignMixedReadWrite(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(obj) { val x = obj.bar\n obj.baz = 5 }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {bar: unknown, baz: number}) -> void", values["foo"])
+	require.Equal(t, "fn <T0>(obj: mut {bar: T0, baz: number}) -> void", values["foo"])
 }
 
 // A compound written value widens recursively via the shared widen (B3): writing
@@ -117,16 +119,17 @@ func TestInferMemberAssignWrittenObjectEscapes(t *testing.T) {
 	require.Equal(t, "fn <T0>(obj: mut {x: number} & T0) -> T0", values["foo"])
 }
 
-// KNOWN LIMITATION: writing a parameter's value into a field does NOT link their
-// types. Both `obj`'s field var and `v` occur only in negative position, so
-// single-polarity elimination inlines each to `unknown` independently rather than
-// sharing one type parameter — so this is `(obj: mut {x: unknown}, v: unknown)`, not
-// the tighter `fn <T0>(obj: mut {x: T0}, v: T0)`. Pinned so a future change that
-// connects them is a visible, intentional diff.
-func TestInferMemberAssignVariableValueNotLinked(t *testing.T) {
+// Writing a parameter's value into a field LINKS their types (#737). The write
+// `obj.x = v` makes the field's type the variable `v`, and because the field is
+// `mut` — hence invariant — `v` occurs in BOTH polarities, so single-polarity
+// elimination retains it as a shared type parameter instead of inlining each
+// occurrence to `unknown`. So `fn foo(obj, v) { obj.x = v }` infers the tighter
+// `fn <T0>(obj: mut {x: T0}, v: T0) -> void`. The mut-field invariance reaches the
+// occurrence analysis via recordMutWriteView (simplify.go).
+func TestInferMemberAssignVariableValueLinked(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(obj, v) { obj.x = v }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: unknown}, v: unknown) -> void", values["foo"])
+	require.Equal(t, "fn <T0>(obj: mut {x: T0}, v: T0) -> void", values["foo"])
 }
 
 // Writing one field of a concretely-typed (annotated) mut object checks: the field

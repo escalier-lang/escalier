@@ -224,7 +224,7 @@ func TestInferAssignMemberTargetImmutable(t *testing.T) {
 func TestInferAssignIndexTargetUnsupported(t *testing.T) {
 	src := "val xs = [1, 2]\nfn f() { xs[0] = 6 }"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Unsupported in M2: assignment to a member or index", "xs[0]")
+	requireBlame(t, src, errs, "Unsupported: assignment to a member or index", "xs[0]")
 }
 
 // An immutable target with an independently-broken source reports BOTH errors — they
@@ -254,5 +254,5 @@ func TestInferAssignNilOperandDoesNotPanic(t *testing.T) {
 		}
 	})
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: BinaryExpr", c.errs[0].Message())
+	require.Equal(t, "Unsupported: BinaryExpr", c.errs[0].Message())
 }
