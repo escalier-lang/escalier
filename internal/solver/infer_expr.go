@@ -920,6 +920,15 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// var returns the recorded concrete type instead of minting a fresh var, so
 	// `obj.x = 5; obj.x` is `number`. The write already constrained the receiver to
 	// carry the field, so no additional requirement is needed here.
+	//
+	// Provenance is deliberately NOT recorded on the returned type. Unlike the fresh
+	// `res` below, the recorded type is SHARED — it also sits in the `written` map, in
+	// the write's requirement, and is handed to every read of this field — so it is not
+	// the freshly-minted unique pointer recordProv requires (recording it would panic
+	// under debugProv and mis-blame the other aliases). A later constraint failure on
+	// this value therefore blames its constraint site rather than this `.prop`, the
+	// same graceful site fallback a Prov-less type takes everywhere (see
+	// TestBlameVoidSubjectFallsBackToCallSite).
 	if v, ok := recv.(*soltype.TypeVarType); ok {
 		if t, found := c.written[fieldKey{recvID: v.ID, field: name}]; found {
 			c.recordType(blame, t)

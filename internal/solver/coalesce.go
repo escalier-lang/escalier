@@ -352,19 +352,10 @@ func foldUsageBounds(parts []soltype.Type, open bool) []soltype.Type {
 	var others []soltype.Type
 	mut := false
 	for _, p := range parts {
-		if o, ok := p.(*soltype.ObjectType); ok && o.Inexact {
+		if o, isWrite, ok := usageObject(p); ok {
 			objs = append(objs, o)
+			mut = mut || isWrite
 			continue
-		}
-		// A mutable inexact one-property requirement is a field write (C3). Its inner
-		// object joins the read requirements in the fold, and its presence makes the
-		// whole merged object `mut`.
-		if r, ok := p.(*soltype.RefType); ok && r.Mut {
-			if o, ok := r.Inner.(*soltype.ObjectType); ok && o.Inexact {
-				objs = append(objs, o)
-				mut = true
-				continue
-			}
 		}
 		others = append(others, p)
 	}
@@ -381,6 +372,31 @@ func foldUsageBounds(parts []soltype.Type, open bool) []soltype.Type {
 	return append([]soltype.Type{merged}, others...)
 }
 
+// usageObject classifies a coalesced upper bound as a member-access requirement on
+// a receiver, the unit foldUsageBounds folds. It distinguishes the two requirement
+// shapes the inference walk mints:
+//   - a bare inexact object is a member READ — `obj.x` lowers to {x: β, ...}
+//     (valueProp); ok=true, write=false.
+//   - a `mut`-wrapped inexact object is a field WRITE — `obj.x = v` lowers to
+//     mut {x: widen(v), ...} (inferMemberAssign); ok=true, write=true.
+//
+// Everything else is not a usage requirement and returns ok=false: an EXACT object
+// is an already-closed shape (folding it would be wrong), an immutable borrow is not
+// a member requirement, and a non-object bound is unrelated. Centralizing the shape
+// test here keeps the two requirement forms named in one place rather than as inline
+// type-switches, so a future requirement shape is added here, not hunted for.
+func usageObject(t soltype.Type) (obj *soltype.ObjectType, write bool, ok bool) {
+	if o, isObj := t.(*soltype.ObjectType); isObj && o.Inexact {
+		return o, false, true
+	}
+	if inner, isMut, _ := soltype.UnwrapRef(t); isMut {
+		if o, isObj := inner.(*soltype.ObjectType); isObj && o.Inexact {
+			return o, true, true
+		}
+	}
+	return nil, false, false
+}
+
 // mergeObjectGroup is the property-union step inside foldUsageBounds: it folds the
 // already-selected inexact objects into one object. The property sets are unioned
 // and a property shared by several objects becomes the intersection of its types,
@@ -395,18 +411,19 @@ func foldUsageBounds(parts []soltype.Type, open bool) []soltype.Type {
 // descended into. Nesting is handled by the var-graph walks in sealUsageObjects,
 // coalesce, and coalesceScheme — see foldUsageBounds.
 func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType {
-	types := map[string][]soltype.Type{}
-	allOptional := map[string]bool{}
+	types := map[string][]soltype.Type{} // property name → its distinct types, in first-seen order
+	optional := map[string]bool{}        // property name → optional in every object seen so far
 	var order []string
 	for _, o := range objs {
 		for _, elem := range o.Elems {
 			pe := soltype.AsProperty(elem)
-			if _, seen := allOptional[pe.Name]; !seen {
+			if _, seen := types[pe.Name]; !seen {
 				order = append(order, pe.Name)
-				allOptional[pe.Name] = true
+				optional[pe.Name] = pe.Optional // first occurrence seeds the value
+			} else {
+				optional[pe.Name] = optional[pe.Name] && pe.Optional // optional iff optional in all
 			}
 			types[pe.Name] = appendDistinct(types[pe.Name], pe.Type)
-			allOptional[pe.Name] = allOptional[pe.Name] && pe.Optional
 		}
 	}
 	sort.Strings(order)
@@ -417,7 +434,7 @@ func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType
 		if len(ts) > 1 {
 			ty = &soltype.IntersectionType{Types: ts}
 		}
-		elems[i] = &soltype.PropertyElem{Name: name, Type: ty, Optional: allOptional[name]}
+		elems[i] = &soltype.PropertyElem{Name: name, Type: ty, Optional: optional[name]}
 	}
 	// Closed (Inexact: false) by Policy A; an `open` param leaves it inexact (B2).
 	return &soltype.ObjectType{Elems: elems, Inexact: open}
