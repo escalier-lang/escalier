@@ -73,6 +73,12 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 			return t, true
 		}
 		return c.reportUnsupported(ta), false
+	case *ast.ObjectTypeAnn:
+		return c.resolveObjectTypeAnn(ta, lvl)
+	case *ast.TupleTypeAnn:
+		return c.resolveTupleTypeAnn(ta, lvl)
+	case *ast.MutableTypeAnn:
+		return c.resolveMutableTypeAnn(ta, lvl)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -86,6 +92,115 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	default:
 		return c.reportUnsupported(ta), false
 	}
+}
+
+// resolveObjectTypeAnn lowers an object type annotation to a soltype.ObjectType,
+// honoring the trailing `...` inexact marker. M4 ships PropertyElem only: a
+// `name: T` / `name?: T` property resolves to a PropertyElem; method/getter/setter
+// members (M5), mapped/index signatures and the object rest/spread (M9) are not
+// part of M4's object and report an unsupported feature, with the object still
+// built from the properties that do resolve. Duplicate keys follow the
+// last-wins-first-position dedup inferObject uses, keeping property names unique.
+//
+// A property whose value annotation is itself unsupported recovers that value to a
+// fresh var and keeps the object shape — cascade-safe, mirroring the Promise<bad>
+// recovery — so the binding still checks structurally. The arm therefore always
+// returns ok=true: any unsupported sub-part has already reported its own error.
+func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
+	elems := make([]soltype.ObjTypeElem, 0, len(ta.Elems))
+	pos := make(map[string]int, len(ta.Elems)) // property name → index, for last-wins dedup
+	unsupported := false
+	for _, elem := range ta.Elems {
+		prop, ok := elem.(*ast.PropertyTypeAnn)
+		if !ok {
+			unsupported = true
+			continue
+		}
+		name, ok := objKeyName(prop.Name)
+		if !ok {
+			c.reportUnsupported(prop.Name)
+			continue
+		}
+		var ft soltype.Type
+		switch {
+		case prop.Value == nil:
+			ft = c.freshAt(lvl)
+		default:
+			if t, ok := c.resolveTypeAnn(prop.Value, lvl); ok {
+				ft = t
+			} else {
+				ft = c.freshAt(lvl)
+			}
+		}
+		pe := &soltype.PropertyElem{Name: name, Type: ft, Optional: prop.Optional}
+		if i, dup := pos[name]; dup {
+			elems[i] = pe // last value wins, first position kept
+			continue
+		}
+		pos[name] = len(elems)
+		elems = append(elems, pe)
+	}
+	if unsupported {
+		c.reportUnsupportedFeature(ta, "object type member other than a property")
+	}
+	t := &soltype.ObjectType{Elems: elems, Inexact: ta.Inexact}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType,
+// honoring the trailing `...` inexact marker. A rest-spread / variadic element
+// (`[...P]`, `[number, ...Array<number>]`) defers with its type-level feature
+// (M9 / M7) and reports unsupported; the bare trailing `...` inexact marker is
+// carried on ta.Inexact, not as an element. An element whose annotation is
+// unsupported recovers to a fresh var so the tuple keeps its arity.
+func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
+	elems := make([]soltype.Type, 0, len(ta.Elems))
+	unsupported := false
+	for _, el := range ta.Elems {
+		if _, isRest := el.(*ast.RestSpreadTypeAnn); isRest {
+			unsupported = true
+			continue
+		}
+		if t, ok := c.resolveTypeAnn(el, lvl); ok {
+			elems = append(elems, t)
+		} else {
+			elems = append(elems, c.freshAt(lvl))
+		}
+	}
+	if unsupported {
+		c.reportUnsupportedFeature(ta, "tuple spread or variadic element")
+	}
+	t := &soltype.TupleType{Elems: elems, Inexact: ta.Inexact}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveMutableTypeAnn lowers a `mut T` annotation to an owned-mutable borrow,
+// RefType{Mut: true, Lt: nil, Inner: T} (the C1 RefType wrapper). The lifetime
+// borrow forms (`'a T`, `mut 'a T`) still defer: a named lifetime needs the
+// lifetime sort (D1), and the parser already rejects a lifetime before a non-
+// reference inner, so only the no-lifetime `mut` form reaches here.
+//
+// `mut` over a non-borrowable inner (a primitive, function, promise — anything
+// outside RefInner) is a no-op in the value-types model: there is nothing to
+// borrow. It reports an unsupported feature rather than fabricating a borrow over
+// a type the wrapper cannot hold. An unsupported inner recovers to a fresh var,
+// which IS a RefInner, so the `mut` wrapper is preserved.
+func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltype.Type, bool) {
+	inner, ok := c.resolveTypeAnn(ta.Target, lvl)
+	if !ok {
+		t := soltype.NewRef(true, nil, c.freshAt(lvl))
+		c.recordProv(t, ta, AnnotationType)
+		return t, true
+	}
+	ri, ok := inner.(soltype.RefInner)
+	if !ok {
+		return c.reportUnsupportedFeature(ta, "mut on a non-borrowable type"), false
+	}
+	t := soltype.NewRef(true, nil, ri)
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
 }
 
 // annPrim mints a FRESH PrimType for an annotation and records it against the

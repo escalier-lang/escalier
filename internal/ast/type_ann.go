@@ -207,12 +207,12 @@ func (*MappedTypeAnn) isObjTypeAnnElem()      {}
 func (*RestSpreadTypeAnn) isObjTypeAnnElem()  {}
 
 // No-op Doc/SetDoc impls for the variants that don't carry a JSDoc.
-func (*CallableTypeAnn) Doc() string       { return "" }
-func (*CallableTypeAnn) SetDoc(string)     {}
-func (*ConstructorTypeAnn) Doc() string    { return "" }
-func (*ConstructorTypeAnn) SetDoc(string)  {}
-func (*MappedTypeAnn) Doc() string         { return "" }
-func (*MappedTypeAnn) SetDoc(string)       {}
+func (*CallableTypeAnn) Doc() string      { return "" }
+func (*CallableTypeAnn) SetDoc(string)    {}
+func (*ConstructorTypeAnn) Doc() string   { return "" }
+func (*ConstructorTypeAnn) SetDoc(string) {}
+func (*MappedTypeAnn) Doc() string        { return "" }
+func (*MappedTypeAnn) SetDoc(string)      {}
 
 type CallableTypeAnn struct{ Fn *FuncTypeAnn }
 type ConstructorTypeAnn struct{ Fn *FuncTypeAnn }
@@ -223,9 +223,9 @@ type MethodTypeAnn struct {
 	doc      string
 }
 
-func (m *MethodTypeAnn) Span() Span { return m.Name.Span() }
-func (m *MethodTypeAnn) Doc() string         { return m.doc }
-func (m *MethodTypeAnn) SetDoc(doc string)   { m.doc = doc }
+func (m *MethodTypeAnn) Span() Span        { return m.Name.Span() }
+func (m *MethodTypeAnn) Doc() string       { return m.doc }
+func (m *MethodTypeAnn) SetDoc(doc string) { m.doc = doc }
 
 type GetterTypeAnn struct {
 	Name     ObjKey
@@ -234,9 +234,9 @@ type GetterTypeAnn struct {
 	doc      string
 }
 
-func (g *GetterTypeAnn) Span() Span { return g.Name.Span() }
-func (g *GetterTypeAnn) Doc() string         { return g.doc }
-func (g *GetterTypeAnn) SetDoc(doc string)   { g.doc = doc }
+func (g *GetterTypeAnn) Span() Span        { return g.Name.Span() }
+func (g *GetterTypeAnn) Doc() string       { return g.doc }
+func (g *GetterTypeAnn) SetDoc(doc string) { g.doc = doc }
 
 type SetterTypeAnn struct {
 	Name     ObjKey
@@ -245,9 +245,9 @@ type SetterTypeAnn struct {
 	doc      string
 }
 
-func (s *SetterTypeAnn) Span() Span { return s.Name.Span() }
-func (s *SetterTypeAnn) Doc() string         { return s.doc }
-func (s *SetterTypeAnn) SetDoc(doc string)   { s.doc = doc }
+func (s *SetterTypeAnn) Span() Span        { return s.Name.Span() }
+func (s *SetterTypeAnn) Doc() string       { return s.doc }
+func (s *SetterTypeAnn) SetDoc(doc string) { s.doc = doc }
 
 type MappedModifier string
 
@@ -268,9 +268,9 @@ type PropertyTypeAnn struct {
 	doc      string
 }
 
-func (p *PropertyTypeAnn) Span() Span { return p.Name.Span() }
-func (p *PropertyTypeAnn) Doc() string         { return p.doc }
-func (p *PropertyTypeAnn) SetDoc(doc string)   { p.doc = doc }
+func (p *PropertyTypeAnn) Span() Span        { return p.Name.Span() }
+func (p *PropertyTypeAnn) Doc() string       { return p.doc }
+func (p *PropertyTypeAnn) SetDoc(doc string) { p.doc = doc }
 
 type MappedTypeAnn struct {
 	TypeParam *IndexParamTypeAnn
@@ -313,6 +313,7 @@ func (t *RestSpreadTypeAnn) SetDoc(doc string) { t.doc = doc }
 
 type ObjectTypeAnn struct {
 	Elems        []ObjTypeAnnElem
+	Inexact      bool // trailing `...` marker: `{x: number, ...}` tolerates extra fields
 	span         Span
 	inferredType Type
 }
@@ -360,6 +361,7 @@ func (t *ObjectTypeAnn) Accept(v Visitor) {
 
 type TupleTypeAnn struct {
 	Elems        []TypeAnn
+	Inexact      bool // trailing `...` marker: `[number, ...]` tolerates extra elements
 	span         Span
 	inferredType Type
 }

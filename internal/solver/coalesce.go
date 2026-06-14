@@ -431,7 +431,9 @@ func equalType(a, b soltype.Type) bool {
 		return equalType(a.Ret, b.Ret)
 	case *soltype.TupleType:
 		b, ok := b.(*soltype.TupleType)
-		if !ok || len(a.Elems) != len(b.Elems) {
+		// Inexact flags must be equal — an open tuple never equals a closed one,
+		// mirroring the ObjectType/FuncType arms' Inexact discriminator.
+		if !ok || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 			return false
 		}
 		for i := range a.Elems {

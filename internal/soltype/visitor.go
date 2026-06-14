@@ -106,7 +106,7 @@ func (t *TupleType) Accept(v TypeVisitor, pol Polarity) Type {
 	elems, changed := acceptTypes(cur.Elems, v, pol) // covariant
 	out := cur
 	if changed {
-		out = &TupleType{Elems: elems}
+		out = &TupleType{Elems: elems, Inexact: cur.Inexact}
 	}
 	return v.ExitType(out, pol)
 }

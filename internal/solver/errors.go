@@ -121,6 +121,21 @@ type ExtraPropertyError struct {
 	site       ast.Node     // M2.5: constraint node fallback
 }
 
+// ExtraElementError is the tuple analogue of ExtraPropertyError, fired by the
+// construction-site excess check (A3): a tuple LITERAL checked against a tuple
+// annotation may not carry elements beyond the target's declared set, even when
+// the target is inexact (`[number, ...]`). It is the parallel of the direct-call
+// extra-arg lint: an inexact tail tolerates extra elements from a non-literal
+// source through width subtyping, but a literal spells out its elements, so an
+// extra one is a construction error. One error fires per excess element, carrying
+// its index. It is reported from the walk, not from the tuple constrain arm.
+type ExtraElementError struct {
+	Sub, Super *soltype.TupleType
+	Index      int
+	prov       NodeResolver // M2.5: type→node index (§3.5)
+	site       ast.Node     // M2.5: the excess element node fallback
+}
+
 // OptionalPropertyError fires on ObjectType <: ObjectType when a property is
 // optional on the sub (source) but required on the super (target): the source may omit
 // the property, so it cannot satisfy a target that requires it present (the object
@@ -169,6 +184,7 @@ func (*TupleLengthMismatchError) isSolverError() {}
 func (*MissingPropertyError) isSolverError()     {}
 func (*InexactIntoExactError) isSolverError()    {}
 func (*ExtraPropertyError) isSolverError()       {}
+func (*ExtraElementError) isSolverError()        {}
 func (*OptionalPropertyError) isSolverError()    {}
 func (*MutabilityMismatchError) isSolverError()  {}
 func (*BorrowEscapeError) isSolverError()        {}
@@ -221,6 +237,17 @@ func (e *ExtraPropertyError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, ops...)
 }
 func (e *ExtraPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+
+func (e *ExtraElementError) Span() ast.Span {
+	// The excess element lives on the sub (source) at Index; blame it, degrade to
+	// the super (target), else the site.
+	ops := make([]soltype.Type, 0, 2)
+	if e.Index >= 0 && e.Index < len(e.Sub.Elems) {
+		ops = append(ops, e.Sub.Elems[e.Index])
+	}
+	return spanOfFirst(e.prov, e.site, ops...)
+}
+func (e *ExtraElementError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *OptionalPropertyError) Span() ast.Span {
 	// The optional property lives on the sub (source); blame it, degrade to the super
@@ -764,6 +791,10 @@ func (e *InexactIntoExactError) Message() string {
 
 func (e *ExtraPropertyError) Message() string {
 	return "object has extra property: " + e.Name
+}
+
+func (e *ExtraElementError) Message() string {
+	return "tuple has extra element at index " + strconv.Itoa(e.Index)
 }
 
 func (e *OptionalPropertyError) Message() string {

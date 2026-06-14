@@ -180,6 +180,15 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"TupleWithRestSpreadArray": {
 			input: "[number, ...Array<string>]",
 		},
+		"TupleInexact": {
+			input: "[number, string, ...]",
+		},
+		"ObjectInexact": {
+			input: "{x: number, y: number, ...}",
+		},
+		"ObjectInexactOnly": {
+			input: "{...}",
+		},
 		"UnionOfFunctions": {
 			input: "(fn (x: number) -> string) | (fn (x: string) -> number)",
 		},
@@ -232,9 +241,6 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 		},
 		"ConditionalTypeMissingThen": {
 			input: "if A : B { } else { D }",
-		},
-		"RestSpreadMissingType": {
-			input: "[number, ...]",
 		},
 	}
 

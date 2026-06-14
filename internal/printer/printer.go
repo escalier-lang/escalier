@@ -1243,7 +1243,11 @@ func (p *Printer) printTypeAnn(typ ast.TypeAnn) {
 
 func (p *Printer) printObjectTypeAnn(typ *ast.ObjectTypeAnn) {
 	if len(typ.Elems) == 0 {
-		p.writeString("{}")
+		if typ.Inexact {
+			p.writeString("{...}")
+		} else {
+			p.writeString("{}")
+		}
 		return
 	}
 
@@ -1253,9 +1257,13 @@ func (p *Printer) printObjectTypeAnn(typ *ast.ObjectTypeAnn) {
 
 	for i, elem := range typ.Elems {
 		p.printObjTypeAnnElem(elem)
-		if i < len(typ.Elems)-1 {
+		if i < len(typ.Elems)-1 || typ.Inexact {
 			p.writeString(",")
 		}
+		p.newline()
+	}
+	if typ.Inexact {
+		p.writeString("...")
 		p.newline()
 	}
 
@@ -1382,6 +1390,12 @@ func (p *Printer) printTupleTypeAnn(typ *ast.TupleTypeAnn) {
 		if i < len(typ.Elems)-1 {
 			p.writeString(", ")
 		}
+	}
+	if typ.Inexact {
+		if len(typ.Elems) > 0 {
+			p.writeString(", ")
+		}
+		p.writeString("...")
 	}
 	p.writeString("]")
 }

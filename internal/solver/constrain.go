@@ -171,14 +171,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	case *soltype.TupleType:
 		if sup, ok := super.(*soltype.TupleType); ok {
-			// Same length, element-wise covariant. M1's TupleType has no exact
-			// flag — same-length is the *exact <: exact* case applied
-			// implicitly; M4 adds the exact flag and the inexact arm.
-			if len(sub.Elems) != len(sup.Elems) {
+			// Element-wise covariant over the shared prefix. Length tolerance follows
+			// the super's exactness: an exact super (`[A, B]`) fixes its length, while
+			// an inexact super (`[A, ...]`) only requires the sub to be at least as
+			// long — the longer <: shorter case the `...` tail permits. This mirrors
+			// the ObjectType width rule (inexact super = width-tolerant).
+			if sup.Inexact {
+				if len(sub.Elems) < len(sup.Elems) {
+					return []SolverError{&TupleLengthMismatchError{Sub: sub, Super: sup}}
+				}
+			} else if len(sub.Elems) != len(sup.Elems) {
 				return []SolverError{&TupleLengthMismatchError{Sub: sub, Super: sup}}
 			}
 			var errs []SolverError
-			for i := range sub.Elems {
+			for i := range sup.Elems {
 				errs = append(errs, c.constrain(sub.Elems[i], sup.Elems[i], seen)...) // covariant
 			}
 			return errs

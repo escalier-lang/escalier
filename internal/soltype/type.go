@@ -132,8 +132,14 @@ type FuncType struct {
 	Inexact bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
 }
 
-// TupleType is a fixed-length tuple type.
-type TupleType struct{ Elems []Type }
+// TupleType is a tuple type. Inexact follows the ObjectType/FuncType convention:
+// the zero value is exact, so a tuple is fixed-length by default and only the
+// parser's trailing `...` marker sets it. An inexact tuple (`[A, ...]`) accepts a
+// longer tuple as a subtype, matching the shared prefix element-wise.
+type TupleType struct {
+	Elems   []Type
+	Inexact bool // trailing `...` ⇒ true
+}
 
 // ObjectType is the structural object type — the carrier for object literals,
 // object/interface annotations, and (M5) class instance bodies, so one

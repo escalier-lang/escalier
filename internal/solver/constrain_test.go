@@ -341,6 +341,44 @@ func TestConstrainTuple(t *testing.T) {
 		require.Same(t, t1, tl.Sub)
 		require.Same(t, t2, tl.Super)
 	})
+
+	// [number, string, boolean] <: [number, ...]: a longer tuple satisfies an
+	// inexact super, matching the shared prefix element-wise (the A2 width arm).
+	t.Run("longer fills inexact (width)", func(t *testing.T) {
+		c := &Context{}
+		t1 := &soltype.TupleType{Elems: []soltype.Type{num(), str(), boolT()}}
+		t2 := &soltype.TupleType{Elems: []soltype.Type{num()}, Inexact: true}
+		require.Empty(t, c.Constrain(t1, t2))
+	})
+
+	// [5] <: [number, ...]: same length against an inexact super still checks; the
+	// prefix is covariant (5 <: number).
+	t.Run("equal length fills inexact covariant", func(t *testing.T) {
+		c := &Context{}
+		t1 := &soltype.TupleType{Elems: []soltype.Type{numLit(5)}}
+		t2 := &soltype.TupleType{Elems: []soltype.Type{num()}, Inexact: true}
+		require.Empty(t, c.Constrain(t1, t2))
+	})
+
+	// [number] <: [number, string, ...]: too SHORT for the inexact super's declared
+	// prefix is still a length mismatch — inexactness widens only on the long side.
+	t.Run("shorter than inexact prefix rejects", func(t *testing.T) {
+		c := &Context{}
+		t1 := &soltype.TupleType{Elems: []soltype.Type{num()}}
+		t2 := &soltype.TupleType{Elems: []soltype.Type{num(), str()}, Inexact: true}
+		errs := c.Constrain(t1, t2)
+		require.Equal(t, []string{"cannot constrain tuple of length 1 <: tuple of length 2"}, Messages(errs))
+		require.IsType(t, &TupleLengthMismatchError{}, errs[0])
+	})
+
+	// The shared prefix stays covariant against an inexact super: a prefix mismatch
+	// surfaces the inner failure rather than being masked by width tolerance.
+	t.Run("inexact prefix mismatch surfaces", func(t *testing.T) {
+		c := &Context{}
+		t1 := &soltype.TupleType{Elems: []soltype.Type{num(), num()}}
+		t2 := &soltype.TupleType{Elems: []soltype.Type{str()}, Inexact: true}
+		require.Equal(t, []string{"cannot constrain number <: string"}, Messages(c.Constrain(t1, t2)))
+	})
 }
 
 // propElem builds a PropertyElem so the object accept-set tests read at a glance.

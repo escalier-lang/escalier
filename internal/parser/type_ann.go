@@ -420,14 +420,18 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			typeAnn = ast.NewTypeOfTypeAnn(qualIdent, qualIdent.Span())
 		case OpenBracket: // tuple type
 			p.lexer.consume()
-			elemTypes := parseDelimSeq(p, CloseBracket, Comma, p.typeAnn)
+			elemTypes, tupleInexact := p.parseTupleTypeElems()
 			end := p.expect(CloseBracket, AlwaysConsume)
-			typeAnn = ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+			tupleAnn := ast.NewTupleTypeAnn(elemTypes, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+			tupleAnn.Inexact = tupleInexact
+			typeAnn = tupleAnn
 		case OpenBrace: // object type
 			p.lexer.consume() // consume '{'
-			elems := parseDelimSeq(p, CloseBrace, Comma, p.objTypeAnnElem)
+			elems, objInexact := p.parseObjectTypeElems()
 			end := p.expect(CloseBrace, AlwaysConsume)
-			typeAnn = ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+			objAnn := ast.NewObjectTypeAnn(elems, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
+			objAnn.Inexact = objInexact
+			typeAnn = objAnn
 		case Identifier:
 			p.lexer.consume()
 			typeAnn = p.parseTypeRef(token)
@@ -717,6 +721,89 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 	}
 
 	return nil
+}
+
+// parseTupleTypeElems parses the element list of a tuple type annotation up to the
+// closing `]`, reporting whether a bare trailing `...` marked the tuple inexact.
+// The `...` lookahead mirrors parseFuncParams: a `...` immediately before `]` is
+// the inexact marker, while `...T` is a rest-spread element that p.typeAnn parses.
+func (p *Parser) parseTupleTypeElems() (elems []ast.TypeAnn, inexact bool) {
+	elems = []ast.TypeAnn{}
+	for {
+		select {
+		case <-p.ctx.Done():
+			return elems, inexact
+		default:
+		}
+
+		tok := p.lexer.peek()
+		if tok.Type == CloseBracket || tok.Type == EndOfFile {
+			return elems, inexact
+		}
+
+		// A bare `...` (the next token after it is the closing bracket) marks the
+		// tuple inexact. Anything else after `...` is a rest-spread element (`...T`),
+		// which p.typeAnn parses, so back the lexer up and fall through.
+		if tok.Type == DotDotDot {
+			saved := p.lexer.saveState()
+			p.lexer.consume() // tentatively consume '...'
+			if p.lexer.peek().Type == CloseBracket {
+				return elems, true
+			}
+			p.lexer.restoreState(saved)
+		}
+
+		elem := p.typeAnn()
+		if elem == nil {
+			return elems, inexact
+		}
+		elems = append(elems, elem)
+
+		if p.lexer.peek().Type != Comma {
+			return elems, inexact
+		}
+		p.lexer.consume() // consume separator
+	}
+}
+
+// parseObjectTypeElems parses the member list of an object type annotation up to
+// the closing `}`, reporting whether a bare trailing `...` marked the object
+// inexact. Same `...` lookahead as parseTupleTypeElems: `...` before `}` is the
+// inexact marker, `...T` is a rest-spread member that objTypeAnnElem parses.
+func (p *Parser) parseObjectTypeElems() (elems []ast.ObjTypeAnnElem, inexact bool) {
+	elems = []ast.ObjTypeAnnElem{}
+	for {
+		select {
+		case <-p.ctx.Done():
+			return elems, inexact
+		default:
+		}
+
+		tok := p.lexer.peek()
+		if tok.Type == CloseBrace || tok.Type == EndOfFile {
+			return elems, inexact
+		}
+
+		if tok.Type == DotDotDot {
+			saved := p.lexer.saveState()
+			p.lexer.consume() // tentatively consume '...'
+			if p.lexer.peek().Type == CloseBrace {
+				return elems, true
+			}
+			p.lexer.restoreState(saved)
+		}
+
+		elem := p.objTypeAnnElem()
+		if elem == nil {
+			return elems, inexact
+		}
+		elems = append(elems, elem)
+
+		if p.lexer.peek().Type != Comma {
+			return elems, inexact
+		}
+		p.lexer.consume() // consume separator
+	}
 }
 
 // objTypeAnnElem parses a single member of an object type annotation
