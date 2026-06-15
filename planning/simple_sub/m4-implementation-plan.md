@@ -1193,14 +1193,15 @@ these arms it must add.
 - A3 (#733)
 - B1+B2 (#732)
 - C1+C2 (#731)
+- C3 (#735)
 - F1 (#730)
 
 A1✓ → A2
-A1✓ → A3✓ ─────────────────────┐  (A3's mut/lifetime arms un-gated by C1)
-A1✓ → B1✓ → B2✓                │  (annotation-side acceptance tests)
-      B1✓ → B3                 │
-      B1✓, B3 ────────────┐    │  (C3 reuses B1's foldUsageBounds fold + B3's widen)
-A1✓ → C1✓ → C2✓(GATE) →  C3 → D1 → D2 → D3 → D4 → G1 → G2
+A1✓ → A3✓ ──────────────────────┐  (A3's mut/lifetime arms un-gated by C1)
+A1✓ → B1✓ → B2✓                 │  (annotation-side acceptance tests)
+      B1✓ → B3                  │
+      B1✓, B3 ────────────┐     │  (C3 reuses B1's foldUsageBounds fold + B3's widen)
+A1✓ → C1✓ → C2✓(GATE) →  C3✓ → D1 → D2 → D3 → D4 → G1 → G2
 A1✓ → E1 → E2   (independent of C/D; E1's RefType peel via carrierOf needs C1)
 F1✓             (independent; any time — only M2's Namespace)
 ```
