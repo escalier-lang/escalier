@@ -16,7 +16,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 2   | Node extractor + JSON IR                | ✅      | 1          | [tools/webidl_to_esc/extract.mjs](../../tools/webidl_to_esc/extract.mjs); IR schema in [internal/webidl/ir.go](../../internal/webidl/ir.go). |
 | 3   | Go converter (`internal/webidl`)        | ✅      | 2          | [internal/webidl/convert.go](../../internal/webidl/convert.go). |
 | 4   | CLI + samples + tests                   | ✅      | 3          | [tools/webidl_to_esc/main.go](../../tools/webidl_to_esc/main.go), `samples/dom.{json,esc}`, `convert_test.go`. |
-| 4b  | `throws` from spec algorithms           | 🚧      | 3          | [tools/webidl_to_esc/extract_throws.mjs](../../tools/webidl_to_esc/extract_throws.mjs); converter renders clauses via `-throws`. Prototype done; cross-spec + terse-method gaps open. |
+| 4b  | `throws` from spec algorithms           | 🚧      | 3          | [tools/webidl_to_esc/extract_throws.mjs](../../tools/webidl_to_esc/extract_throws.mjs); converter renders clauses via `-throws`. Closure + curated terse-method bridge (dfns-validated) + mixin-origin lookup done. Cross-spec helper gap open. |
 | 5   | Coverage: dictionaries, enums, typedefs | ⬜      | 3          | New IR node kinds + render functions. |
 | 6   | `iterable`/`maplike`/`setlike`          | ⬜      | 5          | Expand to protocol members. |
 | 7   | Cross-spec references + routing table   | ⬜      | 3          | `Universe` merge + spec→package routing. |
@@ -145,11 +145,19 @@ edges   : Map<href, Set<href>>   // call edges: hrefs that are themselves algori
 closure : Map<href, Set<string>> // transitive throw set (the fixpoint result)
 ```
 
-`Member` gains nothing — the converter reads the external `ThrowsMap`, so the
-IDL IR and the throws data stay decoupled. The render path threads a small
-`renderCtx{iface, throws}` through `writeClass` →
-`writeInstanceMember`/`writeStaticMember` → `writeOperation`, and
-`throwsClause` looks up `throws[iface+"."+name]`.
+The converter reads the external `ThrowsMap`, so the IDL IR and the throws
+data stay decoupled. `Member` gains one field, `Origin`, set by `tagOrigin`
+during the merge to the declaring interface or mixin — the lookup key for a
+folded member. The render path threads a small `renderCtx{iface, throws}`
+through `writeClass` → `writeInstanceMember`/`writeStaticMember` →
+`writeOperation`, and `throwsClause` looks up `throws[iface+"."+name]` then
+falls back to `throws[origin+"."+name]`.
+
+The extractor's curated bridge is a flat table:
+
+```js
+const BRIDGE = { "Document.createElementNS": "<concept href>", ... }
+```
 
 ### Algorithm
 
@@ -175,17 +183,35 @@ The converter side (landed): `ConvertArtifactThrows(a, throws)` and the
 `-throws map.json` CLI flag. `writeOperation`/`writeStaticMember` append the
 `throws` clause from `throwsClause`.
 
-### Remaining work to close the gaps
+### Landed since the first cut
+
+- **Markup-inconsistency fix.** `exceptionsIn` matches the link *text* by
+  shape (any `*Error`, excluding `DOMException`) rather than the link type,
+  because webref tags exceptions as `data-link-type="exception"` on some specs
+  and `="idl"` on others — sometimes both in one algorithm. This recovered
+  `InvalidCharacterError` on the `validate and extract` chain, which the
+  type-keyed match dropped.
+- **Terse-method bridge.** A curated `BRIDGE` map (`Interface.method` → concept
+  algorithm href) unions each concept's closed throw set into the public
+  method. webref carries no machine-readable method→concept link — the method
+  dfn's only outgoing link is a dev example — so the delegation is curated, not
+  derived. The optional `dfns` argument validates every bridge key names a real
+  method (`methodSet` reads method-type dfns, combining `for` with
+  `linkingText`). This recovered `createElementNS`, `removeChild`,
+  `appendChild`, `insertBefore`, `replaceChild`, `querySelector`,
+  `querySelectorAll`.
+- **Mixin-origin lookup.** `Member` gained an `Origin` field set by
+  `tagOrigin` during the merge; `throwsClause` tries the concrete interface
+  then the origin, so a mixin method folded into a concrete interface
+  (`ParentNode.querySelector` under `Element`, `ParentNode.replaceChildren`)
+  resolves its throws. Covered by `TestConvertThrowsMixinOrigin`.
+
+### Remaining work
 
 - **Cross-spec helpers.** Load the full `ed/algorithms/*` set, not just a hand
-  list, so helper algorithms in any spec resolve. The fixpoint already
-  handles a larger graph; this is a fetch/index change. Track the unresolved
+  list, so helper algorithms in any spec resolve. The fixpoint already handles
+  a larger graph; this is a fetch/index change. Track the unresolved
   external-edge count to zero on the target specs.
-- **Terse method association.** Bridge a one-line delegating method to the
-  concept it delegates to using `ed/dfns/<spec>.json`: the dfn entry for
-  `dom-node-removechild` plus the method prose's single concept link gives the
-  `method → algorithm` edge that the `algorithms` extract omits. Add this edge
-  to the graph before computing the closure.
 - **Binding-layer `TypeError`.** Union the IDL `[EnforceRange]` / coercion
   signal (from the §2 IR) into each operation's throw set so binding-thrown
   `TypeError`s appear alongside the algorithm-derived exceptions.

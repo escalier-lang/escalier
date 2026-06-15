@@ -37,17 +37,64 @@ function flattenSteps(steps, out) {
 // merely mentions an exception (e.g. "catch", or prose describing one).
 const THROW_MARKERS = /#dfn-throw|#concept-throw|>\s*throw[s]?\s*</i;
 
-// exceptionsIn pulls exception names from a throwing step: DOMException
-// subtypes are `data-link-type="exception"` links; TypeError / RangeError are
-// referenced by name. Returns [] for a non-throwing step.
+// BRIDGE handles terse delegating methods. The DOM spec defines methods like
+// `removeChild` as a one-line delegation ("the removeChild(child) method
+// steps are to return the result of pre-removing child"), which webref does
+// NOT emit as an operation-named algorithm node — so their throws live only
+// in the concept algorithm they call. webref carries no machine-readable
+// method->concept link either: the method dfn's single outgoing link is a dev
+// example, not the delegation. So the delegation target is curated here,
+// keyed by the concept algorithm's href, and the closure attaches each
+// concept's throw set to the public method. The key is "Interface.method"
+// using the *declaring* interface (a mixin like ParentNode for querySelector);
+// the Go converter resolves that against folded members by member origin.
+const BRIDGE = {
+  "Document.createElementNS": "https://dom.spec.whatwg.org/#internal-createelementns-steps",
+  "Node.appendChild": "https://dom.spec.whatwg.org/#concept-node-pre-insert",
+  "Node.insertBefore": "https://dom.spec.whatwg.org/#concept-node-pre-insert",
+  "Node.removeChild": "https://dom.spec.whatwg.org/#concept-node-pre-remove",
+  "Node.replaceChild": "https://dom.spec.whatwg.org/#concept-node-replace",
+  "ParentNode.querySelector": "https://dom.spec.whatwg.org/#scope-match-a-selectors-string",
+  "ParentNode.querySelectorAll": "https://dom.spec.whatwg.org/#scope-match-a-selectors-string",
+};
+
+// methodSet reads the `dfns` extract (ed/dfns/<spec>.json) and returns the set
+// of "Interface.method" names declared as methods. Used only to validate that
+// every BRIDGE key names a real method, catching typos and spec drift.
+function methodSet(dir) {
+  const names = new Set();
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith(".json")) continue;
+    const j = JSON.parse(readFileSync(join(dir, file), "utf8"));
+    for (const d of j.dfns ?? []) {
+      if (d.type !== "method") continue;
+      // A method dfn carries the declaring interface in `for` (["Document"])
+      // and the signature(s) in `linkingText` (["createElementNS(...)"]).
+      const sig = (d.linkingText ?? [])[0] ?? "";
+      const name = /^([A-Za-z][\w]*)\(/.exec(sig);
+      if (!name) continue;
+      for (const iface of d.for ?? []) {
+        names.add(`${iface}.${name[1]}`);
+      }
+    }
+  }
+  return names;
+}
+
+// exceptionsIn pulls exception names from a throwing step. webref marks the
+// thrown DOMException name inconsistently: `data-link-type="exception"` on
+// some specs, `data-link-type="idl"` on others (e.g. NamespaceError uses
+// "exception" but InvalidCharacterError uses "idl" in the same algorithm).
+// So match the visible link text by shape instead: an <a> whose text is an
+// *Error name. "DOMException" ends in "Exception", so it is excluded.
+// Returns [] for a non-throwing step.
 function exceptionsIn(html) {
   if (!THROW_MARKERS.test(html)) return [];
   const names = new Set();
-  for (const m of html.matchAll(
-    /data-link-type="exception"[^>]*>([^<]+)<\/a>/g,
-  )) {
-    names.add(m[1].trim());
+  for (const m of html.matchAll(/>([A-Z][A-Za-z]*Error)<\/a>/g)) {
+    names.add(m[1]);
   }
+  // TypeError / RangeError are sometimes plain text rather than links.
   for (const m of html.matchAll(/\b(TypeError|RangeError)\b/g)) {
     names.add(m[1]);
   }
@@ -78,9 +125,9 @@ function loadAlgorithms(dir) {
 }
 
 function main() {
-  const [dir, outPath] = process.argv.slice(2);
+  const [dir, outPath, dfnsDir] = process.argv.slice(2);
   if (!dir) {
-    console.error("usage: node extract_throws.mjs <algorithms-dir> [out.json]");
+    console.error("usage: node extract_throws.mjs <algorithms-dir> [out.json] [dfns-dir]");
     process.exit(1);
   }
 
@@ -143,6 +190,30 @@ function main() {
     for (const e of throws) excFreq.set(e, (excFreq.get(e) ?? 0) + 1);
   }
 
+  // Apply the curated bridge for terse delegating methods. Each entry unions
+  // the concept algorithm's closed throw set into the public method's key.
+  let bridged = 0;
+  for (const [method, href] of Object.entries(BRIDGE)) {
+    const set = closure.get(href);
+    if (!set || set.size === 0) {
+      console.error(`bridge: ${method} -> ${href} has no throws (cross-spec helper not loaded?)`);
+      continue;
+    }
+    result[method] = [...new Set([...(result[method] ?? []), ...set])].sort();
+    bridged++;
+  }
+
+  // Validate bridge keys against the dfns extract, if provided: every BRIDGE
+  // method must name a real method definition.
+  if (dfnsDir) {
+    const methods = methodSet(dfnsDir);
+    for (const method of Object.keys(BRIDGE)) {
+      if (!methods.has(method)) {
+        console.error(`bridge: ${method} is not a method in the dfns extract (typo or spec drift?)`);
+      }
+    }
+  }
+
   if (outPath) {
     writeFileSync(outPath, JSON.stringify(result, null, 2) + "\n");
   }
@@ -151,6 +222,7 @@ function main() {
   console.error(`algorithms loaded:        ${all.length}`);
   console.error(`operation-named:          ${opCount}`);
   console.error(`  with >=1 throw:         ${opThrowing}`);
+  console.error(`bridged terse methods:    ${bridged}/${Object.keys(BRIDGE).length}`);
   console.error(`unresolved external edges:${externalEdges} (cross-spec helpers not loaded)`);
   console.error(`exception frequency:`);
   for (const [e, n] of [...excFreq].sort((a, b) => b[1] - a[1])) {

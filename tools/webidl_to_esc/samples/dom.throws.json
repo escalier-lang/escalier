@@ -57,12 +57,14 @@
     "InvalidCharacterError"
   ],
   "Document.createAttributeNS": [
+    "InvalidCharacterError",
     "NamespaceError"
   ],
   "Document.createEvent": [
     "NotSupportedError"
   ],
   "DOMImplementation.createDocument": [
+    "InvalidCharacterError",
     "NamespaceError",
     "NotSupportedError"
   ],
@@ -73,6 +75,7 @@
     "InvalidCharacterError"
   ],
   "Element.setAttributeNS": [
+    "InvalidCharacterError",
     "NamespaceError"
   ],
   "Element.toggleAttribute": [
@@ -304,5 +307,31 @@
   ],
   "ArrayBuffer.transfer": [
     "TypeError"
+  ],
+  "Document.createElementNS": [
+    "InvalidCharacterError",
+    "NamespaceError",
+    "NotSupportedError"
+  ],
+  "Node.appendChild": [
+    "HierarchyRequestError",
+    "NotFoundError"
+  ],
+  "Node.insertBefore": [
+    "HierarchyRequestError",
+    "NotFoundError"
+  ],
+  "Node.removeChild": [
+    "NotFoundError"
+  ],
+  "Node.replaceChild": [
+    "HierarchyRequestError",
+    "NotFoundError"
+  ],
+  "ParentNode.querySelector": [
+    "SyntaxError"
+  ],
+  "ParentNode.querySelectorAll": [
+    "SyntaxError"
   ]
 }

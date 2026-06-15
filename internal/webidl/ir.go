@@ -60,6 +60,13 @@ type Member struct {
 
 	// Unsupported-only: the original webidl2 member type, for a TODO note.
 	MemberType string `json:"memberType"`
+
+	// Origin is the interface or mixin that declared this member, set by the
+	// converter's merge step. It is the lookup key for the throws map when a
+	// member is folded into a concrete interface from a mixin — e.g.
+	// querySelector renders under Element but its throws are keyed
+	// "ParentNode.querySelector". Not part of the JSON IR.
+	Origin string `json:"-"`
 }
 
 // Arg is one operation/constructor argument.

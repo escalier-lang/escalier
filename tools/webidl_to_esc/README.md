@@ -88,11 +88,12 @@ call graph (steps link to the helper algorithms they invoke), computes the
 is essential.
 
 ```sh
-# fetch the DOM dependency set first (dom + its cross-spec helpers)
+# fetch the DOM dependency set first (dom + its cross-spec helpers), plus dfns
 for s in dom infra webidl url html; do
   curl -sL "https://raw.githubusercontent.com/w3c/webref/main/ed/algorithms/$s.json" -o algos/$s.json
 done
-node extract_throws.mjs algos out/dom.throws.json   # map + coverage report on stderr
+curl -sL "https://raw.githubusercontent.com/w3c/webref/main/ed/dfns/dom.json" -o dfns/dom.json
+node extract_throws.mjs algos out/dom.throws.json dfns   # map + coverage on stderr
 ```
 
 Then feed the map to stage 2:
@@ -101,17 +102,33 @@ Then feed the map to stage 2:
 go run ./tools/webidl_to_esc -throws out/dom.throws.json -o out samples/dom.json
 ```
 
-Two honest gaps the prototype surfaced:
+Three subtleties the prototype had to handle:
 
-- **Cross-spec helpers.** A throw in an unloaded spec is missed. Load the full
-  `ed/algorithms/*` set to close this.
-- **Terse method definitions.** webref captures algorithms written as explicit
-  step lists. One-line delegating methods ("the `removeChild(child)` method
-  steps are to return the result of pre-removing child") are not captured as
-  operation-named nodes, so their throws need the `ed/dfns/*` extract to bridge
-  method → concept. This is why `removeChild`/`querySelector` are absent from
-  the prototype's DOM map while `createElement`/`setAttribute`/`dispatchEvent`
-  are present.
+- **Inconsistent exception markup.** webref tags a thrown exception's name with
+  `data-link-type="exception"` on some specs and `data-link-type="idl"` on
+  others — even within one algorithm (`NamespaceError` vs
+  `InvalidCharacterError` in validate-and-extract). The extractor matches the
+  link *text* by shape (any `*Error` name) rather than the link type.
+- **Terse delegating methods (the bridge).** webref captures algorithms
+  written as explicit step lists. A one-line delegating method ("the
+  `removeChild(child)` method steps are to return the result of pre-removing
+  child") is not emitted as an operation node, and webref carries no
+  machine-readable method→concept link — the method dfn's only outgoing link is
+  a dev example. So `extract_throws.mjs` keeps a small **curated `BRIDGE`
+  table** mapping such methods to their concept algorithm's href, and unions
+  that concept's closed throw set into the method. The optional `dfns` argument
+  validates every bridge key names a real method, catching typos and spec
+  drift.
+- **Mixin origin.** A bridged or algorithm-derived throw is keyed by the
+  *declaring* interface, which may be a mixin (`ParentNode.querySelector`). The
+  Go converter folds mixins into concrete interfaces, so it records each
+  member's origin and resolves the throws map against both the concrete
+  interface and the origin.
+
+Remaining gap: **cross-spec helpers.** A throw reachable only through an
+algorithm in a spec that was not loaded is still missed; load the full
+`ed/algorithms/*` set to close it. The extractor reports the unresolved
+external-edge count so the gap is visible.
 
 ## Samples
 

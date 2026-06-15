@@ -92,6 +92,31 @@ func TestConvertArtifactThrows(t *testing.T) {
 	require.NotContains(t, got, "hasFeature(self) -> boolean throws")
 }
 
+// TestConvertThrowsMixinOrigin checks that a throws entry keyed by a mixin
+// resolves on a member folded into a concrete interface via `includes`. The
+// querySelector method is declared on the ParentNode mixin but renders under
+// Element, so its throws are keyed "ParentNode.querySelector".
+func TestConvertThrowsMixinOrigin(t *testing.T) {
+	t.Parallel()
+
+	artifact := Artifact{
+		Spec: "sample",
+		Interfaces: []Interface{
+			{Name: "Element", Inheritance: ptr("Node")},
+			{Name: "ParentNode", Mixin: true, Members: []Member{
+				{Kind: "operation", Name: "querySelector", Return: scalar("Element", true),
+					Args: []Arg{{Name: "selectors", Type: scalar("DOMString", false)}}},
+			}},
+		},
+		Includes: []Include{{Target: "Element", Mixin: "ParentNode"}},
+	}
+	throws := map[string][]string{"ParentNode.querySelector": {"SyntaxError"}}
+
+	got := ConvertArtifactThrows(artifact, throws)
+	require.Contains(t, got,
+		"querySelector(mut self, selectors: string) -> Element | null throws SyntaxError,")
+}
+
 // TestMapType covers the WebIDL->Escalier type mapping: scalars, generics,
 // unions, and nullability.
 func TestMapType(t *testing.T) {

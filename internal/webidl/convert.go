@@ -60,10 +60,11 @@ func merged(a Artifact) []Interface {
 			continue
 		}
 		if existing, ok := bases[iface.Name]; ok {
-			existing.Members = append(existing.Members, iface.Members...)
+			existing.Members = append(existing.Members, tagOrigin(iface.Members, iface.Name)...)
 			continue
 		}
 		copyIface := iface
+		copyIface.Members = tagOrigin(iface.Members, iface.Name)
 		bases[iface.Name] = &copyIface
 		order = append(order, iface.Name)
 	}
@@ -74,13 +75,26 @@ func merged(a Artifact) []Interface {
 			continue
 		}
 		if mixin, ok := mixins[inc.Mixin]; ok {
-			base.Members = append(base.Members, mixin.Members...)
+			// Folded mixin members keep the mixin as their origin, so the
+			// throws map keyed "Mixin.method" still resolves after folding.
+			base.Members = append(base.Members, tagOrigin(mixin.Members, mixin.Name)...)
 		}
 	}
 
 	out := make([]Interface, 0, len(order))
 	for _, name := range order {
 		out = append(out, *bases[name])
+	}
+	return out
+}
+
+// tagOrigin returns a copy of members with Origin set to the declaring
+// interface or mixin name, used as a throws-map lookup key for folded members.
+func tagOrigin(members []Member, origin string) []Member {
+	out := make([]Member, len(members))
+	for i, m := range members {
+		m.Origin = origin
+		out[i] = m
 	}
 	return out
 }
@@ -139,17 +153,23 @@ func writeStaticMember(b *strings.Builder, m Member, ctx renderCtx) {
 			ret = "mut " + ret
 			note = "  // [NewObject] caller owns a fresh value"
 		}
-		fmt.Fprintf(b, "    static %s(%s) -> %s%s,%s\n", m.Name, renderArgs(m.Args), ret, throwsClause(m.Name, ctx), note)
+		fmt.Fprintf(b, "    static %s(%s) -> %s%s,%s\n", m.Name, renderArgs(m.Args), ret, throwsClause(m, ctx), note)
 	case "const":
 		fmt.Fprintf(b, "    readonly static %s: %s,\n", m.Name, MapType(m.Type))
 	}
 }
 
 // throwsClause returns a ` throws E1 | E2` suffix when the throws map has an
-// entry for this interface/method, or "" otherwise. The exceptions come from
-// the spec-algorithm extractor, since WebIDL carries no exception info.
-func throwsClause(name string, ctx renderCtx) string {
-	excs := ctx.throws[ctx.iface+"."+name]
+// entry for this operation, or "" otherwise. It tries the concrete interface
+// first, then the member's declaring origin — so a mixin method folded into a
+// concrete interface (querySelector under Element) still resolves against its
+// "ParentNode.querySelector" key. The exceptions come from the spec-algorithm
+// extractor, since WebIDL carries no exception info.
+func throwsClause(m Member, ctx renderCtx) string {
+	excs := ctx.throws[ctx.iface+"."+m.Name]
+	if len(excs) == 0 && m.Origin != "" && m.Origin != ctx.iface {
+		excs = ctx.throws[m.Origin+"."+m.Name]
+	}
 	if len(excs) == 0 {
 		return ""
 	}
@@ -202,7 +222,7 @@ func writeOperation(b *strings.Builder, m Member, ctx renderCtx) {
 		note = "  // [NewObject] caller owns result"
 	}
 
-	fmt.Fprintf(b, "    %s(%s) -> %s%s,%s\n", m.Name, joinReceiver(recv, m.Args), ret, throwsClause(m.Name, ctx), note)
+	fmt.Fprintf(b, "    %s(%s) -> %s%s,%s\n", m.Name, joinReceiver(recv, m.Args), ret, throwsClause(m, ctx), note)
 }
 
 func joinReceiver(recv string, args []Arg) string {

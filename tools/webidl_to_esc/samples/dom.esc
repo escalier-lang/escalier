@@ -141,10 +141,10 @@ declare class Node extends EventTarget {
     lookupPrefix(mut self, namespace: string | null) -> string | null,  // receiver-mut uncertain (tier-7 default)
     lookupNamespaceURI(mut self, prefix: string | null) -> string | null,  // receiver-mut uncertain (tier-7 default)
     isDefaultNamespace(self, namespace: string | null) -> boolean,
-    insertBefore(mut self, node: Node, child: Node | null) -> Node,
-    appendChild(mut self, node: Node) -> Node,  // receiver-mut uncertain (tier-7 default)
-    replaceChild(mut self, node: Node, child: Node) -> Node,
-    removeChild(mut self, child: Node) -> Node,
+    insertBefore(mut self, node: Node, child: Node | null) -> Node throws HierarchyRequestError | NotFoundError,
+    appendChild(mut self, node: Node) -> Node throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    replaceChild(mut self, node: Node, child: Node) -> Node throws HierarchyRequestError | NotFoundError,
+    removeChild(mut self, child: Node) -> Node throws NotFoundError,
 }
 
 declare class Document extends Node {
@@ -163,7 +163,7 @@ declare class Document extends Node {
     getElementsByTagNameNS(self, namespace: string | null, localName: string) -> HTMLCollection,
     getElementsByClassName(self, classNames: string) -> HTMLCollection,
     createElement(mut self, localName: string, options?: string | ElementCreationOptions) -> mut Element throws InvalidCharacterError | NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    createElementNS(mut self, namespace: string | null, qualifiedName: string, options?: string | ElementCreationOptions) -> mut Element,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createElementNS(mut self, namespace: string | null, qualifiedName: string, options?: string | ElementCreationOptions) -> mut Element throws InvalidCharacterError | NamespaceError | NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createDocumentFragment(mut self) -> mut DocumentFragment,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createTextNode(mut self, data: string) -> mut Text,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createCDATASection(mut self, data: string) -> mut CDATASection throws InvalidCharacterError | NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
@@ -172,7 +172,7 @@ declare class Document extends Node {
     importNode(mut self, node: Node, options?: boolean | ImportNodeOptions) -> mut Node throws NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     adoptNode(mut self, node: Node) -> Node throws HierarchyRequestError | NotSupportedError,  // receiver-mut uncertain (tier-7 default)
     createAttribute(mut self, localName: string) -> mut Attr throws InvalidCharacterError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    createAttributeNS(mut self, namespace: string | null, qualifiedName: string) -> mut Attr throws NamespaceError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createAttributeNS(mut self, namespace: string | null, qualifiedName: string) -> mut Attr throws InvalidCharacterError | NamespaceError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createEvent(mut self, interface: string) -> mut Event throws NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createRange(mut self) -> mut Range,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createNodeIterator(mut self, root: Node, whatToShow?: number, filter?: NodeFilter | null) -> mut NodeIterator,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
@@ -183,12 +183,12 @@ declare class Document extends Node {
     get firstElementChild(self) -> Element | null,
     get lastElementChild(self) -> Element | null,
     get childElementCount(self) -> number,
-    prepend(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
+    prepend(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
     append(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    replaceChildren(mut self, ...nodes: Array<Node | string>) -> undefined,
-    moveBefore(mut self, node: Node, child: Node | null) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    querySelector(mut self, selectors: string) -> Element | null,  // receiver-mut uncertain (tier-7 default)
-    querySelectorAll(mut self, selectors: string) -> mut NodeList,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    replaceChildren(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,
+    moveBefore(mut self, node: Node, child: Node | null) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    querySelector(mut self, selectors: string) -> Element | null throws SyntaxError,  // receiver-mut uncertain (tier-7 default)
+    querySelectorAll(mut self, selectors: string) -> mut NodeList throws SyntaxError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createExpression(mut self, expression: string, resolver?: XPathNSResolver | null) -> mut XPathExpression,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createNSResolver(mut self, nodeResolver: Node) -> Node,  // receiver-mut uncertain (tier-7 default)
     evaluate(mut self, expression: string, contextNode: Node, resolver?: XPathNSResolver | null, type?: number, result?: XPathResult | null) -> XPathResult,  // receiver-mut uncertain (tier-7 default)
@@ -199,7 +199,7 @@ declare class XMLDocument extends Document {
 
 declare class DOMImplementation {
     createDocumentType(mut self, name: string, publicId: string, systemId: string) -> mut DocumentType,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
-    createDocument(mut self, namespace: string | null, qualifiedName: string, doctype?: DocumentType | null) -> mut XMLDocument throws NamespaceError | NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    createDocument(mut self, namespace: string | null, qualifiedName: string, doctype?: DocumentType | null) -> mut XMLDocument throws InvalidCharacterError | NamespaceError | NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     createHTMLDocument(mut self, title?: string) -> mut Document throws NotSupportedError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     hasFeature(self) -> boolean,
 }
@@ -208,9 +208,9 @@ declare class DocumentType extends Node {
     get name(self) -> string,
     get publicId(self) -> string,
     get systemId(self) -> string,
-    before(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    after(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    replaceWith(mut self, ...nodes: Array<Node | string>) -> undefined,
+    before(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    after(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    replaceWith(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,
     remove(mut self) -> undefined,
 }
 
@@ -221,12 +221,12 @@ declare class DocumentFragment extends Node {
     get firstElementChild(self) -> Element | null,
     get lastElementChild(self) -> Element | null,
     get childElementCount(self) -> number,
-    prepend(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
+    prepend(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
     append(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    replaceChildren(mut self, ...nodes: Array<Node | string>) -> undefined,
-    moveBefore(mut self, node: Node, child: Node | null) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    querySelector(mut self, selectors: string) -> Element | null,  // receiver-mut uncertain (tier-7 default)
-    querySelectorAll(mut self, selectors: string) -> mut NodeList,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    replaceChildren(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,
+    moveBefore(mut self, node: Node, child: Node | null) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    querySelector(mut self, selectors: string) -> Element | null throws SyntaxError,  // receiver-mut uncertain (tier-7 default)
+    querySelectorAll(mut self, selectors: string) -> mut NodeList throws SyntaxError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
 }
 
 declare class ShadowRoot extends DocumentFragment {
@@ -260,7 +260,7 @@ declare class Element extends Node {
     getAttribute(self, qualifiedName: string) -> string | null,
     getAttributeNS(self, namespace: string | null, localName: string) -> string | null,
     setAttribute(mut self, qualifiedName: string, value: TrustedType | string) -> undefined throws InvalidCharacterError,
-    setAttributeNS(mut self, namespace: string | null, qualifiedName: string, value: TrustedType | string) -> undefined throws NamespaceError,
+    setAttributeNS(mut self, namespace: string | null, qualifiedName: string, value: TrustedType | string) -> undefined throws InvalidCharacterError | NamespaceError,
     removeAttribute(mut self, qualifiedName: string) -> undefined,
     removeAttributeNS(mut self, namespace: string | null, localName: string) -> undefined,
     toggleAttribute(mut self, qualifiedName: string, force?: boolean) -> boolean throws InvalidCharacterError,  // receiver-mut uncertain (tier-7 default)
@@ -286,17 +286,17 @@ declare class Element extends Node {
     get firstElementChild(self) -> Element | null,
     get lastElementChild(self) -> Element | null,
     get childElementCount(self) -> number,
-    prepend(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
+    prepend(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
     append(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    replaceChildren(mut self, ...nodes: Array<Node | string>) -> undefined,
-    moveBefore(mut self, node: Node, child: Node | null) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    querySelector(mut self, selectors: string) -> Element | null,  // receiver-mut uncertain (tier-7 default)
-    querySelectorAll(mut self, selectors: string) -> mut NodeList,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
+    replaceChildren(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,
+    moveBefore(mut self, node: Node, child: Node | null) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    querySelector(mut self, selectors: string) -> Element | null throws SyntaxError,  // receiver-mut uncertain (tier-7 default)
+    querySelectorAll(mut self, selectors: string) -> mut NodeList throws SyntaxError,  // receiver-mut uncertain (tier-7 default); [NewObject] caller owns result
     get previousElementSibling(self) -> Element | null,
     get nextElementSibling(self) -> Element | null,
-    before(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    after(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    replaceWith(mut self, ...nodes: Array<Node | string>) -> undefined,
+    before(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    after(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    replaceWith(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,
     remove(mut self) -> undefined,
     get assignedSlot(self) -> HTMLSlotElement | null,
 }
@@ -334,9 +334,9 @@ declare class CharacterData extends Node {
     replaceData(mut self, offset: number, count: number, data: string) -> undefined,
     get previousElementSibling(self) -> Element | null,
     get nextElementSibling(self) -> Element | null,
-    before(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    after(mut self, ...nodes: Array<Node | string>) -> undefined,  // receiver-mut uncertain (tier-7 default)
-    replaceWith(mut self, ...nodes: Array<Node | string>) -> undefined,
+    before(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    after(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,  // receiver-mut uncertain (tier-7 default)
+    replaceWith(mut self, ...nodes: Array<Node | string>) -> undefined throws HierarchyRequestError | NotFoundError,
     remove(mut self) -> undefined,
 }
 

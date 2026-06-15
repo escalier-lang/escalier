@@ -80,7 +80,9 @@ specs produced correct `throws` clauses such as
 `createElement(...) throws InvalidCharacterError | NotSupportedError` and
 `dispatchEvent(...) throws InvalidStateError`. So a fourth signal —
 exceptions — is recoverable, from the algorithm corpus rather than the IDL.
-Two coverage gaps are documented under FR12.
+A curated bridge handles the terse delegating methods that webref omits as
+algorithm nodes; the one remaining gap is cross-spec helpers, documented
+under FR12.
 
 ## Goals
 
@@ -232,21 +234,33 @@ algorithm:
 4. For each operation-named algorithm, emit its closed throw set.
 
 The Go converter accepts this map and renders a `throws E1 | E2` clause on the
-matching operation. WebIDL supplies no exception data, so this map is the only
-source. Two coverage gaps are accepted for the first cut and tracked for
-follow-up:
+matching operation. WebIDL supplies no exception data, so this map is the only source.
 
-- **Cross-spec helpers.** A throw reachable only through an algorithm in a spec
-  that was not loaded is missed. Loading the full `ed/algorithms/*` set closes
-  it. The extractor reports the count of unresolved external edges so the gap
-  is visible.
-- **Terse method definitions.** webref captures algorithms written as explicit
-  step lists. A one-line delegating method — "the `removeChild(child)` method
-  steps are to return the result of pre-removing child" — is not captured as
-  an operation-named node, so its throws are not attributed. Bridging
-  method → concept needs the `ed/dfns/<spec>.json` extract, deferred to the
-  follow-up. The proven closure machinery is unaffected; only the
-  method-to-algorithm association is incomplete.
+**Inconsistent exception markup.** webref tags a thrown exception's name with
+`data-link-type="exception"` on some specs and `data-link-type="idl"` on
+others — sometimes both within one algorithm, as in `validate and extract`
+where `NamespaceError` is `exception` but `InvalidCharacterError` is `idl`.
+The extractor matches the link *text* by shape — any `*Error` name, excluding
+`DOMException` — rather than the link type, so neither tagging is missed.
+
+**Terse delegating methods (the bridge).** A one-line delegating method — "the
+`removeChild(child)` method steps are to return the result of pre-removing
+child" — is not emitted as an operation-named algorithm node, so its throws
+live only in the concept it calls (`pre-remove`). webref carries no
+machine-readable method→concept link: the method's `dfns` entry has a single
+outgoing link, and that is a dev example, not the delegation. So the
+delegation cannot be derived automatically. A small **curated bridge table**
+maps each terse method to its concept algorithm's href; the closure attaches
+that concept's throw set to the method. The `dfns` extract is still used, but
+only to *validate* the table — every bridge key must name a real method dfn,
+catching typos and spec drift. The bridge key uses the declaring interface,
+which may be a mixin (`ParentNode.querySelector`); the converter resolves that
+against folded members by recording each member's origin interface.
+
+**Cross-spec helpers (remaining gap).** A throw reachable only through an
+algorithm in a spec that was not loaded is still missed. Loading the full
+`ed/algorithms/*` set closes it. The extractor reports the count of unresolved
+external edges so the gap is visible.
 
 The full throw set for an operation is the union of these algorithm-derived
 exceptions and the binding-layer `TypeError` that `[EnforceRange]` and
@@ -284,12 +298,15 @@ argument coercion imply (FR2's IDL signal).
   spec's interface references types defined in another. The per-spec
   artifact model defers this; the routing table (FR11) and the builtins
   workstream's open-registry augmentation are where it is resolved.
-- **Incomplete `throws` coverage.** The algorithm extractor misses throws in
-  unloaded specs and throws on terse delegating methods (FR12). A generated
-  `throws` clause is therefore a floor, not a guarantee — under-reporting is
-  possible until both gaps close. This argues for hand-review of the
-  generated clauses and for never treating an absent clause as "cannot
-  throw".
+- **Incomplete `throws` coverage.** The algorithm extractor still misses
+  throws reachable only through an unloaded spec (FR12's cross-spec gap). A
+  generated `throws` clause is therefore a floor, not a guarantee —
+  under-reporting is possible until the full `ed/algorithms/*` set is loaded.
+  This argues for hand-review of the generated clauses and for never treating
+  an absent clause as "cannot throw".
+- **Curated bridge maintenance.** The terse-method bridge table is
+  hand-maintained, so a spec adding a new terse delegating method needs a new
+  entry. The `dfns` validation catches a stale *key* but not a *missing* one.
 
 ## Testing strategy
 
