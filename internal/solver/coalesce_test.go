@@ -161,6 +161,75 @@ func TestCoalesceNegativeObjectMerge(t *testing.T) {
 	})
 }
 
+// TestCoalesceMutWriteFold pins the C3 whole-object mut merge: a field-write bound
+// (a mut-wrapped inexact object) folds with the receiver's reads into ONE object,
+// and the presence of any write wraps the merged object in `mut`. usageObject is the
+// classifier that routes both read and write requirements into the fold.
+func TestCoalesceMutWriteFold(t *testing.T) {
+	// A lone write requirement folds and the result is wrapped in mut.
+	t.Run("single write folds to a mut object", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.UpperBounds = []soltype.Type{mutRef(inexactObj(propElem("x", num())))}
+		got := coalesce(p, soltype.Negative)
+		want := mutRef(exactObj(propElem("x", num())))
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+
+	// A bare read and a mut write on the same receiver fold into ONE mut object —
+	// not `{x} & mut {y}` — because any write makes the whole merged object mut.
+	t.Run("read and write fold into one mut object", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.UpperBounds = []soltype.Type{
+			inexactObj(propElem("x", num())),
+			mutRef(inexactObj(propElem("y", str()))),
+		}
+		got := coalesce(p, soltype.Negative)
+		want := mutRef(exactObj(propElem("x", num()), propElem("y", str())))
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+
+	// With no write, reads fold into a bare (immutable) object — the pre-C3 behavior,
+	// confirming the mut wrap is gated on an actual write.
+	t.Run("reads only fold to a bare object", func(t *testing.T) {
+		c := &Context{}
+		p := c.freshVar(0)
+		p.UpperBounds = []soltype.Type{
+			inexactObj(propElem("x", num())),
+			inexactObj(propElem("y", str())),
+		}
+		got := coalesce(p, soltype.Negative)
+		want := exactObj(propElem("x", num()), propElem("y", str()))
+		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	})
+}
+
+// TestUsageObject pins the requirement classifier directly: a bare inexact object is
+// a read, a mut-wrapped inexact object is a write, and an exact object, an immutable
+// borrow, or a non-object is not a usage requirement.
+func TestUsageObject(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        soltype.Type
+		wantOK    bool
+		wantWrite bool
+	}{
+		{"bare inexact object is a read", inexactObj(propElem("x", num())), true, false},
+		{"mut inexact object is a write", mutRef(inexactObj(propElem("x", num()))), true, true},
+		{"exact object is not a usage requirement", exactObj(propElem("x", num())), false, false},
+		{"mut exact object is not a usage requirement", mutRef(exactObj(propElem("x", num()))), false, false},
+		{"non-object is not a usage requirement", num(), false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, write, ok := usageObject(tt.in)
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.wantWrite, write)
+		})
+	}
+}
+
 // TestCoalesceOpenVarStaysInexact pins B2: an `open` parameter var's folded usage
 // object stays inexact (row-polymorphic) instead of closing to exact. The Open flag
 // on the var is the opt-out from B1's Policy-A close.

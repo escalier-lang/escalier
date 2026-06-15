@@ -408,7 +408,7 @@ func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: BigintTypeAnn", errs[0].Message())
+	require.Equal(t, "Unsupported: BigintTypeAnn", errs[0].Message())
 	require.Equal(t, "fn (p: Promise<unknown>) -> 0", values["f"])
 }
 
@@ -423,7 +423,7 @@ func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: BigintTypeAnn", errs[0].Message())
+	require.Equal(t, "Unsupported: BigintTypeAnn", errs[0].Message())
 	require.Equal(t, "fn <T0>(p: Promise<T0>) -> Promise<T0>", values["f"])
 }
 
@@ -442,7 +442,7 @@ func TestInferPromiseLifetimeRejected(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, src)
 			require.Len(t, errs, 1)
-			require.Equal(t, "Unsupported in M2: lifetime annotation on Promise", errs[0].Message())
+			require.Equal(t, "Unsupported: lifetime annotation on Promise", errs[0].Message())
 		})
 	}
 }

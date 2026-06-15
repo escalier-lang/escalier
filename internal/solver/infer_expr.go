@@ -556,12 +556,15 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 
 	target, ok := e.Left.(*ast.IdentExpr)
 	if !ok {
-		// A member/index target (obj.x = …, xs[i] = …) is a structurally VALID place
-		// whose type rule needs record/array types — deferred to M4 — so report it as
-		// an unsupported feature, distinct from a fundamentally invalid target like
-		// `5 = x` or `f() = x`, which is an InvalidAssignmentTargetError.
-		switch e.Left.(type) {
-		case *ast.MemberExpr, *ast.IndexExpr:
+		// A member target (obj.x = …) is a field write: the receiver must accept a
+		// write to that field (M4 C3). An index target (xs[i] = …) still needs Array
+		// and index types (M7), so it stays unsupported, distinct from a fundamentally
+		// invalid target like `5 = x` or `f() = x`, which is an
+		// InvalidAssignmentTargetError.
+		switch left := e.Left.(type) {
+		case *ast.MemberExpr:
+			return c.inferMemberAssign(scope, lvl, e, left, sourceT)
+		case *ast.IndexExpr:
 			c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
 		default:
 			c.report(&InvalidAssignmentTargetError{Target: e.Left})
@@ -623,6 +626,71 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	valueT := c.instantiate(b.Schemes[0], lvl)
 	c.recordType(e, valueT)
 	return valueT
+}
+
+// inferMemberAssign types a field write `recv.prop = source` (M4 C3). It extends
+// inferAssign's member-target branch: the receiver must ACCEPT a write to prop, so
+// the source is constrained against a mutable, inexact one-property requirement
+//
+//	recv <: mut {prop: widen(source), ...}
+//
+// The inexact requirement says "must accept a write to this field," not "is exactly
+// this shape." The mut wrapper makes the receiver a mutable cell, which the C3
+// coalesce fold collapses with the receiver's other selections into one `mut`
+// object. The stored value is WIDENED (5 ⇒ number) because writing through a `mut`
+// receiver is itself a mutation — a later write may store any number — mirroring
+// the `var`-binding widening (B3).
+//
+// C3 ships with Lt: nil: no borrows exist yet, so every receiver is owned. D2 flips
+// this to a fresh lifetime var so a borrowed receiver of any lifetime is accepted.
+//
+// When the receiver is a variable, the widened type is recorded in `written` so a
+// later read of the same field returns it (read-after-write; see valueProp). The
+// assignment evaluates to the value just stored, so its type is the widened source.
+func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m *ast.MemberExpr, source soltype.Type) soltype.Type {
+	voidT := soltype.Type(&soltype.Void{})
+	if m.OptChain {
+		// `recv?.prop = …` is not a meaningful assignment target; optional chaining is
+		// M6 regardless, so report the whole target as unsupported rather than typing it.
+		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
+		return voidT
+	}
+	if m.Prop == nil || m.Prop.Name == "" {
+		// A malformed `recv. = …`: the parser already reported the missing property
+		// name, so emit nothing further and recover to void.
+		return voidT
+	}
+	recv := c.inferExpr(scope, lvl, m.Object)
+	w := widen(source)
+	req := &soltype.RefType{
+		Mut: true,
+		Lt:  nil, // D2: c.freshLifetime()
+		Inner: &soltype.ObjectType{
+			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: m.Prop.Name, Type: w}},
+			Inexact: true, // "must accept a write to this field," not a full shape
+		},
+	}
+	c.constrain(e, recv, req)
+	c.recordWritten(recv, m.Prop.Name, w)
+	// The assignment evaluates to the value just stored. recordType overwrites the
+	// `void` recovery type inferAssign recorded on e before dispatching here.
+	c.recordType(e, w)
+	return w
+}
+
+// recordWritten remembers that field `name` of receiver `recv` was written with
+// type `t`, so a later read in the same function body returns it (read-after-write;
+// see valueProp). Only a VARIABLE receiver has a stable ID to key on; a non-variable
+// receiver — a literal or another expression — cannot be read back through the same
+// binding, so there is nothing to record. The cache is per function body (c.fn): a
+// write at module top-level (c.fn == nil) records nothing, which is sound.
+func (c *checker) recordWritten(recv soltype.Type, name string, t soltype.Type) {
+	if c.fn == nil {
+		return
+	}
+	if v, ok := recv.(*soltype.TypeVarType); ok {
+		c.fn.written[fieldKey{recvID: v.ID, field: name}] = t
+	}
 }
 
 // constrainAssign asserts `source <: target` for a reassignment. For a UNION target
@@ -852,6 +920,27 @@ func (c *checker) valueMember(lvl int, e *ast.MemberExpr, recv soltype.Type) pat
 // — so a missing-property read blames the property, not the receiver. name is the
 // property key being read.
 func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name string, recv soltype.Type) pathResult {
+	// Read-after-write (M4 C3): a read of a field just written to the same receiver
+	// var returns the recorded concrete type instead of minting a fresh var, so
+	// `obj.x = 5; obj.x` is `number`. The write already constrained the receiver to
+	// carry the field, so no additional requirement is needed here.
+	//
+	// Provenance is deliberately NOT recorded on the returned type. Unlike the fresh
+	// `res` below, the recorded type is SHARED — it also sits in the `written` map, in
+	// the write's requirement, and is handed to every read of this field — so it is not
+	// the freshly-minted unique pointer recordProv requires (recording it would panic
+	// under debugProv and mis-blame the other aliases). A later constraint failure on
+	// this value therefore blames its constraint site rather than this `.prop`, the
+	// same graceful site fallback a Prov-less type takes everywhere (see
+	// TestBlameVoidSubjectFallsBackToCallSite).
+	if c.fn != nil {
+		if v, ok := recv.(*soltype.TypeVarType); ok {
+			if t, found := c.fn.written[fieldKey{recvID: v.ID, field: name}]; found {
+				c.recordType(blame, t)
+				return pathResult{value: t}
+			}
+		}
+	}
 	res := c.freshAt(lvl)
 	// The member-requirement record {prop: res} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner res var, so the record would be a dead

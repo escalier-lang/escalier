@@ -42,6 +42,13 @@ type checker struct {
 	debugProv bool
 }
 
+// fieldKey identifies a written field by the receiver variable's ID and the
+// property name — the key into a function body's `written` map (M4 C3).
+type fieldKey struct {
+	recvID int
+	field  string
+}
+
 // funcCtx is the per-function inference context — pushed by inferFunc on entry to
 // a function body and popped on exit. The async flag lets inferAwait diagnose a
 // non-async use (and drives the external Promise wrap); node is the enclosing
@@ -58,6 +65,22 @@ type funcCtx struct {
 	async   bool
 	node    ast.Node
 	returns []soltype.Type
+
+	// written records the widened type stored into a receiver variable's field by a
+	// field-write `recv.prop = source` (M4 C3), keyed by the receiver var's ID and
+	// the property name. A later read of the same field returns this concrete type
+	// instead of minting a fresh var, so `obj.x = 5; obj.x` is `number`
+	// (read-after-write). It is purely a precision win: write-after-read already
+	// works through ordinary bound accumulation.
+	//
+	// It lives here, not on the checker, because read-after-write is an INTRA-BODY
+	// relation: scoping the cache to the function body it belongs to makes that
+	// correct by construction rather than relying on the global fresh-var counter to
+	// keep one body's receiver IDs from colliding with another's. Push/pop of funcCtx
+	// isolates it for free — a nested function gets its own map and the outer's is
+	// restored on exit. A field write at module top-level (c.fn == nil) simply gets
+	// no read-after-write precision, which is sound.
+	written map[fieldKey]soltype.Type
 }
 
 // pushFuncCtx enters the inference context for function `node` (async controls
@@ -68,7 +91,7 @@ type funcCtx struct {
 // than panicking, so there is no unwind to guard against.
 func (c *checker) pushFuncCtx(async bool, node ast.Node) *funcCtx {
 	saved := c.fn
-	c.fn = &funcCtx{async: async, node: node}
+	c.fn = &funcCtx{async: async, node: node, written: map[fieldKey]soltype.Type{}}
 	return saved
 }
 

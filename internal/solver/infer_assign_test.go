@@ -72,8 +72,8 @@ func TestInferAssignToImmutableNonVal(t *testing.T) {
 }
 
 // A non-place target — a literal or a call — is an InvalidAssignmentTargetError that
-// blames the target. A member or index target takes a separate path: it is a valid
-// place pending object/array types (M4), so it reports an UnsupportedFeatureError.
+// blames the target. A member target takes a separate path (a field write, C3) and an
+// index target another (unsupported pending Array types, M7).
 func TestInferAssignInvalidTarget(t *testing.T) {
 	t.Run("literal target", func(t *testing.T) {
 		src := "val a = 5\nfn g() { 5 = a }"
@@ -209,12 +209,22 @@ func TestInferAssignNamespaceTarget(t *testing.T) {
 	require.Equal(t, "Namespace used as a value: Foo", c.errs[0].Message())
 }
 
-// A member target (obj.x = …) is a valid-but-deferred (M4) place, reported as an
-// unsupported feature — distinct from a fundamentally invalid target like `5 = a`.
-func TestInferAssignMemberTargetUnsupported(t *testing.T) {
+// A member target (obj.x = …) is a field write (M4 C3). Writing to a field of an
+// IMMUTABLE object — here `o` is `val`-bound, so its `{x: 5}` is immutable — is
+// rejected: the write requires `o <: mut {x: number, ...}`, and an immutable object
+// cannot fill the mutable slot (the C2 gate's mutability rule).
+func TestInferAssignMemberTargetImmutable(t *testing.T) {
 	src := "val o = {x: 5}\nfn f() { o.x = 6 }"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Unsupported in M2: assignment to a member or index", "o.x")
+	requireBlame(t, src, errs, "cannot constrain immutable object <: mutable object", "o.x = 6")
+}
+
+// An INDEX target (xs[i] = …) still needs Array and index types (M7), so it stays
+// an unsupported feature — distinct from a member target, which C3 now types.
+func TestInferAssignIndexTargetUnsupported(t *testing.T) {
+	src := "val xs = [1, 2]\nfn f() { xs[0] = 6 }"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, "Unsupported: assignment to a member or index", "xs[0]")
 }
 
 // An immutable target with an independently-broken source reports BOTH errors — they
@@ -244,5 +254,5 @@ func TestInferAssignNilOperandDoesNotPanic(t *testing.T) {
 		}
 	})
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: BinaryExpr", c.errs[0].Message())
+	require.Equal(t, "Unsupported: BinaryExpr", c.errs[0].Message())
 }

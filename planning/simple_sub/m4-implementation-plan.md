@@ -314,12 +314,16 @@ case *soltype.RefType:
         if !sub.Mut && sup.Mut {
             return []SolverError{&MutabilityMismatchError{Sub: sub, Super: sup}}
         }
-        // 2. inner variance — bidirectional iff the TARGET writes (read/write
-        //    decomposition = invariance). Mut-decay (sub.Mut && !sup.Mut) falls
-        //    through to the covariant-only read view.
+        // 2. inner variance — covariant read view always; when the TARGET writes,
+        //    a contravariant write view PER NAMED FIELD makes each field the target
+        //    names invariant (read/write decomposition = invariance). The write view
+        //    ranges over the target's fields only (constrainWriteBack), not the whole
+        //    object, so an INEXACT target tolerates extra fields on the source while
+        //    pinning its named fields. Mut-decay (sub.Mut && !sup.Mut) falls through to
+        //    the covariant-only read view.
         errs := c.constrain(sub.Inner, sup.Inner, seen)
         if sup.Mut {
-            errs = append(errs, c.constrain(sup.Inner, sub.Inner, seen)...)
+            errs = append(errs, c.constrainWriteBack(sup.Inner, sub.Inner, seen)...)
         }
         // 3. lifetime — covariant when both present.
         switch {
@@ -813,7 +817,10 @@ these arms it must add.
     - (1) mutability compatibility — `!l.Mut && r.Mut` ⇒
       `MutabilityMismatchError`
     - (2) inner variance — covariant read view always, plus a contravariant write
-      view **iff `r.Mut`** (the read/write decomposition = invariance)
+      view **iff `r.Mut`** (the read/write decomposition = invariance). The write
+      view is **per named field** (`constrainWriteBack`), ranging over the target's
+      fields only, so an inexact target pins its named fields invariantly while
+      tolerating extra fields on the source (see Accept and C3)
     - (3) lifetime step written but **inert while `Lt == nil`** (the `switch` over
       `l.Lt`/`r.Lt` is dead code until D2)
     - cross-case `RefType <: bare` — peel `l.Inner`, with an escape-error guard
@@ -825,9 +832,15 @@ these arms it must add.
     - `MutabilityMismatchError{Sub, Super *soltype.RefType}`
     - `BorrowEscapeError{Sub, Super}` (the latter's firing path is inert until D2)
   - **Accept (the gate):**
-    - `mut {x, y} <: mut {x, ...}` **fails** (invariance — the write view's
-      contravariant `{x, ...} <: {x, y}` is missing a field) while immutable
-      `{x, y} <: {x, ...}` width-**succeeds** (inexact super)
+    - `mut {x, y} <: mut {x, ...}` **succeeds** — the inexact target names only `x`,
+      which the per-field write view pins invariantly, while the source's extra `y`
+      is tolerated (it is hidden, not writable through the target). This width
+      relaxation is sound and is what lets a field write `obj.x = v` — which lowers to
+      the inexact requirement `mut {x, ...}` — apply to a concretely-typed mutable
+      receiver. Immutable `{x, y} <: {x, ...}` also width-**succeeds** (inexact super)
+    - depth invariance is preserved: `mut {x: 5} <: mut {x: number}` **fails**
+      (`number <: 5` on the write view), and an EXACT target still demands an
+      identical field set (the read view rejects extras)
     - mut-decay `mut {x} <: {x}` allowed, the reverse `{x} <: mut {x}` rejected
     - full messages
 
@@ -899,6 +912,11 @@ these arms it must add.
     - a compound written value widens recursively via the shared `widen` (B3): in
       `fn foo(obj) { obj.p = {x: 0} }`, `obj`'s `p` field is `{x: number}`, not
       `{x: 0}`
+    - a write to a **concretely-typed** mutable receiver checks via C2's per-field
+      write view: `fn f(obj: mut {x: number, y: string}) { obj.x = 5 }` is accepted
+      (the inexact write requirement `mut {x, ...}` pins `x` invariantly and tolerates
+      the declared `y`), while `obj.x = "bad"` rejects on `x`'s invariance and a write
+      to a field absent from an exact `mut` object reports a missing property
 
 ### Phase D — Lifetimes (second sort)
 

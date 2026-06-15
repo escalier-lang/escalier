@@ -47,7 +47,7 @@ func TestInferLiteralUnsupported(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, e)
 	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: NullLit", c.errs[0].Message())
+	require.Equal(t, "Unsupported: NullLit", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
@@ -107,6 +107,6 @@ func TestInferExprUnsupportedNode(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, e)
 	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: BinaryExpr", c.errs[0].Message())
+	require.Equal(t, "Unsupported: BinaryExpr", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
