@@ -156,7 +156,13 @@ mutability flag and the (nilable) lifetime around a borrowed value (see
 `Ref` is **invariant in its inner type when the wrapper is mutable**, encoded
 via the read/write decomposition (covariant read view + contravariant write
 view); invariance is not native to a co/contravariant lattice, so it is the
-one place we deliberately step outside the clean lattice structure.
+one place we deliberately step outside the clean lattice structure. The write
+view is **per named field**: it pins the fields the target names invariantly but
+ranges over those fields only, so an **inexact** mutable target stays
+width-tolerant (`mut {x, y} <: mut {x, ...}` holds — `x` is invariant, `y` is
+hidden and not writable through the target). This is what lets a field write,
+which lowers to an inexact `mut {field, ...}` requirement, apply to a
+concretely-typed mutable receiver.
 **Lifetimes themselves are always covariant**: a `Ref`'s lifetime field is
 constrained once in the subtype direction (longer-lived can stand in for
 shorter-lived), regardless of whether the wrapper is mutable. Because the

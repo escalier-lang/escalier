@@ -230,7 +230,7 @@ func TestInferModuleUnsupportedDecl(t *testing.T) {
 	src := `type Foo = number`
 	_, types, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: TypeDecl", errs[0].Message())
+	require.Equal(t, "Unsupported: TypeDecl", errs[0].Message())
 	// M2.5: the error self-blames from the decl node.
 	require.Equal(t, src, spanText(src, errs[0].Span()))
 	// The unsupported decl must not leak a type binding.
@@ -276,7 +276,7 @@ func TestInferModuleDestructuringPatternUnsupported(t *testing.T) {
 	src := `val [a, b] = [1, 2]`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: TuplePat", errs[0].Message())
+	require.Equal(t, "Unsupported: TuplePat", errs[0].Message())
 	// M2.5: blame the offending pattern, not the whole decl.
 	require.Equal(t, "[a, b]", spanText(src, errs[0].Span()))
 	require.Empty(t, values)
@@ -459,7 +459,7 @@ func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported in M2: NamespaceDecl", errs[0].Message())
+	require.Equal(t, "Unsupported: NamespaceDecl", errs[0].Message())
 	require.Empty(t, values)
 	// The unsupported decl must not leak a type binding for the namespace.
 	require.NotContains(t, types, "Foo")

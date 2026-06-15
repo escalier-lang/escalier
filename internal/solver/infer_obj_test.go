@@ -40,7 +40,7 @@ func TestInferTupleSpreadUnsupported(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, e)
 	require.Equal(t, "[error]", render(got))
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: ArraySpreadExpr", c.errs[0].Message())
+	require.Equal(t, "Unsupported: ArraySpreadExpr", c.errs[0].Message())
 }
 
 // --- ObjectExpr ---
@@ -99,7 +99,7 @@ func TestInferObjectShorthandUnsupported(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, objExpr(shorthand))
 	require.Equal(t, "{}", render(got))
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: PropertyExpr", c.errs[0].Message())
+	require.Equal(t, "Unsupported: PropertyExpr", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
@@ -111,7 +111,7 @@ func TestInferObjectSpreadUnsupported(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, objExpr(spread))
 	require.Equal(t, "{}", render(got))
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: ObjSpreadExpr", c.errs[0].Message())
+	require.Equal(t, "Unsupported: ObjSpreadExpr", c.errs[0].Message())
 }
 
 // A computed key ({[k]: v}) carries no static field name — M4.
@@ -121,7 +121,7 @@ func TestInferObjectComputedKeyUnsupported(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, objExpr(computed))
 	require.Equal(t, "{}", render(got))
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: ComputedKey", c.errs[0].Message())
+	require.Equal(t, "Unsupported: ComputedKey", c.errs[0].Message())
 }
 
 // --- MemberExpr ---
@@ -160,7 +160,7 @@ func TestInferMemberOptionalChainUnsupported(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, e)
 	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: OptionalChain", c.errs[0].Message())
+	require.Equal(t, "Unsupported: OptionalChain", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
@@ -174,7 +174,7 @@ func TestInferMemberOptionalChainDoesNotDescendIntoReceiver(t *testing.T) {
 
 	c.inferExpr(NewScope(), 0, e)
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: OptionalChain", c.errs[0].Message())
+	require.Equal(t, "Unsupported: OptionalChain", c.errs[0].Message())
 }
 
 // A malformed `recv.` (no valid property name) leaves Prop.Name empty; the

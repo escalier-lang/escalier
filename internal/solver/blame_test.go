@@ -156,7 +156,7 @@ func TestBlameDuplicateDeclarationRelatesPrevious(t *testing.T) {
 func TestBlameUnsupportedFeatureOptionalChain(t *testing.T) {
 	src := "val o = {a: 5}\nval x = o?.a"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Unsupported in M2: OptionalChain", "o?.a")
+	requireBlame(t, src, errs, "Unsupported: OptionalChain", "o?.a")
 }
 
 // --- Site-fallback fixtures ---
@@ -322,7 +322,7 @@ func TestUnsupportedAnnotationRecovers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, "Unsupported in M2: TypeRefTypeAnn", errs[0].Message())
+			require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
 			require.Equal(t, tt.want, values)
 		})
 	}
@@ -340,6 +340,6 @@ func TestNilVarDeclPatternBlamesDeclWithoutPanic(t *testing.T) {
 		require.False(t, ok)
 	})
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported in M2: VarDecl", c.errs[0].Message())
+	require.Equal(t, "Unsupported: VarDecl", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span()) // derefs the decl node, not a nil pattern
 }

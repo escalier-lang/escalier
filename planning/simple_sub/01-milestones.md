@@ -409,13 +409,23 @@ wrapper) are what first populate a lifetime. Land them together.
   narrowing use should be allowed to reclaim the literal.
 - **`Ref` constrain rule** (single rule for the unified borrow wrapper): inner
   variance is bidirectional iff `r.mut` (read/write decomposition: covariant
-  read + contravariant write when the target writes), covariant otherwise;
-  lifetime is covariant when both sides have one; mutability decay (`Ref{mut:
-  true} <: Ref{mut: false}`) is allowed, the reverse rejects. Plus inferring
-  mutability from field writes (`obj.x = v` ⇒ `Ref{mut: true, lt: freshLt,
-  inner: Record{x: widen(v)}}`, with literal widening and merging; the
-  lifetime is a fresh variable so the constraint accepts both owned-mutable
-  and mut-borrowed receivers). (Spike M3 + extension.)
+  read + contravariant write when the target writes), covariant otherwise. The
+  write view is **per named field**, ranging over the target's fields only, so an
+  inexact mutable target pins its named fields invariantly but stays width-tolerant
+  (`mut {x, y} <: mut {x, ...}` holds) — which is what lets a field write's inexact
+  `mut {field, ...}` requirement apply to a concretely-typed receiver. Lifetime is
+  covariant when both sides have one; mutability decay (`Ref{mut: true} <: Ref{mut:
+  false}`) is allowed, the reverse rejects.
+- **Mutability inference from field writes** (M4): `obj.x = v` constrains the
+  receiver against the inexact requirement `Ref{mut: true, lt: nil, inner:
+  Record{x: widen(v)}}`, with literal widening and merging of a receiver's
+  selections into one `mut` object. The lifetime is `nil`, so M4 supports only
+  owned-mutable receivers. (Spike M3 + extension.)
+- **Lifetime origination on field writes** (D2, **not** M4): the write
+  requirement's lifetime becomes a fresh variable rather than `nil`, so the
+  constraint also accepts a mut-borrowed receiver of any lifetime. This depends on
+  the lifetime sort and borrow origination, which land in D2 — until then a borrowed
+  receiver is not yet supported.
 - **Lifetimes as a second sort**: `LifetimeVar` with lower/upper bounds over the
   outlives lattice (`'static` = top), `constrainLt`, lifetime coalescing +
   elision (a parameter-only lifetime that connects nothing is dropped). Borrows

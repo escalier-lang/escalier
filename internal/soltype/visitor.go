@@ -159,6 +159,13 @@ func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
 	// never sees a real Mut borrow — and Accept is shared with coalesce, which WANTS a
 	// single covariant visit, so the fix belongs in extrude/freshenAbove (not here)
 	// once borrows originate (D2) and the case becomes reachable and testable.
+	//
+	// The OCCURRENCE-analysis half of this invariance is already handled separately,
+	// not here: simplify.go's recordMutWriteView walks a Mut inner in the flipped
+	// polarity for the occurrence and co-occurrence visitors, so a var written through
+	// a mut field is retained as a type parameter rather than dropped (#737). That is a
+	// record-only pass, so it can add the write view without the double visit coalesce
+	// must avoid.
 	inner := cur.Inner.Accept(v, pol)
 	var out Type = cur
 	if inner != cur.Inner {

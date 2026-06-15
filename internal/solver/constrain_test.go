@@ -658,16 +658,30 @@ func TestConstrainRef(t *testing.T) {
 			want:  []string{"cannot constrain number <: 5"},
 		},
 		{
-			// mut {x, y} <: mut {x, ...}: the read view width-succeeds (inexact super),
-			// but the write view {x, ...} <: {x, y} is missing y and is inexact-into-
-			// exact — the plan's headline invariance rejection.
-			name:  "mut wider <: mut inexact rejects on the write view",
+			// mut {x, y} <: mut {x, ...}: the read view width-succeeds (inexact super)
+			// and the write view is per-field over the target's NAMED fields (just x), so
+			// x stays invariant while the source's extra y is tolerated. The inexact
+			// target names only x, and y is not writable through it, so admitting the
+			// wider source is sound. This is what lets a field write `obj.x = v` — which
+			// lowers to mut {x, ...} — apply to a concretely-typed mutable receiver.
+			name:  "mut wider <: mut inexact: width tolerated, named field invariant",
 			sub:   mutRef(exactObj(propElem("x", num()), propElem("y", num()))),
 			super: mutRef(inexactObj(propElem("x", num()))),
-			want: []string{
-				"object is missing property: y",
-				"cannot constrain inexact object <: exact object",
-			},
+		},
+		{
+			// mut {x: 5, y: number} <: mut {x: number, ...}: width is still tolerated, but
+			// the named field x stays invariant because a mut reference checks it in BOTH
+			// directions:
+			//   - read view, covariant (sub <: super): 5 <: number, which holds.
+			//   - write view, contravariant (super <: sub): number <: 5, which fails. The
+			//     super lets a holder write any number into x, but the real field only
+			//     accepts 5.
+			// Invariance forces the two views together, so the named field's type must
+			// match. The relaxation is width-only; it does not weaken depth invariance.
+			name:  "mut wider <: mut inexact still pins the named field's depth",
+			sub:   mutRef(exactObj(propElem("x", numLit(5)), propElem("y", num()))),
+			super: mutRef(inexactObj(propElem("x", num()))),
+			want:  []string{"cannot constrain number <: 5"},
 		},
 		{
 			// The same two object inners as bare (immutable) values width-succeed: an
