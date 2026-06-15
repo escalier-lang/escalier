@@ -333,21 +333,38 @@ declarations.
 **Work.**
 
 - Implement the name normalizer that maps a spec key onto the
-  `(className, memberKey, static)` triple the converter holds:
+  `(owner, member, sort)` triple the converter holds. `owner` is a dotted
+  path so namespace-nested constructors resolve; `sort` distinguishes an
+  instance method, a class static, and a namespace-level function:
 
 ```
-func normalize(specKey string) (class string, member MemberKey, static bool):
-    // "X.prototype.method"          → (X, Str("method"),     false)
-    // "X.prototype [ @@iterator ]"  → (X, Sym("iterator"),   false)
-    // "get X.prototype.size"        → (X, Accessor("size"),  false)  // never overwritten
-    // "X.method"                    → (X, Str("method"),     true)
-    // "X [ @@species ]"             → (X, Sym("species"),    true)
+func normalize(specKey string) (owner []string, member MemberKey, sort MemberSort):
+    // MemberSort ∈ { Instance, Static, NamespaceFunc }
+    // "Array.prototype.push"                   → (["Array"],     Str("push"),     Instance)
+    // "Array.prototype [ @@iterator ]"         → (["Array"],     Sym("iterator"), Instance)
+    // "get Map.prototype.size"                 → (["Map"],       Accessor("size"),Instance)  // never overwritten
+    // "Array.from"                             → (["Array"],     Str("from"),     Static)
+    // "Array [ @@species ]"                    → (["Array"],     Sym("species"),  Static)
+    // "Math.max"                               → (["Math"],      Str("max"),      NamespaceFunc)
+    // "Intl.getCanonicalLocales"               → (["Intl"],      Str("getCanonicalLocales"), NamespaceFunc)
+    // "Intl.DateTimeFormat.prototype.format"   → (["Intl","DateTimeFormat"], Str("format"),  Instance)
+    // "Intl.DateTimeFormat.supportedLocalesOf" → (["Intl","DateTimeFormat"], Str("supportedLocalesOf"), Static)
 ```
 
+  The split rule: strip a trailing `.prototype.<member>` or
+  `[ @@symbol ]` to get an instance member; otherwise the last dotted
+  segment is the member and the leading segments are the owner. An owner
+  whose leading segment is a known namespace (`Intl`, `Math`, `Reflect`,
+  `JSON`, `Atomics`, `WebAssembly`) and that has no further constructor
+  segment yields `NamespaceFunc`; an owner ending in a constructor name
+  yields `Instance`/`Static`. The known-namespace set is a small reviewed
+  list, the same one FR7 enumerates.
   `MemberKey` mirrors `type_system.ObjTypeKey` so symbol-keyed members
   join by kind plus payload, matching how
   [../../internal/interop/mutability.go](../../internal/interop/mutability.go)
-  already distinguishes string- from symbol-keyed names.
+  already distinguishes string- from symbol-keyed names. A
+  `NamespaceFunc` has no receiver, so the join applies only its
+  `mutatesParams` and `throws`, never `mutatesReceiver`.
 - A spec algorithm maps to a single method element even when the
   TypeScript side is an overload set; the fact applies to **all**
   signatures of the merged `MethodElem`, the same iteration
@@ -656,14 +673,28 @@ separate `unclassified` report alongside `facts.json` for auditing
 The shared key space between `cfg.json`, `facts.json`, and the §5
 normalizer.
 
-| Form                          | Example                          | Joins to                         |
-| ----------------------------- | -------------------------------- | -------------------------------- |
-| `X.prototype.method`          | `Array.prototype.push`           | instance method `push` on `X`    |
-| `X.method`                    | `Array.from`                     | static method `from` on `X`      |
-| `X.prototype [ @@symbol ]`    | `Array.prototype [ @@iterator ]` | `[Symbol.iterator]` on `X`       |
-| `X [ @@symbol ]`              | `Array [ @@species ]`            | static `[Symbol.species]` on `X` |
-| `get X.prototype.accessor`    | `get Map.prototype.size`         | getter `size` (not overwritten)  |
-| `set X.prototype.accessor`    | `set …`                          | setter (not overwritten)         |
+The host `X` is a dotted path, so a constructor nested in a namespace
+(`Intl.DateTimeFormat`) is just a longer `X`.
+
+| Form                          | Example                                  | Joins to                              |
+| ----------------------------- | ---------------------------------------- | ------------------------------------- |
+| `X.prototype.method`          | `Array.prototype.push`                   | instance method `push` on `X`         |
+| `X.method`                    | `Array.from`                             | static method `from` on `X`           |
+| `X.prototype [ @@symbol ]`    | `Array.prototype [ @@iterator ]`         | `[Symbol.iterator]` on `X`            |
+| `X [ @@symbol ]`              | `Array [ @@species ]`                    | static `[Symbol.species]` on `X`      |
+| `get X.prototype.accessor`    | `get Map.prototype.size`                 | getter `size` (not overwritten)       |
+| `set X.prototype.accessor`    | `set …`                                  | setter (not overwritten)              |
+| `Namespace.fn`                | `Math.max`, `Intl.getCanonicalLocales`   | namespace-level function (no receiver)|
+| `Namespace.Class.prototype.m` | `Intl.DateTimeFormat.prototype.format`   | instance method on a nested ctor      |
+| `Namespace.Class.method`      | `Intl.DateTimeFormat.supportedLocalesOf` | static method on a nested ctor        |
+
+Namespace-level functions carry `Kind: builtin-static` in `cfg.json`:
+like a class static they have no receiver, so the analysis treats index
+0 of their `Params` as the first real argument, not a `this` value. The
+§5 normalizer distinguishes a class static from a namespace function by
+the known-namespace owner list; the analysis itself does not need the
+distinction, because parameter mutation (`Reflect.set` writing its
+`target`) flows through the same formal-index machinery either way.
 
 Abstract operations referenced inside algorithms — `Set`, `ToObject`,
 `ArrayCreate`, and the like — appear in `cfg.json` as `Func`s with

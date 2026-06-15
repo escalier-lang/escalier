@@ -230,9 +230,12 @@ provenance:
 {
   "Array.prototype.push":  { "mutatesReceiver": true,  "mutatesParams": [], "returns": "fresh",    "throws": [],            "classified": true },
   "Array.prototype.fill":  { "mutatesReceiver": true,  "mutatesParams": [], "returns": "receiver", "throws": [],            "classified": true },
-  "Array.prototype.slice": { "mutatesReceiver": false, "mutatesParams": [], "returns": "fresh",    "throws": [],            "classified": true },
   "Map.prototype.set":     { "mutatesReceiver": true,  "mutatesParams": [], "returns": "receiver", "throws": [],            "classified": true },
-  "Number.prototype.toFixed": { "mutatesReceiver": false, "mutatesParams": [], "returns": "fresh", "throws": ["RangeError"], "classified": true }
+  "Number.prototype.toFixed": { "mutatesReceiver": false, "mutatesParams": [], "returns": "fresh", "throws": ["RangeError"], "classified": true },
+
+  "Reflect.set":                          { "mutatesReceiver": false, "mutatesParams": [0], "returns": "fresh", "throws": [],            "classified": true },
+  "Intl.getCanonicalLocales":             { "mutatesReceiver": false, "mutatesParams": [],  "returns": "fresh", "throws": ["RangeError"], "classified": true },
+  "Intl.DateTimeFormat.prototype.format": { "mutatesReceiver": false, "mutatesParams": [],  "returns": "fresh", "throws": [],            "classified": true }
 }
 ```
 
@@ -242,16 +245,42 @@ when its `fractionDigits` argument is out of the 0–100 range — a domain
 throw the type system cannot preclude — so it is recorded, while the
 `TypeError` from coercing a non-number receiver is filtered out.
 
-The key space covers prototype methods (`X.prototype.method`), static
-methods (`X.method`), and symbol-keyed methods, addressed by FR7.
+The host portion of a key may be a **namespace-qualified dotted path**,
+not just a single class name. Three forms arise:
+
+- `Intl.DateTimeFormat.prototype.format` — a prototype method of
+  `DateTimeFormat`, a constructor nested in the `Intl` namespace. It has
+  a receiver, a `DateTimeFormat` instance, exactly like any other
+  prototype method.
+- `Intl.getCanonicalLocales`, `Math.max`, `JSON.parse` —
+  **namespace-level functions**. They have no receiver, so
+  `mutatesReceiver` is always `false` and the mutation signal of
+  interest is `mutatesParams`. `Intl.getCanonicalLocales` still carries a
+  domain `throws` (`RangeError` on a malformed language tag).
+- `Reflect.set`, `Reflect.defineProperty`, `Reflect.deleteProperty` —
+  namespace functions that **mutate a parameter**: `Reflect.set` writes
+  its `target` argument, so `mutatesParams: [0]`. This is why the
+  analysis models every function uniformly over formal indices (FR2): a
+  namespace function with no receiver still reports parameter mutation
+  through the same machinery.
+
+The key space therefore covers prototype methods
+(`X.prototype.method`), static methods (`X.method`), symbol-keyed
+methods, and namespace-qualified forms where `X` is a dotted path naming
+a namespace and optionally a nested constructor — all joined by FR7.
 `classified: false` marks the FR5 fall-through entries; they carry no
 mutability claim.
 
 ### FR7. Keying and join to converter declarations
 
-The facts file is keyed by spec name; the bootstrap converter holds a
-class name plus a method name derived from the `.d.ts`. A normalizer
-joins the two and must handle:
+The facts file is keyed by spec name; the bootstrap converter holds, for
+each declaration, an owner path plus a member name. That owner and
+member come from the pinned TypeScript `.d.ts` while the converter is
+bootstrapping the `.esc` files, and from the committed `.esc` files
+thereafter. The join is purely name-based, so it does not depend on
+which side supplies the declaration; the `.d.ts` is just where the
+converter reads names at bootstrap. A normalizer maps a spec key onto
+the converter's owner and member and must handle:
 
 - symbol-keyed methods — `Symbol.iterator` in the spec maps to the
   `[Symbol.iterator]` member the converter emits;
@@ -260,7 +289,16 @@ joins the two and must handle:
   overwritten;
 - overload sets — one TypeScript overload set may map to a single spec
   algorithm; the fact applies to all signatures of the merged method
-  element.
+  element;
+- namespace-qualified hosts — the host before `.prototype.` or the bare
+  member name may be a dotted path. The normalizer splits it: leading
+  segments naming a namespace (`Intl`, `Math`, `Reflect`, `JSON`,
+  `Atomics`, `WebAssembly`) route to the owning `std:*` package; a
+  trailing constructor segment (`Intl.DateTimeFormat`) routes to a class
+  in that package; a member with no constructor segment
+  (`Intl.getCanonicalLocales`, `Math.max`) is a namespace-level function
+  joined to a free function in the package. A namespace function has no
+  receiver, so only its `mutatesParams` and `throws` apply.
 
 Names present on one side and absent from the other are reported,
 mirroring FR10's unmapped-symbol fail-safe in the builtins converter.
