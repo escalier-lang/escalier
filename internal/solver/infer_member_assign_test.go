@@ -167,6 +167,8 @@ func TestInferMemberAssignAnnotatedMutMissingField(t *testing.T) {
 // on the receiver var with no constraint relating them. Pinned so the gap is
 // explicit; a future soundness pass over conflicting writes should surface an error
 // here and update this assertion.
+// TODO(#738): report conflicting writes to one field instead of folding to an
+// uninhabited intersection.
 func TestInferMemberAssignConflictingWritesNoError(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n obj.x = \"hi\" }")
 	require.Empty(t, errs)
