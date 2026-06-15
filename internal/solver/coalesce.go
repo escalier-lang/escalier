@@ -552,7 +552,11 @@ func equalType(a, b soltype.Type) bool {
 	case *soltype.RefType:
 		b, ok := b.(*soltype.RefType)
 		// Mut must match — a mutable borrow never equals an immutable one. Lifetime
-		// equality joins in D1; Lt is always nil here.
+		// equality is deferred to D2: D1 lands the lifetime sort but does not attach a
+		// lifetime to any borrow, so every Lt is nil here and comparing Inner+Mut is
+		// complete. D2, which mints borrow lifetimes, must add an Lt comparison (by
+		// pointer for a LifetimeVar, by value for 'static) or two borrows differing
+		// only in lifetime would coalesce as equal.
 		return ok && a.Mut == b.Mut && equalType(a.Inner, b.Inner)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)

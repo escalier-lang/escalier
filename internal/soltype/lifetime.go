@@ -28,6 +28,13 @@ type LifetimeVar struct {
 // outlives at most 'static, so `X <: 'static` always holds.
 type StaticLifetime struct{}
 
+// Static is the canonical 'static value. Prefer it over a fresh
+// &StaticLifetime{} at every origination site (escape-to-static, annotations) so
+// all 'static share one pointer identity. ContainsLifetime dedups 'static by
+// value regardless, so a stray fresh instance is still correct — the singleton is
+// the cheap default, not a correctness crutch.
+var Static Lifetime = &StaticLifetime{}
+
 func (*LifetimeVar) isLifetime()    {}
 func (*StaticLifetime) isLifetime() {}
 
@@ -37,11 +44,19 @@ func IsStaticLifetime(lt Lifetime) bool {
 	return ok
 }
 
-// ContainsLifetime reports whether lt is already present in bounds (by pointer
-// identity), so a repeated outlives constraint does not re-append a bound.
+// ContainsLifetime reports whether lt is already present in bounds, so a repeated
+// outlives constraint does not re-append a bound. A LifetimeVar matches by pointer
+// identity, but 'static matches by VALUE: every StaticLifetime denotes the one
+// lattice top, and origination sites mint a fresh &StaticLifetime{} per call, so
+// pointer identity would wrongly treat two 'static values as distinct and let a
+// bound list accumulate duplicate 'static entries.
 func ContainsLifetime(bounds []Lifetime, lt Lifetime) bool {
+	ltStatic := IsStaticLifetime(lt)
 	for _, b := range bounds {
 		if b == lt {
+			return true
+		}
+		if ltStatic && IsStaticLifetime(b) {
 			return true
 		}
 	}

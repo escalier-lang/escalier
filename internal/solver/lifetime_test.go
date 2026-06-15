@@ -52,6 +52,22 @@ func TestConstrainLtPropagatesTransitively(t *testing.T) {
 	require.Contains(t, x.UpperBounds, soltype.Lifetime(b), "x gains b transitively through a")
 }
 
+// Two DISTINCT 'static values denote the one lattice top, so constraining a
+// variable against each in turn records a single 'static upper bound — dedup is by
+// value, not pointer. Origination sites mint a fresh &StaticLifetime{} per call, so
+// pointer-identity dedup would wrongly pile up duplicate 'static bounds.
+func TestConstrainLtStaticDedupsByValue(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime()
+
+	c.ctx.constrainLt(a, &soltype.StaticLifetime{})
+	c.ctx.constrainLt(a, &soltype.StaticLifetime{}) // a different 'static instance
+	c.ctx.constrainLt(a, soltype.Static)            // and the canonical singleton
+
+	require.Len(t, a.UpperBounds, 1, "all three 'static constraints collapse to one upper bound")
+	require.True(t, soltype.IsStaticLifetime(a.UpperBounds[0]))
+}
+
 // A repeated outlives constraint does not re-append a bound already present.
 func TestConstrainLtDedupsBounds(t *testing.T) {
 	c := newChecker()
