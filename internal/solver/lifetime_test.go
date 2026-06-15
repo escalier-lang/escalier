@@ -168,3 +168,162 @@ func TestProbeLifetimeCommittedChildCoveredByParentDiscard(t *testing.T) {
 	require.Empty(t, a.UpperBounds, "the parent discard reverts the committed child's lifetime bound")
 	require.Empty(t, b.LowerBounds)
 }
+
+// Test 1 — the lower-bound propagation branch. TestConstrainLtPropagatesTransitively
+// exercises propagation through the SUPER variable's upper bounds; this exercises the
+// distinct `subVar.LowerBounds` loop: with lb <: a already recorded, constraining
+// a <: super must propagate lb <: super through a's existing lower bound.
+func TestConstrainLtPropagatesThroughLowerBounds(t *testing.T) {
+	c := newChecker()
+	lb := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime()
+	super := c.ctx.freshLifetime()
+
+	c.ctx.constrainLt(lb, a)    // lb <: a ⇒ a gains lb as a lower bound
+	c.ctx.constrainLt(a, super) // a <: super ⇒ a's lower-bound loop propagates lb <: super
+
+	require.Contains(t, lb.UpperBounds, soltype.Lifetime(a), "lb gains a directly")
+	require.Contains(t, lb.UpperBounds, soltype.Lifetime(super), "lb gains super transitively through a's lower-bound propagation")
+	require.Contains(t, super.LowerBounds, soltype.Lifetime(lb), "super sees lb as a lower bound from the same propagation")
+}
+
+// Test 2 — a probe discard rolls back vars touched TRANSITIVELY, not just the ones
+// named at the constrainLt call site. With a <: b set pre-probe, a single
+// constrainLt(x, a) under the probe touches x, a, AND b (x <: a <: b), and the
+// discard must truncate every probe-era bound while leaving the pre-probe ones.
+func TestProbeDiscardRollsBackTransitivelyTouchedLifetimes(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime()
+	b := c.ctx.freshLifetime()
+
+	c.ctx.constrainLt(a, b) // pre-probe: a.upper=[b], b.lower=[a]
+	require.Len(t, a.UpperBounds, 1)
+	require.Len(t, b.LowerBounds, 1)
+
+	p := c.openProbe()
+	x := c.ctx.freshLifetime()
+	c.ctx.constrainLt(x, a) // x <: a, transitively recording x <: b; touches x, a, b
+	require.Contains(t, x.UpperBounds, soltype.Lifetime(a))
+	require.Contains(t, x.UpperBounds, soltype.Lifetime(b), "x gained b transitively under the probe")
+	require.Len(t, a.LowerBounds, 1, "a gained x as a probe-era lower bound")
+	require.Len(t, b.LowerBounds, 2, "b gained x transitively under the probe")
+
+	c.closeProbe(p, false) // discard
+
+	require.Empty(t, x.UpperBounds, "x was minted and constrained entirely under the probe")
+	require.Len(t, a.UpperBounds, 1, "a's pre-probe upper bound survives")
+	require.Empty(t, a.LowerBounds, "a's probe-era lower bound x is truncated")
+	require.Len(t, b.LowerBounds, 1, "b's transitive probe-era lower bound is truncated")
+	require.Equal(t, soltype.Lifetime(a), b.LowerBounds[0], "b's pre-probe lower bound survives")
+}
+
+// Test 3 — recordLt journals a lifetime var at most once per probe, even across
+// several appends to it, so the single snapshot truncates every later append on
+// discard. Mirrors the type sort's TestProbeRecordDedupsPerVariable. Each
+// constrainLt(a, …) also touches its super var, so the probe holds three entries
+// total; the point is that `a` appears in exactly one of them.
+func TestProbeRecordLtDedupsPerLifetimeVar(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime()
+	b := c.ctx.freshLifetime()
+	d := c.ctx.freshLifetime()
+
+	p := c.openProbe()
+	c.ctx.constrainLt(a, b) // a.upper += b
+	c.ctx.constrainLt(a, d) // a.upper += d — a SECOND append to a
+	require.Len(t, a.UpperBounds, 2)
+
+	aEntries := 0
+	for _, e := range p.ltEntries {
+		if e.v == a {
+			aEntries++
+		}
+	}
+	require.Equal(t, 1, aEntries, "a is journaled exactly once despite two appends")
+
+	c.closeProbe(p, false) // discard
+	require.Empty(t, a.UpperBounds, "both speculative bounds on a are truncated via the single journal entry")
+}
+
+// Test 5 — a probe built directly as &Probe{} (bypassing newProbe) is safe for the
+// lifetime sort too: ltTouched is lazily created on first recordLt, so there is no
+// nil-map panic. Mirrors the type sort's TestProbeBareLiteralIsNilMapSafe.
+func TestProbeBareLiteralLifetimeIsNilMapSafe(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime()
+	b := c.ctx.freshLifetime()
+
+	c.ctx.probe = &Probe{} // deliberately skip newProbe
+	require.NotPanics(t, func() {
+		c.ctx.constrainLt(a, b) // appends bounds ⇒ recordLt(a), recordLt(b)
+	})
+	require.Len(t, a.UpperBounds, 1)
+
+	c.ctx.probe.Discard()
+	require.Empty(t, a.UpperBounds, "the bare-literal probe still rolls back the lifetime bound")
+	require.Empty(t, b.LowerBounds)
+}
+
+// Test 6a — a discarded child reverts only ITS OWN lifetime appends, leaving the
+// parent's journal and the var's parent-era bounds intact. Mirrors the type sort's
+// TestDiscardedChildLeavesParentJournalIntact.
+func TestProbeLifetimeDiscardedChildLeavesParentJournalIntact(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime()
+	b := c.ctx.freshLifetime()
+	d := c.ctx.freshLifetime()
+
+	parent := c.openProbe()
+	c.ctx.constrainLt(a, b) // parent: a.upper=[b]
+	require.Len(t, a.UpperBounds, 1)
+
+	child := c.openProbe()
+	c.ctx.constrainLt(a, d) // child: a.upper=[b, d]
+	require.Len(t, a.UpperBounds, 2)
+	c.closeProbe(child, false) // child discards ⇒ back to [b]
+	require.Len(t, a.UpperBounds, 1, "the child discard reverts only the child's lifetime bound")
+	require.Equal(t, soltype.Lifetime(b), a.UpperBounds[0])
+
+	c.closeProbe(parent, false) // parent discards ⇒ back to empty
+	require.Empty(t, a.UpperBounds, "the parent discard reverts its own lifetime bound")
+}
+
+// Test 6b — when the parent has NOT touched a lifetime var the committed child did,
+// the child's snapshot is inherited so the parent discard reverts the child's bound
+// to the var's pre-child length. Mirrors TestCommittedChildInheritsUntouchedVarSnapshot.
+func TestProbeLifetimeCommittedChildInheritsUntouchedVarSnapshot(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime()
+	b := c.ctx.freshLifetime()
+
+	parent := c.openProbe()
+	child := c.openProbe()
+	c.ctx.constrainLt(a, b) // only the child touches a and b
+	require.Len(t, a.UpperBounds, 1)
+	c.closeProbe(child, true) // commit: parent inherits a and b at snapshot 0
+
+	c.closeProbe(parent, false) // discard
+	require.Empty(t, a.UpperBounds, "the inherited child snapshot truncates a back to empty")
+	require.Empty(t, b.LowerBounds)
+}
+
+// Test 7 — re-constraining a lifetime bound already present journals nothing: the
+// ContainsLifetime guard skips the append, so no recordLt fires and a discard is a
+// clean no-op that leaves the pre-probe bound untouched. This verifies the
+// "no journal entry without an append" invariant for the lifetime sort.
+func TestProbeReconstrainingPresentLifetimeBoundJournalsNothing(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime()
+	b := c.ctx.freshLifetime()
+
+	c.ctx.constrainLt(a, b) // pre-probe: a.upper=[b], b.lower=[a]
+
+	p := c.openProbe()
+	c.ctx.constrainLt(a, b) // identical constraint: both bounds already present
+	require.Empty(t, p.ltEntries, "re-constraining a present bound journals nothing")
+	require.Len(t, a.UpperBounds, 1, "no duplicate bound is appended")
+
+	c.closeProbe(p, false) // discard is a clean no-op
+	require.Len(t, a.UpperBounds, 1, "the pre-probe bound is untouched by the no-op trial")
+	require.Equal(t, soltype.Lifetime(b), a.UpperBounds[0])
+}
