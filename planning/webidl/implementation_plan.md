@@ -15,7 +15,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 1   | Feasibility spike                       | ✅      | —          | Confirmed `@webref/idl` carries `[SameObject]`/`[NewObject]`; WebIDL is a lifetime seed, not a mutability oracle. |
 | 2   | Node extractor + JSON IR                | ✅      | 1          | [tools/webidl_to_esc/extract.mjs](../../tools/webidl_to_esc/extract.mjs); IR schema in [internal/webidl/ir.go](../../internal/webidl/ir.go). |
 | 3   | Go converter (`internal/webidl`)        | ✅      | 2          | [internal/webidl/convert.go](../../internal/webidl/convert.go). |
-| 4   | CLI + samples + tests                   | ✅      | 3          | [tools/webidl_to_esc/main.go](../../tools/webidl_to_esc/main.go), `samples/dom.{json,esc}`, `convert_test.go`. |
+| 4   | CLI + tests                             | ✅      | 3          | [tools/webidl_to_esc/main.go](../../tools/webidl_to_esc/main.go), `convert_test.go`. Generated `.esc` types ship as a separate change. |
 | 4b  | `throws` from spec algorithms           | 🚧      | 3          | [tools/webidl_to_esc/extract_throws.mjs](../../tools/webidl_to_esc/extract_throws.mjs); converter renders clauses via `-throws`. Closure + curated terse-method bridge (dfns-validated) + mixin-origin lookup done. Cross-spec helper gap open. |
 | 5   | Coverage: dictionaries, enums, typedefs | ⬜      | 3          | New IR node kinds + render functions. |
 | 6   | `iterable`/`maplike`/`setlike`          | ⬜      | 5          | Expand to protocol members. |
@@ -111,19 +111,20 @@ order  := []string{}              // base names in first-seen order, for stable 
    primitive families; an unknown name passes through; `Nullable` appends
    `| null`.
 
-## 4. CLI, samples, tests — done
+## 4. CLI, tests — done
 
 ### Data structures
 
 `run` in `main.go` holds only flag state: `outDir string`, `toStdout bool`,
-and the positional artifact paths. Each file is unmarshalled into a
-`webidl.Artifact`.
+the optional throws-map path, and the positional artifact paths. Each file is
+unmarshalled into a `webidl.Artifact`.
 
 ### Algorithm
 
-For each path: read, `json.Unmarshal` into `Artifact`, `ConvertArtifact`, then
-write to stdout, alongside the artifact, or under `-o`. Tests build in-memory
-`Artifact`s and assert the full rendered class.
+For each path: read, `json.Unmarshal` into `Artifact`, `ConvertArtifactThrows`,
+then write to stdout, alongside the artifact, or under `-o`. Tests build
+in-memory `Artifact`s and assert the rendered class. The generated `.esc`
+types are checked in as a separate change, not committed under the tool dir.
 
 ## 4b. `throws` from spec algorithms — prototype done
 

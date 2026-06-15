@@ -68,8 +68,8 @@ the shared classifier; `[NewObject]` returns are wrapped in `mut`;
 `[SameObject]` getters are tagged as borrowing from `self`.
 
 ```sh
-go run ./tools/webidl_to_esc -stdout samples/dom.json   # to stdout
-go run ./tools/webidl_to_esc -o out samples/dom.json     # writes out/dom.esc
+go run ./tools/webidl_to_esc -stdout out/dom.json   # to stdout
+go run ./tools/webidl_to_esc -o out out/dom.json     # writes out/dom.esc
 ```
 
 ### Stage 1b — `extract_throws.mjs` (Node)
@@ -99,7 +99,7 @@ node extract_throws.mjs algos out/dom.throws.json dfns   # map + coverage on std
 Then feed the map to stage 2:
 
 ```sh
-go run ./tools/webidl_to_esc -throws out/dom.throws.json -o out samples/dom.json
+go run ./tools/webidl_to_esc -throws out/dom.throws.json -o out out/dom.json
 ```
 
 Three subtleties the prototype had to handle:
@@ -130,14 +130,10 @@ algorithm in a spec that was not loaded is still missed; load the full
 `ed/algorithms/*` set to close it. The extractor reports the unresolved
 external-edge count so the gap is visible.
 
-## Samples
+## Example output
 
-`samples/dom.json` is the stage-1 IR for the DOM spec; `samples/dom.esc` is
-the stage-2 output. They let you read the result, and run stage 2, without an
-`npm install`. Representative lines:
-
-`samples/dom.throws.json` is the stage-1b throw map used to render the
-`throws` clauses below. Representative output lines:
+The generated `.esc` types are checked in separately, not in this tool's
+directory — run the stages above to produce them. Representative output lines:
 
 ```escalier
 get signal(self) -> AbortSignal,  // [SameObject] result borrows from self; candidate for a self lifetime

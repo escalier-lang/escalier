@@ -11,8 +11,8 @@ lifetimes; no, for mutability" and lives at:
   Node stage that parses `@webref/idl` into a JSON IR.
 - [internal/webidl/](../../internal/webidl/) — Go stage that renders the IR
   to `.esc`.
-- [tools/webidl_to_esc/samples/](../../tools/webidl_to_esc/samples/) —
-  committed `dom.json` IR and `dom.esc` output.
+- [tools/webidl_to_esc/](../../tools/webidl_to_esc/) — the extractors and CLI.
+  The generated `.esc` types land in a separate change, not in the tool dir.
 
 It is a companion to two existing workstreams:
 
@@ -271,8 +271,10 @@ argument coercion imply (FR2's IDL signal).
 - **Determinism.** Running either stage twice on the same inputs produces
   byte-identical output. Member order follows IDL source order so diffs are
   reviewable.
-- **Reproducibility without npm.** A committed sample IR and `.esc` let a
-  reviewer run the Go stage and read the result without `npm install`.
+- **Reproducibility.** The Go stage consumes only the JSON IR, so a checked-in
+  IR artifact lets a reviewer run conversion and read the result without an
+  `npm install`. The generated `.esc` types are checked in as their own change,
+  separate from the converter.
 - **Isolation.** The Node tool has its own `package.json` and is outside the
   pnpm workspace, so its `npm`-managed deps do not perturb the workspace.
 - **Regeneration cost.** An `@webref/idl` bump re-runs the Node stage only;
@@ -316,7 +318,7 @@ argument coercion imply (FR2's IDL signal).
   [internal/webidl/convert_test.go](../../internal/webidl/convert_test.go).
 - **Type-mapping table tests** cover scalars, generics, unions, and
   nullability.
-- **Golden samples.** The committed `samples/dom.esc` is regenerated and
-  diffed in CI so extractor or converter drift is caught.
+- **Golden output.** Once the generated `.esc` types are checked in, CI
+  regenerates and diffs them so extractor or converter drift is caught.
 - **Round-trip parse** (follow-up). Once the lifetime grammar lands,
   generated `.esc` is fed through `parser.ParseLibFiles` to assert it parses.
