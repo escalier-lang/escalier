@@ -271,16 +271,33 @@ a namespace and optionally a nested constructor — all joined by FR7.
 `classified: false` marks the FR5 fall-through entries; they carry no
 mutability claim.
 
-### FR7. Keying and join to converter declarations
+### FR7. Keying and join to typed declarations
 
-The facts file is keyed by spec name; the bootstrap converter holds, for
-each declaration, an owner path plus a member name. That owner and
-member come from the pinned TypeScript `.d.ts` while the converter is
-bootstrapping the `.esc` files, and from the committed `.esc` files
+**Why a join is needed at all.** ECMA-262 is untyped. It specifies
+algorithm semantics — what a method mutates, throws, and returns — but
+carries no static type information: no generics (`Array<T>`,
+`Map<K, V>`), no parameter or return types, no typed overloads.
+`Array.prototype.push` in the spec takes "a List of ECMAScript language
+values," not `(...items: T[]): number`. So the spec cannot be the source
+of the type signatures; it is the source only of the Escalier-specific
+semantics this workstream extracts. The facts file is therefore
+deliberately shape-free — keyed by spec name, carrying mutability,
+aliasing, and throws but no types — and must be joined to a separate
+source that holds the typed declarations. That typed source supplies the
+signatures; the facts supply the annotations layered on top.
+
+**What supplies the types is the builtins workstream's choice, not
+this one's.** Today it is the pinned TypeScript `.d.ts`, chosen to reuse
+TypeScript's hand-curated generic signatures and JSDoc at no authoring
+cost; the bootstrap converter reads declaration names from there while
+seeding the `.esc` files, and from the committed `.esc` files
 thereafter. The join is purely name-based, so it does not depend on
-which side supplies the declaration; the `.d.ts` is just where the
-converter reads names at bootstrap. A normalizer maps a spec key onto
-the converter's owner and member and must handle:
+which source supplies the declaration — if the builtins workstream ever
+hand-authored the `.esc` signatures instead, `.d.ts` would drop out and
+this join would target `.esc` unchanged.
+
+A normalizer maps a spec key onto the typed declaration's owner and
+member and must handle:
 
 - symbol-keyed methods — `Symbol.iterator` in the spec maps to the
   `[Symbol.iterator]` member the converter emits;
