@@ -2,9 +2,9 @@ package solver
 
 import "github.com/escalier-lang/escalier/internal/soltype"
 
-// Context owns the engine's mutable counters. M1 carries ONLY varCounter; the
-// spike's lifetimeCounter / paramLifetimes / written fields are M4 (lifetimes
-// and records/mut), so M1's Context is correspondingly lean.
+// Context owns the engine's mutable counters. M1 carries ONLY varCounter; M4 D1
+// adds lifetimeCounter for the lifetime sort. The spike's paramLifetimes /
+// written fields live on the checker carrier (D2/C3), not here.
 //
 // M3 (PR5) adds the nullable probe pointer. The engine's bound-mutating core
 // (constrain/extrude) lives on *Context, so the speculation journal must live
@@ -22,6 +22,13 @@ import "github.com/escalier-lang/escalier/internal/soltype"
 type Context struct {
 	varCounter int
 	probe      *Probe
+
+	// lifetimeCounter mints the next LifetimeVar id (M4 D1). Lifetimes are a
+	// SECOND bounded sort solved by the same machinery as types: a fresh lifetime
+	// gets the next id here, its bounds are extended only through
+	// addLowerLtBound/addUpperLtBound, and a speculation trial journals it under
+	// the same probe discipline as a TypeVarType.
+	lifetimeCounter int
 }
 
 // freshVar allocates a new inference variable at the given level, assigning it
@@ -30,6 +37,41 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 	v := &soltype.TypeVarType{ID: c.varCounter, Level: level}
 	c.varCounter++
 	return v
+}
+
+// freshLifetime allocates a new lifetime variable, assigning it the next id in
+// sequence. Lifetimes carry no level — they are a flat sort over the outlives
+// lattice, not the let-generalization level hierarchy types ride.
+func (c *Context) freshLifetime() *soltype.LifetimeVar {
+	lv := &soltype.LifetimeVar{ID: c.lifetimeCounter}
+	c.lifetimeCounter++
+	return lv
+}
+
+// addLowerLtBound appends lt to v's lower bounds, journaling the mutation in the
+// active probe first so a discarded trial truncates it away. This (and
+// addUpperLtBound) is the ONLY sanctioned way to extend a lifetime bound list —
+// the second sort inherits the type sort's "appends only through journaling
+// helpers" invariant so an un-journaled append cannot survive a Discard.
+func (c *Context) addLowerLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime) {
+	c.recordLtMutation(v)
+	v.LowerBounds = append(v.LowerBounds, lt)
+}
+
+// addUpperLtBound is the upper-bound counterpart of addLowerLtBound.
+func (c *Context) addUpperLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime) {
+	c.recordLtMutation(v)
+	v.UpperBounds = append(v.UpperBounds, lt)
+}
+
+// recordLtMutation snapshots v's bound-list lengths in the active probe, if any,
+// BEFORE a bound append mutates v — the lifetime-sort twin of recordMutation. A
+// no-op when no probe is open; recordLt dedups per probe, so the first touch's
+// snapshot covers every later append to v under the same probe.
+func (c *Context) recordLtMutation(v *soltype.LifetimeVar) {
+	if c.probe != nil {
+		c.probe.recordLt(v)
+	}
 }
 
 // addLowerBound appends t to v's lower bounds, journaling the mutation in the

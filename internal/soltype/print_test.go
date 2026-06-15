@@ -128,8 +128,9 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"promise of prim", &PromiseType{Inner: numP()}, "Promise<number>"},
 		{"nested promise", &PromiseType{Inner: &PromiseType{Inner: strP()}}, "Promise<Promise<string>>"},
 
-		// Borrows (M4). Lt is always nil in C1, so only the owned-mutable form
-		// renders; the inner object/tuple is brace/bracket-delimited, so no parens.
+		// Borrows (M4). The inner object/tuple is brace/bracket-delimited, so no
+		// parens. The owned-mutable form (Lt nil) and, with D1's lifetime sort, the
+		// borrow forms carrying a lifetime all render here.
 		{
 			"mut object",
 			&RefType{Mut: true, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
@@ -139,6 +140,21 @@ func TestPrintRoundTrips(t *testing.T) {
 			"mut tuple",
 			&RefType{Mut: true, Inner: &TupleType{Elems: []Type{numP(), strP()}}},
 			"mut [number, string]",
+		},
+		{
+			"immutable borrow with lifetime var",
+			&RefType{Lt: &LifetimeVar{ID: 0}, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
+			"'l0 {x: number}",
+		},
+		{
+			"mutable borrow with lifetime var",
+			&RefType{Mut: true, Lt: &LifetimeVar{ID: 2}, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
+			"mut 'l2 {x: number}",
+		},
+		{
+			"borrow with static lifetime",
+			&RefType{Mut: true, Lt: &StaticLifetime{}, Inner: &TupleType{Elems: []Type{numP()}}},
+			"mut 'static [number]",
 		},
 	}
 	for _, tt := range tests {

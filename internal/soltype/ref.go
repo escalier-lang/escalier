@@ -1,12 +1,5 @@
 package soltype
 
-// Lifetime is the sort of borrow lifetimes — a second, non-Type sort threaded
-// through RefType.Lt. It is a placeholder in C1: it has no concretes yet, so Lt is
-// always nil and no RefType is borrowed. M4 D1 adds the concretes (LifetimeVar,
-// StaticLifetime) and the outlives lattice; until then a RefType carries the field
-// unused.
-type Lifetime interface{ isLifetime() }
-
 // NewRef wraps inner in a borrow, collapsing the degenerate immutable-no-lifetime
 // cell back to the bare inner so no *RefType ever names a value that isn't really a
 // borrow. A type-switch on *RefType can therefore assume the wrapper is meaningful.

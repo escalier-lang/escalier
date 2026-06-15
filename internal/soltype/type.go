@@ -224,12 +224,14 @@ func AsProperty(e ObjTypeElem) *PropertyElem {
 //	Mut=true  Lt='a    mutable borrow
 //
 // The single RefType<:RefType constrain rule (M4 C2) reads Mut for inner variance
-// and Lt for the lifetime outlives check; until then a RefType only carries data.
-// Lt is always nil in C1 — the Lifetime sort and its constrain rule arrive in M4
-// D1/D2, so the immutable-borrow and lifetime forms above are reachable only then.
+// and Lt for the lifetime outlives check. M4 D1 lands the Lifetime sort (the
+// LifetimeVar/StaticLifetime concretes, freshLifetime, constrainLt, the probe
+// extension); D2 attaches a fresh lifetime to a borrowed parameter and activates
+// the rule's outlives step. Until D2 every minted RefType still carries Lt == nil,
+// so the immutable-borrow and lifetime forms above are only reached once D2 lands.
 type RefType struct {
 	Mut   bool
-	Lt    Lifetime // nilable; always nil until the lifetime sort lands (D1)
+	Lt    Lifetime // nilable; carries a lifetime once D2 attaches one to a borrow
 	Inner RefInner
 }
 

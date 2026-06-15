@@ -174,6 +174,30 @@ func freeTypeVars(t Type) []*TypeVarType {
 // `t{ID}`) and populated by PrintAsScheme (a retained variable renders as `T{i}`).
 type namedPrinter struct {
 	names map[*TypeVarType]string
+	// ltNames maps a retained lifetime variable to its surface name (`'a`, `'b`,
+	// …). It is nil for plain Print, where a lifetime var renders as the raw
+	// `'l{ID}` debug form; D4's display-time coalescing populates it so a
+	// param-originated lifetime renders under its quantified name.
+	ltNames map[*LifetimeVar]string
+}
+
+// printLifetime renders a lifetime in Escalier surface syntax: 'static for the
+// top of the lattice, a retained variable's assigned name (`'a`) when ltNames
+// carries one, else the raw `'l{ID}` debug form — the lifetime-sort twin of
+// printType's TypeVarType arm, which falls back to `t{ID}` for an un-named var.
+func (p *namedPrinter) printLifetime(lt Lifetime) string {
+	switch lt := lt.(type) {
+	case *StaticLifetime:
+		return "'static"
+	case *LifetimeVar:
+		if p.ltNames != nil {
+			if name, ok := p.ltNames[lt]; ok {
+				return name
+			}
+		}
+		return "'l" + strconv.Itoa(lt.ID)
+	}
+	panic(fmt.Sprintf("printLifetime: unhandled %T", lt))
 }
 
 // printTypeMinPrec prints a child type, wrapping it in parentheses when its
@@ -244,13 +268,16 @@ func (p *namedPrinter) printType(t Type) string {
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:
-		// `mut {x: number}`, `mut [number]`. The immutable-borrow and lifetime
-		// prefixes (`'a {…}`, `mut 'a {…}`) render once D1 adds the lifetime sort;
-		// Lt is always nil here, so only the `mut` prefix appears. The inner prints
-		// at precPrefix so a looser inner (a union/function) gets parenthesized.
+		// A borrow prefix: `mut {x: number}` (owned-mutable), `'a {…}` (immutable
+		// borrow), `mut 'a {…}` (mutable borrow). The `mut` keyword leads, then the
+		// lifetime when present (Lt != nil). The inner prints at precPrefix so a
+		// looser inner (a union/function) gets parenthesized.
 		prefix := ""
 		if t.Mut {
 			prefix = "mut "
+		}
+		if t.Lt != nil {
+			prefix += p.printLifetime(t.Lt) + " "
 		}
 		return prefix + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *UnionType:

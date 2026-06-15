@@ -42,20 +42,22 @@ import (
 // first consumer: each candidate overload is trialled under a probe and the
 // losers rolled back.
 //
-// Deviation from the plan's sketch: the plan typed the journal over a `Bounded`
-// interface (boundLengths/truncateBounds) to abstract "things with bound lists".
-// Go can't add those (unexported) methods to soltype.TypeVarType from this
-// package, and M3 has exactly one bounded type, so the journal holds the concrete
-// *soltype.TypeVarType and truncates its exported bound fields directly — keeping
-// the speculation-only truncate out of soltype's public surface. If a second
-// bounded type appears, reintroduce the interface (with exported methods on the
-// soltype types) then.
+// M4 D1 adds a SECOND bounded sort, LifetimeVar. The probe stays concrete: rather
+// than abstract over "things with bound lists" (the plan's discarded `Bounded`
+// interface, which Go can't fit because the truncate methods would be unexported
+// on soltype types), it carries a PARALLEL journal — ltEntries / ltTouched /
+// recordLt — with the same length-snapshot + truncate-on-discard discipline as
+// the *TypeVarType path. The cost is two near-identical discard paths; the gain is
+// no speculation-only truncate verb on soltype's public surface and no
+// cross-package abstraction.
 type Probe struct {
-	entries  []probeEntry                  // one per touched variable, in first-touch order
-	touched  set.Set[*soltype.TypeVarType] // dedup: a var is journaled at most once per probe
-	cleanups []func()                      // Info / Prov rollback closures, registration order
-	parent   *Probe                        // enclosing probe (nil at top level)
-	done     bool                          // Commit/Discard are idempotent and mutually exclusive
+	entries   []probeEntry                  // one per touched type var, in first-touch order
+	touched   set.Set[*soltype.TypeVarType] // dedup: a type var is journaled at most once per probe
+	ltEntries []ltProbeEntry                // one per touched lifetime var, in first-touch order
+	ltTouched set.Set[*soltype.LifetimeVar] // dedup: a lifetime var is journaled at most once per probe
+	cleanups  []func()                      // Info / Prov rollback closures, registration order
+	parent    *Probe                        // enclosing probe (nil at top level)
+	done      bool                          // Commit/Discard are idempotent and mutually exclusive
 }
 
 // probeEntry snapshots one variable's bound-list lengths at the moment the probe
@@ -63,6 +65,15 @@ type Probe struct {
 // lengths, dropping exactly the bounds the trial appended.
 type probeEntry struct {
 	v         *soltype.TypeVarType
+	prevLower int
+	prevUpper int
+}
+
+// ltProbeEntry is probeEntry for the lifetime sort: it snapshots a LifetimeVar's
+// bound-list lengths at first touch so a discard truncates exactly the outlives
+// bounds the trial appended.
+type ltProbeEntry struct {
+	v         *soltype.LifetimeVar
 	prevLower int
 	prevUpper int
 }
@@ -100,6 +111,29 @@ func (p *Probe) record(v *soltype.TypeVarType) {
 	p.entries = append(p.entries, probeEntry{v: v, prevLower: len(v.LowerBounds), prevUpper: len(v.UpperBounds)})
 }
 
+// markLtTouched is markTouched for the lifetime sort: it dedups a LifetimeVar to
+// one journal entry per probe, lazily creating the set so a bare &Probe{} never
+// writes to a nil map.
+func (p *Probe) markLtTouched(v *soltype.LifetimeVar) bool {
+	if p.ltTouched == nil {
+		p.ltTouched = set.NewSet[*soltype.LifetimeVar]()
+	}
+	if p.ltTouched.Contains(v) {
+		return false
+	}
+	p.ltTouched.Add(v)
+	return true
+}
+
+// recordLt is record for the lifetime sort: it snapshots v's bound-list lengths
+// the first time this probe sees v, before the append that mutates it.
+func (p *Probe) recordLt(v *soltype.LifetimeVar) {
+	if !p.markLtTouched(v) {
+		return
+	}
+	p.ltEntries = append(p.ltEntries, ltProbeEntry{v: v, prevLower: len(v.LowerBounds), prevUpper: len(v.UpperBounds)})
+}
+
 // onRollback registers a closure to undo a side-table write (Info / Prov) made
 // under this probe. A discard runs the closures (see rollback); a commit hands
 // them to the parent (or drops them at top level).
@@ -127,6 +161,14 @@ func (p *Probe) rollback() {
 		e := p.entries[i]
 		if e.prevLower > len(e.v.LowerBounds) || e.prevUpper > len(e.v.UpperBounds) {
 			panic("probe.rollback: a journaled var's bounds were replaced or shortened, not appended — the append-only invariant is violated")
+		}
+		e.v.LowerBounds = e.v.LowerBounds[:e.prevLower]
+		e.v.UpperBounds = e.v.UpperBounds[:e.prevUpper]
+	}
+	for i := len(p.ltEntries) - 1; i >= 0; i-- {
+		e := p.ltEntries[i]
+		if e.prevLower > len(e.v.LowerBounds) || e.prevUpper > len(e.v.UpperBounds) {
+			panic("probe.rollback: a journaled lifetime var's bounds were replaced or shortened, not appended — the append-only invariant is violated")
 		}
 		e.v.LowerBounds = e.v.LowerBounds[:e.prevLower]
 		e.v.UpperBounds = e.v.UpperBounds[:e.prevUpper]
@@ -159,6 +201,7 @@ func (p *Probe) Commit() {
 	parent := p.parent
 	if parent == nil {
 		p.entries = nil
+		p.ltEntries = nil
 		p.cleanups = nil
 		return
 	}
@@ -169,8 +212,16 @@ func (p *Probe) Commit() {
 			parent.entries = append(parent.entries, e)
 		}
 	}
+	for _, e := range p.ltEntries {
+		// Same handoff for the lifetime sort: a lifetime var the parent hasn't
+		// journaled is inherited at the child's snapshot.
+		if parent.markLtTouched(e.v) {
+			parent.ltEntries = append(parent.ltEntries, e)
+		}
+	}
 	parent.cleanups = append(parent.cleanups, p.cleanups...)
 	p.entries = nil
+	p.ltEntries = nil
 	p.cleanups = nil
 }
 
