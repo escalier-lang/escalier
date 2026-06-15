@@ -670,8 +670,14 @@ func TestConstrainRef(t *testing.T) {
 		},
 		{
 			// mut {x: 5, y: number} <: mut {x: number, ...}: width is still tolerated, but
-			// the named field x stays invariant — the write view number <: 5 fails. The
-			// relaxation is width-only; it does not weaken depth invariance.
+			// the named field x stays invariant because a mut reference checks it in BOTH
+			// directions:
+			//   - read view, covariant (sub <: super): 5 <: number, which holds.
+			//   - write view, contravariant (super <: sub): number <: 5, which fails. The
+			//     super lets a holder write any number into x, but the real field only
+			//     accepts 5.
+			// Invariance forces the two views together, so the named field's type must
+			// match. The relaxation is width-only; it does not weaken depth invariance.
 			name:  "mut wider <: mut inexact still pins the named field's depth",
 			sub:   mutRef(exactObj(propElem("x", numLit(5)), propElem("y", num()))),
 			super: mutRef(inexactObj(propElem("x", num()))),

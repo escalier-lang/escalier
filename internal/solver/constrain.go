@@ -307,6 +307,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			//    number}` still rejects (x invariant: number <: 5 fails) and an EXACT
 			//    target still demands an identical field set (the read view rejects extras).
 			//
+			//    A literal-typed field like the `5` in `mut {x: 5}` only arises from an
+			//    ANNOTATION. A field WRITE never produces one: inferMemberAssign builds the
+			//    requirement with widen(source), so `obj.x = 5` lowers to `mut {x: number,
+			//    ...}`, not `mut {x: 5, ...}`. Writing through a mut receiver is itself a
+			//    mutation — a later write may store any number — so the stored literal widens
+			//    to its primitive before it becomes the field's type.
+			//
 			//    The write view gates on `sup.Mut`, which is load-bearing-equivalent to
 			//    `sub.Mut && sup.Mut`: the mutability check above already returned for
 			//    `!sub.Mut && sup.Mut`, so reaching here with sup.Mut implies sub.Mut.

@@ -177,6 +177,18 @@ func (m *mirror) effectiveBounds(v *soltype.TypeVarType, pol soltype.Polarity) [
 // EnterResult so Accept still performs the covariant walk. The inner ends up
 // recorded in BOTH polarities, so such a variable is retained as a type parameter.
 // Shared by the occurrence and co-occurrence visitors so both agree.
+//
+// The flipped descent is safe to run inline for two reasons:
+//   - It is a fixed structural property of the `mut` constructor, not a fact derived
+//     from the constraint graph. A mut borrow's inner is invariant no matter what
+//     bounds exist.
+//   - It is stateless. It records occurrences through the normal variable-recording
+//     path and mutates no stored bound lists, so it touches nothing coalesce or
+//     extrude reads.
+//
+// This is the contrast with the reverse var↔var bound edges, which buildMirror keeps
+// in a separate derived view precisely because writing them back to the bound lists
+// would corrupt those passes.
 func recordMutWriteView(v soltype.TypeVisitor, t soltype.Type, pol soltype.Polarity) bool {
 	if rt, ok := t.(*soltype.RefType); ok && rt.Mut {
 		rt.Inner.Accept(v, pol.Flip())
@@ -188,6 +200,15 @@ func recordMutWriteView(v soltype.TypeVisitor, t soltype.Type, pol soltype.Polar
 // symOccVisitor records which polarities each variable occurs in. It walks the
 // symmetric bound graph through mirror.effectiveBounds, so a variable reached only
 // through a one-sided edge is still seen in that polarity.
+//
+// It does not reconstruct those reverse var↔var edges itself. buildMirror derives
+// them once into a separate view, and this visitor only reads that view. Two reasons
+// keep the reconstruction out of here:
+//   - The same reverse-edge graph is also consumed by coOccVisitor and gatherGroup,
+//     so building it once and sharing it avoids duplicating the work.
+//   - The reverse edges must stay off the canonical bound lists, because coalesce and
+//     extrude read those lists and an extra edge would pull a spurious variable into a
+//     rendered union or intersection.
 //
 // The (var, pol) seen-set keeps a cyclic graph terminating.
 type symOccVisitor struct {
