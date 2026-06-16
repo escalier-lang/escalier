@@ -8,8 +8,9 @@ import (
 )
 
 // A lifetime variable on the LEFT of an outlives constraint gains the right as an
-// upper bound; 'static on the right is the top of the lattice, so the constraint
-// holds with NO bound recorded.
+// upper bound. 'static is the top of the lattice, so `a <: 'static` always holds;
+// it is still recorded as a's upper bound, which is what drives a to 'static at
+// coalescing.
 func TestConstrainLtVarOutlivesStatic(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime()

@@ -465,18 +465,18 @@ type ltPair struct{ sub, super soltype.Lifetime }
 // rule is written and unit-tested now; the RefType constrain arm activates it in
 // D2 (its lifetime step is inert while every Lt is nil).
 func (c *Context) constrainLt(sub, super soltype.Lifetime) {
-	c.constrainLtSeen(sub, super, map[ltPair]bool{})
+	c.constrainLtSeen(sub, super, set.NewSet[ltPair]())
 }
 
-func (c *Context) constrainLtSeen(sub, super soltype.Lifetime, seen map[ltPair]bool) {
+func (c *Context) constrainLtSeen(sub, super soltype.Lifetime, seen set.Set[ltPair]) {
 	if sub == super {
 		return
 	}
 	key := ltPair{sub, super}
-	if seen[key] {
+	if seen.Contains(key) {
 		return
 	}
-	seen[key] = true
+	seen.Add(key)
 
 	subVar, subIsVar := sub.(*soltype.LifetimeVar)
 	superVar, superIsVar := super.(*soltype.LifetimeVar)
