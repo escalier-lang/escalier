@@ -878,6 +878,11 @@ these arms it must add.
     (return the concrete stored type, not a coalesced var); the reverse order
     already works, and an incompatible read-then-write surfaces as a normal
     constrain error.
+    **KNOWN GAP (issue #742):** the `written` lookup is keyed on a `*TypeVarType`
+    receiver, so a *concrete borrow* receiver (an annotated `mut {…}` param after
+    D2) misses the cache and re-derives the field from its annotation. The two paths
+    diverge only when the declared field type is wider than the widened write, which
+    needs M6 unions to exhibit; fix is to key the map on `CarrierOf(recv)`'s inner.
   - **Algorithm — whole-object `mut` merge (follows `internal/checker`, not the
     spike's partition):** extend B1's `foldUsageBounds` fold over the receiver's
     accumulated selections so that **if any field was written, every selection —
@@ -967,7 +972,15 @@ these arms it must add.
     - owned source into a borrow slot ok
     - borrow into an owned slot ⇒ `BorrowEscapeError` (now live)
 
-    The `RefType <: bare` escape guard (`l.Lt != nil`) also goes live.
+    The `RefType <: bare` escape guard (`l.Lt != nil`) also goes live. A member
+    *read* must not trip it, so `valueProp` peels the receiver through
+    `CarrierOf` before emitting the read requirement. **KNOWN GAP (issue #741):**
+    the peel is a no-op when the receiver is a *variable* whose lower bound is a
+    borrow, so the borrow reaches the guard through the bound graph and a plain
+    read fires a spurious `BorrowEscapeError`. Not constructible until D3 makes a
+    var-bound-to-borrow read reachable; the deeper fix is to peel an inexact
+    read-requirement target inside the constrain arm and drop the `valueProp`
+    bandaid.
   - **Algorithm — `attachParamLifetimes`** (per the sketch): a `RefType`-typed
     param with `Lt == nil` gets a fresh lifetime var, recorded in
     `paramLifetimes`. Called when binding function params.

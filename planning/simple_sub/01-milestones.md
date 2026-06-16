@@ -420,7 +420,10 @@ wrapper) are what first populate a lifetime. Land them together.
   receiver against the inexact requirement `Ref{mut: true, lt: nil, inner:
   Record{x: widen(v)}}`, with literal widening and merging of a receiver's
   selections into one `mut` object. The lifetime is `nil`, so M4 supports only
-  owned-mutable receivers. (Spike M3 + extension.)
+  owned-mutable receivers. (Spike M3 + extension.) Read-after-write returns the
+  stored value, but its cache is keyed on a type-variable receiver, so a concrete
+  borrow receiver re-derives from its annotation instead — a divergence observable
+  only with M6 unions, tracked in issue #742.
 - **Lifetime origination on field writes** (D2, **not** M4): the write
   requirement's lifetime becomes a fresh variable rather than `nil`, so the
   constraint also accepts a mut-borrowed receiver of any lifetime. This depends on
@@ -431,7 +434,10 @@ wrapper) are what first populate a lifetime. Land them together.
   elision (a parameter-only lifetime that connects nothing is dropped). Borrows
   originate at parameters typed as `Ref` (mut or immut); returning shares by
   value identity; multi-source returns union lifetimes; escape constrains `<:
-  'static`. (Spike M4.)
+  'static`. (Spike M4.) A borrow flowing into an owned slot is rejected as an
+  escape, but a member *read* must look through the borrow first; the read-side
+  peel misses a variable bound to a borrow, so such a read can fire a spurious
+  escape — tracked in issue #741, not reachable until D3.
 - **Destructuring patterns + the `match` expression form.** `IdentPat` (M1, the
   only `Pat` concrete through M2–M3) is joined here by the structural concretes —
   `TuplePat`, `ObjectPat`, and literal patterns — now that tuple/record types
