@@ -22,9 +22,9 @@ func TestInferIdentityRefReturn(t *testing.T) {
 	require.Equal(t, "fn (p: mut 'l0 {x: number}) -> mut 'l0 {x: number}", values["f"])
 }
 
-// Returning a freshly-constructed mutable object carries no borrow lifetime: the
-// object is owned (Lt nil), not borrowed, so the result renders as a bare
-// owned-mutable `mut {…}` with no `'l`.
+// Returning a freshly-constructed owned object carries no borrow lifetime: the
+// object literal is owned (Lt nil) and not mutable, so the result renders as a
+// bare object `{…}` with no `mut` prefix and no `'l` lifetime annotation.
 func TestInferFreshObjectReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() { return {x: 5} }`)
 	require.Empty(t, errs)
