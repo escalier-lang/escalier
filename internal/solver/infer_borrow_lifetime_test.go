@@ -47,3 +47,52 @@ func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: mut 'l0 {x: number}) -> void", values["f"])
 }
+
+// Passing a borrow into a function whose parameter is an OWNED (bare) object is the
+// borrow-into-owned-slot escape: the RefType<:bare arm rejects because the source
+// carries a lifetime and the target owns its value. This is the only path that
+// exercises the escape guard D2 activated — before D2 every Lt was nil, so it never
+// fired.
+func TestInferBorrowEscapesIntoOwnedArg(t *testing.T) {
+	src := "fn use(o: {x: number}) -> number {\n  return o.x\n}\nfn f(p: mut {x: number}) {\n  return use(p)\n}"
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		"borrowed value mut object does not live long enough to satisfy object",
+	}, Messages(errs))
+}
+
+// The companion to the escape case: passing the same borrow into a function whose
+// parameter is itself a `mut` borrow checks. The RefType<:RefType arm relates the
+// two lifetimes via constrainLt (the now-active step 3) instead of rejecting, so the
+// borrow slot — unlike the owned slot above — admits the borrow.
+func TestInferBorrowIntoBorrowArg(t *testing.T) {
+	src := "fn use(o: mut {x: number}) -> number {\n  return o.x\n}\nfn f(p: mut {x: number}) {\n  return use(p)\n}"
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut 'l1 {x: number}) -> number", values["f"])
+}
+
+// Reading a field after writing it through an annotated `mut` borrow returns the
+// written field's type. The receiver is the concrete borrow `mut 'l0 {x: number}`,
+// so valueProp peels it via CarrierOf before emitting the read requirement — without
+// the peel this would trip the escape guard on the bare read requirement. Unlike the
+// usage-inferred read-after-write tests (which key off the `written` map on a
+// receiver VAR), this exercises the peel-and-constrain path on a concrete borrow.
+func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
+	src := "fn f(p: mut {x: number}) {\n  p.x = 5\n  return p.x\n}"
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut 'l0 {x: number}) -> number", values["f"])
+}
+
+// Writing a field of a NON-`mut` owned object is rejected: the write lowers to the
+// mutable requirement `mut {x, ...}`, and an immutable owned object cannot fill a
+// mutable slot. This confirms the field-write requirement's fresh lifetime (D2) did
+// not loosen the mutability gate — an owned-but-immutable receiver still fails.
+func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
+	src := "fn g(o: {x: number}) {\n  o.x = 5\n}"
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		"cannot constrain immutable object <: mutable object",
+	}, Messages(errs))
+}
