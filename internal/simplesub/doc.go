@@ -43,7 +43,7 @@
 //
 // M4 adds lifetimes as a SECOND SORT solved by the same constraint machinery
 // (see lifetime.go): a LifetimeVar carries lower/upper bounds over the
-// "outlives" lattice ('static = top), and constrainLt mirrors constrain. A `mut`
+// "outlives" lattice ('static = bottom), and constrainLt mirrors constrain. A `mut`
 // record parameter is a borrow, so it gets a fresh lifetime; returning it shares
 // that lifetime by value identity (`fn <'a>(p: mut 'a {x}) -> mut 'a {x}`);
 // returning one of several borrows unions their lifetimes via a fresh join

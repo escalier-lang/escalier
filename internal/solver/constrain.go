@@ -443,6 +443,65 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 
+// ltPair keys constrainLt's coinductive seen-set by (sub, super) lifetime
+// identity so a transitive cycle (`'a <: 'b`, `'b <: 'a`, or a longer chain back
+// to 'a) terminates: the same pair is never re-entered. Pointer equality on the
+// soltype lifetime concretes is the identity here, matching constraintKey.
+type ltPair struct{ sub, super soltype.Lifetime }
+
+// constrainLt asserts the outlives relation sub <: super between lifetimes,
+// mirroring constrain for the type sort. It is the M4 D1 lifetime-sort solver: a
+// variable on the left gains an upper bound, a variable on the right a lower
+// bound, and a var-to-var constraint records BOTH directions so each variable
+// sees the full relationship at coalescing — the type sort gets symmetry from a
+// separate pass, but lifetimes record it directly here. 'static is the bottom of the
+// lattice: `'static <: X` always holds, while `X <: 'static` is the forcing escape
+// constraint, satisfiable only by X = 'static. The latter records 'static as X's
+// upper bound, and since 'static is the bottom it absorbs the meet at a
+// negative-position variable, so X coalesces to 'static regardless of any other upper
+// bound. The bound is deduped by value through ContainsLifetime, so repeating the
+// constraint does not pile up duplicate 'static bounds.
+//
+// Bound appends route through addLowerLtBound/addUpperLtBound so a speculation
+// trial journals them; the (sub, super)-keyed seen-set terminates cycles. The
+// rule is written and unit-tested now; the RefType constrain arm activates it in
+// D2 (its lifetime step is inert while every Lt is nil).
+func (c *Context) constrainLt(sub, super soltype.Lifetime) {
+	c.constrainLtSeen(sub, super, set.NewSet[ltPair]())
+}
+
+func (c *Context) constrainLtSeen(sub, super soltype.Lifetime, seen set.Set[ltPair]) {
+	if sub == super {
+		return
+	}
+	key := ltPair{sub, super}
+	if seen.Contains(key) {
+		return
+	}
+	seen.Add(key)
+
+	subVar, subIsVar := sub.(*soltype.LifetimeVar)
+	superVar, superIsVar := super.(*soltype.LifetimeVar)
+	if subIsVar {
+		if !soltype.ContainsLifetime(subVar.UpperBounds, super) {
+			c.addUpperLtBound(subVar, super)
+		}
+		// Propagate to existing lower bounds: lb <: sub <: super.
+		for _, lb := range subVar.LowerBounds {
+			c.constrainLtSeen(lb, super, seen)
+		}
+	}
+	if superIsVar {
+		if !soltype.ContainsLifetime(superVar.LowerBounds, sub) {
+			c.addLowerLtBound(superVar, sub)
+		}
+		// Propagate to existing upper bounds: sub <: super <: ub.
+		for _, ub := range superVar.UpperBounds {
+			c.constrainLtSeen(sub, ub, seen)
+		}
+	}
+}
+
 // extrude copies t so that variables above lvl are replaced by fresh variables
 // at lvl, wired to the originals through the polarity-appropriate bound
 // direction. The cache is keyed by (var ID, polarity): a variable reached in
