@@ -109,11 +109,13 @@ func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 	})
 }
 
-// A `mut T` annotation lowers to an owned-mutable borrow (RefType{Mut: true}); a
-// function parameter typed `mut {x: number}` renders with the `mut` prefix and a
-// member read through it resolves the inner property.
+// A `mut T` annotation lowers to a borrow (RefType{Mut: true}); a function
+// parameter typed `mut {x: number}` originates a fresh borrow lifetime (D2) so it
+// renders `mut 'l0 {x: number}`, and a member read through it peels the borrow to
+// resolve the inner property. The lifetime is unused in the result, so D4's
+// display-time elision will later drop it and the render returns to `mut {…}`.
 func TestInferMutObjectAnnotation(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) -> number { return p.x }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
+	require.Equal(t, "fn (p: mut 'l0 {x: number}) -> number", values["f"])
 }

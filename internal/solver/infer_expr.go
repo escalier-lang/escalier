@@ -180,6 +180,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	params := make([]*soltype.FuncParam, len(sig.Params))
 	for i, p := range sig.Params {
 		pt := c.paramType(p, lvl)
+		// A `mut`-borrow param without a declared lifetime originates a fresh
+		// lifetime here (D2), so a returned borrow carries the param's lifetime.
+		pt = c.attachParamLifetimes(pt)
 		// An `open` un-annotated param keeps its usage-inferred object inexact at
 		// display time (B2). The marker only makes sense for an inferred var; an
 		// annotated param's exactness is fixed by its annotation, and paramType
@@ -387,6 +390,27 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 		}
 	}
 	return c.freshAt(lvl)
+}
+
+// attachParamLifetimes originates a borrow at a function parameter (M4 D2). A
+// RefType-typed param without a declared lifetime is a borrow of whatever the
+// caller lends, so it gets a fresh lifetime var that flows wherever the param
+// does — when the param is returned, that lifetime appears on the return type,
+// which is how `fn (p: mut {x: number}) { return p }` infers
+// `fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}`. The fresh lifetime's
+// id is recorded as a param lifetime so it gets a name (`'a`) at display time.
+//
+// A param that already carries a lifetime (an explicit `'a T` annotation) or
+// that is not a borrow at all is returned unchanged. The returned RefType shares
+// the inner, so the lifetime is the only thing that changes.
+func (c *checker) attachParamLifetimes(t soltype.Type) soltype.Type {
+	r, ok := t.(*soltype.RefType)
+	if !ok || r.Lt != nil {
+		return t
+	}
+	lt := c.ctx.freshLifetime()
+	c.paramLifetimes.Add(lt.ID)
+	return &soltype.RefType{Mut: r.Mut, Lt: lt, Inner: r.Inner}
 }
 
 // inferCall types a function application. It types the callee and each argument,
@@ -641,8 +665,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 // receiver is itself a mutation — a later write may store any number — mirroring
 // the `var`-binding widening (B3).
 //
-// C3 ships with Lt: nil: no borrows exist yet, so every receiver is owned. D2 flips
-// this to a fresh lifetime var so a borrowed receiver of any lifetime is accepted.
+// The write requirement carries a fresh lifetime (D2): a mut-borrow receiver of
+// any lifetime is accepted (the fresh var imposes no obligation), and an owned
+// receiver satisfies the borrow slot by the RefType rule.
 //
 // When the receiver is a variable, the widened type is recorded in `written` so a
 // later read of the same field returns it (read-after-write; see valueProp). The
@@ -664,7 +689,10 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	w := widen(source)
 	req := &soltype.RefType{
 		Mut: true,
-		Lt:  nil, // D2: c.freshLifetime()
+		// A fresh lifetime imposes no obligation on the receiver (D2): a mut-borrow
+		// receiver of ANY lifetime satisfies the write requirement, and an owned
+		// receiver (Lt nil) satisfies a borrow slot by the RefType rule's step 3.
+		Lt: c.ctx.freshLifetime(),
 		Inner: &soltype.ObjectType{
 			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: m.Prop.Name, Type: w}},
 			Inexact: true, // "must accept a write to this field," not a full shape
@@ -941,6 +969,13 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 			}
 		}
 	}
+	// Look through a borrow to its carrier (D2): reading a field through a
+	// `mut`/`'a` borrow is always legal and yields the field's value, not the
+	// borrow. Peeling here keeps the read requirement off the RefType, so the
+	// RefType<:bare escape guard fires only when the borrow itself flows into an
+	// owned slot — never when a field is merely read. A non-borrow receiver is
+	// returned unchanged, so usage inference over a plain var is untouched.
+	recv = soltype.CarrierOf(recv)
 	res := c.freshAt(lvl)
 	// The member-requirement record {prop: res} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner res var, so the record would be a dead
