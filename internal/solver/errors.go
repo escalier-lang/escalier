@@ -850,9 +850,10 @@ func describe(t soltype.Type) string {
 		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
-		// recursing like the Promise arm. The immutable-borrow and lifetime prefixes
-		// (`'a object`) join once the lifetime sort lands (D1); Lt is always nil here,
-		// so only `mut` appears.
+		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2
+		// attaches lifetimes, so Lt may be non-nil here, but a raw `'l{id}` in a
+		// diagnostic is noise. Naming lands in D4; until then an escape message reads
+		// `mut object` without naming which borrow escaped.
 		prefix := ""
 		if t.Mut {
 			prefix = "mut "

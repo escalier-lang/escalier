@@ -400,9 +400,14 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // `fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}`. The fresh lifetime's
 // id is recorded as a param lifetime so it gets a name (`'a`) at display time.
 //
-// A param that already carries a lifetime (an explicit `'a T` annotation) or
-// that is not a borrow at all is returned unchanged. The returned RefType shares
-// the inner, so the lifetime is the only thing that changes.
+// A param that already carries a lifetime (an explicit `'a T` annotation) or that
+// is not a borrow at all is returned unchanged. The lifetime is attached by
+// mutating the RefType IN PLACE rather than minting a new wrapper: the param's
+// RefType is freshly resolved by resolveMutableTypeAnn and not yet shared, and its
+// pointer is the key under which resolveTypeAnn recorded AnnotationType provenance
+// (Prov is pointer-keyed). A new wrapper would drop that entry, so the "declared
+// mut here" related span on a borrow diagnostic would be lost. Mutating in place
+// also avoids an allocation per mut param.
 func (c *checker) attachParamLifetimes(t soltype.Type) soltype.Type {
 	r, ok := t.(*soltype.RefType)
 	if !ok || r.Lt != nil {
@@ -410,7 +415,8 @@ func (c *checker) attachParamLifetimes(t soltype.Type) soltype.Type {
 	}
 	lt := c.ctx.freshLifetime()
 	c.paramLifetimes.Add(lt.ID)
-	return &soltype.RefType{Mut: r.Mut, Lt: lt, Inner: r.Inner}
+	r.Lt = lt
+	return r
 }
 
 // inferCall types a function application. It types the callee and each argument,

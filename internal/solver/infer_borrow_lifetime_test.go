@@ -96,3 +96,17 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 		"cannot constrain immutable object <: mutable object",
 	}, Messages(errs))
 }
+
+// Joining two borrows with DISTINCT lifetimes preserves both. equalType compares
+// lifetimes (D2), so dedup does not collapse `mut 'l0 {x}` and `mut 'l1 {x}` into a
+// single member and silently drop a lifetime. The branch join renders the un-joined
+// union here; D3 factors it into the `mut ('l0 | 'l1) {x}` form. Without the Lt
+// comparison in equalType this rendered `mut 'l0 {x}`, losing 'l1.
+func TestInferDistinctLifetimeBorrowsDoNotCoalesce(t *testing.T) {
+	src := "fn f(p: mut {x: number}, q: mut {x: number}) {\n  if true {\n    return p\n  } else {\n    return q\n  }\n}"
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn (p: mut 'l0 {x: number}, q: mut 'l1 {x: number}) -> mut 'l0 {x: number} | mut 'l1 {x: number}",
+		values["f"])
+}

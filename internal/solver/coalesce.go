@@ -551,13 +551,12 @@ func equalType(a, b soltype.Type) bool {
 		return ok && equalType(a.Inner, b.Inner)
 	case *soltype.RefType:
 		b, ok := b.(*soltype.RefType)
-		// Mut must match — a mutable borrow never equals an immutable one. Lifetime
-		// equality is deferred to D2: D1 lands the lifetime sort but does not attach a
-		// lifetime to any borrow, so every Lt is nil here and comparing Inner+Mut is
-		// complete. D2, which mints borrow lifetimes, must add an Lt comparison (by
-		// pointer for a LifetimeVar, by value for 'static) or two borrows differing
-		// only in lifetime would coalesce as equal.
-		return ok && a.Mut == b.Mut && equalType(a.Inner, b.Inner)
+		// Mut must match — a mutable borrow never equals an immutable one — and the
+		// lifetimes must match: D2 mints borrow lifetimes, so two borrows differing only
+		// in lifetime are NOT equal. Without the Lt check, dedup would collapse them and
+		// silently drop a lifetime the solver computed. ltEqual compares a LifetimeVar by
+		// pointer and 'static by value.
+		return ok && a.Mut == b.Mut && ltEqual(a.Lt, b.Lt) && equalType(a.Inner, b.Inner)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
 		return ok && equalTypeSlice(a.Types, b.Types)
@@ -566,6 +565,21 @@ func equalType(a, b soltype.Type) bool {
 		return ok && equalTypeSlice(a.Types, b.Types)
 	}
 	return false
+}
+
+// ltEqual reports lifetime equality for equalType's RefType arm (D2). A
+// LifetimeVar is identity-keyed, so two are equal only when they are the same
+// pointer; 'static is a value, so any two StaticLifetimes are equal; a nil
+// lifetime (an owned-mutable borrow) equals only another nil. This mirrors how the
+// rest of equalType keys variables by pointer and primitives by value.
+func ltEqual(a, b soltype.Lifetime) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	if soltype.IsStaticLifetime(a) || soltype.IsStaticLifetime(b) {
+		return soltype.IsStaticLifetime(a) && soltype.IsStaticLifetime(b)
+	}
+	return a == b
 }
 
 func equalTypeSlice(a, b []soltype.Type) bool {
