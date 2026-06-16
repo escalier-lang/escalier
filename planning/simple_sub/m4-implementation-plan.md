@@ -1115,6 +1115,11 @@ these arms it must add.
       `simplify.go`'s `symOccVisitor` but over the lifetime sort
     - a `ltKeep`/naming map keyed by lifetime-var ID, threaded into the scheme
       coalescer the way `schemeSimplification` is threaded today (coalesce.go:120)
+    - **scope `paramLifetimes` per function first** (issue #743). D2 added it as a
+      module-wide accumulator on the checker; this pass is its first reader, so move
+      it onto `funcCtx` (push/pop like `written`) or snapshot/restore it around each
+      `inferFunc` before naming reads it, or naming sees stale ids from earlier
+      functions.
   - **Algorithm — naming:** only param-originated lifetimes are named (`'a`,
     `'b`, … via a base-26 `alphaName`, per the spike); a join var renders as the
     union of the param lifetimes it reaches; `'static` absorbs. The `<'a>`
