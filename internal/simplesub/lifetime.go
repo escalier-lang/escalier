@@ -7,8 +7,8 @@ import "github.com/escalier-lang/escalier/internal/set"
 // The M4 thesis: lifetime inference is not a separate multi-phase dataflow
 // analysis (as in the production infer_lifetime.go) but ordinary constraint
 // solving over a *second sort* of variable. A Lifetime is either a variable
-// (with lower/upper bounds, exactly like a type Variable) or 'static — the top
-// of the "outlives" lattice (it outlives everything).
+// (with lower/upper bounds, exactly like a type Variable) or 'static — the bottom
+// of the "outlives" lattice, since 'static outlives everything.
 //
 // Lifetimes ride on values: a borrowed record carries the lifetime of what it
 // was borrowed from. So lifetime relationships fall out of the same value flow
@@ -26,15 +26,17 @@ type Lifetime interface{ isLifetime() }
 // LifetimeVar is a lifetime inference variable. Like a type Variable it carries
 // lower/upper bounds and is coalesced polarity-dependently: positive position
 // (output) joins its lower bounds, negative position (input) meets its upper
-// bounds. 'static appearing as an upper bound drives a negative-position
-// variable to 'static.
+// bounds. 'static is the bottom of the order, so it absorbs a meet: a
+// negative-position variable with 'static among its upper bounds resolves to
+// 'static, regardless of any other upper bound.
 type LifetimeVar struct {
 	id          int
 	lowerBounds []Lifetime
 	upperBounds []Lifetime
 }
 
-// StaticLifetime is 'static, the top of the outlives lattice.
+// StaticLifetime is 'static, the bottom of the outlives lattice. It outlives every
+// lifetime.
 type StaticLifetime struct{}
 
 func (*LifetimeVar) isLifetime()    {}
@@ -57,7 +59,8 @@ func (in *Inferer) freshLifetime() *LifetimeVar {
 // var-to-var constraint records BOTH directions (lhs gains upper rhs, rhs gains
 // lower lhs) so each variable sees the full relationship at coalescing — the
 // type sort gets this from the separate symmetrize pass, but lifetimes are
-// recorded directly here. 'static is the top, so X <: 'static always holds.
+// recorded directly here. 'static is the bottom, so `'static <: X` always holds. The
+// reverse `X <: 'static` is the forcing escape constraint that pins X to 'static.
 func (in *Inferer) constrainLt(lhs, rhs Lifetime) {
 	in.constrainLtSeen(lhs, rhs, map[ltPair]bool{})
 }

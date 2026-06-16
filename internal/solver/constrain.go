@@ -454,11 +454,13 @@ type ltPair struct{ sub, super soltype.Lifetime }
 // variable on the left gains an upper bound, a variable on the right a lower
 // bound, and a var-to-var constraint records BOTH directions so each variable
 // sees the full relationship at coalescing — the type sort gets symmetry from a
-// separate pass, but lifetimes record it directly here. 'static is the top of the
-// lattice, so `X <: 'static` always holds: it is recorded as an upper bound (which
-// drives a negative-position variable to 'static at coalescing) and deduped by
-// value through ContainsLifetime, so repeating the constraint does not pile up
-// duplicate 'static bounds.
+// separate pass, but lifetimes record it directly here. 'static is the bottom of the
+// lattice: `'static <: X` always holds, while `X <: 'static` is the forcing escape
+// constraint, satisfiable only by X = 'static. The latter records 'static as X's
+// upper bound, and since 'static is the bottom it absorbs the meet at a
+// negative-position variable, so X coalesces to 'static regardless of any other upper
+// bound. The bound is deduped by value through ContainsLifetime, so repeating the
+// constraint does not pile up duplicate 'static bounds.
 //
 // Bound appends route through addLowerLtBound/addUpperLtBound so a speculation
 // trial journals them; the (sub, super)-keyed seen-set terminates cycles. The

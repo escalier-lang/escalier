@@ -182,7 +182,7 @@ type namedPrinter struct {
 }
 
 // printLifetime renders a lifetime in Escalier surface syntax: 'static for the
-// top of the lattice, a retained variable's assigned name (`'a`) when ltNames
+// bottom of the lattice, a retained variable's assigned name (`'a`) when ltNames
 // carries one, else the raw `'l{ID}` debug form — the lifetime-sort twin of
 // printType's TypeVarType arm, which falls back to `t{ID}` for an un-named var.
 func (p *namedPrinter) printLifetime(lt Lifetime) string {

@@ -42,14 +42,15 @@ import (
 // first consumer: each candidate overload is trialled under a probe and the
 // losers rolled back.
 //
-// M4 D1 adds a SECOND bounded sort, LifetimeVar. The probe stays concrete: rather
-// than abstract over "things with bound lists" (the plan's discarded `Bounded`
-// interface, which Go can't fit because the truncate methods would be unexported
-// on soltype types), it carries a PARALLEL journal — ltEntries / ltTouched /
-// recordLt — with the same length-snapshot + truncate-on-discard discipline as
-// the *TypeVarType path. The cost is two near-identical discard paths; the gain is
-// no speculation-only truncate verb on soltype's public surface and no
-// cross-package abstraction.
+// M4 D1 adds a SECOND bounded sort, LifetimeVar. The probe stays concrete instead
+// of abstracting over "things with bound lists". The plan's discarded `Bounded`
+// interface would have been that abstraction, but Go can't fit it because the
+// truncate methods would be unexported on soltype types. So the probe carries a
+// PARALLEL journal of its own: ltEntries, ltTouched, and recordLt. That journal
+// follows the same length-snapshot and truncate-on-discard discipline as the
+// *TypeVarType path. The cost is two near-identical discard paths. The gain is no
+// speculation-only truncate verb on soltype's public surface, and no cross-package
+// abstraction.
 type Probe struct {
 	entries   []probeEntry                  // one per touched type var, in first-touch order
 	touched   set.Set[*soltype.TypeVarType] // dedup: a type var is journaled at most once per probe

@@ -8,9 +8,11 @@ import (
 )
 
 // A lifetime variable on the LEFT of an outlives constraint gains the right as an
-// upper bound. 'static is the top of the lattice, so `a <: 'static` always holds;
-// it is still recorded as a's upper bound, which is what drives a to 'static at
-// coalescing.
+// upper bound. 'static is the bottom of the lattice, so `'static <: a` is what always
+// holds; the reverse `a <: 'static` recorded here is the forcing escape constraint,
+// satisfiable only by a = 'static. Coalescing meets a negative-position variable's
+// upper bounds, and 'static is the bottom, so it absorbs that meet and a resolves to
+// 'static regardless of any other upper bound.
 func TestConstrainLtVarOutlivesStatic(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime()
@@ -53,7 +55,7 @@ func TestConstrainLtPropagatesTransitively(t *testing.T) {
 	require.Contains(t, x.UpperBounds, soltype.Lifetime(b), "x gains b transitively through a")
 }
 
-// Two DISTINCT 'static values denote the one lattice top, so constraining a
+// Two DISTINCT 'static values denote the one lattice bottom, so constraining a
 // variable against each in turn records a single 'static upper bound — dedup is by
 // value, not pointer. Origination sites mint a fresh &StaticLifetime{} per call, so
 // pointer-identity dedup would wrongly pile up duplicate 'static bounds.

@@ -92,7 +92,7 @@ func alphaName(i int) string {
 // lifetime renders as its own name. A non-param (join) variable expands to the
 // set of param lifetimes reachable through its bounds — its lower bounds in
 // Positive position (a return uniting several borrows ⇒ `('a | 'b)`), its upper
-// bounds in Negative position. 'static (top) absorbs.
+// bounds in Negative position. 'static (bottom) absorbs.
 func (c *coalescer) coalesceLifetime(lt Lifetime, pol Polarity) type_system.Lifetime {
 	v, ok := lt.(*LifetimeVar)
 	if !ok {

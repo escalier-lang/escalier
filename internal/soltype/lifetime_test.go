@@ -8,7 +8,7 @@ import (
 
 // Test 4 — ContainsLifetime's two equality regimes: a LifetimeVar matches by
 // pointer identity, but 'static matches by VALUE because origination sites mint a
-// fresh &StaticLifetime{} per call and they all denote the one lattice top.
+// fresh &StaticLifetime{} per call and they all denote the one lattice bottom.
 func TestContainsLifetime(t *testing.T) {
 	a := &LifetimeVar{ID: 0}
 	b := &LifetimeVar{ID: 1}
@@ -32,7 +32,7 @@ func TestContainsLifetime(t *testing.T) {
 	require.False(t, ContainsLifetime(nil, a), "empty bounds contain nothing")
 }
 
-// IsStaticLifetime distinguishes the lattice top from a variable, including the
+// IsStaticLifetime distinguishes the lattice bottom from a variable, including the
 // canonical Static singleton.
 func TestIsStaticLifetime(t *testing.T) {
 	require.True(t, IsStaticLifetime(&StaticLifetime{}))
