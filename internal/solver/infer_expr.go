@@ -751,7 +751,24 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// the `b.Kind != ast.VarKind` gate above before reaching here.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
-	c.constrainAssign(e, sourceT, targetT)
+	if b.ModuleLevel {
+		// A GLOBAL WRITE: the value is now reachable from module-level storage for the
+		// program's lifetime, so any borrow it carries must outlive every borrow region
+		// — it escapes to 'static (M4 D3). constrainEscape forces each of the source's
+		// borrow lifetimes `<: 'static`, which is why `var sink = {…}; fn(p: mut {…}) {
+		// sink = p }` reports p as `mut 'static {…}`.
+		//
+		// The value-compatibility check then runs against the source's CARRIER, not the
+		// borrow itself: a borrow forced to 'static is owned-forever, so it satisfies the
+		// owned slot — comparing the whole borrow would instead trip the
+		// borrow-into-owned BorrowEscapeError (the rule that rejects a NON-escaping
+		// borrow). CarrierOf is the identity on a non-borrow source, so an ordinary
+		// global write like `n = 5` is unaffected.
+		c.constrainEscape(sourceT)
+		c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
+	} else {
+		c.constrainAssign(e, sourceT, targetT)
+	}
 	// The assignment evaluates to the value just stored — the SAME read face as
 	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
 	// instantiate (the read face), NOT the coalesced write-face targetT: targetT is a

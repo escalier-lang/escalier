@@ -239,3 +239,36 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 		"fn (p: mut 'l0 {x: number}) -> mut 'l0 {x: number} | {x: 5}",
 		values["f"])
 }
+
+// A borrowed parameter written into module-level storage escapes to 'static (M4 D3,
+// the EscapingRefIntoStatic acceptance — now reachable from real source). `cache`
+// stores its borrow `p` into the module-level `var sink`, a GLOBAL WRITE: the value
+// outlives every borrow region, so p's lifetime is forced `<: 'static` and the
+// parameter renders `mut 'static {x: number}` rather than under a borrow lifetime
+// `'l{id}`. The store itself checks — a 'static borrow is owned-forever, so it fills
+// the owned slot instead of tripping BorrowEscapeError.
+func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
+	src := `var sink = {x: 0}
+fn cache(p: mut {x: number}) {
+  sink = p
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "{x: number}", values["sink"])
+	require.Equal(t, "fn (p: mut 'static {x: number}) -> void", values["cache"])
+}
+
+// An ordinary global write of a NON-borrow value is unaffected by the escape rule:
+// constrainEscape is a no-op on a non-borrow source and CarrierOf is the identity, so
+// `bump` reassigning the module-level `var n` checks exactly as before, with no
+// lifetime machinery engaged.
+func TestInferGlobalWriteNonBorrowUnaffected(t *testing.T) {
+	src := `var n = 0
+fn bump() {
+  n = 5
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["n"])
+	require.Equal(t, "fn () -> void", values["bump"])
+}
