@@ -363,7 +363,7 @@ type LifetimeVar struct {
     LowerBounds []Lifetime
     UpperBounds []Lifetime
 }
-type StaticLifetime struct{} // 'static, top of the outlives lattice
+type StaticLifetime struct{} // 'static, bottom of the outlives lattice
 
 // Context grows the spike's M4 fields (context.go's own comment reserves them):
 type Context struct {
@@ -374,8 +374,8 @@ type Context struct {
 }
 
 // constrainLt mirrors constrain over the outlives lattice: var-left gains an
-// upper bound, var-right a lower bound, var-to-var records both; 'static is
-// top (X <: 'static always holds); (sub, super)-keyed seen-set for cycles.
+// upper bound, var-right a lower bound, var-to-var records both; 'static is the
+// bottom ('static <: X always holds); (sub, super)-keyed seen-set for cycles.
 // Bound appends go ONLY through addLowerLtBound/addUpperLtBound — the journal
 // invariant extends to the second sort:
 func (c *Context) constrainLt(sub, super Lifetime)
@@ -931,14 +931,14 @@ these arms it must add.
   - **Structures:**
     - `LifetimeVar{ID int; LowerBounds, UpperBounds []Lifetime}`, implementing
       `isLifetime()`
-    - `StaticLifetime{}` (top of the outlives lattice), implementing
+    - `StaticLifetime{}` (bottom of the outlives lattice), implementing
       `isLifetime()`
     - `Context` grows `lifetimeCounter int` (its own comment at context.go:5
       names this deferred field) and a `freshLifetime()` minter
   - **Algorithm — `constrainLt`** (ported from `simplesub/lifetime.go:61`):
     mirrors `constrain` over the outlives lattice — a var on the left gains an
     upper bound, on the right a lower bound, var-to-var records both;
-    `'static` is top (`X <: 'static` always holds); a `(sub, super)`-keyed
+    `'static` is the bottom (`'static <: X` always holds); a `(sub, super)`-keyed
     seen-set terminates cycles. Bound appends go **only** through new
     `addLowerLtBound`/`addUpperLtBound` helpers that journal before appending —
     the same discipline as `addLowerBound`/`addUpperBound` (context.go:36).

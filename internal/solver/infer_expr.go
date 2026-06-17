@@ -695,9 +695,10 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	w := widen(source)
 	req := &soltype.RefType{
 		Mut: true,
-		// A fresh lifetime imposes no obligation on the receiver (D2): a mut-borrow
-		// receiver of ANY lifetime satisfies the write requirement, and an owned
-		// receiver (Lt nil) satisfies a borrow slot by the RefType rule's step 3.
+		// A fresh lifetime imposes no obligation on the receiver (D2): constrainLt
+		// gives the new variable an upper bound and constrains nothing back, so a
+		// mut-borrow receiver of ANY lifetime satisfies the write requirement. A
+		// nil slot lifetime would instead reject a borrow receiver as an escape.
 		Lt: c.ctx.freshLifetime(),
 		Inner: &soltype.ObjectType{
 			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: m.Prop.Name, Type: w}},
@@ -975,12 +976,12 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 			}
 		}
 	}
-	// Look through a borrow to its carrier (D2): reading a field through a
-	// `mut`/`'a` borrow is always legal and yields the field's value, not the
-	// borrow. Peeling here keeps the read requirement off the RefType, so the
-	// RefType<:bare escape guard fires only when the borrow itself flows into an
-	// owned slot — never when a field is merely read. A non-borrow receiver is
-	// returned unchanged, so usage inference over a plain var is untouched.
+	// Strip the borrow wrapper before building the field-read requirement (D2):
+	//   - Reading a field through a `mut`/`'a` borrow is always legal and yields
+	//     the field's value, not the borrow.
+	//   - It keeps the requirement off the RefType, so the RefType<:bare escape
+	//     guard fires only when the borrow flows into an owned slot, not on a read.
+	//   - A non-borrow receiver is returned unchanged, leaving plain vars untouched.
 	recv = soltype.CarrierOf(recv)
 	res := c.freshAt(lvl)
 	// The member-requirement record {prop: res} is deliberately NOT recorded —

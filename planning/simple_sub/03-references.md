@@ -91,21 +91,22 @@ Simple-sub as published is purely structural; it has no notion of lifetimes.
 by the *same* constraint machinery (the spike proved this collapses Escalier's
 multi-phase `infer_lifetime.go` into ordinary constraint solving).
 
-The ordering `≤` is **"is outlived by"**: `'a ≤ 'b` ⟺ `'b` outlives `'a`
-(equivalently, `'a` is outlived by `'b`). So a **longer-lived lifetime is a
-greater element**, and `'static` — which outlives everything — is the top. (This
-is the lattice direction the code uses: `X <: 'static` always holds. It is
-consistent with references being covariant in their lifetime — a longer-lived
-value can stand in where a shorter-lived one is expected, so the longer lifetime
-sits higher.)
+The ordering `<:` is **"outlives"**: `'a <: 'b` ⟺ `'a` outlives `'b`
+(equivalently, `'a` lives at least as long as `'b`). This is the relation
+`constrainLt` asserts. So a **longer-lived lifetime is a lesser element**, and
+`'static` — which outlives everything — is the **bottom**: `'static <: X` holds
+for every `X`, while `X <: 'static` holds only for `X = 'static` and is therefore
+the forcing escape constraint. It is consistent with references being covariant
+in their lifetime — a longer-lived value can stand in where a shorter-lived one
+is expected, so `'static` is the universal subtype and sits at the bottom.
 
 | Lattice notion | Lifetime meaning |
 |---|---|
-| order `≤` | "is outlived by" (`'a ≤ 'b` ⟺ `'b` outlives `'a`) |
-| join `'a ⊔ 'b` | least lifetime that outlives both — arises in **positive position** from a multi-source borrow (e.g. an `if` returning either `&'a T` or `&'b T`); the result carries one of the source lifetimes |
-| meet `'a ⊓ 'b` | greatest lifetime outlived by both — arises in **negative position** from a borrow with multiple upper bounds (e.g. a borrow that must fit within both context `'a` and context `'b`); the principal solution is the shorter window where both are still valid |
-| top `⊤` | `'static` — outlives everything, so every lifetime `≤ 'static` |
-| bottom `⊥` | a maximally-short / fresh lifetime |
+| order `<:` | "outlives" (`'a <: 'b` ⟺ `'a` outlives `'b`) |
+| join `'a ⊔ 'b` | arises in **positive position** from a multi-source borrow (e.g. an `if` returning either `&'a T` or `&'b T`); the result carries one of the source lifetimes and is valid only within the span where both are still alive |
+| meet `'a ⊓ 'b` | arises in **negative position** from a borrow with multiple upper bounds (e.g. a borrow that must fit within both context `'a` and context `'b`); the borrow must be valid in every context that uses it |
+| bottom `⊥` | `'static` — outlives everything, so `'static <: X` for every lifetime `X` |
+| top `⊤` | a maximally-short / fresh lifetime |
 
 The lattice formally has both operations and the spike computes both —
 positive-position coalescing joins lower bounds, negative-position coalescing
@@ -128,11 +129,11 @@ itself. The flow-set framing is what makes a single representation work for
 both polarities.
 
 ```text
-            'static            ⊤   (outlives everything)
+         (fresh/short)         ⊤
           /    |    \
        'a     'b    'c   ...     (concrete borrows)
           \    |    /
-         (fresh/short)         ⊥
+            'static            ⊥   (outlives everything)
 ```
 
 A `LifetimeVar` carries lower/upper bound lists and coalesces by join/meet
@@ -143,7 +144,7 @@ the entire reason "lifetimes as a second sort" works:
 - a multi-source return ⇒ the result lifetime is the **join** of the sources,
   coalescing to `('a | 'b)`;
 - a value escaping to module/static storage ⇒ `constrain(lifetime <: 'static)`,
-  coalescing to `'static` (top absorbs);
+  coalescing to `'static` (the bottom absorbs the meet);
 - a parameter-only lifetime that connects nothing is **elided** — the
   lifetime-sort analogue of single-polarity elimination.
 
@@ -187,5 +188,5 @@ covariance is structural, not a special case.
 The lattice is the subtype-ordered space of types (`never` ⊥, `unknown` ⊤, union
 = join, intersection = meet); Simple-sub is "collect ordering constraints, then
 compute joins and meets in it," and **our extension adds a second lattice over
-lifetimes ordered so that longer-lived is greater (`'static` = ⊤) — i.e. `≤` is
-"is outlived by" — so lifetimes are solved by the very same machinery.**
+lifetimes ordered by `<:` = "outlives" so that longer-lived is lesser (`'static`
+= ⊥, the universal subtype) — so lifetimes are solved by the very same machinery.**

@@ -54,7 +54,12 @@ func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
 // exercises the escape guard D2 activated — before D2 every Lt was nil, so it never
 // fired.
 func TestInferBorrowEscapesIntoOwnedArg(t *testing.T) {
-	src := "fn use(o: {x: number}) -> number {\n  return o.x\n}\nfn f(p: mut {x: number}) {\n  return use(p)\n}"
+	src := `fn use(o: {x: number}) -> number {
+  return o.x
+}
+fn f(p: mut {x: number}) {
+  return use(p)
+}`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
 		"borrowed value mut object does not live long enough to satisfy object",
@@ -66,7 +71,12 @@ func TestInferBorrowEscapesIntoOwnedArg(t *testing.T) {
 // two lifetimes via constrainLt (the now-active step 3) instead of rejecting, so the
 // borrow slot — unlike the owned slot above — admits the borrow.
 func TestInferBorrowIntoBorrowArg(t *testing.T) {
-	src := "fn use(o: mut {x: number}) -> number {\n  return o.x\n}\nfn f(p: mut {x: number}) {\n  return use(p)\n}"
+	src := `fn use(o: mut {x: number}) -> number {
+  return o.x
+}
+fn f(p: mut {x: number}) {
+  return use(p)
+}`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: mut 'l1 {x: number}) -> number", values["f"])
@@ -79,7 +89,10 @@ func TestInferBorrowIntoBorrowArg(t *testing.T) {
 // usage-inferred read-after-write tests (which key off the `written` map on a
 // receiver VAR), this exercises the peel-and-constrain path on a concrete borrow.
 func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
-	src := "fn f(p: mut {x: number}) {\n  p.x = 5\n  return p.x\n}"
+	src := `fn f(p: mut {x: number}) {
+  p.x = 5
+  return p.x
+}`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: mut 'l0 {x: number}) -> number", values["f"])
@@ -90,7 +103,9 @@ func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
 // mutable slot. This confirms the field-write requirement's fresh lifetime (D2) did
 // not loosen the mutability gate — an owned-but-immutable receiver still fails.
 func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
-	src := "fn g(o: {x: number}) {\n  o.x = 5\n}"
+	src := `fn g(o: {x: number}) {
+  o.x = 5
+}`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
 		"cannot constrain immutable object <: mutable object",
@@ -103,7 +118,13 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 // union here; D3 factors it into the `mut ('l0 | 'l1) {x}` form. Without the Lt
 // comparison in equalType this rendered `mut 'l0 {x}`, losing 'l1.
 func TestInferDistinctLifetimeBorrowsDoNotCoalesce(t *testing.T) {
-	src := "fn f(p: mut {x: number}, q: mut {x: number}) {\n  if true {\n    return p\n  } else {\n    return q\n  }\n}"
+	src := `fn f(p: mut {x: number}, q: mut {x: number}) {
+  if true {
+    return p
+  } else {
+    return q
+  }
+}`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
