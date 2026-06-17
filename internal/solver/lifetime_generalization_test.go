@@ -168,3 +168,118 @@ fn f(a: mut {x: number}, b: mut {x: number}) {
 	_, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 }
+
+// --- extruder lifetime arm ---
+//
+// extrude copies a type so a variable above the target level is replaced by a
+// fresh var at that level, wired to the original. D2.5 extends it to the lifetime
+// sort: a borrow's lifetime above the level is extruded too. These drive extrude
+// directly, the first tests to do so.
+
+// A borrow whose lifetime outranks the extrusion level gets a fresh lifetime at
+// that level, and in Positive (covariant/output) polarity the original is wired
+// ABOVE the fresh var (original <: fresh), mirroring the type-var extrude's
+// addUpperBound.
+func TestExtrudeFreshensHigherLevelLifetimePositive(t *testing.T) {
+	c := newChecker()
+	lt := c.ctx.freshLifetime(2) // above the extrusion target (lvl = 1)
+
+	out := c.ctx.extrude(mutObjAt(lt), soltype.Positive, 1, map[extrudeKey]*soltype.TypeVarType{})
+
+	outLt, ok := out.(*soltype.RefType).Lt.(*soltype.LifetimeVar)
+	require.True(t, ok)
+	require.NotSame(t, lt, outLt, "the higher-level lifetime is extruded to a fresh var")
+	require.Equal(t, 1, outLt.Level, "the fresh lifetime sits at the extrusion target level")
+	require.Contains(t, lt.UpperBounds, soltype.Lifetime(outLt),
+		"Positive polarity wires the fresh var as an upper bound of the original (orig <: fresh)")
+}
+
+// The contravariant counterpart: in Negative (input) polarity the fresh var is
+// wired BELOW the original (fresh <: original), mirroring the type-var extrude's
+// addLowerBound. A var reached in both polarities therefore yields two distinct
+// fresh vars with opposite wiring — the reason the cache is keyed by polarity.
+func TestExtrudeFreshensHigherLevelLifetimeNegative(t *testing.T) {
+	c := newChecker()
+	lt := c.ctx.freshLifetime(2)
+
+	out := c.ctx.extrude(mutObjAt(lt), soltype.Negative, 1, map[extrudeKey]*soltype.TypeVarType{})
+
+	outLt := out.(*soltype.RefType).Lt.(*soltype.LifetimeVar)
+	require.Contains(t, lt.LowerBounds, soltype.Lifetime(outLt),
+		"Negative polarity wires the fresh var as a lower bound of the original (fresh <: orig)")
+}
+
+// A borrow whose lifetime is at or below the target level is extruded to itself:
+// the whole RefType is shared, since nothing in it outranks the level.
+func TestExtrudeSharesBelowLevelBorrow(t *testing.T) {
+	c := newChecker()
+	lt := c.ctx.freshLifetime(1) // at the target level
+
+	out := c.ctx.extrude(mutObjAt(lt), soltype.Positive, 1, map[extrudeKey]*soltype.TypeVarType{})
+
+	require.Same(t, soltype.Lifetime(lt), out.(*soltype.RefType).Lt, "a below-level lifetime is shared, not extruded")
+	require.Empty(t, lt.UpperBounds, "and no extrusion bound is recorded on it")
+}
+
+// An extruded lifetime bound on the ORIGINAL var is journaled, so a discarded probe
+// trial truncates it back — the lifetime-sort twin of the type-var extrude's
+// journaled bound write. Without this a failed overload trial that extruded a borrow
+// lifetime would leak a bound.
+func TestExtrudeLifetimeBoundRolledBackOnDiscard(t *testing.T) {
+	c := newChecker()
+	lt := c.ctx.freshLifetime(2)
+
+	p := c.openProbe()
+	c.ctx.extrude(mutObjAt(lt), soltype.Positive, 1, map[extrudeKey]*soltype.TypeVarType{})
+	require.Len(t, lt.UpperBounds, 1, "the extrusion records a bound on the original under the probe")
+
+	c.closeProbe(p, false) // discard
+	require.Empty(t, lt.UpperBounds, "the extruded lifetime bound is rolled back on discard")
+}
+
+// --- constrainLt level-extrusion ---
+
+// Recording a higher-level lifetime as the bound of a lower-level variable extrudes
+// it down first, so a variable's bound never outranks its own level — the invariant
+// the freshener/extruder level prune over the lifetime sort relies on.
+func TestConstrainLtMaintainsLevelInvariant(t *testing.T) {
+	c := newChecker()
+	low := c.ctx.freshLifetime(0)
+	high := c.ctx.freshLifetime(2)
+
+	c.ctx.constrainLt(low, high) // low <: high; high outranks low's level
+
+	require.Len(t, low.UpperBounds, 1)
+	recorded, ok := low.UpperBounds[0].(*soltype.LifetimeVar)
+	require.True(t, ok)
+	require.LessOrEqual(t, recorded.Level, low.Level, "a recorded bound never outranks the variable's own level")
+	require.NotSame(t, high, recorded, "the higher-level bound is extruded to a fresh lower-level var")
+}
+
+// --- freshener fall-through: captured lifetime, quantified inner ---
+
+// A borrow with a CAPTURED lifetime (Level <= lim) but a QUANTIFIED inner type var
+// freshens the inner while sharing the lifetime. This exercises the RefType arm's
+// fall-through path — freshenLt returns the lifetime unchanged, so Accept rebuilds
+// Inner — which the all-concrete-inner cases never reach (they are pruned whole
+// before the arm runs).
+func TestFreshenSharesCapturedLifetimeWhileFreshateningInner(t *testing.T) {
+	c := newChecker()
+	captured := c.ctx.freshLifetime(0) // captured: shared across instantiations
+	innerVar := c.freshAt(1)           // quantified inner type var: per-use fresh
+	ref := &soltype.RefType{
+		Mut: true,
+		Lt:  captured,
+		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "x", Type: innerVar},
+		}},
+	}
+
+	out := c.freshenAbove(0, ref, 1, map[*soltype.TypeVarType]*soltype.TypeVarType{})
+
+	outRef := out.(*soltype.RefType)
+	require.True(t, outRef.Mut, "mutability is carried through")
+	require.Same(t, soltype.Lifetime(captured), outRef.Lt, "the captured lifetime is shared")
+	outInnerVar := outRef.Inner.(*soltype.ObjectType).Elems[0].(*soltype.PropertyElem).Type
+	require.NotSame(t, innerVar, outInnerVar, "the quantified inner type var is freshened")
+}
