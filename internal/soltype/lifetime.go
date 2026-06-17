@@ -22,8 +22,19 @@ type Lifetime interface{ isLifetime() }
 // lists are extended ONLY through the solver's
 // addLowerLtBound/addUpperLtBound helpers, mirroring the type-sort discipline so
 // a discarded speculation trial truncates them back.
+//
+// Level brings the lifetime sort into the let-generalization hierarchy that
+// TypeVarType already rides (M4 D2.5). A lifetime minted onto a generalizable
+// parameter sits ABOVE its scheme's generalize-level, so instantiate freshens it
+// per use just as it does a type parameter, and two call sites of a
+// borrow-passing function never share one LifetimeVar's bounds. The MLsub level
+// invariant extends to this sort: a LifetimeVar's Level is >= the Level of every
+// lifetime in its bounds, maintained by constrainLt's level extrusion. LevelOf's
+// RefType arm reads it through LevelOfLifetime so the freshener/extruder prune
+// stays sound.
 type LifetimeVar struct {
 	ID          int
+	Level       int
 	LowerBounds []Lifetime
 	UpperBounds []Lifetime
 }
@@ -48,6 +59,18 @@ func (*StaticLifetime) isLifetime() {}
 func IsStaticLifetime(lt Lifetime) bool {
 	_, ok := lt.(*StaticLifetime)
 	return ok
+}
+
+// LevelOfLifetime is the lifetime-sort twin of LevelOf for a single Lifetime: a
+// LifetimeVar's own Level, and 0 for 'static or a nil slot. Neither 'static nor a
+// nil slot carries a quantifiable variable. LevelOf's RefType arm folds this into
+// the wrapper's level so the freshener/extruder level prune accounts for a borrow's
+// lifetime, not just its inner.
+func LevelOfLifetime(lt Lifetime) int {
+	if lv, ok := lt.(*LifetimeVar); ok {
+		return lv.Level
+	}
+	return 0
 }
 
 // ContainsLifetime reports whether lt is already present in bounds, so a repeated
