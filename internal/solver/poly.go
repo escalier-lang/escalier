@@ -128,7 +128,7 @@ type freshener struct {
 }
 
 func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	// Every variable inside t is at or below lim: nothing to freshen, SHARE the node
+	// Every variable inside t is at lim or outside it: nothing to freshen, SHARE the node
 	// (the original pointer flows through unchanged — Accept's identity preservation
 	// gives the same result for the structural arms too). Two consequences worth
 	// naming:
@@ -212,7 +212,7 @@ func (c *checker) freshenAll(t soltype.Type, lvl int) soltype.Type {
 		c:     c,
 		lvl:   lvl,
 		cache: map[*soltype.TypeVarType]*soltype.TypeVarType{},
-		// lim is below every lifetime level, so fresh replaces EVERY lifetime — the
+		// lim is outside every lifetime level, so fresh replaces EVERY lifetime — the
 		// lifetime-sort analogue of allFreshener's no-prune treatment of type vars.
 		lt: ltFreshener{ctx: c.ctx, lim: math.MinInt, lvl: lvl},
 	}, soltype.Positive)
@@ -272,10 +272,10 @@ func (f *allFreshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // ltFreshener freshens lifetime variables for the rewriting visitors (M4 D2.5).
 // Accept never walks a RefType's lifetime, because a Lifetime is not a Type, so each
 // lifetime-aware visitor delegates here through refLifetimeResult. A LifetimeVar
-// above lim is a quantified lifetime: fresh replaces it with a fresh lifetime at
+// inside lim is a quantified lifetime: fresh replaces it with a fresh lifetime at
 // lvl and freshens its bounds, so each use gets its own lifetime and constraining
-// one site does not perturb another. A LifetimeVar at lim or below, 'static, and a
-// nil slot are shared. The freshener passes its own lim; allFreshener passes
+// one site does not perturb another. A LifetimeVar at lim or outside it, 'static,
+// and a nil slot are shared. The freshener passes its own lim; allFreshener passes
 // math.MinInt so every lifetime is freshened.
 //
 // The cache is allocated lazily, so a borrow-free rewrite pays no allocation. It is

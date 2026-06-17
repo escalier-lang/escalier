@@ -108,7 +108,7 @@ breakdown, design rationale, and per-file sketches.
 **Accept:** unit tests for `constrain` (prim/function variance with exact
 arity — same-arity required, both fewer and more params rejected, parallel
 to the exact-tuple same-length rule; levels + extrusion with no
-higher-level var leakage into lower-level bound lists); coalescing
+inner-level var leakage into outer-level bound lists); coalescing
 (inline-to-bounds, empty-bound collapse to `never`/`unknown`, multi-bound
 union/intersection); printer round-trips for the M1 coalesced type set
 (prims, literals, tuples, multi-arg functions, `never`/`unknown`,

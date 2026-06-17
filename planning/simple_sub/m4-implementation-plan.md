@@ -1062,7 +1062,7 @@ these arms it must add.
     - **extruder:** the analogous `*RefType`/lifetime arm, wiring the fresh lifetime
       var to the original through the polarity-appropriate outlives bound, mirroring
       the type-var extrude.
-    - **`constrainLt`:** extrude a higher-level lifetime down before recording a bound,
+    - **`constrainLt`:** extrude an inner-level lifetime out before recording a bound,
       mirroring `constrain`'s `levelOf(rhs) <= lv.level` branch, so the lifetime-level
       invariant the freshener prune relies on is maintained.
   - **Accept (Option A):**

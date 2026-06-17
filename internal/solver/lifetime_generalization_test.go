@@ -279,9 +279,9 @@ func TestConstrainLtRecordsLowerLevelBoundDirectly(t *testing.T) {
 }
 
 // A repeated cross-level outlives constraint does NOT accumulate duplicate bounds.
-// Extrusion mints a down-extruded proxy of `high`; without proxy reuse the second
+// Extrusion mints an outer-extruded proxy of `high`; without proxy reuse the second
 // call would mint a second proxy and the identity-keyed ContainsLifetime dedup would
-// never match, so `low.UpperBounds` would grow to 2. extrudeDownAsUpper reuses the
+// never match, so `low.UpperBounds` would grow to 2. extrudeOuterAsUpper reuses the
 // first proxy, so the bound count stays 1 across repeats — the lifetime-sort
 // analogue of the same-level dedup, restored for the cross-level path.
 func TestConstrainLtCrossLevelDoesNotAccumulateDuplicates(t *testing.T) {
@@ -292,7 +292,7 @@ func TestConstrainLtCrossLevelDoesNotAccumulateDuplicates(t *testing.T) {
 	c.ctx.constrainLt(low, high)
 	upperAfterFirst := len(low.UpperBounds)
 	lowerAfterFirst := len(high.LowerBounds)
-	require.Equal(t, 1, upperAfterFirst, "low gains one down-extruded proxy of high as an upper bound")
+	require.Equal(t, 1, upperAfterFirst, "low gains one outer-extruded proxy of high as an upper bound")
 
 	c.ctx.constrainLt(low, high) // identical cross-level constraint again
 
