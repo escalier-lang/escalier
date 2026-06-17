@@ -74,6 +74,15 @@ type extrudeKey struct {
 	pol soltype.Polarity
 }
 
+// ltExtrudeKey is the lifetime-sort twin of extrudeKey (M4 D2.5): it keys the
+// lifetime extrusion cache by the origin LifetimeVar's ID and polarity, so a
+// lifetime reached in both polarities yields two fresh vars with opposite outlives
+// wiring, exactly as the type-var cache does.
+type ltExtrudeKey struct {
+	id  int
+	pol soltype.Polarity
+}
+
 // Constrain asserts sub <: super, mutating bound lists. An empty result means
 // success.
 //
@@ -484,21 +493,35 @@ func (c *Context) constrainLtSeen(sub, super soltype.Lifetime, seen set.Set[ltPa
 	subVar, subIsVar := sub.(*soltype.LifetimeVar)
 	superVar, superIsVar := super.(*soltype.LifetimeVar)
 	if subIsVar {
-		if !soltype.ContainsLifetime(subVar.UpperBounds, super) {
-			c.addUpperLtBound(subVar, super)
+		// Maintain the level invariant: a bound's level must not exceed the var's, or
+		// the freshener/extruder level prune over the lifetime sort becomes unsound (M4
+		// D2.5). super sits in subVar's upper bounds (a negative-position slot), so
+		// extrude it down before recording, mirroring constrain's var arm.
+		recSuper := super
+		if soltype.LevelOfLifetime(recSuper) > subVar.Level {
+			recSuper = c.extrudeLt(recSuper, soltype.Negative, subVar.Level, map[ltExtrudeKey]*soltype.LifetimeVar{})
+		}
+		if !soltype.ContainsLifetime(subVar.UpperBounds, recSuper) {
+			c.addUpperLtBound(subVar, recSuper)
 		}
 		// Propagate to existing lower bounds: lb <: sub <: super.
 		for _, lb := range subVar.LowerBounds {
-			c.constrainLtSeen(lb, super, seen)
+			c.constrainLtSeen(lb, recSuper, seen)
 		}
 	}
 	if superIsVar {
-		if !soltype.ContainsLifetime(superVar.LowerBounds, sub) {
-			c.addLowerLtBound(superVar, sub)
+		// sub sits in superVar's lower bounds (a positive-position slot); extrude it
+		// down to superVar's level for the same invariant.
+		recSub := sub
+		if soltype.LevelOfLifetime(recSub) > superVar.Level {
+			recSub = c.extrudeLt(recSub, soltype.Positive, superVar.Level, map[ltExtrudeKey]*soltype.LifetimeVar{})
+		}
+		if !soltype.ContainsLifetime(superVar.LowerBounds, recSub) {
+			c.addLowerLtBound(superVar, recSub)
 		}
 		// Propagate to existing upper bounds: sub <: super <: ub.
 		for _, ub := range superVar.UpperBounds {
-			c.constrainLtSeen(sub, ub, seen)
+			c.constrainLtSeen(recSub, ub, seen)
 		}
 	}
 }
@@ -511,7 +534,45 @@ func (c *Context) constrainLtSeen(sub, super soltype.Lifetime, seen set.Set[ltPa
 // cache). Keying by ID alone would reuse a Negative-polarity copy in Positive
 // position — skipping its covariant bounds — and vice versa.
 func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache map[extrudeKey]*soltype.TypeVarType) soltype.Type {
-	return t.Accept(&extruder{c: c, lvl: lvl, cache: cache}, pol)
+	return t.Accept(&extruder{
+		c:       c,
+		lvl:     lvl,
+		cache:   cache,
+		ltCache: map[ltExtrudeKey]*soltype.LifetimeVar{},
+	}, pol)
+}
+
+// extrudeLt copies a lifetime so a LifetimeVar above lvl is replaced by a fresh
+// lifetime at lvl, wired to the original through the polarity-appropriate outlives
+// bound (M4 D2.5) — the lifetime-sort twin of extrude's var node. The cache is
+// keyed by (var ID, polarity) for the same reason the type-var cache is. A
+// 'static, nil slot, or below-lvl lifetime extrudes to itself. Bound appends route
+// through the journaling helpers; mutating the ORIGINAL var's bound is the append a
+// Discard must truncate, while the fresh var's appends are a harmless no-op (it is
+// unreachable after a Discard).
+func (c *Context) extrudeLt(lt soltype.Lifetime, pol soltype.Polarity, lvl int, cache map[ltExtrudeKey]*soltype.LifetimeVar) soltype.Lifetime {
+	lv, ok := lt.(*soltype.LifetimeVar)
+	if !ok || lv.Level <= lvl {
+		return lt
+	}
+	key := ltExtrudeKey{id: lv.ID, pol: pol}
+	if nlv, ok := cache[key]; ok {
+		return nlv
+	}
+	nlv := c.freshLifetime(lvl)
+	cache[key] = nlv
+	if pol == soltype.Positive {
+		c.addUpperLtBound(lv, nlv)
+		for _, lb := range lv.LowerBounds {
+			c.addLowerLtBound(nlv, c.extrudeLt(lb, pol, lvl, cache))
+		}
+	} else {
+		c.addLowerLtBound(lv, nlv)
+		for _, ub := range lv.UpperBounds {
+			c.addUpperLtBound(nlv, c.extrudeLt(ub, pol, lvl, cache))
+		}
+	}
+	return nlv
 }
 
 // extruder is the soltype-visitor form of extrude. The structural arms and the
@@ -523,12 +584,25 @@ type extruder struct {
 	c     *Context
 	lvl   int
 	cache map[extrudeKey]*soltype.TypeVarType
+	// ltCache is the lifetime-sort twin of cache (M4 D2.5); see extrudeLt.
+	ltCache map[ltExtrudeKey]*soltype.LifetimeVar
 }
 
 func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	// A subtree with no variable above lvl extrudes to itself (identity-shared).
 	if soltype.LevelOf(t) <= e.lvl {
 		return soltype.EnterResult{Type: t, SkipChildren: true}
+	}
+	if r, ok := t.(*soltype.RefType); ok {
+		// A borrow's lifetime is covariant on the wrapper and never walked by Accept, so
+		// extrude it here in the wrapper's polarity (M4 D2.5), then hand back a RefType
+		// carrying the fresh lifetime for the descend path to rebuild Inner around. When
+		// the lifetime needs no extrusion, fall through to the ordinary rebuild of Inner.
+		lt := e.c.extrudeLt(r.Lt, pol, e.lvl, e.ltCache)
+		if lt != r.Lt {
+			return soltype.EnterResult{Type: &soltype.RefType{Mut: r.Mut, Lt: lt, Inner: r.Inner}}
+		}
+		return soltype.EnterResult{}
 	}
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {

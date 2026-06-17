@@ -182,7 +182,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		pt := c.paramType(p, lvl)
 		// A `mut`-borrow param without a declared lifetime originates a fresh
 		// lifetime here (D2), so a returned borrow carries the param's lifetime.
-		pt = c.attachParamLifetimes(pt)
+		pt = c.attachParamLifetimes(pt, lvl)
 		// An `open` un-annotated param keeps its usage-inferred object inexact at
 		// display time (B2). The marker only makes sense for an inferred var; an
 		// annotated param's exactness is fixed by its annotation, and paramType
@@ -408,12 +408,15 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // (Prov is pointer-keyed). A new wrapper would drop that entry, so the "declared
 // mut here" related span on a borrow diagnostic would be lost. Mutating in place
 // also avoids an allocation per mut param.
-func (c *checker) attachParamLifetimes(t soltype.Type) soltype.Type {
+func (c *checker) attachParamLifetimes(t soltype.Type, lvl int) soltype.Type {
 	r, ok := t.(*soltype.RefType)
 	if !ok || r.Lt != nil {
 		return t
 	}
-	lt := c.ctx.freshLifetime()
+	// Mint the lifetime at the parameter's level — the same level as the param's
+	// inference var — so it sits above the function's generalize-level and is
+	// freshened per call (M4 D2.5), on par with a type parameter.
+	lt := c.ctx.freshLifetime(lvl)
 	c.paramLifetimes.Add(lt.ID)
 	r.Lt = lt
 	return r
@@ -699,7 +702,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		// gives the new variable an upper bound and constrains nothing back, so a
 		// mut-borrow receiver of ANY lifetime satisfies the write requirement. A
 		// nil slot lifetime would instead reject a borrow receiver as an escape.
-		Lt: c.ctx.freshLifetime(),
+		Lt: c.ctx.freshLifetime(lvl),
 		Inner: &soltype.ObjectType{
 			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: m.Prop.Name, Type: w}},
 			Inexact: true, // "must accept a write to this field," not a full shape

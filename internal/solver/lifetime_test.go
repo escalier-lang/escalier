@@ -15,7 +15,7 @@ import (
 // 'static regardless of any other upper bound.
 func TestConstrainLtVarOutlivesStatic(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
 	static := &soltype.StaticLifetime{}
 
 	c.ctx.constrainLt(a, static)
@@ -29,8 +29,8 @@ func TestConstrainLtVarOutlivesStatic(t *testing.T) {
 // relationship at coalescing.
 func TestConstrainLtVarToVarRecordsBothDirections(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(a, b) // a outlives b
 
@@ -44,9 +44,9 @@ func TestConstrainLtVarToVarRecordsBothDirections(t *testing.T) {
 // through a's existing upper bounds so x <: b is recorded too.
 func TestConstrainLtPropagatesTransitively(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
-	x := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	x := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(a, b) // a <: b
 	c.ctx.constrainLt(x, a) // x <: a, which must propagate x <: b through a's uppers
@@ -61,7 +61,7 @@ func TestConstrainLtPropagatesTransitively(t *testing.T) {
 // pointer-identity dedup would wrongly pile up duplicate 'static bounds.
 func TestConstrainLtStaticDedupsByValue(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(a, &soltype.StaticLifetime{})
 	c.ctx.constrainLt(a, &soltype.StaticLifetime{}) // a different 'static instance
@@ -74,8 +74,8 @@ func TestConstrainLtStaticDedupsByValue(t *testing.T) {
 // A repeated outlives constraint does not re-append a bound already present.
 func TestConstrainLtDedupsBounds(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(a, b)
 	c.ctx.constrainLt(a, b) // identical constraint again
@@ -88,8 +88,8 @@ func TestConstrainLtDedupsBounds(t *testing.T) {
 // and each direction is recorded exactly once.
 func TestConstrainLtCycleTerminates(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	require.NotPanics(t, func() {
 		c.ctx.constrainLt(a, b)
@@ -105,7 +105,7 @@ func TestConstrainLtCycleTerminates(t *testing.T) {
 // Constraining a lifetime against ITSELF is a no-op — neither a bound nor a loop.
 func TestConstrainLtReflexiveIsNoOp(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(a, a)
 
@@ -118,15 +118,15 @@ func TestConstrainLtReflexiveIsNoOp(t *testing.T) {
 // rides the same journal discipline. Bounds added before the probe survive.
 func TestProbeDiscardRestoresLifetimeBounds(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	// Pre-probe bound on a, permanent.
 	c.ctx.constrainLt(a, b)
 	require.Len(t, a.UpperBounds, 1)
 
 	p := c.openProbe()
-	x := c.ctx.freshLifetime()
+	x := c.ctx.freshLifetime(0)
 	c.ctx.constrainLt(a, x) // a.UpperBounds: +1 ⇒ 2; x.LowerBounds: +1 ⇒ 1
 	require.Len(t, a.UpperBounds, 2)
 	require.Len(t, x.LowerBounds, 1)
@@ -143,8 +143,8 @@ func TestProbeDiscardRestoresLifetimeBounds(t *testing.T) {
 // journal's existence.
 func TestProbeCommitKeepsLifetimeBounds(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	p := c.openProbe()
 	c.ctx.constrainLt(a, b)
@@ -158,8 +158,8 @@ func TestProbeCommitKeepsLifetimeBounds(t *testing.T) {
 // so the parent's later discard still reverts the committed child's lifetime work.
 func TestProbeLifetimeCommittedChildCoveredByParentDiscard(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	parent := c.openProbe()
 	child := c.openProbe()
@@ -178,9 +178,9 @@ func TestProbeLifetimeCommittedChildCoveredByParentDiscard(t *testing.T) {
 // a <: super must propagate lb <: super through a's existing lower bound.
 func TestConstrainLtPropagatesThroughLowerBounds(t *testing.T) {
 	c := newChecker()
-	lb := c.ctx.freshLifetime()
-	a := c.ctx.freshLifetime()
-	super := c.ctx.freshLifetime()
+	lb := c.ctx.freshLifetime(0)
+	a := c.ctx.freshLifetime(0)
+	super := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(lb, a)    // lb <: a ⇒ a gains lb as a lower bound
 	c.ctx.constrainLt(a, super) // a <: super ⇒ a's lower-bound loop propagates lb <: super
@@ -196,15 +196,15 @@ func TestConstrainLtPropagatesThroughLowerBounds(t *testing.T) {
 // discard must truncate every probe-era bound while leaving the pre-probe ones.
 func TestProbeDiscardRollsBackTransitivelyTouchedLifetimes(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(a, b) // pre-probe: a.upper=[b], b.lower=[a]
 	require.Len(t, a.UpperBounds, 1)
 	require.Len(t, b.LowerBounds, 1)
 
 	p := c.openProbe()
-	x := c.ctx.freshLifetime()
+	x := c.ctx.freshLifetime(0)
 	c.ctx.constrainLt(x, a) // x <: a, transitively recording x <: b; touches x, a, b
 	require.Contains(t, x.UpperBounds, soltype.Lifetime(a))
 	require.Contains(t, x.UpperBounds, soltype.Lifetime(b), "x gained b transitively under the probe")
@@ -227,9 +227,9 @@ func TestProbeDiscardRollsBackTransitivelyTouchedLifetimes(t *testing.T) {
 // total; the point is that `a` appears in exactly one of them.
 func TestProbeRecordLtDedupsPerLifetimeVar(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
-	d := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	d := c.ctx.freshLifetime(0)
 
 	p := c.openProbe()
 	c.ctx.constrainLt(a, b) // a.upper += b
@@ -253,8 +253,8 @@ func TestProbeRecordLtDedupsPerLifetimeVar(t *testing.T) {
 // nil-map panic. Mirrors the type sort's TestProbeBareLiteralIsNilMapSafe.
 func TestProbeBareLiteralLifetimeIsNilMapSafe(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	c.ctx.probe = &Probe{} // deliberately skip newProbe
 	require.NotPanics(t, func() {
@@ -272,9 +272,9 @@ func TestProbeBareLiteralLifetimeIsNilMapSafe(t *testing.T) {
 // TestDiscardedChildLeavesParentJournalIntact.
 func TestProbeLifetimeDiscardedChildLeavesParentJournalIntact(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
-	d := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	d := c.ctx.freshLifetime(0)
 
 	parent := c.openProbe()
 	c.ctx.constrainLt(a, b) // parent: a.upper=[b]
@@ -296,8 +296,8 @@ func TestProbeLifetimeDiscardedChildLeavesParentJournalIntact(t *testing.T) {
 // to the var's pre-child length. Mirrors TestCommittedChildInheritsUntouchedVarSnapshot.
 func TestProbeLifetimeCommittedChildInheritsUntouchedVarSnapshot(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	parent := c.openProbe()
 	child := c.openProbe()
@@ -316,8 +316,8 @@ func TestProbeLifetimeCommittedChildInheritsUntouchedVarSnapshot(t *testing.T) {
 // "no journal entry without an append" invariant for the lifetime sort.
 func TestProbeReconstrainingPresentLifetimeBoundJournalsNothing(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(a, b) // pre-probe: a.upper=[b], b.lower=[a]
 
@@ -339,8 +339,8 @@ func TestProbeReconstrainingPresentLifetimeBoundJournalsNothing(t *testing.T) {
 // failed overload trial that constrained two borrows would leak a lifetime bound.
 func TestProbeRollsBackLifetimeBoundFromRefArm(t *testing.T) {
 	c := newChecker()
-	a := c.ctx.freshLifetime()
-	b := c.ctx.freshLifetime()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
 
 	inner := func() *soltype.ObjectType {
 		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{

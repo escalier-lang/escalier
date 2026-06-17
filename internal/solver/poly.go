@@ -98,7 +98,13 @@ func (c *checker) instantiate(s TypeScheme, lvl int) soltype.Type {
 // three onto a shared soltype rewriting visitor with no behavior change. Unlike
 // those two it ignores polarity (it freshens uniformly, no variance flip).
 func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*soltype.TypeVarType]*soltype.TypeVarType) soltype.Type {
-	return t.Accept(&freshener{c: c, lim: lim, lvl: lvl, cache: cache}, soltype.Positive)
+	return t.Accept(&freshener{
+		c:       c,
+		lim:     lim,
+		lvl:     lvl,
+		cache:   cache,
+		ltCache: map[*soltype.LifetimeVar]*soltype.LifetimeVar{},
+	}, soltype.Positive)
 }
 
 // freshener is the soltype-visitor form of freshenAbove. The structural arms come
@@ -112,6 +118,11 @@ type freshener struct {
 	lim   int
 	lvl   int
 	cache map[*soltype.TypeVarType]*soltype.TypeVarType
+	// ltCache is the lifetime-sort twin of cache (M4 D2.5): a quantified param
+	// lifetime reached more than once in one instantiation yields a single fresh
+	// copy, so a borrow that flows to both a parameter and the return type keeps one
+	// shared lifetime across them.
+	ltCache map[*soltype.LifetimeVar]*soltype.LifetimeVar
 }
 
 func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
@@ -139,6 +150,20 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	//     instantiated node must account for the sharing.
 	if soltype.LevelOf(t) <= f.lim {
 		return soltype.EnterResult{Type: t, SkipChildren: true}
+	}
+	if r, ok := t.(*soltype.RefType); ok {
+		// A borrow's lifetime is not a Type, so Accept carries it through unchanged and
+		// neither the structural rebuild below nor the var arm would ever freshen it
+		// (M4 D2.5). Freshen it here when it is a quantified param lifetime
+		// (Level > lim), then hand back a RefType carrying the fresh lifetime so the
+		// descend path rebuilds Inner around it. When the lifetime is shared (captured,
+		// 'static, or nil), freshenLt returns it unchanged and we fall through to the
+		// ordinary structural rebuild of Inner.
+		lt := f.freshenLt(r.Lt)
+		if lt != r.Lt {
+			return soltype.EnterResult{Type: &soltype.RefType{Mut: r.Mut, Lt: lt, Inner: r.Inner}}
+		}
+		return soltype.EnterResult{} // only Inner needs freshening: let Accept rebuild it
 	}
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
@@ -227,6 +252,45 @@ func (f *allFreshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 	out := make([]soltype.Type, len(bounds))
 	for i, b := range bounds {
 		out[i] = b.Accept(f, soltype.Positive)
+	}
+	return out
+}
+
+// freshenLt is the lifetime-sort twin of the freshener's var arm (M4 D2.5). A
+// LifetimeVar at Level > lim is a quantified param lifetime: it is replaced by a
+// fresh lifetime at lvl, its bounds freshened too, so each instantiation gets its
+// own lifetime and constraining one call site does not perturb another. The cache
+// is populated BEFORE bounds are freshened so a cyclic bound referencing the
+// original resolves to the in-progress copy rather than looping. 'static, a nil
+// slot, and a captured lifetime (Level <= lim) are shared, never freshened.
+//
+// The fresh var's bounds are whole-slice assignments, intentionally NOT journaled
+// by the probe — the same sanctioned non-append the type-var path uses (a fresh
+// var is unreachable after a Discard, so it self-rolls-back).
+func (f *freshener) freshenLt(lt soltype.Lifetime) soltype.Lifetime {
+	lv, ok := lt.(*soltype.LifetimeVar)
+	if !ok || lv.Level <= f.lim {
+		return lt
+	}
+	if nlv, ok := f.ltCache[lv]; ok {
+		return nlv
+	}
+	nlv := f.c.ctx.freshLifetime(f.lvl)
+	f.ltCache[lv] = nlv
+	nlv.LowerBounds = f.freshenLtBounds(lv.LowerBounds)
+	nlv.UpperBounds = f.freshenLtBounds(lv.UpperBounds)
+	return nlv
+}
+
+// freshenLtBounds freshens a lifetime var's bound list, preserving the
+// nil-for-empty shape — the lifetime-sort twin of freshenBounds.
+func (f *freshener) freshenLtBounds(bounds []soltype.Lifetime) []soltype.Lifetime {
+	if len(bounds) == 0 {
+		return nil
+	}
+	out := make([]soltype.Lifetime, len(bounds))
+	for i, b := range bounds {
+		out[i] = f.freshenLt(b)
 	}
 	return out
 }

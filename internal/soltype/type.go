@@ -342,9 +342,14 @@ func LevelOf(t Type) int {
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:
-		// Inner is a RefInner, which embeds Type; the borrow wrapper itself carries
-		// no variable, so the level is its content's.
-		return LevelOf(t.Inner)
+		// A borrow's level is the max of its inner content's and its lifetime's (M4
+		// D2.5). The lifetime is a SECOND quantifiable variable on the wrapper: a
+		// concrete-inner borrow whose lifetime var sits above a freshen/extrude limit
+		// must NOT be pruned and shared whole, or two instantiations would alias one
+		// LifetimeVar. Folding the lifetime level in here is the load-bearing change
+		// that makes the level prune descend into such a borrow to freshen its
+		// lifetime. LevelOfLifetime returns 0 for 'static and a nil slot.
+		return max(LevelOf(t.Inner), LevelOfLifetime(t.Lt))
 	// Union and Intersection recurse into their members for the same reason, but only
 	// the IntersectionType arm is load-bearing today. overloadIntersection (solver) is
 	// the ONE producer of a lattice node carrying LIVE inference variables that flows

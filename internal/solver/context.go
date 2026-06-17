@@ -39,11 +39,13 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 	return v
 }
 
-// freshLifetime allocates a new lifetime variable, assigning it the next id in
-// sequence. Lifetimes carry no level — they are a flat sort over the outlives
-// lattice, not the let-generalization level hierarchy types ride.
-func (c *Context) freshLifetime() *soltype.LifetimeVar {
-	lv := &soltype.LifetimeVar{ID: c.lifetimeCounter}
+// freshLifetime allocates a new lifetime variable at the given level, assigning it
+// the next id in sequence. Lifetimes now ride the same let-generalization level
+// hierarchy as types (M4 D2.5): a lifetime minted above its scheme's
+// generalize-level is freshened per instantiation, so two uses of a
+// borrow-passing function never share one LifetimeVar.
+func (c *Context) freshLifetime(level int) *soltype.LifetimeVar {
+	lv := &soltype.LifetimeVar{ID: c.lifetimeCounter, Level: level}
 	c.lifetimeCounter++
 	return lv
 }
