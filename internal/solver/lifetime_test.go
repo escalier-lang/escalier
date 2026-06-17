@@ -159,6 +159,36 @@ func TestEscapingNestedRefIntoStatic(t *testing.T) {
 	require.Equal(t, "{p: mut 'static {x: number}}", soltype.Print(coalesce(stored, soltype.Positive)))
 }
 
+// Escaping a JOINED borrow forces every param lifetime the join reaches to outlive
+// 'static, so the whole `('l0 | 'l1)` union collapses to a single 'static (M4 D3, the
+// join↔escape interaction). constrainEscape constrains the join lifetime `<:
+// 'static`, which propagates through its lower bounds to each member, and
+// coalesceLifetime then absorbs the union to 'static rather than expanding it.
+func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	join := c.ctx.freshJoinLifetime(0)
+	// The join is bounded below by each source lifetime, as joinBorrows wires it.
+	c.ctx.constrainLt(a, join)
+	c.ctx.constrainLt(b, join)
+	ref := &soltype.RefType{
+		Mut: true,
+		Lt:  join,
+		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+		}},
+	}
+
+	// Before escape the join expands to the union of its members.
+	require.Equal(t, "mut ('l0 | 'l1) {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+
+	c.constrainEscape(ref)
+
+	require.Equal(t, []soltype.Lifetime{soltype.Static}, join.UpperBounds)
+	require.Equal(t, "mut 'static {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+}
+
 // A discarded probe truncates every lifetime bound the trial appended back to the
 // pre-probe length, exactly as it does for type-variable bounds — the second sort
 // rides the same journal discipline. Bounds added before the probe survive.
