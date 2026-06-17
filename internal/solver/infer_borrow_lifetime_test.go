@@ -174,3 +174,68 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 		"fn (p: mut 'l0 {x: number}, q: mut 'l1 {x: number}, r: mut 'l2 {x: number}) -> mut ('l0 | 'l1 | 'l2) {x: number}",
 		values["f"])
 }
+
+// A GENERALIZED joined-borrow function keeps its union face after instantiation: a
+// caller that passes two of its own borrows still sees a two-lifetime union, not a
+// single name. This is the only end-to-end exercise of the Join flag riding through
+// freshenAbove/extrude (D2.5): if the flag were dropped on the freshened join
+// lifetime, the instantiated return would coalesce to one `'l{id}` instead of a
+// union. `pick` generalizes to `mut ('l0 | 'l1) {…}`; instantiating it inside `use`
+// freshens the join and its two members to use-level lifetimes, so `use` returns a
+// union of those.
+func TestInferInstantiatedJoinReturnsUnion(t *testing.T) {
+	src := `fn pick(p: mut {x: number}, q: mut {x: number}) {
+  if true { return p } else { return q }
+}
+fn use(a: mut {x: number}, b: mut {x: number}) {
+  return pick(a, b)
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn (p: mut 'l0 {x: number}, q: mut 'l1 {x: number}) -> mut ('l0 | 'l1) {x: number}",
+		values["pick"])
+	require.Equal(t,
+		"fn (a: mut 'l3 {x: number}, b: mut 'l4 {x: number}) -> mut ('l5 | 'l7) {x: number}",
+		values["use"])
+}
+
+// Joining borrows that share a field NAME but disagree on its TYPE is rejected: a mut
+// object's fields are observable in both directions, so the join pins each shared
+// field invariant, and `number` vs `string` for `x` fails that pin in both
+// directions. This locks in that the soundness constraint actually fires rather than
+// silently unifying incompatible borrows (M4 D3).
+func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
+	src := `fn f(p: mut {x: number}, q: mut {x: string}) {
+  if true {
+    return p
+  } else {
+    return q
+  }
+}`
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		"cannot constrain number <: string",
+		"cannot constrain string <: number",
+	}, Messages(errs))
+}
+
+// A return set mixing a borrow with an OWNED value does not join — joinBorrows
+// requires every input to be a mutable borrow carrying a lifetime, and an object
+// literal is owned (not a RefType). The all-borrows gate falls back to the generic
+// union, so the result keeps the borrow's lifetime alongside the owned literal (M4
+// D3).
+func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
+	src := `fn f(p: mut {x: number}) {
+  if true {
+    return p
+  } else {
+    return {x: 5}
+  }
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn (p: mut 'l0 {x: number}) -> mut 'l0 {x: number} | {x: 5}",
+		values["f"])
+}

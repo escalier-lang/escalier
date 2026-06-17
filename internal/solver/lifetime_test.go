@@ -189,6 +189,27 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	require.Equal(t, "mut 'static {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
 }
 
+// ltEqual compares a LifetimeUnion (a join's coalesced face) structurally — equal
+// iff its members are pairwise equal in order — so two RefTypes with the same join
+// face dedup during coalescing. A LifetimeVar member keys by identity and 'static by
+// value, inherited from the recursive call. This branch has no source-reachable
+// trigger yet (two identical joined borrows in one union), so it is checked directly.
+func TestLtEqualLifetimeUnion(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+
+	ab1 := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{a, b}}
+	ab2 := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{a, b}}
+	ba := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{b, a}}
+	a1 := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{a}}
+
+	require.True(t, ltEqual(ab1, ab2), "same members in the same order are equal")
+	require.False(t, ltEqual(ab1, ba), "order matters: member i must match member i")
+	require.False(t, ltEqual(ab1, a1), "differing member counts are unequal")
+	require.False(t, ltEqual(ab1, a), "a union and a bare variable are unequal")
+}
+
 // A discarded probe truncates every lifetime bound the trial appended back to the
 // pre-probe length, exactly as it does for type-variable bounds — the second sort
 // rides the same journal discipline. Bounds added before the probe survive.
