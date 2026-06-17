@@ -2,6 +2,7 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -40,6 +41,15 @@ type checker struct {
 	// one. Off in production (a span bug must never crash the compiler); flipped on
 	// by tests that exercise the guard. See recordProv.
 	debugProv bool
+
+	// paramLifetimes is the set of lifetime-variable ids that originate on a
+	// function parameter (M4 D2). A `mut`-borrow param without a declared lifetime
+	// is a borrow of whatever the caller lends, so attachParamLifetimes mints a
+	// fresh lifetime var for it and records its id here. These are the only
+	// lifetimes that get named in the rendered output — a borrow originates at a
+	// parameter — while internal join vars (D3) stay anonymous and render as the
+	// union of their reachable param lifetimes.
+	paramLifetimes set.Set[int]
 }
 
 // fieldKey identifies a written field by the receiver variable's ID and the
@@ -107,7 +117,7 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // newChecker returns a checker with a fresh Context, an empty Info table, and an
 // empty Prov side table.
 func newChecker() *checker {
-	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}}
+	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, paramLifetimes: set.NewSet[int]()}
 }
 
 // freshAt allocates a fresh inference variable at the given level. Provenance for

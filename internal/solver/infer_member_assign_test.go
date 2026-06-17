@@ -137,10 +137,14 @@ func TestInferMemberAssignVariableValueLinked(t *testing.T) {
 // per-field write view pins x invariantly while tolerating the object's other
 // declared fields. Before the per-field write view this reported spurious
 // "missing property: y" / "inexact <: exact" errors.
+//
+// The annotated `mut` param originates a borrow lifetime (D2), so it renders with
+// a raw `'l{id}` here; the lifetime is unused in the (void) result, so D4's
+// display-time elision will later drop it and the render returns to `mut {…}`.
 func TestInferMemberAssignAnnotatedMutObject(t *testing.T) {
 	values, _, errs := inferSource(t, "fn f(obj: mut {x: number, y: string}) { obj.x = 5 }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number, y: string}) -> void", values["f"])
+	require.Equal(t, "fn (obj: mut 'l0 {x: number, y: string}) -> void", values["f"])
 }
 
 // The named field stays invariant: storing a string into a number field of an

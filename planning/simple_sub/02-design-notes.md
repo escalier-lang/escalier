@@ -630,7 +630,7 @@ Lifetimes are a **second sort** solved by the same machinery:
 
 ```go
 type LifetimeVar struct { id int; lowerBounds, upperBounds []Lifetime }
-type StaticLifetime struct{}           // top of the outlives lattice
+type StaticLifetime struct{}           // bottom of the outlives lattice
 ```
 
 ## Exactness

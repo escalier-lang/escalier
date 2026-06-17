@@ -330,3 +330,35 @@ func TestProbeReconstrainingPresentLifetimeBoundJournalsNothing(t *testing.T) {
 	require.Len(t, a.UpperBounds, 1, "the pre-probe bound is untouched by the no-op trial")
 	require.Equal(t, soltype.Lifetime(b), a.UpperBounds[0])
 }
+
+// Test 8 — the lifetime bound minted by the RefType constrain arm itself is
+// journaled, so a discarded trial rolls it back. The earlier probe tests drive
+// constrainLt directly; this drives it THROUGH constrain over two `mut` borrows
+// (the now-active step 3, D2), confirming the RefType arm participates in the same
+// speculation discipline as a direct constrainLt call. Without journaling here, a
+// failed overload trial that constrained two borrows would leak a lifetime bound.
+func TestProbeRollsBackLifetimeBoundFromRefArm(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime()
+	b := c.ctx.freshLifetime()
+
+	inner := func() *soltype.ObjectType {
+		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "x", Type: num()},
+		}}
+	}
+	sub := &soltype.RefType{Mut: true, Lt: a, Inner: inner()}
+	super := &soltype.RefType{Mut: true, Lt: b, Inner: inner()}
+
+	p := c.openProbe()
+	errs := c.ctx.Constrain(sub, super)
+	require.Empty(t, errs, "two compatible mut borrows constrain cleanly")
+	// step 3 runs constrainLt(super.Lt, sub.Lt) = constrainLt(b, a): b gains a as an
+	// upper bound, a gains b as a lower bound.
+	require.Equal(t, []soltype.Lifetime{a}, b.UpperBounds)
+	require.Equal(t, []soltype.Lifetime{b}, a.LowerBounds)
+
+	c.closeProbe(p, false) // discard
+	require.Empty(t, b.UpperBounds, "the RefType arm's lifetime bound is rolled back on discard")
+	require.Empty(t, a.LowerBounds)
+}

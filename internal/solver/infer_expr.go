@@ -180,6 +180,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	params := make([]*soltype.FuncParam, len(sig.Params))
 	for i, p := range sig.Params {
 		pt := c.paramType(p, lvl)
+		// A `mut`-borrow param without a declared lifetime originates a fresh
+		// lifetime here (D2), so a returned borrow carries the param's lifetime.
+		pt = c.attachParamLifetimes(pt)
 		// An `open` un-annotated param keeps its usage-inferred object inexact at
 		// display time (B2). The marker only makes sense for an inferred var; an
 		// annotated param's exactness is fixed by its annotation, and paramType
@@ -387,6 +390,33 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 		}
 	}
 	return c.freshAt(lvl)
+}
+
+// attachParamLifetimes originates a borrow at a function parameter (M4 D2). A
+// RefType-typed param without a declared lifetime is a borrow of whatever the
+// caller lends, so it gets a fresh lifetime var that flows wherever the param
+// does — when the param is returned, that lifetime appears on the return type,
+// which is how `fn (p: mut {x: number}) { return p }` infers
+// `fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}`. The fresh lifetime's
+// id is recorded as a param lifetime so it gets a name (`'a`) at display time.
+//
+// A param that already carries a lifetime (an explicit `'a T` annotation) or that
+// is not a borrow at all is returned unchanged. The lifetime is attached by
+// mutating the RefType IN PLACE rather than minting a new wrapper: the param's
+// RefType is freshly resolved by resolveMutableTypeAnn and not yet shared, and its
+// pointer is the key under which resolveTypeAnn recorded AnnotationType provenance
+// (Prov is pointer-keyed). A new wrapper would drop that entry, so the "declared
+// mut here" related span on a borrow diagnostic would be lost. Mutating in place
+// also avoids an allocation per mut param.
+func (c *checker) attachParamLifetimes(t soltype.Type) soltype.Type {
+	r, ok := t.(*soltype.RefType)
+	if !ok || r.Lt != nil {
+		return t
+	}
+	lt := c.ctx.freshLifetime()
+	c.paramLifetimes.Add(lt.ID)
+	r.Lt = lt
+	return r
 }
 
 // inferCall types a function application. It types the callee and each argument,
@@ -641,8 +671,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 // receiver is itself a mutation — a later write may store any number — mirroring
 // the `var`-binding widening (B3).
 //
-// C3 ships with Lt: nil: no borrows exist yet, so every receiver is owned. D2 flips
-// this to a fresh lifetime var so a borrowed receiver of any lifetime is accepted.
+// The write requirement carries a fresh lifetime (D2): a mut-borrow receiver of
+// any lifetime is accepted (the fresh var imposes no obligation), and an owned
+// receiver satisfies the borrow slot by the RefType rule.
 //
 // When the receiver is a variable, the widened type is recorded in `written` so a
 // later read of the same field returns it (read-after-write; see valueProp). The
@@ -664,7 +695,11 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	w := widen(source)
 	req := &soltype.RefType{
 		Mut: true,
-		Lt:  nil, // D2: c.freshLifetime()
+		// A fresh lifetime imposes no obligation on the receiver (D2): constrainLt
+		// gives the new variable an upper bound and constrains nothing back, so a
+		// mut-borrow receiver of ANY lifetime satisfies the write requirement. A
+		// nil slot lifetime would instead reject a borrow receiver as an escape.
+		Lt: c.ctx.freshLifetime(),
 		Inner: &soltype.ObjectType{
 			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: m.Prop.Name, Type: w}},
 			Inexact: true, // "must accept a write to this field," not a full shape
@@ -941,6 +976,13 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 			}
 		}
 	}
+	// Strip the borrow wrapper before building the field-read requirement (D2):
+	//   - Reading a field through a `mut`/`'a` borrow is always legal and yields
+	//     the field's value, not the borrow.
+	//   - It keeps the requirement off the RefType, so the RefType<:bare escape
+	//     guard fires only when the borrow flows into an owned slot, not on a read.
+	//   - A non-borrow receiver is returned unchanged, leaving plain vars untouched.
+	recv = soltype.CarrierOf(recv)
 	res := c.freshAt(lvl)
 	// The member-requirement record {prop: res} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner res var, so the record would be a dead

@@ -324,23 +324,24 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if sup.Mut {
 				errs = append(errs, c.constrainWriteBack(sup.Inner, sub.Inner, seen)...)
 			}
-			// 3. Lifetime outlives, covariant. Written now, INERT in C2 because Lt is
-			//    always nil until the lifetime sort lands (D1); constrainLt wires the
-			//    var-to-var case in D2. The escape branch's error is unreachable until
-			//    borrows carry lifetimes.
+			// 3. Lifetime outlives, covariant (M4 D2). Active now that borrows carry
+			//    lifetimes (D1 minted the sort, attachParamLifetimes originates them).
 			switch {
 			case sub.Lt != nil && sup.Lt != nil:
-				// D2: c.constrainLt(sup.Lt, sub.Lt)
+				// Both borrows carry a lifetime: relate them covariantly through the
+				// outlives lattice, mirroring the covariant read view on the inner.
+				c.constrainLt(sup.Lt, sub.Lt)
 			case sub.Lt == nil && sup.Lt != nil:
 				// An owned source satisfies any borrow slot — no lifetime constraint.
 			case sub.Lt != nil && sup.Lt == nil:
+				// A borrow flowing into an owned slot escapes its region.
 				errs = append(errs, &BorrowEscapeError{Sub: sub, Super: sup})
 			}
 			return errs
 		}
 		// RefType <: a concrete non-borrow: peel to the inner. An owned value (Lt nil)
 		// satisfies a bare slot; a borrow escaping into an owned slot is a
-		// BorrowEscapeError (inert in C2). When super is a VARIABLE, fall through to the
+		// BorrowEscapeError (live in D2). When super is a VARIABLE, fall through to the
 		// var arm so the WHOLE borrow is recorded as a bound — peeling there would drop
 		// its mutability.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {

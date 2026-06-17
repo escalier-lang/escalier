@@ -363,7 +363,7 @@ type LifetimeVar struct {
     LowerBounds []Lifetime
     UpperBounds []Lifetime
 }
-type StaticLifetime struct{} // 'static, top of the outlives lattice
+type StaticLifetime struct{} // 'static, bottom of the outlives lattice
 
 // Context grows the spike's M4 fields (context.go's own comment reserves them):
 type Context struct {
@@ -374,8 +374,8 @@ type Context struct {
 }
 
 // constrainLt mirrors constrain over the outlives lattice: var-left gains an
-// upper bound, var-right a lower bound, var-to-var records both; 'static is
-// top (X <: 'static always holds); (sub, super)-keyed seen-set for cycles.
+// upper bound, var-right a lower bound, var-to-var records both; 'static is the
+// bottom ('static <: X always holds); (sub, super)-keyed seen-set for cycles.
 // Bound appends go ONLY through addLowerLtBound/addUpperLtBound — the journal
 // invariant extends to the second sort:
 func (c *Context) constrainLt(sub, super Lifetime)
@@ -507,7 +507,7 @@ func isValueType(t soltype.Type) bool // from checker/check_transitions.go:189-2
 
 ## PR breakdown
 
-17 PRs across 7 phases, each independently mergeable and green, each with
+18 PRs across 7 phases, each independently mergeable and green, each with
 table-driven tests asserting rendered types and **full** error messages. Every
 PR below names the concrete files touched, the data structures added/modified,
 the algorithm changes, and its acceptance set — enough to start implementation
@@ -878,6 +878,11 @@ these arms it must add.
     (return the concrete stored type, not a coalesced var); the reverse order
     already works, and an incompatible read-then-write surfaces as a normal
     constrain error.
+    **KNOWN GAP (issue #742):** the `written` lookup is keyed on a `*TypeVarType`
+    receiver, so a *concrete borrow* receiver (an annotated `mut {…}` param after
+    D2) misses the cache and re-derives the field from its annotation. The two paths
+    diverge only when the declared field type is wider than the widened write, which
+    needs M6 unions to exhibit; fix is to key the map on `CarrierOf(recv)`'s inner.
   - **Algorithm — whole-object `mut` merge (follows `internal/checker`, not the
     spike's partition):** extend B1's `foldUsageBounds` fold over the receiver's
     accumulated selections so that **if any field was written, every selection —
@@ -926,14 +931,14 @@ these arms it must add.
   - **Structures:**
     - `LifetimeVar{ID int; LowerBounds, UpperBounds []Lifetime}`, implementing
       `isLifetime()`
-    - `StaticLifetime{}` (top of the outlives lattice), implementing
+    - `StaticLifetime{}` (bottom of the outlives lattice), implementing
       `isLifetime()`
     - `Context` grows `lifetimeCounter int` (its own comment at context.go:5
       names this deferred field) and a `freshLifetime()` minter
   - **Algorithm — `constrainLt`** (ported from `simplesub/lifetime.go:61`):
     mirrors `constrain` over the outlives lattice — a var on the left gains an
     upper bound, on the right a lower bound, var-to-var records both;
-    `'static` is top (`X <: 'static` always holds); a `(sub, super)`-keyed
+    `'static` is the bottom (`'static <: X` always holds); a `(sub, super)`-keyed
     seen-set terminates cycles. Bound appends go **only** through new
     `addLowerLtBound`/`addUpperLtBound` helpers that journal before appending —
     the same discipline as `addLowerBound`/`addUpperBound` (context.go:36).
@@ -967,7 +972,15 @@ these arms it must add.
     - owned source into a borrow slot ok
     - borrow into an owned slot ⇒ `BorrowEscapeError` (now live)
 
-    The `RefType <: bare` escape guard (`l.Lt != nil`) also goes live.
+    The `RefType <: bare` escape guard (`l.Lt != nil`) also goes live. A member
+    *read* must not trip it, so `valueProp` peels the receiver through
+    `CarrierOf` before emitting the read requirement. **KNOWN GAP (issue #741):**
+    the peel is a no-op when the receiver is a *variable* whose lower bound is a
+    borrow, so the borrow reaches the guard through the bound graph and a plain
+    read fires a spurious `BorrowEscapeError`. Not constructible until D3 makes a
+    var-bound-to-borrow read reachable; the deeper fix is to peel an inexact
+    read-requirement target inside the constrain arm and drop the `valueProp`
+    bandaid.
   - **Algorithm — `attachParamLifetimes`** (per the sketch): a `RefType`-typed
     param with `Lt == nil` gets a fresh lifetime var, recorded in
     `paramLifetimes`. Called when binding function params.
@@ -979,6 +992,91 @@ these arms it must add.
     - `IdentityRefReturn` (`fn (p: mut {x: number}) { return p }`) ⇒ `fn <'a>(p:
       mut 'a {x: number}) -> mut 'a {x: number}`
     - `FreshObjectReturn` (returning a fresh `mut {x: 1}`) carries no lifetime
+
+- **D2.5 — Lifetime-sort generalization: levels + per-instantiation freshening**
+  (~150–250, design-dependent).
+  - **Why this PR exists (provenance).** The spike documented this exact gap as a
+    KNOWN LIMITATION at [simplesub/scheme.go:32-38](../../internal/simplesub/scheme.go):
+    a lifetime carried by a borrow is copied **by reference, not freshened**, so two
+    instantiations of a generalized lifetime-bearing scheme share one `LifetimeVar`.
+    The spike deferred the fix to "the M1 production rewrite," but D1 added
+    `LifetimeVar` **without a `Level`**, and D2 is the first phase to mint lifetimes
+    onto generalizable param types (`attachParamLifetimes`), so the gap is now live in
+    production. D2 itself shows no wrong output — lifetimes render by their raw
+    `'l{id}` and no phase reads lifetime **bounds** yet — which is why this is split
+    out rather than folded into D2.
+  - **Ordering — blocks D4, should precede D3.** This lands after the already-merged
+    D1/D2. It is a hard prerequisite for **D4**, the first phase to consume lifetime
+    bounds (the `analyzeLts` occurrence walk over the bound graph): cross-instantiation
+    contamination of a shared `LifetimeVar`'s bounds becomes wrong output exactly when
+    those bounds are read. It should also precede **D3**, which mints more distinct
+    lifetimes (joins, escape) and so widens the surface the sharing bug corrupts.
+  - **The defect, concretely.** `freshenAbove`
+    ([poly.go](../../internal/solver/poly.go)) and `extrude`
+    ([constrain.go](../../internal/solver/constrain.go)) ride the `Accept` visitor,
+    which only walks `Type`s. A `Lifetime` is **not** a `Type`, so `RefType.Accept`
+    carries `Lt` through unchanged ([visitor.go:173](../../internal/soltype/visitor.go))
+    and neither pass ever freshens it. Worse, `LevelOf(*RefType)` returns
+    `LevelOf(Inner)` ([type.go:344](../../internal/soltype/type.go)), so a
+    concrete-inner borrow whose lifetime var sits above `lim` is pruned and **shared
+    whole** by the freshener. The MLsub level invariant — a variable's level is `>=`
+    the level of everything in its bounds, the property the freshener prune at
+    [poly.go:123-132](../../internal/solver/poly.go) depends on — does not yet extend
+    to the lifetime sort.
+  - **DESIGN DECISION — resolve before implementing.** Two shapes, with very
+    different sizes:
+    - **Option A — full lifetime generalization (recommended).** Give `LifetimeVar` a
+      `Level`, make `LevelOf` lifetime-aware, add freshen/extrude lifetime arms with a
+      lifetime cache, and add level-extrusion to `constrainLt` so the invariant holds.
+      ~150–250 lines; extends the level discipline to a second sort. A param lifetime
+      becomes per-call-fresh, on par with how a `TypeVarType` param is.
+    - **Option B — monomorphic lifetimes.** Refuse to generalize a scheme whose body
+      has a free lifetime var — or pin param lifetimes at a fixed level so
+      `freshenAbove` never copies them — and defer per-use freshening to the M7
+      library-import boundary. ~50 lines, but it narrows the language: a generic
+      borrow-passing function cannot be instantiated at two distinct lifetimes within
+      one module. Record that consequence in the spec if chosen.
+    - Recommendation is **A**, to keep lifetimes on par with type vars and avoid an M7
+      special case. **B** is the cheaper fallback if A's invariant work proves too
+      costly; pick before writing code, since it swings the PR size ~5×.
+  - **Files (Option A):** `soltype/lifetime.go` (`Level` field), `soltype/type.go`
+    (`LevelOf`), `solver/context.go` (`freshLifetime` takes a level; update the
+    `attachParamLifetimes` and `inferMemberAssign` call sites), `solver/poly.go`
+    (freshener lifetime arm + cache, threaded through `freshenAbove`/`instantiate`),
+    `solver/constrain.go` (extruder lifetime arm; `constrainLt` level-extrusion).
+  - **Structures (Option A):**
+    - `LifetimeVar` gains `Level int`; `freshLifetime(lvl int)` sets it.
+    - the freshener and extruder each gain a
+      `map[*soltype.LifetimeVar]*soltype.LifetimeVar` cache, parallel to their
+      `*TypeVarType` cache, so a lifetime reached twice in one pass yields one copy.
+  - **Algorithm (Option A):**
+    - `LevelOf(*RefType)` ⇒ `max(LevelOf(Inner), levelOfLt(Lt))`, where `levelOfLt`
+      returns a `LifetimeVar`'s `Level` and `0` for `'static`. This is the
+      load-bearing change: without it the prune shares the lifetime and nothing else
+      fires.
+    - **freshener:** special-case `*RefType` in `EnterType` — when `LevelOf(t) > lim`
+      on account of its lifetime, freshen `Lt` through the lifetime cache, copying its
+      bounds with the same cache-before-bounds order the `*TypeVarType` path uses to
+      terminate recursion, then let `Accept` rebuild `Inner` around the fresh `Lt`. A
+      `'static` lifetime is shared, never freshened.
+    - **extruder:** the analogous `*RefType`/lifetime arm, wiring the fresh lifetime
+      var to the original through the polarity-appropriate outlives bound, mirroring
+      the type-var extrude.
+    - **`constrainLt`:** extrude a higher-level lifetime down before recording a bound,
+      mirroring `constrain`'s `levelOf(rhs) <= lv.level` branch, so the lifetime-level
+      invariant the freshener prune relies on is maintained.
+  - **Accept (Option A):**
+    - a generalized borrow-returning fn (`fn id(p: mut {x: number}) { return p }`)
+      called at two sites instantiates **two distinct** lifetime vars; constraining one
+      site's borrow does not perturb the other (cross-site non-contamination)
+    - quantify-vs-keep: a param lifetime at the scheme's level is freshened per use,
+      while a lifetime captured from an outer scope (level `<= lim`) is shared
+    - the D2 acceptance (`IdentityRefReturn`) still renders correctly
+    - a probe discard rolls back a freshened lifetime bound (the freshener's fresh-var
+      bound writes are sanctioned non-journaled, same as the type-var path)
+  - **Standing rule reminder:** adding the `Level` field touches no new type-set arm,
+    but the lifetime sort now participates in `LevelOf`, so re-audit every `LevelOf`
+    caller that assumed a borrow's level equals its inner's.
 
 - **D3 — Multi-source lifetime joins + escape-to-`'static`** (~150).
   - **Files:** `solver/infer_stmt.go` / wherever the M3 return-point join lives,
@@ -1018,6 +1116,10 @@ these arms it must add.
       escapes it to `mut 'static`
 
 - **D4 — Display-time lifetime coalescing + elision** (~200).
+  - **Depends on D2.5.** The occurrence walk below reads each lifetime var's
+    bound graph, so it produces correct output only once lifetimes are freshened
+    per instantiation (D2.5). Without that, two call sites share one `LifetimeVar`
+    and its contaminated bounds drive wrong naming/elision here. Land D2.5 first.
   - **Files:** new lifetime-occurrence logic alongside `solver/simplify.go` /
     `solver/coalesce.go`, `soltype/print.go` (the `<'a>` quantifier).
   - **Structures:**
@@ -1026,6 +1128,11 @@ these arms it must add.
       `simplify.go`'s `symOccVisitor` but over the lifetime sort
     - a `ltKeep`/naming map keyed by lifetime-var ID, threaded into the scheme
       coalescer the way `schemeSimplification` is threaded today (coalesce.go:120)
+    - **scope `paramLifetimes` per function first** (issue #743). D2 added it as a
+      module-wide accumulator on the checker; this pass is its first reader, so move
+      it onto `funcCtx` (push/pop like `written`) or snapshot/restore it around each
+      `inferFunc` before naming reads it, or naming sees stale ids from earlier
+      functions.
   - **Algorithm — naming:** only param-originated lifetimes are named (`'a`,
     `'b`, … via a base-26 `alphaName`, per the spike); a join var renders as the
     union of the param lifetimes it reaches; `'static` absorbs. The `<'a>`
@@ -1210,8 +1317,10 @@ Critical path to the gate: **A1 → C1 → C2** — three PRs. B, E, F are paral
 tracks off A1; nothing downstream of the gate starts before C2 clears. B1's
 `foldUsageBounds` fold is reused by C3 (whole-object mut merge) and the `widen` helper
 authored in B3 is reused by C3, so land B before C3 even though B is otherwise
-independent of the gate. Total ≈ 3.0k non-test LoC across 17 PRs, with the
-single highest-risk change (C2) isolated to ~180 reviewable lines.
+independent of the gate. D2.5 is the one PR discovered mid-implementation rather
+than planned up front — the spike's deferred lifetime-generalization gap — and
+gates D4, so it lands between D2 and D3. Total ≈ 3.2k non-test LoC across 18 PRs,
+with the single highest-risk change (C2) isolated to ~180 reviewable lines.
 
 ## Testing strategy
 

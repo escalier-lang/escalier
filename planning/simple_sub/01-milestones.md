@@ -420,18 +420,24 @@ wrapper) are what first populate a lifetime. Land them together.
   receiver against the inexact requirement `Ref{mut: true, lt: nil, inner:
   Record{x: widen(v)}}`, with literal widening and merging of a receiver's
   selections into one `mut` object. The lifetime is `nil`, so M4 supports only
-  owned-mutable receivers. (Spike M3 + extension.)
+  owned-mutable receivers. (Spike M3 + extension.) Read-after-write returns the
+  stored value, but its cache is keyed on a type-variable receiver, so a concrete
+  borrow receiver re-derives from its annotation instead — a divergence observable
+  only with M6 unions, tracked in issue #742.
 - **Lifetime origination on field writes** (D2, **not** M4): the write
   requirement's lifetime becomes a fresh variable rather than `nil`, so the
   constraint also accepts a mut-borrowed receiver of any lifetime. This depends on
   the lifetime sort and borrow origination, which land in D2 — until then a borrowed
   receiver is not yet supported.
 - **Lifetimes as a second sort**: `LifetimeVar` with lower/upper bounds over the
-  outlives lattice (`'static` = top), `constrainLt`, lifetime coalescing +
+  outlives lattice (`'static` = bottom), `constrainLt`, lifetime coalescing +
   elision (a parameter-only lifetime that connects nothing is dropped). Borrows
   originate at parameters typed as `Ref` (mut or immut); returning shares by
   value identity; multi-source returns union lifetimes; escape constrains `<:
-  'static`. (Spike M4.)
+  'static`. (Spike M4.) A borrow flowing into an owned slot is rejected as an
+  escape, but a member *read* must look through the borrow first; the read-side
+  peel misses a variable bound to a borrow, so such a read can fire a spurious
+  escape — tracked in issue #741, not reachable until D3.
 - **Destructuring patterns + the `match` expression form.** `IdentPat` (M1, the
   only `Pat` concrete through M2–M3) is joined here by the structural concretes —
   `TuplePat`, `ObjectPat`, and literal patterns — now that tuple/record types
@@ -533,6 +539,41 @@ further.
 - **Rest-param element checking (#677)** — `...xs: T[]` element checking needs
   `Array<T>`, so it lands in **M7**. M4 stays arity-only and marks the
   `FuncParam.Rest` note "M7."
+
+**Open design question — per-property lifetimes on alias-typed params (needs type
+annotations first).** Per-property and tuple-per-slot lifetimes have a syntactic
+home when the parameter's type spells out its structure inline, so each leaf can
+name its own lifetime:
+
+```
+fn getPoints(line: {p: 'a Point, q: 'b Point}) -> ['a Point, 'b Point] {
+  return [line.p, line.q]
+}
+```
+
+A type alias hides that structure, leaving nowhere to write the per-leaf
+lifetimes:
+
+```
+type Line = {p: Point, q: Point}
+fn getPoints(line: Line) -> [Point, Point] { // no way to name line.p / line.q's lifetimes
+  return [line.p, line.q]
+}
+```
+
+One candidate is a path-based lifetime annotation that names a lifetime by the
+access path into the aliased parameter, so the return slots borrow from `line.p`
+and `line.q` directly:
+
+```
+fn getPoints(line: Line) -> ['line.p Point, 'line.q Point]
+```
+
+This is unsettled and needs its own design pass. The surface syntax, how a path
+lifetime resolves against the alias body, and how it interacts with elision and
+escape are all open. It also depends on type annotations being implemented first,
+since there is no annotation surface to attach these to until then. Out of scope
+for M4 — capture the design before any milestone commits to it.
 
 ---
 
