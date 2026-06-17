@@ -359,7 +359,7 @@ func TestFreshenAllFreshensLowLevelBorrowLifetime(t *testing.T) {
 // fall-through path — ltFreshener.fresh returns the lifetime unchanged, so Accept
 // rebuilds Inner — which the all-concrete-inner cases never reach (they are pruned
 // whole before the arm runs).
-func TestFreshenSharesCapturedLifetimeWhileFreshateningInner(t *testing.T) {
+func TestFreshenSharesCapturedLifetimeWhileFresheningInner(t *testing.T) {
 	c := newChecker()
 	captured := c.ctx.freshLifetime(0) // captured: shared across instantiations
 	innerVar := c.freshAt(1)           // quantified inner type var: per-use fresh
