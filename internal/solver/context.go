@@ -30,7 +30,7 @@ type Context struct {
 	// the same probe discipline as a TypeVarType.
 	lifetimeCounter int
 
-	// ltProxyOrigin maps a down-extruded lifetime proxy to the lifetime it was
+	// ltProxyOrigin maps an outer-extruded lifetime proxy to the lifetime it was
 	// extruded from (M4 D2.5). constrainLt consults it through findLtProxy to reuse
 	// an existing proxy for a repeated cross-level outlives constraint, so the bound
 	// dedup is not defeated by minting a fresh proxy each time. It is metadata only
@@ -50,7 +50,7 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 
 // freshLifetime allocates a new lifetime variable at the given level, assigning it
 // the next id in sequence. Lifetimes now ride the same let-generalization level
-// hierarchy as types (M4 D2.5): a lifetime minted above its scheme's
+// hierarchy as types (M4 D2.5): a lifetime minted inside its scheme's
 // generalize-level is freshened per instantiation, so two uses of a
 // borrow-passing function never share one LifetimeVar.
 func (c *Context) freshLifetime(level int) *soltype.LifetimeVar {
@@ -75,7 +75,7 @@ func (c *Context) addUpperLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime) {
 	v.UpperBounds = append(v.UpperBounds, lt)
 }
 
-// recordLtProxy notes that proxy is a down-extruded copy of origin, so a later
+// recordLtProxy notes that proxy is an outer-extruded copy of origin, so a later
 // repeated outlives constraint can reuse the proxy rather than mint a new one (M4
 // D2.5). Lazily allocates the map.
 func (c *Context) recordLtProxy(proxy *soltype.LifetimeVar, origin soltype.Lifetime) {
@@ -85,7 +85,7 @@ func (c *Context) recordLtProxy(proxy *soltype.LifetimeVar, origin soltype.Lifet
 	c.ltProxyOrigin[proxy] = origin
 }
 
-// findLtProxy returns a lifetime among bounds that is a down-extruded proxy of
+// findLtProxy returns a lifetime among bounds that is an outer-extruded proxy of
 // origin, or nil if none. Identity-keyed: a proxy matches only when ltProxyOrigin
 // records it against the exact origin pointer. Scanning live bounds keeps it
 // probe-safe — a proxy a discarded trial removed from its bound list is not found.
