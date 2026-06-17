@@ -116,10 +116,10 @@ func TestFreshenSharesCapturedLifetime(t *testing.T) {
 	require.Same(t, soltype.Lifetime(captured), paramLt, "a captured lifetime (Level <= lim) is shared across instantiations")
 }
 
-// A freshened lifetime carries copies of the original's outlives bounds, and those
-// fresh-var bound writes are the sanctioned non-journaled append: a probe discard
-// rolls them back for free because the fresh var is unreachable afterward, so the
-// probe journals nothing for it and the original's bounds are untouched.
+// A freshened lifetime carries copies of the original's outlives bounds. Writing
+// those bounds onto the fresh var is the one sanctioned non-journaled append. Once a
+// probe is discarded the fresh var is unreachable, so there is nothing to roll back:
+// the probe journals nothing for it, and the original's bounds stay untouched.
 func TestFreshenCopiesLifetimeBoundsUnderProbe(t *testing.T) {
 	c := newChecker()
 	lt := c.ctx.freshLifetime(1)
@@ -254,6 +254,28 @@ func TestConstrainLtMaintainsLevelInvariant(t *testing.T) {
 	require.True(t, ok)
 	require.LessOrEqual(t, recorded.Level, low.Level, "a recorded bound never outranks the variable's own level")
 	require.NotSame(t, high, recorded, "the higher-level bound is extruded to a fresh lower-level var")
+}
+
+// The mirror of TestConstrainLtMaintainsLevelInvariant: when the super sits below the
+// sub's level, it is recorded directly with no extrusion, so the recorded bound's
+// level is strictly BELOW the variable's own. This exercises the strict side of the
+// invariant — a bound may rank lower than its variable, only never higher.
+func TestConstrainLtRecordsLowerLevelBoundDirectly(t *testing.T) {
+	c := newChecker()
+	high := c.ctx.freshLifetime(2)
+	low := c.ctx.freshLifetime(0)
+
+	c.ctx.constrainLt(high, low) // high <: low; low does NOT outrank high's level
+
+	// low is below high's level, so it is recorded as-is with no extrusion. That gives
+	// high an upper bound ranking strictly below high itself. constrainLt also extrudes
+	// high down to seed low's lower bound, so high.UpperBounds additionally holds that
+	// self-proxy. Both bounds still satisfy the invariant, asserted by the loop.
+	require.Contains(t, high.UpperBounds, soltype.Lifetime(low), "a below-level super is recorded as-is, not extruded")
+	require.Less(t, low.Level, high.Level, "the directly-recorded bound ranks strictly below the variable's level")
+	for _, ub := range high.UpperBounds {
+		require.LessOrEqual(t, soltype.LevelOfLifetime(ub), high.Level, "no recorded bound outranks the variable's level")
+	}
 }
 
 // A repeated cross-level outlives constraint does NOT accumulate duplicate bounds.
