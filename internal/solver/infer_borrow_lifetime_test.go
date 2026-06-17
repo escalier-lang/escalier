@@ -112,12 +112,13 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 	}, Messages(errs))
 }
 
-// Joining two borrows with DISTINCT lifetimes preserves both. equalType compares
-// lifetimes (D2), so dedup does not collapse `mut 'l0 {x}` and `mut 'l1 {x}` into a
-// single member and silently drop a lifetime. The branch join renders the un-joined
-// union here; D3 factors it into the `mut ('l0 | 'l1) {x}` form. Without the Lt
-// comparison in equalType this rendered `mut 'l0 {x}`, losing 'l1.
-func TestInferDistinctLifetimeBorrowsDoNotCoalesce(t *testing.T) {
+// Returning one of two borrows with DISTINCT lifetimes joins them into a single
+// borrow whose lifetime is the union of theirs (M4 D3, the ConditionalUnionReturn
+// acceptance). The return-point join mints a fresh join lifetime bounded below by
+// 'l0 and 'l1, which coalesces to `('l0 | 'l1)` in the positive return position. The
+// param lifetimes 'l0/'l1 stay named on the borrows they originate; D4 renders them
+// `'a`/`'b` and the union `('a | 'b)`.
+func TestInferConditionalUnionReturn(t *testing.T) {
 	src := `fn f(p: mut {x: number}, q: mut {x: number}) {
   if true {
     return p
@@ -128,6 +129,48 @@ func TestInferDistinctLifetimeBorrowsDoNotCoalesce(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn (p: mut 'l0 {x: number}, q: mut 'l1 {x: number}) -> mut 'l0 {x: number} | mut 'l1 {x: number}",
+		"fn (p: mut 'l0 {x: number}, q: mut 'l1 {x: number}) -> mut ('l0 | 'l1) {x: number}",
+		values["f"])
+}
+
+// Returning borrows whose objects have DIFFERENT field sets does NOT join — a mut
+// object's field set is invariant, so uniting `mut {x}` and `mut {y}` would invent a
+// writable field absent from one branch. joinBorrows rejects the mismatch and the
+// return falls back to the generic union, preserving both borrows with their own
+// lifetimes (M4 D3).
+func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
+	src := `fn f(p: mut {x: number}, q: mut {y: number}) {
+  if true {
+    return p
+  } else {
+    return q
+  }
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn (p: mut 'l0 {x: number}, q: mut 'l1 {y: number}) -> mut 'l0 {x: number} | mut 'l1 {y: number}",
+		values["f"])
+}
+
+// A join over THREE borrows unites all their lifetimes: the fresh join lifetime is
+// bounded below by each, coalescing to `('l0 | 'l1 | 'l2)` in the return position.
+// This confirms the join generalizes past the two-branch case to an n-ary return set.
+func TestInferThreeWayBorrowJoin(t *testing.T) {
+	src := `fn f(p: mut {x: number}, q: mut {x: number}, r: mut {x: number}) {
+  if true {
+    return p
+  } else {
+    if true {
+      return q
+    } else {
+      return r
+    }
+  }
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn (p: mut 'l0 {x: number}, q: mut 'l1 {x: number}, r: mut 'l2 {x: number}) -> mut ('l0 | 'l1 | 'l2) {x: number}",
 		values["f"])
 }

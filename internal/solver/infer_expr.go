@@ -315,6 +315,14 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 	case 1:
 		return collected[0]
 	default:
+		// M4 D3: several returns of borrowed objects that differ only in lifetime join
+		// into one borrow whose lifetime unites theirs, so `if c { return p } else {
+		// return q }` over two `mut` params is `mut ('a | 'b) {…}` rather than the
+		// un-joined `mut 'a {…} | mut 'b {…}`. A mixed or non-borrow set falls through to
+		// the generic union below.
+		if joined, ok := c.joinBorrows(node, lvl, collected); ok {
+			return joined
+		}
 		joinVar := c.freshAt(lvl)
 		c.recordProv(joinVar, node, ReturnJoin)
 		for _, rt := range collected {
@@ -322,6 +330,101 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 		}
 		return joinVar
 	}
+}
+
+// joinBorrows synthesizes the join of several borrowed objects that differ only in
+// lifetime (M4 D3). It applies only when EVERY input is a mutable borrow of an
+// object, all sharing the same field-name set with each carrying a lifetime. The
+// result is one mutable borrow whose lifetime is a fresh JOIN variable bounded below
+// by each input's lifetime — so a positive-position result coalesces to `('a | 'b)`
+// — with the shared fields constrained invariant across the inputs. A mut object's
+// fields are observable in both directions, so a sound join pins them equal; uniting
+// differing field sets is rejected (ok=false) because it would invent writable fields
+// absent from one input.
+//
+// ok=false leaves the caller on its generic union path. A usage-inferred borrow is a
+// type variable here, not a concrete RefType, so it falls through to ok=false —
+// matching the spike, which joins only concrete mut records.
+func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
+	refs := make([]*soltype.RefType, len(types))
+	objs := make([]*soltype.ObjectType, len(types))
+	for i, t := range types {
+		r, ok := t.(*soltype.RefType)
+		if !ok || !r.Mut || r.Lt == nil {
+			return nil, false
+		}
+		obj, ok := r.Inner.(*soltype.ObjectType)
+		if !ok {
+			return nil, false
+		}
+		if i > 0 && !sameObjectKeys(objs[0], obj) {
+			return nil, false
+		}
+		refs[i] = r
+		objs[i] = obj
+	}
+
+	joinLt := c.ctx.freshJoinLifetime(lvl)
+	for _, r := range refs {
+		c.ctx.constrainLt(r.Lt, joinLt)
+	}
+	// Pin each shared field invariant across the inputs: a mut object's fields are
+	// read AND written through the join, so the join is sound only when they agree.
+	for _, e := range objs[0].Elems {
+		name := soltype.AsProperty(e).Name
+		first, _ := objs[0].Prop(name)
+		for _, obj := range objs[1:] {
+			other, _ := obj.Prop(name)
+			c.constrain(node, first.Type, other.Type)
+			c.constrain(node, other.Type, first.Type)
+		}
+	}
+	return &soltype.RefType{Mut: true, Lt: joinLt, Inner: objs[0]}, true
+}
+
+// constrainEscape constrains every borrow lifetime reachable in t to outlive
+// 'static (M4 D3) — the rule for a value flowing into module-level or otherwise
+// 'static storage. A borrow that escapes its borrow region must live forever, so
+// each lifetime variable v gains the upper bound 'static (`v <: 'static`), which
+// coalesceLifetime then resolves to 'static. It walks the structural carriers a
+// borrow can nest in — the RefType inner, object properties, tuple elements — so a
+// stored `{p: mut 'a Point}` escapes its inner borrow too.
+//
+// No current Escalier construct routes a borrow into 'static storage: a borrow
+// originates only at a parameter, and no syntax stores one module-level yet. So this
+// has no source-reachable call site — it lands as the rule's mechanism, covered by a
+// direct test, ready for the first escape site (a module-level binding or global
+// write) to call it.
+func (c *checker) constrainEscape(t soltype.Type) {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		if lt, ok := t.Lt.(*soltype.LifetimeVar); ok {
+			c.ctx.constrainLt(lt, soltype.Static)
+		}
+		c.constrainEscape(t.Inner)
+	case *soltype.ObjectType:
+		for _, e := range t.Elems {
+			c.constrainEscape(soltype.AsProperty(e).Type)
+		}
+	case *soltype.TupleType:
+		for _, e := range t.Elems {
+			c.constrainEscape(e)
+		}
+	}
+}
+
+// sameObjectKeys reports whether two objects carry exactly the same set of property
+// names — the join's precondition, since a mut object's field set is invariant.
+func sameObjectKeys(a, b *soltype.ObjectType) bool {
+	if len(a.Elems) != len(b.Elems) {
+		return false
+	}
+	for _, e := range a.Elems {
+		if _, ok := b.Prop(soltype.AsProperty(e).Name); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // asyncReturn computes an `async fn`'s external return type, which always faces

@@ -113,6 +113,52 @@ func TestConstrainLtReflexiveIsNoOp(t *testing.T) {
 	require.Empty(t, a.LowerBounds)
 }
 
+// A borrowed value flowing into 'static storage has its lifetime forced to outlive
+// 'static (M4 D3, the EscapingRefIntoStatic acceptance). constrainEscape constrains
+// the borrow's lifetime `<: 'static`, so coalescing the borrow renders it `mut
+// 'static {x: number}` rather than under the param's own name. No Escalier construct
+// routes a borrow into static storage yet — a borrow originates only at a parameter
+// — so this exercises the rule's mechanism directly.
+func TestEscapingRefIntoStatic(t *testing.T) {
+	c := newChecker()
+	lt := c.ctx.freshLifetime(0)
+	ref := &soltype.RefType{
+		Mut: true,
+		Lt:  lt,
+		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+		}},
+	}
+
+	c.constrainEscape(ref)
+
+	require.Equal(t, []soltype.Lifetime{soltype.Static}, lt.UpperBounds)
+	require.Equal(t, "mut 'static {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+}
+
+// Escape reaches a borrow NESTED inside an object property: storing `{p: mut 'a
+// Point}` forces the inner borrow's lifetime to 'static too, since the whole value
+// escapes. constrainEscape walks the structural carriers, so the property's borrow
+// is constrained alongside any top-level one.
+func TestEscapingNestedRefIntoStatic(t *testing.T) {
+	c := newChecker()
+	inner := c.ctx.freshLifetime(0)
+	stored := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+		&soltype.PropertyElem{Name: "p", Type: &soltype.RefType{
+			Mut: true,
+			Lt:  inner,
+			Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+			}},
+		}},
+	}}
+
+	c.constrainEscape(stored)
+
+	require.Equal(t, []soltype.Lifetime{soltype.Static}, inner.UpperBounds)
+	require.Equal(t, "{p: mut 'static {x: number}}", soltype.Print(coalesce(stored, soltype.Positive)))
+}
+
 // A discarded probe truncates every lifetime bound the trial appended back to the
 // pre-probe length, exactly as it does for type-variable bounds — the second sort
 // rides the same journal discipline. Bounds added before the probe survive.

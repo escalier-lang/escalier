@@ -59,6 +59,16 @@ func (c *Context) freshLifetime(level int) *soltype.LifetimeVar {
 	return lv
 }
 
+// freshJoinLifetime allocates a lifetime variable for a multi-source join site (a
+// return or branch uniting several borrows, M4 D3). It is identical to
+// freshLifetime but sets Join, so coalesceLifetime expands it to the union of the
+// param lifetimes it reaches rather than naming it as a borrow origin.
+func (c *Context) freshJoinLifetime(level int) *soltype.LifetimeVar {
+	lv := c.freshLifetime(level)
+	lv.Join = true
+	return lv
+}
+
 // addLowerLtBound appends lt to v's lower bounds, journaling the mutation in the
 // active probe first so a discarded trial truncates it away. This (and
 // addUpperLtBound) is the ONLY sanctioned way to extend a lifetime bound list —
