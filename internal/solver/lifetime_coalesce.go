@@ -1,6 +1,9 @@
 package solver
 
-import "github.com/escalier-lang/escalier/internal/soltype"
+import (
+	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
+)
 
 // coalesceRefLifetime rewrites a coalesced RefType's lifetime to its display form
 // (M4 D3). The structural coalescers rebuild a RefType through the shared visitor,
@@ -30,9 +33,10 @@ func coalesceRefLifetime(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // renders 'static and a nil lifetime stays nil. A lifetime variable resolves by
 // its origin:
 //
-//   - A param lifetime (a borrow origin) is kept as itself — the printer renders it
-//     under its raw 'l{ID} debug name now, its quantified name in D4 — unless it is
-//     forced to 'static, in which case its borrow escapes and it renders 'static.
+//   - A param lifetime (a borrow origin) is kept as itself. The printer renders it
+//     under its raw 'l{ID} debug name now and its quantified name in D4. A param
+//     forced to 'static is the exception: its borrow has escaped, so it renders
+//     'static.
 //   - A join lifetime (a multi-source return/branch, Join set) expands to the union
 //     of the param lifetimes it reaches through its polarity-relevant bounds, so a
 //     return uniting two borrows coalesces to `('a | 'b)`. A reachable 'static
@@ -48,17 +52,20 @@ func coalesceLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetim
 		}
 		return v
 	}
-	members, static := reachableParamLifetimes(v, pol, map[*soltype.LifetimeVar]bool{})
+	members, static := reachableParamLifetimes(v, pol, set.NewSet[*soltype.LifetimeVar]())
 	if static {
 		return soltype.Static
 	}
 	switch len(members) {
-	case 0:
-		// A join reaching no param lifetime carries no nameable lifetime — drop it,
-		// yielding an owned-mutable borrow (the wrapper's lifetime goes nil).
-		return nil
 	case 1:
 		return members[0]
+	case 0:
+		// Unreachable: joinBorrows gives every join at least one param lower bound, and
+		// a join whose members are all forced returns through the 'static branch above.
+		// Guard it so a degenerate empty union never reaches the printer as `()`. A
+		// memberless join carries no nameable lifetime, so it drops to nil, an
+		// owned-mutable borrow.
+		return nil
 	default:
 		return &soltype.LifetimeUnion{Lifetimes: members}
 	}
@@ -70,11 +77,11 @@ func coalesceLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetim
 // 'static is reached, which absorbs the union. The seen-set keys by variable
 // identity so a cyclic bound graph terminates. A forced param member renders
 // 'static, which sets the static flag rather than adding the member.
-func reachableParamLifetimes(v *soltype.LifetimeVar, pol soltype.Polarity, seen map[*soltype.LifetimeVar]bool) ([]soltype.Lifetime, bool) {
-	if seen[v] {
+func reachableParamLifetimes(v *soltype.LifetimeVar, pol soltype.Polarity, seen set.Set[*soltype.LifetimeVar]) ([]soltype.Lifetime, bool) {
+	if seen.Contains(v) {
 		return nil, false
 	}
-	seen[v] = true
+	seen.Add(v)
 	var members []soltype.Lifetime
 	static := false
 	for _, b := range v.BoundsAt(pol) {

@@ -383,35 +383,41 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 }
 
 // constrainEscape constrains every borrow lifetime reachable in t to outlive
-// 'static (M4 D3) — the rule for a value flowing into module-level or otherwise
-// 'static storage. A borrow that escapes its borrow region must live forever, so
-// each lifetime variable v gains the upper bound 'static (`v <: 'static`), which
-// coalesceLifetime then resolves to 'static. It walks the structural carriers a
-// borrow can nest in — the RefType inner, object properties, tuple elements — so a
-// stored `{p: mut 'a Point}` escapes its inner borrow too.
+// 'static (M4 D3). It is the rule for a value flowing into module-level or otherwise
+// 'static storage. A borrow that escapes its region must live forever, so each
+// lifetime variable v gains the upper bound 'static. coalesceLifetime then resolves
+// such a forced lifetime to 'static.
 //
-// No current Escalier construct routes a borrow into 'static storage: a borrow
-// originates only at a parameter, and no syntax stores one module-level yet. So this
-// has no source-reachable call site — it lands as the rule's mechanism, covered by a
-// direct test, ready for the first escape site (a module-level binding or global
-// write) to call it.
+// inferAssign calls this on the source of a GLOBAL WRITE, a store into a
+// module-level binding. The walk rides the shared soltype visitor through
+// escapeVisitor, so it reaches a borrow in any structural position without a
+// hand-maintained type switch.
+//
+// One boundary: the visitor treats a TypeVarType as a leaf, so a borrow reachable
+// only through a usage-inferred variable is not forced here. That is the same place
+// the global-write CarrierOf peel stops, and the deeper handling rides M4 G2.
 func (c *checker) constrainEscape(t soltype.Type) {
-	switch t := t.(type) {
-	case *soltype.RefType:
-		if lt, ok := t.Lt.(*soltype.LifetimeVar); ok {
-			c.ctx.constrainLt(lt, soltype.Static)
-		}
-		c.constrainEscape(t.Inner)
-	case *soltype.ObjectType:
-		for _, e := range t.Elems {
-			c.constrainEscape(soltype.AsProperty(e).Type)
-		}
-	case *soltype.TupleType:
-		for _, e := range t.Elems {
-			c.constrainEscape(e)
+	t.Accept(escapeVisitor{c: c}, soltype.Positive)
+}
+
+// escapeVisitor forces every borrow lifetime it reaches to outlive 'static. It
+// rewrites nothing: EnterType records the constraint and returns an ordinary descent,
+// so the shared rewriting visitor carries it through a RefType inner, object
+// property, tuple element, union member, function parameter or return, and promise
+// payload alike. The 'static bound is monotonic, so visiting a borrow in any polarity
+// is sound.
+type escapeVisitor struct{ c *checker }
+
+func (v escapeVisitor) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if r, ok := t.(*soltype.RefType); ok {
+		if lt, ok := r.Lt.(*soltype.LifetimeVar); ok {
+			v.c.ctx.constrainLt(lt, soltype.Static)
 		}
 	}
+	return soltype.EnterResult{}
 }
+
+func (escapeVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // sameObjectKeys reports whether two objects carry exactly the same set of property
 // names — the join's precondition, since a mut object's field set is invariant.
@@ -752,20 +758,27 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
 	if b.ModuleLevel {
-		// A GLOBAL WRITE: the value is now reachable from module-level storage for the
-		// program's lifetime, so any borrow it carries must outlive every borrow region
-		// — it escapes to 'static (M4 D3). constrainEscape forces each of the source's
-		// borrow lifetimes `<: 'static`, which is why `var sink = {…}; fn(p: mut {…}) {
-		// sink = p }` reports p as `mut 'static {…}`.
+		// This is a global write, a store into module-level storage that lives for the
+		// program's whole run. Any borrow the value carries must outlive every borrow
+		// region, so it escapes to 'static (M4 D3).
 		//
-		// The value-compatibility check then runs against the source's CARRIER, not the
-		// borrow itself: a borrow forced to 'static is owned-forever, so it satisfies the
-		// owned slot — comparing the whole borrow would instead trip the
-		// borrow-into-owned BorrowEscapeError (the rule that rejects a NON-escaping
-		// borrow). CarrierOf is the identity on a non-borrow source, so an ordinary
-		// global write like `n = 5` is unaffected.
-		c.constrainEscape(sourceT)
+		// The value-compatibility check runs against the source's CARRIER, not the
+		// borrow itself. A borrow forced to 'static is owned-forever, so it satisfies an
+		// owned slot. Comparing the whole borrow would instead trip the
+		// borrow-into-owned BorrowEscapeError, the rule that rejects a borrow which does
+		// NOT escape. CarrierOf is the identity on a non-borrow source, so an ordinary
+		// global write such as `n = 5` is unaffected. The peel only looks through a
+		// top-level borrow and drops the source's mutability check; the fuller treatment
+		// of an escaped borrow's mutability rides M4 G2.
+		//
+		// Escape runs only when the compatibility check passes, so a rejected store does
+		// not leave the source's lifetime forced to 'static. So `var sink = {…}; fn(p:
+		// mut {…}) { sink = p }` reports p as `mut 'static {…}`.
+		errsBefore := len(c.errs)
 		c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
+		if len(c.errs) == errsBefore {
+			c.constrainEscape(sourceT)
+		}
 	} else {
 		c.constrainAssign(e, sourceT, targetT)
 	}
