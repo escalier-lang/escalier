@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"math"
+
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -99,11 +101,11 @@ func (c *checker) instantiate(s TypeScheme, lvl int) soltype.Type {
 // those two it ignores polarity (it freshens uniformly, no variance flip).
 func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*soltype.TypeVarType]*soltype.TypeVarType) soltype.Type {
 	return t.Accept(&freshener{
-		c:       c,
-		lim:     lim,
-		lvl:     lvl,
-		cache:   cache,
-		ltCache: map[*soltype.LifetimeVar]*soltype.LifetimeVar{},
+		c:     c,
+		lim:   lim,
+		lvl:   lvl,
+		cache: cache,
+		lt:    ltFreshener{ctx: c.ctx, lim: lim, lvl: lvl},
 	}, soltype.Positive)
 }
 
@@ -118,11 +120,11 @@ type freshener struct {
 	lim   int
 	lvl   int
 	cache map[*soltype.TypeVarType]*soltype.TypeVarType
-	// ltCache is the lifetime-sort twin of cache (M4 D2.5): a quantified param
-	// lifetime reached more than once in one instantiation yields a single fresh
-	// copy, so a borrow that flows to both a parameter and the return type keeps one
-	// shared lifetime across them.
-	ltCache map[*soltype.LifetimeVar]*soltype.LifetimeVar
+	// lt freshens a borrow's lifetime, the second quantifiable sort Accept does not
+	// walk (M4 D2.5). It shares the freshener's lim/lvl and lazily allocates its own
+	// cache, so a borrow that flows to both a parameter and the return type keeps one
+	// shared fresh lifetime across them.
+	lt ltFreshener
 }
 
 func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
@@ -154,16 +156,11 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	if r, ok := t.(*soltype.RefType); ok {
 		// A borrow's lifetime is not a Type, so Accept carries it through unchanged and
 		// neither the structural rebuild below nor the var arm would ever freshen it
-		// (M4 D2.5). Freshen it here when it is a quantified param lifetime
-		// (Level > lim), then hand back a RefType carrying the fresh lifetime so the
-		// descend path rebuilds Inner around it. When the lifetime is shared (captured,
-		// 'static, or nil), freshenLt returns it unchanged and we fall through to the
-		// ordinary structural rebuild of Inner.
-		lt := f.freshenLt(r.Lt)
-		if lt != r.Lt {
-			return soltype.EnterResult{Type: &soltype.RefType{Mut: r.Mut, Lt: lt, Inner: r.Inner}}
-		}
-		return soltype.EnterResult{} // only Inner needs freshening: let Accept rebuild it
+		// (M4 D2.5). ltFreshener.fresh replaces a quantified param lifetime
+		// (Level > lim) and shares a captured, 'static, or nil one; refLifetimeResult
+		// then either hands back a RefType carrying the fresh lifetime or signals an
+		// ordinary descent so Accept rebuilds Inner.
+		return refLifetimeResult(r, f.lt.fresh(r.Lt))
 	}
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
@@ -211,7 +208,14 @@ func (f *freshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { 
 // later use. Freshening first makes the constraint mutate throwaway copies instead.
 // A var-free input (the common annotated/literal case) is returned unchanged.
 func (c *checker) freshenAll(t soltype.Type, lvl int) soltype.Type {
-	return t.Accept(&allFreshener{c: c, lvl: lvl, cache: map[*soltype.TypeVarType]*soltype.TypeVarType{}}, soltype.Positive)
+	return t.Accept(&allFreshener{
+		c:     c,
+		lvl:   lvl,
+		cache: map[*soltype.TypeVarType]*soltype.TypeVarType{},
+		// lim is below every lifetime level, so fresh replaces EVERY lifetime — the
+		// lifetime-sort analogue of allFreshener's no-prune treatment of type vars.
+		lt: ltFreshener{ctx: c.ctx, lim: math.MinInt, lvl: lvl},
+	}, soltype.Positive)
 }
 
 // allFreshener is the soltype-visitor form of freshenAll: it replaces every var
@@ -222,9 +226,18 @@ type allFreshener struct {
 	c     *checker
 	lvl   int
 	cache map[*soltype.TypeVarType]*soltype.TypeVarType
+	// lt freshens a borrow's lifetime, which Accept does not walk (M4 D2.5). Without
+	// this arm a reassigned borrow-typed binding would keep its scheme's lifetime, so
+	// constraining the reassignment source would mutate the binding's own lifetime —
+	// the cross-use contamination freshenAll exists to prevent, here for the lifetime
+	// sort.
+	lt ltFreshener
 }
 
 func (f *allFreshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if r, ok := t.(*soltype.RefType); ok {
+		return refLifetimeResult(r, f.lt.fresh(r.Lt))
+	}
 	v, ok := t.(*soltype.TypeVarType)
 	if !ok {
 		return soltype.EnterResult{} // structural / atom node: let Accept rebuild or descend
@@ -256,43 +269,71 @@ func (f *allFreshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 	return out
 }
 
-// freshenLt is the lifetime-sort twin of the freshener's var arm (M4 D2.5). A
-// LifetimeVar at Level > lim is a quantified param lifetime: it is replaced by a
-// fresh lifetime at lvl, its bounds freshened too, so each instantiation gets its
-// own lifetime and constraining one call site does not perturb another. The cache
-// is populated BEFORE bounds are freshened so a cyclic bound referencing the
-// original resolves to the in-progress copy rather than looping. 'static, a nil
-// slot, and a captured lifetime (Level <= lim) are shared, never freshened.
+// ltFreshener freshens lifetime variables for the rewriting visitors (M4 D2.5).
+// Accept never walks a RefType's lifetime, because a Lifetime is not a Type, so each
+// lifetime-aware visitor delegates here through refLifetimeResult. A LifetimeVar
+// above lim is a quantified lifetime: fresh replaces it with a fresh lifetime at
+// lvl and freshens its bounds, so each use gets its own lifetime and constraining
+// one site does not perturb another. A LifetimeVar at lim or below, 'static, and a
+// nil slot are shared. The freshener passes its own lim; allFreshener passes
+// math.MinInt so every lifetime is freshened.
 //
-// The fresh var's bounds are whole-slice assignments, intentionally NOT journaled
-// by the probe — the same sanctioned non-append the type-var path uses (a fresh
-// var is unreachable after a Discard, so it self-rolls-back).
-func (f *freshener) freshenLt(lt soltype.Lifetime) soltype.Lifetime {
+// The cache is allocated lazily, so a borrow-free rewrite pays no allocation. It is
+// populated BEFORE bounds are freshened, so a cyclic bound referencing the original
+// resolves to the in-progress copy rather than looping. The fresh var's bound
+// writes are whole-slice assignments, intentionally NOT journaled by the probe. A
+// fresh var is unreachable after a Discard, so it self-rolls-back, the same
+// sanctioned non-append the type-var paths use.
+type ltFreshener struct {
+	ctx   *Context
+	lim   int
+	lvl   int
+	cache map[*soltype.LifetimeVar]*soltype.LifetimeVar
+}
+
+func (lf *ltFreshener) fresh(lt soltype.Lifetime) soltype.Lifetime {
 	lv, ok := lt.(*soltype.LifetimeVar)
-	if !ok || lv.Level <= f.lim {
+	if !ok || lv.Level <= lf.lim {
 		return lt
 	}
-	if nlv, ok := f.ltCache[lv]; ok {
+	if lf.cache == nil {
+		lf.cache = map[*soltype.LifetimeVar]*soltype.LifetimeVar{}
+	}
+	if nlv, ok := lf.cache[lv]; ok {
 		return nlv
 	}
-	nlv := f.c.ctx.freshLifetime(f.lvl)
-	f.ltCache[lv] = nlv
-	nlv.LowerBounds = f.freshenLtBounds(lv.LowerBounds)
-	nlv.UpperBounds = f.freshenLtBounds(lv.UpperBounds)
+	nlv := lf.ctx.freshLifetime(lf.lvl)
+	lf.cache[lv] = nlv
+	nlv.LowerBounds = lf.freshBounds(lv.LowerBounds)
+	nlv.UpperBounds = lf.freshBounds(lv.UpperBounds)
 	return nlv
 }
 
-// freshenLtBounds freshens a lifetime var's bound list, preserving the
-// nil-for-empty shape — the lifetime-sort twin of freshenBounds.
-func (f *freshener) freshenLtBounds(bounds []soltype.Lifetime) []soltype.Lifetime {
+// freshBounds freshens a lifetime var's bound list, preserving the nil-for-empty
+// shape — the lifetime-sort twin of freshenBounds.
+func (lf *ltFreshener) freshBounds(bounds []soltype.Lifetime) []soltype.Lifetime {
 	if len(bounds) == 0 {
 		return nil
 	}
 	out := make([]soltype.Lifetime, len(bounds))
 	for i, b := range bounds {
-		out[i] = f.freshenLt(b)
+		out[i] = lf.fresh(b)
 	}
 	return out
+}
+
+// refLifetimeResult builds the EnterType result for a RefType whose lifetime a
+// visitor has transformed to lt. It is the single place every lifetime-aware
+// rewriting visitor handles a borrow's non-Type lifetime: when lt changed it hands
+// back a RefType carrying it so the descend path rebuilds Inner around the new
+// lifetime; otherwise it signals an ordinary descent so Accept rebuilds Inner with
+// the lifetime shared. Sharing this keeps freshener, allFreshener, and the extruder
+// from each re-deriving the rebuild-or-descend boilerplate.
+func refLifetimeResult(r *soltype.RefType, lt soltype.Lifetime) soltype.EnterResult {
+	if lt != r.Lt {
+		return soltype.EnterResult{Type: &soltype.RefType{Mut: r.Mut, Lt: lt, Inner: r.Inner}}
+	}
+	return soltype.EnterResult{}
 }
 
 // freshenBounds freshens a var's bound list, preserving the nil-for-empty shape.

@@ -29,6 +29,15 @@ type Context struct {
 	// addLowerLtBound/addUpperLtBound, and a speculation trial journals it under
 	// the same probe discipline as a TypeVarType.
 	lifetimeCounter int
+
+	// ltProxyOrigin maps a down-extruded lifetime proxy to the lifetime it was
+	// extruded from (M4 D2.5). constrainLt consults it through findLtProxy to reuse
+	// an existing proxy for a repeated cross-level outlives constraint, so the bound
+	// dedup is not defeated by minting a fresh proxy each time. It is metadata only
+	// and is never rolled back: a stale entry for a proxy that a discarded trial
+	// removed from its bound list is simply never matched, since findLtProxy scans
+	// only bounds currently present.
+	ltProxyOrigin map[*soltype.LifetimeVar]soltype.Lifetime
 }
 
 // freshVar allocates a new inference variable at the given level, assigning it
@@ -64,6 +73,29 @@ func (c *Context) addLowerLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime) {
 func (c *Context) addUpperLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime) {
 	c.recordLtMutation(v)
 	v.UpperBounds = append(v.UpperBounds, lt)
+}
+
+// recordLtProxy notes that proxy is a down-extruded copy of origin, so a later
+// repeated outlives constraint can reuse the proxy rather than mint a new one (M4
+// D2.5). Lazily allocates the map.
+func (c *Context) recordLtProxy(proxy *soltype.LifetimeVar, origin soltype.Lifetime) {
+	if c.ltProxyOrigin == nil {
+		c.ltProxyOrigin = map[*soltype.LifetimeVar]soltype.Lifetime{}
+	}
+	c.ltProxyOrigin[proxy] = origin
+}
+
+// findLtProxy returns a lifetime among bounds that is a down-extruded proxy of
+// origin, or nil if none. Identity-keyed: a proxy matches only when ltProxyOrigin
+// records it against the exact origin pointer. Scanning live bounds keeps it
+// probe-safe — a proxy a discarded trial removed from its bound list is not found.
+func (c *Context) findLtProxy(bounds []soltype.Lifetime, origin soltype.Lifetime) soltype.Lifetime {
+	for _, b := range bounds {
+		if bv, ok := b.(*soltype.LifetimeVar); ok && c.ltProxyOrigin[bv] == origin {
+			return bv
+		}
+	}
+	return nil
 }
 
 // recordLtMutation snapshots v's bound-list lengths in the active probe, if any,

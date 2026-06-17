@@ -256,13 +256,87 @@ func TestConstrainLtMaintainsLevelInvariant(t *testing.T) {
 	require.NotSame(t, high, recorded, "the higher-level bound is extruded to a fresh lower-level var")
 }
 
+// A repeated cross-level outlives constraint does NOT accumulate duplicate bounds.
+// Extrusion mints a down-extruded proxy of `high`; without proxy reuse the second
+// call would mint a second proxy and the identity-keyed ContainsLifetime dedup would
+// never match, so `low.UpperBounds` would grow to 2. extrudeDownAsUpper reuses the
+// first proxy, so the bound count stays 1 across repeats — the lifetime-sort
+// analogue of the same-level dedup, restored for the cross-level path.
+func TestConstrainLtCrossLevelDoesNotAccumulateDuplicates(t *testing.T) {
+	c := newChecker()
+	low := c.ctx.freshLifetime(0)
+	high := c.ctx.freshLifetime(2)
+
+	c.ctx.constrainLt(low, high)
+	upperAfterFirst := len(low.UpperBounds)
+	lowerAfterFirst := len(high.LowerBounds)
+	require.Equal(t, 1, upperAfterFirst, "low gains one down-extruded proxy of high as an upper bound")
+
+	c.ctx.constrainLt(low, high) // identical cross-level constraint again
+
+	require.Len(t, low.UpperBounds, upperAfterFirst, "the repeat reuses the proxy; no duplicate upper bound accrues")
+	require.Len(t, high.LowerBounds, lowerAfterFirst, "and no duplicate lower bound accrues on high")
+}
+
+// A discarded probe trial removes its extruded proxy from the bound list, so a later
+// real constraint mints a genuinely-wired fresh proxy rather than reusing the
+// rolled-back one. This guards the probe-safety of the proxy-reuse dedup: the reuse
+// scan reads live bounds, so a proxy whose wiring a Discard reverted is never found.
+func TestConstrainLtProxyReuseIsProbeSafe(t *testing.T) {
+	c := newChecker()
+	low := c.ctx.freshLifetime(0)
+	high := c.ctx.freshLifetime(2)
+
+	p := c.openProbe()
+	c.ctx.constrainLt(low, high)
+	require.Len(t, low.UpperBounds, 1)
+	c.closeProbe(p, false) // discard: low's proxy bound and the proxy's own wiring revert
+	require.Empty(t, low.UpperBounds, "the speculative cross-level bound is rolled back")
+
+	c.ctx.constrainLt(low, high) // real constraint after the discard
+	require.Len(t, low.UpperBounds, 1)
+	proxy := low.UpperBounds[0].(*soltype.LifetimeVar)
+	require.Contains(t, high.LowerBounds, soltype.Lifetime(proxy),
+		"the post-discard proxy is freshly wired to high, not a rolled-back orphan")
+}
+
+// freshenAll freshens a borrow's lifetime, not just its type vars. allFreshener has
+// no level prune, so EVERY quantifiable variable — including a RefType's lifetime —
+// is replaced. Without the arm a reassigned borrow-typed binding would keep its
+// scheme lifetime and the reassignment constraint would mutate it, contaminating
+// later uses. inferAssign relies on this isolation.
+func TestFreshenAllFreshensBorrowLifetime(t *testing.T) {
+	c := newChecker()
+	lt := c.ctx.freshLifetime(3)
+	ref := mutObjAt(lt)
+
+	out := c.freshenAll(ref, 1)
+
+	outLt := out.(*soltype.RefType).Lt.(*soltype.LifetimeVar)
+	require.NotSame(t, lt, outLt, "freshenAll replaces the borrow's lifetime with a fresh one")
+}
+
+// freshenAll freshens a lifetime regardless of its level — even one at or below the
+// target level, which freshenAbove would share. This is the lifetime-sort analogue
+// of allFreshener's no-prune treatment of type vars (lim = math.MinInt).
+func TestFreshenAllFreshensLowLevelBorrowLifetime(t *testing.T) {
+	c := newChecker()
+	lt := c.ctx.freshLifetime(0) // freshenAbove(lim=0) would share this; freshenAll must not
+	ref := mutObjAt(lt)
+
+	out := c.freshenAll(ref, 1)
+
+	outLt := out.(*soltype.RefType).Lt.(*soltype.LifetimeVar)
+	require.NotSame(t, lt, outLt, "freshenAll freshens even a level-0 lifetime")
+}
+
 // --- freshener fall-through: captured lifetime, quantified inner ---
 
 // A borrow with a CAPTURED lifetime (Level <= lim) but a QUANTIFIED inner type var
 // freshens the inner while sharing the lifetime. This exercises the RefType arm's
-// fall-through path — freshenLt returns the lifetime unchanged, so Accept rebuilds
-// Inner — which the all-concrete-inner cases never reach (they are pruned whole
-// before the arm runs).
+// fall-through path — ltFreshener.fresh returns the lifetime unchanged, so Accept
+// rebuilds Inner — which the all-concrete-inner cases never reach (they are pruned
+// whole before the arm runs).
 func TestFreshenSharesCapturedLifetimeWhileFreshateningInner(t *testing.T) {
 	c := newChecker()
 	captured := c.ctx.freshLifetime(0) // captured: shared across instantiations

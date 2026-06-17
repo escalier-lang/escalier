@@ -62,10 +62,10 @@ func IsStaticLifetime(lt Lifetime) bool {
 }
 
 // LevelOfLifetime is the lifetime-sort twin of LevelOf for a single Lifetime: a
-// LifetimeVar's own Level, and 0 for 'static or a nil slot (neither carries a
-// quantifiable variable). LevelOf's RefType arm folds this into the wrapper's
-// level so the freshener/extruder level prune accounts for a borrow's lifetime,
-// not just its inner.
+// LifetimeVar's own Level, and 0 for 'static or a nil slot. Neither 'static nor a
+// nil slot carries a quantifiable variable. LevelOf's RefType arm folds this into
+// the wrapper's level so the freshener/extruder level prune accounts for a borrow's
+// lifetime, not just its inner.
 func LevelOfLifetime(lt Lifetime) int {
 	if lv, ok := lt.(*LifetimeVar); ok {
 		return lv.Level
