@@ -7,14 +7,14 @@ import (
 
 // coalesceRefLifetime rewrites a coalesced RefType's lifetime to its display form
 // (M4 D3). The structural coalescers rebuild a RefType through the shared visitor,
-// which carries the lifetime through unchanged because a Lifetime is not a Type; this
-// runs in their ExitType to resolve that lifetime the way the var arms resolve a
-// type variable. A non-RefType, or a borrow with no lifetime, passes through
-// untouched. The RefType lifetime is covariant — the mut-driven write view never
-// touches it — so it coalesces in the borrow's own polarity, pol.
+// which carries the lifetime through unchanged because a Lifetime is not a Type.
+// This runs in their ExitType to resolve that lifetime the way the var arms resolve
+// a type variable. A non-RefType, or a borrow with no lifetime, passes through
+// untouched. The RefType lifetime is covariant, so it coalesces in the borrow's own
+// polarity, pol. The mut-driven write view never touches it.
 //
-// Naming and single-polarity elision of param lifetimes are deferred to D4; D3
-// resolves only the join-and-escape shape: a join variable expands to the union of
+// Naming and single-polarity elision of param lifetimes are deferred to D4. D3
+// resolves only the join-and-escape shape. A join variable expands to the union of
 // the param lifetimes it reaches, and any lifetime forced to 'static renders
 // 'static.
 func coalesceRefLifetime(t soltype.Type, pol soltype.Polarity) soltype.Type {
@@ -33,14 +33,14 @@ func coalesceRefLifetime(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // renders 'static and a nil lifetime stays nil. A lifetime variable resolves by
 // its origin:
 //
-//   - A param lifetime (a borrow origin) is kept as itself. The printer renders it
-//     under its raw 'l{ID} debug name now and its quantified name in D4. A param
+//   - A param lifetime is a borrow origin. It is kept as itself. The printer renders
+//     it under its raw 'l{ID} debug name now and its quantified name in D4. A param
 //     forced to 'static is the exception: its borrow has escaped, so it renders
 //     'static.
-//   - A join lifetime (a multi-source return/branch, Join set) expands to the union
-//     of the param lifetimes it reaches through its polarity-relevant bounds, so a
-//     return uniting two borrows coalesces to `('a | 'b)`. A reachable 'static
-//     absorbs the whole union to 'static.
+//   - A join lifetime is a multi-source return or branch with Join set. It expands
+//     to the union of the param lifetimes it reaches through its polarity-relevant
+//     bounds, so a return uniting two borrows coalesces to `('a | 'b)`. A reachable
+//     'static absorbs the whole union to 'static.
 func coalesceLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetime {
 	v, ok := lt.(*soltype.LifetimeVar)
 	if !ok {
@@ -56,8 +56,8 @@ func coalesceLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetim
 	//      its own name. ContainsLifetime already dedups bounds, so this never even
 	//      reaches a second copy.
 	//   3. meet('a, 'b), two distinct lifetimes, is NOT constructed. There is no
-	//      lifetime-intersection form to hold it — only LifetimeUnion exists, and that
-	//      is the output-only join twin — so the variable keeps its own name and its
+	//      lifetime-intersection form to hold it. Only LifetimeUnion exists, and that
+	//      is the output-only join twin. So the variable keeps its own name and its
 	//      non-'static upper bounds do not appear in the result.
 	// Cases 2 and 3 both fall through to `return v`: a non-forced param renders under
 	// its own name regardless of its other upper bounds.

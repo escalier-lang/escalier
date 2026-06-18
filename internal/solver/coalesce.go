@@ -580,6 +580,7 @@ func equalType(a, b soltype.Type) bool {
 //   - A LifetimeUnion is the union form a join variable coalesces to in D3, such as
 //     'a | 'b. Two are equal when they hold the same members, pairwise equal in
 //     order. This lets two RefTypes carrying the same coalesced union dedup.
+//
 // This mirrors how the rest of equalType keys variables by pointer and primitives by
 // value.
 func ltEqual(a, b soltype.Lifetime) bool {

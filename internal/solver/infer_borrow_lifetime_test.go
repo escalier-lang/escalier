@@ -113,11 +113,11 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 }
 
 // Returning one of two borrows with DISTINCT lifetimes joins them into a single
-// borrow whose lifetime is the union of theirs (M4 D3, the ConditionalUnionReturn
-// acceptance). The return-point join mints a fresh join lifetime bounded below by
-// 'l0 and 'l1, which coalesces to `('l0 | 'l1)` in the positive return position. The
-// param lifetimes 'l0/'l1 stay named on the borrows they originate; D4 renders them
-// `'a`/`'b` and the union `('a | 'b)`.
+// borrow whose lifetime is the union of theirs. This is the ConditionalUnionReturn
+// acceptance (M4 D3). The return-point join mints a fresh join lifetime bounded
+// below by 'l0 and 'l1, which coalesces to `('l0 | 'l1)` in the positive return
+// position. The param lifetimes 'l0/'l1 stay named on the borrows they originate.
+// D4 renders them `'a`/`'b` and the union `('a | 'b)`.
 func TestInferConditionalUnionReturn(t *testing.T) {
 	src := `fn f(p: mut {x: number}, q: mut {x: number}) {
   if true {
@@ -133,7 +133,7 @@ func TestInferConditionalUnionReturn(t *testing.T) {
 		values["f"])
 }
 
-// Returning borrows whose objects have DIFFERENT field sets does NOT join — a mut
+// Returning borrows whose objects have DIFFERENT field sets does NOT join. A mut
 // object's field set is invariant, so uniting `mut {x}` and `mut {y}` would invent a
 // writable field absent from one branch. joinBorrows rejects the mismatch and the
 // return falls back to the generic union, preserving both borrows with their own
@@ -153,7 +153,7 @@ func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
 		values["f"])
 }
 
-// A join over THREE borrows unites all their lifetimes: the fresh join lifetime is
+// A join over THREE borrows unites all their lifetimes. The fresh join lifetime is
 // bounded below by each, coalescing to `('l0 | 'l1 | 'l2)` in the return position.
 // This confirms the join generalizes past the two-branch case to an n-ary return set.
 func TestInferThreeWayBorrowJoin(t *testing.T) {
@@ -175,12 +175,12 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 		values["f"])
 }
 
-// A GENERALIZED joined-borrow function keeps its union face after instantiation: a
+// A GENERALIZED joined-borrow function keeps its union face after instantiation. A
 // caller that passes two of its own borrows still sees a two-lifetime union, not a
 // single name. This is the only end-to-end exercise of the Join flag riding through
-// freshenAbove/extrude (D2.5): if the flag were dropped on the freshened join
+// freshenAbove/extrude (D2.5). If the flag were dropped on the freshened join
 // lifetime, the instantiated return would coalesce to one `'l{id}` instead of a
-// union. `pick` generalizes to `mut ('l0 | 'l1) {…}`; instantiating it inside `use`
+// union. `pick` generalizes to `mut ('l0 | 'l1) {…}`. Instantiating it inside `use`
 // freshens the join and its two members to use-level lifetimes, so `use` returns a
 // union of those.
 func TestInferInstantiatedJoinReturnsUnion(t *testing.T) {
@@ -200,7 +200,7 @@ fn use(a: mut {x: number}, b: mut {x: number}) {
 		values["use"])
 }
 
-// Joining borrows that share a field NAME but disagree on its TYPE is rejected: a mut
+// Joining borrows that share a field NAME but disagree on its TYPE is rejected. A mut
 // object's fields are observable in both directions, so the join pins each shared
 // field invariant, and `number` vs `string` for `x` fails that pin in both
 // directions. This locks in that the soundness constraint actually fires rather than
@@ -220,11 +220,11 @@ func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
 	}, Messages(errs))
 }
 
-// A return set mixing a borrow with an OWNED value does not join — joinBorrows
+// A return set mixing a borrow with an OWNED value does not join. joinBorrows
 // requires every input to be a mutable borrow carrying a lifetime, and an object
-// literal is owned (not a RefType). The all-borrows gate falls back to the generic
-// union, so the result keeps the borrow's lifetime alongside the owned literal (M4
-// D3).
+// literal is owned rather than a RefType. The all-borrows gate falls back to the
+// generic union, so the result keeps the borrow's lifetime alongside the owned
+// literal (M4 D3).
 func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 	src := `fn f(p: mut {x: number}) {
   if true {
@@ -240,13 +240,13 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 		values["f"])
 }
 
-// A borrowed parameter written into module-level storage escapes to 'static (M4 D3,
-// the EscapingRefIntoStatic acceptance — now reachable from real source). `cache`
-// stores its borrow `p` into the module-level `var sink`, a GLOBAL WRITE: the value
-// outlives every borrow region, so p's lifetime is forced `<: 'static` and the
-// parameter renders `mut 'static {x: number}` rather than under a borrow lifetime
-// `'l{id}`. The store itself checks — a 'static borrow is owned-forever, so it fills
-// the owned slot instead of tripping BorrowEscapeError.
+// A borrowed parameter written into module-level storage escapes to 'static. This is
+// the EscapingRefIntoStatic acceptance (M4 D3), now reachable from real source.
+// `cache` stores its borrow `p` into the module-level `var sink`, a global write. The
+// stored value outlives every borrow region, so p's lifetime is forced `<: 'static`
+// and the parameter renders `mut 'static {x: number}` rather than under a borrow
+// lifetime `'l{id}`. The store itself checks. A 'static borrow is owned-forever, so
+// it fills the owned slot instead of tripping BorrowEscapeError.
 func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
 	src := `var sink = {x: 0}
 fn cache(p: mut {x: number}) {
@@ -258,7 +258,7 @@ fn cache(p: mut {x: number}) {
 	require.Equal(t, "fn (p: mut 'static {x: number}) -> void", values["cache"])
 }
 
-// An ordinary global write of a NON-borrow value is unaffected by the escape rule:
+// An ordinary global write of a NON-borrow value is unaffected by the escape rule.
 // constrainEscape is a no-op on a non-borrow source and CarrierOf is the identity, so
 // `bump` reassigning the module-level `var n` checks exactly as before, with no
 // lifetime machinery engaged.

@@ -316,7 +316,7 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 		return collected[0]
 	default:
 		// M4 D3: several returns of borrowed objects that differ only in lifetime join
-		// into one borrow whose lifetime unites theirs, so `if c { return p } else {
+		// into one borrow whose lifetime unites theirs. So `if c { return p } else {
 		// return q }` over two `mut` params is `mut ('a | 'b) {…}` rather than the
 		// un-joined `mut 'a {…} | mut 'b {…}`. A mixed or non-borrow set falls through to
 		// the generic union below.
@@ -336,15 +336,15 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 // lifetime (M4 D3). It applies only when EVERY input is a mutable borrow of an
 // object, all sharing the same field-name set with each carrying a lifetime. The
 // result is one mutable borrow whose lifetime is a fresh JOIN variable bounded below
-// by each input's lifetime — so a positive-position result coalesces to `('a | 'b)`
-// — with the shared fields constrained invariant across the inputs. A mut object's
-// fields are observable in both directions, so a sound join pins them equal; uniting
-// differing field sets is rejected (ok=false) because it would invent writable fields
+// by each input's lifetime, so a positive-position result coalesces to `('a | 'b)`.
+// The shared fields are constrained invariant across the inputs. A mut object's
+// fields are observable in both directions, so a sound join pins them equal. Uniting
+// differing field sets returns ok=false, because it would invent writable fields
 // absent from one input.
 //
 // ok=false leaves the caller on its generic union path. A usage-inferred borrow is a
-// type variable here, not a concrete RefType, so it falls through to ok=false —
-// matching the spike, which joins only concrete mut records.
+// type variable here, not a concrete RefType, so it returns ok=false. This matches
+// the spike, which joins only concrete mut records.
 func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
 	refs := make([]*soltype.RefType, len(types))
 	objs := make([]*soltype.ObjectType, len(types))
@@ -393,15 +393,16 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 // escapeVisitor, so it reaches a borrow in any structural position without a
 // hand-maintained type switch.
 //
-// One boundary: the visitor treats a TypeVarType as a leaf, so a borrow reachable
-// only through a usage-inferred variable is not forced here. That is the same place
-// the global-write CarrierOf peel stops, and the deeper handling rides M4 G2.
+// There is one boundary. The visitor treats a TypeVarType as a leaf, so a borrow
+// reachable only through a usage-inferred variable is not forced here. That is the
+// same place the global-write CarrierOf peel stops, and the deeper handling rides
+// M4 G2.
 func (c *checker) constrainEscape(t soltype.Type) {
 	t.Accept(escapeVisitor{c: c}, soltype.Positive)
 }
 
 // escapeVisitor forces every borrow lifetime it reaches to outlive 'static. It
-// rewrites nothing: EnterType records the constraint and returns an ordinary descent,
+// rewrites nothing. EnterType records the constraint and returns an ordinary descent,
 // so the shared rewriting visitor carries it through a RefType inner, object
 // property, tuple element, union member, function parameter or return, and promise
 // payload alike. The 'static bound is monotonic, so visiting a borrow in any polarity
@@ -768,7 +769,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// borrow-into-owned BorrowEscapeError, the rule that rejects a borrow which does
 		// NOT escape. CarrierOf is the identity on a non-borrow source, so an ordinary
 		// global write such as `n = 5` is unaffected. The peel only looks through a
-		// top-level borrow and drops the source's mutability check; the fuller treatment
+		// top-level borrow and drops the source's mutability check. The fuller treatment
 		// of an escaped borrow's mutability rides M4 G2.
 		//
 		// Escape runs only when the compatibility check passes, so a rejected store does

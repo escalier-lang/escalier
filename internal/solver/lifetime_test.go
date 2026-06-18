@@ -114,11 +114,11 @@ func TestConstrainLtReflexiveIsNoOp(t *testing.T) {
 }
 
 // A borrowed value flowing into 'static storage has its lifetime forced to outlive
-// 'static (M4 D3, the EscapingRefIntoStatic acceptance). constrainEscape constrains
-// the borrow's lifetime `<: 'static`, so coalescing the borrow renders it `mut
-// 'static {x: number}` rather than under the param's own name. No Escalier construct
-// routes a borrow into static storage yet — a borrow originates only at a parameter
-// — so this exercises the rule's mechanism directly.
+// 'static. This is the EscapingRefIntoStatic acceptance (M4 D3). constrainEscape
+// constrains the borrow's lifetime `<: 'static`, so coalescing the borrow renders it
+// `mut 'static {x: number}` rather than under the param's own name. No Escalier
+// construct routes a borrow into static storage yet, since a borrow originates only
+// at a parameter, so this exercises the rule's mechanism directly.
 func TestEscapingRefIntoStatic(t *testing.T) {
 	c := newChecker()
 	lt := c.ctx.freshLifetime(0)
@@ -136,7 +136,7 @@ func TestEscapingRefIntoStatic(t *testing.T) {
 	require.Equal(t, "mut 'static {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
 }
 
-// Escape reaches a borrow NESTED inside an object property: storing `{p: mut 'a
+// Escape reaches a borrow NESTED inside an object property. Storing `{p: mut 'a
 // Point}` forces the inner borrow's lifetime to 'static too, since the whole value
 // escapes. constrainEscape walks the structural carriers, so the property's borrow
 // is constrained alongside any top-level one.
@@ -160,9 +160,9 @@ func TestEscapingNestedRefIntoStatic(t *testing.T) {
 }
 
 // Escaping a JOINED borrow forces every param lifetime the join reaches to outlive
-// 'static, so the whole `('l0 | 'l1)` union collapses to a single 'static (M4 D3, the
-// join↔escape interaction). constrainEscape constrains the join lifetime `<:
-// 'static`, which propagates through its lower bounds to each member, and
+// 'static, so the whole `('l0 | 'l1)` union collapses to a single 'static. This is
+// the join↔escape interaction (M4 D3). constrainEscape constrains the join lifetime
+// `<: 'static`, which propagates through its lower bounds to each member, and
 // coalesceLifetime then absorbs the union to 'static rather than expanding it.
 func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	c := newChecker()
@@ -191,7 +191,7 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 
 // A nested join reaching one param lifetime through two distinct sub-joins lists
 // that lifetime once in the rendered union, not twice. The top join's lower bounds
-// are the two sub-joins; both reach 'l0, so reachableParamLifetimes collects it
+// are the two sub-joins, and both reach 'l0. So reachableParamLifetimes collects it
 // twice and coalesceLifetime dedups before building the LifetimeUnion. Without the
 // dedup this rendered `('l0 | 'l1 | 'l0 | 'l2)`.
 func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
@@ -219,11 +219,12 @@ func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 	require.Equal(t, "mut ('l0 | 'l1 | 'l2) {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
 }
 
-// ltEqual compares a LifetimeUnion (a join's coalesced face) structurally — equal
-// iff its members are pairwise equal in order — so two RefTypes with the same join
-// face dedup during coalescing. A LifetimeVar member keys by identity and 'static by
-// value, inherited from the recursive call. This branch has no source-reachable
-// trigger yet (two identical joined borrows in one union), so it is checked directly.
+// ltEqual compares a LifetimeUnion structurally. A LifetimeUnion is a join's
+// coalesced face. Two unions are equal iff their members are pairwise equal in order,
+// so two RefTypes with the same join face dedup during coalescing. A LifetimeVar
+// member keys by identity and 'static by value, inherited from the recursive call.
+// This branch has no source-reachable trigger yet, which would be two identical
+// joined borrows in one union, so it is checked directly.
 func TestLtEqualLifetimeUnion(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)

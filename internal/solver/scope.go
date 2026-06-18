@@ -31,7 +31,7 @@ type ValueBinding struct {
 	Kind ast.VariableKind
 	// ModuleLevel marks a top-level binding — one defined directly in the module
 	// scope, as opposed to a function parameter or body-local `val`/`var`. It is set
-	// only by inferComponent's phase-3 definitions (the module's SCC bindings) and
+	// only by inferComponent's phase-3 definitions, the module's SCC bindings, and
 	// left false for every nested binding. inferAssign reads it to recognise a GLOBAL
 	// WRITE: storing a value into module-level storage outlives every borrow region,
 	// so a borrowed value written there escapes to 'static (M4 D3).
