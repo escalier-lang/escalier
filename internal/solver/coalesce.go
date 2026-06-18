@@ -31,7 +31,8 @@ import (
 // See coalesceRec for the guard's behavior. M3 still owns the *precise* μ-bound
 // recursive rendering; this guard only keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	return t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType]()}, pol)
+	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType]()}, pol)
+	return coalesceLifetimes(c) // D4: resolve borrow lifetimes to their display form
 }
 
 // coalescer is the soltype-visitor form of coalesce. The structural arms and the
@@ -78,7 +79,9 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 }
 
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	return coalesceRefLifetime(t, pol)
+	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
+	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
+	return t
 }
 
 // widenVar lowers a widenable `var` binding's coalesced value to its primitive
@@ -143,11 +146,12 @@ type occKey struct {
 // its own polarities, so the check is exactly PR1's per-variable both-polarities
 // test.
 func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
-	return t.Accept(&schemeCoalescer{
+	c := t.Accept(&schemeCoalescer{
 		simp:     simplifyScheme(t, genLevel),
 		genLevel: genLevel,
 		seen:     set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
+	return coalesceLifetimes(c) // D4: resolve borrow lifetimes to their display form
 }
 
 // schemeCoalescer is the soltype-visitor form of coalesceScheme. It has the same
@@ -225,7 +229,9 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 }
 
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	return coalesceRefLifetime(t, pol)
+	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
+	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
+	return t
 }
 
 // schemeType returns a scheme's coalesced DISPLAY type (variable-free except for

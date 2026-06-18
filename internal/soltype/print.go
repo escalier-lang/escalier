@@ -103,13 +103,24 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
 		names[v] = name
 		labels = append(labels, name)
 	}
-	if len(labels) == 0 {
+	// Borrow lifetimes left in the coalesced type by D4's coalesceLifetimes are all
+	// nameable param lifetimes — a connect-nothing one was already elided and a join
+	// expanded to a union of these. Name each 'a, 'b, … in first-appearance order and
+	// add it to the quantifier prefix after the type parameters.
+	ltNames := map[*LifetimeVar]string{}
+	var ltLabels []string
+	for _, lv := range freeLifetimeVars(t) {
+		name := lifetimeParamName(len(ltLabels))
+		ltNames[lv] = name
+		ltLabels = append(ltLabels, name)
+	}
+	if len(labels) == 0 && len(ltLabels) == 0 {
 		// No quantified parameters: render as a plain (possibly raw-var) type, which
 		// keeps a leaked variable visible as t{ID}.
 		return Print(t)
 	}
-	p := &namedPrinter{names: names}
-	prefix := "<" + strings.Join(labels, ", ") + ">"
+	p := &namedPrinter{names: names, ltNames: ltNames}
+	prefix := "<" + strings.Join(append(labels, ltLabels...), ", ") + ">"
 	if ft, ok := t.(*FuncType); ok {
 		return "fn " + prefix + p.printFuncTail(ft)
 	}
@@ -120,6 +131,79 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
 // T1, …, matching the planned `fn <T0>(x: T0) -> T0` rendering.
 func typeParamName(i int) string {
 	return "T" + strconv.Itoa(i)
+}
+
+// lifetimeParamName is the surface name for the i-th quantified lifetime parameter:
+// 'a, 'b, …, 'z, 'aa, 'ab, … (Excel-style base-26), so a borrow renders as
+// `fn <'a>(p: mut 'a {x}) -> mut 'a {x}`.
+func lifetimeParamName(i int) string {
+	var b []byte
+	for {
+		b = append([]byte{byte('a' + i%26)}, b...)
+		i = i/26 - 1
+		if i < 0 {
+			break
+		}
+	}
+	return "'" + string(b)
+}
+
+// freeLifetimeVars collects the LifetimeVars appearing in t in first-appearance
+// print order — the lifetime-sort twin of freeTypeVars. Lifetimes ride only on
+// RefType (its Lt slot, directly or as the members of a LifetimeUnion), so the walk
+// mirrors freeTypeVars but inspects each borrow's lifetime as it descends.
+func freeLifetimeVars(t Type) []*LifetimeVar {
+	var out []*LifetimeVar
+	seen := set.NewSet[*LifetimeVar]()
+	addLt := func(lt Lifetime) {
+		switch lt := lt.(type) {
+		case *LifetimeVar:
+			if !seen.Contains(lt) {
+				seen.Add(lt)
+				out = append(out, lt)
+			}
+		case *LifetimeUnion:
+			for _, m := range lt.Lifetimes {
+				if mv, ok := m.(*LifetimeVar); ok && !seen.Contains(mv) {
+					seen.Add(mv)
+					out = append(out, mv)
+				}
+			}
+		}
+	}
+	var walk func(Type)
+	walk = func(t Type) {
+		switch t := t.(type) {
+		case *FuncType:
+			for _, p := range t.Params {
+				walk(p.Type)
+			}
+			walk(t.Ret)
+		case *TupleType:
+			for _, e := range t.Elems {
+				walk(e)
+			}
+		case *ObjectType:
+			for _, e := range t.Elems {
+				walk(AsProperty(e).Type)
+			}
+		case *PromiseType:
+			walk(t.Inner)
+		case *RefType:
+			addLt(t.Lt)
+			walk(t.Inner)
+		case *UnionType:
+			for _, m := range t.Types {
+				walk(m)
+			}
+		case *IntersectionType:
+			for _, m := range t.Types {
+				walk(m)
+			}
+		}
+	}
+	walk(t)
+	return out
 }
 
 // freeTypeVars collects the TypeVarTypes appearing in t in first-appearance print
