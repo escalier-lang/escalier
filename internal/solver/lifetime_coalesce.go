@@ -56,6 +56,12 @@ func coalesceLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetim
 	if static {
 		return soltype.Static
 	}
+	// reachableParamLifetimes can reach one param lifetime through two distinct
+	// nested joins, so its collected members may repeat one. Dedup before building
+	// the union so the rendered `('a | 'b)` lists each lifetime once and ltEqual's
+	// positional member comparison stays stable. Deduping here can also drop the
+	// count to one, which the switch then renders as a bare lifetime.
+	members = dedupLifetimes(members)
 	switch len(members) {
 	case 1:
 		return members[0]
@@ -106,6 +112,22 @@ func reachableParamLifetimes(v *soltype.LifetimeVar, pol soltype.Polarity, seen 
 		static = static || subStatic
 	}
 	return members, static
+}
+
+// dedupLifetimes removes duplicate lifetimes, preserving first-occurrence order.
+// The members are identity-keyed LifetimeVars, the same key ltEqual uses, so
+// pointer equality is the right notion of "the same lifetime" here.
+func dedupLifetimes(lts []soltype.Lifetime) []soltype.Lifetime {
+	seen := set.NewSet[soltype.Lifetime]()
+	out := make([]soltype.Lifetime, 0, len(lts))
+	for _, lt := range lts {
+		if seen.Contains(lt) {
+			continue
+		}
+		seen.Add(lt)
+		out = append(out, lt)
+	}
+	return out
 }
 
 // lifetimeForced reports whether a lifetime variable has 'static among its bounds,

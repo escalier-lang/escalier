@@ -189,6 +189,36 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	require.Equal(t, "mut 'static {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
 }
 
+// A nested join reaching one param lifetime through two distinct sub-joins lists
+// that lifetime once in the rendered union, not twice. The top join's lower bounds
+// are the two sub-joins; both reach 'l0, so reachableParamLifetimes collects it
+// twice and coalesceLifetime dedups before building the LifetimeUnion. Without the
+// dedup this rendered `('l0 | 'l1 | 'l0 | 'l2)`.
+func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	d := c.ctx.freshLifetime(0)
+	j2 := c.ctx.freshJoinLifetime(0)
+	j3 := c.ctx.freshJoinLifetime(0)
+	top := c.ctx.freshJoinLifetime(0)
+	c.ctx.constrainLt(a, j2)
+	c.ctx.constrainLt(b, j2)
+	c.ctx.constrainLt(a, j3) // 'l0 shared across both sub-joins
+	c.ctx.constrainLt(d, j3)
+	c.ctx.constrainLt(j2, top)
+	c.ctx.constrainLt(j3, top)
+	ref := &soltype.RefType{
+		Mut: true,
+		Lt:  top,
+		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+		}},
+	}
+
+	require.Equal(t, "mut ('l0 | 'l1 | 'l2) {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+}
+
 // ltEqual compares a LifetimeUnion (a join's coalesced face) structurally — equal
 // iff its members are pairwise equal in order — so two RefTypes with the same join
 // face dedup during coalescing. A LifetimeVar member keys by identity and 'static by
