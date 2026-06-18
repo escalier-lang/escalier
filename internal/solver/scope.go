@@ -29,6 +29,13 @@ type ValueBinding struct {
 	// SEPARATE from type-level mutability (`mut`-field / aliasing / lifetime
 	// transitions, M4), which is a property of the TYPE, not of this binding.
 	Kind ast.VariableKind
+	// ModuleLevel marks a top-level binding — one defined directly in the module
+	// scope, as opposed to a function parameter or body-local `val`/`var`. It is set
+	// only by inferComponent's phase-3 definitions, the module's SCC bindings, and
+	// left false for every nested binding. inferAssign reads it to recognise a GLOBAL
+	// WRITE: storing a value into module-level storage outlives every borrow region,
+	// so a borrowed value written there escapes to 'static (M4 D3).
+	ModuleLevel bool
 }
 
 // IsOverloaded reports whether this binding is an overload set. Consumers MUST

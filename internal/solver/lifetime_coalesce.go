@@ -1,0 +1,155 @@
+package solver
+
+import (
+	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
+)
+
+// coalesceRefLifetime rewrites a coalesced RefType's lifetime to its display form
+// (M4 D3). The structural coalescers rebuild a RefType through the shared visitor,
+// which carries the lifetime through unchanged because a Lifetime is not a Type.
+// This runs in their ExitType to resolve that lifetime the way the var arms resolve
+// a type variable. A non-RefType, or a borrow with no lifetime, passes through
+// untouched. The RefType lifetime is covariant, so it coalesces in the borrow's own
+// polarity, pol. The mut-driven write view never touches it.
+//
+// Naming and single-polarity elision of param lifetimes are deferred to D4. D3
+// resolves only the join-and-escape shape. A join variable expands to the union of
+// the param lifetimes it reaches, and any lifetime forced to 'static renders
+// 'static.
+func coalesceRefLifetime(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	r, ok := t.(*soltype.RefType)
+	if !ok || r.Lt == nil {
+		return t
+	}
+	lt := coalesceLifetime(r.Lt, pol)
+	if lt == r.Lt {
+		return r
+	}
+	return &soltype.RefType{Mut: r.Mut, Lt: lt, Inner: r.Inner}
+}
+
+// coalesceLifetime resolves a single lifetime to its display form. A 'static
+// renders 'static and a nil lifetime stays nil. A lifetime variable resolves by
+// its origin:
+//
+//   - A param lifetime is a borrow origin. It is kept as itself. The printer renders
+//     it under its raw 'l{ID} debug name now and its quantified name in D4. A param
+//     forced to 'static is the exception: its borrow has escaped, so it renders
+//     'static.
+//   - A join lifetime is a multi-source return or branch with Join set. It expands
+//     to the union of the param lifetimes it reaches through its polarity-relevant
+//     bounds, so a return uniting two borrows coalesces to `('a | 'b)`. A reachable
+//     'static absorbs the whole union to 'static.
+func coalesceLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetime {
+	v, ok := lt.(*soltype.LifetimeVar)
+	if !ok {
+		return lt // 'static, or a nil slot handled by the caller
+	}
+	// A param lifetime resolves by MEETING its upper bounds, but this lattice is
+	// degenerate, so that meet has only three outcomes and never builds a combined
+	// node:
+	//   1. meet('a, 'static) = 'static. 'static is the lattice bottom, so it absorbs
+	//      the meet. forcedToStatic detects the `v <: 'static` escape and returns
+	//      'static. This is the only outcome that changes the variable.
+	//   2. meet('a, 'a) = 'a. A duplicate bound is idempotent, so the variable keeps
+	//      its own name. ContainsLifetime already dedups bounds, so this never even
+	//      reaches a second copy.
+	//   3. meet('a, 'b), two distinct lifetimes, is NOT constructed. There is no
+	//      lifetime-intersection form to hold it. Only LifetimeUnion exists, and that
+	//      is the output-only join twin. So the variable keeps its own name and its
+	//      non-'static upper bounds do not appear in the result.
+	// Cases 2 and 3 both fall through to `return v`: a non-forced param renders under
+	// its own name regardless of its other upper bounds.
+	if !v.Join {
+		if forcedToStatic(v) {
+			return soltype.Static
+		}
+		return v
+	}
+	members, static := reachableParamLifetimes(v, pol, set.NewSet[*soltype.LifetimeVar]())
+	if static {
+		return soltype.Static
+	}
+	// reachableParamLifetimes can reach one param lifetime through two distinct
+	// nested joins, so its collected members may repeat one. Dedup before building
+	// the union so the rendered `('a | 'b)` lists each lifetime once and ltEqual's
+	// positional member comparison stays stable. Deduping here can also drop the
+	// count to one, which the switch then renders as a bare lifetime.
+	members = dedupLifetimes(members)
+	switch len(members) {
+	case 1:
+		return members[0]
+	case 0:
+		// Unreachable: joinBorrows gives every join at least one param lower bound, and
+		// a join whose members are all forced returns through the 'static branch above.
+		// Guard it so a degenerate empty union never reaches the printer as `()`. A
+		// memberless join carries no nameable lifetime, so it drops to nil, an
+		// owned-mutable borrow.
+		return nil
+	default:
+		return &soltype.LifetimeUnion{Lifetimes: members}
+	}
+}
+
+// reachableParamLifetimes collects the param lifetimes a join variable reaches
+// through its polarity-relevant bounds — lower bounds in Positive position, upper
+// in Negative — following nested join variables transitively. It reports whether
+// 'static is reached, which absorbs the union. The seen-set keys by variable
+// identity so a cyclic bound graph terminates. A forced param member renders
+// 'static, which sets the static flag rather than adding the member.
+func reachableParamLifetimes(v *soltype.LifetimeVar, pol soltype.Polarity, seen set.Set[*soltype.LifetimeVar]) ([]soltype.Lifetime, bool) {
+	if seen.Contains(v) {
+		return nil, false
+	}
+	seen.Add(v)
+	var members []soltype.Lifetime
+	static := false
+	for _, b := range v.BoundsAt(pol) {
+		if soltype.IsStaticLifetime(b) {
+			static = true
+			continue
+		}
+		bv, ok := b.(*soltype.LifetimeVar)
+		if !ok {
+			continue
+		}
+		if !bv.Join {
+			if forcedToStatic(bv) {
+				static = true
+				continue
+			}
+			members = append(members, bv)
+			continue
+		}
+		sub, subStatic := reachableParamLifetimes(bv, pol, seen)
+		members = append(members, sub...)
+		static = static || subStatic
+	}
+	return members, static
+}
+
+// dedupLifetimes removes duplicate lifetimes, preserving first-occurrence order.
+// The members are identity-keyed LifetimeVars, the same key ltEqual uses, so
+// pointer equality is the right notion of "the same lifetime" here.
+func dedupLifetimes(lts []soltype.Lifetime) []soltype.Lifetime {
+	seen := set.NewSet[soltype.Lifetime]()
+	out := make([]soltype.Lifetime, 0, len(lts))
+	for _, lt := range lts {
+		if seen.Contains(lt) {
+			continue
+		}
+		seen.Add(lt)
+		out = append(out, lt)
+	}
+	return out
+}
+
+// forcedToStatic reports whether a lifetime variable has 'static among its bounds,
+// in which case it coalesces to 'static — the escape-to-static outcome. Both bound
+// directions are checked: the escape constraint `v <: 'static` adds 'static as an
+// upper bound, while a lower-bound 'static can arise from a join member.
+func forcedToStatic(v *soltype.LifetimeVar) bool {
+	return soltype.ContainsLifetime(v.LowerBounds, soltype.Static) ||
+		soltype.ContainsLifetime(v.UpperBounds, soltype.Static)
+}

@@ -585,6 +585,7 @@ func (c *Context) extrudeLt(lt soltype.Lifetime, pol soltype.Polarity, lvl int, 
 		return nlv
 	}
 	nlv := c.freshLifetime(lvl)
+	nlv.Join = lv.Join // an extruded proxy keeps the origin's join-vs-param nature
 	cache[key] = nlv
 	// Remember which lifetime nlv is an outer-extruded proxy of, so a repeated outlives
 	// constraint can reuse this proxy instead of minting a second one (constrainLt's

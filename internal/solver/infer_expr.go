@@ -315,6 +315,14 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 	case 1:
 		return collected[0]
 	default:
+		// M4 D3: several returns of borrowed objects that differ only in lifetime join
+		// into one borrow whose lifetime unites theirs. So `if c { return p } else {
+		// return q }` over two `mut` params is `mut ('a | 'b) {…}` rather than the
+		// un-joined `mut 'a {…} | mut 'b {…}`. A mixed or non-borrow set falls through to
+		// the generic union below.
+		if joined, ok := c.joinBorrows(node, lvl, collected); ok {
+			return joined
+		}
 		joinVar := c.freshAt(lvl)
 		c.recordProv(joinVar, node, ReturnJoin)
 		for _, rt := range collected {
@@ -322,6 +330,108 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 		}
 		return joinVar
 	}
+}
+
+// joinBorrows synthesizes the join of several borrowed objects that differ only in
+// lifetime (M4 D3). It applies only when EVERY input is a mutable borrow of an
+// object, all sharing the same field-name set with each carrying a lifetime. The
+// result is one mutable borrow whose lifetime is a fresh JOIN variable bounded below
+// by each input's lifetime, so a positive-position result coalesces to `('a | 'b)`.
+// The shared fields are constrained invariant across the inputs. A mut object's
+// fields are observable in both directions, so a sound join pins them equal. Uniting
+// differing field sets returns ok=false, because it would invent writable fields
+// absent from one input.
+//
+// ok=false leaves the caller on its generic union path. A usage-inferred borrow is a
+// type variable here, not a concrete RefType, so it returns ok=false. This matches
+// the spike, which joins only concrete mut records.
+func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
+	refs := make([]*soltype.RefType, len(types))
+	objs := make([]*soltype.ObjectType, len(types))
+	for i, t := range types {
+		r, ok := t.(*soltype.RefType)
+		if !ok || !r.Mut || r.Lt == nil {
+			return nil, false
+		}
+		obj, ok := r.Inner.(*soltype.ObjectType)
+		if !ok {
+			return nil, false
+		}
+		if i > 0 && !sameObjectKeys(objs[0], obj) {
+			return nil, false
+		}
+		refs[i] = r
+		objs[i] = obj
+	}
+
+	joinLt := c.ctx.freshJoinLifetime(lvl)
+	for _, r := range refs {
+		c.ctx.constrainLt(r.Lt, joinLt)
+	}
+	// Pin each shared field invariant across the inputs: a mut object's fields are
+	// read AND written through the join, so the join is sound only when they agree.
+	for _, e := range objs[0].Elems {
+		name := soltype.AsProperty(e).Name
+		first, _ := objs[0].Prop(name)
+		for _, obj := range objs[1:] {
+			other, _ := obj.Prop(name)
+			c.constrain(node, first.Type, other.Type)
+			c.constrain(node, other.Type, first.Type)
+		}
+	}
+	return &soltype.RefType{Mut: true, Lt: joinLt, Inner: objs[0]}, true
+}
+
+// constrainEscape constrains every borrow lifetime reachable in t to outlive
+// 'static (M4 D3). It is the rule for a value flowing into module-level or otherwise
+// 'static storage. A borrow that escapes its region must live forever, so each
+// lifetime variable v gains the upper bound 'static. coalesceLifetime then resolves
+// such a forced lifetime to 'static.
+//
+// inferAssign calls this on the source of a GLOBAL WRITE, a store into a
+// module-level binding. The walk rides the shared soltype visitor through
+// escapeVisitor, so it reaches a borrow in any structural position without a
+// hand-maintained type switch.
+//
+// There is one boundary. The visitor treats a TypeVarType as a leaf, so a borrow
+// reachable only through a usage-inferred variable is not forced here. That is the
+// same place the global-write CarrierOf peel stops, and the deeper handling rides
+// M4 G2.
+func (c *checker) constrainEscape(t soltype.Type) {
+	t.Accept(escapeVisitor{c: c}, soltype.Positive)
+}
+
+// escapeVisitor forces every borrow lifetime it reaches to outlive 'static. It
+// rewrites nothing. EnterType records the constraint and returns an ordinary descent,
+// so the shared rewriting visitor carries it through a RefType inner, object
+// property, tuple element, union member, function parameter or return, and promise
+// payload alike. The 'static bound is monotonic, so visiting a borrow in any polarity
+// is sound.
+type escapeVisitor struct{ c *checker }
+
+func (v escapeVisitor) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if r, ok := t.(*soltype.RefType); ok {
+		if lt, ok := r.Lt.(*soltype.LifetimeVar); ok {
+			v.c.ctx.constrainLt(lt, soltype.Static)
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (escapeVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// sameObjectKeys reports whether two objects carry exactly the same set of property
+// names — the join's precondition, since a mut object's field set is invariant.
+func sameObjectKeys(a, b *soltype.ObjectType) bool {
+	if len(a.Elems) != len(b.Elems) {
+		return false
+	}
+	for _, e := range a.Elems {
+		if _, ok := b.Prop(soltype.AsProperty(e).Name); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // asyncReturn computes an `async fn`'s external return type, which always faces
@@ -648,7 +758,31 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// the `b.Kind != ast.VarKind` gate above before reaching here.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
-	c.constrainAssign(e, sourceT, targetT)
+	if b.ModuleLevel {
+		// This is a global write, a store into module-level storage that lives for the
+		// program's whole run. Any borrow the value carries must outlive every borrow
+		// region, so it escapes to 'static (M4 D3).
+		//
+		// The value-compatibility check runs against the source's CARRIER, not the
+		// borrow itself. A borrow forced to 'static is owned-forever, so it satisfies an
+		// owned slot. Comparing the whole borrow would instead trip the
+		// borrow-into-owned BorrowEscapeError, the rule that rejects a borrow which does
+		// NOT escape. CarrierOf is the identity on a non-borrow source, so an ordinary
+		// global write such as `n = 5` is unaffected. The peel only looks through a
+		// top-level borrow and drops the source's mutability check. The fuller treatment
+		// of an escaped borrow's mutability rides M4 G2.
+		//
+		// Escape runs only when the compatibility check passes, so a rejected store does
+		// not leave the source's lifetime forced to 'static. So `var sink = {…}; fn(p:
+		// mut {…}) { sink = p }` reports p as `mut 'static {…}`.
+		errsBefore := len(c.errs)
+		c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
+		if len(c.errs) == errsBefore {
+			c.constrainEscape(sourceT)
+		}
+	} else {
+		c.constrainAssign(e, sourceT, targetT)
+	}
 	// The assignment evaluates to the value just stored — the SAME read face as
 	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
 	// instantiate (the read face), NOT the coalesced write-face targetT: targetT is a

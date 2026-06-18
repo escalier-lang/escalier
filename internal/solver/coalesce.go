@@ -77,7 +77,9 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	return soltype.EnterResult{Type: widenVar(v, pol, combine(pol, dedup(bounds), v.Open)), SkipChildren: true}
 }
 
-func (c *coalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	return coalesceRefLifetime(t, pol)
+}
 
 // widenVar lowers a widenable `var` binding's coalesced value to its primitive
 // (M4 B3) when it is read in covariant (Positive) position — `var a = 5` ⇒
@@ -222,7 +224,9 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	return soltype.EnterResult{Type: widenVar(v, pol, combine(pol, dedup(parts), v.Open)), SkipChildren: true}
 }
 
-func (c *schemeCoalescer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	return coalesceRefLifetime(t, pol)
+}
 
 // schemeType returns a scheme's coalesced DISPLAY type (variable-free except for
 // retained type parameters), the soltype handed to soltype.PrintAsScheme and
@@ -567,17 +571,36 @@ func equalType(a, b soltype.Type) bool {
 	return false
 }
 
-// ltEqual reports lifetime equality for equalType's RefType arm (D2). A
-// LifetimeVar is identity-keyed, so two are equal only when they are the same
-// pointer; 'static is a value, so any two StaticLifetimes are equal; a nil
-// lifetime (an owned-mutable borrow) equals only another nil. This mirrors how the
-// rest of equalType keys variables by pointer and primitives by value.
+// ltEqual reports lifetime equality for equalType's RefType arm (D2). Each lifetime
+// form has its own equality rule:
+//   - A LifetimeVar is identity-keyed. Two are equal only when they are the same
+//     pointer.
+//   - 'static is a value, so any two StaticLifetimes are equal.
+//   - A nil lifetime is an owned-mutable borrow. It equals only another nil.
+//   - A LifetimeUnion is the union form a join variable coalesces to in D3, such as
+//     'a | 'b. Two are equal when they hold the same members, pairwise equal in
+//     order. This lets two RefTypes carrying the same coalesced union dedup.
+//
+// This mirrors how the rest of equalType keys variables by pointer and primitives by
+// value.
 func ltEqual(a, b soltype.Lifetime) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
 	if soltype.IsStaticLifetime(a) || soltype.IsStaticLifetime(b) {
 		return soltype.IsStaticLifetime(a) && soltype.IsStaticLifetime(b)
+	}
+	if ua, ok := a.(*soltype.LifetimeUnion); ok {
+		ub, ok := b.(*soltype.LifetimeUnion)
+		if !ok || len(ua.Lifetimes) != len(ub.Lifetimes) {
+			return false
+		}
+		for i := range ua.Lifetimes {
+			if !ltEqual(ua.Lifetimes[i], ub.Lifetimes[i]) {
+				return false
+			}
+		}
+		return true
 	}
 	return a == b
 }

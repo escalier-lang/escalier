@@ -37,6 +37,28 @@ type LifetimeVar struct {
 	Level       int
 	LowerBounds []Lifetime
 	UpperBounds []Lifetime
+
+	// Join marks an internal lifetime minted at a multi-source join site (M4 D3).
+	// A join site is a return or branch that unites several borrows with distinct
+	// lifetimes. A join variable is NOT a borrow origin, so it is never named in
+	// the output. It renders as the union of the param lifetimes it reaches through
+	// its bounds, e.g. returning one of two borrows coalesces to `('a | 'b)`. The
+	// default is a param lifetime, Join false, which originates at a borrow
+	// parameter and renders under its own name. The distinction governs
+	// coalesceLifetime. A param variable is kept whole, a join variable is expanded
+	// to its reachable members.
+	Join bool
+}
+
+// BoundsAt returns a lifetime variable's polarity-relevant bounds. In Positive
+// position it returns the lower bounds, because an output joins its lower bounds.
+// In Negative position it returns the upper bounds, because an input meets its
+// upper bounds. This is the lifetime-sort twin of TypeVarType.BoundsAt.
+func (v *LifetimeVar) BoundsAt(pol Polarity) []Lifetime {
+	if pol == Positive {
+		return v.LowerBounds
+	}
+	return v.UpperBounds
 }
 
 // StaticLifetime is 'static, the bottom of the outlives lattice: it outlives every
@@ -44,6 +66,18 @@ type LifetimeVar struct {
 // for X = 'static, so asserting it forces X to 'static — the escape-to-static
 // constraint.
 type StaticLifetime struct{}
+
+// LifetimeUnion is a coalescing-output-only lifetime. It is the union of the param
+// lifetimes a join variable reaches, e.g. returning one of two borrows renders as
+// `('a | 'b)`. It never appears as a constraint input, since constrainLt relates
+// LifetimeVars and 'static only. It is minted solely by coalesceLifetime when a
+// join variable expands to more than one member. A single-member expansion yields
+// the member directly, so a LifetimeUnion always carries at least two lifetimes.
+type LifetimeUnion struct {
+	Lifetimes []Lifetime
+}
+
+func (*LifetimeUnion) isLifetime() {}
 
 // Static is the canonical 'static value. Prefer it over a fresh
 // &StaticLifetime{} at every origination site (escape-to-static, annotations) so

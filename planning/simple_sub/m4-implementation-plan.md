@@ -1086,7 +1086,12 @@ these arms it must add.
     fresh **join** lifetime var and `constrainLt` each source lifetime into it
     (so it coalesces to `'a | 'b`). The join var is *not* a param lifetime —
     only its reachable param-lifetime members are named (the spike's
-    `paramLifetimes`-vs-join distinction).
+    `paramLifetimes`-vs-join distinction). This unifies a SINGLE carrier object, so
+    two borrows whose shared fields disagree on type fail the invariant field pin and
+    error (`TestInferIncompatibleBorrowJoinErrors`). That reconcile-or-error contract
+    is the conservative M4 default; M6 may relax the incompatible case to a
+    read-until-narrowed union to match TypeScript (see 01-milestones.md M6,
+    "Permissive mut-borrow joins").
   - **Algorithm — escape:** a value flowing into module/static storage (a
     top-level binding, a global write) constrains its lifetime `<: 'static`
     (`constrainLt(lt, &StaticLifetime{})`), which coalesces to `'static`.
@@ -1137,6 +1142,18 @@ these arms it must add.
     `'b`, … via a base-26 `alphaName`, per the spike); a join var renders as the
     union of the param lifetimes it reaches; `'static` absorbs. The `<'a>`
     quantifier joins the existing `<T0, …>` prefix in `PrintAsSchemeWith`.
+  - **Algorithm — canonical union member order (closes the `ltEqual` order gap):**
+    sort a join's reached param lifetimes by `LifetimeVar.ID` before building the
+    `LifetimeUnion`, so the rendered `'a | 'b` is deterministic and `ltEqual`'s
+    positional member compare (`coalesce.go`) becomes order-insensitive with no set
+    comparison. `coalesceLifetime` today builds the union in bound-list order, so two
+    separately-built unions over the same lifetimes can differ in order, and
+    `equalType` then treats the two borrows as distinct — a latent dedup gap. It is
+    not reachable from current source but is cheap to close while the union is
+    rendered here. Members are always param `LifetimeVar`s with stable IDs, so the
+    sort is total. The type-sort twin — positional `UnionType`/`IntersectionType`
+    comparison in `equalType` — needs a canonical order over arbitrary types and
+    rides M6 (see 01-milestones.md M6, "Canonical union/intersection member order").
   - **Algorithm — elision (the subtle branch):** a param lifetime occurring in
     only one polarity (and not forced to `'static`) connects nothing and is
     elided — the lifetime-sort analogue of single-polarity elimination. The
@@ -1156,6 +1173,8 @@ these arms it must add.
     - a connect-nothing param lifetime elides (mut ⇒ owned-mut, immut ⇒ wrapper
       dropped)
     - read-after-write field collapse with a lifetime present
+    - a `LifetimeUnion` built from the same param lifetimes in any order renders
+      identically and `ltEqual`-compares equal
 
 ### Phase E — Destructuring + `match`
 
@@ -1291,6 +1310,32 @@ these arms it must add.
     into inference ad hoc.
   - **Accept:** the static-escape transition cases pass via lifetime queries
     rather than the dropped bits.
+  - **Carried over from D3 — finish the global-write escape.** Revisit this at G2.
+    D3 shipped the escape-to-`'static` rule and wired it to the one global-write site
+    it could reach, `inferAssign`'s store into a module-level binding. That wiring is
+    deliberately shallow, and G2 should complete it, since G2 is already designing the
+    liveness-`VarID` ↔ `soltype`-borrow bridge the full fix needs. Two gaps remain:
+    1. **Escape only engages a structurally-borrowed source.** `constrainEscape` rides
+       the `soltype` visitor, which treats a `TypeVarType` as a leaf. So a borrow that
+       reaches module storage only through a usage-inferred variable is never forced
+       `<: 'static`. Take `sink = if c { p } else { … }`, where the source is the
+       if-join variable, not a `RefType`. A bare `sink = p` works because `p`'s static
+       type is already a `RefType`.
+    2. **The value-compatibility check trips `BorrowEscapeError` for those same
+       sources.** The global-write branch compares `CarrierOf(sourceT)` against the
+       slot so a forced-`'static` borrow fills an owned slot instead of being rejected.
+       `CarrierOf` peels only a top-level `RefType`, so a borrow buried in a variable or
+       union still reaches the owned slot as a non-escaping borrow and is rejected. So
+       `sink = p` checks but `sink = if c { p } else { … }` errors, an inconsistency.
+       The peel also drops the source's mutability check, the mutability half this PR
+       already owns in Rule 1 and Rule 2 above.
+
+    The clean fix is the same seam G2 builds. Resolve a value's borrows through the
+    constraint graph rather than its syntactic type, so escape forces every reachable
+    borrow lifetime and the compat check admits a forced-`'static` borrow into an owned
+    slot. That avoids both the C2-gate change and an ad-hoc variable-bound walk D3
+    declined to add. D3 left the boundary documented in `constrainEscape` and the
+    `inferAssign` global-write branch.
 
 ### Dependency graph
 

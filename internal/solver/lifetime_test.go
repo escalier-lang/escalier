@@ -113,6 +113,135 @@ func TestConstrainLtReflexiveIsNoOp(t *testing.T) {
 	require.Empty(t, a.LowerBounds)
 }
 
+// A borrowed value flowing into 'static storage has its lifetime forced to outlive
+// 'static. This is the EscapingRefIntoStatic acceptance (M4 D3). constrainEscape
+// constrains the borrow's lifetime `<: 'static`, so coalescing the borrow renders it
+// `mut 'static {x: number}` rather than under the param's own name. No Escalier
+// construct routes a borrow into static storage yet, since a borrow originates only
+// at a parameter, so this exercises the rule's mechanism directly.
+func TestEscapingRefIntoStatic(t *testing.T) {
+	c := newChecker()
+	lt := c.ctx.freshLifetime(0)
+	ref := &soltype.RefType{
+		Mut: true,
+		Lt:  lt,
+		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+		}},
+	}
+
+	c.constrainEscape(ref)
+
+	require.Equal(t, []soltype.Lifetime{soltype.Static}, lt.UpperBounds)
+	require.Equal(t, "mut 'static {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+}
+
+// Escape reaches a borrow NESTED inside an object property. Storing `{p: mut 'a
+// Point}` forces the inner borrow's lifetime to 'static too, since the whole value
+// escapes. constrainEscape walks the structural carriers, so the property's borrow
+// is constrained alongside any top-level one.
+func TestEscapingNestedRefIntoStatic(t *testing.T) {
+	c := newChecker()
+	inner := c.ctx.freshLifetime(0)
+	stored := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+		&soltype.PropertyElem{Name: "p", Type: &soltype.RefType{
+			Mut: true,
+			Lt:  inner,
+			Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+			}},
+		}},
+	}}
+
+	c.constrainEscape(stored)
+
+	require.Equal(t, []soltype.Lifetime{soltype.Static}, inner.UpperBounds)
+	require.Equal(t, "{p: mut 'static {x: number}}", soltype.Print(coalesce(stored, soltype.Positive)))
+}
+
+// Escaping a JOINED borrow forces every param lifetime the join reaches to outlive
+// 'static, so the whole `('l0 | 'l1)` union collapses to a single 'static. This is
+// the join↔escape interaction (M4 D3). constrainEscape constrains the join lifetime
+// `<: 'static`, which propagates through its lower bounds to each member, and
+// coalesceLifetime then absorbs the union to 'static rather than expanding it.
+func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	join := c.ctx.freshJoinLifetime(0)
+	// The join is bounded below by each source lifetime, as joinBorrows wires it.
+	c.ctx.constrainLt(a, join)
+	c.ctx.constrainLt(b, join)
+	ref := &soltype.RefType{
+		Mut: true,
+		Lt:  join,
+		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+		}},
+	}
+
+	// Before escape the join expands to the union of its members.
+	require.Equal(t, "mut ('l0 | 'l1) {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+
+	c.constrainEscape(ref)
+
+	require.Equal(t, []soltype.Lifetime{soltype.Static}, join.UpperBounds)
+	require.Equal(t, "mut 'static {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+}
+
+// A nested join reaching one param lifetime through two distinct sub-joins lists
+// that lifetime once in the rendered union, not twice. The top join's lower bounds
+// are the two sub-joins, and both reach 'l0. So reachableParamLifetimes collects it
+// twice and coalesceLifetime dedups before building the LifetimeUnion. Without the
+// dedup this rendered `('l0 | 'l1 | 'l0 | 'l2)`.
+func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	d := c.ctx.freshLifetime(0)
+	j2 := c.ctx.freshJoinLifetime(0)
+	j3 := c.ctx.freshJoinLifetime(0)
+	top := c.ctx.freshJoinLifetime(0)
+	c.ctx.constrainLt(a, j2)
+	c.ctx.constrainLt(b, j2)
+	c.ctx.constrainLt(a, j3) // 'l0 shared across both sub-joins
+	c.ctx.constrainLt(d, j3)
+	c.ctx.constrainLt(j2, top)
+	c.ctx.constrainLt(j3, top)
+	ref := &soltype.RefType{
+		Mut: true,
+		Lt:  top,
+		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+		}},
+	}
+
+	require.Equal(t, "mut ('l0 | 'l1 | 'l2) {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+}
+
+// ltEqual compares a LifetimeUnion structurally. A LifetimeUnion is the union form a
+// join variable coalesces to. Two unions are equal iff their members are pairwise
+// equal in order, so two RefTypes with the same coalesced union dedup during
+// coalescing. A LifetimeVar member keys by identity and 'static by value, inherited
+// from the recursive call.
+// This branch has no source-reachable trigger yet, which would be two identical
+// joined borrows in one union, so it is checked directly.
+func TestLtEqualLifetimeUnion(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+
+	ab1 := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{a, b}}
+	ab2 := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{a, b}}
+	ba := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{b, a}}
+	a1 := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{a}}
+
+	require.True(t, ltEqual(ab1, ab2), "same members in the same order are equal")
+	require.False(t, ltEqual(ab1, ba), "order matters: member i must match member i")
+	require.False(t, ltEqual(ab1, a1), "differing member counts are unequal")
+	require.False(t, ltEqual(ab1, a), "a union and a bare variable are unequal")
+}
+
 // A discarded probe truncates every lifetime bound the trial appended back to the
 // pre-probe length, exactly as it does for type-variable bounds — the second sort
 // rides the same journal discipline. Bounds added before the probe survive.

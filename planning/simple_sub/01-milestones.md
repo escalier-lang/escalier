@@ -803,6 +803,20 @@ recursive references (cf. `infer_module.go:431-872` and the discussion in
   reported. (In M3 this is an invariant freebie — `ErrorType` is short-circuited out
   of every bound list, so it never reaches a former; M6 must keep it true once
   formers can be built directly.)
+- **Canonical union/intersection member order — closes the `equalType` order gap.**
+  `equalType` compares `UnionType`/`IntersectionType` members positionally
+  (`equalTypeSlice`), so two unions over the same members in a different order
+  compare unequal even though both formers are commutative — a latent dedup gap.
+  It is masked today only because pre-M6 unions arise from coalescing **output** in
+  a deterministic construction order. Once unions are real formers built from
+  annotations and constraint inputs, that determinism is gone, so member order must
+  be canonicalized at construction. This needs a stable total order over arbitrary
+  types — there is no cheap key as there is for the lifetime sort — so fold it into
+  the "Former simplification" normalization above, running dedup, lattice
+  identities, and canonical ordering as one pass. The lifetime-sort twin —
+  `ltEqual` over `LifetimeUnion` — is closed earlier and more cheaply in M4 D4 by
+  sorting members on `LifetimeVar.ID` (see m4-implementation-plan.md D4, "canonical
+  union member order").
 - **The `_ <: unknown` (⊤) subtyping rule — closes M4's Variation-B gap
   (deferred from M4).** With `unknown` a real former here, add the rule that makes
   it the top of the lattice (everything is a subtype of `unknown`). M4 left a
@@ -812,6 +826,33 @@ recursive references (cf. `infer_module.go:431-872` and the discussion in
   path closed — A3 adds no function annotations and the extra-position branch
   fails loud via `reportUnsupportedFeature` — so the gap is unreachable until this
   rule lands and that guard is removed.
+- **Permissive mut-borrow joins — degrade an incompatible join to a
+  read-until-narrowed union, matching TypeScript.** M4 D3's `joinBorrows` rejects a
+  return set of mutable borrows whose shared fields disagree on TYPE. Joining
+  `mut {x: number}` and `mut {x: string}` pins `x` invariant in both directions and
+  reports `number <: string` / `string <: number`, asserted by
+  `TestInferIncompatibleBorrowJoinErrors`. That error is the conservative default M4
+  could represent. The intended M6 behavior is more permissive: produce the
+  type-level union `(mut 'a {x: number}) | (mut 'b {x: string})` instead. That union
+  is readable — `.x` yields `number | string` through the covariant read view — and
+  a write through `.x` is allowed only after the static type narrows to one branch,
+  which re-establishes the field's write type. This is sound by the same rule
+  TypeScript uses: an un-narrowed union of mutable objects is read-only at its
+  conflicting fields and writable once narrowed.
+  - **Why it lands here, not in M4.** It needs two M6 pieces. First, union types as
+    first-class OUTPUTS that can carry `mut` `RefType` members — M4's join only
+    builds a single-carrier lifetime-union `mut ('a | 'b) {x}`, never a union of two
+    distinct borrows. Second, union-scrutinee narrowing to gate the write site.
+    Until both exist the union is unrepresentable or permanently read-only.
+  - **The hard case is non-discriminated narrowing.** These branches differ only in
+    the TYPE of `x`, with no discriminant tag, so re-enabling writes needs narrowing
+    by a field's runtime type such as `typeof r.x === "number"`, not tag-based
+    narrowing. That is the trickiest narrowing form, so this exact shape narrows
+    last.
+  - **Scope.** This relaxes D3's all-mut-borrows reconcile-or-error contract to
+    reconcile-or-union. The compatible case still joins to one carrier with a union
+    lifetime as today; only the incompatible case changes from error to union.
+    Revisit the D3 join policy once M6 union outputs and narrowing land.
 
 **Accept:** `number | string` annotation accepts `number`/rejects `boolean`;
 intersection annotation satisfied by a value at both member types; both

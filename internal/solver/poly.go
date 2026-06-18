@@ -303,6 +303,7 @@ func (lf *ltFreshener) fresh(lt soltype.Lifetime) soltype.Lifetime {
 		return nlv
 	}
 	nlv := lf.ctx.freshLifetime(lf.lvl)
+	nlv.Join = lv.Join // a freshened copy keeps the origin's join-vs-param nature
 	lf.cache[lv] = nlv
 	nlv.LowerBounds = lf.freshBounds(lv.LowerBounds)
 	nlv.UpperBounds = lf.freshBounds(lv.UpperBounds)

@@ -376,7 +376,7 @@ func (c *checker) inferComponent(
 					c.recordType(arm.decl.Name, schemeType(sc))
 				}
 			}
-			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes, Sources: srcs})
+			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes, Sources: srcs, ModuleLevel: true})
 			continue
 		}
 		// Generalize the binding var at the component's level (was: coalesce to a
@@ -398,7 +398,7 @@ func (c *checker) inferComponent(
 		} else {
 			scheme = c.generalize(b.v, lvl)
 		}
-		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind})
+		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, ModuleLevel: true})
 		// Record the binding's final (coalesced) DISPLAY type in Info on the name
 		// node, so it is queryable even for a `val` in a recursive group (where
 		// coalescing at definition time would have frozen it to `never`). A VarDecl
