@@ -8,15 +8,15 @@ import (
 
 // --- M4 D2/D4: borrow origination + display-time lifetime naming and elision ---
 //
-// These assert the D4 display form: a param lifetime that reaches the output is
-// named ('a, 'b, …) and quantified in a leading <…> prefix, while a param lifetime
-// that connects nothing — it never reaches an output — is elided (a mut borrow
-// becomes owned-mutable, an immutable borrow drops the wrapper).
+// These assert the D4 display form. A param lifetime that reaches the output is
+// named 'a, 'b, … and quantified in a leading <…> prefix. A param lifetime that
+// connects nothing, never reaching an output, is elided: a mut borrow becomes
+// owned-mutable, and an immutable borrow drops the wrapper.
 
 // A `mut` param returned unchanged carries its originated lifetime to the result:
 // the same lifetime appears on both the parameter and the return type, so the
 // borrow flows out at the lifetime it came in. Occurring in both positions, it is
-// named `'a` and quantified — the IdentityRefReturn acceptance (M4 D4).
+// named `'a` and quantified. This is the IdentityRefReturn acceptance (M4 D4).
 func TestInferIdentityRefReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return p }`)
 	require.Empty(t, errs)
@@ -33,7 +33,7 @@ func TestInferFreshObjectReturn(t *testing.T) {
 }
 
 // Two `mut` params originate independent lifetimes, but only the returned one
-// reaches the output. `p` is returned, so its lifetime is named `'a`; `q` connects
+// reaches the output. `p` is returned, so its lifetime is named `'a`. `q` connects
 // nothing, so its borrow lifetime is elided to owned-mutable.
 func TestInferDistinctParamLifetimes(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}, q: mut {y: number}) { return p }`)
@@ -44,7 +44,7 @@ func TestInferDistinctParamLifetimes(t *testing.T) {
 // Writing a field through an annotated `mut` borrow checks: the receiver carries a
 // borrow lifetime, and the write requirement's fresh lifetime imposes no obligation,
 // so a borrowed receiver of any lifetime satisfies it. The borrow never reaches the
-// output (the body returns void), so D4 elides its lifetime to owned-mutable.
+// output, since the body returns void, so D4 elides its lifetime to owned-mutable.
 func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { p.x = 10 }`)
 	require.Empty(t, errs)
@@ -185,7 +185,7 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 // lifetime, the instantiated return would coalesce to one lifetime instead of a
 // union. `pick` renders `mut ('a | 'b) {…}` over its two param lifetimes.
 // Instantiating it inside `use` freshens the join and its two members to use-level
-// lifetimes; D4's component-based expansion resolves those intermediaries back to
+// lifetimes. D4's component-based expansion resolves those intermediaries back to
 // `use`'s own param lifetimes, so `use` renders the same clean `mut ('a | 'b) {…}`
 // over `a` and `b` rather than the raw freshened ids.
 func TestInferInstantiatedJoinReturnsUnion(t *testing.T) {

@@ -104,7 +104,7 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
 		labels = append(labels, name)
 	}
 	// Borrow lifetimes left in the coalesced type by D4's coalesceLifetimes are all
-	// nameable param lifetimes — a connect-nothing one was already elided and a join
+	// nameable param lifetimes. A connect-nothing one was already elided, and a join
 	// expanded to a union of these. Name each 'a, 'b, … in first-appearance order and
 	// add it to the quantifier prefix after the type parameters.
 	ltNames := map[*LifetimeVar]string{}
@@ -134,7 +134,7 @@ func typeParamName(i int) string {
 }
 
 // lifetimeParamName is the surface name for the i-th quantified lifetime parameter:
-// 'a, 'b, …, 'z, 'aa, 'ab, … (Excel-style base-26), so a borrow renders as
+// 'a, 'b, …, 'z, 'aa, 'ab, … in Excel-style base-26, so a borrow renders as
 // `fn <'a>(p: mut 'a {x}) -> mut 'a {x}`.
 func lifetimeParamName(i int) string {
 	var b []byte
@@ -149,21 +149,21 @@ func lifetimeParamName(i int) string {
 }
 
 // freeLifetimeVars collects the LifetimeVars appearing in t in first-appearance
-// print order — the lifetime-sort twin of freeTypeVars. It rides the shared Accept
+// print order, the lifetime-sort twin of freeTypeVars. It rides the shared Accept
 // visitor rather than a hand-rolled walk, the same way simplify.go's varCollector
 // collects type vars. Lifetimes are not Types, so Accept never visits a Lt slot
-// itself; the collector reads it in EnterType when it reaches a RefType, before
-// Accept descends into the borrow's inner, which preserves print order — a borrow's
-// own lifetime precedes any lifetime nested in its inner.
+// itself. The collector reads it in EnterType when it reaches a RefType, before
+// Accept descends into the borrow's inner. That preserves print order, because a
+// borrow's own lifetime precedes any lifetime nested in its inner.
 func freeLifetimeVars(t Type) []*LifetimeVar {
 	c := &ltVarCollector{seen: set.NewSet[*LifetimeVar]()}
 	t.Accept(c, Positive)
 	return c.out
 }
 
-// ltVarCollector gathers LifetimeVars in Accept-traversal order. It rewrites nothing
-// — EnterType returns the default descend result and ExitType returns the node
-// unchanged — so Accept performs no allocation and the walk is a pure collection.
+// ltVarCollector gathers LifetimeVars in Accept-traversal order. It rewrites nothing.
+// EnterType returns the default descend result and ExitType returns the node
+// unchanged, so Accept performs no allocation and the walk is a pure collection.
 type ltVarCollector struct {
 	out  []*LifetimeVar
 	seen set.Set[*LifetimeVar]

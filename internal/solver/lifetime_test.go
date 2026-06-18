@@ -159,7 +159,7 @@ func TestEscapingNestedRefIntoStatic(t *testing.T) {
 	require.Equal(t, "{p: mut 'static {x: number}}", soltype.Print(coalesce(stored, soltype.Positive)))
 }
 
-// mutPointRef is a `mut lt {x: number}` borrow — the carrier these lifetime tests
+// mutPointRef is a `mut lt {x: number}` borrow, the carrier these lifetime tests
 // hang a join or escape off.
 func mutPointRef(lt soltype.Lifetime) *soltype.RefType {
 	return &soltype.RefType{
@@ -172,9 +172,10 @@ func mutPointRef(lt soltype.Lifetime) *soltype.RefType {
 }
 
 // borrowFn wraps a return type in a function whose parameters carry the given borrow
-// lifetimes. D4 names a lifetime only when it originates at a parameter (occurs in a
-// negative position), so a join's member lifetimes must appear on parameters to be
-// named or expanded — exactly how joinBorrows produces them from real source.
+// lifetimes. D4 names a lifetime only when it originates at a parameter, which means
+// it occurs in a negative position. So a join's member lifetimes must appear on
+// parameters to be named or expanded, exactly how joinBorrows produces them from
+// real source.
 func borrowFn(ret soltype.Type, paramLts ...soltype.Lifetime) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(paramLts))
 	for i, lt := range paramLts {
@@ -209,19 +210,19 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 
 	c.constrainEscape(ret)
 
-	// Escape forces the join — and through its lower bounds each member — to 'static, so
-	// the entire signature collapses to 'static with no nameable lifetime left.
+	// Escape forces the join to 'static, propagating through its lower bounds to each
+	// member, so the entire signature collapses to 'static with no nameable lifetime left.
 	require.Equal(t, []soltype.Lifetime{soltype.Static}, join.UpperBounds)
 	require.Equal(t,
 		"fn (p: mut 'static {x: number}, q: mut 'static {x: number}) -> mut 'static {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
-// D4 elision branches on Mut. A connect-nothing IMMUTABLE borrow — its lifetime
-// reaches no output — drops the RefType wrapper entirely, rendering as its bare
+// D4 elision branches on Mut. A connect-nothing IMMUTABLE borrow, whose lifetime
+// reaches no output, drops the RefType wrapper entirely and renders as its bare
 // inner, because RefType{false, nil} is the forbidden degenerate cell NewRef
-// rejects. This contrasts with the mutable case, which becomes owned-mutable
-// (RefType{Mut: true, Lt: nil}); the FieldWrite acceptance covers that branch.
+// rejects. This contrasts with the mutable case, which becomes owned-mutable,
+// RefType{Mut: true, Lt: nil}. The FieldWrite acceptance covers that branch.
 func TestImmutableConnectNothingBorrowDropsWrapper(t *testing.T) {
 	c := newChecker()
 	lt := c.ctx.freshLifetime(0)
@@ -232,8 +233,8 @@ func TestImmutableConnectNothingBorrowDropsWrapper(t *testing.T) {
 			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
 		}},
 	}
-	// The borrow appears only on the parameter — the body returns a number, not the
-	// borrow — so its lifetime connects nothing and is elided.
+	// The borrow appears only on the parameter, since the body returns a number, not
+	// the borrow, so its lifetime connects nothing and is elided.
 	fn := &soltype.FuncType{
 		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "p"}, Type: param}},
 		Ret:    &soltype.PrimType{Prim: soltype.NumPrim},

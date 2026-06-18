@@ -10,7 +10,7 @@ import (
 // Display-time lifetime coalescing (M4 D4). The structural coalescers (coalesce /
 // coalesceScheme) rebuild a type through the shared visitor, which carries every
 // RefType lifetime through unchanged because a Lifetime is not a Type. They leave
-// the RAW lifetime variables in place — a borrow parameter's originated lifetime, a
+// the RAW lifetime variables in place: a borrow parameter's originated lifetime, a
 // multi-source join variable, and any instantiation-freshened intermediary. This
 // pass runs once over the finished coalesced type and resolves those lifetimes to
 // their display form, the lifetime-sort analogue of how the var arms resolve a type
@@ -20,24 +20,24 @@ import (
 // connected-component grouping of the lifetime bound graph:
 //
 //  1. Naming. A borrow originates at a parameter, so a lifetime occurring in a
-//     NEGATIVE (input) position is a "param lifetime". It is the only kind named in
-//     the output. The printer assigns it 'a, 'b, … from the variables this pass
-//     leaves in the type.
+//     NEGATIVE position is a "param lifetime". It is the only kind named in the
+//     output. The printer assigns it 'a, 'b, … from the variables this pass leaves
+//     in the type.
 //
 //  2. Elision. A param lifetime whose borrow never reaches an output connects
-//     nothing — it occurs in no positive position and its bound-graph component
-//     holds no output lifetime — so it is dropped, the lifetime-sort analogue of
-//     single-polarity type-variable elimination. Dropping branches on Mut: a
-//     mutable borrow becomes owned-mutable (RefType{Mut: true, Lt: nil}); an
-//     immutable borrow drops the RefType wrapper entirely (its bare inner), because
-//     RefType{false, nil} is the forbidden degenerate cell NewRef rejects.
+//     nothing. It occurs in no positive position, and its bound-graph component
+//     holds no output lifetime, so it is dropped. This is the lifetime-sort analogue
+//     of single-polarity type-variable elimination. Dropping branches on Mut. A
+//     mutable borrow becomes owned-mutable, RefType{Mut: true, Lt: nil}. An
+//     immutable borrow drops the RefType wrapper entirely and returns its bare inner,
+//     because RefType{false, nil} is the forbidden degenerate cell NewRef rejects.
 //
-//  3. Join expansion. A non-param lifetime — a join variable minted at a return or
-//     branch, or a lifetime freshened when a borrow-passing function was
-//     instantiated — is not itself nameable. It expands to the union of the param
+//  3. Join expansion. A non-param lifetime is not itself nameable. It is either a
+//     join variable minted at a return or branch, or a lifetime freshened when a
+//     borrow-passing function was instantiated. It expands to the union of the param
 //     lifetimes it shares a bound-graph component with, so a return uniting two
 //     borrows coalesces to ('a | 'b). The expansion follows the UNDIRECTED bound
-//     graph: instantiation interposes intermediary variables between a call's
+//     graph. Instantiation interposes intermediary variables between a call's
 //     argument lifetime and the callee's freshened parameter lifetime, related only
 //     by a mix of upper and lower bounds, so reachability cannot be confined to one
 //     bound direction. A lifetime forced to 'static renders 'static and absorbs.
@@ -46,7 +46,7 @@ import (
 // coalescers. pol is the root polarity the type was coalesced at, threaded through
 // so the occurrence walk and the rewrite classify lifetimes from the same root the
 // coalesced type was built from. Every caller coalesces a display type from the
-// Positive root today, so this is Positive in practice; threading it keeps the
+// Positive root today, so this is Positive in practice. Threading it keeps the
 // lifetime analysis consistent with the coalescing polarity rather than assuming it.
 func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	occ := map[*soltype.LifetimeVar]occPolarity{}
@@ -57,8 +57,8 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 }
 
 // ltOccVisitor records the polarities each lifetime variable occurs in
-// structurally. A RefType lifetime is COVARIANT — it lives on the wrapper, not in
-// the inner — so it is recorded in the borrow's own polarity; the mut-driven write
+// structurally. A RefType lifetime is COVARIANT, since it lives on the wrapper, not
+// in the inner, so it is recorded in the borrow's own polarity. The mut-driven write
 // view that flips the inner never touches it.
 type ltOccVisitor struct {
 	occ map[*soltype.LifetimeVar]occPolarity
@@ -81,7 +81,7 @@ func (v *ltOccVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type
 
 // ltAnalysis is the precomputed input the rewriter reads: per-variable structural
 // occurrence, the connected-component grouping of the lifetime bound graph, and the
-// set of component roots that hold an output (positive) lifetime.
+// set of component roots that hold a positive output lifetime.
 type ltAnalysis struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
 	uf       *unionFind                   // components over lifetime bound edges
@@ -99,15 +99,15 @@ type ltAnalysis struct {
 //
 // INVARIANT: this grouping is UNDIRECTED, so it conflates outlives direction. It is
 // correct only while two distinct param lifetimes share a component ONLY when they
-// genuinely co-flow — i.e. a join unites them, or one is borrowed from the other.
-// Every lifetime origin today obeys this: attachParamLifetimes mints an independent
-// var per parameter, and the only cross-links are joins (joinBorrows) and
-// instantiation copies (the freshener/extruder), both of which connect lifetimes
-// that really do flow together. A future origin that bound-links two independent
-// param borrows through a shared intermediary would break it: the two would be
-// unioned and both kept, rendering a spurious `('a | 'b)`. Distinguishing that case
-// needs directional reasoning (or first-class lifetime bounds), which the union
-// rendering deliberately does not yet model — see the join-expansion note above.
+// genuinely co-flow, meaning a join unites them or one is borrowed from the other.
+// Every lifetime origin today obeys this. attachParamLifetimes mints an independent
+// var per parameter. The only cross-links are joins from joinBorrows and
+// instantiation copies from the freshener and extruder, both of which connect
+// lifetimes that really do flow together. A future origin that bound-links two
+// independent param borrows through a shared intermediary would break it. The two
+// would be unioned and both kept, rendering a spurious `('a | 'b)`. Distinguishing
+// that case needs directional reasoning, or first-class lifetime bounds, which the
+// union rendering deliberately does not yet model. See the join-expansion note above.
 func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity) *ltAnalysis {
 	uf := newUnionFind()
 	vars := map[int]*soltype.LifetimeVar{}
@@ -145,8 +145,8 @@ func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity) *ltAnalysis {
 	return &ltAnalysis{occ: occ, uf: uf, vars: vars, posRoots: posRoots}
 }
 
-// isParam reports whether v is a borrow-origin (param) lifetime: one occurring in a
-// negative position. Only param lifetimes are named.
+// isParam reports whether v is a param lifetime: one that originates at a borrow
+// parameter and so occurs in a negative position. Only param lifetimes are named.
 func (a *ltAnalysis) isParam(v *soltype.LifetimeVar) bool {
 	return a.occ[v]&occNeg != 0
 }
@@ -160,8 +160,8 @@ func (a *ltAnalysis) kept(v *soltype.LifetimeVar) bool {
 
 // componentParams returns the kept param lifetimes sharing v's component, sorted by
 // ID. Sorting yields a canonical union member order, so a join expanded here renders
-// the same ('a | 'b) regardless of bound-list order and ltEqual's positional member
-// compare stays order-insensitive (closes the order gap noted in coalesce.go).
+// the same ('a | 'b) regardless of bound-list order, and ltEqual's positional member
+// compare stays order-insensitive. This closes the order gap noted in coalesce.go.
 func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []soltype.Lifetime {
 	root := a.uf.find(v.ID)
 	var ids []int
@@ -191,8 +191,8 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 		}
 		return nil, true // connect-nothing param: elide
 	}
-	// A non-param lifetime (join or instantiation intermediary) is not nameable; it
-	// expands to the union of the param lifetimes in its component.
+	// A non-param lifetime is a join variable or an instantiation intermediary. It is
+	// not nameable, so it expands to the union of the param lifetimes in its component.
 	members := a.componentParams(v)
 	switch len(members) {
 	case 0:
@@ -227,7 +227,7 @@ func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 	resolved, elide := r.a.resolveLt(lv)
 	if elide {
 		if rt.Mut {
-			// NewRef would collapse (true, nil) back to its inner; keep the
+			// NewRef would collapse (true, nil) back to its inner. Keep the
 			// owned-mutable wrapper by constructing it directly.
 			return &soltype.RefType{Mut: true, Lt: nil, Inner: rt.Inner}
 		}

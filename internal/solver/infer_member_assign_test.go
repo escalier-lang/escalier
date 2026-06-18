@@ -139,7 +139,7 @@ func TestInferMemberAssignVariableValueLinked(t *testing.T) {
 // "missing property: y" / "inexact <: exact" errors.
 //
 // The annotated `mut` param originates a borrow lifetime (D2), but it is unused in
-// the (void) result, so D4's display-time elision drops it and the param renders as
+// the void result, so D4's display-time elision drops it and the param renders as
 // plain owned-mutable `mut {…}`.
 func TestInferMemberAssignAnnotatedMutObject(t *testing.T) {
 	values, _, errs := inferSource(t, "fn f(obj: mut {x: number, y: string}) { obj.x = 5 }")
