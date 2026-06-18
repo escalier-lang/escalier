@@ -571,13 +571,17 @@ func equalType(a, b soltype.Type) bool {
 	return false
 }
 
-// ltEqual reports lifetime equality for equalType's RefType arm (D2). A
-// LifetimeVar is identity-keyed, so two are equal only when they are the same
-// pointer; 'static is a value, so any two StaticLifetimes are equal; a nil
-// lifetime (an owned-mutable borrow) equals only another nil. A LifetimeUnion (a
-// join's coalesced face, D3) is compared structurally — equal iff its members are
-// pairwise equal in order — so two RefTypes with the same join face dedup. This
-// mirrors how the rest of equalType keys variables by pointer and primitives by value.
+// ltEqual reports lifetime equality for equalType's RefType arm (D2). Each lifetime
+// form has its own equality rule:
+//   - A LifetimeVar is identity-keyed. Two are equal only when they are the same
+//     pointer.
+//   - 'static is a value, so any two StaticLifetimes are equal.
+//   - A nil lifetime is an owned-mutable borrow. It equals only another nil.
+//   - A LifetimeUnion is the union form a join variable coalesces to in D3, such as
+//     'a | 'b. Two are equal when they hold the same members, pairwise equal in
+//     order. This lets two RefTypes carrying the same coalesced union dedup.
+// This mirrors how the rest of equalType keys variables by pointer and primitives by
+// value.
 func ltEqual(a, b soltype.Lifetime) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil

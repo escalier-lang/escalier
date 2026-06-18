@@ -46,6 +46,21 @@ func coalesceLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetim
 	if !ok {
 		return lt // 'static, or a nil slot handled by the caller
 	}
+	// A param lifetime resolves by MEETING its upper bounds, but this lattice is
+	// degenerate, so that meet has only three outcomes and never builds a combined
+	// node:
+	//   1. meet('a, 'static) = 'static. 'static is the lattice bottom, so it absorbs
+	//      the meet. lifetimeForced detects the `v <: 'static` escape and returns
+	//      'static. This is the only outcome that changes the variable.
+	//   2. meet('a, 'a) = 'a. A duplicate bound is idempotent, so the variable keeps
+	//      its own name. ContainsLifetime already dedups bounds, so this never even
+	//      reaches a second copy.
+	//   3. meet('a, 'b), two distinct lifetimes, is NOT constructed. There is no
+	//      lifetime-intersection form to hold it — only LifetimeUnion exists, and that
+	//      is the output-only join twin — so the variable keeps its own name and its
+	//      non-'static upper bounds do not appear in the result.
+	// Cases 2 and 3 both fall through to `return v`: a non-forced param renders under
+	// its own name regardless of its other upper bounds.
 	if !v.Join {
 		if lifetimeForced(v) {
 			return soltype.Static
