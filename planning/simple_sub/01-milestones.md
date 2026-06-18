@@ -39,6 +39,7 @@ are recorded in
 - [M4 — Core value types: records + usage-based inference + `mut` + **lifetimes** + destructuring/`match`](#m4--core-value-types-records--usage-based-inference--mut--lifetimes--destructuringmatch)
 - [M5 — Nominal types (classes)](#m5--nominal-types-classes)
 - [M6 — Unions / intersections](#m6--unions--intersections)
+- [M6.5 — Lifetime bounds](#m65--lifetime-bounds)
 - [M7 — Library type resolution (`std:*` / `web:*` / `node:*`)](#m7--library-type-resolution-std--web--node)
 - [M8 — Second fixture harness + differential triage](#m8--second-fixture-harness--differential-triage)
 - [M9 — Type-level operators](#m9--type-level-operators)
@@ -863,6 +864,58 @@ inexact-union `match` does.
 
 ---
 
+## M6.5 — Lifetime bounds
+
+See [m6.5-implementation-plan.md](m6.5-implementation-plan.md) for the routes
+considered, the chosen route, and the sequencing rationale.
+
+A **lifetime bound** is a declared or rendered outlives relation between two named
+lifetimes in a signature — Rust's `'a: 'b`, read "`'a` outlives `'b`". Escalier's
+lifetimes are unrelated once named today; a bound lets a signature state how two of
+them relate. The constraint solver already builds the outlives graph —
+`constrainLt` records the edges in `LifetimeVar.LowerBounds`/`UpperBounds`, and M4
+D2.5 generalizes them per instantiation — so this milestone is about surfacing,
+declaring, and checking relations the solver already computes, not new inference.
+
+- **Render inferred bounds as where-clauses.** M4 D4 collapses a multi-source join
+  to the union `('a | 'b)`, the conservative stand-in for "one of these". The graph
+  underneath already carries `'a: 'c, 'b: 'c` for the join `'c`, so the precise form
+  `fn <'a, 'b, 'c>(…) -> mut 'c {…} where 'a: 'c, 'b: 'c` is a display upgrade, not
+  an inference change. Naming kept join lifetimes and a where-clause section in
+  `PrintAsSchemeWith` are the new rendering pieces.
+- **Declare bounds at no-body sites.** A site with no body to infer from must declare
+  its bounds — external and library signatures, abstract interface methods, and type
+  aliases over borrows. Add `where 'a: 'b` syntax to the AST and parser and lower it
+  into `constrainLt` during signature resolution, so a declared bound participates in
+  solving exactly like an inferred one.
+- **Check inferred against declared.** An annotated function's inferred bound set must
+  satisfy its declared one — subsumption over the lifetime sort, built on
+  `constrainLt`.
+- **Chosen route — a unified bound set.** `coalesceLifetimes` stops expanding and
+  eliding and instead computes one canonical, transitively-reduced bound set that
+  both the printer and the annotation resolver share. This is also where the
+  undirected connected-component grouping in `newLtAnalysis` — sound today only
+  because independent param lifetimes never share a bound-graph component, the
+  invariant that file documents — is replaced with directional reasoning. The cheaper
+  display-only and annotation-only routes are recorded in the plan as the alternatives
+  this supersedes.
+
+**Why it lands here.** It sits after M6 because M6 changes the join machinery
+directly — the permissive mut-borrow join and the canonical union member order — and
+the bound set is built on that settled representation. It sits with or just before M7
+because M7 library imports are the first site where declared bounds become
+mandatory, which is the first configuration where the unified model beats a
+display-only one. Earlier would be premature: nothing in M4 or M5 is blocked, since
+the D4 union rendering is sound and only less precise.
+
+**Accept:** a multi-source join renders `fn <'a, 'b, 'c>(p: mut 'a {…}, q: mut 'b
+{…}) -> mut 'c {…} where 'a: 'c, 'b: 'c` instead of the union; a `where`-annotated
+signature round-trips through the parser and printer; a body whose inferred bounds
+violate a declared `where` clause is rejected with the full outlives message; a
+redundant declared bound implied by transitivity is dropped from the rendered set.
+
+---
+
 ## M7 — Library type resolution (`std:*` / `web:*` / `node:*`)
 
 Port the standard-library type ingestion onto `soltype`. Today this is a
@@ -1288,6 +1341,13 @@ reduce through the M9 operator machinery.
   semantics (not old-checker output), and the second fixture harness's
   differential is a triage tool, not a parity gate. This is what lets
   intended improvements through instead of forcing old-checker parity.
+- M6.5 (lifetime bounds) is numbered `.5` for the same reason M2.5 is — to slot
+  between M6 and M7 without renumbering. It rides *after* M6 because M6 settles the
+  join machinery its canonical bound set is built on (the permissive mut-borrow join
+  and canonical union order), and *before/with* M7 because library imports are the
+  first no-body site where declared bounds become mandatory. It is deferred past M4,
+  even though M4 D4 already renders the union approximation, because that rendering is
+  sound and nothing in M4–M5 needs the precise bounded form.
 - M2.5 sits between M2 and M3 (rather than folding into M3 or deferring with the
   rest of `Prov`) because the `FromAST` discipline is "born-with-the-type" infra:
   threading one provenance line per construction site is cheap across M2's ~8
