@@ -32,7 +32,7 @@ import (
 // recursive rendering; this guard only keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType]()}, pol)
-	return coalesceLifetimes(c) // D4: resolve borrow lifetimes to their display form
+	return coalesceLifetimes(c, pol) // D4: resolve borrow lifetimes to their display form
 }
 
 // coalescer is the soltype-visitor form of coalesce. The structural arms and the
@@ -151,7 +151,8 @@ func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 		genLevel: genLevel,
 		seen:     set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
-	return coalesceLifetimes(c) // D4: resolve borrow lifetimes to their display form
+	// A scheme display is always coalesced from the Positive root.
+	return coalesceLifetimes(c, soltype.Positive) // D4: resolve borrow lifetimes to their display form
 }
 
 // schemeCoalescer is the soltype-visitor form of coalesceScheme. It has the same

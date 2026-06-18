@@ -149,61 +149,52 @@ func lifetimeParamName(i int) string {
 }
 
 // freeLifetimeVars collects the LifetimeVars appearing in t in first-appearance
-// print order — the lifetime-sort twin of freeTypeVars. Lifetimes ride only on
-// RefType (its Lt slot, directly or as the members of a LifetimeUnion), so the walk
-// mirrors freeTypeVars but inspects each borrow's lifetime as it descends.
+// print order — the lifetime-sort twin of freeTypeVars. It rides the shared Accept
+// visitor rather than a hand-rolled walk, the same way simplify.go's varCollector
+// collects type vars. Lifetimes are not Types, so Accept never visits a Lt slot
+// itself; the collector reads it in EnterType when it reaches a RefType, before
+// Accept descends into the borrow's inner, which preserves print order — a borrow's
+// own lifetime precedes any lifetime nested in its inner.
 func freeLifetimeVars(t Type) []*LifetimeVar {
-	var out []*LifetimeVar
-	seen := set.NewSet[*LifetimeVar]()
-	addLt := func(lt Lifetime) {
-		switch lt := lt.(type) {
-		case *LifetimeVar:
-			if !seen.Contains(lt) {
-				seen.Add(lt)
-				out = append(out, lt)
-			}
-		case *LifetimeUnion:
-			for _, m := range lt.Lifetimes {
-				if mv, ok := m.(*LifetimeVar); ok && !seen.Contains(mv) {
-					seen.Add(mv)
-					out = append(out, mv)
-				}
+	c := &ltVarCollector{seen: set.NewSet[*LifetimeVar]()}
+	t.Accept(c, Positive)
+	return c.out
+}
+
+// ltVarCollector gathers LifetimeVars in Accept-traversal order. It rewrites nothing
+// — EnterType returns the default descend result and ExitType returns the node
+// unchanged — so Accept performs no allocation and the walk is a pure collection.
+type ltVarCollector struct {
+	out  []*LifetimeVar
+	seen set.Set[*LifetimeVar]
+}
+
+func (c *ltVarCollector) EnterType(t Type, _ Polarity) EnterResult {
+	if r, ok := t.(*RefType); ok {
+		c.add(r.Lt)
+	}
+	return EnterResult{}
+}
+
+func (c *ltVarCollector) ExitType(t Type, _ Polarity) Type { return t }
+
+// add records a borrow's lifetime: a LifetimeVar directly, or each LifetimeVar
+// member of a LifetimeUnion, deduped by identity.
+func (c *ltVarCollector) add(lt Lifetime) {
+	switch lt := lt.(type) {
+	case *LifetimeVar:
+		if !c.seen.Contains(lt) {
+			c.seen.Add(lt)
+			c.out = append(c.out, lt)
+		}
+	case *LifetimeUnion:
+		for _, m := range lt.Lifetimes {
+			if mv, ok := m.(*LifetimeVar); ok && !c.seen.Contains(mv) {
+				c.seen.Add(mv)
+				c.out = append(c.out, mv)
 			}
 		}
 	}
-	var walk func(Type)
-	walk = func(t Type) {
-		switch t := t.(type) {
-		case *FuncType:
-			for _, p := range t.Params {
-				walk(p.Type)
-			}
-			walk(t.Ret)
-		case *TupleType:
-			for _, e := range t.Elems {
-				walk(e)
-			}
-		case *ObjectType:
-			for _, e := range t.Elems {
-				walk(AsProperty(e).Type)
-			}
-		case *PromiseType:
-			walk(t.Inner)
-		case *RefType:
-			addLt(t.Lt)
-			walk(t.Inner)
-		case *UnionType:
-			for _, m := range t.Types {
-				walk(m)
-			}
-		case *IntersectionType:
-			for _, m := range t.Types {
-				walk(m)
-			}
-		}
-	}
-	walk(t)
-	return out
 }
 
 // freeTypeVars collects the TypeVarTypes appearing in t in first-appearance print

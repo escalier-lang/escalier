@@ -41,12 +41,19 @@ import (
 //     argument lifetime and the callee's freshened parameter lifetime, related only
 //     by a mix of upper and lower bounds, so reachability cannot be confined to one
 //     bound direction. A lifetime forced to 'static renders 'static and absorbs.
-func coalesceLifetimes(t soltype.Type) soltype.Type {
+//
+// coalesceLifetimes resolves the borrow lifetimes left raw by the structural
+// coalescers. pol is the root polarity the type was coalesced at, threaded through
+// so the occurrence walk and the rewrite classify lifetimes from the same root the
+// coalesced type was built from. Every caller coalesces a display type from the
+// Positive root today, so this is Positive in practice; threading it keeps the
+// lifetime analysis consistent with the coalescing polarity rather than assuming it.
+func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	occ := map[*soltype.LifetimeVar]occPolarity{}
-	t.Accept(&ltOccVisitor{occ: occ}, soltype.Positive)
+	t.Accept(&ltOccVisitor{occ: occ}, pol)
 
 	a := newLtAnalysis(occ)
-	return t.Accept(&ltRewriter{a: a}, soltype.Positive)
+	return t.Accept(&ltRewriter{a: a}, pol)
 }
 
 // ltOccVisitor records the polarities each lifetime variable occurs in
