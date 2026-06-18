@@ -219,10 +219,11 @@ func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 	require.Equal(t, "mut ('l0 | 'l1 | 'l2) {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
 }
 
-// ltEqual compares a LifetimeUnion structurally. A LifetimeUnion is a join's
-// coalesced face. Two unions are equal iff their members are pairwise equal in order,
-// so two RefTypes with the same join face dedup during coalescing. A LifetimeVar
-// member keys by identity and 'static by value, inherited from the recursive call.
+// ltEqual compares a LifetimeUnion structurally. A LifetimeUnion is the union form a
+// join variable coalesces to. Two unions are equal iff their members are pairwise
+// equal in order, so two RefTypes with the same coalesced union dedup during
+// coalescing. A LifetimeVar member keys by identity and 'static by value, inherited
+// from the recursive call.
 // This branch has no source-reachable trigger yet, which would be two identical
 // joined borrows in one union, so it is checked directly.
 func TestLtEqualLifetimeUnion(t *testing.T) {

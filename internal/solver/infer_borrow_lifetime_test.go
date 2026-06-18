@@ -175,8 +175,8 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 		values["f"])
 }
 
-// A GENERALIZED joined-borrow function keeps its union face after instantiation. A
-// caller that passes two of its own borrows still sees a two-lifetime union, not a
+// A GENERALIZED joined-borrow function keeps its lifetime union after instantiation.
+// A caller that passes two of its own borrows still sees a two-lifetime union, not a
 // single name. This is the only end-to-end exercise of the Join flag riding through
 // freshenAbove/extrude (D2.5). If the flag were dropped on the freshened join
 // lifetime, the instantiated return would coalesce to one `'l{id}` instead of a
@@ -205,6 +205,12 @@ fn use(a: mut {x: number}, b: mut {x: number}) {
 // field invariant, and `number` vs `string` for `x` fails that pin in both
 // directions. This locks in that the soundness constraint actually fires rather than
 // silently unifying incompatible borrows (M4 D3).
+//
+// FUTURE (M6): this error is the conservative M4 default. M6 may relax it to a
+// read-until-narrowed union — `(mut 'a {x: number}) | (mut 'b {x: string})`, readable
+// always and writable only after narrowing — to match TypeScript. See 01-milestones.md
+// M6, "Permissive mut-borrow joins". When that lands, this test changes from asserting
+// an error to asserting the union.
 func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
 	src := `fn f(p: mut {x: number}, q: mut {x: string}) {
   if true {

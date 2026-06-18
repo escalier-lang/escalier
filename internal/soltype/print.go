@@ -197,9 +197,9 @@ func (p *namedPrinter) printLifetime(lt Lifetime) string {
 		}
 		return "'l" + strconv.Itoa(lt.ID)
 	case *LifetimeUnion:
-		// A join lifetime's coalesced face. It is the union of the param lifetimes
-		// it reaches, parenthesized so the `mut`/borrow prefix binds the whole union,
-		// giving `mut ('a | 'b) {…}` rather than `mut 'a | 'b {…}`.
+		// The union form a join lifetime coalesces to. It is the union of the param
+		// lifetimes it reaches, parenthesized so the `mut`/borrow prefix binds the
+		// whole union, giving `mut ('a | 'b) {…}` rather than `mut 'a | 'b {…}`.
 		parts := make([]string, len(lt.Lifetimes))
 		for i, m := range lt.Lifetimes {
 			parts[i] = p.printLifetime(m)

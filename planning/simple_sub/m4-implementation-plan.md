@@ -1086,7 +1086,12 @@ these arms it must add.
     fresh **join** lifetime var and `constrainLt` each source lifetime into it
     (so it coalesces to `'a | 'b`). The join var is *not* a param lifetime —
     only its reachable param-lifetime members are named (the spike's
-    `paramLifetimes`-vs-join distinction).
+    `paramLifetimes`-vs-join distinction). This unifies a SINGLE carrier object, so
+    two borrows whose shared fields disagree on type fail the invariant field pin and
+    error (`TestInferIncompatibleBorrowJoinErrors`). That reconcile-or-error contract
+    is the conservative M4 default; M6 may relax the incompatible case to a
+    read-until-narrowed union to match TypeScript (see 01-milestones.md M6,
+    "Permissive mut-borrow joins").
   - **Algorithm — escape:** a value flowing into module/static storage (a
     top-level binding, a global write) constrains its lifetime `<: 'static`
     (`constrainLt(lt, &StaticLifetime{})`), which coalesces to `'static`.
@@ -1137,6 +1142,18 @@ these arms it must add.
     `'b`, … via a base-26 `alphaName`, per the spike); a join var renders as the
     union of the param lifetimes it reaches; `'static` absorbs. The `<'a>`
     quantifier joins the existing `<T0, …>` prefix in `PrintAsSchemeWith`.
+  - **Algorithm — canonical union member order (closes the `ltEqual` order gap):**
+    sort a join's reached param lifetimes by `LifetimeVar.ID` before building the
+    `LifetimeUnion`, so the rendered `'a | 'b` is deterministic and `ltEqual`'s
+    positional member compare (`coalesce.go`) becomes order-insensitive with no set
+    comparison. `coalesceLifetime` today builds the union in bound-list order, so two
+    separately-built unions over the same lifetimes can differ in order, and
+    `equalType` then treats the two borrows as distinct — a latent dedup gap. It is
+    not reachable from current source but is cheap to close while the union is
+    rendered here. Members are always param `LifetimeVar`s with stable IDs, so the
+    sort is total. The type-sort twin — positional `UnionType`/`IntersectionType`
+    comparison in `equalType` — needs a canonical order over arbitrary types and
+    rides M6 (see 01-milestones.md M6, "Canonical union/intersection member order").
   - **Algorithm — elision (the subtle branch):** a param lifetime occurring in
     only one polarity (and not forced to `'static`) connects nothing and is
     elided — the lifetime-sort analogue of single-polarity elimination. The
@@ -1156,6 +1173,8 @@ these arms it must add.
     - a connect-nothing param lifetime elides (mut ⇒ owned-mut, immut ⇒ wrapper
       dropped)
     - read-after-write field collapse with a lifetime present
+    - a `LifetimeUnion` built from the same param lifetimes in any order renders
+      identically and `ltEqual`-compares equal
 
 ### Phase E — Destructuring + `match`
 

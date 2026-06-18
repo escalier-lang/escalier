@@ -50,7 +50,7 @@ func coalesceLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetim
 	// degenerate, so that meet has only three outcomes and never builds a combined
 	// node:
 	//   1. meet('a, 'static) = 'static. 'static is the lattice bottom, so it absorbs
-	//      the meet. lifetimeForced detects the `v <: 'static` escape and returns
+	//      the meet. forcedToStatic detects the `v <: 'static` escape and returns
 	//      'static. This is the only outcome that changes the variable.
 	//   2. meet('a, 'a) = 'a. A duplicate bound is idempotent, so the variable keeps
 	//      its own name. ContainsLifetime already dedups bounds, so this never even
@@ -62,7 +62,7 @@ func coalesceLifetime(lt soltype.Lifetime, pol soltype.Polarity) soltype.Lifetim
 	// Cases 2 and 3 both fall through to `return v`: a non-forced param renders under
 	// its own name regardless of its other upper bounds.
 	if !v.Join {
-		if lifetimeForced(v) {
+		if forcedToStatic(v) {
 			return soltype.Static
 		}
 		return v
@@ -115,7 +115,7 @@ func reachableParamLifetimes(v *soltype.LifetimeVar, pol soltype.Polarity, seen 
 			continue
 		}
 		if !bv.Join {
-			if lifetimeForced(bv) {
+			if forcedToStatic(bv) {
 				static = true
 				continue
 			}
@@ -145,11 +145,11 @@ func dedupLifetimes(lts []soltype.Lifetime) []soltype.Lifetime {
 	return out
 }
 
-// lifetimeForced reports whether a lifetime variable has 'static among its bounds,
+// forcedToStatic reports whether a lifetime variable has 'static among its bounds,
 // in which case it coalesces to 'static — the escape-to-static outcome. Both bound
 // directions are checked: the escape constraint `v <: 'static` adds 'static as an
 // upper bound, while a lower-bound 'static can arise from a join member.
-func lifetimeForced(v *soltype.LifetimeVar) bool {
+func forcedToStatic(v *soltype.LifetimeVar) bool {
 	return soltype.ContainsLifetime(v.LowerBounds, soltype.Static) ||
 		soltype.ContainsLifetime(v.UpperBounds, soltype.Static)
 }
