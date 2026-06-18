@@ -1291,32 +1291,32 @@ these arms it must add.
     into inference ad hoc.
   - **Accept:** the static-escape transition cases pass via lifetime queries
     rather than the dropped bits.
-  - **Carried over from D3 — finish the global-write escape (issue: revisit at G2).**
+  - **Carried over from D3 — finish the global-write escape.** Revisit this at G2.
     D3 shipped the escape-to-`'static` rule and wired it to the one global-write site
-    it could: `inferAssign`'s store into a module-level binding. That wiring is
-    deliberately shallow and G2 should complete it, since G2 is already designing the
+    it could reach, `inferAssign`'s store into a module-level binding. That wiring is
+    deliberately shallow, and G2 should complete it, since G2 is already designing the
     liveness-`VarID` ↔ `soltype`-borrow bridge the full fix needs. Two gaps remain:
     1. **Escape only engages a structurally-borrowed source.** `constrainEscape` rides
-       the `soltype` visitor, which treats a `TypeVarType` as a leaf, so a borrow that
-       reaches module storage only through a usage-inferred variable — `sink = if c { p
-       } else { … }`, where the source is the if-join var, not a `RefType` — is never
-       forced `<: 'static`. A bare `sink = p` works because `p`'s static type is already
-       a `RefType`.
+       the `soltype` visitor, which treats a `TypeVarType` as a leaf. So a borrow that
+       reaches module storage only through a usage-inferred variable is never forced
+       `<: 'static`. Take `sink = if c { p } else { … }`, where the source is the
+       if-join variable, not a `RefType`. A bare `sink = p` works because `p`'s static
+       type is already a `RefType`.
     2. **The value-compatibility check trips `BorrowEscapeError` for those same
        sources.** The global-write branch compares `CarrierOf(sourceT)` against the
        slot so a forced-`'static` borrow fills an owned slot instead of being rejected.
        `CarrierOf` peels only a top-level `RefType`, so a borrow buried in a variable or
        union still reaches the owned slot as a non-escaping borrow and is rejected. So
-       `sink = p` checks but `sink = if c { p } else { … }` errors — an inconsistency.
-       The peel also drops the source's mutability check, which is the mutability
-       half this PR already owns (Rule 1/Rule 2 above).
+       `sink = p` checks but `sink = if c { p } else { … }` errors, an inconsistency.
+       The peel also drops the source's mutability check, the mutability half this PR
+       already owns in Rule 1 and Rule 2 above.
 
-    The clean fix is the same seam G2 builds: resolve a value's borrows through the
+    The clean fix is the same seam G2 builds. Resolve a value's borrows through the
     constraint graph rather than its syntactic type, so escape forces every reachable
     borrow lifetime and the compat check admits a forced-`'static` borrow into an owned
-    slot — instead of the C2-gate change or an ad-hoc variable-bound walk D3 declined to
-    add. D3 left the boundary documented in `constrainEscape` and the `inferAssign`
-    global-write branch.
+    slot. That avoids both the C2-gate change and an ad-hoc variable-bound walk D3
+    declined to add. D3 left the boundary documented in `constrainEscape` and the
+    `inferAssign` global-write branch.
 
 ### Dependency graph
 
