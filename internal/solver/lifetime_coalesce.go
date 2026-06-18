@@ -89,6 +89,18 @@ type ltAnalysis struct {
 // the argument and parameter lifetimes it bridges. A component root is marked
 // positive when any structurally-positive lifetime falls in it; that is what keeps
 // a connected param lifetime from being elided.
+//
+// INVARIANT: this grouping is UNDIRECTED, so it conflates outlives direction. It is
+// correct only while two distinct param lifetimes share a component ONLY when they
+// genuinely co-flow — i.e. a join unites them, or one is borrowed from the other.
+// Every lifetime origin today obeys this: attachParamLifetimes mints an independent
+// var per parameter, and the only cross-links are joins (joinBorrows) and
+// instantiation copies (the freshener/extruder), both of which connect lifetimes
+// that really do flow together. A future origin that bound-links two independent
+// param borrows through a shared intermediary would break it: the two would be
+// unioned and both kept, rendering a spurious `('a | 'b)`. Distinguishing that case
+// needs directional reasoning (or first-class lifetime bounds), which the union
+// rendering deliberately does not yet model — see the join-expansion note above.
 func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity) *ltAnalysis {
 	uf := newUnionFind()
 	vars := map[int]*soltype.LifetimeVar{}
