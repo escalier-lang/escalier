@@ -99,6 +99,7 @@ func transitionFixture(
 		},
 		aliases:    aliases,
 		varIDNames: varNames,
+		varIDTypes: map[liveness.VarID]soltype.Type{},
 		written:    map[fieldKey]soltype.Type{},
 	}
 	return c
@@ -234,6 +235,143 @@ func TestCheckMutabilityTransition(t *testing.T) {
 			"cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
 		}, transitionMessages(t, c.errs))
 	})
+}
+
+// staticBorrow builds a mut/immutable borrow whose lifetime is forced to 'static,
+// the shape borrowEscapedToStatic recognizes as a permanent outside alias (G2). The
+// 'static upper bound is what D3's constrainEscape adds when a borrow escapes.
+func staticBorrow(mut bool) *soltype.RefType {
+	lt := &soltype.LifetimeVar{ID: 1, UpperBounds: []soltype.Lifetime{soltype.Static}}
+	return &soltype.RefType{Mut: mut, Lt: lt, Inner: objT()}
+}
+
+// TestStaticEscapeTransition covers G2's lifetime-sort replacement for the dropped
+// HasStatic{Mut,Imm}Alias bits: a source whose borrow escaped to 'static is a
+// permanent outside alias, so a transition conflicts even when the source is locally
+// dead after the transition point. Without the escape the same state is conflict-free.
+func TestStaticEscapeTransition(t *testing.T) {
+	const (
+		src = liveness.VarID(1)
+		tgt = liveness.VarID(2)
+	)
+	names := map[liveness.VarID]string{src: "p", tgt: "snap"}
+
+	// A mutable borrow that escaped to 'static conflicts with a mut→immutable
+	// transition (Rule 1), even though p is dead after the alias — only snap is live.
+	t.Run("Rule1_MutEscape_SourceDead_Error", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasMutable)
+		a.AddAlias(tgt, src, liveness.AliasImmutable)
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
+		c.fn.varIDTypes[src] = staticBorrow(true)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		require.Equal(t, []string{
+			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
+		}, transitionMessages(t, c.errs))
+	})
+
+	// Symmetric Rule 2: an immutable borrow that escaped to 'static conflicts with an
+	// immutable→mut transition.
+	t.Run("Rule2_ImmEscape_SourceDead_Error", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasImmutable)
+		a.AddAlias(tgt, src, liveness.AliasMutable)
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
+		c.fn.varIDTypes[src] = staticBorrow(false)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, transitionRef, transitionSite)
+		require.Equal(t, []string{
+			"cannot assign 'p' to mutable 'snap': a `'static` escape still has immutable access to 'p' after this point",
+		}, transitionMessages(t, c.errs))
+	})
+
+	// A mutable escape does NOT conflict with Rule 2: the escaped mutability must match
+	// the rule's direction, mirroring the two independent bits it replaced.
+	t.Run("MutEscape_DoesNotTriggerRule2", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasImmutable)
+		a.AddAlias(tgt, src, liveness.AliasMutable)
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
+		c.fn.varIDTypes[src] = staticBorrow(true)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, transitionRef, transitionSite)
+		require.Empty(t, transitionMessages(t, c.errs))
+	})
+
+	// A borrow whose lifetime is NOT forced to 'static is an ordinary local borrow, so a
+	// dead source produces no conflict.
+	t.Run("UnforcedLifetime_SourceDead_OK", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasMutable)
+		a.AddAlias(tgt, src, liveness.AliasImmutable)
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
+		c.fn.varIDTypes[src] = &soltype.RefType{
+			Mut:   true,
+			Lt:    &soltype.LifetimeVar{ID: 1},
+			Inner: objT(),
+		}
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		require.Empty(t, transitionMessages(t, c.errs))
+	})
+}
+
+// TestStaticEscapeTransitionFromSource is the end-to-end counterpart: a `mut` borrow
+// stored into module-level `sink` escapes to 'static (D3), creating a permanent mutable
+// alias outside the function. Aliasing that borrow into the immutable `snap` is then a
+// mut→immutable transition that conflicts with the escape, even though `p` is dead after
+// the alias — the query over `p`'s 'static-forced lifetime is what reports it (G2).
+//
+// Before G2 the dropped HasStaticMutAlias bit was never set, so this case was silently
+// accepted as a false negative. A second error rides along: binding the borrow into the
+// owned slot `snap` is a borrow escape, the same known divergence from internal/checker
+// that TestTransitionWiringReportsRule1Error pins; G3 removes it by reborrowing the
+// initializer. So both messages are asserted.
+func TestStaticEscapeTransitionFromSource(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		var sink = {x: 0}
+		fn cache(p: mut {x: number}) {
+			sink = p
+			val snap: {x: number} = p
+			snap
+		}
+	`)
+	msgs := make([]string, len(errs))
+	for i, e := range errs {
+		msgs[i] = e.Message()
+	}
+	require.ElementsMatch(t, []string{
+		"borrowed value mut object does not live long enough to satisfy object",
+		"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
+	}, msgs)
+}
+
+// TestBorrowEscapedToStatic locks the lifetime-sort query G2 uses in place of the
+// dropped escape bits: a borrow forced to 'static is recognized with its mutability, an
+// owned value or an unforced borrow is not.
+func TestBorrowEscapedToStatic(t *testing.T) {
+	c := transitionFixture(nil, liveness.NewAliasTracker(), set.NewSet[liveness.VarID]())
+
+	c.fn.varIDTypes[1] = staticBorrow(true)
+	mut, escaped := c.borrowEscapedToStatic(1)
+	require.True(t, escaped)
+	require.True(t, mut)
+
+	c.fn.varIDTypes[2] = staticBorrow(false)
+	mut, escaped = c.borrowEscapedToStatic(2)
+	require.True(t, escaped)
+	require.False(t, mut)
+
+	// An explicit 'static annotation escapes too.
+	c.fn.varIDTypes[3] = &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: objT()}
+	_, escaped = c.borrowEscapedToStatic(3)
+	require.True(t, escaped)
+
+	// An owned value never escapes.
+	c.fn.varIDTypes[4] = objT()
+	_, escaped = c.borrowEscapedToStatic(4)
+	require.False(t, escaped)
+
+	// An unrecorded variable does not escape.
+	_, escaped = c.borrowEscapedToStatic(99)
+	require.False(t, escaped)
 }
 
 // TestTransitionReassignNestedRHS guards the currentStmt fix: a reassignment whose

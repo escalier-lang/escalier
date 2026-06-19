@@ -36,10 +36,10 @@ import (
 
 // staticConflictName is a sentinel placeholder used in
 // MutabilityTransitionError.ConflictingVars to represent a permanent alias from a
-// `'static` escape. The escape bits it stands for are populated only at `'static`
-// call sites, which M4 G1 does not yet mark, so it stays unset until G2 wires the
-// lifetime sort into the escape check. The message renders it specially rather than
-// printing the literal sentinel.
+// `'static` escape. M4 G2 populates it by querying the lifetime sort: a member of the
+// source's alias set whose borrow lifetime is forced `<: 'static` (D3's escape output)
+// is the permanent outside reference this sentinel stands for. The message renders it
+// specially rather than printing the literal sentinel.
 const staticConflictName = "<static escape>"
 
 // MutabilityTransitionError is reported when a mutability transition is attempted
@@ -141,6 +141,42 @@ func isMutableType(t soltype.Type) bool {
 	return false
 }
 
+// borrowEscapedToStatic reports whether the variable's recorded type carries a
+// top-level borrow whose lifetime is forced to 'static, and that borrow's mutability
+// (M4 G2). It is the lifetime-sort replacement for the dropped HasStatic{Mut,Imm}Alias
+// bits: a value whose borrow escaped — was stored where it outlives the function and so
+// pinned `<: 'static` by D3's constrainEscape — has a permanent outside alias of that
+// mutability. Only the top-level RefType is inspected, matching the bits' "this value
+// escaped" semantics rather than "a field of this value escaped". An owned value, a
+// borrow with an unforced lifetime, or an unrecorded variable returns escaped=false.
+func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (mut bool, escaped bool) {
+	if c.fn == nil || c.fn.varIDTypes == nil {
+		return false, false
+	}
+	r, ok := c.fn.varIDTypes[varID].(*soltype.RefType)
+	if !ok || r.Lt == nil {
+		return false, false
+	}
+	switch lt := r.Lt.(type) {
+	case *soltype.StaticLifetime:
+		return r.Mut, true
+	case *soltype.LifetimeVar:
+		if forcedToStatic(lt) {
+			return r.Mut, true
+		}
+	}
+	return false, false
+}
+
+// recordVarIDType records a tracked variable's soltype into the G2 escape bridge,
+// guarding the nil map at module top-level where no pre-pass ran.
+func (c *checker) recordVarIDType(varID liveness.VarID, t soltype.Type) {
+	if c.fn == nil || c.fn.varIDTypes == nil || varID <= 0 {
+		return
+	}
+	c.fn.varIDTypes[varID] = t
+}
+
 // aliasMutability maps a Go bool to the liveness alias-mutability enum.
 func aliasMutability(mut bool) liveness.AliasMutability {
 	if mut {
@@ -202,16 +238,22 @@ func (c *checker) checkMutabilityTransition(
 	// (conditional aliasing), so deduplicate by collecting names into a set.
 	conflictingSet := set.NewSet[string]()
 	for _, aliasSet := range fn.aliases.GetAliasSets(sourceVarID) {
-		// A `'static` escape on the alias set represents a permanent outside reference.
-		// No liveness check is meaningful, so it always counts as a live alias of its
-		// escaped mutability. These bits are unset until G2 marks `'static` call sites.
-		if sourceMut && !targetMut && aliasSet.HasStaticMutAlias {
-			conflictingSet.Add(staticConflictName)
-		}
-		if !sourceMut && targetMut && aliasSet.HasStaticImmAlias {
-			conflictingSet.Add(staticConflictName)
-		}
 		for varID, aliasMut := range aliasSet.Members {
+			// A borrow on this member forced to 'static (D3's escape output) is a
+			// permanent outside reference: it outlives the function, so no liveness
+			// check is meaningful and it always counts as a live alias of its escaped
+			// mutability. This is G2's lifetime-sort replacement for the dropped
+			// HasStatic{Mut,Imm}Alias bits — Rule 1 conflicts with a permanent MUTABLE
+			// escape, Rule 2 with a permanent IMMUTABLE one. Checked before the liveness
+			// skip below so a member that is locally dead but has escaped still counts.
+			if escMut, escaped := c.borrowEscapedToStatic(varID); escaped {
+				if sourceMut && !targetMut && escMut {
+					conflictingSet.Add(staticConflictName)
+				}
+				if !sourceMut && targetMut && !escMut {
+					conflictingSet.Add(staticConflictName)
+				}
+			}
 			if !fn.liveness.IsLiveAfter(assignRef, varID) {
 				continue
 			}
@@ -310,6 +352,7 @@ func (c *checker) trackAliasesForIdentPat(
 	targetVarID := liveness.VarID(identPat.VarID)
 	targetMut := isMutableType(bindingT)
 	aliasMut := aliasMutability(targetMut)
+	c.recordVarIDType(targetVarID, bindingT)
 
 	source := liveness.DetermineAliasSource(init)
 	switch source.RootKind() {
@@ -402,6 +445,7 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	targetVarID := liveness.VarID(target.VarID)
 	targetMut := isMutableType(targetType)
 	aliasMut := aliasMutability(targetMut)
+	c.recordVarIDType(targetVarID, targetType)
 
 	source := liveness.DetermineAliasSource(rhs)
 	switch source.RootKind() {
@@ -505,13 +549,18 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 
 	// Initialize the alias tracker and seed each parameter leaf so aliases from
 	// parameters are tracked and mutability transitions involving them are detected.
+	// varIDTypes is the VarID → soltype bridge the `'static`-escape query reads (G2);
+	// seedParamLeafAliases records each param leaf's type into it alongside the alias
+	// mutability it derives from the same type.
 	aliases := liveness.NewAliasTracker()
-	seedParamLeafAliases(astParams, paramTypes, aliases)
+	varIDTypes := map[liveness.VarID]soltype.Type{}
+	seedParamLeafAliases(astParams, paramTypes, aliases, varIDTypes)
 
 	c.fn.liveness = livenessInfo
 	c.fn.aliases = aliases
 	c.fn.stmtToRef = stmtToRef
 	c.fn.varIDNames = renameResult.VarIDNames
+	c.fn.varIDTypes = varIDTypes
 }
 
 // seedParamLeafAliases walks each parameter pattern recursively and seeds the alias
@@ -527,15 +576,21 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 // paramTypes per leaf (the old checker's inferPattern did this) or derive each leaf's
 // type by walking the pattern against the param's structural type, rather than the
 // flat name lookup here.
-func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker) {
+func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
 	for _, param := range astParams {
 		ast.ForEachLeafBinding(param.Pattern, func(name string, varID int) {
 			if varID <= 0 {
 				return
 			}
 			mut := liveness.AliasImmutable
-			if t, ok := paramTypes[name]; ok && isMutableType(t) {
-				mut = liveness.AliasMutable
+			if t, ok := paramTypes[name]; ok {
+				if isMutableType(t) {
+					mut = liveness.AliasMutable
+				}
+				// Record the param's type for the G2 escape query. It is the same
+				// pointer the body's reads instantiate (a param binding is mono), so a
+				// lifetime this param later escapes to 'static is visible through it.
+				varIDTypes[liveness.VarID(varID)] = t
 			}
 			aliases.NewValue(liveness.VarID(varID), mut)
 		})
