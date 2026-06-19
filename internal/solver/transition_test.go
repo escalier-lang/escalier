@@ -10,16 +10,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M4 G1: mutability-transition checking (machinery) ---
+// --- M4 G1: mutability-transition checking ---
 //
 // The transition checker is ported from the old checker (check_transitions.go), with
-// its two type predicates reimplemented over soltype. This change adds the machinery
-// and tests it directly; a later change wires it into the function-body walk.
+// its two type predicates reimplemented over soltype.
 //
-// checkMutabilityTransition is exercised over a constructed alias/liveness state, which
-// covers Rule 1 / Rule 2 / Rule 3 independently of the walk and of the source-level
-// constructs the solver does not yet support. The predicates and the outer-binding
-// collection are unit-tested the same way.
+// A freshly constructed literal can be given an owned-mutable type, so the
+// construction case `val items: mut {x} = {x: 1}` type-checks and the source-level
+// Rule 1 and Rule 3 scenarios are reachable. TestMutabilityTransitionsFromSource
+// exercises those end to end through inferSource.
+//
+// The rest stay at the unit level. Rule 2, an immutable→mut transition over a live
+// source, is rejected by the type system before the transition pass runs, so it never
+// produces a transition error from source. Other old-checker cases need features the
+// solver lacks: destructuring, enums and match, binary operators, unions, for-in
+// loops, and top-level statements. TestCheckMutabilityTransition exercises the ported
+// Rule 1 / Rule 2 / Rule 3 logic directly over a constructed alias/liveness state,
+// covering the rules independently of those gaps.
 
 func numT() *soltype.PrimType { return &soltype.PrimType{Prim: soltype.NumPrim} }
 func objT() *soltype.ObjectType {
@@ -229,29 +236,6 @@ func TestCheckMutabilityTransition(t *testing.T) {
 	})
 }
 
-// TestCollectOuterBindingsPreludeCache covers the outer-binding collection that feeds
-// the rename pass: every reachable value name maps to a distinct negative id, the
-// prelude's operator names are included, and the prelude cache makes repeated calls
-// return the same result.
-func TestCollectOuterBindingsPreludeCache(t *testing.T) {
-	c := newChecker()
-	scope := sharedPrelude().Child()
-	scope.defineValue("myLocal", ValueBinding{})
-
-	first := c.collectOuterBindings(scope)
-
-	require.Contains(t, first, "myLocal")
-	require.Contains(t, first, "+") // a prelude operator name
-	for name, id := range first {
-		require.Negative(t, int(id), "outer binding %q must have a negative id", name)
-	}
-	require.Same(t, scope.parent, c.preludeNamesRoot) // prelude root was cached
-
-	// A second call returns an equal mapping, so the cached prelude names do not corrupt
-	// the result.
-	require.Equal(t, first, c.collectOuterBindings(scope))
-}
-
 // TestTransitionReassignNestedRHS guards the currentStmt fix: a reassignment whose
 // RHS contains statements (`b = if cond { … } else { … }`) re-enters inferStmt while
 // walking the RHS, which overwrites c.fn.currentStmt. The reassignment transition path
@@ -350,4 +334,112 @@ func TestTransitionWiringReportsRule1Error(t *testing.T) {
 		"borrowed value mut object does not live long enough to satisfy object",
 		"cannot assign 'p' to immutable 'q': 'p' is still used mutably after this point",
 	}, msgs)
+}
+
+// TestCollectOuterBindingsPreludeCache covers the outer-binding collection that feeds
+// the rename pass: every reachable value name maps to a distinct negative id, the
+// prelude's operator names are included, and the prelude cache makes repeated calls
+// return the same result.
+func TestCollectOuterBindingsPreludeCache(t *testing.T) {
+	c := newChecker()
+	scope := sharedPrelude().Child()
+	scope.defineValue("myLocal", ValueBinding{})
+
+	first := c.collectOuterBindings(scope)
+
+	require.Contains(t, first, "myLocal")
+	require.Contains(t, first, "+") // a prelude operator name
+	for name, id := range first {
+		require.Negative(t, int(id), "outer binding %q must have a negative id", name)
+	}
+	require.Same(t, scope.parent, c.preludeNamesRoot) // prelude root was cached
+
+	// A second call returns an equal mapping, so the cached prelude names do not corrupt
+	// the result.
+	require.Equal(t, first, c.collectOuterBindings(scope))
+}
+
+// TestMutabilityTransitionsFromSource reproduces the old checker's transition cases at
+// the source level, now reachable because a fresh literal can be constructed into an
+// owned-mutable binding. Each case mints its mutable value with `val x: mut {…} = {…}`,
+// aliases it, and asserts the transition verdict. want is empty for the safe cases.
+func TestMutabilityTransitionsFromSource(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// Rule 1 (mut→immutable): error when the mutable source is live after the alias.
+		"Rule1_SourceLive_Error": {
+			src: `
+				fn test() {
+					val items: mut {x: number} = {x: 1}
+					val snapshot: {x: number} = items
+					items.x = 2
+					snapshot
+				}
+			`,
+			want: []string{
+				"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
+			},
+		},
+		// Rule 1: safe when the mutable source is dead after the alias.
+		"Rule1_SourceDead_OK": {
+			src: `
+				fn test() {
+					val items: mut {x: number} = {x: 1}
+					items.x = 2
+					val snapshot: {x: number} = items
+					snapshot
+				}
+			`,
+		},
+		// Rule 3: two mutable aliases of the same value are always allowed.
+		"Rule3_MultipleMutableAliases_OK": {
+			src: `
+				fn test() {
+					val a: mut {x: number} = {x: 1}
+					val b: mut {x: number} = a
+					b.x = 2
+					a.x
+				}
+			`,
+		},
+		// Chain aliasing through a mutable intermediate: the conflict names the live
+		// mutable alias, not the source itself.
+		"ChainAlias_TargetLive_Error": {
+			src: `
+				fn test() {
+					val a: mut {x: number} = {x: 1}
+					val b: mut {x: number} = a
+					val c: {x: number} = b
+					a.x = 2
+					c
+				}
+			`,
+			want: []string{
+				"cannot assign 'b' to immutable 'c': 'a' still has mutable access to 'b' after this point",
+			},
+		},
+		// Conditional aliasing: c aliases both branches; a is live after the transition.
+		"Conditional_IfElse_Error": {
+			src: `
+				fn test(cond: boolean) {
+					val a: mut {x: number} = {x: 0}
+					val b: mut {x: number} = {x: 1}
+					val c: {x: number} = if cond { a } else { b }
+					a.x = 5
+					c
+				}
+			`,
+			want: []string{
+				"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, transitionMessages(t, errs))
+		})
+	}
 }

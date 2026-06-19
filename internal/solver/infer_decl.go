@@ -89,7 +89,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		if annT, ok := c.resolveTypeAnn(d.TypeAnn, lvl); ok {
-			c.constrain(d.Init, initT, annT)
+			c.constrainInitAgainstAnnotation(d.Init, initT, annT)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
@@ -107,6 +107,71 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		initT = widen(initT)
 	}
 	return initT, true
+}
+
+// constrainInitAgainstAnnotation constrains a `val`/`var` initializer against its
+// resolved annotation, with one refinement over a plain constrain: a freshly
+// constructed, unaliased initializer flowing into an OWNED-mutable annotation is
+// allowed to take that mutable type.
+//
+// The C2 gate rejects immutable <: mutable structurally, because writing through the
+// target would otherwise mutate a read-only value. But that is only unsound when a
+// live immutable alias to the source exists. A freshly constructed literal has none —
+// it is uniquely owned — so granting it the annotated mutable type is safe. This is
+// Rule 2 with an empty alias set, the construction case `val items: mut {x} = {x: 1}`.
+// The decision belongs at this value-flow site, which can see the source is fresh, not
+// in the liveness-blind constrain engine.
+//
+// The upgrade constrains the initializer's shape against the borrow's INNER, the
+// covariant read view, exactly as the non-mut path constrains against the annotation
+// directly. It does not relate two independent mutable references, so no write-view
+// invariance applies. It is gated on an owned-mutable annotation (Lt == nil): a borrow
+// annotation (`'a mut …`) is a reference into a caller's region, not an owned value, so
+// a fresh source flowing into it stays on the strict path. A non-fresh source — a
+// variable, a call, a member access — also stays strict; its Rule 2 safety depends on
+// liveness or the lifetime/region system (M4 G2), not on syntax.
+func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) {
+	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && isFreshlyConstructed(init) {
+		c.constrain(init, initT, ref.Inner)
+		return
+	}
+	c.constrain(init, initT, annT)
+}
+
+// isFreshlyConstructed reports whether e is a syntactically fresh, unaliased value: a
+// literal, or an object/tuple literal whose every element is itself freshly
+// constructed. Such a value captures no reference to an existing binding, so it is
+// uniquely owned. It is deliberately conservative and identifier-free: any IdentExpr,
+// call, member access, or spread disqualifies the whole expression, because a captured
+// variable could alias a value held immutably elsewhere. Being identifier-free also
+// makes it sound without VarIDs, so it holds at module top level where the liveness
+// pre-pass has not run. A richer freshness judgment over provably-unique non-literal
+// expressions is the lifetime/region work (M4 G2).
+func isFreshlyConstructed(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.LiteralExpr:
+		return true
+	case *ast.TupleExpr:
+		for _, elem := range e.Elems {
+			if !isFreshlyConstructed(elem) {
+				return false
+			}
+		}
+		return true
+	case *ast.ObjectExpr:
+		for _, elem := range e.Elems {
+			prop, ok := elem.(*ast.PropertyExpr)
+			if !ok || prop.Value == nil {
+				return false
+			}
+			if !isFreshlyConstructed(prop.Value) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 // checkExcessLiteralMembers is the construction-site excess check (M4 A3): a

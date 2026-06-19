@@ -1336,6 +1336,72 @@ these arms it must add.
     slot. That avoids both the C2-gate change and an ad-hoc variable-bound walk D3
     declined to add. D3 left the boundary documented in `constrainEscape` and the
     `inferAssign` global-write branch.
+  - **Carried over from G1 — cross-frame captured-mutability via lifetime escape.**
+    G1's `trackCapturedAliases` keys alias/liveness on a liveness `VarID`. A binding
+    stores the `VarID` of the body that DECLARED it, so when a closure captures a
+    variable declared in a frame ABOVE its enclosing function, that outer-frame id is
+    fed into the enclosing frame's `AliasTracker` / `LivenessInfo`. The result would be
+    a silently wrong transition verdict, not a crash — `IsLiveAfter` is a set membership
+    test, so a foreign id returns the wrong boolean. It is dormant today because a
+    captured mutable is a borrow that cannot yet be aliased into a local, so no
+    cross-frame transition is reachable. G1 ships two defensive measures already:
+    1. **Module-wide unique `VarID`s.** `liveness.RenameFrom` numbers each body's
+       locals from a checker-level running counter instead of restarting at 1, so a
+       `VarID` names the same variable in any frame and a foreign id can never collide
+       with an unrelated local. This makes the system SOUND on its own — a foreign id
+       is simply absent from the current frame's tables.
+    2. **A conservative capture guard.** `trackCapturedAliases` skips a capture whose
+       binding did not originate in the current frame, so a cross-frame capture is not
+       tracked at all rather than mis-tracked.
+    Both are a correctness FLOOR, not the full answer: even with unique ids, an outer
+    variable's id is not in the inner frame's `LiveAfter` set, so cross-frame liveness
+    reads as "dead" and the transition is missed. G2 supplies the real fix from the
+    same bridge it already builds: a captured outer mutable is a borrow whose lifetime
+    escapes INTO the closure, so the transition is enforced by the lifetime sort — the
+    captured borrow's escape constraint and its `RefType.Mut` — rather than by extending
+    the per-frame `VarID` machinery across frames. This is the same "resolve borrows
+    through the constraint graph, not the syntactic id-space" principle as the
+    global-write escape above, so the two share G2's `VarID` ↔ `soltype`-borrow bridge.
+    When G2 lands, the capture guard can relax to defer cross-frame cases to the
+    lifetime escape instead of skipping them.
+  - **Carried into G2 — immutable→mutable upgrade, at every value-flow site.** The C2
+    gate rejects `immutable <: mutable` structurally, but the upgrade is sound whenever
+    the source has no live immutable alias. This is Rule 2 with an empty alias set. G1
+    ships the narrow start; G2 generalizes it along two orthogonal axes.
+
+    *Sites — where the upgrade is checked.* G1 wires it at ONE site, the annotated
+    `val`/`var` initializer in `constrainInitAgainstAnnotation`. The same decision applies
+    wherever a value flows into a `mut` slot:
+    1. a reassignment `x = e` into a `mut` binding (`inferAssign`);
+    2. a call argument against a `mut` parameter (`inferCall`);
+    3. a `return e` against a `mut` return annotation (`inferFunc` / `asyncReturn`);
+    4. a field write `obj.f = e` where `obj.f` is `mut` (`inferMemberAssign`).
+
+    Today a fresh literal type-checks into a `mut` declaration but not into a `mut`
+    parameter, return, or field, an inconsistency a caller hits the moment they write
+    `f({x: 1})` for `fn f(p: mut {x: number})`. G2 should lift the decision into one
+    shared helper consulted at every site, rather than repeating the `inferVarDeclInit`
+    special case four more times. The helper needs the source EXPRESSION, for the
+    syntactic freshness check, alongside the source type, exactly as
+    `constrainInitAgainstAnnotation` takes both `init` and `initT`. The return site has a
+    wrinkle: several `return`s join into one type, so the check keys on each branch's
+    return expression, not the joined result.
+
+    *Sources — which sources qualify.* G1's `isFreshlyConstructed` is deliberately
+    syntactic and identifier-free, so it is sound without VarIDs and at module top level,
+    but it covers only literals. G2 should admit a non-fresh source — a variable, a call,
+    a member access — by resolving the source's owning region rather than its syntax. The
+    upgrade holds when that region carries no live immutable borrow, the same question the
+    `VarID` ↔ `soltype`-borrow bridge answers for escape and cross-frame captures. A dead
+    immutable variable (`val cfg = …; val m: mut … = cfg` with `cfg` dead after) can then
+    be moved to `mut`, which today still reports the structural mismatch.
+
+    The two axes compose: every site consults the one upgrade helper, and the helper
+    decides via the syntactic fast path or the region query. The three region consumers —
+    escape-to-`'static`, cross-frame capture, and this immutable→mut move — all reduce to
+    "does this value's region have a conflicting outstanding borrow here?" and share one
+    mechanism. The walk-level fresh-literal check stays as the fast path; the region query
+    is the general case layered behind it.
 
 ### Dependency graph
 
