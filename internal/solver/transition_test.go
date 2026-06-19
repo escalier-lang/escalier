@@ -323,50 +323,31 @@ func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
 // mut→immutable (Rule 1) transition error from source, not just that it stays silent on
 // benign bodies.
 //
-// Before split-5 the only owned-mutable value is a `mut` parameter. Binding one into an
-// owned immutable slot is also a borrow escape, so a "does not live long enough"
-// lifetime error is reported alongside the transition error. Split-5 adds fresh-literal
-// owned-mutable construction, which removes the borrow escape and lets
-// TestMutabilityTransitionsFromSource assert the transition error in isolation. The two
-// arms below share the same alias and differ only in whether the mutable source stays
-// live, so the presence or absence of the transition error shows liveness — not the
-// lifetime check — is what gates it.
+// Before split-5 the only owned-mutable value is a `mut` parameter, so p (mut) is aliased
+// into immutable q and then mutated, leaving both live across the alias. Rule 1 fires.
+//
+// A second error rides along: binding the `mut` borrow into the owned slot `q` is a borrow
+// escape, so "does not live long enough" is reported too. That escape is a known divergence
+// from internal/checker, which accepts this binding — G3 removes it by reborrowing the
+// initializer instead of treating q as an owned slot. The clean dead-source variant, where
+// only the transition rule is in play, is covered without the escape by
+// TestMutabilityTransitionsFromSource (Rule1_SourceDead_OK) once split-5 supplies an owned
+// mutable value, and by TestCheckMutabilityTransition over constructed state. So this test
+// asserts only the live-source case and pins both messages, escape included.
 func TestTransitionWiringReportsRule1Error(t *testing.T) {
-	allMessages := func(errs []SolverError) []string {
-		msgs := make([]string, len(errs))
-		for i, e := range errs {
-			msgs[i] = e.Message()
+	_, _, errs := inferSource(t, `
+		fn test(p: mut {x: number}) {
+			val q: {x: number} = p
+			p.x = 5
+			q.x
 		}
-		return msgs
+	`)
+	msgs := make([]string, len(errs))
+	for i, e := range errs {
+		msgs[i] = e.Message()
 	}
-
-	t.Run("source_live_reports_transition", func(t *testing.T) {
-		// p (mut) is aliased into immutable q and then mutated, so both are live across
-		// the alias. Rule 1 fires, accompanied by the borrow-escape lifetime error.
-		_, _, errs := inferSource(t, `
-			fn test(p: mut {x: number}) {
-				val q: {x: number} = p
-				p.x = 5
-				q.x
-			}
-		`)
-		require.ElementsMatch(t, []string{
-			"borrowed value mut object does not live long enough to satisfy object",
-			"cannot assign 'p' to immutable 'q': 'p' is still used mutably after this point",
-		}, allMessages(errs))
-	})
-
-	t.Run("source_dead_no_transition", func(t *testing.T) {
-		// The same alias, but p is never used after q is created, so the mutable source
-		// is dead and Rule 1 stays silent. Only the borrow-escape error remains.
-		_, _, errs := inferSource(t, `
-			fn test(p: mut {x: number}) {
-				val q: {x: number} = p
-				q.x
-			}
-		`)
-		require.ElementsMatch(t, []string{
-			"borrowed value mut object does not live long enough to satisfy object",
-		}, allMessages(errs))
-	})
+	require.ElementsMatch(t, []string{
+		"borrowed value mut object does not live long enough to satisfy object",
+		"cannot assign 'p' to immutable 'q': 'p' is still used mutably after this point",
+	}, msgs)
 }
