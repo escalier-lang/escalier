@@ -123,3 +123,137 @@ func TestInferTuplePatternWildcard(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (t: [number, string]) -> number", values["f"])
 }
+
+// A leaf type annotation is enforced: annotating a field whose scrutinee type
+// conflicts is a constraint error, not a silently dropped annotation.
+func TestInferObjectPatternLeafTypeAnnConflict(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			val {x :: string} = p
+			return x
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain number <: string", errs[0].Message())
+}
+
+// A matching leaf type annotation checks and is adopted as the leaf's type.
+func TestInferObjectPatternLeafTypeAnnAdopted(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			val {x :: number} = p
+			return x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number}) -> number", values["f"])
+}
+
+// A field default makes the field optional, so destructuring an absent field
+// that carries a default binds the default's type instead of reporting a missing
+// property.
+func TestInferObjectPatternLeafDefault(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			val {z = 0} = p
+			return z
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number}) -> 0", values["f"])
+}
+
+// A trailing rest element relaxes the tuple requirement to an inexact prefix, so
+// the fixed slots bind without a spurious arity error. The rest element itself is
+// reported unsupported, since typed rest tuples are M9.
+func TestInferTuplePatternRestPrefix(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(t: [number, string, boolean]) {
+			val [a, ...rest] = t
+			return a
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported: RestPat", errs[0].Message())
+	require.Equal(t, "fn (t: [number, string, boolean]) -> number", values["f"])
+}
+
+// A closure capturing a destructured leaf resolves the leaf's binding. This
+// exercises the liveness wiring: the leaf's rename-assigned VarID is copied onto
+// its binding, so trackCapturedAliases finds it instead of skipping a VarID-0
+// binding.
+func TestInferDestructuredLeafClosureCapture(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			val {x} = p
+			val g = fn () { return x }
+			return g()
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number}) -> number", values["f"])
+}
+
+// A `var` tuple destructuring widens each leaf to its primitive, the B3 widening
+// applied through the initializer.
+func TestInferVarTupleDestructureWidens(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f() {
+			var [a, b] = [1, 2]
+			return [a, b]
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> [number, number]", values["f"])
+}
+
+// A `var` object destructuring widens its leaf the same way.
+func TestInferVarObjectDestructureWidens(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f() {
+			var {x} = {x: 5}
+			return x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> number", values["f"])
+}
+
+// Destructuring a `mut` borrow scrutinee peels the borrow via CarrierOf and binds
+// the borrowed field values, just as a member read through the borrow would.
+func TestInferDestructureBorrowScrutinee(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: mut {x: number, y: string}) {
+			val {x, y} = p
+			return [x, y]
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {x: number, y: string}) -> [number, string]", values["f"])
+}
+
+// A default is checked against an explicit leaf annotation: a default that the
+// annotation rejects is a constraint error.
+func TestInferObjectPatternLeafDefaultViolatesAnnotation(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			val {x :: number = "hi"} = p
+			return x
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, `cannot constrain "hi" <: number`, errs[0].Message())
+}
+
+// Patterns nest across kinds: an object pattern whose field is a tuple pattern
+// binds the inner slots at the nested element types.
+func TestInferObjectContainingTuplePattern(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(o: {pt: [number, string]}) {
+			val {pt: [a, b]} = o
+			return [b, a]
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (o: {pt: [number, string]}) -> [string, number]", values["f"])
+}

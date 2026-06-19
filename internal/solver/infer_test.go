@@ -268,9 +268,9 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 	require.Equal(t, map[string]string{"y": "error"}, values)
 }
 
-// A TOP-LEVEL destructuring pattern still defers (M4 E1 adds body-level and
+// A TOP-LEVEL destructuring pattern still defers. M4 E1 adds body-level and
 // function-param destructuring, but a module-scope `val [a, b] = …` needs the SCC
-// driver to bind several names from one decl); the binding reports
+// driver to bind several names from one decl. The binding reports
 // UnsupportedNodeError and introduces no value. The initializer `[1, 2]` is a
 // tuple expression, which PR-4 now infers, so the only remaining error is the
 // destructuring pattern on the binding side.

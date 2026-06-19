@@ -219,12 +219,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// narrower type. Widening needs undefined/unions (M6); M3 has neither.
 			params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
 		} else if p.Pattern != nil {
-			// M4 E1: a destructuring parameter ({x, y}, [a, b]). bindPattern binds each
-			// leaf into the function scope against the param's type and returns the
-			// soltype mirror the printer renders. It also writes each leaf's type into
-			// paramTypes (keyed by leaf name) so the liveness pre-pass seeds the leaf's
-			// alias mutability. An un-annotated destructuring param mints a fresh var
-			// (pt) whose mismatch blame should point at the pattern.
+			// M4 E1: a destructuring parameter such as `{x, y}` or `[a, b]`. bindPattern
+			// binds each leaf into the function scope against the param's type and returns
+			// the soltype mirror the printer renders. It also writes each leaf's type into
+			// paramTypes, keyed by leaf name, so the liveness pre-pass seeds the leaf's
+			// alias mutability. An un-annotated destructuring param mints a fresh var pt
+			// whose mismatch blame should point at the pattern.
 			if p.TypeAnn == nil {
 				c.recordProv(pt, p.Pattern, ParamBinding)
 			}
@@ -232,7 +232,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			params[i] = &soltype.FuncParam{Pattern: mirror, Type: pt, Optional: p.Optional}
 		} else {
 			// A pattern-less param is not reachable from the real parser, which
-			// synthesizes a placeholder; blame the enclosing function rather than a nil
+			// synthesizes a placeholder. Blame the enclosing function rather than a nil
 			// Span(), honoring the "never a panic" guarantee. Bind a synthetic name so
 			// the param slot still types.
 			c.reportUnsupported(node)

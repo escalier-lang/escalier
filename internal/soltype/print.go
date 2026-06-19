@@ -444,8 +444,8 @@ func printPat(pat Pat) (string, bool) {
 	case *ObjectPat:
 		parts := make([]string, len(p.Fields))
 		for i, f := range p.Fields {
-			// A shorthand `{x}` is a field whose value is the IdentPat `x`; render it
-			// as the bare key. Any other sub-pattern renders `name: subpat`.
+			// A shorthand `{x}` is a field whose value is the IdentPat `x`, so render
+			// it as the bare key. Any other sub-pattern renders `name: subpat`.
 			if ip, ok := f.Value.(*IdentPat); ok && ip.Name == f.Name {
 				parts[i] = printObjectKeyName(f.Name)
 				continue

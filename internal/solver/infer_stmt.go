@@ -87,9 +87,9 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 				c.reportUnsupported(vd)
 				return &soltype.Void{}
 			}
-			// M4 E1: a destructuring `val`/`var` ({x, y} = …, [a, b] = …). Type the
-			// initializer, then bind the pattern's leaves against it as monomorphic
-			// projections.
+			// M4 E1: a destructuring `val`/`var` such as `{x, y} = …` or `[a, b] = …`.
+			// Type the initializer, then bind the pattern's leaves against it as
+			// monomorphic projections.
 			c.inferDestructureDecl(scope, lvl, vd)
 			return &soltype.Void{}
 		}

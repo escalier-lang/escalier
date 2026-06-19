@@ -293,30 +293,38 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 	}, true
 }
 
-// inferDestructureDecl types a body-level destructuring `val`/`var` (M4 E1):
-// `val {x, y} = p`, `val [a, b] = t`. It types the initializer through the shared
-// inferVarDeclInit core — so an annotation is honored and a `var` initializer is
-// widened — then binds the pattern's leaves against that type via bindPattern.
+// inferDestructureDecl types a body-level destructuring `val`/`var` such as
+// `val {x, y} = p` or `val [a, b] = t` (M4 E1). It types the initializer through
+// the shared inferVarDeclInit core, so an annotation is honored and a `var`
+// initializer is widened, then binds the pattern's leaves against that type via
+// bindPattern.
 //
 // The leaves are MONOMORPHIC projections of the initializer, not independently
-// generalized bindings: a destructured name reads a slot of the initializer, so
+// generalized bindings. A destructured name reads a slot of the initializer, so
 // it shares that slot's type rather than quantifying over it. Top-level
-// destructuring (`val {x, y} = p` at module scope) still defers — it needs the
-// SCC driver to bind several names from one decl — so this path is body-level
-// only; inferDeclDef reports a top-level destructuring decl as unsupported.
+// destructuring at module scope still defers. It needs the SCC driver to bind
+// several names from one decl, so this path is body-level only and inferDeclDef
+// reports a top-level destructuring decl as unsupported.
+//
+// After binding, the leaves are wired into the liveness machinery so a closure
+// capturing a leaf resolves its alias set and a mutability transition through it
+// is checked. This is the per-leaf analogue of the IdentPat path's VarID copy
+// plus trackAliasesForVarDecl.
 func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
 	initType, ok := c.inferVarDeclInit(scope, lvl, d)
 	if !ok {
 		return
 	}
 	c.bindPattern(scope, lvl, d.Pattern, initType, nil)
+	c.trackDestructureLeaves(scope, d.Pattern)
 }
 
 // varName returns the bound name of a VarDecl whose pattern is an IdentPat, with
 // ok=false for any other pattern shape. M2 binds IdentPat-only patterns,
-// mirroring M1's IdentPat-only FuncParam; body-level destructuring (`val [a, b] =
-// …`) is handled by inferDestructureDecl (M4 E1), top-level destructuring still
-// defers (it needs the SCC driver to bind several names from one decl).
+// mirroring M1's IdentPat-only FuncParam. Body-level destructuring such as
+// `val [a, b] = …` is handled by inferDestructureDecl (M4 E1). Top-level
+// destructuring still defers, since it needs the SCC driver to bind several names
+// from one decl.
 func varName(d *ast.VarDecl) (string, bool) {
 	if p, ok := d.Pattern.(*ast.IdentPat); ok {
 		return p.Name, true

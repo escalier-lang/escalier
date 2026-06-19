@@ -152,7 +152,7 @@ func TestInferFuncExprNilParamPatternNoPanic(t *testing.T) {
 }
 
 // A destructuring parameter binds its leaves and renders its pattern (M4 E1). The
-// leaves below go unused, so each slot coalesces to `unknown`; the point is that
+// leaves below go unused, so each slot coalesces to `unknown`. The point is that
 // the param is accepted and rendered, not reported as unsupported.
 func TestInferFuncExprDestructuringParam(t *testing.T) {
 	c := newChecker()

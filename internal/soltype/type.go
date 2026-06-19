@@ -109,7 +109,7 @@ func (*IdentPat) isPat() {}
 
 // TuplePat is a tuple destructuring pattern (M4 E1). Its sub-patterns are
 // positional. It is carried on a destructured FuncParam.Pattern so the parameter
-// renders and round-trips; the solver's pattern-typing helper produces it.
+// renders and round-trips. The solver's pattern-typing helper produces it.
 type TuplePat struct{ Elems []Pat }
 
 func (*TuplePat) isPat() {}
@@ -127,8 +127,8 @@ type ObjectPatField struct {
 	Value Pat
 }
 
-// LitPat matches a literal value (M4 E1). It binds nothing; it is carried for
-// rendering and (E2) match-arm typing.
+// LitPat matches a literal value (M4 E1). It binds nothing. It is carried for
+// rendering and for E2's match-arm typing.
 type LitPat struct{ Lit Lit }
 
 func (*LitPat) isPat() {}
