@@ -486,44 +486,27 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	// local from non-local variables.
 	outerBindings := c.collectOuterBindings(scope)
 
-	// Extra param names are bindings present in paramTypes but not introduced by an
-	// astParams pattern, such as the implicit `self` of a method. M4 has no methods, so
-	// this is inert today and extraParamNames stays empty. The seam is kept for M5,
-	// which adds classes and the `self` receiver. The one exception is an unsupported
-	// destructuring param, whose synthetic `arg%d` name lands here harmlessly.
-	astParamNames := set.NewSet[string]()
-	for _, p := range astParams {
-		ast.CollectPatternBindingNames(p.Pattern, astParamNames)
-	}
-	var extraParamNames []string // M5: populated once methods introduce `self`
-	for name := range paramTypes {
-		if !astParamNames.Contains(name) {
-			extraParamNames = append(extraParamNames, name)
-		}
-	}
-
 	// Allocate this body's local VarIDs from the module-wide counter so they are
 	// unique across every body in the run, then advance it past them. UniqueVarCount
 	// is the number of locals this body defined, so the next body starts just after.
+	//
+	// Every parameter is an explicit entry in astParams, including a method's `self`
+	// receiver — `self` is written in the signature and is only implicit at the call
+	// site. So the rename pass sees every parameter directly. RenameFrom's
+	// extraParamNames hook, for a binding injected into a body without a signature
+	// param, is unused here.
 	firstID := liveness.VarID(c.varIDCounter)
-	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID, extraParamNames...)
+	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID)
 	c.varIDCounter += renameResult.UniqueVarCount
 
 	cfg := liveness.BuildCFG(*body)
 	livenessInfo := liveness.AnalyzeFunction(cfg)
 	stmtToRef := liveness.BuildStmtToRef(cfg)
 
-	// Initialize the alias tracker and seed parameters so aliases from parameters are
-	// tracked and mutability transitions involving them are detected.
+	// Initialize the alias tracker and seed each parameter leaf so aliases from
+	// parameters are tracked and mutability transitions involving them are detected.
 	aliases := liveness.NewAliasTracker()
 	seedParamLeafAliases(astParams, paramTypes, aliases)
-	for name, varID := range renameResult.ExtraParamVarIDs {
-		mut := liveness.AliasImmutable
-		if t, ok := paramTypes[name]; ok && isMutableType(t) {
-			mut = liveness.AliasMutable
-		}
-		aliases.NewValue(varID, mut)
-	}
 
 	c.fn.liveness = livenessInfo
 	c.fn.aliases = aliases
