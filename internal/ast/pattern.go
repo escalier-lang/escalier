@@ -268,10 +268,10 @@ func FindBindings(pat Pat) set.Set[string] {
 // introduces, recursing through every composite pattern: tuples, objects, rest
 // patterns, extractor-pattern arguments, and an instance pattern's object. varID is
 // the leaf's VarID as written on the AST node by the rename pass (0 when unset).
-// Unlike FindBindings, which yields only names and skips tuple/rest/key-value leaves,
-// this exposes the (name, varID) pair every leaf carries, so the checker's and
-// solver's liveness pre-passes share one walker instead of each keeping a copy.
-// LitPat and WildcardPat bind no names and contribute no leaves.
+// FindBindings collects the same leaf names; this exists separately because it
+// exposes each leaf's (name, varID) pair, which the checker's and solver's liveness
+// pre-passes need to map a leaf back to its variable. LitPat and WildcardPat bind no
+// names and contribute no leaves.
 func ForEachLeafBinding(pat Pat, fn func(name string, varID int)) {
 	if pat == nil {
 		return
