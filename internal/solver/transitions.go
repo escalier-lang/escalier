@@ -517,6 +517,16 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 // seedParamLeafAliases walks each parameter pattern recursively and seeds the alias
 // tracker with one alias set per leaf binding, reading each leaf's mutability from
 // paramTypes so transitions involving the leaf are checked correctly.
+//
+// TODO(destructuring params): paramTypes is keyed by the top-level parameter name, not
+// by leaf name, so the lookup below only resolves an IdentPat parameter, where the leaf
+// IS the parameter. For a destructuring param like `{a, b}: {a: mut T, b: U}` there is
+// no paramTypes["a"]/["b"] entry, so every leaf falls back to AliasImmutable and a
+// `mut` leaf is mis-seeded. This is unreachable today because inferFunc reports a
+// destructuring param as unsupported. When destructuring params land, either populate
+// paramTypes per leaf (the old checker's inferPattern did this) or derive each leaf's
+// type by walking the pattern against the param's structural type, rather than the
+// flat name lookup here.
 func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker) {
 	for _, param := range astParams {
 		ast.ForEachLeafBinding(param.Pattern, func(name string, varID int) {
