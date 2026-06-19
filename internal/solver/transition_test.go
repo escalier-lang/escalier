@@ -251,3 +251,69 @@ func TestCollectOuterBindingsPreludeCache(t *testing.T) {
 	// the result.
 	require.Equal(t, first, c.collectOuterBindings(scope))
 }
+
+// TestTransitionReassignNestedRHS guards the currentStmt fix: a reassignment whose
+// RHS contains statements (`b = if cond { … } else { … }`) re-enters inferStmt while
+// walking the RHS, which overwrites c.fn.currentStmt. The reassignment transition path
+// must use the statement captured before the RHS walk, not the clobbered field, so it
+// resolves the correct CFG StmtRef. The body type-checks with no spurious error.
+func TestTransitionReassignNestedRHS(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn test(cond: boolean) {
+			var b = 0
+			b = if cond { 1 } else { 2 }
+			b
+		}
+	`)
+	require.Empty(t, errs)
+}
+
+// TestTransitionWiringNoSpuriousErrors confirms the liveness pre-pass is wired into
+// function-body inference and that the alias-tracking paths run over real bodies
+// without inventing a transition error. Each case type-checks cleanly, so any
+// MutabilityTransitionError would be a wiring bug. The cases exercise the decl-alias
+// branches and parameter seeding end to end, which the constructed-state unit tests
+// above do not.
+func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
+	tests := map[string]string{
+		// Immutable owned objects aliased down a chain. No mutability, no transition.
+		"immutable_chain": `
+			fn test() {
+				val a = {x: 1}
+				val b = a
+				val c = b
+				c
+			}
+		`,
+		// Single-source decl alias: an immutable param aliased to a val exercises the
+		// AliasSourceVariable branch of trackAliasesForIdentPat.
+		"single_source_alias": `
+			fn test(q: {y: number}) {
+				val r = q
+				r
+			}
+		`,
+		// Multi-source decl alias: an if/else over two params makes the binding alias
+		// both, exercising the AliasSourceMultiple branch.
+		"multi_source_alias": `
+			fn test(cond: boolean, a: {x: number}, b: {x: number}) {
+				val c = if cond { a } else { b }
+				c
+			}
+		`,
+		// A mut and an immutable parameter are seeded into the alias tracker, and a
+		// field write through the mut param walks the prop-assignment path.
+		"params_seeded": `
+			fn test(p: mut {x: number}, q: {y: number}) {
+				p.x = 5
+				q.y
+			}
+		`,
+	}
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Empty(t, errs)
+		})
+	}
+}
