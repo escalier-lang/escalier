@@ -636,7 +636,7 @@ func (c *Checker) trackAliasesForPropAssignment(
 	rhs ast.Expr,
 ) {
 	// Find the root object variable of the member/index chain.
-	objVarID := rootObjectVarID(lhs)
+	objVarID := liveness.VarID(ast.RootObjectVarID(lhs))
 	if objVarID <= 0 {
 		return
 	}
@@ -653,27 +653,6 @@ func (c *Checker) trackAliasesForPropAssignment(
 		// No alias relationship to track.
 	default:
 		panic(fmt.Sprintf("trackAliasesForPropAssignment: unhandled alias source kind %d", source.RootKind()))
-	}
-}
-
-// rootObjectVarID iteratively walks a member/index expression chain
-// (e.g. a.b.c, a[b][c]) to find the root object's VarID.
-// Returns 0 if the root is not a local variable.
-func rootObjectVarID(expr ast.Expr) liveness.VarID {
-	for {
-		switch e := expr.(type) {
-		case *ast.MemberExpr:
-			expr = e.Object
-		case *ast.IndexExpr:
-			expr = e.Object
-		case *ast.IdentExpr:
-			if e.VarID > 0 {
-				return liveness.VarID(e.VarID)
-			}
-			return 0
-		default:
-			return 0
-		}
 	}
 }
 

@@ -34,7 +34,7 @@ func (c *Checker) runLivenessPrePass(ctx *Context, astParams []*ast.Param, param
 	// IdentExpr.VarID resolves to.
 	astParamNames := set.NewSet[string]()
 	for _, p := range astParams {
-		collectPatternBindingNames(p.Pattern, astParamNames)
+		ast.CollectPatternBindingNames(p.Pattern, astParamNames)
 	}
 	var extraParamNames []string
 	for name := range paramBindings {
@@ -95,7 +95,7 @@ func seedParamLeafAliases(
 	aliases *liveness.AliasTracker,
 ) {
 	for _, param := range astParams {
-		forEachLeafBinding(param.Pattern, func(name string, varID int) {
+		ast.ForEachLeafBinding(param.Pattern, func(name string, varID int) {
 			if varID <= 0 {
 				return
 			}

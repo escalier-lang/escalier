@@ -46,6 +46,28 @@ func TestIsValueType(t *testing.T) {
 	require.False(t, isValueType(&soltype.UnionType{}))
 	require.False(t, isValueType(objT()))
 	require.False(t, isValueType(&soltype.RefType{Mut: true, Inner: objT()}))
+	// An inference variable falls through to false (conservatively a reference), the
+	// no-Prune divergence from the old checker — see isValueType's doc.
+	require.False(t, isValueType(&soltype.TypeVarType{ID: 0, Level: 0}))
+}
+
+// TestIsSourceMutable locks the predicate that reads a source variable's recorded
+// mutability from the alias tracker: a seeded mutable value reports true, a seeded
+// immutable one reports false, and an unregistered source reports false.
+func TestIsSourceMutable(t *testing.T) {
+	const (
+		mutVar   = liveness.VarID(1)
+		immVar   = liveness.VarID(2)
+		unseeded = liveness.VarID(3)
+	)
+	a := liveness.NewAliasTracker()
+	a.NewValue(mutVar, liveness.AliasMutable)
+	a.NewValue(immVar, liveness.AliasImmutable)
+	c := transitionFixture(nil, a, set.NewSet[liveness.VarID]())
+
+	require.True(t, c.isSourceMutable(mutVar))
+	require.False(t, c.isSourceMutable(immVar))
+	require.False(t, c.isSourceMutable(unseeded))
 }
 
 // TestIsMutableType covers the predicate that distinguishes a mutable borrow from

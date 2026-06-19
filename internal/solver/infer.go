@@ -52,6 +52,13 @@ type checker struct {
 	// "unset" sentinel, negative ids mark non-local bindings).
 	varIDCounter int
 
+	// preludeNames caches the immutable prelude root scope's sorted value names so the
+	// liveness pre-pass collects them once instead of re-walking and re-sorting the
+	// prelude for every function body (M4 G1). preludeNamesRoot is the scope the cache
+	// was computed for; collectOuterBindings recomputes if a different root appears.
+	preludeNames     []string
+	preludeNamesRoot *Scope
+
 	// paramLifetimes is the set of lifetime-variable ids that originate on a
 	// function parameter (M4 D2). A `mut`-borrow param without a declared lifetime
 	// is a borrow of whatever the caller lends, so attachParamLifetimes mints a

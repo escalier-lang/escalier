@@ -98,11 +98,17 @@ func (e *MutabilityTransitionError) Message() string {
 	)
 }
 
-// isValueType reports whether the type is a primitive or literal type (or a union
-// of such types). Value types have copy semantics — assigning them to another
-// variable creates an independent copy, so alias tracking is unnecessary. Ported
-// from check_transitions.go over soltype: there is no Prune step because the
-// coalesced display type the caller passes is already resolved.
+// isValueType reports whether the type is a primitive or literal type (or a union of
+// such types). Value types have copy semantics — assigning them to another variable
+// creates an independent copy, so alias tracking is unnecessary.
+//
+// Ported from check_transitions.go, which first calls type_system.Prune. There is no
+// equivalent here: the only caller (trackCapturedAliases) passes a binding's coalesced
+// display type, which carries no inference-variable indirection to prune. If such a
+// type ever did surface as a bare *soltype.TypeVarType, it falls through to false —
+// classified as a reference and conservatively alias-tracked. That is sound: it can
+// only ADD a spurious alias edge, never drop a real transition, so a value-typed
+// binding mis-seen as a reference at worst over-reports, never under-reports.
 func isValueType(t soltype.Type) bool {
 	switch p := t.(type) {
 	case *soltype.PrimType, *soltype.LitType:
@@ -257,6 +263,32 @@ func (c *checker) trackAliasesForVarDecl(scope *Scope, decl *ast.VarDecl, bindin
 	}
 }
 
+// checkTransitionsAgainst checks the mutability transition that aliasing each source
+// in sourceIDs to (targetVarID, targetName, targetMut) induces, at enclosingStmt's CFG
+// point. It is the shared core of the decl and reassignment paths — the single-source
+// case is just the one-element instance of this loop, so neither path open-codes its
+// own copy. A no-op when the statement has no StmtRef.
+func (c *checker) checkTransitionsAgainst(
+	sourceIDs []liveness.VarID,
+	targetVarID liveness.VarID,
+	targetName string,
+	targetMut bool,
+	enclosingStmt ast.Stmt,
+	node ast.Node,
+) {
+	stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]
+	if !hasRef {
+		return
+	}
+	for _, sourceVarID := range sourceIDs {
+		c.checkMutabilityTransition(
+			sourceVarID, targetVarID,
+			c.varIDToName(sourceVarID), targetName,
+			c.isSourceMutable(sourceVarID), targetMut, stmtRef, node,
+		)
+	}
+}
+
 // trackAliasesForIdentPat handles alias tracking for a simple identifier pattern
 // binding (`val x = expr`).
 func (c *checker) trackAliasesForIdentPat(
@@ -275,32 +307,14 @@ func (c *checker) trackAliasesForIdentPat(
 
 	source := liveness.DetermineAliasSource(init)
 	switch source.RootKind() {
-	case liveness.AliasSourceVariable:
-		sourceVarID := source.UniqueVarIDs()[0]
-		c.fn.aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
-		if stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]; hasRef {
-			sourceMut := c.isSourceMutable(sourceVarID)
-			c.checkMutabilityTransition(
-				sourceVarID, targetVarID,
-				c.varIDToName(sourceVarID), identPat.Name,
-				sourceMut, targetMut, stmtRef, node,
-			)
-		}
-	case liveness.AliasSourceMultiple:
-		// Conditional aliasing: the target aliases all possible source variables.
-		for _, sourceVarID := range source.UniqueVarIDs() {
+	case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
+		// The target aliases every source — one variable, or several under conditional
+		// aliasing. Add each alias edge, then check the transition against each source.
+		sourceIDs := source.UniqueVarIDs()
+		for _, sourceVarID := range sourceIDs {
 			c.fn.aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
 		}
-		if stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]; hasRef {
-			for _, sourceVarID := range source.UniqueVarIDs() {
-				sourceMut := c.isSourceMutable(sourceVarID)
-				c.checkMutabilityTransition(
-					sourceVarID, targetVarID,
-					c.varIDToName(sourceVarID), identPat.Name,
-					sourceMut, targetMut, stmtRef, node,
-				)
-			}
-		}
+		c.checkTransitionsAgainst(sourceIDs, targetVarID, identPat.Name, targetMut, enclosingStmt, node)
 	case liveness.AliasSourceFresh, liveness.AliasSourceUnknown:
 		c.fn.aliases.NewValue(targetVarID, aliasMut)
 	}
@@ -351,15 +365,13 @@ func (c *checker) trackCapturedAliases(
 		}
 		enclosingVarID := liveness.VarID(b.VarID)
 		c.fn.aliases.AddAlias(closureVarID, enclosingVarID, aliasMutability(capture.IsMutable))
-
-		if stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]; hasRef {
-			sourceMut := c.isSourceMutable(enclosingVarID)
-			c.checkMutabilityTransition(
-				enclosingVarID, closureVarID,
-				capture.Name, c.varIDToName(closureVarID),
-				sourceMut, capture.IsMutable, stmtRef, node,
-			)
-		}
+		// The capture creates a (closure ← enclosing var) alias; check the transition it
+		// induces. The cross-frame guard above guarantees enclosingVarID resolves in this
+		// frame, so the helper's varIDToName(enclosingVarID) is capture.Name.
+		c.checkTransitionsAgainst(
+			[]liveness.VarID{enclosingVarID}, closureVarID,
+			c.varIDToName(closureVarID), capture.IsMutable, enclosingStmt, node,
+		)
 	}
 }
 
@@ -385,30 +397,17 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	source := liveness.DetermineAliasSource(rhs)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
+		// Check the transition BEFORE reassigning: the single-source reassign rewires
+		// the target's membership, so checking first reads the pre-reassign alias state.
 		sourceVarID := source.UniqueVarIDs()[0]
-		if stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]; hasRef {
-			sourceMut := c.isSourceMutable(sourceVarID)
-			c.checkMutabilityTransition(
-				sourceVarID, targetVarID,
-				c.varIDToName(sourceVarID), target.Name,
-				sourceMut, targetMut, stmtRef, target,
-			)
-		}
+		c.checkTransitionsAgainst([]liveness.VarID{sourceVarID}, targetVarID, target.Name, targetMut, enclosingStmt, target)
 		c.fn.aliases.Reassign(targetVarID, &sourceVarID, aliasMut)
 	case liveness.AliasSourceMultiple:
-		// Conditional aliasing: reassign to all sources before checking transitions
-		// so alias state stays consistent regardless of whether errors are reported.
-		c.fn.aliases.ReassignMulti(targetVarID, source.UniqueVarIDs(), aliasMut)
-		if stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]; hasRef {
-			for _, sourceVarID := range source.UniqueVarIDs() {
-				sourceMut := c.isSourceMutable(sourceVarID)
-				c.checkMutabilityTransition(
-					sourceVarID, targetVarID,
-					c.varIDToName(sourceVarID), target.Name,
-					sourceMut, targetMut, stmtRef, target,
-				)
-			}
-		}
+		// Conditional aliasing: reassign to all sources BEFORE checking transitions so
+		// alias state stays consistent regardless of whether errors are reported.
+		sourceIDs := source.UniqueVarIDs()
+		c.fn.aliases.ReassignMulti(targetVarID, sourceIDs, aliasMut)
+		c.checkTransitionsAgainst(sourceIDs, targetVarID, target.Name, targetMut, enclosingStmt, target)
 	case liveness.AliasSourceFresh, liveness.AliasSourceUnknown:
 		c.fn.aliases.Reassign(targetVarID, nil, aliasMut)
 	}
@@ -421,7 +420,7 @@ func (c *checker) trackAliasesForPropAssignment(lhs ast.Expr, rhs ast.Expr) {
 	if c.fn == nil || c.fn.aliases == nil {
 		return
 	}
-	objVarID := rootObjectVarID(lhs)
+	objVarID := liveness.VarID(ast.RootObjectVarID(lhs))
 	if objVarID <= 0 {
 		return
 	}
@@ -439,7 +438,10 @@ func (c *checker) trackAliasesForPropAssignment(lhs ast.Expr, rhs ast.Expr) {
 }
 
 // isSourceMutable checks whether a source variable is registered as mutable in its
-// alias sets. Returns true if the source holds a mutable reference.
+// alias sets. Returns true if the source holds a mutable reference, and false when the
+// source is absent from the tracker — every decl/param seeds its source first
+// (NewValue/AddAlias), so an unregistered source means "no mutable alias on record,"
+// which conservatively reads as immutable.
 func (c *checker) isSourceMutable(sourceVarID liveness.VarID) bool {
 	for _, s := range c.fn.aliases.GetAliasSets(sourceVarID) {
 		if m, exists := s.Members[sourceVarID]; exists {
@@ -447,27 +449,6 @@ func (c *checker) isSourceMutable(sourceVarID liveness.VarID) bool {
 		}
 	}
 	return false
-}
-
-// rootObjectVarID iteratively walks a member/index expression chain (`a.b.c`,
-// `a[b][c]`) to find the root object's VarID, returning 0 when the root is not a
-// local variable.
-func rootObjectVarID(expr ast.Expr) liveness.VarID {
-	for {
-		switch e := expr.(type) {
-		case *ast.MemberExpr:
-			expr = e.Object
-		case *ast.IndexExpr:
-			expr = e.Object
-		case *ast.IdentExpr:
-			if e.VarID > 0 {
-				return liveness.VarID(e.VarID)
-			}
-			return 0
-		default:
-			return 0
-		}
-	}
 }
 
 // varIDToName resolves a VarID back to a variable name for error messages, reading
@@ -494,16 +475,18 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	// Build outer bindings from the scope chain. Every value binding accessible from
 	// the current scope gets a negative VarID so the rename pass can distinguish
 	// local from non-local variables.
-	outerBindings := collectOuterBindings(scope)
+	outerBindings := c.collectOuterBindings(scope)
 
-	// Extra param names are bindings present as params but not in astParams (e.g. an
-	// implicit `self`). The new checker has no such params yet, so this is normally
-	// empty; the logic is kept for parity with the old prepass.
+	// Extra param names are bindings present in paramTypes but not introduced by an
+	// astParams pattern — the implicit `self` of a method. M4 has no methods, so this
+	// is inert today and extraParamNames stays empty; the seam is kept for M5, which
+	// adds classes and the `self` receiver. The one exception is an unsupported
+	// destructuring param, whose synthetic `arg%d` name lands here harmlessly.
 	astParamNames := set.NewSet[string]()
 	for _, p := range astParams {
-		collectPatternBindingNames(p.Pattern, astParamNames)
+		ast.CollectPatternBindingNames(p.Pattern, astParamNames)
 	}
-	var extraParamNames []string
+	var extraParamNames []string // M5: populated once methods introduce `self`
 	for name := range paramTypes {
 		if !astParamNames.Contains(name) {
 			extraParamNames = append(extraParamNames, name)
@@ -544,7 +527,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 // paramTypes so transitions involving the leaf are checked correctly.
 func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker) {
 	for _, param := range astParams {
-		forEachLeafBinding(param.Pattern, func(name string, varID int) {
+		ast.ForEachLeafBinding(param.Pattern, func(name string, varID int) {
 			if varID <= 0 {
 				return
 			}
@@ -558,19 +541,20 @@ func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.
 }
 
 // collectOuterBindings walks the scope chain and collects all value binding names,
-// assigning each a unique negative VarID. Names within each scope are sorted before
-// assignment so the resulting IDs are deterministic across runs (Go map iteration
-// order is randomized), keeping any VarID-capturing snapshots stable.
-func collectOuterBindings(scope *Scope) map[string]liveness.VarID {
+// assigning each a unique negative VarID so the rename pass can tell a non-local
+// reference from a local. Names within each scope are sorted before assignment so the
+// ids are deterministic across runs (Go map iteration order is randomized).
+//
+// The root of every chain is the shared, immutable prelude, which this re-walks and
+// re-sorts on every function body's pre-pass. preludeOuterNames memoizes the prelude's
+// sorted names so only the mutable scopes above it are re-collected each time — the
+// old checker left this re-walk as a TODO(Phase 15.1). The module scope above the
+// prelude is NOT cached: it grows as later SCC components bind, so a cached snapshot
+// would be stale for a body inferred after it.
+func (c *checker) collectOuterBindings(scope *Scope) map[string]liveness.VarID {
 	bindings := make(map[string]liveness.VarID)
 	nextID := liveness.VarID(-1)
-
-	for s := scope; s != nil; s = s.parent {
-		names := make([]string, 0, len(s.values))
-		for name := range s.values {
-			names = append(names, name)
-		}
-		slices.Sort(names)
+	add := func(names []string) {
 		for _, name := range names {
 			if _, exists := bindings[name]; !exists {
 				bindings[name] = nextID
@@ -579,7 +563,36 @@ func collectOuterBindings(scope *Scope) map[string]liveness.VarID {
 		}
 	}
 
+	for s := scope; s != nil; s = s.parent {
+		if s.parent == nil {
+			add(c.preludeOuterNames(s)) // immutable prelude root: collected once, reused
+		} else {
+			add(sortedValueNames(s))
+		}
+	}
+
 	return bindings
+}
+
+// preludeOuterNames returns the prelude root scope's sorted value names, computing
+// them once per root and caching the result on the checker. The prelude is built once
+// and never mutated during a run, so the cache is always fresh.
+func (c *checker) preludeOuterNames(root *Scope) []string {
+	if c.preludeNamesRoot != root {
+		c.preludeNames = sortedValueNames(root)
+		c.preludeNamesRoot = root
+	}
+	return c.preludeNames
+}
+
+// sortedValueNames returns a scope's own value binding names in sorted order.
+func sortedValueNames(s *Scope) []string {
+	names := make([]string, 0, len(s.values))
+	for name := range s.values {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }
 
 // recordParamVarIDs copies each IdentPat parameter's rename-assigned VarID onto its
@@ -597,43 +610,4 @@ func recordParamVarIDs(fnScope *Scope, params []*ast.Param) {
 			fnScope.defineValue(ip.Name, b)
 		}
 	}
-}
-
-// forEachLeafBinding invokes fn for every identifier name a pattern introduces,
-// recursing through destructuring patterns. Ported from internal/checker.
-func forEachLeafBinding(pat ast.Pat, fn func(name string, varID int)) {
-	if pat == nil {
-		return
-	}
-	switch p := pat.(type) {
-	case *ast.IdentPat:
-		fn(p.Name, p.VarID)
-	case *ast.TuplePat:
-		for _, sub := range p.Elems {
-			forEachLeafBinding(sub, fn)
-		}
-	case *ast.ObjectPat:
-		for _, elem := range p.Elems {
-			switch e := elem.(type) {
-			case *ast.ObjKeyValuePat:
-				forEachLeafBinding(e.Value, fn)
-			case *ast.ObjShorthandPat:
-				if e.Key != nil {
-					fn(e.Key.Name, e.VarID)
-				}
-			case *ast.ObjRestPat:
-				forEachLeafBinding(e.Pattern, fn)
-			}
-		}
-	case *ast.RestPat:
-		forEachLeafBinding(p.Pattern, fn)
-	}
-}
-
-// collectPatternBindingNames adds every identifier name introduced by a pattern
-// (recursively) to the provided set.
-func collectPatternBindingNames(p ast.Pat, into set.Set[string]) {
-	forEachLeafBinding(p, func(name string, _ int) {
-		into.Add(name)
-	})
 }

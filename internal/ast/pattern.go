@@ -21,7 +21,7 @@ func (*WildcardPat) isPat()  {}
 
 type IdentPat struct {
 	Name         string
-	VarID        int // set by the rename pass (liveness.VarID); 0 = unset
+	VarID        int     // set by the rename pass (liveness.VarID); 0 = unset
 	Mutable      bool    // `mut` prefix on the binding (e.g. `val mut x = …`)
 	TypeAnn      TypeAnn // optional
 	Default      Expr    // optional
@@ -69,8 +69,8 @@ func (p *ObjKeyValuePat) Accept(v Visitor) {
 
 type ObjShorthandPat struct {
 	Key     *Ident
-	VarID   int  // set by the rename pass (liveness.VarID); 0 = unset
-	Mutable bool // `mut` prefix on the shorthand binding (e.g. `{ mut x }`)
+	VarID   int     // set by the rename pass (liveness.VarID); 0 = unset
+	Mutable bool    // `mut` prefix on the shorthand binding (e.g. `{ mut x }`)
 	TypeAnn TypeAnn // optional
 	Default Expr    // optional
 	span    Span
@@ -262,4 +262,69 @@ func FindBindings(pat Pat) set.Set[string] {
 	pat.Accept(visitor)
 
 	return visitor.Bindings
+}
+
+// ForEachLeafBinding invokes fn for every identifier-binding leaf a pattern
+// introduces, recursing through destructuring patterns. varID is the leaf's VarID as
+// written on the AST node by the rename pass (0 when unset). Unlike FindBindings,
+// which yields only names and skips tuple/rest/key-value leaves, this exposes the
+// (name, varID) pair every leaf carries, so the checker's and solver's liveness
+// pre-passes share one walker instead of each keeping a copy.
+func ForEachLeafBinding(pat Pat, fn func(name string, varID int)) {
+	if pat == nil {
+		return
+	}
+	switch p := pat.(type) {
+	case *IdentPat:
+		fn(p.Name, p.VarID)
+	case *TuplePat:
+		for _, sub := range p.Elems {
+			ForEachLeafBinding(sub, fn)
+		}
+	case *ObjectPat:
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ObjKeyValuePat:
+				ForEachLeafBinding(e.Value, fn)
+			case *ObjShorthandPat:
+				if e.Key != nil {
+					fn(e.Key.Name, e.VarID)
+				}
+			case *ObjRestPat:
+				ForEachLeafBinding(e.Pattern, fn)
+			}
+		}
+	case *RestPat:
+		ForEachLeafBinding(p.Pattern, fn)
+	}
+}
+
+// CollectPatternBindingNames adds every identifier name a pattern introduces
+// (recursively) to into.
+func CollectPatternBindingNames(p Pat, into set.Set[string]) {
+	ForEachLeafBinding(p, func(name string, _ int) {
+		into.Add(name)
+	})
+}
+
+// RootObjectVarID walks a member/index expression chain (`a.b.c`, `a[b][c]`) to the
+// root object's VarID as written on the AST node, returning 0 when the root is not a
+// local variable. The result is the raw node VarID; liveness callers wrap it in
+// liveness.VarID.
+func RootObjectVarID(expr Expr) int {
+	for {
+		switch e := expr.(type) {
+		case *MemberExpr:
+			expr = e.Object
+		case *IndexExpr:
+			expr = e.Object
+		case *IdentExpr:
+			if e.VarID > 0 {
+				return e.VarID
+			}
+			return 0
+		default:
+			return 0
+		}
+	}
 }
