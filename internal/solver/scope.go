@@ -36,6 +36,14 @@ type ValueBinding struct {
 	// WRITE: storing a value into module-level storage outlives every borrow region,
 	// so a borrowed value written there escapes to 'static (M4 D3).
 	ModuleLevel bool
+	// VarID is the liveness VarID assigned to this binding's name by the function
+	// body's rename pass (M4 G1), or 0 for a binding outside any liveness-analysed
+	// body (every top-level binding, and any binding minted before its enclosing
+	// body's prepass runs). The mutability-transition checker reads it to resolve a
+	// captured outer variable back to its alias set — the new-checker analogue of the
+	// old checker's type_system.Binding.VarID. It is metadata for transition checking
+	// only and never participates in type inference.
+	VarID int
 }
 
 // IsOverloaded reports whether this binding is an overload set. Consumers MUST
