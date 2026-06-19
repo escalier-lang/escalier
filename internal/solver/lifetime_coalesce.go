@@ -27,10 +27,12 @@ import (
 //  2. Elision. A param lifetime whose borrow never reaches an output connects
 //     nothing. It occurs in no positive position, and its bound-graph component
 //     holds no output lifetime, so it is dropped. This is the lifetime-sort analogue
-//     of single-polarity type-variable elimination. Dropping branches on Mut. A
-//     mutable borrow becomes owned-mutable, RefType{Mut: true, Lt: nil}. An
-//     immutable borrow drops the RefType wrapper entirely and returns its bare inner,
-//     because RefType{false, nil} is the forbidden degenerate cell NewRef rejects.
+//     of single-polarity type-variable elimination. The drop branches on the
+//     borrow's Mut flag:
+//       - A mutable borrow becomes owned-mutable, RefType{Mut: true, Lt: nil}.
+//       - An immutable borrow drops the RefType wrapper entirely and returns its
+//         bare inner, because RefType{Mut: false, Lt: nil} is the forbidden
+//         degenerate cell NewRef rejects.
 //
 //  3. Join expansion. A non-param lifetime is not itself nameable. It is either a
 //     join variable minted at a return or branch, or a lifetime freshened when a
@@ -41,6 +43,11 @@ import (
 //     argument lifetime and the callee's freshened parameter lifetime, related only
 //     by a mix of upper and lower bounds, so reachability cannot be confined to one
 //     bound direction. A lifetime forced to 'static renders 'static and absorbs.
+//     FUTURE (M6.5, lifetime bounds): this undirected grouping is a D4
+//     approximation, sound only because independent param lifetimes never share a
+//     bound-graph component. M6.5 replaces it with directional reasoning over the
+//     LowerBounds/UpperBounds edges, rendering a join as precise where-clauses like
+//     `where 'a: 'c, 'b: 'c` rather than collapsing it to the union ('a | 'b).
 //
 // coalesceLifetimes resolves the borrow lifetimes left raw by the structural
 // coalescers. pol is the root polarity the type was coalesced at, threaded through
@@ -84,9 +91,9 @@ func (v *ltOccVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type
 // set of component roots that hold a positive output lifetime.
 type ltAnalysis struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
-	uf       *unionFind                   // components over lifetime bound edges
+	uf       *unionFind                   // components over lifetime bound edges; find(ID) is the component's representative ID
 	vars     map[int]*soltype.LifetimeVar // every lifetime var reachable, by ID
-	posRoots set.Set[int]                 // component roots reaching a positive occurrence
+	posRoots set.Set[int]                 // representative IDs (uf.find results) of components reaching a positive occurrence
 }
 
 // newLtAnalysis builds the bound-graph components from the structurally-occurring
@@ -107,7 +114,9 @@ type ltAnalysis struct {
 // independent param borrows through a shared intermediary would break it. The two
 // would be unioned and both kept, rendering a spurious `('a | 'b)`. Distinguishing
 // that case needs directional reasoning, or first-class lifetime bounds, which the
-// union rendering deliberately does not yet model. See the join-expansion note above.
+// union rendering deliberately does not yet model. M6.5 (lifetime bounds) is the
+// milestone that retires this undirected grouping, replacing it with directional
+// reasoning over the LowerBounds/UpperBounds edges. See the join-expansion note above.
 func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity) *ltAnalysis {
 	uf := newUnionFind()
 	vars := map[int]*soltype.LifetimeVar{}
@@ -138,6 +147,10 @@ func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity) *ltAnalysis {
 
 	posRoots := set.NewSet[int]()
 	for v, pols := range occ {
+		// pols is a bitset of the polarities v occurred in. `&occPos != 0` tests
+		// whether the positive flag is set, tolerating a co-set occNeg bit, so a
+		// both-polarity v still counts. A v that occurs positively reaches an output,
+		// so mark its component root positive — kept reads this to gate elision.
 		if pols&occPos != 0 {
 			posRoots.Add(uf.find(v.ID))
 		}
@@ -227,11 +240,13 @@ func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 	resolved, elide := r.a.resolveLt(lv)
 	if elide {
 		if rt.Mut {
-			// NewRef would collapse (true, nil) back to its inner. Keep the
-			// owned-mutable wrapper by constructing it directly.
+			// Drop the elided lifetime to owned-mutable. (true, nil) is a valid borrow
+			// cell — NewRef does NOT collapse it — so keep the wrapper. Only the
+			// immutable (false, nil) cell below is the degenerate one.
 			return &soltype.RefType{Mut: true, Lt: nil, Inner: rt.Inner}
 		}
-		// RefType{false, nil} is the forbidden degenerate cell — drop the wrapper.
+		// RefType{false, nil} is the forbidden degenerate cell NewRef collapses — drop
+		// the wrapper and return the bare inner.
 		return rt.Inner
 	}
 	return &soltype.RefType{Mut: rt.Mut, Lt: resolved, Inner: rt.Inner}
