@@ -245,3 +245,77 @@ func TestNewObjShorthandPatMutableArg(t *testing.T) {
 		t.Errorf("expected Mutable=false on ctor-built pat, got true")
 	}
 }
+
+func TestForEachLeafBinding(t *testing.T) {
+	ident := func(n string) *IdentPat { return NewIdentPat(n, false, nil, nil, emptySpan()) }
+	shorthand := func(n string) ObjPatElem {
+		return NewObjShorthandPat(&Ident{Name: n, span: emptySpan()}, false, nil, nil, emptySpan())
+	}
+	collect := func(pat Pat) []string {
+		var names []string
+		ForEachLeafBinding(pat, func(name string, _ int) { names = append(names, name) })
+		return names
+	}
+
+	tests := []struct {
+		name string
+		pat  Pat
+		want []string
+	}{
+		{"ident", ident("x"), []string{"x"}},
+		{"tuple", NewTuplePat([]Pat{ident("a"), ident("b")}, emptySpan()), []string{"a", "b"}},
+		{"object shorthand", NewObjectPat([]ObjPatElem{shorthand("a"), shorthand("b")}, emptySpan()), []string{"a", "b"}},
+		{"rest", NewRestPat(ident("r"), emptySpan()), []string{"r"}},
+		// ExtractorPat: each argument is a sub-pattern (e.g. `Some(v, w)`).
+		{
+			"extractor args",
+			NewExtractorPat(NewIdentifier("Some", emptySpan()), []Pat{ident("v"), ident("w")}, emptySpan()),
+			[]string{"v", "w"},
+		},
+		// InstancePat: leaves live in the object sub-pattern (e.g. `Point { x, y }`).
+		{
+			"instance object",
+			NewInstancePat(
+				NewIdentifier("Point", emptySpan()),
+				NewObjectPat([]ObjPatElem{shorthand("x"), shorthand("y")}, emptySpan()),
+				emptySpan(),
+			),
+			[]string{"x", "y"},
+		},
+		// Composite patterns nest: an extractor inside a tuple.
+		{
+			"nested extractor in tuple",
+			NewTuplePat([]Pat{
+				ident("a"),
+				NewExtractorPat(NewIdentifier("Wrap", emptySpan()), []Pat{ident("b")}, emptySpan()),
+			}, emptySpan()),
+			[]string{"a", "b"},
+		},
+		// Non-binding patterns contribute no leaves.
+		{"wildcard binds nothing", NewWildcardPat(emptySpan()), nil},
+		{"literal binds nothing", NewLitPat(NewNumber(1, emptySpan()), emptySpan()), nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := collect(tc.pat); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("ForEachLeafBinding leaves = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// ForEachLeafBinding passes through each leaf's VarID, including for leaves reached
+// through an extractor pattern's arguments.
+func TestForEachLeafBindingVarID(t *testing.T) {
+	v := NewIdentPat("v", false, nil, nil, emptySpan())
+	v.VarID = 42
+	pat := NewExtractorPat(NewIdentifier("Some", emptySpan()), []Pat{v}, emptySpan())
+
+	got := map[string]int{}
+	ForEachLeafBinding(pat, func(name string, varID int) { got[name] = varID })
+
+	if got["v"] != 42 {
+		t.Fatalf("leaf v VarID = %d, want 42", got["v"])
+	}
+}

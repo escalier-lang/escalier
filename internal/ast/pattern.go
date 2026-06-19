@@ -21,7 +21,7 @@ func (*WildcardPat) isPat()  {}
 
 type IdentPat struct {
 	Name         string
-	VarID        int // set by the rename pass (liveness.VarID); 0 = unset
+	VarID        int     // set by the rename pass (liveness.VarID); 0 = unset
 	Mutable      bool    // `mut` prefix on the binding (e.g. `val mut x = …`)
 	TypeAnn      TypeAnn // optional
 	Default      Expr    // optional
@@ -69,8 +69,8 @@ func (p *ObjKeyValuePat) Accept(v Visitor) {
 
 type ObjShorthandPat struct {
 	Key     *Ident
-	VarID   int  // set by the rename pass (liveness.VarID); 0 = unset
-	Mutable bool // `mut` prefix on the shorthand binding (e.g. `{ mut x }`)
+	VarID   int     // set by the rename pass (liveness.VarID); 0 = unset
+	Mutable bool    // `mut` prefix on the shorthand binding (e.g. `{ mut x }`)
 	TypeAnn TypeAnn // optional
 	Default Expr    // optional
 	span    Span
@@ -262,4 +262,81 @@ func FindBindings(pat Pat) set.Set[string] {
 	pat.Accept(visitor)
 
 	return visitor.Bindings
+}
+
+// ForEachLeafBinding invokes fn for every identifier-binding leaf a pattern
+// introduces, recursing through every composite pattern: tuples, objects, rest
+// patterns, extractor-pattern arguments, and an instance pattern's object. varID is
+// the leaf's VarID as written on the AST node by the rename pass (0 when unset).
+// FindBindings collects the same leaf names; this exists separately because it
+// exposes each leaf's (name, varID) pair, which the checker's and solver's liveness
+// pre-passes need to map a leaf back to its variable. LitPat and WildcardPat bind no
+// names and contribute no leaves.
+func ForEachLeafBinding(pat Pat, fn func(name string, varID int)) {
+	if pat == nil {
+		return
+	}
+	switch p := pat.(type) {
+	case *IdentPat:
+		fn(p.Name, p.VarID)
+	case *TuplePat:
+		for _, sub := range p.Elems {
+			ForEachLeafBinding(sub, fn)
+		}
+	case *ObjectPat:
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ObjKeyValuePat:
+				ForEachLeafBinding(e.Value, fn)
+			case *ObjShorthandPat:
+				if e.Key != nil {
+					fn(e.Key.Name, e.VarID)
+				}
+			case *ObjRestPat:
+				ForEachLeafBinding(e.Pattern, fn)
+			}
+		}
+	case *ExtractorPat:
+		// e.g. `Some(v)` / `Point(x, y)` — each argument is a sub-pattern.
+		for _, arg := range p.Args {
+			ForEachLeafBinding(arg, fn)
+		}
+	case *InstancePat:
+		// e.g. `Point { x, y }` — the bound leaves live in the object sub-pattern.
+		if p.Object != nil {
+			ForEachLeafBinding(p.Object, fn)
+		}
+	case *RestPat:
+		ForEachLeafBinding(p.Pattern, fn)
+	}
+}
+
+// CollectPatternBindingNames adds every identifier name a pattern introduces
+// (recursively) to into.
+func CollectPatternBindingNames(p Pat, into set.Set[string]) {
+	ForEachLeafBinding(p, func(name string, _ int) {
+		into.Add(name)
+	})
+}
+
+// RootObjectVarID walks a member/index expression chain (`a.b.c`, `a[b][c]`) to the
+// root object's VarID as written on the AST node, returning 0 when the root is not a
+// local variable. The result is the raw node VarID; liveness callers wrap it in
+// liveness.VarID.
+func RootObjectVarID(expr Expr) int {
+	for {
+		switch e := expr.(type) {
+		case *MemberExpr:
+			expr = e.Object
+		case *IndexExpr:
+			expr = e.Object
+		case *IdentExpr:
+			if e.VarID > 0 {
+				return e.VarID
+			}
+			return 0
+		default:
+			return 0
+		}
+	}
 }
