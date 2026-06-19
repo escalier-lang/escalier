@@ -178,6 +178,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	}
 	fnScope := scope.Child()
 	params := make([]*soltype.FuncParam, len(sig.Params))
+	// paramTypes maps each bound parameter name to its soltype, consumed by the M4
+	// G1 liveness pre-pass to seed parameter alias mutability.
+	paramTypes := make(map[string]soltype.Type, len(sig.Params))
 	for i, p := range sig.Params {
 		pt := c.paramType(p, lvl)
 		// A `mut`-borrow param without a declared lifetime originates a fresh
@@ -224,6 +227,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A parameter binding never generalizes — its var is fixed for the body — so
 		// it is a MonoScheme; instantiate returns pt unchanged at every use.
 		fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}, Sources: sources})
+		paramTypes[name] = pt
 		// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
 		// `required` count without dropping the param — carried onto the soltype so
 		// the accept-set rule and the printer (x?: T) see it. KNOWN GAP (M6): the
@@ -240,6 +244,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// walking the body lands in our own returns list (a nested fn inside this
 		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node)
+		// M4 G1: run the liveness pre-pass before walking the body so mutability
+		// transitions are checked. It renames the body's variable nodes (writing the
+		// VarIDs DetermineAliasSource and the alias tracker read) and seeds the
+		// parameter alias sets onto c.fn. recordParamVarIDs then copies each param's
+		// freshly-assigned VarID onto its binding so a closure capturing the param
+		// resolves to its alias set.
+		c.runLivenessPrePass(fnScope, sig.Params, paramTypes, body)
+		recordParamVarIDs(fnScope, sig.Params)
 		// Walk the body for type-checking and to collect its ReturnStmts; the
 		// block's TAIL value is intentionally discarded. Unlike a value-position
 		// block, where the last expression IS the block's value, a function body's
@@ -758,6 +770,11 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// the `b.Kind != ast.VarKind` gate above before reaching here.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
+	// M4 G1: track the alias this reassignment creates and check its mutability
+	// transition, but only when the constraint below succeeds — an ill-typed
+	// reassignment must not seed a false-positive transition error off types that
+	// never matched. assignErrsBefore captures the pre-constraint error count.
+	assignErrsBefore := len(c.errs)
 	if b.ModuleLevel {
 		// This is a global write, a store into module-level storage that lives for the
 		// program's whole run. Any borrow the value carries must outlive every borrow
@@ -782,6 +799,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		}
 	} else {
 		c.constrainAssign(e, sourceT, targetT)
+	}
+	if c.fn != nil && len(c.errs) == assignErrsBefore && target.VarID > 0 {
+		c.trackAliasesForAssignment(target, e.Right, targetT)
 	}
 	// The assignment evaluates to the value just stored — the SAME read face as
 	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
@@ -842,8 +862,15 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 			Inexact: true, // "must accept a write to this field," not a full shape
 		},
 	}
+	errsBefore := len(c.errs)
 	c.constrain(e, recv, req)
 	c.recordWritten(recv, m.Prop.Name, w)
+	// M4 G1: when the written value aliases a variable, merge the receiver's and the
+	// source's alias sets so a later transition off either sees the shared value. Only
+	// when the write type-checked, so a rejected write does not record a bogus alias.
+	if c.fn != nil && len(c.errs) == errsBefore {
+		c.trackAliasesForPropAssignment(e.Left, e.Right)
+	}
 	// The assignment evaluates to the value just stored. recordType overwrites the
 	// `void` recovery type inferAssign recorded on e before dispatching here.
 	c.recordType(e, w)

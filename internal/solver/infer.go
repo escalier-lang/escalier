@@ -2,6 +2,7 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -91,6 +92,22 @@ type funcCtx struct {
 	// restored on exit. A field write at module top-level (c.fn == nil) simply gets
 	// no read-after-write precision, which is sound.
 	written map[fieldKey]soltype.Type
+
+	// liveness, aliases, stmtToRef, and varIDNames are the mutability-transition
+	// checking state for THIS function body (M4 G1), populated by runLivenessPrePass
+	// before the body is walked. They are the new-checker analogue of the old
+	// checker's Context.Liveness/Aliases/StmtToRef/VarIDNames. Scoping them to funcCtx
+	// gives a nested function its own liveness analysis for free — push/pop isolates
+	// them exactly like `written`. They stay nil at module top-level (c.fn == nil),
+	// where the transition checker is a no-op.
+	liveness   *liveness.LivenessInfo
+	aliases    *liveness.AliasTracker
+	stmtToRef  map[ast.Stmt]liveness.StmtRef
+	varIDNames map[liveness.VarID]string
+	// currentStmt is the enclosing statement currently being walked (M4 G1), set by
+	// inferStmt. A reassignment `a = e` lives in expression position, so the transition
+	// checker reads the enclosing statement from here to find its CFG StmtRef.
+	currentStmt ast.Stmt
 }
 
 // pushFuncCtx enters the inference context for function `node` (async controls
