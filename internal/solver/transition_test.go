@@ -209,6 +209,22 @@ func TestCheckMutabilityTransition(t *testing.T) {
 	})
 }
 
+// TestTransitionReassignNestedRHS guards the currentStmt fix: a reassignment whose
+// RHS contains statements (`b = if cond { … } else { … }`) re-enters inferStmt while
+// walking the RHS, which overwrites c.fn.currentStmt. The reassignment transition path
+// must use the statement captured before the RHS walk, not the clobbered field, so it
+// resolves the correct CFG StmtRef. The body type-checks with no spurious error.
+func TestTransitionReassignNestedRHS(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn test(cond: boolean) {
+			var b = 0
+			b = if cond { 1 } else { 2 }
+			b
+		}
+	`)
+	require.Empty(t, errs)
+}
+
 // TestTransitionWiringNoSpuriousErrors confirms the liveness pre-pass is wired into
 // function-body inference and that aliasing immutable, owned values produces no
 // transition error: the pass runs, renames the body, tracks the aliases, and finds

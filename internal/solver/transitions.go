@@ -187,17 +187,17 @@ func (c *checker) checkMutabilityTransition(
 	// a member of the alias set, and if it is still live after the transition point,
 	// it IS a conflicting alias. A variable may belong to multiple alias sets
 	// (conditional aliasing), so deduplicate by collecting names into a set.
-	conflictingSet := make(map[string]struct{})
+	conflictingSet := set.NewSet[string]()
 	for _, aliasSet := range fn.aliases.GetAliasSets(sourceVarID) {
 		// A `'static` escape on the alias set represents a permanent outside
 		// reference — no liveness check is meaningful, so it always counts as a live
 		// alias of its escaped mutability. These bits are unset until G2 marks
 		// `'static` call sites.
 		if sourceMut && !targetMut && aliasSet.HasStaticMutAlias {
-			conflictingSet[staticConflictName] = struct{}{}
+			conflictingSet.Add(staticConflictName)
 		}
 		if !sourceMut && targetMut && aliasSet.HasStaticImmAlias {
-			conflictingSet[staticConflictName] = struct{}{}
+			conflictingSet.Add(staticConflictName)
 		}
 		for varID, aliasMut := range aliasSet.Members {
 			if !fn.liveness.IsLiveAfter(assignRef, varID) {
@@ -206,25 +206,22 @@ func (c *checker) checkMutabilityTransition(
 			if sourceMut && !targetMut {
 				// Rule 1: mut → immutable — error if any live mutable alias exists.
 				if aliasMut == liveness.AliasMutable {
-					conflictingSet[c.varIDToName(varID)] = struct{}{}
+					conflictingSet.Add(c.varIDToName(varID))
 				}
 			} else {
 				// Rule 2: immutable → mut — error if any live immutable alias exists.
 				if aliasMut == liveness.AliasImmutable {
-					conflictingSet[c.varIDToName(varID)] = struct{}{}
+					conflictingSet.Add(c.varIDToName(varID))
 				}
 			}
 		}
 	}
 
-	if len(conflictingSet) == 0 {
+	if conflictingSet.Len() == 0 {
 		return
 	}
 
-	conflicting := make([]string, 0, len(conflictingSet))
-	for name := range conflictingSet {
-		conflicting = append(conflicting, name)
-	}
+	conflicting := conflictingSet.ToSlice()
 	sort.Strings(conflicting)
 
 	c.errs = append(c.errs, &MutabilityTransitionError{
@@ -331,6 +328,21 @@ func (c *checker) trackCapturedAliases(
 		if !found || b.VarID <= 0 {
 			continue
 		}
+		// Cross-frame guard (M4 G1). A VarID is only meaningful within the frame whose
+		// rename pass assigned it — each function body restarts numbering at 1, and a
+		// binding stores the id of the body that DECLARED it. Track a capture only when
+		// its binding originated in THIS frame, i.e. the current body's rename assigned
+		// b.VarID to this name. A capture from an outer frame (a closure nested in
+		// another closure, reaching past its immediate enclosing function) carries an id
+		// from a different id-space; feeding it into this frame's AliasTracker /
+		// LivenessInfo would conflate it with an unrelated local and produce a silently
+		// wrong transition verdict. Skipping is sound — it misses that transition rather
+		// than inventing one. The real cross-frame fix rides G2's lifetime-escape bridge
+		// (see m4-implementation-plan G2). This is unreachable today: a captured mutable
+		// is a borrow, which cannot yet be aliased into a local.
+		if name, ok := c.fn.varIDNames[liveness.VarID(b.VarID)]; !ok || name != capture.Name {
+			continue
+		}
 		// Primitives and literals have value semantics — reassigning a captured
 		// primitive inside a closure can't affect other variables that copied the
 		// value, so alias tracking is unnecessary.
@@ -354,7 +366,15 @@ func (c *checker) trackCapturedAliases(
 // trackAliasesForAssignment updates the alias tracker and checks mutability
 // transitions for a variable reassignment (`b = expr`). Called only after the
 // assignment's source/target constraint succeeded, so the types it reads are sound.
-func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr, targetType soltype.Type) {
+//
+// enclosingStmt is the statement that contains the assignment, captured by
+// inferAssign BEFORE it walks the RHS. It must NOT be re-read from c.fn.currentStmt
+// here: walking an RHS that itself contains statements — `b = if c { … } else { … }`,
+// a match, a block expression — re-enters inferStmt and overwrites currentStmt with an
+// inner-branch statement, so by this point currentStmt no longer names the
+// assignment's statement. Reading it would resolve a valid-but-wrong CFG StmtRef and
+// run the liveness query at the wrong program point.
+func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr, targetType soltype.Type, enclosingStmt ast.Stmt) {
 	if c.fn == nil || c.fn.aliases == nil || target.VarID <= 0 {
 		return
 	}
@@ -366,7 +386,7 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
 		sourceVarID := source.UniqueVarIDs()[0]
-		if stmtRef, hasRef := c.fn.stmtToRef[c.fn.currentStmt]; hasRef {
+		if stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]; hasRef {
 			sourceMut := c.isSourceMutable(sourceVarID)
 			c.checkMutabilityTransition(
 				sourceVarID, targetVarID,
@@ -379,7 +399,7 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 		// Conditional aliasing: reassign to all sources before checking transitions
 		// so alias state stays consistent regardless of whether errors are reported.
 		c.fn.aliases.ReassignMulti(targetVarID, source.UniqueVarIDs(), aliasMut)
-		if stmtRef, hasRef := c.fn.stmtToRef[c.fn.currentStmt]; hasRef {
+		if stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]; hasRef {
 			for _, sourceVarID := range source.UniqueVarIDs() {
 				sourceMut := c.isSourceMutable(sourceVarID)
 				c.checkMutabilityTransition(

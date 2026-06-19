@@ -703,6 +703,16 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	if e.Left == nil || e.Right == nil {
 		return c.reportUnsupported(e)
 	}
+	// M4 G1: snapshot the enclosing statement BEFORE walking the RHS. Reassignment
+	// transition checking needs this assignment's statement to find its CFG StmtRef,
+	// but walking an RHS that contains statements (`b = if c { … } else { … }`, a
+	// match, a block expression) re-enters inferStmt and overwrites c.fn.currentStmt.
+	// Capturing it here keeps the reassignment path on the right program point, the
+	// way the var-decl path threads its statement explicitly.
+	var assignStmt ast.Stmt
+	if c.fn != nil {
+		assignStmt = c.fn.currentStmt
+	}
 	sourceT := c.inferExpr(scope, lvl, e.Right)
 	// Record void on e up front as the recovery type: every error path below returns
 	// voidT without recording a type, so this guarantees the node is typed on failure.
@@ -801,7 +811,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		c.constrainAssign(e, sourceT, targetT)
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && target.VarID > 0 {
-		c.trackAliasesForAssignment(target, e.Right, targetT)
+		c.trackAliasesForAssignment(target, e.Right, targetT, assignStmt)
 	}
 	// The assignment evaluates to the value just stored — the SAME read face as
 	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
