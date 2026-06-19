@@ -265,11 +265,13 @@ func FindBindings(pat Pat) set.Set[string] {
 }
 
 // ForEachLeafBinding invokes fn for every identifier-binding leaf a pattern
-// introduces, recursing through destructuring patterns. varID is the leaf's VarID as
-// written on the AST node by the rename pass (0 when unset). Unlike FindBindings,
-// which yields only names and skips tuple/rest/key-value leaves, this exposes the
-// (name, varID) pair every leaf carries, so the checker's and solver's liveness
-// pre-passes share one walker instead of each keeping a copy.
+// introduces, recursing through every composite pattern: tuples, objects, rest
+// patterns, extractor-pattern arguments, and an instance pattern's object. varID is
+// the leaf's VarID as written on the AST node by the rename pass (0 when unset).
+// Unlike FindBindings, which yields only names and skips tuple/rest/key-value leaves,
+// this exposes the (name, varID) pair every leaf carries, so the checker's and
+// solver's liveness pre-passes share one walker instead of each keeping a copy.
+// LitPat and WildcardPat bind no names and contribute no leaves.
 func ForEachLeafBinding(pat Pat, fn func(name string, varID int)) {
 	if pat == nil {
 		return
@@ -293,6 +295,16 @@ func ForEachLeafBinding(pat Pat, fn func(name string, varID int)) {
 			case *ObjRestPat:
 				ForEachLeafBinding(e.Pattern, fn)
 			}
+		}
+	case *ExtractorPat:
+		// e.g. `Some(v)` / `Point(x, y)` — each argument is a sub-pattern.
+		for _, arg := range p.Args {
+			ForEachLeafBinding(arg, fn)
+		}
+	case *InstancePat:
+		// e.g. `Point { x, y }` — the bound leaves live in the object sub-pattern.
+		if p.Object != nil {
+			ForEachLeafBinding(p.Object, fn)
 		}
 	case *RestPat:
 		ForEachLeafBinding(p.Pattern, fn)
