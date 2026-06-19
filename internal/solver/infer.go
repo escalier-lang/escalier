@@ -120,15 +120,15 @@ type funcCtx struct {
 	aliases    *liveness.AliasTracker
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
-	// varIDTypes maps each tracked variable's VarID to its soltype, the bridge the
-	// transition checker uses to query the lifetime sort for a `'static` escape (M4
-	// G2). It replaces the dropped HasStatic{Mut,Imm}Alias bits: a value whose borrow
-	// lifetime is forced `<: 'static` (D3's escape output) has a permanent outside
-	// alias, and that borrow's Mut supplies its mutability. The stored type is the
-	// SAME pointer the inference graph mutates, so a lifetime forced to 'static after
-	// the binding is recorded — by a later global write `sink = p` — is visible here
-	// through the shared LifetimeVar. Populated at the same sites that seed alias
-	// mutability: parameter leaves, decl bindings, and reassignment targets.
+	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
+	// the transition checker uses to query the lifetime sort for a `'static` escape in
+	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow
+	// lifetime D3 forced `<: 'static` has a permanent outside alias, and that borrow's
+	// Mut supplies its mutability. The stored type is the SAME pointer the inference
+	// graph mutates. So a lifetime that a later global write `sink = p` forces to
+	// 'static after the binding is recorded is visible here through the shared
+	// LifetimeVar. Populated at the same sites that seed alias mutability: parameter
+	// leaves, decl bindings, and reassignment targets.
 	varIDTypes map[liveness.VarID]soltype.Type
 	// currentStmt is the enclosing statement currently being walked (M4 G1), set by
 	// inferStmt. A reassignment `a = e` lives in expression position, so the transition

@@ -257,7 +257,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 	names := map[liveness.VarID]string{src: "p", tgt: "snap"}
 
 	// A mutable borrow that escaped to 'static conflicts with a mut→immutable
-	// transition (Rule 1), even though p is dead after the alias — only snap is live.
+	// transition (Rule 1), even though p is dead after the alias. Only snap is live.
 	t.Run("Rule1_MutEscape_SourceDead_Error", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasMutable)
@@ -317,12 +317,12 @@ func TestStaticEscapeTransition(t *testing.T) {
 // stored into module-level `sink` escapes to 'static (D3), creating a permanent mutable
 // alias outside the function. Aliasing that borrow into the immutable `snap` is then a
 // mut→immutable transition that conflicts with the escape, even though `p` is dead after
-// the alias — the query over `p`'s 'static-forced lifetime is what reports it (G2).
+// the alias. The query over `p`'s 'static-forced lifetime is what reports it in G2.
 //
 // Before G2 the dropped HasStaticMutAlias bit was never set, so this case was silently
 // accepted as a false negative. A second error rides along: binding the borrow into the
 // owned slot `snap` is a borrow escape, the same known divergence from internal/checker
-// that TestTransitionWiringReportsRule1Error pins; G3 removes it by reborrowing the
+// that TestTransitionWiringReportsRule1Error pins. G3 removes it by reborrowing the
 // initializer. So both messages are asserted.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
@@ -371,6 +371,17 @@ func TestBorrowEscapedToStatic(t *testing.T) {
 
 	// An unrecorded variable does not escape.
 	_, escaped = c.borrowEscapedToStatic(99)
+	require.False(t, escaped)
+
+	// 'static in the LOWER bounds is not an escape. The escape constraint `v <:
+	// 'static` adds an UPPER bound, so a lower-bound 'static, which can arise from a
+	// join member, must not be read as an escape. forcedToStatic would over-report it.
+	c.fn.varIDTypes[5] = &soltype.RefType{
+		Mut:   true,
+		Lt:    &soltype.LifetimeVar{ID: 5, LowerBounds: []soltype.Lifetime{soltype.Static}},
+		Inner: objT(),
+	}
+	_, escaped = c.borrowEscapedToStatic(5)
 	require.False(t, escaped)
 }
 

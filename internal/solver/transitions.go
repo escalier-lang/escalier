@@ -36,10 +36,10 @@ import (
 
 // staticConflictName is a sentinel placeholder used in
 // MutabilityTransitionError.ConflictingVars to represent a permanent alias from a
-// `'static` escape. M4 G2 populates it by querying the lifetime sort: a member of the
-// source's alias set whose borrow lifetime is forced `<: 'static` (D3's escape output)
-// is the permanent outside reference this sentinel stands for. The message renders it
-// specially rather than printing the literal sentinel.
+// `'static` escape. M4 G2 populates it by querying the lifetime sort. A member of the
+// source's alias set whose borrow lifetime D3 forced `<: 'static` is the permanent
+// outside reference this sentinel stands for. The message renders it specially rather
+// than printing the literal sentinel.
 const staticConflictName = "<static escape>"
 
 // MutabilityTransitionError is reported when a mutability transition is attempted
@@ -142,13 +142,20 @@ func isMutableType(t soltype.Type) bool {
 }
 
 // borrowEscapedToStatic reports whether the variable's recorded type carries a
-// top-level borrow whose lifetime is forced to 'static, and that borrow's mutability
-// (M4 G2). It is the lifetime-sort replacement for the dropped HasStatic{Mut,Imm}Alias
-// bits: a value whose borrow escaped — was stored where it outlives the function and so
-// pinned `<: 'static` by D3's constrainEscape — has a permanent outside alias of that
-// mutability. Only the top-level RefType is inspected, matching the bits' "this value
-// escaped" semantics rather than "a field of this value escaped". An owned value, a
-// borrow with an unforced lifetime, or an unrecorded variable returns escaped=false.
+// top-level borrow whose lifetime is forced to 'static, and that borrow's
+// mutability. It is the lifetime-sort replacement for the dropped
+// HasStatic{Mut,Imm}Alias bits in M4 G2. A borrow escapes when it is stored where it
+// outlives the function. D3's constrainEscape then pins its lifetime `<: 'static`, so
+// the value has a permanent outside alias of its mutability.
+//
+// Only the top-level RefType is inspected, matching the bits' "this value escaped"
+// semantics rather than "a field of this value escaped". An owned value, a borrow
+// with an unforced lifetime, or an unrecorded variable returns escaped=false.
+//
+// KNOWN GAP (M4 G2 carry-over): a borrow reachable only through a usage-inferred
+// TypeVarType, or one nested in a field, is not seen here. The deeper fix resolves a
+// value's borrows through the constraint graph rather than its top-level type. See the
+// G2 note in planning/simple_sub/m4-implementation-plan.md.
 func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (mut bool, escaped bool) {
 	if c.fn == nil || c.fn.varIDTypes == nil {
 		return false, false
@@ -161,7 +168,12 @@ func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (mut bool, escaped
 	case *soltype.StaticLifetime:
 		return r.Mut, true
 	case *soltype.LifetimeVar:
-		if forcedToStatic(lt) {
+		// The escape is the constraint `v <: 'static`, which adds 'static as an
+		// UPPER bound. Query that bound directly rather than the display-time
+		// forcedToStatic, which also matches a lower-bound 'static. A lower-bound
+		// 'static can arise from a join member and does not mean v escaped, so
+		// reusing forcedToStatic here would over-report an escape.
+		if soltype.ContainsLifetime(lt.UpperBounds, soltype.Static) {
 			return r.Mut, true
 		}
 	}
@@ -239,20 +251,18 @@ func (c *checker) checkMutabilityTransition(
 	conflictingSet := set.NewSet[string]()
 	for _, aliasSet := range fn.aliases.GetAliasSets(sourceVarID) {
 		for varID, aliasMut := range aliasSet.Members {
-			// A borrow on this member forced to 'static (D3's escape output) is a
-			// permanent outside reference: it outlives the function, so no liveness
-			// check is meaningful and it always counts as a live alias of its escaped
-			// mutability. This is G2's lifetime-sort replacement for the dropped
-			// HasStatic{Mut,Imm}Alias bits — Rule 1 conflicts with a permanent MUTABLE
-			// escape, Rule 2 with a permanent IMMUTABLE one. Checked before the liveness
-			// skip below so a member that is locally dead but has escaped still counts.
-			if escMut, escaped := c.borrowEscapedToStatic(varID); escaped {
-				if sourceMut && !targetMut && escMut {
-					conflictingSet.Add(staticConflictName)
-				}
-				if !sourceMut && targetMut && !escMut {
-					conflictingSet.Add(staticConflictName)
-				}
+			// A borrow on this member forced to 'static is a permanent outside
+			// reference. It outlives the function, so no liveness check is meaningful
+			// and it always counts as a live alias of its escaped mutability. This is
+			// G2's lifetime-sort replacement for the dropped HasStatic{Mut,Imm}Alias
+			// bits. A mutable escape conflicts with a mut→immutable transition and an
+			// immutable escape with an immutable→mut one, so the escaped mutability
+			// must equal the source's. Past the early return sourceMut != targetMut
+			// holds, so escMut == sourceMut captures both rules. Checked before the
+			// liveness skip below so a member that is locally dead but has escaped
+			// still counts.
+			if escMut, escaped := c.borrowEscapedToStatic(varID); escaped && escMut == sourceMut {
+				conflictingSet.Add(staticConflictName)
 			}
 			if !fn.liveness.IsLiveAfter(assignRef, varID) {
 				continue
@@ -549,7 +559,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 
 	// Initialize the alias tracker and seed each parameter leaf so aliases from
 	// parameters are tracked and mutability transitions involving them are detected.
-	// varIDTypes is the VarID → soltype bridge the `'static`-escape query reads (G2);
+	// varIDTypes is the VarID → soltype bridge the `'static`-escape query reads in G2.
 	// seedParamLeafAliases records each param leaf's type into it alongside the alias
 	// mutability it derives from the same type.
 	aliases := liveness.NewAliasTracker()
@@ -587,8 +597,8 @@ func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.
 				if isMutableType(t) {
 					mut = liveness.AliasMutable
 				}
-				// Record the param's type for the G2 escape query. It is the same
-				// pointer the body's reads instantiate (a param binding is mono), so a
+				// Record the param's type for the G2 escape query. A param binding is
+				// mono, so the body's reads instantiate this same pointer, and a
 				// lifetime this param later escapes to 'static is visible through it.
 				varIDTypes[liveness.VarID(varID)] = t
 			}

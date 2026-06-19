@@ -811,7 +811,12 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		c.constrainAssign(e, sourceT, targetT)
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && target.VarID > 0 {
-		c.trackAliasesForAssignment(target, e.Right, targetT, assignStmt)
+		// Track against the binding's own type, not the freshened targetT. The G2
+		// escape query reads the recorded type, and a later global write forces the
+		// lifetime on the binding's shared pointer. The freshened copy carries an
+		// independent lifetime var that the escape never touches. isMutableType reads
+		// the same top-level Mut from either, so the alias mutability is unchanged.
+		c.trackAliasesForAssignment(target, e.Right, bindingType(b), assignStmt)
 	}
 	// The assignment evaluates to the value just stored — the SAME read face as
 	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
