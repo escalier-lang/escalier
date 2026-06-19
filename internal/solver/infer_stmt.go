@@ -45,6 +45,12 @@ func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type,
 // and overwrites the name's slot in the current scope, so redeclaration rebinds
 // without constraining the old and new types together.
 func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
+	// M4 G1: record the enclosing statement so a reassignment in expression position
+	// can find its CFG StmtRef for transition checking. A no-op outside a function
+	// body (c.fn == nil), where no liveness analysis ran.
+	if c.fn != nil {
+		c.fn.currentStmt = s
+	}
 	switch s := s.(type) {
 	case *ast.ExprStmt:
 		return c.inferExpr(scope, lvl, s.Expr)
@@ -89,7 +95,17 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		// missing initializer itself and returns ok=false; bind only when it
 		// produced a type.
 		if b, ok := c.inferVarDecl(scope, lvl, vd); ok {
+			// M4 G1: carry the rename-assigned VarID onto the binding so a later
+			// closure capture resolves this body-level binding to its alias set, then
+			// track the alias the declaration creates and check its mutability
+			// transition. Both are no-ops outside a function body (c.fn == nil).
+			if ip, ok := vd.Pattern.(*ast.IdentPat); ok && ip.VarID > 0 {
+				b.VarID = ip.VarID
+			}
 			scope.defineValue(name, b) // overwrite ⇒ same-name redeclaration rebinds
+			if c.fn != nil {
+				c.trackAliasesForVarDecl(scope, vd, bindingType(b), s)
+			}
 		}
 		return &soltype.Void{}
 	default:
