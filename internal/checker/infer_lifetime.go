@@ -822,13 +822,13 @@ func (v *escapingRefsVisitor) EnterDecl(d ast.Decl) bool {
 
 // isEscapingLValue returns true if the given assignment-target expression's
 // root identifier (walking through MemberExpr/IndexExpr chains) is an
-// escape root: either a non-local binding (rootObjectVarID returns 0,
+// escape root: either a non-local binding (ast.RootObjectVarID returns 0,
 // meaning module-level / prelude / outer-scope) or a positive VarID that
 // the caller declared as a forced escape root (e.g. `self` in a
 // constructor body, where `self.<field> = expr` outlives the local frame
 // even though `self` itself is a local parameter).
 func (v *escapingRefsVisitor) isEscapingLValue(expr ast.Expr) bool {
-	root := rootObjectVarID(expr)
+	root := liveness.VarID(ast.RootObjectVarID(expr))
 	if root == 0 {
 		return true
 	}
@@ -1445,56 +1445,6 @@ func (v *fieldAssignVisitor) EnterDecl(d ast.Decl) bool {
 		return false
 	}
 	return true
-}
-
-// forEachLeafBinding invokes fn for every identifier-binding leaf
-// introduced by a pattern, walking through Tuple/Object/Rest containers.
-// Leaves are IdentPat (the pattern's own Name+VarID) and ObjShorthandPat
-// (the property's Key.Name plus the shorthand's own VarID). ObjRestPat,
-// RestPat, and ObjKeyValuePat are container-only; this helper recurses
-// through them.
-//
-// Note: walkPatternForLeaves cannot use this helper because it walks the
-// pattern in *lockstep with the parameter's type* (slicing tuple/object/
-// array sub-positions to compute each leaf's leafType) and intentionally
-// skips ObjRestPat (a freshly-assembled container has no
-// caller-provided lifetime). The two name-only walkers below share this
-// traversal; lifetime walking does not.
-func forEachLeafBinding(pat ast.Pat, fn func(name string, varID int)) {
-	if pat == nil {
-		return
-	}
-	switch p := pat.(type) {
-	case *ast.IdentPat:
-		fn(p.Name, p.VarID)
-	case *ast.TuplePat:
-		for _, sub := range p.Elems {
-			forEachLeafBinding(sub, fn)
-		}
-	case *ast.ObjectPat:
-		for _, elem := range p.Elems {
-			switch e := elem.(type) {
-			case *ast.ObjKeyValuePat:
-				forEachLeafBinding(e.Value, fn)
-			case *ast.ObjShorthandPat:
-				if e.Key != nil {
-					fn(e.Key.Name, e.VarID)
-				}
-			case *ast.ObjRestPat:
-				forEachLeafBinding(e.Pattern, fn)
-			}
-		}
-	case *ast.RestPat:
-		forEachLeafBinding(p.Pattern, fn)
-	}
-}
-
-// collectPatternBindingNames adds every identifier name introduced by a
-// pattern (recursively) to the provided set.
-func collectPatternBindingNames(p ast.Pat, into set.Set[string]) {
-	forEachLeafBinding(p, func(name string, _ int) {
-		into.Add(name)
-	})
 }
 
 // typeCarriesLifetime reports whether the given type can carry a lifetime.
