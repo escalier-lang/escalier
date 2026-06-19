@@ -37,6 +37,7 @@ are recorded in
 - [M2.5 — Provenance side table + precise error spans](#m25--provenance-side-table--precise-error-spans)
 - [M3 — Functions, application, let-polymorphism](#m3--functions-application-let-polymorphism)
 - [M4 — Core value types: records + usage-based inference + `mut` + **lifetimes** + destructuring/`match`](#m4--core-value-types-records--usage-based-inference--mut--lifetimes--destructuringmatch)
+- [M4.5 — Script inference](#m45--script-inference)
 - [M5 — Nominal types (classes)](#m5--nominal-types-classes)
 - [M6 — Unions / intersections](#m6--unions--intersections)
 - [M6.5 — Lifetime bounds](#m65--lifetime-bounds)
@@ -575,6 +576,54 @@ lifetime resolves against the alias body, and how it interacts with elision and
 escape are all open. It also depends on type annotations being implemented first,
 since there is no annotation surface to attach these to until then. Out of scope
 for M4 — capture the design before any milestone commits to it.
+
+---
+
+## M4.5 — Script inference
+
+A **script** is a source file whose top-level statements run in source order with
+function-body semantics, the `bin/` counterpart to a library module. A module's
+top-level declarations are dependency-ordered and mutually visible; a script's are a
+linear body, so liveness, alias tracking, and the `mut` transition rules apply at the
+top level exactly as they do inside a function.
+
+The new solver has `InferModule`
+([module.go](../../internal/solver/module.go)), which walks declarations in
+dependency-graph SCC order, but no `InferScript`. This milestone adds the script entry
+point. It is short because M4 already shipped every building block: the liveness
+pre-pass (`runLivenessPrePass`), the per-body `funcCtx`, alias tracking, the transition
+checker, and lifetime origination/escape. The only new code is the entry point that
+runs them over a script body — no new inference.
+
+- **Mirror the old checker's `InferScript`.** `internal/checker/infer_script.go` is the
+  template: wrap the script's statements in an `ast.Block`, run `runLivenessPrePass`
+  over that block under a fresh `funcCtx`, then walk the statements in source order.
+  This is the seam the new solver's `transitions.go` package doc already records — at
+  module top level `c.fn` is nil so every transition/liveness entry point is a no-op,
+  which is correct for a dependency-ordered module but silently skips a script until it
+  is given the same per-body context a function gets.
+- **Linear body, not SCC order.** A script is one straight-line body, so there is no
+  dependency-graph driver and no generalization at an SCC boundary. Top-level bindings
+  behave like locals. A borrow stored into a later top-level binding is a local move; a
+  borrow escapes to `'static` only when written into actual module-level or global
+  state, the same escape rule D3 applies inside a function.
+- **Testable without the fixture harness.** `InferScript` is exercised directly by the
+  single-file table harness, the same `inferSource`-style driver M4 already uses, so
+  script-level lifetime and transition coverage lands as soon as this entry point
+  exists. It does not wait on M8's second fixture harness.
+
+**Why it lands here.** Numbered `.5` to slot between M4 and M5 without renumbering. It
+rides immediately after M4 because it consumes M4's lifetime/transition machinery
+directly and adds no new inference — it is only the entry point that lets that
+machinery run over a script's linear top-level body. It is independent of M5 and later,
+which add new type shapes rather than new program forms.
+
+**Accept:** a script of top-level statements, with no enclosing function, infers in
+source order; a `mut`→immutable transition and a borrow lifetime at script top level
+are checked identically to the same statements wrapped in a function body. For example
+a top-level `val items: mut {x: number} = {x: 1}` aliased to an immutable binding and
+then used mutably reports the Rule 1 transition error, matching the function-wrapped
+form. Parity with the old checker's `InferScript` on the transition and lifetime cases.
 
 ---
 
@@ -1335,6 +1384,14 @@ reduce through the M9 operator machinery.
 - M4 is front-loaded as the combined "core value types" milestone because
   records, `mut`, and lifetimes are an inseparable cluster once lifetimes ride on
   values — and it contains the highest-risk gate (`mut` invariance).
+- M4.5 (script inference) is numbered `.5` like M2.5 — to slot between M4 and M5
+  without renumbering. It rides immediately after M4 because it adds no new inference:
+  every building block — the liveness pre-pass, the per-body `funcCtx`, alias tracking,
+  the transition checker, and lifetime origination/escape — ships in M4, and M4.5 is
+  only the `InferScript` entry point that runs them over a script's linear top-level
+  body. It does not wait for M8's fixture harness, since `InferScript` is exercised
+  directly by the single-file table harness, so script-level lifetime/transition
+  coverage lands as soon as M4's machinery exists.
 - M5 (nominal classes) sits right after M4 so it reuses M4's `mut`/lifetimes
   substrate directly. Its subtyping rule is small; its bulk (constructor / body
   inference / overloads) is language-proportional and unrelated to the inference
