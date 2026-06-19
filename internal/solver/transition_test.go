@@ -13,15 +13,20 @@ import (
 // --- M4 G1: mutability-transition checking ---
 //
 // The transition checker is ported from the old checker (check_transitions.go), with
-// its two type predicates reimplemented over soltype. The old checker exercised it
-// through source like `val items: mut {x} = {x: 1}` followed by aliasing such as
-// `val snapshot = items`. The new checker's borrow rules reject that shape outright. A
-// `mut` value is a borrow, and a borrow cannot be aliased into an owned local because
-// it would not live long enough. So those exact programs no longer type-check, and
-// their alias-transition scenarios are unreachable from source today. The ported Rule
-// 1 / Rule 2 / Rule 3 logic is therefore exercised directly here, reproducing the old
-// checker's cases at the level of the code that actually moved: the predicates, and
-// checkMutabilityTransition over a constructed alias/liveness state.
+// its two type predicates reimplemented over soltype.
+//
+// A freshly constructed literal can be given an owned-mutable type, so the
+// construction case `val items: mut {x} = {x: 1}` type-checks and the source-level
+// Rule 1 and Rule 3 scenarios are reachable. TestMutabilityTransitionsFromSource
+// exercises those end to end through inferSource.
+//
+// The rest stay at the unit level. Rule 2, an immutable→mut transition over a live
+// source, is rejected by the type system before the transition pass runs, so it never
+// produces a transition error from source. Other old-checker cases need features the
+// solver lacks: destructuring, enums and match, binary operators, unions, for-in
+// loops, and top-level statements. TestCheckMutabilityTransition exercises the ported
+// Rule 1 / Rule 2 / Rule 3 logic directly over a constructed alias/liveness state,
+// covering the rules independently of those gaps.
 
 func numT() *soltype.PrimType { return &soltype.PrimType{Prim: soltype.NumPrim} }
 func objT() *soltype.ObjectType {
@@ -104,12 +109,12 @@ var transitionRef = liveness.StmtRef{BlockID: 0, StmtIdx: 0}
 // transitionSite is a placeholder blame node; the message under test does not read it.
 var transitionSite ast.Node = &ast.IdentExpr{}
 
-// transitionMessages renders every MutabilityTransitionError in c.errs, failing on any
+// transitionMessages renders every MutabilityTransitionError in errs, failing on any
 // other error kind.
-func transitionMessages(t *testing.T, c *checker) []string {
+func transitionMessages(t *testing.T, errs []SolverError) []string {
 	t.Helper()
 	var msgs []string
-	for _, e := range c.errs {
+	for _, e := range errs {
 		me, ok := e.(*MutabilityTransitionError)
 		require.True(t, ok, "unexpected non-transition error: %s", e.Message())
 		msgs = append(msgs, me.Message())
@@ -140,7 +145,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
-		}, transitionMessages(t, c))
+		}, transitionMessages(t, c.errs))
 	})
 
 	t.Run("Rule1_MutToImmutable_TargetDead_OK", func(t *testing.T) {
@@ -150,7 +155,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		a.AddAlias(snap, items, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items}))
 		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c))
+		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
 	t.Run("Rule1_MutToImmutable_SourceDead_OK", func(t *testing.T) {
@@ -160,7 +165,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		a.AddAlias(snap, items, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{snap}))
 		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c))
+		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
 	t.Run("Rule2_ImmutableToMut_SourceLive_Error", func(t *testing.T) {
@@ -172,7 +177,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		c.checkMutabilityTransition(config, mutConf, "config", "mutableConfig", false, true, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'config' to mutable 'mutableConfig': 'config' is still used immutably after this point",
-		}, transitionMessages(t, c))
+		}, transitionMessages(t, c.errs))
 	})
 
 	t.Run("Rule3_MutToMut_NoTransition", func(t *testing.T) {
@@ -182,7 +187,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		a.AddAlias(snap, items, liveness.AliasMutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items, snap}))
 		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, true, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c))
+		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
 	t.Run("TransitiveAlias_NamesLiveMutableAlias", func(t *testing.T) {
@@ -203,7 +208,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		c.checkMutabilityTransition(p, q, "p", "q", true, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
-		}, transitionMessages(t, c))
+		}, transitionMessages(t, c.errs))
 	})
 
 	t.Run("Conditional_SourceInMultipleSets_NoDuplicateConflicting", func(t *testing.T) {
@@ -227,7 +232,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		c.checkMutabilityTransition(cv, fr, "c", "frozen", true, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
-		}, transitionMessages(t, c))
+		}, transitionMessages(t, c.errs))
 	})
 }
 
@@ -318,4 +323,89 @@ func TestCollectOuterBindingsPreludeCache(t *testing.T) {
 	// A second call returns an equal mapping, so the cached prelude names do not corrupt
 	// the result.
 	require.Equal(t, first, c.collectOuterBindings(scope))
+}
+
+// TestMutabilityTransitionsFromSource reproduces the old checker's transition cases at
+// the source level, now reachable because a fresh literal can be constructed into an
+// owned-mutable binding. Each case mints its mutable value with `val x: mut {…} = {…}`,
+// aliases it, and asserts the transition verdict. want is empty for the safe cases.
+func TestMutabilityTransitionsFromSource(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// Rule 1 (mut→immutable): error when the mutable source is live after the alias.
+		"Rule1_SourceLive_Error": {
+			src: `
+				fn test() {
+					val items: mut {x: number} = {x: 1}
+					val snapshot: {x: number} = items
+					items.x = 2
+					snapshot
+				}
+			`,
+			want: []string{
+				"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
+			},
+		},
+		// Rule 1: safe when the mutable source is dead after the alias.
+		"Rule1_SourceDead_OK": {
+			src: `
+				fn test() {
+					val items: mut {x: number} = {x: 1}
+					items.x = 2
+					val snapshot: {x: number} = items
+					snapshot
+				}
+			`,
+		},
+		// Rule 3: two mutable aliases of the same value are always allowed.
+		"Rule3_MultipleMutableAliases_OK": {
+			src: `
+				fn test() {
+					val a: mut {x: number} = {x: 1}
+					val b: mut {x: number} = a
+					b.x = 2
+					a.x
+				}
+			`,
+		},
+		// Chain aliasing through a mutable intermediate: the conflict names the live
+		// mutable alias, not the source itself.
+		"ChainAlias_TargetLive_Error": {
+			src: `
+				fn test() {
+					val a: mut {x: number} = {x: 1}
+					val b: mut {x: number} = a
+					val c: {x: number} = b
+					a.x = 2
+					c
+				}
+			`,
+			want: []string{
+				"cannot assign 'b' to immutable 'c': 'a' still has mutable access to 'b' after this point",
+			},
+		},
+		// Conditional aliasing: c aliases both branches; a is live after the transition.
+		"Conditional_IfElse_Error": {
+			src: `
+				fn test(cond: boolean) {
+					val a: mut {x: number} = {x: 0}
+					val b: mut {x: number} = {x: 1}
+					val c: {x: number} = if cond { a } else { b }
+					a.x = 5
+					c
+				}
+			`,
+			want: []string{
+				"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, transitionMessages(t, errs))
+		})
+	}
 }

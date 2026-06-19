@@ -1364,6 +1364,25 @@ these arms it must add.
     global-write escape above, so the two share G2's `VarID` ↔ `soltype`-borrow bridge.
     When G2 lands, the capture guard can relax to defer cross-frame cases to the
     lifetime escape instead of skipping them.
+  - **Carried into G2 — immutable→mutable upgrade for a non-fresh source.** The C2 gate
+    rejects `immutable <: mutable` structurally, but the upgrade is sound whenever the
+    source has no live immutable alias. This is Rule 2 with an empty alias set. G1's
+    construction path already takes the trivial case: `constrainInitAgainstAnnotation`
+    upgrades a freshly constructed, unaliased literal flowing into an owned-mutable
+    annotation, so `val items: mut {x} = {x: 1}` type-checks and the source-level Rule 1
+    and Rule 3 scenarios become reachable. `isFreshlyConstructed` is deliberately
+    syntactic and identifier-free, so it is sound without VarIDs and at module top
+    level, but it covers only literals.
+    G2 should generalize this to a non-fresh source — a variable, a call, a member
+    access — by resolving the source's owning region rather than its syntax: the upgrade
+    is admitted when that region carries no live immutable borrow, the same question the
+    `VarID` ↔ `soltype`-borrow bridge answers for escape and cross-frame captures. So a
+    dead immutable variable (`val cfg = …; val m: mut … = cfg` with `cfg` dead after) can
+    be moved to `mut`, which today still reports the structural mismatch. The three
+    consumers — escape-to-`'static`, cross-frame capture, and this immutable→mut move —
+    all reduce to "does this value's region have a conflicting outstanding borrow here?"
+    and share one mechanism. The narrow walk-level upgrade stays as the fast path for
+    fresh construction; the region query is the general case layered behind it.
 
 ### Dependency graph
 
