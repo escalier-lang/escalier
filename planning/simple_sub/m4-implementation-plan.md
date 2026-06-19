@@ -1337,29 +1337,33 @@ these arms it must add.
     declined to add. D3 left the boundary documented in `constrainEscape` and the
     `inferAssign` global-write branch.
   - **Carried over from G1 — cross-frame captured-mutability via lifetime escape.**
-    G1's `trackCapturedAliases` keys alias/liveness on a liveness `VarID`, but a
-    `VarID` is only meaningful within one function body's rename pass — each body
-    restarts numbering at 1. A binding stores the `VarID` of the body that DECLARED it,
-    so when a closure captures a variable declared in a frame ABOVE its enclosing
-    function, that outer-frame id is fed into the enclosing frame's `AliasTracker` /
-    `LivenessInfo`, where the same number names a different variable. The result is a
-    silently wrong transition verdict, not a crash — `IsLiveAfter` is a set membership
+    G1's `trackCapturedAliases` keys alias/liveness on a liveness `VarID`. A binding
+    stores the `VarID` of the body that DECLARED it, so when a closure captures a
+    variable declared in a frame ABOVE its enclosing function, that outer-frame id is
+    fed into the enclosing frame's `AliasTracker` / `LivenessInfo`. The result would be
+    a silently wrong transition verdict, not a crash — `IsLiveAfter` is a set membership
     test, so a foreign id returns the wrong boolean. It is dormant today because a
     captured mutable is a borrow that cannot yet be aliased into a local, so no
-    cross-frame transition is reachable. G1 ships a conservative guard: skip a capture
-    whose binding did not originate in the current frame, which is sound (it misses such
-    a transition rather than inventing one). G2 should supply the real fix from the
+    cross-frame transition is reachable. G1 ships two defensive measures already:
+    1. **Module-wide unique `VarID`s.** `liveness.RenameFrom` numbers each body's
+       locals from a checker-level running counter instead of restarting at 1, so a
+       `VarID` names the same variable in any frame and a foreign id can never collide
+       with an unrelated local. This makes the system SOUND on its own — a foreign id
+       is simply absent from the current frame's tables.
+    2. **A conservative capture guard.** `trackCapturedAliases` skips a capture whose
+       binding did not originate in the current frame, so a cross-frame capture is not
+       tracked at all rather than mis-tracked.
+    Both are a correctness FLOOR, not the full answer: even with unique ids, an outer
+    variable's id is not in the inner frame's `LiveAfter` set, so cross-frame liveness
+    reads as "dead" and the transition is missed. G2 supplies the real fix from the
     same bridge it already builds: a captured outer mutable is a borrow whose lifetime
     escapes INTO the closure, so the transition is enforced by the lifetime sort — the
-    captured borrow's escape constraint and its `RefType.Mut` — rather than by
-    extending the per-frame `VarID` machinery across frames. This is the same
-    "resolve borrows through the constraint graph, not the syntactic id-space"
-    principle as the global-write escape above, so the two share G2's
-    `VarID` ↔ `soltype`-borrow bridge. Per-frame alternatives (global module-wide
-    `VarID`s, or `(frame, VarID)` keys with an owner-frame liveness query) would fix
-    the id collision but still cannot answer cross-frame liveness, so they are a
-    correctness floor at best — the lifetime-escape route is the one that actually
-    models "the closure keeps the captured value live."
+    captured borrow's escape constraint and its `RefType.Mut` — rather than by extending
+    the per-frame `VarID` machinery across frames. This is the same "resolve borrows
+    through the constraint graph, not the syntactic id-space" principle as the
+    global-write escape above, so the two share G2's `VarID` ↔ `soltype`-borrow bridge.
+    When G2 lands, the capture guard can relax to defer cross-frame cases to the
+    lifetime escape instead of skipping them.
 
 ### Dependency graph
 

@@ -510,7 +510,12 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 		}
 	}
 
-	renameResult := liveness.Rename(astParams, *body, outerBindings, extraParamNames...)
+	// Allocate this body's local VarIDs from the module-wide counter so they are
+	// unique across every body in the run, then advance it past them. UniqueVarCount
+	// is the number of locals this body defined, so the next body starts just after.
+	firstID := liveness.VarID(c.varIDCounter)
+	renameResult := liveness.RenameFrom(astParams, *body, outerBindings, firstID, extraParamNames...)
+	c.varIDCounter += renameResult.UniqueVarCount
 
 	cfg := liveness.BuildCFG(*body)
 	livenessInfo := liveness.AnalyzeFunction(cfg)

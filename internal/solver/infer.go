@@ -43,6 +43,15 @@ type checker struct {
 	// by tests that exercise the guard. See recordProv.
 	debugProv bool
 
+	// varIDCounter is the module-wide running allocator for liveness VarIDs (M4 G1).
+	// Each function body's pre-pass renames its locals starting from this counter and
+	// then advances it, so VarIDs are unique across every body in one inference run
+	// rather than restarting at 1 per body. That makes a binding's VarID name the same
+	// variable in any frame, so a stale or cross-frame id can never collide with an
+	// unrelated local in another body's alias/liveness tables. It starts at 1 (0 is the
+	// "unset" sentinel, negative ids mark non-local bindings).
+	varIDCounter int
+
 	// paramLifetimes is the set of lifetime-variable ids that originate on a
 	// function parameter (M4 D2). A `mut`-borrow param without a declared lifetime
 	// is a borrow of whatever the caller lends, so attachParamLifetimes mints a
@@ -134,7 +143,7 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // newChecker returns a checker with a fresh Context, an empty Info table, and an
 // empty Prov side table.
 func newChecker() *checker {
-	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, paramLifetimes: set.NewSet[int]()}
+	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, paramLifetimes: set.NewSet[int](), varIDCounter: 1}
 }
 
 // freshAt allocates a fresh inference variable at the given level. Provenance for

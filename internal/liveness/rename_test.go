@@ -58,6 +58,30 @@ func block(stmts ...ast.Stmt) ast.Block {
 	return ast.Block{Stmts: stmts, Span: span()}
 }
 
+// RenameFrom starts local numbering at firstID instead of 1, so a caller threading a
+// module-wide counter gets VarIDs unique across bodies. UniqueVarCount stays the count
+// of locals defined, independent of the starting id.
+func TestRenameFromStartsAtFirstID(t *testing.T) {
+	// val a = 1; val b = a  — two locals, started at id 10.
+	a := identPat("a")
+	b := identPat("b")
+	aRef := ident("a")
+	body := block(
+		valDecl(a, numLit(1)),
+		valDecl(b, aRef),
+	)
+
+	result := RenameFrom(nil, body, map[string]VarID{}, 10)
+
+	require.Empty(t, result.Errors)
+	require.Equal(t, 2, result.UniqueVarCount)  // count is start-independent
+	require.Equal(t, VarID(10), VarID(a.VarID)) // first local takes firstID
+	require.Equal(t, VarID(11), VarID(b.VarID)) // second is firstID+1
+	require.Equal(t, a.VarID, aRef.VarID)       // use resolves to binding
+	// Next free id = firstID + UniqueVarCount, so a following body starts at 12.
+	require.Equal(t, 12, 10+result.UniqueVarCount)
+}
+
 func TestSimpleBindingAndUse(t *testing.T) {
 	// val x = 1; print(x)
 	x := identPat("x")
