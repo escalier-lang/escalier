@@ -14,10 +14,10 @@ import (
 //
 // The transition checker is ported from the old checker (check_transitions.go), with
 // its two type predicates reimplemented over soltype. The old checker exercised it
-// through source like `val items: mut {x} = {x: 1}` followed by aliasing
-// (`val snapshot = items`). The new checker's borrow rules reject that shape outright
-// — a `mut` value is a borrow, and a borrow cannot be aliased into an owned local
-// (it would not live long enough) — so those exact programs no longer type-check, and
+// through source like `val items: mut {x} = {x: 1}` followed by aliasing such as
+// `val snapshot = items`. The new checker's borrow rules reject that shape outright. A
+// `mut` value is a borrow, and a borrow cannot be aliased into an owned local because
+// it would not live long enough. So those exact programs no longer type-check, and
 // their alias-transition scenarios are unreachable from source today. The ported Rule
 // 1 / Rule 2 / Rule 3 logic is therefore exercised directly here, reproducing the old
 // checker's cases at the level of the code that actually moved: the predicates, and
@@ -46,8 +46,8 @@ func TestIsValueType(t *testing.T) {
 	require.False(t, isValueType(&soltype.UnionType{}))
 	require.False(t, isValueType(objT()))
 	require.False(t, isValueType(&soltype.RefType{Mut: true, Inner: objT()}))
-	// An inference variable falls through to false (conservatively a reference), the
-	// no-Prune divergence from the old checker — see isValueType's doc.
+	// An inference variable falls through to false, conservatively a reference. This is
+	// the no-Prune divergence from the old checker; see isValueType's doc.
 	require.False(t, isValueType(&soltype.TypeVarType{ID: 0, Level: 0}))
 }
 
@@ -187,7 +187,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 
 	t.Run("TransitiveAlias_NamesLiveMutableAlias", func(t *testing.T) {
 		// p has a live mutable alias r and an immutable alias q being created. The
-		// conflict names r, the alias still holding mutable access — not p itself.
+		// conflict names r, the alias still holding mutable access, not p itself.
 		const (
 			p = liveness.VarID(1)
 			r = liveness.VarID(3)
@@ -248,17 +248,74 @@ func TestTransitionReassignNestedRHS(t *testing.T) {
 }
 
 // TestTransitionWiringNoSpuriousErrors confirms the liveness pre-pass is wired into
-// function-body inference and that aliasing immutable, owned values produces no
-// transition error: the pass runs, renames the body, tracks the aliases, and finds
-// nothing to report. This guards the wiring independently of any reachable error case.
+// function-body inference and that the alias-tracking paths run over real bodies
+// without inventing a transition error. Each case type-checks cleanly, so any
+// MutabilityTransitionError would be a wiring bug. The cases exercise the decl-alias
+// branches and parameter seeding end to end, which the constructed-state unit tests
+// above do not.
 func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn test() {
-			val a = {x: 1}
-			val b = a
-			val c = b
-			c
-		}
-	`)
-	require.Empty(t, errs)
+	tests := map[string]string{
+		// Immutable owned objects aliased down a chain. No mutability, no transition.
+		"immutable_chain": `
+			fn test() {
+				val a = {x: 1}
+				val b = a
+				val c = b
+				c
+			}
+		`,
+		// Single-source decl alias: an immutable param aliased to a val exercises the
+		// AliasSourceVariable branch of trackAliasesForIdentPat.
+		"single_source_alias": `
+			fn test(q: {y: number}) {
+				val r = q
+				r
+			}
+		`,
+		// Multi-source decl alias: an if/else over two params makes the binding alias
+		// both, exercising the AliasSourceMultiple branch.
+		"multi_source_alias": `
+			fn test(cond: boolean, a: {x: number}, b: {x: number}) {
+				val c = if cond { a } else { b }
+				c
+			}
+		`,
+		// A mut and an immutable parameter are seeded into the alias tracker, and a
+		// field write through the mut param walks the prop-assignment path.
+		"params_seeded": `
+			fn test(p: mut {x: number}, q: {y: number}) {
+				p.x = 5
+				q.y
+			}
+		`,
+	}
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Empty(t, errs)
+		})
+	}
+}
+
+// TestCollectOuterBindingsPreludeCache covers the outer-binding collection that feeds
+// the rename pass: every reachable value name maps to a distinct negative id, the
+// prelude's operator names are included, and the prelude cache makes repeated calls
+// return the same result.
+func TestCollectOuterBindingsPreludeCache(t *testing.T) {
+	c := newChecker()
+	scope := sharedPrelude().Child()
+	scope.defineValue("myLocal", ValueBinding{})
+
+	first := c.collectOuterBindings(scope)
+
+	require.Contains(t, first, "myLocal")
+	require.Contains(t, first, "+") // a prelude operator name
+	for name, id := range first {
+		require.Negative(t, int(id), "outer binding %q must have a negative id", name)
+	}
+	require.Same(t, scope.parent, c.preludeNamesRoot) // prelude root was cached
+
+	// A second call returns an equal mapping, so the cached prelude names do not corrupt
+	// the result.
+	require.Equal(t, first, c.collectOuterBindings(scope))
 }

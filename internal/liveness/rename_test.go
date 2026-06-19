@@ -82,6 +82,35 @@ func TestRenameFromStartsAtFirstID(t *testing.T) {
 	require.Equal(t, 12, 10+result.UniqueVarCount)
 }
 
+// Chaining RenameFrom across two bodies, with the second starting where the first left
+// off, gives every local a VarID unique across both bodies. That is the property that
+// lets a binding's VarID name the same variable in any frame.
+func TestRenameFromDisjointAcrossBodies(t *testing.T) {
+	// Body 1: val a = 1; val b = a
+	a := identPat("a")
+	b := identPat("b")
+	body1 := block(valDecl(a, numLit(1)), valDecl(b, ident("a")))
+
+	r1 := RenameFrom(nil, body1, map[string]VarID{}, 1)
+	require.Empty(t, r1.Errors)
+
+	// Body 2 starts at the next free id, so its locals cannot collide with body 1's.
+	c := identPat("c")
+	d := identPat("d")
+	body2 := block(valDecl(c, numLit(2)), valDecl(d, ident("c")))
+
+	r2 := RenameFrom(nil, body2, map[string]VarID{}, 1+VarID(r1.UniqueVarCount))
+	require.Empty(t, r2.Errors)
+
+	body1IDs := []int{a.VarID, b.VarID}
+	body2IDs := []int{c.VarID, d.VarID}
+	for _, id1 := range body1IDs {
+		for _, id2 := range body2IDs {
+			require.NotEqual(t, id1, id2, "VarIDs must be disjoint across bodies")
+		}
+	}
+}
+
 func TestSimpleBindingAndUse(t *testing.T) {
 	// val x = 1; print(x)
 	x := identPat("x")

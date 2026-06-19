@@ -705,10 +705,10 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	}
 	// M4 G1: snapshot the enclosing statement BEFORE walking the RHS. Reassignment
 	// transition checking needs this assignment's statement to find its CFG StmtRef,
-	// but walking an RHS that contains statements (`b = if c { … } else { … }`, a
-	// match, a block expression) re-enters inferStmt and overwrites c.fn.currentStmt.
-	// Capturing it here keeps the reassignment path on the right program point, the
-	// way the var-decl path threads its statement explicitly.
+	// but walking an RHS that contains statements re-enters inferStmt and overwrites
+	// c.fn.currentStmt. A `b = if c { … } else { … }`, a match, or a block expression
+	// all do this. Capturing the statement here keeps the reassignment path on the
+	// right program point, the way the var-decl path threads its statement explicitly.
 	var assignStmt ast.Stmt
 	if c.fn != nil {
 		assignStmt = c.fn.currentStmt

@@ -48,14 +48,14 @@ type checker struct {
 	// then advances it, so VarIDs are unique across every body in one inference run
 	// rather than restarting at 1 per body. That makes a binding's VarID name the same
 	// variable in any frame, so a stale or cross-frame id can never collide with an
-	// unrelated local in another body's alias/liveness tables. It starts at 1 (0 is the
-	// "unset" sentinel, negative ids mark non-local bindings).
+	// unrelated local in another body's alias/liveness tables. It starts at 1. The id 0
+	// is the unset sentinel, and negative ids mark non-local bindings.
 	varIDCounter int
 
 	// preludeNames caches the immutable prelude root scope's sorted value names so the
 	// liveness pre-pass collects them once instead of re-walking and re-sorting the
 	// prelude for every function body (M4 G1). preludeNamesRoot is the scope the cache
-	// was computed for; collectOuterBindings recomputes if a different root appears.
+	// was computed for. collectOuterBindings recomputes if a different root appears.
 	preludeNames     []string
 	preludeNamesRoot *Scope
 
@@ -113,9 +113,9 @@ type funcCtx struct {
 	// checking state for THIS function body (M4 G1), populated by runLivenessPrePass
 	// before the body is walked. They are the new-checker analogue of the old
 	// checker's Context.Liveness/Aliases/StmtToRef/VarIDNames. Scoping them to funcCtx
-	// gives a nested function its own liveness analysis for free — push/pop isolates
-	// them exactly like `written`. They stay nil at module top-level (c.fn == nil),
-	// where the transition checker is a no-op.
+	// gives a nested function its own liveness analysis for free. Push/pop isolates them
+	// exactly like `written`. They stay nil at module top-level (c.fn == nil), where the
+	// transition checker is a no-op.
 	liveness   *liveness.LivenessInfo
 	aliases    *liveness.AliasTracker
 	stmtToRef  map[ast.Stmt]liveness.StmtRef

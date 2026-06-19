@@ -14,8 +14,8 @@ import (
 
 // Mutability-transition checking, ported from internal/checker/check_transitions.go
 // and internal/checker/liveness_prepass.go (M4 G1). The liveness/CFG/alias-tracking
-// machinery in internal/liveness is reused verbatim; only two pieces are
-// reimplemented over soltype rather than type_system:
+// machinery in internal/liveness is reused verbatim. Only two pieces are reimplemented
+// over soltype rather than type_system:
 //
 //   - isValueType / isMutableType, the two type predicates the transition checker
 //     consults, and
@@ -23,10 +23,10 @@ import (
 //     ValueBinding.VarID and its mutability from the binding's coalesced soltype,
 //     not from a type_system.Binding.
 //
-// checkMutabilityTransition's Rule 1 / Rule 2 / Rule 3 logic is unchanged — it
-// talks only to liveness.LivenessInfo and liveness.AliasTracker. The whole pass
-// runs inside a function body, keyed off the per-body state on funcCtx (c.fn): at
-// module top-level c.fn is nil and every entry point below is a no-op.
+// checkMutabilityTransition's Rule 1 / Rule 2 / Rule 3 logic is unchanged. It talks
+// only to liveness.LivenessInfo and liveness.AliasTracker. The whole pass runs inside a
+// function body, keyed off the per-body state on funcCtx. At module top-level c.fn is
+// nil, so every entry point below is a no-op.
 
 // staticConflictName is a sentinel placeholder used in
 // MutabilityTransitionError.ConflictingVars to represent a permanent alias from a
@@ -36,10 +36,10 @@ import (
 // printing the literal sentinel.
 const staticConflictName = "<static escape>"
 
-// MutabilityTransitionError is reported when a mutability transition
-// (mut→immutable or immutable→mut) is attempted while conflicting live aliases
-// exist. It is a liveness-derived diagnostic that self-blames from the
-// transition's node — the alias-creating declaration or reassignment — rather than
+// MutabilityTransitionError is reported when a mutability transition is attempted
+// while conflicting live aliases exist. The transition is either mut→immutable or
+// immutable→mut. It is a liveness-derived diagnostic. It self-blames from the
+// transition's node, the alias-creating declaration or reassignment, rather than
 // resolving an operand through the Prov table.
 type MutabilityTransitionError struct {
 	// SourceVar is the variable being aliased.
@@ -48,7 +48,8 @@ type MutabilityTransitionError struct {
 	TargetVar string
 	// ConflictingVars lists the names of live aliases that conflict.
 	ConflictingVars []string
-	// MutToImmutable is true for Rule 1 (mut→immutable), false for Rule 2 (immutable→mut).
+	// MutToImmutable records the transition direction: true for Rule 1, the
+	// mut→immutable case, and false for Rule 2, the immutable→mut case.
 	MutToImmutable bool
 	// node is the transition site, used for blame (the decl or assignment).
 	node ast.Node
@@ -98,17 +99,17 @@ func (e *MutabilityTransitionError) Message() string {
 	)
 }
 
-// isValueType reports whether the type is a primitive or literal type (or a union of
-// such types). Value types have copy semantics — assigning them to another variable
+// isValueType reports whether the type is a primitive or literal type, or a union of
+// such types. Value types have copy semantics. Assigning one to another variable
 // creates an independent copy, so alias tracking is unnecessary.
 //
 // Ported from check_transitions.go, which first calls type_system.Prune. There is no
-// equivalent here: the only caller (trackCapturedAliases) passes a binding's coalesced
+// equivalent here. The only caller, trackCapturedAliases, passes a binding's coalesced
 // display type, which carries no inference-variable indirection to prune. If such a
-// type ever did surface as a bare *soltype.TypeVarType, it falls through to false —
-// classified as a reference and conservatively alias-tracked. That is sound: it can
-// only ADD a spurious alias edge, never drop a real transition, so a value-typed
-// binding mis-seen as a reference at worst over-reports, never under-reports.
+// type ever surfaced as a bare *soltype.TypeVarType, it falls through to false and is
+// classified as a reference, so it is conservatively alias-tracked. That is sound.
+// Mis-seeing a value type as a reference can only add a spurious alias edge, never
+// drop a real transition, so it over-reports rather than under-reports.
 func isValueType(t soltype.Type) bool {
 	switch p := t.(type) {
 	case *soltype.PrimType, *soltype.LitType:
@@ -153,11 +154,11 @@ func bindingType(b ValueBinding) soltype.Type {
 
 // checkMutabilityTransition verifies that a mutability transition is safe at the
 // given program point, reporting a MutabilityTransitionError when conflicting live
-// aliases exist. Ported verbatim from check_transitions.go — the Rule 1 / Rule 2 /
+// aliases exist. Ported verbatim from check_transitions.go. The Rule 1 / Rule 2 /
 // Rule 3 logic talks only to liveness state on c.fn.
 //
 // A transition is only dangerous when both sides are live simultaneously after the
-// transition point — a mutable alias could mutate the value while an immutable
+// transition point. A mutable alias could then mutate the value while an immutable
 // alias assumes it is unchanged.
 //
 //	Rule 1 (mut → immutable): no live mutable aliases may exist after this point,
@@ -195,10 +196,9 @@ func (c *checker) checkMutabilityTransition(
 	// (conditional aliasing), so deduplicate by collecting names into a set.
 	conflictingSet := set.NewSet[string]()
 	for _, aliasSet := range fn.aliases.GetAliasSets(sourceVarID) {
-		// A `'static` escape on the alias set represents a permanent outside
-		// reference — no liveness check is meaningful, so it always counts as a live
-		// alias of its escaped mutability. These bits are unset until G2 marks
-		// `'static` call sites.
+		// A `'static` escape on the alias set represents a permanent outside reference.
+		// No liveness check is meaningful, so it always counts as a live alias of its
+		// escaped mutability. These bits are unset until G2 marks `'static` call sites.
 		if sourceMut && !targetMut && aliasSet.HasStaticMutAlias {
 			conflictingSet.Add(staticConflictName)
 		}
@@ -239,11 +239,11 @@ func (c *checker) checkMutabilityTransition(
 	})
 }
 
-// trackAliasesForVarDecl updates the alias tracker and checks mutability
-// transitions for a body-level `val`/`var` declaration with an initializer. M4 G1
-// handles the IdentPat case (and closure capture when the initializer is a
-// FuncExpr); destructuring patterns are unsupported in the new checker until the
-// pattern PRs land, and a non-IdentPat decl produces no binding anyway.
+// trackAliasesForVarDecl records the alias a body-level `val`/`var` with an
+// initializer creates, then checks its mutability transition. It covers an IdentPat
+// binding. It also covers closure capture when the initializer is a FuncExpr.
+// Destructuring patterns are unsupported in the new checker until the pattern PRs
+// land, and a non-IdentPat decl produces no binding anyway.
 func (c *checker) trackAliasesForVarDecl(scope *Scope, decl *ast.VarDecl, bindingT soltype.Type, enclosingStmt ast.Stmt) {
 	if c.fn == nil || c.fn.aliases == nil || decl.Init == nil {
 		return
@@ -254,7 +254,7 @@ func (c *checker) trackAliasesForVarDecl(scope *Scope, decl *ast.VarDecl, bindin
 	}
 	c.trackAliasesForIdentPat(pat, bindingT, decl.Init, enclosingStmt, decl)
 
-	// Closure-capture aliasing — when the initializer is a FuncExpr, add the closure
+	// Closure-capture aliasing. When the initializer is a FuncExpr, add the closure
 	// variable to each captured variable's alias set. A read-only capture of a
 	// mutable variable is a mut→immut transition that must be checked against live
 	// mutable aliases.
@@ -265,7 +265,7 @@ func (c *checker) trackAliasesForVarDecl(scope *Scope, decl *ast.VarDecl, bindin
 
 // checkTransitionsAgainst checks the mutability transition that aliasing each source
 // in sourceIDs to (targetVarID, targetName, targetMut) induces, at enclosingStmt's CFG
-// point. It is the shared core of the decl and reassignment paths — the single-source
+// point. It is the shared core of the decl and reassignment paths. The single-source
 // case is just the one-element instance of this loop, so neither path open-codes its
 // own copy. A no-op when the statement has no StmtRef.
 func (c *checker) checkTransitionsAgainst(
@@ -289,8 +289,8 @@ func (c *checker) checkTransitionsAgainst(
 	}
 }
 
-// trackAliasesForIdentPat handles alias tracking for a simple identifier pattern
-// binding (`val x = expr`).
+// trackAliasesForIdentPat records the alias a simple identifier binding `val x = expr`
+// creates and checks its mutability transition.
 func (c *checker) trackAliasesForIdentPat(
 	identPat *ast.IdentPat,
 	bindingT soltype.Type,
@@ -308,8 +308,9 @@ func (c *checker) trackAliasesForIdentPat(
 	source := liveness.DetermineAliasSource(init)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
-		// The target aliases every source — one variable, or several under conditional
-		// aliasing. Add each alias edge, then check the transition against each source.
+		// The target aliases every source, whether one variable or several under
+		// conditional aliasing. Add each alias edge, then check the transition against
+		// each source.
 		sourceIDs := source.UniqueVarIDs()
 		for _, sourceVarID := range sourceIDs {
 			c.fn.aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
@@ -322,8 +323,8 @@ func (c *checker) trackAliasesForIdentPat(
 
 // trackCapturedAliases adds the closure variable to the alias sets of each captured
 // variable from the enclosing scope, and checks the mutability transition each
-// capture induces. The captured variable's identity (its VarID) and mutability come
-// from its ValueBinding, the new-checker analogue of type_system.Binding.
+// capture induces. The captured variable's VarID and mutability both come from its
+// ValueBinding, the new-checker analogue of type_system.Binding.
 func (c *checker) trackCapturedAliases(
 	scope *Scope,
 	funcExpr *ast.FuncExpr,
@@ -336,28 +337,29 @@ func (c *checker) trackCapturedAliases(
 	}
 	captures := liveness.AnalyzeCaptures(funcExpr)
 	for _, capture := range captures {
-		// Look up the captured variable's binding in the enclosing scope. The scope
-		// chain handles shadowing correctly — GetValue returns the innermost binding.
+		// Look up the captured variable's binding in the enclosing scope. GetValue
+		// walks the scope chain and returns the innermost binding, so shadowing
+		// resolves to the name in scope at the capture site.
 		b, found := scope.GetValue(capture.Name)
 		if !found || b.VarID <= 0 {
 			continue
 		}
-		// Cross-frame guard (M4 G1). A VarID is only meaningful within the frame whose
-		// rename pass assigned it — each function body restarts numbering at 1, and a
-		// binding stores the id of the body that DECLARED it. Track a capture only when
-		// its binding originated in THIS frame, i.e. the current body's rename assigned
-		// b.VarID to this name. A capture from an outer frame (a closure nested in
-		// another closure, reaching past its immediate enclosing function) carries an id
-		// from a different id-space; feeding it into this frame's AliasTracker /
-		// LivenessInfo would conflate it with an unrelated local and produce a silently
-		// wrong transition verdict. Skipping is sound — it misses that transition rather
-		// than inventing one. The real cross-frame fix rides G2's lifetime-escape bridge
-		// (see m4-implementation-plan G2). This is unreachable today: a captured mutable
-		// is a borrow, which cannot yet be aliased into a local.
+		// Cross-frame guard (M4 G1). A binding stores the VarID of the body that
+		// declared it. Module-wide numbering keeps those ids distinct across bodies, so
+		// they no longer collide, but a captured variable from an outer frame still does
+		// not appear in THIS frame's varIDNames or liveness tables. Track a capture only
+		// when its binding originated in this frame. That holds exactly when the current
+		// body's rename assigned b.VarID to this name. A capture from an outer frame
+		// reaches past its immediate enclosing function, so its liveness lives in another
+		// body's tables and cannot be queried here. Skipping is sound. It misses that
+		// transition rather than inventing one. The real cross-frame fix rides G2's
+		// lifetime-escape bridge; see the G2 note in m4-implementation-plan. This is
+		// unreachable today because a captured mutable is a borrow, which cannot yet be
+		// aliased into a local.
 		if name, ok := c.fn.varIDNames[liveness.VarID(b.VarID)]; !ok || name != capture.Name {
 			continue
 		}
-		// Primitives and literals have value semantics — reassigning a captured
+		// Primitives and literals have value semantics. Reassigning a captured
 		// primitive inside a closure can't affect other variables that copied the
 		// value, so alias tracking is unnecessary.
 		if isValueType(bindingType(b)) {
@@ -381,11 +383,12 @@ func (c *checker) trackCapturedAliases(
 //
 // enclosingStmt is the statement that contains the assignment, captured by
 // inferAssign BEFORE it walks the RHS. It must NOT be re-read from c.fn.currentStmt
-// here: walking an RHS that itself contains statements — `b = if c { … } else { … }`,
-// a match, a block expression — re-enters inferStmt and overwrites currentStmt with an
-// inner-branch statement, so by this point currentStmt no longer names the
-// assignment's statement. Reading it would resolve a valid-but-wrong CFG StmtRef and
-// run the liveness query at the wrong program point.
+// here. Walking an RHS that itself contains statements re-enters inferStmt and
+// overwrites currentStmt with an inner-branch statement, so by this point currentStmt
+// no longer names the assignment's statement. A `b = if c { … } else { … }`, a match,
+// or a block expression all trigger this. Reading the clobbered currentStmt would
+// resolve a valid-but-wrong CFG StmtRef and run the liveness query at the wrong
+// program point.
 func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr, targetType soltype.Type, enclosingStmt ast.Stmt) {
 	if c.fn == nil || c.fn.aliases == nil || target.VarID <= 0 {
 		return
@@ -397,7 +400,7 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	source := liveness.DetermineAliasSource(rhs)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
-		// Check the transition BEFORE reassigning: the single-source reassign rewires
+		// Check the transition before reassigning. The single-source reassign rewires
 		// the target's membership, so checking first reads the pre-reassign alias state.
 		sourceVarID := source.UniqueVarIDs()[0]
 		c.checkTransitionsAgainst([]liveness.VarID{sourceVarID}, targetVarID, target.Name, targetMut, enclosingStmt, target)
@@ -413,9 +416,9 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	}
 }
 
-// trackAliasesForPropAssignment handles alias tracking for property assignments
-// like `obj.prop = value`. When the RHS aliases a variable, the alias sets of the
-// object and the RHS source are merged.
+// trackAliasesForPropAssignment merges alias sets for a property assignment
+// `obj.prop = value`. When the RHS aliases a variable, the object's alias set and the
+// RHS source's alias set are merged.
 func (c *checker) trackAliasesForPropAssignment(lhs ast.Expr, rhs ast.Expr) {
 	if c.fn == nil || c.fn.aliases == nil {
 		return
@@ -438,10 +441,10 @@ func (c *checker) trackAliasesForPropAssignment(lhs ast.Expr, rhs ast.Expr) {
 }
 
 // isSourceMutable checks whether a source variable is registered as mutable in its
-// alias sets. Returns true if the source holds a mutable reference, and false when the
-// source is absent from the tracker — every decl/param seeds its source first
-// (NewValue/AddAlias), so an unregistered source means "no mutable alias on record,"
-// which conservatively reads as immutable.
+// alias sets. It returns true if the source holds a mutable reference, and false when
+// the source is absent from the tracker. Every decl and param seeds its source first
+// through NewValue or AddAlias, so an unregistered source means no mutable alias is on
+// record, which conservatively reads as immutable.
 func (c *checker) isSourceMutable(sourceVarID liveness.VarID) bool {
 	for _, s := range c.fn.aliases.GetAliasSets(sourceVarID) {
 		if m, exists := s.Members[sourceVarID]; exists {
@@ -464,10 +467,10 @@ func (c *checker) varIDToName(id liveness.VarID) string {
 
 // runLivenessPrePass runs name resolution, CFG construction, and liveness analysis
 // on the function body about to be walked, populating the transition-checking state
-// on c.fn. Ported from internal/checker/liveness_prepass.go: the rename pass writes
+// on c.fn. Ported from internal/checker/liveness_prepass.go. The rename pass writes
 // VarIDs directly onto the body's AST nodes, so DetermineAliasSource and the
-// IdentPat/IdentExpr reads downstream see them. paramTypes maps each parameter name
-// to its soltype, supplying the mutability the alias seeding records.
+// downstream IdentPat/IdentExpr reads see them. paramTypes maps each parameter name to
+// its soltype, the mutability the alias seeding records.
 //
 // Must be called after parameters are bound in scope (so outer-scope names resolve)
 // but before the body is walked.
@@ -478,9 +481,9 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	outerBindings := c.collectOuterBindings(scope)
 
 	// Extra param names are bindings present in paramTypes but not introduced by an
-	// astParams pattern — the implicit `self` of a method. M4 has no methods, so this
-	// is inert today and extraParamNames stays empty; the seam is kept for M5, which
-	// adds classes and the `self` receiver. The one exception is an unsupported
+	// astParams pattern, such as the implicit `self` of a method. M4 has no methods, so
+	// this is inert today and extraParamNames stays empty. The seam is kept for M5,
+	// which adds classes and the `self` receiver. The one exception is an unsupported
 	// destructuring param, whose synthetic `arg%d` name lands here harmlessly.
 	astParamNames := set.NewSet[string]()
 	for _, p := range astParams {
@@ -545,12 +548,12 @@ func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.
 // reference from a local. Names within each scope are sorted before assignment so the
 // ids are deterministic across runs (Go map iteration order is randomized).
 //
-// The root of every chain is the shared, immutable prelude, which this re-walks and
-// re-sorts on every function body's pre-pass. preludeOuterNames memoizes the prelude's
-// sorted names so only the mutable scopes above it are re-collected each time — the
-// old checker left this re-walk as a TODO(Phase 15.1). The module scope above the
-// prelude is NOT cached: it grows as later SCC components bind, so a cached snapshot
-// would be stale for a body inferred after it.
+// The root of every chain is the shared, immutable prelude, which this would re-walk
+// and re-sort on every function body's pre-pass. preludeOuterNames memoizes the
+// prelude's sorted names so only the mutable scopes above it are re-collected each
+// time. The old checker left this re-walk as a TODO(Phase 15.1). The module scope
+// above the prelude is NOT cached. It grows as later SCC components bind, so a cached
+// snapshot would be stale for a body inferred after it.
 func (c *checker) collectOuterBindings(scope *Scope) map[string]liveness.VarID {
 	bindings := make(map[string]liveness.VarID)
 	nextID := liveness.VarID(-1)

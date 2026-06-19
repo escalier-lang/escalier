@@ -128,11 +128,11 @@ func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID,
 // RenameFrom is Rename with an explicit starting id for the positive local VarIDs.
 // Plain Rename starts at 1, giving each body its own 1-based numbering. The solver
 // instead passes a module-wide running counter so VarIDs are unique across every
-// function body in a single inference run: a binding's VarID then names the same
+// function body in a single inference run. A binding's VarID then names the same
 // variable in any frame, so feeding one body's id into another body's alias/liveness
-// tables can no longer collide with an unrelated local. firstID must be >= 1 — 0 is
-// the "unset" sentinel and negative ids mark non-local (outer) bindings. The next
-// free id is firstID + the returned UniqueVarCount.
+// tables can no longer collide with an unrelated local. firstID must be >= 1. The id 0
+// is the unset sentinel, and negative ids mark non-local bindings. The next free id is
+// firstID + the returned UniqueVarCount.
 func RenameFrom(params []*ast.Param, body ast.Block, outerBindings map[string]VarID, firstID VarID, extraParamNames ...string) *RenameResult {
 	r := newRenamer(outerBindings, firstID)
 
