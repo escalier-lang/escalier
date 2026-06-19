@@ -1459,6 +1459,7 @@ these arms it must add.
 - D2.5 (#745)
 - D3 (#748)
 - D4 (#749)
+- G1 (#753, #754, #755; ast/liveness prereqs #751, #752)
 - F1 (#730)
 
 A1✓ → A2
@@ -1466,7 +1467,7 @@ A1✓ → A3✓ ─────────────────────�
 A1✓ → B1✓ → B2✓                 │  (annotation-side acceptance tests)
       B1✓ → B3✓                 │
       B1✓, B3✓ ───────────┐     │  (C3 reuses B1's foldUsageBounds fold + B3's widen)
-A1✓ → C1✓ → C2✓(GATE) →  C3✓ → D1✓ → D2✓ → D3✓ → D4✓ → G1 → G2 → G3
+A1✓ → C1✓ → C2✓(GATE) →  C3✓ → D1✓ → D2✓ → D3✓ → D4✓ → G1✓ → G2 → G3
 A1✓ → E1 → E2   (independent of C/D; E1's RefType peel via carrierOf needs C1)
 F1✓             (independent; any time — only M2's Namespace)
 ```
