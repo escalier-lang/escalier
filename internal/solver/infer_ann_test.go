@@ -141,6 +141,38 @@ func TestInferOwnedMutFromVariableRejected(t *testing.T) {
 	require.Equal(t, "cannot constrain immutable object <: mutable object", errs[0].Message())
 }
 
+// The freshness check recurses, so a literal that WRAPS a non-fresh element is itself not
+// freshly constructed and gets no upgrade. This is the recursive false path of
+// isFreshlyConstructed, distinct from TestInferOwnedMutFromVariableRejected's top-level
+// variable: the outer literal is fresh, but a field or element reads a variable.
+func TestInferOwnedMutFreshnessRecurses(t *testing.T) {
+	t.Run("object field is a variable", func(t *testing.T) {
+		src := "fn f() {\n\tval cfg = {x: 1}\n\tval m: mut {p: {x: number}} = {p: cfg}\n\tm\n}"
+		_, _, errs := inferSource(t, src)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain immutable object <: mutable object", errs[0].Message())
+	})
+	t.Run("tuple element is a variable", func(t *testing.T) {
+		src := "fn f() {\n\tval cfg = {x: 1}\n\tval t: mut [number, {x: number}] = [1, cfg]\n\tt\n}"
+		_, _, errs := inferSource(t, src)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain immutable tuple <: mutable tuple", errs[0].Message())
+	})
+}
+
+// The upgrade fires only at the top-level annotation, not recursively per nested `mut`
+// field. The fresh literal `{p: {x: 0}}` upgrades the outer object to owned-mutable, but
+// the inner `{x: 0}` is then constrained against the inner `mut {x: number}`, which the C2
+// gate rejects. The binding still adopts the annotation under error recovery. G2's
+// "immutable→mutable upgrade at every value-flow site" is what generalizes the upgrade to
+// reach a nested `mut` target.
+func TestInferOwnedMutNestedMutFieldNotUpgraded(t *testing.T) {
+	values, _, errs := inferSource(t, `val w: mut {p: mut {x: number}} = {p: {x: 0}}`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain immutable object <: mutable object", errs[0].Message())
+	require.Equal(t, "mut {p: mut {x: number}}", values["w"])
+}
+
 // A `mut T` annotation lowers to a borrow (RefType{Mut: true}); a function
 // parameter typed `mut {x: number}` originates a fresh borrow lifetime (D2), and a
 // member read through it peels the borrow to resolve the inner property. The lifetime

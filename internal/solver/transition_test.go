@@ -443,3 +443,42 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		})
 	}
 }
+
+// TestMutabilityTransitionReassignFromSource exercises the reassignment transition path
+// (inferAssign). TestMutabilityTransitionsFromSource only aliases through declarations, so
+// it never walks the `x = e` reassignment branch. Reassigning a live mutable owned value
+// into an immutable binding is a Rule 1 transition; the fresh-literal upgrade is what mints
+// the owned-mutable source these cases reassign from.
+func TestMutabilityTransitionReassignFromSource(t *testing.T) {
+	t.Run("source_live_error", func(t *testing.T) {
+		// items is reassigned into immutable snap, then mutated, so both are live across
+		// the reassignment.
+		_, _, errs := inferSource(t, `
+			fn f() {
+				var snap: {x: number} = {x: 0}
+				val items: mut {x: number} = {x: 1}
+				snap = items
+				items.x = 2
+				snap
+			}
+		`)
+		require.Equal(t, []string{
+			"cannot assign 'items' to immutable 'snap': 'items' is still used mutably after this point",
+		}, transitionMessages(t, errs))
+	})
+
+	t.Run("source_dead_ok", func(t *testing.T) {
+		// items is mutated before the reassignment and never again, so it is dead after
+		// snap = items and Rule 1 stays silent.
+		_, _, errs := inferSource(t, `
+			fn f() {
+				var snap: {x: number} = {x: 0}
+				val items: mut {x: number} = {x: 1}
+				items.x = 2
+				snap = items
+				snap
+			}
+		`)
+		require.Empty(t, transitionMessages(t, errs))
+	})
+}
