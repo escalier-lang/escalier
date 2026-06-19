@@ -138,6 +138,30 @@ type WildcardPat struct{}
 
 func (*WildcardPat) isPat() {}
 
+// ExtractorPat is a constructor/extractor pattern such as `Some(v)` or
+// `Point(x, y)`. The solver does not yet produce it; it is a forward-declared
+// member of the sealed set, the structural mirror of ast.ExtractorPat, and lands
+// with the constructor patterns in M5. Name is the qualified constructor name
+// rendered as a string, since soltype stays ast-free. Args are positional
+// sub-patterns.
+type ExtractorPat struct {
+	Name string
+	Args []Pat
+}
+
+func (*ExtractorPat) isPat() {}
+
+// InstancePat is a class-instance pattern such as `Point { x, y }`. Like
+// ExtractorPat it is forward-declared here, the mirror of ast.InstancePat, and
+// lands with classes in M5. ClassName is the qualified class name as a string;
+// Object is the field sub-pattern.
+type InstancePat struct {
+	ClassName string
+	Object    *ObjectPat
+}
+
+func (*InstancePat) isPat() {}
+
 // FuncParam mirrors type_system.FuncParam. Pattern is reachable only through Pat
 // concretes M1 defines (IdentPat). M3 (PR4) adds Optional: an `x?` parameter
 // lowers the function's `required` count (the accept-set lower bound) without

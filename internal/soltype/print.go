@@ -457,6 +457,22 @@ func printPat(pat Pat) (string, bool) {
 			parts[i] = printObjectKeyName(f.Name) + ": " + s
 		}
 		return "{" + strings.Join(parts, ", ") + "}", true
+	case *ExtractorPat:
+		parts := make([]string, len(p.Args))
+		for i, a := range p.Args {
+			s, ok := printPat(a)
+			if !ok {
+				s = "_"
+			}
+			parts[i] = s
+		}
+		return p.Name + "(" + strings.Join(parts, ", ") + ")", true
+	case *InstancePat:
+		obj, ok := printPat(p.Object)
+		if !ok {
+			obj = "{}"
+		}
+		return p.ClassName + " " + obj, true
 	}
 	return "", false
 }

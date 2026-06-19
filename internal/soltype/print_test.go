@@ -263,6 +263,62 @@ func TestPrintUnnamedParamFallback(t *testing.T) {
 	require.Equal(t, "fn (arg0: number, arg1: string) -> boolean", Print(fn))
 }
 
+// A destructuring parameter renders its pattern (M4 E1). Each Pat concrete in the
+// sealed set has a printPat arm, including the M5 constructor patterns
+// ExtractorPat and InstancePat, which are forward-declared members of the set.
+func TestPrintDestructuringParamPatterns(t *testing.T) {
+	tests := []struct {
+		name string
+		pat  Pat
+		want string
+	}{
+		{
+			name: "object shorthand and rename",
+			pat: &ObjectPat{Fields: []*ObjectPatField{
+				{Name: "x", Value: &IdentPat{Name: "x"}},
+				{Name: "y", Value: &IdentPat{Name: "b"}},
+			}},
+			want: "{x, y: b}",
+		},
+		{
+			name: "tuple with wildcard",
+			pat:  &TuplePat{Elems: []Pat{&IdentPat{Name: "a"}, &WildcardPat{}}},
+			want: "[a, _]",
+		},
+		{
+			name: "literal",
+			pat:  &LitPat{Lit: &NumLit{Value: 5}},
+			want: "5",
+		},
+		{
+			name: "nested object in tuple",
+			pat: &TuplePat{Elems: []Pat{
+				&ObjectPat{Fields: []*ObjectPatField{{Name: "x", Value: &IdentPat{Name: "x"}}}},
+			}},
+			want: "[{x}]",
+		},
+		{
+			name: "extractor",
+			pat:  &ExtractorPat{Name: "Some", Args: []Pat{&IdentPat{Name: "v"}}},
+			want: "Some(v)",
+		},
+		{
+			name: "instance",
+			pat: &InstancePat{ClassName: "Point", Object: &ObjectPat{Fields: []*ObjectPatField{
+				{Name: "x", Value: &IdentPat{Name: "x"}},
+				{Name: "y", Value: &IdentPat{Name: "y"}},
+			}}},
+			want: "Point {x, y}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fn := &FuncType{Params: []*FuncParam{{Pattern: tt.pat, Type: numP()}}, Ret: boolP()}
+			require.Equal(t, "fn ("+tt.want+": number) -> boolean", Print(fn))
+		})
+	}
+}
+
 // TestPrintScheme covers the M3 quantifier-prefix rendering: a generalized type's
 // free variables are collected into a <T0, T1, …> prefix (named by first
 // appearance in print order) and rendered under those names, while a variable-free
