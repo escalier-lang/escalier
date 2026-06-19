@@ -195,46 +195,52 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				v.Open = true
 			}
 		}
-		name, ok := identPatName(p.Pattern)
-		var sources []provenance.Provenance
-		if !ok {
-			// Destructuring params (TuplePat/ObjectPat) need record/tuple types —
-			// they arrive in M4. M2 binds IdentPat only. A non-nil pattern blames
-			// itself (its own narrower span); a pattern-less param (not reachable
-			// from the real parser) blames the enclosing function, since Param.Span()
-			// dereferences the nil pattern — honoring M2's "never a panic" guarantee.
-			if p.Pattern != nil {
-				c.reportUnsupported(p.Pattern)
-			} else {
-				c.reportUnsupported(node)
-			}
-			name = fmt.Sprintf("arg%d", i)
-			// Leave sources empty: the synthetic arg%d name is not a real place, so
-			// there is nothing useful for go-to-definition or a related span to point at.
-		} else {
+		if name, ok := identPatName(p.Pattern); ok {
 			// The param's IdentPat IS its definition site, so record it as the binding's
 			// source — symmetric to a val/var/fn binding (inferVarDecl/module.go). This
 			// lets CannotAssignToImmutableError point "declared immutable here" at the
 			// parameter (see bindingDecl). p.Pattern is an ast.Node (*ast.Param is not).
-			sources = []provenance.Provenance{&ast.NodeProvenance{Node: p.Pattern}}
+			sources := []provenance.Provenance{&ast.NodeProvenance{Node: p.Pattern}}
 			if p.TypeAnn == nil {
 				// An un-annotated param's type is the fresh var minted here, so a
 				// param-type mismatch blames the param. An annotated param's blame
 				// instead rides on its annotation, recorded by resolveTypeAnn.
 				c.recordProv(pt, p.Pattern, ParamBinding)
 			}
+			// A parameter binding never generalizes — its var is fixed for the body — so
+			// it is a MonoScheme; instantiate returns pt unchanged at every use.
+			fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}, Sources: sources})
+			paramTypes[name] = pt
+			// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
+			// `required` count without dropping the param — carried onto the soltype so
+			// the accept-set rule and the printer (x?: T) see it. KNOWN GAP (M6): the
+			// in-body binding keeps the param's declared type (pt), NOT widened to
+			// `pt | undefined`, so a body that reads an omitted optional sees it at the
+			// narrower type. Widening needs undefined/unions (M6); M3 has neither.
+			params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
+		} else if p.Pattern != nil {
+			// M4 E1: a destructuring parameter ({x, y}, [a, b]). bindPattern binds each
+			// leaf into the function scope against the param's type and returns the
+			// soltype mirror the printer renders. It also writes each leaf's type into
+			// paramTypes (keyed by leaf name) so the liveness pre-pass seeds the leaf's
+			// alias mutability. An un-annotated destructuring param mints a fresh var
+			// (pt) whose mismatch blame should point at the pattern.
+			if p.TypeAnn == nil {
+				c.recordProv(pt, p.Pattern, ParamBinding)
+			}
+			mirror := c.bindPattern(fnScope, lvl, p.Pattern, pt, paramTypes)
+			params[i] = &soltype.FuncParam{Pattern: mirror, Type: pt, Optional: p.Optional}
+		} else {
+			// A pattern-less param is not reachable from the real parser, which
+			// synthesizes a placeholder; blame the enclosing function rather than a nil
+			// Span(), honoring the "never a panic" guarantee. Bind a synthetic name so
+			// the param slot still types.
+			c.reportUnsupported(node)
+			name := fmt.Sprintf("arg%d", i)
+			fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}})
+			paramTypes[name] = pt
+			params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
 		}
-		// A parameter binding never generalizes — its var is fixed for the body — so
-		// it is a MonoScheme; instantiate returns pt unchanged at every use.
-		fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}, Sources: sources})
-		paramTypes[name] = pt
-		// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
-		// `required` count without dropping the param — carried onto the soltype so
-		// the accept-set rule and the printer (x?: T) see it. KNOWN GAP (M6): the
-		// in-body binding keeps the param's declared type (pt), NOT widened to
-		// `pt | undefined`, so a body that reads an omitted optional sees it at the
-		// narrower type. Widening needs undefined/unions (M6); M3 has neither.
-		params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
 	}
 
 	var ret soltype.Type = &soltype.Void{}

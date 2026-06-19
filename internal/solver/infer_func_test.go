@@ -151,18 +151,21 @@ func TestInferFuncExprNilParamPatternNoPanic(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
-func TestInferFuncExprDestructuringParamUnsupported(t *testing.T) {
+// A destructuring parameter binds its leaves and renders its pattern (M4 E1). The
+// leaves below go unused, so each slot coalesces to `unknown`; the point is that
+// the param is accepted and rendered, not reported as unsupported.
+func TestInferFuncExprDestructuringParam(t *testing.T) {
 	c := newChecker()
-	// fn ([a, b]) { ... } — destructuring params are M4.
+	// fn ([a, b]) { 1 }
 	tuplePat := ast.NewTuplePat([]ast.Pat{
 		ast.NewIdentPat("a", false, nil, nil, testSpan()),
 		ast.NewIdentPat("b", false, nil, nil, testSpan()),
 	}, testSpan())
 	e := funcExpr([]*ast.Param{{Pattern: tuplePat}}, nil, block(exprStmt(numExpr(1))))
 
-	c.inferExpr(NewScope(), 0, e)
-	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: TuplePat", c.errs[0].Message())
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, "fn ([a, b]: [unknown, unknown]) -> void", render(got))
 }
 
 // A generic function (fn <T>() { ... }) is diagnosed rather than silently erased

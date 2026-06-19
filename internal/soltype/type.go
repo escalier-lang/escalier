@@ -107,6 +107,37 @@ type IdentPat struct{ Name string }
 
 func (*IdentPat) isPat() {}
 
+// TuplePat is a tuple destructuring pattern (M4 E1). Its sub-patterns are
+// positional. It is carried on a destructured FuncParam.Pattern so the parameter
+// renders and round-trips; the solver's pattern-typing helper produces it.
+type TuplePat struct{ Elems []Pat }
+
+func (*TuplePat) isPat() {}
+
+// ObjectPat is an object destructuring pattern (M4 E1). Each field names a
+// property and binds its value through a sub-pattern. A bare `{x}` shorthand is
+// an ObjectPatField whose Value is an IdentPat of the same name.
+type ObjectPat struct{ Fields []*ObjectPatField }
+
+func (*ObjectPat) isPat() {}
+
+// ObjectPatField is one `name: subpat` entry of an ObjectPat.
+type ObjectPatField struct {
+	Name  string
+	Value Pat
+}
+
+// LitPat matches a literal value (M4 E1). It binds nothing; it is carried for
+// rendering and (E2) match-arm typing.
+type LitPat struct{ Lit Lit }
+
+func (*LitPat) isPat() {}
+
+// WildcardPat (`_`) matches anything and binds nothing (M4 E1).
+type WildcardPat struct{}
+
+func (*WildcardPat) isPat() {}
+
 // FuncParam mirrors type_system.FuncParam. Pattern is reachable only through Pat
 // concretes M1 defines (IdentPat). M3 (PR4) adds Optional: an `x?` parameter
 // lowers the function's `required` count (the accept-set lower bound) without
