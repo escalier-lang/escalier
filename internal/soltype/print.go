@@ -103,13 +103,24 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
 		names[v] = name
 		labels = append(labels, name)
 	}
-	if len(labels) == 0 {
+	// Borrow lifetimes left in the coalesced type by D4's coalesceLifetimes are all
+	// nameable param lifetimes. A connect-nothing one was already elided, and a join
+	// expanded to a union of these. Name each 'a, 'b, … in first-appearance order and
+	// add it to the quantifier prefix after the type parameters.
+	ltNames := map[*LifetimeVar]string{}
+	var ltLabels []string
+	for _, lv := range freeLifetimeVars(t) {
+		name := lifetimeParamName(len(ltLabels))
+		ltNames[lv] = name
+		ltLabels = append(ltLabels, name)
+	}
+	if len(labels) == 0 && len(ltLabels) == 0 {
 		// No quantified parameters: render as a plain (possibly raw-var) type, which
 		// keeps a leaked variable visible as t{ID}.
 		return Print(t)
 	}
-	p := &namedPrinter{names: names}
-	prefix := "<" + strings.Join(labels, ", ") + ">"
+	p := &namedPrinter{names: names, ltNames: ltNames}
+	prefix := "<" + strings.Join(append(labels, ltLabels...), ", ") + ">"
 	if ft, ok := t.(*FuncType); ok {
 		return "fn " + prefix + p.printFuncTail(ft)
 	}
@@ -120,6 +131,70 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
 // T1, …, matching the planned `fn <T0>(x: T0) -> T0` rendering.
 func typeParamName(i int) string {
 	return "T" + strconv.Itoa(i)
+}
+
+// lifetimeParamName is the surface name for the i-th quantified lifetime parameter:
+// 'a, 'b, …, 'z, 'aa, 'ab, … in Excel-style base-26, so a borrow renders as
+// `fn <'a>(p: mut 'a {x}) -> mut 'a {x}`.
+func lifetimeParamName(i int) string {
+	var b []byte
+	for {
+		b = append([]byte{byte('a' + i%26)}, b...)
+		i = i/26 - 1
+		if i < 0 {
+			break
+		}
+	}
+	return "'" + string(b)
+}
+
+// freeLifetimeVars collects the LifetimeVars appearing in t in first-appearance
+// print order, the lifetime-sort twin of freeTypeVars. It rides the shared Accept
+// visitor rather than a hand-rolled walk, the same way simplify.go's varCollector
+// collects type vars. Lifetimes are not Types, so Accept never visits a Lt slot
+// itself. The collector reads it in EnterType when it reaches a RefType, before
+// Accept descends into the borrow's inner. That preserves print order, because a
+// borrow's own lifetime precedes any lifetime nested in its inner.
+func freeLifetimeVars(t Type) []*LifetimeVar {
+	c := &ltVarCollector{seen: set.NewSet[*LifetimeVar]()}
+	t.Accept(c, Positive)
+	return c.out
+}
+
+// ltVarCollector gathers LifetimeVars in Accept-traversal order. It rewrites nothing.
+// EnterType returns the default descend result and ExitType returns the node
+// unchanged, so Accept performs no allocation and the walk is a pure collection.
+type ltVarCollector struct {
+	out  []*LifetimeVar
+	seen set.Set[*LifetimeVar]
+}
+
+func (c *ltVarCollector) EnterType(t Type, _ Polarity) EnterResult {
+	if r, ok := t.(*RefType); ok {
+		c.add(r.Lt)
+	}
+	return EnterResult{}
+}
+
+func (c *ltVarCollector) ExitType(t Type, _ Polarity) Type { return t }
+
+// add records a borrow's lifetime: a LifetimeVar directly, or each LifetimeVar
+// member of a LifetimeUnion, deduped by identity.
+func (c *ltVarCollector) add(lt Lifetime) {
+	switch lt := lt.(type) {
+	case *LifetimeVar:
+		if !c.seen.Contains(lt) {
+			c.seen.Add(lt)
+			c.out = append(c.out, lt)
+		}
+	case *LifetimeUnion:
+		for _, m := range lt.Lifetimes {
+			if mv, ok := m.(*LifetimeVar); ok && !c.seen.Contains(mv) {
+				c.seen.Add(mv)
+				c.out = append(c.out, mv)
+			}
+		}
+	}
 }
 
 // freeTypeVars collects the TypeVarTypes appearing in t in first-appearance print

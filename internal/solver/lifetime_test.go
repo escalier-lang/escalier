@@ -159,11 +159,39 @@ func TestEscapingNestedRefIntoStatic(t *testing.T) {
 	require.Equal(t, "{p: mut 'static {x: number}}", soltype.Print(coalesce(stored, soltype.Positive)))
 }
 
+// mutPointRef is a `mut lt {x: number}` borrow, the carrier these lifetime tests
+// hang a join or escape off.
+func mutPointRef(lt soltype.Lifetime) *soltype.RefType {
+	return &soltype.RefType{
+		Mut: true,
+		Lt:  lt,
+		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+		}},
+	}
+}
+
+// borrowFn wraps a return type in a function whose parameters carry the given borrow
+// lifetimes. D4 names a lifetime only when it originates at a parameter, which means
+// it occurs in a negative position. So a join's member lifetimes must appear on
+// parameters to be named or expanded, exactly how joinBorrows produces them from
+// real source.
+func borrowFn(ret soltype.Type, paramLts ...soltype.Lifetime) *soltype.FuncType {
+	params := make([]*soltype.FuncParam, len(paramLts))
+	for i, lt := range paramLts {
+		params[i] = &soltype.FuncParam{
+			Pattern: &soltype.IdentPat{Name: string(rune('p' + i))},
+			Type:    mutPointRef(lt),
+		}
+	}
+	return &soltype.FuncType{Params: params, Ret: ret}
+}
+
 // Escaping a JOINED borrow forces every param lifetime the join reaches to outlive
-// 'static, so the whole `('l0 | 'l1)` union collapses to a single 'static. This is
-// the join↔escape interaction (M4 D3). constrainEscape constrains the join lifetime
+// 'static, so the whole `('a | 'b)` union collapses to a single 'static. This is the
+// join↔escape interaction (M4 D3). constrainEscape constrains the join lifetime
 // `<: 'static`, which propagates through its lower bounds to each member, and
-// coalesceLifetime then absorbs the union to 'static rather than expanding it.
+// coalesceLifetimes then absorbs the union to 'static rather than expanding it.
 func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -172,28 +200,55 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	// The join is bounded below by each source lifetime, as joinBorrows wires it.
 	c.ctx.constrainLt(a, join)
 	c.ctx.constrainLt(b, join)
-	ref := &soltype.RefType{
-		Mut: true,
-		Lt:  join,
+	ret := mutPointRef(join)
+	fn := borrowFn(ret, a, b)
+
+	// Before escape the join expands to the union of its members.
+	require.Equal(t,
+		"fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}) -> mut ('a | 'b) {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
+
+	c.constrainEscape(ret)
+
+	// Escape forces the join to 'static, propagating through its lower bounds to each
+	// member, so the entire signature collapses to 'static with no nameable lifetime left.
+	require.Equal(t, []soltype.Lifetime{soltype.Static}, join.UpperBounds)
+	require.Equal(t,
+		"fn (p: mut 'static {x: number}, q: mut 'static {x: number}) -> mut 'static {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
+
+// D4 elision branches on Mut. A connect-nothing IMMUTABLE borrow, whose lifetime
+// reaches no output, drops the RefType wrapper entirely and renders as its bare
+// inner, because RefType{false, nil} is the forbidden degenerate cell NewRef
+// rejects. This contrasts with the mutable case, which becomes owned-mutable,
+// RefType{Mut: true, Lt: nil}. The FieldWrite acceptance covers that branch.
+func TestImmutableConnectNothingBorrowDropsWrapper(t *testing.T) {
+	c := newChecker()
+	lt := c.ctx.freshLifetime(0)
+	param := &soltype.RefType{
+		Mut: false,
+		Lt:  lt,
 		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
 			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
 		}},
 	}
+	// The borrow appears only on the parameter, since the body returns a number, not
+	// the borrow, so its lifetime connects nothing and is elided.
+	fn := &soltype.FuncType{
+		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "p"}, Type: param}},
+		Ret:    &soltype.PrimType{Prim: soltype.NumPrim},
+	}
 
-	// Before escape the join expands to the union of its members.
-	require.Equal(t, "mut ('l0 | 'l1) {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
-
-	c.constrainEscape(ref)
-
-	require.Equal(t, []soltype.Lifetime{soltype.Static}, join.UpperBounds)
-	require.Equal(t, "mut 'static {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+	require.Equal(t, "fn (p: {x: number}) -> number", renderScheme(&MonoScheme{Ty: fn}))
 }
 
 // A nested join reaching one param lifetime through two distinct sub-joins lists
 // that lifetime once in the rendered union, not twice. The top join's lower bounds
-// are the two sub-joins, and both reach 'l0. So reachableParamLifetimes collects it
-// twice and coalesceLifetime dedups before building the LifetimeUnion. Without the
-// dedup this rendered `('l0 | 'l1 | 'l0 | 'l2)`.
+// are the two sub-joins, and both reach 'a. componentParams gathers the join's
+// component param lifetimes into an ID-keyed, sorted set, so a lifetime reached
+// through two sub-joins appears once. Without that dedup this rendered
+// `('a | 'b | 'a | 'c)`.
 func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -204,19 +259,15 @@ func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 	top := c.ctx.freshJoinLifetime(0)
 	c.ctx.constrainLt(a, j2)
 	c.ctx.constrainLt(b, j2)
-	c.ctx.constrainLt(a, j3) // 'l0 shared across both sub-joins
+	c.ctx.constrainLt(a, j3) // 'a shared across both sub-joins
 	c.ctx.constrainLt(d, j3)
 	c.ctx.constrainLt(j2, top)
 	c.ctx.constrainLt(j3, top)
-	ref := &soltype.RefType{
-		Mut: true,
-		Lt:  top,
-		Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
-			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
-		}},
-	}
+	fn := borrowFn(mutPointRef(top), a, b, d)
 
-	require.Equal(t, "mut ('l0 | 'l1 | 'l2) {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+	require.Equal(t,
+		"fn <'a, 'b, 'c>(p: mut 'a {x: number}, q: mut 'b {x: number}, r: mut 'c {x: number}) -> mut ('a | 'b | 'c) {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
 }
 
 // ltEqual compares a LifetimeUnion structurally. A LifetimeUnion is the union form a
