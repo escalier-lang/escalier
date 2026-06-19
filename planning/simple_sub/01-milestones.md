@@ -877,17 +877,22 @@ them relate. The constraint solver already builds the outlives graph —
 D2.5 generalizes them per instantiation — so this milestone is about surfacing,
 declaring, and checking relations the solver already computes, not new inference.
 
-- **Render inferred bounds as where-clauses.** M4 D4 collapses a multi-source join
+- **Bounds live in the lifetime and type-param list, not a `where` clause.** A
+  lifetime bound is attached in the `<…>` list as `<'a: 'b>`, mirroring how a
+  type-param bound is written `<T: U>`. One quantifier list carries both sorts and
+  their bounds, which keeps the surface consistent between type-param and lifetime
+  bounds and avoids a second bound-declaration grammar.
+- **Render inferred bounds in the param list.** M4 D4 collapses a multi-source join
   to the union `('a | 'b)`, the conservative stand-in for "one of these". The graph
   underneath already carries `'a: 'c, 'b: 'c` for the join `'c`, so the precise form
-  `fn <'a, 'b, 'c>(…) -> mut 'c {…} where 'a: 'c, 'b: 'c` is a display upgrade, not
-  an inference change. Naming kept join lifetimes and a where-clause section in
-  `PrintAsSchemeWith` are the new rendering pieces.
+  `fn <'a: 'c, 'b: 'c, 'c>(…) -> mut 'c {…}` is a display upgrade, not an inference
+  change. Naming kept join lifetimes and emitting their `'a: 'b` bounds in the
+  quantifier list `PrintAsSchemeWith` already builds are the new rendering pieces.
 - **Declare bounds at no-body sites.** A site with no body to infer from must declare
   its bounds — external and library signatures, abstract interface methods, and type
-  aliases over borrows. Add `where 'a: 'b` syntax to the AST and parser and lower it
-  into `constrainLt` during signature resolution, so a declared bound participates in
-  solving exactly like an inferred one.
+  aliases over borrows. Add in-list bound syntax `<'a, 'b: 'a>` to the AST and parser
+  and lower it into `constrainLt` during signature resolution, so a declared bound
+  participates in solving exactly like an inferred one.
 - **Check inferred against declared.** An annotated function's inferred bound set must
   satisfy its declared one — subsumption over the lifetime sort, built on
   `constrainLt`.
@@ -908,11 +913,11 @@ mandatory, which is the first configuration where the unified model beats a
 display-only one. Earlier would be premature: nothing in M4 or M5 is blocked, since
 the D4 union rendering is sound and only less precise.
 
-**Accept:** a multi-source join renders `fn <'a, 'b, 'c>(p: mut 'a {…}, q: mut 'b
-{…}) -> mut 'c {…} where 'a: 'c, 'b: 'c` instead of the union; a `where`-annotated
-signature round-trips through the parser and printer; a body whose inferred bounds
-violate a declared `where` clause is rejected with the full outlives message; a
-redundant declared bound implied by transitivity is dropped from the rendered set.
+**Accept:** a multi-source join renders `fn <'a: 'c, 'b: 'c, 'c>(p: mut 'a {…}, q:
+mut 'b {…}) -> mut 'c {…}` instead of the union; a signature with in-list bounds
+round-trips through the parser and printer; a body whose inferred bounds violate a
+declared bound is rejected with the full outlives message; a redundant declared bound
+implied by transitivity is dropped from the rendered set.
 
 ---
 
