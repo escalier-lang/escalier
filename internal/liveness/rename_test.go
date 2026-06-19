@@ -58,6 +58,59 @@ func block(stmts ...ast.Stmt) ast.Block {
 	return ast.Block{Stmts: stmts, Span: span()}
 }
 
+// RenameFrom starts local numbering at firstID instead of 1, so a caller threading a
+// module-wide counter gets VarIDs unique across bodies. UniqueVarCount stays the count
+// of locals defined, independent of the starting id.
+func TestRenameFromStartsAtFirstID(t *testing.T) {
+	// val a = 1; val b = a  — two locals, started at id 10.
+	a := identPat("a")
+	b := identPat("b")
+	aRef := ident("a")
+	body := block(
+		valDecl(a, numLit(1)),
+		valDecl(b, aRef),
+	)
+
+	result := RenameFrom(nil, body, map[string]VarID{}, 10)
+
+	require.Empty(t, result.Errors)
+	require.Equal(t, 2, result.UniqueVarCount)  // count is start-independent
+	require.Equal(t, VarID(10), VarID(a.VarID)) // first local takes firstID
+	require.Equal(t, VarID(11), VarID(b.VarID)) // second is firstID+1
+	require.Equal(t, a.VarID, aRef.VarID)       // use resolves to binding
+	// Next free id = firstID + UniqueVarCount, so a following body starts at 12.
+	require.Equal(t, 12, 10+result.UniqueVarCount)
+}
+
+// Chaining RenameFrom across two bodies, with the second starting where the first left
+// off, gives every local a VarID unique across both bodies. That is the property that
+// lets a binding's VarID name the same variable in any frame.
+func TestRenameFromDisjointAcrossBodies(t *testing.T) {
+	// Body 1: val a = 1; val b = a
+	a := identPat("a")
+	b := identPat("b")
+	body1 := block(valDecl(a, numLit(1)), valDecl(b, ident("a")))
+
+	r1 := RenameFrom(nil, body1, map[string]VarID{}, 1)
+	require.Empty(t, r1.Errors)
+
+	// Body 2 starts at the next free id, so its locals cannot collide with body 1's.
+	c := identPat("c")
+	d := identPat("d")
+	body2 := block(valDecl(c, numLit(2)), valDecl(d, ident("c")))
+
+	r2 := RenameFrom(nil, body2, map[string]VarID{}, 1+VarID(r1.UniqueVarCount))
+	require.Empty(t, r2.Errors)
+
+	body1IDs := []int{a.VarID, b.VarID}
+	body2IDs := []int{c.VarID, d.VarID}
+	for _, id1 := range body1IDs {
+		for _, id2 := range body2IDs {
+			require.NotEqual(t, id1, id2, "VarIDs must be disjoint across bodies")
+		}
+	}
+}
+
 func TestSimpleBindingAndUse(t *testing.T) {
 	// val x = 1; print(x)
 	x := identPat("x")

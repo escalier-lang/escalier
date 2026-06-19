@@ -63,11 +63,11 @@ type renamer struct {
 	varIDNames map[VarID]string
 }
 
-func newRenamer(outerBindings map[string]VarID) *renamer {
+func newRenamer(outerBindings map[string]VarID, firstID VarID) *renamer {
 	s := newScope(nil)
 	maps.Copy(s.bindings, outerBindings)
 	return &renamer{
-		nextID:     1, // local VarIDs start at 1
+		nextID:     firstID,
 		scope:      s,
 		varIDNames: make(map[VarID]string),
 	}
@@ -122,7 +122,19 @@ func (r *renamer) resolve(name string, span ast.Span) VarID {
 // After this function returns, the internal scope stack is discarded.
 // All downstream phases read VarIDs directly from AST nodes.
 func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID, extraParamNames ...string) *RenameResult {
-	r := newRenamer(outerBindings)
+	return RenameFrom(params, body, outerBindings, 1, extraParamNames...)
+}
+
+// RenameFrom is Rename with an explicit starting id for the positive local VarIDs.
+// Plain Rename starts at 1, giving each body its own 1-based numbering. The solver
+// instead passes a module-wide running counter so VarIDs are unique across every
+// function body in a single inference run. A binding's VarID then names the same
+// variable in any frame, so feeding one body's id into another body's alias/liveness
+// tables can no longer collide with an unrelated local. firstID must be >= 1. The id 0
+// is the unset sentinel, and negative ids mark non-local bindings. The next free id is
+// firstID + the returned UniqueVarCount.
+func RenameFrom(params []*ast.Param, body ast.Block, outerBindings map[string]VarID, firstID VarID, extraParamNames ...string) *RenameResult {
+	r := newRenamer(outerBindings, firstID)
 
 	// Process function parameters — they are in scope for the entire body.
 	// Parameters share the root scope with outerBindings. This is fine because
@@ -146,7 +158,7 @@ func Rename(params []*ast.Param, body ast.Block, outerBindings map[string]VarID,
 	r.renameBlock(body)
 
 	return &RenameResult{
-		UniqueVarCount:   int(r.nextID) - 1, // count of local variables assigned
+		UniqueVarCount:   int(r.nextID) - int(firstID), // count of local variables assigned
 		VarIDNames:       r.varIDNames,
 		ExtraParamVarIDs: extraParamVarIDs,
 		Errors:           r.errors,
