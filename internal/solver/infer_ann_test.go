@@ -85,10 +85,10 @@ func TestInferInexactTupleAnnotationVariableWidthSubtyping(t *testing.T) {
 }
 
 // The construction-site excess check looks THROUGH a `mut` borrow: an inexact
-// object/tuple wrapped in `mut` still rejects undeclared literal members, so the
-// rule is consistent whether or not the annotation is a borrow. The mutability
-// mismatch (an immutable literal into a mut slot) fires too — both are real,
-// independent problems — so the excess diagnostic must appear alongside it.
+// object/tuple wrapped in `mut` still rejects undeclared literal members, so the rule
+// is consistent whether or not the annotation is a borrow. The freshly constructed
+// literal is given the owned-mutable type without a mutability mismatch, since a fresh
+// value is uniquely owned, so the excess-member diagnostic is the only error.
 func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 	t.Run("object", func(t *testing.T) {
 		_, _, errs := inferSource(t, `val r: mut {x: number, ...} = {x: 1, y: 2}`)
@@ -96,7 +96,7 @@ func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 		for i, e := range errs {
 			msgs[i] = e.Message()
 		}
-		require.Contains(t, msgs, "object has extra property: y")
+		require.Equal(t, []string{"object has extra property: y"}, msgs)
 	})
 	t.Run("tuple", func(t *testing.T) {
 		_, _, errs := inferSource(t, `val t: mut [number, ...] = [1, 2, 3]`)
@@ -104,9 +104,73 @@ func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 		for i, e := range errs {
 			msgs[i] = e.Message()
 		}
-		require.Contains(t, msgs, "tuple has extra element at index 1")
-		require.Contains(t, msgs, "tuple has extra element at index 2")
+		require.ElementsMatch(t, []string{
+			"tuple has extra element at index 1",
+			"tuple has extra element at index 2",
+		}, msgs)
 	})
+}
+
+// A freshly constructed literal is uniquely owned, so it may be given an owned-mutable
+// annotation: `val items: mut {x} = {x: 1}` type-checks and the binding is mutable.
+// The upgrade recurses through nested literals and tuples.
+func TestInferOwnedMutFromFreshLiteral(t *testing.T) {
+	t.Run("object", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val items: mut {x: number} = {x: 1}`)
+		require.Empty(t, errs)
+		require.Equal(t, "mut {x: number}", values["items"])
+	})
+	t.Run("nested object", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val w: mut {p: {x: number}} = {p: {x: 0}}`)
+		require.Empty(t, errs)
+		require.Equal(t, "mut {p: {x: number}}", values["w"])
+	})
+	t.Run("tuple", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val t: mut [number, number] = [1, 2]`)
+		require.Empty(t, errs)
+		require.Equal(t, "mut [number, number]", values["t"])
+	})
+}
+
+// The upgrade applies only to a freshly constructed value. A non-fresh source — here a
+// variable — still rejects an immutable→mutable assignment, because the variable could
+// alias a value held immutably elsewhere. That case waits on the lifetime/region work.
+func TestInferOwnedMutFromVariableRejected(t *testing.T) {
+	src := "fn f() {\n\tval cfg: {x: number} = {x: 1}\n\tval m: mut {x: number} = cfg\n\tm.x = 2\n}"
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, "cannot constrain immutable object <: mutable object", errs[0].Message())
+}
+
+// The freshness check recurses, so a literal that WRAPS a non-fresh element is itself not
+// freshly constructed and gets no upgrade. This is the recursive false path of
+// isFreshlyConstructed, distinct from TestInferOwnedMutFromVariableRejected's top-level
+// variable: the outer literal is fresh, but a field or element reads a variable.
+func TestInferOwnedMutFreshnessRecurses(t *testing.T) {
+	t.Run("object field is a variable", func(t *testing.T) {
+		src := "fn f() {\n\tval cfg = {x: 1}\n\tval m: mut {p: {x: number}} = {p: cfg}\n\tm\n}"
+		_, _, errs := inferSource(t, src)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain immutable object <: mutable object", errs[0].Message())
+	})
+	t.Run("tuple element is a variable", func(t *testing.T) {
+		src := "fn f() {\n\tval cfg = {x: 1}\n\tval t: mut [number, {x: number}] = [1, cfg]\n\tt\n}"
+		_, _, errs := inferSource(t, src)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain immutable tuple <: mutable tuple", errs[0].Message())
+	})
+}
+
+// The upgrade fires only at the top-level annotation, not recursively per nested `mut`
+// field. The fresh literal `{p: {x: 0}}` upgrades the outer object to owned-mutable, but
+// the inner `{x: 0}` is then constrained against the inner `mut {x: number}`, which the C2
+// gate rejects. The binding still adopts the annotation under error recovery. G2's
+// "immutable→mutable upgrade at every value-flow site" is what generalizes the upgrade to
+// reach a nested `mut` target.
+func TestInferOwnedMutNestedMutFieldNotUpgraded(t *testing.T) {
+	values, _, errs := inferSource(t, `val w: mut {p: mut {x: number}} = {p: {x: 0}}`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain immutable object <: mutable object", errs[0].Message())
+	require.Equal(t, "mut {p: mut {x: number}}", values["w"])
 }
 
 // A `mut T` annotation lowers to a borrow (RefType{Mut: true}); a function
