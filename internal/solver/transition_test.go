@@ -253,8 +253,9 @@ func TestStaticEscapeTransition(t *testing.T) {
 	const (
 		src = liveness.VarID(1)
 		tgt = liveness.VarID(2)
+		mid = liveness.VarID(3)
 	)
-	names := map[liveness.VarID]string{src: "p", tgt: "snap"}
+	names := map[liveness.VarID]string{src: "p", tgt: "snap", mid: "z"}
 
 	// A mutable borrow that escaped to 'static conflicts with a mut→immutable
 	// transition (Rule 1), even though p is dead after the alias. Only snap is live.
@@ -308,6 +309,57 @@ func TestStaticEscapeTransition(t *testing.T) {
 			Lt:    &soltype.LifetimeVar{ID: 1},
 			Inner: objT(),
 		}
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		require.Empty(t, transitionMessages(t, c.errs))
+	})
+
+	// The escape is carried by a TRANSITIVE alias, not the source itself. p and z
+	// share a value; z escaped to 'static mutably while p never did. Aliasing p into
+	// immutable snap is a mut→immutable transition, and z's permanent mutable alias
+	// of the shared value conflicts with it even though p and z are both dead after
+	// the alias. This exercises the per-member loop reaching past the source: the old
+	// HasStaticMutAlias bit was set-level, so the replacement must find the escape on
+	// any member of the source's set, not only on the source's own recorded type.
+	t.Run("Rule1_TransitiveAliasEscape_Error", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasMutable)
+		a.AddAlias(mid, src, liveness.AliasMutable)   // z aliases p, same set
+		a.AddAlias(tgt, src, liveness.AliasImmutable) // snap aliases p, same set
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
+		c.fn.varIDTypes[mid] = staticBorrow(true) // z escaped, p did not
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		require.Equal(t, []string{
+			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
+		}, transitionMessages(t, c.errs))
+	})
+
+	// An explicit StaticLifetime on the member, not a LifetimeVar forced to 'static,
+	// drives the same conflict. This covers borrowEscapedToStatic's *StaticLifetime
+	// branch through the full transition path. The source-level form, a parameter
+	// annotated `mut 'static {x}`, is not constructible yet: a lifetime annotation
+	// attaches only to a type reference, which needs M7's TypeRef resolution, so this
+	// stays at the unit level until then.
+	t.Run("Rule1_ExplicitStaticLifetime_Error", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasMutable)
+		a.AddAlias(tgt, src, liveness.AliasImmutable)
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
+		c.fn.varIDTypes[src] = &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: objT()}
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		require.Equal(t, []string{
+			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
+		}, transitionMessages(t, c.errs))
+	})
+
+	// An escaped source with a DEAD target reports nothing. The target-dead early
+	// return precedes the member loop, so when no live window exists the escape never
+	// produces a phantom conflict. snap is absent from the live set here.
+	t.Run("MutEscape_TargetDead_OK", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasMutable)
+		a.AddAlias(tgt, src, liveness.AliasImmutable)
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{src}))
+		c.fn.varIDTypes[src] = staticBorrow(true)
 		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
