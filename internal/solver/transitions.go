@@ -26,7 +26,13 @@ import (
 // checkMutabilityTransition's Rule 1 / Rule 2 / Rule 3 logic is unchanged. It talks
 // only to liveness.LivenessInfo and liveness.AliasTracker. The whole pass runs inside a
 // function body, keyed off the per-body state on funcCtx. At module top-level c.fn is
-// nil, so every entry point below is a no-op.
+// nil, so every entry point below is a no-op. That is correct for a module, whose
+// top-level declarations are dependency-ordered rather than a linear body. A script is
+// different: its top-level statements run in source order with function-body semantics.
+// So when script inference lands it must give the script body the same per-body liveness
+// context a function gets, by running runLivenessPrePass over the script statements
+// under a funcCtx, or these checks stay silently skipped there. The old checker's
+// InferScript ran the pre-pass over the whole script body for this reason.
 
 // staticConflictName is a sentinel placeholder used in
 // MutabilityTransitionError.ConflictingVars to represent a permanent alias from a
