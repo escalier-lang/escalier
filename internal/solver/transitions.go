@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -590,12 +591,7 @@ func (c *checker) preludeOuterNames(root *Scope) []string {
 
 // sortedValueNames returns a scope's own value binding names in sorted order.
 func sortedValueNames(s *Scope) []string {
-	names := make([]string, 0, len(s.values))
-	for name := range s.values {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
+	return slices.Sorted(maps.Keys(s.values))
 }
 
 // recordParamVarIDs copies each IdentPat parameter's rename-assigned VarID onto its
