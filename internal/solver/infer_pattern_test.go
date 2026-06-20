@@ -262,6 +262,37 @@ func TestInferMatchBindsArm(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number, y: string}) -> [number, string]", values["f"])
 }
 
+// An unannotated param used only as a match scrutinee infers its shape from the arm
+// patterns, the same usage-based inference a member read drives. Each arm's pattern
+// emits its member-lookup requirements onto the scrutinee var. A bound field the body
+// never uses lands as `unknown`, and the inferred object closes to exact (Policy A).
+func TestInferMatchParamUsageObject(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p) {
+			return match p {
+				{x, y} => x,
+				_ => 0
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(p: {x: T0, y: unknown}) -> T0 | 0", values["f"])
+}
+
+// The same usage inference applies through a tuple pattern: the scrutinee infers a
+// tuple whose arity is the pattern's and whose unused slot lands as `unknown`.
+func TestInferMatchParamUsageTuple(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p) {
+			return match p {
+				[a, b] => a
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(p: [T0, unknown]) -> T0", values["f"])
+}
+
 // Every non-diverging arm body joins into one branch-union result, exactly as an
 // if/else joins its two branches. A non-structural scrutinee such as `number` is
 // not subject to the exactness exhaustiveness check, so the literal-pattern arms
