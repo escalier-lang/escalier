@@ -140,8 +140,14 @@ through a parameter or a member read. The full set of rules:
    into a bare object or tuple annotation lowers the annotation to an immutable
    borrow with a fresh lifetime, not an owned slot. `val q: {x: number} = p` for
    `p: mut {x: number}` makes `q` a local immutable view that borrows `p`; `p`
-   keeps ownership. A `mut` or lifetime-qualified annotation is not reborrowed —
-   `mut {x: number}` stays an owned-mutable slot.
+   keeps ownership. G3 ships the reborrow only for bare, immutable annotations: a
+   `mut {x: number}` annotation lowers to an owned-mutable type and a
+   lifetime-qualified annotation names the borrow explicitly, neither rewritten by
+   G3. Under move/affine semantics the move-versus-borrow choice is escape-driven
+   and applies to every form, so a local `mut` binding of a reference is a mutable
+   reborrow that retains the source — the multiple-mutable-aliases case — and only
+   a binding that escapes moves. The bare/`mut` split decides the *mutability* of
+   the resulting view, not whether the source is moved.
 
 4. **Member reads borrow the receiver.** Reading `obj.f` yields a borrow of the
    field for a lifetime bounded by the receiver, not a fresh owned value. A read
