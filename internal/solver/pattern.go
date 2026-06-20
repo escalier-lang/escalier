@@ -80,6 +80,18 @@ func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		// Each αi lowers from the scrutinee's matching element, so a sub-pattern binds
 		// at that element's type.
 		c.constrain(p, scrutinee, &soltype.TupleType{Elems: elemTypes, Inexact: inexact})
+		// When the scrutinee is a concrete tuple, pin each αi's upper bound to the
+		// matching element. The constraint above gives αi the element only as a lower
+		// bound, which cannot reject a refutable literal sub-pattern of the wrong kind.
+		// The upper bound makes a nested literal flow against the real element type, so
+		// `[a, "hi"]` against `[number, number]` reports the mismatch.
+		if tup, ok := scrutinee.(*soltype.TupleType); ok {
+			for i := range fixed {
+				if i < len(tup.Elems) {
+					c.constrain(fixed[i], elemTypes[i], tup.Elems[i])
+				}
+			}
+		}
 		subs := make([]soltype.Pat, len(fixed))
 		for i, e := range fixed {
 			subs[i] = c.bindPattern(scope, lvl, e, elemTypes[i], leafTypes)
@@ -107,6 +119,16 @@ func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				// the field optional.
 				beta := c.freshAt(lvl)
 				c.constrain(e, scrutinee, propReq(e.Key.Name, beta, patternDefaultsField(e.Value)))
+				// When the scrutinee is a concrete object, pin beta's upper bound to the
+				// field type. propReq gives beta the field only as a lower bound, which
+				// cannot reject a refutable literal sub-pattern of the wrong kind. The
+				// upper bound makes a nested literal flow against the real field type, so
+				// `{x: "hi"}` against `{x: number}` reports the mismatch.
+				if o, ok := scrutinee.(*soltype.ObjectType); ok {
+					if prop, found := o.Prop(e.Key.Name); found {
+						c.constrain(e, beta, prop.Type)
+					}
+				}
 				sub := c.bindPattern(scope, lvl, e.Value, beta, leafTypes)
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: sub})
 			default:

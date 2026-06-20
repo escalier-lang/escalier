@@ -276,6 +276,8 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferAwait(scope, lvl, e)
 	case *ast.IfElseExpr:
 		return c.inferIfElse(scope, lvl, e)
+	case *ast.MatchExpr:
+		return c.inferMatch(scope, lvl, e)
 	case *ast.BinaryExpr:
 		// PR8 handles the ASSIGNMENT op only (`a = expr`); every other binary
 		// operator (+, ==, &&, ++, …) needs the operator-scheme walk over the prelude

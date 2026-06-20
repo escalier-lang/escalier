@@ -581,6 +581,20 @@ type CannotAssignToImmutableError struct {
 	Decl   ast.Node        // the introducing decl, related; nil for prelude bindings
 }
 
+// NonExhaustiveMatchError fires when a `match` expression does not cover every
+// value its scrutinee can take, so a value could fall through every arm. In M4 the
+// coverage decision reads only the scrutinee's structural exactness. An exact object
+// or tuple scrutinee is covered by a structural arm matching its shape. An inexact
+// scrutinee carries an open tail of unknown values, so it requires a catch-all arm.
+// A catch-all is an unguarded wildcard `_` or identifier pattern. Union-scrutinee
+// exhaustiveness is M6 and enum exhaustiveness is M5, and both extend this same form.
+//
+// It is a bridge error born in inferMatch with the match node in hand, so it
+// self-blames the whole match through Span and carries no related node.
+type NonExhaustiveMatchError struct {
+	Match *ast.MatchExpr
+}
+
 func (*UnknownIdentifierError) isSolverError()            {}
 func (*NamespaceUsedAsValueError) isSolverError()         {}
 func (*UnknownNamespaceMemberError) isSolverError()       {}
@@ -600,6 +614,13 @@ func (*DuplicateOverloadError) isSolverError()            {}
 func (*AwaitOutsideAsyncError) isSolverError()            {}
 func (*ReturnOutsideFunctionError) isSolverError()        {}
 func (*AsyncReturnNotPromiseError) isSolverError()        {}
+func (*NonExhaustiveMatchError) isSolverError()           {}
+
+func (e *NonExhaustiveMatchError) Span() ast.Span      { return e.Match.Span() }
+func (e *NonExhaustiveMatchError) Related() []ast.Span { return nil }
+func (e *NonExhaustiveMatchError) Message() string {
+	return "match is not exhaustive; add a catch-all branch"
+}
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
 func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
