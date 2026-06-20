@@ -245,6 +245,112 @@ func TestInferObjectPatternLeafDefaultViolatesAnnotation(t *testing.T) {
 	require.Equal(t, `cannot constrain "hi" <: number`, errs[0].Message())
 }
 
+// --- M4 E2: the `match` expression ---
+
+// A match over a structural pattern binds the pattern's leaves and types the arm
+// body against them. An exact-object scrutinee with a matching structural arm is
+// exhaustive without a catch-all.
+func TestInferMatchBindsArm(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number, y: string}) {
+			return match p {
+				{x, y} => [x, y]
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number, y: string}) -> [number, string]", values["f"])
+}
+
+// Every non-diverging arm body joins into one branch-union result, exactly as an
+// if/else joins its two branches. A non-structural scrutinee (here `number`) is not
+// subject to the exactness exhaustiveness check, so the literal-pattern arms need
+// no extra catch-all to type.
+func TestInferMatchJoinsArms(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(n: number) {
+			return match n {
+				1 => "one",
+				_ => "other"
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (n: number) -> "one" | "other"`, values["f"])
+}
+
+// An exact-object scrutinee whose structural arm matches its shape needs no
+// catch-all.
+func TestInferMatchExactNeedsNoCatchAll(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number, y: number}) {
+			return match p {
+				{x, y} => x
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number, y: number}) -> number", values["f"])
+}
+
+// An inexact-object scrutinee carries an open tail of unknown values, so a
+// structural arm does not cover it: a missing catch-all is a NonExhaustiveMatchError.
+func TestInferMatchInexactNeedsCatchAll(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number, y: number, ...}) {
+			return match p {
+				{x, y} => x
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "match is not exhaustive; add a catch-all branch", errs[0].Message())
+}
+
+// An inexact-object scrutinee with an unguarded catch-all arm is exhaustive.
+func TestInferMatchInexactWithCatchAll(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number, y: number, ...}) {
+			return match p {
+				{x, y} => x,
+				_ => 0
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number, y: number, ...}) -> number | 0", values["f"])
+}
+
+// A guarded arm can always fail its guard, so it never makes a match exhaustive: an
+// inexact scrutinee still needs a separate catch-all even when a guarded arm names
+// its whole shape.
+func TestInferMatchGuardedArmDoesNotCover(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number, ...}, b: boolean) {
+			return match p {
+				{x} if b => x
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "match is not exhaustive; add a catch-all branch", errs[0].Message())
+}
+
+// A guard is typed as a boolean over the arm's bindings: a non-boolean guard is a
+// constraint error.
+func TestInferMatchGuardMustBeBoolean(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			return match p {
+				{x} if x => x,
+				_ => 0
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain number <: boolean", errs[0].Message())
+}
+
 // Patterns nest across kinds: an object pattern whose field is a tuple pattern
 // binds the inner slots at the nested element types.
 func TestInferObjectContainingTuplePattern(t *testing.T) {
