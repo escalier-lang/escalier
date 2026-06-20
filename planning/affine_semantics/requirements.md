@@ -127,9 +127,14 @@ through a parameter or a member read. The full set of rules:
    without an explicit lifetime is a borrow of whatever the caller lends. The
    checker attaches a fresh lifetime variable to it, so inside the body the
    parameter is `'a {…}` or `mut 'a {…}`. The caller retains ownership; the callee
-   only borrows for the call. A parameter becomes a consuming, owned slot only
-   when it is annotated to take ownership or when the body lets it escape, which
-   forces the borrow's lifetime to `'static`.
+   only borrows for the call. A parameter is never owned in the `Lt`-nil sense a
+   local binding is — it is always reached across the call boundary, so it always
+   carries a lifetime. A parameter becomes *consuming* only when its lifetime is
+   `'static`, which the body forces by letting the parameter escape, or which a
+   signature states explicitly as `p: mut 'static {…}`. A consuming parameter
+   requires the caller to give up ownership; the lifetimes design phrases this to
+   the caller as "pass a clone if you need to keep access." There is no separate
+   ownership annotation.
 
 3. **Bare annotations in reference position reborrow (G3).** Binding a reference
    into a bare object or tuple annotation lowers the annotation to an immutable
@@ -436,6 +441,13 @@ deliberate hover, and is never silently surprised by it at runtime.
 - **Cross-package moves.** Move behaviour at the boundary of imported,
   body-less declarations depends on declared lifetimes and is deferred to the
   library-import work, consistent with the elision rules for lifetimes.
+- **Surface syntax for a consuming parameter.** A parameter is consuming when its
+  lifetime is `'static`. Today that is written by spelling the lifetime out,
+  `p: mut 'static {…}`, which is accurate but exposes a lifetime most code never
+  names. Whether to keep `'static` as the user-facing way to demand ownership, or
+  to add a dedicated keyword that reads as "consume this argument," is an unmade
+  design decision. It does not change behaviour — only how a caller-visible
+  ownership transfer is spelled.
 - **Diagnostics.** Exact wording and blame spans for use-after-move and
   move-on-escape errors are left to the implementation plan; they should name the
   move site, the later use, and why the transfer was a move.
