@@ -622,10 +622,6 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			t.Logf("test %q produced %d error(s)", name, len(errs))
-			for i, e := range errs {
-				t.Logf("error %d: %s", i, e.Message())
-			}
 			require.Equal(t, tc.want, transitionMessages(t, errs))
 		})
 	}
