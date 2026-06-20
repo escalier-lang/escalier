@@ -152,7 +152,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		a.NewValue(items, liveness.AliasMutable)
 		a.AddAlias(snap, items, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items, snap}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
 		}, transitionMessages(t, c.errs))
@@ -168,7 +168,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		a.NewValue(items, liveness.AliasMutable)
 		a.AddAlias(snap, items, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, false, transitionRef, transitionSite)
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
@@ -182,7 +182,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		a.NewValue(items, liveness.AliasMutable)
 		a.AddAlias(snap, items, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{snap}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, false, transitionRef, transitionSite)
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
@@ -198,7 +198,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		a.NewValue(config, liveness.AliasImmutable)
 		a.AddAlias(mutConf, config, liveness.AliasMutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{config, mutConf}))
-		c.checkMutabilityTransition(config, mutConf, "config", "mutableConfig", false, true, transitionRef, transitionSite)
+		c.checkMutabilityTransition(config, mutConf, "config", "mutableConfig", false, true, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'config' to mutable 'mutableConfig': 'config' is still used immutably after this point",
 		}, transitionMessages(t, c.errs))
@@ -214,7 +214,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		a.NewValue(items, liveness.AliasMutable)
 		a.AddAlias(snap, items, liveness.AliasMutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items, snap}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, true, transitionRef, transitionSite)
+		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, true, false, transitionRef, transitionSite)
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
@@ -239,7 +239,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		a.AddAlias(q, p, liveness.AliasImmutable)
 		// p itself is dead after the transition; r and q are live.
 		c := transitionFixture(nm, a, set.FromSlice([]liveness.VarID{r, q}))
-		c.checkMutabilityTransition(p, q, "p", "q", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(p, q, "p", "q", true, false, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
 		}, transitionMessages(t, c.errs))
@@ -269,7 +269,7 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		at.AddAlias(cv, b1, liveness.AliasMutable)
 		at.AddAlias(fr, cv, liveness.AliasImmutable)
 		c := transitionFixture(nm, at, set.FromSlice([]liveness.VarID{cv, fr}))
-		c.checkMutabilityTransition(cv, fr, "c", "frozen", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(cv, fr, "c", "frozen", true, false, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
 		}, transitionMessages(t, c.errs))
@@ -310,7 +310,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		a.AddAlias(tgt, src, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
 		c.fn.varIDTypes[src] = staticBorrow(true)
-		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
 		}, transitionMessages(t, c.errs))
@@ -326,7 +326,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		a.AddAlias(tgt, src, liveness.AliasMutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
 		c.fn.varIDTypes[src] = staticBorrow(false)
-		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'p' to mutable 'snap': a `'static` escape still has immutable access to 'p' after this point",
 		}, transitionMessages(t, c.errs))
@@ -341,7 +341,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		a.AddAlias(tgt, src, liveness.AliasMutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
 		c.fn.varIDTypes[src] = staticBorrow(true)
-		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, false, transitionRef, transitionSite)
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
@@ -361,7 +361,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 			Lt:    &soltype.LifetimeVar{ID: 1},
 			Inner: objT(),
 		}
-		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
@@ -384,7 +384,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		a.AddAlias(tgt, src, liveness.AliasImmutable) // snap aliases p, same set
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
 		c.fn.varIDTypes[mid] = staticBorrow(true) // z escaped, p did not
-		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
 		}, transitionMessages(t, c.errs))
@@ -405,7 +405,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		a.AddAlias(tgt, src, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
 		c.fn.varIDTypes[src] = &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: objT()}
-		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
 		}, transitionMessages(t, c.errs))
@@ -427,22 +427,30 @@ func TestStaticEscapeTransition(t *testing.T) {
 		a.AddAlias(tgt, src, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{src}))
 		c.fn.varIDTypes[src] = staticBorrow(true)
-		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 }
 
-// TestStaticEscapeTransitionFromSource is the end-to-end counterpart: a `mut` borrow
-// stored into module-level `sink` escapes to 'static (D3), creating a permanent mutable
-// alias outside the function. Aliasing that borrow into the immutable `snap` is then a
-// mut→immutable transition that conflicts with the escape, even though `p` is dead after
-// the alias. The query over `p`'s 'static-forced lifetime is what reports it in G2.
+// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. A `mut` borrow
+// stored into module-level `sink` escapes to 'static (D3), creating a permanent alias
+// outside the function, then is aliased into the immutable `snap`. The program surfaces
+// three errors, all asserted:
 //
-// Before G2 the dropped HasStaticMutAlias bit was never set, so this case was silently
-// accepted as a false negative. A second error rides along: binding the borrow into the
-// owned slot `snap` is a borrow escape, the same known divergence from internal/checker
-// that TestTransitionWiringReportsRule1Error pins. G3 removes it by reborrowing the
-// initializer. So both messages are asserted.
+//  1. The global-write transition at `sink = p` (Option 1, this PR): storing `mut p`
+//     into the immutable global `sink` while `p` stays live afterward is a
+//     mut→immutable transition against a permanent target.
+//  2. The borrow escape at `val snap: {x} = p`: binding a `mut` borrow into the owned
+//     slot `snap` is the known divergence from internal/checker that
+//     TestTransitionWiringReportsRule1Error pins; G3 removes it by reborrowing the
+//     initializer.
+//  3. The static-escape transition at `val snap = p` (G2): `p` escaped to 'static via
+//     the earlier store, so aliasing it into immutable `snap` conflicts. The query over
+//     `p`'s 'static-forced lifetime is what reports it, named as a `'static` escape.
+//
+// Before G2 the dropped HasStaticMutAlias bit was never set, so case 3 was silently
+// accepted as a false negative. Before Option 1, case 1 was missed entirely because the
+// module-level target is not a tracked local.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		var sink = {x: 0}
@@ -457,9 +465,54 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 		msgs[i] = e.Message()
 	}
 	require.ElementsMatch(t, []string{
+		"cannot assign 'p' to immutable 'sink': 'p' is still used mutably after this point",
 		"borrowed value mut object does not live long enough to satisfy object",
 		"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
 	}, msgs)
+}
+
+// TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
+// mutability transition against a permanent, always-live target. The local reassignment
+// path skips module-level targets, so before this the store went unchecked.
+func TestGlobalWriteMutTransition(t *testing.T) {
+	// Storing a mut borrow into the immutable global `sink`, then mutating through the
+	// borrow, is a mut→immutable transition: `sink` permanently observes a value that p
+	// still mutates. p stays live via the field write, so Rule 1 fires.
+	t.Run("mut_into_immutable_global_then_mutate_error", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			var sink = {x: 0}
+			fn f(p: mut {x: number}) {
+				sink = p
+				p.x = 5
+			}
+		`)
+		require.Equal(t, []string{
+			"cannot assign 'p' to immutable 'sink': 'p' is still used mutably after this point",
+		}, transitionMessages(t, errs))
+	})
+
+	// A dead-source move into the global is sound: p is never used after the store, so no
+	// window exists and no transition is reported. This is the move the rule must allow.
+	t.Run("dead_source_move_into_global_ok", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			var sink = {x: 0}
+			fn f(p: mut {x: number}) {
+				sink = p
+			}
+		`)
+		require.Empty(t, errs)
+	})
+
+	// Storing a FRESH value into a global has no aliasable source, so no transition.
+	t.Run("fresh_value_into_global_ok", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			var sink = {x: 0}
+			fn f() {
+				sink = {x: 9}
+			}
+		`)
+		require.Empty(t, errs)
+	})
 }
 
 // TestBorrowEscapedToStatic locks the lifetime-sort query G2 uses in place of the

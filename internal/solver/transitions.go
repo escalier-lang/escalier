@@ -220,6 +220,10 @@ func bindingType(b ValueBinding) soltype.Type {
 //	Rule 2 (immutable → mut): no live immutable aliases may exist after this point,
 //	  provided the target (mutable) alias is also live.
 //	Rule 3: multiple mutable aliases are always allowed (mut → mut is not a transition).
+//
+// targetAlwaysLive marks a target that outlives the function, the permanent
+// module-level slot checkGlobalWriteTransition passes. Such a target has no liveness
+// window, so the dead-target early return below is skipped for it.
 func (c *checker) checkMutabilityTransition(
 	sourceVarID liveness.VarID,
 	targetVarID liveness.VarID,
@@ -227,6 +231,7 @@ func (c *checker) checkMutabilityTransition(
 	targetVarName string,
 	sourceMut bool,
 	targetMut bool,
+	targetAlwaysLive bool,
 	assignRef liveness.StmtRef,
 	node ast.Node,
 ) {
@@ -239,8 +244,9 @@ func (c *checker) checkMutabilityTransition(
 		return
 	}
 	// If the target alias is dead immediately after the transition, there is no
-	// window where both sides are live simultaneously, so it's safe.
-	if !fn.liveness.IsLiveAfter(assignRef, targetVarID) {
+	// window where both sides are live simultaneously, so it's safe. A permanent
+	// target has no window to check, so this is skipped for it.
+	if !targetAlwaysLive && !fn.liveness.IsLiveAfter(assignRef, targetVarID) {
 		return
 	}
 
@@ -342,7 +348,7 @@ func (c *checker) checkTransitionsAgainst(
 		c.checkMutabilityTransition(
 			sourceVarID, targetVarID,
 			c.varIDToName(sourceVarID), targetName,
-			c.isSourceMutable(sourceVarID), targetMut, stmtRef, node,
+			c.isSourceMutable(sourceVarID), targetMut, false, stmtRef, node,
 		)
 	}
 }
@@ -474,6 +480,42 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	case liveness.AliasSourceFresh, liveness.AliasSourceUnknown:
 		c.fn.aliases.Reassign(targetVarID, nil, aliasMut)
 	}
+}
+
+// checkGlobalWriteTransition checks the mutability transition a store into a
+// module-level binding induces. The target binding is not a local, so the reassignment
+// alias path above skips it, yet it outlives the function and aliases whatever the
+// source holds. Storing a mutable borrow into an immutable global, or an immutable one
+// into a mutable global, is therefore a mut↔immutable transition against a permanent,
+// always-live target. It conflicts exactly when the source stays live at the
+// conflicting mutability after the store, so a dead-source move into the global stays
+// legal. slotType is the global binding's own type, whose mutability is the target side
+// of the transition.
+//
+// Run BEFORE constrainEscape so the source's own about-to-happen escape is not
+// double-counted by the G2 escape query as a prior permanent alias.
+func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr, slotType soltype.Type, enclosingStmt ast.Stmt) {
+	if c.fn == nil || c.fn.aliases == nil {
+		return
+	}
+	stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]
+	if !hasRef {
+		return
+	}
+	source := liveness.DetermineAliasSource(rhs)
+	switch source.RootKind() {
+	case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
+		targetMut := isMutableType(slotType)
+		for _, sourceVarID := range source.UniqueVarIDs() {
+			c.checkMutabilityTransition(
+				sourceVarID, 0,
+				c.varIDToName(sourceVarID), target.Name,
+				c.isSourceMutable(sourceVarID), targetMut, true, stmtRef, target,
+			)
+		}
+	}
+	// A fresh value has no aliasable source, so storing it into a global creates no
+	// cross-binding mutability hazard.
 }
 
 // trackAliasesForPropAssignment merges alias sets for a property assignment

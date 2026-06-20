@@ -1378,6 +1378,15 @@ reduce through the M9 operator machinery.
   effort, not a checker change — it consumes the exactness machinery rather than
   implementing it. It can proceed once the flag exists (after M3–M6) and is
   sequenced independently of the cutover.
+- **Move/affine semantics (use-after-move) — beyond the M-series.** A future
+  effort to treat owned-value stores and moves affinely, so storing or passing an
+  owned value or a `mut` borrow consumes the source and any later use through the
+  original binding is a compile-time use-after-move error. It is the principled,
+  general fix for the aliasing-through-stores gaps the `mut`-transition checker
+  only partially covers — for example storing a `mut` borrow into immutable
+  module-level state and then mutating it. Tracked at #762, the use-after-move
+  item of the broader sound borrow checker #618. It needs its own RFC and is
+  layered after the M12 flip, not slotted into the M-series.
 
 ## Dependency / risk ordering rationale
 

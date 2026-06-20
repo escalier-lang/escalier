@@ -811,6 +811,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		errsBefore := len(c.errs)
 		c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
 		if len(c.errs) == errsBefore {
+			// The store aliases the source into a permanent module-level slot. If the
+			// source's mutability differs from the slot's and the source stays live at
+			// the conflicting mutability, that is a mut↔immutable transition the local
+			// reassignment path cannot see, since the global target is not a tracked
+			// local. Check it before forcing the escape so the source's own escape is
+			// not double-counted as a prior permanent alias.
+			c.checkGlobalWriteTransition(target, e.Right, bindingType(b), assignStmt)
 			c.constrainEscape(sourceT)
 		}
 	} else {
