@@ -288,7 +288,7 @@ fn bump() {
 
 // Binding a `mut` borrow into a bare object annotation reborrows it as a local
 // immutable view rather than an owned slot. `q` dies within `p`'s region and never
-// escapes, so the lifetime sort accepts it with no borrow-escape error — matching
+// escapes, so the lifetime sort accepts it with no borrow-escape error, matching
 // internal/checker. Before G3 this reported "does not live long enough".
 func TestInferBareAnnotationReborrowsLocally(t *testing.T) {
 	src := `fn f(p: mut {x: number}) {
@@ -300,8 +300,8 @@ func TestInferBareAnnotationReborrowsLocally(t *testing.T) {
 	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
 }
 
-// A reborrowed binding that is RETURNED carries its inferred lifetime to the output:
-// the borrow flows out at the source's lifetime, so the return renders an immutable
+// A reborrowed binding that is RETURNED carries its inferred lifetime to the output.
+// The borrow flows out at the source's lifetime, so the return renders an immutable
 // borrow over the same named lifetime as the parameter. This is the D4 display path
 // for a reborrow that reaches an output.
 func TestInferReborrowReturnedCarriesLifetime(t *testing.T) {
@@ -316,7 +316,7 @@ func TestInferReborrowReturnedCarriesLifetime(t *testing.T) {
 
 // A reborrow that escapes into an OWNED return slot still errors. The return annotation
 // is resolved in value position, not reborrowed, so returning the local borrow into the
-// owned `{x: number}` result trips the borrow escape — the reborrow only relaxes the
+// owned `{x: number}` result trips the borrow escape. The reborrow only relaxes the
 // binding itself, not a genuine escape past the function boundary.
 func TestInferReborrowEscapingOwnedReturnRejected(t *testing.T) {
 	src := `fn f(p: mut {x: number}) -> {x: number} {
@@ -329,7 +329,7 @@ func TestInferReborrowEscapingOwnedReturnRejected(t *testing.T) {
 	}, Messages(errs))
 }
 
-// An OWNED source bound through a bare annotation is NOT reborrowed: it has no lifetime
+// An OWNED source bound through a bare annotation is NOT reborrowed. It has no lifetime
 // to outlive, so it stays an owned binding and flows into an owned parameter without a
 // spurious escape error. Gating the G3 reborrow on the source SYNTAX rather than its type
 // would wrongly wrap `q` in a free-lifetime borrow and reject `acceptObj(q)`.
@@ -344,9 +344,9 @@ fn f(r: {x: number}) {
 	require.Equal(t, "fn (r: {x: number}) -> number", values["f"])
 }
 
-// The owned-MUTABLE analogue: a `mut` value bound through a bare annotation peels to an
-// owned immutable binding rather than reborrowing, so it too flows into an owned slot
-// without an escape error. Only a source already carrying a borrow lifetime reborrows.
+// This is the owned-MUTABLE analogue. A `mut` value bound through a bare annotation peels
+// to an owned immutable binding rather than reborrowing, so it too flows into an owned
+// slot without an escape error. Only a source already carrying a borrow lifetime reborrows.
 func TestInferOwnedMutSourceNotReborrowed(t *testing.T) {
 	src := `fn acceptObj(o: {x: number}) -> number { return o.x }
 fn f() {
@@ -356,4 +356,45 @@ fn f() {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
+}
+
+// A TUPLE reborrow exercises reborrowAnnotation's tuple arm, the object arm's twin. A
+// `mut` tuple borrow bound through a bare tuple annotation and returned carries the
+// source's lifetime to the output, exactly as the object case does.
+func TestInferTupleReborrowReturnsLifetime(t *testing.T) {
+	src := `fn f(p: mut [number, number]) {
+  val q: [number, number] = p
+  return q
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: mut 'a [number, number]) -> 'a [number, number]", values["f"])
+}
+
+// This is the tuple twin of TestInferOwnedSourceNotReborrowed. An owned tuple source has
+// no lifetime, so it is not reborrowed and flows into an owned tuple parameter without a
+// spurious escape error. A syntactic gate would wrongly reborrow it and reject the call.
+func TestInferTupleOwnedSourceNotReborrowed(t *testing.T) {
+	src := `fn acceptTup(o: [number, number]) -> number { return 0 }
+fn f(r: [number, number]) {
+  val q: [number, number] = r
+  return acceptTup(q)
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (r: [number, number]) -> number", values["f"])
+}
+
+// A reborrow composes with an INEXACT annotation: binding `mut {x, y}` through `{x, ...}`
+// reborrows an immutable view that names only `x`, with the source's extra `y` tolerated
+// by width subtyping. Returned, the view carries the source's lifetime and renders its
+// inexact tail.
+func TestInferInexactAnnotationReborrows(t *testing.T) {
+	src := `fn f(p: mut {x: number, y: number}) {
+  val q: {x: number, ...} = p
+  return q
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: mut 'a {x: number, y: number}) -> 'a {x: number, ...}", values["f"])
 }

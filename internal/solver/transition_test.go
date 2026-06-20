@@ -229,7 +229,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 // module-level target is not a tracked local.
 //
 // G3 reborrows the bare annotation at `val snap: {x} = p`, so binding the borrow no
-// longer trips BorrowEscapeError — `snap` is a local immutable view, not an owned slot.
+// longer trips BorrowEscapeError. `snap` is a local immutable view, not an owned slot.
 // The escape verdict comes from the lifetime sort and the transition pass instead, which
 // is case 2 above.
 //
@@ -427,9 +427,9 @@ func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
 // into immutable q and then mutated, leaving both live across the alias. Rule 1 fires.
 //
 // G3 reborrows the bare annotation at `val q: {x} = p`, so binding the `mut` borrow into q
-// no longer trips "does not live long enough" — q is a local immutable view of p, not an
+// no longer trips "does not live long enough". q is a local immutable view of p, not an
 // owned slot. That escape was the known divergence from internal/checker, which accepts the
-// binding; the lifetime sort now accepts the local view too. So only the live-source Rule 1
+// binding. The lifetime sort now accepts the local view too, so only the live-source Rule 1
 // transition remains, which this test pins.
 func TestTransitionWiringReportsRule1Error(t *testing.T) {
 	_, _, errs := inferSource(t, `
@@ -505,10 +505,10 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 		},
-		// The `val z: mut {x} = p` binding still escapes — a `mut` annotation is an
-		// owned-mutable slot, not reborrowed (G3 reborrows only bare object/tuple
-		// annotations) — so "does not live long enough to satisfy mut object" stays. The
-		// bare `val snap: {x} = p` reborrows instead, so its former escape is gone; p and z
+		// The `val z: mut {x} = p` binding still escapes. A `mut` annotation is an
+		// owned-mutable slot, and G3 reborrows only bare object/tuple annotations, so it is
+		// not reborrowed and "does not live long enough to satisfy mut object" stays. The
+		// bare `val snap: {x} = p` reborrows instead, so its former escape is gone. p and z
 		// are dead afterward, so no transition fires on snap either.
 		"Rule1_TransitiveAliasEscape_Error": {
 			src: `
@@ -524,9 +524,9 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				"cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
 			},
 		},
-		// G3: binding a `mut` borrow into a bare annotation reborrows it as a local
+		// G3 binds a `mut` borrow into a bare annotation by reborrowing it as a local
 		// immutable view. `snap` dies within `p`'s region and never escapes, so the
-		// lifetime sort accepts it — matching internal/checker, which has no borrow-escape
+		// lifetime sort accepts it, matching internal/checker, which has no borrow-escape
 		// concept here. Before G3 this reported the divergent "does not live long enough".
 		"UnforcedLifetime_LocalReborrow_OK": {
 			src: `
