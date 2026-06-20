@@ -93,13 +93,14 @@ type componentBinding struct {
 	// 3 to recover a VarDecl's Pattern (or a single FuncDecl's Name) for Info
 	// recording, and (via isVarDecl) to tell an overload arm from a duplicate.
 	primary ast.Decl
-	// patLeaf is the pattern leaf node a top-level destructuring binding fans this
-	// key onto, for example the `a` IdentPat of `val [a, b] = …` (M4 E3). It is
-	// non-nil only for a destructured leaf. Phase 3 records the generalized display
-	// type on this leaf node rather than on the whole decl pattern, which several
-	// leaf keys share.
-	patLeaf ast.Node
-	bound   bool // a definition was inferred and constrained
+	// infoNode is the AST node phase 3 records the binding's generalized display type
+	// on, for Info and go-to-definition. It is the binding's own name-bearing node: a
+	// VarDecl's pattern, a FuncDecl's name, or — for a top-level destructuring — the
+	// individual pattern leaf this key binds, e.g. the `a` IdentPat of `val [a, b] = …`
+	// (M4 E3). A destructuring records per leaf rather than on the whole decl pattern,
+	// which its sibling leaf keys share.
+	infoNode ast.Node
+	bound    bool // a definition was inferred and constrained
 	// isVarDecl reports whether the primary decl is a VarDecl, i.e. a `val` or a `var`
 	// rather than a function. It is NOT the `var`-vs-`val` distinction — that is kind.
 	isVarDecl bool
@@ -270,6 +271,14 @@ func (c *checker) inferComponent(
 				b.bound = true
 				vd, isVarDecl := d.(*ast.VarDecl)
 				b.isVarDecl = isVarDecl
+				// Record where phase 3 stamps the display type: a `val`/`var` on its
+				// pattern, a `fn` on its name. A destructuring leaf overrides this with its
+				// own leaf node in bindModuleDestructureLeaf.
+				if isVarDecl {
+					b.infoNode = vd.Pattern
+				} else if isFunc {
+					b.infoNode = fd.Name
+				}
 				// PR8: carry the decl's kind so phase 3 can gate reassignment — a top-level
 				// `var` is reassignable (e.g. from a function body that closes over it);
 				// a `val`/`fn` is not. A FuncDecl leaves kind at its ValKind zero value.
@@ -420,38 +429,32 @@ func (c *checker) inferComponent(
 			scheme = c.generalize(b.v, lvl)
 		}
 		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{scheme}, Sources: b.sources, Kind: b.kind, ModuleLevel: true})
-		// Record the binding's final (coalesced) DISPLAY type in Info on the name
-		// node, so it is queryable even for a `val` in a recursive group (where
-		// coalescing at definition time would have frozen it to `never`). A VarDecl
-		// records on its pattern, a FuncDecl on its name, so a top-level `fn` is
-		// queryable through Info exactly like a `val`.
+		// Record the binding's final (coalesced) DISPLAY type in Info on infoNode, so
+		// it is queryable even for a `val` in a recursive group (where coalescing at
+		// definition time would have frozen it to `never`). infoNode is the binding's
+		// name-bearing node — a VarDecl's pattern, a FuncDecl's name, or a destructuring
+		// leaf — so a top-level `fn` is queryable through Info exactly like a `val`.
 		//
 		// NOTE: for a GENERALIZED binding this display type RETAINS its quantified
 		// type-parameter variables (it is not var-free), so consumers must render it
 		// with soltype.PrintAsScheme — plain soltype.Print renders those vars as the
 		// raw `t{ID}` debug form. (renderScheme is the canonical renderer.)
 		display := schemeType(scheme)
-		if b.patLeaf != nil {
-			// M4 E3: a destructured leaf records on its own pattern leaf node, not on
-			// the whole decl pattern that its sibling leaf keys share.
-			c.recordType(b.patLeaf, display)
-		} else {
-			switch d := b.primary.(type) {
-			case *ast.VarDecl:
-				c.recordType(d.Pattern, display)
-			case *ast.FuncDecl:
-				if d.Name != nil {
-					c.recordType(d.Name, display)
-				}
-			}
+		if b.infoNode != nil {
+			c.recordType(b.infoNode, display)
 		}
 	}
 }
 
 // moduleDestructure memoizes a top-level destructuring decl's typed pattern (M4
-// E3). dep_graph fans one `val {x, y} = …` across one component per bound name. The
-// initializer is typed and the pattern bound once, on the first leaf key reached.
-// Each leaf component then constrains its own projected type into its binding var.
+// E3). dep_graph fans one `val {x, y} = …` across one component per bound name, so
+// every leaf key points at the same decl. The pattern must be typed and bound only
+// ONCE — typing the initializer or re-binding the pattern per leaf would re-report
+// its errors and duplicate work — so the first leaf key whose component is processed
+// in topological order types it and stores the result here, keyed by the decl. Every
+// later leaf key reuses this memo and only constrains its own projected type into its
+// binding var. There is nothing special about which leaf is "first"; the memo just
+// makes whichever one runs first the single typing site.
 //
 // leaves maps each bound name to that projection plus its pattern leaf node. ok is
 // false when the decl had no initializer, in which case MissingInitializerError was
@@ -518,7 +521,7 @@ func (c *checker) bindModuleDestructureLeaf(
 	}
 	c.constrain(d, leaf.t, b.v)
 	b.primary = d
-	b.patLeaf = leaf.node
+	b.infoNode = leaf.node
 	b.isVarDecl = true
 	b.kind = d.Kind
 	b.bound = true
