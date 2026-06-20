@@ -220,19 +220,20 @@ func TestStaticEscapeTransition(t *testing.T) {
 //  1. The global-write transition at `sink = p` (Option 1, this PR): storing `mut p`
 //     into the immutable global `sink` while `p` stays live afterward is a
 //     mut→immutable transition against a permanent target.
-//  2. The borrow escape at `val snap: {x} = p`: binding a `mut` borrow into the owned
-//     slot `snap` is the known divergence from internal/checker that
-//     TestTransitionWiringReportsRule1Error pins; G3 removes it by reborrowing the
-//     initializer.
-//  3. The static-escape transition at `val snap = p` (G2): `p` escaped to 'static via
+//  2. The static-escape transition at `val snap = p` (G2): `p` escaped to 'static via
 //     the earlier store, so aliasing it into immutable `snap` conflicts. The query over
 //     `p`'s 'static-forced lifetime is what reports it, named as a `'static` escape.
 //
-// Before G2 the dropped HasStaticMutAlias bit was never set, so case 3 was silently
+// Before G2 the dropped HasStaticMutAlias bit was never set, so case 2 was silently
 // accepted as a false negative. Before Option 1, case 1 was missed entirely because the
 // module-level target is not a tracked local.
 //
-// Case 3 also covers the source-dead property a unit test used to isolate: `p` is dead
+// G3 reborrows the bare annotation at `val snap: {x} = p`, so binding the borrow no
+// longer trips BorrowEscapeError — `snap` is a local immutable view, not an owned slot.
+// The escape verdict comes from the lifetime sort and the transition pass instead, which
+// is case 2 above.
+//
+// Case 2 also covers the source-dead property a unit test used to isolate: `p` is dead
 // after `val snap = p` (only `snap` is read afterward), so the conflict fires purely
 // because `p` escaped to 'static, not because `p` is locally live. The liveness loop
 // skips the dead `p`; only the escape query reports it.
@@ -251,7 +252,6 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{
 		"cannot assign 'p' to immutable 'sink': 'p' is still used mutably after this point",
-		"borrowed value mut object does not live long enough to satisfy object",
 		"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
 	}, msgs)
 }
@@ -426,14 +426,11 @@ func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
 // Before split-5 the only owned-mutable value is a `mut` parameter, so p (mut) is aliased
 // into immutable q and then mutated, leaving both live across the alias. Rule 1 fires.
 //
-// A second error rides along: binding the `mut` borrow into the owned slot `q` is a borrow
-// escape, so "does not live long enough" is reported too. That escape is a known divergence
-// from internal/checker, which accepts this binding — G3 removes it by reborrowing the
-// initializer instead of treating q as an owned slot. The clean dead-source variant, where
-// only the transition rule is in play, is covered without the escape by
-// TestMutabilityTransitionsFromSource (Rule1_SourceDead_OK) once split-5 supplies an owned
-// mutable value, and by TestCheckMutabilityTransition over constructed state. So this test
-// asserts only the live-source case and pins both messages, escape included.
+// G3 reborrows the bare annotation at `val q: {x} = p`, so binding the `mut` borrow into q
+// no longer trips "does not live long enough" — q is a local immutable view of p, not an
+// owned slot. That escape was the known divergence from internal/checker, which accepts the
+// binding; the lifetime sort now accepts the local view too. So only the live-source Rule 1
+// transition remains, which this test pins.
 func TestTransitionWiringReportsRule1Error(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn test(p: mut {x: number}) {
@@ -447,7 +444,6 @@ func TestTransitionWiringReportsRule1Error(t *testing.T) {
 		msgs[i] = e.Message()
 	}
 	require.ElementsMatch(t, []string{
-		"borrowed value mut object does not live long enough to satisfy object",
 		"cannot assign 'p' to immutable 'q': 'p' is still used mutably after this point",
 	}, msgs)
 }
@@ -509,30 +505,35 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 		},
+		// The `val z: mut {x} = p` binding still escapes — a `mut` annotation is an
+		// owned-mutable slot, not reborrowed (G3 reborrows only bare object/tuple
+		// annotations) — so "does not live long enough to satisfy mut object" stays. The
+		// bare `val snap: {x} = p` reborrows instead, so its former escape is gone; p and z
+		// are dead afterward, so no transition fires on snap either.
 		"Rule1_TransitiveAliasEscape_Error": {
 			src: `
 				var sink = {x: 0}
 				fn f(p: mut {x: number}) {
 				  val z: mut {x: number} = p   // z aliases p, the same value
 				  sink = z                      // z's borrow escapes to 'static, mutably
-				  val snap: {x: number} = p     // mut→immutable on p; p and z dead afterward
+				  val snap: {x: number} = p     // local immutable reborrow; p and z dead afterward
 				}
 			`,
 			want: []string{
 				"borrowed value mut object does not live long enough to satisfy mut object",
 				"cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
-				"borrowed value mut object does not live long enough to satisfy object",
 			},
 		},
-		"UnforcedLifetime_SourceDead_Error": {
+		// G3: binding a `mut` borrow into a bare annotation reborrows it as a local
+		// immutable view. `snap` dies within `p`'s region and never escapes, so the
+		// lifetime sort accepts it — matching internal/checker, which has no borrow-escape
+		// concept here. Before G3 this reported the divergent "does not live long enough".
+		"UnforcedLifetime_LocalReborrow_OK": {
 			src: `
 				fn f(p: mut {x: number}) {
 					val snap: {x: number} = p
 				}
 			`,
-			want: []string{
-				"borrowed value mut object does not live long enough to satisfy object",
-			},
 		},
 		"Rule2_ImmEscape_SourceDead_Error": {
 			src: `

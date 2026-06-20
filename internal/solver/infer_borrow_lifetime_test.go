@@ -283,3 +283,48 @@ fn bump() {
 	require.Equal(t, "number", values["n"])
 	require.Equal(t, "fn () -> void", values["bump"])
 }
+
+// --- M4 G3: a bare reference annotation reborrows its initializer ---
+
+// Binding a `mut` borrow into a bare object annotation reborrows it as a local
+// immutable view rather than an owned slot. `q` dies within `p`'s region and never
+// escapes, so the lifetime sort accepts it with no borrow-escape error — matching
+// internal/checker. Before G3 this reported "does not live long enough".
+func TestInferBareAnnotationReborrowsLocally(t *testing.T) {
+	src := `fn f(p: mut {x: number}) {
+  val q: {x: number} = p
+  return q.x
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
+}
+
+// A reborrowed binding that is RETURNED carries its inferred lifetime to the output:
+// the borrow flows out at the source's lifetime, so the return renders an immutable
+// borrow over the same named lifetime as the parameter. This is the D4 display path
+// for a reborrow that reaches an output.
+func TestInferReborrowReturnedCarriesLifetime(t *testing.T) {
+	src := `fn f(p: mut {x: number}) {
+  val q: {x: number} = p
+  return q
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> 'a {x: number}", values["f"])
+}
+
+// A reborrow that escapes into an OWNED return slot still errors. The return annotation
+// is resolved in value position, not reborrowed, so returning the local borrow into the
+// owned `{x: number}` result trips the borrow escape — the reborrow only relaxes the
+// binding itself, not a genuine escape past the function boundary.
+func TestInferReborrowEscapingOwnedReturnRejected(t *testing.T) {
+	src := `fn f(p: mut {x: number}) -> {x: number} {
+  val q: {x: number} = p
+  return q
+}`
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		"borrowed value object does not live long enough to satisfy object",
+	}, Messages(errs))
+}
