@@ -263,9 +263,9 @@ func TestInferMatchBindsArm(t *testing.T) {
 }
 
 // Every non-diverging arm body joins into one branch-union result, exactly as an
-// if/else joins its two branches. A non-structural scrutinee (here `number`) is not
-// subject to the exactness exhaustiveness check, so the literal-pattern arms need
-// no extra catch-all to type.
+// if/else joins its two branches. A non-structural scrutinee such as `number` is
+// not subject to the exactness exhaustiveness check, so the literal-pattern arms
+// need no extra catch-all to type.
 func TestInferMatchJoinsArms(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(n: number) {
@@ -294,7 +294,7 @@ func TestInferMatchExactNeedsNoCatchAll(t *testing.T) {
 }
 
 // An inexact-object scrutinee carries an open tail of unknown values, so a
-// structural arm does not cover it: a missing catch-all is a NonExhaustiveMatchError.
+// structural arm does not cover it. A missing catch-all is a NonExhaustiveMatchError.
 func TestInferMatchInexactNeedsCatchAll(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(p: {x: number, y: number, ...}) {
@@ -321,7 +321,7 @@ func TestInferMatchInexactWithCatchAll(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number, y: number, ...}) -> number | 0", values["f"])
 }
 
-// A guarded arm can always fail its guard, so it never makes a match exhaustive: an
+// A guarded arm can always fail its guard, so it never makes a match exhaustive. An
 // inexact scrutinee still needs a separate catch-all even when a guarded arm names
 // its whole shape.
 func TestInferMatchGuardedArmDoesNotCover(t *testing.T) {
@@ -336,8 +336,8 @@ func TestInferMatchGuardedArmDoesNotCover(t *testing.T) {
 	require.Equal(t, "match is not exhaustive; add a catch-all branch", errs[0].Message())
 }
 
-// A guard is typed as a boolean over the arm's bindings: a non-boolean guard is a
-// constraint error.
+// A guard is typed as a boolean over the arm's bindings, so a non-boolean guard is
+// a constraint error.
 func TestInferMatchGuardMustBeBoolean(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(p: {x: number}) {
@@ -349,6 +349,84 @@ func TestInferMatchGuardMustBeBoolean(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t, "cannot constrain number <: boolean", errs[0].Message())
+}
+
+// An arm whose only structural pattern is refutable does not cover an exact
+// scrutinee. A nested literal such as `{x: 1}` can fail, so a match with no
+// catch-all is non-exhaustive.
+func TestInferMatchRefutableArmNonExhaustive(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			return match p {
+				{x: 1} => 10
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "match is not exhaustive; add a catch-all branch", errs[0].Message())
+}
+
+// A nested literal pattern flows against the scrutinee's concrete field type, so a
+// kind mismatch is rejected, just as a top-level literal pattern is.
+func TestInferMatchNestedWrongLiteralRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			return match p {
+				{x: "hi"} => 1,
+				_ => 0
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, `cannot constrain "hi" <: number`, errs[0].Message())
+}
+
+// The same check applies to a nested literal in a tuple pattern element.
+func TestInferMatchTupleNestedWrongLiteralRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(t: [number, number]) {
+			return match t {
+				[a, "hi"] => 1,
+				_ => 0
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, `cannot constrain "hi" <: number`, errs[0].Message())
+}
+
+// A correctly-typed nested literal pattern still type-checks.
+func TestInferMatchNestedRightLiteralOK(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			return match p {
+				{x: 1} => 1,
+				_ => 0
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number}) -> 1 | 0", values["f"])
+}
+
+// A name a match arm binds is local to that arm. Referencing it in the arm body
+// must not register a module-level dependency on a top-level binding of the same
+// name. Here the arm leaf `ov` shadows the top-level overloaded `ov`. Without
+// per-arm scoping the dep graph would form a false {f, ov} cycle and wrongly
+// require fully-annotated overload signatures.
+func TestInferMatchArmBindingScopedInDepGraph(t *testing.T) {
+	_, _, errs := inferSources(t, map[string]string{
+		"main": `
+			fn f(p: {ov: number}) {
+				return match p {
+					{ov} => ov
+				}
+			}
+			fn ov(a: number) { return f({ov: a}) }
+			fn ov(a: string) { return a }
+		`,
+	})
+	require.Empty(t, errs)
 }
 
 // Patterns nest across kinds: an object pattern whose field is a tuple pattern

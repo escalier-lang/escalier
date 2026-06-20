@@ -583,14 +583,14 @@ type CannotAssignToImmutableError struct {
 
 // NonExhaustiveMatchError fires when a `match` expression does not cover every
 // value its scrutinee can take, so a value could fall through every arm. In M4 the
-// coverage decision reads only the scrutinee's structural exactness (E2): an exact
-// object/tuple scrutinee is covered by a structural arm matching its shape, while
-// an inexact scrutinee carries an open tail of unknown values and so requires a
-// catch-all arm — an unguarded wildcard `_` or identifier pattern. Union-scrutinee
-// exhaustiveness is M6 and enum exhaustiveness is M5; both extend this same form.
+// coverage decision reads only the scrutinee's structural exactness. An exact object
+// or tuple scrutinee is covered by a structural arm matching its shape. An inexact
+// scrutinee carries an open tail of unknown values, so it requires a catch-all arm.
+// A catch-all is an unguarded wildcard `_` or identifier pattern. Union-scrutinee
+// exhaustiveness is M6 and enum exhaustiveness is M5, and both extend this same form.
 //
-// It is a BRIDGE error: born in inferMatch with the *ast.MatchExpr in hand, so it
-// self-blames the whole match (Span()) and carries no related node.
+// It is a bridge error born in inferMatch with the match node in hand, so it
+// self-blames the whole match through Span and carries no related node.
 type NonExhaustiveMatchError struct {
 	Match *ast.MatchExpr
 }

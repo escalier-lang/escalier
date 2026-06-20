@@ -478,6 +478,42 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 			}
 		}
 		return true
+	case *ast.MatchExpr:
+		// A match binds names in each arm's pattern, and those bindings are local to
+		// their arm. Each arm needs its own scope, unlike a function's single
+		// param-and-body scope handled above. Walk the scrutinee in the current scope.
+		// Then walk each arm in a fresh scope seeded with that arm's pattern bindings,
+		// so a reference to a bound name resolves locally instead of registering a
+		// spurious module-level dependency. The walk is manual, so return false to stop
+		// the framework from re-walking the arms without scopes.
+		if e.Target != nil {
+			e.Target.Accept(v)
+		}
+		for _, arm := range e.Cases {
+			if arm == nil {
+				continue
+			}
+			v.pushScope()
+			if arm.Pattern != nil && len(v.LocalScopes) > 0 {
+				currentScope := &v.LocalScopes[len(v.LocalScopes)-1]
+				bindings := ast.FindBindings(arm.Pattern)
+				for binding := range bindings {
+					currentScope.ValueBindings.Add(binding)
+				}
+				arm.Pattern.Accept(v)
+			}
+			if arm.Guard != nil {
+				arm.Guard.Accept(v)
+			}
+			if arm.Body.Block != nil {
+				arm.Body.Block.Accept(v)
+			}
+			if arm.Body.Expr != nil {
+				arm.Body.Expr.Accept(v)
+			}
+			v.popScope()
+		}
+		return false
 	default:
 		return true
 	}

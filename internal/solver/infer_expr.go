@@ -1365,15 +1365,15 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	return res
 }
 
-// inferMatch types a `match` expression. The scrutinee is inferred once; each arm
+// inferMatch types a `match` expression. The scrutinee is inferred once. Each arm
 // then types its pattern against the scrutinee in a child scope carrying the arm's
-// bindings (E1's bindPattern, the same path `val` destructuring uses), types an
-// optional `if` guard as a boolean, and infers the arm body. Every non-diverging
+// bindings, the same E1 bindPattern path `val` destructuring uses. An optional `if`
+// guard is typed as a boolean, then the arm body is inferred. Every non-diverging
 // arm body is constrained into one fresh branch-join var, exactly as inferIfElse
-// joins its two branches — a diverging arm contributes `never`, so when every arm
+// joins its two branches. A diverging arm contributes `never`, so when every arm
 // diverges the result coalesces to `never`.
 //
-// Exhaustiveness is checked from structural exactness (E2): see checkMatchExhaustive.
+// Exhaustiveness is checked from structural exactness by checkMatchExhaustive.
 func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	res := c.freshAt(lvl)
@@ -1387,7 +1387,7 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 		c.bindPattern(armScope, lvl, arm.Pattern, scrutinee, nil)
 		if arm.Guard != nil {
 			// A guard is an ordinary boolean condition over the arm's bindings. As in
-			// inferIfElse, the synthesized boolean requirement is left out of Prov: it
+			// inferIfElse, the synthesized boolean requirement is left out of Prov. It
 			// is a language rule, not a user annotation, so there is no source node to
 			// anchor a related span to.
 			guard := c.inferExpr(armScope, lvl, arm.Guard)
@@ -1405,12 +1405,12 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 
 // checkMatchExhaustive reports a NonExhaustiveMatchError when no arm covers every
 // value the scrutinee can take. M4 drives the decision solely from the scrutinee's
-// structural exactness: an exact object/tuple has a fixed shape, so a structural
-// arm matching it covers every value; an inexact object/tuple carries an open tail
-// of unknown values, so only an unguarded catch-all — a wildcard `_` or an
-// identifier pattern — covers it. A scrutinee that is neither an object nor a tuple
-// is not checked here; union-scrutinee exhaustiveness is M6 and enum exhaustiveness
-// is M5, both extending this same path.
+// structural exactness. An exact object or tuple has a fixed shape, so a structural
+// arm matching it covers every value. An inexact object or tuple carries an open
+// tail of unknown values, so only an unguarded catch-all covers it. A catch-all is
+// a wildcard `_` or an identifier pattern. A scrutinee that is neither an object nor
+// a tuple is not checked here. Union-scrutinee exhaustiveness is M6 and enum
+// exhaustiveness is M5, and both extend this same path.
 func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type) {
 	inexact, isStructural := structuralInexact(soltype.CarrierOf(scrutinee))
 	if !isStructural {
@@ -1418,7 +1418,7 @@ func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type)
 	}
 	for _, arm := range e.Cases {
 		// A guarded arm can always fail its guard, so it never makes a match
-		// exhaustive — only an unguarded covering arm does.
+		// exhaustive. Only an unguarded covering arm does.
 		if arm.Guard == nil && armCoversShape(arm.Pattern, inexact) {
 			return
 		}
@@ -1440,19 +1440,56 @@ func structuralInexact(t soltype.Type) (inexact bool, ok bool) {
 	}
 }
 
-// armCoversShape reports whether an unguarded arm pattern makes the match
-// exhaustive for a scrutinee of the given exactness. A wildcard or identifier
-// pattern is a catch-all that matches any value. An object or tuple pattern covers
-// an EXACT scrutinee — its shape is fixed, so the structural pattern always
-// matches — but not an INEXACT one, whose open tail may hold values the pattern
-// cannot see, so an inexact scrutinee still needs a true catch-all. A literal
+// armCoversShape reports whether an unguarded arm makes the match exhaustive for a
+// scrutinee of the given exactness. A wildcard or identifier pattern binds
+// unconditionally, so it covers any value. An object or tuple pattern covers an
+// exact scrutinee only when it is irrefutable. Every sub-pattern must itself be
+// irrefutable, so a nested literal such as `{x: 1}` does not count. Such a pattern
+// never covers an inexact scrutinee. An inexact scrutinee's open tail may hold
+// values the pattern cannot see, so it still needs a true catch-all. A literal
 // pattern is refutable and never covers.
 func armCoversShape(p ast.Pat, inexact bool) bool {
 	switch p.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
 		return true
 	case *ast.ObjectPat, *ast.TuplePat:
-		return !inexact
+		return !inexact && irrefutablePat(p)
+	default:
+		return false
+	}
+}
+
+// irrefutablePat reports whether a pattern matches every value of a compatible
+// type, so it can never fail at runtime. A wildcard or identifier binds
+// unconditionally. An object or tuple pattern is irrefutable only when all of its
+// sub-patterns are. A literal pattern can fail, and the constructor patterns deferred
+// to M5 are refutable, so both return false.
+func irrefutablePat(p ast.Pat) bool {
+	switch p := p.(type) {
+	case *ast.WildcardPat, *ast.IdentPat:
+		return true
+	case *ast.TuplePat:
+		for _, e := range p.Elems {
+			if !irrefutablePat(e) {
+				return false
+			}
+		}
+		return true
+	case *ast.ObjectPat:
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjShorthandPat:
+				// A shorthand binds an identifier, which always matches.
+			case *ast.ObjKeyValuePat:
+				if !irrefutablePat(e.Value) {
+					return false
+				}
+			default:
+				// ObjRestPat is M9; treat anything else as refutable.
+				return false
+			}
+		}
+		return true
 	default:
 		return false
 	}
@@ -1495,10 +1532,10 @@ func stmtDiverges(s ast.Stmt) bool {
 // arguments). The recursive switch is the right shape; the visitor is for the dual
 // problem of collecting every `return` regardless of position.
 //
-// MatchExpr is walked by inferMatch (M4 E2), so its arm reflects real source: a
+// MatchExpr is walked by inferMatch in M4 E2, so its arm reflects real source. A
 // match diverges when every arm body does. ThrowExpr and DoExpr are not yet walked
-// by the solver (inferExpr reports them unsupported), so those arms are unreachable
-// from real source today; they are kept in place so a form's divergence is already
+// by the solver, which reports them unsupported, so those arms are unreachable from
+// real source today. They are kept in place so a form's divergence is already
 // recognised the moment its inferExpr case lands, matching the checker rather than
 // re-discovering divergence later. The checker's
 // CallExpr `-> never` arm is deliberately omitted: the solver represents a call's
