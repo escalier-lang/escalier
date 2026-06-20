@@ -191,10 +191,23 @@ type SpreadNotTupleError struct {
 	Operand soltype.Type
 }
 
+// InexactTupleSpreadError fires when a tuple-literal spread element ([...xs]) has an
+// operand that infers to an INEXACT tuple ([number, ...]). An inexact tuple has
+// unknown length, so an element written after the spread lands at an unknown
+// position and the result tuple's shape cannot be pinned. M4 splices concrete
+// (exact) tuples only; the variadic-tail forms ([number, ...Array<number>]) defer
+// to M7/M9. Spread is the offending spread element (the blame span); Operand is the
+// inexact tuple it inferred to.
+type InexactTupleSpreadError struct {
+	Spread  *ast.ArraySpreadExpr
+	Operand *soltype.TupleType
+}
+
 func (*CannotConstrainError) isSolverError()     {}
 func (*FuncArityMismatchError) isSolverError()   {}
 func (*TupleLengthMismatchError) isSolverError() {}
 func (*SpreadNotTupleError) isSolverError()      {}
+func (*InexactTupleSpreadError) isSolverError()  {}
 func (*MissingPropertyError) isSolverError()     {}
 func (*InexactIntoExactError) isSolverError()    {}
 func (*ExtraPropertyError) isSolverError()       {}
@@ -820,6 +833,12 @@ func (e *SpreadNotTupleError) Span() ast.Span      { return e.Spread.Span() }
 func (e *SpreadNotTupleError) Related() []ast.Span { return nil }
 func (e *SpreadNotTupleError) Message() string {
 	return "cannot spread " + describe(e.Operand) + " into a tuple"
+}
+
+func (e *InexactTupleSpreadError) Span() ast.Span      { return e.Spread.Span() }
+func (e *InexactTupleSpreadError) Related() []ast.Span { return nil }
+func (e *InexactTupleSpreadError) Message() string {
+	return "cannot spread an inexact tuple into a tuple"
 }
 
 func (e *MissingPropertyError) Message() string {

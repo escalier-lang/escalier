@@ -240,10 +240,28 @@ func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) 
 		if !isLit || !isTup {
 			return
 		}
+		// A spread element ([...xs]) splices a variable number of inferred elements
+		// into the literal, so an AST element position no longer lines up with the
+		// inferred tuple's. Index ranges over the INFERRED tuple, which
+		// ExtraElementError.Index and .Sub both refer to; Span() resolves each
+		// element's own origin node through prov, so per-element blame stays precise.
+		// The site is only a fallback: the AST element at i when the literal has no
+		// spread (positions match), else the whole literal.
+		hasSpread := false
+		for _, el := range tup.Elems {
+			if _, ok := el.(*ast.ArraySpreadExpr); ok {
+				hasSpread = true
+				break
+			}
+		}
 		// Elements beyond the target's declared prefix are excess on the literal.
-		for i := len(ann.Elems); i < len(tup.Elems) && i < len(subTup.Elems); i++ {
+		for i := len(ann.Elems); i < len(subTup.Elems); i++ {
 			err := &ExtraElementError{Sub: subTup, Super: ann, Index: i}
-			err.prov, err.site = c.prov, tup.Elems[i]
+			if !hasSpread && i < len(tup.Elems) {
+				err.prov, err.site = c.prov, tup.Elems[i]
+			} else {
+				err.prov, err.site = c.prov, tup
+			}
 			c.errs = append(c.errs, err)
 		}
 	}

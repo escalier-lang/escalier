@@ -74,6 +74,25 @@ func TestInferInexactTupleAnnotationRejectsExcessLiteralElements(t *testing.T) {
 	require.Equal(t, "[number, ...]", values["t"])
 }
 
+// The excess check counts and blames by the INFERRED tuple's index, so a literal
+// with a spread reports each spliced excess element with precise per-element blame.
+// Before the fix the loop indexed the AST tuple and the inferred tuple by the same
+// counter, so a spread mis-blamed and under-reported the excess.
+func TestInferInexactTupleAnnotationExcessThroughSpread(t *testing.T) {
+	src := `val t: [number, ...] = [...[5, 6], 7]`
+	values, _, errs := inferSource(t, src)
+	// Inferred [5, 6, 7] against [number]: indices 1 and 2 are excess — two errors.
+	require.Len(t, errs, 2)
+	require.IsType(t, &ExtraElementError{}, errs[0])
+	require.Equal(t, "tuple has extra element at index 1", errs[0].Message())
+	require.Equal(t, "tuple has extra element at index 2", errs[1].Message())
+	// Per-element blame resolves through prov to each spliced element's own node:
+	// index 1 is the spread's `6`, index 2 is the trailing `7`.
+	require.Equal(t, "6", spanText(src, errs[0].Span()))
+	require.Equal(t, "7", spanText(src, errs[1].Span()))
+	require.Equal(t, "[number, ...]", values["t"])
+}
+
 // The tuple variable escape hatch: a non-literal source against an inexact tuple
 // target takes width subtyping (longer <: shorter through the inexact tail).
 func TestInferInexactTupleAnnotationVariableWidthSubtyping(t *testing.T) {

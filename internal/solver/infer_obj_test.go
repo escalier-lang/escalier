@@ -52,6 +52,18 @@ func TestInferTupleSpreadNonTuple(t *testing.T) {
 	require.Equal(t, "cannot spread 5 into a tuple", c.errs[0].Message())
 }
 
+// Spreading an inexact tuple is rejected: an inexact operand ([number, ...]) has
+// unknown length, so an element after the spread lands at an unknown position and
+// the result's shape can't be pinned. M4 splices exact tuples only.
+func TestInferTupleSpreadInexact(t *testing.T) {
+	// fn f(z: [number, ...]) { return [...z, 1] }
+	_, _, errs := inferSource(t, `
+		fn f(z: [number, ...]) { return [...z, 1] }
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot spread an inexact tuple into a tuple", errs[0].Message())
+}
+
 // A spread whose operand already errored is absorbed: walking the unbound `a`
 // reports a single unknown-identifier error, and the spread does not layer a
 // SpreadNotTupleError on the recovery sentinel.
