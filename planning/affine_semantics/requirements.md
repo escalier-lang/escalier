@@ -110,17 +110,20 @@ axis; the mutability axis is governed by the existing exclusivity rule.
 The default is owned for freshly produced values and borrowed for values reached
 through a parameter or a member read. The full set of rules:
 
-1. **Literals are owned.** An object, tuple, or array literal produces a fresh
-   value the binding owns. `val p = {x: 0, y: 0}` makes `p` owned. Its mutability
-   follows the existing value-default rules: a plain object literal is
-   owned-immutable, and a `mut` annotation or a mutating method makes it
-   owned-mutable.
+1. **Freshly produced values are owned, and immutable by default.** An object,
+   tuple, or array literal, a class constructor call, and any other expression
+   that builds a new value all yield a value the binding owns. Escalier defaults
+   to immutability, so a fresh value is owned-immutable unless the program opts
+   into mutability. A class instance is immutable regardless of whether the class
+   has `mut self` methods — a bare `val p = Point(5, 10)` is `Point`, never
+   `mut Point`, per [#499](https://github.com/escalier-lang/escalier/issues/499)
+   and [TestDefaultMutabilityFromClass](../../internal/checker/tests/class_test.go).
+   The opt-in is at the binding pattern, `val mut p = Point(5, 10)`, or via a
+   `mut` annotation, `val obj: mut {x: number} = {x: 0}`. The same applies to
+   object and tuple literals: `{x: 0}` is owned-immutable until a `mut` binding or
+   annotation makes it owned-mutable.
 
-2. **Constructor and fresh-value results are owned.** A class constructor or any
-   expression that builds a new value yields an owned value, mutable or immutable
-   per the class's default.
-
-3. **Function parameters are borrowed by default.** A reference-typed parameter
+2. **Function parameters are borrowed by default.** A reference-typed parameter
    without an explicit lifetime is a borrow of whatever the caller lends. The
    checker attaches a fresh lifetime variable to it, so inside the body the
    parameter is `'a {…}` or `mut 'a {…}`. The caller retains ownership; the callee
@@ -128,19 +131,19 @@ through a parameter or a member read. The full set of rules:
    when it is annotated to take ownership or when the body lets it escape, which
    forces the borrow's lifetime to `'static`.
 
-4. **Bare annotations in reference position reborrow (G3).** Binding a reference
+3. **Bare annotations in reference position reborrow (G3).** Binding a reference
    into a bare object or tuple annotation lowers the annotation to an immutable
    borrow with a fresh lifetime, not an owned slot. `val q: {x: number} = p` for
    `p: mut {x: number}` makes `q` a local immutable view that borrows `p`; `p`
    keeps ownership. A `mut` or lifetime-qualified annotation is not reborrowed —
    `mut {x: number}` stays an owned-mutable slot.
 
-5. **Member reads borrow the receiver.** Reading `obj.f` yields a borrow of the
+4. **Member reads borrow the receiver.** Reading `obj.f` yields a borrow of the
    field for a lifetime bounded by the receiver, not a fresh owned value. A read
    that is immediately consumed locally needs no lifetime in the rendered type;
    one that escapes carries the receiver's lifetime.
 
-6. **Escape forces ownership and lifetime.** A value that flows into storage
+5. **Escape forces ownership and lifetime.** A value that flows into storage
    outliving its current binding — a module-level or other longer-lived binding,
    a field of a longer-lived object, a return value, or an escaping closure
    capture — has its lifetime constrained to outlive the destination. For a
