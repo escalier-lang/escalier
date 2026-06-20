@@ -60,6 +60,10 @@ func TestIsValueType(t *testing.T) {
 // mutability from the alias tracker: a seeded mutable value reports true, a seeded
 // immutable one reports false, and an unregistered source reports false.
 func TestIsSourceMutable(t *testing.T) {
+	// Models three names:
+	//   val mutVar: mut {x: number} = {x: 1}   // seeded mutable
+	//   val immVar: {x: number} = {x: 1}        // seeded immutable
+	//   unseeded                                // a name the tracker never saw
 	const (
 		mutVar   = liveness.VarID(1)
 		immVar   = liveness.VarID(2)
@@ -138,7 +142,12 @@ func TestCheckMutabilityTransition(t *testing.T) {
 	}
 
 	t.Run("Rule1_MutToImmutable_SourceLive_Error", func(t *testing.T) {
-		// `val snapshot = items` where items is mut and still live afterwards.
+		// Corresponds to:
+		//   val items: mut {x: number} = {x: 1}
+		//   val snapshot: {x: number} = items   // mut→immutable alias
+		//   items.x = 2                         // items still used mutably after
+		//   snapshot
+		// items and snapshot are both live across the alias, so Rule 1 fires.
 		a := liveness.NewAliasTracker()
 		a.NewValue(items, liveness.AliasMutable)
 		a.AddAlias(snap, items, liveness.AliasImmutable)
@@ -150,7 +159,11 @@ func TestCheckMutabilityTransition(t *testing.T) {
 	})
 
 	t.Run("Rule1_MutToImmutable_TargetDead_OK", func(t *testing.T) {
-		// snapshot is dead immediately after the transition, so there is no window.
+		// Corresponds to:
+		//   val items: mut {x: number} = {x: 1}
+		//   val snapshot: {x: number} = items   // snapshot is never read again
+		//   items.x = 2
+		// snapshot is dead right after the alias, so there is no overlap window.
 		a := liveness.NewAliasTracker()
 		a.NewValue(items, liveness.AliasMutable)
 		a.AddAlias(snap, items, liveness.AliasImmutable)
@@ -160,7 +173,11 @@ func TestCheckMutabilityTransition(t *testing.T) {
 	})
 
 	t.Run("Rule1_MutToImmutable_SourceDead_OK", func(t *testing.T) {
-		// items is dead after the transition; only the immutable snapshot survives.
+		// Corresponds to:
+		//   val items: mut {x: number} = {x: 1}
+		//   val snapshot: {x: number} = items   // items is never used again
+		//   snapshot                            // only snapshot is live
+		// items is dead after the alias, so the mutable side cannot observe a change.
 		a := liveness.NewAliasTracker()
 		a.NewValue(items, liveness.AliasMutable)
 		a.AddAlias(snap, items, liveness.AliasImmutable)
@@ -170,7 +187,13 @@ func TestCheckMutabilityTransition(t *testing.T) {
 	})
 
 	t.Run("Rule2_ImmutableToMut_SourceLive_Error", func(t *testing.T) {
-		// `val mutableConfig = config` where config is immutable and still live.
+		// Corresponds to:
+		//   val config: {x: number} = {x: 1}
+		//   val mutableConfig: mut {x: number} = config  // immutable→mut alias
+		//   config.x                                      // config still read after
+		// config and mutableConfig are both live, so Rule 2 fires. This shape is not
+		// reachable from source today: the type system rejects the immutable→mut bind
+		// before the transition pass runs, so the state is built directly here.
 		a := liveness.NewAliasTracker()
 		a.NewValue(config, liveness.AliasImmutable)
 		a.AddAlias(mutConf, config, liveness.AliasMutable)
@@ -182,6 +205,10 @@ func TestCheckMutabilityTransition(t *testing.T) {
 	})
 
 	t.Run("Rule3_MutToMut_NoTransition", func(t *testing.T) {
+		// Corresponds to:
+		//   val items: mut {x: number} = {x: 1}
+		//   val snapshot: mut {x: number} = items   // mut→mut alias
+		//   items.x = 2
 		// Same mutability is not a transition, so nothing is checked.
 		a := liveness.NewAliasTracker()
 		a.NewValue(items, liveness.AliasMutable)
@@ -192,8 +219,14 @@ func TestCheckMutabilityTransition(t *testing.T) {
 	})
 
 	t.Run("TransitiveAlias_NamesLiveMutableAlias", func(t *testing.T) {
-		// p has a live mutable alias r and an immutable alias q being created. The
-		// conflict names r, the alias still holding mutable access, not p itself.
+		// Corresponds to:
+		//   val p: mut {x: number} = {x: 1}
+		//   val r: mut {x: number} = p   // live mutable alias of p
+		//   val q: {x: number} = p       // mut→immutable; p itself is dead afterward
+		//   r.x = 2                      // r keeps mutable access to the shared value
+		//   q
+		// p is dead after the alias, so the conflict names r, the live mutable alias,
+		// not p itself.
 		const (
 			p = liveness.VarID(1)
 			r = liveness.VarID(3)
@@ -213,8 +246,14 @@ func TestCheckMutabilityTransition(t *testing.T) {
 	})
 
 	t.Run("Conditional_SourceInMultipleSets_NoDuplicateConflicting", func(t *testing.T) {
-		// A source that belongs to two alias sets and is itself a live mutable alias is
-		// reported once, not once per set.
+		// Corresponds to:
+		//   val a: mut {x: number} = {x: 1}
+		//   val b: mut {x: number} = {x: 2}
+		//   val c: mut {x: number} = if cond { a } else { b }  // c joins two alias sets
+		//   val frozen: {x: number} = c                         // mut→immutable
+		//   c.x = 3                                              // c still used mutably
+		//   frozen
+		// c is a live mutable alias in both sets, so it is reported once, not per set.
 		const (
 			a1 = liveness.VarID(1)
 			b1 = liveness.VarID(2)
@@ -257,8 +296,14 @@ func TestStaticEscapeTransition(t *testing.T) {
 	)
 	names := map[liveness.VarID]string{src: "p", tgt: "snap", mid: "z"}
 
-	// A mutable borrow that escaped to 'static conflicts with a mut→immutable
-	// transition (Rule 1), even though p is dead after the alias. Only snap is live.
+	// Corresponds to:
+	//   var sink = {x: 0}
+	//   fn cache(p: mut {x: number}) {
+	//     sink = p                    // p's borrow escapes to 'static, mutably
+	//     val snap: {x: number} = p   // mut→immutable; p is dead afterward
+	//   }
+	// p is locally dead, but its escaped mutable alias outside the function is
+	// permanent, so the mut→immutable transition still conflicts. Only snap is live.
 	t.Run("Rule1_MutEscape_SourceDead_Error", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasMutable)
@@ -271,8 +316,10 @@ func TestStaticEscapeTransition(t *testing.T) {
 		}, transitionMessages(t, c.errs))
 	})
 
-	// Symmetric Rule 2: an immutable borrow that escaped to 'static conflicts with an
-	// immutable→mut transition.
+	// The Rule 2 mirror of the case above: an immutable borrow that escaped to
+	// 'static conflicts with an immutable→mut transition. The escaped immutable alias
+	// outside is permanent, so it conflicts even with the source dead. The source form
+	// is not reachable today, so the state is built directly here.
 	t.Run("Rule2_ImmEscape_SourceDead_Error", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasImmutable)
@@ -285,8 +332,9 @@ func TestStaticEscapeTransition(t *testing.T) {
 		}, transitionMessages(t, c.errs))
 	})
 
-	// A mutable escape does NOT conflict with Rule 2: the escaped mutability must match
-	// the rule's direction, mirroring the two independent bits it replaced.
+	// A MUTABLE escape does NOT conflict with a Rule 2 immutable→mut transition: the
+	// escaped mutability must match the rule's direction, mirroring the two independent
+	// bits it replaced. Same shape as the case above but the source escaped mutably.
 	t.Run("MutEscape_DoesNotTriggerRule2", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasImmutable)
@@ -297,8 +345,12 @@ func TestStaticEscapeTransition(t *testing.T) {
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
-	// A borrow whose lifetime is NOT forced to 'static is an ordinary local borrow, so a
-	// dead source produces no conflict.
+	// Corresponds to:
+	//   fn f(p: mut {x: number}) {
+	//     val snap: {x: number} = p   // p never escapes; p is dead afterward
+	//   }
+	// A borrow whose lifetime is NOT forced to 'static is an ordinary local borrow, so
+	// a dead source produces no conflict.
 	t.Run("UnforcedLifetime_SourceDead_OK", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasMutable)
@@ -313,11 +365,16 @@ func TestStaticEscapeTransition(t *testing.T) {
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
-	// The escape is carried by a TRANSITIVE alias, not the source itself. p and z
-	// share a value; z escaped to 'static mutably while p never did. Aliasing p into
-	// immutable snap is a mut→immutable transition, and z's permanent mutable alias
-	// of the shared value conflicts with it even though p and z are both dead after
-	// the alias. This exercises the per-member loop reaching past the source: the old
+	// Corresponds to:
+	//   var sink = {x: 0}
+	//   fn f(p: mut {x: number}) {
+	//     val z: mut {x: number} = p   // z aliases p, the same value
+	//     sink = z                      // z's borrow escapes to 'static, mutably
+	//     val snap: {x: number} = p     // mut→immutable on p; p and z dead afterward
+	//   }
+	// The escape is carried by z, a TRANSITIVE alias, not by p itself. z's permanent
+	// mutable alias of the shared value conflicts with the mut→immutable transition on
+	// p. This exercises the per-member loop reaching past the source: the old
 	// HasStaticMutAlias bit was set-level, so the replacement must find the escape on
 	// any member of the source's set, not only on the source's own recorded type.
 	t.Run("Rule1_TransitiveAliasEscape_Error", func(t *testing.T) {
@@ -333,12 +390,15 @@ func TestStaticEscapeTransition(t *testing.T) {
 		}, transitionMessages(t, c.errs))
 	})
 
+	// Would correspond to:
+	//   fn f(p: mut 'static {x: number}) {   // p is an explicit 'static borrow
+	//     val snap: {x: number} = p          // mut→immutable; p dead afterward
+	//   }
 	// An explicit StaticLifetime on the member, not a LifetimeVar forced to 'static,
 	// drives the same conflict. This covers borrowEscapedToStatic's *StaticLifetime
-	// branch through the full transition path. The source-level form, a parameter
-	// annotated `mut 'static {x}`, is not constructible yet: a lifetime annotation
-	// attaches only to a type reference, which needs M7's TypeRef resolution, so this
-	// stays at the unit level until then.
+	// branch through the full transition path. The source-level form above is not
+	// constructible yet: a lifetime annotation attaches only to a type reference, which
+	// needs M7's TypeRef resolution, so this stays at the unit level until then.
 	t.Run("Rule1_ExplicitStaticLifetime_Error", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasMutable)
@@ -351,6 +411,13 @@ func TestStaticEscapeTransition(t *testing.T) {
 		}, transitionMessages(t, c.errs))
 	})
 
+	// Corresponds to:
+	//   var sink = {x: 0}
+	//   fn f(p: mut {x: number}) {
+	//     sink = p                    // p escapes to 'static
+	//     val snap: {x: number} = p   // snap is never read, so it is dead
+	//     p.x = 5                     // only p stays live
+	//   }
 	// An escaped source with a DEAD target reports nothing. The target-dead early
 	// return precedes the member loop, so when no live window exists the escape never
 	// produces a phantom conflict. snap is absent from the live set here.
@@ -401,22 +468,25 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 func TestBorrowEscapedToStatic(t *testing.T) {
 	c := transitionFixture(nil, liveness.NewAliasTracker(), set.NewSet[liveness.VarID]())
 
+	// `mut {x}` whose lifetime a global write forced to 'static, e.g. a `mut` param
+	// after `sink = p`. Escaped, mutably.
 	c.fn.varIDTypes[1] = staticBorrow(true)
 	mut, escaped := c.borrowEscapedToStatic(1)
 	require.True(t, escaped)
 	require.True(t, mut)
 
+	// The immutable analogue: a `{x}` borrow forced to 'static. Escaped, immutably.
 	c.fn.varIDTypes[2] = staticBorrow(false)
 	mut, escaped = c.borrowEscapedToStatic(2)
 	require.True(t, escaped)
 	require.False(t, mut)
 
-	// An explicit 'static annotation escapes too.
+	// An explicit annotation `mut 'static {x}` escapes too.
 	c.fn.varIDTypes[3] = &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: objT()}
 	_, escaped = c.borrowEscapedToStatic(3)
 	require.True(t, escaped)
 
-	// An owned value never escapes.
+	// An owned value such as `val v = {x: 0}` never escapes.
 	c.fn.varIDTypes[4] = objT()
 	_, escaped = c.borrowEscapedToStatic(4)
 	require.False(t, escaped)
