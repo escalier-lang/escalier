@@ -379,6 +379,49 @@ stays local borrows its captures. Repeated `await` of one promise returns the sa
 reference rather than a copy, so a borrowed payload awaited twice is ordinary
 aliasing, governed by exclusivity, not a second move.
 
+## Ownership visibility and ergonomics
+
+Ownership is inferred, and the lifetime that distinguishes an owned value from a
+borrow is elided from the canonical type. So the same printed type can be owned in
+one place and borrowed in another: a binding of type `{x: number}` is owned when
+it holds a fresh value and is a borrow when it reborrows another binding (G3).
+Nothing in the printed annotation says which. This document keeps that inference,
+because reborrowing is strictly more permissive than always moving and is what
+lets a program take a cheap immutable view of a value without giving up the
+mutable original.
+
+The risk is that a developer reads `{x: number}` as an owned object and is
+surprised when it behaves like a borrow. Two facts bound that risk:
+
+- The owned/borrow distinction is **observable only at a small, fixed set of
+  points**: the escape sites where a value must outlive its source — returns,
+  stores into longer-lived state, fields of an outliving object, escaping closure
+  captures — and the one local case where the source is mutated again after a
+  local immutable view of it has died. Everywhere else an owned value and a borrow
+  of the same type behave identically.
+- At every one of those points the divergence surfaces as a **compile-time
+  error**, never as silently different runtime behaviour. The failure mode is "the
+  compiler won't let me return this," answered by a diagnostic, not a latent bug.
+
+Because the distinction is invisible in the type but visible in behaviour, the
+ergonomic burden falls on diagnostics and on-demand display. The requirements:
+
+1. **Errors carry the ownership story.** When a borrow cannot escape, the message
+   names the borrow's source and explains the ownership relationship — for
+   example, "`q` borrows `p` and cannot outlive it; `p` is a local value" — and
+   suggests a concrete fix, such as returning the source directly or cloning. This
+   mirrors how the lifetime errors already explain an aliasing relationship that
+   is otherwise hidden.
+2. **Borrow-ness is discoverable on demand.** The canonical type display stays
+   elided and clean, rendering `{x: number}` for both owned and borrowed values.
+   LSP hover and a verbose `showLifetimes` mode reveal the inferred lifetime and
+   the borrow source, so a developer who wants to know whether a binding is owned
+   or borrowed can find out without every signature carrying lifetime noise.
+
+The aim is that a developer never has to reason about ownership to write ordinary
+local code, encounters the distinction only through an actionable error or a
+deliberate hover, and is never silently surprised by it at runtime.
+
 ## Non-goals and deferred questions
 
 - **Linearity / mandatory consumption.** Values need not be consumed; unused
