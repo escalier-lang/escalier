@@ -819,6 +819,14 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// not double-counted as a prior permanent alias.
 			c.checkGlobalWriteTransition(target, e.Right, bindingType(b), assignStmt)
 			c.constrainEscape(sourceT)
+			// KNOWN GAP (#762): this store is accepted even though it is not sound in
+			// general. checkGlobalWriteTransition is an in-body check only. The store
+			// escapes the source to 'static, but nothing forces the CALLER to pass a
+			// unique 'static borrow, so the caller may retain a live mutable alias to the
+			// same value and mutate it after the call, which the immutable global then
+			// observes. Closing this needs the call site to enforce the 'static borrow as
+			// unique, which is the borrow checker's job. Move/affine semantics (#762),
+			// under the sound borrow checker (#618), will eventually reject it.
 		}
 	} else {
 		c.constrainAssign(e, sourceT, targetT)
