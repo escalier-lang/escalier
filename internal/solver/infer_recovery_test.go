@@ -33,16 +33,16 @@ func TestInferErrorBindingFlowsIntoCallNoCascade(t *testing.T) {
 	require.Equal(t, "fn () -> number", values["f"])
 }
 
-// An unsupported expression (here an array spread, an M4 construct) recovers to the
+// An unsupported expression (here an object spread, deferred to M9) recovers to the
 // ErrorType sentinel and flows on without cascading: the only error is the
-// unsupported-node one, and the surrounding tuple still builds.
+// unsupported-node one, and the surrounding object still builds.
 func TestInferUnsupportedExprRecoversWithoutCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		val t = [...xs]
+		val o = {...xs}
 	`)
 	// One error for the spread itself; `xs` is never walked (so no extra
 	// unknown-identifier), and the broken element does not cascade.
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported: ArraySpreadExpr", errs[0].Message())
-	require.Equal(t, "[error]", values["t"])
+	require.Equal(t, "Unsupported: ObjSpreadExpr", errs[0].Message())
+	require.Equal(t, "{}", values["o"])
 }

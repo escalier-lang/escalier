@@ -28,19 +28,41 @@ func TestInferTupleEmpty(t *testing.T) {
 	require.Equal(t, "[]", render(got))
 }
 
-// A spread element ([...a]) is an ArraySpreadExpr, which the M2 walk does not
-// cover; inferExpr reports it as unsupported and drops the error-recovery
-// placeholder (PR8) into the tuple slot, so the tuple still builds (no panic) and
-// the spread's value `a` is never walked — so no cascading unknown-identifier
-// error. Tuple/array spread is M4.
-func TestInferTupleSpreadUnsupported(t *testing.T) {
+// A spread element ([...pair]) splices the operand tuple's element types into the
+// literal: [...pair, 3] over pair: [number, string] builds [number, string, 3].
+func TestInferTupleSpread(t *testing.T) {
+	c := newChecker()
+	// [...[1, "hi"], 3]
+	pair := tupleExpr(numExpr(1), strExpr("hi"))
+	e := tupleExpr(ast.NewArraySpread(pair, testSpan()), numExpr(3))
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, `[1, "hi", 3]`, render(got))
+}
+
+// Spreading a non-tuple value is a typed error: M4 splices concrete tuple
+// literals only, so the operand must infer to a tuple.
+func TestInferTupleSpreadNonTuple(t *testing.T) {
+	c := newChecker()
+	// [...5]
+	e := tupleExpr(ast.NewArraySpread(numExpr(5), testSpan()))
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Equal(t, "[]", render(got)) // the bad spread contributes no elements
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "cannot spread 5 into a tuple", c.errs[0].Message())
+}
+
+// A spread whose operand already errored is absorbed: walking the unbound `a`
+// reports a single unknown-identifier error, and the spread does not layer a
+// SpreadNotTupleError on the recovery sentinel.
+func TestInferTupleSpreadErrorOperandAbsorbs(t *testing.T) {
 	c := newChecker()
 	// [...a]
 	e := tupleExpr(ast.NewArraySpread(identExpr("a"), testSpan()))
 	got := c.inferExpr(NewScope(), 0, e)
-	require.Equal(t, "[error]", render(got))
+	require.Equal(t, "[]", render(got))
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: ArraySpreadExpr", c.errs[0].Message())
+	require.Equal(t, "Unknown identifier: a", c.errs[0].Message())
 }
 
 // --- ObjectExpr ---
@@ -71,6 +93,18 @@ func TestInferObjectStringKey(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, objExpr(strKey))
 	require.Empty(t, c.errs)
 	require.Equal(t, "{a: 5}", render(got))
+}
+
+// A numeric key resolves to a static field name: JavaScript coerces it to its
+// string form, so {0: 5} names the field "0". The field name is not a valid
+// identifier, so it renders as a quoted key.
+func TestInferObjectNumericKey(t *testing.T) {
+	c := newChecker()
+	// {0: 5}
+	numKey := ast.NewProperty(ast.NewNumber(0, testSpan()), false, false, numExpr(5), testSpan())
+	got := c.inferExpr(NewScope(), 0, objExpr(numKey))
+	require.Empty(t, c.errs)
+	require.Equal(t, `{"0": 5}`, render(got))
 }
 
 // Duplicate keys follow JS last-wins semantics: the later value replaces the
