@@ -15,18 +15,22 @@ import (
 // The transition checker is ported from the old checker (check_transitions.go), with
 // its two type predicates reimplemented over soltype.
 //
-// A freshly constructed literal can be given an owned-mutable type, so the
-// construction case `val items: mut {x} = {x: 1}` type-checks and the source-level
-// Rule 1 and Rule 3 scenarios are reachable. TestMutabilityTransitionsFromSource
-// exercises those end to end through inferSource.
+// A freshly constructed literal can be given an owned-mutable type, so
+// `val items: mut {x} = {x: 1}` type-checks and the Rule 1 / Rule 2 / Rule 3 scenarios
+// are reachable from real source. TestMutabilityTransitionsFromSource and
+// TestRule2TransitionFromSource exercise them end to end through inferSource rather than
+// over constructed alias/liveness state. The transition pass runs even when a binding
+// type-errors, so a Rule 2 immutable→mut bind reports its transition error alongside the
+// type error.
 //
-// The rest stay at the unit level. Rule 2, an immutable→mut transition over a live
-// source, is rejected by the type system before the transition pass runs, so it never
-// produces a transition error from source. Other old-checker cases need features the
-// solver lacks: destructuring, enums and match, binary operators, unions, for-in
-// loops, and top-level statements. TestCheckMutabilityTransition exercises the ported
-// Rule 1 / Rule 2 / Rule 3 logic directly over a constructed alias/liveness state,
-// covering the rules independently of those gaps.
+// What stays at the unit level cannot be reproduced cleanly from source:
+//   - The type predicates isValueType / isMutableType / isSourceMutable and the
+//     borrowEscapedToStatic query are Go-level functions, tested directly.
+//   - The G2 static-escape cases (TestStaticEscapeTransition) isolate the lifetime
+//     query, its polarity, the transitive-member reach, and the target-dead early
+//     return. From source those are confounded by the global-write store error and the
+//     borrow-into-owned-slot escape, or are not constructible at all. The feature's
+//     end-to-end coverage is TestStaticEscapeTransitionFromSource.
 
 func numT() *soltype.PrimType { return &soltype.PrimType{Prim: soltype.NumPrim} }
 func objT() *soltype.ObjectType {
@@ -125,158 +129,6 @@ func transitionMessages(t *testing.T, errs []SolverError) []string {
 		msgs = append(msgs, me.Message())
 	}
 	return msgs
-}
-
-// TestCheckMutabilityTransition reproduces the old checker's transition cases over the
-// ported Rule 1 / Rule 2 / Rule 3 logic.
-func TestCheckMutabilityTransition(t *testing.T) {
-	const (
-		items   = liveness.VarID(1)
-		snap    = liveness.VarID(2)
-		rAlias  = liveness.VarID(3)
-		config  = liveness.VarID(4)
-		mutConf = liveness.VarID(5)
-	)
-	names := map[liveness.VarID]string{
-		items: "items", snap: "snapshot", rAlias: "r", config: "config", mutConf: "mutableConfig",
-	}
-
-	t.Run("Rule1_MutToImmutable_SourceLive_Error", func(t *testing.T) {
-		// Corresponds to:
-		//   val items: mut {x: number} = {x: 1}
-		//   val snapshot: {x: number} = items   // mut→immutable alias
-		//   items.x = 2                         // items still used mutably after
-		//   snapshot
-		// items and snapshot are both live across the alias, so Rule 1 fires.
-		a := liveness.NewAliasTracker()
-		a.NewValue(items, liveness.AliasMutable)
-		a.AddAlias(snap, items, liveness.AliasImmutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items, snap}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, false, transitionRef, transitionSite)
-		require.Equal(t, []string{
-			"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
-		}, transitionMessages(t, c.errs))
-	})
-
-	t.Run("Rule1_MutToImmutable_TargetDead_OK", func(t *testing.T) {
-		// Corresponds to:
-		//   val items: mut {x: number} = {x: 1}
-		//   val snapshot: {x: number} = items   // snapshot is never read again
-		//   items.x = 2
-		// snapshot is dead right after the alias, so there is no overlap window.
-		a := liveness.NewAliasTracker()
-		a.NewValue(items, liveness.AliasMutable)
-		a.AddAlias(snap, items, liveness.AliasImmutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, false, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c.errs))
-	})
-
-	t.Run("Rule1_MutToImmutable_SourceDead_OK", func(t *testing.T) {
-		// Corresponds to:
-		//   val items: mut {x: number} = {x: 1}
-		//   val snapshot: {x: number} = items   // items is never used again
-		//   snapshot                            // only snapshot is live
-		// items is dead after the alias, so the mutable side cannot observe a change.
-		a := liveness.NewAliasTracker()
-		a.NewValue(items, liveness.AliasMutable)
-		a.AddAlias(snap, items, liveness.AliasImmutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{snap}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, false, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c.errs))
-	})
-
-	t.Run("Rule2_ImmutableToMut_SourceLive_Error", func(t *testing.T) {
-		// Corresponds to:
-		//   val config: {x: number} = {x: 1}
-		//   val mutableConfig: mut {x: number} = config  // immutable→mut alias
-		//   mutableConfig.x = 5                            // mutableConfig is live
-		//   config.x                                       // config still read after
-		// config and mutableConfig are both live, so Rule 2 fires. mutableConfig must be
-		// used for it to be a live target. Without that use it would be dead and no error
-		// would fire. This shape is not reachable from source today: the type system
-		// rejects the immutable→mut bind before the transition pass runs, so the state is
-		// built directly here.
-		a := liveness.NewAliasTracker()
-		a.NewValue(config, liveness.AliasImmutable)
-		a.AddAlias(mutConf, config, liveness.AliasMutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{config, mutConf}))
-		c.checkMutabilityTransition(config, mutConf, "config", "mutableConfig", false, true, false, transitionRef, transitionSite)
-		require.Equal(t, []string{
-			"cannot assign 'config' to mutable 'mutableConfig': 'config' is still used immutably after this point",
-		}, transitionMessages(t, c.errs))
-	})
-
-	t.Run("Rule3_MutToMut_NoTransition", func(t *testing.T) {
-		// Corresponds to:
-		//   val items: mut {x: number} = {x: 1}
-		//   val snapshot: mut {x: number} = items   // mut→mut alias
-		//   items.x = 2
-		// Same mutability is not a transition, so nothing is checked.
-		a := liveness.NewAliasTracker()
-		a.NewValue(items, liveness.AliasMutable)
-		a.AddAlias(snap, items, liveness.AliasMutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items, snap}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, true, false, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c.errs))
-	})
-
-	t.Run("TransitiveAlias_NamesLiveMutableAlias", func(t *testing.T) {
-		// Corresponds to:
-		//   val p: mut {x: number} = {x: 1}
-		//   val r: mut {x: number} = p   // live mutable alias of p
-		//   val q: {x: number} = p       // mut→immutable; p itself is dead afterward
-		//   r.x = 2                      // r keeps mutable access to the shared value
-		//   q
-		// p is dead after the alias, so the conflict names r, the live mutable alias,
-		// not p itself.
-		const (
-			p = liveness.VarID(1)
-			r = liveness.VarID(3)
-			q = liveness.VarID(6)
-		)
-		nm := map[liveness.VarID]string{p: "p", r: "r", q: "q"}
-		a := liveness.NewAliasTracker()
-		a.NewValue(p, liveness.AliasMutable)
-		a.AddAlias(r, p, liveness.AliasMutable)
-		a.AddAlias(q, p, liveness.AliasImmutable)
-		// p itself is dead after the transition; r and q are live.
-		c := transitionFixture(nm, a, set.FromSlice([]liveness.VarID{r, q}))
-		c.checkMutabilityTransition(p, q, "p", "q", true, false, false, transitionRef, transitionSite)
-		require.Equal(t, []string{
-			"cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
-		}, transitionMessages(t, c.errs))
-	})
-
-	t.Run("Conditional_SourceInMultipleSets_NoDuplicateConflicting", func(t *testing.T) {
-		// Corresponds to:
-		//   val a: mut {x: number} = {x: 1}
-		//   val b: mut {x: number} = {x: 2}
-		//   val c: mut {x: number} = if cond { a } else { b }  // c joins two alias sets
-		//   val frozen: {x: number} = c                         // mut→immutable
-		//   c.x = 3                                              // c still used mutably
-		//   frozen
-		// c is a live mutable alias in both sets, so it is reported once, not per set.
-		const (
-			a1 = liveness.VarID(1)
-			b1 = liveness.VarID(2)
-			cv = liveness.VarID(3)
-			fr = liveness.VarID(4)
-		)
-		nm := map[liveness.VarID]string{a1: "a", b1: "b", cv: "c", fr: "frozen"}
-		at := liveness.NewAliasTracker()
-		at.NewValue(a1, liveness.AliasMutable)
-		at.NewValue(b1, liveness.AliasMutable)
-		// c is mut and aliases both a and b (conditional), so it sits in two sets.
-		at.AddAlias(cv, a1, liveness.AliasMutable)
-		at.AddAlias(cv, b1, liveness.AliasMutable)
-		at.AddAlias(fr, cv, liveness.AliasImmutable)
-		c := transitionFixture(nm, at, set.FromSlice([]liveness.VarID{cv, fr}))
-		c.checkMutabilityTransition(cv, fr, "c", "frozen", true, false, false, transitionRef, transitionSite)
-		require.Equal(t, []string{
-			"cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
-		}, transitionMessages(t, c.errs))
-	})
 }
 
 // staticBorrow builds a mut/immutable borrow whose lifetime is forced to 'static,
@@ -777,6 +629,35 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
 			},
 		},
+		// Rule 1: safe when the immutable target is dead. snapshot is never read, so there
+		// is no window where the immutable view and the live mutable source overlap.
+		"Rule1_TargetDead_OK": {
+			src: `
+				fn test() {
+					val items: mut {x: number} = {x: 1}
+					val snapshot: {x: number} = items
+					items.x = 2
+				}
+			`,
+		},
+		// Conditional aliasing where the SOURCE is mut and sits in two alias sets. c
+		// aliases both a and b, then c→frozen is the mut→immutable transition while c
+		// stays live. c is reported once, not once per set.
+		"Conditional_SourceMutInTwoSets_Error": {
+			src: `
+				fn test(cond: boolean) {
+					val a: mut {x: number} = {x: 0}
+					val b: mut {x: number} = {x: 1}
+					val c: mut {x: number} = if cond { a } else { b }
+					val frozen: {x: number} = c
+					c.x = 3
+					frozen
+				}
+			`,
+			want: []string{
+				"cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -784,6 +665,30 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			require.Equal(t, tc.want, transitionMessages(t, errs))
 		})
 	}
+}
+
+// TestRule2TransitionFromSource covers the Rule 2 immutable→mut transition from source.
+// Binding an immutable value into a `mut` slot is a type error, but the decl path runs
+// transition tracking unconditionally, so the Rule 2 transition error rides along with
+// it. config stays live, so the immutable→mut alias conflicts. Both messages are
+// asserted; this is the source-level home for the old constructed-state Rule 2 case.
+func TestRule2TransitionFromSource(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn test() {
+			val config: {x: number} = {x: 1}
+			val mutableConfig: mut {x: number} = config
+			mutableConfig.x = 5
+			config.x
+		}
+	`)
+	msgs := make([]string, len(errs))
+	for i, e := range errs {
+		msgs[i] = e.Message()
+	}
+	require.ElementsMatch(t, []string{
+		"cannot constrain immutable object <: mutable object",
+		"cannot assign 'config' to mutable 'mutableConfig': 'config' is still used immutably after this point",
+	}, msgs)
 }
 
 // TestMutabilityTransitionReassignFromSource exercises the reassignment transition path
