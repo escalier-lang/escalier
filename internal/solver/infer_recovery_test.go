@@ -33,9 +33,9 @@ func TestInferErrorBindingFlowsIntoCallNoCascade(t *testing.T) {
 	require.Equal(t, "fn () -> number", values["f"])
 }
 
-// An unsupported expression (here an object spread, deferred to M9) recovers to the
-// ErrorType sentinel and flows on without cascading: the only error is the
-// unsupported-node one, and the surrounding object still builds.
+// An unsupported expression recovers to the ErrorType sentinel and flows on without
+// cascading. Here the unsupported expression is an object spread, which is M9. The
+// only error is the unsupported-node one, and the surrounding object still builds.
 func TestInferUnsupportedExprRecoversWithoutCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val o = {...xs}

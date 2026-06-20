@@ -40,6 +40,19 @@ func TestInferTupleSpread(t *testing.T) {
 	require.Equal(t, `[1, "hi", 3]`, render(got))
 }
 
+// A spread in the middle of a literal keeps element order: the elements before
+// the spread, then the splice, then the elements after. [1, ...[2, 3], 4] builds
+// [1, 2, 3, 4].
+func TestInferTupleSpreadMiddle(t *testing.T) {
+	c := newChecker()
+	// [1, ...[2, 3], 4]
+	mid := tupleExpr(numExpr(2), numExpr(3))
+	e := tupleExpr(numExpr(1), ast.NewArraySpread(mid, testSpan()), numExpr(4))
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, "[1, 2, 3, 4]", render(got))
+}
+
 // Spreading a non-tuple value is a typed error: M4 splices concrete tuple
 // literals only, so the operand must infer to a tuple.
 func TestInferTupleSpreadNonTuple(t *testing.T) {
@@ -117,6 +130,24 @@ func TestInferObjectNumericKey(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, objExpr(numKey))
 	require.Empty(t, c.errs)
 	require.Equal(t, `{"0": 5}`, render(got))
+}
+
+// A numeric key and a string key that coerce to the same name are the same field
+// under JavaScript semantics: {0: 1, "0": 2} is a single field "0". Last-wins
+// dedup then collapses them to {"0": 2}, so the resolved name, not the syntactic
+// key kind, decides identity.
+func TestInferObjectNumericStringKeyCollision(t *testing.T) {
+	c := newChecker()
+	// {0: 1, "0": 2}
+	numKey := ast.NewProperty(ast.NewNumber(0, testSpan()), false, false, numExpr(1), testSpan())
+	strKey := ast.NewProperty(ast.NewString("0", testSpan()), false, false, numExpr(2), testSpan())
+	got := c.inferExpr(NewScope(), 0, objExpr(numKey, strKey))
+	require.Empty(t, c.errs)
+	require.Equal(t, `{"0": 2}`, render(got))
+
+	obj, ok := got.(*soltype.ObjectType)
+	require.True(t, ok)
+	require.Len(t, obj.Elems, 1) // the two keys collapsed to one field
 }
 
 // Duplicate keys follow JS last-wins semantics: the later value replaces the

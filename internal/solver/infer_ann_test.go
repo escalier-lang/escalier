@@ -17,6 +17,15 @@ func TestInferObjectAnnotationAdopted(t *testing.T) {
 	require.Equal(t, "{x: number, y: number}", values["r"])
 }
 
+// A numeric key resolves in an object annotation just as it does in a literal,
+// since both go through objKeyName. {0: number} names the field "0", which a {0: 5}
+// literal satisfies.
+func TestInferObjectAnnotationNumericKey(t *testing.T) {
+	values, _, errs := inferSource(t, `val o: {0: number} = {0: 5}`)
+	require.Empty(t, errs)
+	require.Equal(t, `{"0": number}`, values["o"])
+}
+
 // An inexact object annotation renders its `...` tail and accepts a literal whose
 // fields are all declared — the tail simply goes unused.
 func TestInferInexactObjectAnnotationDeclaredFields(t *testing.T) {
@@ -81,7 +90,7 @@ func TestInferInexactTupleAnnotationRejectsExcessLiteralElements(t *testing.T) {
 func TestInferInexactTupleAnnotationExcessThroughSpread(t *testing.T) {
 	src := `val t: [number, ...] = [...[5, 6], 7]`
 	values, _, errs := inferSource(t, src)
-	// Inferred [5, 6, 7] against [number]: indices 1 and 2 are excess — two errors.
+	// Inferred [5, 6, 7] against [number]: indices 1 and 2 are excess, so two errors.
 	require.Len(t, errs, 2)
 	require.IsType(t, &ExtraElementError{}, errs[0])
 	require.Equal(t, "tuple has extra element at index 1", errs[0].Message())

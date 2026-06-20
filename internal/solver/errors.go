@@ -181,11 +181,11 @@ type BorrowEscapeError struct {
 // SpreadNotTupleError fires when a tuple-literal spread element ([...xs]) has an
 // operand that does not infer to a tuple. M4 handles only the concrete-literal
 // splice: the operand's element types are copied into the literal in order, so it
-// must be a TupleType. A spread of any other type (e.g. an Array, which is M7)
-// cannot be spliced statically. The type-level cousins — a tuple-spread type over
-// an abstract operand ([...P, x]) and a typed variadic tail
-// ([number, ...Array<number>]) — defer to M9/M7. Spread is the offending spread
-// element (the blame span); Operand is the type it inferred to.
+// must be a TupleType. A spread of any other type, such as an Array (M7), cannot
+// be spliced statically. Two type-level cousins defer to M7/M9: a tuple-spread
+// type over an abstract operand [...P, x], and a typed variadic tail
+// [number, ...Array<number>]. Spread is the offending spread element and carries
+// the blame span. Operand is the type it inferred to.
 type SpreadNotTupleError struct {
 	Spread  *ast.ArraySpreadExpr
 	Operand soltype.Type
@@ -194,10 +194,10 @@ type SpreadNotTupleError struct {
 // InexactTupleSpreadError fires when a tuple-literal spread element ([...xs]) has an
 // operand that infers to an INEXACT tuple ([number, ...]). An inexact tuple has
 // unknown length, so an element written after the spread lands at an unknown
-// position and the result tuple's shape cannot be pinned. M4 splices concrete
-// (exact) tuples only; the variadic-tail forms ([number, ...Array<number>]) defer
-// to M7/M9. Spread is the offending spread element (the blame span); Operand is the
-// inexact tuple it inferred to.
+// position and the result tuple's shape cannot be pinned. M4 splices exact tuples
+// only. The variadic-tail forms such as [number, ...Array<number>] defer to M7/M9.
+// Spread is the offending spread element and carries the blame span. Operand is
+// the inexact tuple it inferred to.
 type InexactTupleSpreadError struct {
 	Spread  *ast.ArraySpreadExpr
 	Operand *soltype.TupleType

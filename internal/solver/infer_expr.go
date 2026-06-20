@@ -984,16 +984,16 @@ func bindingDecl(b ValueBinding) ast.Node {
 // inferTuple types a tuple literal as a soltype.TupleType of its element types
 // and records it in Info. Elements are typed left-to-right in the current scope.
 //
-// A spread element ([...xs]) splices the operand's element types into the literal
-// (so [...pair, 3] over pair: [number, string] builds [number, string, number]).
-// M4 handles only this concrete-literal splice: the operand must infer to an EXACT
-// TupleType. An inexact operand ([number, ...]) has unknown length, so a later
-// element lands at an unknown position and the result's shape can't be pinned — it
-// is an InexactTupleSpreadError. A spread of any other type is a
-// SpreadNotTupleError; a spread whose operand already errored is absorbed silently,
-// so the recovery sentinel does not cascade a second diagnostic. The type-level
-// cousins — a tuple-spread type over an abstract operand ([...P, x]) and a typed
-// variadic tail ([number, ...Array<number>]) — defer to M9/M7.
+// A spread element ([...xs]) splices the operand's element types into the literal.
+// For example, [...pair, 3] over pair: [number, string] builds
+// [number, string, number]. M4 handles only this concrete-literal splice: the
+// operand must infer to an EXACT TupleType. An inexact operand ([number, ...]) has
+// unknown length, so a later element lands at an unknown position and the result's
+// shape can't be pinned, which is an InexactTupleSpreadError. A spread of any other
+// type is a SpreadNotTupleError. A spread whose operand already errored is absorbed
+// silently, so the recovery sentinel does not cascade a second diagnostic. Two
+// type-level cousins defer to M7/M9: a tuple-spread type over an abstract operand
+// [...P, x], and a typed variadic tail [number, ...Array<number>].
 func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Type {
 	elems := make([]soltype.Type, 0, len(e.Elems))
 	for _, el := range e.Elems {
@@ -1023,16 +1023,17 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 }
 
 // inferObject types an object literal as an exact soltype.ObjectType. A property
-// with a static key — an identifier label, a string-literal key, or a numeric key
-// ({0: v}) — folds into the object. The forms it does not cover each report an
-// UnsupportedNodeError and are skipped rather than panicking:
+// with a static key folds into the object. A static key is an identifier label, a
+// string-literal key, or a numeric key like {0: v}. The forms it does not cover
+// each report an UnsupportedNodeError and are skipped rather than panicking:
 //   - spreads ({...o}), deferred to M9 with object rest/spread,
 //   - method/constructor elements, which arrive with classes in M5,
 //   - computed keys ({[k]: v}), which need M9 index signatures,
-//   - shorthand ({x}, i.e. a property with no value).
+//   - shorthand ({x}, a property with no value).
 //
-// Usage-inference depth (e.g. inferring an open object from how a value is used)
-// builds on this elsewhere; here the closed object the literal spells out is built.
+// Usage-inference depth builds on this elsewhere, for example inferring an open
+// object from how a value is used. Here the closed object the literal spells out is
+// built.
 //
 // Duplicate keys follow JavaScript semantics: the last value wins, keeping the
 // property at its first position ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). This keeps
@@ -1042,8 +1043,9 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	for _, elem := range e.Elems {
 		prop, ok := elem.(*ast.PropertyExpr)
 		if !ok {
-			// ObjSpreadExpr is M9 (object rest/spread); CallableExpr (method) and
-			// ConstructorExpr arrive with classes in M5.
+			// ObjSpreadExpr is object rest/spread, which is M9. The method and
+			// constructor elements CallableExpr and ConstructorExpr arrive with
+			// classes in M5.
 			c.reportUnsupported(elem)
 			continue
 		}
@@ -1054,8 +1056,9 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		}
 		name, ok := objKeyName(prop.Name)
 		if !ok {
-			// A computed key ({[k]: v}) carries no static property name — M9. Blame
-			// the key itself (its own narrower span), not the whole property.
+			// A computed key ({[k]: v}) carries no static property name, so it is M9.
+			// Blame the key itself, which has its own narrower span, not the whole
+			// property.
 			c.reportUnsupported(prop.Name)
 			continue
 		}
@@ -1292,10 +1295,10 @@ func constStringKey(e ast.Expr) (string, bool) {
 
 // objKeyName reads the static field name of an object-literal key. Object field
 // names are strings, so an identifier label, a string-literal key, or a numeric
-// key all map to a field: a numeric key is coerced to its string form the way
+// key all map to a field. A numeric key is coerced to its string form the way
 // JavaScript does, so {0: v} names the field "0". A computed key ({[k]: v}) carries
-// no static name and returns false so the caller can raise a structured error;
-// full index-signature support rides M9.
+// no static name and returns false so the caller can raise a structured error.
+// Full index-signature support rides M9.
 func objKeyName(k ast.ObjKey) (string, bool) {
 	switch k := k.(type) {
 	case *ast.IdentExpr:

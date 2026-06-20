@@ -243,10 +243,10 @@ func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) 
 		// A spread element ([...xs]) splices a variable number of inferred elements
 		// into the literal, so an AST element position no longer lines up with the
 		// inferred tuple's. Index ranges over the INFERRED tuple, which
-		// ExtraElementError.Index and .Sub both refer to; Span() resolves each
+		// ExtraElementError.Index and .Sub both refer to. Span() resolves each
 		// element's own origin node through prov, so per-element blame stays precise.
-		// The site is only a fallback: the AST element at i when the literal has no
-		// spread (positions match), else the whole literal.
+		// The site is only a fallback. It is the AST element at i when the literal has
+		// no spread, since positions then match, and the whole literal otherwise.
 		hasSpread := false
 		for _, el := range tup.Elems {
 			if _, ok := el.(*ast.ArraySpreadExpr); ok {
