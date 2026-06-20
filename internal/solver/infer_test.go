@@ -268,22 +268,6 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 	require.Equal(t, map[string]string{"y": "error"}, values)
 }
 
-// A TOP-LEVEL destructuring pattern still defers. M4 E1 adds body-level and
-// function-param destructuring, but a module-scope `val [a, b] = …` needs the SCC
-// driver to bind several names from one decl. The binding reports
-// UnsupportedNodeError and introduces no value. The initializer `[1, 2]` is a
-// tuple expression, which PR-4 now infers, so the only remaining error is the
-// destructuring pattern on the binding side.
-func TestInferModuleDestructuringPatternUnsupported(t *testing.T) {
-	src := `val [a, b] = [1, 2]`
-	values, _, errs := inferSource(t, src)
-	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported: TuplePat", errs[0].Message())
-	// M2.5: blame the offending pattern, not the whole decl.
-	require.Equal(t, "[a, b]", spanText(src, errs[0].Span()))
-	require.Empty(t, values)
-}
-
 // A duplicate top-level `val` is a redeclaration error (unlike FuncDecl
 // overloads); the first binding is kept and the second reports cleanly.
 func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {

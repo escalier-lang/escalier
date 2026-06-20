@@ -17,6 +17,11 @@ import (
 // would read a recursive peer's still-empty binding var and freeze the binding to
 // `never` — the bug behind splitting this out of inferVarDecl.
 //
+// A top-level destructuring VarDecl never reaches here. inferComponent intercepts
+// each of its leaf keys via destructureDecl and binds them through
+// bindModuleDestructureLeaf (M4 E3). The destructuring arm below is a defensive
+// guard for a hand-built AST that bypasses that path.
+//
 // ok=false cases, each already reported:
 //   - VarDecl without an initializer → MissingInitializerError
 //   - VarDecl with a destructuring pattern → UnsupportedNodeError (initializer

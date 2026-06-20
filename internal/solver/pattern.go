@@ -26,12 +26,37 @@ import (
 // leafTypes, when non-nil, receives each leaf binding's type keyed by name. The
 // function-param path passes its paramTypes map so the liveness pre-pass can seed
 // each leaf's alias mutability. Other callers pass nil.
+//
+// bindPattern places each leaf as a monomorphic binding in scope, the body-level
+// and function-param strategy. The top-level driver needs the leaves constrained
+// into pre-bound binding vars instead, so it calls bindPatternWith with its own
+// emit (M4 E3).
 func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type) soltype.Pat {
+	return c.bindPatternWith(scope, lvl, pat, scrutinee, leafTypes, defineLeafMono)
+}
+
+// leafEmit places one bound leaf: it receives the leaf's name, its projected type,
+// and its pattern node. defineLeafMono defines a fresh monomorphic binding in scope
+// for the body-level and function-param paths. The top-level driver passes an emit
+// that constrains the leaf's type into a pre-bound binding var instead (M4 E3).
+type leafEmit func(scope *Scope, name string, t soltype.Type, node ast.Node)
+
+// defineLeafMono is the default leaf-placement strategy: it defines the leaf as a
+// monomorphic projection of the scrutinee. Used by every body-level and
+// function-param destructuring path.
+func defineLeafMono(scope *Scope, name string, t soltype.Type, _ ast.Node) {
+	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(t)}})
+}
+
+// bindPatternWith is bindPattern parameterized by the leaf-placement strategy. See
+// bindPattern for the pattern-typing contract. The emit decides where each bound
+// leaf lands.
+func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
 	scrutinee = soltype.CarrierOf(scrutinee)
 	switch p := pat.(type) {
 	case *ast.IdentPat:
 		t := c.applyLeafExtras(scope, lvl, p, scrutinee, p.TypeAnn, p.Default)
-		c.bindLeaf(scope, p.Name, t, p, leafTypes)
+		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit)
 		return &soltype.IdentPat{Name: p.Name}
 
 	case *ast.WildcardPat:
@@ -94,7 +119,7 @@ func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		}
 		subs := make([]soltype.Pat, len(fixed))
 		for i, e := range fixed {
-			subs[i] = c.bindPattern(scope, lvl, e, elemTypes[i], leafTypes)
+			subs[i] = c.bindPatternWith(scope, lvl, e, elemTypes[i], leafTypes, emit)
 		}
 		c.recordType(p, scrutinee)
 		return &soltype.TuplePat{Elems: subs}
@@ -109,7 +134,7 @@ func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				beta := c.freshAt(lvl)
 				c.constrain(e, scrutinee, propReq(e.Key.Name, beta, e.Default != nil))
 				t := c.applyLeafExtras(scope, lvl, e, beta, e.TypeAnn, e.Default)
-				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes)
+				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit)
 				fields = append(fields, &soltype.ObjectPatField{
 					Name:  e.Key.Name,
 					Value: &soltype.IdentPat{Name: e.Key.Name},
@@ -129,7 +154,7 @@ func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 						c.constrain(e, beta, prop.Type)
 					}
 				}
-				sub := c.bindPattern(scope, lvl, e.Value, beta, leafTypes)
+				sub := c.bindPatternWith(scope, lvl, e.Value, beta, leafTypes, emit)
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: sub})
 			default:
 				// ObjRestPat (`{...rest}`) needs object rest types, which arrive in M9.
@@ -177,11 +202,13 @@ func patternDefaultsField(p ast.Pat) bool {
 	return ok && ip.Default != nil
 }
 
-// bindLeaf binds one identifier leaf to t in scope as a monomorphic projection of
-// the scrutinee, records its type, and (when leafTypes is non-nil) reports the
-// leaf's type by name for the liveness pre-pass.
-func (c *checker) bindLeaf(scope *Scope, name string, t soltype.Type, node ast.Node, leafTypes map[string]soltype.Type) {
-	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(t)}})
+// bindLeaf places one identifier leaf bound to t via emit and records its type. When
+// leafTypes is non-nil it also reports the leaf's type by name for the liveness
+// pre-pass. The default emit, defineLeafMono, defines a monomorphic projection of the
+// scrutinee in scope. The top-level driver's emit constrains t into a pre-bound
+// binding var instead.
+func (c *checker) bindLeaf(scope *Scope, name string, t soltype.Type, node ast.Node, leafTypes map[string]soltype.Type, emit leafEmit) {
+	emit(scope, name, t, node)
 	c.recordType(node, t)
 	if leafTypes != nil {
 		leafTypes[name] = t
