@@ -414,9 +414,9 @@ func TestStaticEscapeTransition(t *testing.T) {
 	// Corresponds to:
 	//   var sink = {x: 0}
 	//   fn f(p: mut {x: number}) {
-	//     sink = p                    // p escapes to 'static
+	//     sink = p                    // p's borrow escapes to 'static
 	//     val snap: {x: number} = p   // snap is never read, so it is dead
-	//     p.x = 5                     // only p stays live
+	//     p.x                         // p stays live via a read
 	//   }
 	// An escaped source with a DEAD target reports nothing. The target-dead early
 	// return precedes the member loop, so when no live window exists the escape never
