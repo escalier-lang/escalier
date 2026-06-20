@@ -12,10 +12,17 @@ It assumes the M4 borrow and lifetime machinery has landed: the
 `RefType{Mut, Lt, Inner}` wrapper, the lifetime sort (`LifetimeVar`,
 `StaticLifetime`, `constrainLt`), borrow origination and escape-to-`'static`,
 and the liveness-based mutability-transition checker in
-[internal/solver/transitions.go](../../internal/solver/transitions.go). It also
-assumes **G3** is in place: a bare object or tuple annotation in reference
-position reborrows its initializer as a local immutable view rather than an owned
-slot. G3 is in review as [#764](https://github.com/escalier-lang/escalier/pull/764).
+[internal/solver/transitions.go](../../internal/solver/transitions.go).
+
+Borrows are written with an explicit `&`, following Rust: `&{x: number}` and
+`&mut {x: number}` are immutable and mutable references whose lifetime is
+inferred, and `&'a {x: number}` and `&'a mut {x: number}` name the lifetime. A
+bare annotation is therefore always *owned*: `{x: number}` is owned-immutable and
+`mut {x: number}` is owned-mutable. This supersedes the earlier **G3** proposal
+([#764](https://github.com/escalier-lang/escalier/pull/764)), where a bare
+annotation in reference position implicitly reborrowed its initializer. With `&`
+the reborrow is spelled out, so a bare annotation no longer needs to mean anything
+other than ownership.
 
 This document describes target behaviour, not an implementation plan. The
 implementation plan is a separate doc.
@@ -34,13 +41,13 @@ paths slip through. The motivating gap from #762:
 var sink: {x: number} = {x: 0}   // immutable global
 
 fn leak(p: mut {x: number}) -> void {
-    sink = p        // a mut borrow is stored into an immutable global
-    p.x = 5         // mutating through p now changes what `sink` reads
+    sink = p        // an owned mutable value is stored into an immutable global
+    p.x = 5         // mutating it now changes what `sink` reads
 }
 ```
 
-Storing a mutable borrow into longer-lived immutable state, then mutating through
-the borrow, breaks the immutability guarantee. Patching this one site is not
+Storing a mutable value into longer-lived immutable state, then mutating it,
+breaks the immutability guarantee. Patching this one site is not
 enough, because the same shape recurs at returns, field stores, and escaping
 function arguments.
 
@@ -82,11 +89,14 @@ decides ownership.
   - **owned-mutable** — `RefType{Mut: true, Lt: nil}`, printed `mut {x: number}`.
     The owner may read and mutate.
 - **Borrowed** — `Lt` is a lifetime. The value is a reference into storage owned
-  elsewhere, valid only for the lifetime `Lt`. Two flavours:
-  - **immutable borrow** — `RefType{Mut: false, Lt: 'a}`, printed `'a {x: number}`.
-    A read-only view for the duration of `'a`.
-  - **mutable borrow** — `RefType{Mut: true, Lt: 'a}`, printed `mut 'a {x: number}`.
-    A read-write view for the duration of `'a`.
+  elsewhere, valid only for the lifetime `Lt`, and is written with a leading `&`.
+  Two flavours, each with an inferred or an explicitly named lifetime:
+  - **immutable borrow** — `RefType{Mut: false, Lt: 'a}`, printed `&{x: number}`
+    when the lifetime is inferred and `&'a {x: number}` when it is named. A
+    read-only view for the duration of `'a`.
+  - **mutable borrow** — `RefType{Mut: true, Lt: 'a}`, printed `&mut {x: number}`
+    when the lifetime is inferred and `&'a mut {x: number}` when it is named. A
+    read-write view for the duration of `'a`.
 
 Primitives (`number`, `string`, `boolean`), functions, and promises are **value
 types**: they are never wrapped in a `RefType` and are excluded from `RefInner`.
@@ -97,18 +107,37 @@ The four quadrants:
 
 | | owned (`Lt` nil) | borrowed (`Lt` = `'a`) |
 |---|---|---|
-| **immutable** (`Mut` false) | `{x: number}` | `'a {x: number}` |
-| **mutable** (`Mut` true) | `mut {x: number}` | `mut 'a {x: number}` |
+| **immutable** (`Mut` false) | `{x: number}` | `&{x: number}` / `&'a {x: number}` |
+| **mutable** (`Mut` true) | `mut {x: number}` | `&mut {x: number}` / `&'a mut {x: number}` |
 
 Ownership and mutability are orthogonal axes. Ownership decides who is
 responsible for the value and whether a transfer consumes the source. Mutability
 decides whether writes are allowed. Move/affine semantics governs the ownership
 axis; the mutability axis is governed by the existing exclusivity rule.
 
+### Borrows of a mutable owned value
+
+A mutable owned value may be borrowed many times over. Its borrows fall into two
+phases that never overlap:
+
+- multiple immutable borrows (`&{x: number}`) may be live at once, **or**
+- multiple mutable borrows (`&mut {x: number}`) may be live at once,
+
+but the lifetime of an immutable borrow and the lifetime of a mutable borrow of
+the same value may never overlap. While any mutable borrow is live, no immutable
+borrow of that value may be live, and vice versa. That is exactly what preserves
+the soundness invariant: an immutable borrow never coexists with a mutable path,
+so it never observes a mutation. Single-threaded execution is what makes the
+multiple-simultaneous-mutable-borrows case safe — there is no data race to
+exclude, and the invariant forbids only mixing the two kinds, not aliasing within
+one kind.
+
 ## When owned versus borrowed is inferred
 
-The default is owned for freshly produced values and borrowed for values reached
-through a parameter or a member read. The full set of rules:
+Freshly produced values are owned. A value is borrowed when an annotation marks it
+with `&`, when a member read reaches into a receiver, or when inference on an
+unannotated binding finds the value reaches storage something else owns. The full
+set of rules:
 
 1. **Freshly produced values are owned, and immutable by default.** An object,
    tuple, or array literal, a class constructor call, and any other expression
@@ -123,48 +152,68 @@ through a parameter or a member read. The full set of rules:
    object and tuple literals: `{x: 0}` is owned-immutable until a `mut` binding or
    annotation makes it owned-mutable.
 
-2. **Function parameters are borrowed by default.** A reference-typed parameter
-   without an explicit lifetime is a borrow of whatever the caller lends. The
-   checker attaches a fresh lifetime variable to it, so inside the body the
-   parameter is `'a {…}` or `mut 'a {…}`. The caller retains ownership; the callee
-   only borrows for the call. A parameter is never owned in the `Lt`-nil sense a
-   local binding is — it is always reached across the call boundary, so it always
-   carries a lifetime. A parameter becomes *consuming* only when its lifetime is
-   `'static`, which the body forces by letting the parameter escape, or which a
-   signature states explicitly as `p: mut 'static {…}`. A consuming parameter
-   requires the caller to give up ownership; the lifetimes design phrases this to
-   the caller as "pass a clone if you need to keep access." There is no separate
-   ownership annotation.
-
-3. **Bare annotations fix shape and mutability; the lifetime is inferred.** A bare
-   object or tuple annotation constrains the value's shape and mutability and lets
-   the compiler infer the lifetime. This holds in every annotation position — a
-   `val`/`var` binding, a return type, a field, a parameter — not only `val`
-   bindings. A bare annotation never forces an owned slot. `val q: {x: number} = p`
-   for `p: mut {x: number}` makes `q` an immutable view that borrows `p` with an
-   inferred lifetime; `p` keeps ownership. The same holds in return position:
+   A `val mut` binding may also take ownership of an existing owned-immutable
+   value by moving it. For an owned-immutable `p`, `val mut q = p` moves `p` into
+   the mutable binding `q` and consumes `p`. Because the move leaves `q` the sole
+   owner, it is sound for `q` to be mutable — no immutable reference to the value
+   survives the move. This is the mirror image of freezing: freezing moves an
+   owned-mutable value into an immutable binding, and this moves an owned-immutable
+   value into a mutable one.
 
    ```esc
-   fn f(p: mut {x: number}) -> {x: number} {
-       val q: {x: number} = p
-       return q
-   }
-   // inferred: fn <'a>(p: mut 'a {x: number}) -> 'a {x: number}
+   val p = Point(5, 10)       // owned-immutable
+   val mut q = Point(0, 0)    // owned-mutable, independent value
    ```
 
-   The annotated function infers the same `-> 'a {x: number}` as the version with
-   the return type omitted, rather than rejecting the returned borrow against an
-   owned slot. This generalizes G3, which shipped the reborrow only for bare
-   immutable `val` annotations
-   ([#764](https://github.com/escalier-lang/escalier/pull/764)), to every
-   annotation position, so annotated and unannotated code agree. Whether the
-   source is moved or borrowed is the escape-driven decision, independent of the
-   annotation: a local `mut` binding of a reference is a mutable reborrow that
-   retains the source — the multiple-mutable-aliases case — and only a binding that
-   escapes moves. A `mut` annotation fixes mutable shape; a lifetime-qualified
-   annotation names the lifetime explicitly instead of inferring it. The bare/`mut`
-   split decides the *mutability* of the resulting view, not whether the source is
-   moved.
+   ```esc
+   val p = Point(5, 10)       // owned-immutable
+   val mut q = p              // move: p into mutable q; p consumed
+   p.x                        // ERROR: use of `p` after it was moved into `q`
+   ```
+
+2. **A parameter is owned or borrowed according to its annotation.** A parameter
+   written with `&` is a borrow — `p: &{x: number}` or `p: &mut {x: number}` — and
+   the caller retains ownership, lending the value for the call. The lifetime is
+   inferred unless named with `&'a`. This is the common case: a function that only
+   reads or transiently uses its argument takes it by `&`, and the borrow keeps the
+   caller's value alive and usable after the call. A parameter written *without*
+   `&` is owned — `p: {x: number}` or `p: mut {x: number}` — and is *consuming*:
+   the signature declares an ownership transfer, so the caller gives the value up
+   at the call site. An unannotated parameter is inferred: the checker reads whether
+   the body lets the value escape and picks owned or borrowed accordingly. A
+   borrowing parameter no longer relies on an implicit lifetime — the `&` states the
+   borrow outright, and the lifetime appears only when it is load-bearing.
+
+3. **A bare annotation is owned; a `&` annotation borrows.** An annotation is read
+   literally. A bare object or tuple annotation fixes shape and mutability and
+   denotes an *owned* value — `{x: number}` owned-immutable, `mut {x: number}`
+   owned-mutable. To annotate a borrow, write `&`: `&{x: number}` and
+   `&mut {x: number}` leave the lifetime inferred, while `&'a {x: number}` and
+   `&'a mut {x: number}` name it. This holds in every annotation position — a
+   `val`/`var` binding, a return type, a field, a parameter.
+
+   So `val q: &{x: number} = p` makes `q` an immutable borrow of `p` with an
+   inferred lifetime, leaving `p` its owner; writing `val q: {x: number} = p`
+   instead *moves* `p` into the owned binding `q` and consumes `p`. Whether a value
+   is owned or borrowed is now visible in the annotation rather than inferred from
+   it. The same distinction works in return position, where a `&` return borrows
+   from a `&` parameter:
+
+   ```esc
+   fn f(p: &mut {x: number}) -> &{x: number} {
+       val q: &{x: number} = p    // downgrade the mutable borrow to an immutable one
+       return q
+   }
+   // inferred: fn <'a>(p: &'a mut {x: number}) -> &'a {x: number}
+   ```
+
+   The lifetime `'a` threads the input borrow to the output borrow, so it is
+   load-bearing and shown. This replaces the implicit bare-annotation reborrow of
+   G3 ([#764](https://github.com/escalier-lang/escalier/pull/764)): the reborrow is
+   now spelled with `&`, and a bare annotation means ownership in every position,
+   so the inferred type and a written annotation agree without a special reborrow
+   rule. A `mut` modifier still fixes mutable shape, and a lifetime-qualified `&'a`
+   names the lifetime instead of inferring it.
 
 4. **Member reads borrow the receiver.** Reading `obj.f` yields a borrow of the
    field for a lifetime bounded by the receiver, not a fresh owned value. A read
@@ -196,9 +245,9 @@ the transfer has one of three outcomes.
 2. **Borrow.** The destination takes a reference whose lifetime is bounded within
    the source binding's region. The source keeps ownership and stays usable. The
    borrow is governed by the mutability-exclusivity rule for its lifetime. This
-   is the outcome for a read-only argument to a non-escaping parameter, a
-   `mut`-to-`mut` local reborrow, sharing an immutable value, and a G3 reborrow
-   that stays local.
+   is the outcome for a `&` parameter the callee does not let escape, a
+   `&mut`-to-`&mut` local reborrow, sharing an immutable value, and any explicit
+   `&` borrow that stays local.
 
 3. **Move.** Ownership transfers out of the source binding. The source binding is
    **consumed**: any later use of it is a use-after-move error. This is the
@@ -255,17 +304,18 @@ Move/affine semantics applies the same copy/borrow/move decision uniformly. This
 section lists the sites and the outcome at each.
 
 - **`val` / `var` binding.** `val y = x` copies if `x` is a value type, borrows
-  if `y` is a bounded local view of `x` (a G3 reborrow, or a `mut`-to-`mut`
-  reborrow), and moves if `y` outlives `x` or escapes.
+  if `y` is annotated `&` (a local view of `x`, immutable or `&mut`), and otherwise
+  moves `x` into `y`, consuming `x`.
 - **Reassignment.** `y = x` follows the same decision as a binding. A reassigned
   `var` that previously owned a value drops the old value and takes the new one.
 - **Field / element store.** `obj.f = x` and `t[i] = x` move `x` when `obj` or
   `t` outlives `x`. Storing into a longer-lived object is the canonical escape.
 - **`return`.** `return x` moves `x` out of the frame unless `x` is a value type
   or a borrow whose lifetime already outlives the frame.
-- **Function argument.** Passing `x` to a parameter moves `x` when the callee's
-  signature lets that parameter escape, and borrows otherwise. A read-only or
-  non-escaping parameter borrows; the caller keeps `x`.
+- **Function argument.** Passing `x` to a `&` parameter borrows; the caller keeps
+  `x`. Passing `x` to a bare owned parameter moves `x`; the caller gives it up. For
+  an unannotated parameter the outcome is inferred — a move when the callee lets the
+  value escape, a borrow otherwise.
 - **Closure capture.** Capturing `x` in a closure that escapes moves `x` into the
   closure. Capturing in a closure that stays local borrows.
 - **Destructuring.** Destructuring moves or borrows each extracted part following
@@ -323,15 +373,27 @@ fn build() -> {x: number} {
 }
 ```
 
-**Local immutable view.** A G3 reborrow that stays local does not move; it
-borrows. The invariant is preserved instead by mutability exclusivity: while the
-immutable view is live, the mutable owner may not mutate.
+**Thawing an immutable value.** The reverse transition is also a move. Moving an
+owned-immutable value into a `val mut` binding consumes the source, so the new
+binding is the sole owner and may safely mutate — no immutable reference to the
+value survives.
+
+```esc
+val p = {x: 0}             // owned-immutable
+val mut q = p              // move: p into mutable q; p consumed
+q.x = 5                    // OK — q is the sole owner
+print(p.x)                 // ERROR: use of `p` after it was moved into `q`
+```
+
+**Local immutable view.** A `&` borrow that stays local does not move; it borrows.
+The invariant is preserved instead by mutability exclusivity: while the immutable
+borrow is live, the mutable owner may not mutate.
 
 ```esc
 val p: mut {x: number} = {x: 0}
-val q: {x: number} = p     // reborrow — q is a local immutable view of p; p retained
+val q: &{x: number} = p    // immutable borrow — q is a local view of p; p retained
 print(q.x)
-p.x = 5                    // ERROR: p mutated while immutable view q is live
+p.x = 5                    // ERROR: p mutated while immutable borrow q is live
 ```
 
 The two mechanisms cover the two ways the invariant can be threatened. A value
@@ -349,16 +411,18 @@ ones. The behaviours below keep precision high.
 - **Reads and non-escaping borrows do not consume.** Passing a value to a
   function that only reads it, or binding a bounded local view, leaves the source
   usable. Most application code is linear data flow and triggers no move at all.
-- **Multiple mutable borrows are allowed.** Escalier is not Rust. Several mutable
-  borrows of one value may be live at once. Move/affine semantics applies to
-  ownership transfer, not to mutable borrowing, so `mut`-to-`mut` aliasing stays
-  legal and does not consume the source.
+- **Multiple borrows of one kind are allowed.** Escalier is not Rust. Several
+  mutable borrows of one value may be live at once, as may several immutable
+  borrows — but never a mutable and an immutable borrow at the same time, per
+  "Borrows of a mutable owned value." Move/affine semantics applies to ownership
+  transfer, not to borrowing, so `&mut`-to-`&mut` aliasing stays legal and does not
+  consume the source.
 
   ```esc
-  val a: mut {x: number} = {x: 1}
-  val b: mut {x: number} = a    // reborrow, not a move — a retained
+  val a: mut {x: number} = {x: 1}    // owned-mutable
+  val b: &mut {x: number} = a         // mutable borrow of a — a retained
   b.x = 2
-  print(a.x)                    // OK — prints 2
+  print(a.x)                          // OK — prints 2
   ```
 - **Conditional moves track per-path.** A value moved on one branch and untouched
   on another is consumed only on paths where the move occurs. A use after a
@@ -420,22 +484,24 @@ this. The governing decision for how lifetimes appear:
 
 Two consequences follow.
 
-- **Load-bearing lifetimes are shown; connect-nothing lifetimes are elided.** A
-  lifetime that appears in a signature — one that connects an input to an output,
-  or escapes to `'static` — is part of the type and is rendered, so
-  `fn <'a>(p: mut 'a {x: number}) -> 'a {x: number}` displays its `'a`. A lifetime
-  that connects nothing is dropped at display time (D4), because the type genuinely
-  does not depend on it, and there owned and borrowed are indistinguishable.
-  Lifetimes are therefore shown exactly when they carry meaning and hidden exactly
-  when they do not, so the display is never misleading.
-- **A bare annotation is accepted and agrees with inference.** Because a bare
-  object or tuple annotation fixes shape and mutability and lets the compiler infer
-  the lifetime (inference rule 3), writing `{x: number}` produces the same type as
-  writing the full `'a {x: number}` or omitting the annotation entirely. Annotating
-  code never diverges from inferring it. This is what removes the
+- **Load-bearing lifetime names are shown; connect-nothing names are elided, but
+  the `&` is never hidden.** A borrow always prints its `&`, so owned (`{x: number}`)
+  and borrowed (`&{x: number}`) are always distinguishable — the marker that earlier
+  drafts could only infer is now in the surface type. What the display elides is the
+  lifetime *name*. A lifetime that connects an input to an output or escapes to
+  `'static` is rendered, so `fn <'a>(p: &'a mut {x: number}) -> &'a {x: number}`
+  shows its `'a`; a lifetime that connects nothing is dropped (D4), leaving the bare
+  `&{x: number}`. Names appear exactly when they carry meaning, while the borrow
+  marker itself is always present, so the display is never misleading.
+- **Annotations are read literally, and a written type round-trips.** A bare
+  annotation denotes an owned value and a `&` annotation a borrow (inference rule
+  3), so the displayed type is itself a valid annotation: writing it back produces
+  the same type, and no position silently reinterprets a bare annotation as a
+  borrow. This removes the
   [#764](https://github.com/escalier-lang/escalier/pull/764) inconsistency, where a
   bare return annotation forced an owned slot and errored while the same code with
-  the return type omitted inferred a lifetime.
+  the return type omitted inferred a lifetime. Now the omitted case infers a `&`
+  borrow and the explicit borrow is written `&`, so the two agree.
 
 This stance is a deliberate reversal of an earlier draft that elided lifetimes from
 the canonical display and surfaced them only on hover. Matching annotations to
@@ -452,9 +518,10 @@ remaining requirement on diagnostics:
   diagnostic use.
 
 The aim is that the inferred type a developer sees is exactly the type they could
-write, ordinary local code needs no lifetime annotations because the elided
-lifetimes connect nothing, and the cases that do require a lifetime show it in the
-signature rather than hiding it behind a later error.
+write, ordinary local code needs no lifetime *names* because the elided lifetimes
+connect nothing, and the cases that do require a named lifetime show it in the
+signature rather than hiding it behind a later error. Borrows are always marked
+with `&`, but their lifetimes stay inferred until they become load-bearing.
 
 ## Non-goals and deferred questions
 
@@ -470,13 +537,12 @@ signature rather than hiding it behind a later error.
 - **Cross-package moves.** Move behaviour at the boundary of imported,
   body-less declarations depends on declared lifetimes and is deferred to the
   library-import work, consistent with the elision rules for lifetimes.
-- **Surface syntax for a consuming parameter.** A parameter is consuming when its
-  lifetime is `'static`. Today that is written by spelling the lifetime out,
-  `p: mut 'static {…}`, which is accurate but exposes a lifetime most code never
-  names. Whether to keep `'static` as the user-facing way to demand ownership, or
-  to add a dedicated keyword that reads as "consume this argument," is an unmade
-  design decision. It does not change behaviour — only how a caller-visible
-  ownership transfer is spelled.
+- **Auto-borrow at call sites.** Passing an owned value to a `&` parameter is
+  sound without writing `&` at the call, since owning subsumes borrowing. Whether
+  the call site stays fully implicit, or a marker is required on mutable-borrow
+  calls so a `&mut` mutation is visible where it happens, is an open ergonomics
+  decision. It does not change which transfers are legal — only how a borrow is
+  spelled at the call.
 - **Diagnostics.** Exact wording and blame spans for use-after-move and
   move-on-escape errors are left to the implementation plan; they should name the
   move site, the later use, and why the transfer was a move.
