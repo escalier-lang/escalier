@@ -224,19 +224,21 @@ func (c *checker) inferComponent(
 			}
 			continue
 		}
-		// M4 E3: a top-level destructuring `val [a, b] = …` / `val {x, y} = …` fans
-		// one decl across one leaf key per bound name, each its own component. This
-		// key is one such leaf, so type the decl's pattern once, memoized in the
-		// destructured map, and lower THIS leaf's projected type into its binding var.
-		if vd := destructureDecl(g, key); vd != nil {
-			c.bindModuleDestructureLeaf(scope, inner, vd, g, key, b, handled, destructured)
-			continue
-		}
 		for _, d := range g.GetDecls(key) {
+			// M4 E3: a top-level destructuring `val [a, b] = …` / `val {x, y} = …`
+			// registers one decl under one leaf key per bound name. Bind it per key it
+			// appears under, before the handled-dedup that gates ordinary decls, so a
+			// destructuring decl sharing a name with another decl still binds its other
+			// leaves and the collision reports as a duplicate rather than as an
+			// unsupported pattern.
+			if vd := asDestructureDecl(d); vd != nil {
+				c.bindModuleDestructureLeaf(scope, inner, vd, g, key, b, handled, destructured)
+				continue
+			}
 			if handled.Contains(d) {
-				// Already inferred under another binding key. The only M2 decl that
-				// registers under several keys is a destructuring `val [a, b] = …`,
-				// which is handled by the E3 leaf path above and never reaches here.
+				// Already inferred under another key this decl registers under, e.g. a
+				// class contributing both a value and a type key. Skipping avoids
+				// re-inferring and re-reporting it.
 				continue
 			}
 			handled.Add(d)
@@ -468,20 +470,14 @@ type destructureLeaf struct {
 	node ast.Node
 }
 
-// destructureDecl returns the destructuring VarDecl bound to key, or nil when key is
-// not a destructuring leaf. A destructuring decl is a top-level `val`/`var` whose
-// pattern is not a plain IdentPat. dep_graph registers such a decl under one value
-// key per bound name, each its own decl-of-one, so a leaf key has exactly that one
-// VarDecl.
-func destructureDecl(g *dep_graph.DepGraph, key dep_graph.BindingKey) *ast.VarDecl {
-	if key.Kind() != dep_graph.DepKindValue {
-		return nil
-	}
-	decls := g.GetDecls(key)
-	if len(decls) != 1 {
-		return nil // an overload set or merge is never a destructuring leaf
-	}
-	vd, ok := decls[0].(*ast.VarDecl)
+// asDestructureDecl returns d as a destructuring VarDecl, a top-level `val`/`var`
+// whose pattern is not a plain IdentPat, or nil when d is not one. dep_graph
+// registers such a decl under one value key per bound name, and phase 2 binds each
+// leaf under the key it appears. Detecting it per decl rather than per key lets a
+// destructuring decl that shares a key with another decl bind its leaves and report
+// the collision as a duplicate.
+func asDestructureDecl(d ast.Decl) *ast.VarDecl {
+	vd, ok := d.(*ast.VarDecl)
 	if !ok || vd.Pattern == nil {
 		return nil
 	}
@@ -511,6 +507,13 @@ func (c *checker) bindModuleDestructureLeaf(
 		// The pattern bound no leaf for this name, because destructurePattern already
 		// reported a field the scrutinee lacks or a wrong tuple arity. Leave the leaf
 		// unbound. Phase 3 removes it.
+		return
+	}
+	if b.bound {
+		// Another declaration already bound this name. A destructured leaf is neither
+		// an overload arm nor a merge, so the collision is a duplicate declaration.
+		// Keep the first binding and blame the destructuring decl.
+		c.report(&DuplicateDeclarationError{Decl: d, Previous: b.primary, Name: key.Name()})
 		return
 	}
 	c.constrain(d, leaf.t, b.v)
