@@ -153,26 +153,6 @@ func TestStaticEscapeTransition(t *testing.T) {
 
 	// Corresponds to:
 	//   var sink = {x: 0}
-	//   fn cache(p: mut {x: number}) {
-	//     sink = p                    // p's borrow escapes to 'static, mutably
-	//     val snap: {x: number} = p   // mut→immutable; p is dead afterward
-	//   }
-	// p is locally dead, but its escaped mutable alias outside the function is
-	// permanent, so the mut→immutable transition still conflicts. Only snap is live.
-	t.Run("Rule1_MutEscape_SourceDead_Error", func(t *testing.T) {
-		a := liveness.NewAliasTracker()
-		a.NewValue(src, liveness.AliasMutable)
-		a.AddAlias(tgt, src, liveness.AliasImmutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
-		c.fn.varIDTypes[src] = staticBorrow(true)
-		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
-		require.Equal(t, []string{
-			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
-		}, transitionMessages(t, c.errs))
-	})
-
-	// Corresponds to:
-	//   var sink = {x: 0}
 	//   fn f(p: {x: number}) {           // p is an immutable borrow
 	//     sink = p                        // p escapes to 'static, immutably
 	//     val snap: mut {x: number} = p   // immutable→mut; p is dead afterward
@@ -321,6 +301,11 @@ func TestStaticEscapeTransition(t *testing.T) {
 // Before G2 the dropped HasStaticMutAlias bit was never set, so case 3 was silently
 // accepted as a false negative. Before Option 1, case 1 was missed entirely because the
 // module-level target is not a tracked local.
+//
+// Case 3 also covers the source-dead property a unit test used to isolate: `p` is dead
+// after `val snap = p` (only `snap` is read afterward), so the conflict fires purely
+// because `p` escaped to 'static, not because `p` is locally live. The liveness loop
+// skips the dead `p`; only the escape query reports it.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		var sink = {x: 0}
