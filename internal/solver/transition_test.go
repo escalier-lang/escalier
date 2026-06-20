@@ -15,18 +15,22 @@ import (
 // The transition checker is ported from the old checker (check_transitions.go), with
 // its two type predicates reimplemented over soltype.
 //
-// A freshly constructed literal can be given an owned-mutable type, so the
-// construction case `val items: mut {x} = {x: 1}` type-checks and the source-level
-// Rule 1 and Rule 3 scenarios are reachable. TestMutabilityTransitionsFromSource
-// exercises those end to end through inferSource.
+// A freshly constructed literal can be given an owned-mutable type, so
+// `val items: mut {x} = {x: 1}` type-checks and the Rule 1 / Rule 2 / Rule 3 scenarios
+// are reachable from real source. TestMutabilityTransitionsFromSource and
+// TestRule2TransitionFromSource exercise them end to end through inferSource rather than
+// over constructed alias/liveness state. The transition pass runs even when a binding
+// type-errors, so a Rule 2 immutable→mut bind reports its transition error alongside the
+// type error.
 //
-// The rest stay at the unit level. Rule 2, an immutable→mut transition over a live
-// source, is rejected by the type system before the transition pass runs, so it never
-// produces a transition error from source. Other old-checker cases need features the
-// solver lacks: destructuring, enums and match, binary operators, unions, for-in
-// loops, and top-level statements. TestCheckMutabilityTransition exercises the ported
-// Rule 1 / Rule 2 / Rule 3 logic directly over a constructed alias/liveness state,
-// covering the rules independently of those gaps.
+// What stays at the unit level cannot be reproduced cleanly from source:
+//   - The type predicates isValueType / isMutableType / isSourceMutable and the
+//     borrowEscapedToStatic query are Go-level functions, tested directly.
+//   - The G2 static-escape cases (TestStaticEscapeTransition) isolate the lifetime
+//     query, its polarity, the transitive-member reach, and the target-dead early
+//     return. From source those are confounded by the global-write store error and the
+//     borrow-into-owned-slot escape, or are not constructible at all. The feature's
+//     end-to-end coverage is TestStaticEscapeTransitionFromSource.
 
 func numT() *soltype.PrimType { return &soltype.PrimType{Prim: soltype.NumPrim} }
 func objT() *soltype.ObjectType {
@@ -60,6 +64,10 @@ func TestIsValueType(t *testing.T) {
 // mutability from the alias tracker: a seeded mutable value reports true, a seeded
 // immutable one reports false, and an unregistered source reports false.
 func TestIsSourceMutable(t *testing.T) {
+	// Models three names:
+	//   val mutVar: mut {x: number} = {x: 1}   // seeded mutable
+	//   val immVar: {x: number} = {x: 1}        // seeded immutable
+	//   unseeded                                // a name the tracker never saw
 	const (
 		mutVar   = liveness.VarID(1)
 		immVar   = liveness.VarID(2)
@@ -99,6 +107,7 @@ func transitionFixture(
 		},
 		aliases:    aliases,
 		varIDNames: varNames,
+		varIDTypes: map[liveness.VarID]soltype.Type{},
 		written:    map[fieldKey]soltype.Type{},
 	}
 	return c
@@ -115,125 +124,232 @@ func transitionMessages(t *testing.T, errs []SolverError) []string {
 	t.Helper()
 	var msgs []string
 	for _, e := range errs {
-		me, ok := e.(*MutabilityTransitionError)
-		require.True(t, ok, "unexpected non-transition error: %s", e.Message())
-		msgs = append(msgs, me.Message())
+		msgs = append(msgs, e.Message())
 	}
 	return msgs
 }
 
-// TestCheckMutabilityTransition reproduces the old checker's transition cases over the
-// ported Rule 1 / Rule 2 / Rule 3 logic.
-func TestCheckMutabilityTransition(t *testing.T) {
+// staticBorrow builds a mut/immutable borrow whose lifetime is forced to 'static,
+// the shape borrowEscapedToStatic recognizes as a permanent outside alias (G2). The
+// 'static upper bound is what D3's constrainEscape adds when a borrow escapes.
+func staticBorrow(mut bool) *soltype.RefType {
+	lt := &soltype.LifetimeVar{ID: 1, UpperBounds: []soltype.Lifetime{soltype.Static}}
+	return &soltype.RefType{Mut: mut, Lt: lt, Inner: objT()}
+}
+
+// TestStaticEscapeTransition covers G2's lifetime-sort replacement for the dropped
+// HasStatic{Mut,Imm}Alias bits: a source whose borrow escaped to 'static is a
+// permanent outside alias, so a transition conflicts even when the source is locally
+// dead after the transition point. Without the escape the same state is conflict-free.
+func TestStaticEscapeTransition(t *testing.T) {
 	const (
-		items   = liveness.VarID(1)
-		snap    = liveness.VarID(2)
-		rAlias  = liveness.VarID(3)
-		config  = liveness.VarID(4)
-		mutConf = liveness.VarID(5)
+		src = liveness.VarID(1)
+		tgt = liveness.VarID(2)
+		mid = liveness.VarID(3)
 	)
-	names := map[liveness.VarID]string{
-		items: "items", snap: "snapshot", rAlias: "r", config: "config", mutConf: "mutableConfig",
+	names := map[liveness.VarID]string{src: "p", tgt: "snap", mid: "z"}
+
+	// A MUTABLE escape does NOT conflict with a Rule 2 immutable→mut transition: the
+	// escaped mutability must match the rule's direction, mirroring the two independent
+	// bits it replaced.
+	//
+	// This one has no faithful Escalier form. The escape's mutability IS the source
+	// borrow's own mutability, so a mutable escape and an immutable transition source
+	// cannot coexist on one variable. An immutable binding sharing a value with a
+	// mutable escaped one would itself be a Rule 1 transition. The unit test pins the
+	// mutable escape directly on the immutable source to isolate the polarity check that
+	// escMut must equal sourceMut.
+	t.Run("MutEscape_DoesNotTriggerRule2", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasImmutable)
+		a.AddAlias(tgt, src, liveness.AliasMutable)
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
+		c.fn.varIDTypes[src] = staticBorrow(true)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, false, transitionRef, transitionSite)
+		require.Empty(t, transitionMessages(t, c.errs))
+	})
+
+	// Would correspond to:
+	//   fn f(p: mut 'static {x: number}) {   // p is an explicit 'static borrow
+	//     val snap: {x: number} = p          // mut→immutable; p dead afterward
+	//   }
+	// An explicit StaticLifetime on the member, not a LifetimeVar forced to 'static,
+	// drives the same conflict. This covers borrowEscapedToStatic's *StaticLifetime
+	// branch through the full transition path. The source-level form above is not
+	// constructible yet: a lifetime annotation attaches only to a type reference, which
+	// needs M7's TypeRef resolution, so this stays at the unit level until then.
+	t.Run("Rule1_ExplicitStaticLifetime_Error", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasMutable)
+		a.AddAlias(tgt, src, liveness.AliasImmutable)
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
+		c.fn.varIDTypes[src] = &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: objT()}
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
+		require.Equal(t, []string{
+			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
+		}, transitionMessages(t, c.errs))
+	})
+
+	// This isolates ONE transition: aliasing p into the immutable `snap`, where snap is
+	// DEAD. The target-dead early return precedes the member loop, so even an escaped
+	// source produces no conflict FROM THIS transition. It models only the
+	//   val snap: {x: number} = p   // snap is immutable and never read, so it is dead
+	// step, with p already an escaped 'static borrow from an earlier store.
+	//
+	// It does NOT model the escape-creating store. In a full program that store, e.g.
+	// `sink = p` into an immutable global with p staying live, is itself a Rule 1 error
+	// once Option 1 checks module-level write targets. TestStaticEscapeTransitionFromSource
+	// runs the whole program and reports it; this unit test checks a single transition,
+	// so the two are not the same situation and this one correctly reports nothing.
+	t.Run("MutEscape_TargetDead_OK", func(t *testing.T) {
+		a := liveness.NewAliasTracker()
+		a.NewValue(src, liveness.AliasMutable)
+		a.AddAlias(tgt, src, liveness.AliasImmutable)
+		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{src}))
+		c.fn.varIDTypes[src] = staticBorrow(true)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
+		require.Empty(t, transitionMessages(t, c.errs))
+	})
+}
+
+// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. A `mut` borrow
+// stored into module-level `sink` escapes to 'static (D3), creating a permanent alias
+// outside the function, then is aliased into the immutable `snap`. The program surfaces
+// three errors, all asserted:
+//
+//  1. The global-write transition at `sink = p` (Option 1, this PR): storing `mut p`
+//     into the immutable global `sink` while `p` stays live afterward is a
+//     mut→immutable transition against a permanent target.
+//  2. The borrow escape at `val snap: {x} = p`: binding a `mut` borrow into the owned
+//     slot `snap` is the known divergence from internal/checker that
+//     TestTransitionWiringReportsRule1Error pins; G3 removes it by reborrowing the
+//     initializer.
+//  3. The static-escape transition at `val snap = p` (G2): `p` escaped to 'static via
+//     the earlier store, so aliasing it into immutable `snap` conflicts. The query over
+//     `p`'s 'static-forced lifetime is what reports it, named as a `'static` escape.
+//
+// Before G2 the dropped HasStaticMutAlias bit was never set, so case 3 was silently
+// accepted as a false negative. Before Option 1, case 1 was missed entirely because the
+// module-level target is not a tracked local.
+//
+// Case 3 also covers the source-dead property a unit test used to isolate: `p` is dead
+// after `val snap = p` (only `snap` is read afterward), so the conflict fires purely
+// because `p` escaped to 'static, not because `p` is locally live. The liveness loop
+// skips the dead `p`; only the escape query reports it.
+func TestStaticEscapeTransitionFromSource(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		var sink = {x: 0}
+		fn cache(p: mut {x: number}) {
+			sink = p
+			val snap: {x: number} = p
+			snap
+		}
+	`)
+	msgs := make([]string, len(errs))
+	for i, e := range errs {
+		msgs[i] = e.Message()
 	}
+	require.ElementsMatch(t, []string{
+		"cannot assign 'p' to immutable 'sink': 'p' is still used mutably after this point",
+		"borrowed value mut object does not live long enough to satisfy object",
+		"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
+	}, msgs)
+}
 
-	t.Run("Rule1_MutToImmutable_SourceLive_Error", func(t *testing.T) {
-		// `val snapshot = items` where items is mut and still live afterwards.
-		a := liveness.NewAliasTracker()
-		a.NewValue(items, liveness.AliasMutable)
-		a.AddAlias(snap, items, liveness.AliasImmutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items, snap}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, transitionRef, transitionSite)
+// TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
+// mutability transition against a permanent, always-live target. The local reassignment
+// path skips module-level targets, so before this the store went unchecked. This is an
+// in-body check only; it does not catch a caller that retains a mutable alias to a value
+// stored into an immutable global (see the dead-source case below).
+func TestGlobalWriteMutTransition(t *testing.T) {
+	// Storing a mut borrow into the immutable global `sink`, then mutating through the
+	// borrow, is a mut→immutable transition: `sink` permanently observes a value that p
+	// still mutates. p stays live via the field write, so Rule 1 fires.
+	t.Run("mut_into_immutable_global_then_mutate_error", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			var sink = {x: 0}
+			fn f(p: mut {x: number}) {
+				sink = p
+				p.x = 5
+			}
+		`)
 		require.Equal(t, []string{
-			"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
-		}, transitionMessages(t, c.errs))
+			"cannot assign 'p' to immutable 'sink': 'p' is still used mutably after this point",
+		}, transitionMessages(t, errs))
 	})
 
-	t.Run("Rule1_MutToImmutable_TargetDead_OK", func(t *testing.T) {
-		// snapshot is dead immediately after the transition, so there is no window.
-		a := liveness.NewAliasTracker()
-		a.NewValue(items, liveness.AliasMutable)
-		a.AddAlias(snap, items, liveness.AliasImmutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c.errs))
+	// When the source is dead within this body, Option 1's in-body check reports
+	// nothing. This is NOT a soundness guarantee. The store still escapes p to 'static,
+	// and the CALLER may keep a live mutable alias to the same value and mutate it after
+	// the call, so the immutable `sink` observes a mutation. Catching that needs the call
+	// site to enforce the 'static borrow as unique, which is the borrow checker's job
+	// (#618, #762), not this pass. The assertion pins current behavior and is expected to
+	// gain an error once the caller-side check lands.
+	t.Run("dead_in_body_source_no_inbody_conflict", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			var sink = {x: 0}
+			fn f(p: mut {x: number}) {
+				sink = p
+			}
+		`)
+		require.Empty(t, errs)
 	})
 
-	t.Run("Rule1_MutToImmutable_SourceDead_OK", func(t *testing.T) {
-		// items is dead after the transition; only the immutable snapshot survives.
-		a := liveness.NewAliasTracker()
-		a.NewValue(items, liveness.AliasMutable)
-		a.AddAlias(snap, items, liveness.AliasImmutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{snap}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, false, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c.errs))
+	// Storing a FRESH value into a global has no aliasable source, so no transition.
+	t.Run("fresh_value_into_global_ok", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			var sink = {x: 0}
+			fn f() {
+				sink = {x: 9}
+			}
+		`)
+		require.Empty(t, errs)
 	})
+}
 
-	t.Run("Rule2_ImmutableToMut_SourceLive_Error", func(t *testing.T) {
-		// `val mutableConfig = config` where config is immutable and still live.
-		a := liveness.NewAliasTracker()
-		a.NewValue(config, liveness.AliasImmutable)
-		a.AddAlias(mutConf, config, liveness.AliasMutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{config, mutConf}))
-		c.checkMutabilityTransition(config, mutConf, "config", "mutableConfig", false, true, transitionRef, transitionSite)
-		require.Equal(t, []string{
-			"cannot assign 'config' to mutable 'mutableConfig': 'config' is still used immutably after this point",
-		}, transitionMessages(t, c.errs))
-	})
+// TestBorrowEscapedToStatic locks the lifetime-sort query G2 uses in place of the
+// dropped escape bits: a borrow forced to 'static is recognized with its mutability, an
+// owned value or an unforced borrow is not.
+func TestBorrowEscapedToStatic(t *testing.T) {
+	c := transitionFixture(nil, liveness.NewAliasTracker(), set.NewSet[liveness.VarID]())
 
-	t.Run("Rule3_MutToMut_NoTransition", func(t *testing.T) {
-		// Same mutability is not a transition, so nothing is checked.
-		a := liveness.NewAliasTracker()
-		a.NewValue(items, liveness.AliasMutable)
-		a.AddAlias(snap, items, liveness.AliasMutable)
-		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{items, snap}))
-		c.checkMutabilityTransition(items, snap, "items", "snapshot", true, true, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c.errs))
-	})
+	// `mut {x}` whose lifetime a global write forced to 'static, e.g. a `mut` param
+	// after `sink = p`. Escaped, mutably.
+	c.fn.varIDTypes[1] = staticBorrow(true)
+	mut, escaped := c.borrowEscapedToStatic(1)
+	require.True(t, escaped)
+	require.True(t, mut)
 
-	t.Run("TransitiveAlias_NamesLiveMutableAlias", func(t *testing.T) {
-		// p has a live mutable alias r and an immutable alias q being created. The
-		// conflict names r, the alias still holding mutable access, not p itself.
-		const (
-			p = liveness.VarID(1)
-			r = liveness.VarID(3)
-			q = liveness.VarID(6)
-		)
-		nm := map[liveness.VarID]string{p: "p", r: "r", q: "q"}
-		a := liveness.NewAliasTracker()
-		a.NewValue(p, liveness.AliasMutable)
-		a.AddAlias(r, p, liveness.AliasMutable)
-		a.AddAlias(q, p, liveness.AliasImmutable)
-		// p itself is dead after the transition; r and q are live.
-		c := transitionFixture(nm, a, set.FromSlice([]liveness.VarID{r, q}))
-		c.checkMutabilityTransition(p, q, "p", "q", true, false, transitionRef, transitionSite)
-		require.Equal(t, []string{
-			"cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
-		}, transitionMessages(t, c.errs))
-	})
+	// The immutable analogue: a `{x}` borrow forced to 'static. Escaped, immutably.
+	c.fn.varIDTypes[2] = staticBorrow(false)
+	mut, escaped = c.borrowEscapedToStatic(2)
+	require.True(t, escaped)
+	require.False(t, mut)
 
-	t.Run("Conditional_SourceInMultipleSets_NoDuplicateConflicting", func(t *testing.T) {
-		// A source that belongs to two alias sets and is itself a live mutable alias is
-		// reported once, not once per set.
-		const (
-			a1 = liveness.VarID(1)
-			b1 = liveness.VarID(2)
-			cv = liveness.VarID(3)
-			fr = liveness.VarID(4)
-		)
-		nm := map[liveness.VarID]string{a1: "a", b1: "b", cv: "c", fr: "frozen"}
-		at := liveness.NewAliasTracker()
-		at.NewValue(a1, liveness.AliasMutable)
-		at.NewValue(b1, liveness.AliasMutable)
-		// c is mut and aliases both a and b (conditional), so it sits in two sets.
-		at.AddAlias(cv, a1, liveness.AliasMutable)
-		at.AddAlias(cv, b1, liveness.AliasMutable)
-		at.AddAlias(fr, cv, liveness.AliasImmutable)
-		c := transitionFixture(nm, at, set.FromSlice([]liveness.VarID{cv, fr}))
-		c.checkMutabilityTransition(cv, fr, "c", "frozen", true, false, transitionRef, transitionSite)
-		require.Equal(t, []string{
-			"cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
-		}, transitionMessages(t, c.errs))
-	})
+	// An explicit annotation `mut 'static {x}` escapes too.
+	c.fn.varIDTypes[3] = &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: objT()}
+	_, escaped = c.borrowEscapedToStatic(3)
+	require.True(t, escaped)
+
+	// An owned value such as `val v = {x: 0}` never escapes.
+	c.fn.varIDTypes[4] = objT()
+	_, escaped = c.borrowEscapedToStatic(4)
+	require.False(t, escaped)
+
+	// An unrecorded variable does not escape.
+	_, escaped = c.borrowEscapedToStatic(99)
+	require.False(t, escaped)
+
+	// 'static in the LOWER bounds is not an escape. The escape constraint `v <:
+	// 'static` adds an UPPER bound, so a lower-bound 'static, which can arise from a
+	// join member, must not be read as an escape. forcedToStatic would over-report it.
+	c.fn.varIDTypes[5] = &soltype.RefType{
+		Mut:   true,
+		Lt:    &soltype.LifetimeVar{ID: 5, LowerBounds: []soltype.Lifetime{soltype.Static}},
+		Inner: objT(),
+	}
+	_, escaped = c.borrowEscapedToStatic(5)
+	require.False(t, escaped)
 }
 
 // TestTransitionReassignNestedRHS guards the currentStmt fix: a reassignment whose
@@ -393,6 +509,44 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 		},
+		"Rule1_TransitiveAliasEscape_Error": {
+			src: `
+				var sink = {x: 0}
+				fn f(p: mut {x: number}) {
+				  val z: mut {x: number} = p   // z aliases p, the same value
+				  sink = z                      // z's borrow escapes to 'static, mutably
+				  val snap: {x: number} = p     // mut→immutable on p; p and z dead afterward
+				}
+			`,
+			want: []string{
+				"borrowed value mut object does not live long enough to satisfy mut object",
+				"cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
+				"borrowed value mut object does not live long enough to satisfy object",
+			},
+		},
+		"UnforcedLifetime_SourceDead_Error": {
+			src: `
+				fn f(p: mut {x: number}) {
+					val snap: {x: number} = p
+				}
+			`,
+			want: []string{
+				"borrowed value mut object does not live long enough to satisfy object",
+			},
+		},
+		"Rule2_ImmEscape_SourceDead_Error": {
+			src: `
+				var sink = {x: 0}
+				fn f(p: {x: number}) {
+				  sink = p
+				  val snap: mut {x: number} = p
+				  snap.x = 5
+				}
+			`,
+			want: []string{
+				"cannot constrain immutable object <: mutable object",
+			},
+		},
 		// Rule 3: two mutable aliases of the same value are always allowed.
 		"Rule3_MultipleMutableAliases_OK": {
 			src: `
@@ -435,6 +589,35 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
 			},
 		},
+		// Rule 1: safe when the immutable target is dead. snapshot is never read, so there
+		// is no window where the immutable view and the live mutable source overlap.
+		"Rule1_TargetDead_OK": {
+			src: `
+				fn test() {
+					val items: mut {x: number} = {x: 1}
+					val snapshot: {x: number} = items
+					items.x = 2
+				}
+			`,
+		},
+		// Conditional aliasing where the SOURCE is mut and sits in two alias sets. c
+		// aliases both a and b, then c→frozen is the mut→immutable transition while c
+		// stays live. c is reported once, not once per set.
+		"Conditional_SourceMutInTwoSets_Error": {
+			src: `
+				fn test(cond: boolean) {
+					val a: mut {x: number} = {x: 0}
+					val b: mut {x: number} = {x: 1}
+					val c: mut {x: number} = if cond { a } else { b }
+					val frozen: {x: number} = c
+					c.x = 3
+					frozen
+				}
+			`,
+			want: []string{
+				"cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -442,6 +625,30 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			require.Equal(t, tc.want, transitionMessages(t, errs))
 		})
 	}
+}
+
+// TestRule2TransitionFromSource covers the Rule 2 immutable→mut transition from source.
+// Binding an immutable value into a `mut` slot is a type error, but the decl path runs
+// transition tracking unconditionally, so the Rule 2 transition error rides along with
+// it. config stays live, so the immutable→mut alias conflicts. Both messages are
+// asserted; this is the source-level home for the old constructed-state Rule 2 case.
+func TestRule2TransitionFromSource(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn test() {
+			val config: {x: number} = {x: 1}
+			val mutableConfig: mut {x: number} = config
+			mutableConfig.x = 5
+			config.x
+		}
+	`)
+	msgs := make([]string, len(errs))
+	for i, e := range errs {
+		msgs[i] = e.Message()
+	}
+	require.ElementsMatch(t, []string{
+		"cannot constrain immutable object <: mutable object",
+		"cannot assign 'config' to mutable 'mutableConfig': 'config' is still used immutably after this point",
+	}, msgs)
 }
 
 // TestMutabilityTransitionReassignFromSource exercises the reassignment transition path

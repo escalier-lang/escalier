@@ -29,10 +29,10 @@ import (
 //     holds no output lifetime, so it is dropped. This is the lifetime-sort analogue
 //     of single-polarity type-variable elimination. The drop branches on the
 //     borrow's Mut flag:
-//       - A mutable borrow becomes owned-mutable, RefType{Mut: true, Lt: nil}.
-//       - An immutable borrow drops the RefType wrapper entirely and returns its
-//         bare inner, because RefType{Mut: false, Lt: nil} is the forbidden
-//         degenerate cell NewRef rejects.
+//     - A mutable borrow becomes owned-mutable, RefType{Mut: true, Lt: nil}.
+//     - An immutable borrow drops the RefType wrapper entirely and returns its
+//     bare inner, because RefType{Mut: false, Lt: nil} is the forbidden
+//     degenerate cell NewRef rejects.
 //
 //  3. Join expansion. A non-param lifetime is not itself nameable. It is either a
 //     join variable minted at a return or branch, or a lifetime freshened when a

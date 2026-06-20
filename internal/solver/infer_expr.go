@@ -811,13 +811,33 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		errsBefore := len(c.errs)
 		c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
 		if len(c.errs) == errsBefore {
+			// The store aliases the source into a permanent module-level slot. If the
+			// source's mutability differs from the slot's and the source stays live at
+			// the conflicting mutability, that is a mut↔immutable transition the local
+			// reassignment path cannot see, since the global target is not a tracked
+			// local. Check it before forcing the escape so the source's own escape is
+			// not double-counted as a prior permanent alias.
+			c.checkGlobalWriteTransition(target, e.Right, bindingType(b), assignStmt)
 			c.constrainEscape(sourceT)
+			// KNOWN GAP (#762): this store is accepted even though it is not sound in
+			// general. checkGlobalWriteTransition is an in-body check only. The store
+			// escapes the source to 'static, but nothing forces the CALLER to pass a
+			// unique 'static borrow, so the caller may retain a live mutable alias to the
+			// same value and mutate it after the call, which the immutable global then
+			// observes. Closing this needs the call site to enforce the 'static borrow as
+			// unique, which is the borrow checker's job. Move/affine semantics (#762),
+			// under the sound borrow checker (#618), will eventually reject it.
 		}
 	} else {
 		c.constrainAssign(e, sourceT, targetT)
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && target.VarID > 0 {
-		c.trackAliasesForAssignment(target, e.Right, targetT, assignStmt)
+		// Track against the binding's own type, not the freshened targetT. The G2
+		// escape query reads the recorded type, and a later global write forces the
+		// lifetime on the binding's shared pointer. The freshened copy carries an
+		// independent lifetime var that the escape never touches. isMutableType reads
+		// the same top-level Mut from either, so the alias mutability is unchanged.
+		c.trackAliasesForAssignment(target, e.Right, bindingType(b), assignStmt)
 	}
 	// The assignment evaluates to the value just stored — the SAME read face as
 	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
