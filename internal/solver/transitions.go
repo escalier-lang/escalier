@@ -261,12 +261,22 @@ func (c *checker) checkMutabilityTransition(
 			// reference. It outlives the function, so no liveness check is meaningful
 			// and it always counts as a live alias of its escaped mutability. This is
 			// G2's lifetime-sort replacement for the dropped HasStatic{Mut,Imm}Alias
-			// bits. A mutable escape conflicts with a mut→immutable transition and an
-			// immutable escape with an immutable→mut one, so the escaped mutability
-			// must equal the source's. Past the early return sourceMut != targetMut
-			// holds, so escMut == sourceMut captures both rules. Checked before the
-			// liveness skip below so a member that is locally dead but has escaped
-			// still counts.
+			// bits.
+			//
+			// The conflict test is escMut == sourceMut, compared against the SOURCE, not
+			// the target. Past the early return sourceMut != targetMut holds, so
+			// escMut == sourceMut means the escaped alias carries the source's old
+			// mutability, which is the opposite of the target view being created. That is
+			// exactly the alias that conflicts with the new view. Under Rule 1, mut to
+			// immutable, the new view is immutable and a permanent MUTABLE escape can
+			// change it under us. Under Rule 2, immutable to mut, the new view is mutable
+			// and can mutate what a permanent IMMUTABLE escape assumes is frozen.
+			//
+			// This mirrors the live-alias loop below, which looks for aliasMut == Mutable
+			// under Rule 1 and aliasMut == Immutable under Rule 2, i.e. aliasMut ==
+			// sourceMut. The escape check runs that same predicate for a permanent alias
+			// rather than a live local one. Checked before the liveness skip so a member
+			// that is locally dead but has escaped still counts.
 			if escMut, escaped := c.borrowEscapedToStatic(varID); escaped && escMut == sourceMut {
 				conflictingSet.Add(staticConflictName)
 			}
