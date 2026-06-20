@@ -96,6 +96,6 @@ func TestInferModuleDestructuringRecursiveGroup(t *testing.T) {
 		val {g} = {g: f}
 	`)
 	require.Empty(t, errs)
-	require.Contains(t, values, "f")
-	require.Contains(t, values, "g")
+	require.Equal(t, "fn () -> never", values["f"])
+	require.Equal(t, "fn () -> never", values["g"])
 }
