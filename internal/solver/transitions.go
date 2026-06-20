@@ -518,15 +518,16 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 // tracker with one alias set per leaf binding, reading each leaf's mutability from
 // paramTypes so transitions involving the leaf are checked correctly.
 //
-// TODO(destructuring params): paramTypes is keyed by the top-level parameter name, not
-// by leaf name, so the lookup below only resolves an IdentPat parameter, where the leaf
-// IS the parameter. For a destructuring param like `{a, b}: {a: mut T, b: U}` there is
-// no paramTypes["a"]/["b"] entry, so every leaf falls back to AliasImmutable and a
-// `mut` leaf is mis-seeded. This is unreachable today because inferFunc reports a
-// destructuring param as unsupported. When destructuring params land, either populate
-// paramTypes per leaf (the old checker's inferPattern did this) or derive each leaf's
-// type by walking the pattern against the param's structural type, rather than the
-// flat name lookup here.
+// paramTypes is keyed by leaf name. An IdentPat parameter contributes the parameter
+// itself, and a destructuring param (M4 E1) contributes one entry per leaf via
+// bindPattern, so the lookup below resolves every leaf.
+//
+// KNOWN LIMITATION: a destructured leaf's type is a fresh inference variable at
+// pre-pass time, before constraints are coalesced, so isMutableType sees a bare var
+// rather than a RefType and a `mut` leaf still seeds AliasImmutable. Seeding a
+// destructured `mut` leaf accurately needs the leaf's resolved type, which is not
+// available until after the body walk. This is deferred with the rest of the
+// destructuring mutability work.
 func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker) {
 	for _, param := range astParams {
 		ast.ForEachLeafBinding(param.Pattern, func(name string, varID int) {
@@ -597,19 +598,52 @@ func sortedValueNames(s *Scope) []string {
 	return names
 }
 
-// recordParamVarIDs copies each IdentPat parameter's rename-assigned VarID onto its
-// scope binding (M4 G1), so a closure that captures the parameter resolves it to its
-// alias set through trackCapturedAliases. Runs after the pre-pass, since the rename
-// is what assigns the VarIDs.
+// recordParamVarIDs copies each parameter leaf's rename-assigned VarID onto its
+// scope binding (M4 G1), so a closure that captures the parameter resolves it to
+// its alias set through trackCapturedAliases. It walks every leaf, so a
+// destructuring parameter's leaves (M4 E1) are covered alongside a plain IdentPat
+// parameter. Runs after the pre-pass, since the rename is what assigns the VarIDs.
 func recordParamVarIDs(fnScope *Scope, params []*ast.Param) {
 	for _, p := range params {
-		ip, ok := p.Pattern.(*ast.IdentPat)
-		if !ok || ip.VarID <= 0 {
-			continue
-		}
-		if b, found := fnScope.GetValue(ip.Name); found {
-			b.VarID = ip.VarID
-			fnScope.defineValue(ip.Name, b)
-		}
+		ast.ForEachLeafBinding(p.Pattern, func(name string, varID int) {
+			if varID <= 0 {
+				return
+			}
+			if b, found := fnScope.GetValue(name); found {
+				b.VarID = varID
+				fnScope.defineValue(name, b)
+			}
+		})
 	}
+}
+
+// trackDestructureLeaves wires a body-level destructuring `val`/`var`'s leaves
+// (M4 E1) into the liveness machinery, the IdentPat path's per-leaf analogue. For
+// each leaf it copies the rename-assigned VarID onto the binding — so a closure
+// capturing the leaf resolves its alias set — and registers the leaf as a tracked
+// value carrying its mutability, so a later mutation or reassignment through it is
+// checked. A no-op outside a function body.
+//
+// Unlike trackAliasesForVarDecl it does not add an alias edge from each leaf to
+// the initializer. A destructured leaf reads a PROJECTION of the initializer. For
+// example `x` from `val {x} = p` is `p.x`, not `p`. That projection is not a
+// variable the liveness graph names, so the leaf is registered as its own value.
+// A leaf whose resolved type is a `mut` borrow still seeds AliasImmutable here,
+// since the leaf's type is an unresolved inference variable at this point. That
+// timing gap is the destructuring-mutability work deferred with the rest.
+func (c *checker) trackDestructureLeaves(scope *Scope, pat ast.Pat) {
+	ast.ForEachLeafBinding(pat, func(name string, varID int) {
+		if varID <= 0 {
+			return
+		}
+		b, found := scope.GetValue(name)
+		if !found {
+			return
+		}
+		b.VarID = varID
+		scope.defineValue(name, b)
+		if c.fn != nil && c.fn.aliases != nil {
+			c.fn.aliases.NewValue(liveness.VarID(varID), aliasMutability(isMutableType(bindingType(b))))
+		}
+	})
 }

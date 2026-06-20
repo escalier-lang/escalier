@@ -413,10 +413,68 @@ func (p *namedPrinter) printFuncTail(t *FuncType) string {
 // `?` marker is appended by printFuncTail, not here, so callers that only want
 // the bare name (none today) stay unaffected.
 func paramName(p *FuncParam, i int) string {
-	if pat, ok := p.Pattern.(*IdentPat); ok {
-		return pat.Name
+	if s, ok := printPat(p.Pattern); ok {
+		return s
 	}
 	return "arg" + strconv.Itoa(i)
+}
+
+// printPat renders a parameter pattern in Escalier surface syntax (M4 E1). A
+// pattern carries only sub-patterns and literal values, never a Type, so it
+// renders without the namedPrinter's type context. ok=false for a nil or unknown
+// pattern, so paramName falls back to a positional name.
+func printPat(pat Pat) (string, bool) {
+	switch p := pat.(type) {
+	case *IdentPat:
+		return p.Name, true
+	case *WildcardPat:
+		return "_", true
+	case *LitPat:
+		return printLit(p.Lit), true
+	case *TuplePat:
+		parts := make([]string, len(p.Elems))
+		for i, e := range p.Elems {
+			s, ok := printPat(e)
+			if !ok {
+				s = "_"
+			}
+			parts[i] = s
+		}
+		return "[" + strings.Join(parts, ", ") + "]", true
+	case *ObjectPat:
+		parts := make([]string, len(p.Fields))
+		for i, f := range p.Fields {
+			// A shorthand `{x}` is a field whose value is the IdentPat `x`, so render
+			// it as the bare key. Any other sub-pattern renders `name: subpat`.
+			if ip, ok := f.Value.(*IdentPat); ok && ip.Name == f.Name {
+				parts[i] = printObjectKeyName(f.Name)
+				continue
+			}
+			s, ok := printPat(f.Value)
+			if !ok {
+				s = "_"
+			}
+			parts[i] = printObjectKeyName(f.Name) + ": " + s
+		}
+		return "{" + strings.Join(parts, ", ") + "}", true
+	case *ExtractorPat:
+		parts := make([]string, len(p.Args))
+		for i, a := range p.Args {
+			s, ok := printPat(a)
+			if !ok {
+				s = "_"
+			}
+			parts[i] = s
+		}
+		return p.Name + "(" + strings.Join(parts, ", ") + ")", true
+	case *InstancePat:
+		obj, ok := printPat(p.Object)
+		if !ok {
+			obj = "{}"
+		}
+		return p.ClassName + " " + obj, true
+	}
+	return "", false
 }
 
 // printObjectKeyName renders an object property name as Escalier surface syntax:

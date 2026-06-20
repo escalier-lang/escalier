@@ -107,6 +107,61 @@ type IdentPat struct{ Name string }
 
 func (*IdentPat) isPat() {}
 
+// TuplePat is a tuple destructuring pattern (M4 E1). Its sub-patterns are
+// positional. It is carried on a destructured FuncParam.Pattern so the parameter
+// renders and round-trips. The solver's pattern-typing helper produces it.
+type TuplePat struct{ Elems []Pat }
+
+func (*TuplePat) isPat() {}
+
+// ObjectPat is an object destructuring pattern (M4 E1). Each field names a
+// property and binds its value through a sub-pattern. A bare `{x}` shorthand is
+// an ObjectPatField whose Value is an IdentPat of the same name.
+type ObjectPat struct{ Fields []*ObjectPatField }
+
+func (*ObjectPat) isPat() {}
+
+// ObjectPatField is one `name: subpat` entry of an ObjectPat.
+type ObjectPatField struct {
+	Name  string
+	Value Pat
+}
+
+// LitPat matches a literal value (M4 E1). It binds nothing. It is carried for
+// rendering and for E2's match-arm typing.
+type LitPat struct{ Lit Lit }
+
+func (*LitPat) isPat() {}
+
+// WildcardPat (`_`) matches anything and binds nothing (M4 E1).
+type WildcardPat struct{}
+
+func (*WildcardPat) isPat() {}
+
+// ExtractorPat is a constructor/extractor pattern such as `Some(v)` or
+// `Point(x, y)`. The solver does not yet produce it; it is a forward-declared
+// member of the sealed set, the structural mirror of ast.ExtractorPat, and lands
+// with the constructor patterns in M5. Name is the qualified constructor name
+// rendered as a string, since soltype stays ast-free. Args are positional
+// sub-patterns.
+type ExtractorPat struct {
+	Name string
+	Args []Pat
+}
+
+func (*ExtractorPat) isPat() {}
+
+// InstancePat is a class-instance pattern such as `Point { x, y }`. Like
+// ExtractorPat it is forward-declared here, the mirror of ast.InstancePat, and
+// lands with classes in M5. ClassName is the qualified class name as a string;
+// Object is the field sub-pattern.
+type InstancePat struct {
+	ClassName string
+	Object    *ObjectPat
+}
+
+func (*InstancePat) isPat() {}
+
 // FuncParam mirrors type_system.FuncParam. Pattern is reachable only through Pat
 // concretes M1 defines (IdentPat). M3 (PR4) adds Optional: an `x?` parameter
 // lowers the function's `required` count (the accept-set lower bound) without
