@@ -315,7 +315,13 @@ section lists the sites and the outcome at each.
 - **Function argument.** Passing `x` to a `&` parameter borrows; the caller keeps
   `x`. Passing `x` to a bare owned parameter moves `x`; the caller gives it up. For
   an unannotated parameter the outcome is inferred — a move when the callee lets the
-  value escape, a borrow otherwise.
+  value escape, a borrow otherwise. Both kinds of borrow are inserted implicitly at
+  the call: an owned argument passed to a `&` or `&mut` parameter is borrowed
+  without writing `&` or `&mut` — `foo(p)`, not `foo(&mut p)` — since owning a value
+  subsumes lending it. A `&mut` parameter requires the argument to be owned-mutable.
+  The compiler still inserts the borrow and checks it against the phase and
+  exclusivity rules, so the elision is purely syntactic and never changes which
+  calls are legal.
 - **Closure capture.** Capturing `x` in a closure that escapes moves `x` into the
   closure. Capturing in a closure that stays local borrows.
 - **Destructuring.** Destructuring moves or borrows each extracted part following
@@ -537,12 +543,6 @@ with `&`, but their lifetimes stay inferred until they become load-bearing.
 - **Cross-package moves.** Move behaviour at the boundary of imported,
   body-less declarations depends on declared lifetimes and is deferred to the
   library-import work, consistent with the elision rules for lifetimes.
-- **Auto-borrow at call sites.** Passing an owned value to a `&` parameter is
-  sound without writing `&` at the call, since owning subsumes borrowing. Whether
-  the call site stays fully implicit, or a marker is required on mutable-borrow
-  calls so a `&mut` mutation is visible where it happens, is an open ergonomics
-  decision. It does not change which transfers are legal — only how a borrow is
-  spelled at the call.
 - **Diagnostics.** Exact wording and blame spans for use-after-move and
   move-on-escape errors are left to the implementation plan; they should name the
   move site, the later use, and why the transfer was a move.
