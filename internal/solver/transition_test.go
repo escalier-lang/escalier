@@ -190,10 +190,13 @@ func TestCheckMutabilityTransition(t *testing.T) {
 		// Corresponds to:
 		//   val config: {x: number} = {x: 1}
 		//   val mutableConfig: mut {x: number} = config  // immutable→mut alias
-		//   config.x                                      // config still read after
-		// config and mutableConfig are both live, so Rule 2 fires. This shape is not
-		// reachable from source today: the type system rejects the immutable→mut bind
-		// before the transition pass runs, so the state is built directly here.
+		//   mutableConfig.x = 5                            // mutableConfig is live
+		//   config.x                                       // config still read after
+		// config and mutableConfig are both live, so Rule 2 fires. mutableConfig must be
+		// used for it to be a live target. Without that use it would be dead and no error
+		// would fire. This shape is not reachable from source today: the type system
+		// rejects the immutable→mut bind before the transition pass runs, so the state is
+		// built directly here.
 		a := liveness.NewAliasTracker()
 		a.NewValue(config, liveness.AliasImmutable)
 		a.AddAlias(mutConf, config, liveness.AliasMutable)
@@ -316,10 +319,17 @@ func TestStaticEscapeTransition(t *testing.T) {
 		}, transitionMessages(t, c.errs))
 	})
 
-	// The Rule 2 mirror of the case above: an immutable borrow that escaped to
-	// 'static conflicts with an immutable→mut transition. The escaped immutable alias
-	// outside is permanent, so it conflicts even with the source dead. The source form
-	// is not reachable today, so the state is built directly here.
+	// Corresponds to:
+	//   var sink = {x: 0}
+	//   fn f(p: {x: number}) {           // p is an immutable borrow
+	//     sink = p                        // p escapes to 'static, immutably
+	//     val snap: mut {x: number} = p   // immutable→mut; p is dead afterward
+	//     snap.x = 5                       // snap is live and mutable
+	//   }
+	// The Rule 2 mirror of the case above: the permanent immutable alias outside
+	// conflicts with the immutable→mut transition even with the source dead. The source
+	// form is not reachable today: the type system rejects the immutable→mut bind, so
+	// the state is built directly here.
 	t.Run("Rule2_ImmEscape_SourceDead_Error", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasImmutable)
@@ -334,7 +344,14 @@ func TestStaticEscapeTransition(t *testing.T) {
 
 	// A MUTABLE escape does NOT conflict with a Rule 2 immutable→mut transition: the
 	// escaped mutability must match the rule's direction, mirroring the two independent
-	// bits it replaced. Same shape as the case above but the source escaped mutably.
+	// bits it replaced.
+	//
+	// This one has no faithful Escalier form. The escape's mutability IS the source
+	// borrow's own mutability, so a mutable escape and an immutable transition source
+	// cannot coexist on one variable. An immutable binding sharing a value with a
+	// mutable escaped one would itself be a Rule 1 transition. The unit test pins the
+	// mutable escape directly on the immutable source to isolate the polarity check that
+	// escMut must equal sourceMut.
 	t.Run("MutEscape_DoesNotTriggerRule2", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasImmutable)
@@ -411,16 +428,17 @@ func TestStaticEscapeTransition(t *testing.T) {
 		}, transitionMessages(t, c.errs))
 	})
 
-	// Corresponds to:
-	//   var sink = {x: 0}
-	//   fn f(p: mut {x: number}) {
-	//     sink = p                    // p's borrow escapes to 'static
-	//     val snap: {x: number} = p   // snap is never read, so it is dead
-	//     p.x                         // p stays live via a read
-	//   }
-	// An escaped source with a DEAD target reports nothing. The target-dead early
-	// return precedes the member loop, so when no live window exists the escape never
-	// produces a phantom conflict. snap is absent from the live set here.
+	// This isolates ONE transition: aliasing p into the immutable `snap`, where snap is
+	// DEAD. The target-dead early return precedes the member loop, so even an escaped
+	// source produces no conflict FROM THIS transition. It models only the
+	//   val snap: {x: number} = p   // snap is immutable and never read, so it is dead
+	// step, with p already an escaped 'static borrow from an earlier store.
+	//
+	// It does NOT model the escape-creating store. In a full program that store, e.g.
+	// `sink = p` into an immutable global with p staying live, is itself a Rule 1 error
+	// once Option 1 checks module-level write targets. TestStaticEscapeTransitionFromSource
+	// runs the whole program and reports it; this unit test checks a single transition,
+	// so the two are not the same situation and this one correctly reports nothing.
 	t.Run("MutEscape_TargetDead_OK", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasMutable)
