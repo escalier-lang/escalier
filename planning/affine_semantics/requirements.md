@@ -136,18 +136,35 @@ through a parameter or a member read. The full set of rules:
    the caller as "pass a clone if you need to keep access." There is no separate
    ownership annotation.
 
-3. **Bare annotations in reference position reborrow (G3).** Binding a reference
-   into a bare object or tuple annotation lowers the annotation to an immutable
-   borrow with a fresh lifetime, not an owned slot. `val q: {x: number} = p` for
-   `p: mut {x: number}` makes `q` a local immutable view that borrows `p`; `p`
-   keeps ownership. G3 ships the reborrow only for bare, immutable annotations: a
-   `mut {x: number}` annotation lowers to an owned-mutable type and a
-   lifetime-qualified annotation names the borrow explicitly, neither rewritten by
-   G3. Under move/affine semantics the move-versus-borrow choice is escape-driven
-   and applies to every form, so a local `mut` binding of a reference is a mutable
-   reborrow that retains the source — the multiple-mutable-aliases case — and only
-   a binding that escapes moves. The bare/`mut` split decides the *mutability* of
-   the resulting view, not whether the source is moved.
+3. **Bare annotations fix shape and mutability; the lifetime is inferred.** A bare
+   object or tuple annotation constrains the value's shape and mutability and lets
+   the compiler infer the lifetime. This holds in every annotation position — a
+   `val`/`var` binding, a return type, a field, a parameter — not only `val`
+   bindings. A bare annotation never forces an owned slot. `val q: {x: number} = p`
+   for `p: mut {x: number}` makes `q` an immutable view that borrows `p` with an
+   inferred lifetime; `p` keeps ownership. The same holds in return position:
+
+   ```esc
+   fn f(p: mut {x: number}) -> {x: number} {
+       val q: {x: number} = p
+       return q
+   }
+   // inferred: fn <'a>(p: mut 'a {x: number}) -> 'a {x: number}
+   ```
+
+   The annotated function infers the same `-> 'a {x: number}` as the version with
+   the return type omitted, rather than rejecting the returned borrow against an
+   owned slot. This generalizes G3, which shipped the reborrow only for bare
+   immutable `val` annotations
+   ([#764](https://github.com/escalier-lang/escalier/pull/764)), to every
+   annotation position, so annotated and unannotated code agree. Whether the
+   source is moved or borrowed is the escape-driven decision, independent of the
+   annotation: a local `mut` binding of a reference is a mutable reborrow that
+   retains the source — the multiple-mutable-aliases case — and only a binding that
+   escapes moves. A `mut` annotation fixes mutable shape; a lifetime-qualified
+   annotation names the lifetime explicitly instead of inferring it. The bare/`mut`
+   split decides the *mutability* of the resulting view, not whether the source is
+   moved.
 
 4. **Member reads borrow the receiver.** Reading `obj.f` yields a borrow of the
    field for a lifetime bounded by the receiver, not a fresh owned value. A read
@@ -390,48 +407,54 @@ stays local borrows its captures. Repeated `await` of one promise returns the sa
 reference rather than a copy, so a borrowed payload awaited twice is ordinary
 aliasing, governed by exclusivity, not a second move.
 
-## Ownership visibility and ergonomics
+## Type display and annotations
 
-Ownership is inferred, and the lifetime that distinguishes an owned value from a
-borrow is elided from the canonical type. So the same printed type can be owned in
-one place and borrowed in another: a binding of type `{x: number}` is owned when
-it holds a fresh value and is a borrow when it reborrows another binding (G3).
-Nothing in the printed annotation says which. This document keeps that inference,
-because reborrowing is strictly more permissive than always moving and is what
-lets a program take a cheap immutable view of a value without giving up the
-mutable original.
+Ownership is inferred: whether a value is owned or borrowed follows from how it
+flows, not from the annotation. The lifetime is the part of the type that records
+this. The governing decision for how lifetimes appear:
 
-The risk is that a developer reads `{x: number}` as an owned object and is
-surprised when it behaves like a borrow. Two facts bound that risk:
+> A type annotation should match the inferred type. The displayed signature is
+> always a valid annotation, and writing it back produces the same type. The
+> compiler fills in a type the program did not write only at an explicit hole,
+> such as the `_` in `fn () -> _ throws _`.
 
-- The owned/borrow distinction is **observable only at a small, fixed set of
-  points**: the escape sites where a value must outlive its source — returns,
-  stores into longer-lived state, fields of an outliving object, escaping closure
-  captures — and the one local case where the source is mutated again after a
-  local immutable view of it has died. Everywhere else an owned value and a borrow
-  of the same type behave identically.
-- At every one of those points the divergence surfaces as a **compile-time
-  error**, never as silently different runtime behaviour. The failure mode is "the
-  compiler won't let me return this," answered by a diagnostic, not a latent bug.
+Two consequences follow.
 
-Because the distinction is invisible in the type but visible in behaviour, the
-ergonomic burden falls on diagnostics and on-demand display. The requirements:
+- **Load-bearing lifetimes are shown; connect-nothing lifetimes are elided.** A
+  lifetime that appears in a signature — one that connects an input to an output,
+  or escapes to `'static` — is part of the type and is rendered, so
+  `fn <'a>(p: mut 'a {x: number}) -> 'a {x: number}` displays its `'a`. A lifetime
+  that connects nothing is dropped at display time (D4), because the type genuinely
+  does not depend on it, and there owned and borrowed are indistinguishable.
+  Lifetimes are therefore shown exactly when they carry meaning and hidden exactly
+  when they do not, so the display is never misleading.
+- **A bare annotation is accepted and agrees with inference.** Because a bare
+  object or tuple annotation fixes shape and mutability and lets the compiler infer
+  the lifetime (inference rule 3), writing `{x: number}` produces the same type as
+  writing the full `'a {x: number}` or omitting the annotation entirely. Annotating
+  code never diverges from inferring it. This is what removes the
+  [#764](https://github.com/escalier-lang/escalier/pull/764) inconsistency, where a
+  bare return annotation forced an owned slot and errored while the same code with
+  the return type omitted inferred a lifetime.
 
-1. **Errors carry the ownership story.** When a borrow cannot escape, the message
-   names the borrow's source and explains the ownership relationship — for
-   example, "`q` borrows `p` and cannot outlive it; `p` is a local value" — and
-   suggests a concrete fix, such as returning the source directly or cloning. This
-   mirrors how the lifetime errors already explain an aliasing relationship that
-   is otherwise hidden.
-2. **Borrow-ness is discoverable on demand.** The canonical type display stays
-   elided and clean, rendering `{x: number}` for both owned and borrowed values.
-   LSP hover and a verbose `showLifetimes` mode reveal the inferred lifetime and
-   the borrow source, so a developer who wants to know whether a binding is owned
-   or borrowed can find out without every signature carrying lifetime noise.
+This stance is a deliberate reversal of an earlier draft that elided lifetimes from
+the canonical display and surfaced them only on hover. Matching annotations to
+inferred types matters more now that much code is written or transformed by LLMs: a
+tool can read the inferred signature and reproduce it verbatim as an annotation,
+and an annotated program type-checks to the same result as the inferred one. The
+remaining requirement on diagnostics:
 
-The aim is that a developer never has to reason about ownership to write ordinary
-local code, encounters the distinction only through an actionable error or a
-deliberate hover, and is never silently surprised by it at runtime.
+- **Errors carry the ownership story.** When a borrow cannot escape, the message
+  names the borrow's source and explains the ownership relationship — for example,
+  "`q` borrows `p` and cannot outlive it; `p` is a local value" — and suggests a
+  concrete fix, such as returning the source directly or cloning. A `showLifetimes`
+  verbose mode may additionally render every lifetime, including elided ones, for
+  diagnostic use.
+
+The aim is that the inferred type a developer sees is exactly the type they could
+write, ordinary local code needs no lifetime annotations because the elided
+lifetimes connect nothing, and the cases that do require a lifetime show it in the
+signature rather than hiding it behind a later error.
 
 ## Non-goals and deferred questions
 
