@@ -36,9 +36,9 @@ func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 }
 
 // leafEmit places one bound leaf: it receives the leaf's name, its projected type,
-// and its pattern node. defineLeafMono defines a fresh monomorphic binding in
-// scope (body-level / function-param); the top-level driver passes an emit that
-// constrains the leaf's type into a pre-bound binding var instead (M4 E3).
+// and its pattern node. defineLeafMono defines a fresh monomorphic binding in scope
+// for the body-level and function-param paths. The top-level driver passes an emit
+// that constrains the leaf's type into a pre-bound binding var instead (M4 E3).
 type leafEmit func(scope *Scope, name string, t soltype.Type, node ast.Node)
 
 // defineLeafMono is the default leaf-placement strategy: it defines the leaf as a
@@ -49,8 +49,8 @@ func defineLeafMono(scope *Scope, name string, t soltype.Type, _ ast.Node) {
 }
 
 // bindPatternWith is bindPattern parameterized by the leaf-placement strategy. See
-// bindPattern for the pattern-typing contract; emit decides where each bound leaf
-// lands.
+// bindPattern for the pattern-typing contract. The emit decides where each bound
+// leaf lands.
 func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
 	scrutinee = soltype.CarrierOf(scrutinee)
 	switch p := pat.(type) {
@@ -202,11 +202,11 @@ func patternDefaultsField(p ast.Pat) bool {
 	return ok && ip.Default != nil
 }
 
-// bindLeaf places one identifier leaf bound to t via emit, records its type, and
-// (when leafTypes is non-nil) reports the leaf's type by name for the liveness
-// pre-pass. The default emit (defineLeafMono) defines a monomorphic projection of
-// the scrutinee in scope; the top-level driver's emit constrains t into a
-// pre-bound binding var instead.
+// bindLeaf places one identifier leaf bound to t via emit and records its type. When
+// leafTypes is non-nil it also reports the leaf's type by name for the liveness
+// pre-pass. The default emit, defineLeafMono, defines a monomorphic projection of the
+// scrutinee in scope. The top-level driver's emit constrains t into a pre-bound
+// binding var instead.
 func (c *checker) bindLeaf(scope *Scope, name string, t soltype.Type, node ast.Node, leafTypes map[string]soltype.Type, emit leafEmit) {
 	emit(scope, name, t, node)
 	c.recordType(node, t)
