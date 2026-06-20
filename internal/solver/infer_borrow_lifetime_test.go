@@ -328,3 +328,32 @@ func TestInferReborrowEscapingOwnedReturnRejected(t *testing.T) {
 		"borrowed value object does not live long enough to satisfy object",
 	}, Messages(errs))
 }
+
+// An OWNED source bound through a bare annotation is NOT reborrowed: it has no lifetime
+// to outlive, so it stays an owned binding and flows into an owned parameter without a
+// spurious escape error. Gating the G3 reborrow on the source SYNTAX rather than its type
+// would wrongly wrap `q` in a free-lifetime borrow and reject `acceptObj(q)`.
+func TestInferOwnedSourceNotReborrowed(t *testing.T) {
+	src := `fn acceptObj(o: {x: number}) -> number { return o.x }
+fn f(r: {x: number}) {
+  val q: {x: number} = r
+  return acceptObj(q)
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (r: {x: number}) -> number", values["f"])
+}
+
+// The owned-MUTABLE analogue: a `mut` value bound through a bare annotation peels to an
+// owned immutable binding rather than reborrowing, so it too flows into an owned slot
+// without an escape error. Only a source already carrying a borrow lifetime reborrows.
+func TestInferOwnedMutSourceNotReborrowed(t *testing.T) {
+	src := `fn acceptObj(o: {x: number}) -> number { return o.x }
+fn f() {
+  val items: mut {x: number} = {x: 1}
+  val q: {x: number} = items
+  return acceptObj(q)
+}`
+	_, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+}
