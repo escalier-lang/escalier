@@ -507,7 +507,7 @@ func isValueType(t soltype.Type) bool // from checker/check_transitions.go:189-2
 
 ## PR breakdown
 
-18 PRs across 7 phases, each independently mergeable and green, each with
+19 PRs across 7 phases, each independently mergeable and green, each with
 table-driven tests asserting rendered types and **full** error messages. Every
 PR below names the concrete files touched, the data structures added/modified,
 the algorithm changes, and its acceptance set — enough to start implementation
@@ -1231,6 +1231,69 @@ these arms it must add.
     - a `match` over structural patterns binds and type-checks each arm
     - an exact-object scrutinee with a complete pattern set needs no catch-all, an
       inexact one does (full error on the missing catch-all)
+
+- **E3 — Top-level destructuring binding** (~180).
+  - **Background:** E1 shipped destructuring for body-level `val`/`var` and
+    function params, but a MODULE-scope `val {x, y} = p` / `val [a, b] = t` still
+    reports `UnsupportedNodeError` and binds nothing. The reason is the SCC driver,
+    not the pattern machinery: `inferComponent`/`inferDeclDef`
+    ([module.go](../../internal/solver/module.go),
+    [infer_decl.go](../../internal/solver/infer_decl.go)) are built
+    **one-decl-to-one-binding-var**, while a destructuring decl produces SEVERAL
+    binding names from one declaration. E3 teaches the driver that fan-out. It
+    retires E1's body-level-only deferral and the
+    `TestInferModuleDestructuringPatternUnsupported` regression test.
+  - **Files:** `solver/module.go` (the SCC driver's phase 2/3),
+    `solver/infer_decl.go` (`inferDeclDef`'s destructuring arm),
+    `solver/pattern.go` (factor a leaf-placement callback out of `bindPattern`).
+    **No dep_graph change:** `ModuleBindingVisitor.EnterDecl` already registers a
+    `VarDecl` under one `ValueBindingKey` per bound name via
+    `ast.FindBindings(d.Pattern)` ([dep_graph.go:183](../../internal/dep_graph/dep_graph.go)),
+    so `val [a, b] = …` already lands under keys `a` and `b`, both pointing at the
+    same decl. Phase 1 therefore already mints a binding var per leaf, and phase 2's
+    `handled` set already dedups the multi-key decl to a single inference.
+  - **Structures:**
+    - factor `bindPattern`'s leaf placement behind an emit callback —
+      `bindPatternWith(scope, lvl, pat, scrutinee, emit func(name string, t
+      soltype.Type))` — so the leaf-placement STRATEGY is pluggable. Body-level
+      (E1) keeps `emit = scope.defineValue(name, monoScheme(t))`; top-level passes
+      an emit that constrains each leaf type into its pre-bound binding var
+      (`constrain(t, bindings[ValueBindingKey(name)].v)`) instead of defining a
+      fresh monoScheme that would shadow the generalization-pending var.
+    - the per-decl driver result grows from a single `(type, prov, ok)` to a
+      per-leaf set, so `inferDeclDef` can hand each leaf's type to the matching
+      binding var. Keep the single-binding shape as the one-leaf case.
+  - **Algorithm — fan one decl across its keys:**
+    - in phase 2, on a destructuring `VarDecl` (reached under its first key, the
+      rest skipped by `handled`), type the initializer ONCE through
+      `inferVarDeclInit` — so an annotation is honored and a `var` initializer is
+      widened, exactly as the body-level path does — then run the pattern against
+      that type with the constrain-into-var emit, lowering each leaf's projected
+      type into `bindings[leafKey].v`
+    - phase 3 generalizes each leaf key's var **independently**, the existing
+      per-key `generalize` path — no new generalization logic, each leaf is its own
+      scheme
+    - record each leaf's display type on its pattern leaf node for Info /
+      go-to-definition (the per-leaf analogue of the `recordType(d.Pattern,
+      display)` a single-name `VarDecl` does at module.go:415)
+  - **Edge cases (each reuses an existing mechanism):**
+    - **recursion:** a destructuring binding inside a recursive SCC resolves
+      through the phase-1 pre-bound leaf vars, so `val {f} = mk()` where `mk`
+      references `f` type-checks, same as a single recursive `val`
+    - **error recovery:** a destructuring whose initializer recovered to the
+      `ErrorType` sentinel leaves every leaf var unbound; recover EACH leaf as the
+      error sentinel (the `b.recovered && len(b.v.LowerBounds) == 0` guard at
+      module.go:396), so no leaf cascades `<: never`
+    - **`var` widening** flows from `inferVarDeclInit` as above, so
+      `var [a, b] = [1, 2]` binds `a`/`b` at `number`
+  - **Accept:**
+    - `val [a, b] = [1, 2]` at module scope binds `a: 1`, `b: 2`; `var [a, b] =
+      [1, 2]` binds both at `number`
+    - `val {x, y} = p` at module scope, with `p` another top-level binding, binds
+      `x`/`y` at their field types and a missing field / wrong arity still errors
+    - a recursive group through a destructured binding type-checks
+    - the former `TestInferModuleDestructuringPatternUnsupported` becomes a
+      binding test asserting the rendered leaf types
 
 ### Phase F — Namespace member lookup (parallel track)
 

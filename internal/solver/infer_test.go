@@ -268,10 +268,12 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 	require.Equal(t, map[string]string{"y": "error"}, values)
 }
 
-// A destructuring pattern is IdentPat-only-gated in M2 (M4 adds tuple/record
-// binding); the binding reports UnsupportedNodeError and introduces no value.
-// The initializer `[1, 2]` is a tuple expression, which PR-4 now infers, so the
-// only remaining error is the destructuring pattern on the binding side.
+// A TOP-LEVEL destructuring pattern still defers. M4 E1 adds body-level and
+// function-param destructuring, but a module-scope `val [a, b] = …` needs the SCC
+// driver to bind several names from one decl. The binding reports
+// UnsupportedNodeError and introduces no value. The initializer `[1, 2]` is a
+// tuple expression, which PR-4 now infers, so the only remaining error is the
+// destructuring pattern on the binding side.
 func TestInferModuleDestructuringPatternUnsupported(t *testing.T) {
 	src := `val [a, b] = [1, 2]`
 	values, _, errs := inferSource(t, src)

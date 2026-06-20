@@ -83,11 +83,14 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		if !named {
 			// A nil pattern (hand-built AST; the parser synthesizes a placeholder)
 			// blames the decl, mirroring inferFunc — never a nil-node Span() panic.
-			if vd.Pattern != nil {
-				c.reportUnsupported(vd.Pattern)
-			} else {
+			if vd.Pattern == nil {
 				c.reportUnsupported(vd)
+				return &soltype.Void{}
 			}
+			// M4 E1: a destructuring `val`/`var` such as `{x, y} = …` or `[a, b] = …`.
+			// Type the initializer, then bind the pattern's leaves against it as
+			// monomorphic projections.
+			c.inferDestructureDecl(scope, lvl, vd)
 			return &soltype.Void{}
 		}
 		// Unlike the module driver (inferComponent), a body-level redeclaration is
