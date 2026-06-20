@@ -343,7 +343,9 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 
 // TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
 // mutability transition against a permanent, always-live target. The local reassignment
-// path skips module-level targets, so before this the store went unchecked.
+// path skips module-level targets, so before this the store went unchecked. This is an
+// in-body check only; it does not catch a caller that retains a mutable alias to a value
+// stored into an immutable global (see the dead-source case below).
 func TestGlobalWriteMutTransition(t *testing.T) {
 	// Storing a mut borrow into the immutable global `sink`, then mutating through the
 	// borrow, is a mut→immutable transition: `sink` permanently observes a value that p
@@ -361,9 +363,14 @@ func TestGlobalWriteMutTransition(t *testing.T) {
 		}, transitionMessages(t, errs))
 	})
 
-	// A dead-source move into the global is sound: p is never used after the store, so no
-	// window exists and no transition is reported. This is the move the rule must allow.
-	t.Run("dead_source_move_into_global_ok", func(t *testing.T) {
+	// When the source is dead within this body, Option 1's in-body check reports
+	// nothing. This is NOT a soundness guarantee. The store still escapes p to 'static,
+	// and the CALLER may keep a live mutable alias to the same value and mutate it after
+	// the call, so the immutable `sink` observes a mutation. Catching that needs the call
+	// site to enforce the 'static borrow as unique, which is the borrow checker's job
+	// (#618, #762), not this pass. The assertion pins current behavior and is expected to
+	// gain an error once the caller-side check lands.
+	t.Run("dead_in_body_source_no_inbody_conflict", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			var sink = {x: 0}
 			fn f(p: mut {x: number}) {

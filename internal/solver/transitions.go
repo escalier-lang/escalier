@@ -487,10 +487,16 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 // alias path above skips it, yet it outlives the function and aliases whatever the
 // source holds. Storing a mutable borrow into an immutable global, or an immutable one
 // into a mutable global, is therefore a mut↔immutable transition against a permanent,
-// always-live target. It conflicts exactly when the source stays live at the
-// conflicting mutability after the store, so a dead-source move into the global stays
-// legal. slotType is the global binding's own type, whose mutability is the target side
-// of the transition.
+// always-live target. It conflicts when the source stays live at the conflicting
+// mutability after the store, WITHIN this body. slotType is the global binding's own
+// type, whose mutability is the target side of the transition.
+//
+// This is an in-body check only. It does NOT make a store into a global sound: a borrow
+// parameter stored into an immutable global escapes to 'static, but the caller may
+// retain its own live mutable alias to the same value and mutate it after the call, so
+// the immutable global observes a mutation. Catching that needs the call site to enforce
+// the 'static borrow as unique, which is the borrow checker's job (#618 lifetime
+// enforcement, #762 move semantics), not this pass.
 //
 // Run BEFORE constrainEscape so the source's own about-to-happen escape is not
 // double-counted by the G2 escape query as a prior permanent alias.
