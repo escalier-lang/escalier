@@ -529,6 +529,91 @@ connect nothing, and the cases that do require a named lifetime show it in the
 signature rather than hiding it behind a later error. Borrows are always marked
 with `&`, but their lifetimes stay inferred until they become load-bearing.
 
+## Type-former interactions
+
+Ownership and lifetime live in the `RefType{Mut, Lt, Inner}` wrapper, which sits
+outside the shape. Type variables, aliases, unions, intersections, and tuples all
+describe the `Inner` shape, and the wrapper is a mostly-orthogonal layer applied on
+top. Borrowing therefore composes with the type formers: a borrow wraps whatever
+shape a former produces. The places where the composition is not fully orthogonal
+are described below.
+
+### Type variables
+
+A borrow applies outside a type parameter, never inside it. `&T`, `&mut T`, and
+`&'a T` wrap a `T`, and the lifetime is solved by the existing `constrainLt`
+machinery rather than baked into `T`. Because `&'a U` is itself an ordinary type, a
+type parameter can be instantiated with a borrow, and the lifetime rides along for
+free. Instantiating `fn id<T>(x: T) -> T` at a borrow yields `fn(&'a U) -> &'a U`
+with no separate lifetime parameter. This is a deliberate divergence from Rust,
+where lifetimes are a distinct kind that must be threaded explicitly.
+
+Explicit lifetime variables, a separate sort from type variables, are needed only to
+relate two borrows whose lifetimes elision cannot disambiguate — the
+multiple-input-borrows case. Within a single solved instantiation a variable has one
+ownership. Owned and borrowed are different types, so an inference variable used as
+owned in one place and borrowed in another is a conflict, not a value that is both.
+
+### Type aliases
+
+A shape alias is transparent. `type Point = {x: number, y: number}` names an owned
+shape, and `&Point` expands to `&{x: number, y: number}`. An alias that itself names
+a reference type is implicitly generic over the lifetime: each use of
+`type PointRef = &Point` gets a fresh inferred lifetime, the way lifetime elision
+works inside a Rust type alias. Write `&'a Point` directly to name the lifetime
+instead.
+
+### Unions and intersections
+
+The wrapper is outer and shared. `&(A | B)` is one borrow over a union pointee, with
+a single lifetime and mutability for the whole value, not `&A | &B` with independent
+lifetimes. A union is owned-or-borrowed and mutable-or-not as a unit; there is no
+per-member ownership. Move and borrow treat the union as a whole, so moving consumes
+it regardless of which variant it currently holds. Intersections compose the same
+way, with the wrapper outside `A & B`.
+
+Narrowing introduces a new binding, so it falls under the ordinary borrow and phase
+rules rather than a special narrowing rule. The narrowed binding is a fresh borrow of
+the scrutinee, scoped to the narrowed region, and the original keeps its `A | B`
+type. An immutable narrowed binding puts the value into the immutable phase for its
+scope, and the phase rule already forbids any mutable borrow from changing the
+variant while it is live. A concurrent mutation can therefore never silently re-type
+a narrowed view.
+
+`mut` and `&` sit identically on the wrapper but behave differently over a union,
+because mutation is invariant where an immutable borrow is covariant. An immutable
+borrow reads only, so `&(A | B)` factors by subtyping: `&A` is usable where
+`&(A | B)` is wanted, and `&A | &B <: &(A | B)`. A mutable wrapper can also write, so
+it is invariant: `mut A` and `mut (A | B)` are incomparable, and `mut (A | B)` does
+not factor. Passing a `mut A` where `mut (A | B)` is expected would let the callee
+write a `B` into `A`-typed storage:
+
+```esc
+type A = {tag: "a", x: number}
+type B = {tag: "b", y: number}
+
+fn f(p: mut (A | B)) -> void {
+    p = {tag: "b", y: 0}   // writes a value of type A | B; would corrupt storage typed mut A
+}
+```
+
+### Other formers
+
+- **Tuples and arrays** are `RefInner`. `&(A, B)` borrows the whole tuple, and
+  element access borrows a piece for a lifetime bounded by the container. Partial
+  moves apply at element granularity, as in the partial-moves section.
+- **Functions** are value types. They copy and are never wrapped in `RefType`. The
+  lifetimes inside a function signature elide or show by the display rules.
+- **Generic containers** such as `Array<T>` own their elements, so `arr[i]` yields a
+  `&T` bounded by the array's lifetime, and `&mut Array<T>` is a mutable borrow of
+  the container.
+- **Conditional and mapped types** compute a shape without reference to ownership.
+  The wrapper is applied to the computed result, so a conditional type that selects
+  between branches yields a pointee shape that a borrow then wraps.
+
+Open questions on type-former interactions are collected under "Non-goals and
+deferred questions."
+
 ## Non-goals and deferred questions
 
 - **Linearity / mandatory consumption.** Values need not be consumed; unused
@@ -543,6 +628,23 @@ with `&`, but their lifetimes stay inferred until they become load-bearing.
 - **Cross-package moves.** Move behaviour at the boundary of imported,
   body-less declarations depends on declared lifetimes and is deferred to the
   library-import work, consistent with the elision rules for lifetimes.
+- **A `Copy` bound for generics.** Without a value-type bound, generic code must
+  conservatively assume a type parameter *moves*, since it cannot tell whether the
+  argument is a value type. A `Copy`-like bound that marks a parameter as a value
+  type would let generic code pass it freely. Whether to add one is deferred.
+- **Nested borrows.** Instantiating `T` with a borrow under another `&` produces
+  `&&U`. Such nested borrows are meaningful but rare; whether to normalize them away
+  or carry them is unsettled.
+- **Mixed-ownership unions and intersections.** A union whose members carry
+  different ownership, such as `{x: number} | &{y: number}`, has no single owned-or-
+  borrowed verdict. The principled options are to factor a common wrapper or to
+  reject the type; which one is unsettled.
+- **Mutable narrowed bindings.** Whether narrowing may yield a mutable narrowed
+  binding — `&mut A`, so the variant's fields can be written — is open. If it can,
+  then because several mutable borrows may be live at once, that binding's soundness
+  needs the discriminant to stay stable for its scope: treat the tag as immutable
+  while narrowed, or make that one borrow exclusive. If narrowing yields only
+  immutable views, the question disappears.
 - **Diagnostics.** Exact wording and blame spans for use-after-move and
   move-on-escape errors are left to the implementation plan; they should name the
   move site, the later use, and why the transfer was a move.
