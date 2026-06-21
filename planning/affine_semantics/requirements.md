@@ -239,8 +239,18 @@ a separate analysis.
 At every site where a value flows from a source expression into a destination,
 the transfer has one of three outcomes.
 
-1. **Copy.** The source is a value type. It is duplicated; the source binding
-   stays fully usable. Primitives, functions, and promises always copy.
+1. **Copy.** The source is a value type, so the transfer never consumes it and
+   the source binding stays fully usable. What happens at runtime depends on the
+   kind of value. Primitives — `number`, `string`, and `boolean` — are
+   duplicated by value, so each binding holds an independent copy. Functions and
+   promises are reference objects that JavaScript cannot copy, so the transfer
+   shares the same object. They count as value types anyway, because the system
+   tracks no interior mutability for them. A function and a promise are immutable
+   to their holders, and freely aliasing an immutable reference can never let
+   another reference observe a mutation. "Copy" names the compile-time category,
+   meaning never tracked and never moved. It does not assert that a runtime
+   duplicate is made. A promise's resolved payload is governed separately.
+   Awaiting the promise borrows that payload under the ordinary borrow rules.
 
 2. **Borrow.** The destination takes a reference whose lifetime is bounded within
    the source binding's region. The source keeps ownership and stays usable. The
@@ -398,8 +408,8 @@ borrow is live, the mutable owner may not mutate.
 ```esc
 val p: mut {x: number} = {x: 0}
 val q: &{x: number} = p    // immutable borrow — q is a local view of p; p retained
-print(q.x)
 p.x = 5                    // ERROR: p mutated while immutable borrow q is live
+print(q.x)                 // q read here, so the borrow spans the mutation above
 ```
 
 The two mechanisms cover the two ways the invariant can be threatened. A value
@@ -558,10 +568,23 @@ There is no `Copy` bound. Generic code treats a type parameter as non-duplicable
 the conservative affine assumption — because it cannot tell whether the argument is a
 value type. A body may therefore use a `T` value at most once, and a function that
 needs to reuse its argument takes it by `&T` and reads through the borrow. A function
-that genuinely duplicates an owned value, such as `fn dup<T>(x: T) -> (T, T)`, is not
+that genuinely duplicates an owned value, such as `fn dup<T>(x: T) -> [T, T]`, is not
 expressible generically; it must be written against a concrete value type or take a
 borrow. The bound is omitted deliberately: duplicating a type-parameter value is rare
 enough not to justify the constraint machinery, and borrowing covers the common case.
+
+Writing the parameter as `&T` makes the function borrow-only, and that is what lets it
+duplicate the argument. In `fn dup<T>(x: &T) -> [&T, &T]` the parameter is a borrow, so
+`x` is a reference rather than an owned value. Copying a reference is not a move, so the
+body `return [x, x]` is allowed. It yields two immutable borrows of one value, both
+sharing the lent lifetime, which is sound because multiple immutable borrows may be live
+at once. Because `&T` is part of the signature, the function never takes ownership. It
+borrows for any `T`, whether the caller's value is owned or itself borrowed. This is the
+difference from the bare-`T` form above: the borrow is stated in the type, so the body's
+duplication is checked against a known-copyable reference rather than an unconstrained
+`T`. At the call the borrow is inserted implicitly. With an owned `x` you write `dup(x)`,
+not `dup(&x)`, since the parameter is declared `&` and owning a value subsumes lending
+it.
 
 ### Type aliases
 
@@ -571,6 +594,29 @@ a reference type is implicitly generic over the lifetime: each use of
 `type PointRef = &Point` gets a fresh inferred lifetime, the way lifetime elision
 works inside a Rust type alias. Write `&'a Point` directly to name the lifetime
 instead.
+
+Utility types extend this transparency to aliases that *compute* a shape rather than
+name a fixed one. TypeScript's `Partial<T>`, `Pick<T, K>`, `Record<K, V>`, and
+`ReturnType<T>` are generic aliases built on three foundations: conditional types,
+mapped types, and template literal types. The rule for `&` follows the wrapper's outer
+position and matches a plain alias. Strip the wrapper, evaluate the operator over the
+pointee shape, then re-wrap the result. `&Partial<T>` borrows the object that
+`Partial<T>` computes; it is not `Partial<&T>` with the borrow pushed inside the
+operands. The lifetime is solved over the whole computed shape and is fresh per use,
+exactly as a `&` alias is implicitly generic over its lifetime.
+
+The three foundations differ in whether `&` applies at all. Template literal types
+compute string-kind results, and strings are value types, so `&` never wraps them and
+the borrow question does not arise. Conditional and mapped types can compute an object
+or tuple shape, so the wrapper does apply. A conditional type wraps whichever branch
+shape it selects, and a mapped type wraps the object it builds. The per-property `readonly`
+modifier that a mapped type may toggle is a separate axis from the whole-value wrapper,
+and the two compose without conflict. A `readonly` field stays read-only however the
+object is held, even through an owned-mutable value or a `&mut` borrow. The whole-value
+mutability decides whether the value may be written or reassigned at all, while
+`readonly` independently forbids writes to that one field. A mapped type such as
+`Readonly<T>` therefore works inside the shape, marking fields read-only, and leaves the
+borrow wrapper untouched. No special reconciliation is needed.
 
 ### Unions and intersections
 
@@ -639,8 +685,9 @@ A nested borrow such as `&&Point` arises only from generic substitution — `&T`
 represents a borrow of a borrow. The JS compile target forces this rather than a
 policy choosing it.
 
-- **Immutable layers collapse.** Immutable borrows are Copy, and both layers compile
-  to the same bare object reference, so `&'a &'b Point` reduces to `&'a Point` — the
+- **Immutable layers collapse.** Immutable borrows are Copy. Here Copy duplicates the reference and never the
+  referenced data, so a duplicate is just another immutable alias to the same value.
+  Both layers compile to the same bare object reference, so `&'a &'b Point` reduces to `&'a Point` — the
   outer, shorter lifetime, with the standing constraint that `'b` outlives `'a`.
   Immutable `&` is idempotent.
 - **Mutable nesting is uninhabitable.** `&mut &mut Point` would have to mean "repoint
@@ -655,7 +702,7 @@ policy choosing it.
 
 ### Other formers
 
-- **Tuples and arrays** are `RefInner`. `&(A, B)` borrows the whole tuple, and
+- **Tuples and arrays** are `RefInner`. `&[A, B]` borrows the whole tuple, and
   element access borrows a piece for a lifetime bounded by the container. Partial
   moves apply at element granularity, as in the partial-moves section.
 - **Functions** are value types. They copy and are never wrapped in `RefType`. The
