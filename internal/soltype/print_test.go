@@ -128,33 +128,36 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"promise of prim", &PromiseType{Inner: numP()}, "Promise<number>"},
 		{"nested promise", &PromiseType{Inner: &PromiseType{Inner: strP()}}, "Promise<Promise<string>>"},
 
-		// Borrows (M4). The inner object/tuple is brace/bracket-delimited, so no
-		// parens. The owned-mutable form (Lt nil) and, with D1's lifetime sort, the
-		// borrow forms carrying a lifetime all render here.
+		// Borrows (M4). Ownership and the borrow `&` split on Lt. An owned value (Lt
+		// nil) renders bare — `mut {x}` owned-mutable — while a borrow (Lt set) leads
+		// with `&`. The inner object/tuple is brace/bracket-delimited, so no parens. An
+		// un-named LifetimeVar is an inferred borrow that prints as a bare `&` with no
+		// lifetime; a load-bearing lifetime is named by the scheme printer (covered in
+		// TestPrintScheme), and 'static is always shown.
 		{
-			"mut object",
+			"owned-mutable object renders bare mut, no borrow &",
 			&RefType{Mut: true, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
 			"mut {x: number}",
 		},
 		{
-			"mut tuple",
+			"owned-mutable tuple renders bare mut, no borrow &",
 			&RefType{Mut: true, Inner: &TupleType{Elems: []Type{numP(), strP()}}},
 			"mut [number, string]",
 		},
 		{
-			"immutable borrow with lifetime var",
+			"immutable borrow with inferred lifetime renders bare &",
 			&RefType{Lt: &LifetimeVar{ID: 0}, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
-			"'l0 {x: number}",
+			"&{x: number}",
 		},
 		{
-			"mutable borrow with lifetime var",
+			"mutable borrow with inferred lifetime renders &mut",
 			&RefType{Mut: true, Lt: &LifetimeVar{ID: 2}, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
-			"mut 'l2 {x: number}",
+			"&mut {x: number}",
 		},
 		{
-			"borrow with static lifetime",
+			"borrow with static lifetime always shows 'static",
 			&RefType{Mut: true, Lt: &StaticLifetime{}, Inner: &TupleType{Elems: []Type{numP()}}},
-			"mut 'static [number]",
+			"&'static mut [number]",
 		},
 	}
 	for _, tt := range tests {
@@ -362,6 +365,23 @@ func TestPrintScheme(t *testing.T) {
 			&PropertyElem{Name: "b", Type: b},
 		}}}
 		require.Equal(t, "fn <T0, T1>() -> {a: T0, b: T1}", PrintAsScheme(ty))
+	})
+
+	t.Run("a load-bearing borrow lifetime is named in & notation", func(t *testing.T) {
+		lv := &LifetimeVar{ID: 0, Level: 1}
+		// fn (p: &'a mut {x: number}) -> &'a mut {x: number}: one borrow lifetime shared
+		// by the param and the return, so the scheme names it once and renders both in
+		// `&'a` notation — the mutable-borrow display form.
+		ref := &RefType{Mut: true, Lt: lv, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}}
+		ty := &FuncType{Params: []*FuncParam{identP("p", ref)}, Ret: ref}
+		require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", PrintAsScheme(ty))
+	})
+
+	t.Run("an immutable borrow lifetime is named after the &", func(t *testing.T) {
+		lv := &LifetimeVar{ID: 1, Level: 1}
+		ref := &RefType{Lt: lv, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}}
+		ty := &FuncType{Params: []*FuncParam{identP("p", ref)}, Ret: ref}
+		require.Equal(t, "fn <'a>(p: &'a {x: number}) -> &'a {x: number}", PrintAsScheme(ty))
 	})
 
 	t.Run("a borrowed generic survives generalization", func(t *testing.T) {

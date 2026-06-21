@@ -169,6 +169,13 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 // without constraining anything. node supplies the span stamped onto a
 // return-annotation constraint failure.
 func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node) *soltype.FuncType {
+	// Give this function its own named-lifetime scope so a `&'a` in its signature
+	// resolves consistently across its params and return, without sharing the name
+	// with an enclosing or sibling function. Restored on exit so a nested function
+	// does not clobber the outer scope's names.
+	savedNamedLts := c.namedLifetimes
+	c.namedLifetimes = map[string]*soltype.LifetimeVar{}
+	defer func() { c.namedLifetimes = savedNamedLts }()
 	if len(sig.TypeParams) > 0 {
 		// Generic functions (fn <T>(...)) need type schemes / generalization,
 		// which are M3. The FuncExpr/FuncDecl kind itself is supported — it is the

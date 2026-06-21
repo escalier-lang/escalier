@@ -233,7 +233,7 @@ func TestScriptBorrowLifetimeParity(t *testing.T) {
 
 	scriptValues, _, scriptErrs := inferScriptSource(t, src)
 	require.Empty(t, scriptErrs)
-	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}", scriptValues["id"])
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", scriptValues["id"])
 
 	moduleValues, _, moduleErrs := inferSource(t, src)
 	require.Empty(t, moduleErrs)

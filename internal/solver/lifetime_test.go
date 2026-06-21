@@ -116,7 +116,7 @@ func TestConstrainLtReflexiveIsNoOp(t *testing.T) {
 // A borrowed value flowing into 'static storage has its lifetime forced to outlive
 // 'static. This is the EscapingRefIntoStatic acceptance (M4 D3). constrainEscape
 // constrains the borrow's lifetime `<: 'static`, so coalescing the borrow renders it
-// `mut 'static {x: number}` rather than under the param's own name. No Escalier
+// `&'static mut {x: number}` rather than under the param's own name. No Escalier
 // construct routes a borrow into static storage yet, since a borrow originates only
 // at a parameter, so this exercises the rule's mechanism directly.
 func TestEscapingRefIntoStatic(t *testing.T) {
@@ -133,10 +133,10 @@ func TestEscapingRefIntoStatic(t *testing.T) {
 	c.constrainEscape(ref)
 
 	require.Equal(t, []soltype.Lifetime{soltype.Static}, lt.UpperBounds)
-	require.Equal(t, "mut 'static {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
+	require.Equal(t, "&'static mut {x: number}", soltype.Print(coalesce(ref, soltype.Positive)))
 }
 
-// Escape reaches a borrow NESTED inside an object property. Storing `{p: mut 'a
+// Escape reaches a borrow NESTED inside an object property. Storing `{p: &'a mut
 // Point}` forces the inner borrow's lifetime to 'static too, since the whole value
 // escapes. constrainEscape walks the structural carriers, so the property's borrow
 // is constrained alongside any top-level one.
@@ -156,7 +156,7 @@ func TestEscapingNestedRefIntoStatic(t *testing.T) {
 	c.constrainEscape(stored)
 
 	require.Equal(t, []soltype.Lifetime{soltype.Static}, inner.UpperBounds)
-	require.Equal(t, "{p: mut 'static {x: number}}", soltype.Print(coalesce(stored, soltype.Positive)))
+	require.Equal(t, "{p: &'static mut {x: number}}", soltype.Print(coalesce(stored, soltype.Positive)))
 }
 
 // mutPointRef is a `mut lt {x: number}` borrow, the carrier these lifetime tests
@@ -205,7 +205,7 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 
 	// Before escape the join expands to the union of its members.
 	require.Equal(t,
-		"fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}) -> mut ('a | 'b) {x: number}",
+		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &('a | 'b) mut {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
 
 	c.constrainEscape(ret)
@@ -214,7 +214,7 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	// member, so the entire signature collapses to 'static with no nameable lifetime left.
 	require.Equal(t, []soltype.Lifetime{soltype.Static}, join.UpperBounds)
 	require.Equal(t,
-		"fn (p: mut 'static {x: number}, q: mut 'static {x: number}) -> mut 'static {x: number}",
+		"fn (p: &'static mut {x: number}, q: &'static mut {x: number}) -> &'static mut {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
@@ -266,7 +266,7 @@ func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 	fn := borrowFn(mutPointRef(top), a, b, d)
 
 	require.Equal(t,
-		"fn <'a, 'b, 'c>(p: mut 'a {x: number}, q: mut 'b {x: number}, r: mut 'c {x: number}) -> mut ('a | 'b | 'c) {x: number}",
+		"fn <'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> &('a | 'b | 'c) mut {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 

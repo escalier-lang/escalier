@@ -149,7 +149,7 @@ func TestFreshenCopiesLifetimeBoundsUnderProbe(t *testing.T) {
 func TestInferIdentityRefReturnStillRendersAfterGeneralization(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return p }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}", values["f"])
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
 }
 
 // Source-level regression: a borrow-passing function called at two distinct sites
