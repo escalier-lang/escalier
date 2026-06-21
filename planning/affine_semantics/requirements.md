@@ -154,9 +154,10 @@ set of rules:
 
    A `val mut` binding may also take ownership of an existing owned-immutable
    value by moving it. For an owned-immutable `p`, `val mut q = p` moves `p` into
-   the mutable binding `q` and consumes `p`. Because the move leaves `q` the sole
-   owner, it is sound for `q` to be mutable — no immutable reference to the value
-   survives the move. This is the mirror image of freezing: freezing moves an
+   the mutable binding `q` and consumes `p`. Like any move, it is rejected if `p`
+   has a live borrow. Given that, the move leaves `q` the sole owner, so it is sound
+   for `q` to be mutable, because no reference to the value survives to observe
+   `q`'s later mutations. This is the mirror image of freezing: freezing moves an
    owned-mutable value into an immutable binding, and this moves an owned-immutable
    value into a mutable one.
 
@@ -277,8 +278,11 @@ the transfer has one of three outcomes.
    `&` borrow that stays local.
 
 3. **Move.** Ownership transfers out of the source binding. The source binding is
-   **consumed**: any later use of it is a use-after-move error. This is the
-   outcome whenever the value **escapes** the source binding's region.
+   **consumed**: any later use of it is a use-after-move error. A move also requires
+   the source to have no live borrow at the move point. Moving a value that is
+   currently borrowed is rejected, because the move would consume storage the borrow
+   still points into. This is the outcome whenever the value **escapes** the source
+   binding's region.
 
 ### What counts as escape
 
