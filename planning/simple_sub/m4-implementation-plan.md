@@ -1510,29 +1510,24 @@ these arms it must add.
 ### Dependency graph
 
 ```
-✓ = landed on main.  Done so far:
-- A1 (#728)
+✓ = landed.  All M4 PRs are complete:
+- A1 (#728), A2 (#765)
 - A3 (#733)
-- B1+B2 (#732)
-- B3 (#733)
-- C1+C2 (#731)
-- C3 (#735)
-- D1 (#740)
-- D2 (#744)
-- D2.5 (#745)
-- D3 (#748)
-- D4 (#749)
-- G1 (#753, #754, #755; ast/liveness prereqs #751, #752)
+- B1+B2 (#732), B3 (#734)
+- C1+C2 (#731), C3 (#735)
+- D1 (#740), D2 (#744), D2.5 (#745), D3 (#748), D4 (#749)
+- E1 (#758), E2 (#761), E3 (#763)
 - F1 (#730)
+- G1 (#753, #754, #755; ast/liveness prereqs #751, #752), G2 (#759), G3 (#764)
 
-A1✓ → A2
+A1✓ → A2✓
 A1✓ → A3✓ ──────────────────────┐  (A3's mut/lifetime arms un-gated by C1)
 A1✓ → B1✓ → B2✓                 │  (annotation-side acceptance tests)
       B1✓ → B3✓                 │
       B1✓, B3✓ ───────────┐     │  (C3 reuses B1's foldUsageBounds fold + B3's widen)
-A1✓ → C1✓ → C2✓(GATE) →  C3✓ → D1✓ → D2✓ → D3✓ → D4✓ → G1✓ → G2 → G3
-A1✓ → E1 → E2   (independent of C/D; E1's RefType peel via carrierOf needs C1)
-F1✓             (independent; any time — only M2's Namespace)
+A1✓ → C1✓ → C2✓(GATE) →  C3✓ → D1✓ → D2✓ → D2.5✓ → D3✓ → D4✓ → G1✓ → G2✓ → G3✓
+A1✓ → E1✓ → E2✓ → E3✓   (independent of C/D; E1's RefType peel via carrierOf needs C1)
+F1✓                     (independent; any time — only M2's Namespace)
 ```
 
 Critical path to the gate: **A1 → C1 → C2** — three PRs. B, E, F are parallel
