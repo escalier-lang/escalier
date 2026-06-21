@@ -228,11 +228,12 @@ set of rules:
    next. For a borrow, escape that the borrow's lifetime cannot satisfy is a
    borrow-escape error.
 
-The principle behind these rules: **owned** is inferred when a binding is the sole
-producer or holder of a value, and **borrowed** is inferred when a binding reaches
-a value that something else owns. The lifetime machinery already in place
-computes which case applies; move semantics reads its verdict rather than running
-a separate analysis.
+The principle behind these rules: when an annotation is present, its `&` or bare
+form decides owned versus borrowed directly. Otherwise **owned** is inferred when a
+binding is the sole producer or holder of a value, and **borrowed** is inferred when
+a binding reaches a value that something else owns. For the inferred case the
+lifetime machinery already in place computes which one applies, and move semantics
+reads its verdict rather than running a separate analysis.
 
 ## Move / affine semantics
 
@@ -489,9 +490,11 @@ aliasing, governed by exclusivity, not a second move.
 
 ## Type display and annotations
 
-Ownership is inferred: whether a value is owned or borrowed follows from how it
-flows, not from the annotation. The lifetime is the part of the type that records
-this. The governing decision for how lifetimes appear:
+Ownership is read from the annotation: a `&` marks a borrow and a bare type is
+owned, and inference fills in the verdict only for an unannotated value. The `&`
+marker is the part of the displayed type that records owned versus borrowed, and a
+lifetime name records the borrow's extent when it is load-bearing. The governing
+decision for how lifetimes appear:
 
 > A type annotation should match the inferred type. The displayed signature is
 > always a valid annotation, and writing it back produces the same type. The
@@ -506,7 +509,7 @@ Two consequences follow.
   drafts could only infer is now in the surface type. What the display elides is the
   lifetime *name*. A lifetime that connects an input to an output or escapes to
   `'static` is rendered, so `fn <'a>(p: &'a mut {x: number}) -> &'a {x: number}`
-  shows its `'a`; a lifetime that connects nothing is dropped (D4), leaving the bare
+  shows its `'a`; a lifetime that connects nothing is dropped, leaving the bare
   `&{x: number}`. Names appear exactly when they carry meaning, while the borrow
   marker itself is always present, so the display is never misleading.
 - **Annotations are read literally, and a written type round-trips.** A bare
@@ -657,14 +660,15 @@ because mutation is invariant where an immutable borrow is covariant. An immutab
 borrow reads only, so `&(A | B)` factors by subtyping: `&A` is usable where
 `&(A | B)` is wanted, and `&A | &B <: &(A | B)`. A mutable wrapper can also write, so
 it is invariant: `mut A` and `mut (A | B)` are incomparable, and `mut (A | B)` does
-not factor. Passing a `mut A` where `mut (A | B)` is expected would let the callee
-write a `B` into `A`-typed storage:
+not factor. The corruption is observable only through a borrow, where the callee
+still aliases the caller's value: passing a `&mut A` where `&mut (A | B)` is expected
+would let the callee write a `B` into the caller's `A`-typed storage:
 
 ```esc
 type A = {tag: "a", x: number}
 type B = {tag: "b", y: number}
 
-fn f(p: mut (A | B)) -> void {
+fn f(p: &mut (A | B)) -> void {
     p = {tag: "b", y: 0}   // writes a value of type A | B; would corrupt storage typed mut A
 }
 ```
