@@ -103,7 +103,7 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 			input: "&(A | B)", // borrow of the whole union
 		},
 		"BorrowAsIntersectionMember": {
-			input: "&A & B", // (&A) & B — no parens needed
+			input: "&A & B", // (&A) & B, no parens needed
 		},
 		"InfixIntersectionStillParses": {
 			input: "A & B", // infix '&' stays intersection

@@ -693,8 +693,8 @@ func (t *MutableTypeAnn) Accept(v Visitor) {
 //	&'a {x}      → RefTypeAnn{Mut: false, Lifetime: 'a}
 //	&'a mut {x}  → RefTypeAnn{Mut: true,  Lifetime: 'a}
 //
-// The prefix `&` binds tight to a single atom, so `&A | B` is `(&A) | B`;
-// a borrow of a compound is written with explicit parens, `&(A | B)`.
+// The prefix `&` binds tight to a single atom, so `&A | B` is `(&A) | B`.
+// A borrow of a compound is written with explicit parens, `&(A | B)`.
 type RefTypeAnn struct {
 	Mut          bool
 	Lifetime     LifetimeAnnNode // optional

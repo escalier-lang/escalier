@@ -49,7 +49,7 @@ func (p *Parser) typeAnn() ast.TypeAnn {
 	case Pipe:
 		p.lexer.consume() // skip leading '|'
 	default:
-		// A leading '&' is no longer skipped as intersection sugar: in
+		// A leading '&' is no longer skipped as intersection sugar. In
 		// primary position it is a prefix borrow (see primaryTypeAnn).
 	}
 
@@ -180,7 +180,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	token := p.lexer.peek()
 
 	// Prefix borrow: `&`, `&mut`, `&'a`, `&'a mut`. The `&` binds tight to a
-	// single atom, so `&A | B` parses as `(&A) | B`; a borrow of a compound is
+	// single atom, so `&A | B` parses as `(&A) | B`. A borrow of a compound is
 	// written with explicit parens, `&(A | B)`. The optional lifetime precedes
 	// an optional `mut`, mirroring the `&'a mut` receiver form on methods.
 	if token.Type == Ampersand {
@@ -1003,8 +1003,9 @@ func (p *Parser) parseTypeRef(firstToken *Token) *ast.TypeRefTypeAnn {
 }
 
 // parseOptLifetimeAnn parses an optional leading lifetime annotation that
-// precedes an inner type — a single `'a` or a union `('a | 'b)`. It returns
-// nil and consumes nothing when the next tokens are not a lifetime, so an
+// precedes an inner type. The annotation is a single `'a` or a union
+// `('a | 'b)`. It returns nil and consumes nothing when the next tokens are
+// not a lifetime, so an
 // `(` that opens a parenthesized type rather than a lifetime union falls
 // through to the regular type-annotation path. Used both for the `'a Point`
 // prefix on a type reference and for the lifetime slot of a prefix borrow.
