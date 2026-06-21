@@ -215,6 +215,16 @@ set of rules:
    rule. A `mut` modifier still fixes mutable shape, and a lifetime-qualified `&'a`
    names the lifetime instead of inferring it.
 
+   A binding may also borrow with an explicit `&` on the initializer instead of an
+   annotation. `val q = &p` borrows `p` immutably and infers `q: &{x: number}`, and
+   `val q = &mut p` takes a mutable borrow, which requires `p` to be owned-mutable. This
+   is equivalent to the annotated form, but it does not repeat the pointee shape, so it
+   is the ergonomic way to force a borrow where inference would otherwise move. The
+   explicit `&` expression is a binding-site convenience. Call arguments still borrow
+   implicitly, `foo(p)` rather than `foo(&p)`, per the "Function argument" rule, because
+   the parameter's own `&` already states the borrow. A binding has no parameter
+   annotation to lean on, so the `&` on the initializer states the borrow there instead.
+
 4. **Member reads borrow the receiver.** Reading `obj.f` yields a borrow of the
    field for a lifetime bounded by the receiver, not a fresh owned value. A read
    that is immediately consumed locally needs no lifetime in the rendered type;
@@ -252,6 +262,12 @@ the transfer has one of three outcomes.
    meaning never tracked and never moved. It does not assert that a runtime
    duplicate is made. A promise's resolved payload is governed separately.
    Awaiting the promise borrows that payload under the ordinary borrow rules.
+
+   Immutable borrows are Copy as well. Copying one yields another immutable borrow of
+   the same value, and the source stays live, which is why a `&T` can be freely
+   duplicated. A mutable borrow is also non-consuming when bound, though as a
+   `&mut`-to-`&mut` reborrow under outcome 2 rather than a copy. The common rule is that
+   binding a borrow never consumes it. Only an owned value moves.
 
 2. **Borrow.** The destination takes a reference whose lifetime is bounded within
    the source binding's region. The source keeps ownership and stays usable. The
@@ -314,9 +330,32 @@ requiring every value to be consumed exactly once — is not a goal.
 Move/affine semantics applies the same copy/borrow/move decision uniformly. This
 section lists the sites and the outcome at each.
 
-- **`val` / `var` binding.** `val y = x` copies if `x` is a value type, borrows
-  if `y` is annotated `&` (a local view of `x`, immutable or `&mut`), and otherwise
-  moves `x` into `y`, consuming `x`.
+- **`val` / `var` binding.** The outcome depends on `x`. A value type is copied. A
+  borrow, `&T` or `&mut T`, is duplicated non-consumingly so the source stays live. An
+  immutable borrow is copied and a mutable borrow reborrowed, and the multiple-`&mut`
+  rule makes the mutable case sound. An owned value is moved into `y` and consumed,
+  unless `y` is annotated `&` or `&mut`, which borrows `x` and keeps it usable. So
+  binding a borrow never consumes it, and only owned values move.
+
+  ```esc
+  val p = Point(5, 10)
+  val q = &p             // q: &Point — immutable borrow of p
+  val r = q              // r: &Point — copies the borrow; q stays live
+  ```
+
+  ```esc
+  val mut p = Point(0, 0)
+  val q = &mut p         // q: &mut Point — mutable borrow of p
+  val r = q              // r: &mut Point — reborrows; q stays live (multiple &mut allowed)
+  ```
+
+  Mutability lives in a different place for the two, which is why `val r = q` preserves
+  a borrow's mutability while a plain `val` move of an owned value drops it. An owned
+  value's mutability belongs to the binding and defaults to immutable, so moving into a
+  plain `val` freezes it, and `val mut` keeps it mutable. A borrow's mutability belongs
+  to its `&`/`&mut` type and is inherited on copy. It can be narrowed by annotation, as
+  in `val r: &Point = q` downgrading a `&mut`, but never widened, since a view cannot
+  grant itself access the owner withheld.
 - **Reassignment.** `y = x` follows the same decision as a binding. A reassigned
   `var` that previously owned a value drops the old value and takes the new one.
 - **Field / element store.** `obj.f = x` and `t[i] = x` move `x` when `obj` or
@@ -358,6 +397,15 @@ moved field, and allowed if it only reaches live fields. The precision target is
 field-granular tracking; the conservative fallback, acceptable if field-granular
 tracking proves costly, is to consume the whole object on any field move and
 record that as a precision limitation.
+
+Place borrows share this path-granular tracking. `&obj.f` borrows the field `obj.f`
+rather than the whole receiver, so it locks only that path and leaves a disjoint sibling
+such as `obj.g` independently usable, including through `&mut obj.g`. Moves and borrows
+read the same per-path ownership state, so they compose, and a field may be borrowed
+while a disjoint field is moved. The same conservative fallback applies. A path the
+checker cannot prove disjoint, such as a dynamic `arr[i]` versus `arr[j]`, falls back to
+a container-level borrow, the way the whole-object-consume fallback covers field moves it
+cannot separate.
 
 ## Why the invariant holds
 

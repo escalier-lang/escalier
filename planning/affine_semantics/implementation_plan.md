@@ -310,8 +310,41 @@ Goal: implement inference rules 2 and 3 — the annotation is read literally, an
 call sites auto-borrow.
 
 - Rule 3: with PR 2's lowering, a bare annotation is owned and a `&` annotation is
-  a borrow in every position. Add tests pinning `val q: &{x} = p` as a borrow and
-  `val q: {x} = p` as a move into an owned binding.
+  a borrow in every position. The binding initializer makes the move-or-borrow and
+  mutability choice when `p` is an owned value:
+
+  | | move (owned `q`) | borrow |
+  |---|---|---|
+  | **immutable `q`** | `val q = p` | `val q = &p` |
+  | **mutable `q`** | `val mut q = p` | `val q = &mut p` |
+
+  A `&mut` borrow requires an owned-mutable `p`, and the `&` forms infer `q`'s borrow
+  type without repeating the pointee shape. The move forms establish owned bindings
+  here, with the consuming enforcement and use-after-move landing in PR 6, as with the
+  bare owned parameter.
+
+  Each quadrant also has an annotated spelling that restates the pointee shape instead
+  of inferring it:
+
+  | | move (owned `q`) | borrow |
+  |---|---|---|
+  | **immutable `q`** | `val q: {x} = p` | `val q: &{x} = p` |
+  | **mutable `q`** | `val q: mut {x} = p` | `val q: &mut {x} = p` |
+
+  Add tests pinning each form in both tables.
+- Borrow-expression syntax: `&p` and `&mut p` are the first `&` in expression position,
+  so they need new surface syntax, unlike the type-position `&` of PR 1. Add an
+  `ast.BorrowExpr{Mut bool, Arg Expr}` variant to the `Expr` sum type
+  ([internal/ast/expr.go](../../internal/ast/expr.go)), add it to `isExpr()`, regenerate
+  via `gen_ast.go`, and update [internal/ast/visitor.go](../../internal/ast/visitor.go).
+  The existing `UnaryExpr` is the precedent for a prefix operator. Parse prefix `&`/`&mut`
+  in the unary position of the expression parser and render it in
+  [internal/printer/printer.go](../../internal/printer/printer.go). In the solver, infer
+  `&p` to an immutable `RefType` borrow and `&mut p` to a mutable one, minting a fresh
+  inferred lifetime bounded by `p`'s region, the same `RefType` the annotated
+  `val q: &{x} = p` produces. Require `p` to be owned-mutable for `&mut p`. Prefix `&`
+  binds looser than the postfix `.` and `[]`, so `&obj.f` parses as `&(obj.f)`, a borrow
+  of the whole place path, not `(&obj).f`. Its field-granular semantics are in PR 4.
 - Rule 2: a `&` parameter is a borrow and a bare parameter is owned. Adjust
   `attachParamLifetimes` ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go))
   so it mints a fresh lifetime only for `&` parameters, and leaves a bare parameter
@@ -327,7 +360,8 @@ call sites auto-borrow.
   the check that a `&mut` parameter requires an owned-mutable argument.
 
 Tests: owned vs borrow parameters; the consuming-parameter case; `foo(p)` rather
-than `foo(&p)`; the `&mut`-requires-mutable rejection.
+than `foo(&p)`; the `&mut`-requires-mutable rejection; `&p` and `&mut p` borrow
+expressions parse, print round-trip, and infer borrows.
 
 Acceptance: the rule-2 and rule-3 examples in the requirements check as written.
 
@@ -345,9 +379,16 @@ Goal: implement inference rule 4.
 - A field whose static type is itself a `&` borrow copies the borrow out rather
   than nesting, since immutable borrows are freely duplicable. This keeps reads
   from producing `&&` types and sets up PR 9's normalization.
+- An explicit `&obj.f` borrows the path `obj.f` at field granularity, with the same
+  receiver-bounded lifetime as the implicit member read, and locks only that field. A
+  disjoint sibling such as `obj.g` stays independently usable, including `&mut obj.g`.
+  This shares the path-granular tracking the partial-moves work introduces. A path the
+  checker cannot prove disjoint, such as `arr[i]` versus `arr[j]`, falls back to a
+  container-level borrow.
 
 Tests: local member read with no displayed lifetime; an escaping member read that
-carries the receiver lifetime; reading a `&`-typed field yields a flat borrow.
+carries the receiver lifetime; reading a `&`-typed field yields a flat borrow; an
+explicit `&obj.f` borrow locks only the field and leaves `&mut obj.g` legal.
 
 Acceptance: member reads display and constrain as receiver-bounded borrows.
 
@@ -370,6 +411,34 @@ queried" above.
   blocks from [internal/liveness](../../internal/liveness), keyed by `VarID` and
   queried at `StmtRef` granularity, alongside the existing liveness and alias state
   on `funcCtx`. This is the genuinely new analysis.
+
+The lattice the second bullet builds has three per-binding states, joined at every CFG
+merge:
+
+```text
+            MaybeMoved
+           /          \
+     NotMoved          Moved
+```
+
+- **NotMoved** — no reaching path has moved the binding, so a use is allowed.
+- **Moved** — every reaching path has moved it, so a use is an unconditional
+  use-after-move.
+- **MaybeMoved** — some but not all reaching paths moved it, so a use is a conditional
+  use-after-move.
+
+`NotMoved` and `Moved` are the agreeing states below the top. Joining two edges that
+disagree raises the result to `MaybeMoved`, which then absorbs everything:
+
+| ⊔ | NotMoved | Moved | MaybeMoved |
+|---|---|---|---|
+| **NotMoved** | NotMoved | MaybeMoved | MaybeMoved |
+| **Moved** | MaybeMoved | Moved | MaybeMoved |
+| **MaybeMoved** | MaybeMoved | MaybeMoved | MaybeMoved |
+
+The entry state for every binding is `NotMoved`, and a move site sets it to `Moved`.
+PR 6 reads the state at each use, passing `NotMoved` and rejecting `Moved` and
+`MaybeMoved`.
 
 Tests: unit tests that the consumed lattice merges correctly across if/else, match,
 and loops; tests that escape now fires at returns, stores, arguments, and captures.
@@ -424,13 +493,25 @@ exclusivity.
 - Thaw: `val mut q = p` for an owned-immutable `p` moves `p` into a mutable
   binding and consumes it, so `q` is the sole owner and may be mutable. This is a
   move variant on the binding site from PR 6.
+- Freeze: the mirror transition, `val q = p` for an owned-mutable `p`, moves `p` into
+  an immutable binding and consumes it, so no mutable alias survives. This already
+  falls out of the PR 6 move engine, since moving an owned value into an immutable
+  binding is an ordinary escape-move; PR 8 only confirms the phase reframing leaves it
+  intact.
+
+  ```esc
+  val mut p = {x: 0}    // owned-mutable
+  p.x = 42
+  val q = p             // freeze: move into an immutable binding; p consumed
+  q.x = 5               // ERROR: q is immutable
+  print(p.x)            // ERROR: use of `p` after it was moved into `q`
+  ```
 - Reframe the residual exclusivity from Rules 1/2/3
   ([internal/solver/transitions.go](../../internal/solver/transitions.go)) as the
   borrow-phase rule: a mutable owned value is in either an immutable phase with any
   number of `&` borrows or a mutable phase with any number of `&mut` borrows, and
   the two never overlap. The existing liveness-driven mut/immut conflict check is
-  the mechanism; this PR aligns it to phases over lifetimes and keeps the freeze
-  (mut→immut) case it already handles.
+  the mechanism; this PR aligns it to phases over lifetimes.
 
 Tests: the thaw example with a use-after-move on the immutable source; the
 multiple-`&mut` example staying legal; an immutable borrow overlapping a `&mut`
@@ -446,10 +527,13 @@ union and intersection formers.
 - Make M6's `UnionType` and `IntersectionType` participate as `RefInner`
   ([internal/soltype/type.go](../../internal/soltype/type.go)) so `&(A | B)` is one
   borrow over a union pointee. M6 already introduces the formers and can carry
-  `mut` borrow members in a union, but does not make a union a valid borrow inner;
-  this is two marker methods plus a behavioural review of the `.(RefInner)`
-  assertion sites listed under "Unions as RefInner is a behavioural change, not a
-  fan-out" above, each with a test.
+  `mut` borrow members in a union, but does not make a union a valid borrow inner.
+  The change itself is small, just two marker methods, but it quietly reaches further
+  than that. The roughly seven `.(RefInner)` type assertions in the codebase will now
+  also accept unions and intersections, with no compile error to point them out. Review
+  each of those sites to confirm its logic still behaves correctly for a union or
+  intersection inner, and add a test for each. The sites are listed earlier under
+  "Unions as `RefInner`".
 - Reject mixed-ownership unions and intersections: a type whose members disagree
   on ownership, such as `{x} | &{y}`, has no uniform verdict and is an error that
   asks the programmer to make ownership uniform first. No silent downgrade.
