@@ -44,6 +44,12 @@ What is missing: the `&` notation end to end, annotation-literal ownership, memb
 reads that borrow the receiver, and the whole move / use-after-move analysis. The
 PRs below add these.
 
+The move-engine work, PRs 1 through 8, builds only on this M4 substrate. The
+type-former PRs, 9 and 10, additionally depend on **M6** of
+[planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md), which lands
+union and intersection formers together with union-scrutinee narrowing. They are
+scheduled after M6, while PRs 1 through 8 can proceed once M4 is in place.
+
 ## Parsing borrows without a syntax mode
 
 There is no parser grammar mode. A prefix `&` is parsed as a borrow unconditionally,
@@ -134,20 +140,23 @@ part of this work, since a move that misses a nested escape is unsound. This is 
 the move engine is split across PR 5 (escape generalization and the consumed
 lattice) and PR 6 (the consume and use-after-move behaviour).
 
-### Narrowing does not exist yet in the solver
+### Narrowing comes from M6, not this plan
 
-The discriminant pin assumed narrowing infrastructure to build on; there is none.
-Neither `inferIfElse` nor `inferMatch`
+The discriminant pin needs union-scrutinee narrowing to build on, and the current
+solver has none — neither `inferIfElse` nor `inferMatch`
 ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go)) refines the
-scrutinee inside a branch or arm. Match binds only the pattern's leaf projections
-through the member-lookup constraint path
-([internal/solver/pattern.go](../../internal/solver/pattern.go)), never a narrowed
-scrutinee. Decision: PR 10 splits. **PR 10a adds union narrowing** to the solver —
-discriminant and shape guards in conditionals and match arms that refine the
-scrutinee to a new per-arm binding, general type-system work that is independently
-useful. **PR 10b adds the affine layer** — a mutable narrowed binding `&mut A` with
-the discriminant pinned for the arm. The insertion points are `inferMatch` where
-the arm scope is built and the `LitPat` discriminant arm in `bindPatternWith`.
+scrutinee inside a branch or arm, and match binds only the pattern's leaf
+projections through the member-lookup constraint path
+([internal/solver/pattern.go](../../internal/solver/pattern.go)). But narrowing is a
+planned deliverable of **M6** in
+[planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md), which adds
+union and intersection formers together with union-scrutinee narrowing to gate the
+read-until-narrowed-union write site, including the trickier non-discriminated form
+that narrows on a field's runtime type. Decision: the affine plan does not add
+narrowing. PR 10 adds only the affine layer — a mutable narrowed binding `&mut A`
+with the discriminant pinned for the arm — on top of M6's narrowing. The insertion
+points are `inferMatch` where the arm scope is built and the `LitPat` discriminant
+arm in `bindPatternWith`.
 
 ### Unions as RefInner is a behavioural change, not a fan-out
 
@@ -230,9 +239,8 @@ lifetime. Chained access `a.b.c` composes the rule at each link.
 | 6 | Consume and use-after-move at every flow site, conditional moves | 5 | Large |
 | 7 | Partial moves and field-level ownership | 6 | Medium |
 | 8 | Immutable→mutable thaw move and borrow-phase framing | 6 | Medium |
-| 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3 | Medium |
-| 10a | Union narrowing in the solver (general type-system work) | 9 | Large |
-| 10b | Mutable narrowed binding with pinned discriminant | 8, 10a | Medium |
+| 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3, M6 | Medium |
+| 10 | Mutable narrowed binding with pinned discriminant | 8, 9, M6 | Medium |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
@@ -432,13 +440,16 @@ Acceptance: both transitions are moves, and exclusivity reads as the phase rule.
 
 ### PR 9 — Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization
 
-Goal: the type-former interactions that do not involve narrowing.
+Goal: the type-former interactions that do not involve narrowing, built on M6's
+union and intersection formers.
 
-- Make `UnionType` and `IntersectionType` participate as `RefInner`
+- Make M6's `UnionType` and `IntersectionType` participate as `RefInner`
   ([internal/soltype/type.go](../../internal/soltype/type.go)) so `&(A | B)` is one
-  borrow over a union pointee. This is two marker methods plus a behavioural review
-  of the `.(RefInner)` assertion sites listed under "Unions as RefInner is a
-  behavioural change, not a fan-out" above, each with a test.
+  borrow over a union pointee. M6 already introduces the formers and can carry
+  `mut` borrow members in a union, but does not make a union a valid borrow inner;
+  this is two marker methods plus a behavioural review of the `.(RefInner)`
+  assertion sites listed under "Unions as RefInner is a behavioural change, not a
+  fan-out" above, each with a test.
 - Reject mixed-ownership unions and intersections: a type whose members disagree
   on ownership, such as `{x} | &{y}`, has no uniform verdict and is an error that
   asks the programmer to make ownership uniform first. No silent downgrade.
@@ -457,39 +468,21 @@ make-uniform message; `&&Point` normalized to `&Point`.
 Acceptance: unions borrow as a unit, mixed ownership is rejected, and nested
 borrows never exceed depth one.
 
-### PR 10a — Union narrowing in the solver
+### PR 10 — Mutable narrowed binding with pinned discriminant
 
-Goal: add the narrowing infrastructure the affine pin depends on, since the solver
-has none today. See "Narrowing does not exist yet in the solver" above. This is
-general type-system work, useful independently of affine semantics.
+Goal: the affine layer on M6's union-scrutinee narrowing. See "Narrowing comes from
+M6, not this plan" above. This PR adds no narrowing of its own; it depends on M6
+having landed.
 
-- In `inferIfElse` and `inferMatch`
-  ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go)), refine the
-  scrutinee inside a branch or arm based on a discriminant or shape guard, binding
-  the scrutinee to a narrowed type in the branch or arm scope rather than leaving it
-  at the un-narrowed union. The `match` arm scope is built where `bindPattern` is
-  called; the discriminant comparison is the `LitPat` arm in `bindPatternWith`
-  ([internal/solver/pattern.go](../../internal/solver/pattern.go)).
-- Narrowing introduces a fresh binding for the narrowed view; the original keeps its
-  union type.
-
-Tests: a discriminated union narrowed in a match arm and in an if guard; the
-narrowed binding has the variant type, the original keeps the union.
-
-Acceptance: conditionals and match arms narrow a union scrutinee.
-
-### PR 10b — Mutable narrowed binding with pinned discriminant
-
-Goal: the affine layer on PR 10a's narrowing.
-
-- The narrowed binding is a fresh borrow of the scrutinee scoped to the narrowed
-  region. An immutable narrowed binding sits in the immutable phase and is sound
-  with no extra rule.
+- The narrowed binding M6 produces is treated as a fresh borrow of the scrutinee
+  scoped to the narrowed region. An immutable narrowed binding sits in the immutable
+  phase and is sound with no extra rule.
 - A mutable narrowed binding `&mut A` is allowed, and while it is live the
   discriminant the narrowing tested may not be written through any alias, though the
   variant's other fields stay mutable. Implement the tag-pin as a scoped,
   field-level write restriction layered on PR 7's field-level tracking and PR 8's
-  phase framing.
+  phase framing, hooked at the `inferMatch` arm scope and the `LitPat` discriminant
+  arm in `bindPatternWith`.
 
 Tests: the `match u { a is A => { a.x = 5 } }` example, with `a.x = 5` accepted and a
 write to the tag rejected for the arm.
