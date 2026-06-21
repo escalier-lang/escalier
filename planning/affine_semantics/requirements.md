@@ -597,6 +597,27 @@ fn f(p: mut (A | B)) -> void {
 }
 ```
 
+### Nested borrows
+
+A nested borrow such as `&&Point` arises only from generic substitution — `&T` at
+`T = &Point` — and every nesting normalizes to depth at most one, so Escalier never
+represents a borrow of a borrow. The JS compile target forces this rather than a
+policy choosing it.
+
+- **Immutable layers collapse.** Immutable borrows are Copy, and both layers compile
+  to the same bare object reference, so `&'a &'b Point` reduces to `&'a Point` — the
+  outer, shorter lifetime, with the standing constraint that `'b` outlives `'a`.
+  Immutable `&` is idempotent.
+- **Mutable nesting is uninhabitable.** `&mut &mut Point` would have to mean "repoint
+  the inner borrow," which needs a storage cell holding the inner reference. A borrow
+  compiles to the bare object reference with no cell of its own, and JS offers no
+  lvalue-reference to a binding, so no such operation is expressible. Repointing a
+  borrow stored in a field is written by mutably borrowing the *container* — an
+  ordinary `&mut Holder` — never by forming `&mut &mut Point`. The only way to get a
+  real repointable cell is to box it by hand as a `{ value: ... }` object, which is a
+  normal owned value, not a borrow. So the mutable nested type has no inhabitant you
+  can produce, and rejecting it costs nothing.
+
 ### Other formers
 
 - **Tuples and arrays** are `RefInner`. `&(A, B)` borrows the whole tuple, and
@@ -632,9 +653,6 @@ deferred questions."
   conservatively assume a type parameter *moves*, since it cannot tell whether the
   argument is a value type. A `Copy`-like bound that marks a parameter as a value
   type would let generic code pass it freely. Whether to add one is deferred.
-- **Nested borrows.** Instantiating `T` with a borrow under another `&` produces
-  `&&U`. Such nested borrows are meaningful but rare; whether to normalize them away
-  or carry them is unsettled.
 - **Mixed-ownership unions and intersections.** A union whose members carry
   different ownership, such as `{x: number} | &{y: number}`, has no single owned-or-
   borrowed verdict. The principled options are to factor a common wrapper or to
