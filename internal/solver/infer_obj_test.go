@@ -65,16 +65,33 @@ func TestInferTupleSpreadNonTuple(t *testing.T) {
 	require.Equal(t, "cannot spread 5 into a tuple", c.errs[0].Message())
 }
 
-// Spreading an inexact tuple is rejected: an inexact operand ([number, ...]) has
-// unknown length, so an element after the spread lands at an unknown position and
-// the result's shape can't be pinned. M4 splices exact tuples only.
-func TestInferTupleSpreadInexact(t *testing.T) {
+// Spreading an inexact tuple before another element is rejected: the inexact
+// operand ([number, ...]) has unknown length, so the trailing 1 would land at an
+// unknown position.
+func TestInferTupleSpreadInexactNotLast(t *testing.T) {
 	// fn f(z: [number, ...]) { return [...z, 1] }
 	_, _, errs := inferSource(t, `
 		fn f(z: [number, ...]) { return [...z, 1] }
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot spread an inexact tuple into a tuple", errs[0].Message())
+	require.Equal(t, "cannot spread an inexact tuple except as the last element", errs[0].Message())
+}
+
+// A trailing inexact spread is sound: the operand's known prefix extends the
+// literal and its unknown tail becomes the literal's tail, so the result is itself
+// an inexact tuple. [...z] over z: [number, ...] yields [number, ...], and a leading
+// element keeps its place: [a, ...z] yields [typeof a, number, ...].
+func TestInferTupleSpreadInexactLast(t *testing.T) {
+	t.Run("spread alone", func(t *testing.T) {
+		vals, _, errs := inferSource(t, `fn f(z: [number, ...]) { return [...z] }`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (z: [number, ...]) -> [number, ...]", vals["f"])
+	})
+	t.Run("element before a trailing spread", func(t *testing.T) {
+		vals, _, errs := inferSource(t, `fn f(z: [number, ...]) { return ["hi", ...z] }`)
+		require.Empty(t, errs)
+		require.Equal(t, `fn (z: [number, ...]) -> ["hi", number, ...]`, vals["f"])
+	})
 }
 
 // A spread whose operand already errored is absorbed: walking the unbound `a`

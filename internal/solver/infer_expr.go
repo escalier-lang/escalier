@@ -987,16 +987,19 @@ func bindingDecl(b ValueBinding) ast.Node {
 // A spread element ([...xs]) splices the operand's element types into the literal.
 // For example, [...pair, 3] over pair: [number, string] builds
 // [number, string, number]. M4 handles only this concrete-literal splice: the
-// operand must infer to an EXACT TupleType. An inexact operand ([number, ...]) has
-// unknown length, so a later element lands at an unknown position and the result's
-// shape can't be pinned, which is an InexactTupleSpreadError. A spread of any other
-// type is a SpreadNotTupleError. A spread whose operand already errored is absorbed
-// silently, so the recovery sentinel does not cascade a second diagnostic. Two
-// type-level cousins defer to M7/M9: a tuple-spread type over an abstract operand
-// [...P, x], and a typed variadic tail [number, ...Array<number>].
+// operand must infer to a TupleType. An inexact operand ([number, ...]) has unknown
+// length, so it may only be spread as the last element. There its known prefix
+// extends the literal and its unknown tail makes the result inexact too. An inexact
+// operand anywhere else would put a later element at an unknown position, which is an
+// InexactTupleSpreadError. A spread of any other type is a SpreadNotTupleError. A
+// spread whose operand already errored is absorbed silently, so the recovery
+// sentinel does not cascade a second diagnostic. Two type-level cousins defer to
+// M7/M9: a tuple-spread type over an abstract operand [...P, x], and a typed
+// variadic tail [number, ...Array<number>].
 func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Type {
 	elems := make([]soltype.Type, 0, len(e.Elems))
-	for _, el := range e.Elems {
+	inexact := false
+	for i, el := range e.Elems {
 		spread, ok := el.(*ast.ArraySpreadExpr)
 		if !ok {
 			elems = append(elems, c.inferExpr(scope, lvl, el))
@@ -1004,11 +1007,14 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 		}
 		switch op := c.inferExpr(scope, lvl, spread.Value).(type) {
 		case *soltype.TupleType:
-			if op.Inexact {
+			if op.Inexact && i != len(e.Elems)-1 {
 				c.report(&InexactTupleSpreadError{Spread: spread, Operand: op})
 				continue
 			}
 			elems = append(elems, op.Elems...)
+			if op.Inexact {
+				inexact = true // a trailing inexact spread carries through
+			}
 		case *soltype.ErrorType:
 			// The operand already reported its own failure; absorb it rather than
 			// layering a SpreadNotTupleError on the recovery sentinel.
@@ -1016,7 +1022,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			c.report(&SpreadNotTupleError{Spread: spread, Operand: op})
 		}
 	}
-	t := &soltype.TupleType{Elems: elems}
+	t := &soltype.TupleType{Elems: elems, Inexact: inexact}
 	c.recordType(e, t)
 	c.recordProv(t, e, TupleElem)
 	return t
