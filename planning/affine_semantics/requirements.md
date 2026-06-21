@@ -554,6 +554,15 @@ multiple-input-borrows case. Within a single solved instantiation a variable has
 ownership. Owned and borrowed are different types, so an inference variable used as
 owned in one place and borrowed in another is a conflict, not a value that is both.
 
+There is no `Copy` bound. Generic code treats a type parameter as non-duplicable —
+the conservative affine assumption — because it cannot tell whether the argument is a
+value type. A body may therefore use a `T` value at most once, and a function that
+needs to reuse its argument takes it by `&T` and reads through the borrow. A function
+that genuinely duplicates an owned value, such as `fn dup<T>(x: T) -> (T, T)`, is not
+expressible generically; it must be written against a concrete value type or take a
+borrow. The bound is omitted deliberately: duplicating a type-parameter value is rare
+enough not to justify the constraint machinery, and borrowing covers the common case.
+
 ### Type aliases
 
 A shape alias is transparent. `type Point = {x: number, y: number}` names an owned
@@ -580,6 +589,23 @@ scope, and the phase rule already forbids any mutable borrow from changing the
 variant while it is live. A concurrent mutation can therefore never silently re-type
 a narrowed view.
 
+Narrowing a mutable value may yield a mutable narrowed binding, `&mut A`, so the
+variant's fields can be written. To keep that sound while several mutable borrows are
+live at once, the discriminant is **pinned** for the binding's scope: while a mutable
+narrowed `&mut A` is live, the tag the narrowing tested may not be written through any
+alias, though the variant's other fields stay mutable. Pinning matches the mental
+model — the narrowing already depends on the tag, so the tag is frozen for the arm —
+and it removes the only way a concurrent write could invalidate the narrowed type.
+
+```esc
+match u {              // u: mut (A | B)
+    a is A => {
+        a.x = 5        // OK — a is &mut A, and x is an ordinary field of the A variant
+        // a.tag = "b" is rejected — the discriminant is pinned for this arm
+    }
+}
+```
+
 `mut` and `&` sit identically on the wrapper but behave differently over a union,
 because mutation is invariant where an immutable borrow is covariant. An immutable
 borrow reads only, so `&(A | B)` factors by subtyping: `&A` is usable where
@@ -596,6 +622,15 @@ fn f(p: mut (A | B)) -> void {
     p = {tag: "b", y: 0}   // writes a value of type A | B; would corrupt storage typed mut A
 }
 ```
+
+A union or intersection must have uniform ownership. Because ownership is the outer
+wrapper, a type whose members disagree — an owned member beside a borrowed one, such
+as `{x: number} | &{y: number}` — has no single owned-or-borrowed verdict and is
+rejected. The programmer makes ownership uniform first: clone the borrowed member to
+own it, or borrow the owned member, so both sides agree before the union is formed.
+Auto-factoring the owned member down to a borrow is deliberately not done: when that
+member is a fresh temporary the resulting borrow lifetime is too short to be useful,
+and the silent downgrade would hide the problem rather than surface it.
 
 ### Nested borrows
 
@@ -632,9 +667,6 @@ policy choosing it.
   The wrapper is applied to the computed result, so a conditional type that selects
   between branches yields a pointee shape that a borrow then wraps.
 
-Open questions on type-former interactions are collected under "Non-goals and
-deferred questions."
-
 ## Non-goals and deferred questions
 
 - **Linearity / mandatory consumption.** Values need not be consumed; unused
@@ -649,20 +681,6 @@ deferred questions."
 - **Cross-package moves.** Move behaviour at the boundary of imported,
   body-less declarations depends on declared lifetimes and is deferred to the
   library-import work, consistent with the elision rules for lifetimes.
-- **A `Copy` bound for generics.** Without a value-type bound, generic code must
-  conservatively assume a type parameter *moves*, since it cannot tell whether the
-  argument is a value type. A `Copy`-like bound that marks a parameter as a value
-  type would let generic code pass it freely. Whether to add one is deferred.
-- **Mixed-ownership unions and intersections.** A union whose members carry
-  different ownership, such as `{x: number} | &{y: number}`, has no single owned-or-
-  borrowed verdict. The principled options are to factor a common wrapper or to
-  reject the type; which one is unsettled.
-- **Mutable narrowed bindings.** Whether narrowing may yield a mutable narrowed
-  binding — `&mut A`, so the variant's fields can be written — is open. If it can,
-  then because several mutable borrows may be live at once, that binding's soundness
-  needs the discriminant to stay stable for its scope: treat the tag as immutable
-  while narrowed, or make that one borrow exclusive. If narrowing yields only
-  immutable views, the question disappears.
 - **Diagnostics.** Exact wording and blame spans for use-after-move and
   move-on-escape errors are left to the implementation plan; they should name the
   move site, the later use, and why the transfer was a move.
