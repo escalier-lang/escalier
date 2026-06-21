@@ -65,11 +65,15 @@ and the *rules*.
   order. There is **no `UnionType` arm at all**, and no general intersection
   rule. The structural `switch` ([constrain.go:150](../../internal/solver/constrain.go))
   falls through to `CannotConstrainError` when a side is a union.
-- **`resolveTypeAnn` rejects union/intersection annotations.**
+- **`resolveTypeAnn` rejects union/intersection AND function annotations.**
   ([type_ann.go:21](../../internal/solver/type_ann.go)) has no `*ast.UnionTypeAnn`
-  / `*ast.IntersectionTypeAnn` arm; both fall to `reportUnsupported`. The AST
-  nodes exist ([ast/type_ann.go:381](../../internal/ast/type_ann.go)) but carry
-  **no `Inexact` field**.
+  / `*ast.IntersectionTypeAnn` / `*ast.FuncTypeAnn` arm; all fall to
+  `reportUnsupported`. The AST nodes exist
+  ([ast/type_ann.go:381](../../internal/ast/type_ann.go),
+  [ast/type_ann.go:438](../../internal/ast/type_ann.go)); `UnionTypeAnn` carries
+  **no `Inexact` field**, while `FuncTypeAnn` already has `Params` / `Return` /
+  `Inexact`. So M3's accept-set callback subtyping is only unit-tested on
+  hand-built `FuncType` values, not in source.
 - **The probe journal exists** ([probe.go](../../internal/solver/probe.go)):
   `newProbe` / `Commit` / `Discard`, with bound-append and Info/Prov rollback.
   The overload arm is its first consumer; M6's "exists" rules are the second.
@@ -94,12 +98,18 @@ and the *rules*.
 2. **Lattice subtyping rules in `constrain`** — the "for all" rules eagerly, the
    "exists" rules under a probe with **variable deferral** to avoid speculative
    pinning — plus **union/intersection annotation input** in `resolveTypeAnn`.
-3. **The `UnionType` exactness flag** end to end: AST/parser for `A | B | ...`,
+3. **Monomorphic function-type annotation input** — `resolveTypeAnn` resolves
+   `fn(params) -> ret` and the inexact `fn(..., ...) -> ret` into a
+   `soltype.FuncType`, so function types are writable as params, returns,
+   union/intersection members, and binding annotations. Generic, `throws`, and
+   lifetime-param'd function annotations stay deferred.
+4. **The `UnionType` exactness flag** end to end: AST/parser for `A | B | ...`,
    inferred-output exact-by-default, the one-way `exact <: inexact` rule, and the
    **union leg of `match` exhaustiveness**.
-4. **The `_ <: unknown` (⊤) and `never <: _` (⊥) rules**, and the removal of the
-   function-arm Variation-B guard.
-5. **The permissive mut-borrow join**: degrade an incompatible reconcile to a
+5. **The `_ <: unknown` (⊤) and `never <: _` (⊥) rules**, and the removal of the
+   function-arm Variation-B guard — now testable end-to-end via an inexact
+   function annotation.
+6. **The permissive mut-borrow join**: degrade an incompatible reconcile to a
    read-until-narrowed union instead of an error.
 
 ## Scope — deliberately out of M6
@@ -109,11 +119,19 @@ and the *rules*.
   match-exhaustiveness payoff, not operator-driven propagation
   ([01-milestones.md](01-milestones.md) M9, "Exactness propagation through
   operators").
-- **Narrowing-gated writes through a union.** PR5 produces the union *output* and
+- **Narrowing-gated writes through a union.** PR6 produces the union *output* and
   keeps its conflicting fields **read-only**, which is sound. Re-enabling a write
   after a runtime-type narrow such as `typeof r.x === "number"` needs narrowing
-  infrastructure the solver does not have yet. That is the hardest narrowing form
-  and stays deferred (see Open questions).
+  infrastructure the solver does not have yet, and **no current milestone owns
+  narrowing** (see Open questions). Per the settled decision that narrowing
+  introduces a new binding ([02-design-notes.md](02-design-notes.md) §"Settled
+  decisions"), the write would happen through that *new* narrowed binding, never
+  through the original union-typed one — so the read-only-forever behavior of the
+  original binding is exactly right, not a stopgap.
+- **Generic / `throws` / lifetime-param'd function-type annotations.** M6 resolves
+  only the monomorphic function annotation (PR3). A written type parameter `T`
+  needs a type-name scope, which is M7 TypeRef work; `throws` is M9; lifetime
+  params ride M6.5.
 - **Enum/nominal `match` exhaustiveness** — M5.
 - **General intersection-of-objects distribution / normalization beyond the
   lattice identities** — not required by any M6 acceptance case; intersections
@@ -124,19 +142,24 @@ and the *rules*.
 
 ```
 PR1 (representation + normalization)
- ├─► PR2 (constrain lattice rules + annotation input)
- │     └─► PR3 (union exactness flag + match exhaustiveness leg)
- ├─► PR4 (⊤/⊥ rules + Variation-B close)
- └─► PR5 (permissive mut-borrow join)
+ ├─► PR2 (constrain lattice rules + union/intersection annotation input)
+ │     └─► PR4 (union exactness flag + match exhaustiveness leg)
+ ├─► PR3 (monomorphic function-type annotations)
+ │     └─► PR5 (⊤/⊥ rules + Variation-B close — now testable end-to-end)
+ └─► PR6 (permissive mut-borrow join)
 ```
 
 - **PR1 is first because every other PR mints or compares a union/intersection**,
   and they must all route through one normalizer or the canonical-order and
   identity guarantees leak. It is "born-with-the-type" infra in the same sense
   M2.5's `Prov` discipline was.
-- **PR2 before PR3** because the exactness one-way rule is a refinement of the
+- **PR2 before PR4** because the exactness one-way rule is a refinement of the
   base lattice rules PR2 installs.
-- **PR4 and PR5 depend only on PR1** (PR5 also reads PR2's union rule for the
+- **PR3 (function annotations) feeds PR5.** The `_ <: unknown` rule itself needs
+  only PR1, but its reason for existing — the Variation-B check — is only
+  *reachable* once an inexact function annotation can reach `constrain`, which is
+  PR3. So PR3 lands first and PR5 carries the end-to-end test.
+- **PR3 and PR6 depend only on PR1** (PR6 also reads PR2's union rule for the
   covariant-read story but does not require it to land first).
 
 ## Core types added or changed in M6
@@ -175,7 +198,7 @@ routes through them:
 - `mergeObjectGroup` ([coalesce.go:447](../../internal/solver/coalesce.go)) — the
   per-property intersection of usage requirements.
 - `resolveTypeAnn` (PR2) — annotation input.
-- the permissive `joinBorrows` (PR5) — the borrow union.
+- the permissive `joinBorrows` (PR6) — the borrow union.
 
 ### A total order `compareType` (`solver/`)
 
@@ -191,7 +214,7 @@ ranks by a kind tag first, then tie-breaks structurally. See PR1.
 ### PR1 — Union/intersection normalization + the `Inexact` representation
 
 The representational foundation. No new subtyping yet; this PR makes the nodes
-well-formed, canonical, and flag-carrying so PR2–PR5 build on a settled shape.
+well-formed, canonical, and flag-carrying so PR2–PR6 build on a settled shape.
 
 **Add the flag and fix the visitor.**
 
@@ -308,12 +331,12 @@ between the `ErrorType` short-circuit and the structural `switch`, plus an
     not only an overload synthesis. Keep the specificity ordering for the
     function-arm case; a non-function intersection trials in declaration order.
 
-**Union exactness one-way rule (base form; the flag itself lands in PR3).** When
+**Union exactness one-way rule (base form; the flag itself lands in PR4).** When
 the sub is an **inexact** union and the super is closed — an exact union, or any
 non-union concrete that the open tail could violate — reject with an
 `InexactIntoExact`-style error before for-all decomposition, mirroring the object
 arm ([constrain.go:275](../../internal/solver/constrain.go)). Exact-into-inexact
-and exact-into-exact follow from member-wise decomposition. PR3 supplies the flag
+and exact-into-exact follow from member-wise decomposition. PR4 supplies the flag
 this reads; PR2 writes the rule against `Inexact == false` as the only reachable
 case until then.
 
@@ -342,7 +365,61 @@ still renders (regression against PR1's normalization).
 
 ---
 
-### PR3 — Union exactness flag end to end + `match` exhaustiveness (union leg)
+### PR3 — Monomorphic function-type annotations
+
+Resolve `ast.FuncTypeAnn` into `soltype.FuncType` for the monomorphic case, so
+function types are writable in source. This is the same "annotation input" work as
+PR2 and composes with it — a union or intersection of function types resolves
+member-wise. The core target type already exists: `soltype.FuncType` and its
+accept-set subtyping rule shipped in M3 ([constrain.go:171](../../internal/solver/constrain.go)),
+and `FuncParam` already carries `Optional` / `Rest` and a `Pat`.
+
+**Add the `*ast.FuncTypeAnn` arm to `resolveTypeAnn`**
+([type_ann.go:21](../../internal/solver/type_ann.go)):
+
+- Resolve each `Param`'s value annotation via `resolveTypeAnn`; carry its
+  `Optional` / `Rest` flags and `Pat` onto the `soltype.FuncParam` (M1 `IdentPat`
+  plus M4's structural pats already exist).
+- Map `ta.Inexact` ([ast/type_ann.go:444](../../internal/ast/type_ann.go)) to
+  `FuncType.Inexact`, resolve `Return`, record `Prov` against the annotation node.
+- Recover an unsupported part to a fresh var and keep the function shape —
+  cascade-safe, mirroring the `Promise<bad>` and object/tuple arms
+  ([type_ann.go:124](../../internal/solver/type_ann.go),
+  [type_ann.go:158](../../internal/solver/type_ann.go)).
+
+**Scope boundary — report unsupported (keep the wrapper, recover the inner) for:**
+
+- **Generic** annotations (`TypeParams` non-empty). Resolving a written `T` needs a
+  type-name scope, which is M7 TypeRef work — `resolveTypeAnn` already records
+  "Full name resolution against the type scope still arrives with M7"
+  ([type_ann.go:20](../../internal/solver/type_ann.go)).
+- **`throws`** (`Throws` non-nil) — M9.
+- **Lifetime params / lifetime-annotated params** (`LifetimeParams` non-empty) —
+  the lifetime-annotation surface (M6.5).
+
+These mirror the existing "supported wrapper, unsupported inner" recovery, so a
+function annotation with a deferred part still yields a function-shaped type rather
+than collapsing the binding.
+
+**Why it lands in M6.** It is annotation input like PR2, it makes PR5's
+Variation-B check reachable in real source, and it lets M3's accept-set acceptance
+— the `fn(x, y)` callback-slot rule, currently only unit-tested on hand-built
+`FuncType` values — be written as source. M5's variance examples are
+function/method-typed and will consume it too; landing it here (before M5) removes
+that blocker.
+
+**Tests.** `val f: fn(x: number) -> string = ...` checks structurally and rejects a
+mismatched body; an inexact `fn(x: number, ...) -> string` annotation resolves and
+round-trips; a function annotation as a union member
+(`fn() -> number | fn() -> string`) resolves; the M3 accept-set acceptance now
+expressible in source (into a `fn(x, y)` callback slot, `fn(x, ...)` / `fn(...)`
+are accepted, `fn(x)` and a 3-param function rejected); a generic / `throws` /
+lifetime function annotation reports the documented unsupported feature and
+recovers function-shaped.
+
+---
+
+### PR4 — Union exactness flag end to end + `match` exhaustiveness (union leg)
 
 Thread the flag from surface syntax to the exhaustiveness payoff.
 
@@ -358,7 +435,7 @@ default** — `combine` ([coalesce.go:295](../../internal/solver/coalesce.go)) m
 `newUnion(parts, false)` — matching exact-by-default for inferred shapes. The
 flag must be **threaded by coalescing, not just stored**: where a union's
 exactness derives from a source former's exactness it is carried through. M6's
-reachable case is the annotation and the borrow-join union (PR5); `keyof` /
+reachable case is the annotation and the borrow-join union (PR6); `keyof` /
 tuple-element-union propagation is M9.
 
 **Constrain.** Activate the full one-way rule from PR2 against the real flag:
@@ -389,9 +466,9 @@ inexact marker.
 
 ---
 
-### PR4 — The `_ <: unknown` (⊤) and `never <: _` (⊥) rules + close Variation-B
+### PR5 — The `_ <: unknown` (⊤) and `never <: _` (⊥) rules + close Variation-B
 
-Small and mostly independent of PR3.
+Small. Depends on PR1 for the rule placement and on PR3 for the end-to-end test.
 
 **The top rule.** Add to `constrain`: any `sub <: UnknownType` succeeds —
 everything is a subtype of `unknown` ([01-milestones.md](01-milestones.md), "the
@@ -410,24 +487,20 @@ KNOWN GAP ([constrain.go:195-202](../../internal/solver/constrain.go)): when
 "Variation B"). Remove the comment's "left unchecked for now" and the dependency
 note.
 
-**Reachability caveat.** The extra-position branch is exercised only once an
-**inexact function annotation** can reach `constrain` — and `resolveTypeAnn`
-still resolves no function-type annotations
-([type_ann.go](../../internal/solver/type_ann.go)). So PR4 lands the rule and
-wires the check, but a test that drives it requires function-annotation
-resolution. Land the ⊤/⊥ unit tests here; defer the end-to-end Variation-B
-fixture to whichever PR/milestone resolves function annotations, and note it at
-the call site rather than leaving the gap silently re-opened. (See Open
-questions.)
+**Now reachable in source.** PR3 resolves the inexact function annotation that
+drives the extra-position branch, so this PR lands the rule **and** an end-to-end
+fixture, not just a unit test on hand-built `FuncType` values. A wider exact
+function flowing into an inexact-callback slot exercises the
+`unknown <: sub.Params[i].Type` check through `resolveTypeAnn`.
 
 **Tests.** `x <: unknown` holds for every concrete `x` and for a borrow/union;
 `never <: x` holds; a unit test on the function arm with a hand-built inexact
 `FuncType` super and a wider exact `sub` asserts the extra-position `unknown`
-check fires.
+check fires; and the same case in real source via a `fn(x, ...)` annotation.
 
 ---
 
-### PR5 — Permissive mut-borrow join (relax D3)
+### PR6 — Permissive mut-borrow join (relax D3)
 
 Relax `joinBorrows` ([infer_expr.go:367](../../internal/solver/infer_expr.go))
 from D3's reconcile-or-error to **reconcile-or-union**, matching TypeScript's
@@ -506,7 +579,7 @@ message.
   construction, not in the `constrain`/`coalesce` inner loops.
 - **Permissive join soundness.** The read-only-until-narrowed contract is only
   sound if conflicting-field writes are actually rejected. Gate: the write-
-  rejection test in PR5.
+  rejection test in PR6.
 
 ## Acceptance (maps to [01-milestones.md](01-milestones.md) §M6)
 
@@ -514,27 +587,35 @@ message.
 - An intersection annotation is satisfied by a value at both member types. (PR2)
 - Both round-trip through the printer; inferred unions from multi-branch returns
   still render. (PR1/PR2)
+- A monomorphic `fn(x: A) -> B` annotation resolves and checks structurally; the
+  M3 accept-set callback-slot rule is expressible in source; a generic / `throws`
+  / lifetime function annotation reports unsupported and recovers function-shaped.
+  (PR3)
 - An exact union `"a" | "b"` is assignable to inexact `"a" | "b" | ...` but not
-  the reverse. (PR3)
+  the reverse. (PR4)
 - An exact-union `match` covering all members needs no default; an inexact-union
-  `match` requires one. (PR3)
-- `_ <: unknown` holds for every type; the function-arm Variation-B check is
-  wired. (PR4)
+  `match` requires one. (PR4)
+- `_ <: unknown` holds for every type; the function-arm Variation-B check is wired
+  and exercised end-to-end via an inexact function annotation. (PR5)
 - An incompatible mut-borrow join renders
   `(mut 'a {x: number}) | (mut 'b {x: string})` and reads `.x` as
-  `number | string`. (PR5)
+  `number | string`. (PR6)
 
 ## Open questions
 
-1. **Function-type annotation resolution.** PR4 wires Variation B but cannot
-   exercise it end-to-end until `resolveTypeAnn` resolves function-type
-   annotations. Is that in M6's scope, or does it ride a later milestone? The
-   `_ <: unknown` rule lands here regardless; only the reachable fixture waits.
-2. **Narrowing-gated writes.** PR5 leaves conflicting union fields read-only. The
-   write-after-narrow story needs runtime-type narrowing (`typeof r.x ===
-   "number"`), the trickiest narrowing form and the one the milestone says
-   "narrows last." It wants its own design pass once any narrowing
-   infrastructure exists.
+1. **Narrowing has no milestone.** PR6 leaves conflicting union fields read-only,
+   which is sound — but the broader narrowing story (write-after-narrow here,
+   match-arm narrowing in `pattern_matching` R9, general union narrowing) is **not
+   assigned to any M-series milestone**. `03-references.md` files it under the
+   post-MVP "narrowing future," tied to negation types. The settled rule is that
+   **narrowing introduces a new binding** ([02-design-notes.md](02-design-notes.md)
+   §"Settled decisions"), which removes the flow-sensitive-retyping burden, but a
+   milestone still has to own the construct. Decide whether to scope one before or
+   after the MVP cutover.
+2. **Generic function-type annotations.** PR3 covers only the monomorphic case.
+   The generic form needs a type-name scope to resolve a written `T`, which is M7
+   TypeRef work. Confirm M7 is the home, or pull it forward if M5's generic
+   method/variance work demands it sooner.
 3. **Intersection beyond lattice identities.** M6 normalizes intersections only
    to the identity level. If a later milestone needs general intersection-of-
    objects distribution, decide whether it extends `newIntersection` or lands as
