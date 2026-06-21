@@ -118,6 +118,10 @@ func (node *MutableTypeAnn) Span() Span             { return node.span }
 func (node *MutableTypeAnn) InferredType() Type     { return node.inferredType }
 func (node *MutableTypeAnn) SetInferredType(t Type) { node.inferredType = t }
 
+func (node *RefTypeAnn) Span() Span             { return node.span }
+func (node *RefTypeAnn) InferredType() Type     { return node.inferredType }
+func (node *RefTypeAnn) SetInferredType(t Type) { node.inferredType = t }
+
 func (node *ErrorTypeAnn) Span() Span             { return node.span }
 func (node *ErrorTypeAnn) InferredType() Type     { return node.inferredType }
 func (node *ErrorTypeAnn) SetInferredType(t Type) { node.inferredType = t }

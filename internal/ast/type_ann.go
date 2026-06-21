@@ -37,6 +37,7 @@ func (*IntrinsicTypeAnn) isTypeAnn()    {}
 func (*ImportTypeAnn) isTypeAnn()       {}
 func (*MatchTypeAnn) isTypeAnn()        {}
 func (*MutableTypeAnn) isTypeAnn()      {}
+func (*RefTypeAnn) isTypeAnn()          {}
 func (*ErrorTypeAnn) isTypeAnn()        {}
 func (*RestSpreadTypeAnn) isTypeAnn()   {}
 
@@ -681,6 +682,33 @@ func NewMutableTypeAnn(target TypeAnn, span Span) *MutableTypeAnn {
 func (t *MutableTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
 		t.Target.Accept(v)
+	}
+	v.ExitTypeAnn(t)
+}
+
+// RefTypeAnn is a borrow annotation written with a prefix `&`:
+//
+//	&{x}         → RefTypeAnn{Mut: false}
+//	&mut {x}     → RefTypeAnn{Mut: true}
+//	&'a {x}      → RefTypeAnn{Mut: false, Lifetime: 'a}
+//	&'a mut {x}  → RefTypeAnn{Mut: true,  Lifetime: 'a}
+//
+// The prefix `&` binds tight to a single atom, so `&A | B` is `(&A) | B`;
+// a borrow of a compound is written with explicit parens, `&(A | B)`.
+type RefTypeAnn struct {
+	Mut          bool
+	Lifetime     LifetimeAnnNode // optional
+	Inner        TypeAnn
+	span         Span
+	inferredType Type
+}
+
+func NewBorrowTypeAnn(mut bool, lifetime LifetimeAnnNode, inner TypeAnn, span Span) *RefTypeAnn {
+	return &RefTypeAnn{Mut: mut, Lifetime: lifetime, Inner: inner, span: span, inferredType: nil}
+}
+func (t *RefTypeAnn) Accept(v Visitor) {
+	if v.EnterTypeAnn(t) {
+		t.Inner.Accept(v)
 	}
 	v.ExitTypeAnn(t)
 }

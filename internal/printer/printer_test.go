@@ -716,6 +716,36 @@ func TestPrintTypeAnnotations(t *testing.T) {
 	}
 }
 
+func TestPrintBorrowTypeAnnotations(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"borrow", "&Point", "&Point"},
+		{"borrow mut", "&mut Point", "&mut Point"},
+		{"borrow lifetime", "&'a Point", "&'a Point"},
+		{"borrow lifetime mut", "&'a mut Point", "&'a mut Point"},
+		{"borrow of union parenthesized", "&(A | B)", "&(A | B)"},
+		{"borrow binds tighter than union", "&A | B", "&A | B"},
+		{"borrow as intersection member", "&A & B", "&A & B"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn := parseTypeAnn(t, tt.input)
+			result, err := Print(typeAnn, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected:\n%s\nGot:\n%s", tt.expected, result)
+			}
+		})
+	}
+}
+
 func TestPrintScript(t *testing.T) {
 	input := `val x = 5
 val y = 10

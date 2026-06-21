@@ -1770,3 +1770,203 @@
     span: 1:1-1:6,
 }
 ---
+
+[TestParseTypeAnnNoErrors/BorrowLifetimeMutType - 1]
+&ast.RefTypeAnn{
+    Mut: true,
+    Lifetime: &ast.LifetimeAnn{
+        Name: "a",
+        span: 1:2-1:4,
+    },
+    Inner: &ast.ObjectTypeAnn{
+        Elems: []ast.ObjTypeAnnElem{
+            &ast.PropertyTypeAnn{
+                Name: &ast.IdentExpr{
+                    Name: "x",
+                    span: 1:10-1:11,
+                },
+                Value: &ast.NumberTypeAnn{
+                    span: 1:13-1:19,
+                },
+            },
+        },
+        span: 1:9-1:20,
+    },
+    span: 1:1-1:20,
+}
+---
+
+[TestParseTypeAnnNoErrors/InfixIntersectionStillParses - 1]
+&ast.IntersectionTypeAnn{
+    Types: []ast.TypeAnn{
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "A",
+                span: 1:1-1:2,
+            },
+            span: 1:1-1:2,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "B",
+                span: 1:5-1:6,
+            },
+            span: 1:5-1:6,
+        },
+    },
+    span: 1:1-1:6,
+}
+---
+
+[TestParseTypeAnnNoErrors/BorrowAsIntersectionMember - 1]
+&ast.IntersectionTypeAnn{
+    Types: []ast.TypeAnn{
+        &ast.RefTypeAnn{
+            Inner: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "A",
+                    span: 1:2-1:3,
+                },
+                span: 1:2-1:3,
+            },
+            span: 1:1-1:3,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "B",
+                span: 1:6-1:7,
+            },
+            span: 1:6-1:7,
+        },
+    },
+    span: 1:1-1:7,
+}
+---
+
+[TestParseTypeAnnNoErrors/BorrowBindsTighterThanUnion - 1]
+&ast.UnionTypeAnn{
+    Types: []ast.TypeAnn{
+        &ast.RefTypeAnn{
+            Inner: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "A",
+                    span: 1:2-1:3,
+                },
+                span: 1:2-1:3,
+            },
+            span: 1:1-1:3,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "B",
+                span: 1:6-1:7,
+            },
+            span: 1:6-1:7,
+        },
+    },
+    span: 1:1-1:7,
+}
+---
+
+[TestParseTypeAnnNoErrors/BorrowMutType - 1]
+&ast.RefTypeAnn{
+    Mut: true,
+    Inner: &ast.ObjectTypeAnn{
+        Elems: []ast.ObjTypeAnnElem{
+            &ast.PropertyTypeAnn{
+                Name: &ast.IdentExpr{
+                    Name: "x",
+                    span: 1:7-1:8,
+                },
+                Value: &ast.NumberTypeAnn{
+                    span: 1:10-1:16,
+                },
+            },
+        },
+        span: 1:6-1:17,
+    },
+    span: 1:1-1:17,
+}
+---
+
+[TestParseTypeAnnNoErrors/BorrowTypeRef - 1]
+&ast.RefTypeAnn{
+    Inner: &ast.TypeRefTypeAnn{
+        Name: &ast.Ident{
+            Name: "Point",
+            span: 1:2-1:7,
+        },
+        span: 1:2-1:7,
+    },
+    span: 1:1-1:7,
+}
+---
+
+[TestParseTypeAnnNoErrors/BorrowLifetimeType - 1]
+&ast.RefTypeAnn{
+    Lifetime: &ast.LifetimeAnn{
+        Name: "a",
+        span: 1:2-1:4,
+    },
+    Inner: &ast.ObjectTypeAnn{
+        Elems: []ast.ObjTypeAnnElem{
+            &ast.PropertyTypeAnn{
+                Name: &ast.IdentExpr{
+                    Name: "x",
+                    span: 1:6-1:7,
+                },
+                Value: &ast.NumberTypeAnn{
+                    span: 1:9-1:15,
+                },
+            },
+        },
+        span: 1:5-1:16,
+    },
+    span: 1:1-1:16,
+}
+---
+
+[TestParseTypeAnnNoErrors/BorrowOfUnion - 1]
+&ast.RefTypeAnn{
+    Inner: &ast.UnionTypeAnn{
+        Types: []ast.TypeAnn{
+            &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "A",
+                    span: 1:3-1:4,
+                },
+                span: 1:3-1:4,
+            },
+            &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "B",
+                    span: 1:7-1:8,
+                },
+                span: 1:7-1:8,
+            },
+        },
+        span: 1:3-1:8,
+    },
+    span: 1:1-1:8,
+}
+---
+
+[TestParseTypeAnnNoErrors/BorrowType - 1]
+&ast.RefTypeAnn{
+    Inner: &ast.ObjectTypeAnn{
+        Elems: []ast.ObjTypeAnnElem{
+            &ast.PropertyTypeAnn{
+                Name: &ast.IdentExpr{
+                    Name: "x",
+                    span: 1:3-1:4,
+                },
+                Value: &ast.NumberTypeAnn{
+                    span: 1:6-1:12,
+                },
+            },
+        },
+        span: 1:2-1:13,
+    },
+    span: 1:1-1:13,
+}
+---

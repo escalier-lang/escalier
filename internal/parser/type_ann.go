@@ -48,10 +48,9 @@ func (p *Parser) typeAnn() ast.TypeAnn {
 	switch token.Type {
 	case Pipe:
 		p.lexer.consume() // skip leading '|'
-	case Ampersand:
-		p.lexer.consume() // skip leading '&'
 	default:
-		// Nothing to skip, continue parsing
+		// A leading '&' is no longer skipped as intersection sugar: in
+		// primary position it is a prefix borrow (see primaryTypeAnn).
 	}
 
 	primary := p.primaryTypeAnn()
@@ -179,8 +178,31 @@ loop:
 
 func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	token := p.lexer.peek()
-	isMut := false
 
+	// Prefix borrow: `&`, `&mut`, `&'a`, `&'a mut`. The `&` binds tight to a
+	// single atom, so `&A | B` parses as `(&A) | B`; a borrow of a compound is
+	// written with explicit parens, `&(A | B)`. The optional lifetime precedes
+	// an optional `mut`, mirroring the `&'a mut` receiver form on methods.
+	if token.Type == Ampersand {
+		p.lexer.consume() // consume '&'
+		lifetime := p.parseOptLifetimeAnn()
+		isMut := false
+		if p.lexer.peek().Type == Mut {
+			p.lexer.consume() // consume 'mut'
+			isMut = true
+		}
+		inner := p.primaryTypeAnn()
+		if inner == nil {
+			next := p.lexer.peek()
+			p.reportError(ast.MergeSpans(token.Span, next.Span),
+				"expected a type annotation after '&'")
+			inner = ast.NewErrorTypeAnn(token.Span)
+		}
+		span := ast.MergeSpans(token.Span, inner.Span())
+		return ast.NewBorrowTypeAnn(isMut, lifetime, inner, span)
+	}
+
+	isMut := false
 	if token.Type == Mut {
 		p.lexer.consume() // consume 'mut'
 		token = p.lexer.peek()
@@ -192,41 +214,8 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	//   ('a | 'b) Point  → LifetimeUnionAnn{...}
 	// We attach the lifetime to the resulting TypeRefTypeAnn after parsing
 	// the inner type.
-	var lifetime ast.LifetimeAnnNode
-	// nolint: exhaustive
-	switch token.Type {
-	case Lifetime:
-		p.lexer.consume()
-		lifetime = ast.NewLifetimeAnn(token.Value, token.Span)
-		token = p.lexer.peek()
-	case OpenParen:
-		// Try to parse a lifetime union: ( 'a | 'b | ... ) followed by a type.
-		// If the parens don't enclose a lifetime list, restore and fall through
-		// to the regular parenthesized-type-annotation path below.
-		saved := p.saveState()
-		open := p.lexer.next() // consume '('
-		if p.lexer.peek().Type != Lifetime {
-			p.restoreState(saved)
-			break
-		}
-		lifetimes := parseDelimSeq(p, CloseParen, Pipe, func() *ast.LifetimeAnn {
-			lt := p.lexer.peek()
-			if lt.Type != Lifetime {
-				return nil
-			}
-			p.lexer.consume()
-			return ast.NewLifetimeAnn(lt.Value, lt.Span)
-		})
-		closeTok := p.lexer.peek()
-		if closeTok.Type != CloseParen {
-			p.restoreState(saved)
-			break
-		}
-		p.lexer.consume()
-		lifetime = ast.NewLifetimeUnionAnn(lifetimes,
-			ast.MergeSpans(open.Span, closeTok.Span))
-		token = p.lexer.peek()
-	}
+	lifetime := p.parseOptLifetimeAnn()
+	token = p.lexer.peek()
 
 	var typeAnn ast.TypeAnn
 
@@ -1011,6 +1000,47 @@ func (p *Parser) parseTypeRef(firstToken *Token) *ast.TypeRefTypeAnn {
 		return ref
 	}
 	return ast.NewRefTypeAnn(qualIdent, []ast.TypeAnn{}, getQualIdentSpan(qualIdent))
+}
+
+// parseOptLifetimeAnn parses an optional leading lifetime annotation that
+// precedes an inner type — a single `'a` or a union `('a | 'b)`. It returns
+// nil and consumes nothing when the next tokens are not a lifetime, so an
+// `(` that opens a parenthesized type rather than a lifetime union falls
+// through to the regular type-annotation path. Used both for the `'a Point`
+// prefix on a type reference and for the lifetime slot of a prefix borrow.
+func (p *Parser) parseOptLifetimeAnn() ast.LifetimeAnnNode {
+	token := p.lexer.peek()
+	// nolint: exhaustive
+	switch token.Type {
+	case Lifetime:
+		p.lexer.consume()
+		return ast.NewLifetimeAnn(token.Value, token.Span)
+	case OpenParen:
+		saved := p.saveState()
+		open := p.lexer.next() // consume '('
+		if p.lexer.peek().Type != Lifetime {
+			p.restoreState(saved)
+			return nil
+		}
+		lifetimes := parseDelimSeq(p, CloseParen, Pipe, func() *ast.LifetimeAnn {
+			lt := p.lexer.peek()
+			if lt.Type != Lifetime {
+				return nil
+			}
+			p.lexer.consume()
+			return ast.NewLifetimeAnn(lt.Value, lt.Span)
+		})
+		closeTok := p.lexer.peek()
+		if closeTok.Type != CloseParen {
+			p.restoreState(saved)
+			return nil
+		}
+		p.lexer.consume()
+		return ast.NewLifetimeUnionAnn(lifetimes,
+			ast.MergeSpans(open.Span, closeTok.Span))
+	default:
+		return nil
+	}
 }
 
 // tryParseLifetimeArg attempts to parse a bare lifetime argument (`'a` or
