@@ -178,9 +178,37 @@ type BorrowEscapeError struct {
 	site  ast.Node     // M2.5: constraint node fallback
 }
 
+// SpreadNotTupleError fires when a tuple-literal spread element ([...xs]) has an
+// operand that does not infer to a tuple. M4 handles only the concrete-literal
+// splice: the operand's element types are copied into the literal in order, so it
+// must be a TupleType. A spread of any other type, such as an Array (M7), cannot
+// be spliced statically. Two type-level cousins defer to M7/M9: a tuple-spread
+// type over an abstract operand [...P, x], and a typed variadic tail
+// [number, ...Array<number>]. Spread is the offending spread element and carries
+// the blame span. Operand is the type it inferred to.
+type SpreadNotTupleError struct {
+	Spread  *ast.ArraySpreadExpr
+	Operand soltype.Type
+}
+
+// InexactTupleSpreadError fires when a tuple-literal spread element ([...xs]) has an
+// operand that infers to an INEXACT tuple ([number, ...]) and is not the last
+// element of the literal. An inexact tuple has unknown length, so an element written
+// after the spread would land at an unknown position and the result tuple's shape
+// could not be pinned. A trailing inexact spread is allowed and makes the whole
+// result inexact. The variadic-tail forms such as [number, ...Array<number>] defer
+// to M7/M9. Spread is the offending spread element and carries the blame span.
+// Operand is the inexact tuple it inferred to.
+type InexactTupleSpreadError struct {
+	Spread  *ast.ArraySpreadExpr
+	Operand *soltype.TupleType
+}
+
 func (*CannotConstrainError) isSolverError()     {}
 func (*FuncArityMismatchError) isSolverError()   {}
 func (*TupleLengthMismatchError) isSolverError() {}
+func (*SpreadNotTupleError) isSolverError()      {}
+func (*InexactTupleSpreadError) isSolverError()  {}
 func (*MissingPropertyError) isSolverError()     {}
 func (*InexactIntoExactError) isSolverError()    {}
 func (*ExtraPropertyError) isSolverError()       {}
@@ -800,6 +828,18 @@ func (e *FuncArityMismatchError) Message() string {
 func (e *TupleLengthMismatchError) Message() string {
 	return fmt.Sprintf("cannot constrain tuple of length %d <: tuple of length %d",
 		len(e.Sub.Elems), len(e.Super.Elems))
+}
+
+func (e *SpreadNotTupleError) Span() ast.Span      { return e.Spread.Span() }
+func (e *SpreadNotTupleError) Related() []ast.Span { return nil }
+func (e *SpreadNotTupleError) Message() string {
+	return "cannot spread " + describe(e.Operand) + " into a tuple"
+}
+
+func (e *InexactTupleSpreadError) Span() ast.Span      { return e.Spread.Span() }
+func (e *InexactTupleSpreadError) Related() []ast.Span { return nil }
+func (e *InexactTupleSpreadError) Message() string {
+	return "cannot spread an inexact tuple except as the last element"
 }
 
 func (e *MissingPropertyError) Message() string {

@@ -28,19 +28,103 @@ func TestInferTupleEmpty(t *testing.T) {
 	require.Equal(t, "[]", render(got))
 }
 
-// A spread element ([...a]) is an ArraySpreadExpr, which the M2 walk does not
-// cover; inferExpr reports it as unsupported and drops the error-recovery
-// placeholder (PR8) into the tuple slot, so the tuple still builds (no panic) and
-// the spread's value `a` is never walked — so no cascading unknown-identifier
-// error. Tuple/array spread is M4.
-func TestInferTupleSpreadUnsupported(t *testing.T) {
+// A spread element ([...pair]) splices the operand tuple's element types into the
+// literal: [...pair, 3] over pair: [number, string] builds [number, string, 3].
+func TestInferTupleSpread(t *testing.T) {
+	c := newChecker()
+	// [...[1, "hi"], 3]
+	pair := tupleExpr(numExpr(1), strExpr("hi"))
+	e := tupleExpr(ast.NewArraySpread(pair, testSpan()), numExpr(3))
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, `[1, "hi", 3]`, render(got))
+}
+
+// A spread in the middle of a literal keeps element order: the elements before
+// the spread, then the splice, then the elements after. [1, ...[2, 3], 4] builds
+// [1, 2, 3, 4].
+func TestInferTupleSpreadMiddle(t *testing.T) {
+	c := newChecker()
+	// [1, ...[2, 3], 4]
+	mid := tupleExpr(numExpr(2), numExpr(3))
+	e := tupleExpr(numExpr(1), ast.NewArraySpread(mid, testSpan()), numExpr(4))
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, "[1, 2, 3, 4]", render(got))
+}
+
+// Spreading multiple exact tuples concatenates them into one exact tuple whose
+// length is the sum of the operand lengths. The result stays exact, since every
+// operand has a known length, so the assertion checks the Inexact flag and the
+// element count directly rather than relying on the rendered form.
+func TestInferTupleSpreadMultipleExact(t *testing.T) {
+	c := newChecker()
+	// [...[1, 2], ...[3, 4]]
+	a := tupleExpr(numExpr(1), numExpr(2))
+	b := tupleExpr(numExpr(3), numExpr(4))
+	e := tupleExpr(ast.NewArraySpread(a, testSpan()), ast.NewArraySpread(b, testSpan()))
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, "[1, 2, 3, 4]", render(got))
+
+	tup, ok := got.(*soltype.TupleType)
+	require.True(t, ok)
+	require.False(t, tup.Inexact) // every operand had a known length
+	require.Len(t, tup.Elems, 4)  // 2 + 2 spliced elements
+}
+
+// Spreading a non-tuple value is a typed error: M4 splices concrete tuple
+// literals only, so the operand must infer to a tuple.
+func TestInferTupleSpreadNonTuple(t *testing.T) {
+	c := newChecker()
+	// [...5]
+	e := tupleExpr(ast.NewArraySpread(numExpr(5), testSpan()))
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Equal(t, "[]", render(got)) // the bad spread contributes no elements
+	require.Len(t, c.errs, 1)
+	require.Equal(t, "cannot spread 5 into a tuple", c.errs[0].Message())
+}
+
+// Spreading an inexact tuple before another element is rejected: the inexact
+// operand ([number, ...]) has unknown length, so the trailing 1 would land at an
+// unknown position.
+func TestInferTupleSpreadInexactNotLast(t *testing.T) {
+	// fn f(z: [number, ...]) { return [...z, 1] }
+	_, _, errs := inferSource(t, `
+		fn f(z: [number, ...]) { return [...z, 1] }
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot spread an inexact tuple except as the last element", errs[0].Message())
+}
+
+// A trailing inexact spread is sound: the operand's known prefix extends the
+// literal and its unknown tail becomes the literal's tail, so the result is itself
+// an inexact tuple. [...z] over z: [number, ...] yields [number, ...], and a leading
+// element keeps its place: [a, ...z] yields [typeof a, number, ...].
+func TestInferTupleSpreadInexactLast(t *testing.T) {
+	t.Run("spread alone", func(t *testing.T) {
+		vals, _, errs := inferSource(t, `fn f(z: [number, ...]) { return [...z] }`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (z: [number, ...]) -> [number, ...]", vals["f"])
+	})
+	t.Run("element before a trailing spread", func(t *testing.T) {
+		vals, _, errs := inferSource(t, `fn f(z: [number, ...]) { return ["hi", ...z] }`)
+		require.Empty(t, errs)
+		require.Equal(t, `fn (z: [number, ...]) -> ["hi", number, ...]`, vals["f"])
+	})
+}
+
+// A spread whose operand already errored is absorbed: walking the unbound `a`
+// reports a single unknown-identifier error, and the spread does not layer a
+// SpreadNotTupleError on the recovery sentinel.
+func TestInferTupleSpreadErrorOperandAbsorbs(t *testing.T) {
 	c := newChecker()
 	// [...a]
 	e := tupleExpr(ast.NewArraySpread(identExpr("a"), testSpan()))
 	got := c.inferExpr(NewScope(), 0, e)
-	require.Equal(t, "[error]", render(got))
+	require.Equal(t, "[]", render(got))
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: ArraySpreadExpr", c.errs[0].Message())
+	require.Equal(t, "Unknown identifier: a", c.errs[0].Message())
 }
 
 // --- ObjectExpr ---
@@ -71,6 +155,36 @@ func TestInferObjectStringKey(t *testing.T) {
 	got := c.inferExpr(NewScope(), 0, objExpr(strKey))
 	require.Empty(t, c.errs)
 	require.Equal(t, "{a: 5}", render(got))
+}
+
+// A numeric key resolves to a static field name: JavaScript coerces it to its
+// string form, so {0: 5} names the field "0". The field name is not a valid
+// identifier, so it renders as a quoted key.
+func TestInferObjectNumericKey(t *testing.T) {
+	c := newChecker()
+	// {0: 5}
+	numKey := ast.NewProperty(ast.NewNumber(0, testSpan()), false, false, numExpr(5), testSpan())
+	got := c.inferExpr(NewScope(), 0, objExpr(numKey))
+	require.Empty(t, c.errs)
+	require.Equal(t, `{"0": 5}`, render(got))
+}
+
+// A numeric key and a string key that coerce to the same name are the same field
+// under JavaScript semantics: {0: 1, "0": 2} is a single field "0". Last-wins
+// dedup then collapses them to {"0": 2}, so the resolved name, not the syntactic
+// key kind, decides identity.
+func TestInferObjectNumericStringKeyCollision(t *testing.T) {
+	c := newChecker()
+	// {0: 1, "0": 2}
+	numKey := ast.NewProperty(ast.NewNumber(0, testSpan()), false, false, numExpr(1), testSpan())
+	strKey := ast.NewProperty(ast.NewString("0", testSpan()), false, false, numExpr(2), testSpan())
+	got := c.inferExpr(NewScope(), 0, objExpr(numKey, strKey))
+	require.Empty(t, c.errs)
+	require.Equal(t, `{"0": 2}`, render(got))
+
+	obj, ok := got.(*soltype.ObjectType)
+	require.True(t, ok)
+	require.Len(t, obj.Elems, 1) // the two keys collapsed to one field
 }
 
 // Duplicate keys follow JS last-wins semantics: the later value replaces the

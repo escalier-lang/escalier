@@ -354,6 +354,15 @@ checker:
 
 ## M4 — Core value types: records + usage-based inference + `mut` + **lifetimes** + destructuring/`match`
 
+**Status: landed** (PRs #728–#765; see
+[m4-implementation-plan.md](m4-implementation-plan.md) §"Dependency graph" — all
+phases A–G complete). The `ObjectType`/`TupleType` exactness flag and subtyping
+rules, usage-based inference with the `open` marker, `var` literal widening, the
+unified `RefType{mut, lt, inner}` borrow wrapper and its constrain rule,
+field-write mutability inference, the lifetime sort with origination/escape/elision,
+destructuring patterns and the `match` expression, namespace member lookup, and the
+ported mutability-transition checks all shipped.
+
 The big one. These are inseparable: lifetimes ride on borrows, records are the
 first value type that can be borrowed, and `mut` borrows (via the `Ref`
 wrapper) are what first populate a lifetime. Land them together.

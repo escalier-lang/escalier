@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -982,30 +983,63 @@ func bindingDecl(b ValueBinding) ast.Node {
 
 // inferTuple types a tuple literal as a soltype.TupleType of its element types
 // and records it in Info. Elements are typed left-to-right in the current scope.
-// A spread element ([...xs]) is an ArraySpreadExpr, which is not in the M2 walk,
-// so inferExpr reports it as unsupported and contributes a never placeholder in
-// its slot — the tuple is still built (error already accumulated), never a panic.
+//
+// A spread element ([...xs]) splices the operand's element types into the literal.
+// For example, [...pair, 3] over pair: [number, string] builds
+// [number, string, number]. M4 handles only this concrete-literal splice: the
+// operand must infer to a TupleType. An inexact operand ([number, ...]) has unknown
+// length, so it may only be spread as the last element. There its known prefix
+// extends the literal and its unknown tail makes the result inexact too. An inexact
+// operand anywhere else would put a later element at an unknown position, which is an
+// InexactTupleSpreadError. A spread of any other type is a SpreadNotTupleError. A
+// spread whose operand already errored is absorbed silently, so the recovery
+// sentinel does not cascade a second diagnostic. Two type-level cousins defer to
+// M7/M9: a tuple-spread type over an abstract operand [...P, x], and a typed
+// variadic tail [number, ...Array<number>].
 func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Type {
-	elems := make([]soltype.Type, len(e.Elems))
+	elems := make([]soltype.Type, 0, len(e.Elems))
+	inexact := false
 	for i, el := range e.Elems {
-		elems[i] = c.inferExpr(scope, lvl, el)
+		spread, ok := el.(*ast.ArraySpreadExpr)
+		if !ok {
+			elems = append(elems, c.inferExpr(scope, lvl, el))
+			continue
+		}
+		switch op := c.inferExpr(scope, lvl, spread.Value).(type) {
+		case *soltype.TupleType:
+			if op.Inexact && i != len(e.Elems)-1 {
+				c.report(&InexactTupleSpreadError{Spread: spread, Operand: op})
+				continue
+			}
+			elems = append(elems, op.Elems...)
+			if op.Inexact {
+				inexact = true // a trailing inexact spread carries through
+			}
+		case *soltype.ErrorType:
+			// The operand already reported its own failure; absorb it rather than
+			// layering a SpreadNotTupleError on the recovery sentinel.
+		default:
+			c.report(&SpreadNotTupleError{Spread: spread, Operand: op})
+		}
 	}
-	t := &soltype.TupleType{Elems: elems}
+	t := &soltype.TupleType{Elems: elems, Inexact: inexact}
 	c.recordType(e, t)
 	c.recordProv(t, e, TupleElem)
 	return t
 }
 
-// inferObject types an object literal as an exact soltype.ObjectType. M2 covers
-// the basic case only: a `name: value` property with a static (identifier or
-// string) key. The forms it does not cover each report an UnsupportedNodeError
-// and are skipped rather than panicking (the deeper object system is M4):
-//   - spreads ({...o}) and method/constructor elements,
-//   - computed ({[k]: v}) and numeric ({0: v}) keys,
-//   - shorthand ({x}, i.e. a property with no value).
+// inferObject types an object literal as an exact soltype.ObjectType. A property
+// with a static key folds into the object. A static key is an identifier label, a
+// string-literal key, or a numeric key like {0: v}. The forms it does not cover
+// each report an UnsupportedNodeError and are skipped rather than panicking:
+//   - spreads ({...o}), deferred to M9 with object rest/spread,
+//   - method/constructor elements, which arrive with classes in M5,
+//   - computed keys ({[k]: v}), which need M9 index signatures,
+//   - shorthand ({x}, a property with no value).
 //
-// Usage-inference depth (e.g. inferring an open object from how a value is used)
-// is explicitly M4; M2 builds the closed object the literal spells out.
+// Usage-inference depth builds on this elsewhere, for example inferring an open
+// object from how a value is used. Here the closed object the literal spells out is
+// built.
 //
 // Duplicate keys follow JavaScript semantics: the last value wins, keeping the
 // property at its first position ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). This keeps
@@ -1015,19 +1049,22 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	for _, elem := range e.Elems {
 		prop, ok := elem.(*ast.PropertyExpr)
 		if !ok {
-			// ObjSpreadExpr, CallableExpr (method), ConstructorExpr — all M4.
+			// ObjSpreadExpr is object rest/spread, which is M9. The method and
+			// constructor elements CallableExpr and ConstructorExpr arrive with
+			// classes in M5.
 			c.reportUnsupported(elem)
 			continue
 		}
 		if prop.Value == nil {
-			// Shorthand ({x}) needs the ident's binding folded in as the value — M4.
+			// Shorthand ({x}) needs the ident's binding folded in as the value.
 			c.reportUnsupported(prop)
 			continue
 		}
 		name, ok := objKeyName(prop.Name)
 		if !ok {
-			// Computed/numeric keys carry no static property name — M4. Blame the
-			// key itself (its own narrower span), not the whole property.
+			// A computed key ({[k]: v}) carries no static property name, so it is M9.
+			// Blame the key itself, which has its own narrower span, not the whole
+			// property.
 			c.reportUnsupported(prop.Name)
 			continue
 		}
@@ -1262,16 +1299,20 @@ func constStringKey(e ast.Expr) (string, bool) {
 	return "", false
 }
 
-// objKeyName reads the static field name of an object-literal key. M2 records
-// have string field names, so an identifier label or a string-literal key maps
-// to a field; numeric and computed keys do not (they need M4's wider object
-// system) and return false so the caller can raise a structured error.
+// objKeyName reads the static field name of an object-literal key. Object field
+// names are strings, so an identifier label, a string-literal key, or a numeric
+// key all map to a field. A numeric key is coerced to its string form the way
+// JavaScript does, so {0: v} names the field "0". A computed key ({[k]: v}) carries
+// no static name and returns false so the caller can raise a structured error.
+// Full index-signature support rides M9.
 func objKeyName(k ast.ObjKey) (string, bool) {
 	switch k := k.(type) {
 	case *ast.IdentExpr:
 		return k.Name, true
 	case *ast.StrLit:
 		return k.Value, true
+	case *ast.NumLit:
+		return strconv.FormatFloat(k.Value, 'f', -1, 64), true
 	default:
 		return "", false
 	}
