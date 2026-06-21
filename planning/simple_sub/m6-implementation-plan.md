@@ -249,7 +249,8 @@ well-formed, canonical, and flag-carrying so PR2–PR6 build on a settled shape.
   function/tuple rendering ([print.go:367](../../internal/soltype/print.go)).
 
 **The smart constructors `newUnion(parts, inexact)` / `newIntersection(parts)`.**
-Each runs the normalization the milestone enumerates, in one pass:
+Each runs the normalization the milestone enumerates in one pass — step 5 only
+when a Context is supplied:
 
 1. **Flatten** nested same-kind members: a `UnionType` inside a union is spliced
    in. An inexact member makes the result inexact.
@@ -296,11 +297,10 @@ equality set-based.
 `&soltype.UnionType{Types: parts}` / `&soltype.IntersectionType{Types: parts}`
 raw; `mergeObjectGroup` ([coalesce.go:446](../../internal/solver/coalesce.go))
 builds a raw `IntersectionType` for a shared property. Both become `newUnion` /
-`newIntersection` calls — passing **no** Context, so they get the Context-free
-normalization without subsumption (these are free functions with no `*Context` to
-hand it). This is observable: previously-unnormalized coalesced output now dedups
-and orders canonically, so some rendered snapshots tighten — update them with
-`UPDATE_SNAPS=true`.
+`newIntersection` calls, passing **no** Context, so they get the Context-free
+normalization without subsumption. This is observable: previously-unnormalized
+coalesced output now dedups and orders canonically, so some rendered snapshots
+tighten — update them with `UPDATE_SNAPS=true`.
 
 **Tests.** Table-driven over `newUnion` / `newIntersection`: flatten, dedup,
 `never`/`unknown` drop, `ErrorType` elision (and sole-member retention),
@@ -318,17 +318,19 @@ constructor leaves non-subsumed members in place — the `combine` posture.
 The heart of M6. Install the directional lattice rules and open the annotation
 path. Both produce normalized formers via PR1's constructors.
 
-**The rule ordering, per [01-milestones.md](01-milestones.md) §M6.** All
-union/intersection handling lives in **one pre-switch lattice block** in
-`constrain` ([constrain.go:126](../../internal/solver/constrain.go)), inserted
-between the `ErrorType` short-circuit and the structural `switch`. It has to
-precede the switch: several structural arms — **notably the RefType arm**
-([constrain.go:356-361](../../internal/solver/constrain.go)) — return early on a
-non-variable super, so a union/intersection operand would be intercepted before
-its lattice-ness is ever considered (see the RefType note below). The block runs
-for-all decomposition unconditionally and the exists trial when the deciding side
-is concrete, and falls through to the variable arms when a variable is on the
-deciding side:
+**The rule ordering, per [01-milestones.md](01-milestones.md) §M6.** A **pre-switch
+lattice block** in `constrain` ([constrain.go:126](../../internal/solver/constrain.go)),
+inserted between the `ErrorType` short-circuit and the structural `switch`, carries
+every rule whose deciding operand is a union/intersection **super**, plus the
+union-**sub** for-all rule. It has to precede the switch: several structural arms —
+**notably the RefType arm** ([constrain.go:356-361](../../internal/solver/constrain.go))
+— return early on a non-variable super, so a super-side union/intersection operand
+would be intercepted before its lattice-ness is ever considered (see the RefType
+note below). The one rule that stays in the switch is the intersection-**sub**
+exists case, where the sub is the lattice node the switch already dispatches on.
+The block runs for-all decomposition unconditionally and the exists trial when the
+deciding side is concrete, and falls through to the variable arms when a variable
+is on the deciding side:
 
 - **"For all" rules — eager, deterministic, fire first.**
   - `(A | B) <: C` ⟹ `A <: C` *and* `B <: C`. A `UnionType` on the **sub** side
