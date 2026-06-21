@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// parseScript parses a single in-memory .esc source as a SCRIPT — top-level
-// statements that run in source order with function-body semantics — and returns
-// the AST. It is the script counterpart to parseModule, parsing through
+// parseScript parses a single in-memory .esc source as a script and returns the AST.
+// A script is top-level statements that run in source order with function-body
+// semantics. parseScript is the script counterpart to parseModule, parsing through
 // ParseScript rather than the library-module assembly ParseLibFiles drives.
 func parseScript(t *testing.T, src string) *ast.Script {
 	t.Helper()
@@ -27,8 +27,8 @@ func parseScript(t *testing.T, src string) *ast.Script {
 }
 
 // inferScriptSource parses src as a script, runs InferScript, and renders the
-// top-level value/type bindings off the script scope's own maps (not the prelude
-// parent). It is the script counterpart to inferSource. A script's top-level
+// top-level value and type bindings off the script scope's own maps rather than the
+// prelude parent. It is the script counterpart to inferSource. A script's top-level
 // bindings are linear locals, so this is how their generalized types are inspected.
 func inferScriptSource(t *testing.T, src string) (values, types map[string]string, errs []SolverError) {
 	t.Helper()
@@ -56,10 +56,11 @@ func TestInferScriptSourceOrder(t *testing.T) {
 
 // TestScriptTransitionParity is the milestone's central claim: a `mut`→immutable
 // transition at script top level is checked identically to the same statements
-// wrapped in a function body. Each case runs through InferScript directly and,
-// indented into `fn test() { … }`, through InferModule. The two error lists must
-// match each other and the expected verdict — the proof that a script's top-level
-// body runs the same liveness/alias/transition machinery a function body does.
+// wrapped in a function body. Each case runs through InferScript directly, then again
+// through InferModule after being indented into `fn test() { … }`. The two error lists
+// must match each other and the expected verdict. That match proves a script's
+// top-level body runs the same liveness, alias, and transition machinery a function
+// body does.
 func TestScriptTransitionParity(t *testing.T) {
 	tests := map[string]struct {
 		// stmts are valid both at script top level and inside a function body, so the
@@ -67,9 +68,10 @@ func TestScriptTransitionParity(t *testing.T) {
 		stmts string
 		want  []string
 	}{
-		// Rule 1 (mut→immutable): error when the mutable source is live after the alias.
-		// This is the Accept example — a top-level `val items: mut {…}` aliased to an
-		// immutable binding and then used mutably reports the Rule 1 transition error.
+		// Rule 1, the mut→immutable case, errors when the mutable source is live after
+		// the alias. This is the Accept example. A top-level `val items: mut {…}` aliased
+		// to an immutable binding and then used mutably reports the Rule 1 transition
+		// error.
 		"Rule1_SourceLive_Error": {
 			stmts: `
 				val items: mut {x: number} = {x: 1}
@@ -148,7 +150,7 @@ func TestScriptLinearScoping(t *testing.T) {
 	require.Len(t, scriptErrs, 1)
 	require.Equal(t, "Unknown identifier: x", scriptErrs[0].Message())
 
-	// The identical source is well-formed as a module: the dep graph types `val x`
+	// The identical source is well-formed as a module. The dep graph types `val x`
 	// before the `val y` that refers to it.
 	_, _, moduleErrs := inferSource(t, src)
 	require.Empty(t, moduleErrs)
@@ -168,8 +170,8 @@ func TestScriptEmpty(t *testing.T) {
 // drive. inferAssign reads the enclosing statement from c.fn.currentStmt to find its
 // CFG StmtRef, which only exists because InferScript installs a funcCtx and runs the
 // liveness pre-pass over the script body. Reassigning a live mutable owned value into
-// an immutable binding is a Rule 1 transition; mutating it before the reassignment
-// makes it dead and the transition stays silent.
+// an immutable binding is a Rule 1 transition. Mutating it before the reassignment
+// makes it dead, and the transition stays silent.
 func TestScriptReassignTransition(t *testing.T) {
 	t.Run("source_live_error", func(t *testing.T) {
 		_, _, errs := inferScriptSource(t, `
@@ -201,7 +203,7 @@ func TestScriptReassignTransition(t *testing.T) {
 // parameter, bound to a top-level `val`, originates a fresh lifetime on its parameter
 // and threads it through the return. The `'a` in the rendered type is the evidence the
 // borrow lifetime was inferred, not skipped. The identical source as a module binds
-// the same `id`, and the two rendered types must match: the script entry point and the
+// the same `id`, and the two rendered types must match. The script entry point and the
 // module entry point thread the borrow lifetime the same way.
 func TestScriptBorrowLifetimeParity(t *testing.T) {
 	const src = `val id = fn (p: mut {x: number}) { return p }`
@@ -216,9 +218,9 @@ func TestScriptBorrowLifetimeParity(t *testing.T) {
 }
 
 // TestScriptAwaitOutsideAsync pins the top-level `await` diagnostic. A script has no
-// enclosing function to mark `async`, so the error carries no related span, matching a
-// module top-level await rather than pointing Related() at the whole script. This
-// guards InferScript passing a nil funcCtx node.
+// enclosing function to mark `async`, so the error carries no related span. That
+// matches a module top-level await, rather than pointing Related() at the whole
+// script. This guards InferScript passing a nil funcCtx node.
 func TestScriptAwaitOutsideAsync(t *testing.T) {
 	_, _, errs := inferScriptSource(t, `
 		val x = 5

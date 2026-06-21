@@ -15,8 +15,8 @@ import (
 // script is instead one straight-line body. Its bindings are linear, and each
 // statement sees only the ones before it, exactly as inside a function. So liveness,
 // alias tracking, and the `mut` transition rules all apply to a script's top-level
-// statements. A module skips those at top level: there c.fn is nil, which makes every
-// transition entry point a no-op.
+// statements. A module skips those at top level, where c.fn is nil and every
+// transition entry point is a no-op.
 //
 // It mirrors the old checker's InferScript in internal/checker/infer_script.go:
 //
@@ -31,22 +31,21 @@ import (
 // that runs them over a script body. There is no new inference.
 //
 // The pushed funcCtx carries no async flag and a nil node. A top-level `await` is
-// rejected the same way it is at module top level, with no enclosing function to mark
-// `async`, since a script has none. inferStmt routes a top-level `return` into the
-// funcCtx's returns list, which the script never joins, so the return is accepted and
-// discarded — the same no-op the old checker's inferStmt applies to a script-level
-// return.
+// rejected the same way it is at module top level. There is no enclosing function to
+// mark `async`, because a script has none. inferStmt routes a top-level `return` into
+// the funcCtx's returns list. The script never joins that list, so the return is
+// accepted and discarded. The old checker's inferStmt applies the same no-op to a
+// script-level return.
 func InferScript(script *ast.Script) (*Scope, *Info, []SolverError) {
 	c := newChecker()
 	scope := sharedPrelude().Child()
 
 	// A script's statements form one linear body, so give them the same per-body
-	// context a function body gets. pushFuncCtx makes c.fn non-nil, which the
-	// transition checker keys off and which runLivenessPrePass writes its
-	// liveness/alias state onto. The node is nil because a script has no enclosing
-	// function. The prelude child is the outer scope the pre-pass resolves names
-	// against. There is no enclosing context to restore, so the returned previous one
-	// is discarded.
+	// context a function body gets. pushFuncCtx makes c.fn non-nil. The transition
+	// checker keys off c.fn, and runLivenessPrePass writes its liveness and alias state
+	// onto it. The node is nil because a script has no enclosing function. The prelude
+	// child is the outer scope the pre-pass resolves names against. There is no
+	// enclosing context to restore, so the returned previous one is discarded.
 	scriptBody := &ast.Block{Stmts: script.Stmts, Span: script.Span()}
 	c.pushFuncCtx(false, nil)
 	c.runLivenessPrePass(scope, nil, nil, scriptBody)
@@ -55,7 +54,7 @@ func InferScript(script *ast.Script) (*Scope, *Info, []SolverError) {
 	// function body uses, at level 0. inferVarDecl types each initializer one level
 	// deeper and generalizes back to 0, so a top-level binding is a generalized local
 	// exactly like one in a function body walked at its level. inferBlock's tail value
-	// and divergence flag are discarded, just as inferFunc discards them: a script,
+	// and divergence flag are discarded, just as inferFunc discards them. A script,
 	// like a function body, produces no value from its last statement.
 	c.inferBlock(scope, 0, scriptBody)
 
