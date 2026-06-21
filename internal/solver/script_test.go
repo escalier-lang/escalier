@@ -165,6 +165,29 @@ func TestScriptEmpty(t *testing.T) {
 	require.Empty(t, values)
 }
 
+// TestScriptRedeclaration checks that a script allows a name to be redeclared, the
+// function-body rule rather than the module rule. inferStmt overwrites the name's slot
+// on a body-level `val`/`var`, so a second declaration rebinds without constraining
+// the old and new types together. A later reference sees the new type. The identical
+// source as a module is rejected, because the dep-graph driver reports a duplicate
+// top-level declaration.
+func TestScriptRedeclaration(t *testing.T) {
+	src := `
+		val x = 5
+		val x = "hi"
+		val y = x
+	`
+	values, _, scriptErrs := inferScriptSource(t, src)
+	require.Empty(t, scriptErrs)
+	require.Equal(t, `"hi"`, values["x"])
+	require.Equal(t, `"hi"`, values["y"])
+
+	// The same source is a duplicate-declaration error as a module.
+	_, _, moduleErrs := inferSource(t, src)
+	require.Len(t, moduleErrs, 1)
+	require.Equal(t, "Duplicate declaration: x", moduleErrs[0].Message())
+}
+
 // TestScriptReassignTransition exercises the reassignment transition path
 // (inferAssign), distinct from the declaration-aliasing path the other parity cases
 // drive. inferAssign reads the enclosing statement from c.fn.currentStmt to find its
