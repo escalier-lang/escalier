@@ -7,6 +7,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/stretchr/testify/require"
 )
 
 func parseScript(t *testing.T, input string) *ast.Script {
@@ -729,6 +730,12 @@ func TestPrintBorrowTypeAnnotations(t *testing.T) {
 		{"borrow of union parenthesized", "&(A | B)", "&(A | B)"},
 		{"borrow binds tighter than union", "&A | B", "&A | B"},
 		{"borrow as intersection member", "&A & B", "&A & B"},
+		// A prefix-mut or nested-borrow inner must keep its parens, else
+		// `&(mut A)` would print as `&mut A` and `&(&A)` as `&&A`, both of
+		// which re-parse to a different annotation.
+		{"borrow of mut inner keeps parens", "&(mut A)", "&(mut A)"},
+		{"borrow of mut inner with lifetime", "&'a (mut A)", "&'a (mut A)"},
+		{"nested borrow keeps parens", "&(&A)", "&(&A)"},
 	}
 
 	opts := DefaultOptions()
@@ -736,12 +743,8 @@ func TestPrintBorrowTypeAnnotations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			typeAnn := parseTypeAnn(t, tt.input)
 			result, err := Print(typeAnn, opts)
-			if err != nil {
-				t.Fatalf("Print error: %v", err)
-			}
-			if result != tt.expected {
-				t.Errorf("Expected:\n%s\nGot:\n%s", tt.expected, result)
-			}
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
 		})
 	}
 }

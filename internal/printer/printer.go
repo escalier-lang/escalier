@@ -1443,13 +1443,29 @@ func (p *Printer) printRefTypeAnn(typ *ast.RefTypeAnn) {
 	if typ.Mut {
 		p.writeString("mut ")
 	}
-	needsParens := needsTypeAnnParens(typ.Inner)
+	needsParens := borrowInnerNeedsParens(typ.Inner)
 	if needsParens {
 		p.writeString("(")
 	}
 	p.printTypeAnn(typ.Inner)
 	if needsParens {
 		p.writeString(")")
+	}
+}
+
+// borrowInnerNeedsParens reports whether the inner of a prefix borrow must be
+// parenthesized to round-trip. A borrow prints as `& [lifetime] [mut] Inner`,
+// so an Inner whose own leading token would re-associate into the borrow needs
+// wrapping. A `mut A` inner would otherwise print as `&mut A` and re-parse as a
+// mutable borrow of `A`. A nested borrow `&A` would print as `&&A`, which the
+// lexer reads as a single `&&` token. Union and intersection bind looser than
+// the prefix `&`, the same reason needsTypeAnnParens already gives.
+func borrowInnerNeedsParens(typ ast.TypeAnn) bool {
+	switch typ.(type) {
+	case *ast.MutableTypeAnn, *ast.RefTypeAnn:
+		return true
+	default:
+		return needsTypeAnnParens(typ)
 	}
 }
 
