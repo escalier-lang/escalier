@@ -94,7 +94,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		if annT, ok := c.resolveTypeAnn(d.TypeAnn, lvl); ok {
-			c.constrainInitAgainstAnnotation(d.Init, initT, annT)
+			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT, lvl)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
@@ -115,32 +115,76 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 }
 
 // constrainInitAgainstAnnotation constrains a `val`/`var` initializer against its
-// resolved annotation, with one refinement over a plain constrain: a freshly
-// constructed, unaliased initializer flowing into an OWNED-mutable annotation is
-// allowed to take that mutable type.
+// resolved annotation and returns the type the binding adopts, which may differ from
+// the written annotation in two refinements over a plain constrain.
 //
-// The C2 gate rejects immutable <: mutable structurally, because writing through the
-// target would otherwise mutate a read-only value. But that is only unsound when a
-// live immutable alias to the source exists. A freshly constructed literal has none —
-// it is uniquely owned — so granting it the annotated mutable type is safe. This is
-// Rule 2 with an empty alias set, the construction case `val items: mut {x} = {x: 1}`.
-// The decision belongs at this value-flow site, which can see the source is fresh, not
-// in the liveness-blind constrain engine.
+// 1. A freshly constructed, unaliased initializer flowing into an OWNED-mutable
+// annotation is allowed to take that mutable type. The C2 gate rejects immutable <:
+// mutable structurally, because writing through the target would otherwise mutate a
+// read-only value. But that is only unsound when a live immutable alias to the source
+// exists. A freshly constructed literal has none. It is uniquely owned, so granting it
+// the annotated mutable type is safe. This is Rule 2 with an empty alias set. The
+// construction case is `val items: mut {x} = {x: 1}`. The decision belongs at this
+// value-flow site, which can see the source is fresh, not in the liveness-blind
+// constrain engine. The upgrade constrains the initializer's shape against the borrow's
+// INNER, its covariant read view, exactly as the non-mut path constrains against the
+// annotation directly. It is gated on an owned-mutable annotation whose `Lt` is nil. A
+// borrow annotation is a reference into a caller's region, not an owned value, so a fresh
+// source flowing into it stays on the strict path.
 //
-// The upgrade constrains the initializer's shape against the borrow's INNER, the
-// covariant read view, exactly as the non-mut path constrains against the annotation
-// directly. It does not relate two independent mutable references, so no write-view
-// invariance applies. It is gated on an owned-mutable annotation (Lt == nil): a borrow
-// annotation (`'a mut …`) is a reference into a caller's region, not an owned value, so
-// a fresh source flowing into it stays on the strict path. A non-fresh source — a
-// variable, a call, a member access — also stays strict; its Rule 2 safety depends on
-// liveness or the lifetime/region system (M4 G2), not on syntax.
-func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) {
+// 2. A bare object/tuple annotation whose initializer is a borrow lowers to an immutable
+// reborrow of the initializer rather than an owned slot (M4 G3). See reborrowAnnotation.
+// Binding a borrow into a bare annotation, as in `val q: {x} = p` for `p: mut {x}`, would
+// otherwise trip BorrowEscapeError, since the borrow flows into an owned slot. The old
+// checker accepts this and treats the annotation as a local immutable view of `p` that
+// never escapes. Reborrowing makes the lifetime sort decide. A local view that dies
+// within the source's region carries no escape constraint and is accepted, while one that
+// escapes through a return or a module store still errors.
+func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, lvl int) soltype.Type {
 	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && isFreshlyConstructed(init) {
 		c.constrain(init, initT, ref.Inner)
-		return
+		return annT
+	}
+	if borrow, ok := c.reborrowAnnotation(initT, annT, lvl); ok {
+		c.constrain(init, initT, borrow)
+		return borrow
 	}
 	c.constrain(init, initT, annT)
+	return annT
+}
+
+// reborrowAnnotation lowers a bare object/tuple annotation to an immutable borrow with a
+// fresh lifetime, returning ok=false when the refinement does not apply (M4 G3). It
+// applies only when the initializer's type is itself a borrow carrying a lifetime and
+// the annotation is a bare object or tuple, not an already-borrow `mut`/lifetime form or
+// a non-borrowable primitive.
+//
+// The gate is the source TYPE, not the source syntax. An owned source, whether an
+// immutable object or an owned-mutable one, has no lifetime to outlive, so the existing
+// owned-slot path already accepts it by peeling. Reborrowing it would instead make the
+// binding a borrow with a free lifetime, which then trips BorrowEscapeError the moment
+// the binding flows into any owned position, such as an owned parameter. Only a source
+// that already carries a borrow lifetime needs the reborrow.
+//
+// The fresh lifetime carries no obligation on its own. The RefType <: RefType constrain
+// arm relates it to the source's lifetime through constrainLt. This reborrow constraint
+// runs exactly as the borrow-into-borrow argument path does. A binding that escapes
+// carries D3's escape-to-'static constraint, which the lifetime sort weighs against the
+// reborrow. A binding that stays local and dies within the source's region leaves the
+// fresh lifetime free, so D4's display-time elision drops the wrapper and the binding
+// renders as the bare inner.
+func (c *checker) reborrowAnnotation(initT, annT soltype.Type, lvl int) (soltype.Type, bool) {
+	if src, ok := initT.(*soltype.RefType); !ok || src.Lt == nil {
+		return nil, false
+	}
+	switch inner := annT.(type) {
+	case *soltype.ObjectType:
+		return &soltype.RefType{Mut: false, Lt: c.ctx.freshLifetime(lvl), Inner: inner}, true
+	case *soltype.TupleType:
+		return &soltype.RefType{Mut: false, Lt: c.ctx.freshLifetime(lvl), Inner: inner}, true
+	default:
+		return nil, false
+	}
 }
 
 // isFreshlyConstructed reports whether e is a syntactically fresh, unaliased value: a
