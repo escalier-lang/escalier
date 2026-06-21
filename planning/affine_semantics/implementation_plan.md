@@ -13,12 +13,12 @@ dependency-ordered pull requests, each sized to be reviewable on its own.
   `solver.InferModule` ([internal/solver/module.go](../../internal/solver/module.go)),
   so the work rides in solver tests and never touches the fixture corpus, which
   belongs to the old checker.
-- **Parser carries both grammars.** The parser is shared by both checkers through
-  one `ParseLibFiles` entry, and `&` already means intersection in type-annotation
-  position. To let the solver read the new `&`-borrow syntax while the old checker
-  keeps the existing grammar, the parser gains a syntax-mode flag. The solver's
-  parse path requests borrow mode; the old checker keeps the default. This is the
-  one cross-cutting change and is described next.
+- **Parser parses borrows unconditionally.** The parser is shared by both checkers
+  through one `ParseLibFiles` entry, and `&` already means intersection in
+  type-annotation position. Prefix `&` is position-disambiguated from infix `&`, so
+  the parser can read a prefix `&` as a borrow without a grammar mode: infix `&`
+  stays intersection and is unaffected. The old checker keeps working through a
+  graceful fallback rather than a parser flag, as described next.
 
 ## What the M4 substrate already provides
 
@@ -44,22 +44,28 @@ What is missing: the `&` notation end to end, annotation-literal ownership, memb
 reads that borrow the receiver, and the whole move / use-after-move analysis. The
 PRs below add these.
 
-## The parser syntax-mode split
+## Parsing borrows without a syntax mode
 
-A `SyntaxMode` value is added to the `Parser` struct
-([internal/parser/parser.go](../../internal/parser/parser.go)) with two values,
-`LegacySyntax` (default) and `BorrowSyntax`. It is threaded through `NewParser`,
-copied in `saveState`/`restoreState`, and exposed on a solver-facing parse entry.
-The fork inside the parser is small and local:
+There is no parser grammar mode. A prefix `&` is parsed as a borrow unconditionally,
+and the old checker is kept working by a graceful fallback at its translation layer.
+Three facts make this safe:
 
-- In `BorrowSyntax`, a prefix `&` in `primaryTypeAnn`
-  ([internal/parser/type_ann.go](../../internal/parser/type_ann.go)) parses a
-  borrow and produces the new `RefTypeAnn` node. Infix `&` stays intersection, so
-  `A & B` is unaffected and `&A` is a borrow; the two are distinguished by
-  position.
-- In `LegacySyntax`, `&` behaves exactly as today and `RefTypeAnn` is never
-  produced, so the old checker never encounters a node its translation switch
-  lacks.
+- **Infix `&` is untouched.** The only `&` form the existing corpus uses is infix
+  intersection — `A & B`, `keyof T & U`, `typeof x & U` — and a prefix `&` is
+  distinguished from it by position the way any Pratt parser separates prefix from
+  infix. A `&` where an atom is expected is a borrow; a `&` between two parsed types
+  is intersection.
+- **The only changed behaviour is unused.** The single thing a prefix-borrow
+  reinterpretation alters is the incidental leading-`&` skip at
+  [internal/parser/type_ann.go](../../internal/parser/type_ann.go) lines 51-52,
+  which mirrors the leading-`|` union sugar. No `.esc` fixture and no test string
+  starts a type annotation with `&`, so reinterpreting a leading `&` as a borrow
+  changes nothing in the corpus.
+- **The old checker degrades cleanly.** It only meets a `RefTypeAnn` if borrow
+  syntax appears in a file it parses, which does not happen for existing files. For
+  any stray case, the non-panicking fallback in PR 1 turns it into a clean
+  "borrows unsupported in the legacy checker" error rather than a crash, which is
+  better than a silent misparse.
 
 Everything else — the `mut` prefix, `'a` prefixes on type refs, lifetime
 parameters, and `val mut` patterns — is already shared and stays common.
@@ -179,8 +185,7 @@ consuming an optional lifetime and an optional `mut` and then the atom, so `&`,
 `&mut`, `&'a`, and `&'a mut` are tight prefixes on one atom. To borrow a union,
 intersection, or other compound, parenthesize it. In the printer the borrow-`&`
 prefix prints at `precPrefix`, the same level as `mut`/lifetime, so `&(A | B)`
-renders with the inner union parenthesized. The borrow-mode flag gates this, so
-legacy mode keeps `&` as infix intersection only.
+renders with the inner union parenthesized.
 
 Disambiguation is by position, the standard prefix-versus-infix split: a `&` where
 an atom is expected is a borrow of that atom, and a `&` between two parsed types is
@@ -217,7 +222,7 @@ lifetime. Chained access `a.b.c` composes the rule at each link.
 
 | PR | Title | Depends on | Rough size |
 |----|-------|-----------|-----------|
-| 1 | Parser borrow mode, `&` grammar, `RefTypeAnn` node, printer | — | Medium |
+| 1 | `&` grammar, `RefTypeAnn` node, printer | — | Medium |
 | 2 | Solver lowering of `&`, soltype `&` rendering, snapshot migration | 1 | Medium |
 | 3 | Annotation-literal ownership, owned/borrow params, auto-borrow | 2 | Medium |
 | 4 | Member reads borrow the receiver | 3 | Medium |
@@ -229,14 +234,11 @@ lifetime. Chained access `a.b.c` composes the rule at each link.
 | 10a | Union narrowing in the solver (general type-system work) | 9 | Large |
 | 10b | Mutable narrowed binding with pinned discriminant | 8, 10a | Medium |
 
-### PR 1 — Parser borrow mode, `&` grammar, `RefTypeAnn` node, printer
+### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
-Goal: the parser can read `&{x}`, `&mut {x}`, `&'a {x}`, and `&'a mut {x}` in
-borrow mode and round-trips them through the printer, with the old checker
-unaffected.
+Goal: the parser can read `&{x}`, `&mut {x}`, `&'a {x}`, and `&'a mut {x}` and
+round-trips them through the printer, with the old checker unaffected.
 
-- Add `SyntaxMode` to `Parser`; thread it through `NewParser`,
-  `saveState`/`restoreState`, and add a borrow-mode parse entry for the solver.
 - Add the `ast.RefTypeAnn{Mut bool, Lifetime LifetimeAnnNode, Inner TypeAnn}`
   variant to the `TypeAnn` sum type
   ([internal/ast/type_ann.go](../../internal/ast/type_ann.go)), add it to
@@ -245,24 +247,28 @@ unaffected.
   ([internal/ast/class.go](../../internal/ast/class.go)) is the field template:
   it already carries `Mut bool` plus `Lifetime LifetimeAnnNode`.
 - Parse prefix `&`/`&mut`/`&'a`/`&'a mut` in `primaryTypeAnn` alongside the existing
-  `mut` and lifetime prefixes, gated on `BorrowSyntax`, so `&` binds tight to one
-  atom and `&A | B` is `(&A) | B`. A borrow of a union or intersection is written
-  `&(A | B)`. See "Prefix `&` binds tight, like `mut`" above. Reuse the existing
-  `LifetimeAnn`/`LifetimeUnionAnn` nodes for the lifetime slot.
+  `mut` and lifetime prefixes, so `&` binds tight to one atom and `&A | B` is
+  `(&A) | B`. A borrow of a union or intersection is written `&(A | B)`. This
+  replaces the incidental leading-`&` skip. See "Prefix `&` binds tight, like `mut`"
+  above. Reuse the existing `LifetimeAnn`/`LifetimeUnionAnn` nodes for the lifetime
+  slot.
 - Render `RefTypeAnn` in [internal/printer/printer.go](../../internal/printer/printer.go).
-- Defensive guard: replace the `panic` default in the old checker's
-  `inferTypeAnn` ([internal/checker/infer_type_ann.go](../../internal/checker/infer_type_ann.go))
-  with a clean "unsupported annotation" error returning `ErrorType`, so a stray
-  new node can never crash the CLI or LSP. The old checker still parses in legacy
-  mode and will not see `RefTypeAnn` in normal operation.
+- Graceful fallback, which is the isolation mechanism in place of a parser mode:
+  replace the `panic` default in the old checker's `inferTypeAnn`
+  ([internal/checker/infer_type_ann.go](../../internal/checker/infer_type_ann.go))
+  with a clean "borrows unsupported in the legacy checker" error returning
+  `ErrorType`, so a `RefTypeAnn` can never crash the CLI or LSP. The old checker
+  does not see `RefTypeAnn` in normal operation, since existing files contain no
+  borrow syntax.
 
 Tests: parser tests for each borrow form in
 [internal/parser/type_ann_test.go](../../internal/parser/type_ann_test.go);
-printer round-trip; a legacy-mode test asserting `A & B` still parses as
-intersection and `&A` is not a borrow.
+printer round-trip; a test asserting infix `A & B` still parses as intersection and
+`&A` parses as a borrow distinguished by position; `&(A | B)` borrows the union
+while `&A | B` is `(&A) | B`.
 
-Acceptance: borrow forms parse and print in borrow mode; the full existing parser
-and old-checker suites are green with no snapshot changes.
+Acceptance: borrow forms parse and print; the full existing parser and old-checker
+suites are green with no snapshot changes.
 
 ### PR 2 — Solver lowering of `&`, soltype `&` rendering, snapshot migration
 
