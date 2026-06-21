@@ -561,15 +561,33 @@ having landed.
 - The narrowed binding M6 produces is treated as a fresh borrow of the scrutinee
   scoped to the narrowed region. An immutable narrowed binding sits in the immutable
   phase and is sound with no extra rule.
-- A mutable narrowed binding `&mut A` is allowed, and while it is live the
-  discriminant the narrowing tested may not be written through any alias, though the
-  variant's other fields stay mutable. Implement the tag-pin as a scoped,
-  field-level write restriction layered on PR 7's field-level tracking and PR 8's
-  phase framing, hooked at the `inferMatch` arm scope and the `LitPat` discriminant
-  arm in `bindPatternWith`.
+- A mutable narrowed binding `&mut A` is allowed. Through the binding itself the tag is
+  already unwritable, because M6 narrows it to a single literal: `a.tag = "b"` is a type
+  error since `"b"` is not assignable to `"a"`, with no extra rule, while the variant's
+  other fields stay mutable. The work this PR adds is the cross-alias case. While the
+  narrowed `&mut A` is live, the tag may not be written through any other alias of the
+  scrutinee, even one typed as the full union, since such a write would flip the variant
+  and invalidate the narrowed binding.
 
-Tests: the `match u { a is A => { a.x = 5 } }` example, with `a.x = 5` accepted and a
-write to the tag rejected for the arm.
+  ```esc
+  val mut u: mut (A | B) = ...
+  val b = &mut u            // b: &mut (A | B) — not narrowed
+  match u {
+      a is A => {
+          a.x = 5           // OK — x is an ordinary field of the A variant
+          // a.tag = "b" is already a type error: "b" is not assignable to "a"
+          b.tag = "b"       // ERROR: the tag is pinned while a: &mut A is live
+      }
+  }
+  ```
+
+  Implement the pin as a scoped, field-level write restriction over the alias set,
+  layered on PR 7's field-level tracking and PR 8's phase framing, hooked at the
+  `inferMatch` arm scope and the `LitPat` discriminant arm in `bindPatternWith`.
+
+Tests: the `match u { a is A => { a.x = 5 } }` example, with `a.x = 5` accepted; a tag
+write through the narrowed binding rejected as a type error; a tag write through an
+un-narrowed alias rejected by the pin.
 
 Acceptance: mutable narrowing works with the discriminant pinned for the arm.
 
