@@ -134,20 +134,97 @@ func TestScriptTransitionParity(t *testing.T) {
 	}
 }
 
+// TestScriptLinearScoping pins the defining difference between a script and a
+// module: a script's top-level statements are a linear body, so a binding sees only
+// the ones before it. The same source that forward-references a later binding is an
+// "Unknown identifier" error as a script but type-checks as a module, where
+// BuildDepGraph orders declarations by dependency rather than source position.
+func TestScriptLinearScoping(t *testing.T) {
+	src := `
+		val y = x
+		val x = 5
+	`
+	_, _, scriptErrs := inferScriptSource(t, src)
+	require.Len(t, scriptErrs, 1)
+	require.Equal(t, "Unknown identifier: x", scriptErrs[0].Message())
+
+	// The identical source is well-formed as a module: the dep graph types `val x`
+	// before the `val y` that refers to it.
+	_, _, moduleErrs := inferSource(t, src)
+	require.Empty(t, moduleErrs)
+}
+
+// TestScriptEmpty checks that a script with no statements infers cleanly. The
+// liveness pre-pass over an empty block and the empty statement walk must not panic
+// or invent diagnostics.
+func TestScriptEmpty(t *testing.T) {
+	values, _, errs := inferScriptSource(t, "")
+	require.Empty(t, errs)
+	require.Empty(t, values)
+}
+
+// TestScriptReassignTransition exercises the reassignment transition path
+// (inferAssign), distinct from the declaration-aliasing path the other parity cases
+// drive. inferAssign reads the enclosing statement from c.fn.currentStmt to find its
+// CFG StmtRef, which only exists because InferScript installs a funcCtx and runs the
+// liveness pre-pass over the script body. Reassigning a live mutable owned value into
+// an immutable binding is a Rule 1 transition; mutating it before the reassignment
+// makes it dead and the transition stays silent.
+func TestScriptReassignTransition(t *testing.T) {
+	t.Run("source_live_error", func(t *testing.T) {
+		_, _, errs := inferScriptSource(t, `
+			var snap: {x: number} = {x: 0}
+			val items: mut {x: number} = {x: 1}
+			snap = items
+			items.x = 2
+			snap
+		`)
+		require.Equal(t, []string{
+			"cannot assign 'items' to immutable 'snap': 'items' is still used mutably after this point",
+		}, transitionMessages(t, errs))
+	})
+
+	t.Run("source_dead_ok", func(t *testing.T) {
+		_, _, errs := inferScriptSource(t, `
+			var snap: {x: number} = {x: 0}
+			val items: mut {x: number} = {x: 1}
+			items.x = 2
+			snap = items
+			snap
+		`)
+		require.Empty(t, transitionMessages(t, errs))
+	})
+}
+
 // TestScriptBorrowLifetimeParity checks that the lifetime origination/escape
 // machinery runs over a script body too. A function expression with a `mut` borrow
-// parameter, bound to a top-level `val`, originates a fresh lifetime on its
-// parameter and threads it through the return — the `'a` in the rendered type is the
-// evidence the borrow lifetime was inferred, not skipped. The same statement wrapped
-// in a function body produces the identical (empty) error list.
+// parameter, bound to a top-level `val`, originates a fresh lifetime on its parameter
+// and threads it through the return. The `'a` in the rendered type is the evidence the
+// borrow lifetime was inferred, not skipped. The identical source as a module binds
+// the same `id`, and the two rendered types must match: the script entry point and the
+// module entry point thread the borrow lifetime the same way.
 func TestScriptBorrowLifetimeParity(t *testing.T) {
-	stmts := `
-		val id = fn (p: mut {x: number}) { return p }
-	`
-	values, _, scriptErrs := inferScriptSource(t, stmts)
-	require.Empty(t, scriptErrs)
-	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}", values["id"])
+	const src = `val id = fn (p: mut {x: number}) { return p }`
 
-	_, _, fnErrs := inferSource(t, "fn test() {"+stmts+"\n}")
-	require.Empty(t, transitionMessages(t, fnErrs))
+	scriptValues, _, scriptErrs := inferScriptSource(t, src)
+	require.Empty(t, scriptErrs)
+	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}", scriptValues["id"])
+
+	moduleValues, _, moduleErrs := inferSource(t, src)
+	require.Empty(t, moduleErrs)
+	require.Equal(t, scriptValues["id"], moduleValues["id"])
+}
+
+// TestScriptAwaitOutsideAsync pins the top-level `await` diagnostic. A script has no
+// enclosing function to mark `async`, so the error carries no related span, matching a
+// module top-level await rather than pointing Related() at the whole script. This
+// guards InferScript passing a nil funcCtx node.
+func TestScriptAwaitOutsideAsync(t *testing.T) {
+	_, _, errs := inferScriptSource(t, `
+		val x = 5
+		val y = await x
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "await can only be used inside an async function", errs[0].Message())
+	require.Empty(t, errs[0].Related())
 }
