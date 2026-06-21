@@ -200,6 +200,26 @@ routes through them:
 - `resolveTypeAnn` (PR2) — annotation input.
 - the permissive `joinBorrows` (PR6) — the borrow union.
 
+**The normalization splits into a Context-free core and a Context-gated
+subsumption step**, because the mint sites differ in what they have available.
+`combine` and `coalesce` are free functions with no `*Context`
+([coalesce.go:33](../../internal/solver/coalesce.go),
+[coalesce.go:295](../../internal/solver/coalesce.go)); the `coalescer` /
+`schemeCoalescer` visitors hold only `seen`. `resolveTypeAnn` and `joinBorrows`
+are `*checker` methods and so reach `c.ctx` and `c.probe`. So:
+
+- **`newUnion(parts, inexact)` / `newIntersection(parts)` are Context-free** and do
+  the bulk of the work — flatten, lattice identities, `ErrorType` elision,
+  structural dedup, canonical order, collapse. Every site calls these.
+- **Subsumed-member elimination is a separate, optional pass** that needs a
+  `*Context` because it runs `constrain` under a probe (PR1 step 5). The
+  constructors take it as an optional dependency — `newUnion` runs subsumption only
+  when handed a Context, and skips it otherwise. `combine` passes none (its members
+  are already coalesced, so the dedup + identity passes already tighten them);
+  `resolveTypeAnn` and `joinBorrows` pass `c.ctx` so an annotation or borrow union
+  is fully subsumed. This keeps the constructors usable from the coalescer without
+  threading a Context through it.
+
 ### A total order `compareType` (`solver/`)
 
 The canonical-ordering primitive PR1 needs. It must be a deterministic total
@@ -244,12 +264,14 @@ Each runs the normalization the milestone enumerates, in one pass:
 4. **Dedup** structurally-equal members via `equalType`
    ([coalesce.go:492](../../internal/solver/coalesce.go)) — the existing `dedup`
    helper ([coalesce.go:470](../../internal/solver/coalesce.go)) generalizes here.
-5. **Subsumed-member elimination.** Drop a union member that is a subtype of
-   another union member, and an intersection member that is a supertype of
-   another. Reuse `constrain` under a discard-only probe for the subtype test, so
-   the check mutates no bounds (a no-error trial means subsumption holds). Keep
-   this gated to concrete members to avoid trialling against inference variables
-   mid-walk.
+5. **Subsumed-member elimination (Context-gated, optional).** Drop a union member
+   that is a subtype of another union member, and an intersection member that is a
+   supertype of another. The subtype test reuses `constrain` under a discard-only
+   probe (a no-error trial means subsumption holds), so it needs a `*Context` — it
+   runs only at the mint sites that have one (`resolveTypeAnn`, `joinBorrows`), and
+   `combine` skips it (see "smart constructors" above). Keep it gated to concrete
+   members to avoid trialling against inference variables mid-walk. Steps 1–4, 6,
+   and 7 are Context-free and run everywhere.
 6. **Canonical order** via `compareType`, so member order is construction-order-
    independent.
 7. **Collapse**: an empty union ⇒ `never`, an empty intersection ⇒ `unknown`, a
@@ -274,16 +296,20 @@ equality set-based.
 `&soltype.UnionType{Types: parts}` / `&soltype.IntersectionType{Types: parts}`
 raw; `mergeObjectGroup` ([coalesce.go:446](../../internal/solver/coalesce.go))
 builds a raw `IntersectionType` for a shared property. Both become `newUnion` /
-`newIntersection` calls. This is observable: previously-unnormalized coalesced
-output now dedups and orders canonically, so some rendered snapshots tighten —
-update them with `UPDATE_SNAPS=true`.
+`newIntersection` calls — passing **no** Context, so they get the Context-free
+normalization without subsumption (these are free functions with no `*Context` to
+hand it). This is observable: previously-unnormalized coalesced output now dedups
+and orders canonically, so some rendered snapshots tighten — update them with
+`UPDATE_SNAPS=true`.
 
 **Tests.** Table-driven over `newUnion` / `newIntersection`: flatten, dedup,
 `never`/`unknown` drop, `ErrorType` elision (and sole-member retention),
-subsumption (`number | 1` ⇒ `number`; `{x} & {x, y}` ⇒ `{x, y}` on the
-intersection side per the meet), canonical order (`string | number` and
-`number | string` render identically and `equalType`-match), single-member and
-empty collapse. Printer round-trip for an inexact union.
+canonical order (`string | number` and `number | string` render identically and
+`equalType`-match), single-member and empty collapse. Printer round-trip for an
+inexact union. The subsumption cases (`number | 1` ⇒ `number`; `{x} & {x, y}` ⇒
+`{x, y}` on the intersection side per the meet) pass a `*Context` so the
+Context-gated step runs; a separate case asserts that **without** a Context the
+constructor leaves non-subsumed members in place — the `combine` posture.
 
 ---
 
@@ -292,10 +318,17 @@ empty collapse. Printer round-trip for an inexact union.
 The heart of M6. Install the directional lattice rules and open the annotation
 path. Both produce normalized formers via PR1's constructors.
 
-**The rule ordering, per [01-milestones.md](01-milestones.md) §M6.** Insert a
-lattice block into `constrain` ([constrain.go:126](../../internal/solver/constrain.go))
-between the `ErrorType` short-circuit and the structural `switch`, plus an
-"exists" block after the `switch`:
+**The rule ordering, per [01-milestones.md](01-milestones.md) §M6.** All
+union/intersection handling lives in **one pre-switch lattice block** in
+`constrain` ([constrain.go:126](../../internal/solver/constrain.go)), inserted
+between the `ErrorType` short-circuit and the structural `switch`. It has to
+precede the switch: several structural arms — **notably the RefType arm**
+([constrain.go:356-361](../../internal/solver/constrain.go)) — return early on a
+non-variable super, so a union/intersection operand would be intercepted before
+its lattice-ness is ever considered (see the RefType note below). The block runs
+for-all decomposition unconditionally and the exists trial when the deciding side
+is concrete, and falls through to the variable arms when a variable is on the
+deciding side:
 
 - **"For all" rules — eager, deterministic, fire first.**
   - `(A | B) <: C` ⟹ `A <: C` *and* `B <: C`. A `UnionType` on the **sub** side
@@ -321,15 +354,33 @@ between the `ErrorType` short-circuit and the structural `switch`, plus an
 
 - **"Exists" rules — existential, under a probe, only when the deciding side is
   concrete.**
-  - `A <: (B | C)` ⟹ `A <: B` *or* `A <: C`, fired **after** the structural
-    switch and **only when `A` is not a variable**. Trial each member under a
-    `newProbe`, commit the first success, discard the losers — the same shape as
-    the overload intersection arm ([constrain.go:387](../../internal/solver/constrain.go)),
-    with a cloned `seen` per arm.
-  - `(A & B) <: C` ⟹ `A <: C` *or* `B <: C`. The existing overload arm **is**
-    this rule; generalize its guard so it serves a plain annotation intersection,
-    not only an overload synthesis. Keep the specificity ordering for the
-    function-arm case; a non-function intersection trials in declaration order.
+  - `A <: (B | C)` ⟹ `A <: B` *or* `A <: C`, fired **in the pre-switch block**
+    (so it precedes the RefType arm) and **only when `A` is not a variable**.
+    Trial each member under a `newProbe`, commit the first success, discard the
+    losers — the same shape as the overload intersection arm
+    ([constrain.go:387](../../internal/solver/constrain.go)), with a cloned `seen`
+    per arm.
+  - `(A & B) <: C` ⟹ `A <: C` *or* `B <: C`. The sub **is** the lattice node here,
+    so the structural switch's `IntersectionType` case
+    ([constrain.go:366](../../internal/solver/constrain.go)) already matches it
+    first — there is no interception risk, so this one case can stay in the switch.
+    The existing overload arm **is** this rule; generalize its guard so it serves a
+    plain annotation intersection, not only an overload synthesis. Keep the
+    specificity ordering for the function-arm case; a non-function intersection
+    trials in declaration order.
+
+**RefType interception — why the super-side rules go pre-switch.** The structural
+`switch` matches on the **sub**, and the RefType arm
+([constrain.go:356-361](../../internal/solver/constrain.go)) ends with
+`if _, superIsVar := super.(*TypeVarType); !superIsVar { … }` — for a borrow sub it
+peels to the inner, or returns a `BorrowEscapeError` when `sub.Lt != nil`. A
+`UnionType` / `IntersectionType` super is not a variable, so without the pre-switch
+block a constraint like `mut 'a {x} <: (mut 'a {x} | mut 'b {y})` would hit that
+arm and **spuriously escape-error** instead of matching the first union member.
+This shape is reachable directly in PR6's world (unions of borrows) and through any
+borrow-typed value flowing into a union annotation. Handling the union/intersection
+**super** before the switch is what avoids it; the union/intersection **sub** is
+safe in the switch because the sub is the lattice node the switch dispatches on.
 
 **Union exactness one-way rule (base form; the flag itself lands in PR4).** When
 the sub is an **inexact** union and the super is closed — an exact union, or any
@@ -557,8 +608,18 @@ message.
   (PR1), since several behaviors — `ErrorType` elision, subsumption, canonical
   order — are awkward to surface through source alone.
 - **Snapshot churn is expected** when PR1 routes `combine` through the
-  normalizer: previously-unordered or undeduped coalesced output tightens. Re-run
-  with `UPDATE_SNAPS=true` and review each diff as an intended improvement.
+  normalizer. Two kinds of change, of different blast radius:
+  - **Dedup + canonical ordering** of `combine` output — purely cosmetic
+    reordering and collapse of structural duplicates. This is the common case.
+  - **Note:** subsumption does **not** run at the `combine` site (it is
+    Context-gated and `combine` passes none), so a coalesced output like
+    `1 | number` is **not** collapsed to `number` here — that collapse only happens
+    where a Context is available (`resolveTypeAnn`, `joinBorrows`). So inferred-type
+    renders change by reorder/dedup only, not by subsumption. If a future change
+    threads a Context into `combine`, revisit this — subsumption there would
+    rewrite inferred unions (`1 | number` ⇒ `number`) and broaden the churn well
+    beyond reordering.
+  Re-run with `UPDATE_SNAPS=true` and review each diff as an intended improvement.
 - **Regression**: the existing union-output renders from M4 multi-branch returns
   must still pass through PR1 unchanged except for canonical ordering.
 
@@ -574,9 +635,13 @@ message.
   makes canonicalization unstable and dedup unreliable. Gate: a property-style
   test that `newUnion` of a member list and of its shuffle render identically and
   `equalType`-match.
-- **Subsumption cost.** The subtype test in normalization runs `constrain` under
-  a probe; keep it gated to concrete members and off the hot path. It runs at
-  construction, not in the `constrain`/`coalesce` inner loops.
+- **Subsumption cost and reach.** The subtype test runs `constrain` under a probe,
+  so it needs a `*Context` and runs only at the Context-bearing mint sites
+  (`resolveTypeAnn`, `joinBorrows`), never from `combine`/`coalesce`. Keep it gated
+  to concrete members and off the hot path — it runs at annotation/join
+  construction, not in the `constrain`/`coalesce` inner loops. Gate: a test that a
+  Context-free `newUnion` leaves non-subsumed members in place while the
+  Context-bearing path collapses them.
 - **Permissive join soundness.** The read-only-until-narrowed contract is only
   sound if conflicting-field writes are actually rejected. Gate: the write-
   rejection test in PR6.
