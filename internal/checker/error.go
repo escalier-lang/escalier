@@ -36,6 +36,7 @@ func (e CannotUnifyTypesError) isError()                    {}
 func (e UnknownIdentifierError) isError()                   {}
 func (e UnknownOperatorError) isError()                     {}
 func (e UnknownTypeError) isError()                         {}
+func (e BorrowUnsupportedError) isError()                   {}
 func (e CalleeIsNotCallableError) isError()                 {}
 func (e InvalidNumberOfArgumentsError) isError()            {}
 func (e NoMatchingOverloadError) isError()                  {}
@@ -98,6 +99,7 @@ func (e CannotUnifyTypesError) IsWarning() bool                    { return fals
 func (e UnknownIdentifierError) IsWarning() bool                   { return false }
 func (e UnknownOperatorError) IsWarning() bool                     { return false }
 func (e UnknownTypeError) IsWarning() bool                         { return false }
+func (e BorrowUnsupportedError) IsWarning() bool                   { return false }
 func (e CalleeIsNotCallableError) IsWarning() bool                 { return false }
 func (e InvalidNumberOfArgumentsError) IsWarning() bool            { return false }
 func (e NoMatchingOverloadError) IsWarning() bool                  { return false }
@@ -431,6 +433,17 @@ func (e UnknownTypeError) Span() ast.Span {
 }
 func (e UnknownTypeError) Message() string {
 	return "Unknown type: " + e.TypeName
+}
+
+type BorrowUnsupportedError struct {
+	span ast.Span
+}
+
+func (e BorrowUnsupportedError) Span() ast.Span {
+	return e.span
+}
+func (e BorrowUnsupportedError) Message() string {
+	return "borrows are unsupported in the legacy checker"
 }
 
 type CalleeIsNotCallableError struct {

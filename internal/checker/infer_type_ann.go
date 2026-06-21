@@ -230,6 +230,14 @@ func (c *Checker) inferTypeAnn(
 		targetType, targetErrors := c.inferTypeAnn(ctx, typeAnn.Target)
 		errors = slices.Concat(errors, targetErrors)
 		t = type_system.NewMutType(provenance, targetType)
+	case *ast.RefTypeAnn:
+		// Borrow annotations carry affine/move semantics that only the
+		// SimpleSub-based checker implements. The legacy HM checker never
+		// meets one in normal operation, since no existing source uses
+		// borrow syntax. Report cleanly rather than panicking on the
+		// default arm so a stray `&T` can't crash the CLI or LSP.
+		errors = append(errors, &BorrowUnsupportedError{span: typeAnn.Span()})
+		t = type_system.NewErrorType(provenance)
 	case *ast.TemplateLitTypeAnn:
 		types := make([]type_system.Type, len(typeAnn.TypeAnns))
 		quasis := make([]*type_system.Quasi, len(typeAnn.Quasis))

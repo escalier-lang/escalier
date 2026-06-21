@@ -81,6 +81,33 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MutableUnionType": {
 			input: "mut number | string",
 		},
+		"BorrowType": {
+			input: "&{x: number}",
+		},
+		"BorrowMutType": {
+			input: "&mut {x: number}",
+		},
+		"BorrowLifetimeType": {
+			input: "&'a {x: number}",
+		},
+		"BorrowLifetimeMutType": {
+			input: "&'a mut {x: number}",
+		},
+		"BorrowTypeRef": {
+			input: "&Point",
+		},
+		"BorrowBindsTighterThanUnion": {
+			input: "&A | B", // parses as (&A) | B
+		},
+		"BorrowOfUnion": {
+			input: "&(A | B)", // borrow of the whole union
+		},
+		"BorrowAsIntersectionMember": {
+			input: "&A & B", // (&A) & B, no parens needed
+		},
+		"InfixIntersectionStillParses": {
+			input: "A & B", // infix '&' stays intersection
+		},
 		"ConditionalType": {
 			input: "if A : B { C } else { D }",
 		},

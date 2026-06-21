@@ -961,11 +961,7 @@ func (p *Printer) printTypeCastExpr(expr *ast.TypeCastExpr) {
 	p.printExpr(expr.Expr)
 	p.writeString(":")
 	// Wrap union/intersection types in parentheses for clarity
-	needsParens := false
-	switch expr.TypeAnn.(type) {
-	case *ast.UnionTypeAnn, *ast.IntersectionTypeAnn:
-		needsParens = true
-	}
+	needsParens := needsTypeAnnParens(expr.TypeAnn)
 	if needsParens {
 		p.writeString("(")
 	}
@@ -1231,6 +1227,8 @@ func (p *Printer) printTypeAnn(typ ast.TypeAnn) {
 	case *ast.MutableTypeAnn:
 		p.writeString("mut ")
 		p.printTypeAnn(t.Target)
+	case *ast.RefTypeAnn:
+		p.printRefTypeAnn(t)
 	case *ast.ErrorTypeAnn:
 		// Skip error recovery nodes
 	case *ast.RestSpreadTypeAnn:
@@ -1429,6 +1427,78 @@ func (p *Printer) printTypeRefTypeAnn(typ *ast.TypeRefTypeAnn) {
 			}
 		}
 		p.writeString(">")
+	}
+}
+
+// printRefTypeAnn renders a prefix borrow: `&`, `&mut`, `&'a`, `&'a mut`.
+// The `&` binds tighter than union and intersection, so a union or
+// intersection inner is parenthesized to keep `&(A | B)` distinct from the
+// `(&A) | B` that an unparenthesized `&A | B` denotes.
+func (p *Printer) printRefTypeAnn(typ *ast.RefTypeAnn) {
+	p.writeString("&")
+	if typ.Lifetime != nil {
+		p.printLifetimeAnn(typ.Lifetime)
+		p.writeString(" ")
+	}
+	if typ.Mut {
+		p.writeString("mut ")
+	}
+	needsParens := borrowInnerNeedsParens(typ.Inner)
+	if needsParens {
+		p.writeString("(")
+	}
+	p.printTypeAnn(typ.Inner)
+	if needsParens {
+		p.writeString(")")
+	}
+}
+
+// borrowInnerNeedsParens reports whether the inner of a prefix borrow must be
+// parenthesized to round-trip. A borrow prints as `& [lifetime] [mut] Inner`,
+// so an Inner whose own leading token would re-associate into the borrow needs
+// wrapping. A `mut A` inner would otherwise print as `&mut A` and re-parse as a
+// mutable borrow of `A`. A nested borrow `&A` would print as `&&A`, which the
+// lexer reads as a single `&&` token. Union and intersection bind looser than
+// the prefix `&`, the same reason needsTypeAnnParens already gives.
+func borrowInnerNeedsParens(typ ast.TypeAnn) bool {
+	switch typ.(type) {
+	case *ast.MutableTypeAnn, *ast.RefTypeAnn:
+		return true
+	default:
+		return needsTypeAnnParens(typ)
+	}
+}
+
+// needsTypeAnnParens reports whether a type annotation must be parenthesized
+// when it appears as the operand of a tighter-binding prefix such as a borrow
+// `&` or a type cast. Union and intersection bind looser than those prefixes,
+// so they are the cases that need wrapping.
+func needsTypeAnnParens(typ ast.TypeAnn) bool {
+	switch typ.(type) {
+	case *ast.UnionTypeAnn, *ast.IntersectionTypeAnn:
+		return true
+	default:
+		return false
+	}
+}
+
+// printLifetimeAnn renders a lifetime annotation node: a single lifetime
+// `'a` or a union `('a | 'b)`.
+func (p *Printer) printLifetimeAnn(lt ast.LifetimeAnnNode) {
+	switch lt := lt.(type) {
+	case *ast.LifetimeAnn:
+		p.writeString("'")
+		p.writeString(lt.Name)
+	case *ast.LifetimeUnionAnn:
+		p.writeString("(")
+		for i, l := range lt.Lifetimes {
+			p.writeString("'")
+			p.writeString(l.Name)
+			if i < len(lt.Lifetimes)-1 {
+				p.writeString(" | ")
+			}
+		}
+		p.writeString(")")
 	}
 }
 
