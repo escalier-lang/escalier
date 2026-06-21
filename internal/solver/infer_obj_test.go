@@ -53,6 +53,26 @@ func TestInferTupleSpreadMiddle(t *testing.T) {
 	require.Equal(t, "[1, 2, 3, 4]", render(got))
 }
 
+// Spreading multiple exact tuples concatenates them into one exact tuple whose
+// length is the sum of the operand lengths. The result stays exact, since every
+// operand has a known length, so the assertion checks the Inexact flag and the
+// element count directly rather than relying on the rendered form.
+func TestInferTupleSpreadMultipleExact(t *testing.T) {
+	c := newChecker()
+	// [...[1, 2], ...[3, 4]]
+	a := tupleExpr(numExpr(1), numExpr(2))
+	b := tupleExpr(numExpr(3), numExpr(4))
+	e := tupleExpr(ast.NewArraySpread(a, testSpan()), ast.NewArraySpread(b, testSpan()))
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, "[1, 2, 3, 4]", render(got))
+
+	tup, ok := got.(*soltype.TupleType)
+	require.True(t, ok)
+	require.False(t, tup.Inexact) // every operand had a known length
+	require.Len(t, tup.Elems, 4)  // 2 + 2 spliced elements
+}
+
 // Spreading a non-tuple value is a typed error: M4 splices concrete tuple
 // literals only, so the operand must infer to a tuple.
 func TestInferTupleSpreadNonTuple(t *testing.T) {
