@@ -167,18 +167,25 @@ needs a behavioural review and a test, not a compile fix. Sites to review:
   [internal/soltype/print.go](../../internal/soltype/print.go) — it already
   parenthesizes a looser inner, so `&(A | B)` renders correctly; add a snapshot.
 
-### Prefix `&` binds looser than `|` and `&`
+### Prefix `&` binds tight, like `mut`
 
-The requirements want `&A | B` to mean `&(A | B)`. The type-annotation parser gives
-intersection precedence 4 and union precedence 3, and prefix `mut` and lifetime are
-parsed inside `primaryTypeAnn`, so they bind tighter than both — `mut A | B` is
-`(mut A) | B`. Decision: prefix `&` is parsed at the top of `typeAnn`, above the
-precedence-climbing loop, wrapping the full following annotation. This gives it the
-loosest binding, so `&A | B` and `&mut A | B` wrap the whole union. It is the
-opposite placement from `mut`, which stays tight for the owned-mutable `mut A` form.
-In the printer the borrow-`&` prefix prints below `precUnion`, distinct from the
-`mut`/lifetime prefix which keep `precPrefix`. The borrow-mode flag gates this, so
+A leading `&` borrows the immediately following atom, not the whole annotation, so
+`&A | B` is `(&A) | B` and a borrow of the union is written with explicit
+parentheses, `&(A | B)`. This keeps `&` uniform with the prefixes that already
+exist: `mut` and the lifetime prefix are parsed inside `primaryTypeAnn` and bind
+tighter than intersection (precedence 4) and union (precedence 3), so `mut A | B` is
+`(mut A) | B`. Decision: prefix `&` is parsed in `primaryTypeAnn` alongside `mut`,
+consuming an optional lifetime and an optional `mut` and then the atom, so `&`,
+`&mut`, `&'a`, and `&'a mut` are tight prefixes on one atom. To borrow a union,
+intersection, or other compound, parenthesize it. In the printer the borrow-`&`
+prefix prints at `precPrefix`, the same level as `mut`/lifetime, so `&(A | B)`
+renders with the inner union parenthesized. The borrow-mode flag gates this, so
 legacy mode keeps `&` as infix intersection only.
+
+Disambiguation is by position, the standard prefix-versus-infix split: a `&` where
+an atom is expected is a borrow of that atom, and a `&` between two parsed types is
+intersection. Each string has one parse. A borrow as an intersection member needs no
+parentheses; only borrowing a compound does.
 
 ### Param-default flip is sequenced with the move engine
 
@@ -237,11 +244,11 @@ unaffected.
   [internal/ast/visitor.go](../../internal/ast/visitor.go). `MethodReceiver`
   ([internal/ast/class.go](../../internal/ast/class.go)) is the field template:
   it already carries `Mut bool` plus `Lifetime LifetimeAnnNode`.
-- Parse prefix `&`/`&mut`/`&'a`/`&'a mut` at the top of `typeAnn`, above the
-  precedence-climbing loop, gated on `BorrowSyntax`, so the borrow wraps the full
-  following annotation and `&A | B` is `&(A | B)`. See "Prefix `&` binds looser
-  than `|` and `&`" above. Reuse the existing `LifetimeAnn`/`LifetimeUnionAnn`
-  nodes for the lifetime slot.
+- Parse prefix `&`/`&mut`/`&'a`/`&'a mut` in `primaryTypeAnn` alongside the existing
+  `mut` and lifetime prefixes, gated on `BorrowSyntax`, so `&` binds tight to one
+  atom and `&A | B` is `(&A) | B`. A borrow of a union or intersection is written
+  `&(A | B)`. See "Prefix `&` binds tight, like `mut`" above. Reuse the existing
+  `LifetimeAnn`/`LifetimeUnionAnn` nodes for the lifetime slot.
 - Render `RefTypeAnn` in [internal/printer/printer.go](../../internal/printer/printer.go).
 - Defensive guard: replace the `panic` default in the old checker's
   `inferTypeAnn` ([internal/checker/infer_type_ann.go](../../internal/checker/infer_type_ann.go))
