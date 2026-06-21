@@ -194,9 +194,9 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		inner := p.primaryTypeAnn()
 		if inner == nil {
 			next := p.lexer.peek()
-			p.reportError(ast.MergeSpans(token.Span, next.Span),
-				"expected a type annotation after '&'")
-			inner = ast.NewErrorTypeAnn(token.Span)
+			errSpan := ast.MergeSpans(token.Span, next.Span)
+			p.reportError(errSpan, "expected a type annotation after '&'")
+			inner = ast.NewErrorTypeAnn(errSpan)
 		}
 		span := ast.MergeSpans(token.Span, inner.Span())
 		return ast.NewBorrowTypeAnn(isMut, lifetime, inner, span)

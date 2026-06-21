@@ -961,11 +961,7 @@ func (p *Printer) printTypeCastExpr(expr *ast.TypeCastExpr) {
 	p.printExpr(expr.Expr)
 	p.writeString(":")
 	// Wrap union/intersection types in parentheses for clarity
-	needsParens := false
-	switch expr.TypeAnn.(type) {
-	case *ast.UnionTypeAnn, *ast.IntersectionTypeAnn:
-		needsParens = true
-	}
+	needsParens := needsTypeAnnParens(expr.TypeAnn)
 	if needsParens {
 		p.writeString("(")
 	}
@@ -1447,17 +1443,26 @@ func (p *Printer) printRefTypeAnn(typ *ast.RefTypeAnn) {
 	if typ.Mut {
 		p.writeString("mut ")
 	}
-	needsParens := false
-	switch typ.Inner.(type) {
-	case *ast.UnionTypeAnn, *ast.IntersectionTypeAnn:
-		needsParens = true
-	}
+	needsParens := needsTypeAnnParens(typ.Inner)
 	if needsParens {
 		p.writeString("(")
 	}
 	p.printTypeAnn(typ.Inner)
 	if needsParens {
 		p.writeString(")")
+	}
+}
+
+// needsTypeAnnParens reports whether a type annotation must be parenthesized
+// when it appears as the operand of a tighter-binding prefix such as a borrow
+// `&` or a type cast. Union and intersection bind looser than those prefixes,
+// so they are the cases that need wrapping.
+func needsTypeAnnParens(typ ast.TypeAnn) bool {
+	switch typ.(type) {
+	case *ast.UnionTypeAnn, *ast.IntersectionTypeAnn:
+		return true
+	default:
+		return false
 	}
 }
 

@@ -172,6 +172,12 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 		// declaration that wraps it (e.g. `type Uppercase = intrinsic`).
 		// Audit test skips IntrinsicType for round-trip.
 		return &IntrinsicType{Name: ""}
+	case *ast.RefTypeAnn:
+		// The legacy type system has no borrow/ref representation; borrows
+		// are modeled only by the SimpleSub-based checker. Feeding a borrow
+		// annotation here is a test mistake — fail with a clear cause rather
+		// than the generic default below.
+		panic("typeAnnToType: borrow annotations are unsupported in the legacy test helper")
 	default:
 		panic(fmt.Sprintf("ConvertTypeAnnToType: unsupported type annotation: %T", typeAnn))
 	}
