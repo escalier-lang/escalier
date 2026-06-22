@@ -10,6 +10,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildNamespaceStatements(t *testing.T) {
@@ -775,7 +776,7 @@ func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
 				{ID: 0, Path: "main.esc", Contents: test.src},
 			})
-			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+			require.Empty(t, errors)
 
 			depGraph := dep_graph.BuildDepGraph(module)
 			builder := &Builder{tempId: 0, depGraph: depGraph}
@@ -788,7 +789,7 @@ func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
 				}
 				printer.PrintStmt(stmt)
 			}
-			assert.Equal(t, test.expected, printer.Output)
+			require.Equal(t, test.expected, printer.Output)
 		})
 	}
 }

@@ -273,12 +273,8 @@ func TestPrintBorrowExpressions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expr := parseExpr(t, tt.input)
 			result, err := Print(expr, opts)
-			if err != nil {
-				t.Fatalf("Print error: %v", err)
-			}
-			if result != tt.expected {
-				t.Errorf("Expected %q, got %q", tt.expected, result)
-			}
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
 		})
 	}
 
