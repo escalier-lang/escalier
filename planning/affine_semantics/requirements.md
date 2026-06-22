@@ -411,6 +411,100 @@ checker cannot prove disjoint, such as a dynamic `arr[i]` versus `arr[j]`, falls
 a container-level borrow, the way the whole-object-consume fallback covers field moves it
 cannot separate.
 
+## Moving a graph
+
+A value may hold borrows to other values — a graph of nodes wired together with
+`&mut` cross-edges, built from locals inside a function. Cyclic or acyclic, such a
+graph has no node that owns the others; the nodes own nothing and reference each
+other, and an external owner is what would normally hold them. The move precondition
+above forbids moving a value while a borrow points into it, so naively returning the
+graph's root would be rejected: its edges borrow sibling nodes that do not outlive
+the function.
+
+The refinement: when the graph's nodes are reachable **only through the graph
+itself** — no reference to any node exists outside the connected component — the
+whole component moves as a unit. Returning or storing the root co-moves every node
+in the component, re-anchors the internal borrows to the destination's region, and
+consumes every local binding in the component. A borrow internal to a component that
+moves as a unit is re-anchored, not orphaned. The unit of ownership becomes the
+connected component: the destination owns the whole reachable subgraph, and the
+`&mut` cross-edges are internal to it.
+
+```esc
+type Node = { value: number, peers: Array<&mut Node> }
+
+fn build() -> Node {
+    val mut a: Node = { value: 1, peers: [] }
+    val mut b: Node = { value: 2, peers: [] }
+    a.peers.push(b)            // a borrows b
+    b.peers.push(a)            // b borrows a — a cycle
+    return a                   // the whole {a, b} component moves out; a and b both consumed
+}
+```
+
+This is sound for two reasons. First, the runtime is garbage-collected, so a
+co-moved node stays alive as long as the destination keeps the component reachable;
+there is no dangling, which is the hazard the lifetime check guards against in a
+non-GC setting. Second, with no external reference to any node, every path to every
+node runs through the component, so extending the region to the destination adds no
+new observer — the phase rules keep governing mutation exactly as they did inside
+the function. The mutual internal lifetimes, which cannot nest, unify into the one
+destination region instead of failing.
+
+The precondition is **no external references to the component's nodes**. If any node
+is also reachable from outside the component — a parameter the caller retains, a
+separate binding, a longer-lived store — that outside reference pins the node's
+lifetime and ownership, the component move does not apply, and the ordinary
+borrow-escape error or a phase conflict stands. Acyclicity is not required: the
+mechanism handles trees, DAGs, and cyclic graphs alike, because reclamation is the
+collector's job and the re-anchoring unifies mutual lifetimes into one region. A
+component moves as a whole: a program may return or store the graph, or keep using
+its nodes locally, but not both. This is the single-binding move rule lifted to the
+connected component.
+
+## Freeze and Thaw
+
+The freeze and thaw moves change mutability only at the level of the value moved; a
+nested `&mut` or `mut` field keeps its mutability, because Escalier is shallow by
+default — an immutable type may hold mutable fields. So moving a graph's root into an
+immutable binding does not freeze the graph: the `&mut` cross-edges and `mut` field
+types are part of the node type and stay mutable.
+
+To convert a whole structure between mutable and immutable, use the `Freeze<T>` and
+`Thaw<T>` utility types. `Freeze<T>` is a deep, recursive mapped type that rewrites
+every reachable `&mut` to `&` and every `mut` container to its immutable form;
+`Thaw<T>` is the opposite direction. For the node type above:
+
+```esc
+type Freeze<Node>        // { value: number, peers: Array<&Freeze<Node>> }
+type Thaw<Freeze<Node>>  // { value: number, peers: Array<&mut Node> } — recovers Node
+```
+
+`Freeze<Node>` recurses into the peer references, so a frozen node's edges point at
+frozen nodes; the result is a recursive, self-referential type, resolved by the same
+machinery that resolves `Node`.
+
+The types are purely type-level and carry no runtime cost: the value is unchanged,
+the type is stricter or looser. Soundness comes from the move, not the mapped type.
+Assigning a value into `Freeze<T>` is the mutable-to-immutable freeze move — it
+consumes the source and requires every mutable path to the reachable structure to be
+dead. `Thaw<T>` is the immutable-to-mutable move and requires no live immutable
+observer. The mapped type names the deep target; the move supplies the guarantee
+that no conflicting path survives.
+
+This pairs with the connected-component move. When a graph is owned as a single
+component — a returned component, or an arena whose one binding owns every node —
+consuming that binding kills every mutable path at once, so
+`val frozen: Freeze<Graph> = g` freezes the entire graph in one sound move. A
+scattered graph with many owning bindings would instead require all of them
+consumed.
+
+Two caveats. `Thaw` is not a faithful inverse for a type with genuinely-immutable
+fields: it deep-mutables everything, so `Thaw<Freeze<T>>` recovers `T` only when `T`
+was fully mutable. And `Freeze<T>` is the deliberate opt-in to deep immutability; the
+default stays shallow, so a type is deeply immutable only where the program asks for
+it with `Freeze`.
+
 ## Why the invariant holds
 
 Move/affine semantics preserves the soundness invariant by eliminating, at the
@@ -774,9 +868,12 @@ policy choosing it.
 
 - **Linearity / mandatory consumption.** Values need not be consumed; unused
   owned values are dropped. Out of scope.
-- **Interior-mutability escape hatches.** Patterns for cyclic mutable data that
-  outlive a single owner — a `Cell`-like wrapper — are noted in #618 as a separate
-  concern and are not specified here.
+- **Interior-mutability escape hatches.** Moving a self-contained cyclic or acyclic
+  graph is specified above under "Moving a graph," and `Freeze`/`Thaw` convert such a
+  graph between mutable and immutable. What remains out of scope is the case those do
+  not cover: a mutable cyclic structure whose nodes are referenced from outside the
+  graph, with no single owner — a `Cell`-like wrapper, noted in #618 as a separate
+  concern.
 - **Field-granular tracking depth.** Partial moves target field granularity. How
   deep the tracking goes through nested objects and through dynamic index
   expressions is an implementation-precision question for the plan, with the
