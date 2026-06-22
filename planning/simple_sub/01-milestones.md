@@ -894,20 +894,23 @@ recursive references (cf. `infer_module.go:431-872` and the discussion in
   could represent. The intended M6 behavior is more permissive: produce the
   type-level union `(mut 'a {x: number}) | (mut 'b {x: string})` instead. That union
   is readable — `.x` yields `number | string` through the covariant read view — and
-  a write through `.x` is allowed only after the static type narrows to one branch,
-  which re-establishes the field's write type. This is sound by the same rule
-  TypeScript uses: an un-narrowed union of mutable objects is read-only at its
-  conflicting fields and writable once narrowed.
+  a write to a conflicting field through the un-narrowed binding is rejected and leaves
+  its type unchanged. To write, narrow to one branch with an `if let` and write through
+  the fresh mutable binding. This is TypeScript's read-until-narrowed rule, adapted to
+  Escalier's binding-based narrowing. The un-narrowed union is read-only at its
+  conflicting fields, and the write goes through the narrowed binding, never by
+  re-typing the original.
   - **Why it lands here, not in M4.** It needs two M6 pieces. First, union types as
     first-class OUTPUTS that can carry `mut` `RefType` members — M4's join only
     builds a single-carrier lifetime-union `mut ('a | 'b) {x}`, never a union of two
-    distinct borrows. Second, union-scrutinee narrowing to gate the write site.
-    Until both exist the union is unrepresentable or permanently read-only.
-  - **The hard case is non-discriminated narrowing.** These branches differ only in
-    the TYPE of `x`, with no discriminant tag, so re-enabling writes needs narrowing
-    by a field's runtime type such as `typeof r.x === "number"`, not tag-based
-    narrowing. That is the trickiest narrowing form, so this exact shape narrows
-    last.
+    distinct borrows. Second, the `if let` narrowing form that binds a fresh mutable
+    view of one branch to write through. Until the first exists the union is
+    unrepresentable; until the second, it stays read-only.
+  - **The write path is an `if let` binding.** These branches carry no discriminant
+    tag, but the narrowed type is named in the pattern, so
+    `if let r2: mut {x: number} = r` binds a fresh mutable view and `r2.x = 5` writes
+    through it. This is ordinary binding-based narrowing. Escalier has no runtime-type
+    flow narrowing, and the un-narrowed `r` keeps its union type.
   - **Scope.** This relaxes D3's all-mut-borrows reconcile-or-error contract to
     reconcile-or-union. The compatible case still joins to one carrier with a union
     lifetime as today; only the incompatible case changes from error to union.

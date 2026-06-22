@@ -1134,3 +1134,29 @@ read once and branched at those three sites.
 7. **Exact-only fixture skip-tag location** — **magic comment header** in
    `lib/index.esc` (e.g. `// @applicable_to new`). More visible than a
    `package.json` field; people rarely open the package.json in a fixture.
+8. **Narrowing always introduces a new binding.** A type guard, a `match` arm, or
+   any future narrowing construct produces a *fresh* binding at the narrowed type
+   rather than re-typing an existing variable in a flow-sensitive way. This is the
+   deliberate departure from TypeScript's control-flow narrowing, and it is what
+   keeps narrowing compatible with SimpleSub's one-principal-type-per-expression
+   model: a binding has exactly one type for its whole scope, so a narrow cannot
+   mutate it — it can only bind a new name. Consequences:
+   - **No flow-sensitive re-typing machinery.** The hardest part of TS-style
+     narrowing — tracking a variable's type changing across statements and
+     branches — is simply absent. The narrowed type lives on a different name.
+   - **It is what makes M6's permissive mut-borrow join clean.** The original
+     union-typed binding stays read-only at its conflicting fields *for its whole
+     scope*; a write happens only through a new binding whose type is one branch
+     of the union. So "read-only until narrowed" is the permanent, correct
+     behavior of the original binding, not a stopgap
+     ([01-milestones.md](01-milestones.md) M6 "Permissive mut-borrow joins").
+   - **It already matches `match`-arm binding** (`pattern_matching` R9), where arm
+     patterns introduce new bound names rather than re-typing the scrutinee.
+
+   **Open: narrowing has no milestone.** This decision settles the *shape* of
+   narrowing, not its schedule. No M-series milestone implements narrowing; it sits
+   in the post-MVP "narrowing future" tied to negation types
+   ([03-references.md](03-references.md) §"Beyond a plain lattice"). The features
+   that want it — M6's write-after-narrow, `pattern_matching` R9 arm narrowing,
+   general union narrowing — defer to that unscheduled work. A milestone still has
+   to own the construct.

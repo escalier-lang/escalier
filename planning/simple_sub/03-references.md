@@ -176,7 +176,12 @@ covariance is structural, not a special case.
 
 - **Boolean algebra (negation):** adding negation types `¬T` (MLstruct) turns the
   subtype lattice into a Boolean algebra (complements + distributivity), enabling
-  narrowing. Out of scope for the MVP; noted for the narrowing future.
+  narrowing. Out of scope for the MVP; noted for the narrowing future. No M-series
+  milestone owns narrowing — the features that want it (M6's write-after-narrow,
+  `pattern_matching` R9 arm narrowing) defer to this unscheduled work. When it does
+  land, **narrowing introduces a new binding** rather than re-typing an existing
+  variable ([02-design-notes.md](02-design-notes.md) §"Settled decisions" #8), so
+  it never needs flow-sensitive re-typing.
 - **Nominal types** break pure structural ordering; they are layered on as atomic
   lattice elements with an explicit declared-subtype relation feeding `constrain`.
 - **Recursive types** are not lattice elements per se; they are handled
