@@ -86,7 +86,7 @@ fn f(p: mut {x: number}) {
 }
 
 // Reading a field after writing it through an annotated `mut` borrow returns the
-// written field's type. The receiver is the concrete borrow `&'l0 mut {x: number}`,
+// written field's type. The receiver is a concrete mutable borrow `&mut {x: number}`,
 // so valueProp peels it via CarrierOf before emitting the read requirement — without
 // the peel this would trip the escape guard on the bare read requirement. Unlike the
 // usage-inferred read-after-write tests (which key off the `written` map on a

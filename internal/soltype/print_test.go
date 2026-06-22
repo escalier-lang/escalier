@@ -371,7 +371,7 @@ func TestPrintScheme(t *testing.T) {
 		lv := &LifetimeVar{ID: 0, Level: 1}
 		// fn (p: &'a mut {x: number}) -> &'a mut {x: number}: one borrow lifetime shared
 		// by the param and the return, so the scheme names it once and renders both in
-		// `&'a` notation — the mutable-borrow display form.
+		// the mutable-borrow `&'a mut` display form.
 		ref := &RefType{Mut: true, Lt: lv, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}}
 		ty := &FuncType{Params: []*FuncParam{identP("p", ref)}, Ret: ref}
 		require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", PrintAsScheme(ty))

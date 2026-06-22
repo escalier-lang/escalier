@@ -172,9 +172,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// Give this function its own named-lifetime scope so a `&'a` in its signature
 	// resolves consistently across its params and return, without sharing the name
 	// with an enclosing or sibling function. Restored on exit so a nested function
-	// does not clobber the outer scope's names.
+	// does not clobber the outer scope's names. namedLifetime allocates the map on
+	// first use, so a body with no `&'a` annotation pays no allocation.
 	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = map[string]*soltype.LifetimeVar{}
+	c.namedLifetimes = nil
 	defer func() { c.namedLifetimes = savedNamedLts }()
 	if len(sig.TypeParams) > 0 {
 		// Generic functions (fn <T>(...)) need type schemes / generalization,
