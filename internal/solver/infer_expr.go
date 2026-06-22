@@ -555,6 +555,14 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // `val q = &p` and `val q = &mut p`. The move side establishes ownership only.
 // Consume and use-after-move enforcement lands in PR 6.
 func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
+	// PR 4: an explicit borrow of a member path takes the receiver-bounded
+	// lifetime of the implicit read at field granularity. Intercept the
+	// MemberExpr operand so a `&mut obj.f` can express a mutable view, which
+	// the ordinary inferBorrow path would reject as a mutability mismatch
+	// against the immutable wrap PR 4's fieldReadBorrow puts on `obj.f`.
+	if mem, ok := e.Arg.(*ast.MemberExpr); ok && !mem.OptChain && mem.Prop != nil && mem.Prop.Name != "" {
+		return c.inferBorrowOfMember(scope, lvl, e, mem)
+	}
 	sub := c.inferExpr(scope, lvl, e.Arg)
 	// Absorb the ErrorType recovery sentinel: the operand already reported its
 	// own diagnostic, so the borrow must not cascade a second one. Record the
@@ -588,6 +596,90 @@ func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.
 	if constrainable {
 		c.constrain(e, sub, target)
 	}
+	c.recordType(e, target)
+	return target
+}
+
+// inferBorrowOfMember types `&obj.f` or `&mut obj.f` (PR 4 rule 4). It reads
+// `obj.f` as a borrow of the field bounded by the receiver, at the requested
+// mutability. An owned receiver mints a fresh lifetime here; a borrowed
+// receiver's lifetime passes through. A `&mut obj.f` requires the receiver to
+// support a mutable view of the field, expressed as a mutable inexact
+// requirement that the RefType <: RefType rule resolves against an owned-mut or
+// `&mut`-borrow receiver. A `&obj.f` reads the field through the ordinary
+// immutable selection. The receiver is inferred ONCE here rather than letting
+// inferExpr re-walk the MemberExpr through the PR 4 wrap in fieldReadBorrow,
+// which would produce an immutable borrow at the receiver lifetime that the
+// outer `&mut` could not upgrade.
+//
+// Path-granular tracking — locking only the borrowed field while leaving a
+// disjoint sibling such as `obj.g` independently usable — is the partial-moves
+// work in PR 7. PR 4 ships only the typing rule.
+func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, mem *ast.MemberExpr) soltype.Type {
+	recv := c.inferExpr(scope, lvl, mem.Object)
+	// Absorb the ErrorType recovery sentinel from the receiver so the borrow
+	// does not cascade a second diagnostic. The MemberExpr and the BorrowExpr
+	// both adopt the sentinel as their recorded type.
+	if _, ok := recv.(*soltype.ErrorType); ok {
+		c.recordType(mem, recv)
+		c.recordType(e, recv)
+		return recv
+	}
+	var recvLt soltype.Lifetime
+	if r, ok := recv.(*soltype.RefType); ok {
+		recvLt = r.Lt
+	}
+	recvCarrier := soltype.CarrierOf(recv)
+	// The constraint validates that the receiver supports the requested view
+	// of this field — a `&mut` lowers to the mutable inexact requirement
+	// inferMemberAssign uses for `obj.f = v`, a `&` to the ordinary immutable
+	// inexact read requirement. The requirement's fresh field var is consumed
+	// here for the check only; the borrow returned to the caller wires its
+	// Inner to the receiver's static property type when one is known, so the
+	// wrap survives coalescing. Routing the result through the fresh field var
+	// would let the co-occurrence pass widen a bi-polar inner — `mut`
+	// constrainWriteBack pins the field invariant, so the same var occurs in
+	// both polarities — into a union node that is not a `RefInner` and peels
+	// the borrow wrapper away.
+	chk := c.freshAt(lvl)
+	c.recordProv(chk, mem.Prop, MemberAccess)
+	if e.Mut {
+		req := &soltype.RefType{
+			Mut: true,
+			Lt:  c.ctx.freshLifetime(lvl),
+			Inner: &soltype.ObjectType{
+				Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: mem.Prop.Name, Type: chk}},
+				Inexact: true,
+			},
+		}
+		c.constrain(e, recv, req)
+	} else {
+		c.constrain(e, recvCarrier, &soltype.ObjectType{
+			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: mem.Prop.Name, Type: chk}},
+			Inexact: true,
+		})
+	}
+	// Inner of the result borrow: prefer the receiver's static property type
+	// so the borrow renders as a concrete `RefType` rather than a co-occurring
+	// var. A receiver without a concrete property type — a usage-inferred
+	// TypeVar carrier or a missing property the constraint above will already
+	// have reported — falls back to the fresh check var, matching the existing
+	// immutable selection's shape.
+	var inner soltype.RefInner = chk
+	if obj, ok := recvCarrier.(*soltype.ObjectType); ok {
+		if prop, ok := obj.Prop(mem.Prop.Name); ok {
+			if ri, ok := prop.Type.(soltype.RefInner); ok {
+				inner = ri
+			}
+		}
+	}
+	lt := recvLt
+	if lt == nil {
+		lt = c.ctx.freshLifetime(lvl)
+	}
+	target := &soltype.RefType{Mut: e.Mut, Lt: lt, Inner: inner}
+	c.recordProv(target, e, BorrowExprOrigin)
+	c.recordType(mem, target)
 	c.recordType(e, target)
 	return target
 }
@@ -1254,24 +1346,79 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 			}
 		}
 	}
+	// A borrowed receiver passes its lifetime through to the read; an owned
+	// receiver originates a fresh lifetime at the read site. PR 4 rule 4 makes
+	// a member read on a reference-shaped field yield a borrow bounded by the
+	// receiver, rather than the bare field value. Capture the receiver's
+	// lifetime BEFORE peeling the borrow wrapper so the wrap site has it.
+	var recvLt soltype.Lifetime
+	if r, ok := recv.(*soltype.RefType); ok {
+		recvLt = r.Lt
+	}
 	// Strip the borrow wrapper before building the field-read requirement (D2):
 	//   - Reading a field through a `mut`/`'a` borrow is always legal and yields
 	//     the field's value, not the borrow.
 	//   - It keeps the requirement off the RefType, so the RefType<:bare escape
 	//     guard fires only when the borrow flows into an owned slot, not on a read.
 	//   - A non-borrow receiver is returned unchanged, leaving plain vars untouched.
-	recv = soltype.CarrierOf(recv)
+	recvCarrier := soltype.CarrierOf(recv)
 	res := c.freshAt(lvl)
 	// The member-requirement record {prop: res} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner res var, so the record would be a dead
 	// entry (§3.3).
 	c.recordProv(res, provNode, MemberAccess)
-	c.constrain(blame, recv, &soltype.ObjectType{
+	c.constrain(blame, recvCarrier, &soltype.ObjectType{
 		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: res}},
 		Inexact: true, // "has at least this property" — width tolerance is inexactness
 	})
-	c.recordType(blame, res)
-	return pathResult{value: res}
+	out := c.fieldReadBorrow(res, recvCarrier, name, recvLt, lvl)
+	c.recordType(blame, out)
+	return pathResult{value: out}
+}
+
+// fieldReadBorrow applies PR 4 rule 4: a member read yields a borrow of the
+// field bounded by the receiver when the field is reference-shaped. An owned
+// receiver mints a fresh lifetime here; a borrowed receiver's lifetime passes
+// through via recvLt. The wrap is conditional on the field's static shape, read
+// off a concrete receiver carrier — a primitive or function field stays a
+// value, since PrimType and FuncType are excluded from RefInner. A field whose
+// static type is itself an immutable borrow copies the borrow out flat rather
+// than nesting, setting up PR 9's nested-borrow normalization. When the
+// receiver's shape is not statically known — a usage-inferred TypeVar carrier
+// or an index path with no concrete property — the existing `res` var is
+// returned unchanged, so the inferred-receiver paths keep their pre-PR-4
+// behaviour and only annotated reference shapes pick up the new borrow.
+func (c *checker) fieldReadBorrow(res *soltype.TypeVarType, recvCarrier soltype.Type, name string, recvLt soltype.Lifetime, lvl int) soltype.Type {
+	obj, ok := recvCarrier.(*soltype.ObjectType)
+	if !ok {
+		return res
+	}
+	prop, ok := obj.Prop(name)
+	if !ok {
+		return res
+	}
+	switch ft := prop.Type.(type) {
+	case *soltype.RefType:
+		if !ft.Mut {
+			// Flat copy-out of an immutable borrow field. Immutable borrows are
+			// freely duplicable, so the read hands back the field's borrow at
+			// its own lifetime rather than nesting under the receiver's. A
+			// `&mut` field falls through to the no-wrap branch — aliasing a
+			// mutable borrow needs the move-engine work in PR 6 — and PR 9
+			// retires the depth-two `&mut &mut` shape entirely.
+			return ft
+		}
+		return res
+	case *soltype.ObjectType, *soltype.TupleType:
+		_ = ft
+		lt := recvLt
+		if lt == nil {
+			lt = c.ctx.freshLifetime(lvl)
+		}
+		return &soltype.RefType{Mut: false, Lt: lt, Inner: res}
+	default:
+		return res
+	}
 }
 
 // resolveIndexPath resolves `obj[index]`. A namespace object is indexed by a
