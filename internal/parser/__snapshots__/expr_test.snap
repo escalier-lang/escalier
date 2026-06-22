@@ -3763,3 +3763,39 @@
     span: 1:1-1:4,
 }
 ---
+
+[TestParseExprNoErrors/BorrowBindsTighterThanPlus - 1]
+&ast.BinaryExpr{
+    Left: &ast.BorrowExpr{
+        Arg: &ast.IdentExpr{
+            Name: "a",
+            span: 1:2-1:3,
+        },
+        span: 1:1-1:3,
+    },
+    Op: "+",
+    Right: &ast.IdentExpr{
+        Name: "b",
+        span: 1:6-1:7,
+    },
+    span: 1:1-1:7,
+}
+---
+
+[TestParseExprNoErrors/BorrowOfParenthesizedSum - 1]
+&ast.BorrowExpr{
+    Arg: &ast.BinaryExpr{
+        Left: &ast.IdentExpr{
+            Name: "a",
+            span: 1:3-1:4,
+        },
+        Op: "+",
+        Right: &ast.IdentExpr{
+            Name: "b",
+            span: 1:7-1:8,
+        },
+        span: 1:3-1:8,
+    },
+    span: 1:1-1:8,
+}
+---

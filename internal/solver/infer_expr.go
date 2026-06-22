@@ -192,9 +192,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	paramTypes := make(map[string]soltype.Type, len(sig.Params))
 	for i, p := range sig.Params {
 		pt := c.paramType(p, lvl)
-		// PR 3 (Rule 2): a bare annotation is owned, only an `&` annotation borrows.
-		// A `&` annotation already mints its lifetime in resolveLifetimeAnn, so the
-		// param has nothing to attach here. A bare `mut T` stays owned-mutable.
+		// Rule 2 of PR 3. A bare annotation is owned and only an `&` annotation
+		// borrows. An `&` annotation already mints its lifetime in
+		// resolveLifetimeAnn, so a parameter has nothing to attach here. A bare
+		// `mut T` stays owned-mutable.
 		// An `open` un-annotated param keeps its usage-inferred object inexact at
 		// display time (B2). The marker only makes sense for an inferred var; an
 		// annotated param's exactness is fixed by its annotation, and paramType
@@ -532,8 +533,8 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // inferBorrow types a borrow expression `&p` or `&mut p`. The result is a
 // RefType over the operand's carrier, carrying a fresh inferred lifetime. The
 // operand is constrained against the wrapper so the existing RefType<:RefType
-// and bare<:RefType rules enforce the rest: an immutable operand cannot satisfy
-// a `&mut` (mutability mismatch), and an owned operand satisfies the borrow slot
+// and bare<:RefType rules enforce the rest. An immutable operand fails the
+// mutability check against `&mut`, and an owned operand satisfies a borrow slot
 // the same way a call-site argument does.
 //
 // The inner is taken directly from the operand rather than a fresh variable, so
@@ -541,10 +542,10 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // owned-mutable `mut {x: number}` reads as `mut {x: number}` when the lifetime
 // elides locally, and as `&'a mut {x: number}` when the borrow reaches an output.
 //
-// PR 3 introduces `&p` / `&mut p` as the explicit borrow form a binding
-// initializer uses to choose "borrow" over "move" in the inference-rule table
-// (val q = &p, val q = &mut p). The move side establishes ownership only; the
-// consume / use-after-move enforcement lands in PR 6.
+// PR 3 introduces `&p` and `&mut p` as the explicit borrow form. A binding
+// initializer uses one of them to choose "borrow" over "move", as in
+// `val q = &p` and `val q = &mut p`. The move side establishes ownership only.
+// Consume and use-after-move enforcement lands in PR 6.
 func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
 	sub := c.inferExpr(scope, lvl, e.Arg)
 	// Absorb the ErrorType recovery sentinel: the operand already reported its
@@ -566,7 +567,7 @@ func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.
 		// A primitive, function, or promise is not a RefInner and has nothing to
 		// borrow. Report the diagnostic and build the wrapper around a fresh
 		// inner var so the surrounding expression stays cascade-safe. Skip the
-		// constrain step below: routing `5 <: &T` through bare<:RefType would
+		// constrain step below. Routing `5 <: &T` through bare<:RefType would
 		// raise a second "cannot constrain" diagnostic on top of the single
 		// non-borrowable report.
 		c.reportUnsupportedFeature(e, "borrow of a non-borrowable type")

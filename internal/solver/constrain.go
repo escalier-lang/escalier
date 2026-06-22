@@ -334,8 +334,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 				errs = append(errs, c.constrainWriteBack(sup.Inner, sub.Inner, seen)...)
 			}
 			// 3. Lifetime outlives, covariant (M4 D2). Active now that borrows carry
-			//    lifetimes: D1 minted the sort, and resolveLifetimeAnn (for `&`
-			//    annotations) and inferBorrow (for `&p` expressions) mint them.
+			//    lifetimes. D1 minted the sort. Each borrow site mints a lifetime:
+			//    resolveLifetimeAnn for an `&` annotation and inferBorrow for an
+			//    `&p` expression.
 			switch {
 			case sub.Lt != nil && sup.Lt != nil:
 				// Both borrows carry a lifetime: relate them covariantly through the

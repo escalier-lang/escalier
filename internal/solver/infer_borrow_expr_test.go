@@ -15,18 +15,18 @@ import (
 
 // --- Rule 2 (params) -----------------------------------------------------------
 
-// A bare `mut` parameter is OWNED-mutable, not a borrow. Before PR 3, a `mut T`
-// param picked up a fresh inferred lifetime (borrow-by-default); now only an
-// explicit `&` annotation borrows, so the rendered signature carries no lifetime
-// quantifier on a bare-mut returning function.
+// A bare `mut` parameter is OWNED-mutable, not a borrow. Under the pre-PR 3
+// borrow-by-default convention, a `mut T` param picked up a fresh inferred
+// lifetime. Now only an explicit `&` annotation borrows, so the rendered
+// signature carries no lifetime quantifier on a bare-mut returning function.
 func TestInferBareMutParamIsOwned(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", values["f"])
 }
 
-// A bare immutable parameter is OWNED-immutable: an unwrapped value type, no
-// borrow lifetime in the signature.
+// A bare immutable parameter is OWNED-immutable. The signature renders the
+// unwrapped value type with no borrow lifetime.
 func TestInferBareImmutableParamIsOwned(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: {x: number}) { return p }`)
 	require.Empty(t, errs)
@@ -35,8 +35,8 @@ func TestInferBareImmutableParamIsOwned(t *testing.T) {
 
 // --- Rule 3 (binding initializer): inferred bindings, owned operand ------------
 
-// `val q = p` for an owned-immutable p establishes q as owned-immutable. After
-// PR 6 this consumes p; for now it only establishes the owned binding.
+// `val q = p` for an owned-immutable p establishes q as owned-immutable. PR 6
+// will make this consume p. For now it only establishes the owned binding.
 func TestInferValOwnedImmFromOwnedImm(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: {x: number}) {
   val q = p
@@ -77,7 +77,7 @@ func TestInferValMutBorrowFromOwnedMut(t *testing.T) {
 	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", values["f"])
 }
 
-// `&mut p` on an owned-IMMUTABLE p is a mutability mismatch: a mutable borrow
+// `&mut p` on an owned-IMMUTABLE p is a mutability mismatch. A mutable borrow
 // cannot be taken on a value that is not declared mutable.
 func TestInferBorrowMutOnImmutableRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f(p: {x: number}) {
@@ -169,13 +169,11 @@ fn f(p: {x: number}) {
 
 // --- Borrow expressions infer to borrow types ----------------------------------
 
-// `&p` on an inferred-owned local infers an immutable borrow. The borrow's
-// inferred lifetime is local — it does not reach an output here — so it elides
-// at display time, but the borrow is real, as the next test confirms.
+// A returned `&p` carries the borrow lifetime out. The display name is then
+// load-bearing, so the rendered signature quantifies it. The receiver `p` is a
+// `&mut` borrow, and its lifetime threads through into the immutable reborrow at
+// the return.
 func TestInferBorrowExprImmReturnedCarriesLifetime(t *testing.T) {
-	// A returned `&p` carries the borrow lifetime out, where it is named at
-	// display time. The receiver `p` is `&mut` so its own lifetime threads
-	// through into the immutable reborrow at the return.
 	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return &p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a {x: number}", values["f"])
@@ -189,9 +187,9 @@ func TestInferBorrowExprMutFromOwnedMut(t *testing.T) {
 }
 
 // A borrow of an undefined identifier must not cascade a second diagnostic.
-// inferIdent reports the unknown name and returns the ErrorType sentinel; the
-// borrow form absorbs it without emitting a follow-on "borrow of a non-borrowable
-// type" error.
+// inferIdent reports the unknown name and returns the ErrorType sentinel. The
+// borrow form absorbs that sentinel without emitting a follow-on
+// "borrow of a non-borrowable type" error.
 func TestInferBorrowExprAbsorbsUnknownIdentifier(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f() { return &q }`)
 	require.Equal(t, []string{
@@ -200,11 +198,51 @@ func TestInferBorrowExprAbsorbsUnknownIdentifier(t *testing.T) {
 }
 
 // A borrow of a primitive value reports the unsupported-borrow diagnostic once.
-// The recovery mirrors the annotation path's borrowInner: a fresh inner var
+// The recovery mirrors borrowInner on the annotation path. A fresh inner var
 // keeps the wrapper alive so the surrounding expression does not cascade.
 func TestInferBorrowExprOfPrimitiveRecovers(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f() { return &5 }`)
 	require.Equal(t, []string{
 		"Unsupported: borrow of a non-borrowable type",
 	}, Messages(errs))
+}
+
+// Passing an explicit `&p` argument into a `&` parameter type-checks the same as
+// auto-borrowing an owned argument. The borrow expression produces a RefType.
+// The argument-constraining path then relates that RefType to the parameter
+// through the existing RefType<:RefType rule.
+func TestInferBorrowExprAsArgumentIntoBorrowParam(t *testing.T) {
+	src := `fn use(o: &{x: number}) -> number {
+  return o.x
+}
+fn f(p: {x: number}) {
+  return use(&p)
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number}) -> number", values["f"])
+}
+
+// `&mut p` as an argument into a `&mut` parameter on an owned-mutable receiver
+// type-checks. The same source written `use(p)` also checks via auto-borrow, so
+// this pins the explicit-borrow form as an alternative spelling.
+func TestInferBorrowMutExprAsArgumentIntoMutBorrowParam(t *testing.T) {
+	src := `fn use(o: &mut {x: number}) -> number {
+  return o.x
+}
+fn f(p: mut {x: number}) {
+  return use(&mut p)
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
+}
+
+// A `&mut` borrow of a `&mut` parameter is a reborrow at the parameter's lifetime.
+// The result carries the same lifetime through to the return, which renders as
+// the parameter's named lifetime when the borrow reaches the output.
+func TestInferBorrowExprMutReborrowOfMutParam(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return &mut p }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
 }

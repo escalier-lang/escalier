@@ -736,6 +736,63 @@ state.ui.isEnabled = state__ui__isEnabled;`,
 	}
 }
 
+// TestBuildBorrowExpr_LowersToOperand pins that a `&p` or `&mut p` expression
+// drops its borrow wrapper at codegen and emits the operand directly. JavaScript
+// has no borrow concept, so the affine layer must not survive into the runtime.
+func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		expected string
+	}{
+		"BorrowIdent": {
+			src: "fn f(p) { return &p }",
+			expected: `export function f(temp1) {
+  const p = temp1;
+  return p;
+}`,
+		},
+		"BorrowMutIdent": {
+			src: "fn f(p) { return &mut p }",
+			expected: `export function f(temp1) {
+  const p = temp1;
+  return p;
+}`,
+		},
+		"BorrowMember": {
+			src: "fn f(obj) { return &obj.x }",
+			expected: `export function f(temp1) {
+  const obj = temp1;
+  return obj.x;
+}`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: test.src},
+			})
+			assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+			depGraph := dep_graph.BuildDepGraph(module)
+			builder := &Builder{tempId: 0, depGraph: depGraph}
+			outModule := builder.BuildTopLevelDecls(depGraph)
+
+			printer := NewPrinter()
+			for i, stmt := range outModule.Stmts {
+				if i > 0 {
+					printer.NewLine()
+				}
+				printer.PrintStmt(stmt)
+			}
+			assert.Equal(t, test.expected, printer.Output)
+		})
+	}
+}
+
 func TestBuildDecls_WithDependencies(t *testing.T) {
 	tests := map[string]struct {
 		sources  []*ast.Source

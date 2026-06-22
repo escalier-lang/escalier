@@ -107,11 +107,11 @@ type ltAnalysis struct {
 // INVARIANT: this grouping is UNDIRECTED, so it conflates outlives direction. It is
 // correct only while two distinct param lifetimes share a component ONLY when they
 // genuinely co-flow, meaning a join unites them or one is borrowed from the other.
-// Every lifetime origin today obeys this. resolveLifetimeAnn (for `&` annotations)
-// and inferBorrow (for `&p` expressions) each mint an independent var per site. The
-// only cross-links are joins from joinBorrows and instantiation copies from the
-// freshener and extruder, both of which connect lifetimes that really do flow
-// together. A future origin that bound-links two
+// Every lifetime origin today obeys this. Each borrow site mints an independent
+// var. resolveLifetimeAnn mints one for an `&` annotation, and inferBorrow mints
+// one for an `&p` expression. The only cross-links are joins from joinBorrows and
+// instantiation copies from the freshener and extruder, both of which connect
+// lifetimes that really do flow together. A future origin that bound-links two
 // independent param borrows through a shared intermediary would break it. The two
 // would be unioned and both kept, rendering a spurious `('a | 'b)`. Distinguishing
 // that case needs directional reasoning, or first-class lifetime bounds, which the

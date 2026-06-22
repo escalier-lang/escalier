@@ -333,9 +333,10 @@ func (p *Parser) primaryExpr() ast.Expr {
 	ops := p.parsePrefix()
 
 	// Borrow expression: `&expr` or `&mut expr`. The prefix `&` binds looser
-	// than the postfix `.` / `[]`, so `&obj.f` parses as `&(obj.f)`, a borrow
-	// of the whole place path. Placed AFTER parsePrefix so a leading unary
-	// prefix wraps the borrow: `-&p` is `-(&p)`, not a parse error.
+	// than the postfix `.` and `[]`, so `&obj.f` parses as `&(obj.f)`, a
+	// borrow of the whole place path. This block runs AFTER parsePrefix so a
+	// leading unary prefix wraps the borrow. `-&p` parses as `-(&p)` rather
+	// than a parse error.
 	if p.lexer.peek().Type == Ampersand {
 		ampToken := p.lexer.next()
 		isMut := false
@@ -351,8 +352,8 @@ func (p *Parser) primaryExpr() ast.Expr {
 			arg = ast.NewError(errSpan)
 		}
 		expr := ast.Expr(ast.NewBorrow(isMut, arg, ast.MergeSpans(ampToken.Span, arg.Span())))
-		// Apply any collected unary prefixes outside the borrow, so `-&p`
-		// renders as UnaryMinus(BorrowExpr(p)).
+		// Apply any collected unary prefixes outside the borrow. `-&p` renders
+		// as UnaryMinus(BorrowExpr(p)).
 		for !ops.IsEmpty() {
 			tokenAndOp := ops.Pop()
 			expr = ast.NewUnary(tokenAndOp.Op, expr, ast.Span{Start: tokenAndOp.Token.Span.Start, End: expr.Span().End, SourceID: p.lexer.source.ID})

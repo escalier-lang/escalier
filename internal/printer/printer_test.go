@@ -261,10 +261,9 @@ func TestPrintBorrowExpressions(t *testing.T) {
 		{"borrow mut ident", "&mut p", "&mut p"},
 		{"borrow member", "&obj.f", "&obj.f"},
 		{"borrow mut member", "&mut obj.f", "&mut obj.f"},
-		// Round-trip safety: a borrow whose operand is a binary or unary
-		// expression must parenthesize the operand so the printed form re-parses
-		// to the same tree. `&a + b` would otherwise re-parse as
-		// `BorrowExpr(a) + b`.
+		// A borrow whose operand is a binary or unary expression must
+		// parenthesize the operand so the printed form re-parses to the same
+		// tree. `&a + b` would otherwise re-parse as `BorrowExpr(a) + b`.
 		{"borrow of binary", "&(a + b)", "&(a + b)"},
 		{"borrow of unary", "&-x", "&(-x)"},
 	}
@@ -283,11 +282,10 @@ func TestPrintBorrowExpressions(t *testing.T) {
 		})
 	}
 
-	// Direct-AST: a nested BorrowExpr cannot be spelled in surface syntax
-	// because the lexer reads `&&` as the AmpersandAmpersand token. A
-	// downstream rewriter that constructs the nested node must still print to a
-	// form the parser can read back, so the printer wraps the inner borrow in
-	// parens.
+	// A nested BorrowExpr cannot be spelled in surface syntax because the lexer
+	// reads `&&` as the AmpersandAmpersand token. A downstream rewriter that
+	// constructs the nested node must still print to a form the parser can
+	// read back, so the printer wraps the inner borrow in parens.
 	t.Run("nested borrow direct AST", func(t *testing.T) {
 		span := ast.Span{}
 		inner := ast.NewBorrow(false, ast.NewIdent("p", span), span)

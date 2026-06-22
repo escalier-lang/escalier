@@ -264,6 +264,15 @@ func TestParseExprNoErrors(t *testing.T) {
 		"LogicalNotOfBorrowMutable": {
 			input: "!&mut p",
 		},
+		"BorrowBindsTighterThanPlus": {
+			// Prefix `&` binds tighter than infix `+`, so `&a + b` parses as
+			// `BinaryExpr(BorrowExpr(a), +, b)`. A borrow of the sum is written
+			// `&(a + b)`.
+			input: "&a + b",
+		},
+		"BorrowOfParenthesizedSum": {
+			input: "&(a + b)",
+		},
 	}
 
 	for name, test := range tests {
