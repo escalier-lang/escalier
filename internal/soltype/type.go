@@ -338,9 +338,20 @@ type UnknownType struct{}
 // single-polarity variables (positive ⇒ union of lowers, negative ⇒ intersection
 // of uppers). The spike emits these via type_system.NewUnionType /
 // NewIntersectionType; M1 carries them natively so coalescing returns
-// soltype.Type in every case. Their *subtyping rules* in constrain are M6 —
-// these nodes appear only as coalesced output in M1, never as constrain inputs.
-type UnionType struct{ Types []Type }
+// soltype.Type in every case. M6 promotes them to first-class lattice members:
+// legal `constrain` inputs (M6 PR2), writable annotations (M6 PR2), and the
+// subjects of a normalization pass (M6 PR1).
+//
+// UnionType.Inexact (M6 PR1) flags whether the union is open. A bare `A | B` is
+// EXACT — its inhabitants are exactly A ∪ B. An `A | B | ...` written with a
+// trailing `...` is INEXACT — at least these, with an unknown-typed tail. The
+// flag is Inexact (not Exact) so the zero value is exact, matching the
+// ObjectType / TupleType / FuncType convention. IntersectionType carries no
+// exactness flag: exactness is a property of the result, not the meet.
+type UnionType struct {
+	Types   []Type
+	Inexact bool // M6 PR1: trailing `...` ⇒ true; bare `A | B` ⇒ false (the exact zero value)
+}
 type IntersectionType struct{ Types []Type }
 
 // ErrorType is the error-recovery sentinel (M3 PR8) — a childless atom distinct

@@ -224,9 +224,9 @@ func TestInferBlockReturnJoinAcrossIf(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	// The two return points coalesce into a union; the renderer orders by
-	// first-occurrence in the join var's lower-bound list (declaration order).
-	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["h"])
+	// The two return points coalesce into a union, canonicalized to print-string
+	// order by M6 PR1's newUnion: `"x"` sorts before `1` within the LitType kind.
+	require.Equal(t, `fn (c: boolean) -> "x" | 1`, values["h"])
 }
 
 // An early return inside one branch plus a fall-through return: both return
@@ -262,7 +262,7 @@ func TestInferBlockNonTailReturnCheckedAgainstAnnotation(t *testing.T) {
 }
 
 // `async fn` joined with multiple returns wraps the join in Promise<…>. The
-// external return is Promise<1 | "x">.
+// external return is Promise<"x" | 1> (members in canonical order, M6 PR1).
 func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		async fn f(c: boolean) {
@@ -271,7 +271,7 @@ func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> Promise<1 | "x">`, values["f"])
+	require.Equal(t, `fn (c: boolean) -> Promise<"x" | 1>`, values["f"])
 }
 
 // --- IfElseExpr value ---
@@ -287,11 +287,11 @@ func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["pick"])
+	require.Equal(t, `fn (c: boolean) -> "x" | 1`, values["pick"])
 }
 
 // An if WITHOUT else folds in void from the missing alt — `return if c { 5 }`
-// returns `5 | void`.
+// returns `void | 5` (Void ranks before LitType in canonical order, M6 PR1).
 func TestInferIfElseExprMissingAltIsVoid(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn pick(c: boolean) {
@@ -299,7 +299,7 @@ func TestInferIfElseExprMissingAltIsVoid(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> 5 | void`, values["pick"])
+	require.Equal(t, `fn (c: boolean) -> void | 5`, values["pick"])
 }
 
 // The if's condition must be boolean; a string condition is rejected.

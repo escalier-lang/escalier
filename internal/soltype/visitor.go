@@ -193,7 +193,7 @@ func (t *UnionType) Accept(v TypeVisitor, pol Polarity) Type {
 	types, changed := acceptTypes(cur.Types, v, pol)
 	out := cur
 	if changed {
-		out = &UnionType{Types: types}
+		out = &UnionType{Types: types, Inexact: cur.Inexact}
 	}
 	return v.ExitType(out, pol)
 }

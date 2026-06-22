@@ -153,9 +153,11 @@ func TestCoalesceNegativeObjectMerge(t *testing.T) {
 			num(),
 		}
 		got := coalesce(p, soltype.Negative)
+		// Members are in canonical order (M6 PR1): PrimType ranks before
+		// ObjectType, so `number & {a: number}`.
 		want := &soltype.IntersectionType{Types: []soltype.Type{
-			exactObj(propElem("a", num())),
 			num(),
+			exactObj(propElem("a", num())),
 		}}
 		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
 	})

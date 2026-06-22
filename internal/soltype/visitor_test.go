@@ -225,6 +225,32 @@ func TestAcceptObjectPreservesInexact(t *testing.T) {
 	require.Same(t, p1, got.Elems[1], "the unchanged property keeps its *PropertyElem pointer")
 }
 
+// M6 PR1: UnionType.Accept threads the Inexact flag through a rewrite. Without
+// the fix at visitor.go's UnionType arm, every coalesce / extrude / freshenAbove
+// pass would silently drop the flag — load-bearing, not cosmetic, since those
+// passes run on every type the solver touches.
+func TestAcceptUnionPreservesInexact(t *testing.T) {
+	a := &TypeVarType{ID: 1}
+	num := &PrimType{Prim: NumPrim}
+	str := &PrimType{Prim: StrPrim}
+	u := &UnionType{Types: []Type{a, num}, Inexact: true}
+
+	got := u.Accept(&replaceVar{target: a, repl: str}, Positive).(*UnionType)
+
+	require.NotSame(t, u, got, "a changed member forces a new union")
+	require.True(t, got.Inexact, "the rebuilt union keeps its Inexact marker")
+	require.Same(t, str, got.Types[0], "the changed member took the replacement")
+	require.Same(t, num, got.Types[1], "the unchanged member keeps its pointer")
+}
+
+// An unchanged inexact UnionType keeps its pointer (copy-on-write).
+func TestAcceptUnionIdentityPreservation(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	str := &PrimType{Prim: StrPrim}
+	u := &UnionType{Types: []Type{num, str}, Inexact: true}
+	require.Same(t, u, u.Accept(identityVisitor{}, Positive), "an unchanged UnionType keeps its pointer")
+}
+
 // An unchanged inexact ObjectType keeps its pointer (copy-on-write): a no-op
 // rewrite allocates nothing.
 func TestAcceptObjectIdentityPreservation(t *testing.T) {

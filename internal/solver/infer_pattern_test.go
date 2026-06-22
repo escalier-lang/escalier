@@ -276,7 +276,7 @@ func TestInferMatchParamUsageObject(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(p: {x: T0, y: unknown}) -> T0 | 0", values["f"])
+	require.Equal(t, "fn <T0>(p: {x: T0, y: unknown}) -> 0 | T0", values["f"])
 }
 
 // The same usage inference applies through a tuple pattern: the scrutinee infers a
@@ -437,7 +437,7 @@ func TestInferMatchNestedRightLiteralOK(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number}) -> 1 | 0", values["f"])
+	require.Equal(t, "fn (p: {x: number}) -> 0 | 1", values["f"])
 }
 
 // A name a match arm binds is local to that arm. Referencing it in the arm body

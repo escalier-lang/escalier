@@ -296,13 +296,19 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 	if pol == soltype.Negative {
 		parts = foldUsageBounds(parts, open)
 	}
-	if len(parts) == 1 {
-		return parts[0]
-	}
+	// Route through the M6 PR1 smart constructors so the coalesced output is
+	// flattened, deduped, lattice-identity-pruned, and canonically ordered. The
+	// Context is nil here: members are already coalesced and concrete, so the
+	// core normalization is enough — subsumption is reserved for the
+	// Context-bearing mint sites (PR2 resolveTypeAnn, PR6 joinBorrows). The
+	// single-member collapse is handled by the constructor.
+	//
+	// Coalesced unions are EXACT by default — an inferred shape is closed unless
+	// PR4 thread of an inexact source flag says otherwise (M6 plan PR4).
 	if pol == soltype.Positive {
-		return &soltype.UnionType{Types: parts}
+		return newUnion(nil, parts, false)
 	}
-	return &soltype.IntersectionType{Types: parts}
+	return newIntersection(nil, parts)
 }
 
 // foldUsageBounds folds the INEXACT ObjectType parts of an upper-bound list into a
@@ -440,12 +446,11 @@ func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType
 	sort.Strings(order)
 	elems := make([]soltype.ObjTypeElem, len(order))
 	for i, name := range order {
-		ts := types[name]
-		ty := ts[0]
-		if len(ts) > 1 {
-			ty = &soltype.IntersectionType{Types: ts}
-		}
-		elems[i] = &soltype.PropertyElem{Name: name, Type: ty, Optional: optional[name]}
+		// Route the per-property intersection through newIntersection so a shared
+		// property's type is normalized like every other lattice mint (M6 PR1).
+		// Context is nil — the per-property folded types are already coalesced,
+		// so the core normalization is enough.
+		elems[i] = &soltype.PropertyElem{Name: name, Type: newIntersection(nil, types[name]), Optional: optional[name]}
 	}
 	// Closed (Inexact: false) by Policy A; an `open` param leaves it inexact (B2).
 	return &soltype.ObjectType{Elems: elems, Inexact: open}
@@ -570,7 +575,11 @@ func equalType(a, b soltype.Type) bool {
 		return ok && a.Mut == b.Mut && ltEqual(a.Lt, b.Lt) && equalType(a.Inner, b.Inner)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
-		return ok && equalTypeSlice(a.Types, b.Types)
+		// Inexact flags must match — an open union never equals a closed one. With
+		// canonical member order imposed at construction (M6 PR1 newUnion), the
+		// positional equalTypeSlice is order-stable, so two unions over the same
+		// member set are now equal whatever order their members were minted in.
+		return ok && a.Inexact == b.Inexact && equalTypeSlice(a.Types, b.Types)
 	case *soltype.IntersectionType:
 		b, ok := b.(*soltype.IntersectionType)
 		return ok && equalTypeSlice(a.Types, b.Types)

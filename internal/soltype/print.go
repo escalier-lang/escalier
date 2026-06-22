@@ -398,9 +398,15 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		return prefix + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *UnionType:
-		parts := make([]string, len(t.Types))
-		for i, m := range t.Types {
-			parts[i] = p.printTypeMinPrec(m, precUnion)
+		// M6 PR1: an inexact union renders a trailing `...` entry — `A | B | ...` —
+		// mirroring the inexact tuple/object/function rendering so the flag round-trips
+		// to surface syntax.
+		parts := make([]string, 0, len(t.Types)+1)
+		for _, m := range t.Types {
+			parts = append(parts, p.printTypeMinPrec(m, precUnion))
+		}
+		if t.Inexact {
+			parts = append(parts, "...")
 		}
 		return strings.Join(parts, " | ")
 	case *IntersectionType:
