@@ -342,15 +342,17 @@ type UnknownType struct{}
 // legal `constrain` inputs (M6 PR2), writable annotations (M6 PR2), and the
 // subjects of a normalization pass (M6 PR1).
 //
-// UnionType.Inexact (M6 PR1) flags whether the union is open. A bare `A | B` is
-// EXACT — its inhabitants are exactly A ∪ B. An `A | B | ...` written with a
-// trailing `...` is INEXACT — at least these, with an unknown-typed tail. The
-// flag is Inexact (not Exact) so the zero value is exact, matching the
-// ObjectType / TupleType / FuncType convention. IntersectionType carries no
-// exactness flag: exactness is a property of the result, not the meet.
+// UnionType.Inexact flags whether the union is open. A bare `A | B` is
+// exact, so its inhabitants are exactly A ∪ B. An `A | B | ...` written with
+// a trailing `...` is inexact: at least these, with an unknown-typed tail.
+// The flag is Inexact rather than Exact so the zero value is exact, matching
+// the ObjectType, TupleType, and FuncType convention. IntersectionType
+// carries no exactness flag, since exactness is a property of the result
+// rather than the meet. The flag and the smart constructors land with M6 PR1.
 type UnionType struct {
-	Types   []Type
-	Inexact bool // M6 PR1: trailing `...` ⇒ true; bare `A | B` ⇒ false (the exact zero value)
+	Types []Type
+	// Inexact tracks the trailing `...` marker. The zero value is exact.
+	Inexact bool
 }
 type IntersectionType struct{ Types []Type }
 

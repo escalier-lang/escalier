@@ -2,40 +2,65 @@ package solver
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// newUnion / newIntersection are the M6 PR1 smart constructors — the SINGLE
-// mint path for UnionType and IntersectionType. They run the normalization the
-// M6 plan enumerates in one pass, so every later milestone that mints a lattice
-// node — combine's coalesced output, mergeObjectGroup's shared-property meet,
-// PR2's annotation input, PR6's permissive borrow join — produces well-formed,
-// canonical, deduplicated lattice nodes without re-spelling the rules.
+// newUnion and newIntersection are the M6 PR1 smart constructors. They are
+// the single mint path for UnionType and IntersectionType. Every site that
+// builds a lattice node routes through them, so coalesced output, the
+// shared-property meet in mergeObjectGroup, PR2's annotation input, and PR6's
+// permissive borrow join all produce well-formed, canonical, deduplicated
+// lattice nodes without re-spelling the rules.
 //
-// The normalization splits into a Context-free CORE — flatten, lattice
-// identities, ErrorType elision, dedup, canonical order, collapse — and a
-// Context-gated subsumed-member elimination step. The core is what every mint
-// site needs; subsumption runs ONLY when a Context is supplied, because the
-// subtype test it relies on calls c.constrain under a probe. combine and
-// mergeObjectGroup pass a nil Context (their members are already coalesced, so
-// dedup + identities tighten them enough). resolveTypeAnn (PR2) and
-// joinBorrows (PR6) pass their checker's Context so an annotation or borrow
-// union is fully subsumed.
+// Normalization splits into a Context-free core and a Context-gated
+// subsumed-member elimination step. The core covers flatten, lattice
+// identities, ErrorType elision, dedup, canonical order, and collapse. Every
+// caller needs it. Subsumption runs only when the caller passes a Context,
+// because the subtype test it uses calls c.constrain under a probe. combine
+// and mergeObjectGroup pass nil. resolveTypeAnn from PR2 and joinBorrows from
+// PR6 pass their checker's Context.
 //
-// Canonical member order is imposed at construction so equalType stays
-// positional and cheap: two unions over the same member set hold them in the
-// same order, so the existing equalTypeSlice already returns true. The order
-// is also what lets rendering be deterministic (string | number and number |
-// string render identically), and what makes a canonicalized type usable as a
-// stable key for caching.
+// Canonical member order keeps equalType positional and cheap. Two unions
+// over the same members hold them in the same order, so equalTypeSlice
+// already returns true. Canonical order also makes rendering deterministic,
+// so `number | string` and `string | number` print identically, and it lets
+// the canonical type serve as a stable key for caching.
 func newUnion(c *Context, parts []soltype.Type, inexact bool) soltype.Type {
-	// 1. Flatten nested same-kind members and detect tail-inexactness: a nested
-	//    UnionType is spliced in, and an inexact member contributes to the
-	//    result's inexactness (an inexact tail anywhere makes the whole union
-	//    inexact).
+	flat, inexact := flattenUnion(parts, inexact)
+	pruned, hadError := pruneUnion(flat)
+	pruned = dedup(pruned)
+	if c != nil {
+		pruned = subsumeMembers(c, pruned, unionDrops)
+	}
+	sortTypes(pruned)
+	return collapseUnion(pruned, inexact, hadError)
+}
+
+// newIntersection is the meet twin of newUnion. An IntersectionType carries
+// no exactness flag, since exactness is a property of the result rather than
+// the meet, so the API is one argument shorter.
+func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
+	flat := flattenIntersection(parts)
+	pruned, hadError := pruneIntersection(flat)
+	pruned = dedup(pruned)
+	if c != nil {
+		pruned = subsumeMembers(c, pruned, intersectionDrops)
+	}
+	sortTypes(pruned)
+	return collapseIntersection(pruned, hadError)
+}
+
+// flattenUnion splices nested UnionType members into the outer member list
+// and carries an inner inexact flag out to the caller. An inexact nested
+// member makes the outer union inexact, since `... | (A | ...)` collapses to
+// `A | ...`. When no member nests, the input slice is reused, so the common
+// case pays no allocation.
+func flattenUnion(parts []soltype.Type, inexact bool) ([]soltype.Type, bool) {
+	if !anyUnion(parts) {
+		return parts, inexact
+	}
 	flat := make([]soltype.Type, 0, len(parts))
 	for _, p := range parts {
 		if u, ok := p.(*soltype.UnionType); ok {
@@ -47,63 +72,15 @@ func newUnion(c *Context, parts []soltype.Type, inexact bool) soltype.Type {
 		}
 		flat = append(flat, p)
 	}
-
-	// 2. Lattice identity drop: never (⊥) is the identity of |, so drop it.
-	// 3. ErrorType elision: drop ErrorType (the join identity / absorbing sentinel)
-	//    unless it ends up the sole survivor below.
-	pruned := make([]soltype.Type, 0, len(flat))
-	hadError := false
-	for _, p := range flat {
-		if _, isNever := p.(*soltype.NeverType); isNever {
-			continue
-		}
-		if _, isError := p.(*soltype.ErrorType); isError {
-			hadError = true
-			continue
-		}
-		pruned = append(pruned, p)
-	}
-
-	// 4. Structural dedup via equalType — order-preserving.
-	pruned = dedup(pruned)
-
-	// 5. Subsumed-member elimination (Context-gated, optional). Drop a member
-	//    that is a subtype of another member, since the wider one already
-	//    covers it. Concrete-gated: skip when either side carries a free type
-	//    variable, to avoid speculatively pinning a var mid-walk.
-	if c != nil {
-		pruned = subsumeUnionMembers(c, pruned)
-	}
-
-	// 6. Canonical order, so member order is construction-order-independent.
-	sortTypes(pruned)
-
-	// 7. Collapse.
-	if len(pruned) == 0 {
-		if hadError {
-			return &soltype.ErrorType{}
-		}
-		// Empty union ⇒ never (⊥, the identity of |). An inexact-but-empty union
-		// is still ⊥; the inexactness flag has no carrier without members. If a
-		// future caller needs an "inexact never" — i.e. a tail of unknown alone —
-		// it can express that as unknown explicitly.
-		return &soltype.NeverType{}
-	}
-	if len(pruned) == 1 && !inexact {
-		// A single exact-union member collapses to that member. An inexact
-		// single-member union keeps its wrapper, since the `... | T` tail makes
-		// it strictly weaker than the bare T.
-		return pruned[0]
-	}
-	return &soltype.UnionType{Types: pruned, Inexact: inexact}
+	return flat, inexact
 }
 
-// newIntersection is the meet twin of newUnion. An IntersectionType carries no
-// exactness flag (M6 plan: "intersection has no exact/inexact variant —
-// exactness is a property of its result, not the meet"), so the API is one
-// argument shorter.
-func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
-	// 1. Flatten nested intersections.
+// flattenIntersection is the meet twin of flattenUnion. There is no exactness
+// flag to carry.
+func flattenIntersection(parts []soltype.Type) []soltype.Type {
+	if !anyIntersection(parts) {
+		return parts
+	}
 	flat := make([]soltype.Type, 0, len(parts))
 	for _, p := range parts {
 		if i, ok := p.(*soltype.IntersectionType); ok {
@@ -112,41 +89,116 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 		}
 		flat = append(flat, p)
 	}
+	return flat
+}
 
-	// 2. Lattice identity drop: unknown (⊤) is the identity of &, so drop it.
-	// 3. ErrorType elision: drop ErrorType unless it ends up the sole survivor.
-	pruned := make([]soltype.Type, 0, len(flat))
+func anyUnion(parts []soltype.Type) bool {
+	for _, p := range parts {
+		if _, ok := p.(*soltype.UnionType); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func anyIntersection(parts []soltype.Type) bool {
+	for _, p := range parts {
+		if _, ok := p.(*soltype.IntersectionType); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// pruneUnion drops the union's lattice identity never, which is ⊥, and
+// elides ErrorType. ErrorType is the join identity and the absorbing recovery
+// sentinel. It is dropped unless every other member was also dropped, in
+// which case the collapse step keeps a single ErrorType as the sole
+// survivor. The hadError return signals that case to the collapse step.
+//
+// Reuses the input slice when nothing was dropped.
+func pruneUnion(parts []soltype.Type) ([]soltype.Type, bool) {
 	hadError := false
-	for _, p := range flat {
-		if _, isUnknown := p.(*soltype.UnknownType); isUnknown {
-			continue
+	drop := func(p soltype.Type) bool {
+		if _, isNever := p.(*soltype.NeverType); isNever {
+			return true
 		}
 		if _, isError := p.(*soltype.ErrorType); isError {
 			hadError = true
-			continue
+			return true
 		}
-		pruned = append(pruned, p)
+		return false
 	}
+	return filterDropped(parts, drop), hadError
+}
 
-	// 4. Structural dedup.
-	pruned = dedup(pruned)
-
-	// 5. Subsumed-member elimination, Context-gated. Drop an intersection
-	//    member that is a SUPERTYPE of another, since the more specific
-	//    sibling already implies it.
-	if c != nil {
-		pruned = subsumeIntersectionMembers(c, pruned)
+// pruneIntersection is the meet twin of pruneUnion. It drops unknown, the
+// identity of &, and elides ErrorType under the same sole-survivor rule.
+func pruneIntersection(parts []soltype.Type) ([]soltype.Type, bool) {
+	hadError := false
+	drop := func(p soltype.Type) bool {
+		if _, isUnknown := p.(*soltype.UnknownType); isUnknown {
+			return true
+		}
+		if _, isError := p.(*soltype.ErrorType); isError {
+			hadError = true
+			return true
+		}
+		return false
 	}
+	return filterDropped(parts, drop), hadError
+}
 
-	// 6. Canonical order.
-	sortTypes(pruned)
+// filterDropped returns parts with every element the drop callback flagged
+// removed, preserving order. It reuses the input slice when nothing was
+// dropped, so the common case pays no allocation.
+func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype.Type {
+	firstDrop := -1
+	for i, p := range parts {
+		if drop(p) {
+			firstDrop = i
+			break
+		}
+	}
+	if firstDrop < 0 {
+		return parts
+	}
+	out := make([]soltype.Type, 0, len(parts)-1)
+	out = append(out, parts[:firstDrop]...)
+	for _, p := range parts[firstDrop+1:] {
+		if !drop(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
 
-	// 7. Collapse.
+func collapseUnion(pruned []soltype.Type, inexact, hadError bool) soltype.Type {
 	if len(pruned) == 0 {
 		if hadError {
 			return &soltype.ErrorType{}
 		}
-		// Empty intersection ⇒ unknown (⊤, the identity of &).
+		// Empty union ⇒ never, the identity of |. An inexact-but-empty union is
+		// still never, since the inexactness flag has no carrier without
+		// members. A caller that needs a union whose only content is the open
+		// tail should write unknown directly.
+		return &soltype.NeverType{}
+	}
+	if len(pruned) == 1 && !inexact {
+		// A single exact-union member collapses to that member. An inexact
+		// single-member union keeps its wrapper, since the `... | T` tail
+		// makes it strictly weaker than the bare T.
+		return pruned[0]
+	}
+	return &soltype.UnionType{Types: pruned, Inexact: inexact}
+}
+
+func collapseIntersection(pruned []soltype.Type, hadError bool) soltype.Type {
+	if len(pruned) == 0 {
+		if hadError {
+			return &soltype.ErrorType{}
+		}
+		// Empty intersection ⇒ unknown, the identity of &.
 		return &soltype.UnknownType{}
 	}
 	if len(pruned) == 1 {
@@ -155,84 +207,93 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 	return &soltype.IntersectionType{Types: pruned}
 }
 
-// subsumeUnionMembers drops a union member that is a subtype of another member.
-// Concrete-gated: a member that still carries a free type variable is left
-// alone, since trialling subtype against an inference variable would
-// speculatively pin it.
+// subsumeMembers drops every member m for which drops(m, sibling) returns
+// true for some kept sibling. The drops callback names the direction of the
+// subtype check. A union drops m when m <: sibling, since the sibling is
+// wider. An intersection drops m when sibling <: m, since the sibling is
+// narrower and already constrains the value below m.
 //
-// The check uses a discard-only probe so a successful trial leaves no bound
-// mutation behind. With c.constrain returning the trial's errors directly
-// rather than routing through c.errs, the probe just needs to roll back bound
-// appends — newProbe + Discard is enough.
-func subsumeUnionMembers(c *Context, parts []soltype.Type) []soltype.Type {
+// The pass is concrete-gated. A member that still carries a free type
+// variable is left alone, since trialling subtype against an inference
+// variable could pin it speculatively. The trial uses a discard-only probe
+// so a successful trial leaves no bound mutation behind.
+//
+// When two members mutually subsume, the survivor must be deterministic. The
+// pass pre-sorts the input by compareType, so the iteration order is
+// canonical and newUnion([A, B]) and newUnion([B, A]) drop the same member
+// when A and B subsume each other but differ structurally. That is the
+// canonicalization contract the M6 plan asserts.
+func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, sibling soltype.Type) bool) []soltype.Type {
 	if len(parts) < 2 {
 		return parts
 	}
-	keep := make([]bool, len(parts))
-	for i := range keep {
-		keep[i] = true
-	}
-	for i, a := range parts {
-		if !keep[i] || hasTypeVar(a) {
-			continue
-		}
-		for j, b := range parts {
-			if i == j || !keep[j] || hasTypeVar(b) {
-				continue
-			}
-			// a is subsumed if a <: b for some other kept member b.
-			if subtypeUnderProbe(c, a, b) {
-				keep[i] = false
-				break
-			}
-		}
-	}
-	return filterKept(parts, keep)
-}
-
-// subsumeIntersectionMembers drops an intersection member that is a supertype
-// of another. The dropped member is the wider one — the narrower sibling
-// already constrains the value below it. Symmetric to subsumeUnionMembers.
-func subsumeIntersectionMembers(c *Context, parts []soltype.Type) []soltype.Type {
-	if len(parts) < 2 {
-		return parts
-	}
-	keep := make([]bool, len(parts))
-	for i := range keep {
-		keep[i] = true
-	}
-	for i, a := range parts {
-		if !keep[i] || hasTypeVar(a) {
-			continue
-		}
-		for j, b := range parts {
-			if i == j || !keep[j] || hasTypeVar(b) {
-				continue
-			}
-			// a is subsumed if b <: a for some other kept member b (a is the wider).
-			if subtypeUnderProbe(c, b, a) {
-				keep[i] = false
-				break
-			}
-		}
-	}
-	return filterKept(parts, keep)
-}
-
-func filterKept(parts []soltype.Type, keep []bool) []soltype.Type {
-	out := make([]soltype.Type, 0, len(parts))
+	parts = append([]soltype.Type(nil), parts...)
+	sortTypes(parts)
+	hasVar := make([]bool, len(parts))
 	for i, p := range parts {
-		if keep[i] {
-			out = append(out, p)
+		hasVar[i] = soltype.HasTypeVar(p)
+	}
+	keep := make([]bool, len(parts))
+	for i := range keep {
+		keep[i] = true
+	}
+	for i, a := range parts {
+		if !keep[i] || hasVar[i] {
+			continue
+		}
+		for j, b := range parts {
+			if i == j || !keep[j] || hasVar[j] {
+				continue
+			}
+			if drops(c, a, b) {
+				keep[i] = false
+				break
+			}
 		}
 	}
-	return out
+	return compactKept(parts, keep)
 }
 
-// subtypeUnderProbe trials sub <: super under a discard-only probe and reports
-// whether the trial succeeded. A successful trial means subsumption holds; the
-// probe is always Discarded so the bound mutations it would otherwise leave
-// behind never become visible. Used by the M6 PR1 subsumption pass.
+// unionDrops returns true when union member m should be dropped because the
+// sibling subsumes it. The check is m <: sibling.
+func unionDrops(c *Context, m, sibling soltype.Type) bool {
+	return subtypeUnderProbe(c, m, sibling)
+}
+
+// intersectionDrops returns true when intersection member m should be
+// dropped because the sibling subsumes it from below. The check is sibling
+// <: m. The sibling is narrower, so it already implies m, and m is the wider
+// one to discard.
+func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
+	return subtypeUnderProbe(c, sibling, m)
+}
+
+// compactKept returns the elements of parts whose keep flag is set, reusing
+// parts when every entry is kept.
+func compactKept(parts []soltype.Type, keep []bool) []soltype.Type {
+	for _, k := range keep {
+		if !k {
+			out := make([]soltype.Type, 0, len(parts))
+			for i, p := range parts {
+				if keep[i] {
+					out = append(out, p)
+				}
+			}
+			return out
+		}
+	}
+	return parts
+}
+
+// subtypeUnderProbe trials sub <: super under a discard-only probe and
+// reports whether the trial succeeded. A successful trial means subsumption
+// holds. The probe is always Discarded so the bound mutations it would
+// otherwise leave behind never become visible.
+//
+// The probe push/pop runs directly on *Context. openProbe and closeProbe are
+// the checker-level path and additionally snapshot c.errs, which subsumption
+// does not need. (*Context).constrain returns its errors through the return
+// value and never appends to checker state.
 func subtypeUnderProbe(c *Context, sub, super soltype.Type) bool {
 	p := newProbe(c.probe)
 	c.probe = p
@@ -242,95 +303,273 @@ func subtypeUnderProbe(c *Context, sub, super soltype.Type) bool {
 	return len(errs) == 0
 }
 
-// hasTypeVar reports whether t contains any TypeVarType, anywhere in its
-// structure. Subsumption checks gate on this: a member with a free var would
-// trial constrain against an unresolved variable and could pin it
-// speculatively, which is the failure mode the M6 plan calls out.
-func hasTypeVar(t soltype.Type) bool {
-	switch t := t.(type) {
-	case *soltype.TypeVarType:
-		return true
-	case *soltype.FuncType:
-		for _, p := range t.Params {
-			if hasTypeVar(p.Type) {
-				return true
-			}
-		}
-		return hasTypeVar(t.Ret)
-	case *soltype.TupleType:
-		for _, e := range t.Elems {
-			if hasTypeVar(e) {
-				return true
-			}
-		}
-		return false
-	case *soltype.ObjectType:
-		for _, e := range t.Elems {
-			if hasTypeVar(soltype.AsProperty(e).Type) {
-				return true
-			}
-		}
-		return false
-	case *soltype.PromiseType:
-		return hasTypeVar(t.Inner)
-	case *soltype.RefType:
-		return hasTypeVar(t.Inner)
-	case *soltype.UnionType:
-		for _, m := range t.Types {
-			if hasTypeVar(m) {
-				return true
-			}
-		}
-		return false
-	case *soltype.IntersectionType:
-		for _, m := range t.Types {
-			if hasTypeVar(m) {
-				return true
-			}
-		}
-		return false
-	}
-	return false
-}
-
-// sortTypes orders parts in place under compareType. Stable so that members
-// already in canonical order across passes keep their pointer order, which
-// keeps the rebuild identity-preserving when possible.
+// sortTypes orders parts in place under compareType. The sort is stable so a
+// list already in canonical order keeps its pointer order across passes,
+// which keeps a downstream rebuild identity-preserving when possible.
 func sortTypes(parts []soltype.Type) {
 	sort.SliceStable(parts, func(i, j int) bool {
 		return compareType(parts[i], parts[j]) < 0
 	})
 }
 
-// compareType is the deterministic total order canonical member order is built
-// on. It is consistent with equalType: two equalType-equal types compare equal.
-// The ordering ranks by a concrete-kind tag first, then tie-breaks by the
-// rendered Print string within a kind. The string fallback is a pragmatic
-// choice — the M6 plan flags it as such — and couples the canonical order to
-// the printer, but it bottoms out deterministically and produces a stable order
-// for every shape M1–M4 mints.
+// compareType is the deterministic total order canonical member order is
+// built on. It is consistent with equalType: two equalType-equal types
+// compare equal. The ordering ranks by a concrete-kind tag and tie-breaks
+// structurally, so distinct types that print identically still compare
+// strictly. Two RefTypes whose only difference is a pair of distinct unnamed
+// LifetimeVars is the case that motivates avoiding a printer-string
+// tie-break: under top-level Print they render the same string but they are
+// not equalType-equal, and a string fallback would call them equal. The
+// comparator never calls the printer.
 func compareType(a, b soltype.Type) int {
 	if equalType(a, b) {
 		return 0
 	}
 	ka, kb := typeKindOrder(a), typeKindOrder(b)
 	if ka != kb {
-		if ka < kb {
-			return -1
+		return ka - kb
+	}
+	return compareSameKind(a, b)
+}
+
+// compareSameKind is the per-kind structural tie-breaker. The payload-free
+// kinds NeverType, UnknownType, ErrorType, and Void cannot reach this
+// function, because equalType already returned true for any two of them above.
+// The remaining kinds compare by their fields in declaration order, with
+// nested types recursing through compareType.
+func compareSameKind(a, b soltype.Type) int {
+	switch a := a.(type) {
+	case *soltype.PrimType:
+		b := b.(*soltype.PrimType)
+		return int(a.Prim) - int(b.Prim)
+	case *soltype.LitType:
+		return compareLit(a.Lit, b.(*soltype.LitType).Lit)
+	case *soltype.TypeVarType:
+		b := b.(*soltype.TypeVarType)
+		return a.ID - b.ID
+	case *soltype.RefType:
+		b := b.(*soltype.RefType)
+		if a.Mut != b.Mut {
+			return boolOrder(a.Mut) - boolOrder(b.Mut)
 		}
+		if c := compareLifetime(a.Lt, b.Lt); c != 0 {
+			return c
+		}
+		return compareType(a.Inner, b.Inner)
+	case *soltype.TupleType:
+		b := b.(*soltype.TupleType)
+		if a.Inexact != b.Inexact {
+			return boolOrder(a.Inexact) - boolOrder(b.Inexact)
+		}
+		if c := len(a.Elems) - len(b.Elems); c != 0 {
+			return c
+		}
+		return compareTypeSlice(a.Elems, b.Elems)
+	case *soltype.ObjectType:
+		b := b.(*soltype.ObjectType)
+		if a.Inexact != b.Inexact {
+			return boolOrder(a.Inexact) - boolOrder(b.Inexact)
+		}
+		return compareObjectFields(a, b)
+	case *soltype.PromiseType:
+		return compareType(a.Inner, b.(*soltype.PromiseType).Inner)
+	case *soltype.FuncType:
+		b := b.(*soltype.FuncType)
+		if a.Inexact != b.Inexact {
+			return boolOrder(a.Inexact) - boolOrder(b.Inexact)
+		}
+		if c := len(a.Params) - len(b.Params); c != 0 {
+			return c
+		}
+		for i := range a.Params {
+			if c := compareFuncParam(a.Params[i], b.Params[i]); c != 0 {
+				return c
+			}
+		}
+		return compareType(a.Ret, b.Ret)
+	case *soltype.UnionType:
+		b := b.(*soltype.UnionType)
+		if a.Inexact != b.Inexact {
+			return boolOrder(a.Inexact) - boolOrder(b.Inexact)
+		}
+		if c := len(a.Types) - len(b.Types); c != 0 {
+			return c
+		}
+		return compareTypeSlice(a.Types, b.Types)
+	case *soltype.IntersectionType:
+		b := b.(*soltype.IntersectionType)
+		if c := len(a.Types) - len(b.Types); c != 0 {
+			return c
+		}
+		return compareTypeSlice(a.Types, b.Types)
+	}
+	return 0
+}
+
+func compareTypeSlice(a, b []soltype.Type) int {
+	for i := range a {
+		if c := compareType(a[i], b[i]); c != 0 {
+			return c
+		}
+	}
+	return 0
+}
+
+// compareFuncParam orders parameters by surface marker first. Rest comes
+// first, then Optional, then the parameter type. Pattern is intentionally
+// ignored, since an inferred or unnamed pattern would otherwise discriminate
+// two type-equal parameters.
+func compareFuncParam(a, b *soltype.FuncParam) int {
+	if a.Rest != b.Rest {
+		return boolOrder(a.Rest) - boolOrder(b.Rest)
+	}
+	if a.Optional != b.Optional {
+		return boolOrder(a.Optional) - boolOrder(b.Optional)
+	}
+	return compareType(a.Type, b.Type)
+}
+
+// compareObjectFields orders two objects by property name, then by each
+// property's optional flag and type. Property order in the slice is
+// presentation only, so the comparator walks both objects in name-sorted
+// order.
+func compareObjectFields(a, b *soltype.ObjectType) int {
+	if c := len(a.Elems) - len(b.Elems); c != 0 {
+		return c
+	}
+	an := sortedPropertyNames(a)
+	bn := sortedPropertyNames(b)
+	for i := range an {
+		if c := stringCompare(an[i], bn[i]); c != 0 {
+			return c
+		}
+		ap, _ := a.Prop(an[i])
+		bp, _ := b.Prop(bn[i])
+		if ap.Optional != bp.Optional {
+			return boolOrder(ap.Optional) - boolOrder(bp.Optional)
+		}
+		if c := compareType(ap.Type, bp.Type); c != 0 {
+			return c
+		}
+	}
+	return 0
+}
+
+func sortedPropertyNames(o *soltype.ObjectType) []string {
+	names := make([]string, len(o.Elems))
+	for i, e := range o.Elems {
+		names[i] = soltype.AsProperty(e).Name
+	}
+	sort.Strings(names)
+	return names
+}
+
+func stringCompare(a, b string) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
 		return 1
 	}
-	// Same kind, structurally distinct: fall back to the printer for a stable
-	// total order. Two equalType-equal types are already filtered above.
-	return strings.Compare(soltype.Print(a), soltype.Print(b))
+	return 0
+}
+
+func boolOrder(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// compareLit orders literal values within the LitType kind. NumLit comes
+// first, then StrLit, then BoolLit; within a sort, values compare by their
+// own ordering.
+func compareLit(a, b soltype.Lit) int {
+	ka, kb := litKindOrder(a), litKindOrder(b)
+	if ka != kb {
+		return ka - kb
+	}
+	switch a := a.(type) {
+	case *soltype.NumLit:
+		b := b.(*soltype.NumLit)
+		switch {
+		case a.Value < b.Value:
+			return -1
+		case a.Value > b.Value:
+			return 1
+		}
+		return 0
+	case *soltype.StrLit:
+		return stringCompare(a.Value, b.(*soltype.StrLit).Value)
+	case *soltype.BoolLit:
+		b := b.(*soltype.BoolLit)
+		return boolOrder(a.Value) - boolOrder(b.Value)
+	}
+	return 0
+}
+
+func litKindOrder(l soltype.Lit) int {
+	switch l.(type) {
+	case *soltype.NumLit:
+		return 0
+	case *soltype.StrLit:
+		return 1
+	case *soltype.BoolLit:
+		return 2
+	}
+	return 3
+}
+
+// compareLifetime orders the lifetime forms a RefType.Lt can take. A nil
+// slot, which marks an owned value, sorts first. Then 'static. Then
+// LifetimeVar, ordered by ID. Then LifetimeUnion, ordered by length first
+// and members second.
+func compareLifetime(a, b soltype.Lifetime) int {
+	ka, kb := lifetimeKindOrder(a), lifetimeKindOrder(b)
+	if ka != kb {
+		return ka - kb
+	}
+	switch a := a.(type) {
+	case nil:
+		return 0
+	case *soltype.StaticLifetime:
+		return 0
+	case *soltype.LifetimeVar:
+		b := b.(*soltype.LifetimeVar)
+		return a.ID - b.ID
+	case *soltype.LifetimeUnion:
+		b := b.(*soltype.LifetimeUnion)
+		if c := len(a.Lifetimes) - len(b.Lifetimes); c != 0 {
+			return c
+		}
+		for i := range a.Lifetimes {
+			if c := compareLifetime(a.Lifetimes[i], b.Lifetimes[i]); c != 0 {
+				return c
+			}
+		}
+		return 0
+	}
+	return 0
+}
+
+func lifetimeKindOrder(lt soltype.Lifetime) int {
+	switch lt.(type) {
+	case nil:
+		return 0
+	case *soltype.StaticLifetime:
+		return 1
+	case *soltype.LifetimeVar:
+		return 2
+	case *soltype.LifetimeUnion:
+		return 3
+	}
+	return 4
 }
 
 // typeKindOrder ranks a soltype concrete kind for compareType. Lattice atoms
-// come first (never, unknown, error, void), then primitives and literals, then
-// the structural kinds, and the lattice forms (UnionType / IntersectionType)
-// last so a nested lattice node always sorts after its concrete siblings —
-// useful while M6 still allows residual lattice nodes after dedup but before
-// flatten finishes (it shouldn't, but the order keeps the result legible).
+// come first, then primitives and literals, then the structural kinds. The
+// lattice forms come last so a residual nested UnionType or IntersectionType
+// sorts after its concrete siblings.
 func typeKindOrder(t soltype.Type) int {
 	switch t.(type) {
 	case *soltype.NeverType:

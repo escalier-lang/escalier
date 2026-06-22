@@ -268,3 +268,33 @@ func acceptObjElems(es []ObjTypeElem, v TypeVisitor, pol Polarity) ([]ObjTypeEle
 	}
 	return out, changed
 }
+
+// HasTypeVar reports whether t contains any TypeVarType in its structure.
+// It drives the shared TypeVisitor so every kind that participates in Accept
+// participates here, with no parallel switch to keep in sync as new kinds land.
+// The visitor sets found on the first TypeVarType it sees and returns
+// SkipChildren so the walk short-circuits.
+func HasTypeVar(t Type) bool {
+	s := &typeVarSeeker{}
+	t.Accept(s, Positive)
+	return s.found
+}
+
+// typeVarSeeker is the read-only TypeVisitor that backs HasTypeVar. It rewrites
+// nothing. EnterType returns SkipChildren once it has seen a TypeVarType so
+// later sibling subtrees are not walked.
+type typeVarSeeker struct{ found bool }
+
+func (s *typeVarSeeker) EnterType(t Type, _ Polarity) EnterResult {
+	if s.found {
+		return EnterResult{SkipChildren: true}
+	}
+	if _, ok := t.(*TypeVarType); ok {
+		s.found = true
+		return EnterResult{SkipChildren: true}
+	}
+	return EnterResult{}
+}
+
+func (s *typeVarSeeker) ExitType(t Type, _ Polarity) Type { return t }
+

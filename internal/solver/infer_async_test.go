@@ -224,9 +224,10 @@ func TestInferBlockReturnJoinAcrossIf(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	// The two return points coalesce into a union, canonicalized to print-string
-	// order by M6 PR1's newUnion: `"x"` sorts before `1` within the LitType kind.
-	require.Equal(t, `fn (c: boolean) -> "x" | 1`, values["h"])
+	// The two return points coalesce into a union, canonicalized by M6 PR1's
+	// newUnion. NumLit sorts before StrLit within the LitType kind, so 1
+	// comes before "x".
+	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["h"])
 }
 
 // An early return inside one branch plus a fall-through return: both return
@@ -261,8 +262,9 @@ func TestInferBlockNonTailReturnCheckedAgainstAnnotation(t *testing.T) {
 	require.Contains(t, errs[0].Message(), "number")
 }
 
-// `async fn` joined with multiple returns wraps the join in Promise<…>. The
-// external return is Promise<"x" | 1> (members in canonical order, M6 PR1).
+// An `async fn` joined with multiple returns wraps the join in Promise. The
+// external return is Promise<1 | "x">. Members are in canonical order under
+// M6 PR1.
 func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		async fn f(c: boolean) {
@@ -271,7 +273,7 @@ func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> Promise<"x" | 1>`, values["f"])
+	require.Equal(t, `fn (c: boolean) -> Promise<1 | "x">`, values["f"])
 }
 
 // --- IfElseExpr value ---
@@ -287,11 +289,12 @@ func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> "x" | 1`, values["pick"])
+	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["pick"])
 }
 
-// An if WITHOUT else folds in void from the missing alt — `return if c { 5 }`
-// returns `void | 5` (Void ranks before LitType in canonical order, M6 PR1).
+// An if without an else folds in void from the missing alt, so
+// `return if c { 5 }` returns `void | 5`. Void ranks before LitType in M6
+// PR1's canonical order.
 func TestInferIfElseExprMissingAltIsVoid(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn pick(c: boolean) {

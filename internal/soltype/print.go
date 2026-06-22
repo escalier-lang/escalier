@@ -398,9 +398,9 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		return prefix + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *UnionType:
-		// M6 PR1: an inexact union renders a trailing `...` entry — `A | B | ...` —
-		// mirroring the inexact tuple/object/function rendering so the flag round-trips
-		// to surface syntax.
+		// An inexact union renders a trailing `...` entry, so a union typed
+		// `A | B | ...` round-trips to surface syntax. The inexact tuple,
+		// object, and function arms render their flag the same way.
 		parts := make([]string, 0, len(t.Types)+1)
 		for _, m := range t.Types {
 			parts = append(parts, p.printTypeMinPrec(m, precUnion))

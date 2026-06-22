@@ -929,7 +929,13 @@ func describe(t soltype.Type) string {
 	case *soltype.ErrorType:
 		return "error"
 	case *soltype.UnionType:
-		return joinDescribe(t.Types, " | ")
+		s := joinDescribe(t.Types, " | ")
+		if t.Inexact {
+			// An inexact union has an open tail. Append the marker so a
+			// diagnostic naming the union matches the printer's surface form.
+			return s + " | ..."
+		}
+		return s
 	case *soltype.IntersectionType:
 		return joinDescribe(t.Types, " & ")
 	case *soltype.TypeVarType:

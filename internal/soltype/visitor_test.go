@@ -225,10 +225,10 @@ func TestAcceptObjectPreservesInexact(t *testing.T) {
 	require.Same(t, p1, got.Elems[1], "the unchanged property keeps its *PropertyElem pointer")
 }
 
-// M6 PR1: UnionType.Accept threads the Inexact flag through a rewrite. Without
-// the fix at visitor.go's UnionType arm, every coalesce / extrude / freshenAbove
-// pass would silently drop the flag — load-bearing, not cosmetic, since those
-// passes run on every type the solver touches.
+// UnionType.Accept threads the Inexact flag through a rewrite. Without the
+// fix at visitor.go's UnionType arm, every coalesce, extrude, and
+// freshenAbove pass would silently drop the flag. The fix is load-bearing,
+// not cosmetic: those passes run on every type the solver touches.
 func TestAcceptUnionPreservesInexact(t *testing.T) {
 	a := &TypeVarType{ID: 1}
 	num := &PrimType{Prim: NumPrim}

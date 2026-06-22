@@ -121,6 +121,13 @@ func isValueType(t soltype.Type) bool {
 	case *soltype.PrimType, *soltype.LitType:
 		return true
 	case *soltype.UnionType:
+		if p.Inexact {
+			// An inexact union has an open tail of unknown type, so the
+			// classification depends on members the union does not name. The
+			// conservative answer is "not a value type". Over-reporting an
+			// alias edge is sound; under-reporting one is not.
+			return false
+		}
 		for _, member := range p.Types {
 			if !isValueType(member) {
 				return false
