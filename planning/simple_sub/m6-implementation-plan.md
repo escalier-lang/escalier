@@ -106,11 +106,21 @@ and the *rules*.
 4. **The `UnionType` exactness flag** end to end: AST/parser for `A | B | ...`,
    inferred-output exact-by-default, the one-way `exact <: inexact` rule, and the
    **union leg of `match` exhaustiveness**.
-5. **The `_ <: unknown` (⊤) and `never <: _` (⊥) rules**, and the removal of the
-   function-arm Variation-B guard — now testable end-to-end via an inexact
-   function annotation.
+5. **The `_ <: unknown` (⊤) and `never <: _` (⊥) rules**. These close the
+   **function-arm Variation-B gap** that M4 left open and documented as a KNOWN GAP in
+   [m4-implementation-plan.md](m4-implementation-plan.md). The ⊤ rule supplies the
+   extra-position check M4 deferred, now testable end-to-end via an inexact function
+   annotation.
 6. **The permissive mut-borrow join**: degrade an incompatible reconcile to a
-   read-until-narrowed union instead of an error.
+   read-until-narrowed union instead of an error. Joining `mut {x: number}` with
+   `mut {x: string}` now infers `(mut 'a {x: number}) | (mut 'b {x: string})` instead
+   of erroring on `number <: string`.
+7. **`if-let` / `let-else`**: one-arm refutable-match forms that bind a fresh name at
+   the narrowed member type, leaving the scrutinee's union type untouched. `let-else`'s
+   `else` must diverge, checked via the `never` (⊥) rule.
+8. **Subsumption of inferred types**: a concrete-gated pass at the type-finalization
+   boundaries collapses an inferred `1 | number` to `number`, so the rendered type and
+   `equalType` agree with the annotated form.
 
 ## Scope — deliberately out of M6
 
@@ -119,15 +129,6 @@ and the *rules*.
   match-exhaustiveness payoff, not operator-driven propagation
   ([01-milestones.md](01-milestones.md) M9, "Exactness propagation through
   operators").
-- **Narrowing-gated writes through a union.** PR6 produces the union *output* and
-  keeps its conflicting fields **read-only**, which is sound. Re-enabling a write
-  after a runtime-type narrow such as `typeof r.x === "number"` needs narrowing
-  infrastructure the solver does not have yet, and **no current milestone owns
-  narrowing** (see Open questions). Per the settled decision that narrowing
-  introduces a new binding ([02-design-notes.md](02-design-notes.md) §"Settled
-  decisions"), the write would happen through that *new* narrowed binding, never
-  through the original union-typed one — so the read-only-forever behavior of the
-  original binding is exactly right, not a stopgap.
 - **Generic / `throws` / lifetime-param'd function-type annotations.** M6 resolves
   only the monomorphic function annotation (PR3). A written type parameter `T`
   needs a type-name scope, which is M7 TypeRef work; `throws` is M9; lifetime
@@ -146,7 +147,9 @@ PR1 (representation + normalization)
  │     └─► PR4 (union exactness flag + match exhaustiveness leg)
  ├─► PR3 (monomorphic function-type annotations)
  │     └─► PR5 (⊤/⊥ rules + Variation-B close — now testable end-to-end)
- └─► PR6 (permissive mut-borrow join)
+ ├─► PR6 (permissive mut-borrow join)
+ ├─► PR7 (if-let / let-else — needs PR4 + PR5)
+ └─► PR8 (subsume inferred types at finalization — needs PR1 + PR2)
 ```
 
 - **PR1 is first because every other PR mints or compares a union/intersection**,
@@ -161,6 +164,12 @@ PR1 (representation + normalization)
   PR3. So PR3 lands first and PR5 carries the end-to-end test.
 - **PR3 and PR6 depend only on PR1** (PR6 also reads PR2's union rule for the
   covariant-read story but does not require it to land first).
+- **PR7 needs PR4 and PR5.** `if-let`/`let-else` reuse PR4's union member matching to
+  bind the narrowed name, and `let-else`'s divergent-`else` check uses PR5's `never`
+  (⊥) rule, so it lands after both.
+- **PR8 needs only PR1 and PR2** and lands last. It reuses PR1's `newUnion` /
+  `newIntersection` and PR2's subtype probe, runs once per finalized type rather than in
+  the coalesce loop, and is additive — droppable if M6 ships without it.
 
 ## Core types added or changed in M6
 
@@ -292,6 +301,25 @@ correct — two unions over the same members now hold them in the same order. Th
 is the milestone's chosen route: canonicalize at construction rather than make
 equality set-based.
 
+Canonical form is the stronger normalization, and its cost lands once per construction
+rather than on every `equalType` call, which is the hot path. What it buys beyond
+equality:
+
+- **Equality stays cheap and unchanged.** `equalTypeSlice` already walks members
+  pairwise, so canonical order makes it correct with no rewrite. A set-based equality
+  would turn a hot function into a sort- or O(n²)-per-call comparison and add a new code
+  path to get wrong.
+- **Rendering is deterministic.** `string | number` and `number | string` print
+  identically, which keeps snapshots stable. Set-based equality does nothing for display,
+  since the members would still render in construction order.
+- **Dedup happens at construction.** The normalizer collapses structurally-equal members
+  in the same pass. Equality-as-set leaves the duplicates in the type itself.
+- **Structural keys are stable.** A canonical form is usable as a stable key for
+  memoization or caching; an unordered set is not.
+
+Set-based equality would fix only equality, at the most expensive place to fix it, and
+leave rendering and dedup still needing a canonical order.
+
 **Route `combine` and `mergeObjectGroup` through the constructors.** `combine`
 ([coalesce.go:302](../../internal/solver/coalesce.go)) currently builds
 `&soltype.UnionType{Types: parts}` / `&soltype.IntersectionType{Types: parts}`
@@ -372,17 +400,24 @@ is on the deciding side:
     trials in declaration order.
 
 **RefType interception — why the super-side rules go pre-switch.** The structural
-`switch` matches on the **sub**, and the RefType arm
-([constrain.go:356-361](../../internal/solver/constrain.go)) ends with
-`if _, superIsVar := super.(*TypeVarType); !superIsVar { … }` — for a borrow sub it
-peels to the inner, or returns a `BorrowEscapeError` when `sub.Lt != nil`. A
-`UnionType` / `IntersectionType` super is not a variable, so without the pre-switch
-block a constraint like `mut 'a {x} <: (mut 'a {x} | mut 'b {y})` would hit that
-arm and **spuriously escape-error** instead of matching the first union member.
-This shape is reachable directly in PR6's world (unions of borrows) and through any
-borrow-typed value flowing into a union annotation. Handling the union/intersection
-**super** before the switch is what avoids it; the union/intersection **sub** is
-safe in the switch because the sub is the lattice node the switch dispatches on.
+`switch` dispatches on the **sub**, so whichever arm matches the sub decides the
+constraint without ever inspecting the super's lattice structure. The RefType arm is the
+problem case. When the sub is a borrow and the super is **not** a type variable, that
+arm ([constrain.go:356-361](../../internal/solver/constrain.go)) treats the pair as a
+borrow against a concrete type, peeling to the inner type or returning a
+`BorrowEscapeError` when the sub has a lifetime (`sub.Lt != nil`).
+
+A `UnionType` or `IntersectionType` super is not a variable, so it takes that same path.
+Without the pre-switch block, `mut 'a {x} <: (mut 'a {x} | mut 'b {y})` hits the RefType
+arm and **escape-errors**, even though the sub matches the first union member exactly.
+The arm sees only "super is not a variable." It never sees that the super is a union.
+This shape shows up directly in PR6 (unions of borrows) and whenever a borrow flows into
+a union annotation.
+
+Running the super-side union/intersection rules **before** the switch fixes it. The
+lattice rule matches the member first, before the RefType arm can intercept. A
+union/intersection **sub** needs no pre-switch handling, since the switch dispatches on
+the sub and a lattice sub is matched by its own case.
 
 **Union exactness one-way rule (base form; the flag itself lands in PR4).** When
 the sub is an **inexact** union and the super is closed — an exact union, or any
@@ -584,11 +619,11 @@ key set; shared fields are pinned invariant by constraining both directions
 yields `number | string` via PR2's "for all" union rule on member access — the
 covariant read view. A **write** to a conflicting field through the un-narrowed
 union is **rejected**, which is sound: an un-narrowed union of mutable objects is
-read-only at its conflicting fields. Re-enabling the write after a runtime-type
-narrow is the **non-discriminated narrowing** case the milestone flags as
-narrowing-last; the solver has no narrowing infrastructure yet, so M6 stops at
-the sound read-only behavior and does not gate writes on a narrow. Document this
-at `joinBorrows` and in the Open questions.
+read-only at its conflicting fields, and a rejected write never changes the union's
+type. To write, narrow to one branch with a PR7 `if let` and write through the fresh
+mutable view, as in `if let r2: mut {x: number} = r { r2.x = 5 }`. The un-narrowed
+binding stays read-only for its whole scope by design, not as a deferral. Document this
+at `joinBorrows`.
 
 **Tests.** Replace `TestInferIncompatibleBorrowJoinErrors`: joining
 `mut {x: number}` and `mut {x: string}` now infers
@@ -596,6 +631,71 @@ at `joinBorrows` and in the Open questions.
 `number | string`; the compatible join still renders the single carrier with a
 union lifetime; a write to `.x` on the un-narrowed union is rejected with a clear
 message.
+
+### PR7 — `if-let` / `let-else` (one-arm refutable-match narrowing)
+
+Add the two single-arm refutable-binding forms over a union scrutinee. Both desugar to
+a one-arm `match`: the pattern introduces fresh bindings at the narrowed member type and
+leaves the scrutinee's own union type untouched, which is the binding-based narrowing the
+design settles on ([02-design-notes.md](02-design-notes.md) §"Settled decisions"). No
+flow-sensitive re-typing is involved.
+
+- **`if-let`.** `IfLetExpr` already exists in the AST and the *legacy* checker infers it
+  ([internal/ast/expr.go](../../internal/ast/expr.go),
+  [internal/checker/infer_expr.go](../../internal/checker/infer_expr.go)), so this is a
+  port of that inference into the solver, not new surface syntax. The pattern matches one
+  branch of the scrutinee and binds its names in the consequent at the matched member
+  type; the alternate sees the scrutinee unchanged. The pattern may be a type annotation,
+  `if let x: number = v`, which is how a union narrows to one member. Reuses M4's
+  structural-pattern binding and PR4's union member matching.
+- **`let-else`.** New construct, so it needs parser and AST in addition to inference. The
+  pattern binds its names for the rest of the enclosing block at the narrowed type, and
+  the `else` block must diverge. The divergence check types the `else` block as `never`
+  via PR5's `never <: _` (⊥) rule, rejecting an `else` that can fall through.
+- **Narrowing stays a new binding.** Neither form re-types the scrutinee. The original
+  binding keeps its union type for its whole scope; the narrowed view lives on the
+  pattern's fresh names. This keeps both forms inside Escalier's one-type-per-binding
+  model.
+- **Re-enables write-after-narrow.** A `mut` type pattern binds a fresh mutable view of
+  the matched branch, so `if let r2: mut {x: number} = r { r2.x = 5 }` is how a write
+  reaches a field that PR6's read-until-narrowed union keeps read-only. The write goes
+  through the fresh binding; the original `r` keeps its union type.
+
+**Tests.** An `if let` over `A | B` binds the matched arm's names at `A` in the
+consequent and leaves the scrutinee `A | B` in the alternate; a `let-else` with a
+diverging `else` binds for the rest of the block; a `let-else` whose `else` can fall
+through is rejected; an `if let r2: mut {x: number} = r` over a PR6 read-only union
+allows `r2.x = 5` while `r` keeps its union type; the scrutinee's own type is unchanged
+after both forms.
+
+### PR8 — Subsume inferred types at finalization
+
+Close the subsumption gap for inferred types without threading a Context through the
+coalesce inner loop. `combine` stays Context-free; instead, after coalesce produces a
+final type, run one subsumption pass over it using the ambient Context.
+
+- **Two finalization boundaries.** Subsume at generalization, where a scheme is sealed,
+  and at the point a monomorphic inferred type is finalized onto the node / `Info` table.
+  Both already hold a Context. Each runs once per finalized type, so the pass is off the
+  `constrain` / `coalesce` inner loop and cannot reenter coalescing.
+- **Concrete-gated, same as the mint sites.** Drop a union or intersection member only
+  when a concrete sibling subsumes it. A member that still carries a free type variable
+  is left untouched, to avoid speculative pinning, so a scheme whose union is not yet
+  ground is unchanged.
+- **No change to `equalType` or `combine`.** The pass canonicalizes the finalized type by
+  extending the construction-time canonical form with the one normalization step that
+  needs a Context. `equalType` stays positional and cheap.
+
+This closes both symptoms recorded under the subsumption gap. An inferred `1 | number`
+renders `number`, and because the stored type is now canonical, it is `equalType`-equal
+to the annotated `number`, so caching and annotation round-trip agree. Neither soundness
+nor assignability changes, since the dropped members were mutually subtype with the one
+that subsumes them.
+
+**Tests.** An inferred `1 | number` renders `number` and is `equalType`-equal to the
+annotation `number`; an inferred intersection `{x} & {x, y}` renders `{x, y}`; a union
+that still carries a free var is left unchanged; assignability decisions are identical
+before and after the pass.
 
 ---
 
@@ -617,10 +717,21 @@ message.
     Context-gated and `combine` passes none), so a coalesced output like
     `1 | number` is **not** collapsed to `number` here — that collapse only happens
     where a Context is available (`resolveTypeAnn`, `joinBorrows`). So inferred-type
-    renders change by reorder/dedup only, not by subsumption. If a future change
-    threads a Context into `combine`, revisit this — subsumption there would
-    rewrite inferred unions (`1 | number` ⇒ `number`) and broaden the churn well
-    beyond reordering.
+    renders change by reorder/dedup only, not by subsumption. The subsumption collapse
+    (`1 | number` ⇒ `number`) lands later in PR8, which subsumes the finalized type
+    rather than threading a Context into `combine`, and carries its own snapshot churn.
+  - **What the gap costs, and what it doesn't.** It is not a precision loss.
+    `1 | number` denotes exactly `number`, so the inferred type is equally tight, just
+    redundantly shaped. The real costs are representation size and `equalType` identity.
+    Subsumable members accumulate, so a value flowing through many literal cases can
+    carry `1 | 2 | … | number`, which a member-iterating `constrain` checks more slowly
+    and renders larger. Separately, an inferred `1 | number` is not `equalType`-equal to
+    an annotated `number`, so the two forms diverge for caching and for annotation
+    round-trip. Neither affects soundness, since the members are mutually subtype, and
+    M4 literal widening keeps the accumulation small in practice. PR8 closes both
+    symptoms for concrete inferred types by subsuming at the finalization boundaries
+    rather than in the coalesce inner loop; what remains after it is only intermediate
+    types during solving and unions that still carry free vars.
   Re-run with `UPDATE_SNAPS=true` and review each diff as an intended improvement.
 - **Regression**: the existing union-output renders from M4 multi-branch returns
   must still pass through PR1 unchanged except for canonical ordering.
@@ -667,23 +778,18 @@ message.
 - An incompatible mut-borrow join renders
   `(mut 'a {x: number}) | (mut 'b {x: string})` and reads `.x` as
   `number | string`. (PR6)
+- An `if let` / `let-else` over a union binds the matched member type into a fresh
+  name; a `let-else` whose `else` does not diverge is rejected. (PR7)
+- An inferred `1 | number` renders `number` and is `equalType`-equal to the annotation
+  `number`; a union with a free var is left unchanged. (PR8)
 
 ## Open questions
 
-1. **Narrowing has no milestone.** PR6 leaves conflicting union fields read-only,
-   which is sound — but the broader narrowing story (write-after-narrow here,
-   match-arm narrowing in `pattern_matching` R9, general union narrowing) is **not
-   assigned to any M-series milestone**. `03-references.md` files it under the
-   post-MVP "narrowing future," tied to negation types. The settled rule is that
-   **narrowing introduces a new binding** ([02-design-notes.md](02-design-notes.md)
-   §"Settled decisions"), which removes the flow-sensitive-retyping burden, but a
-   milestone still has to own the construct. Decide whether to scope one before or
-   after the MVP cutover.
-2. **Generic function-type annotations.** PR3 covers only the monomorphic case.
+1. **Generic function-type annotations.** PR3 covers only the monomorphic case.
    The generic form needs a type-name scope to resolve a written `T`, which is M7
    TypeRef work. Confirm M7 is the home, or pull it forward if M5's generic
    method/variance work demands it sooner.
-3. **Intersection beyond lattice identities.** M6 normalizes intersections only
+2. **Intersection beyond lattice identities.** M6 normalizes intersections only
    to the identity level. If a later milestone needs general intersection-of-
    objects distribution, decide whether it extends `newIntersection` or lands as
    a separate reduction (cf. M9's operator reduction).
