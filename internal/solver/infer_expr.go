@@ -542,6 +542,14 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // owned-mutable `mut {x: number}` reads as `mut {x: number}` when the lifetime
 // elides locally, and as `&'a mut {x: number}` when the borrow reaches an output.
 //
+// Concretely, `fn f(p: mut {x: number}) { return &mut p }` renders as
+// `fn (p: mut {x: number}) -> mut {x: number}`. The fresh lifetime on `&mut p`
+// has no upper bound from `p` because `p` is owned (Lt nil), so it occurs only
+// positively in the return, fails the param-lifetime test, and D4 elides the
+// wrapper. The borrow is real in the type graph; the elision just hides it at
+// display time. A proper rejection of this dangling-borrow case needs the
+// directional lifetime bounds slated for M6.5.
+//
 // PR 3 introduces `&p` and `&mut p` as the explicit borrow form. A binding
 // initializer uses one of them to choose "borrow" over "move", as in
 // `val q = &p` and `val q = &mut p`. The move side establishes ownership only.
