@@ -47,8 +47,11 @@ PRs below add these.
 The move-engine work, PRs 1 through 8, builds only on this M4 substrate. The
 type-former PRs, 9 and 10, additionally depend on **M6** of
 [planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md), which lands
-union and intersection formers together with union-scrutinee narrowing. They are
-scheduled after M6, while PRs 1 through 8 can proceed once M4 is in place.
+union and intersection formers together with union-scrutinee narrowing. PR 11, the
+connected-component moves, is a further move-engine extension and stays on M4. PR 12,
+`Freeze`/`Thaw`, additionally depends on **M9**, the mapped and conditional type
+operators. So PRs 1 through 8 and 11 can proceed once M4 is in place, 9 and 10 wait
+on M6, and 12 waits on M9.
 
 ## Parsing borrows without a syntax mode
 
@@ -241,6 +244,8 @@ lifetime. Chained access `a.b.c` composes the rule at each link.
 | 8 | Immutable→mutable thaw move and borrow-phase framing | 6 | Medium |
 | 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3, M6 | Medium |
 | 10 | Mutable narrowed binding with pinned discriminant | 8, 9, M6 | Medium |
+| 11 | Connected-component moves for graphs | 6, 7 | Large |
+| 12 | `Freeze`/`Thaw` deep mut↔immut utility types | 8, 11, M9 | Large |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
@@ -591,6 +596,64 @@ un-narrowed alias rejected by the pin.
 
 Acceptance: mutable narrowing works with the discriminant pinned for the arm.
 
+### PR 11 — Connected-component moves for graphs
+
+Goal: move a self-contained cyclic or acyclic graph out of a function — returned or
+stored — when no node is referenced from outside the graph. See "Moving a graph" in
+the requirements. This logically extends the move engine (PRs 5–7); it's numbered
+later only because its dependencies are 6 and 7.
+
+- Compute the connected component reachable from an escaping value through its
+  borrow edges, over the move/borrow state the engine already tracks on `funcCtx`
+  (PRs 5–7).
+- Establish the precondition that no node in the component is reachable from any
+  binding or store outside it, reusing the alias and liveness state and the
+  per-path tracking from PR 7.
+- When it holds, treat the escape as a component move: re-anchor the internal borrow
+  lifetimes to the destination region — unify the mutual lifetimes into the
+  destination rather than failing the borrow-escape check — and consume every local
+  binding in the component, so any later use of any of them is a use-after-move.
+- When it fails — some node is externally aliased — fall back to the ordinary
+  borrow-escape error or phase conflict.
+- Soundness rests on the GC keeping co-moved nodes alive and on there being no
+  external observer, so the phase rules are unchanged; this is the requirements'
+  "Moving a graph" argument.
+
+Tests: the cyclic `build()` returns `a` with both `a` and `b` consumed; an acyclic
+shared graph returned the same way; a graph where a node is also held by a retained
+binding is rejected.
+
+Acceptance: a self-contained graph, cyclic or acyclic, can be returned or stored;
+externally-aliased nodes still error.
+
+### PR 12 — `Freeze`/`Thaw` deep mut↔immut utility types
+
+Goal: the `Freeze<T>` and `Thaw<T>` utility types for deep mutability conversion. See
+"Freeze and Thaw" in the requirements. Depends on the mapped/conditional-type
+machinery (M9) and the freeze/thaw moves (PR 8).
+
+- Add the modifier-rewrite capability to mapped/conditional types: a type-level
+  operator that matches a `&mut`/`mut` reference and yields its immutable form, and
+  the inverse, analogous to TypeScript's `-readonly`/`+readonly` but on the
+  borrow/`mut` axis, applied recursively.
+- Define `Freeze<T>` and `Thaw<T>` as recursive mapped-plus-conditional types over
+  objects, arrays, tuples, and borrows, with the self-referential recursion resolved
+  by the existing recursion machinery, so `Freeze<Node>` is the recursive
+  `{ value: number, peers: Array<&Freeze<Node>> }`.
+- Wire soundness to the move, not the mapped type: assigning into `Freeze<T>` is the
+  mutable-to-immutable freeze move from PR 8, and `Thaw<T>` the immutable-to-mutable
+  move, each reusing that PR's preconditions — all mutable paths dead, or no live
+  immutable observer. There is no runtime transformation; the value is unchanged.
+- Compose with PR 11: a single-owner or component-moved graph freezes in one move,
+  because consuming the one binding kills every mutable path at once.
+
+Tests: `Freeze<Node>` renders as the deep-immutable recursive type; `Thaw<Freeze<Node>>`
+recovers `Node`; a component-owned graph frozen in one move; a write through a
+`Freeze<>` value rejected; the immutable-field over-thaw caveat asserted.
+
+Acceptance: `Freeze`/`Thaw` produce the deep types and are sound through the
+freeze/thaw moves, with no runtime cost.
+
 ---
 
 ## Deferred and out of scope
@@ -600,8 +663,11 @@ Acceptance: mutable narrowing works with the discriminant pinned for the arm.
 - **Cross-package moves.** Move behaviour at the boundary of imported, body-less
   declarations depends on declared lifetimes and is left to the library-import
   work, consistent with the requirements.
-- **Interior-mutability escape hatches.** A `Cell`-like wrapper for cyclic mutable
-  data is tracked separately under #618.
+- **Interior-mutability escape hatches.** Moving a self-contained graph (PR 11) and
+  `Freeze`/`Thaw` (PR 12) cover the cyclic and acyclic cases where the graph owns its
+  own nodes. What stays deferred is the case they do not: a mutable cyclic structure
+  whose nodes are referenced from outside the graph, with no single owner — a
+  `Cell`-like wrapper, tracked separately under #618.
 - **Diagnostic wording.** Each PR ships a working diagnostic; final wording and
   blame spans for use-after-move and move-on-escape are tuned as the engine
   settles.
