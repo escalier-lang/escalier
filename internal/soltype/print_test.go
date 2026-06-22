@@ -128,12 +128,12 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"promise of prim", &PromiseType{Inner: numP()}, "Promise<number>"},
 		{"nested promise", &PromiseType{Inner: &PromiseType{Inner: strP()}}, "Promise<Promise<string>>"},
 
-		// Borrows (M4). Ownership and the borrow `&` split on Lt. An owned value (Lt
-		// nil) renders bare — `mut {x}` owned-mutable — while a borrow (Lt set) leads
-		// with `&`. The inner object/tuple is brace/bracket-delimited, so no parens. An
-		// un-named LifetimeVar is an inferred borrow that prints as a bare `&` with no
-		// lifetime; a load-bearing lifetime is named by the scheme printer (covered in
-		// TestPrintScheme), and 'static is always shown.
+		// Borrows (M4). Ownership and the borrow `&` split on Lt. An owned value has Lt
+		// nil and renders bare, as owned-mutable `mut {x}`. A borrow has Lt set and leads
+		// with `&`. The inner object or tuple is brace- or bracket-delimited, so it needs
+		// no parens. An un-named LifetimeVar is an inferred borrow and prints as a bare
+		// `&` with no lifetime. A load-bearing lifetime is named by the scheme printer,
+		// which TestPrintScheme exercises. 'static is always shown.
 		{
 			"owned-mutable object renders bare mut, no borrow &",
 			&RefType{Mut: true, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
@@ -369,9 +369,8 @@ func TestPrintScheme(t *testing.T) {
 
 	t.Run("a load-bearing borrow lifetime is named in & notation", func(t *testing.T) {
 		lv := &LifetimeVar{ID: 0, Level: 1}
-		// fn (p: &'a mut {x: number}) -> &'a mut {x: number}: one borrow lifetime shared
-		// by the param and the return, so the scheme names it once and renders both in
-		// the mutable-borrow `&'a mut` display form.
+		// One borrow lifetime is shared by the param and the return, so the scheme names
+		// it once and renders both in the mutable-borrow `&'a mut {x: number}` form.
 		ref := &RefType{Mut: true, Lt: lv, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}}
 		ty := &FuncType{Params: []*FuncParam{identP("p", ref)}, Ret: ref}
 		require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", PrintAsScheme(ty))

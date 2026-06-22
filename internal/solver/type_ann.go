@@ -188,12 +188,12 @@ func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltyp
 	return t, true
 }
 
-// borrowInner resolves the pointee of a `mut`/`&` annotation to a RefInner, the shared
-// inner-resolution step of resolveMutableTypeAnn and resolveRefTypeAnn. An unsupported
-// inner recovers to a fresh var, which IS a RefInner, so the wrapper is preserved and
-// the binding stays cascade-safe. ok=false means the inner resolved to a concrete
-// non-borrowable type (a primitive, function, or promise); the caller reports that with
-// a wrapper-specific message.
+// borrowInner resolves the pointee of a `mut` or `&` annotation to a RefInner, the
+// shared inner-resolution step of resolveMutableTypeAnn and resolveRefTypeAnn. An
+// unsupported inner recovers to a fresh var, which IS a RefInner, so the wrapper is
+// preserved and the binding stays cascade-safe. ok=false means the inner resolved to a
+// concrete non-borrowable type such as a primitive, function, or promise. The caller
+// reports that with a wrapper-specific message.
 func (c *checker) borrowInner(ta ast.TypeAnn, lvl int) (soltype.RefInner, bool) {
 	inner, ok := c.resolveTypeAnn(ta, lvl)
 	if !ok {
@@ -204,14 +204,14 @@ func (c *checker) borrowInner(ta ast.TypeAnn, lvl int) (soltype.RefInner, bool) 
 }
 
 // resolveRefTypeAnn lowers a borrow annotation `&T`, `&mut T`, `&'a T`, or `&'a mut T`
-// to a soltype.RefType{Mut, Lt, Inner}. The inner must be a RefInner; a borrow of a
-// value type, such as a primitive, has nothing to point at and is reported as an
+// to a soltype.RefType{Mut, Lt, Inner}. The inner must be a RefInner. A borrow of a
+// value type such as a primitive has nothing to point at and is reported as an
 // unsupported feature.
 //
-// resolveLifetimeAnn mints the lifetime: a bare `&` gets a fresh inferred lifetime, and
+// resolveLifetimeAnn mints the lifetime. A bare `&` gets a fresh inferred lifetime, and
 // `&'a` resolves the named lifetime to the variable that name denotes in the current
 // function. Display naming is decided structurally at coalesce time, so a borrow that
-// reaches an output renders under a quantified name like `&'a {x}` while one that
+// reaches an output renders under a quantified name like `&'a {x}`, while one that
 // connects nothing elides. Unlike resolveMutableTypeAnn, this arm always sets Lt, so the
 // result is a genuine borrow rather than an owned value.
 func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, bool) {
@@ -225,8 +225,8 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 }
 
 // resolveLifetimeAnn resolves the lifetime slot of a borrow annotation. A nil node is
-// an inferred borrow and mints a fresh lifetime; a named `'a` resolves to the variable
-// that name denotes; a `('a | 'b)` union resolves each member and joins them in a
+// an inferred borrow and mints a fresh lifetime. A named `'a` resolves to the variable
+// that name denotes. A `('a | 'b)` union resolves each member and joins them in a
 // LifetimeUnion.
 func (c *checker) resolveLifetimeAnn(node ast.LifetimeAnnNode, lvl int) soltype.Lifetime {
 	switch n := node.(type) {

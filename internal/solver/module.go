@@ -207,8 +207,8 @@ func (c *checker) inferComponent(
 
 	// Phase 2: infer each declaration's definition and constrain it <: its var.
 	for _, key := range component {
-		// Each top-level binding is its own named-lifetime scope, mirroring inferFunc:
-		// two declarations that both write `&'a` get independent lifetimes rather than
+		// Each top-level binding is its own named-lifetime scope, mirroring inferFunc.
+		// Two declarations that both write `&'a` get independent lifetimes rather than
 		// sharing one through a stale map. A function decl re-clears this inside inferFunc.
 		c.namedLifetimes = nil
 		b, isValue := bindings[key]

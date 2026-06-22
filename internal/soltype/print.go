@@ -286,11 +286,11 @@ func (p *namedPrinter) printLifetime(lt Lifetime) string {
 
 // borrowLifetimeName returns the lifetime to print after a borrow's leading `&`, or
 // "" when the lifetime is inferred and carries no load-bearing name. A LifetimeVar
-// renders its assigned quantifier name (`'a`) when ltNames carries one; an un-named
-// var is an inferred borrow that prints as a bare `&` with no lifetime, matching the
-// display rule that names a lifetime only when it is load-bearing. 'static and a
-// coalesced lifetime union are always shown. The `&` itself is emitted by the caller
-// whenever Lt is set, so a borrow is always distinguishable from an owned value.
+// renders its assigned quantifier name `'a` when ltNames carries one. An un-named var
+// is an inferred borrow and prints as a bare `&` with no lifetime, matching the display
+// rule that names a lifetime only when it is load-bearing. 'static and a coalesced
+// lifetime union are always shown. The `&` itself is emitted by the caller whenever Lt
+// is set, so a borrow is always distinguishable from an owned value.
 func (p *namedPrinter) borrowLifetimeName(lt Lifetime) string {
 	switch lt := lt.(type) {
 	case *LifetimeVar:
@@ -376,15 +376,16 @@ func (p *namedPrinter) printType(t Type) string {
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:
-		// Ownership and the borrow `&` split on Lt. An owned value (Lt nil) renders
-		// bare: `{x}` owned-immutable, which NewRef collapses so a surviving owned
-		// RefType is always `mut {x}` owned-mutable. A borrow (Lt set) leads with `&`,
-		// then the lifetime name when it is load-bearing, then `mut`:
+		// Ownership and the borrow `&` split on Lt. An owned value has Lt nil and
+		// renders bare. NewRef collapses the owned-immutable cell, so a surviving owned
+		// RefType is always owned-mutable and renders `mut {x}`. A borrow has Lt set and
+		// leads with `&`, then the lifetime name when it is load-bearing, then `mut`.
+		// The four forms are:
 		//
 		//	&{x}        &mut {x}        &'a {x}        &'a mut {x}
 		//
-		// The inner prints at precPrefix so a looser inner (a union/function) gets
-		// parenthesized.
+		// The inner prints at precPrefix so a looser inner such as a union or function
+		// gets parenthesized.
 		prefix := ""
 		if t.Lt != nil {
 			prefix = "&"

@@ -429,7 +429,7 @@ func TestInferNamedBorrowLifetimeShared(t *testing.T) {
 	require.Equal(t, "fn <'a>(p: &'a {x: number}, q: &'a {x: number}) -> &'a {x: number}", values["f"])
 }
 
-// A borrow of a value type has nothing to point at: `&number` wraps a primitive, which
+// A borrow of a value type has nothing to point at. `&number` wraps a primitive, which
 // is excluded from RefInner, so lowering reports it as an unsupported feature rather than
 // fabricating a borrow over a non-borrowable type.
 func TestInferBorrowOfNonBorrowableRejected(t *testing.T) {
