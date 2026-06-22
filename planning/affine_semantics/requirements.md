@@ -494,9 +494,26 @@ that no conflicting path survives.
 
 This pairs with the connected-component move. When a graph is owned as a single
 component — a returned component, or an arena whose one binding owns every node —
-consuming that binding kills every mutable path at once, so
-`val frozen: Freeze<Graph> = g` freezes the entire graph in one sound move. A
-scattered graph with many owning bindings would instead require all of them
+consuming that binding kills every mutable path at once, so the whole graph freezes
+in one sound move. Take the `build` function from the previous section, whose `Node`
+edges are `&mut` and so leave the returned graph mutable through them:
+
+```esc
+val g = build()                 // g: Node — the moved-out {a, b} component
+g.peers[0].value = 20           // OK — a node is mutated through a `&mut` edge, even
+                                // though g's own slots are immutable; this is the shallow gap
+
+val frozen: Freeze<Node> = g    // deep-freeze the whole component in one move; g consumed
+print(frozen.peers[0].value)    // OK — read
+// frozen.peers[0].value = 5    // ERROR: Freeze<Node> is deeply immutable; the edges are now `&`
+
+val mut h: Thaw<Freeze<Node>> = frozen   // thaw back to a mutable graph; recovers Node; frozen consumed
+h.peers[0].value = 7            // mutation allowed again
+```
+
+The freeze is a single sound move because `build` returned a self-contained
+component: `g` is the only binding into the graph, so consuming it leaves no mutable
+path. A scattered graph with many owning bindings would instead require all of them
 consumed.
 
 Two caveats. `Thaw` is not a faithful inverse for a type with genuinely-immutable
