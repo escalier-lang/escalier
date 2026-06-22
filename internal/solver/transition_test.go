@@ -505,22 +505,21 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 		},
-		// The `val z: mut {x} = p` binding still escapes. A `mut` annotation is an
-		// owned-mutable slot, and G3 reborrows only bare object/tuple annotations, so it is
-		// not reborrowed and "does not live long enough to satisfy mut object" stays. The
-		// bare `val snap: {x} = p` reborrows instead, so its former escape is gone. p and z
-		// are dead afterward, so no transition fires on snap either.
+		// `val z: &mut {x} = p` aliases p's borrow into z at z's lifetime. `sink =
+		// z` forces z's lifetime to 'static, and Rule 1 then reports that p still
+		// has mutable access to the same value. `val snap: &{x} = p` is a local
+		// immutable reborrow that does not extend p's region, so no further
+		// transition fires on it.
 		"Rule1_TransitiveAliasEscape_Error": {
 			src: `
 				var sink = {x: 0}
 				fn f(p: &mut {x: number}) {
-				  val z: mut {x: number} = p   // z aliases p, the same value
-				  sink = z                      // z's borrow escapes to 'static, mutably
-				  val snap: {x: number} = p     // local immutable reborrow; p and z dead afterward
+				  val z: &mut {x: number} = p    // z aliases p, the same value
+				  sink = z                        // z's borrow escapes to 'static, mutably
+				  val snap: &{x: number} = p      // local immutable reborrow; p and z dead afterward
 				}
 			`,
 			want: []string{
-				"borrowed value mut object does not live long enough to satisfy mut object",
 				"cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
 			},
 		},
