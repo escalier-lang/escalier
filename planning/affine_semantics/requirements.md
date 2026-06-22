@@ -516,6 +516,27 @@ component: `g` is the only binding into the graph, so consuming it leaves no mut
 path. A scattered graph with many owning bindings would instead require all of them
 consumed.
 
+The "only binding" qualifier is load-bearing, and the checker holds the program to
+it by tracking aliases across the freeze. Extracting a borrow of a node before the
+freeze creates a second mutable path into the component, and the freeze is then
+rejected:
+
+```esc
+val g = build()
+val first = g.peers[0]          // first: &mut Node — a live mutable borrow into the component
+val frozen: Freeze<Node> = g    // ERROR: `first` is a live mutable path into the
+                                // component, so "every mutable path dead" fails
+first.value = 5                 // the later use that keeps `first` live across the freeze
+```
+
+The error lands on the freeze rather than on `first.value = 5`. Because `first` is
+live across the freeze, a mutable path into the structure is still outstanding when
+the freeze tries to make it immutable. Nothing dangles, since the garbage collector
+keeps the node alive; the freeze is refused because it would otherwise let `first`
+mutate a value an immutable view now depends on. Catching this needs alias tracking
+that reaches a borrow of an internal node, not only a borrow of the root `g`, which
+is the alias-set reasoning in "Relationship to the mutability-transition checker."
+
 Two caveats. `Thaw` is not a faithful inverse for a type with genuinely-immutable
 fields: it deep-mutables everything, so `Thaw<Freeze<T>>` recovers `T` only when `T`
 was fully mutable. And `Freeze<T>` is the deliberate opt-in to deep immutability; the
