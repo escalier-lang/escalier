@@ -245,6 +245,13 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				span:    expr.Span(),
 			}}
 		}
+	case *ast.BorrowExpr:
+		// Affine semantics is a new-checker-only feature; the legacy checker
+		// degrades gracefully with the same diagnostic shape as a borrow type
+		// annotation. Returning ErrorType (not Never) keeps the operand from
+		// cascading `<: never` through every downstream use.
+		exprType = type_system.NewErrorType(nil)
+		errors = []Error{&BorrowUnsupportedError{span: expr.Span()}}
 	case *ast.CallExpr:
 		exprType, errors = c.inferCallExpr(ctx, expr)
 	case *ast.MemberExpr:

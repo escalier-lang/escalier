@@ -187,3 +187,24 @@ func TestInferBorrowExprMutFromOwnedMut(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", values["f"])
 }
+
+// A borrow of an undefined identifier must not cascade a second diagnostic.
+// inferIdent reports the unknown name and returns the ErrorType sentinel; the
+// borrow form absorbs it without emitting a follow-on "borrow of a non-borrowable
+// type" error.
+func TestInferBorrowExprAbsorbsUnknownIdentifier(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f() { return &q }`)
+	require.Equal(t, []string{
+		"Unknown identifier: q",
+	}, Messages(errs))
+}
+
+// A borrow of a primitive value reports the unsupported-borrow diagnostic once.
+// The recovery mirrors the annotation path's borrowInner: a fresh inner var
+// keeps the wrapper alive so the surrounding expression does not cascade.
+func TestInferBorrowExprOfPrimitiveRecovers(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f() { return &5 }`)
+	require.Equal(t, []string{
+		"Unsupported: borrow of a non-borrowable type",
+	}, Messages(errs))
+}

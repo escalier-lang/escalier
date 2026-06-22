@@ -3734,3 +3734,32 @@
     span: 1:1-1:11,
 }
 ---
+
+[TestParseExprNoErrors/LogicalNotOfBorrowMutable - 1]
+&ast.UnaryExpr{
+    Op: 2,
+    Arg: &ast.BorrowExpr{
+        Mut: true,
+        Arg: &ast.IdentExpr{
+            Name: "p",
+            span: 1:7-1:8,
+        },
+        span: 1:2-1:8,
+    },
+    span: 1:1-1:8,
+}
+---
+
+[TestParseExprNoErrors/UnaryMinusOfBorrow - 1]
+&ast.UnaryExpr{
+    Op: 1,
+    Arg: &ast.BorrowExpr{
+        Arg: &ast.IdentExpr{
+            Name: "p",
+            span: 1:3-1:4,
+        },
+        span: 1:2-1:4,
+    },
+    span: 1:1-1:4,
+}
+---

@@ -406,6 +406,15 @@ func (ic *initChecker) walkExpr(expr ast.Expr, st initState) initFlow {
 		}
 		return initFlow{state: st}
 
+	case *ast.BorrowExpr:
+		// A borrow expression's operand is read like any other reference, so
+		// recurse so `&self.x` / `foo(&self)` before init fires the same
+		// ReadBeforeInit / SelfAliasBeforeInit diagnostics a bare read does.
+		if e.Arg != nil {
+			return ic.walkExpr(e.Arg, st)
+		}
+		return initFlow{state: st}
+
 	case *ast.TupleExpr:
 		// Unlike the single-arg AwaitExpr/UnaryExpr cases above, a tuple has
 		// multiple sibling sub-expressions threaded through `st`. If one

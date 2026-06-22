@@ -3,7 +3,6 @@ package solver
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -58,15 +57,6 @@ type checker struct {
 	// was computed for. collectOuterBindings recomputes if a different root appears.
 	preludeNames     []string
 	preludeNamesRoot *Scope
-
-	// paramLifetimes is the set of lifetime-variable ids that originate on a
-	// function parameter (M4 D2). A `mut`-borrow param without a declared lifetime
-	// is a borrow of whatever the caller lends, so attachParamLifetimes mints a
-	// fresh lifetime var for it and records its id here. These are the only
-	// lifetimes that get named in the rendered output — a borrow originates at a
-	// parameter — while internal join vars (D3) stay anonymous and render as the
-	// union of their reachable param lifetimes.
-	paramLifetimes set.Set[int]
 
 	// namedLifetimes resolves a written lifetime name `'a` to its lifetime variable so
 	// every `&'a` in one scope shares one variable. inferFunc saves and clears it on
@@ -167,7 +157,7 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // newChecker returns a checker with a fresh Context, an empty Info table, and an
 // empty Prov side table.
 func newChecker() *checker {
-	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, paramLifetimes: set.NewSet[int](), varIDCounter: 1}
+	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, varIDCounter: 1}
 }
 
 // freshAt allocates a fresh inference variable at the given level. Provenance for

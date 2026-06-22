@@ -547,7 +547,15 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // consume / use-after-move enforcement lands in PR 6.
 func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
 	sub := c.inferExpr(scope, lvl, e.Arg)
+	// Absorb the ErrorType recovery sentinel: the operand already reported its
+	// own diagnostic, so the borrow must not cascade a second one. Record the
+	// sentinel against the BorrowExpr so downstream consumers see a typed node.
+	if _, ok := sub.(*soltype.ErrorType); ok {
+		c.recordType(e, sub)
+		return sub
+	}
 	var inner soltype.RefInner
+	constrainable := true
 	switch s := sub.(type) {
 	case *soltype.RefType:
 		inner = s.Inner
@@ -556,14 +564,21 @@ func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.
 		inner = s
 	default:
 		// A primitive, function, or promise is not a RefInner and has nothing to
-		// borrow. Report it as unsupported and recover to the error sentinel so the
-		// surrounding expression does not cascade `<: never`.
-		return c.reportUnsupportedFeature(e, "borrow of a non-borrowable type")
+		// borrow. Report the diagnostic and build the wrapper around a fresh
+		// inner var so the surrounding expression stays cascade-safe. Skip the
+		// constrain step below: routing `5 <: &T` through bare<:RefType would
+		// raise a second "cannot constrain" diagnostic on top of the single
+		// non-borrowable report.
+		c.reportUnsupportedFeature(e, "borrow of a non-borrowable type")
+		inner = c.freshAt(lvl)
+		constrainable = false
 	}
 	lt := c.ctx.freshLifetime(lvl)
 	target := &soltype.RefType{Mut: e.Mut, Lt: lt, Inner: inner}
 	c.recordProv(target, e, BorrowExprOrigin)
-	c.constrain(e, sub, target)
+	if constrainable {
+		c.constrain(e, sub, target)
+	}
 	c.recordType(e, target)
 	return target
 }

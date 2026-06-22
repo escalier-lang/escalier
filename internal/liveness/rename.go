@@ -357,6 +357,8 @@ func (r *renamer) renameExpr(expr ast.Expr) {
 		r.renameExpr(e.Arg)
 	case *ast.AwaitExpr:
 		r.renameExpr(e.Arg)
+	case *ast.BorrowExpr:
+		r.renameExpr(e.Arg)
 	case *ast.YieldExpr:
 		if e.Value != nil {
 			r.renameExpr(e.Value)

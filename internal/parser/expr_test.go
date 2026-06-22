@@ -256,6 +256,14 @@ func TestParseExprNoErrors(t *testing.T) {
 		"BorrowOfCallResult": {
 			input: "&getValue()",
 		},
+		"UnaryMinusOfBorrow": {
+			// A unary prefix wraps the borrow rather than colliding with it:
+			// `-&p` parses as `UnaryMinus(BorrowExpr(p))`.
+			input: "-&p",
+		},
+		"LogicalNotOfBorrowMutable": {
+			input: "!&mut p",
+		},
 	}
 
 	for name, test := range tests {

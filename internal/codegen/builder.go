@@ -1955,6 +1955,11 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		return b.buildJSXElement(expr)
 	case *ast.JSXFragmentExpr:
 		return b.buildJSXFragment(expr)
+	case *ast.BorrowExpr:
+		// JavaScript has no borrow concept, so a `&p` / `&mut p` expression
+		// lowers to the operand directly. Affine soundness is enforced by the
+		// new checker, not at runtime.
+		return b.buildExpr(expr.Arg, expr)
 	case *ast.ErrorExpr:
 		undefined := NewLitExpr(NewUndefinedLit(&ast.UndefinedLit{}), expr)
 		return undefined, []Stmt{}
