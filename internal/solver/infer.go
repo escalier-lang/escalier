@@ -67,6 +67,13 @@ type checker struct {
 	// parameter — while internal join vars (D3) stay anonymous and render as the
 	// union of their reachable param lifetimes.
 	paramLifetimes set.Set[int]
+
+	// namedLifetimes resolves a written lifetime name `'a` to its lifetime variable so
+	// every `&'a` in one scope shares one variable. inferFunc saves and clears it on
+	// entry and restores it on exit, so each function has its own named-lifetime scope,
+	// nested functions included. inferComponent clears it per top-level binding for the
+	// same reason. The map is allocated lazily by namedLifetime on first use.
+	namedLifetimes map[string]*soltype.LifetimeVar
 }
 
 // fieldKey identifies a written field by the receiver variable's ID and the

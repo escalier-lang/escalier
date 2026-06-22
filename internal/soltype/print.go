@@ -284,6 +284,30 @@ func (p *namedPrinter) printLifetime(lt Lifetime) string {
 	panic(fmt.Sprintf("printLifetime: unhandled %T", lt))
 }
 
+// borrowLifetimeName returns the lifetime to print after a borrow's leading `&`, or
+// "" when the lifetime is inferred and carries no load-bearing name. A LifetimeVar
+// renders its assigned quantifier name `'a` when ltNames carries one. An un-named var
+// is an inferred borrow and prints as a bare `&` with no lifetime, matching the display
+// rule that names a lifetime only when it is load-bearing. 'static and a coalesced
+// lifetime union are always shown. The `&` itself is emitted by the caller whenever Lt
+// is set, so a borrow is always distinguishable from an owned value.
+func (p *namedPrinter) borrowLifetimeName(lt Lifetime) string {
+	switch lt := lt.(type) {
+	case *LifetimeVar:
+		if p.ltNames != nil {
+			if name, ok := p.ltNames[lt]; ok {
+				return name
+			}
+		}
+		return ""
+	case *StaticLifetime:
+		return "'static"
+	case *LifetimeUnion:
+		return p.printLifetime(lt)
+	}
+	return ""
+}
+
 // printTypeMinPrec prints a child type, wrapping it in parentheses when its
 // precedence is below the required minimum — mirrors type_system's helper of the
 // same shape, so e.g. a function inside a union renders as
@@ -352,16 +376,25 @@ func (p *namedPrinter) printType(t Type) string {
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:
-		// A borrow prefix: `mut {x: number}` (owned-mutable), `'a {…}` (immutable
-		// borrow), `mut 'a {…}` (mutable borrow). The `mut` keyword leads, then the
-		// lifetime when present (Lt != nil). The inner prints at precPrefix so a
-		// looser inner (a union/function) gets parenthesized.
+		// Ownership and the borrow `&` split on Lt. An owned value has Lt nil and
+		// renders bare. NewRef collapses the owned-immutable cell, so a surviving owned
+		// RefType is always owned-mutable and renders `mut {x}`. A borrow has Lt set and
+		// leads with `&`, then the lifetime name when it is load-bearing, then `mut`.
+		// The four forms are:
+		//
+		//	&{x}        &mut {x}        &'a {x}        &'a mut {x}
+		//
+		// The inner prints at precPrefix so a looser inner such as a union or function
+		// gets parenthesized.
 		prefix := ""
-		if t.Mut {
-			prefix = "mut "
-		}
 		if t.Lt != nil {
-			prefix += p.printLifetime(t.Lt) + " "
+			prefix = "&"
+			if name := p.borrowLifetimeName(t.Lt); name != "" {
+				prefix += name + " "
+			}
+		}
+		if t.Mut {
+			prefix += "mut "
 		}
 		return prefix + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *UnionType:

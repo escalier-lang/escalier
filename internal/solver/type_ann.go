@@ -79,6 +79,8 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 		return c.resolveTupleTypeAnn(ta, lvl)
 	case *ast.MutableTypeAnn:
 		return c.resolveMutableTypeAnn(ta, lvl)
+	case *ast.RefTypeAnn:
+		return c.resolveRefTypeAnn(ta, lvl)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -175,22 +177,87 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 // `mut` over a non-borrowable inner (a primitive, function, promise — anything
 // outside RefInner) is a no-op in the value-types model: there is nothing to
 // borrow. It reports an unsupported feature rather than fabricating a borrow over
-// a type the wrapper cannot hold. An unsupported inner recovers to a fresh var,
-// which IS a RefInner, so the `mut` wrapper is preserved.
+// a type the wrapper cannot hold.
 func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltype.Type, bool) {
-	inner, ok := c.resolveTypeAnn(ta.Target, lvl)
-	if !ok {
-		t := soltype.NewRef(true, nil, c.freshAt(lvl))
-		c.recordProv(t, ta, AnnotationType)
-		return t, true
-	}
-	ri, ok := inner.(soltype.RefInner)
+	ri, ok := c.borrowInner(ta.Target, lvl)
 	if !ok {
 		return c.reportUnsupportedFeature(ta, "mut on a non-borrowable type"), false
 	}
 	t := soltype.NewRef(true, nil, ri)
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// borrowInner resolves the pointee of a `mut` or `&` annotation to a RefInner, the
+// shared inner-resolution step of resolveMutableTypeAnn and resolveRefTypeAnn. An
+// unsupported inner recovers to a fresh var, which IS a RefInner, so the wrapper is
+// preserved and the binding stays cascade-safe. ok=false means the inner resolved to a
+// concrete non-borrowable type such as a primitive, function, or promise. The caller
+// reports that with a wrapper-specific message.
+func (c *checker) borrowInner(ta ast.TypeAnn, lvl int) (soltype.RefInner, bool) {
+	inner, ok := c.resolveTypeAnn(ta, lvl)
+	if !ok {
+		return c.freshAt(lvl), true
+	}
+	ri, isRI := inner.(soltype.RefInner)
+	return ri, isRI
+}
+
+// resolveRefTypeAnn lowers a borrow annotation `&T`, `&mut T`, `&'a T`, or `&'a mut T`
+// to a soltype.RefType{Mut, Lt, Inner}. The inner must be a RefInner. A borrow of a
+// value type such as a primitive has nothing to point at and is reported as an
+// unsupported feature.
+//
+// resolveLifetimeAnn mints the lifetime. A bare `&` gets a fresh inferred lifetime, and
+// `&'a` resolves the named lifetime to the variable that name denotes in the current
+// function. Display naming is decided structurally at coalesce time, so a borrow that
+// reaches an output renders under a quantified name like `&'a {x}`, while one that
+// connects nothing elides. Unlike resolveMutableTypeAnn, this arm always sets Lt, so the
+// result is a genuine borrow rather than an owned value.
+func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, bool) {
+	ri, ok := c.borrowInner(ta.Inner, lvl)
+	if !ok {
+		return c.reportUnsupportedFeature(ta, "borrow of a non-borrowable type"), false
+	}
+	t := &soltype.RefType{Mut: ta.Mut, Lt: c.resolveLifetimeAnn(ta.Lifetime, lvl), Inner: ri}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveLifetimeAnn resolves the lifetime slot of a borrow annotation. A nil node is
+// an inferred borrow and mints a fresh lifetime. A named `'a` resolves to the variable
+// that name denotes. A `('a | 'b)` union resolves each member and joins them in a
+// LifetimeUnion.
+func (c *checker) resolveLifetimeAnn(node ast.LifetimeAnnNode, lvl int) soltype.Lifetime {
+	switch n := node.(type) {
+	case *ast.LifetimeAnn:
+		return c.namedLifetime(n.Name, lvl)
+	case *ast.LifetimeUnionAnn:
+		members := make([]soltype.Lifetime, len(n.Lifetimes))
+		for i, m := range n.Lifetimes {
+			members[i] = c.namedLifetime(m.Name, lvl)
+		}
+		return &soltype.LifetimeUnion{Lifetimes: members}
+	default:
+		// A nil node, or any unexpected form, is an inferred borrow with a fresh lifetime.
+		return c.ctx.freshLifetime(lvl)
+	}
+}
+
+// namedLifetime resolves a written lifetime name to its variable, minting one on first
+// appearance so every `&'a` in one function shares a single lifetime. The map is reset
+// per function by inferFunc and per top-level binding by inferComponent, so the same
+// name in two such scopes denotes distinct lifetimes.
+func (c *checker) namedLifetime(name string, lvl int) *soltype.LifetimeVar {
+	if c.namedLifetimes == nil {
+		c.namedLifetimes = map[string]*soltype.LifetimeVar{}
+	}
+	if lt, ok := c.namedLifetimes[name]; ok {
+		return lt
+	}
+	lt := c.ctx.freshLifetime(lvl)
+	c.namedLifetimes[name] = lt
+	return lt
 }
 
 // annPrim mints a FRESH PrimType for an annotation and records it against the

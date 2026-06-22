@@ -20,7 +20,7 @@ import (
 func TestInferIdentityRefReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return p }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}", values["f"])
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
 }
 
 // Returning a freshly-constructed owned object carries no borrow lifetime: the
@@ -38,7 +38,7 @@ func TestInferFreshObjectReturn(t *testing.T) {
 func TestInferDistinctParamLifetimes(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}, q: mut {y: number}) { return p }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: mut 'a {x: number}, q: mut {y: number}) -> mut 'a {x: number}", values["f"])
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number}, q: mut {y: number}) -> &'a mut {x: number}", values["f"])
 }
 
 // Writing a field through an annotated `mut` borrow checks: the receiver carries a
@@ -86,7 +86,7 @@ fn f(p: mut {x: number}) {
 }
 
 // Reading a field after writing it through an annotated `mut` borrow returns the
-// written field's type. The receiver is the concrete borrow `mut 'l0 {x: number}`,
+// written field's type. The receiver is a concrete mutable borrow `&mut {x: number}`,
 // so valueProp peels it via CarrierOf before emitting the read requirement — without
 // the peel this would trip the escape guard on the bare read requirement. Unlike the
 // usage-inferred read-after-write tests (which key off the `written` map on a
@@ -132,7 +132,7 @@ func TestInferConditionalUnionReturn(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}) -> mut ('a | 'b) {x: number}",
+		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &('a | 'b) mut {x: number}",
 		values["f"])
 }
 
@@ -152,7 +152,7 @@ func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {y: number}) -> mut 'a {x: number} | mut 'b {y: number}",
+		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {y: number}) -> &'a mut {x: number} | &'b mut {y: number}",
 		values["f"])
 }
 
@@ -174,7 +174,7 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a, 'b, 'c>(p: mut 'a {x: number}, q: mut 'b {x: number}, r: mut 'c {x: number}) -> mut ('a | 'b | 'c) {x: number}",
+		"fn <'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> &('a | 'b | 'c) mut {x: number}",
 		values["f"])
 }
 
@@ -198,10 +198,10 @@ fn use(a: mut {x: number}, b: mut {x: number}) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a, 'b>(p: mut 'a {x: number}, q: mut 'b {x: number}) -> mut ('a | 'b) {x: number}",
+		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &('a | 'b) mut {x: number}",
 		values["pick"])
 	require.Equal(t,
-		"fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> mut ('a | 'b) {x: number}",
+		"fn <'a, 'b>(a: &'a mut {x: number}, b: &'b mut {x: number}) -> &('a | 'b) mut {x: number}",
 		values["use"])
 }
 
@@ -212,7 +212,7 @@ fn use(a: mut {x: number}, b: mut {x: number}) {
 // silently unifying incompatible borrows (M4 D3).
 //
 // FUTURE (M6): this error is the conservative M4 default. M6 may relax it to a
-// read-until-narrowed union — `(mut 'a {x: number}) | (mut 'b {x: string})`, readable
+// read-until-narrowed union — `(&'a mut {x: number}) | (&'b mut {x: string})`, readable
 // always and writable only after narrowing — to match TypeScript. See 01-milestones.md
 // M6, "Permissive mut-borrow joins". When that lands, this test changes from asserting
 // an error to asserting the union.
@@ -247,7 +247,7 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number} | {x: 5}",
+		"fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number} | {x: 5}",
 		values["f"])
 }
 
@@ -255,7 +255,7 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 // the EscapingRefIntoStatic acceptance (M4 D3), now reachable from real source.
 // `cache` stores its borrow `p` into the module-level `var sink`, a global write. The
 // stored value outlives every borrow region, so p's lifetime is forced `<: 'static`
-// and the parameter renders `mut 'static {x: number}` rather than under a borrow
+// and the parameter renders `&'static mut {x: number}` rather than under a borrow
 // lifetime `'l{id}`. The store itself checks. A 'static borrow is owned-forever, so
 // it fills the owned slot instead of tripping BorrowEscapeError.
 func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
@@ -266,7 +266,7 @@ fn cache(p: mut {x: number}) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t, "{x: number}", values["sink"])
-	require.Equal(t, "fn (p: mut 'static {x: number}) -> void", values["cache"])
+	require.Equal(t, "fn (p: &'static mut {x: number}) -> void", values["cache"])
 }
 
 // An ordinary global write of a NON-borrow value is unaffected by the escape rule.
@@ -311,7 +311,7 @@ func TestInferReborrowReturnedCarriesLifetime(t *testing.T) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: mut 'a {x: number}) -> 'a {x: number}", values["f"])
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a {x: number}", values["f"])
 }
 
 // A reborrow that escapes into an OWNED return slot still errors. The return annotation
@@ -368,7 +368,7 @@ func TestInferTupleReborrowReturnsLifetime(t *testing.T) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: mut 'a [number, number]) -> 'a [number, number]", values["f"])
+	require.Equal(t, "fn <'a>(p: &'a mut [number, number]) -> &'a [number, number]", values["f"])
 }
 
 // This is the tuple twin of TestInferOwnedSourceNotReborrowed. An owned tuple source has
@@ -396,5 +396,43 @@ func TestInferInexactAnnotationReborrows(t *testing.T) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: mut 'a {x: number, y: number}) -> 'a {x: number, ...}", values["f"])
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number, y: number}) -> &'a {x: number, ...}", values["f"])
+}
+
+// --- PR2: lowering `&` borrow annotations to RefType ---
+
+// A bare `&` parameter lowers to an immutable borrow with a fresh inferred lifetime.
+// Returned, the borrow carries that lifetime to the output, which is then load-bearing
+// and named `'a`, so the signature renders the borrow in `&'a` notation rather than the
+// old `'a {x}` form.
+func TestInferBorrowAnnImmutableParam(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: &{x: number}) { return p }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: &'a {x: number}) -> &'a {x: number}", values["f"])
+}
+
+// A `&mut` parameter lowers to a mutable borrow with a fresh inferred lifetime. This is
+// the same RefType the borrow-by-default `mut {x}` param produced, now written
+// explicitly, so it renders identically as `&'a mut {x}`.
+func TestInferBorrowAnnMutableParam(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return p }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
+}
+
+// A named `&'a` lifetime resolves to one lifetime variable shared by every occurrence in
+// the function, so two parameters annotated `&'a` borrow at the same lifetime. Returning
+// one makes that lifetime load-bearing, and the display names it `'a` on both params.
+func TestInferNamedBorrowLifetimeShared(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: &'a {x: number}, q: &'a {x: number}) { return p }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: &'a {x: number}, q: &'a {x: number}) -> &'a {x: number}", values["f"])
+}
+
+// A borrow of a value type has nothing to point at. `&number` wraps a primitive, which
+// is excluded from RefInner, so lowering reports it as an unsupported feature rather than
+// fabricating a borrow over a non-borrowable type.
+func TestInferBorrowOfNonBorrowableRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f(p: &number) -> number { return 0 }`)
+	require.Equal(t, []string{"Unsupported: borrow of a non-borrowable type"}, Messages(errs))
 }
