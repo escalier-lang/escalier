@@ -47,8 +47,11 @@ PRs below add these.
 The move-engine work, PRs 1 through 8, builds only on this M4 substrate. The
 type-former PRs, 9 and 10, additionally depend on **M6** of
 [planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md), which lands
-union and intersection formers together with union-scrutinee narrowing. They are
-scheduled after M6, while PRs 1 through 8 can proceed once M4 is in place.
+union and intersection formers together with union-scrutinee narrowing. PR 11, the
+connected-component moves, is a further move-engine extension and stays on M4. PR 12,
+`Freeze`/`Thaw`, additionally depends on **M9**, the mapped and conditional type
+operators. So PRs 1 through 8 and 11 can proceed once M4 is in place, 9 and 10 wait
+on M6, and 12 waits on M9.
 
 ## Parsing borrows without a syntax mode
 

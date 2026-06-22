@@ -125,7 +125,10 @@ phases that never overlap:
 
 but the lifetime of an immutable borrow and the lifetime of a mutable borrow of
 the same value may never overlap. While any mutable borrow is live, no immutable
-borrow of that value may be live, and vice versa. That is exactly what preserves
+borrow of that value may be live, and vice versa. The owner's own write path counts
+as a mutable path here. In the mutable phase the owner may mutate the value alongside
+any number of live `&mut` borrows, and in the immutable phase nothing mutates it
+through the owner or a borrow. That is exactly what preserves
 the soundness invariant: an immutable borrow never coexists with a mutable path,
 so it never observes a mutation. Single-threaded execution is what makes the
 multiple-simultaneous-mutable-borrows case safe — there is no data race to
@@ -415,11 +418,11 @@ cannot separate.
 
 A value may hold borrows to other values — a graph of nodes wired together with
 `&mut` cross-edges, built from locals inside a function. Cyclic or acyclic, such a
-graph has no node that owns the others; the nodes own nothing and reference each
-other, and an external owner is what would normally hold them. The move precondition
-above forbids moving a value while a borrow points into it, so naively returning the
-graph's root would be rejected: its edges borrow sibling nodes that do not outlive
-the function.
+graph has no node that owns the others; each node owns only its own data and
+references the rest, and an external owner is what would normally hold the nodes. The
+move precondition above forbids moving a value while a borrow points into it, so
+naively returning the graph's root would be rejected, because its edges borrow
+sibling nodes that do not outlive the function.
 
 The refinement: when the graph's nodes are reachable **only through the graph
 itself** — no reference to any node exists outside the connected component — the
@@ -467,8 +470,8 @@ connected component.
 The freeze and thaw moves change mutability only at the level of the value moved; a
 nested `&mut` or `mut` field keeps its mutability, because Escalier is shallow by
 default — an immutable type may hold mutable fields. So moving a graph's root into an
-immutable binding does not freeze the graph: the `&mut` cross-edges and `mut` field
-types are part of the node type and stay mutable.
+immutable binding does not freeze the graph, because the `&mut` cross-edges and `mut`
+field types are part of the node type and stay mutable.
 
 To convert a whole structure between mutable and immutable, use the `Freeze<T>` and
 `Thaw<T>` utility types. `Freeze<T>` is a deep, recursive mapped type that rewrites
@@ -538,7 +541,7 @@ that reaches a borrow of an internal node, not only a borrow of the root `g`, wh
 is the alias-set reasoning in "Relationship to the mutability-transition checker."
 
 Two caveats. `Thaw` is not a faithful inverse for a type with genuinely-immutable
-fields: it deep-mutables everything, so `Thaw<Freeze<T>>` recovers `T` only when `T`
+fields. It deep-mutables everything, so `Thaw<Freeze<T>>` recovers `T` only when `T`
 was fully mutable. And `Freeze<T>` is the deliberate opt-in to deep immutability; the
 default stays shallow, so a type is deeply immutable only where the program asks for
 it with `Freeze`.
