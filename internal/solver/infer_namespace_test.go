@@ -152,3 +152,30 @@ func TestInferValueIndexUnsupported(t *testing.T) {
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported: IndexExpr", c.errs[0].Message())
 }
+
+// `&Foo.bar` where `Foo` is a namespace and `bar` is a borrowable value
+// resolves through the namespace path and borrows the resolved value. The
+// receiver-bounded path in inferBorrowOfMember bails to wrapBorrow when the
+// receiver is a namespace, since a namespace has no value region to bound the
+// borrow's lifetime. Pre-fix this case errored with NamespaceUsedAsValueError
+// because the intercept routed the receiver through inferExpr, which rejects
+// a namespace in value position.
+func TestInferBorrowOfNamespaceMember(t *testing.T) {
+	c := newChecker()
+	scope := NewScope()
+	objT := &soltype.ObjectType{
+		Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{
+			Name: "x",
+			Type: &soltype.PrimType{Prim: soltype.NumPrim},
+		}},
+	}
+	scope.defineNamespace("Foo", &Namespace{
+		Name:   "Foo",
+		Values: map[string]ValueBinding{"bar": {Schemes: []TypeScheme{monoScheme(objT)}}},
+	})
+
+	e := ast.NewBorrow(false, memberExpr(identExpr("Foo"), "bar"), testSpan())
+	got := c.inferExpr(scope, 0, e)
+	require.Empty(t, c.errs)
+	require.Equal(t, "&{x: number}", soltype.Print(got))
+}

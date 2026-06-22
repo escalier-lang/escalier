@@ -448,12 +448,11 @@ func TestInferBorrowOfNonBorrowableRejected(t *testing.T) {
 
 // --- PR 4: member reads borrow the receiver ---
 
-// A member read whose result reaches the function output carries the receiver's
-// borrow lifetime through. The implicit read on `p.a` for `p: &mut {a: {...}}`
-// yields a borrow of the field at p's lifetime, so the rendered signature
-// names that lifetime on both the param and the return type. This is rule 4
-// of PR 4: the receiver's lifetime passes through to a reference-shaped field
-// read.
+// A member read whose result reaches the function output carries the
+// receiver's borrow lifetime through, the heart of PR 4 rule 4. The implicit
+// read on `p.a` for `p: &mut {a: {...}}` yields a borrow of the field at p's
+// lifetime, so the rendered signature names that lifetime on both the param
+// and the return type.
 func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
 	src := `fn f(p: &mut {a: {x: number}}) {
   return p.a
@@ -465,11 +464,10 @@ func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
 		values["f"])
 }
 
-// A member read consumed locally — not flowing into the function output —
-// leaves the receiver lifetime free, so D4's display-time elision drops it
-// from the rendered signature. `obj.a` reads as a borrow inside the body, but
-// the binding `q` never escapes, so the param's borrow lifetime does not need
-// to be named.
+// A member read consumed inside the body leaves the receiver lifetime free,
+// so D4's display-time elision drops it from the rendered signature. `obj.a`
+// reads as a borrow inside the body, but the binding `q` never escapes, so
+// the param's borrow lifetime does not need to be named.
 func TestInferMemberReadLocalElidesLifetime(t *testing.T) {
 	src := `fn f(p: &mut {a: {x: number}}) {
   val q = p.a
@@ -496,9 +494,9 @@ func TestInferMemberReadFlatBorrowOfRefField(t *testing.T) {
 		values["f"])
 }
 
-// A primitive field stays a value: `PrimType` is not a `RefInner`, so the
+// A primitive field stays a value, since `PrimType` is not a `RefInner`. The
 // PR 4 wrap is skipped and the read returns the primitive directly. This is
-// the same shape pre-PR-4 returned; pinning it here guards against the wrap
+// the same shape pre-PR-4 returned. Pinning it here guards against the wrap
 // firing on non-borrowable fields and tripping the bare<:RefType escape
 // guard when the field flows into a primitive sink.
 func TestInferMemberReadPrimitiveStaysValue(t *testing.T) {
@@ -512,7 +510,7 @@ func TestInferMemberReadPrimitiveStaysValue(t *testing.T) {
 
 // An explicit `&obj.f` shares the receiver-bounded lifetime of the implicit
 // read. PR 4 routes a `&`-of-MemberExpr through inferBorrowOfMember, which
-// produces a `&` borrow at the receiver lifetime — the same shape the
+// produces a `&` borrow at the receiver lifetime. This matches the shape the
 // implicit read produces, with no extra wrapping. Both the param and the
 // return render at the receiver's named lifetime.
 func TestInferExplicitBorrowOfMemberSharesLifetime(t *testing.T) {
@@ -529,9 +527,9 @@ func TestInferExplicitBorrowOfMemberSharesLifetime(t *testing.T) {
 // An explicit `&mut obj.g` mutably borrows the field at the receiver's
 // lifetime when the receiver supports a mutable view. The receiver is an
 // owned-mut object, so the mut requirement lowers via the RefType <: RefType
-// rule. Path-granular tracking — leaving a disjoint sibling such as `obj.a`
-// independently usable — is the partial-moves work in PR 7; this test pins
-// the typing rule only.
+// rule. The partial-moves work in PR 7 adds path-granular tracking that
+// leaves a disjoint sibling such as `obj.a` independently usable. This test
+// pins the typing rule only.
 func TestInferExplicitMutBorrowOfMemberAcceptsMutReceiver(t *testing.T) {
 	src := `fn f(obj: &mut {a: {x: number}, b: {y: number}}) {
   return &mut obj.b
@@ -558,16 +556,33 @@ func TestInferExplicitMutBorrowOfMemberOnImmutableRejected(t *testing.T) {
 	}, Messages(errs))
 }
 
-// A usage-inferred receiver — an un-annotated param whose shape is inferred
-// from how it is used — keeps its pre-PR-4 read behaviour: the wrap fires
-// only off a concrete ObjectType carrier, so a TypeVar carrier returns the
-// field's result var directly. The param closes to its inferred object
-// shape, and the function returns the field's primitive type rather than a
-// borrow.
+// A usage-inferred receiver keeps its pre-PR-4 read behaviour. A
+// usage-inferred receiver is an un-annotated param whose shape the body's
+// uses determine. The wrap fires only off a concrete ObjectType carrier, so
+// a TypeVar carrier returns the field's result var directly. The param
+// closes to its inferred object shape, and the function returns the field's
+// primitive type rather than a borrow.
 func TestInferMemberReadInferredReceiverUnchanged(t *testing.T) {
 	src := `fn f(p) { return p.x }
 val r = f({x: 5})`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t, "5", values["r"])
+}
+
+// `&mut obj["foo"]` for a reference-shaped field matches the dot form. The
+// constant-string index access is the bracket form of dot access, so the
+// dispatch in inferBorrow routes it through inferBorrowOfMember and lifts
+// the receiver's borrow lifetime onto the mutable result. Without the
+// IndexExpr branch the operand types as an immutable wrap that the outer
+// `&mut` cannot upgrade.
+func TestInferExplicitMutBorrowOfConstIndexAcceptsMutReceiver(t *testing.T) {
+	src := `fn f(obj: &mut {a: {x: number}, b: {y: number}}) {
+  return &mut obj["b"]
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a>(obj: &'a mut {a: {x: number}, b: {y: number}}) -> &'a mut {y: number}",
+		values["f"])
 }
