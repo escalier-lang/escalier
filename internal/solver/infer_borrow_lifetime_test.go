@@ -69,15 +69,15 @@ fn f(p: &mut {x: number}) {
 	}, Messages(errs))
 }
 
-// The companion to the escape case: passing the same borrow into a function whose
-// parameter is itself a `mut` borrow checks. The RefType<:RefType arm relates the
-// two lifetimes via constrainLt (the now-active step 3) instead of rejecting, so the
-// borrow slot — unlike the owned slot above — admits the borrow.
+// The companion to the escape case: passing the same borrow into a function
+// whose parameter is itself a `&mut` borrow checks. The RefType<:RefType arm
+// relates the two lifetimes via constrainLt instead of rejecting, so the borrow
+// slot admits the borrow.
 func TestInferBorrowIntoBorrowArg(t *testing.T) {
-	src := `fn use(o: mut {x: number}) -> number {
+	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
 }
-fn f(p: mut {x: number}) {
+fn f(p: &mut {x: number}) {
   return use(p)
 }`
 	values, _, errs := inferSource(t, src)
@@ -85,14 +85,15 @@ fn f(p: mut {x: number}) {
 	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
 }
 
-// Reading a field after writing it through an annotated `mut` borrow returns the
-// written field's type. The receiver is a concrete mutable borrow `&mut {x: number}`,
-// so valueProp peels it via CarrierOf before emitting the read requirement — without
-// the peel this would trip the escape guard on the bare read requirement. Unlike the
-// usage-inferred read-after-write tests (which key off the `written` map on a
-// receiver VAR), this exercises the peel-and-constrain path on a concrete borrow.
+// Reading a field after writing it through an annotated `&mut` borrow returns
+// the written field's type. The receiver is a concrete mutable borrow, so
+// valueProp peels it via CarrierOf before emitting the read requirement.
+// Without the peel this would trip the escape guard on the bare read
+// requirement. Unlike the usage-inferred read-after-write tests, which key off
+// the `written` map on a receiver var, this exercises the peel-and-constrain
+// path on a concrete borrow.
 func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
-	src := `fn f(p: mut {x: number}) {
+	src := `fn f(p: &mut {x: number}) {
   p.x = 5
   return p.x
 }`
@@ -284,15 +285,14 @@ fn bump() {
 	require.Equal(t, "fn () -> void", values["bump"])
 }
 
-// --- M4 G3: a bare reference annotation reborrows its initializer ---
+// --- Borrow-alias bindings ---
 
-// Binding a `mut` borrow into a bare object annotation reborrows it as a local
-// immutable view rather than an owned slot. `q` dies within `p`'s region and never
-// escapes, so the lifetime sort accepts it with no borrow-escape error, matching
-// internal/checker. Before G3 this reported "does not live long enough".
-func TestInferBareAnnotationReborrowsLocally(t *testing.T) {
-	src := `fn f(p: mut {x: number}) {
-  val q: {x: number} = p
+// Binding a `&mut` borrow into an explicit `&` annotation establishes q as an
+// immutable view of p. q dies within p's region and never escapes, so the
+// lifetime sort accepts it with no error.
+func TestInferImmutableBorrowAliasLocally(t *testing.T) {
+	src := `fn f(p: &mut {x: number}) {
+  val q: &{x: number} = p
   return q.x
 }`
 	values, _, errs := inferSource(t, src)
@@ -300,13 +300,13 @@ func TestInferBareAnnotationReborrowsLocally(t *testing.T) {
 	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
 }
 
-// A reborrowed binding that is RETURNED carries its inferred lifetime to the output.
-// The borrow flows out at the source's lifetime, so the return renders an immutable
-// borrow over the same named lifetime as the parameter. This is the D4 display path
-// for a reborrow that reaches an output.
-func TestInferReborrowReturnedCarriesLifetime(t *testing.T) {
+// An immutable borrow alias that is RETURNED carries its lifetime to the output.
+// The borrow flows out at p's lifetime, so the return renders an immutable borrow
+// over the same named lifetime as the parameter. This is the D4 display path for
+// a borrow alias that reaches an output.
+func TestInferImmutableBorrowAliasReturnedCarriesLifetime(t *testing.T) {
 	src := `fn f(p: &mut {x: number}) {
-  val q: {x: number} = p
+  val q: &{x: number} = p
   return q
 }`
 	values, _, errs := inferSource(t, src)
@@ -314,13 +314,12 @@ func TestInferReborrowReturnedCarriesLifetime(t *testing.T) {
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a {x: number}", values["f"])
 }
 
-// A reborrow that escapes into an OWNED return slot still errors. The return annotation
-// is resolved in value position, not reborrowed, so returning the local borrow into the
-// owned `{x: number}` result trips the borrow escape. The reborrow only relaxes the
-// binding itself, not a genuine escape past the function boundary.
-func TestInferReborrowEscapingOwnedReturnRejected(t *testing.T) {
+// Returning a local borrow into an OWNED return slot errors. The return
+// annotation is owned, so the borrow flowing into it trips the escape guard. The
+// alias only relaxes the binding itself, not the function boundary.
+func TestInferBorrowAliasEscapingOwnedReturnRejected(t *testing.T) {
 	src := `fn f(p: &mut {x: number}) -> {x: number} {
-  val q: {x: number} = p
+  val q: &{x: number} = p
   return q
 }`
 	_, _, errs := inferSource(t, src)
@@ -329,11 +328,10 @@ func TestInferReborrowEscapingOwnedReturnRejected(t *testing.T) {
 	}, Messages(errs))
 }
 
-// An OWNED source bound through a bare annotation is NOT reborrowed. It has no lifetime
-// to outlive, so it stays an owned binding and flows into an owned parameter without a
-// spurious escape error. Gating the G3 reborrow on the source SYNTAX rather than its type
-// would wrongly wrap `q` in a free-lifetime borrow and reject `acceptObj(q)`.
-func TestInferOwnedSourceNotReborrowed(t *testing.T) {
+// An owned-immutable source binds through an owned annotation as an owned
+// binding, with no borrow lifetime introduced. q then flows into an
+// owned-immutable parameter without an escape error.
+func TestInferOwnedToOwnedImmutableBinding(t *testing.T) {
 	src := `fn acceptObj(o: {x: number}) -> number { return o.x }
 fn f(r: {x: number}) {
   val q: {x: number} = r
@@ -344,10 +342,10 @@ fn f(r: {x: number}) {
 	require.Equal(t, "fn (r: {x: number}) -> number", values["f"])
 }
 
-// This is the owned-MUTABLE analogue. A `mut` value bound through a bare annotation peels
-// to an owned immutable binding rather than reborrowing, so it too flows into an owned
-// slot without an escape error. Only a source already carrying a borrow lifetime reborrows.
-func TestInferOwnedMutSourceNotReborrowed(t *testing.T) {
+// An owned-mutable value binds through an owned-immutable annotation as a
+// mut-decayed owned binding, with no borrow lifetime introduced. q then flows
+// into an owned-immutable parameter without an escape error.
+func TestInferOwnedMutDecayToOwnedImmutable(t *testing.T) {
 	src := `fn acceptObj(o: {x: number}) -> number { return o.x }
 fn f() {
   val items: mut {x: number} = {x: 1}
@@ -358,12 +356,12 @@ fn f() {
 	require.Empty(t, errs)
 }
 
-// A TUPLE reborrow exercises reborrowAnnotation's tuple arm, the object arm's twin. A
-// `mut` tuple borrow bound through a bare tuple annotation and returned carries the
-// source's lifetime to the output, exactly as the object case does.
-func TestInferTupleReborrowReturnsLifetime(t *testing.T) {
+// A tuple borrow alias is the tuple twin of the object case. A `&mut` tuple
+// borrow aliased through an explicit `&` tuple annotation and returned carries
+// the source's lifetime to the output.
+func TestInferTupleBorrowAliasReturnsLifetime(t *testing.T) {
 	src := `fn f(p: &mut [number, number]) {
-  val q: [number, number] = p
+  val q: &[number, number] = p
   return q
 }`
 	values, _, errs := inferSource(t, src)
@@ -371,10 +369,11 @@ func TestInferTupleReborrowReturnsLifetime(t *testing.T) {
 	require.Equal(t, "fn <'a>(p: &'a mut [number, number]) -> &'a [number, number]", values["f"])
 }
 
-// This is the tuple twin of TestInferOwnedSourceNotReborrowed. An owned tuple source has
-// no lifetime, so it is not reborrowed and flows into an owned tuple parameter without a
-// spurious escape error. A syntactic gate would wrongly reborrow it and reject the call.
-func TestInferTupleOwnedSourceNotReborrowed(t *testing.T) {
+// The tuple twin of TestInferOwnedToOwnedImmutableBinding. An owned tuple source
+// binds through an owned tuple annotation as an owned binding, with no borrow
+// lifetime introduced. q then flows into an owned tuple parameter without an
+// escape error.
+func TestInferOwnedToOwnedTupleBinding(t *testing.T) {
 	src := `fn acceptTup(o: [number, number]) -> number { return 0 }
 fn f(r: [number, number]) {
   val q: [number, number] = r
@@ -385,13 +384,13 @@ fn f(r: [number, number]) {
 	require.Equal(t, "fn (r: [number, number]) -> number", values["f"])
 }
 
-// A reborrow composes with an INEXACT annotation: binding `mut {x, y}` through `{x, ...}`
-// reborrows an immutable view that names only `x`, with the source's extra `y` tolerated
-// by width subtyping. Returned, the view carries the source's lifetime and renders its
-// inexact tail.
-func TestInferInexactAnnotationReborrows(t *testing.T) {
+// A borrow alias composes with an inexact annotation. Aliasing `&mut {x, y}`
+// through `&{x, ...}` produces an immutable view that names only `x`, with the
+// source's extra `y` tolerated by width subtyping. Returned, the view carries
+// the source's lifetime and renders its inexact tail.
+func TestInferInexactBorrowAlias(t *testing.T) {
 	src := `fn f(p: &mut {x: number, y: number}) {
-  val q: {x: number, ...} = p
+  val q: &{x: number, ...} = p
   return q
 }`
 	values, _, errs := inferSource(t, src)

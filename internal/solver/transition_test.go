@@ -212,37 +212,37 @@ func TestStaticEscapeTransition(t *testing.T) {
 	})
 }
 
-// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. A `mut` borrow
-// stored into module-level `sink` escapes to 'static (D3), creating a permanent alias
-// outside the function, then is aliased into the immutable `snap`. The program surfaces
-// three errors, all asserted:
+// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. A `&mut`
+// borrow stored into module-level `sink` escapes to 'static (D3), creating a
+// permanent alias outside the function, then is aliased into the immutable
+// `snap`. The program surfaces two errors, both asserted.
 //
-//  1. The global-write transition at `sink = p` (Option 1, this PR): storing `mut p`
-//     into the immutable global `sink` while `p` stays live afterward is a
+//  1. The global-write transition at `sink = p`. Storing the mutable borrow into
+//     the immutable global `sink` while `p` stays live afterward is a
 //     mut→immutable transition against a permanent target.
-//  2. The static-escape transition at `val snap = p` (G2): `p` escaped to 'static via
-//     the earlier store, so aliasing it into immutable `snap` conflicts. The query over
-//     `p`'s 'static-forced lifetime is what reports it, named as a `'static` escape.
+//  2. The static-escape transition at `val snap = p` (G2). `p` escaped to
+//     'static via the earlier store, so aliasing it into immutable `snap`
+//     conflicts. The query over `p`'s 'static-forced lifetime is what reports
+//     it, named as a `'static` escape.
 //
-// Before G2 the dropped HasStaticMutAlias bit was never set, so case 2 was silently
-// accepted as a false negative. Before Option 1, case 1 was missed entirely because the
-// module-level target is not a tracked local.
+// Before G2 the dropped HasStaticMutAlias bit was never set, so case 2 was
+// silently accepted as a false negative. Before the global-write check, case 1
+// was missed entirely because the module-level target is not a tracked local.
 //
-// G3 reborrows the bare annotation at `val snap: {x} = p`, so binding the borrow no
-// longer trips BorrowEscapeError. `snap` is a local immutable view, not an owned slot.
-// The escape verdict comes from the lifetime sort and the transition pass instead, which
-// is case 2 above.
+// `val snap: &{x} = p` aliases the borrow at a fresh lifetime. The lifetime sort
+// and the transition pass produce the verdict above, which is case 2.
 //
-// Case 2 also covers the source-dead property a unit test used to isolate: `p` is dead
-// after `val snap = p` (only `snap` is read afterward), so the conflict fires purely
-// because `p` escaped to 'static, not because `p` is locally live. The liveness loop
-// skips the dead `p`; only the escape query reports it.
+// Case 2 also covers the source-dead property a unit test used to isolate. `p`
+// is dead after `val snap = p` because only `snap` is read afterward, so the
+// conflict fires purely because `p` escaped to 'static, not because `p` is
+// locally live. The liveness loop skips the dead `p`. Only the escape query
+// reports it.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		var sink = {x: 0}
 		fn cache(p: &mut {x: number}) {
 			sink = p
-			val snap: {x: number} = p
+			val snap: &{x: number} = p
 			snap
 		}
 	`)
@@ -419,18 +419,13 @@ func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
 }
 
 // TestTransitionWiringReportsRule1Error is the error counterpart to
-// TestTransitionWiringNoSpuriousErrors: it proves the wired pre-pass reports a real
-// mut→immutable (Rule 1) transition error from source, not just that it stays silent on
-// benign bodies.
+// TestTransitionWiringNoSpuriousErrors. It proves the wired pre-pass reports a
+// real mut→immutable (Rule 1) transition error from source, not just that it
+// stays silent on benign bodies.
 //
-// Before split-5 the only owned-mutable value is a `mut` parameter, so p (mut) is aliased
-// into immutable q and then mutated, leaving both live across the alias. Rule 1 fires.
-//
-// G3 reborrows the bare annotation at `val q: {x} = p`, so binding the `mut` borrow into q
-// no longer trips "does not live long enough". q is a local immutable view of p, not an
-// owned slot. That escape was the known divergence from internal/checker, which accepts the
-// binding. The lifetime sort now accepts the local view too, so only the live-source Rule 1
-// transition remains, which this test pins.
+// p is an owned-mutable parameter. The mut decay at `val q: {x} = p` aliases p
+// into the immutable q. p mutates `p.x = 5` and q stays live for the later
+// `q.x` read, so both are live across the alias. Rule 1 fires.
 func TestTransitionWiringReportsRule1Error(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn test(p: mut {x: number}) {
