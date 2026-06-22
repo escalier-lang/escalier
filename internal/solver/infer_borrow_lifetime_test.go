@@ -237,6 +237,16 @@ func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
 // literal is owned rather than a RefType. The all-borrows gate falls back to the
 // generic union, so the result keeps the borrow's lifetime alongside the owned
 // literal (M4 D3).
+//
+// DISABLED until PR 9 lands.
+//
+// PR 9 of the affine semantics plan ("Reject mixed-ownership unions and
+// intersections") makes a type whose members disagree on ownership an error
+// rather than a silent union. Once it lands, this source should fail at the
+// if-else join with a "mixed-ownership union" diagnostic against the union
+// site instead of producing the union shown below. Re-enable then and flip
+// the assertion from a successful render to an error list.
+/*
 func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 	src := `fn f(p: &mut {x: number}) {
   if true {
@@ -245,12 +255,12 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
     return {x: 5}
   }
 }`
-	values, _, errs := inferSource(t, src)
-	require.Empty(t, errs)
-	require.Equal(t,
-		"fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number} | {x: 5}",
-		values["f"])
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		"mixed-ownership union: members disagree on ownership; make ownership uniform first",
+	}, Messages(errs))
 }
+*/
 
 // A borrowed parameter written into module-level storage escapes to 'static. This is
 // the EscapingRefIntoStatic acceptance (M4 D3), now reachable from real source.

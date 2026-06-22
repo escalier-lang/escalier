@@ -48,14 +48,28 @@ func TestInferValOwnedImmFromOwnedImm(t *testing.T) {
 
 // `val q = &p` for an owned-immutable p establishes q as an immutable borrow.
 // The borrow lifetime is inferred and carried through to the return.
+//
+// DISABLED until lifetime-bounds (M6.5) lands.
+//
+// Returning a borrow of a locally-owned `p` is unsound: `p` is destroyed when
+// `f` returns, so `q` dangles. The current solver under-checks this because
+// the fresh lifetime on `&p` has no upper bound from `p` (an owned value has
+// no lifetime), and D4 elides the unconstrained lifetime to render the result
+// as owned. PR 5 of the affine plan generalizes escape detection at returns,
+// which will force the lifetime to 'static and change the rendering, but the
+// hard rejection needs M6.5's directional lifetime bounds. Re-enable then and
+// assert the borrow-of-local diagnostic instead of the empty error list.
+/*
 func TestInferValBorrowFromOwnedImm(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: {x: number}) {
+	_, _, errs := inferSource(t, `fn f(p: {x: number}) {
   val q = &p
   return q
 }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number}) -> {x: number}", values["f"])
+	require.Equal(t, []string{
+		"cannot return borrow of local 'p': 'p' does not live long enough",
+	}, Messages(errs))
 }
+*/
 
 // `val mut q = p` for an owned-mutable p establishes q as owned-mutable.
 func TestInferValMutOwnedFromOwnedMut(t *testing.T) {
@@ -68,14 +82,22 @@ func TestInferValMutOwnedFromOwnedMut(t *testing.T) {
 }
 
 // `val q = &mut p` for an owned-mutable p establishes q as a mutable borrow.
+//
+// DISABLED until lifetime-bounds (M6.5) lands. Same under-checking as
+// TestInferValBorrowFromOwnedImm: the borrow of a locally-owned `p` escapes
+// through the return without a lifetime that can refute it. Re-enable when
+// M6.5 lifetime bounds catch the dangling-borrow case.
+/*
 func TestInferValMutBorrowFromOwnedMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
+	_, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
   val q = &mut p
   return q
 }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", values["f"])
+	require.Equal(t, []string{
+		"cannot return borrow of local 'p': 'p' does not live long enough",
+	}, Messages(errs))
 }
+*/
 
 // `&mut p` on an owned-IMMUTABLE p is a mutability mismatch. A mutable borrow
 // cannot be taken on a value that is not declared mutable.
@@ -103,24 +125,37 @@ func TestInferValAnnotatedOwnedImm(t *testing.T) {
 
 // `val q: &{x} = p` for an owned p auto-borrows p into the annotated borrow slot.
 // The constrain rule's bare<:RefType arm wraps p as an immutable view.
+//
+// DISABLED until lifetime-bounds (M6.5) lands. The annotated borrow form has
+// the same dangling-borrow soundness gap as the inferred `val q = &p` case
+// in TestInferValBorrowFromOwnedImm.
+/*
 func TestInferValAnnotatedBorrowImm(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: {x: number}) {
+	_, _, errs := inferSource(t, `fn f(p: {x: number}) {
   val q: &{x: number} = p
   return q
 }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number}) -> {x: number}", values["f"])
+	require.Equal(t, []string{
+		"cannot return borrow of local 'p': 'p' does not live long enough",
+	}, Messages(errs))
 }
+*/
 
 // `val q: &mut {x} = p` for an owned-mutable p auto-borrows p as a mutable borrow.
+//
+// DISABLED until lifetime-bounds (M6.5) lands. Mutable analogue of
+// TestInferValAnnotatedBorrowImm.
+/*
 func TestInferValAnnotatedBorrowMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
+	_, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
   val q: &mut {x: number} = p
   return q
 }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", values["f"])
+	require.Equal(t, []string{
+		"cannot return borrow of local 'p': 'p' does not live long enough",
+	}, Messages(errs))
 }
+*/
 
 // --- Auto-borrow at call sites -------------------------------------------------
 
@@ -180,11 +215,23 @@ func TestInferBorrowExprImmReturnedCarriesLifetime(t *testing.T) {
 }
 
 // `&mut p` on an owned-mutable p infers a mutable borrow.
+//
+// DISABLED until lifetime-bounds (M6.5) lands.
+//
+// Returning a borrow expression `&mut p` for a locally-owned `p` is unsound:
+// `p` is destroyed when the function returns, so the borrow dangles. The
+// current solver under-checks this because the fresh lifetime on `&mut p`
+// has no anchor and D4 elides it to render the result as `mut {x: number}`.
+// PR 5 will force the lifetime to 'static at the return, but the hard
+// rejection still needs M6.5's directional lifetime bounds.
+/*
 func TestInferBorrowExprMutFromOwnedMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return &mut p }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> mut {x: number}", values["f"])
+	_, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return &mut p }`)
+	require.Equal(t, []string{
+		"cannot return borrow of local 'p': 'p' does not live long enough",
+	}, Messages(errs))
 }
+*/
 
 // A borrow of an undefined identifier must not cascade a second diagnostic.
 // inferIdent reports the unknown name and returns the ErrorType sentinel. The
