@@ -239,6 +239,23 @@ func TestParseExprNoErrors(t *testing.T) {
 		"YieldFromInBinaryExpr": {
 			input: "x + yield from items",
 		},
+		"BorrowImmutable": {
+			input: "&p",
+		},
+		"BorrowMutable": {
+			input: "&mut p",
+		},
+		"BorrowOfMember": {
+			// Prefix `&` binds looser than the postfix `.`, so `&obj.f` parses
+			// as `&(obj.f)`, a borrow of the whole place path.
+			input: "&obj.f",
+		},
+		"BorrowMutableOfMember": {
+			input: "&mut obj.f",
+		},
+		"BorrowOfCallResult": {
+			input: "&getValue()",
+		},
 	}
 
 	for name, test := range tests {

@@ -330,6 +330,26 @@ func (p *Parser) objExprKey() ast.ObjKey {
 }
 
 func (p *Parser) primaryExpr() ast.Expr {
+	// Borrow expression: `&expr` or `&mut expr`. The prefix `&` binds looser
+	// than the postfix `.` / `[]`, so `&obj.f` parses as `&(obj.f)`, a borrow
+	// of the whole place path.
+	if p.lexer.peek().Type == Ampersand {
+		ampToken := p.lexer.next()
+		isMut := false
+		if p.lexer.peek().Type == Mut {
+			p.lexer.consume()
+			isMut = true
+		}
+		arg := p.primaryExpr()
+		if arg == nil {
+			next := p.lexer.peek()
+			errSpan := ast.MergeSpans(ampToken.Span, next.Span)
+			p.reportError(errSpan, "expected an expression after '&'")
+			return ast.NewError(errSpan)
+		}
+		return ast.NewBorrow(isMut, arg, ast.MergeSpans(ampToken.Span, arg.Span()))
+	}
+
 	ops := p.parsePrefix()
 	token := p.lexer.peek()
 

@@ -222,14 +222,14 @@ func TestScriptReassignTransition(t *testing.T) {
 }
 
 // TestScriptBorrowLifetimeParity checks that the lifetime origination/escape
-// machinery runs over a script body too. A function expression with a `mut` borrow
-// parameter, bound to a top-level `val`, originates a fresh lifetime on its parameter
-// and threads it through the return. The `'a` in the rendered type is the evidence the
-// borrow lifetime was inferred, not skipped. The identical source as a module binds
-// the same `id`, and the two rendered types must match. The script entry point and the
-// module entry point thread the borrow lifetime the same way.
+// machinery runs over a script body too. A function expression with a `&mut`
+// parameter, bound to a top-level `val`, carries a fresh lifetime on its parameter
+// and threads it through the return. The `'a` in the rendered type is the evidence
+// the borrow lifetime was inferred, not skipped. The identical source as a module
+// binds the same `id`, and the two rendered types must match. The script entry
+// point and the module entry point thread the borrow lifetime the same way.
 func TestScriptBorrowLifetimeParity(t *testing.T) {
-	const src = `val id = fn (p: mut {x: number}) { return p }`
+	const src = `val id = fn (p: &mut {x: number}) { return p }`
 
 	scriptValues, _, scriptErrs := inferScriptSource(t, src)
 	require.Empty(t, scriptErrs)

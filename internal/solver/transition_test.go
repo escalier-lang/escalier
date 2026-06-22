@@ -240,7 +240,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		var sink = {x: 0}
-		fn cache(p: mut {x: number}) {
+		fn cache(p: &mut {x: number}) {
 			sink = p
 			val snap: {x: number} = p
 			snap
@@ -513,7 +513,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Rule1_TransitiveAliasEscape_Error": {
 			src: `
 				var sink = {x: 0}
-				fn f(p: mut {x: number}) {
+				fn f(p: &mut {x: number}) {
 				  val z: mut {x: number} = p   // z aliases p, the same value
 				  sink = z                      // z's borrow escapes to 'static, mutably
 				  val snap: {x: number} = p     // local immutable reborrow; p and z dead afterward

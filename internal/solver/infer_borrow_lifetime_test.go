@@ -13,12 +13,12 @@ import (
 // connects nothing, never reaching an output, is elided: a mut borrow becomes
 // owned-mutable, and an immutable borrow drops the wrapper.
 
-// A `mut` param returned unchanged carries its originated lifetime to the result:
-// the same lifetime appears on both the parameter and the return type, so the
-// borrow flows out at the lifetime it came in. Occurring in both positions, it is
-// named `'a` and quantified. This is the IdentityRefReturn acceptance (M4 D4).
+// A `&mut` param returned unchanged carries its lifetime to the result: the same
+// lifetime appears on both the parameter and the return type, so the borrow flows
+// out at the lifetime it came in. Occurring in both positions, it is named `'a`
+// and quantified. This is the IdentityRefReturn acceptance (M4 D4).
 func TestInferIdentityRefReturn(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
 }
@@ -32,11 +32,11 @@ func TestInferFreshObjectReturn(t *testing.T) {
 	require.Equal(t, "fn () -> {x: 5}", values["f"])
 }
 
-// Two `mut` params originate independent lifetimes, but only the returned one
+// Two `&mut` params carry independent lifetimes, but only the returned one
 // reaches the output. `p` is returned, so its lifetime is named `'a`. `q` connects
 // nothing, so its borrow lifetime is elided to owned-mutable.
 func TestInferDistinctParamLifetimes(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: mut {x: number}, q: mut {y: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}, q: &mut {y: number}) { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}, q: mut {y: number}) -> &'a mut {x: number}", values["f"])
 }
@@ -60,7 +60,7 @@ func TestInferBorrowEscapesIntoOwnedArg(t *testing.T) {
 	src := `fn use(o: {x: number}) -> number {
   return o.x
 }
-fn f(p: mut {x: number}) {
+fn f(p: &mut {x: number}) {
   return use(p)
 }`
 	_, _, errs := inferSource(t, src)
@@ -122,7 +122,7 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 // position. The param lifetimes 'l0/'l1 stay named on the borrows they originate.
 // D4 renders them `'a`/`'b` and the union `('a | 'b)`.
 func TestInferConditionalUnionReturn(t *testing.T) {
-	src := `fn f(p: mut {x: number}, q: mut {x: number}) {
+	src := `fn f(p: &mut {x: number}, q: &mut {x: number}) {
   if true {
     return p
   } else {
@@ -142,7 +142,7 @@ func TestInferConditionalUnionReturn(t *testing.T) {
 // return falls back to the generic union, preserving both borrows with their own
 // lifetimes (M4 D3).
 func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
-	src := `fn f(p: mut {x: number}, q: mut {y: number}) {
+	src := `fn f(p: &mut {x: number}, q: &mut {y: number}) {
   if true {
     return p
   } else {
@@ -160,7 +160,7 @@ func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
 // bounded below by each, coalescing to `('l0 | 'l1 | 'l2)` in the return position.
 // This confirms the join generalizes past the two-branch case to an n-ary return set.
 func TestInferThreeWayBorrowJoin(t *testing.T) {
-	src := `fn f(p: mut {x: number}, q: mut {x: number}, r: mut {x: number}) {
+	src := `fn f(p: &mut {x: number}, q: &mut {x: number}, r: &mut {x: number}) {
   if true {
     return p
   } else {
@@ -189,10 +189,10 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 // `use`'s own param lifetimes, so `use` renders the same clean `mut ('a | 'b) {…}`
 // over `a` and `b` rather than the raw freshened ids.
 func TestInferInstantiatedJoinReturnsUnion(t *testing.T) {
-	src := `fn pick(p: mut {x: number}, q: mut {x: number}) {
+	src := `fn pick(p: &mut {x: number}, q: &mut {x: number}) {
   if true { return p } else { return q }
 }
-fn use(a: mut {x: number}, b: mut {x: number}) {
+fn use(a: &mut {x: number}, b: &mut {x: number}) {
   return pick(a, b)
 }`
 	values, _, errs := inferSource(t, src)
@@ -217,7 +217,7 @@ fn use(a: mut {x: number}, b: mut {x: number}) {
 // M6, "Permissive mut-borrow joins". When that lands, this test changes from asserting
 // an error to asserting the union.
 func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
-	src := `fn f(p: mut {x: number}, q: mut {x: string}) {
+	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
   if true {
     return p
   } else {
@@ -237,7 +237,7 @@ func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
 // generic union, so the result keeps the borrow's lifetime alongside the owned
 // literal (M4 D3).
 func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
-	src := `fn f(p: mut {x: number}) {
+	src := `fn f(p: &mut {x: number}) {
   if true {
     return p
   } else {
@@ -260,7 +260,7 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 // it fills the owned slot instead of tripping BorrowEscapeError.
 func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
 	src := `var sink = {x: 0}
-fn cache(p: mut {x: number}) {
+fn cache(p: &mut {x: number}) {
   sink = p
 }`
 	values, _, errs := inferSource(t, src)
@@ -305,7 +305,7 @@ func TestInferBareAnnotationReborrowsLocally(t *testing.T) {
 // borrow over the same named lifetime as the parameter. This is the D4 display path
 // for a reborrow that reaches an output.
 func TestInferReborrowReturnedCarriesLifetime(t *testing.T) {
-	src := `fn f(p: mut {x: number}) {
+	src := `fn f(p: &mut {x: number}) {
   val q: {x: number} = p
   return q
 }`
@@ -319,7 +319,7 @@ func TestInferReborrowReturnedCarriesLifetime(t *testing.T) {
 // owned `{x: number}` result trips the borrow escape. The reborrow only relaxes the
 // binding itself, not a genuine escape past the function boundary.
 func TestInferReborrowEscapingOwnedReturnRejected(t *testing.T) {
-	src := `fn f(p: mut {x: number}) -> {x: number} {
+	src := `fn f(p: &mut {x: number}) -> {x: number} {
   val q: {x: number} = p
   return q
 }`
@@ -362,7 +362,7 @@ fn f() {
 // `mut` tuple borrow bound through a bare tuple annotation and returned carries the
 // source's lifetime to the output, exactly as the object case does.
 func TestInferTupleReborrowReturnsLifetime(t *testing.T) {
-	src := `fn f(p: mut [number, number]) {
+	src := `fn f(p: &mut [number, number]) {
   val q: [number, number] = p
   return q
 }`
@@ -390,7 +390,7 @@ fn f(r: [number, number]) {
 // by width subtyping. Returned, the view carries the source's lifetime and renders its
 // inexact tail.
 func TestInferInexactAnnotationReborrows(t *testing.T) {
-	src := `fn f(p: mut {x: number, y: number}) {
+	src := `fn f(p: &mut {x: number, y: number}) {
   val q: {x: number, ...} = p
   return q
 }`

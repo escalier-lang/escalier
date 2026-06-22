@@ -251,6 +251,33 @@ func TestPrintUnaryExpressions(t *testing.T) {
 	}
 }
 
+func TestPrintBorrowExpressions(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"borrow ident", "&p", "&p"},
+		{"borrow mut ident", "&mut p", "&mut p"},
+		{"borrow member", "&obj.f", "&obj.f"},
+		{"borrow mut member", "&mut obj.f", "&mut obj.f"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			if err != nil {
+				t.Fatalf("Print error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
 func TestPrintArrays(t *testing.T) {
 	tests := []struct {
 		name     string

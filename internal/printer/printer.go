@@ -622,6 +622,8 @@ func (p *Printer) printExpr(expr ast.Expr) {
 		p.printBinaryExpr(e)
 	case *ast.UnaryExpr:
 		p.printUnaryExpr(e)
+	case *ast.BorrowExpr:
+		p.printBorrowExpr(e)
 	case *ast.LiteralExpr:
 		p.printLiteral(e.Lit)
 	case *ast.IdentExpr:
@@ -712,6 +714,14 @@ func (p *Printer) printUnaryExpr(expr *ast.UnaryExpr) {
 	if needsParens {
 		p.writeString(")")
 	}
+}
+
+func (p *Printer) printBorrowExpr(expr *ast.BorrowExpr) {
+	p.writeString("&")
+	if expr.Mut {
+		p.writeString("mut ")
+	}
+	p.printExpr(expr.Arg)
 }
 
 func (p *Printer) printCallExpr(expr *ast.CallExpr) {
