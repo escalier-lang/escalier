@@ -135,7 +135,7 @@ func typeParamName(i int) string {
 
 // lifetimeParamName is the surface name for the i-th quantified lifetime parameter:
 // 'a, 'b, …, 'z, 'aa, 'ab, … in Excel-style base-26, so a borrow renders as
-// `fn <'a>(p: mut 'a {x}) -> mut 'a {x}`.
+// `fn <'a>(p: &'a mut {x}) -> &'a mut {x}`.
 func lifetimeParamName(i int) string {
 	var b []byte
 	for {

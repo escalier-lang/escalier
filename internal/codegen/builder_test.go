@@ -10,6 +10,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildNamespaceStatements(t *testing.T) {
@@ -732,6 +733,63 @@ state.ui.isEnabled = state__ui__isEnabled;`,
 			}
 
 			assert.Equal(t, test.expected, printer.Output, "Generated module should match expected output")
+		})
+	}
+}
+
+// TestBuildBorrowExpr_LowersToOperand pins that a `&p` or `&mut p` expression
+// drops its borrow wrapper at codegen and emits the operand directly. JavaScript
+// has no borrow concept, so the affine layer must not survive into the runtime.
+func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		expected string
+	}{
+		"BorrowIdent": {
+			src: "fn f(p) { return &p }",
+			expected: `export function f(temp1) {
+  const p = temp1;
+  return p;
+}`,
+		},
+		"BorrowMutIdent": {
+			src: "fn f(p) { return &mut p }",
+			expected: `export function f(temp1) {
+  const p = temp1;
+  return p;
+}`,
+		},
+		"BorrowMember": {
+			src: "fn f(obj) { return &obj.x }",
+			expected: `export function f(temp1) {
+  const obj = temp1;
+  return obj.x;
+}`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: test.src},
+			})
+			require.Empty(t, errors)
+
+			depGraph := dep_graph.BuildDepGraph(module)
+			builder := &Builder{tempId: 0, depGraph: depGraph}
+			outModule := builder.BuildTopLevelDecls(depGraph)
+
+			printer := NewPrinter()
+			for i, stmt := range outModule.Stmts {
+				if i > 0 {
+					printer.NewLine()
+				}
+				printer.PrintStmt(stmt)
+			}
+			require.Equal(t, test.expected, printer.Output)
 		})
 	}
 }

@@ -14,6 +14,10 @@ func (node *UnaryExpr) Span() Span             { return node.span }
 func (node *UnaryExpr) InferredType() Type     { return node.inferredType }
 func (node *UnaryExpr) SetInferredType(t Type) { node.inferredType = t }
 
+func (node *BorrowExpr) Span() Span             { return node.span }
+func (node *BorrowExpr) InferredType() Type     { return node.inferredType }
+func (node *BorrowExpr) SetInferredType(t Type) { node.inferredType = t }
+
 func (node *LiteralExpr) Span() Span             { return node.span }
 func (node *LiteralExpr) InferredType() Type     { return node.inferredType }
 func (node *LiteralExpr) SetInferredType(t Type) { node.inferredType = t }

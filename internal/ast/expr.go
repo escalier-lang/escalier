@@ -24,6 +24,7 @@ type Expr interface {
 func (*ErrorExpr) isExpr()             {}
 func (*BinaryExpr) isExpr()            {}
 func (*UnaryExpr) isExpr()             {}
+func (*BorrowExpr) isExpr()            {}
 func (*LiteralExpr) isExpr()           {}
 func (*IdentExpr) isExpr()             {}
 func (*FuncExpr) isExpr()              {}
@@ -119,6 +120,30 @@ func NewUnary(op UnaryOp, arg Expr, span Span) *UnaryExpr {
 	return &UnaryExpr{Op: op, Arg: arg, span: span, inferredType: nil}
 }
 func (e *UnaryExpr) Accept(v Visitor) {
+	if v.EnterExpr(e) {
+		e.Arg.Accept(v)
+	}
+	v.ExitExpr(e)
+}
+
+// BorrowExpr is a prefix borrow in expression position:
+//
+//	&p      → BorrowExpr{Mut: false}
+//	&mut p  → BorrowExpr{Mut: true}
+//
+// The prefix `&` binds looser than the postfix `.` and `[]`, so `&obj.f`
+// parses as `&(obj.f)`, a borrow of the whole place path.
+type BorrowExpr struct {
+	Mut          bool
+	Arg          Expr
+	span         Span
+	inferredType Type
+}
+
+func NewBorrow(mut bool, arg Expr, span Span) *BorrowExpr {
+	return &BorrowExpr{Mut: mut, Arg: arg, span: span, inferredType: nil}
+}
+func (e *BorrowExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		e.Arg.Accept(v)
 	}

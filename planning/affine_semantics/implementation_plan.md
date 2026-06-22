@@ -468,13 +468,29 @@ source region, ownership moves, the source is consumed, and a later use is an er
 - This subsumes the "no Copy bound" requirement: reusing an owned type-parameter
   value triggers a second move and a use-after-move error, with no extra machinery.
   Add a test showing `fn dup<T>(x: T) -> [T, T]` fails and the `&T` form succeeds.
+- Retire the M4 G3 implicit-reborrow path in `reborrowAnnotation`
+  ([internal/solver/infer_decl.go](../../internal/solver/infer_decl.go)). G3 silently
+  rewrites `val q: {x} = p` for a borrowed `p` into an immutable reborrow rather than
+  an owned binding, which was sound in M4 but contradicts the affine rule landing in
+  this PR. Once a `val` binding is a flow site that consumes an owned source, a
+  borrowed source flowing into a bare owned annotation is no longer "silently
+  reborrow"; it is a use-after-move on the borrow's referent or, equivalently, a
+  borrow-into-owned escape. Delete the call to `reborrowAnnotation` in
+  `constrainInitAgainstAnnotation` so the constraint falls through to the ordinary
+  RefType<:bare arm, which already trips `BorrowEscapeError`. Users who want the
+  reborrow keep it explicit with `val q: &{x} = p`. Update the few solver tests that
+  were renamed in PR 3 from "Reborrow" to "BorrowAlias" — they already use the
+  explicit `&` form and continue to test what they claim.
 
 Tests: the motivating `leak` example errors at `p.x = 5`; `val q = storeGlobally(p);
 print(p.x)`; a field store that escapes; an owned argument consumed by the callee; a
-capture by an escaping closure; an if/else where only one branch moves.
+capture by an escaping closure; an if/else where only one branch moves; a
+`val q: {x} = p_borrow` that was silently accepted under G3 is now rejected.
 
 Acceptance: every flow site moves or borrows correctly, including per-branch
-behaviour, and use-after-move names both sites.
+behaviour, and use-after-move names both sites. A borrowed source flowing into a
+bare owned annotation is rejected, with the explicit `&` form preserved as the
+opt-in for an alias.
 
 ### PR 7 — Partial moves and field-level ownership
 

@@ -622,6 +622,8 @@ func (p *Printer) printExpr(expr ast.Expr) {
 		p.printBinaryExpr(e)
 	case *ast.UnaryExpr:
 		p.printUnaryExpr(e)
+	case *ast.BorrowExpr:
+		p.printBorrowExpr(e)
 	case *ast.LiteralExpr:
 		p.printLiteral(e.Lit)
 	case *ast.IdentExpr:
@@ -711,6 +713,37 @@ func (p *Printer) printUnaryExpr(expr *ast.UnaryExpr) {
 	p.printExpr(expr.Arg)
 	if needsParens {
 		p.writeString(")")
+	}
+}
+
+func (p *Printer) printBorrowExpr(expr *ast.BorrowExpr) {
+	p.writeString("&")
+	if expr.Mut {
+		p.writeString("mut ")
+	}
+	needsParens := borrowExprArgNeedsParens(expr.Arg)
+	if needsParens {
+		p.writeString("(")
+	}
+	p.printExpr(expr.Arg)
+	if needsParens {
+		p.writeString(")")
+	}
+}
+
+// borrowExprArgNeedsParens reports whether the operand of a borrow expression
+// must be parenthesized to round-trip. A nested borrow `&&p` would re-lex as the
+// AmpersandAmpersand token, so an inner BorrowExpr always needs parens. A
+// BinaryExpr would re-parse as `(&a) + b` rather than `&(a + b)`, since the
+// prefix `&` binds tighter than infix operators. UnaryExpr and value-producing
+// control forms similarly re-associate against the prefix.
+func borrowExprArgNeedsParens(e ast.Expr) bool {
+	switch e.(type) {
+	case *ast.BorrowExpr, *ast.BinaryExpr, *ast.UnaryExpr,
+		*ast.IfElseExpr, *ast.IfLetExpr, *ast.MatchExpr, *ast.DoExpr:
+		return true
+	default:
+		return false
 	}
 }
 

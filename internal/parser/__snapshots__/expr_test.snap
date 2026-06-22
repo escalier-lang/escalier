@@ -3665,3 +3665,137 @@
     },
 }
 ---
+
+[TestParseExprNoErrors/BorrowImmutable - 1]
+&ast.BorrowExpr{
+    Arg: &ast.IdentExpr{
+        Name: "p",
+        span: 1:2-1:3,
+    },
+    span: 1:1-1:3,
+}
+---
+
+[TestParseExprNoErrors/BorrowOfCallResult - 1]
+&ast.BorrowExpr{
+    Arg: &ast.CallExpr{
+        Callee: &ast.IdentExpr{
+            Name: "getValue",
+            span: 1:2-1:10,
+        },
+        span: 1:2-1:12,
+    },
+    span: 1:1-1:12,
+}
+---
+
+[TestParseExprNoErrors/BorrowOfMember - 1]
+&ast.BorrowExpr{
+    Arg: &ast.MemberExpr{
+        Object: &ast.IdentExpr{
+            Name: "obj",
+            span: 1:2-1:5,
+        },
+        Prop: &ast.Ident{
+            Name: "f",
+            span: 1:6-1:7,
+        },
+        span: 1:2-1:7,
+    },
+    span: 1:1-1:7,
+}
+---
+
+[TestParseExprNoErrors/BorrowMutable - 1]
+&ast.BorrowExpr{
+    Mut: true,
+    Arg: &ast.IdentExpr{
+        Name: "p",
+        span: 1:6-1:7,
+    },
+    span: 1:1-1:7,
+}
+---
+
+[TestParseExprNoErrors/BorrowMutableOfMember - 1]
+&ast.BorrowExpr{
+    Mut: true,
+    Arg: &ast.MemberExpr{
+        Object: &ast.IdentExpr{
+            Name: "obj",
+            span: 1:6-1:9,
+        },
+        Prop: &ast.Ident{
+            Name: "f",
+            span: 1:10-1:11,
+        },
+        span: 1:6-1:11,
+    },
+    span: 1:1-1:11,
+}
+---
+
+[TestParseExprNoErrors/LogicalNotOfBorrowMutable - 1]
+&ast.UnaryExpr{
+    Op: 2,
+    Arg: &ast.BorrowExpr{
+        Mut: true,
+        Arg: &ast.IdentExpr{
+            Name: "p",
+            span: 1:7-1:8,
+        },
+        span: 1:2-1:8,
+    },
+    span: 1:1-1:8,
+}
+---
+
+[TestParseExprNoErrors/UnaryMinusOfBorrow - 1]
+&ast.UnaryExpr{
+    Op: 1,
+    Arg: &ast.BorrowExpr{
+        Arg: &ast.IdentExpr{
+            Name: "p",
+            span: 1:3-1:4,
+        },
+        span: 1:2-1:4,
+    },
+    span: 1:1-1:4,
+}
+---
+
+[TestParseExprNoErrors/BorrowBindsTighterThanPlus - 1]
+&ast.BinaryExpr{
+    Left: &ast.BorrowExpr{
+        Arg: &ast.IdentExpr{
+            Name: "a",
+            span: 1:2-1:3,
+        },
+        span: 1:1-1:3,
+    },
+    Op: "+",
+    Right: &ast.IdentExpr{
+        Name: "b",
+        span: 1:6-1:7,
+    },
+    span: 1:1-1:7,
+}
+---
+
+[TestParseExprNoErrors/BorrowOfParenthesizedSum - 1]
+&ast.BorrowExpr{
+    Arg: &ast.BinaryExpr{
+        Left: &ast.IdentExpr{
+            Name: "a",
+            span: 1:3-1:4,
+        },
+        Op: "+",
+        Right: &ast.IdentExpr{
+            Name: "b",
+            span: 1:7-1:8,
+        },
+        span: 1:3-1:8,
+    },
+    span: 1:1-1:8,
+}
+---

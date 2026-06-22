@@ -64,6 +64,7 @@ const (
 	ReturnJoin                              // a fresh return-join var from inferFunc (the union of every return point)
 	IfElseBranch                            // a fresh branch-join var from inferIfElse (the union of cons / alt)
 	MatchBranch                             // a fresh branch-join var from inferMatch (the union of every arm body)
+	BorrowExprOrigin                        // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
 )
 
 // NodeResolver resolves an operand type to the AST node that minted it. M2.5's

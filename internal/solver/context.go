@@ -3,8 +3,8 @@ package solver
 import "github.com/escalier-lang/escalier/internal/soltype"
 
 // Context owns the engine's mutable counters. M1 carries ONLY varCounter; M4 D1
-// adds lifetimeCounter for the lifetime sort. The spike's paramLifetimes /
-// written fields live on the checker carrier (D2/C3), not here.
+// adds lifetimeCounter for the lifetime sort. M4 C3's read-after-write cache,
+// the `written` map, lives on the checker's per-function context, not here.
 //
 // M3 (PR5) adds the nullable probe pointer. The engine's bound-mutating core
 // (constrain/extrude) lives on *Context, so the speculation journal must live

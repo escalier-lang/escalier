@@ -239,6 +239,40 @@ func TestParseExprNoErrors(t *testing.T) {
 		"YieldFromInBinaryExpr": {
 			input: "x + yield from items",
 		},
+		"BorrowImmutable": {
+			input: "&p",
+		},
+		"BorrowMutable": {
+			input: "&mut p",
+		},
+		"BorrowOfMember": {
+			// Prefix `&` binds looser than the postfix `.`, so `&obj.f` parses
+			// as `&(obj.f)`, a borrow of the whole place path.
+			input: "&obj.f",
+		},
+		"BorrowMutableOfMember": {
+			input: "&mut obj.f",
+		},
+		"BorrowOfCallResult": {
+			input: "&getValue()",
+		},
+		"UnaryMinusOfBorrow": {
+			// A unary prefix wraps the borrow rather than colliding with it:
+			// `-&p` parses as `UnaryMinus(BorrowExpr(p))`.
+			input: "-&p",
+		},
+		"LogicalNotOfBorrowMutable": {
+			input: "!&mut p",
+		},
+		"BorrowBindsTighterThanPlus": {
+			// Prefix `&` binds tighter than infix `+`, so `&a + b` parses as
+			// `BinaryExpr(BorrowExpr(a), +, b)`. A borrow of the sum is written
+			// `&(a + b)`.
+			input: "&a + b",
+		},
+		"BorrowOfParenthesizedSum": {
+			input: "&(a + b)",
+		},
 	}
 
 	for name, test := range tests {

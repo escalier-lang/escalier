@@ -192,9 +192,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	paramTypes := make(map[string]soltype.Type, len(sig.Params))
 	for i, p := range sig.Params {
 		pt := c.paramType(p, lvl)
-		// A `mut`-borrow param without a declared lifetime originates a fresh
-		// lifetime here (D2), so a returned borrow carries the param's lifetime.
-		pt = c.attachParamLifetimes(pt, lvl)
+		// Rule 2 of PR 3. A bare annotation is owned and only an `&` annotation
+		// borrows. An `&` annotation already mints its lifetime in
+		// resolveLifetimeAnn, so a parameter has nothing to attach here. A bare
+		// `mut T` stays owned-mutable.
 		// An `open` un-annotated param keeps its usage-inferred object inexact at
 		// display time (B2). The marker only makes sense for an inferred var; an
 		// annotated param's exactness is fixed by its annotation, and paramType
@@ -344,8 +345,8 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 	default:
 		// M4 D3: several returns of borrowed objects that differ only in lifetime join
 		// into one borrow whose lifetime unites theirs. So `if c { return p } else {
-		// return q }` over two `mut` params is `mut ('a | 'b) {…}` rather than the
-		// un-joined `mut 'a {…} | mut 'b {…}`. A mixed or non-borrow set falls through to
+		// return q }` over two `&mut` params is `&('a | 'b) mut {…}` rather than the
+		// un-joined `&'a mut {…} | &'b mut {…}`. A mixed or non-borrow set falls through to
 		// the generic union below.
 		if joined, ok := c.joinBorrows(node, lvl, collected); ok {
 			return joined
@@ -529,34 +530,66 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 	return c.freshAt(lvl)
 }
 
-// attachParamLifetimes originates a borrow at a function parameter (M4 D2). A
-// RefType-typed param without a declared lifetime is a borrow of whatever the
-// caller lends, so it gets a fresh lifetime var that flows wherever the param
-// does — when the param is returned, that lifetime appears on the return type,
-// which is how `fn (p: mut {x: number}) { return p }` infers
-// `fn <'a>(p: mut 'a {x: number}) -> mut 'a {x: number}`. The fresh lifetime's
-// id is recorded as a param lifetime so it gets a name (`'a`) at display time.
+// inferBorrow types a borrow expression `&p` or `&mut p`. The result is a
+// RefType over the operand's carrier, carrying a fresh inferred lifetime. The
+// operand is constrained against the wrapper so the existing RefType<:RefType
+// and bare<:RefType rules enforce the rest. An immutable operand fails the
+// mutability check against `&mut`, and an owned operand satisfies a borrow slot
+// the same way a call-site argument does.
 //
-// A param that already carries a lifetime (an explicit `'a T` annotation) or that
-// is not a borrow at all is returned unchanged. The lifetime is attached by
-// mutating the RefType IN PLACE rather than minting a new wrapper: the param's
-// RefType is freshly resolved by resolveMutableTypeAnn and not yet shared, and its
-// pointer is the key under which resolveTypeAnn recorded AnnotationType provenance
-// (Prov is pointer-keyed). A new wrapper would drop that entry, so the "declared
-// mut here" related span on a borrow diagnostic would be lost. Mutating in place
-// also avoids an allocation per mut param.
-func (c *checker) attachParamLifetimes(t soltype.Type, lvl int) soltype.Type {
-	r, ok := t.(*soltype.RefType)
-	if !ok || r.Lt != nil {
-		return t
+// The inner is taken directly from the operand rather than a fresh variable, so
+// the borrow renders against the operand's actual shape. `&mut p` on an
+// owned-mutable `mut {x: number}` reads as `mut {x: number}` when the lifetime
+// elides locally, and as `&'a mut {x: number}` when the borrow reaches an output.
+//
+// Concretely, `fn f(p: mut {x: number}) { return &mut p }` renders as
+// `fn (p: mut {x: number}) -> mut {x: number}`. The fresh lifetime on `&mut p`
+// has no upper bound from `p` because `p` is owned (Lt nil), so it occurs only
+// positively in the return, fails the param-lifetime test, and D4 elides the
+// wrapper. The borrow is real in the type graph; the elision just hides it at
+// display time. A proper rejection of this dangling-borrow case needs the
+// directional lifetime bounds slated for M6.5.
+//
+// PR 3 introduces `&p` and `&mut p` as the explicit borrow form. A binding
+// initializer uses one of them to choose "borrow" over "move", as in
+// `val q = &p` and `val q = &mut p`. The move side establishes ownership only.
+// Consume and use-after-move enforcement lands in PR 6.
+func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
+	sub := c.inferExpr(scope, lvl, e.Arg)
+	// Absorb the ErrorType recovery sentinel: the operand already reported its
+	// own diagnostic, so the borrow must not cascade a second one. Record the
+	// sentinel against the BorrowExpr so downstream consumers see a typed node.
+	if _, ok := sub.(*soltype.ErrorType); ok {
+		c.recordType(e, sub)
+		return sub
 	}
-	// Mint the lifetime at the parameter's level — the same level as the param's
-	// inference var — so it sits above the function's generalize-level and is
-	// freshened per call (M4 D2.5), on par with a type parameter.
+	var inner soltype.RefInner
+	constrainable := true
+	switch s := sub.(type) {
+	case *soltype.RefType:
+		inner = s.Inner
+	case soltype.RefInner:
+		// ObjectType, TupleType, or TypeVarType — all valid borrow inners.
+		inner = s
+	default:
+		// A primitive, function, or promise is not a RefInner and has nothing to
+		// borrow. Report the diagnostic and build the wrapper around a fresh
+		// inner var so the surrounding expression stays cascade-safe. Skip the
+		// constrain step below. Routing `5 <: &T` through bare<:RefType would
+		// raise a second "cannot constrain" diagnostic on top of the single
+		// non-borrowable report.
+		c.reportUnsupportedFeature(e, "borrow of a non-borrowable type")
+		inner = c.freshAt(lvl)
+		constrainable = false
+	}
 	lt := c.ctx.freshLifetime(lvl)
-	c.paramLifetimes.Add(lt.ID)
-	r.Lt = lt
-	return r
+	target := &soltype.RefType{Mut: e.Mut, Lt: lt, Inner: inner}
+	c.recordProv(target, e, BorrowExprOrigin)
+	if constrainable {
+		c.constrain(e, sub, target)
+	}
+	c.recordType(e, target)
+	return target
 }
 
 // inferCall types a function application. It types the callee and each argument,
