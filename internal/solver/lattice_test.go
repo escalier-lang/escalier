@@ -7,17 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// inexactTuple builds the tail-tolerant tuple form `[…, ...]`. The mutual-
-// subsumption canonicalization tests read at a glance which arm they
-// exercise.
-func inexactTuple(elems ...soltype.Type) *soltype.TupleType {
-	return &soltype.TupleType{Elems: elems, Inexact: true}
-}
-
-func exactTuple(elems ...soltype.Type) *soltype.TupleType {
-	return &soltype.TupleType{Elems: elems}
-}
-
 // TestNewUnionNormalization is the table-driven sweep over newUnion's
 // Context-free steps. Each row exercises one of flatten, lattice identities,
 // ErrorType elision, dedup, canonical order, or collapse.
@@ -30,54 +19,59 @@ func TestNewUnionNormalization(t *testing.T) {
 	}{
 		{
 			name:  "nested union splices in, canonical order",
-			parts: []soltype.Type{&soltype.UnionType{Types: []soltype.Type{num(), str()}}, boolT()},
+			parts: []soltype.Type{parseType(t, "number | string"), parseType(t, "boolean")},
 			// PrimType members sort by the Prim enum order NumPrim, StrPrim,
 			// BoolPrim.
-			want: &soltype.UnionType{Types: []soltype.Type{num(), str(), boolT()}},
+			want: parseType(t, "number | string | boolean"),
 		},
 		{
-			name:    "inexact nested member makes outer inexact",
-			parts:   []soltype.Type{&soltype.UnionType{Types: []soltype.Type{num()}, Inexact: true}, str()},
+			name: "inexact nested member makes outer inexact",
+			// A nested inexact UnionType carries the inexact flag out to the
+			// outer mint. parseType cannot author an inexact union literal
+			// today (PR4 lands the surface marker), so the nested member is
+			// built from a parsed exact union with Inexact flipped.
+			parts:   []soltype.Type{&soltype.UnionType{Types: []soltype.Type{num()}, Inexact: true}, parseType(t, "string")},
 			inexact: false,
-			want:    &soltype.UnionType{Types: []soltype.Type{num(), str()}, Inexact: true},
+			want:    &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true},
 		},
 		{
 			name: "doubly-nested union splices fully",
-			// ((number | string) | boolean) collapses to number | string | boolean.
-			// The recursive splice walks the inner UnionType the outer member
-			// holds rather than stopping at one level.
+			// `((number | string) | boolean)` collapses to
+			// `number | string | boolean`. The recursive splice walks the
+			// inner UnionType the outer member holds rather than stopping at
+			// one level.
 			parts: []soltype.Type{&soltype.UnionType{Types: []soltype.Type{
-				&soltype.UnionType{Types: []soltype.Type{num(), str()}},
-				boolT(),
+				parseType(t, "number | string"),
+				parseType(t, "boolean"),
 			}}},
-			want: &soltype.UnionType{Types: []soltype.Type{num(), str(), boolT()}},
+			want: parseType(t, "number | string | boolean"),
 		},
 		{
 			name: "inexact propagates from a deeply nested member",
-			// number | ((string | ...)) — the inexact tail lives two levels
+			// `number | ((string | ...))` — the inexact tail lives two levels
 			// down and still makes the outer union inexact.
 			parts: []soltype.Type{
-				num(),
+				parseType(t, "number"),
 				&soltype.UnionType{Types: []soltype.Type{
-					&soltype.UnionType{Types: []soltype.Type{str()}, Inexact: true},
+					&soltype.UnionType{Types: parseTypes(t, "string"), Inexact: true},
 				}},
 			},
-			want: &soltype.UnionType{Types: []soltype.Type{num(), str()}, Inexact: true},
+			want: &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true},
 		},
 		{
 			name:  "never drops from union",
-			parts: []soltype.Type{num(), &soltype.NeverType{}},
-			want:  num(),
+			parts: parseTypes(t, "number", "never"),
+			want:  parseType(t, "number"),
 		},
 		{
 			name:  "all-never collapses to never",
-			parts: []soltype.Type{&soltype.NeverType{}, &soltype.NeverType{}},
-			want:  &soltype.NeverType{},
+			parts: parseTypes(t, "never", "never"),
+			want:  parseType(t, "never"),
 		},
 		{
 			name:  "error drops from union with other members",
-			parts: []soltype.Type{num(), &soltype.ErrorType{}},
-			want:  num(),
+			parts: []soltype.Type{parseType(t, "number"), &soltype.ErrorType{}},
+			want:  parseType(t, "number"),
 		},
 		{
 			name:  "error retained as sole member",
@@ -86,29 +80,29 @@ func TestNewUnionNormalization(t *testing.T) {
 		},
 		{
 			name:  "error retained when other members are all lattice identities",
-			parts: []soltype.Type{&soltype.ErrorType{}, &soltype.NeverType{}},
+			parts: []soltype.Type{&soltype.ErrorType{}, parseType(t, "never")},
 			want:  &soltype.ErrorType{},
 		},
 		{
 			name:  "structural dedup",
-			parts: []soltype.Type{num(), num(), str()},
-			want:  &soltype.UnionType{Types: []soltype.Type{num(), str()}},
+			parts: parseTypes(t, "number", "number", "string"),
+			want:  parseType(t, "number | string"),
 		},
 		{
 			name:  "empty union collapses to never",
 			parts: nil,
-			want:  &soltype.NeverType{},
+			want:  parseType(t, "never"),
 		},
 		{
 			name:  "single exact member collapses to that member",
-			parts: []soltype.Type{num()},
-			want:  num(),
+			parts: parseTypes(t, "number"),
+			want:  parseType(t, "number"),
 		},
 		{
 			name:    "inexact single member keeps the wrapper",
-			parts:   []soltype.Type{num()},
+			parts:   parseTypes(t, "number"),
 			inexact: true,
-			want:    &soltype.UnionType{Types: []soltype.Type{num()}, Inexact: true},
+			want:    &soltype.UnionType{Types: parseTypes(t, "number"), Inexact: true},
 		},
 	}
 	for _, tt := range tests {
@@ -128,41 +122,34 @@ func TestNewIntersectionNormalization(t *testing.T) {
 	}{
 		{
 			name:  "nested intersection splices in, canonical order",
-			parts: []soltype.Type{&soltype.IntersectionType{Types: []soltype.Type{num(), exactObj(propElem("a", num()))}}, exactObj(propElem("b", str()))},
-			want:  &soltype.IntersectionType{Types: []soltype.Type{num(), exactObj(propElem("a", num())), exactObj(propElem("b", str()))}},
+			parts: []soltype.Type{parseType(t, "number & {a: number}"), parseType(t, "{b: string}")},
+			want:  parseType(t, "number & {a: number} & {b: string}"),
 		},
 		{
 			name: "doubly-nested intersection splices fully",
-			// (({a} & {b}) & number) collapses to number & {a} & {b}. The
-			// recursive splice walks the inner IntersectionType the outer
-			// member holds.
+			// `(({a} & {b}) & number)` collapses to `number & {a} & {b}`.
+			// The recursive splice walks the inner IntersectionType the
+			// outer member holds.
 			parts: []soltype.Type{&soltype.IntersectionType{Types: []soltype.Type{
-				&soltype.IntersectionType{Types: []soltype.Type{
-					exactObj(propElem("a", num())),
-					exactObj(propElem("b", str())),
-				}},
-				num(),
+				parseType(t, "{a: number} & {b: string}"),
+				parseType(t, "number"),
 			}}},
-			want: &soltype.IntersectionType{Types: []soltype.Type{
-				num(),
-				exactObj(propElem("a", num())),
-				exactObj(propElem("b", str())),
-			}},
+			want: parseType(t, "number & {a: number} & {b: string}"),
 		},
 		{
 			name:  "unknown drops from intersection",
-			parts: []soltype.Type{num(), &soltype.UnknownType{}},
-			want:  num(),
+			parts: parseTypes(t, "number", "unknown"),
+			want:  parseType(t, "number"),
 		},
 		{
 			name:  "all-unknown collapses to unknown",
-			parts: []soltype.Type{&soltype.UnknownType{}, &soltype.UnknownType{}},
-			want:  &soltype.UnknownType{},
+			parts: parseTypes(t, "unknown", "unknown"),
+			want:  parseType(t, "unknown"),
 		},
 		{
 			name:  "error drops from intersection with other members",
-			parts: []soltype.Type{num(), &soltype.ErrorType{}},
-			want:  num(),
+			parts: []soltype.Type{parseType(t, "number"), &soltype.ErrorType{}},
+			want:  parseType(t, "number"),
 		},
 		{
 			name:  "error retained as sole member",
@@ -171,23 +158,23 @@ func TestNewIntersectionNormalization(t *testing.T) {
 		},
 		{
 			name:  "error retained when other members are all lattice identities",
-			parts: []soltype.Type{&soltype.ErrorType{}, &soltype.UnknownType{}},
+			parts: []soltype.Type{&soltype.ErrorType{}, parseType(t, "unknown")},
 			want:  &soltype.ErrorType{},
 		},
 		{
 			name:  "structural dedup",
-			parts: []soltype.Type{num(), str(), num()},
-			want:  &soltype.IntersectionType{Types: []soltype.Type{num(), str()}},
+			parts: parseTypes(t, "number", "string", "number"),
+			want:  parseType(t, "number & string"),
 		},
 		{
 			name:  "empty intersection collapses to unknown",
 			parts: nil,
-			want:  &soltype.UnknownType{},
+			want:  parseType(t, "unknown"),
 		},
 		{
 			name:  "single member collapses to that member",
-			parts: []soltype.Type{num()},
-			want:  num(),
+			parts: parseTypes(t, "number"),
+			want:  parseType(t, "number"),
 		},
 	}
 	for _, tt := range tests {
@@ -202,15 +189,15 @@ func TestNewIntersectionNormalization(t *testing.T) {
 // drift. A union of a member list and of its shuffle must render identically
 // and compare equalType-equal.
 func TestNewUnionCanonicalOrder(t *testing.T) {
-	a := newUnion(nil, []soltype.Type{num(), str()}, false)
-	b := newUnion(nil, []soltype.Type{str(), num()}, false)
+	a := newUnion(nil, parseTypes(t, "number", "string"), false)
+	b := newUnion(nil, parseTypes(t, "string", "number"), false)
 	require.True(t, equalType(a, b), "expected canonical order to equate both shuffles")
 	require.Equal(t, soltype.Print(a), soltype.Print(b))
 }
 
 func TestNewIntersectionCanonicalOrder(t *testing.T) {
-	a := newIntersection(nil, []soltype.Type{num(), str()})
-	b := newIntersection(nil, []soltype.Type{str(), num()})
+	a := newIntersection(nil, parseTypes(t, "number", "string"))
+	b := newIntersection(nil, parseTypes(t, "string", "number"))
 	require.True(t, equalType(a, b), "expected canonical order to equate both shuffles")
 	require.Equal(t, soltype.Print(a), soltype.Print(b))
 }
@@ -218,7 +205,7 @@ func TestNewIntersectionCanonicalOrder(t *testing.T) {
 // TestNewUnionInexactPrintRoundTrip pins the printer's trailing `...` rendering
 // for an inexact union, so the flag round-trips to surface syntax.
 func TestNewUnionInexactPrintRoundTrip(t *testing.T) {
-	u := newUnion(nil, []soltype.Type{num(), str()}, true)
+	u := newUnion(nil, parseTypes(t, "number", "string"), true)
 	require.Equal(t, "number | string | ...", soltype.Print(u))
 }
 
@@ -227,8 +214,8 @@ func TestNewUnionInexactPrintRoundTrip(t *testing.T) {
 // reduces to `number`.
 func TestNewUnionSubsumeWithContext(t *testing.T) {
 	c := &Context{}
-	got := newUnion(c, []soltype.Type{num(), numLit(1)}, false)
-	require.True(t, equalType(num(), got), "got %s", soltype.Print(got))
+	got := newUnion(c, parseTypes(t, "number", "1"), false)
+	require.True(t, equalType(parseType(t, "number"), got), "got %s", soltype.Print(got))
 }
 
 // TestNewIntersectionSubsumeWithContext is the meet twin. An intersection
@@ -237,12 +224,11 @@ func TestNewUnionSubsumeWithContext(t *testing.T) {
 // `{x, ...} & {x, y, ...}` reduces to `{x, y, ...}`.
 func TestNewIntersectionSubsumeWithContext(t *testing.T) {
 	c := &Context{}
-	got := newIntersection(c, []soltype.Type{
-		inexactObj(propElem("x", num())),
-		inexactObj(propElem("x", num()), propElem("y", str())),
-	})
-	want := inexactObj(propElem("x", num()), propElem("y", str()))
-	require.True(t, equalType(want, got), "got %s", soltype.Print(got))
+	got := newIntersection(c, parseTypes(t,
+		"{x: number, ...}",
+		"{x: number, y: string, ...}",
+	))
+	require.True(t, equalType(parseType(t, "{x: number, y: string, ...}"), got), "got %s", soltype.Print(got))
 }
 
 // TestSubsumeMutualPicksCanonicalSurvivor pins the M6 PR1 canonicalization
@@ -254,8 +240,8 @@ func TestNewIntersectionSubsumeWithContext(t *testing.T) {
 // different members. With it, both produce the same survivor.
 func TestSubsumeMutualPicksCanonicalSurvivor(t *testing.T) {
 	c := &Context{}
-	exact := exactTuple(num())
-	inexact := inexactTuple(num())
+	exact := parseType(t, "[number]")
+	inexact := parseType(t, "[number, ...]")
 	t.Run("union forward order", func(t *testing.T) {
 		got := newUnion(c, []soltype.Type{exact, inexact}, false)
 		require.IsType(t, &soltype.TupleType{}, got)
@@ -282,17 +268,14 @@ func TestSubsumeMutualPicksCanonicalSurvivor(t *testing.T) {
 // lattice-pruned but not subsumed. PR8 closes this gap at the finalization
 // boundaries.
 func TestNewUnionNoSubsumeWithoutContext(t *testing.T) {
-	got := newUnion(nil, []soltype.Type{num(), numLit(1)}, false)
-	// PrimType ranks before LitType in the kind table, so num leads.
-	want := &soltype.UnionType{Types: []soltype.Type{num(), numLit(1)}}
+	got := newUnion(nil, parseTypes(t, "number", "1"), false)
+	// PrimType ranks before LitType in the kind table, so number leads.
+	want := parseType(t, "number | 1")
 	require.True(t, equalType(want, got), "got %s", soltype.Print(got))
 }
 
 func TestNewIntersectionNoSubsumeWithoutContext(t *testing.T) {
-	got := newIntersection(nil, []soltype.Type{
-		inexactObj(propElem("x", num())),
-		inexactObj(propElem("x", num()), propElem("y", str())),
-	})
+	got := newIntersection(nil, parseTypes(t, "{x: number, ...}", "{x: number, y: string, ...}"))
 	require.IsType(t, &soltype.IntersectionType{}, got)
 	it := got.(*soltype.IntersectionType)
 	require.Len(t, it.Types, 2)
@@ -300,14 +283,54 @@ func TestNewIntersectionNoSubsumeWithoutContext(t *testing.T) {
 
 // TestNewUnionSubsumptionSkipsVar pins the concrete gate: a member that still
 // carries a free type variable is left alone, even with a Context, to avoid
-// speculatively pinning that variable mid-walk.
+// speculatively pinning that variable mid-walk. The free var has no surface
+// form parseType can produce, so the test builds it directly.
 func TestNewUnionSubsumptionSkipsVar(t *testing.T) {
 	c := &Context{}
 	v := c.freshVar(0)
-	got := newUnion(c, []soltype.Type{num(), v}, false)
+	got := newUnion(c, []soltype.Type{parseType(t, "number"), v}, false)
 	require.IsType(t, &soltype.UnionType{}, got)
 	u := got.(*soltype.UnionType)
 	require.Len(t, u.Types, 2)
+}
+
+// TestVoidAndNullSortLast pins the convention that the absence markers
+// NullType and Void appear after data members in canonical order, with
+// NullType before Void. A mixed union such as `number | null | void`
+// surfaces the data first and the absence markers last.
+func TestVoidAndNullSortLast(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []soltype.Type
+		want  string
+	}{
+		{
+			name:  "void sorts after a data member",
+			parts: parseTypes(t, "void", "number"),
+			want:  "number | void",
+		},
+		{
+			name:  "null sorts after a data member",
+			parts: parseTypes(t, "null", "number"),
+			want:  "number | null",
+		},
+		{
+			name:  "null sorts before void",
+			parts: parseTypes(t, "void", "null", "number"),
+			want:  "number | null | void",
+		},
+		{
+			name:  "null before void independent of input order",
+			parts: parseTypes(t, "void", "null"),
+			want:  "null | void",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := newUnion(nil, tt.parts, false)
+			require.Equal(t, tt.want, soltype.Print(got))
+		})
+	}
 }
 
 // TestCompareTypeConsistentWithEqual pins compareType's consistency
@@ -318,11 +341,13 @@ func TestCompareTypeConsistentWithEqual(t *testing.T) {
 		name string
 		a, b soltype.Type
 	}{
-		{"primitives", num(), num()},
-		{"literals", numLit(5), numLit(5)},
-		{"never", &soltype.NeverType{}, &soltype.NeverType{}},
-		{"unknown", &soltype.UnknownType{}, &soltype.UnknownType{}},
-		{"objects equal up to order", exactObj(propElem("a", num()), propElem("b", str())), exactObj(propElem("b", str()), propElem("a", num()))},
+		{"primitives", parseType(t, "number"), parseType(t, "number")},
+		{"literals", parseType(t, "5"), parseType(t, "5")},
+		{"never", parseType(t, "never"), parseType(t, "never")},
+		{"unknown", parseType(t, "unknown"), parseType(t, "unknown")},
+		// equalType treats objects as equal up to property order; the
+		// comparator must agree.
+		{"objects equal up to order", parseType(t, "{a: number, b: string}"), parseType(t, "{b: string, a: number}")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -339,49 +364,10 @@ func TestCompareTypeConsistentWithEqual(t *testing.T) {
 func TestCompareTypeKindOrder(t *testing.T) {
 	c := &Context{}
 	v := c.freshVar(0)
-	require.Less(t, compareType(v, num()), 0, "TypeVarType < PrimType")
-	require.Less(t, compareType(num(), numLit(1)), 0, "PrimType < LitType")
-	require.Less(t, compareType(&soltype.NeverType{}, v), 0, "NeverType < TypeVarType")
-	require.Less(t, compareType(&soltype.UnknownType{}, v), 0, "UnknownType < TypeVarType")
-}
-
-// TestVoidAndNullSortLast pins the convention that the absence markers
-// NullType and Void appear after data members in canonical order, with
-// NullType before Void. A mixed union such as `number | null | void`
-// surfaces the data first and the absence markers last.
-func TestVoidAndNullSortLast(t *testing.T) {
-	tests := []struct {
-		name  string
-		parts []soltype.Type
-		want  string
-	}{
-		{
-			name:  "void sorts after a data member",
-			parts: []soltype.Type{&soltype.Void{}, num()},
-			want:  "number | void",
-		},
-		{
-			name:  "null sorts after a data member",
-			parts: []soltype.Type{&soltype.NullType{}, num()},
-			want:  "number | null",
-		},
-		{
-			name:  "null sorts before void",
-			parts: []soltype.Type{&soltype.Void{}, &soltype.NullType{}, num()},
-			want:  "number | null | void",
-		},
-		{
-			name:  "null before void independent of input order",
-			parts: []soltype.Type{&soltype.Void{}, &soltype.NullType{}},
-			want:  "null | void",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := newUnion(nil, tt.parts, false)
-			require.Equal(t, tt.want, soltype.Print(got))
-		})
-	}
+	require.Less(t, compareType(v, parseType(t, "number")), 0, "TypeVarType < PrimType")
+	require.Less(t, compareType(parseType(t, "number"), parseType(t, "1")), 0, "PrimType < LitType")
+	require.Less(t, compareType(parseType(t, "never"), v), 0, "NeverType < TypeVarType")
+	require.Less(t, compareType(parseType(t, "unknown"), v), 0, "UnknownType < TypeVarType")
 }
 
 // TestCompareTypeDistinctRefsWithUnnamedLifetimes pins the structural
@@ -389,7 +375,8 @@ func TestVoidAndNullSortLast(t *testing.T) {
 // unnamed LifetimeVars print identically when the top-level Print supplies
 // no name map, so a Print-based tie-break would collapse them. The
 // structural comparator orders them by LifetimeVar.ID and keeps them
-// strictly distinct.
+// strictly distinct. The parseType helper does not author borrows with
+// LifetimeVars, so the test builds the RefTypes directly.
 func TestCompareTypeDistinctRefsWithUnnamedLifetimes(t *testing.T) {
 	c := &Context{}
 	lt1 := c.freshLifetime(0)
