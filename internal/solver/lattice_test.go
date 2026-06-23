@@ -233,31 +233,40 @@ func TestNewIntersectionSubsumeWithContext(t *testing.T) {
 
 // TestSubsumeMutualPicksCanonicalSurvivor pins the M6 PR1 canonicalization
 // fix. When two members mutually subsume but are not equalType-equal, the
-// survivor must be deterministic across input shuffles. The tuple constrain
-// rule admits `[T] <: [T, ...]` and `[T, ...] <: [T]` at equal length, so
-// the two tuples are mutual subtypes, but their Inexact flags distinguish
-// them structurally. Without the pre-sort, [A, B] and [B, A] would drop
-// different members. With it, both produce the same survivor.
+// survivor must be deterministic across input shuffles.
+//
+// Function callback subtyping is the case that triggers mutual subsumption
+// today. A typed-rest function `(...xs: T[]) -> R` and an inexact
+// zero-param function `(...) -> R` are not equalType, since they differ in
+// Inexact and in declared param count, but they share an accept-set of
+// [0, ∞) and the same return, so each is a subtype of the other under the
+// callback rule. Without the pre-sort, the loop would drop whichever was
+// reached first as `i`, and a shuffled input would drop the other. With
+// the pre-sort, both input orders pick the same survivor.
+//
+// parseType cannot author FuncTypeAnn yet, so the test builds the two
+// functions directly.
 func TestSubsumeMutualPicksCanonicalSurvivor(t *testing.T) {
 	c := &Context{}
-	exact := parseType(t, "[number]")
-	inexact := parseType(t, "[number, ...]")
-	t.Run("union forward order", func(t *testing.T) {
-		got := newUnion(c, []soltype.Type{exact, inexact}, false)
-		require.IsType(t, &soltype.TupleType{}, got)
-	})
-	t.Run("union reverse order", func(t *testing.T) {
-		forward := newUnion(c, []soltype.Type{exact, inexact}, false)
-		reverse := newUnion(c, []soltype.Type{inexact, exact}, false)
+	restFn := &soltype.FuncType{
+		Params: []*soltype.FuncParam{
+			{Pattern: &soltype.IdentPat{Name: "xs"}, Type: &soltype.UnknownType{}, Rest: true},
+		},
+		Ret: num(),
+	}
+	inexactFn := &soltype.FuncType{Ret: num(), Inexact: true}
+	require.False(t, equalType(restFn, inexactFn), "precondition: structurally distinct")
+	require.Empty(t, c.Constrain(restFn, inexactFn), "precondition: restFn <: inexactFn")
+	require.Empty(t, c.Constrain(inexactFn, restFn), "precondition: inexactFn <: restFn")
+
+	t.Run("union order-independent", func(t *testing.T) {
+		forward := newUnion(c, []soltype.Type{restFn, inexactFn}, false)
+		reverse := newUnion(c, []soltype.Type{inexactFn, restFn}, false)
 		require.True(t, equalType(forward, reverse), "forward %s, reverse %s", soltype.Print(forward), soltype.Print(reverse))
 	})
-	t.Run("intersection forward order", func(t *testing.T) {
-		got := newIntersection(c, []soltype.Type{exact, inexact})
-		require.IsType(t, &soltype.TupleType{}, got)
-	})
-	t.Run("intersection reverse order", func(t *testing.T) {
-		forward := newIntersection(c, []soltype.Type{exact, inexact})
-		reverse := newIntersection(c, []soltype.Type{inexact, exact})
+	t.Run("intersection order-independent", func(t *testing.T) {
+		forward := newIntersection(c, []soltype.Type{restFn, inexactFn})
+		reverse := newIntersection(c, []soltype.Type{inexactFn, restFn})
 		require.True(t, equalType(forward, reverse), "forward %s, reverse %s", soltype.Print(forward), soltype.Print(reverse))
 	})
 }

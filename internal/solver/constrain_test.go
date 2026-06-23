@@ -360,6 +360,22 @@ func TestConstrainTuple(t *testing.T) {
 		require.Empty(t, c.Constrain(t1, t2))
 	})
 
+	// [number, ...] <: [number]: an inexact source carries an open tail of
+	// trailing elements, so it cannot satisfy an exact target whose length
+	// is fixed, even when the declared prefixes match. The error mirrors
+	// the ObjectType InexactIntoExactError.
+	t.Run("inexact into exact rejects", func(t *testing.T) {
+		c := &Context{}
+		t1 := &soltype.TupleType{Elems: []soltype.Type{num()}, Inexact: true}
+		t2 := &soltype.TupleType{Elems: []soltype.Type{num()}}
+		errs := c.Constrain(t1, t2)
+		require.Equal(t, []string{"cannot constrain inexact tuple <: exact tuple"}, Messages(errs))
+		ie, ok := errs[0].(*InexactTupleIntoExactError)
+		require.True(t, ok)
+		require.Same(t, t1, ie.Sub)
+		require.Same(t, t2, ie.Super)
+	})
+
 	// [number] <: [number, string, ...]: too SHORT for the inexact super's declared
 	// prefix is still a length mismatch — inexactness widens only on the long side.
 	t.Run("shorter than inexact prefix rejects", func(t *testing.T) {

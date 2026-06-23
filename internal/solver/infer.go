@@ -195,6 +195,8 @@ func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
 			err.prov, err.site = c.prov, n
 		case *InexactIntoExactError:
 			err.prov, err.site = c.prov, n
+		case *InexactTupleIntoExactError:
+			err.prov, err.site = c.prov, n
 		case *ExtraPropertyError:
 			err.prov, err.site = c.prov, n
 		case *OptionalPropertyError:

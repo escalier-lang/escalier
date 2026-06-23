@@ -111,6 +111,16 @@ type InexactIntoExactError struct {
 	site       ast.Node     // M2.5: constraint node fallback
 }
 
+// InexactTupleIntoExactError is the tuple twin of InexactIntoExactError. An
+// inexact tuple `[T, ...]` carries an open tail of unknown trailing elements,
+// so it cannot satisfy an exact tuple target `[T]` whose length is fixed,
+// even when the declared element prefixes match.
+type InexactTupleIntoExactError struct {
+	Sub, Super *soltype.TupleType
+	prov       NodeResolver
+	site       ast.Node
+}
+
 // ExtraPropertyError fires on ObjectType <: ObjectType when the super is exact and
 // the sub carries a property the super does not declare — width is rejected against
 // an exact target. One error fires per extra property, carrying its name.
@@ -211,6 +221,7 @@ func (*SpreadNotTupleError) isSolverError()      {}
 func (*InexactTupleSpreadError) isSolverError()  {}
 func (*MissingPropertyError) isSolverError()     {}
 func (*InexactIntoExactError) isSolverError()    {}
+func (*InexactTupleIntoExactError) isSolverError() {}
 func (*ExtraPropertyError) isSolverError()       {}
 func (*ExtraElementError) isSolverError()        {}
 func (*OptionalPropertyError) isSolverError()    {}
@@ -248,6 +259,11 @@ func (e *MissingPropertyError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, ops...)
 }
 func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.Sub) } // the receiver
+
+func (e *InexactTupleIntoExactError) Span() ast.Span {
+	return spanOf(e.prov, e.Sub, e.site)
+}
+func (e *InexactTupleIntoExactError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *InexactIntoExactError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
@@ -848,6 +864,10 @@ func (e *MissingPropertyError) Message() string {
 
 func (e *InexactIntoExactError) Message() string {
 	return "cannot constrain inexact object <: exact object"
+}
+
+func (e *InexactTupleIntoExactError) Message() string {
+	return "cannot constrain inexact tuple <: exact tuple"
 }
 
 func (e *ExtraPropertyError) Message() string {

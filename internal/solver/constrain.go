@@ -209,22 +209,32 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	case *soltype.TupleType:
 		if sup, ok := super.(*soltype.TupleType); ok {
-			// Element-wise covariant over the shared prefix. Length tolerance follows
-			// the super's exactness: an exact super (`[A, B]`) fixes its length, while
-			// an inexact super (`[A, ...]`) only requires the sub to be at least as
-			// long — the longer <: shorter case the `...` tail permits. This mirrors
-			// the ObjectType width rule (inexact super = width-tolerant).
+			// Element-wise covariant over the shared prefix. Length tolerance
+			// follows the super's exactness. An exact super such as `[A, B]`
+			// fixes its length. An inexact super such as `[A, ...]` only
+			// requires the sub to be at least as long, the longer <: shorter
+			// case the `...` tail permits. The ObjectType width rule has the
+			// same shape: an inexact super is width-tolerant.
 			if sup.Inexact {
 				if len(sub.Elems) < len(sup.Elems) {
 					return []SolverError{&TupleLengthMismatchError{Sub: sub, Super: sup}}
 				}
-			} else if len(sub.Elems) != len(sup.Elems) {
-				return []SolverError{&TupleLengthMismatchError{Sub: sub, Super: sup}}
+			} else {
+				if len(sub.Elems) != len(sup.Elems) {
+					return []SolverError{&TupleLengthMismatchError{Sub: sub, Super: sup}}
+				}
+				// An exact super pins its length. An inexact sub whose
+				// declared elements happen to match is still rejected, since
+				// the open tail could carry extra trailing elements at
+				// runtime. Mirrors the ObjectType InexactIntoExactError rule.
+				if sub.Inexact {
+					return []SolverError{&InexactTupleIntoExactError{Sub: sub, Super: sup}}
+				}
 			}
 			var errs []SolverError
-			// Range over sup.Elems, not sub.Elems: an inexact super (`[A, ...]`) lets
-			// the sub be longer, so sup is the shorter side. This walks the shared
-			// prefix and keeps sup.Elems[i] in bounds.
+			// Range over sup.Elems, not sub.Elems: an inexact super such as
+			// `[A, ...]` lets the sub be longer, so sup is the shorter side.
+			// This walks the shared prefix and keeps sup.Elems[i] in bounds.
 			for i := range sup.Elems {
 				errs = append(errs, c.constrain(sub.Elems[i], sup.Elems[i], seen)...) // covariant
 			}
