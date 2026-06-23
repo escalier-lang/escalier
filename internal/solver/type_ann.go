@@ -81,6 +81,10 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 		return c.resolveMutableTypeAnn(ta, lvl)
 	case *ast.RefTypeAnn:
 		return c.resolveRefTypeAnn(ta, lvl)
+	case *ast.UnionTypeAnn:
+		return c.resolveUnionTypeAnn(ta, lvl)
+	case *ast.IntersectionTypeAnn:
+		return c.resolveIntersectionTypeAnn(ta, lvl)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -166,6 +170,72 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 	t := &soltype.TupleType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// resolveUnionTypeAnn lowers `A | B | …` to a soltype.UnionType through
+// newUnion. Each member resolves recursively; an unsupported member recovers
+// to a fresh var so the union shape survives — mirroring the Promise<bad> and
+// object/tuple cascade-safe recovery. The Context-bearing newUnion call also
+// runs subsumed-member elimination, so a literal-and-its-primitive pair like
+// `1 | number` collapses to `number` at the annotation site. PR4 lands the
+// surface `... ` inexact marker; until then ast.UnionTypeAnn carries no flag
+// and the resulting union is always exact.
+func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
+	members := make([]soltype.Type, len(ta.Types))
+	for i, m := range ta.Types {
+		if t, ok := c.resolveTypeAnn(m, lvl); ok {
+			members[i] = t
+		} else {
+			members[i] = c.freshAt(lvl)
+		}
+	}
+	t := newUnion(c.ctx, members, false)
+	// Record provenance only when newUnion produced a FRESH pointer. A
+	// single-member collapse (`number | number` ⇒ `number`, or the
+	// subsumption case `1 | number` ⇒ `number`) returns an input member's
+	// pointer that already carries Prov from its own annotation; re-recording
+	// against the outer union node would overwrite the narrower blame and
+	// trip the debugProv unique-pointer guard.
+	if !isInputMember(t, members) {
+		c.recordProv(t, ta, AnnotationType)
+	}
+	return t, true
+}
+
+// resolveIntersectionTypeAnn is the meet twin of resolveUnionTypeAnn. It
+// lowers `A & B & …` through newIntersection. The Context-bearing call runs
+// subsumed-member elimination, so a pair like `{x} & {x, y}` collapses to the
+// narrower `{x, y}` at the annotation site. An IntersectionType carries no
+// exactness flag — exactness is a property of the result, not the meet.
+func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl int) (soltype.Type, bool) {
+	members := make([]soltype.Type, len(ta.Types))
+	for i, m := range ta.Types {
+		if t, ok := c.resolveTypeAnn(m, lvl); ok {
+			members[i] = t
+		} else {
+			members[i] = c.freshAt(lvl)
+		}
+	}
+	t := newIntersection(c.ctx, members)
+	// Skip Prov recording on a collapsed result — same reason as the union
+	// arm.
+	if !isInputMember(t, members) {
+		c.recordProv(t, ta, AnnotationType)
+	}
+	return t, true
+}
+
+// isInputMember reports whether t shares pointer identity with one of the
+// resolved member types. The smart constructors return an input member as-is
+// for the single-member collapse case, so this guard avoids re-recording Prov
+// against a pointer that already carries a child annotation's blame.
+func isInputMember(t soltype.Type, members []soltype.Type) bool {
+	for _, m := range members {
+		if t == m {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveMutableTypeAnn lowers a `mut T` annotation to an owned-mutable borrow,

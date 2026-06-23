@@ -121,6 +121,19 @@ type InexactTupleIntoExactError struct {
 	site       ast.Node
 }
 
+// InexactUnionIntoExactError is the union twin of InexactIntoExactError. An
+// inexact union `A | B | ...` carries an open tail of unknown additional
+// members, so it cannot flow into a closed target — an exact union, or any
+// non-union concrete the open tail could violate. The base form lands in M6 PR2.
+// The flag itself, and the parser surface for `A | B | ...`, lands in PR4, so
+// the rule fires only against an internally-built inexact union until then.
+type InexactUnionIntoExactError struct {
+	Sub   *soltype.UnionType
+	Super soltype.Type
+	prov  NodeResolver
+	site  ast.Node
+}
+
 // ExtraPropertyError fires on ObjectType <: ObjectType when the super is exact and
 // the sub carries a property the super does not declare — width is rejected against
 // an exact target. One error fires per extra property, carrying its name.
@@ -222,6 +235,7 @@ func (*InexactTupleSpreadError) isSolverError()  {}
 func (*MissingPropertyError) isSolverError()     {}
 func (*InexactIntoExactError) isSolverError()    {}
 func (*InexactTupleIntoExactError) isSolverError() {}
+func (*InexactUnionIntoExactError) isSolverError() {}
 func (*ExtraPropertyError) isSolverError()       {}
 func (*ExtraElementError) isSolverError()        {}
 func (*OptionalPropertyError) isSolverError()    {}
@@ -269,6 +283,11 @@ func (e *InexactIntoExactError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
 }
 func (e *InexactIntoExactError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+
+func (e *InexactUnionIntoExactError) Span() ast.Span {
+	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
+}
+func (e *InexactUnionIntoExactError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *ExtraPropertyError) Span() ast.Span {
 	// The extra property lives on the sub (source); blame it, degrade to the super
@@ -868,6 +887,10 @@ func (e *InexactIntoExactError) Message() string {
 
 func (e *InexactTupleIntoExactError) Message() string {
 	return "cannot constrain inexact tuple <: exact tuple"
+}
+
+func (e *InexactUnionIntoExactError) Message() string {
+	return fmt.Sprintf("cannot constrain %s <: %s", describe(e.Sub), describe(e.Super))
 }
 
 func (e *ExtraPropertyError) Message() string {
