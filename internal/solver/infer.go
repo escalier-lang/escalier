@@ -207,6 +207,8 @@ func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
 			err.prov, err.site = c.prov, n
 		case *BorrowEscapeError:
 			err.prov, err.site = c.prov, n
+		case *ReadonlyFieldError:
+			err.site = n
 		}
 		c.errs = append(c.errs, e)
 	}

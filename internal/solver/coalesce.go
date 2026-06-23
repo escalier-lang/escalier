@@ -430,6 +430,7 @@ func usageObject(t soltype.Type) (obj *soltype.ObjectType, write bool, ok bool) 
 func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType {
 	types := map[string][]soltype.Type{} // property name → its distinct types, in first-seen order
 	optional := map[string]bool{}        // property name → optional in every object seen so far
+	readonly := map[string]bool{}        // property name → readonly in any object seen so far
 	var order []string
 	for _, o := range objs {
 		for _, elem := range o.Elems {
@@ -440,6 +441,10 @@ func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType
 			} else {
 				optional[pe.Name] = optional[pe.Name] && pe.Optional // optional iff optional in all
 			}
+			// readonly is conservative: a merged field stays read-only if any
+			// contributing object marks it so, since a single read-only view forbids
+			// the reassignment the merged field must also forbid.
+			readonly[pe.Name] = readonly[pe.Name] || pe.Readonly
 			types[pe.Name] = appendDistinct(types[pe.Name], pe.Type)
 		}
 	}
@@ -450,7 +455,7 @@ func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType
 		// shared property's type is normalized like every other lattice mint.
 		// Context is nil because the per-property folded types are already
 		// coalesced, so the core normalization is enough.
-		elems[i] = &soltype.PropertyElem{Name: name, Type: newIntersection(nil, types[name]), Optional: optional[name]}
+		elems[i] = &soltype.PropertyElem{Name: name, Type: newIntersection(nil, types[name]), Optional: optional[name], Readonly: readonly[name]}
 	}
 	// Closed (Inexact: false) by Policy A; an `open` param leaves it inexact (B2).
 	return &soltype.ObjectType{Elems: elems, Inexact: open}
@@ -560,7 +565,7 @@ func equalType(a, b soltype.Type) bool {
 		for _, ae := range a.Elems {
 			ap := soltype.AsProperty(ae)
 			bp, ok := b.Prop(ap.Name)
-			if !ok || ap.Optional != bp.Optional || !equalType(ap.Type, bp.Type) {
+			if !ok || ap.Optional != bp.Optional || ap.Readonly != bp.Readonly || !equalType(ap.Type, bp.Type) {
 				return false
 			}
 		}

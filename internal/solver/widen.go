@@ -38,7 +38,7 @@ func widen(t soltype.Type) soltype.Type {
 		elems := make([]soltype.ObjTypeElem, len(t.Elems))
 		for i, e := range t.Elems {
 			p := soltype.AsProperty(e)
-			elems[i] = &soltype.PropertyElem{Name: p.Name, Type: widen(p.Type), Optional: p.Optional}
+			elems[i] = &soltype.PropertyElem{Name: p.Name, Type: widen(p.Type), Optional: p.Optional, Readonly: p.Readonly}
 		}
 		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
 	case *soltype.TupleType:

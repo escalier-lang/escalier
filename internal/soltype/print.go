@@ -367,7 +367,11 @@ func (p *namedPrinter) printType(t Type) string {
 			if prop.Optional {
 				opt = "?"
 			}
-			elems = append(elems, printObjectKeyName(prop.Name)+opt+": "+p.printType(prop.Type))
+			ro := ""
+			if prop.Readonly {
+				ro = "readonly "
+			}
+			elems = append(elems, ro+printObjectKeyName(prop.Name)+opt+": "+p.printType(prop.Type))
 		}
 		if t.Inexact {
 			elems = append(elems, "...")

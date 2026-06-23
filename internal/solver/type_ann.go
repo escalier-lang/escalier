@@ -130,7 +130,7 @@ func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.
 				ft = t
 			}
 		}
-		b.add(name, ft, prop.Optional)
+		b.addReadonly(name, ft, prop.Optional, prop.Readonly)
 	}
 	if unsupported {
 		c.reportUnsupportedFeature(ta, "object type member other than a property")
@@ -183,9 +183,62 @@ func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltyp
 	if !ok {
 		return c.reportUnsupportedFeature(ta, "mut on a non-borrowable type"), false
 	}
-	t := soltype.NewRef(true, nil, ri)
+	t := soltype.NewRef(true, nil, applyDeepMut(ri))
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// applyDeepMut sets `mut` on `ri` and recursively on every borrowable component
+// reachable through its concrete structure, then returns the rebuilt RefInner.
+// `mut` is deep (PR 13): `mut {a: {x}}` lowers to `mut {a: mut {x}}`, so reading
+// `p.a` yields a mutable view and `p.a.x = 5` is legal.
+//
+// The recursion stops at two kinds of slot. A type parameter is inert — a
+// TypeVarType is returned unchanged, so `mut Foo<Point>` applies `mut` to Foo's
+// body and leaves the substituted Point immutable. A value type — a primitive,
+// function, or promise — is never a RefInner, so it is never wrapped.
+//
+// A field that is already a borrow (an explicit `&`/`mut` field) is left as it
+// stands: its own resolution already applied this distribution, and an immutable
+// `&` field states its own mutability. Only a bare object or tuple component is
+// deepened, via deepMutComponent.
+func applyDeepMut(ri soltype.RefInner) soltype.RefInner {
+	switch t := ri.(type) {
+	case *soltype.ObjectType:
+		elems := make([]soltype.ObjTypeElem, len(t.Elems))
+		for i, e := range t.Elems {
+			p := soltype.AsProperty(e)
+			elems[i] = &soltype.PropertyElem{
+				Name:     p.Name,
+				Type:     deepMutComponent(p.Type),
+				Optional: p.Optional,
+				Readonly: p.Readonly,
+			}
+		}
+		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
+	case *soltype.TupleType:
+		elems := make([]soltype.Type, len(t.Elems))
+		for i, e := range t.Elems {
+			elems[i] = deepMutComponent(e)
+		}
+		return &soltype.TupleType{Elems: elems, Inexact: t.Inexact}
+	default:
+		// A TypeVarType is inert, so it is returned unchanged.
+		return ri
+	}
+}
+
+// deepMutComponent wraps a field or element value in owned-mutable and recurses
+// when it is a bare object or tuple, and leaves every other shape unchanged. A
+// value type stays a value, a type parameter stays inert, and a field that is
+// already a borrow keeps its own mutability rather than being re-wrapped.
+func deepMutComponent(t soltype.Type) soltype.Type {
+	switch t.(type) {
+	case *soltype.ObjectType, *soltype.TupleType:
+		return &soltype.RefType{Mut: true, Inner: applyDeepMut(t.(soltype.RefInner))}
+	default:
+		return t
+	}
 }
 
 // borrowInner resolves the pointee of a `mut` or `&` annotation to a RefInner, the
@@ -218,6 +271,12 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 	ri, ok := c.borrowInner(ta.Inner, lvl)
 	if !ok {
 		return c.reportUnsupportedFeature(ta, "borrow of a non-borrowable type"), false
+	}
+	// `&mut` distributes the same way `mut` does (PR 13): the mutability reaches
+	// through the pointee's concrete structure, so `&mut {a: {x}}` lets you write
+	// `p.a.x`. An immutable `&` borrow leaves the pointee untouched.
+	if ta.Mut {
+		ri = applyDeepMut(ri)
 	}
 	t := &soltype.RefType{Mut: ta.Mut, Lt: c.resolveLifetimeAnn(ta.Lifetime, lvl), Inner: ri}
 	c.recordProv(t, ta, AnnotationType)

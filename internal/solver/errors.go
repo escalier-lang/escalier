@@ -214,7 +214,18 @@ type InexactTupleSpreadError struct {
 	Operand *soltype.TupleType
 }
 
+// ReadonlyFieldError fires when a field write `obj.f = …` targets a `readonly`
+// field. `readonly` forbids reassigning the field; the value the field holds may
+// still be mutated when it is mutable. The check sits in constrainWriteBack, the
+// contravariant write view of a mutable borrow: a write requirement names the
+// field, and the source object marks it readonly. Field is the property name.
+type ReadonlyFieldError struct {
+	Field string
+	site  ast.Node // the field-write node, which carries the blame span
+}
+
 func (*CannotConstrainError) isSolverError()     {}
+func (*ReadonlyFieldError) isSolverError()       {}
 func (*FuncArityMismatchError) isSolverError()   {}
 func (*TupleLengthMismatchError) isSolverError() {}
 func (*SpreadNotTupleError) isSolverError()      {}
@@ -890,6 +901,12 @@ func (e *MutabilityMismatchError) Message() string {
 func (e *BorrowEscapeError) Message() string {
 	return fmt.Sprintf("borrowed value %s does not live long enough to satisfy %s",
 		describe(e.Sub), describe(e.Super))
+}
+
+func (e *ReadonlyFieldError) Span() ast.Span      { return spanOfNode(e.site) }
+func (e *ReadonlyFieldError) Related() []ast.Span { return nil }
+func (e *ReadonlyFieldError) Message() string {
+	return fmt.Sprintf("cannot assign to readonly property: %s", e.Field)
 }
 
 // describe renders a RAW, uncoalesced type for in-flight error messages (t0,

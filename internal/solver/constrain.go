@@ -117,6 +117,15 @@ func (c *Context) constrainWriteBack(target, source soltype.Type, seen set.Set[c
 	for _, elem := range targetObj.Elems {
 		p := soltype.AsProperty(elem)
 		if sp, ok := sourceObj.Prop(p.Name); ok {
+			// A `readonly` field forbids reassignment. The write view reaches this
+			// field only when the target demands a write to it, so a readonly source
+			// field is rejected here. The deep mutability the value carries is
+			// independent — `obj.f.x = …` reads `f` and writes `x`, never reassigning
+			// `f` — so the read view above is unaffected.
+			if sp.Readonly {
+				errs = append(errs, &ReadonlyFieldError{Field: p.Name})
+				continue
+			}
 			errs = append(errs, c.constrain(p.Type, sp.Type, seen)...)
 		}
 	}

@@ -452,7 +452,9 @@ func TestInferBorrowOfNonBorrowableRejected(t *testing.T) {
 // receiver's borrow lifetime through, the heart of PR 4 rule 4. The implicit
 // read on `p.a` for `p: &mut {a: {...}}` yields a borrow of the field at p's
 // lifetime, so the rendered signature names that lifetime on both the param
-// and the return type.
+// and the return type. Deep `mut` (PR 13) makes the `a` field owned-mutable, so
+// the param renders `&'a mut {a: mut {x: number}}` and the read yields a MUTABLE
+// borrow `&'a mut {x: number}` rather than an immutable one.
 func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
 	src := `fn f(p: &mut {a: {x: number}}) {
   return p.a
@@ -460,7 +462,7 @@ func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a>(p: &'a mut {a: {x: number}}) -> &'a {x: number}",
+		"fn <'a>(p: &'a mut {a: mut {x: number}}) -> &'a mut {x: number}",
 		values["f"])
 }
 
@@ -474,7 +476,7 @@ func TestInferMemberReadLocalElidesLifetime(t *testing.T) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {a: {x: number}}) -> void", values["f"])
+	require.Equal(t, "fn (p: mut {a: mut {x: number}}) -> void", values["f"])
 }
 
 // A field whose static type is itself an immutable borrow reads through as
@@ -538,7 +540,7 @@ func TestInferExplicitBorrowOfMemberSharesLifetime(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a>(obj: &'a mut {a: {x: number}, b: {y: number}}) -> &'a {y: number}",
+		"fn <'a>(obj: &'a mut {a: mut {x: number}, b: mut {y: number}}) -> &'a {y: number}",
 		values["f"])
 }
 
@@ -555,7 +557,7 @@ func TestInferExplicitMutBorrowOfMemberAcceptsMutReceiver(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a>(obj: &'a mut {a: {x: number}, b: {y: number}}) -> &'a mut {y: number}",
+		"fn <'a>(obj: &'a mut {a: mut {x: number}, b: mut {y: number}}) -> &'a mut {y: number}",
 		values["f"])
 }
 
@@ -601,6 +603,6 @@ func TestInferExplicitMutBorrowOfConstIndexAcceptsMutReceiver(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a>(obj: &'a mut {a: {x: number}, b: {y: number}}) -> &'a mut {y: number}",
+		"fn <'a>(obj: &'a mut {a: mut {x: number}, b: mut {y: number}}) -> &'a mut {y: number}",
 		values["f"])
 }

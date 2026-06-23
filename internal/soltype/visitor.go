@@ -264,7 +264,7 @@ func acceptObjElems(es []ObjTypeElem, v TypeVisitor, pol Polarity) ([]ObjTypeEle
 				out = append([]ObjTypeElem(nil), es...)
 				changed = true
 			}
-			out[i] = &PropertyElem{Name: p.Name, Type: pt, Optional: p.Optional}
+			out[i] = &PropertyElem{Name: p.Name, Type: pt, Optional: p.Optional, Readonly: p.Readonly}
 		}
 	}
 	return out, changed

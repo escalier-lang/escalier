@@ -92,6 +92,13 @@ func TestPrintRoundTrips(t *testing.T) {
 			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP(), Optional: true}}},
 			"{a?: number}",
 		},
+		{
+			// A readonly property renders a leading `readonly ` (PR 13), so a
+			// `readonly a: T` annotation round-trips to surface syntax.
+			"readonly property renders readonly",
+			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP(), Readonly: true}}},
+			"{readonly a: number}",
+		},
 
 		// Functions. A bare (exact) function renders with no trailing marker; an
 		// inexact one renders a trailing `...`, and an optional param renders `x?: T`.
