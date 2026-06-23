@@ -699,27 +699,26 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	// both polarities.
 	chk := c.freshAt(lvl)
 	c.recordProv(chk, provNode, MemberAccess)
-	if e.Mut {
-		req := &soltype.RefType{
-			Mut: true,
-			Lt:  c.ctx.freshLifetime(lvl),
-			Inner: &soltype.ObjectType{
-				Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: propName, Type: chk}},
-				Inexact: true,
-			},
-		}
-		c.constrain(e, recv, req)
-	} else {
-		c.constrain(e, recvCarrier, &soltype.ObjectType{
-			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: propName, Type: chk}},
-			Inexact: true,
-		})
+	propSelection := soltype.ObjectType{
+		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: propName, Type: chk}},
+		Inexact: true,
 	}
-	// The inner of the result borrow prefers a known concrete shape over the
-	// fresh check var. A read-after-write cache hit takes precedence. The
-	// receiver's annotation is the next fallback. The constrained check var
-	// stands in otherwise. A concrete inner makes the borrow render as a
-	// `RefType` rather than letting the co-occurrence pass peel the wrapper.
+	if e.Mut {
+		mutPropSelection := &soltype.RefType{
+			Mut:   true,
+			Lt:    c.ctx.freshLifetime(lvl),
+			Inner: &propSelection,
+		}
+		c.constrain(e, recv, mutPropSelection)
+	} else {
+		c.constrain(e, recvCarrier, &propSelection)
+	}
+	// Choose the inner so the borrow wrapper survives. The co-occurrence pass
+	// peels any borrow whose inner is the bare check var `chk`, so giving the
+	// result a concrete inner is what keeps it rendering as a `RefType`. Pick
+	// the most precise shape available: a read-after-write cache hit first,
+	// then the property type from the receiver's annotation, and `chk` itself
+	// only when neither is known.
 	var inner soltype.RefInner = chk
 	if cachedT != nil {
 		if ri, ok := cachedT.(soltype.RefInner); ok {
@@ -1064,6 +1063,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 // The write requirement carries a fresh lifetime (D2): a mut-borrow receiver of
 // any lifetime is accepted (the fresh var imposes no obligation), and an owned
 // receiver satisfies the borrow slot by the RefType rule.
+//
+// A write has no result borrow to construct, so it needs no counterpart to the
+// read path's fieldReadBorrow. That helper builds the value a read yields: a
+// reference-shaped field comes back as a fresh borrow bounded by the receiver.
+// Here the borrow exists only as the `mut` requirement above. The requirement
+// constrains the receiver and is then discarded. The assignment's own value is
+// the plain stored `w` recorded below.
 //
 // When the receiver is a variable, the widened type is recorded in `written` so a
 // later read of the same field returns it (read-after-write; see valueProp). The
