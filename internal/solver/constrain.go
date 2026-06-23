@@ -85,18 +85,14 @@ func commonBorrowEscape(trials [][]SolverError) *BorrowEscapeError {
 // superAcceptsUnknownTail reports whether super can absorb the open `unknown`
 // tail of an inexact union sub. The tail represents "anything else" beyond the
 // declared members, so only `unknown` itself and an inexact union with its own
-// open tail can take it. A TypeVarType super is ALSO accepted: a free
-// inference variable has no commitments yet, so deferring to the var arm and
-// recording the whole inexact union as an upper bound is sound — later
-// concrete demands on the var run the gate against a real closed target.
-// Anything else — an exact union, a concrete prim/object/borrow, an
-// intersection — is closed against the tail and the sub is rejected with an
-// InexactUnionIntoExactError before for-all decomposition.
+// open tail can take it. Anything else — an exact union, a concrete prim/
+// object/borrow, an intersection — is closed against the tail and the sub is
+// rejected with an InexactUnionIntoExactError before for-all decomposition.
+// A TypeVar super is handled separately by the super-var-deferral gate in the
+// union-sub for-all block, so it never reaches this function.
 func superAcceptsUnknownTail(super soltype.Type) bool {
 	switch s := super.(type) {
 	case *soltype.UnknownType:
-		return true
-	case *soltype.TypeVarType:
 		return true
 	case *soltype.UnionType:
 		return s.Inexact
@@ -216,24 +212,49 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	// parser surface and the third leg of the rule against an exact super union;
 	// the source-reachable check is wired here and against `Inexact == false`
 	// alone until then.
+	//
+	// SUPER-VAR DEFERRAL. When super is a TypeVar, skip decomposition and fall
+	// through to the superVar arm so the WHOLE union is recorded as one lower
+	// bound on the var. This mirrors the sub-side variable-deferral pattern the
+	// plan calls out (`α <: (B | C)` is not decomposed either). For an exact
+	// union sub the deferral is behavior-equivalent (the var coalesces to the
+	// same union from either bound shape, since combine + newUnion's flatten
+	// step normalizes both forms). For an inexact union sub the deferral is
+	// LOAD-BEARING: the per-member loop discards the inexact flag because the
+	// `...` tail is a flag on UnionType, not a member of Types, so decomposing
+	// would record only `number` and `string` bounds and α would coalesce as
+	// the EXACT `number | string` — silently dropping the open tail and
+	// breaking the soundness of any downstream `match` against α.
 	if subU, ok := sub.(*soltype.UnionType); ok {
-		if subU.Inexact && !superAcceptsUnknownTail(super) {
-			return []SolverError{&InexactUnionIntoExactError{Sub: subU, Super: super}}
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			if subU.Inexact && !superAcceptsUnknownTail(super) {
+				return []SolverError{&InexactUnionIntoExactError{Sub: subU, Super: super}}
+			}
+			var errs []SolverError
+			for _, m := range subU.Types {
+				errs = append(errs, c.constrain(m, super, seen)...)
+			}
+			return errs
 		}
-		var errs []SolverError
-		for _, m := range subU.Types {
-			errs = append(errs, c.constrain(m, super, seen)...)
-		}
-		return errs
 	}
 
 	// Intersection super for-all: sub <: (A & B) ⟹ sub <: A and sub <: B.
+	//
+	// SUB-VAR DEFERRAL. Symmetric to the union-sub case above: when sub is a
+	// TypeVar, fall through to the subVar arm so the WHOLE intersection is
+	// recorded as one upper bound on the var. IntersectionType carries no
+	// exactness flag (the plan: "intersection has no exact/inexact variant"),
+	// so unlike the union case there is no soundness-driving asymmetry; the
+	// deferral is for symmetry with the union rule and a one-shape mental
+	// model for variable handling.
 	if supI, ok := super.(*soltype.IntersectionType); ok {
-		var errs []SolverError
-		for _, m := range supI.Types {
-			errs = append(errs, c.constrain(sub, m, seen)...)
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
+			var errs []SolverError
+			for _, m := range supI.Types {
+				errs = append(errs, c.constrain(sub, m, seen)...)
+			}
+			return errs
 		}
-		return errs
 	}
 
 	// Union super exists: sub <: (A | B) ⟹ sub <: A or sub <: B. Trialled only

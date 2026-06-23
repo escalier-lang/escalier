@@ -37,16 +37,19 @@ func TestConstrainUnionSubForAll(t *testing.T) {
 		require.Equal(t, []string{"cannot constrain string <: number"}, Messages(errs))
 	})
 
-	t.Run("union sub against a variable super", func(t *testing.T) {
-		// (number | string) <: α. For-all decomposes to number <: α AND
-		// string <: α, so both end up as lower bounds of α. The var arm
-		// records each one; the variable is NOT pinned to the union — it
-		// gains TWO lower bounds independently.
+	t.Run("union sub against a variable super defers", func(t *testing.T) {
+		// (number | string) <: α. The for-all rule defers when super is a
+		// TypeVar so the WHOLE union is recorded as one lower bound on α.
+		// Coalesce builds the same `number | string` either way, but the
+		// deferral preserves the union shape on the bound list — and the
+		// inexact flag, when present (see TestConstrainInexactUnionIntoVarDefers).
 		c := &Context{}
 		a := c.freshVar(0)
 		sub := newUnion(nil, parseTypes(t, "number", "string"), false)
 		require.Empty(t, c.Constrain(sub, a))
-		require.Len(t, a.LowerBounds, 2)
+		require.Len(t, a.LowerBounds, 1)
+		_, isUnion := a.LowerBounds[0].(*soltype.UnionType)
+		require.True(t, isUnion, "expected the whole union as one bound, got %T", a.LowerBounds[0])
 	})
 }
 
@@ -69,15 +72,17 @@ func TestConstrainIntersectionSuperForAll(t *testing.T) {
 		require.Equal(t, []string{`cannot constrain "x" <: number`}, Messages(errs))
 	})
 
-	t.Run("variable sub against an intersection super", func(t *testing.T) {
-		// α <: (number & string). For-all decomposes to α <: number AND
-		// α <: string, so both end up as upper bounds of α — the variable
-		// is NOT pinned to the intersection.
+	t.Run("variable sub against an intersection super defers", func(t *testing.T) {
+		// α <: (number & string). The for-all rule defers when sub is a
+		// TypeVar so the WHOLE intersection is recorded as one upper bound
+		// on α — the symmetric twin of the union-sub super-var deferral.
 		c := &Context{}
 		a := c.freshVar(0)
 		super := &soltype.IntersectionType{Types: parseTypes(t, "number", "string")}
 		require.Empty(t, c.Constrain(a, super))
-		require.Len(t, a.UpperBounds, 2)
+		require.Len(t, a.UpperBounds, 1)
+		_, isIntersection := a.UpperBounds[0].(*soltype.IntersectionType)
+		require.True(t, isIntersection, "expected the whole intersection as one bound, got %T", a.UpperBounds[0])
 	})
 }
 
@@ -210,21 +215,28 @@ func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
 }
 
 // Regression: an inexact union flowing into a free inference variable must
-// be recorded as an upper bound of the variable, not rejected with
-// InexactUnionIntoExactError.
+// be recorded as a single whole-union lower bound on the variable so the
+// inexact flag rides through coalesce.
 //
-//	(number | string | ...) <: α    defers; α gains number and string as lower bounds
+//	(number | string | ...) <: α    defers; α gains the whole union as one lower bound
 //
-// superAcceptsUnknownTail returns true for TypeVar so the gate doesn't
-// fire; the for-all decomposition recurses on each member, and each
-// constraint (number <: α, string <: α) records a lower bound on α.
+// The union-sub for-all rule defers to the superVar arm when super is a
+// TypeVar. Decomposing per-member would record only `number` and `string`
+// bounds — the `...` is a flag on UnionType, not a member of Types, so a
+// per-member loop silently drops it and α coalesces as the EXACT
+// `number | string`. That would break the soundness of any downstream match
+// against α; the inexact tail could carry a value of any type at runtime
+// that no member arm covers.
 func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
 	c := &Context{}
 	alpha := c.freshVar(0)
 	sub := &soltype.UnionType{Types: []soltype.Type{num(), str()}, Inexact: true}
 
 	require.Empty(t, c.Constrain(sub, alpha))
-	require.Len(t, alpha.LowerBounds, 2)
+	require.Len(t, alpha.LowerBounds, 1)
+	lb, ok := alpha.LowerBounds[0].(*soltype.UnionType)
+	require.True(t, ok, "expected the whole inexact union as one bound, got %T", alpha.LowerBounds[0])
+	require.True(t, lb.Inexact, "inexact flag must survive the bound record")
 }
 
 // TestConstrainInexactUnionIntoUnknownAccepts covers the other accepting
