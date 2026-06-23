@@ -183,26 +183,40 @@ func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltyp
 	if !ok {
 		return c.reportUnsupportedFeature(ta, "mut on a non-borrowable type"), false
 	}
-	t := soltype.NewRef(true, nil, applyDeepMut(ri))
+	t := soltype.NewRef(true, nil, c.applyDeepMut(ri))
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
 
+// The deep-mut walk hand-rolls a structural rebuild rather than using the soltype
+// TypeVisitor, for two reasons. First, every rebuilt ObjectType or TupleType
+// inherits the source pointer's provenance entry, so blame survives the rewrite.
+// The visitor hides the original-to-new pointer mapping ExitType would need to
+// do this. Second, widen.go already hand-rolls the same shape, so this matches
+// the local pattern. If the visitor grows a way to thread the original alongside
+// the rewritten node, this and widen.go should both migrate together.
+
 // applyDeepMut sets `mut` on `ri` and recursively on every borrowable component
 // reachable through its concrete structure, then returns the rebuilt RefInner.
-// `mut` is deep (PR 13): `mut {a: {x}}` lowers to `mut {a: mut {x}}`, so reading
-// `p.a` yields a mutable view and `p.a.x = 5` is legal.
+// `mut` is deep, per PR 13. So `mut {a: {x}}` lowers to `mut {a: mut {x}}`,
+// reading `p.a` yields a mutable view, and `p.a.x = 5` is legal.
 //
-// The recursion stops at two kinds of slot. A type parameter is inert — a
+// The recursion stops at two kinds of slot. A type parameter is inert: a
 // TypeVarType is returned unchanged, so `mut Foo<Point>` applies `mut` to Foo's
-// body and leaves the substituted Point immutable. A value type — a primitive,
-// function, or promise — is never a RefInner, so it is never wrapped.
+// body and leaves the substituted Point immutable. A value type is never a
+// RefInner, so it is never wrapped. The value types are primitives, functions,
+// and promises.
 //
-// A field that is already a borrow (an explicit `&`/`mut` field) is left as it
-// stands: its own resolution already applied this distribution, and an immutable
-// `&` field states its own mutability. Only a bare object or tuple component is
-// deepened, via deepMutComponent.
-func applyDeepMut(ri soltype.RefInner) soltype.RefInner {
+// A field that is already a borrow is left as it stands. Its own resolution
+// already applied this distribution, and an immutable `&` field states its own
+// mutability. Only a bare object or tuple component is deepened, via
+// deepMutComponent.
+//
+// Every rebuilt ObjectType/TupleType inherits the source's provenance entry so
+// that a structural mismatch against a nested annotation object keeps its
+// "expected here" related span. Without the carry-through, the new pointer has
+// no Prov entry and blame falls back to the constraint site.
+func (c *checker) applyDeepMut(ri soltype.RefInner) soltype.RefInner {
 	switch t := ri.(type) {
 	case *soltype.ObjectType:
 		elems := make([]soltype.ObjTypeElem, len(t.Elems))
@@ -210,18 +224,22 @@ func applyDeepMut(ri soltype.RefInner) soltype.RefInner {
 			p := soltype.AsProperty(e)
 			elems[i] = &soltype.PropertyElem{
 				Name:     p.Name,
-				Type:     deepMutComponent(p.Type),
+				Type:     c.deepMutComponent(p.Type),
 				Optional: p.Optional,
 				Readonly: p.Readonly,
 			}
 		}
-		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
+		out := &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
+		c.inheritProv(out, t)
+		return out
 	case *soltype.TupleType:
 		elems := make([]soltype.Type, len(t.Elems))
 		for i, e := range t.Elems {
-			elems[i] = deepMutComponent(e)
+			elems[i] = c.deepMutComponent(e)
 		}
-		return &soltype.TupleType{Elems: elems, Inexact: t.Inexact}
+		out := &soltype.TupleType{Elems: elems, Inexact: t.Inexact}
+		c.inheritProv(out, t)
+		return out
 	default:
 		// A TypeVarType is inert, so it is returned unchanged.
 		return ri
@@ -232,12 +250,27 @@ func applyDeepMut(ri soltype.RefInner) soltype.RefInner {
 // when it is a bare object or tuple, and leaves every other shape unchanged. A
 // value type stays a value, a type parameter stays inert, and a field that is
 // already a borrow keeps its own mutability rather than being re-wrapped.
-func deepMutComponent(t soltype.Type) soltype.Type {
-	switch t.(type) {
-	case *soltype.ObjectType, *soltype.TupleType:
-		return &soltype.RefType{Mut: true, Inner: applyDeepMut(t.(soltype.RefInner))}
+func (c *checker) deepMutComponent(t soltype.Type) soltype.Type {
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		return &soltype.RefType{Mut: true, Inner: c.applyDeepMut(t)}
+	case *soltype.TupleType:
+		return &soltype.RefType{Mut: true, Inner: c.applyDeepMut(t)}
 	default:
 		return t
+	}
+}
+
+// inheritProv copies the provenance entry from `from` onto `to`, when `from` has
+// one. Used by the deep-mut walk to keep a rebuilt object or tuple pointing at
+// the same annotation node the original did, so blame and "expected here" spans
+// survive the rewrite. Skips silently when `from` has no entry, since not every
+// minted type has provenance.
+func (c *checker) inheritProv(to, from soltype.Type) {
+	if n, ok := c.prov.NodeFor(from); ok {
+		if o, ok := c.prov[from].(FromAST); ok {
+			c.recordProv(to, n, o.Kind)
+		}
 	}
 }
 
@@ -276,7 +309,7 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 	// through the pointee's concrete structure, so `&mut {a: {x}}` lets you write
 	// `p.a.x`. An immutable `&` borrow leaves the pointee untouched.
 	if ta.Mut {
-		ri = applyDeepMut(ri)
+		ri = c.applyDeepMut(ri)
 	}
 	t := &soltype.RefType{Mut: ta.Mut, Lt: c.resolveLifetimeAnn(ta.Lifetime, lvl), Inner: ri}
 	c.recordProv(t, ta, AnnotationType)

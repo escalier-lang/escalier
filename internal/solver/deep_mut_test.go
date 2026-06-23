@@ -86,10 +86,11 @@ func TestReadonlyRejectsFieldReassignment(t *testing.T) {
 	require.Equal(t, []string{"cannot assign to readonly property: a"}, Messages(errs))
 }
 
-// `readonly` governs only the field slot, not the deep mutability of its value. The
-// field's value is still made mutable by the enclosing `mut`, so mutating THROUGH the
-// field (`obj.a.b = 5`) checks while REASSIGNING the field (`obj.a = …`) is rejected.
-// The rendered type shows the two axes side by side: `readonly a: mut {b: number}`.
+// `readonly` governs only the field slot, not the deep mutability of its value.
+// The field's value is still made mutable by the enclosing `mut`, so mutating
+// through the field with `obj.a.b = 5` checks while reassigning the field with
+// `obj.a = …` is rejected. The rendered type shows the two axes side by side as
+// `readonly a: mut {b: number}`.
 func TestReadonlyPermitsValueMutationButNotReassignment(t *testing.T) {
 	t.Run("mutate the value", func(t *testing.T) {
 		values, _, errs := inferSource(t, "fn f(obj: mut {readonly a: {b: number}}) { obj.a.b = 5 }")
@@ -100,6 +101,108 @@ func TestReadonlyPermitsValueMutationButNotReassignment(t *testing.T) {
 		_, _, errs := inferSource(t, "fn f(obj: mut {readonly a: {b: number}}) { obj.a = {b: 9} }")
 		require.Equal(t, []string{"cannot assign to readonly property: a"}, Messages(errs))
 	})
+}
+
+// An explicit `&obj.f` on a borrow-typed field flows the field's own borrow
+// through with its own lifetime rather than peeling and re-anchoring to the
+// receiver. The owned-mutable cell that deep `mut` produces is the only carrier
+// the explicit borrow re-wraps at the receiver's lifetime. An explicit `&` or
+// `&mut` field is left intact. This matches the implicit-read path, which
+// flat-copies an immutable borrow field and returns the field's `&mut` at its
+// own lifetime.
+func TestExplicitBorrowOfBorrowFieldFlowsFieldLifetime(t *testing.T) {
+	t.Run("immutable borrow field", func(t *testing.T) {
+		src := "fn f(obj: {a: &{x: number}}) { return &obj.a }"
+		values, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+		require.Equal(t, "fn <'a>(obj: {a: &'a {x: number}}) -> &'a {x: number}", values["f"])
+	})
+	t.Run("mutable borrow field", func(t *testing.T) {
+		src := "fn f(obj: {a: &mut {x: number}}) { return &obj.a }"
+		values, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+		require.Equal(t, "fn <'a>(obj: {a: &'a mut {x: number}}) -> &'a mut {x: number}", values["f"])
+	})
+}
+
+// A readonly source field cannot satisfy a writable target field under a mutable
+// borrow, even when no literal assignment is written. Passing a `mut {readonly
+// a}` where `mut {a}` is expected, or returning one where the return type is `mut
+// {a}`, is rejected with a structural message that names the field and the
+// mismatch. The user wrote no assignment, so the assignment-site message would
+// be misleading. The reverse direction, a writable source flowing into a readonly
+// target, is fine because the target view simply chooses not to write.
+func TestReadonlySubtypingFlowsThroughCallAndReturn(t *testing.T) {
+	t.Run("call: readonly source into writable param", func(t *testing.T) {
+		src := "fn sink(o: mut {a: number}) {}\nfn f(obj: mut {readonly a: number}) { sink(obj) }"
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"readonly field a cannot satisfy a writable field requirement"}, Messages(errs))
+	})
+	t.Run("return: readonly source as writable return", func(t *testing.T) {
+		src := "fn f(obj: mut {readonly a: number}) -> mut {a: number} { return obj }"
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"readonly field a cannot satisfy a writable field requirement"}, Messages(errs))
+	})
+	t.Run("call: writable source into readonly param is fine", func(t *testing.T) {
+		src := "fn sink(o: mut {readonly a: number}) {}\nfn f(obj: mut {a: number}) { sink(obj) }"
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+}
+
+// An owned-mutable field read through an immutable receiver yields an immutable
+// view. Without the recvMut downgrade in fieldReadBorrow, a `mut {x}` field on
+// an immutable container would still admit `p.a.x = 5`. That would be unsound.
+// The field is owned storage inside the container, so the container's
+// immutability must reach into it. The recvMut path closes this gap and rejects
+// the write.
+func TestOwnedMutFieldThroughImmutableReceiverRejectsWrite(t *testing.T) {
+	src := "fn f(p: {a: mut {x: number}}) { p.a.x = 5 }"
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		"cannot constrain immutable object <: mutable object",
+	}, Messages(errs))
+}
+
+// Chained reads through several deep-mut layers all yield mutable views, so a
+// terminal write at depth 3 checks. The intermediate `.a` and `.a.b` reads each
+// borrow with `recvMut` propagated, and the leaf field is then writable.
+func TestDeepMutChainedReadsAllowDeepWrite(t *testing.T) {
+	src := "fn f(p: mut {a: {b: {c: number}}}) { p.a.b.c = 5 }"
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {a: mut {b: mut {c: number}}}) -> void", values["f"])
+}
+
+// A `readonly` field on an IMMUTABLE container is still rejected for writes. The
+// readonly check fires before any mut-receiver check, so an `obj.a = 5` against a
+// `{readonly a: number}` reports the readonly error rather than the immutable-
+// receiver error. The two checks are orthogonal axes of the same write rule.
+func TestReadonlyFieldOnImmutableContainerStillRejectsWrite(t *testing.T) {
+	src := "fn f(p: {readonly a: number}) { p.a = 5 }"
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{"cannot assign to readonly property: a"}, Messages(errs))
+}
+
+// The fresh-literal upgrade reaches into nested tuples too. A fully fresh tuple
+// literal binds to a deeply-mutable tuple annotation, with every nested object
+// becoming owned-mutable. This mirrors the object case and exercises the tuple
+// arm of stripOwnedMut.
+func TestDeepMutLowersFreshTupleLiteral(t *testing.T) {
+	values, _, errs := inferSource(t, "val w: mut [number, {x: number}] = [1, {x: 0}]")
+	require.Empty(t, errs)
+	require.Equal(t, "mut [number, mut {x: number}]", values["w"])
+}
+
+// A `readonly` field's value may still be mutated through deep `mut`, even when
+// the value has multiple fields. Writing each field through `.a.x = …` and
+// `.a.y = …` succeeds because `readonly` only forbids reassigning `a`, not
+// writing through it.
+func TestReadonlyFieldValueIsDeepMutable(t *testing.T) {
+	src := "fn f(obj: mut {readonly a: {x: number, y: number}}) { obj.a.x = 5\n obj.a.y = 6 }"
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (obj: mut {readonly a: mut {x: number, y: number}}) -> void", values["f"])
 }
 
 // A `readonly` field round-trips through the printer: a `readonly a: number` annotation
@@ -124,7 +227,8 @@ func TestApplyDeepMutLeavesTypeParameterInert(t *testing.T) {
 		&soltype.PropertyElem{Name: "p", Type: tv},
 		&soltype.PropertyElem{Name: "q", Type: concrete},
 	}}
-	got := applyDeepMut(inner)
+	c := newChecker()
+	got := c.applyDeepMut(inner)
 	obj, ok := got.(*soltype.ObjectType)
 	require.True(t, ok)
 

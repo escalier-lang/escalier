@@ -149,6 +149,13 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 		// deep-mut type with every nested `mut` stripped — and grant the deep-mut type.
 		// A fully fresh, unaliased literal is uniquely owned at every level, so the
 		// upgrade is sound the whole way down, the recursive form of the top-level Rule 2.
+		//
+		// stripOwnedMut walks the already-deepened type, undoing the applyDeepMut walk
+		// at resolveMutableTypeAnn. The two-pass shape is intentional: the strip also
+		// peels any user-written `mut` field the pre-deepen annotation carried, such as
+		// `{p: mut {x}}` inside `mut {p: mut {x}}`. The pre-deepen `ri` would leave that
+		// inner `mut` in place and reject the immutable literal. The walk is O(n) on
+		// the annotation size and runs only at annotated fresh-literal bindings.
 		c.constrain(init, initT, stripOwnedMut(ref.Inner))
 		return annT
 	}

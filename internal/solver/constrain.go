@@ -108,28 +108,67 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 // mid-inference, a tuple — fall back to a full contravariant constraint, the prior
 // whole-inner behavior.
 func (c *Context) constrainWriteBack(target, source soltype.Type, seen set.Set[constraintKey]) []SolverError {
-	targetObj, ok1 := target.(*soltype.ObjectType)
-	sourceObj, ok2 := source.(*soltype.ObjectType)
-	if !ok1 || !ok2 {
+	targetObj, ok := target.(*soltype.ObjectType)
+	if !ok {
 		return c.constrain(target, source, seen)
 	}
 	var errs []SolverError
 	for _, elem := range targetObj.Elems {
 		p := soltype.AsProperty(elem)
-		if sp, ok := sourceObj.Prop(p.Name); ok {
-			// A `readonly` field forbids reassignment. The write view reaches this
-			// field only when the target demands a write to it, so a readonly source
-			// field is rejected here. The deep mutability the value carries is
-			// independent — `obj.f.x = …` reads `f` and writes `x`, never reassigning
-			// `f` — so the read view above is unaffected.
-			if sp.Readonly {
-				errs = append(errs, &ReadonlyFieldError{Field: p.Name})
-				continue
+		// A readonly source field cannot fill a writable target slot under a
+		// mutable borrow. The target view would otherwise let a holder write through
+		// and break the source's readonly contract. The literal assignment site is
+		// caught earlier in inferMemberAssign with a dedicated ReadonlyFieldError.
+		// This arm fires only for structural subtyping flows such as call arguments,
+		// returns, and re-bindings, and so uses a structural message. The deep
+		// mutability the value carries is independent. A nested write such as
+		// `obj.f.x = …` reads `f` and writes `x`, never reassigning `f`, so the
+		// read view above is unaffected. sourceFieldIsReadonly also walks an
+		// IntersectionType source, so a `{readonly a: T} & {a: T}` source still
+		// rejects the writable target rather than slipping past the bare-object guard.
+		if !p.Readonly && sourceFieldIsReadonly(source, p.Name) {
+			errs = append(errs, &ReadonlyFieldSubtypeError{Field: p.Name})
+			continue
+		}
+		if sourceObj, ok := source.(*soltype.ObjectType); ok {
+			if sp, ok := sourceObj.Prop(p.Name); ok {
+				errs = append(errs, c.constrain(p.Type, sp.Type, seen)...)
 			}
-			errs = append(errs, c.constrain(p.Type, sp.Type, seen)...)
 		}
 	}
+	// A non-object source needs the prior whole-inner contravariant constraint,
+	// since the per-field walk above only fires on a bare object source. The
+	// non-object cases reachable here are a TypeVarType mid-inference, an
+	// intersection still being resolved, and a tuple. The readonly check above
+	// already inspected the source through sourceFieldIsReadonly, so a readonly
+	// mismatch is caught regardless of the source's outer shape.
+	if _, ok := source.(*soltype.ObjectType); !ok {
+		errs = append(errs, c.constrain(target, source, seen)...)
+	}
 	return errs
+}
+
+// sourceFieldIsReadonly reports whether the named field is readonly in `source`,
+// where `source` may be a bare ObjectType or an IntersectionType of objects. An
+// intersection's field is readonly when ANY object member marks it so, since the
+// intersection inherits every member's restrictions. Any other source shape — a
+// TypeVarType, a tuple, a primitive — has no statically-known field flag here.
+// The TypeVarType case is handled by the var's bound-merge in mergeObjectGroup,
+// which carries Readonly through coalescing.
+func sourceFieldIsReadonly(source soltype.Type, name string) bool {
+	switch s := source.(type) {
+	case *soltype.ObjectType:
+		if p, ok := s.Prop(name); ok {
+			return p.Readonly
+		}
+	case *soltype.IntersectionType:
+		for _, m := range s.Types {
+			if sourceFieldIsReadonly(m, name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]) []SolverError {
