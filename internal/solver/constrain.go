@@ -181,56 +181,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		return nil
 	}
 
-	// M6 PR2: pre-switch lattice block. Carries every rule whose deciding operand
-	// is a union/intersection super, plus the union-sub for-all rule. It precedes
-	// the structural switch because several structural arms return early on a
-	// non-variable super and would intercept a lattice super before the lattice
-	// rule could fire. The RefType arm is the load-bearing case. The
-	// intersection-sub exists rule stays in the switch, where the dispatch on sub
-	// matches it directly.
-	//
-	// For-all rules fire eagerly. Every branch must succeed, so seen is shared
-	// across them. The union-super exists rule trials each member under a probe
-	// with a cloned seen, mirroring the overload arm. When the deciding side is
-	// a variable the block falls through to the var arms below, which record the
-	// whole union or intersection as a bound. That avoids speculatively pinning
-	// the variable to one branch.
+	// M6 PR2 pre-switch lattice block. The structural switch below dispatches
+	// on sub and several arms return early on a non-variable super (the
+	// RefType arm most importantly), so a union/intersection super has to be
+	// matched here or it would be intercepted as a concrete-non-var demand
+	// before the lattice rule could fire. A variable on the deciding side
+	// falls through to the var arms instead of decomposing, so the whole
+	// union/intersection is recorded as one bound.
 
-	// Union sub for-all: (A | B) <: super ⟹ A <: super AND B <: super.
-	// An inexact sub union carries an open `unknown` tail. The tail can only be
-	// guaranteed to satisfy a super that is itself open. When super is closed,
-	// the constraint is doomed regardless of the explicit members, so we append
-	// a single union-level InexactUnionIntoExactError to flag the open-tail
-	// cause, then still run the for-all loop so any explicit-member mismatch
-	// surfaces in the same pass. PR4 lands the parser surface and the third leg
-	// of the rule against an exact super union. Until then the source-reachable
-	// flag is always false and the inexact path fires only against
-	// internally-built inexact unions.
-	//
-	// SUPER-VAR DEFERRAL. When super is a TypeVar, skip decomposition and fall
-	// through to the superVar arm. The WHOLE union is recorded as one lower
-	// bound on the var. This mirrors the sub-side variable-deferral pattern the
-	// plan calls out. `α <: (B | C)` is not decomposed either.
-	//
-	// For an exact union sub the deferral is behavior-equivalent. The var
-	// coalesces to the same union from either bound shape, because combine plus
-	// newUnion's flatten step normalizes both `[A, B]` and `[(A|B)]` to the
-	// same UnionType.
-	//
-	// For an inexact union sub the deferral is LOAD-BEARING. The `...` tail is
-	// a flag on UnionType, not a member of Types. A per-member loop reads only
-	// Types, so it would record `number` and `string` bounds on α and drop the
-	// flag. α would then coalesce as the EXACT `number | string`, and any
-	// downstream `match α { number => ..., string => ... }` would be reported
-	// exhaustive even though a value of any type could flow through the open
-	// tail at runtime and slip past every arm.
+	// (A | B) <: super ⟹ A <: super AND B <: super. Inexact sub against a
+	// closed super also emits one InexactUnionIntoExactError for the open tail.
 	if subU, ok := sub.(*soltype.UnionType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			var errs []SolverError
 			if subU.Inexact {
-				// The open tail can only be absorbed by an `unknown` super
-				// or by another inexact union. Any other shape is closed
-				// against the tail and gets the union-level diagnostic.
 				closed := true
 				switch s := super.(type) {
 				case *soltype.UnknownType:
@@ -249,16 +213,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	}
 
-	// Intersection super for-all: sub <: (A & B) ⟹ sub <: A AND sub <: B.
-	//
-	// SUB-VAR DEFERRAL. Symmetric to the union-sub case above. When sub is a
-	// TypeVar, skip decomposition and fall through to the subVar arm so the
-	// WHOLE intersection is recorded as one upper bound on the var.
-	// IntersectionType has no exactness flag. The plan settles that an
-	// intersection has no exact/inexact variant, so there is no
-	// soundness-driving asymmetry like the union case has. The deferral is
-	// in place for symmetry with the union rule and a one-shape mental
-	// model for how variables interact with the lattice.
+	// sub <: (A & B) ⟹ sub <: A AND sub <: B.
 	if supI, ok := super.(*soltype.IntersectionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
 			var errs []SolverError
@@ -269,23 +224,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	}
 
-	// Union super exists: sub <: (A | B) ⟹ sub <: A OR sub <: B. Trialled only
-	// when sub is concrete. A variable sub falls through to the subVar arm and
-	// records the whole union as an upper bound. Each member is trialled under a
-	// probe with a cloned seen so a failed arm's bound mutations and coinductive
-	// cache entries do not leak into the next.
-	//
-	// FREE-VAR MEMBERS ARE SKIPPED. A super-union member that is itself an
-	// unbounded TypeVar would trivially match any concrete sub by recording
-	// sub as the var's lower bound. That is speculative pinning. The var would
-	// commit to the first sub that flows in, even when a concrete sibling
-	// branch would have matched cleanly. Canonical sort ranks TypeVar before
-	// concrete kinds, so without the skip a `5 <: (α | number)` constraint
-	// would always pin α to ≥5 and never even try the number branch. Skipping
-	// the var member lets number succeed. If no concrete branch matches, the
-	// rule fails cleanly without touching α. A var member that already has
-	// bounds is skipped too. Its bounds were set elsewhere and the user did
-	// not write `... | α` as a catch-all here.
+	// sub <: (A | B) ⟹ sub <: A OR sub <: B. Trial each member under a probe;
+	// the first success commits, the losers roll back. Free TypeVar members
+	// are skipped to avoid speculatively pinning them to sub.
 	if supU, ok := super.(*soltype.UnionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
 			var trialErrs [][]SolverError
@@ -307,29 +248,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 				trialErrs = append(trialErrs, errs)
 			}
 			if !triedAny {
-				// Every member was a free var. Fall through to the var arms.
-				// If sub has any var-shaped fallback the whole union is
-				// recorded as an upper bound there. Otherwise the
-				// bottom-of-function CannotConstrainError fires. Either way,
-				// do not emit one here.
+				// Every member was a free var; fall through to the var arms.
 			} else {
-				// Every concrete branch failed. When they all failed for the
-				// same reason the failure has a single root cause and should
-				// surface as one diagnostic. A borrow sub flowing into a union
-				// of owned types is the case in hand: every trial returns a
-				// BorrowEscapeError, and we promote one of them to the union
-				// level so the lifetime cause survives. Otherwise emit the
-				// generic union-level CannotConstrainError.
-				//
-				// PR5 will let an inexact super-union's open tail absorb a
-				// non-matching concrete sub through the `_ <: unknown` rule.
-				// Until then the inexact case is rejected the same as the
-				// exact case.
+				// Every concrete branch failed. Promote a uniform
+				// BorrowEscape outcome so the lifetime cause survives;
+				// otherwise emit the generic union-level error.
 				if commonBorrowEscape(trialErrs) != nil {
-					// Every BorrowEscape carries the sub borrow on its own
-					// Sub field. If every trial returned BorrowEscape, sub
-					// is necessarily a RefType, so the type assertion always
-					// holds.
 					return []SolverError{&BorrowEscapeError{Sub: sub.(*soltype.RefType), Super: super}}
 				}
 				return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
