@@ -50,8 +50,10 @@ type-former PRs, 9 and 10, additionally depend on **M6** of
 union and intersection formers together with union-scrutinee narrowing. PR 11, the
 connected-component moves, is a further move-engine extension and stays on M4. PR 12,
 `Freeze`/`Thaw`, additionally depends on **M9**, the mapped and conditional type
-operators. So PRs 1 through 8 and 11 can proceed once M4 is in place, 9 and 10 wait
-on M6, and 12 waits on M9.
+operators. PR 13, deep `mut` with `readonly`, is foundational mut-semantics work that
+stays on M4 and is best sequenced early, since PR 12 and the affine model's mutability
+all build on it. So PRs 1 through 8, 11, and 13 can proceed once M4 is in place, 9 and
+10 wait on M6, and 12 waits on M9.
 
 ## Parsing borrows without a syntax mode
 
@@ -245,7 +247,8 @@ lifetime. Chained access `a.b.c` composes the rule at each link.
 | 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3, M6 | Medium |
 | 10 | Mutable narrowed binding with pinned discriminant | 8, 9, M6 | Medium |
 | 11 | Connected-component moves for graphs | 6, 7 | Large |
-| 12 | `Freeze`/`Thaw` deep mut↔immut utility types | 8, 11, M9 | Large |
+| 12 | `Freeze`/`Thaw` deep mut↔immut utility types | 8, 11, 13, M9 | Large |
+| 13 | Deep `mut`, type-parameter inertness, and `readonly` | 1, 2 | Medium |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
@@ -644,9 +647,11 @@ externally-aliased nodes still error.
 
 ### PR 12 — `Freeze`/`Thaw` deep mut↔immut utility types
 
-Goal: the `Freeze<T>` and `Thaw<T>` utility types for deep mutability conversion. See
+Goal: the `Freeze<T>` and `Thaw<T>` utility types for deep mutability conversion that
+reaches *through type-parameter boundaries* — the one place deep `mut` and the
+freeze/thaw moves stop (PR 13), so a container's element types get rewritten too. See
 "Freeze and Thaw" in the requirements. Depends on the mapped/conditional-type
-machinery (M9) and the freeze/thaw moves (PR 8).
+machinery (M9), the freeze/thaw moves (PR 8), and deep `mut` (PR 13).
 
 - Add the modifier-rewrite capability to mapped/conditional types: a type-level
   operator that matches a `&mut`/`mut` reference and yields its immutable form, and
@@ -669,6 +674,37 @@ recovers `Node`; a component-owned graph frozen in one move; a write through a
 
 Acceptance: `Freeze`/`Thaw` produce the deep types and are sound through the
 freeze/thaw moves, with no runtime cost.
+
+### PR 13 — Deep `mut`, type-parameter inertness, and `readonly`
+
+Goal: make `mut` deep with type parameters inert, and add the `readonly` field
+modifier. This is foundational mut-semantics work that the affine model and PR 12
+build on; it depends only on the parser (PR 1) and the `&`/`mut` lowering (PR 2) and
+can land early, independent of the move engine. See "Mutability depth and type
+parameters" in the requirements.
+
+- Lower a `mut`/`&mut` annotation by setting `RefType.Mut` deeply through the type's
+  concrete structure, not just the outermost `RefType`. Apply the modifier to the
+  type constructor's body *before* type-argument substitution, so a type parameter is
+  inert: `mut Foo<Point>` is `(mut Foo)<Point>`. The same distribution covers the `&`
+  of `&mut`, so borrow-ness and mutability reach equally far and both stop at the
+  parameter slot.
+- Treat a bare `mut T` as inert until `T` is instantiated, then take its natural
+  meaning, so `mut T` at `T = Point` lowers to `mut Point`.
+- Parser: add the `readonly` field modifier to object type annotations
+  ([internal/parser/type_ann.go](../../internal/parser/type_ann.go)), and lower it to
+  a per-field no-reassignment flag on the object type. `readonly` governs only whether
+  `obj.f = …` is allowed; it is orthogonal to deep mutability.
+- This changes the current shallow-`mut` lowering, so migrate the affected solver
+  snapshots.
+
+Tests: `mut Array<Point>` is a mutable array of immutable points; `mut {a: {b}}` and
+`&mut {a: {x}}` are deep; `mut Line<Point>` over `type Line<P> = {p1: P, p2: P}` keeps
+the points immutable while a concrete `mut Line` is deep; `readonly` rejects field
+reassignment but still permits mutating the field's value when that value is mutable.
+
+Acceptance: `mut`/`&mut` are deep with type parameters inert, and `readonly` forbids
+reassignment only.
 
 ---
 
