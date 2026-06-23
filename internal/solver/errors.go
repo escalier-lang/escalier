@@ -111,6 +111,16 @@ type InexactIntoExactError struct {
 	site       ast.Node     // M2.5: constraint node fallback
 }
 
+// InexactTupleIntoExactError is the tuple twin of InexactIntoExactError. An
+// inexact tuple `[T, ...]` carries an open tail of unknown trailing elements,
+// so it cannot satisfy an exact tuple target `[T]` whose length is fixed,
+// even when the declared element prefixes match.
+type InexactTupleIntoExactError struct {
+	Sub, Super *soltype.TupleType
+	prov       NodeResolver
+	site       ast.Node
+}
+
 // ExtraPropertyError fires on ObjectType <: ObjectType when the super is exact and
 // the sub carries a property the super does not declare — width is rejected against
 // an exact target. One error fires per extra property, carrying its name.
@@ -211,6 +221,7 @@ func (*SpreadNotTupleError) isSolverError()      {}
 func (*InexactTupleSpreadError) isSolverError()  {}
 func (*MissingPropertyError) isSolverError()     {}
 func (*InexactIntoExactError) isSolverError()    {}
+func (*InexactTupleIntoExactError) isSolverError() {}
 func (*ExtraPropertyError) isSolverError()       {}
 func (*ExtraElementError) isSolverError()        {}
 func (*OptionalPropertyError) isSolverError()    {}
@@ -248,6 +259,11 @@ func (e *MissingPropertyError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, ops...)
 }
 func (e *MissingPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.Sub) } // the receiver
+
+func (e *InexactTupleIntoExactError) Span() ast.Span {
+	return spanOf(e.prov, e.Sub, e.site)
+}
+func (e *InexactTupleIntoExactError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *InexactIntoExactError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
@@ -850,6 +866,10 @@ func (e *InexactIntoExactError) Message() string {
 	return "cannot constrain inexact object <: exact object"
 }
 
+func (e *InexactTupleIntoExactError) Message() string {
+	return "cannot constrain inexact tuple <: exact tuple"
+}
+
 func (e *ExtraPropertyError) Message() string {
 	return "object has extra property: " + e.Name
 }
@@ -922,6 +942,8 @@ func describe(t soltype.Type) string {
 		return prefix + describe(t.Inner)
 	case *soltype.Void:
 		return "void"
+	case *soltype.NullType:
+		return "null"
 	case *soltype.NeverType:
 		return "never"
 	case *soltype.UnknownType:
@@ -929,7 +951,13 @@ func describe(t soltype.Type) string {
 	case *soltype.ErrorType:
 		return "error"
 	case *soltype.UnionType:
-		return joinDescribe(t.Types, " | ")
+		s := joinDescribe(t.Types, " | ")
+		if t.Inexact {
+			// An inexact union has an open tail. Append the marker so a
+			// diagnostic naming the union matches the printer's surface form.
+			return s + " | ..."
+		}
+		return s
 	case *soltype.IntersectionType:
 		return joinDescribe(t.Types, " & ")
 	case *soltype.TypeVarType:

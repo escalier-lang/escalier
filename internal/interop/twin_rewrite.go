@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // rewriteReadonlyTwinRefs walks every TypeAnn slot reachable from the
@@ -33,10 +34,10 @@ func rewriteReadonlyTwinRefs(mod *StandaloneModule, twins []readonlyTwin) {
 		return
 	}
 	readonlyToMutable := make(map[string]string, len(twins))
-	mutableSet := make(map[string]struct{}, len(twins))
+	mutableSet := set.NewSet[string]()
 	for _, t := range twins {
 		readonlyToMutable[t.readonlyName] = t.mutableName
-		mutableSet[t.mutableName] = struct{}{}
+		mutableSet.Add(t.mutableName)
 	}
 	rw := &twinRewriter{readonlyToMutable: readonlyToMutable, mutable: mutableSet}
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
@@ -49,7 +50,7 @@ func rewriteReadonlyTwinRefs(mod *StandaloneModule, twins []readonlyTwin) {
 
 type twinRewriter struct {
 	readonlyToMutable map[string]string
-	mutable           map[string]struct{}
+	mutable           set.Set[string]
 }
 
 // rewriteDecl dispatches over every Decl variant. The default panics
@@ -184,7 +185,7 @@ func (r *twinRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 		id.Name = mutableName
 		return
 	}
-	if _, ok := r.mutable[id.Name]; ok {
+	if r.mutable.Contains(id.Name) {
 		panic(fmt.Sprintf("twinRewriter.renameTypeRefInPlace: mutable twin %q appears in an Extends/Implements slot, which cannot carry a `mut` wrapper — the readonly-twin rewrite assumed no class or interface in the pinned TS lib extends a mutable twin directly", id.Name))
 	}
 }
@@ -208,7 +209,7 @@ func (r *twinRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 			id.Name = mutableName
 			return tt
 		}
-		if _, ok := r.mutable[id.Name]; ok {
+		if r.mutable.Contains(id.Name) {
 			return ast.NewMutableTypeAnn(tt, tt.Span())
 		}
 		return tt

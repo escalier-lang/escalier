@@ -327,6 +327,13 @@ type PromiseType struct{ Inner Type }
 // Void is the result type of a statement block with no value.
 type Void struct{}
 
+// NullType is the type whose only inhabitant is the `null` literal. It
+// mirrors TypeScript's `null` type and sits alongside Void as a distinct
+// atomic kind. The canonical comparator sorts both kinds last so a union
+// such as `T | null | void` consistently renders with the data members
+// first.
+type NullType struct{}
+
 // NeverType (⊥) and UnknownType (⊤) are the bottom/top of the subtype lattice —
 // the coalesced output of an empty-bounds single-polarity variable (positive ⇒
 // never, negative ⇒ unknown). The spike emits these via type_system; M1 carries
@@ -338,9 +345,22 @@ type UnknownType struct{}
 // single-polarity variables (positive ⇒ union of lowers, negative ⇒ intersection
 // of uppers). The spike emits these via type_system.NewUnionType /
 // NewIntersectionType; M1 carries them natively so coalescing returns
-// soltype.Type in every case. Their *subtyping rules* in constrain are M6 —
-// these nodes appear only as coalesced output in M1, never as constrain inputs.
-type UnionType struct{ Types []Type }
+// soltype.Type in every case. M6 promotes them to first-class lattice members:
+// legal `constrain` inputs (M6 PR2), writable annotations (M6 PR2), and the
+// subjects of a normalization pass (M6 PR1).
+//
+// UnionType.Inexact flags whether the union is open. A bare `A | B` is
+// exact, so its inhabitants are exactly A ∪ B. An `A | B | ...` written with
+// a trailing `...` is inexact: at least these, with an unknown-typed tail.
+// The flag is Inexact rather than Exact so the zero value is exact, matching
+// the ObjectType, TupleType, and FuncType convention. IntersectionType
+// carries no exactness flag, since exactness is a property of the result
+// rather than the meet. The flag and the smart constructors land with M6 PR1.
+type UnionType struct {
+	Types []Type
+	// Inexact tracks the trailing `...` marker. The zero value is exact.
+	Inexact bool
+}
 type IntersectionType struct{ Types []Type }
 
 // ErrorType is the error-recovery sentinel (M3 PR8) — a childless atom distinct
@@ -364,6 +384,7 @@ func (*ObjectType) isType()       {}
 func (*RefType) isType()          {}
 func (*PromiseType) isType()      {}
 func (*Void) isType()             {}
+func (*NullType) isType()         {}
 func (*NeverType) isType()        {}
 func (*UnknownType) isType()      {}
 func (*UnionType) isType()        {}
@@ -422,8 +443,8 @@ func LevelOf(t Type) int {
 	case *IntersectionType:
 		return maxMemberLevel(t.Types)
 	default:
-		// PrimType, LitType, Void, NeverType, UnknownType, ErrorType: childless leaves
-		// (ErrorType is a sentinel, level 0).
+		// PrimType, LitType, Void, NullType, NeverType, UnknownType, ErrorType:
+		// childless leaves. ErrorType is a sentinel at level 0.
 		return 0
 	}
 }

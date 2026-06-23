@@ -7,6 +7,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/set"
 	type_sys "github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -43,7 +44,7 @@ func (b *Builder) BuildDefinitions(
 
 	// Track which declarations we've already processed to avoid duplicates
 	// (enums and classes have both type and value bindings pointing to the same decl)
-	processedDecls := make(map[ast.Decl]bool)
+	processedDecls := set.NewSet[ast.Decl]()
 
 	for _, namespace := range namespaceNames {
 		bindingKeys := namespaceGroups[namespace]
@@ -59,10 +60,10 @@ func (b *Builder) BuildDefinitions(
 				// For multiple declarations (overloads, interface merging), process all of them
 				for _, decl := range decls {
 					// Skip if we've already processed this declaration
-					if processedDecls[decl] {
+					if processedDecls.Contains(decl) {
 						continue
 					}
-					processedDecls[decl] = true
+					processedDecls.Add(decl)
 
 					declStmts := b.buildDeclStmt(decl, moduleNS, true)
 					if len(declStmts) != 0 {
@@ -89,10 +90,10 @@ func (b *Builder) BuildDefinitions(
 				// For multiple declarations (overloads, interface merging), process all of them
 				for _, decl := range decls {
 					// Skip if we've already processed this declaration
-					if processedDecls[decl] {
+					if processedDecls.Contains(decl) {
 						continue
 					}
-					processedDecls[decl] = true
+					processedDecls.Add(decl)
 
 					declStmts := b.buildDeclStmt(decl, nestedNS, false)
 					if len(declStmts) != 0 {

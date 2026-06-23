@@ -1002,6 +1002,12 @@ func (c *checker) constrainAssign(n ast.Node, source, target soltype.Type) {
 			return
 		}
 	}
+	if union.Inexact {
+		// An inexact union target has an open tail of unknown type, so a
+		// value that does not match any named member still satisfies the
+		// tail. Skip the failure report. The tail accepts everything.
+		return
+	}
 	// No member matched: report once against the whole union (CannotConstrainError),
 	// blaming the assignment.
 	c.constrain(n, source, target)

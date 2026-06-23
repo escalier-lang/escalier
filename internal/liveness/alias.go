@@ -1,6 +1,10 @@
 package liveness
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/escalier-lang/escalier/internal/set"
+)
 
 // AliasMutability tracks whether a variable holds a mutable or immutable
 // reference within an alias set.
@@ -206,15 +210,15 @@ func (a *AliasTracker) MergeAliasSets(v1 VarID, v2 VarID) {
 			// Update VarToSets: replace setID with targetID, deduplicating
 			// to avoid accumulating multiple entries for the same set when
 			// a member already belongs to targetID (e.g. from a prior merge).
-			seen := make(map[SetID]bool)
+			seen := set.NewSet[SetID]()
 			newSets := make([]SetID, 0, len(a.VarToSets[member]))
 			for _, sid := range a.VarToSets[member] {
 				id := sid
 				if id == setID {
 					id = targetID
 				}
-				if !seen[id] {
-					seen[id] = true
+				if !seen.Contains(id) {
+					seen.Add(id)
 					newSets = append(newSets, id)
 				}
 			}

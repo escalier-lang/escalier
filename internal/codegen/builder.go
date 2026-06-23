@@ -10,6 +10,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/printer"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -95,7 +96,7 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	// below, we'll encounter this declaration three times. We track processed
 	// declarations to ensure we only emit the code once, on the first binding key
 	// we encounter.
-	processedDecls := make(map[ast.Decl]bool)
+	processedDecls := set.NewSet[ast.Decl]()
 
 	// Iterate over components in topological order
 	for _, component := range depGraph.Components {
@@ -147,8 +148,8 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 
 			// Build the declaration only once
 			// (VarDecls with pattern destructuring appear under multiple binding keys)
-			if !processedDecls[decl] {
-				processedDecls[decl] = true
+			if !processedDecls.Contains(decl) {
+				processedDecls.Add(decl)
 				stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 			}
 
@@ -237,7 +238,7 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 // for all namespaces in the dependency graph
 func (b *Builder) buildNamespaceStatements(depGraph *dep_graph.DepGraph) []Stmt {
 	// Track which namespace segments have been defined to avoid redefinition
-	definedNamespaces := make(map[string]bool)
+	definedNamespaces := set.NewSet[string]()
 	var stmts []Stmt
 
 	// For each namespace, generate the hierarchy of statements
@@ -632,7 +633,7 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 
 // buildNamespaceHierarchy generates statements to create a namespace hierarchy
 // For "foo.bar.baz", it generates: const foo = {}; foo.bar = {}; foo.bar.baz = {};
-func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces map[string]bool) []Stmt {
+func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces set.Set[string]) []Stmt {
 	if namespace == "" {
 		return []Stmt{}
 	}
@@ -645,10 +646,10 @@ func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces ma
 		currentNS := strings.Join(parts[:i], ".")
 
 		// Skip if this namespace level has already been defined
-		if definedNamespaces[currentNS] {
+		if definedNamespaces.Contains(currentNS) {
 			continue
 		}
-		definedNamespaces[currentNS] = true
+		definedNamespaces.Add(currentNS)
 
 		if i == 1 {
 			// First level: const foo = {};

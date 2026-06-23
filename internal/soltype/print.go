@@ -348,6 +348,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return "error"
 	case *Void:
 		return "void"
+	case *NullType:
+		return "null"
 	case *TupleType:
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {
@@ -398,9 +400,15 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		return prefix + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *UnionType:
-		parts := make([]string, len(t.Types))
-		for i, m := range t.Types {
-			parts[i] = p.printTypeMinPrec(m, precUnion)
+		// An inexact union renders a trailing `...` entry, so a union typed
+		// `A | B | ...` round-trips to surface syntax. The inexact tuple,
+		// object, and function arms render their flag the same way.
+		parts := make([]string, 0, len(t.Types)+1)
+		for _, m := range t.Types {
+			parts = append(parts, p.printTypeMinPrec(m, precUnion))
+		}
+		if t.Inexact {
+			parts = append(parts, "...")
 		}
 		return strings.Join(parts, " | ")
 	case *IntersectionType:

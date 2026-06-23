@@ -122,6 +122,10 @@ func TestPrintRoundTrips(t *testing.T) {
 		// Unions and intersections.
 		{"union pair", &UnionType{Types: []Type{numP(), strP()}}, "number | string"},
 		{"union triple", &UnionType{Types: []Type{numP(), strP(), boolP()}}, "number | string | boolean"},
+		// An inexact union renders a trailing `...` entry.
+		{"inexact union", &UnionType{Types: []Type{numP(), strP()}, Inexact: true}, "number | string | ..."},
+		// NullType renders as `null`. It is a distinct atomic kind from Void.
+		{"null atom", &NullType{}, "null"},
 		{"intersection pair", &IntersectionType{Types: []Type{numP(), strP()}}, "number & string"},
 
 		// Promises (M3).

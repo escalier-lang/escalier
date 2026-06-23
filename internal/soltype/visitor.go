@@ -78,6 +78,7 @@ func (t *TypeVarType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLe
 func (t *PrimType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
 func (t *LitType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *Void) Accept(v TypeVisitor, pol Polarity) Type        { return acceptLeaf(t, v, pol) }
+func (t *NullType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
 func (t *NeverType) Accept(v TypeVisitor, pol Polarity) Type   { return acceptLeaf(t, v, pol) }
 func (t *UnknownType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 func (t *ErrorType) Accept(v TypeVisitor, pol Polarity) Type   { return acceptLeaf(t, v, pol) }
@@ -193,7 +194,7 @@ func (t *UnionType) Accept(v TypeVisitor, pol Polarity) Type {
 	types, changed := acceptTypes(cur.Types, v, pol)
 	out := cur
 	if changed {
-		out = &UnionType{Types: types}
+		out = &UnionType{Types: types, Inexact: cur.Inexact}
 	}
 	return v.ExitType(out, pol)
 }
@@ -268,3 +269,33 @@ func acceptObjElems(es []ObjTypeElem, v TypeVisitor, pol Polarity) ([]ObjTypeEle
 	}
 	return out, changed
 }
+
+// HasTypeVar reports whether t contains any TypeVarType in its structure.
+// It drives the shared TypeVisitor so every kind that participates in Accept
+// participates here, with no parallel switch to keep in sync as new kinds land.
+// The visitor sets found on the first TypeVarType it sees and returns
+// SkipChildren so the walk short-circuits.
+func HasTypeVar(t Type) bool {
+	s := &typeVarSeeker{}
+	t.Accept(s, Positive)
+	return s.found
+}
+
+// typeVarSeeker is the read-only TypeVisitor that backs HasTypeVar. It rewrites
+// nothing. EnterType returns SkipChildren once it has seen a TypeVarType so
+// later sibling subtrees are not walked.
+type typeVarSeeker struct{ found bool }
+
+func (s *typeVarSeeker) EnterType(t Type, _ Polarity) EnterResult {
+	if s.found {
+		return EnterResult{SkipChildren: true}
+	}
+	if _, ok := t.(*TypeVarType); ok {
+		s.found = true
+		return EnterResult{SkipChildren: true}
+	}
+	return EnterResult{}
+}
+
+func (s *typeVarSeeker) ExitType(t Type, _ Polarity) Type { return t }
+

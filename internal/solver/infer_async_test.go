@@ -224,8 +224,9 @@ func TestInferBlockReturnJoinAcrossIf(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	// The two return points coalesce into a union; the renderer orders by
-	// first-occurrence in the join var's lower-bound list (declaration order).
+	// The two return points coalesce into a union, canonicalized by M6 PR1's
+	// newUnion. NumLit sorts before StrLit within the LitType kind, so 1
+	// comes before "x".
 	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["h"])
 }
 
@@ -261,8 +262,9 @@ func TestInferBlockNonTailReturnCheckedAgainstAnnotation(t *testing.T) {
 	require.Contains(t, errs[0].Message(), "number")
 }
 
-// `async fn` joined with multiple returns wraps the join in Promise<…>. The
-// external return is Promise<1 | "x">.
+// An `async fn` joined with multiple returns wraps the join in Promise. The
+// external return is Promise<1 | "x">. Members are in canonical order under
+// M6 PR1.
 func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		async fn f(c: boolean) {
@@ -290,8 +292,9 @@ func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["pick"])
 }
 
-// An if WITHOUT else folds in void from the missing alt — `return if c { 5 }`
-// returns `5 | void`.
+// An if without an else folds in void from the missing alt, so
+// `return if c { 5 }` returns `5 | void`. Void sorts last in M6 PR1's
+// canonical order, so the data member 5 leads.
 func TestInferIfElseExprMissingAltIsVoid(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn pick(c: boolean) {

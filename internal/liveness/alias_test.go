@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -154,10 +155,10 @@ func TestMergeAliasSetsNoDuplicateSetIDs(t *testing.T) {
 	// y already belonged to targetID before the merge, so the replacement
 	// of z's setID with targetID must not create a duplicate entry.
 	for v, setIDs := range tracker.VarToSets {
-		seen := make(map[SetID]bool)
+		seen := set.NewSet[SetID]()
 		for _, id := range setIDs {
-			require.False(t, seen[id], "VarToSets[%d] contains duplicate SetID %d", v, id)
-			seen[id] = true
+			require.False(t, seen.Contains(id), "VarToSets[%d] contains duplicate SetID %d", v, id)
+			seen.Add(id)
 		}
 	}
 }
