@@ -155,12 +155,13 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 // borrow flowing into a union of borrows must match a member, NOT hit the
 // RefType arm's "non-variable super" path that treats a union super as a
 // concrete-non-variable demand and rejects the borrow.
+//
+//	mut {x: number} <: (mut {x: number} | mut {y: string})    succeeds
 func TestConstrainUnionPrecedesRefArm(t *testing.T) {
-	// &mut {x: number} <: (&mut {x: number} | &mut {y: string}). The lattice
-	// block must match the first union member before the RefType arm in the
-	// structural switch can intercept and treat the super as a concrete
-	// non-borrow. Build the borrows with no lifetimes so the BorrowEscape
-	// path is also out of the question.
+	// The lattice block must match the first union member before the RefType
+	// arm in the structural switch can intercept and treat the super as a
+	// concrete non-borrow. Build the borrows with no lifetimes so the
+	// BorrowEscape path is also out of the question.
 	c := &Context{}
 	mutXNum := &soltype.RefType{Mut: true, Inner: exactObj(propElem("x", num()))}
 	mutYStr := &soltype.RefType{Mut: true, Inner: exactObj(propElem("y", str()))}
@@ -171,8 +172,13 @@ func TestConstrainUnionPrecedesRefArm(t *testing.T) {
 }
 
 // TestConstrainInexactUnionIntoClosedRejects covers the inexact-into-closed
-// rule. The flag and the parser surface land in PR4; until then the rule
-// fires only against an internally-built inexact union, which the test mints
+// rule: an inexact sub union carries an open `unknown` tail that a closed
+// (non-inexact-union, non-unknown, non-var) super cannot absorb.
+//
+//	(number | string | ...) <: number    rejects with InexactUnionIntoExact
+//
+// The flag and the parser surface land in PR4; until then the rule fires
+// only against an internally-built inexact union, which the test mints
 // directly through the smart constructor.
 func TestConstrainInexactUnionIntoClosedRejects(t *testing.T) {
 	c := &Context{}
@@ -185,9 +191,13 @@ func TestConstrainInexactUnionIntoClosedRejects(t *testing.T) {
 
 // Regression: a borrow with a lifetime flowing into a union of owned types
 // must surface as a BorrowEscapeError rather than collapsing to a generic
-// union-level CannotConstrainError. Each per-member trial reports
-// BorrowEscape internally; the union-super exists rule promotes that to a
-// single union-level BorrowEscape so the lifetime cause survives.
+// union-level CannotConstrainError.
+//
+//	&'a {x: number} <: (number | string)    BorrowEscapeError, not CannotConstrain
+//
+// Each per-member trial reports BorrowEscape internally; the union-super
+// exists rule promotes that to a single union-level BorrowEscape so the
+// lifetime cause survives.
 func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
 	c := &Context{}
 	lt := c.freshLifetime(0)
@@ -201,10 +211,13 @@ func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
 
 // Regression: an inexact union flowing into a free inference variable must
 // be recorded as an upper bound of the variable, not rejected with
-// InexactUnionIntoExactError. superAcceptsUnknownTail returns true for
-// TypeVar so the gate doesn't fire; the for-all decomposition recurses on
-// each member, and each constraint (number <: α, string <: α) records a
-// lower bound on α. The variable receives both bounds; no error.
+// InexactUnionIntoExactError.
+//
+//	(number | string | ...) <: α    defers; α gains number and string as lower bounds
+//
+// superAcceptsUnknownTail returns true for TypeVar so the gate doesn't
+// fire; the for-all decomposition recurses on each member, and each
+// constraint (number <: α, string <: α) records a lower bound on α.
 func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
 	c := &Context{}
 	alpha := c.freshVar(0)
@@ -214,16 +227,21 @@ func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
 	require.Len(t, alpha.LowerBounds, 2)
 }
 
+// TestConstrainInexactUnionIntoUnknownAccepts covers the other accepting
+// super for an inexact sub union: `unknown` (the lattice top) absorbs the
+// open tail.
+//
+//	(number | string | ...) <: unknown    inexact-into-closed gate does NOT fire
+//
+// The decomposition produces `number <: unknown` and `string <: unknown`.
+// PR5 lands the `_ <: unknown` (⊤) rule; until then those are
+// CannotConstrain fall-throughs, so this case still errors — what the test
+// asserts is that the inexact-into-closed gate did NOT fire (no
+// InexactUnionIntoExactError), since unknown is recognized as accepting the
+// open tail.
 func TestConstrainInexactUnionIntoUnknownAccepts(t *testing.T) {
-	// An inexact sub union flowing into `unknown` — the only super in PR2 that
-	// can absorb the open tail.
 	c := &Context{}
 	sub := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
-	// The decomposition produces `number <: unknown` and `string <: unknown`.
-	// PR5 lands the `_ <: unknown` rule; until then those are CannotConstrain
-	// fall-throughs, so this case still errors — what the test asserts is that
-	// the inexact-into-closed gate did NOT fire (no InexactUnionIntoExactError),
-	// since unknown is recognized as accepting the open tail.
 	errs := c.Constrain(sub, &soltype.UnknownType{})
 	for _, e := range errs {
 		_, isInexact := e.(*InexactUnionIntoExactError)
