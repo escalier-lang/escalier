@@ -567,10 +567,12 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 }
 
 // typeKindOrder ranks a soltype concrete kind for compareType. The lattice
-// bounds and the error sentinel come first, then the structural kinds, then
-// the lattice forms, and finally NullType and Void so a union renders its
-// data members before its absence markers. NullType precedes Void by
-// convention, so `T | null | void` is the canonical render.
+// bounds and the error sentinel come first, then TypeVarType so quantified
+// parameters lead in a rendered union, then primitives and literals, then
+// the remaining structural kinds, then the lattice forms, and finally
+// NullType and Void. A union renders its parameters and data members
+// before its absence markers. NullType precedes Void by convention, so
+// `T0 | number | null | void` is the canonical render.
 func typeKindOrder(t soltype.Type) int {
 	switch t.(type) {
 	case *soltype.NeverType:
@@ -579,11 +581,11 @@ func typeKindOrder(t soltype.Type) int {
 		return 1
 	case *soltype.ErrorType:
 		return 2
-	case *soltype.PrimType:
-		return 3
-	case *soltype.LitType:
-		return 4
 	case *soltype.TypeVarType:
+		return 3
+	case *soltype.PrimType:
+		return 4
+	case *soltype.LitType:
 		return 5
 	case *soltype.RefType:
 		return 6

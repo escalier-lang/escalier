@@ -276,7 +276,7 @@ func TestInferMatchParamUsageObject(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(p: {x: T0, y: unknown}) -> 0 | T0", values["f"])
+	require.Equal(t, "fn <T0>(p: {x: T0, y: unknown}) -> T0 | 0", values["f"])
 }
 
 // The same usage inference applies through a tuple pattern: the scrutinee infers a

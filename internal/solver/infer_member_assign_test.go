@@ -89,7 +89,7 @@ func TestInferMemberAssignWrittenAndEscapingReadField(t *testing.T) {
 func TestInferMemberAssignWriteAfterRead(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(obj) { val x = obj.x\n obj.x = 5\n return x }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: mut {x: number & T0}) -> T0", values["foo"])
+	require.Equal(t, "fn <T0>(obj: mut {x: T0 & number}) -> T0", values["foo"])
 }
 
 // A write through a nested receiver wraps only the INNER object in `mut`: `obj` is

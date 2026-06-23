@@ -292,14 +292,16 @@ func TestCompareTypeConsistentWithEqual(t *testing.T) {
 }
 
 // TestCompareTypeKindOrder pins the kind ranking that orders dissimilar
-// members so a union of mixed kinds renders deterministically.
+// members so a union of mixed kinds renders deterministically. TypeVarType
+// leads, then PrimType, then LitType, so a quantified parameter shows up
+// before the primitive or literal it is constrained against.
 func TestCompareTypeKindOrder(t *testing.T) {
 	c := &Context{}
 	v := c.freshVar(0)
+	require.Less(t, compareType(v, num()), 0, "TypeVarType < PrimType")
 	require.Less(t, compareType(num(), numLit(1)), 0, "PrimType < LitType")
-	require.Less(t, compareType(numLit(1), v), 0, "LitType < TypeVarType")
-	require.Less(t, compareType(&soltype.NeverType{}, num()), 0, "NeverType < PrimType")
-	require.Less(t, compareType(&soltype.UnknownType{}, num()), 0, "UnknownType < PrimType")
+	require.Less(t, compareType(&soltype.NeverType{}, v), 0, "NeverType < TypeVarType")
+	require.Less(t, compareType(&soltype.UnknownType{}, v), 0, "UnknownType < TypeVarType")
 }
 
 // TestVoidAndNullSortLast pins the convention that the absence markers
