@@ -55,15 +55,48 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	return lo, hi
 }
 
+// commonBorrowEscape returns a representative BorrowEscapeError when EVERY
+// trial errored with BorrowEscapeError only — the signal that the sub is a
+// borrow with a lifetime and not one super-union member could host it. The
+// per-trial slices are speculative output, so this collapses them into a
+// single union-level error that names the lifetime cause; without it the
+// union-super exists rule would shadow BorrowEscape with a generic
+// CannotConstrain that loses the actionable diagnostic.
+func commonBorrowEscape(trials [][]SolverError) *BorrowEscapeError {
+	if len(trials) == 0 {
+		return nil
+	}
+	var first *BorrowEscapeError
+	for _, errs := range trials {
+		if len(errs) != 1 {
+			return nil
+		}
+		esc, ok := errs[0].(*BorrowEscapeError)
+		if !ok {
+			return nil
+		}
+		if first == nil {
+			first = esc
+		}
+	}
+	return first
+}
+
 // superAcceptsUnknownTail reports whether super can absorb the open `unknown`
 // tail of an inexact union sub. The tail represents "anything else" beyond the
 // declared members, so only `unknown` itself and an inexact union with its own
-// open tail can take it. Anything else — an exact union, a concrete prim/object/
-// borrow, an intersection — is closed against the tail and the sub is rejected
-// with an InexactUnionIntoExactError before for-all decomposition.
+// open tail can take it. A TypeVarType super is ALSO accepted: a free
+// inference variable has no commitments yet, so deferring to the var arm and
+// recording the whole inexact union as an upper bound is sound — later
+// concrete demands on the var run the gate against a real closed target.
+// Anything else — an exact union, a concrete prim/object/borrow, an
+// intersection — is closed against the tail and the sub is rejected with an
+// InexactUnionIntoExactError before for-all decomposition.
 func superAcceptsUnknownTail(super soltype.Type) bool {
 	switch s := super.(type) {
 	case *soltype.UnknownType:
+		return true
+	case *soltype.TypeVarType:
 		return true
 	case *soltype.UnionType:
 		return s.Inexact
@@ -208,10 +241,26 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	// records the whole union as an upper bound. Each member is trialled under a
 	// probe with a cloned seen so a failed arm's bound mutations and coinductive
 	// cache entries don't leak into the next.
+	//
+	// FREE-VAR MEMBERS ARE SKIPPED. A super-union member that is itself an
+	// unbounded TypeVar would trivially "match" any concrete sub by recording sub
+	// as the var's lower bound — speculative pinning that commits the var to the
+	// first sub that flows in, even when a concrete sibling branch would have
+	// matched cleanly. canonical sort ranks TypeVar before concrete kinds, so
+	// without this skip a `5 <: (α | number)` constraint would always pin α to ≥5
+	// and never even try the number branch. Skipping the var member lets number
+	// succeed; if no concrete branch matches, the rule fails cleanly without
+	// touching α. A var member with bounds is also skipped — its bounds came
+	// from elsewhere and the user did not write `... | α` as a catch-all.
 	if supU, ok := super.(*soltype.UnionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
-			var lastErrs []SolverError
+			var trialErrs [][]SolverError
+			triedAny := false
 			for _, m := range supU.Types {
+				if _, isVar := m.(*soltype.TypeVarType); isVar {
+					continue
+				}
+				triedAny = true
 				p := newProbe(c.probe)
 				c.probe = p
 				errs := c.constrain(sub, m, seen.Clone())
@@ -221,18 +270,33 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					return nil
 				}
 				p.Discard()
-				lastErrs = errs
+				trialErrs = append(trialErrs, errs)
 			}
-			// No branch matched. Report the failure at the union level rather
-			// than the last-branch failure, since each branch was a speculative
-			// trial — the user wrote "or", not "and". The per-branch details are
-			// dropped on purpose: a per-member cascade would name the union
-			// shape repeatedly without adding information. PR5 will let an
-			// inexact super-union's open tail absorb a non-matching concrete
-			// sub through the `_ <: unknown` rule; until then the inexact case
-			// is rejected the same as the exact case.
-			_ = lastErrs
-			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+			if !triedAny {
+				// Every member was a free var. Fall through to the var arms so
+				// the whole union is recorded as an upper bound on sub if sub
+				// has any var-shaped fallback; otherwise the bottom-of-function
+				// CannotConstrainError fires. Don't emit our own here.
+			} else {
+				// Every concrete branch failed. If they all failed for the SAME
+				// reason — a BorrowEscapeError because sub is a borrow flowing
+				// into a union of owned types, for instance — promote that
+				// to a single union-level diagnostic so the lifetime/structural
+				// cause survives. Otherwise emit the generic union-level
+				// CannotConstrainError.
+				//
+				// PR5 will let an inexact super-union's open tail absorb a
+				// non-matching concrete sub through the `_ <: unknown` rule;
+				// until then the inexact case is rejected the same as the
+				// exact case.
+				if commonBorrowEscape(trialErrs) != nil {
+					// Every BorrowEscape carries the sub borrow on its own Sub
+					// field, so if all trials returned BorrowEscape sub must
+					// itself be a RefType — the type assertion always holds.
+					return []SolverError{&BorrowEscapeError{Sub: sub.(*soltype.RefType), Super: super}}
+				}
+				return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+			}
 		}
 	}
 

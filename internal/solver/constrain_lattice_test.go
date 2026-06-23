@@ -131,24 +131,23 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		require.True(t, isUnion, "variable sub should record the union whole, got %T", a.UpperBounds[0])
 	})
 
-	t.Run("losing branch records no upper bound on the variable", func(t *testing.T) {
-		// A failed exists trial that touched a variable must not leak its
-		// bound mutation into the final state. Set up: super union has a
-		// fresh var as one branch and an incompatible prim as the other; a
-		// concrete LITERAL sub matches the var branch by recording itself
-		// as a lower bound — the committing trial. The losing prim-branch
-		// trial would have added a bound to the var too if it weren't
-		// discarded; the assertion is that the variable carries exactly
-		// one lower bound, from the winning branch.
+	t.Run("free-var super member is skipped, not pinned by the trial", func(t *testing.T) {
+		// A super-union member that is itself an unbounded TypeVar must not
+		// be trialled — that would speculatively pin it to sub. Set up: super
+		// union has a fresh var as one branch and an incompatible prim as
+		// the other; trialling the var would trivially succeed by recording
+		// "hi" as its lower bound. The fix skips the var member; the number
+		// trial fails ("hi" vs number); the rule reports a clean union-level
+		// CannotConstrainError and the variable carries NO bounds.
 		c := &Context{}
 		extra := c.freshVar(0)
 		super := newUnion(nil, []soltype.Type{extra, num()}, false)
 
-		// "hi" <: (extra | number). The number branch fails (StrLit vs
-		// NumPrim), so the trial of "hi" <: extra commits and records "hi"
-		// as a lower bound of extra. extra should have exactly one bound.
-		require.Empty(t, c.Constrain(strLit("hi"), super))
-		require.Len(t, extra.LowerBounds, 1)
+		errs := c.Constrain(strLit("hi"), super)
+		require.Len(t, errs, 1)
+		require.IsType(t, &CannotConstrainError{}, errs[0])
+		require.Empty(t, extra.LowerBounds)
+		require.Empty(t, extra.UpperBounds)
 	})
 }
 
@@ -182,6 +181,37 @@ func TestConstrainInexactUnionIntoClosedRejects(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.IsType(t, &InexactUnionIntoExactError{}, errs[0])
 	require.Equal(t, "cannot constrain number | string | ... <: number", errs[0].Message())
+}
+
+// Regression: a borrow with a lifetime flowing into a union of owned types
+// must surface as a BorrowEscapeError rather than collapsing to a generic
+// union-level CannotConstrainError. Each per-member trial reports
+// BorrowEscape internally; the union-super exists rule promotes that to a
+// single union-level BorrowEscape so the lifetime cause survives.
+func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
+	c := &Context{}
+	lt := c.freshLifetime(0)
+	borrow := &soltype.RefType{Mut: false, Lt: lt, Inner: exactObj(propElem("x", num()))}
+	super := newUnion(nil, []soltype.Type{num(), str()}, false)
+
+	errs := c.Constrain(borrow, super)
+	require.Len(t, errs, 1)
+	require.IsType(t, &BorrowEscapeError{}, errs[0])
+}
+
+// Regression: an inexact union flowing into a free inference variable must
+// be recorded as an upper bound of the variable, not rejected with
+// InexactUnionIntoExactError. superAcceptsUnknownTail returns true for
+// TypeVar so the gate doesn't fire; the for-all decomposition recurses on
+// each member, and each constraint (number <: α, string <: α) records a
+// lower bound on α. The variable receives both bounds; no error.
+func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
+	c := &Context{}
+	alpha := c.freshVar(0)
+	sub := &soltype.UnionType{Types: []soltype.Type{num(), str()}, Inexact: true}
+
+	require.Empty(t, c.Constrain(sub, alpha))
+	require.Len(t, alpha.LowerBounds, 2)
 }
 
 func TestConstrainInexactUnionIntoUnknownAccepts(t *testing.T) {

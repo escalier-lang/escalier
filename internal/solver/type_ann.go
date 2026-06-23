@@ -190,13 +190,18 @@ func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Ty
 		}
 	}
 	t := newUnion(c.ctx, members, false)
-	// Record provenance only when newUnion produced a FRESH pointer. A
-	// single-member collapse (`number | number` ⇒ `number`, or the
-	// subsumption case `1 | number` ⇒ `number`) returns an input member's
-	// pointer that already carries Prov from its own annotation; re-recording
+	// Record provenance only when the result has no Prov yet. The smart
+	// constructor's single-member collapse (`number | number` ⇒ `number`,
+	// subsumption `1 | number` ⇒ `number`) returns an input member's pointer
+	// that already carries Prov from its own annotation, so re-recording
 	// against the outer union node would overwrite the narrower blame and
-	// trip the debugProv unique-pointer guard.
-	if !isInputMember(t, members) {
+	// trip the debugProv unique-pointer guard. A pointer-identity check
+	// would miss the case where the survivor is a `freshAt`-recovered
+	// TypeVar — freshAt doesn't recordProv, so that survivor is in
+	// `members` but has no Prov, and the annotation node would end up with
+	// no entry at all. Gating on the Prov state instead of identity records
+	// blame in that case too.
+	if !c.hasProv(t) {
 		c.recordProv(t, ta, AnnotationType)
 	}
 	return t, true
@@ -217,25 +222,11 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 		}
 	}
 	t := newIntersection(c.ctx, members)
-	// Skip Prov recording on a collapsed result — same reason as the union
-	// arm.
-	if !isInputMember(t, members) {
+	// Same Prov-state gate as the union arm — see resolveUnionTypeAnn.
+	if !c.hasProv(t) {
 		c.recordProv(t, ta, AnnotationType)
 	}
 	return t, true
-}
-
-// isInputMember reports whether t shares pointer identity with one of the
-// resolved member types. The smart constructors return an input member as-is
-// for the single-member collapse case, so this guard avoids re-recording Prov
-// against a pointer that already carries a child annotation's blame.
-func isInputMember(t soltype.Type, members []soltype.Type) bool {
-	for _, m := range members {
-		if t == m {
-			return true
-		}
-	}
-	return false
 }
 
 // resolveMutableTypeAnn lowers a `mut T` annotation to an owned-mutable borrow,
