@@ -508,6 +508,9 @@ func equalType(a, b soltype.Type) bool {
 	case *soltype.Void:
 		_, ok := b.(*soltype.Void)
 		return ok
+	case *soltype.NullType:
+		_, ok := b.(*soltype.NullType)
+		return ok
 	case *soltype.NeverType:
 		_, ok := b.(*soltype.NeverType)
 		return ok

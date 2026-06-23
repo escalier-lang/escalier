@@ -293,8 +293,8 @@ func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 }
 
 // An if without an else folds in void from the missing alt, so
-// `return if c { 5 }` returns `void | 5`. Void ranks before LitType in M6
-// PR1's canonical order.
+// `return if c { 5 }` returns `5 | void`. Void sorts last in M6 PR1's
+// canonical order, so the data member 5 leads.
 func TestInferIfElseExprMissingAltIsVoid(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn pick(c: boolean) {
@@ -302,7 +302,7 @@ func TestInferIfElseExprMissingAltIsVoid(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> void | 5`, values["pick"])
+	require.Equal(t, `fn (c: boolean) -> 5 | void`, values["pick"])
 }
 
 // The if's condition must be boolean; a string condition is rejected.

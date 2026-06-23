@@ -922,6 +922,8 @@ func describe(t soltype.Type) string {
 		return prefix + describe(t.Inner)
 	case *soltype.Void:
 		return "void"
+	case *soltype.NullType:
+		return "null"
 	case *soltype.NeverType:
 		return "never"
 	case *soltype.UnknownType:

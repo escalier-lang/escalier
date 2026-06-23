@@ -78,6 +78,7 @@ func (t *TypeVarType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLe
 func (t *PrimType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
 func (t *LitType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *Void) Accept(v TypeVisitor, pol Polarity) Type        { return acceptLeaf(t, v, pol) }
+func (t *NullType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
 func (t *NeverType) Accept(v TypeVisitor, pol Polarity) Type   { return acceptLeaf(t, v, pol) }
 func (t *UnknownType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 func (t *ErrorType) Accept(v TypeVisitor, pol Polarity) Type   { return acceptLeaf(t, v, pol) }

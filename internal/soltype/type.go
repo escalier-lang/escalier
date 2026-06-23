@@ -327,6 +327,13 @@ type PromiseType struct{ Inner Type }
 // Void is the result type of a statement block with no value.
 type Void struct{}
 
+// NullType is the type whose only inhabitant is the `null` literal. It
+// mirrors TypeScript's `null` type and sits alongside Void as a distinct
+// atomic kind. The canonical comparator sorts both kinds last so a union
+// such as `T | null | void` consistently renders with the data members
+// first.
+type NullType struct{}
+
 // NeverType (⊥) and UnknownType (⊤) are the bottom/top of the subtype lattice —
 // the coalesced output of an empty-bounds single-polarity variable (positive ⇒
 // never, negative ⇒ unknown). The spike emits these via type_system; M1 carries
@@ -377,6 +384,7 @@ func (*ObjectType) isType()       {}
 func (*RefType) isType()          {}
 func (*PromiseType) isType()      {}
 func (*Void) isType()             {}
+func (*NullType) isType()         {}
 func (*NeverType) isType()        {}
 func (*UnknownType) isType()      {}
 func (*UnionType) isType()        {}
@@ -435,8 +443,8 @@ func LevelOf(t Type) int {
 	case *IntersectionType:
 		return maxMemberLevel(t.Types)
 	default:
-		// PrimType, LitType, Void, NeverType, UnknownType, ErrorType: childless leaves
-		// (ErrorType is a sentinel, level 0).
+		// PrimType, LitType, Void, NullType, NeverType, UnknownType, ErrorType:
+		// childless leaves. ErrorType is a sentinel at level 0.
 		return 0
 	}
 }

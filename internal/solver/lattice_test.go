@@ -302,6 +302,45 @@ func TestCompareTypeKindOrder(t *testing.T) {
 	require.Less(t, compareType(&soltype.UnknownType{}, num()), 0, "UnknownType < PrimType")
 }
 
+// TestVoidAndNullSortLast pins the convention that the absence markers
+// NullType and Void appear after data members in canonical order, with
+// NullType before Void. A mixed union such as `number | null | void`
+// surfaces the data first and the absence markers last.
+func TestVoidAndNullSortLast(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []soltype.Type
+		want  string
+	}{
+		{
+			name:  "void sorts after a data member",
+			parts: []soltype.Type{&soltype.Void{}, num()},
+			want:  "number | void",
+		},
+		{
+			name:  "null sorts after a data member",
+			parts: []soltype.Type{&soltype.NullType{}, num()},
+			want:  "number | null",
+		},
+		{
+			name:  "null sorts before void",
+			parts: []soltype.Type{&soltype.Void{}, &soltype.NullType{}, num()},
+			want:  "number | null | void",
+		},
+		{
+			name:  "null before void independent of input order",
+			parts: []soltype.Type{&soltype.Void{}, &soltype.NullType{}},
+			want:  "null | void",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := newUnion(nil, tt.parts, false)
+			require.Equal(t, tt.want, soltype.Print(got))
+		})
+	}
+}
+
 // TestCompareTypeDistinctRefsWithUnnamedLifetimes pins the structural
 // comparator fix for borrows. Two RefTypes that differ only in distinct,
 // unnamed LifetimeVars print identically when the top-level Print supplies

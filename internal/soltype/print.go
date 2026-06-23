@@ -348,6 +348,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return "error"
 	case *Void:
 		return "void"
+	case *NullType:
+		return "null"
 	case *TupleType:
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {
