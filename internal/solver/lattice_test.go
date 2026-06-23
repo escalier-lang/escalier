@@ -42,6 +42,29 @@ func TestNewUnionNormalization(t *testing.T) {
 			want:    &soltype.UnionType{Types: []soltype.Type{num(), str()}, Inexact: true},
 		},
 		{
+			name: "doubly-nested union splices fully",
+			// ((number | string) | boolean) collapses to number | string | boolean.
+			// The recursive splice walks the inner UnionType the outer member
+			// holds rather than stopping at one level.
+			parts: []soltype.Type{&soltype.UnionType{Types: []soltype.Type{
+				&soltype.UnionType{Types: []soltype.Type{num(), str()}},
+				boolT(),
+			}}},
+			want: &soltype.UnionType{Types: []soltype.Type{num(), str(), boolT()}},
+		},
+		{
+			name: "inexact propagates from a deeply nested member",
+			// number | ((string | ...)) — the inexact tail lives two levels
+			// down and still makes the outer union inexact.
+			parts: []soltype.Type{
+				num(),
+				&soltype.UnionType{Types: []soltype.Type{
+					&soltype.UnionType{Types: []soltype.Type{str()}, Inexact: true},
+				}},
+			},
+			want: &soltype.UnionType{Types: []soltype.Type{num(), str()}, Inexact: true},
+		},
+		{
 			name:  "never drops from union",
 			parts: []soltype.Type{num(), &soltype.NeverType{}},
 			want:  num(),
@@ -107,6 +130,24 @@ func TestNewIntersectionNormalization(t *testing.T) {
 			name:  "nested intersection splices in, canonical order",
 			parts: []soltype.Type{&soltype.IntersectionType{Types: []soltype.Type{num(), exactObj(propElem("a", num()))}}, exactObj(propElem("b", str()))},
 			want:  &soltype.IntersectionType{Types: []soltype.Type{num(), exactObj(propElem("a", num())), exactObj(propElem("b", str()))}},
+		},
+		{
+			name: "doubly-nested intersection splices fully",
+			// (({a} & {b}) & number) collapses to number & {a} & {b}. The
+			// recursive splice walks the inner IntersectionType the outer
+			// member holds.
+			parts: []soltype.Type{&soltype.IntersectionType{Types: []soltype.Type{
+				&soltype.IntersectionType{Types: []soltype.Type{
+					exactObj(propElem("a", num())),
+					exactObj(propElem("b", str())),
+				}},
+				num(),
+			}}},
+			want: &soltype.IntersectionType{Types: []soltype.Type{
+				num(),
+				exactObj(propElem("a", num())),
+				exactObj(propElem("b", str())),
+			}},
 		},
 		{
 			name:  "unknown drops from intersection",

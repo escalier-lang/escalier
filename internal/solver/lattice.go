@@ -53,41 +53,66 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 }
 
 // flattenUnion splices nested UnionType members into the outer member list
-// and carries an inner inexact flag out to the caller. An inexact nested
-// member makes the outer union inexact, since `... | (A | ...)` collapses to
-// `A | ...`. When no member nests, the input slice is reused, so the common
-// case pays no allocation.
+// and carries an inner inexact flag out to the caller. The splice is
+// recursive, so a UnionType whose members include another UnionType is fully
+// unwrapped in one pass. An inexact nested member at any depth makes the
+// outer union inexact, since `... | (A | ...)` collapses to `A | ...`. When
+// no member nests, the input slice is reused, so the common case pays no
+// allocation.
+//
+// Recursion matters when a caller hands flatten an unnormalized member, such
+// as a raw `&UnionType{Types: [...]}` constructed in a test or rebuilt by a
+// visitor that bypasses newUnion. The smart constructor's own output is
+// always flat, so a chain of normal newUnion calls would never trigger the
+// recursive case, but the recursion keeps the flatness invariant true for
+// every input.
 func flattenUnion(parts []soltype.Type, inexact bool) ([]soltype.Type, bool) {
 	if !anyUnion(parts) {
 		return parts, inexact
 	}
 	flat := make([]soltype.Type, 0, len(parts))
-	for _, p := range parts {
-		if u, ok := p.(*soltype.UnionType); ok {
-			flat = append(flat, u.Types...)
-			if u.Inexact {
-				inexact = true
-			}
-			continue
+	var splice func(p soltype.Type)
+	splice = func(p soltype.Type) {
+		u, ok := p.(*soltype.UnionType)
+		if !ok {
+			flat = append(flat, p)
+			return
 		}
-		flat = append(flat, p)
+		if u.Inexact {
+			inexact = true
+		}
+		for _, m := range u.Types {
+			splice(m)
+		}
+	}
+	for _, p := range parts {
+		splice(p)
 	}
 	return flat, inexact
 }
 
-// flattenIntersection is the meet twin of flattenUnion. There is no exactness
-// flag to carry.
+// flattenIntersection is the meet twin of flattenUnion. The splice is
+// recursive for the same reason: a raw or visitor-rebuilt IntersectionType
+// whose members include another IntersectionType is fully unwrapped in one
+// pass. There is no exactness flag to carry.
 func flattenIntersection(parts []soltype.Type) []soltype.Type {
 	if !anyIntersection(parts) {
 		return parts
 	}
 	flat := make([]soltype.Type, 0, len(parts))
-	for _, p := range parts {
-		if i, ok := p.(*soltype.IntersectionType); ok {
-			flat = append(flat, i.Types...)
-			continue
+	var splice func(p soltype.Type)
+	splice = func(p soltype.Type) {
+		i, ok := p.(*soltype.IntersectionType)
+		if !ok {
+			flat = append(flat, p)
+			return
 		}
-		flat = append(flat, p)
+		for _, m := range i.Types {
+			splice(m)
+		}
+	}
+	for _, p := range parts {
+		splice(p)
 	}
 	return flat
 }
