@@ -841,7 +841,7 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]BindingKey
 	stack := make([]BindingKey, 0)
 	indices := make(map[BindingKey]int)
 	lowlinks := make(map[BindingKey]int)
-	onStack := make(map[BindingKey]bool)
+	onStack := set.NewSet[BindingKey]()
 	sccs := make([][]BindingKey, 0)
 
 	var strongConnect func(BindingKey)
@@ -850,7 +850,7 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]BindingKey
 		lowlinks[v] = index
 		index++
 		stack = append(stack, v)
-		onStack[v] = true
+		onStack.Add(v)
 
 		// Consider successors of v
 		deps := g.GetDeps(v)
@@ -863,7 +863,7 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]BindingKey
 				if lowlinks[w] < lowlinks[v] {
 					lowlinks[v] = lowlinks[w]
 				}
-			} else if onStack[w] {
+			} else if onStack.Contains(w) {
 				// Successor w is in stack and hence in the current SCC
 				if indices[w] < lowlinks[v] {
 					lowlinks[v] = indices[w]
@@ -877,7 +877,7 @@ func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]BindingKey
 			for {
 				w := stack[len(stack)-1]
 				stack = stack[:len(stack)-1]
-				onStack[w] = false
+				onStack.Remove(w)
 				scc = append(scc, w)
 				if w == v {
 					break

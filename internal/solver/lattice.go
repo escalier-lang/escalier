@@ -258,25 +258,31 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 	for i, p := range parts {
 		hasVar[i] = soltype.HasTypeVar(p)
 	}
-	keep := make([]bool, len(parts))
-	for i := range keep {
-		keep[i] = true
-	}
+	dropped := set.NewSet[int]()
 	for i, a := range parts {
-		if !keep[i] || hasVar[i] {
+		if dropped.Contains(i) || hasVar[i] {
 			continue
 		}
 		for j, b := range parts {
-			if i == j || !keep[j] || hasVar[j] {
+			if i == j || dropped.Contains(j) || hasVar[j] {
 				continue
 			}
 			if drops(c, a, b) {
-				keep[i] = false
+				dropped.Add(i)
 				break
 			}
 		}
 	}
-	return compactKept(parts, keep)
+	if dropped.Len() == 0 {
+		return parts
+	}
+	out := make([]soltype.Type, 0, len(parts)-dropped.Len())
+	for i, p := range parts {
+		if !dropped.Contains(i) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // unionDrops returns true when union member m should be dropped because the
@@ -291,23 +297,6 @@ func unionDrops(c *Context, m, sibling soltype.Type) bool {
 // one to discard.
 func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
 	return subtypeUnderProbe(c, sibling, m)
-}
-
-// compactKept returns the elements of parts whose keep flag is set, reusing
-// parts when every entry is kept.
-func compactKept(parts []soltype.Type, keep []bool) []soltype.Type {
-	for _, k := range keep {
-		if !k {
-			out := make([]soltype.Type, 0, len(parts))
-			for i, p := range parts {
-				if keep[i] {
-					out = append(out, p)
-				}
-			}
-			return out
-		}
-	}
-	return parts
 }
 
 // subtypeUnderProbe trials sub <: super under a discard-only probe and

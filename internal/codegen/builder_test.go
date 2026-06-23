@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -156,7 +157,7 @@ very.deep.nested.namespace.structure = {};`,
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			builder := &Builder{tempId: 0, depGraph: nil}
-			definedNamespaces := make(map[string]bool)
+			definedNamespaces := set.NewSet[string]()
 			stmts := builder.buildNamespaceHierarchy(test.namespace, definedNamespaces)
 
 			// Use the printer to generate the output
@@ -175,7 +176,7 @@ very.deep.nested.namespace.structure = {};`,
 
 func TestBuildNamespaceHierarchy_AvoidRedefinition(t *testing.T) {
 	builder := &Builder{tempId: 0, depGraph: nil}
-	definedNamespaces := make(map[string]bool)
+	definedNamespaces := set.NewSet[string]()
 
 	// First call should generate all statements
 	stmts1 := builder.buildNamespaceHierarchy("foo.bar.baz", definedNamespaces)
