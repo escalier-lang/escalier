@@ -494,6 +494,24 @@ func TestInferMemberReadFlatBorrowOfRefField(t *testing.T) {
 		values["f"])
 }
 
+// A `&mut` field falls through fieldReadBorrow's no-wrap branch, so the read
+// returns the field's mutable borrow at the field's own lifetime rather than
+// nesting under the receiver's. The TypeVar result var coalesces to the
+// concrete field type, and the function returns that `&mut` borrow at the
+// annotation-minted lifetime. Aliasing exclusivity on the surviving mut
+// borrow needs the move-engine work in PR 6, and PR 9 normalizes the
+// otherwise uninhabitable `&mut &mut` shape.
+func TestInferMemberReadOfMutBorrowField(t *testing.T) {
+	src := `fn f(p: {a: &mut {x: number}}) {
+  return p.a
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a>(p: {a: &'a mut {x: number}}) -> &'a mut {x: number}",
+		values["f"])
+}
+
 // A primitive field stays a value, since `PrimType` is not a `RefInner`. The
 // PR 4 wrap is skipped and the read returns the primitive directly. This is
 // the same shape pre-PR-4 returned. Pinning it here guards against the wrap
