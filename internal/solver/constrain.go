@@ -57,11 +57,20 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 
 // commonBorrowEscape returns a representative BorrowEscapeError when every
 // per-trial error is itself a BorrowEscapeError. That means sub is a borrow
-// with a lifetime and no super-union member could host it. The caller uses the
-// returned value to emit one union-level BorrowEscapeError so the lifetime
-// cause survives. Without this collapse the union-super exists rule would
-// shadow BorrowEscape with a generic CannotConstrain and the actionable
-// diagnostic would be lost.
+// with a lifetime and no super-union member could host it. The caller uses
+// the returned value to emit one union-level BorrowEscapeError so the
+// lifetime cause survives. Without this collapse the union-super exists
+// rule would shadow BorrowEscape with a generic CannotConstrain and the
+// actionable diagnostic would be lost.
+//
+// Example. With `&'a {x: number} <: (number | string)`:
+//   - trial `&'a {x: number} <: number`: BorrowEscapeError (the borrow can't fit a number slot)
+//   - trial `&'a {x: number} <: string`: BorrowEscapeError (same)
+//
+// Both trials returned the same shape, so commonBorrowEscape returns one of
+// them. The caller emits `BorrowEscapeError{Sub: borrow, Super: union}` and
+// the user sees "borrow does not live long enough" rather than the unhelpful
+// "cannot constrain mut object <: number | string".
 func commonBorrowEscape(trials [][]SolverError) *BorrowEscapeError {
 	if len(trials) == 0 {
 		return nil
@@ -80,25 +89,6 @@ func commonBorrowEscape(trials [][]SolverError) *BorrowEscapeError {
 		}
 	}
 	return first
-}
-
-// superAcceptsUnknownTail reports whether super can absorb the open `unknown`
-// tail of an inexact union sub. The tail represents "anything else" beyond the
-// declared members, so only `unknown` itself and another inexact union with
-// its own open tail can take it. Every other shape is closed against the
-// tail. An exact union, a concrete prim, an object, a borrow, and an
-// intersection are all closed. An inexact-union sub flowing into one of them
-// is rejected with an InexactUnionIntoExactError before for-all decomposition
-// runs. A TypeVar super never reaches this function. The super-var-deferral
-// gate in the union-sub for-all block routes it to the var arm instead.
-func superAcceptsUnknownTail(super soltype.Type) bool {
-	switch s := super.(type) {
-	case *soltype.UnknownType:
-		return true
-	case *soltype.UnionType:
-		return s.Inexact
-	}
-	return false
 }
 
 // constraintKey keys the coinductive seen-set by pointer identity (Go's
@@ -237,8 +227,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	if subU, ok := sub.(*soltype.UnionType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			var errs []SolverError
-			if subU.Inexact && !superAcceptsUnknownTail(super) {
-				errs = append(errs, &InexactUnionIntoExactError{Sub: subU, Super: super})
+			if subU.Inexact {
+				// The open tail can only be absorbed by an `unknown` super
+				// or by another inexact union. Any other shape is closed
+				// against the tail and gets the union-level diagnostic.
+				closed := true
+				switch s := super.(type) {
+				case *soltype.UnknownType:
+					closed = false
+				case *soltype.UnionType:
+					closed = !s.Inexact
+				}
+				if closed {
+					errs = append(errs, &InexactUnionIntoExactError{Sub: subU, Super: super})
+				}
 			}
 			for _, m := range subU.Types {
 				errs = append(errs, c.constrain(m, super, seen)...)
