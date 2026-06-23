@@ -22,17 +22,17 @@ func TestDeepMutEnablesNestedWrite(t *testing.T) {
 		{
 			name: "owned mut, one level",
 			src:  "fn f(p: mut {a: {x: number}}) { p.a.x = 5 }",
-			want: "fn (p: mut {a: mut {x: number}}) -> void",
+			want: "fn (p: mut {a: {x: number}}) -> void",
 		},
 		{
 			name: "borrowed &mut, one level",
 			src:  "fn f(p: &mut {a: {x: number}}) { p.a.x = 5 }",
-			want: "fn (p: mut {a: mut {x: number}}) -> void",
+			want: "fn (p: mut {a: {x: number}}) -> void",
 		},
 		{
 			name: "owned mut, three levels",
 			src:  "fn f(p: mut {a: {b: {c: number}}}) { p.a.b.c = 5 }",
-			want: "fn (p: mut {a: mut {b: mut {c: number}}}) -> void",
+			want: "fn (p: mut {a: {b: {c: number}}}) -> void",
 		},
 	}
 	for _, tc := range cases {
@@ -76,7 +76,7 @@ func TestImmutableAnnotationRejectsNestedWrite(t *testing.T) {
 func TestDeepMutLowersFreshLiteral(t *testing.T) {
 	values, _, errs := inferSource(t, `val w: mut {a: {b: {c: number}}} = {a: {b: {c: 0}}}`)
 	require.Empty(t, errs)
-	require.Equal(t, "mut {a: mut {b: mut {c: number}}}", values["w"])
+	require.Equal(t, "mut {a: {b: {c: number}}}", values["w"])
 }
 
 // `readonly` forbids reassigning a field. Writing `obj.a = …` on a `readonly a`
@@ -95,7 +95,7 @@ func TestReadonlyPermitsValueMutationButNotReassignment(t *testing.T) {
 	t.Run("mutate the value", func(t *testing.T) {
 		values, _, errs := inferSource(t, "fn f(obj: mut {readonly a: {b: number}}) { obj.a.b = 5 }")
 		require.Empty(t, errs)
-		require.Equal(t, "fn (obj: mut {readonly a: mut {b: number}}) -> void", values["f"])
+		require.Equal(t, "fn (obj: mut {readonly a: {b: number}}) -> void", values["f"])
 	})
 	t.Run("reassign the field", func(t *testing.T) {
 		_, _, errs := inferSource(t, "fn f(obj: mut {readonly a: {b: number}}) { obj.a = {b: 9} }")
@@ -171,7 +171,7 @@ func TestDeepMutChainedReadsAllowDeepWrite(t *testing.T) {
 	src := "fn f(p: mut {a: {b: {c: number}}}) { p.a.b.c = 5 }"
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {a: mut {b: mut {c: number}}}) -> void", values["f"])
+	require.Equal(t, "fn (p: mut {a: {b: {c: number}}}) -> void", values["f"])
 }
 
 // A `readonly` field on an IMMUTABLE container is still rejected for writes. The
@@ -191,7 +191,7 @@ func TestReadonlyFieldOnImmutableContainerStillRejectsWrite(t *testing.T) {
 func TestDeepMutLowersFreshTupleLiteral(t *testing.T) {
 	values, _, errs := inferSource(t, "val w: mut [number, {x: number}] = [1, {x: 0}]")
 	require.Empty(t, errs)
-	require.Equal(t, "mut [number, mut {x: number}]", values["w"])
+	require.Equal(t, "mut [number, {x: number}]", values["w"])
 }
 
 // A `readonly` field's value may still be mutated through deep `mut`, even when
@@ -202,7 +202,7 @@ func TestReadonlyFieldValueIsDeepMutable(t *testing.T) {
 	src := "fn f(obj: mut {readonly a: {x: number, y: number}}) { obj.a.x = 5\n obj.a.y = 6 }"
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {readonly a: mut {x: number, y: number}}) -> void", values["f"])
+	require.Equal(t, "fn (obj: mut {readonly a: {x: number, y: number}}) -> void", values["f"])
 }
 
 // A `readonly` field round-trips through the printer: a `readonly a: number` annotation

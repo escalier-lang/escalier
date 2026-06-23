@@ -313,14 +313,45 @@ func (p *namedPrinter) borrowLifetimeName(lt Lifetime) string {
 // same shape, so e.g. a function inside a union renders as
 // `(fn () -> number) | string`.
 func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
-	result := p.printType(t)
-	if typePrec(t) < minPrec {
+	return p.printTypeMinPrecUM(t, minPrec, false)
+}
+
+// printTypeMinPrecUM is printTypeMinPrec threaded with the underMut flag. The flag
+// activates the deep-mut display rule: under a mutable wrapper, a nested
+// owned-mutable cell is the redundant inner `mut` that deep-mut lowering produces,
+// and printing it as the bare inner matches the surface annotation the user wrote.
+func (p *namedPrinter) printTypeMinPrecUM(t Type, minPrec int, underMut bool) string {
+	result := p.printTypeUM(t, underMut)
+	if elidedRefPrec(t, underMut) < minPrec {
 		return "(" + result + ")"
 	}
 	return result
 }
 
+// elidedRefPrec returns the precedence at which t will print after deep-mut
+// elision. An owned-mutable RefType inside a mut context prints as its inner, so
+// its precedence is the inner's, not the wrapper's. All other shapes keep the
+// precedence typePrec assigns.
+func elidedRefPrec(t Type, underMut bool) int {
+	if r, ok := t.(*RefType); ok && underMut && r.Mut && r.Lt == nil {
+		return elidedRefPrec(r.Inner, true)
+	}
+	return typePrec(t)
+}
+
 func (p *namedPrinter) printType(t Type) string {
+	return p.printTypeUM(t, false)
+}
+
+// printTypeUM is printType threaded with the underMut flag, used by the deep-mut
+// display rule. underMut is true inside a mutable RefType wrapper, where a nested
+// owned-mutable cell prints as the bare inner — eliding the redundant `mut` that
+// deep-mut lowering inserts so the rendered type matches the surface annotation
+// the user wrote. The flag propagates through object/tuple fields, union and
+// intersection members, and through every owned-mutable cell that elides. It
+// resets to false at a function or promise boundary, since each carries its own
+// independent annotation context.
+func (p *namedPrinter) printTypeUM(t Type, underMut bool) string {
 	switch t := t.(type) {
 	case *TypeVarType:
 		// A retained type parameter renders under its assigned name; otherwise a
@@ -353,7 +384,7 @@ func (p *namedPrinter) printType(t Type) string {
 	case *TupleType:
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {
-			elems = append(elems, p.printType(e))
+			elems = append(elems, p.printTypeUM(e, underMut))
 		}
 		if t.Inexact {
 			elems = append(elems, "...")
@@ -371,15 +402,19 @@ func (p *namedPrinter) printType(t Type) string {
 			if prop.Readonly {
 				ro = "readonly "
 			}
-			elems = append(elems, ro+printObjectKeyName(prop.Name)+opt+": "+p.printType(prop.Type))
+			elems = append(elems, ro+printObjectKeyName(prop.Name)+opt+": "+p.printTypeUM(prop.Type, underMut))
 		}
 		if t.Inexact {
 			elems = append(elems, "...")
 		}
 		return "{" + strings.Join(elems, ", ") + "}"
 	case *FuncType:
+		// A function is its own annotation context, so the underMut flag does not
+		// flow into its parameters or return type. printFuncTail starts fresh from
+		// printType, which calls printTypeUM with underMut=false.
 		return "fn " + p.printFuncTail(t)
 	case *PromiseType:
+		// A promise's payload is its own annotation context, so the flag resets here.
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:
 		// Ownership and the borrow `&` split on Lt. An owned value has Lt nil and
@@ -392,6 +427,15 @@ func (p *namedPrinter) printType(t Type) string {
 		//
 		// The inner prints at precPrefix so a looser inner such as a union or function
 		// gets parenthesized.
+		//
+		// Deep-mut elision (PR 13). Under a mutable wrapper, a nested owned-mutable
+		// cell is the inner `mut` that deep-mut lowering inserted on every reachable
+		// object and tuple field. Print it as the bare inner, so the rendered type
+		// matches the surface annotation the user wrote. The elision applies only to
+		// an owned-mutable cell (`Lt == nil`); a real borrow keeps its `&`/`&mut`.
+		if underMut && t.Mut && t.Lt == nil {
+			return p.printTypeUM(t.Inner, true)
+		}
 		prefix := ""
 		if t.Lt != nil {
 			prefix = "&"
@@ -402,14 +446,17 @@ func (p *namedPrinter) printType(t Type) string {
 		if t.Mut {
 			prefix += "mut "
 		}
-		return prefix + p.printTypeMinPrec(t.Inner, precPrefix)
+		// Entering a mutable wrapper activates underMut for the inner walk, so a
+		// nested owned-mutable cell can elide. An immutable wrapper (`&T`) does not
+		// activate elision: its pointee carries no deep-mut to undo.
+		return prefix + p.printTypeMinPrecUM(t.Inner, precPrefix, t.Mut)
 	case *UnionType:
 		// An inexact union renders a trailing `...` entry, so a union typed
 		// `A | B | ...` round-trips to surface syntax. The inexact tuple,
 		// object, and function arms render their flag the same way.
 		parts := make([]string, 0, len(t.Types)+1)
 		for _, m := range t.Types {
-			parts = append(parts, p.printTypeMinPrec(m, precUnion))
+			parts = append(parts, p.printTypeMinPrecUM(m, precUnion, underMut))
 		}
 		if t.Inexact {
 			parts = append(parts, "...")
@@ -418,7 +465,7 @@ func (p *namedPrinter) printType(t Type) string {
 	case *IntersectionType:
 		parts := make([]string, len(t.Types))
 		for i, m := range t.Types {
-			parts[i] = p.printTypeMinPrec(m, precIntersection)
+			parts[i] = p.printTypeMinPrecUM(m, precIntersection, underMut)
 		}
 		return strings.Join(parts, " & ")
 	}
