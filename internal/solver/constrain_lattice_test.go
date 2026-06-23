@@ -178,9 +178,17 @@ func TestConstrainUnionPrecedesRefArm(t *testing.T) {
 
 // TestConstrainInexactUnionIntoClosedRejects covers the inexact-into-closed
 // rule: an inexact sub union carries an open `unknown` tail that a closed
-// (non-inexact-union, non-unknown, non-var) super cannot absorb.
+// (non-inexact-union, non-unknown, non-var) super cannot absorb. The rule
+// accumulates BOTH the union-level inexact error AND the per-member
+// failures, mirroring the object arm — the inexact tail and an explicit
+// member that doesn't subtype super are independent bugs, so surfacing
+// only the inexact error would hide the member mismatch the user would
+// only discover after fixing the flag.
 //
-//	(number | string | ...) <: number    rejects with InexactUnionIntoExact
+//	(number | string | ...) <: number    rejects with:
+//	  - InexactUnionIntoExactError (the open tail can't fit number)
+//	  - CannotConstrainError       (string <: number)
+//	  (number <: number succeeds and contributes nothing)
 //
 // The flag and the parser surface land in PR4; until then the rule fires
 // only against an internally-built inexact union, which the test mints
@@ -189,9 +197,11 @@ func TestConstrainInexactUnionIntoClosedRejects(t *testing.T) {
 	c := &Context{}
 	sub := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
 	errs := c.Constrain(sub, num())
-	require.Len(t, errs, 1)
+	require.Len(t, errs, 2)
 	require.IsType(t, &InexactUnionIntoExactError{}, errs[0])
 	require.Equal(t, "cannot constrain number | string | ... <: number", errs[0].Message())
+	require.IsType(t, &CannotConstrainError{}, errs[1])
+	require.Equal(t, "cannot constrain string <: number", errs[1].Message())
 }
 
 // Regression: a borrow with a lifetime flowing into a union of owned types

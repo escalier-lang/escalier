@@ -227,10 +227,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	// breaking the soundness of any downstream `match` against α.
 	if subU, ok := sub.(*soltype.UnionType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
-			if subU.Inexact && !superAcceptsUnknownTail(super) {
-				return []SolverError{&InexactUnionIntoExactError{Sub: subU, Super: super}}
-			}
+			// Accumulate the inexact-into-closed error AND the per-member
+			// failures, mirroring the object arm: one bad cast should surface
+			// every independent issue at once. The inexact tail and an
+			// explicit member that doesn't subtype super are independent bugs
+			// (fixing one leaves the other), so reporting only the inexact
+			// gate would hide a real explicit-member mismatch the user
+			// would only discover after fixing the flag.
 			var errs []SolverError
+			if subU.Inexact && !superAcceptsUnknownTail(super) {
+				errs = append(errs, &InexactUnionIntoExactError{Sub: subU, Super: super})
+			}
 			for _, m := range subU.Types {
 				errs = append(errs, c.constrain(m, super, seen)...)
 			}
