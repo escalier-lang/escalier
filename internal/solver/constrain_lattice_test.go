@@ -41,8 +41,9 @@ func TestConstrainUnionSubForAll(t *testing.T) {
 		// (number | string) <: α. The for-all rule defers when super is a
 		// TypeVar so the WHOLE union is recorded as one lower bound on α.
 		// Coalesce builds the same `number | string` either way, but the
-		// deferral preserves the union shape on the bound list — and the
-		// inexact flag, when present (see TestConstrainInexactUnionIntoVarDefers).
+		// deferral preserves the union shape on the bound list. It also
+		// preserves the inexact flag when present. See
+		// TestConstrainInexactUnionIntoVarDefers for the soundness payoff.
 		c := &Context{}
 		a := c.freshVar(0)
 		sub := newUnion(nil, parseTypes(t, "number", "string"), false)
@@ -75,7 +76,8 @@ func TestConstrainIntersectionSuperForAll(t *testing.T) {
 	t.Run("variable sub against an intersection super defers", func(t *testing.T) {
 		// α <: (number & string). The for-all rule defers when sub is a
 		// TypeVar so the WHOLE intersection is recorded as one upper bound
-		// on α — the symmetric twin of the union-sub super-var deferral.
+		// on α. This is the symmetric twin of the union-sub super-var
+		// deferral.
 		c := &Context{}
 		a := c.freshVar(0)
 		super := &soltype.IntersectionType{Types: parseTypes(t, "number", "string")}
@@ -125,7 +127,7 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 	t.Run("variable sub records whole union, not a branch", func(t *testing.T) {
 		// α <: (number | string). The exists rule is gated to a concrete
 		// sub, so the variable falls through to the subVar arm, which
-		// records the WHOLE union as a single upper bound — exactly the
+		// records the WHOLE union as a single upper bound. That is the
 		// speculative-pinning avoidance the design calls for.
 		c := &Context{}
 		a := c.freshVar(0)
@@ -138,12 +140,14 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 
 	t.Run("free-var super member is skipped, not pinned by the trial", func(t *testing.T) {
 		// A super-union member that is itself an unbounded TypeVar must not
-		// be trialled — that would speculatively pin it to sub. Set up: super
-		// union has a fresh var as one branch and an incompatible prim as
-		// the other; trialling the var would trivially succeed by recording
-		// "hi" as its lower bound. The fix skips the var member; the number
-		// trial fails ("hi" vs number); the rule reports a clean union-level
-		// CannotConstrainError and the variable carries NO bounds.
+		// be trialled. Trialling it would speculatively pin it to sub. The
+		// super union here has a fresh var on one branch and an
+		// incompatible prim on the other. Trialling the var would trivially
+		// succeed by recording "hi" as its lower bound. The rule skips the
+		// var member instead. The number trial then fails on its own merits
+		// (StrLit "hi" against PrimType number), the rule reports a clean
+		// union-level CannotConstrainError, and the variable carries no
+		// bounds.
 		c := &Context{}
 		extra := c.freshVar(0)
 		super := newUnion(nil, []soltype.Type{extra, num()}, false)
@@ -177,22 +181,24 @@ func TestConstrainUnionPrecedesRefArm(t *testing.T) {
 }
 
 // TestConstrainInexactUnionIntoClosedRejects covers the inexact-into-closed
-// rule: an inexact sub union carries an open `unknown` tail that a closed
-// (non-inexact-union, non-unknown, non-var) super cannot absorb. The rule
-// accumulates BOTH the union-level inexact error AND the per-member
-// failures, mirroring the object arm — the inexact tail and an explicit
-// member that doesn't subtype super are independent bugs, so surfacing
-// only the inexact error would hide the member mismatch the user would
-// only discover after fixing the flag.
+// rule. An inexact sub union carries an open `unknown` tail that a closed
+// super cannot absorb. A closed super here is any super that is not an
+// inexact union, not unknown, and not a TypeVar.
+//
+// The rule accumulates BOTH the union-level inexact error AND the per-member
+// failures, mirroring the object arm. The open tail and an explicit member
+// that doesn't subtype super are independent bugs. Surfacing only the
+// inexact error would hide the member mismatch the user would otherwise
+// discover on the next compile.
 //
 //	(number | string | ...) <: number    rejects with:
-//	  - InexactUnionIntoExactError (the open tail can't fit number)
-//	  - CannotConstrainError       (string <: number)
-//	  (number <: number succeeds and contributes nothing)
+//	  - InexactUnionIntoExactError    the open tail can't fit number
+//	  - CannotConstrainError          string <: number
+//	  number <: number succeeds and contributes nothing
 //
-// The flag and the parser surface land in PR4; until then the rule fires
-// only against an internally-built inexact union, which the test mints
-// directly through the smart constructor.
+// The flag and the parser surface for `A | B | ...` land in PR4. Until then
+// the rule fires only against an internally-built inexact union, which the
+// test mints directly through the smart constructor.
 func TestConstrainInexactUnionIntoClosedRejects(t *testing.T) {
 	c := &Context{}
 	sub := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
@@ -210,7 +216,7 @@ func TestConstrainInexactUnionIntoClosedRejects(t *testing.T) {
 //
 //	&'a {x: number} <: (number | string)    BorrowEscapeError, not CannotConstrain
 //
-// Each per-member trial reports BorrowEscape internally; the union-super
+// Each per-member trial reports BorrowEscape internally. The union-super
 // exists rule promotes that to a single union-level BorrowEscape so the
 // lifetime cause survives.
 func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
@@ -228,14 +234,14 @@ func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
 // be recorded as a single whole-union lower bound on the variable so the
 // inexact flag rides through coalesce.
 //
-//	(number | string | ...) <: α    defers; α gains the whole union as one lower bound
+//	(number | string | ...) <: α    α gains the whole inexact union as one lower bound
 //
 // The union-sub for-all rule defers to the superVar arm when super is a
 // TypeVar. Decomposing per-member would record only `number` and `string`
-// bounds — the `...` is a flag on UnionType, not a member of Types, so a
+// bounds. The `...` is a flag on UnionType, not a member of Types, so a
 // per-member loop silently drops it and α coalesces as the EXACT
 // `number | string`. That would break the soundness of any downstream match
-// against α; the inexact tail could carry a value of any type at runtime
+// against α. The inexact tail could carry a value of any type at runtime
 // that no member arm covers.
 func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
 	c := &Context{}
@@ -250,17 +256,17 @@ func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
 }
 
 // TestConstrainInexactUnionIntoUnknownAccepts covers the other accepting
-// super for an inexact sub union: `unknown` (the lattice top) absorbs the
-// open tail.
+// super for an inexact sub union. `unknown` is the lattice top, so it
+// absorbs the open tail.
 //
 //	(number | string | ...) <: unknown    inexact-into-closed gate does NOT fire
 //
 // The decomposition produces `number <: unknown` and `string <: unknown`.
-// PR5 lands the `_ <: unknown` (⊤) rule; until then those are
-// CannotConstrain fall-throughs, so this case still errors — what the test
-// asserts is that the inexact-into-closed gate did NOT fire (no
-// InexactUnionIntoExactError), since unknown is recognized as accepting the
-// open tail.
+// PR5 lands the `_ <: unknown` rule. Until then those are CannotConstrain
+// fall-throughs, so this case still errors. What the test asserts is that
+// the inexact-into-closed gate did not fire, since unknown is recognized
+// as accepting the open tail. No InexactUnionIntoExactError appears in the
+// error list.
 func TestConstrainInexactUnionIntoUnknownAccepts(t *testing.T) {
 	c := &Context{}
 	sub := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}

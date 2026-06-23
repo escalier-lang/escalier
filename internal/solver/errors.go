@@ -123,10 +123,11 @@ type InexactTupleIntoExactError struct {
 
 // InexactUnionIntoExactError is the union twin of InexactIntoExactError. An
 // inexact union `A | B | ...` carries an open tail of unknown additional
-// members, so it cannot flow into a closed target — an exact union, or any
-// non-union concrete the open tail could violate. The base form lands in M6 PR2.
-// The flag itself, and the parser surface for `A | B | ...`, lands in PR4, so
-// the rule fires only against an internally-built inexact union until then.
+// members, so it cannot flow into a closed target. A closed target is either
+// an exact union or any non-union concrete the open tail could violate. The
+// base form lands in M6 PR2. The flag itself and the parser surface for
+// `A | B | ...` land in PR4. Until then the rule fires only against an
+// internally-built inexact union.
 type InexactUnionIntoExactError struct {
 	Sub   *soltype.UnionType
 	Super soltype.Type

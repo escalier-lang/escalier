@@ -1099,18 +1099,19 @@ now resolve to real `soltype` structures rather than opaque placeholders.
 
 **Open design question — free type-var members in a union-super exists trial.**
 M6 PR2's union-super exists rule trials each member of `sub <: (A | B | …)`
-under a probe and commits the first success
-([m6-implementation-plan.md](m6-implementation-plan.md) §PR2). The rule
-deliberately SKIPS direct `TypeVarType` members in the trial loop: canonical
-sort ranks `TypeVar` before concrete kinds, so without the skip a
+under a probe and commits the first success. See
+[m6-implementation-plan.md](m6-implementation-plan.md) §PR2 for the rule. The
+rule deliberately SKIPS direct `TypeVarType` members in the trial loop.
+Canonical sort ranks `TypeVar` before concrete kinds, so without the skip a
 `5 <: (α | number)` constraint would trial `α` first, succeed trivially by
-recording `5` as `α`'s lower bound, and commit — pinning `α` to ≥5 and never
-trying the `number` branch (the "speculative pinning" the design avoids).
+recording `5` as `α`'s lower bound, and commit. `α` would then be pinned to
+≥5 and the `number` branch would never run. The skip avoids this
+speculative pinning.
 
-The skip is sound but incomplete. Today no source path can reach it: PR2's
+The skip is sound but incomplete. No source path can reach it today. PR2's
 `resolveTypeAnn` arms produce unions whose members are resolved concretes,
-and a user-written `T` doesn't resolve until M7. Once it does, a generic-union
-annotation becomes reachable:
+and a user-written `T` does not resolve until M7. Once it does, a
+generic-union annotation becomes reachable:
 
 ```
 fn f<T>(x: T | number) { ... }
@@ -1118,24 +1119,24 @@ f("hi")          // currently fails: cannot constrain string <: T | number
                  // even though T := string would type-check
 ```
 
-The conservative skip rejects this call; a fully complete rule would bind
+The conservative skip rejects this call. A fully complete rule would bind
 `T := string` as a last-resort catch-all. The two designs to choose between
 when M7 lands generic-union surface:
 
-- **Keep the skip.** Simpler, no speculative pinning. A user wanting "var as
-  catch-all" reorders the union, names the branch explicitly, or splits the
-  binding.
-- **Two-pass exists trial.** Try concrete members first; if none commit, try
-  var members in a second pass. Preserves completeness without first-pin
-  behavior. PR7's `if-let` / `let-else` narrowing reuses the same exists path
-  ([m6-implementation-plan.md](m6-implementation-plan.md) §PR7), so this
-  choice also decides whether `if let x: T = u` over `u: T | number` can bind
-  `T` to the matched branch.
+- **Keep the skip.** Simpler, no speculative pinning. A user wanting a
+  "var as catch-all" reorders the union, names the branch explicitly, or
+  splits the binding.
+- **Two-pass exists trial.** Try concrete members first. If none commit,
+  try var members in a second pass. Preserves completeness without
+  first-pin behavior. PR7's `if-let` / `let-else` narrowing reuses the same
+  exists path. See [m6-implementation-plan.md](m6-implementation-plan.md)
+  §PR7. So this choice also decides whether `if let x: T = u` over
+  `u: T | number` can bind `T` to the matched branch.
 
 The IntersectionType-sub overload arm in `constrain.go` already trials
-variable-shaped members through the same probe machinery (that is how
-`g = f; g(x)` resolves when `f`'s arms involve type vars). The two arms are
-asymmetric today; the resolution chosen here should either align them or
+variable-shaped members through the same probe machinery. That is how
+`g = f; g(x)` resolves when `f`'s arms involve type vars. The two arms are
+asymmetric today. The resolution chosen here should either align them or
 document why the union and intersection cases warrant different treatment.
 
 **Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,

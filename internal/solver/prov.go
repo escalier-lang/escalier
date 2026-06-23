@@ -90,12 +90,12 @@ func (p Prov) NodeFor(t soltype.Type) (ast.Node, bool) {
 }
 
 // hasProv reports whether t already carries a FromAST origin in the Prov
-// table. Used by the union/intersection annotation arms to decide whether
-// the smart constructor's result needs its own Prov entry: a single-member
-// collapse that returns an input member's pointer leaves the child's Prov
-// intact, while a fresh-pointer result (a new UnionType, or a
-// freshAt-recovered TypeVar with no Prov yet) needs the outer annotation
-// recorded.
+// table. The union and intersection annotation arms call it to decide
+// whether the smart constructor's result needs its own Prov entry. A
+// single-member collapse returns an input member's pointer and leaves the
+// child's Prov intact. A fresh-pointer result needs the outer annotation
+// recorded. Both a brand-new UnionType and a freshAt-recovered TypeVar
+// fall in the second case, since neither carries Prov yet.
 func (c *checker) hasProv(t soltype.Type) bool {
 	_, ok := c.prov[t].(FromAST)
 	return ok

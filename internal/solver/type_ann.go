@@ -173,12 +173,12 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 }
 
 // resolveUnionTypeAnn lowers `A | B | …` to a soltype.UnionType through
-// newUnion. Each member resolves recursively; an unsupported member recovers
-// to a fresh var so the union shape survives — mirroring the Promise<bad> and
+// newUnion. Each member resolves recursively. An unsupported member recovers
+// to a fresh var so the union shape survives, mirroring the Promise<bad> and
 // object/tuple cascade-safe recovery. The Context-bearing newUnion call also
 // runs subsumed-member elimination, so a literal-and-its-primitive pair like
 // `1 | number` collapses to `number` at the annotation site. PR4 lands the
-// surface `... ` inexact marker; until then ast.UnionTypeAnn carries no flag
+// surface `...` inexact marker. Until then ast.UnionTypeAnn carries no flag
 // and the resulting union is always exact.
 func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))
@@ -191,16 +191,16 @@ func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Ty
 	}
 	t := newUnion(c.ctx, members, false)
 	// Record provenance only when the result has no Prov yet. The smart
-	// constructor's single-member collapse (`number | number` ⇒ `number`,
-	// subsumption `1 | number` ⇒ `number`) returns an input member's pointer
-	// that already carries Prov from its own annotation, so re-recording
-	// against the outer union node would overwrite the narrower blame and
-	// trip the debugProv unique-pointer guard. A pointer-identity check
-	// would miss the case where the survivor is a `freshAt`-recovered
-	// TypeVar — freshAt doesn't recordProv, so that survivor is in
-	// `members` but has no Prov, and the annotation node would end up with
-	// no entry at all. Gating on the Prov state instead of identity records
-	// blame in that case too.
+	// constructor can collapse to a single member. `number | number` ⇒
+	// `number` and the subsumption case `1 | number` ⇒ `number` both
+	// return an input member's pointer, which already carries Prov from its
+	// own annotation. Re-recording against the outer union node would
+	// overwrite the narrower blame and trip the debugProv unique-pointer
+	// guard. A pointer-identity check would miss the case where the
+	// survivor is a `freshAt`-recovered TypeVar. freshAt does not
+	// recordProv, so the survivor is in `members` but has no Prov, and the
+	// annotation node would end up with no entry at all. Gating on the
+	// Prov state instead of identity records blame in that case too.
 	if !c.hasProv(t) {
 		c.recordProv(t, ta, AnnotationType)
 	}
@@ -211,7 +211,8 @@ func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Ty
 // lowers `A & B & …` through newIntersection. The Context-bearing call runs
 // subsumed-member elimination, so a pair like `{x} & {x, y}` collapses to the
 // narrower `{x, y}` at the annotation site. An IntersectionType carries no
-// exactness flag — exactness is a property of the result, not the meet.
+// exactness flag. Exactness is a property of the result of the meet, not of
+// the meet itself.
 func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))
 	for i, m := range ta.Types {
