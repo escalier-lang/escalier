@@ -25,7 +25,7 @@ func TestDeepMutEnablesNestedWrite(t *testing.T) {
 		{
 			name: "borrowed &mut, one level",
 			src:  "fn f(p: &mut {a: {x: number}}) { p.a.x = 5 }",
-			want: "fn (p: mut {a: {x: number}}) -> void",
+			want: "fn (p: &mut {a: {x: number}}) -> void",
 		},
 		{
 			name: "owned mut, three levels",

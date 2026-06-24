@@ -10,8 +10,8 @@ import (
 //
 // These assert the D4 display form. A param lifetime that reaches the output is
 // named 'a, 'b, … and quantified in a leading <…> prefix. A param lifetime that
-// connects nothing, never reaching an output, is elided: a mut borrow becomes
-// owned-mutable, and an immutable borrow drops the wrapper.
+// connects nothing, never reaching an output, has its NAME elided but its `&`
+// kept, so the displayed borrow stays distinguishable from an owned value.
 
 // A `&mut` param returned unchanged carries its lifetime to the result: the same
 // lifetime appears on both the parameter and the return type, so the borrow flows
@@ -32,19 +32,17 @@ func TestInferFreshObjectReturn(t *testing.T) {
 	require.Equal(t, "fn () -> {x: 5}", values["f"])
 }
 
-// Two `&mut` params carry independent lifetimes, but only the returned one
-// reaches the output. `p` is returned, so its lifetime is named `'a`. `q` connects
-// nothing, so its borrow lifetime is elided to owned-mutable.
+// Two `&mut` params carry independent lifetimes; only the returned one reaches
+// the output. `p` is returned, so its lifetime is named `'a`. `q` connects
+// nothing, so its lifetime name is elided but the `&mut` is kept.
 func TestInferDistinctParamLifetimes(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}, q: &mut {y: number}) { return p }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: &'a mut {x: number}, q: mut {y: number}) -> &'a mut {x: number}", values["f"])
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number}, q: &mut {y: number}) -> &'a mut {x: number}", values["f"])
 }
 
-// Writing a field through an annotated `mut` borrow checks: the receiver carries a
-// borrow lifetime, and the write requirement's fresh lifetime imposes no obligation,
-// so a borrowed receiver of any lifetime satisfies it. The borrow never reaches the
-// output, since the body returns void, so D4 elides its lifetime to owned-mutable.
+// Writing a field through an owned-mutable param checks. The write requirement's
+// fresh lifetime imposes no obligation, so an owned receiver satisfies it.
 func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { p.x = 10 }`)
 	require.Empty(t, errs)
@@ -82,7 +80,7 @@ fn f(p: &mut {x: number}) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
+	require.Equal(t, "fn (p: &mut {x: number}) -> number", values["f"])
 }
 
 // Reading a field after writing it through an annotated `&mut` borrow returns
@@ -99,7 +97,7 @@ func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
+	require.Equal(t, "fn (p: &mut {x: number}) -> number", values["f"])
 }
 
 // Writing a field of a NON-`mut` owned object is rejected: the write lowers to the
@@ -307,7 +305,7 @@ func TestInferImmutableBorrowAliasLocally(t *testing.T) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
+	require.Equal(t, "fn (p: &mut {x: number}) -> number", values["f"])
 }
 
 // An immutable borrow alias that is RETURNED carries its lifetime to the output.
@@ -471,7 +469,7 @@ func TestInferMemberReadLocalElidesLifetime(t *testing.T) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {a: {x: number}}) -> void", values["f"])
+	require.Equal(t, "fn (p: &mut {a: {x: number}}) -> void", values["f"])
 }
 
 // A field whose static type is itself an immutable borrow reads through as
@@ -520,7 +518,7 @@ func TestInferMemberReadPrimitiveStaysValue(t *testing.T) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
+	require.Equal(t, "fn (p: &mut {x: number}) -> number", values["f"])
 }
 
 // An explicit `&obj.f` shares the receiver-bounded lifetime of the implicit

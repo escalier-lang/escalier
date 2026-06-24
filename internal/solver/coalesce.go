@@ -621,6 +621,11 @@ func ltEqual(a, b soltype.Lifetime) bool {
 	if soltype.IsStaticLifetime(a) || soltype.IsStaticLifetime(b) {
 		return soltype.IsStaticLifetime(a) && soltype.IsStaticLifetime(b)
 	}
+	// AnonLifetime is a display marker for an elided borrow. All instances denote
+	// the same "no name" marker, so they compare equal by value, mirroring 'static.
+	if soltype.IsAnonLifetime(a) || soltype.IsAnonLifetime(b) {
+		return soltype.IsAnonLifetime(a) && soltype.IsAnonLifetime(b)
+	}
 	if ua, ok := a.(*soltype.LifetimeUnion); ok {
 		ub, ok := b.(*soltype.LifetimeUnion)
 		if !ok || len(ua.Lifetimes) != len(ub.Lifetimes) {

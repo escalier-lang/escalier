@@ -67,6 +67,15 @@ func (v *LifetimeVar) BoundsAt(pol Polarity) []Lifetime {
 // constraint.
 type StaticLifetime struct{}
 
+// AnonLifetime is a display-only marker that keeps the `&` on a borrow whose
+// lifetime is not load-bearing. The lifetime coalescer (D4) inserts it where it
+// used to drop the lifetime entirely, so an `&mut {x}` parameter still renders
+// as `&mut {x}` instead of collapsing to owned-mutable `mut {x}`. It is never a
+// constrain input. Only coalesce produces it, only the printer reads it, and it
+// carries no bounds since the underlying lifetime variable has already been
+// determined unobservable.
+type AnonLifetime struct{}
+
 // LifetimeUnion is a coalescing-output-only lifetime. It is the union of the param
 // lifetimes a join variable reaches, e.g. returning one of two borrows renders as
 // `('a | 'b)`. It never appears as a constraint input, since constrainLt relates
@@ -86,12 +95,24 @@ func (*LifetimeUnion) isLifetime() {}
 // the cheap default, not a correctness crutch.
 var Static Lifetime = &StaticLifetime{}
 
+// Anon is the canonical anonymous-lifetime value. The coalescer reuses it for
+// every elided borrow, so the printer's "any AnonLifetime renders as bare `&`"
+// rule needs no per-instance bookkeeping.
+var Anon Lifetime = &AnonLifetime{}
+
 func (*LifetimeVar) isLifetime()    {}
 func (*StaticLifetime) isLifetime() {}
+func (*AnonLifetime) isLifetime()   {}
 
 // IsStaticLifetime reports whether lt is 'static.
 func IsStaticLifetime(lt Lifetime) bool {
 	_, ok := lt.(*StaticLifetime)
+	return ok
+}
+
+// IsAnonLifetime reports whether lt is an anonymous display lifetime.
+func IsAnonLifetime(lt Lifetime) bool {
+	_, ok := lt.(*AnonLifetime)
 	return ok
 }
 

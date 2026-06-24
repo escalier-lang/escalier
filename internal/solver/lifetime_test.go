@@ -218,12 +218,11 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
-// D4 elision branches on Mut. A connect-nothing IMMUTABLE borrow, whose lifetime
-// reaches no output, drops the RefType wrapper entirely and renders as its bare
-// inner, because RefType{false, nil} is the forbidden degenerate cell NewRef
-// rejects. This contrasts with the mutable case, which becomes owned-mutable,
-// RefType{Mut: true, Lt: nil}. The FieldWrite acceptance covers that branch.
-func TestImmutableConnectNothingBorrowDropsWrapper(t *testing.T) {
+// D4 elision keeps the `&` on a connect-nothing borrow by parking its lifetime on
+// the Anon sentinel, so an immutable borrow whose lifetime reaches no output
+// still renders as `&{x}` rather than collapsing to the bare inner. The mutable
+// case keeps the `&mut` form for the same reason.
+func TestImmutableConnectNothingBorrowKeepsRef(t *testing.T) {
 	c := newChecker()
 	lt := c.ctx.freshLifetime(0)
 	param := &soltype.RefType{
@@ -233,14 +232,12 @@ func TestImmutableConnectNothingBorrowDropsWrapper(t *testing.T) {
 			&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
 		}},
 	}
-	// The borrow appears only on the parameter, since the body returns a number, not
-	// the borrow, so its lifetime connects nothing and is elided.
 	fn := &soltype.FuncType{
 		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "p"}, Type: param}},
 		Ret:    &soltype.PrimType{Prim: soltype.NumPrim},
 	}
 
-	require.Equal(t, "fn (p: {x: number}) -> number", renderScheme(&MonoScheme{Ty: fn}))
+	require.Equal(t, "fn (p: &{x: number}) -> number", renderScheme(&MonoScheme{Ty: fn}))
 }
 
 // A nested join reaching one param lifetime through two distinct sub-joins lists

@@ -264,6 +264,8 @@ func (p *namedPrinter) printLifetime(lt Lifetime) string {
 	switch lt := lt.(type) {
 	case *StaticLifetime:
 		return "'static"
+	case *AnonLifetime:
+		return ""
 	case *LifetimeVar:
 		if p.ltNames != nil {
 			if name, ok := p.ltNames[lt]; ok {

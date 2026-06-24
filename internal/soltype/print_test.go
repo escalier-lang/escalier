@@ -313,6 +313,20 @@ func TestPrintDeepMutElision(t *testing.T) {
 	})
 }
 
+// AnonLifetime renders as bare `&` / `&mut`, keeping a borrow distinguishable
+// from an owned value when its lifetime is elided.
+func TestPrintAnonLifetime(t *testing.T) {
+	body := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}
+	t.Run("mutable anon", func(t *testing.T) {
+		ty := &RefType{Mut: true, Lt: Anon, Inner: body}
+		require.Equal(t, "&mut {x: number}", Print(ty))
+	})
+	t.Run("immutable anon", func(t *testing.T) {
+		ty := &RefType{Mut: false, Lt: Anon, Inner: body}
+		require.Equal(t, "&{x: number}", Print(ty))
+	})
+}
+
 // TestPrintRawTypeVar verifies that Print tolerates a raw, un-coalesced
 // TypeVarType (rendering it as `t{ID}`) instead of panicking — the M2 walk
 // records var-carrying types in Info and only coalesces at binding boundaries,
