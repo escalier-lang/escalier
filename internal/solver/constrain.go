@@ -496,33 +496,25 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			return nil
 		}
 	case *soltype.IntersectionType:
-		// Intersection sub "exists" rule: (A & B & …) <: super iff SOME member <: super.
-		// This is the lattice analogue of the union-super exists rule above, and the one
-		// lattice case that stays in the structural switch: the switch dispatches on sub,
-		// so a lattice sub is matched by its own case here without needing the pre-switch
-		// interception the union-super and intersection-super rules require. Each member
-		// is trialled under a probe in SPECIFICITY order (the same specificityOrder
-		// resolveOverload uses for a direct call) and the first success commits its
-		// bounds; the losers roll back.
+		// (A & B) <: super ⟹ A <: super OR B <: super. Trial each member in
+		// specificity order under a probe; the first success commits. Stays in
+		// the structural switch (not the pre-switch block) because the switch
+		// already dispatches on sub, so a lattice sub is matched by its own case
+		// here without needing a pre-switch interception. When super is a
+		// TypeVar, fall through to the superVar arm so the whole intersection is
+		// recorded as one lower bound rather than committing to one arm and
+		// discarding the rest. Two callers reach this:
 		//
-		// Two callers reach this. The overload-synthesis path is the original consumer:
-		// inferIdent builds an intersection out of an overloaded value's arms so a
-		// let-bound overload called through the binding (`g = f; g(x)`) resolves the
-		// arm via the same trial loop a direct call would, in the same order. M6 PR2
-		// adds the second consumer: a general annotation intersection like
-		// `val x: A & B = e` resolves through resolveTypeAnn into an IntersectionType
-		// and reaches here when the binding flows into a constraint. The specificity
-		// ranking still falls out cleanly — specificityOrder ranks a non-function arm
-		// last in declaration order (see overload.go), so a non-function intersection
-		// trials in declaration order without a separate code path.
-		//
-		// Collapse only against a CONCRETE demand. If super is a variable — the
-		// intersection is flowing INTO a binding (`intersection <: b.v`) — don't collapse
-		// here. Fall through to the var arm below, which records the intersection WHOLE
-		// as a lower bound. Collapsing now would commit to one arm prematurely and
-		// discard the rest of the intersection. The collapse fires later instead, once
-		// that var is constrained against a concrete demand and the whole intersection
-		// propagates to it.
+		//   - Overload synthesis. inferIdent builds an intersection out of an
+		//     overloaded value's arms so a let-bound overload called through the
+		//     binding (`g = f; g(x)`) resolves the arm via the same trial loop a
+		//     direct call would, in the same order.
+		//   - Annotation input (M6 PR2). `val x: A & B = e` resolves through
+		//     resolveTypeAnn into an IntersectionType and reaches here when the
+		//     binding flows into a constraint. specificityOrder ranks
+		//     non-function arms last in declaration order, so a non-function
+		//     intersection trials in declaration order without a separate code
+		//     path.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && len(sub.Types) > 0 {
 			funcs := make([]*soltype.FuncType, len(sub.Types))
 			for i, m := range sub.Types {
