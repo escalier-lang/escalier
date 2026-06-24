@@ -146,6 +146,7 @@ PR1 (representation + normalization)
  ├─► PR2 (constrain lattice rules + union/intersection annotation input)
  │     ├─► PR2.5 (trial-and-commit cleanup: shared helper, specificity order,
  │     │          delete constrainAssign)
+ │     ├─► PR2.7 (tighter BorrowEscape promotion: lifetime-blocker check)
  │     └─► PR4 (union exactness flag + match exhaustiveness leg)
  ├─► PR3 (monomorphic function-type annotations)
  │     └─► PR5 (⊤/⊥ rules + Variation-B close — now testable end-to-end)
@@ -165,6 +166,12 @@ PR1 (representation + normalization)
   before PR4's exactness one-way rule changes how the union-super exists
   rule renders its diagnostics. Independent of PR3/PR5/PR6/PR7/PR8 — purely a
   cleanup of the sites PR2 has just touched.
+- **PR2.7 depends only on PR2** and is independent of every other PR. It is a
+  diagnostic-quality fix in the BorrowEscape firing condition that tightens
+  both the single-trial RefType arm and the PR2 `commonBorrowEscape`
+  union-level promotion. The constraint outcome doesn't change — only which
+  error fires when it fails. Could land before or after PR2.5; no ordering
+  dependency between the two.
 - **PR3 (function annotations) feeds PR5.** The `_ <: unknown` rule itself needs
   only PR1, but its reason for existing — the Variation-B check — is only
   *reachable* once an inexact function annotation can reach `constrain`, which is
@@ -526,6 +533,84 @@ specificity ordering still respects the "no free TypeVar members" rule.
 
 **Depends on:** PR2 (the union-super exists rule, the new trial site this
 cleanup consolidates).
+
+---
+
+### PR2.7 — Tighter `BorrowEscapeError` promotion: only fire when the lifetime is the genuine blocker
+
+Diagnostic-quality fix for the `BorrowEscapeError` class. Today the rule fires
+whenever a borrow with a non-nil lifetime constrains against a non-RefType
+non-var super, regardless of whether the inner would have matched if the
+borrow weren't there. This is misleading whenever the inner is also a shape
+mismatch: the error reads "borrowed value … does not live long enough to
+satisfy …", which suggests "extend the lifetime and this would work" when in
+fact the inner shape doesn't fit either way. The PR2 union-level promotion
+through `commonBorrowEscape` inherits the same problem: every per-trial
+BorrowEscape gets promoted, even when no branch's shape would have matched
+even with the lifetime stripped.
+
+**The rule.** Emit BorrowEscapeError only when peeling the borrow's inner
+would have satisfied the super. Otherwise emit the shape-mismatch error
+that peeling would have produced (typically a CannotConstrainError or a
+deeper structural-arm error). Concretely:
+
+- **Single-trial RefType arm** ([constrain.go:368-373](../../internal/solver/constrain.go)).
+  Before returning `BorrowEscapeError{Sub: sub, Super: super}`, trial
+  `sub.Inner <: super` under a discard probe. If it succeeds, the lifetime
+  was the genuine blocker; emit BorrowEscape. If it fails, surface the
+  inner-trial error instead — that's the actual root cause.
+- **Union-level promotion** (`commonBorrowEscape` in
+  [constrain.go](../../internal/solver/constrain.go)). Replace the
+  "every trial returned BorrowEscape" check with the stronger "peeling
+  sub's inner against the union super has at least one branch that would
+  have succeeded." The check reuses the existing union-super exists rule
+  through `c.constrain(sub.Inner, super, ...)` under a discard probe.
+
+The probe makes the inner re-trial side-effect-free: any bound mutations
+the peeling would have caused are rolled back before the rule decides
+which error to emit.
+
+**Example pairs.** Each pair shows the misleading message today and the
+clearer message after PR2.7:
+
+```
+&'a {x: number} <: number
+  today:    borrowed value &'a object does not live long enough to satisfy number
+  PR2.7:    cannot constrain object <: number
+            (peeling: {x: number} <: number fails — shape, not lifetime)
+
+&'a {x: number} <: {x: number}
+  today:    borrowed value &'a object does not live long enough to satisfy object
+  PR2.7:    borrowed value &'a object does not live long enough to satisfy object
+            (peeling: {x: number} <: {x: number} succeeds — lifetime IS the blocker)
+
+&'a {x: number} <: (number | string)
+  today:    borrowed value &'a object does not live long enough to satisfy number | string
+  PR2.7:    cannot constrain object <: number | string
+            (peeling: every branch is a shape mismatch — lifetime is incidental)
+
+&'a {x: number} <: (number | {x: number})
+  today:    borrowed value &'a object does not live long enough to satisfy number | {x: number}
+  PR2.7:    borrowed value &'a object does not live long enough to satisfy number | {x: number}
+            (peeling: branch 2 succeeds — lifetime IS the blocker for the matching branch)
+```
+
+**Out of scope.** The error class itself is not renamed. The fix is
+about WHEN it fires, not what it says. A separate diagnostic-rewording
+pass could revisit the "does not live long enough" phrasing once the
+firing condition is provably "lifetime was the genuine blocker."
+
+**Tests.** A new table for each of the four example shapes above. Each
+asserts both the error kind and the full message. The
+`TestConstrainUnionSuperPreservesBorrowEscape` regression updates to use
+the meaningful shape (`&'a {x:number} <: (number | {x:number})`), since
+the original test happens to be in the misleading-cause column. Add a
+sibling test for the non-union case so the single-trial RefType arm's
+new behavior is also pinned.
+
+**Depends on:** PR2 (the union-super exists rule and `commonBorrowEscape`
+helper this tightens). Independent of PR2.5, PR3, PR4, PR5, PR6, PR7,
+PR8 — purely a diagnostic-quality fix in the constrain code path.
 
 ---
 
