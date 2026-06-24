@@ -1139,6 +1139,32 @@ variable-shaped members through the same probe machinery. That is how
 asymmetric today. The resolution chosen here should either align them or
 document why the union and intersection cases warrant different treatment.
 
+**Trial-and-commit diagnostic follow-ups (after generic-union surface lands).**
+M6 PR2.5 takes the cheapest mitigations against the first-success-commits
+failure modes: a shared trial helper, specificity-ordered candidates, and
+deletion of the M5-era `constrainAssign` workaround
+([m6-implementation-plan.md](m6-implementation-plan.md) §PR2.5). The two
+deferred mitigations bite once M7 makes generic-union annotations reachable
+from source, since user-written `T | A` is the case where over-constrained
+inner variables actually surface to the user. Land them once that happens:
+
+- **Tag committed bounds with their union-trial origin.** When the trial
+  commits, mark the added bounds (or the var) with a side-table entry
+  pointing at the union annotation node. When a downstream constraint fails
+  on a tagged var, the diagnostic engine chases the tag and emits "this var
+  was committed to branch A of (A | B) at <span>; later use needs B."
+  Replaces today's flat "string is not number" with a breadcrumb back to the
+  union choice that forced the conflict. Probe-safe via the existing
+  rollback hook discipline.
+- **Ambient-time ambiguity detection.** After the first trial commits,
+  optionally peek at later branches under throwaway probes. When another
+  branch would also succeed AND would have added different bounds, emit a
+  warning at the union annotation site asking the user to disambiguate.
+  Catches over-constraint at declaration time rather than at downstream use.
+  Roughly doubles the work for ambiguous unions, which matches the cost of
+  the original failure mode. Worth landing once user reports of confusion
+  start coming in.
+
 **Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,
 `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/`IteratorResult<T>`, `console`) resolves
 to real `soltype` structures and type-checks (not placeholders); `import { … }
@@ -1441,6 +1467,33 @@ reduce through the M9 operator machinery.
   module-level state and then mutating it. Tracked at #762, the use-after-move
   item of the broader sound borrow checker #618. It needs its own RFC and is
   layered after the M12 flip, not slotted into the M-series.
+- **Backtracking + disjunctive bounds — beyond the M-series.** The structural
+  fix for the first-success-commits failure modes in `internal/solver`. Today
+  four trial sites (`resolveOverload`, the IntersectionType-sub arm, the M6
+  PR2 union-super exists rule, and the pre-PR2.5 `constrainAssign`) all pick
+  the first candidate that holds and never reconsider. M6 PR2.5 lands the
+  cheap mitigations (shared helper, specificity ordering, fewer sites), and
+  M7 adds two diagnostic-quality follow-ups (trial-origin tagging and
+  ambient-time ambiguity warnings). The remaining failure modes
+  (over-constraining inner vars without warning, no backtracking when a
+  downstream constraint contradicts the commit, loss of cross-variable
+  correlation across trial branches) require a structurally different
+  solver. Two complementary directions:
+  - **True backtracking.** A search-based solver that unwinds the committed
+    trial when a downstream constraint contradicts it and retries the next
+    candidate. Fixes failure modes #1, #4, and #5 from the post-PR2
+    post-mortem. Bounded backtracking (only revisit the most recent trial)
+    is tractable; full backtracking through propagated bound graphs is an
+    open research problem at this language's scale.
+  - **Disjunctive bound representation.** Let a var carry "γ ≤ A OR γ ≤ B"
+    as a first-class constraint rather than picking one and committing.
+    Fixes failure mode #6 (cross-variable correlation) by recording the
+    correlation explicitly. Requires row-types or refinement-types machinery
+    in the bound graph, which is a fundamentally different solver.
+  Both are large undertakings, post-MVP, and warrant their own RFCs. The
+  realistic short-term path is to keep accumulating the diagnostic and
+  ergonomic mitigations PR2.5 and M7 land, and revisit the structural fix
+  if user reports show the failure modes biting at scale.
 
 ## Dependency / risk ordering rationale
 

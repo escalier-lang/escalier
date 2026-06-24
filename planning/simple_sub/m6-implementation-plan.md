@@ -144,6 +144,8 @@ and the *rules*.
 ```
 PR1 (representation + normalization)
  ├─► PR2 (constrain lattice rules + union/intersection annotation input)
+ │     ├─► PR2.5 (trial-and-commit cleanup: shared helper, specificity order,
+ │     │          delete constrainAssign)
  │     └─► PR4 (union exactness flag + match exhaustiveness leg)
  ├─► PR3 (monomorphic function-type annotations)
  │     └─► PR5 (⊤/⊥ rules + Variation-B close — now testable end-to-end)
@@ -158,6 +160,11 @@ PR1 (representation + normalization)
   M2.5's `Prov` discipline was.
 - **PR2 before PR4** because the exactness one-way rule is a refinement of the
   base lattice rules PR2 installs.
+- **PR2.5 depends only on PR2** and could land before or after PR4. Landing it
+  early makes the trial-and-commit machinery uniform across the four sites
+  before PR4's exactness one-way rule changes how the union-super exists
+  rule renders its diagnostics. Independent of PR3/PR5/PR6/PR7/PR8 — purely a
+  cleanup of the sites PR2 has just touched.
 - **PR3 (function annotations) feeds PR5.** The `_ <: unknown` rule itself needs
   only PR1, but its reason for existing — the Variation-B check — is only
   *reachable* once an inexact function annotation can reach `constrain`, which is
@@ -450,6 +457,75 @@ rendered binding type, not bound internals); `(A & B) <: C` picks a member;
 `A <: (B | C)` for concrete `A` picks a branch and a non-member is rejected;
 both round-trip through the printer; an inferred union from a multi-branch return
 still renders (regression against PR1's normalization).
+
+---
+
+### PR2.5 — Trial-and-commit cleanup: shared helper, specificity order, delete `constrainAssign`
+
+Cleanup pass over the trial-and-commit sites the union-super exists rule joined
+in PR2. With PR2 landed, the solver has four such sites: the original
+overload-resolution path in `resolveOverload`
+([overload.go:43](../../internal/solver/overload.go)), the intersection-sub
+arm in `constrain`, the new union-super exists rule, and the M5-era
+`constrainAssign` workaround in
+[infer_expr.go:991](../../internal/solver/infer_expr.go). All four share the
+same shape — iterate members, probe-trial each, commit on first success,
+collect per-trial errors on failure — and the same user-visible failure modes:
+over-constraining inner inference variables, order-dependence on canonical
+sort, brittleness to union-membership changes, and misleading downstream
+errors. PR2.5 lands the three lowest-cost mitigations as one cleanup.
+
+**Delete `constrainAssign`.** Its doc-comment already flags itself as a
+pre-M6 workaround for assigning into a union target, with the deliberately
+not-fixable shape pointing at "M6's deferred union/intersection rules in
+`constrain`" as the proper fix. PR2 lands those rules. Route assignment
+through `c.constrain` and delete the function. Verify that the pinned
+regression `TestInferAssignUnionTargetVarRHSOverNarrows` still passes
+through the new path; if its expected behavior diverges, update the
+assertion in place rather than reinstating the workaround. Reduces the
+trial-and-commit surface from four sites to three.
+
+**Extract a shared `trialAndCommit` helper.** All three remaining sites have
+the same outline: a candidate order, a per-candidate trial body, a
+first-success commit, and a per-trial error collector for the failure path.
+Pull this into one helper in the probe package (or beside it in
+`constrain.go`), parameterised by the trial body callback and the candidate
+list. Each call site shrinks to a one-liner over its own candidate order
+plus the per-candidate work. Concentrates every later mitigation into one
+location and catches silent drift in the probe / cloned-`seen` discipline
+between the rules. The intersection-sub arm's specificity-order use stays
+the same. The union-super exists rule's free-var-member skip rides on top.
+
+**Specificity-ordered trials, not canonical-ordered.** The
+IntersectionType-sub arm already uses `specificityOrder`
+([overload.go:143](../../internal/solver/overload.go)) for its FuncType-only
+case. Extend the ordering to general types — LitType before PrimType,
+narrower object before wider, etc. — and route the union-super exists rule
+through it. Most-specific-first means adding a less-specific union member
+does not change which branch wins, which addresses the brittleness failure
+mode head-on. The order also matches intuition better than canonical sort
+on member kind, since "the more specific branch wins" is what most type
+systems do. The ordering choice still has to be a total order consistent
+with `equalType` for the trial sequence to be reproducible. Use the
+existing `compareType` for tie-breaks.
+
+**Out of scope here.** The diagnostic-tagging work (point #4 in the
+post-mortem) and the ambient-time ambiguity warning (point #5) are deferred
+to a later milestone — see [01-milestones.md](01-milestones.md) §M7, which
+notes both as follow-ups to the generic-union surface. The structurally
+larger fixes — true backtracking and disjunctive bound representation —
+are post-MVP work; see [01-milestones.md](01-milestones.md) "Later
+(post-MVP)".
+
+**Tests.** A new table in the constrain-tests file: for each rule (overload,
+intersection-sub, union-super exists), adding a less-specific member to the
+candidate list does not change which branch commits. A regression that
+removing `constrainAssign` keeps every existing assignment test passing.
+The free-var-member skip in the union-super rule is unaffected since
+specificity ordering still respects the "no free TypeVar members" rule.
+
+**Depends on:** PR2 (the union-super exists rule, the new trial site this
+cleanup consolidates).
 
 ---
 
