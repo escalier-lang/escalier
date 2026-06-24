@@ -831,6 +831,31 @@ through is rejected; an `if let r2: mut {x: number} = r` over a PR6 read-only un
 allows `r2.x = 5` while `r` keeps its union type; the scrutinee's own type is unchanged
 after both forms.
 
+**Decision pending: free type-var members in the union-super exists trial.**
+PR7's `if-let` pattern reuses the union-super exists rule PR2 shipped, which
+today SKIPS direct TypeVar members of the super union to avoid speculative
+pinning. The skip is sound but rejects `if let x: T = u` over `u: T | number`
+when no concrete branch matches, even when `T := matched-type` would
+type-check. Two designs were on the table at PR2 time and the choice was
+explicitly deferred to PR7. See [01-milestones.md](01-milestones.md) §M7
+"Open design question — free type-var members in a union-super exists trial"
+for the full enumeration. Short version:
+
+- **Keep the skip.** The honest mitigation is restructuring code away from
+  the generic union (split signatures, discriminating wrapper). The
+  reorder-the-union and explicit-type-argument workarounds DON'T work in
+  Escalier today.
+- **Two-pass exists trial.** Trial concrete members first; if none commit,
+  trial var members in a second pass. Roughly one-day implementation: ~20
+  lines in `constrain.go`, one existing test rewrite, two new test cases,
+  one comment update, and resolve the M7 open question.
+
+The deferred decision is what `if let x: T = u` should do for the generic
+case, so PR7 is the natural place to make the call. Land the chosen rule
+as part of PR7 (or as a tail commit on PR2 if the implementer decides
+before PR7 starts) and update both the M7 open question and the comment
+on the union-super exists rule in `constrain.go`.
+
 ### PR8 — Subsume inferred types at finalization
 
 Close the subsumption gap for inferred types without threading a Context through the

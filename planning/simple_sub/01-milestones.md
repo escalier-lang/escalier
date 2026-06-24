@@ -1123,9 +1123,16 @@ The conservative skip rejects this call. A fully complete rule would bind
 `T := string` as a last-resort catch-all. The two designs to choose between
 when M7 lands generic-union surface:
 
-- **Keep the skip.** Simpler, no speculative pinning. A user wanting a
-  "var as catch-all" reorders the union, names the branch explicitly, or
-  splits the binding.
+- **Keep the skip.** Simpler, no speculative pinning. The honest mitigation
+  is restructuring the user's code away from the generic union: split into
+  separate signatures (`fn fT<T>(x: T)` and `fn fN(x: number)`) or use a
+  discriminating wrapper (`type Boxed<T> = {kind: "var", val: T} | {kind:
+  "num", val: number}`). Two superficially-attractive workarounds DON'T
+  work: reordering the union does nothing because `newUnion` canonicalizes
+  member order at construction, and explicit type arguments at the call
+  site (`f<string>("hi")`) aren't syntax `CallExpr` supports today. So
+  "keep the skip" forces a real structural rewrite at every call site, not
+  a one-line tweak.
 - **Two-pass exists trial.** Try concrete members first. If none commit,
   try var members in a second pass. Preserves completeness without
   first-pin behavior. PR7's `if-let` / `let-else` narrowing reuses the same
