@@ -55,6 +55,42 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	return lo, hi
 }
 
+// commonBorrowEscape returns a representative BorrowEscapeError when every
+// per-trial error is itself a BorrowEscapeError. That means sub is a borrow
+// with a lifetime and no super-union member could host it. The caller uses
+// the returned value to emit one union-level BorrowEscapeError so the
+// lifetime cause survives. Without this collapse the union-super exists
+// rule would shadow BorrowEscape with a generic CannotConstrain and the
+// actionable diagnostic would be lost.
+//
+// Example. With `&'a {x: number} <: (number | string)`:
+//   - trial `&'a {x: number} <: number`: BorrowEscapeError (the borrow can't fit a number slot)
+//   - trial `&'a {x: number} <: string`: BorrowEscapeError (same)
+//
+// Both trials returned the same shape, so commonBorrowEscape returns one of
+// them. The caller emits `BorrowEscapeError{Sub: borrow, Super: union}` and
+// the user sees "borrow does not live long enough" rather than the unhelpful
+// "cannot constrain mut object <: number | string".
+func commonBorrowEscape(trials [][]SolverError) *BorrowEscapeError {
+	if len(trials) == 0 {
+		return nil
+	}
+	var first *BorrowEscapeError
+	for _, errs := range trials {
+		if len(errs) != 1 {
+			return nil
+		}
+		esc, ok := errs[0].(*BorrowEscapeError)
+		if !ok {
+			return nil
+		}
+		if first == nil {
+			first = esc
+		}
+	}
+	return first
+}
+
 // constraintKey keys the coinductive seen-set by pointer identity (Go's
 // interface == on pointer-backed soltype concretes). Sufficient for M1: cycles
 // in subtype-checking can only form via TypeVarTypes, and TypeVarType pointers
@@ -143,6 +179,90 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	}
 	if _, ok := super.(*soltype.ErrorType); ok {
 		return nil
+	}
+
+	// M6 PR2 pre-switch lattice block. The structural switch below dispatches
+	// on sub and several arms return early on a non-variable super (the
+	// RefType arm most importantly), so a union/intersection super has to be
+	// matched here or it would be intercepted as a concrete-non-var demand
+	// before the lattice rule could fire. A variable on the deciding side
+	// falls through to the var arms instead of decomposing, so the whole
+	// union/intersection is recorded as one bound.
+
+	// (A | B) <: super ⟹ A <: super AND B <: super. Inexact sub against a
+	// closed super also emits one InexactUnionIntoExactError for the open tail.
+	// When super is a TypeVar, fall through to the superVar arm so the whole
+	// union (with its Inexact flag) is recorded as one lower bound on the var.
+	if subU, ok := sub.(*soltype.UnionType); ok {
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			var errs []SolverError
+			if subU.Inexact {
+				closed := true
+				switch s := super.(type) {
+				case *soltype.UnknownType:
+					closed = false
+				case *soltype.UnionType:
+					closed = !s.Inexact
+				}
+				if closed {
+					errs = append(errs, &InexactUnionIntoExactError{Sub: subU, Super: super})
+				}
+			}
+			for _, m := range subU.Types {
+				errs = append(errs, c.constrain(m, super, seen)...)
+			}
+			return errs
+		}
+	}
+
+	// sub <: (A & B) ⟹ sub <: A AND sub <: B. When sub is a TypeVar, fall
+	// through to the subVar arm so the whole intersection is recorded as one
+	// upper bound on the var.
+	if supI, ok := super.(*soltype.IntersectionType); ok {
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
+			var errs []SolverError
+			for _, m := range supI.Types {
+				errs = append(errs, c.constrain(sub, m, seen)...)
+			}
+			return errs
+		}
+	}
+
+	// sub <: (A | B) ⟹ sub <: A OR sub <: B. Trial each member under a probe;
+	// the first success commits, the losers roll back. Free TypeVar members
+	// are skipped to avoid speculatively pinning them to sub.
+	if supU, ok := super.(*soltype.UnionType); ok {
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
+			var trialErrs [][]SolverError
+			triedAny := false
+			for _, m := range supU.Types {
+				if _, isVar := m.(*soltype.TypeVarType); isVar {
+					continue
+				}
+				triedAny = true
+				p := newProbe(c.probe)
+				c.probe = p
+				errs := c.constrain(sub, m, seen.Clone())
+				c.probe = p.parent
+				if len(errs) == 0 {
+					p.Commit()
+					return nil
+				}
+				p.Discard()
+				trialErrs = append(trialErrs, errs)
+			}
+			if !triedAny {
+				// Every member was a free var; fall through to the var arms.
+			} else {
+				// Every concrete branch failed. Promote a uniform
+				// BorrowEscape outcome so the lifetime cause survives;
+				// otherwise emit the generic union-level error.
+				if commonBorrowEscape(trialErrs) != nil {
+					return []SolverError{&BorrowEscapeError{Sub: sub.(*soltype.RefType), Super: super}}
+				}
+				return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+			}
+		}
 	}
 
 	// Structural cases first; fall through to the variable cases when a side
@@ -376,26 +496,25 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			return nil
 		}
 	case *soltype.IntersectionType:
-		// Function-intersection sub (PR6 scoped lattice exception): (A & B & …) <: super
-		// iff SOME member <: super. This is the ONE place the overload disjunction touches
-		// the lattice — reached only when an overloaded value (inferIdent synthesizes the
-		// arm intersection) flows into a constraint, e.g. a let-bound overload called
-		// through the binding (`g = f; g(x)`). The disjunction stays confined to the
-		// speculation phase: each member is trialled under a probe in SPECIFICITY order
-		// (the same specificityOrder resolveOverload uses for a direct call, so a call
-		// through a binding resolves to the same arm a direct call would), the first
-		// success commits its bounds and the losers roll back. General IntersectionType
-		// subtyping (objects, distribution, normalization) is out of M3; a coalesced
-		// intersection never reaches constrain as input (the design keeps these
-		// output-only), so this arm is overload-synthesis-only.
+		// (A & B) <: super ⟹ A <: super OR B <: super. Trial each member in
+		// specificity order under a probe; the first success commits. Stays in
+		// the structural switch (not the pre-switch block) because the switch
+		// already dispatches on sub, so a lattice sub is matched by its own case
+		// here without needing a pre-switch interception. When super is a
+		// TypeVar, fall through to the superVar arm so the whole intersection is
+		// recorded as one lower bound rather than committing to one arm and
+		// discarding the rest. Two callers reach this:
 		//
-		// Collapse only against a CONCRETE demand. If super is a variable — the overloaded
-		// value is flowing INTO a binding (`intersection <: b.v`) — don't collapse here.
-		// Fall through to the var arm below, which records the intersection WHOLE as a
-		// lower bound. Collapsing now would commit to one arm prematurely and discard the
-		// rest of the overload set. The collapse fires later instead, once that var is
-		// constrained against a concrete function demand (a call shape) and the whole
-		// intersection propagates to it.
+		//   - Overload synthesis. inferIdent builds an intersection out of an
+		//     overloaded value's arms so a let-bound overload called through the
+		//     binding (`g = f; g(x)`) resolves the arm via the same trial loop a
+		//     direct call would, in the same order.
+		//   - Annotation input (M6 PR2). `val x: A & B = e` resolves through
+		//     resolveTypeAnn into an IntersectionType and reaches here when the
+		//     binding flows into a constraint. specificityOrder ranks
+		//     non-function arms last in declaration order, so a non-function
+		//     intersection trials in declaration order without a separate code
+		//     path.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && len(sub.Types) > 0 {
 			funcs := make([]*soltype.FuncType, len(sub.Types))
 			for i, m := range sub.Types {

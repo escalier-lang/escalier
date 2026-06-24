@@ -1097,6 +1097,109 @@ now resolve to real `soltype` structures rather than opaque placeholders.
       reuses the tuple/array read classification above plus C3's `mut` receiver
       requirement and `widen`.
 
+**Open design question — free type-var members in a union-super exists trial.**
+M6 PR2's union-super exists rule trials each member of `sub <: (A | B | …)`
+under a probe and commits the first success. See
+[m6-implementation-plan.md](m6-implementation-plan.md) §PR2 for the rule. The
+rule deliberately SKIPS direct `TypeVarType` members in the trial loop.
+Canonical sort ranks `TypeVar` before concrete kinds, so without the skip a
+`5 <: (α | number)` constraint would trial `α` first, succeed trivially by
+recording `5` as `α`'s lower bound, and commit. `α` would then be pinned to
+≥5 and the `number` branch would never run. The skip avoids this
+speculative pinning.
+
+The skip is sound but incomplete. No source path can reach it today. PR2's
+`resolveTypeAnn` arms produce unions whose members are resolved concretes,
+and a user-written `T` does not resolve until M7. Once it does, a
+generic-union annotation becomes reachable:
+
+```
+fn f<T>(x: T | number) { ... }
+f("hi")          // currently fails: cannot constrain string <: T | number
+                 // even though T := string would type-check
+```
+
+The conservative skip rejects this call. A fully complete rule would bind
+`T := string` as a last-resort catch-all. The two designs to choose between
+when M7 lands generic-union surface:
+
+- **Keep the skip.** Simpler, no speculative pinning. The honest mitigation
+  is restructuring the user's code away from the generic union: split into
+  separate signatures (`fn fT<T>(x: T)` and `fn fN(x: number)`) or use a
+  discriminating wrapper (`type Boxed<T> = {kind: "var", val: T} | {kind:
+  "num", val: number}`). Two superficially-attractive workarounds DON'T
+  work: reordering the union does nothing because `newUnion` canonicalizes
+  member order at construction, and explicit type arguments at the call
+  site (`f<string>("hi")`) aren't syntax `CallExpr` supports today. So
+  "keep the skip" forces a real structural rewrite at every call site, not
+  a one-line tweak.
+- **Two-pass exists trial.** Try concrete members first. If none commit,
+  try var members in a second pass. Preserves completeness without
+  first-pin behavior. PR7's `if-let` / `let-else` narrowing reuses the same
+  exists path. See [m6-implementation-plan.md](m6-implementation-plan.md)
+  §PR7. So this choice also decides whether `if let x: T = u` over
+  `u: T | number` can bind `T` to the matched branch.
+
+The IntersectionType-sub overload arm in `constrain.go` already trials
+variable-shaped members through the same probe machinery. That is how
+`g = f; g(x)` resolves when `f`'s arms involve type vars. The two arms are
+asymmetric today. The resolution chosen here should either align them or
+document why the union and intersection cases warrant different treatment.
+
+**Trial-and-commit diagnostic follow-ups (after generic-union surface lands).**
+M6 PR2 introduced the union-super exists rule, which trials each member of
+`sub <: (A | B | …)` and commits the first success. Three sibling sites in
+`internal/solver` use the same pattern: `resolveOverload`, the
+IntersectionType-sub arm, and `constrainAssign`. All four share the same
+**first-success-commits failure modes**:
+
+1. **Over-constraining inner inference variables.** A trial that succeeds
+   by adding bounds to vars nested in sub or super locks those vars to the
+   chosen branch. A later use that would have matched a different branch
+   is rejected.
+2. **Order-dependence on canonical sort, not user intent.** Members are
+   trialled in `compareType` order. The user's source order is not what
+   decides the winner.
+3. **Brittleness to union-membership changes.** Adding a member can shift
+   canonical sort and change which branch wins, making a seemingly
+   additive change alter downstream behavior.
+4. **Misleading downstream error messages.** When the committed bound
+   conflicts with a later use, the error blames the later constraint with
+   no breadcrumb back to the union trial that forced the commitment.
+5. **No backtracking.** Once committed, the system never reconsiders. A
+   later contradiction errors instead of unwinding to try the next branch.
+6. **Loss of cross-variable correlation.** A trial that touches multiple
+   correlated variables locks them together to one branch. A user
+   expecting the disjunction to remain open across both vars finds it
+   doesn't.
+
+M6 PR2.5 takes the cheapest mitigations: a shared trial helper,
+specificity-ordered candidates, and deletion of the M5-era
+`constrainAssign` workaround
+([m6-implementation-plan.md](m6-implementation-plan.md) §PR2.5). The two
+deferred mitigations bite once M7 makes generic-union annotations
+reachable from source, since user-written `T | A` is the case where
+over-constrained inner variables (failure mode #1) actually surface to the
+user. Land them once that happens:
+
+- **Tag committed bounds with their union-trial origin** (addresses
+  failure mode #4). When the trial commits, mark the added bounds (or the
+  var) with a side-table entry pointing at the union annotation node.
+  When a downstream constraint fails on a tagged var, the diagnostic
+  engine chases the tag and emits "this var was committed to branch A of
+  (A | B) at <span>; later use needs B." Replaces today's flat "string is
+  not number" with a breadcrumb back to the union choice that forced the
+  conflict. Probe-safe via the existing rollback hook discipline.
+- **Ambient-time ambiguity detection** (addresses failure mode #1 at
+  declaration time). After the first trial commits, optionally peek at
+  later branches under throwaway probes. When another branch would also
+  succeed AND would have added different bounds, emit a warning at the
+  union annotation site asking the user to disambiguate. Catches
+  over-constraint at declaration time rather than at downstream use.
+  Roughly doubles the work for ambiguous unions, which matches the cost
+  of the original failure mode. Worth landing once user reports of
+  confusion start coming in.
+
 **Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,
 `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/`IteratorResult<T>`, `console`) resolves
 to real `soltype` structures and type-checks (not placeholders); `import { … }
@@ -1399,6 +1502,34 @@ reduce through the M9 operator machinery.
   module-level state and then mutating it. Tracked at #762, the use-after-move
   item of the broader sound borrow checker #618. It needs its own RFC and is
   layered after the M12 flip, not slotted into the M-series.
+- **Backtracking + disjunctive bounds — beyond the M-series.** The structural
+  fix for the first-success-commits failure modes in `internal/solver`. Today
+  four trial sites (`resolveOverload`, the IntersectionType-sub arm, the M6
+  PR2 union-super exists rule, and the pre-PR2.5 `constrainAssign`) all pick
+  the first candidate that holds and never reconsider. M6 PR2.5 lands the
+  cheap mitigations (shared helper, specificity ordering, fewer sites), and
+  M7 adds two diagnostic-quality follow-ups (trial-origin tagging and
+  ambient-time ambiguity warnings). The remaining failure modes
+  (over-constraining inner vars without warning, no backtracking when a
+  downstream constraint contradicts the commit, loss of cross-variable
+  correlation across trial branches) require a structurally different
+  solver. Two complementary directions:
+  - **True backtracking.** A search-based solver that unwinds the committed
+    trial when a downstream constraint contradicts it and retries the next
+    candidate. Fixes failure modes #1 (over-constraining inner vars), #4
+    (misleading errors), and #5 (no backtracking) from the M7 enumeration
+    above. Bounded backtracking — only revisit the most recent trial — is
+    tractable; full backtracking through propagated bound graphs is an open
+    research problem at this language's scale.
+  - **Disjunctive bound representation.** Let a var carry "γ ≤ A OR γ ≤ B"
+    as a first-class constraint rather than picking one and committing.
+    Fixes failure mode #6 (cross-variable correlation) by recording the
+    correlation explicitly. Requires row-types or refinement-types machinery
+    in the bound graph, which is a fundamentally different solver.
+  Both are large undertakings, post-MVP, and warrant their own RFCs. The
+  realistic short-term path is to keep accumulating the diagnostic and
+  ergonomic mitigations PR2.5 and M7 land, and revisit the structural fix
+  if user reports show the failure modes biting at scale.
 
 ## Dependency / risk ordering rationale
 

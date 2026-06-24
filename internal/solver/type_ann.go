@@ -81,6 +81,10 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 		return c.resolveMutableTypeAnn(ta, lvl)
 	case *ast.RefTypeAnn:
 		return c.resolveRefTypeAnn(ta, lvl)
+	case *ast.UnionTypeAnn:
+		return c.resolveUnionTypeAnn(ta, lvl)
+	case *ast.IntersectionTypeAnn:
+		return c.resolveIntersectionTypeAnn(ta, lvl)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -165,6 +169,50 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 	}
 	t := &soltype.TupleType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveUnionTypeAnn lowers `A | B | …` through newUnion. An unsupported
+// member recovers to a fresh var so the union shape survives, mirroring the
+// Promise<bad> and object/tuple cascade-safe recovery. The Inexact flag and
+// its parser surface land in PR4.
+func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
+	members := make([]soltype.Type, len(ta.Types))
+	for i, m := range ta.Types {
+		if t, ok := c.resolveTypeAnn(m, lvl); ok {
+			members[i] = t
+		} else {
+			// freshAt over ErrorType: preserves the source's union shape
+			// in the rendered type. pruneUnion would drop an ErrorType
+			// member and collapse the union.
+			members[i] = c.freshAt(lvl)
+		}
+	}
+	t := newUnion(c.ctx, members, false)
+	// newUnion can collapse to an input member's pointer (single-member
+	// dedup, or subsumption). Re-recording Prov on a pointer that already
+	// carries it would overwrite the narrower child-annotation blame and
+	// trip the debugProv guard.
+	if !c.hasProv(t) {
+		c.recordProv(t, ta, AnnotationType)
+	}
+	return t, true
+}
+
+// resolveIntersectionTypeAnn is the meet twin of resolveUnionTypeAnn.
+func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl int) (soltype.Type, bool) {
+	members := make([]soltype.Type, len(ta.Types))
+	for i, m := range ta.Types {
+		if t, ok := c.resolveTypeAnn(m, lvl); ok {
+			members[i] = t
+		} else {
+			members[i] = c.freshAt(lvl) // see resolveUnionTypeAnn
+		}
+	}
+	t := newIntersection(c.ctx, members)
+	if !c.hasProv(t) {
+		c.recordProv(t, ta, AnnotationType)
+	}
 	return t, true
 }
 

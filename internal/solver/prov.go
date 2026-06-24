@@ -89,6 +89,12 @@ func (p Prov) NodeFor(t soltype.Type) (ast.Node, bool) {
 	return nil, false
 }
 
+// hasProv reports whether t already carries a FromAST origin in the Prov table.
+func (c *checker) hasProv(t soltype.Type) bool {
+	_, ok := c.prov[t].(FromAST)
+	return ok
+}
+
 // recordProv records that t was minted from node n for reason kind — the inverse
 // of recordType (info.setType). Sparse by intent: only the node-derived
 // construction sites call it; synthesized types (coalesced/extruded, M3+) get no
