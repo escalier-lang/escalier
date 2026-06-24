@@ -172,14 +172,10 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 	return t, true
 }
 
-// resolveUnionTypeAnn lowers `A | B | …` to a soltype.UnionType through
-// newUnion. Each member resolves recursively. An unsupported member recovers
-// to a fresh var so the union shape survives, mirroring the Promise<bad> and
-// object/tuple cascade-safe recovery. The Context-bearing newUnion call also
-// runs subsumed-member elimination, so a literal-and-its-primitive pair like
-// `1 | number` collapses to `number` at the annotation site. PR4 lands the
-// surface `...` inexact marker. Until then ast.UnionTypeAnn carries no flag
-// and the resulting union is always exact.
+// resolveUnionTypeAnn lowers `A | B | …` through newUnion. An unsupported
+// member recovers to a fresh var so the union shape survives, mirroring the
+// Promise<bad> and object/tuple cascade-safe recovery. The Inexact flag and
+// its parser surface land in PR4.
 func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))
 	for i, m := range ta.Types {
@@ -190,29 +186,17 @@ func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Ty
 		}
 	}
 	t := newUnion(c.ctx, members, false)
-	// Record provenance only when the result has no Prov yet. The smart
-	// constructor can collapse to a single member. `number | number` ⇒
-	// `number` and the subsumption case `1 | number` ⇒ `number` both
-	// return an input member's pointer, which already carries Prov from its
-	// own annotation. Re-recording against the outer union node would
-	// overwrite the narrower blame and trip the debugProv unique-pointer
-	// guard. A pointer-identity check would miss the case where the
-	// survivor is a `freshAt`-recovered TypeVar. freshAt does not
-	// recordProv, so the survivor is in `members` but has no Prov, and the
-	// annotation node would end up with no entry at all. Gating on the
-	// Prov state instead of identity records blame in that case too.
+	// newUnion can collapse to an input member's pointer (single-member
+	// dedup, or subsumption). Re-recording Prov on a pointer that already
+	// carries it would overwrite the narrower child-annotation blame and
+	// trip the debugProv guard.
 	if !c.hasProv(t) {
 		c.recordProv(t, ta, AnnotationType)
 	}
 	return t, true
 }
 
-// resolveIntersectionTypeAnn is the meet twin of resolveUnionTypeAnn. It
-// lowers `A & B & …` through newIntersection. The Context-bearing call runs
-// subsumed-member elimination, so a pair like `{x} & {x, y}` collapses to the
-// narrower `{x, y}` at the annotation site. An IntersectionType carries no
-// exactness flag. Exactness is a property of the result of the meet, not of
-// the meet itself.
+// resolveIntersectionTypeAnn is the meet twin of resolveUnionTypeAnn.
 func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))
 	for i, m := range ta.Types {
@@ -223,7 +207,6 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 		}
 	}
 	t := newIntersection(c.ctx, members)
-	// Same Prov-state gate as the union arm — see resolveUnionTypeAnn.
 	if !c.hasProv(t) {
 		c.recordProv(t, ta, AnnotationType)
 	}
