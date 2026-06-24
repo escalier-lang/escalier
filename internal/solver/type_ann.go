@@ -182,6 +182,9 @@ func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Ty
 		if t, ok := c.resolveTypeAnn(m, lvl); ok {
 			members[i] = t
 		} else {
+			// freshAt over ErrorType: preserves the source's union shape
+			// in the rendered type. pruneUnion would drop an ErrorType
+			// member and collapse the union.
 			members[i] = c.freshAt(lvl)
 		}
 	}
@@ -203,7 +206,7 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 		if t, ok := c.resolveTypeAnn(m, lvl); ok {
 			members[i] = t
 		} else {
-			members[i] = c.freshAt(lvl)
+			members[i] = c.freshAt(lvl) // see resolveUnionTypeAnn
 		}
 	}
 	t := newIntersection(c.ctx, members)
