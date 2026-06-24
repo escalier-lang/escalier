@@ -191,6 +191,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 
 	// (A | B) <: super ⟹ A <: super AND B <: super. Inexact sub against a
 	// closed super also emits one InexactUnionIntoExactError for the open tail.
+	// When super is a TypeVar, fall through to the superVar arm so the whole
+	// union (with its Inexact flag) is recorded as one lower bound on the var.
 	if subU, ok := sub.(*soltype.UnionType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			var errs []SolverError
@@ -213,7 +215,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	}
 
-	// sub <: (A & B) ⟹ sub <: A AND sub <: B.
+	// sub <: (A & B) ⟹ sub <: A AND sub <: B. When sub is a TypeVar, fall
+	// through to the subVar arm so the whole intersection is recorded as one
+	// upper bound on the var.
 	if supI, ok := super.(*soltype.IntersectionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
 			var errs []SolverError
