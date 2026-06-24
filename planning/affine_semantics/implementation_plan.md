@@ -52,8 +52,9 @@ connected-component moves, is a further move-engine extension and stays on M4. P
 `Freeze`/`Thaw`, additionally depends on **M9**, the mapped and conditional type
 operators. PR 13, deep `mut` with `readonly`, is foundational mut-semantics work that
 stays on M4 and is best sequenced early, since PR 12 and the affine model's mutability
-all build on it. So PRs 1 through 8, 11, and 13 can proceed once M4 is in place, 9 and
-10 wait on M6, and 12 waits on M9.
+all build on it. PR 14 reshapes the PR 13 representation from an eager lowering to a
+lazy one that stores the surface annotation, also on M4. So PRs 1 through 8, 11, 13,
+and 14 can proceed once M4 is in place, 9 and 10 wait on M6, and 12 waits on M9.
 
 ## Parsing borrows without a syntax mode
 
@@ -249,6 +250,7 @@ lifetime. Chained access `a.b.c` composes the rule at each link.
 | 11 | Connected-component moves for graphs | 6, 7 | Large |
 | 12 | `Freeze`/`Thaw` deep mut↔immut utility types | 8, 11, 13, M9 | Large |
 | 13 | Deep `mut`, type-parameter inertness, and `readonly` | 1, 2 | Medium |
+| 14 | Lazy deep `mut`: store the surface form, push the rule to access and constrain | 13 | Large |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
@@ -705,6 +707,77 @@ reassignment but still permits mutating the field's value when that value is mut
 
 Acceptance: `mut`/`&mut` are deep with type parameters inert, and `readonly` forbids
 reassignment only.
+
+### PR 14 — Lazy deep `mut`: store the surface form, push the rule to access and constrain
+
+Goal: change deep `mut` from an eager lowering that pre-bakes `mut` onto every nested
+object and tuple cell to a lazy representation that stores the type as the user wrote
+it and applies the deep-mut rule at access and constrain time. The two representations
+encode the same semantic. The lazy form stores `mut {a: {x}}` verbatim instead of
+`mut {a: mut {x}}`, so the stored type matches the surface annotation, error messages
+and hover need no special elision, and the fresh-literal upgrade has nothing to strip.
+The cost is threading a "mut context" flag through the constrain pipeline so the
+object subtyping arm knows when it is inside a mutable wrapper and treats fields as
+invariant, the work PR 13's eager representation does by baking `mut` into the field
+types themselves.
+
+Sequence this after PR 13 so the affine model and PR 12 can settle on deep-mut
+behaviour first. The migration touches the same call sites PR 13 grew, so it is best
+done as one focused change rather than dripped into the move-engine PRs.
+
+- Remove `applyDeepMut` and `deepMutComponent` from
+  [internal/solver/type_ann.go](../../internal/solver/type_ann.go).
+  `resolveMutableTypeAnn` and `resolveRefTypeAnn` go back to wrapping the resolved
+  inner in one `RefType` without touching its children. `inheritProv` goes with them,
+  since the lazy form does not rebuild the inner.
+- Remove `stripOwnedMut` and the deep-mut comment block from
+  [internal/solver/infer_decl.go](../../internal/solver/infer_decl.go).
+  `constrainInitAgainstAnnotation` constrains the fresh literal against `ref.Inner`
+  directly, the way it did before PR 13. The literal is owned-immutable, the inner is
+  the bare shape, and the C2 gate accepts it covariantly without a strip walk.
+- Drop the owned-mutable-cell branch in `fieldReadBorrow`
+  ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go)). With the
+  lazy form, a field's value is the bare shape the user wrote, never a `mut` cell, so
+  the only `RefType` branch left is the explicit borrow field. The bare
+  `ObjectType`/`TupleType` arm now handles the deep-mut field too, with the receiver's
+  mutability propagated through `recvMut` to decide whether the produced borrow is
+  `&mut` or `&`.
+- Likewise simplify `borrowInnerOf`. Its owned-mut peel exists only to undo the eager
+  lowering; with the lazy form there is no owned-mut cell to peel and the helper
+  collapses to the ordinary `RefInner` cast.
+- Thread the mut context through the constrain pipeline. Add a flag, threaded
+  alongside `seen`, that the RefType arm sets to true when entering a mutable
+  wrapper. The `ObjectType <: ObjectType` arm consults it to decide per-field
+  variance: covariant outside a mutable wrapper, invariant inside one. The same flag
+  drives the recursive walk into nested object and tuple fields. Reset the flag at
+  function and promise boundaries, since each carries its own annotation context.
+  This subsumes `constrainWriteBack`: the per-field invariance the write view added
+  becomes a natural consequence of the flag, and the function shrinks to the readonly
+  guard plus a passthrough to constrain.
+- Update the field-write requirement in `inferMemberAssign`. Today the requirement
+  `mut {f: w, ...}` relies on the RefType arm's writeBack to pin `f` invariant; under
+  the lazy form the same flag mediates the pin, so the requirement stays a one-line
+  `mut {f: w, ...}` and the readonly upfront check is unchanged.
+- Remove the `underMut` plumbing from
+  [internal/soltype/print.go](../../internal/soltype/print.go). The stored type already
+  matches the surface annotation, so the printer's RefType arm drops the elision
+  branch and `printTypeMinPrec` drops its UM variant. The print tests that pinned the
+  elision retire with it.
+- Migrate the solver snapshots back to the surface form. Tests that asserted
+  `mut {a: mut {x: number}}` flip to `mut {a: {x: number}}`. The PR 13 tests for
+  deep-mut behaviour stay; only their rendered strings update.
+
+Tests: the PR 13 acceptance tests still pass with the rendered strings switched to
+the surface form. Two new tests pin the constrain-side rule: `mut {a: {x: number}}`
+and `mut {a: {y: number}}` are incomparable under the lazy form when the outer is
+mut, matching the eager form's invariance, while the same shapes are subtypes under
+an immutable wrapper. A diagnostic that previously rendered through the elision pass
+now renders the same string with no elision step.
+
+Acceptance: deep-mut semantics is preserved end to end with no representational
+deepening. The stored type matches the surface annotation, the printer is unchanged,
+and the constrain pipeline carries the deep-mut rule through a context flag rather
+than through the field types.
 
 ---
 
