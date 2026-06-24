@@ -93,8 +93,7 @@ func TestPrintRoundTrips(t *testing.T) {
 			"{a?: number}",
 		},
 		{
-			// A readonly property renders a leading `readonly ` (PR 13), so a
-			// `readonly a: T` annotation round-trips to surface syntax.
+			// A readonly property renders a leading `readonly ` prefix.
 			"readonly property renders readonly",
 			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP(), Readonly: true}}},
 			"{readonly a: number}",
@@ -243,13 +242,8 @@ func TestPrintNestedPrecedence(t *testing.T) {
 	})
 }
 
-// TestPrintDeepMutElision verifies that a nested owned-mutable cell elides under a
-// mutable wrapper (PR 13). Deep `mut` lowering inserts a `mut` on every reachable
-// object and tuple field, so the stored type is `mut {a: mut {x}}` for the surface
-// annotation `mut {a: {x}}`. Printing must elide the inner `mut` so the rendered
-// type matches what the user wrote, both for the owned `mut` form and the borrow
-// `&mut` form. An immutable wrapper does NOT activate elision, so a user-explicit
-// `mut` field on an immutable container is preserved verbatim.
+// A nested owned-mutable cell elides under a mutable wrapper so the rendered
+// type matches the surface annotation. An immutable wrapper does not elide.
 func TestPrintDeepMutElision(t *testing.T) {
 	mutOwned := func(inner RefInner) Type {
 		return &RefType{Mut: true, Inner: inner}
@@ -289,8 +283,7 @@ func TestPrintDeepMutElision(t *testing.T) {
 	})
 
 	t.Run("immutable wrapper preserves a user-explicit nested mut", func(t *testing.T) {
-		// `{a: mut {x}}` is an immutable outer with an explicit `mut` inner. The
-		// inner is not deep-mut output, so the print must preserve it verbatim.
+		// An immutable outer is not deep-mut output, so the inner is preserved.
 		ty := &ObjectType{Elems: []ObjTypeElem{
 			&PropertyElem{Name: "a", Type: mutOwned(&ObjectType{Elems: []ObjTypeElem{
 				&PropertyElem{Name: "x", Type: numP()},
@@ -300,8 +293,7 @@ func TestPrintDeepMutElision(t *testing.T) {
 	})
 
 	t.Run("borrow field under mut keeps its & marker", func(t *testing.T) {
-		// `mut {a: &mut {x}}`: the field is a real borrow, not a deep-mut cell, so
-		// it keeps its `&mut` even under a mutable wrapper.
+		// A real borrow field keeps its `&mut` even under a mutable wrapper.
 		ty := mutOwned(&ObjectType{Elems: []ObjTypeElem{
 			&PropertyElem{Name: "a", Type: staticBorrow(true, &ObjectType{Elems: []ObjTypeElem{
 				&PropertyElem{Name: "x", Type: numP()},

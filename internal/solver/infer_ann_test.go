@@ -149,8 +149,7 @@ func TestInferOwnedMutFromFreshLiteral(t *testing.T) {
 		require.Equal(t, "mut {x: number}", values["items"])
 	})
 	t.Run("nested object", func(t *testing.T) {
-		// `mut` is deep (PR 13), so the annotation lowers to `mut {p: {x: number}}`
-		// and the fresh literal is upgraded the whole way down.
+		// Deep `mut` makes the upgrade reach every nested literal.
 		values, _, errs := inferSource(t, `val w: mut {p: {x: number}} = {p: {x: 0}}`)
 		require.Empty(t, errs)
 		require.Equal(t, "mut {p: {x: number}}", values["w"])
@@ -190,12 +189,8 @@ func TestInferOwnedMutFreshnessRecurses(t *testing.T) {
 	})
 }
 
-// A fully fresh literal upgrades to a NESTED `mut` target as well, because deep
-// `mut` (PR 13) made the upgrade strip the whole owned-mutable skeleton before the
-// read-view constraint. The literal `{p: {x: 0}}` is uniquely owned at every level,
-// so granting it `mut {p: {x: number}}` is sound — this is the recursive form of
-// the top-level Rule 2 upgrade. The explicitly-nested-`mut` annotation here lowers to
-// the same type the deep `mut {p: {x: number}}` does, so both check identically.
+// A fully fresh literal is uniquely owned at every level, so it upgrades to a
+// nested `mut` target the same way it does to a top-level one.
 func TestInferOwnedMutNestedMutFieldUpgraded(t *testing.T) {
 	values, _, errs := inferSource(t, `val w: mut {p: {x: number}} = {p: {x: 0}}`)
 	require.Empty(t, errs)

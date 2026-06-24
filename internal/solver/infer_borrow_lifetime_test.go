@@ -448,13 +448,8 @@ func TestInferBorrowOfNonBorrowableRejected(t *testing.T) {
 
 // --- PR 4: member reads borrow the receiver ---
 
-// A member read whose result reaches the function output carries the
-// receiver's borrow lifetime through, the heart of PR 4 rule 4. The implicit
-// read on `p.a` for `p: &mut {a: {...}}` yields a borrow of the field at p's
-// lifetime, so the rendered signature names that lifetime on both the param
-// and the return type. Deep `mut` (PR 13) makes the `a` field owned-mutable, so
-// the param renders `&'a mut {a: {x: number}}` and the read yields a MUTABLE
-// borrow `&'a mut {x: number}` rather than an immutable one.
+// A member read that escapes carries the receiver's borrow lifetime through.
+// Deep `mut` makes the field owned-mutable, so the read yields a mutable borrow.
 func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
 	src := `fn f(p: &mut {a: {x: number}}) {
   return p.a
