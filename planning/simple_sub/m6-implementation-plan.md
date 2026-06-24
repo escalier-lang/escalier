@@ -516,10 +516,12 @@ systems do. The ordering choice still has to be a total order consistent
 with `equalType` for the trial sequence to be reproducible. Use the
 existing `compareType` for tie-breaks.
 
-**Out of scope here.** The diagnostic-tagging work (point #4 in the
-post-mortem) and the ambient-time ambiguity warning (point #5) are deferred
-to a later milestone — see [01-milestones.md](01-milestones.md) §M7, which
-notes both as follow-ups to the generic-union surface. The structurally
+**Out of scope here.** Two further diagnostic-quality mitigations are
+deferred to M7: tagging committed bounds with their union-trial origin
+(so a downstream error chases the tag), and ambient-time ambiguity
+detection (so the over-constraint surfaces at declaration time, not at
+downstream use). See [01-milestones.md](01-milestones.md) §M7 for the
+enumerated failure modes and the deferred mitigations. The structurally
 larger fixes — true backtracking and disjunctive bound representation —
 are post-MVP work; see [01-milestones.md](01-milestones.md) "Later
 (post-MVP)".

@@ -1140,30 +1140,58 @@ asymmetric today. The resolution chosen here should either align them or
 document why the union and intersection cases warrant different treatment.
 
 **Trial-and-commit diagnostic follow-ups (after generic-union surface lands).**
-M6 PR2.5 takes the cheapest mitigations against the first-success-commits
-failure modes: a shared trial helper, specificity-ordered candidates, and
-deletion of the M5-era `constrainAssign` workaround
-([m6-implementation-plan.md](m6-implementation-plan.md) §PR2.5). The two
-deferred mitigations bite once M7 makes generic-union annotations reachable
-from source, since user-written `T | A` is the case where over-constrained
-inner variables actually surface to the user. Land them once that happens:
+M6 PR2 introduced the union-super exists rule, which trials each member of
+`sub <: (A | B | …)` and commits the first success. Three sibling sites in
+`internal/solver` use the same pattern: `resolveOverload`, the
+IntersectionType-sub arm, and `constrainAssign`. All four share the same
+**first-success-commits failure modes**:
 
-- **Tag committed bounds with their union-trial origin.** When the trial
-  commits, mark the added bounds (or the var) with a side-table entry
-  pointing at the union annotation node. When a downstream constraint fails
-  on a tagged var, the diagnostic engine chases the tag and emits "this var
-  was committed to branch A of (A | B) at <span>; later use needs B."
-  Replaces today's flat "string is not number" with a breadcrumb back to the
-  union choice that forced the conflict. Probe-safe via the existing
-  rollback hook discipline.
-- **Ambient-time ambiguity detection.** After the first trial commits,
-  optionally peek at later branches under throwaway probes. When another
-  branch would also succeed AND would have added different bounds, emit a
-  warning at the union annotation site asking the user to disambiguate.
-  Catches over-constraint at declaration time rather than at downstream use.
-  Roughly doubles the work for ambiguous unions, which matches the cost of
-  the original failure mode. Worth landing once user reports of confusion
-  start coming in.
+1. **Over-constraining inner inference variables.** A trial that succeeds
+   by adding bounds to vars nested in sub or super locks those vars to the
+   chosen branch. A later use that would have matched a different branch
+   is rejected.
+2. **Order-dependence on canonical sort, not user intent.** Members are
+   trialled in `compareType` order. The user's source order is not what
+   decides the winner.
+3. **Brittleness to union-membership changes.** Adding a member can shift
+   canonical sort and change which branch wins, making a seemingly
+   additive change alter downstream behavior.
+4. **Misleading downstream error messages.** When the committed bound
+   conflicts with a later use, the error blames the later constraint with
+   no breadcrumb back to the union trial that forced the commitment.
+5. **No backtracking.** Once committed, the system never reconsiders. A
+   later contradiction errors instead of unwinding to try the next branch.
+6. **Loss of cross-variable correlation.** A trial that touches multiple
+   correlated variables locks them together to one branch. A user
+   expecting the disjunction to remain open across both vars finds it
+   doesn't.
+
+M6 PR2.5 takes the cheapest mitigations: a shared trial helper,
+specificity-ordered candidates, and deletion of the M5-era
+`constrainAssign` workaround
+([m6-implementation-plan.md](m6-implementation-plan.md) §PR2.5). The two
+deferred mitigations bite once M7 makes generic-union annotations
+reachable from source, since user-written `T | A` is the case where
+over-constrained inner variables (failure mode #1) actually surface to the
+user. Land them once that happens:
+
+- **Tag committed bounds with their union-trial origin** (addresses
+  failure mode #4). When the trial commits, mark the added bounds (or the
+  var) with a side-table entry pointing at the union annotation node.
+  When a downstream constraint fails on a tagged var, the diagnostic
+  engine chases the tag and emits "this var was committed to branch A of
+  (A | B) at <span>; later use needs B." Replaces today's flat "string is
+  not number" with a breadcrumb back to the union choice that forced the
+  conflict. Probe-safe via the existing rollback hook discipline.
+- **Ambient-time ambiguity detection** (addresses failure mode #1 at
+  declaration time). After the first trial commits, optionally peek at
+  later branches under throwaway probes. When another branch would also
+  succeed AND would have added different bounds, emit a warning at the
+  union annotation site asking the user to disambiguate. Catches
+  over-constraint at declaration time rather than at downstream use.
+  Roughly doubles the work for ambiguous unions, which matches the cost
+  of the original failure mode. Worth landing once user reports of
+  confusion start coming in.
 
 **Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,
 `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/`IteratorResult<T>`, `console`) resolves
@@ -1481,10 +1509,11 @@ reduce through the M9 operator machinery.
   solver. Two complementary directions:
   - **True backtracking.** A search-based solver that unwinds the committed
     trial when a downstream constraint contradicts it and retries the next
-    candidate. Fixes failure modes #1, #4, and #5 from the post-PR2
-    post-mortem. Bounded backtracking (only revisit the most recent trial)
-    is tractable; full backtracking through propagated bound graphs is an
-    open research problem at this language's scale.
+    candidate. Fixes failure modes #1 (over-constraining inner vars), #4
+    (misleading errors), and #5 (no backtracking) from the M7 enumeration
+    above. Bounded backtracking — only revisit the most recent trial — is
+    tractable; full backtracking through propagated bound graphs is an open
+    research problem at this language's scale.
   - **Disjunctive bound representation.** Let a var carry "γ ≤ A OR γ ≤ B"
     as a first-class constraint rather than picking one and committing.
     Fixes failure mode #6 (cross-variable correlation) by recording the
