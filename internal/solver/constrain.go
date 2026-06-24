@@ -130,6 +130,14 @@ func (c *Context) constrainWriteBack(target, source soltype.Type, seen set.Set[c
 			errs = append(errs, &ReadonlyFieldSubtypeError{Field: p.Name})
 			continue
 		}
+		// A readonly target field can never be written through the target view,
+		// so the contravariant write-back constraint that pins it invariant is
+		// unnecessary. The covariant read view already runs in the ObjectType
+		// arm above. Skipping the writeBack lets a more specific source field
+		// fill a readonly target slot, mirroring the assignability rule.
+		if p.Readonly {
+			continue
+		}
 		if sourceObj, ok := source.(*soltype.ObjectType); ok {
 			if sp, ok := sourceObj.Prop(p.Name); ok {
 				errs = append(errs, c.constrain(p.Type, sp.Type, seen)...)

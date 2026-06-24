@@ -148,6 +148,17 @@ func TestReadonlySubtypingFlowsThroughCallAndReturn(t *testing.T) {
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 	})
+	t.Run("call: wider source field fills inexact readonly target", func(t *testing.T) {
+		// A readonly target slot supports only the covariant read view. The
+		// contravariant write-back constraint is skipped, so a wider source field
+		// can fill a narrower readonly target through width subtyping. Without the
+		// skip the writeBack would constrain target.a <: source.a and reject for
+		// the missing `y` property. The target is inexact so the exact-object
+		// excess check does not fire on the outer object's `a` either.
+		src := "fn sink(o: mut {readonly a: {x: number, ...}}) {}\nfn f(obj: mut {a: {x: number, y: number}}) { sink(obj) }"
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
 }
 
 // An owned-mutable field read through an immutable receiver yields an immutable

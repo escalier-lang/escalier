@@ -428,11 +428,12 @@ func (p *namedPrinter) printTypeUM(t Type, underMut bool) string {
 		// The inner prints at precPrefix so a looser inner such as a union or function
 		// gets parenthesized.
 		//
-		// Deep-mut elision (PR 13). Under a mutable wrapper, a nested owned-mutable
-		// cell is the inner `mut` that deep-mut lowering inserted on every reachable
-		// object and tuple field. Print it as the bare inner, so the rendered type
-		// matches the surface annotation the user wrote. The elision applies only to
-		// an owned-mutable cell (`Lt == nil`); a real borrow keeps its `&`/`&mut`.
+		// Deep-mut elision. Under a mutable wrapper, a nested owned-mutable cell
+		// is the inner `mut` that deep-mut lowering inserted on every reachable
+		// object and tuple field. Print it as the bare inner so the rendered type
+		// matches the surface annotation the user wrote. The elision applies only
+		// to an owned-mutable cell with no lifetime. A real borrow keeps its `&`
+		// or `&mut`.
 		if underMut && t.Mut && t.Lt == nil {
 			return p.printTypeUM(t.Inner, true)
 		}

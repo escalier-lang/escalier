@@ -267,10 +267,8 @@ func (c *checker) deepMutComponent(t soltype.Type) soltype.Type {
 // survive the rewrite. Skips silently when `from` has no entry, since not every
 // minted type has provenance.
 func (c *checker) inheritProv(to, from soltype.Type) {
-	if n, ok := c.prov.NodeFor(from); ok {
-		if o, ok := c.prov[from].(FromAST); ok {
-			c.recordProv(to, n, o.Kind)
-		}
+	if o, ok := c.prov[from].(FromAST); ok {
+		c.recordProv(to, o.Node, o.Kind)
 	}
 }
 
