@@ -37,6 +37,21 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - Don't shadow Go builtins (`any`, `error`, `new`, `len`, etc.) or imported type/package aliases with local identifiers. Pick a distinct name (e.g. `anyT`, `errVal`).
 - Avoid parentheticals in comments — they make comments hard to read, especially when nested or combined with em-dashes. Rewrite the aside as a plain sentence, fold it into the main clause, or drop it. Reserve parentheses for short, essential clarifications like a code reference or a concrete example. Prefer several short sentences over one sentence carrying multiple asides.
 
+## Writing comments
+
+Default to no comment. Write one only when the WHY is non-obvious from the code alone, and keep it as short as that WHY requires. The defaults below are aimed at keeping comments from drifting into restatement, duplication, or design exposition that belongs elsewhere.
+
+- **Don't restate the code.** A function named `resolveUnionTypeAnn` doesn't need a comment that says "this resolves union type annotations." A test whose source string is `val x: number | string = 5` doesn't need a leading comment that says "a `number | string` annotation accepts a number initializer." Cut the comment if reading the next two lines of code would tell the reader the same thing.
+- **Don't re-derive design rationale that lives elsewhere.** If a decision is already documented in a plan, a milestone doc, a sibling function's docstring, or the smart-constructor it calls, reference it with "see X" instead of duplicating the prose. Duplication drifts.
+- **Use back-references for symmetric pairs.** When `resolveIntersectionTypeAnn` is the meet twin of `resolveUnionTypeAnn`, the one-line "see the union twin" is the comment — not a copy of the union arm's prose with the words swapped.
+- **Length matches what's actually non-obvious.** A single-line docstring is the right shape when the function name plus signature already says it. A 3-4 line docstring is the right shape when there's one non-obvious operational note. A doc-comment that spans more than ~6 lines usually means it's re-explaining something documented elsewhere or carrying trade-off prose that belongs in the plan, not the code.
+- **One block comment per code region, not one per case.** When a function has a sequence of similar branches (rules in `constrain`, arms in a switch), prefer a short preamble that names the region's invariant plus one-line comments per case showing the case's own essential fact (e.g. the subtyping relation it implements). Don't repeat the preamble's content on each case.
+- **Cut comments that just point at the future.** "PR4 will land X" or "after M9 this gets propagated" notes accumulate quickly and rot when plans shift. The implementation plan is where future-PR pointers live. Inline, mention the future only when the current code is shaped specifically for it (a guard that only fires once the future flag exists, say).
+- **Cut comments that just point at the past.** "This was added because of issue #123" or "fixed in M4" notes are git-blame and PR-description material, not source-of-truth artifacts in the code. They go stale and mislead.
+- **Test comments are for non-obvious test choices.** A test body that reads `val b: boolean = ...; val x: number | string = b` doesn't need a comment saying what it tests. It might need a comment saying why `b` is a function param or a separate binding — that's not visible from the source. Default to no comment; add one only when the test's *shape* hides a deliberate choice (a widening trick, an order-dependent setup, a regression target).
+- **Treat comments as draft-then-revise.** When you write one, reread it from the perspective of someone with no context. If it's restating the code, cut it. If it's re-explaining what another file documents, replace with a one-line reference. If it's a paragraph held together by em-dashes and semicolons, split it into short complete sentences or drop the asides.
+- **When in doubt, lean toward cutting.** A reader who needs the missing context can grep, follow a "see X" pointer, or open the plan. A reader confronted with a wall of stale or restated comments has no easy escape.
+
 ## Writing tests
 
 - Assert the full error message, not a substring.
