@@ -36,9 +36,10 @@ so the option stays cheap to exercise when the decision point arrives.
   and the distribution coupling.
 - **[05-feature-interactions.md](05-feature-interactions.md)** — how MLstruct
   interacts with Escalier's own Simple-sub extensions: lifetimes (the second
-  sort), exact / inexact types, and `throws` clauses. The set-difference upgrade
-  reaches try/catch throws-narrowing; the one soundness watch-item is `¬Ref`
-  lifetime polarity.
+  sort), exact / inexact types, `throws` clauses, and function overloading. The
+  set-difference upgrade reaches try/catch throws-narrowing; the one soundness
+  watch-item is `¬Ref` lifetime polarity; function overloading is the one feature
+  MLstruct complicates, because the trigger-3 inference win does not reach codegen.
 - **[06-open-items.md](06-open-items.md)** — the two verification items that gate
   adoption, each with a plan of attack: verifying arrow-intersection
   normalization against MLscript, and recording/enforcing the `¬Ref` exclusion
