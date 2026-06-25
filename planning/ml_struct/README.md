@@ -39,6 +39,10 @@ so the option stays cheap to exercise when the decision point arrives.
   sort), exact / inexact types, and `throws` clauses. The set-difference upgrade
   reaches try/catch throws-narrowing; the one soundness watch-item is `¬Ref`
   lifetime polarity.
+- **[06-open-items.md](06-open-items.md)** — the two verification items that gate
+  adoption, each with a plan of attack: verifying arrow-intersection
+  normalization against MLscript, and recording/enforcing the `¬Ref` exclusion
+  invariant. Investigation deferred; this is the record of next steps.
 
 ## TL;DR of the strategy
 
