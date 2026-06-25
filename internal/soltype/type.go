@@ -233,12 +233,7 @@ type PropertyElem struct {
 	Name     string
 	Type     Type
 	Optional bool // `x?: T`; the M9 object-spread show-through rule keys off it
-	// Readonly marks a `readonly f: T` field. It forbids reassigning the field
-	// through `obj.f = …` and nothing more. It is orthogonal to the deep
-	// mutability the RefType wrapper carries, so a readonly field may still hold
-	// a mutable value whose own fields are writable. The field-write rule reads
-	// it in constrainWriteBack. It has no effect on the covariant read view.
-	Readonly bool
+	Readonly bool // `readonly f: T`; forbids `obj.f = …` only, orthogonal to deep mut
 }
 
 func (*PropertyElem) isObjTypeElem() {}
