@@ -34,6 +34,11 @@ so the option stays cheap to exercise when the decision point arrives.
   conditional types with `infer`, mapped types, template literals): the
   set-difference upgrade, the conditional-`extends` hazard with worked examples,
   and the distribution coupling.
+- **[05-feature-interactions.md](05-feature-interactions.md)** — how MLstruct
+  interacts with Escalier's own Simple-sub extensions: lifetimes (the second
+  sort), exact / inexact types, and `throws` clauses. The set-difference upgrade
+  reaches try/catch throws-narrowing; the one soundness watch-item is `¬Ref`
+  lifetime polarity.
 
 ## TL;DR of the strategy
 
