@@ -29,6 +29,11 @@ so the option stays cheap to exercise when the decision point arrives.
   grafts onto the `solver/` package and onto the planned `simple_sub/` changes:
   the new `soltype` node, the new `solver/normal.go`, and the seams in
   `constrain.go` / `coalesce.go` / `lattice.go` / `probe.go`.
+- **[04-type-level-operators.md](04-type-level-operators.md)** — how MLstruct
+  interacts with the M9 TypeScript-style operators (`keyof`, indexed access,
+  conditional types with `infer`, mapped types, template literals): the
+  set-difference upgrade, the conditional-`extends` hazard with worked examples,
+  and the distribution coupling.
 
 ## TL;DR of the strategy
 
