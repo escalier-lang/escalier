@@ -1,11 +1,13 @@
 # 05 — Interaction with Escalier's own features
 
 How adopting MLstruct interacts with the features Escalier adds *on top of*
-Simple-sub — the ones with no TypeScript or MLstruct analogue: **lifetimes** (the
-second sort), **exact / inexact types**, and **`throws` clauses** on functions.
-These are the genuinely Escalier-specific interactions; the TypeScript-style
-type-level operators are covered separately in
-[04-type-level-operators.md](04-type-level-operators.md).
+Simple-sub. Three have no TypeScript or MLstruct analogue — **lifetimes**, the
+second sort; **exact / inexact types**; and **`throws` clauses** on functions. A
+fourth, **function overloading**, has a TS analogue in name only: Escalier gives
+each arm its own body and synthesizes the runtime dispatch, where TS overloads are
+type-only signatures over one hand-written body. These are the genuinely
+Escalier-specific interactions; the TypeScript-style type-level operators are
+covered separately in [04-type-level-operators.md](04-type-level-operators.md).
 
 ## The unifying frame
 
@@ -20,6 +22,9 @@ consequences fall out:
    reusing the existing combine logic.
 3. Negation upgrades the **set-difference** operation in whichever domain has one —
    and two of these features have one.
+4. Function overloading sits outside this lattice frame. It interacts through the
+   inference→codegen pipeline rather than the type algebra, and is the one feature
+   where MLstruct *complicates* rather than upgrades or threads through unchanged.
 
 ---
 
@@ -126,6 +131,71 @@ per-body throws inference variable accumulating thrown types as lower bounds (M9
 
 ---
 
+## Function overloading
+
+Escalier supports overloaded `fn` declarations, and its form has no TypeScript
+analogue: each arm is a full `FuncDecl` with **its own body**, and the compiler
+synthesizes the runtime dispatcher rather than relying on a hand-written one. The
+overload *type* is the MLstruct interaction — adoption trigger 3
+([00-overview.md](00-overview.md)) makes inferred intersection-of-arrows
+first-class — but it runs through the inference→codegen pipeline, not the lattice.
+The through-line: **the trigger-3 win is an inference-and-display win, and it does
+not reach codegen.**
+
+- **What trigger 3 buys.** Under Simple-sub, overloads are side-channel metadata
+  outside the lattice, so an overloaded call must *pick a single arm* to know what
+  to constrain ([`../simple_sub/01-milestones.md`](../simple_sub/01-milestones.md)
+  §"Function overloading"). In a mutually recursive group that branch choice depends
+  on the inferred types of the other members, which depend on the branches picked at
+  *their* recursive calls — a cycle that need not converge under subtyping, which
+  Simple-sub breaks by **requiring annotations**. MLstruct infers arrow
+  intersections natively, so there is no branch to pick: the whole intersection is
+  one lattice type in the fixed point, and the recursive-group cycle dissolves. An
+  un-annotated overloaded function in a recursive group becomes inferable.
+- **The inferred type does not round-trip to a TS overload table.** "Infers the
+  overload type" means the **set-theoretic** intersection, not a dispatch table. The
+  arms render as `(A → B) & (C → D)` — shared syntax — but the projection is lossy:
+  faithful only on the sublattice that factors as `⋂ᵢ (Aᵢ → Bᵢ)`; the table reading
+  is the *weaker* one, dropping the union-domain callability MLstruct grants (worked
+  example A in [04-type-level-operators.md](04-type-level-operators.md) coupling
+  point 2); and if it feeds `.d.ts` emit, `extends` / `Parameters` / `infer` over
+  the emitted type diverge from the inferred type. The display simplifier (caveat
+  #2) is equivalence-preserving, so the loss is in surface-expressibility, not
+  simplification — a residual stuck variable, a residual `¬` with no `Not<T>` surface
+  syntax, or an interpretation-divergent arrow-intersection each breaks the
+  round-trip.
+- **Codegen needs the commitment inference discarded.** `buildOverloadedFunc`
+  (`internal/codegen/builder.go`) sorts arms by specificity — parameter count, then
+  required-property count — and emits an if-else chain whose per-arm guards come from
+  `buildTypeGuard` over **each arm's written parameter annotations**: `typeof` for
+  primitives, `===` for literals, `"k" in o` plus recursive checks for object shapes,
+  `Array.isArray`, `instanceof` for nominal classes. Undiscriminable types fall
+  through to `true`; a no-match throws `TypeError`. Deterministic dispatch is a
+  *commit-to-one-runtime-discriminable-arm-in-fixed-order* constraint — the opposite
+  of MLstruct's normalize-and-decompose, which **removes** the per-call arm
+  commitment (trigger 1). Four concrete tensions:
+  1. The dispatcher consumes per-arm annotations, not the inferred type — and
+     trigger 3's win is inferring the type *without* them, removing the artifact
+     codegen dispatches on.
+  2. Normalization fuses arms, so the lattice type is body-agnostic; the syntactic
+     arm→body map must be kept as side metadata regardless.
+  3. Static resolution must select the same arm the dispatcher routes to. MLstruct
+     resolves via the lossy Boolean-algebra `<:` (caveat #4) while the dispatcher
+     runs a concrete `typeof` test; worked example A is where they disagree.
+  4. Negated / union arm domains are silently un-dispatchable — `buildTypeGuard`
+     emits `true`, so the first arm in sort order swallows the call rather than the
+     checker rejecting it.
+- **The carve-out and the consequence.** This bites only *implemented* overloads —
+  `buildOverloadedFunc` emits no dispatcher for declare-only arms, so external /
+  `.d.ts`-shaped overloads take the inference freedom harmlessly. The design
+  consequence: any overloaded `fn` with bodies still needs per-arm parameter
+  annotations, or inferred arm domains restricted to a mutually-distinguishable,
+  runtime-checkable sublanguage, to codegen deterministic dispatch. Scope the
+  trigger-3 relaxation to inference and display; keep the annotation obligation
+  wherever a dispatcher is generated.
+
+---
+
 ## The cross-cutting theme
 
 Negation upgrades **every set-difference in the language at once**: type-level
@@ -135,10 +205,12 @@ conservative "distribute over a ground union" or "two-variable encoding"
 workaround, MLstruct replaces it with an exact `& ¬`. Meanwhile the non-Boolean
 sort (lifetimes) and the orthogonal former-flags (exactness) thread through
 unchanged — with the single `¬Ref`-lifetime-polarity guard as the one soundness
-item to verify.
+item to verify. Function overloading is the lone counter-current: there the
+inference win does not reach codegen, so MLstruct complicates rather than upgrades.
 
 | Feature | Interaction with MLstruct |
 |---|---|
 | Lifetimes (second sort) | Orthogonal — negation does not extend to the outlives lattice. `Ref`-atom normalization splits inner (type algebra) from lifetime (lifetime meet). Watch-item: `¬Ref` must flip lifetime polarity, which `Accept` does not walk. |
 | Exact / inexact | Flag threads through; the merge must stay exactness-aware (exact `{x} & {y}` is `never`, not `{x, y}`) by reusing `newIntersection`. Exact unions + tag negation give `match` exhaustiveness. |
 | `throws` | Rides parallel to `Ret` as a covariant field. **Upgrade** — try/catch narrowing becomes native `body_throws & ¬caught`, resolving M9's open question. |
+| Function overloading | **Complication** — trigger 3 infers recursive-group overloads without annotations, but the set-theoretic type does not round-trip to a TS overload table and the inference win does not reach codegen. Implemented overloads still need per-arm annotations for deterministic dispatch. |
