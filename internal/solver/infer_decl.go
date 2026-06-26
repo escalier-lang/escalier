@@ -142,20 +142,9 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // escapes through a return or a module store still errors.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, lvl int) soltype.Type {
 	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && isFreshlyConstructed(init) {
-		// A deeply-mutable annotation (PR 13) carries `mut` on its nested objects and
-		// tuples too, so `mut {p: {x}}` lowers to `mut {p: mut {x}}`. The initializer is
-		// an immutable fresh literal, which the C2 gate would reject against those nested
-		// `mut` cells. Constrain it against the immutable skeleton — the read view of the
-		// deep-mut type with every nested `mut` stripped — and grant the deep-mut type.
-		// A fully fresh, unaliased literal is uniquely owned at every level, so the
-		// upgrade is sound the whole way down, the recursive form of the top-level Rule 2.
-		//
-		// stripOwnedMut walks the already-deepened type, undoing the applyDeepMut walk
-		// at resolveMutableTypeAnn. The two-pass shape is intentional: the strip also
-		// peels any user-written `mut` field the pre-deepen annotation carried, such as
-		// `{p: mut {x}}` inside `mut {p: mut {x}}`. The pre-deepen `ri` would leave that
-		// inner `mut` in place and reject the immutable literal. The walk is O(n) on
-		// the annotation size and runs only at annotated fresh-literal bindings.
+		// Constrain a fresh literal against the deep-mut annotation's immutable
+		// skeleton, then grant the deep-mut type. A fully fresh literal is uniquely
+		// owned at every level, so the upgrade is sound the whole way down.
 		c.constrain(init, initT, stripOwnedMut(ref.Inner))
 		return annT
 	}
@@ -201,12 +190,9 @@ func (c *checker) reborrowAnnotation(initT, annT soltype.Type, lvl int) (soltype
 	}
 }
 
-// stripOwnedMut returns the deeply-immutable skeleton of t: every owned-mutable
-// cell — a RefType with Mut set and no lifetime — is peeled to its inner, and the
-// peel recurses through objects and tuples. It is the read view of a deep-mut
-// annotation, used by the fresh-literal upgrade to constrain an immutable literal
-// against the shape without the nested `mut` cells the C2 gate would reject. A
-// borrow (Lt set) is left untouched, since it names a reference, not owned storage.
+// stripOwnedMut returns t's deeply-immutable skeleton by peeling every owned-mut
+// cell (Mut set, Lt nil) and recursing through objects and tuples. Borrows are
+// left untouched.
 func stripOwnedMut(t soltype.Type) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.RefType:

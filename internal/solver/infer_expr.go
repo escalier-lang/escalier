@@ -715,16 +715,8 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	// result a concrete inner is what keeps it rendering as a `RefType`. Pick
 	// the most precise shape available: a read-after-write cache hit first,
 	// then the property type from the receiver's annotation, and `chk` itself
-	// only when neither is known.
-	//
-	// borrowInnerOf peels exactly the wrappers an explicit borrow re-anchors. It
-	// peels an owned-mutable cell, which is the shape deep `mut` produces in PR 13,
-	// so the re-wrap restates the cell at the receiver lifetime. It LEAVES a borrow
-	// field intact, so the field's own borrow flows through unchanged rather than
-	// collapsing into a single borrow at the receiver lifetime. That collapse would
-	// produce the depth-two `&mut &mut` borrow shape PR 9 will normalize. Until
-	// then, the field-own lifetime is what the implicit-read path returns, and the
-	// two must agree.
+	// only when neither is known. borrowInnerOf peels owned-mut cells (deep-mut
+	// output) but leaves borrow fields intact so they keep their own lifetime.
 	var inner soltype.RefInner = chk
 	if cachedT != nil {
 		if ri, ok := borrowInnerOf(cachedT); ok {
@@ -753,14 +745,9 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 }
 
 // borrowInnerOf returns the RefInner an explicit `&`/`&mut obj.f` should re-wrap
-// at the receiver's lifetime, or ok=false when the field's type is not a viable
-// re-wrap target. It peels an owned-mutable cell, the shape deep `mut` produces
-// in PR 13, since those are owned storage inside the receiver and a borrow of
-// them belongs at the receiver's lifetime. It returns a bare object or tuple
-// directly, which is the common case. It leaves an explicit borrow field intact
-// by returning ok=false, so the caller keeps the bare `chk` and the field's own
-// borrow flows through with its own lifetime rather than collapsing into one
-// bound by the receiver's lifetime.
+// at the receiver's lifetime. It peels an owned-mut cell (deep-mut output), returns
+// a bare object or tuple as-is, and rejects a borrow field so the caller keeps
+// `chk` and the field's own lifetime flows through unchanged.
 func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
 	if r, ok := t.(*soltype.RefType); ok {
 		if r.Lt == nil {
@@ -1116,13 +1103,9 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	}
 	recv := c.inferExpr(scope, lvl, m.Object)
 	w := widen(source)
-	// Catch a write to a readonly field at the assignment site so the diagnostic
-	// blames the assignment and the message names it outright. Without this, the
-	// structural rejection in constrainWriteBack would fire with a less specific
-	// subtype message. The check only runs when the receiver's carrier is a
-	// concrete object whose field is readonly; a TypeVar receiver still falls
-	// through to constrainWriteBack, which carries the same field name with the
-	// structural message.
+	// Catch a readonly write at the assignment site so the diagnostic blames it
+	// outright; a TypeVar receiver falls through to constrainWriteBack's structural
+	// message.
 	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
 		if prop, ok := recvObj.Prop(m.Prop.Name); ok && prop.Readonly {
 			c.report(&ReadonlyFieldError{Field: m.Prop.Name, site: e})
@@ -1355,9 +1338,8 @@ func (b *objElemBuilder) add(name string, t soltype.Type, optional bool) {
 }
 
 // addReadonly is add with an explicit `readonly` flag, used by
-// resolveObjectTypeAnn to carry a `readonly f: T` annotation onto the
-// PropertyElem. inferObject's object literals are never readonly, so they keep
-// calling add.
+// resolveObjectTypeAnn to carry the annotation through. Object literals are
+// never readonly, so inferObject keeps calling add.
 func (b *objElemBuilder) addReadonly(name string, t soltype.Type, optional, readonly bool) {
 	pe := &soltype.PropertyElem{Name: name, Type: t, Optional: optional, Readonly: readonly}
 	if i, dup := b.pos[name]; dup {
@@ -1524,13 +1506,8 @@ func (c *checker) fieldReadBorrow(res *soltype.TypeVarType, recvCarrier soltype.
 	switch ft := prop.Type.(type) {
 	case *soltype.RefType:
 		if ft.Lt == nil {
-			// An owned-mutable field, produced by deep `mut` in PR 13. The annotation
-			// `mut {a: {x}}` stores `a` as `mut {x}`. The field is owned storage inside
-			// the receiver rather than a reference, so a read borrows it bounded by
-			// the receiver, exactly like a bare object field below. The borrow keeps
-			// the field's `mut` only when the receiver itself grants a mutable view,
-			// so `p.a.x = 5` is legal through a mutable receiver. The inner is the
-			// field's own carrier, which is a RefInner, so the wrapper is well-formed.
+			// Owned-mut field (deep-mut output): borrow it bounded by the receiver
+			// and keep `mut` only when the receiver itself grants a mutable view.
 			lt := recvLt
 			if lt == nil {
 				lt = c.ctx.freshLifetime(lvl)
