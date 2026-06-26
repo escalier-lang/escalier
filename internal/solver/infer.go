@@ -3,6 +3,7 @@ package solver
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -117,6 +118,18 @@ type funcCtx struct {
 	aliases    *liveness.AliasTracker
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
+	// cfg is this body's control-flow graph, retained from the pre-pass so the move
+	// engine can run AnalyzeMoves over it. liveness and stmtToRef are derived from
+	// it; the move engine's branch-merged consumed lattice joins over the same
+	// blocks (PR 5). nil at module top-level, where no pre-pass runs.
+	cfg *liveness.CFG
+	// moveSites records, per CFG statement position, the VarIDs the ordered walk
+	// has consumed there — a binding moved by a return, a store, a consuming
+	// argument, or an escaping capture. PR 6 records into it while walking the body;
+	// AnalyzeMoves(cfg, moveSites) then yields the branch-merged consumed lattice
+	// the use-after-move check reads. PR 5 builds the analysis and this collector;
+	// the recording and reading land in PR 6, so it stays empty until then.
+	moveSites map[liveness.StmtRef]set.Set[liveness.VarID]
 	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
 	// the transition checker uses to query the lifetime sort for a `'static` escape in
 	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow

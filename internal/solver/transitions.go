@@ -636,6 +636,11 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	c.fn.stmtToRef = stmtToRef
 	c.fn.varIDNames = renameResult.VarIDNames
 	c.fn.varIDTypes = varIDTypes
+	// Retain the CFG and a fresh consume-site collector for the move engine (PR 5).
+	// The branch-merged consumed lattice (liveness.AnalyzeMoves) joins over these
+	// same blocks. PR 6 records consume sites into moveSites while walking the body.
+	c.fn.cfg = cfg
+	c.fn.moveSites = map[liveness.StmtRef]set.Set[liveness.VarID]{}
 }
 
 // seedParamLeafAliases walks each parameter pattern recursively and seeds the alias

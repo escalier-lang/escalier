@@ -237,22 +237,24 @@ lifetime. Chained access `a.b.c` composes the rule at each link.
 
 ## PR sequence
 
-| PR | Title | Depends on | Rough size |
-|----|-------|-----------|-----------|
-| 1 | `&` grammar, `RefTypeAnn` node, printer | — | Medium |
-| 2 | Solver lowering of `&`, soltype `&` rendering, snapshot migration | 1 | Medium |
-| 3 | Annotation-literal ownership, owned/borrow params, auto-borrow | 2 | Medium |
-| 4 | Member reads borrow the receiver | 3 | Medium |
-| 5 | Move engine substrate: generalize escape detection, build the consumed lattice | 4 | Large |
-| 6 | Consume and use-after-move at every flow site, conditional moves | 5 | Large |
-| 7 | Partial moves and field-level ownership | 6 | Medium |
-| 8 | Immutable→mutable thaw move and borrow-phase framing | 6 | Medium |
-| 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3, M6 | Medium |
-| 10 | Mutable narrowed binding with pinned discriminant | 8, 9, M6 | Medium |
-| 11 | Connected-component moves for graphs | 6, 7 | Large |
-| 12 | ~~`Freeze`/`Thaw` utility types~~ — retired; subsumed by uniform deep `mut` + the freeze/thaw moves (PR 8, 11) | — | — |
-| 13 | Deep, uniform `mut` and `readonly` | 1, 2 | Medium |
-| 14 | Lazy deep `mut`: store the surface form, push the rule to access and constrain | 13 | Large |
+Status legend: ✅ done · 🚧 in progress · ⬜ not started.
+
+| PR | Title | Depends on | Rough size | Status |
+|----|-------|-----------|-----------|--------|
+| 1 | `&` grammar, `RefTypeAnn` node, printer | — | Medium | ✅ done (#769) |
+| 2 | Solver lowering of `&`, soltype `&` rendering, snapshot migration | 1 | Medium | ✅ done (#770) |
+| 3 | Annotation-literal ownership, owned/borrow params, auto-borrow | 2 | Medium | ✅ done (#771) |
+| 4 | Member reads borrow the receiver | 3 | Medium | ✅ done (#773) |
+| 5 | Move engine substrate: generalize escape detection, build the consumed lattice | 4 | Large | 🚧 in progress |
+| 6 | Consume and use-after-move at every flow site, conditional moves | 5 | Large | ⬜ not started |
+| 7 | Partial moves and field-level ownership | 6 | Medium | ⬜ not started |
+| 8 | Immutable→mutable thaw move and borrow-phase framing | 6 | Medium | ⬜ not started |
+| 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3, M6 | Medium | ⬜ not started |
+| 10 | Mutable narrowed binding with pinned discriminant | 8, 9, M6 | Medium | ⬜ not started |
+| 11 | Connected-component moves for graphs | 6, 7 | Large | ⬜ not started |
+| 12 | ~~`Freeze`/`Thaw` utility types~~ — retired; subsumed by uniform deep `mut` + the freeze/thaw moves (PR 8, 11) | — | — | ❌ retired |
+| 13 | Deep, uniform `mut` and `readonly` | 1, 2 | Medium | ✅ done (#777, #781) |
+| 14 | Lazy deep `mut`: store the surface form, push the rule to access and constrain | 13 | Large | ✅ done (#780) |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
