@@ -24,6 +24,12 @@ overrides:
   '@vitest/browser@4': ^4.1.8
   brace-expansion@2: ^2.0.3
   brace-expansion@5: ^5.0.6
+  # vite@7.3.5 declares `esbuild: ^0.27.0`, but the 0.27.x line has no fix for
+  # the dev-server file-read advisory GHSA-g7r4-m6w7-qqqr; the first patched
+  # release is 0.28.1. We force 0.28.x here, bounded by `^0.28.1` to stay within
+  # esbuild's non-breaking 0.28 minor. vite 7.3.6 widens its range to
+  # `^0.27.0 || ^0.28.0`, so once that release clears the 3-day minimumReleaseAge
+  # gate, bump vite to ^7.3.6 and delete this override.
   esbuild@0.27: ^0.28.1
   glob@11: ^11.1.0
   minimatch@5: ^5.1.8
