@@ -142,10 +142,12 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // escapes through a return or a module store still errors.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, lvl int) soltype.Type {
 	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && isFreshlyConstructed(init) {
-		// Constrain a fresh literal against the deep-mut annotation's immutable
-		// skeleton, then grant the deep-mut type. A fully fresh literal is uniquely
-		// owned at every level, so the upgrade is sound the whole way down.
-		c.constrain(init, initT, stripOwnedMut(ref.Inner))
+		// Constrain a fresh literal against the borrow's bare inner, then grant the
+		// owned-mutable type. Under the lazy deep-mut form (PR 14) the inner is the
+		// bare shape the user wrote, so the fresh literal flows into it covariantly
+		// with nothing to strip. A fully fresh literal is uniquely owned at every
+		// level, so the upgrade is sound the whole way down.
+		c.constrain(init, initT, ref.Inner)
 		return annT
 	}
 	if borrow, ok := c.reborrowAnnotation(initT, annT, lvl); ok {
@@ -187,34 +189,6 @@ func (c *checker) reborrowAnnotation(initT, annT soltype.Type, lvl int) (soltype
 		return &soltype.RefType{Mut: false, Lt: c.ctx.freshLifetime(lvl), Inner: inner}, true
 	default:
 		return nil, false
-	}
-}
-
-// stripOwnedMut returns t's deeply-immutable skeleton by peeling every owned-mut
-// cell (Mut set, Lt nil) and recursing through objects and tuples. Borrows are
-// left untouched.
-func stripOwnedMut(t soltype.Type) soltype.Type {
-	switch t := t.(type) {
-	case *soltype.RefType:
-		if t.Mut && t.Lt == nil {
-			return stripOwnedMut(t.Inner)
-		}
-		return t
-	case *soltype.ObjectType:
-		elems := make([]soltype.ObjTypeElem, len(t.Elems))
-		for i, e := range t.Elems {
-			p := soltype.AsProperty(e)
-			elems[i] = &soltype.PropertyElem{Name: p.Name, Type: stripOwnedMut(p.Type), Optional: p.Optional, Readonly: p.Readonly}
-		}
-		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
-	case *soltype.TupleType:
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, e := range t.Elems {
-			elems[i] = stripOwnedMut(e)
-		}
-		return &soltype.TupleType{Elems: elems, Inexact: t.Inexact}
-	default:
-		return t
 	}
 }
 

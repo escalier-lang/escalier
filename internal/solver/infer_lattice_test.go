@@ -79,5 +79,5 @@ func TestInferUnionAnnotationBorrowMember(t *testing.T) {
 		}
 	`)
 	require.Equal(t, []string(nil), Messages(errs))
-	require.Equal(t, "fn (r: mut {x: number}) -> void", values["check"])
+	require.Equal(t, "fn (r: &mut {x: number}) -> void", values["check"])
 }

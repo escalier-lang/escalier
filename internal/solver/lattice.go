@@ -311,7 +311,7 @@ func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
 func subtypeUnderProbe(c *Context, sub, super soltype.Type) bool {
 	p := newProbe(c.probe)
 	c.probe = p
-	errs := c.constrain(sub, super, set.NewSet[constraintKey]())
+	errs := c.constrain(sub, super, set.NewSet[constraintKey](), false)
 	c.probe = p.parent
 	p.Discard()
 	return len(errs) == 0

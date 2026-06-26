@@ -226,72 +226,20 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 // outside RefInner) is a no-op in the value-types model: there is nothing to
 // borrow. It reports an unsupported feature rather than fabricating a borrow over
 // a type the wrapper cannot hold.
+// resolveMutableTypeAnn stores the lazy deep-mut form (PR 14): the inner is wrapped
+// in one owned-mutable RefType without rewriting its children. `mut {a: {x}}` stays
+// `mut {a: {x}}` rather than deepening to `mut {a: mut {x}}`. The deep-mut rule —
+// every nested object/tuple field is invariant and reads back mutable — is applied
+// at access and constrain time, via fieldReadBorrow's recvMut propagation and
+// constrain's mut-context flag, so the stored type matches the surface annotation.
 func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltype.Type, bool) {
 	ri, ok := c.borrowInner(ta.Target, lvl)
 	if !ok {
 		return c.reportUnsupportedFeature(ta, "mut on a non-borrowable type"), false
 	}
-	t := soltype.NewRef(true, nil, c.applyDeepMut(ri))
+	t := soltype.NewRef(true, nil, ri)
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
-}
-
-// applyDeepMut deepens `ri` by wrapping every reachable bare object/tuple
-// component in owned-mut, returning the rebuilt RefInner. Type parameters and
-// value types (primitives, functions, promises) are inert; an already-borrow
-// field is left as-is. Rebuilt nodes inherit the source's provenance so
-// "expected here" spans survive. Hand-rolled rather than visitor-based to keep
-// that prov carry-through, matching widen.go.
-func (c *checker) applyDeepMut(ri soltype.RefInner) soltype.RefInner {
-	switch t := ri.(type) {
-	case *soltype.ObjectType:
-		elems := make([]soltype.ObjTypeElem, len(t.Elems))
-		for i, e := range t.Elems {
-			p := soltype.AsProperty(e)
-			elems[i] = &soltype.PropertyElem{
-				Name:     p.Name,
-				Type:     c.deepMutComponent(p.Type),
-				Optional: p.Optional,
-				Readonly: p.Readonly,
-			}
-		}
-		out := &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
-		c.inheritProv(out, t)
-		return out
-	case *soltype.TupleType:
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, e := range t.Elems {
-			elems[i] = c.deepMutComponent(e)
-		}
-		out := &soltype.TupleType{Elems: elems, Inexact: t.Inexact}
-		c.inheritProv(out, t)
-		return out
-	default:
-		// A TypeVarType is inert, so it is returned unchanged.
-		return ri
-	}
-}
-
-// deepMutComponent wraps a bare object/tuple field or element in owned-mut and
-// recurses; every other shape passes through unchanged.
-func (c *checker) deepMutComponent(t soltype.Type) soltype.Type {
-	switch t := t.(type) {
-	case *soltype.ObjectType:
-		return &soltype.RefType{Mut: true, Inner: c.applyDeepMut(t)}
-	case *soltype.TupleType:
-		return &soltype.RefType{Mut: true, Inner: c.applyDeepMut(t)}
-	default:
-		return t
-	}
-}
-
-// inheritProv copies `from`'s provenance entry onto `to`, used by the deep-mut
-// walk so a rebuilt object or tuple keeps the original annotation's blame span.
-// Skips silently when `from` has no entry.
-func (c *checker) inheritProv(to, from soltype.Type) {
-	if o, ok := c.prov[from].(FromAST); ok {
-		c.recordProv(to, o.Node, o.Kind)
-	}
 }
 
 // borrowInner resolves the pointee of a `mut` or `&` annotation to a RefInner, the
@@ -325,10 +273,9 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 	if !ok {
 		return c.reportUnsupportedFeature(ta, "borrow of a non-borrowable type"), false
 	}
-	// `&mut` deepens the pointee like `mut` does; `&` leaves it untouched.
-	if ta.Mut {
-		ri = c.applyDeepMut(ri)
-	}
+	// The lazy deep-mut form (PR 14) stores `&mut {a: {x}}` verbatim; the deep-mut
+	// rule is applied at access and constrain time rather than by rewriting the
+	// pointee's children here.
 	t := &soltype.RefType{Mut: ta.Mut, Lt: c.resolveLifetimeAnn(ta.Lifetime, lvl), Inner: ri}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true

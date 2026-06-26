@@ -691,9 +691,8 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	//
 	// Routing the result through the fresh field var would let the
 	// co-occurrence pass widen it into a union node that is not a `RefInner`
-	// and peel the borrow wrapper away. The pass widens because `mut`
-	// constrainWriteBack pins the field invariant, so the same var occurs in
-	// both polarities.
+	// and peel the borrow wrapper away. The pass widens because the mut-context
+	// flag pins the field invariant, so the same var occurs in both polarities.
 	chk := c.freshAt(lvl)
 	c.recordProv(chk, provNode, MemberAccess)
 	propSelection := soltype.ObjectType{
@@ -745,17 +744,12 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 }
 
 // borrowInnerOf returns the RefInner an explicit `&`/`&mut obj.f` should re-wrap
-// at the receiver's lifetime. It peels an owned-mut cell (deep-mut output) and
-// returns a bare object or tuple as-is, but returns ok=false for a borrow field
-// so the caller leaves the field's own borrow flowing through unchanged.
+// at the receiver's lifetime. Under the lazy deep-mut form (PR 14) a field's
+// value is the bare shape the user wrote, never a synthesized owned-mut cell, so
+// this is the ordinary RefInner cast: a bare object or tuple field re-wraps,
+// while a borrow field (a RefType, which is not a RefInner) returns ok=false so
+// the caller leaves the field's own borrow flowing through unchanged.
 func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
-	if r, ok := t.(*soltype.RefType); ok {
-		if r.Lt == nil {
-			ri, ok := r.Inner.(soltype.RefInner)
-			return ri, ok
-		}
-		return nil, false
-	}
 	ri, ok := t.(soltype.RefInner)
 	return ri, ok
 }
@@ -1104,8 +1098,8 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	recv := c.inferExpr(scope, lvl, m.Object)
 	w := widen(source)
 	// Catch a readonly write at the assignment site so the diagnostic blames it
-	// outright; a TypeVar receiver falls through to constrainWriteBack's structural
-	// message.
+	// outright; a TypeVar receiver falls through to the structural
+	// ReadonlyFieldSubtypeError the ObjectType write view raises.
 	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
 		if prop, ok := recvObj.Prop(m.Prop.Name); ok && prop.Readonly {
 			c.report(&ReadonlyFieldError{Field: m.Prop.Name, site: e})
@@ -1496,8 +1490,12 @@ func (c *checker) fieldReadBorrow(res *soltype.TypeVarType, recv soltype.Type, n
 	switch ft := prop.Type.(type) {
 	case *soltype.RefType:
 		if ft.Lt == nil {
-			// Owned-mut field (deep-mut output): borrow it bounded by the receiver
-			// and keep `mut` only when the receiver itself grants a mutable view.
+			// An owned-mutable field cell — the user wrote an explicit `mut {x}`
+			// field, the awkward interior-mutability shape (#779). Read it as a
+			// receiver-bounded borrow, capping `mut` by the receiver's own
+			// mutability so an immutable receiver yields an immutable view. The
+			// lazy deep-mut form no longer mints these for a plain `mut {a: {x}}`;
+			// that field is a bare object, handled by the bare arm below.
 			lt := recvLt
 			if lt == nil {
 				lt = c.ctx.freshLifetime(lvl)
@@ -1515,11 +1513,25 @@ func (c *checker) fieldReadBorrow(res *soltype.TypeVarType, recv soltype.Type, n
 		}
 		return res
 	case *soltype.ObjectType, *soltype.TupleType:
-		_ = ft
+		// A bare object/tuple field is a value the receiver owns. Read it as a
+		// receiver-bounded borrow whose mutability follows the receiver (PR 14):
+		// a mutable receiver yields `&mut`, an immutable one `&`. This is where
+		// the lazy deep-mut rule lives — under `mut {a: {x}}`, reading `p.a`
+		// produces `&mut {x}`, so `p.a.x = 5` checks.
 		lt := recvLt
 		if lt == nil {
 			lt = c.ctx.freshLifetime(lvl)
 		}
+		if recvMut {
+			// Mutable read: keep the concrete field shape as the borrow's inner,
+			// the role the eager form's owned-mut cell played. A chained read
+			// (`p.a.b.c`) then sees the nested object/tuple structure, and the
+			// borrow survives the co-occurrence pass — routing a mutable field
+			// through the fresh `res` var would pin it invariant in both
+			// polarities and widen it into a union that peels the borrow.
+			return &soltype.RefType{Mut: true, Lt: lt, Inner: ft.(soltype.RefInner)}
+		}
+		// Immutable read: route through the fresh field-read var (PR 4).
 		return &soltype.RefType{Mut: false, Lt: lt, Inner: res}
 	default:
 		return res
