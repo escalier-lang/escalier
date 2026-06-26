@@ -945,7 +945,40 @@ func (e *OptionalPropertyError) Message() string {
 
 func (e *MutabilityMismatchError) Message() string {
 	return fmt.Sprintf("cannot constrain immutable %s <: mutable %s",
-		describe(e.Sub.Inner), describe(e.Super.Inner))
+		describeBorrowInner(e.Sub.Inner), describeBorrowInner(e.Super.Inner))
+}
+
+// describeBorrowInner renders the pointee of a borrow for a diagnostic. An immutable
+// field read routes its result through a fresh field-read variable (fieldReadBorrow),
+// so the borrow's inner can be an inference variable whose raw `t{N}` name means
+// nothing to a user. When it is, resolve it to a concrete bound so the message names
+// the actual shape — `immutable object`, not `immutable t3`. Prefer a lower bound, the
+// value that flowed in; fall back to an upper bound, then to the bare variable when it
+// carries no concrete bound.
+func describeBorrowInner(t soltype.Type) string {
+	if v, ok := t.(*soltype.TypeVarType); ok {
+		if b, ok := concreteBoundOf(v); ok {
+			return describe(b)
+		}
+	}
+	return describe(t)
+}
+
+// concreteBoundOf returns a non-variable bound of v, preferring lower bounds, or
+// ok=false when every bound is itself a variable or v has none. It never recurses
+// through a variable bound, so it cannot loop on a cyclic bound graph.
+func concreteBoundOf(v *soltype.TypeVarType) (soltype.Type, bool) {
+	for _, b := range v.LowerBounds {
+		if _, isVar := b.(*soltype.TypeVarType); !isVar {
+			return b, true
+		}
+	}
+	for _, b := range v.UpperBounds {
+		if _, isVar := b.(*soltype.TypeVarType); !isVar {
+			return b, true
+		}
+	}
+	return nil, false
 }
 
 func (e *BorrowEscapeError) Message() string {

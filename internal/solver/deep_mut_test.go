@@ -54,9 +54,10 @@ func TestImmutableAnnotationRejectsNestedWrite(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			// The blame names the inner field-read result var rather than `object`.
+			// The inner field-read result is a fresh variable; the message resolves it
+			// to its concrete bound so it reads `object`, not an internal `t{N}`.
 			require.Equal(t, []string{
-				"cannot constrain immutable t3 <: mutable object",
+				"cannot constrain immutable object <: mutable object",
 			}, Messages(errs))
 		})
 	}
@@ -175,7 +176,7 @@ func TestOwnedMutFieldAnnotationRejected(t *testing.T) {
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
 		"owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability",
-		"cannot constrain immutable t3 <: mutable object",
+		"cannot constrain immutable object <: mutable object",
 	}, Messages(errs))
 }
 
