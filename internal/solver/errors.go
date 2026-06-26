@@ -241,9 +241,10 @@ type ReadonlyFieldError struct {
 // non-readonly target field through structural subtyping under a mutable borrow:
 // a `mut {readonly a: T}` cannot fill a `mut {a: T}` slot, since the target view
 // would otherwise let a holder write through and break the source's readonly
-// contract. The check sits in constrainWriteBack, the contravariant write view of
-// a mutable borrow, and blames whatever site triggered the constraint, typically
-// the call argument or return that flows the value out.
+// contract. The check sits in the ObjectType <: ObjectType arm under the
+// mut-context flag, the contravariant write view of a mutable borrow, and blames
+// whatever site triggered the constraint, typically the call argument or return
+// that flows the value out.
 type ReadonlyFieldSubtypeError struct {
 	Field string
 	site  ast.Node

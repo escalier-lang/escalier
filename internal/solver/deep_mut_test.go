@@ -3,7 +3,6 @@ package solver
 import (
 	"testing"
 
-	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,6 +69,22 @@ func TestDeepMutLowersFreshLiteral(t *testing.T) {
 	require.Equal(t, "mut {a: {b: {c: number}}}", values["w"])
 }
 
+// A fresh literal also upgrades into a target with an EXPLICIT nested `mut` field
+// (#779): stripOwnedMut peels the owned-mut cell so the immutable literal flows in
+// covariantly, the same the whole way down for tuples.
+func TestDeepMutLowersFreshLiteralIntoExplicitNestedMut(t *testing.T) {
+	t.Run("object", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val w: mut {a: mut {x: number}} = {a: {x: 0}}`)
+		require.Empty(t, errs)
+		require.Equal(t, "mut {a: mut {x: number}}", values["w"])
+	})
+	t.Run("tuple", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val w: mut [mut {x: number}] = [{x: 0}]`)
+		require.Empty(t, errs)
+		require.Equal(t, "mut [mut {x: number}]", values["w"])
+	})
+}
+
 // `readonly` rejects `obj.a = …` even on an owned-mutable enclosing object.
 func TestReadonlyRejectsFieldReassignment(t *testing.T) {
 	_, _, errs := inferSource(t, "fn f(obj: mut {readonly a: number}) { obj.a = 5 }")
@@ -105,6 +120,18 @@ func TestExplicitBorrowOfBorrowFieldFlowsFieldLifetime(t *testing.T) {
 		require.Empty(t, errs)
 		require.Equal(t, "fn <'a>(obj: {a: &'a mut {x: number}}) -> &'a mut {x: number}", values["f"])
 	})
+}
+
+// An explicit owned-mut field `mut {x}` borrowed with `&mut obj.a` peels the
+// owned-mut cell so the result is a clean `&mut {x: number}`. borrowInnerOf must
+// keep peeling owned-mut cells under the lazy form; routing the read through the
+// fresh check var instead would let the co-occurrence pass widen it to a union
+// and strip the borrow.
+func TestExplicitBorrowOfOwnedMutFieldPeels(t *testing.T) {
+	src := "fn f(p: mut {a: mut {x: number}}) { return &mut p.a }"
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {a: mut {x: number}}) -> &mut {x: number}", values["f"])
 }
 
 // A readonly source field can't fill a writable target slot, but the reverse is
@@ -188,32 +215,26 @@ func TestReadonlyRendersOnReadField(t *testing.T) {
 	require.Equal(t, "fn (obj: {readonly a: number}) -> number", values["f"])
 }
 
-// applyDeepMut leaves a TypeVarType field untouched, the M4-expressible core of
-// `mut Foo<Point>` == `(mut Foo)<Point>` — full generics land in M7.
-func TestApplyDeepMutLeavesTypeParameterInert(t *testing.T) {
-	tv := &soltype.TypeVarType{ID: 99}
-	concrete := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
-		&soltype.PropertyElem{Name: "x", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
-	}}
-	inner := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
-		&soltype.PropertyElem{Name: "p", Type: tv},
-		&soltype.PropertyElem{Name: "q", Type: concrete},
-	}}
-	c := newChecker()
-	got := c.applyDeepMut(inner)
-	obj, ok := got.(*soltype.ObjectType)
-	require.True(t, ok)
+// --- PR 14: lazy deep-mut representation ---
 
-	// Type-parameter field: same pointer, no `mut` wrapper.
-	pProp, ok := obj.Prop("p")
-	require.True(t, ok)
-	require.Same(t, soltype.Type(tv), pProp.Type)
-
-	// Concrete object field: wrapped in owned-mutable.
-	qProp, ok := obj.Prop("q")
-	require.True(t, ok)
-	qRef, ok := qProp.Type.(*soltype.RefType)
-	require.True(t, ok)
-	require.True(t, qRef.Mut)
-	require.Nil(t, qRef.Lt)
+// Under the lazy form (PR 14), the mut-context flag pins a nested field invariant
+// inside a mutable wrapper. A field whose type is a strict subtype of the target's
+// field passes the covariant read view but fails the contravariant write view, so a
+// `mut {a: {x: number}}` value cannot fill a `mut {a: {x: number | string}}` slot —
+// the same invariance the eager per-cell `mut` lowering produced.
+func TestLazyDeepMutPinsNestedFieldInvariant(t *testing.T) {
+	src := "fn sink(q: mut {a: {x: number | string}}) {}\nfn f(p: mut {a: {x: number}}) { sink(p) }"
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{"cannot constrain string <: number"}, Messages(errs))
 }
+
+// The same shapes under an immutable wrapper are covariant, so the strict-subtype
+// field is accepted through ordinary width/depth subtyping. This is the contrast
+// that the mut-context flag draws: invariant inside a mutable wrapper, covariant
+// outside one.
+func TestImmutableWrapperKeepsNestedFieldCovariant(t *testing.T) {
+	src := "fn sink(q: {a: {x: number | string}}) {}\nfn f(p: {a: {x: number}}) { sink(p) }"
+	_, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+}
+

@@ -165,9 +165,10 @@ func (m *mirror) effectiveBounds(v *soltype.TypeVarType, pol soltype.Polarity) [
 
 // recordMutWriteView reflects a `mut` borrow's INVARIANCE into a polarity-recording
 // visitor (#737). The C2 constrain rule makes every field a `mut` target names
-// invariant — it adds a covariant read view and a contravariant write view
-// (constrainWriteBack) — but RefType.Accept walks the inner only covariantly (the
-// read view; see visitor.go). So a variable that appears only inside a `mut` field,
+// invariant — it adds a covariant read view and, under the mut-context flag, a
+// contravariant write view — but RefType.Accept walks the inner only covariantly
+// (the read view; see visitor.go). So a variable that appears only inside a `mut`
+// field,
 // such as the `v` in `fn (obj, v) { obj.x = v }`, would be seen in one polarity and
 // dropped by single-polarity elimination, severing the link between the field and
 // the value written into it.
