@@ -81,22 +81,23 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	switch {
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && isFreshlyConstructed(d.Init):
 		// An unannotated `val mut q = {…}` / `var mut q = {…}` from a freshly
-		// constructed literal constructs an owned-mutable value. This is the
-		// unannotated mirror of `val q: mut {x} = {x: 1}`, which
-		// constrainInitAgainstAnnotation upgrades through the same fresh-literal
-		// reasoning: a fresh literal is uniquely owned, so granting it the mutable
+		// constructed literal constructs an owned-mutable value. This mirrors the
+		// annotated `val q: mut {x} = {x: 1}` upgrade in
+		// constrainInitAgainstAnnotation, which uses the same fresh-literal
+		// reasoning. A fresh literal is uniquely owned, so granting it the mutable
 		// type aliases nothing. The literal's fields widen, since a mutable cell
-		// admits any value of the field's primitive type, so `val mut q = {x: 1}`
-		// is `mut {x: number}` rather than `mut {x: 1}` — the latter would reject
-		// the ordinary write `q.x = 2`. A non-borrowable initializer (a primitive)
-		// has no interior mutability to make mutable, so it falls back to the
-		// var-widening / val-keep behaviour below.
-		if inner, ok := widen(initT).(soltype.RefInner); ok {
-			ref := &soltype.RefType{Mut: true, Lt: nil, Inner: inner}
+		// admits any value of the field's primitive type. So `val mut q = {x: 1}`
+		// is `mut {x: number}`. A `mut {x: 1}` would reject the ordinary write
+		// `q.x = 2`. A primitive initializer is not borrowable and has no interior
+		// mutability to make mutable, so it falls back to the var-widening and
+		// val-keep behaviour below.
+		widened := widen(initT)
+		if inner, ok := widened.(soltype.RefInner); ok {
+			ref := soltype.NewRef(true, nil, inner)
 			c.recordProv(ref, d.Init, OwnedMutConstruction)
 			initT = ref
 		} else if d.Kind == ast.VarKind {
-			initT = widen(initT)
+			initT = widened
 		}
 	case d.TypeAnn != nil:
 		// M2.5: constrain the initializer against the annotation (the one
