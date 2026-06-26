@@ -744,12 +744,24 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 }
 
 // borrowInnerOf returns the RefInner an explicit `&`/`&mut obj.f` should re-wrap
-// at the receiver's lifetime. Under the lazy deep-mut form (PR 14) a field's
-// value is the bare shape the user wrote, never a synthesized owned-mut cell, so
-// this is the ordinary RefInner cast: a bare object or tuple field re-wraps,
-// while a borrow field (a RefType, which is not a RefInner) returns ok=false so
-// the caller leaves the field's own borrow flowing through unchanged.
+// at the receiver's lifetime. The lazy deep-mut form (PR 14) no longer
+// synthesizes owned-mut cells for a plain `mut {a: {x}}`, so a field is usually
+// the bare object/tuple the user wrote, returned by the ordinary RefInner cast.
+// Two cases still need handling, the same shapes fieldReadBorrow distinguishes:
+//   - An explicit `mut {x}` field is an owned-mut cell, a RefType with Lt nil.
+//     Peel it to its bare inner so `&mut obj.f` re-wraps a clean `{x}` rather than
+//     leaving the fresh check var, which the co-occurrence pass would widen into a
+//     union and strip the borrow.
+//   - A borrow field, a RefType with Lt set, returns ok=false so the caller leaves
+//     the field's own borrow flowing through unchanged.
 func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
+	if r, ok := t.(*soltype.RefType); ok {
+		if r.Lt == nil {
+			ri, ok := r.Inner.(soltype.RefInner)
+			return ri, ok
+		}
+		return nil, false
+	}
 	ri, ok := t.(soltype.RefInner)
 	return ri, ok
 }

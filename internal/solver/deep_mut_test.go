@@ -106,6 +106,18 @@ func TestExplicitBorrowOfBorrowFieldFlowsFieldLifetime(t *testing.T) {
 	})
 }
 
+// An explicit owned-mut field `mut {x}` borrowed with `&mut obj.a` peels the
+// owned-mut cell so the result is a clean `&mut {x: number}`. borrowInnerOf must
+// keep peeling owned-mut cells under the lazy form; routing the read through the
+// fresh check var instead would let the co-occurrence pass widen it to a union
+// and strip the borrow.
+func TestExplicitBorrowOfOwnedMutFieldPeels(t *testing.T) {
+	src := "fn f(p: mut {a: mut {x: number}}) { return &mut p.a }"
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {a: mut {x: number}}) -> &mut {x: number}", values["f"])
+}
+
 // A readonly source field can't fill a writable target slot, but the reverse is
 // fine. A readonly target supports only the covariant read view, so a wider
 // source can fill it through width subtyping.
