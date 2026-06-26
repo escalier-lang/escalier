@@ -154,17 +154,15 @@ func isMutableType(t soltype.Type) bool {
 // where it outlives the function. D3's constrainEscape then pins its lifetime
 // `<: 'static`, so the value has a permanent outside alias of that borrow's mutability.
 //
-// The whole recorded type is walked, not just its top-level RefType (PR 5). A borrow
-// nested in a field or tuple element — for example the `&'static mut {…}` field of an
-// object stored into a global — is seen, closing the nested-escape gap that made a
-// move past such a borrow unsound. A borrow reachable only through a usage-inferred
-// TypeVarType is also seen (#787): the walk descends into a type variable's bounds,
-// so an escape hidden behind a branch-join variable such as `sink = if c { p } else
-// { … }`, whose source is the join variable rather than a bare RefType, is no longer
-// missed. Both mutabilities are reported because a value can carry both a mutable and
-// an immutable escaped borrow in different positions, and Rule 1 and Rule 2 each
-// conflict with one of them. An owned value, a borrow with an unforced lifetime, or an
-// unrecorded variable returns both false.
+// The whole recorded type is walked, every structural position and every type
+// variable's bounds, so a borrow forced to 'static is seen wherever it sits: at the
+// top level, nested in a field or tuple element such as the `&'static mut {…}` field
+// of an object stored into a global, or reachable only through a usage-inferred
+// TypeVarType such as the join variable of `sink = if c { p } else { … }`. Missing any
+// of these would make a move past that borrow unsound. Both mutabilities are reported
+// because a value can carry both a mutable and an immutable escaped borrow in different
+// positions, and Rule 1 and Rule 2 each conflict with one of them. An owned value, a
+// borrow with an unforced lifetime, or an unrecorded variable returns both false.
 func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (escapedMut, escapedImm bool) {
 	if c.fn == nil || c.fn.varIDTypes == nil {
 		return false, false
