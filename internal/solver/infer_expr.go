@@ -745,9 +745,9 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 }
 
 // borrowInnerOf returns the RefInner an explicit `&`/`&mut obj.f` should re-wrap
-// at the receiver's lifetime. It peels an owned-mut cell (deep-mut output), returns
-// a bare object or tuple as-is, and rejects a borrow field so the caller keeps
-// `chk` and the field's own lifetime flows through unchanged.
+// at the receiver's lifetime. It peels an owned-mut cell (deep-mut output) and
+// returns a bare object or tuple as-is, but returns ok=false for a borrow field
+// so the caller leaves the field's own borrow flowing through unchanged.
 func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
 	if r, ok := t.(*soltype.RefType); ok {
 		if r.Lt == nil {
