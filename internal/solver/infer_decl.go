@@ -79,6 +79,26 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	switch {
+	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && isFreshlyConstructed(d.Init):
+		// An unannotated `val mut q = {…}` / `var mut q = {…}` from a freshly
+		// constructed literal constructs an owned-mutable value. This mirrors the
+		// annotated `val q: mut {x} = {x: 1}` upgrade in
+		// constrainInitAgainstAnnotation, which uses the same fresh-literal
+		// reasoning. A fresh literal is uniquely owned, so granting it the mutable
+		// type aliases nothing. The literal's fields widen, since a mutable cell
+		// admits any value of the field's primitive type. So `val mut q = {x: 1}`
+		// is `mut {x: number}`. A `mut {x: 1}` would reject the ordinary write
+		// `q.x = 2`. A primitive initializer is not borrowable and has no interior
+		// mutability to make mutable, so it falls back to the var-widening and
+		// val-keep behaviour below.
+		widened := widen(initT)
+		if inner, ok := widened.(soltype.RefInner); ok {
+			ref := soltype.NewRef(true, nil, inner)
+			c.recordProv(ref, d.Init, OwnedMutConstruction)
+			initT = ref
+		} else if d.Kind == ast.VarKind {
+			initT = widened
+		}
 	case d.TypeAnn != nil:
 		// M2.5: constrain the initializer against the annotation (the one
 		// non-provenance addition, §3.7), so `val x: number = "hi"` produces a
@@ -224,6 +244,15 @@ func stripOwnedMut(t soltype.Type) soltype.Type {
 	default:
 		return t
 	}
+}
+
+// isMutableIdentPat reports whether p is a simple identifier binding written with
+// the `mut` prefix, as in `val mut q = …`. The construction upgrade applies only to
+// an IdentPat; a `mut` leaf inside a destructuring pattern carries the same flag but
+// needs the per-leaf projection work the destructuring mutability path owns.
+func isMutableIdentPat(p ast.Pat) bool {
+	ip, ok := p.(*ast.IdentPat)
+	return ok && ip.Mutable
 }
 
 // isFreshlyConstructed reports whether e is a syntactically fresh, unaliased value: a

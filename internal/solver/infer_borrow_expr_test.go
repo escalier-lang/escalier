@@ -111,6 +111,98 @@ func TestInferBorrowMutOnImmutableRejected(t *testing.T) {
 	}, Messages(errs))
 }
 
+// --- Rule 3 (binding initializer): owned-mutable construction ------------------
+
+// `val mut q = {…}` from a freshly constructed literal builds an owned-mutable
+// value, the unannotated mirror of `val q: mut {x} = {x: 1}`. A fresh literal is
+// uniquely owned, so granting it the mutable type aliases nothing. The literal's
+// field widens, since the mutable cell admits any `number`, so the result is
+// `mut {x: number}` rather than `mut {x: 0}`.
+func TestInferValMutConstructsOwnedMut(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f() {
+  val mut q = {x: 0}
+  return q
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+}
+
+// `var mut q = {…}` constructs owned-mutable too. The reassignable binding and the
+// mutable value are orthogonal: both widen the literal, so the cell renders the
+// same `mut {x: number}` as the `val mut` form.
+func TestInferVarMutConstructsOwnedMut(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f() {
+  var mut q = {x: 0}
+  return q
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+}
+
+// The owned-mutable construction is deep and uniform, reaching nested objects and
+// tuple elements, so `val mut q = {a: {b: 1}}` is mutable to its leaves.
+func TestInferValMutConstructsDeepOwnedMut(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f() {
+  val mut q = {a: {b: 1}}
+  return q
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> mut {a: {b: number}}", values["f"])
+}
+
+// A constructed owned-mutable value admits an ordinary field write. The widened
+// field is `number`, so `q.x = 5` checks where a non-widened `mut {x: 0}` would
+// reject `5 <: 0` under the mutable field's invariance.
+func TestInferValMutConstructedAllowsFieldWrite(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f() {
+  val mut q = {x: 0}
+  q.x = 5
+  return q
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+}
+
+// A constructed owned-mutable value can be borrowed `&mut`. The mutable cell fills
+// the mutable borrow slot, so `&mut q` checks where an owned-immutable q would fail
+// the mutability gate. This is the construction-side companion to
+// TestInferValMutBorrowFromOwnedMut, which sources owned-mutable from a parameter.
+func TestInferValMutConstructedBorrowsMut(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f() {
+  val mut q = {x: 0}
+  val r = &mut q
+  return r
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> &mut {x: number}", values["f"])
+}
+
+// A `mut` binding of a primitive is unchanged: a primitive is a value type with no
+// interior mutability, so it is not wrapped in an owned-mutable borrow. A `val mut`
+// keeps the literal singleton, exactly as a plain `val` would.
+func TestInferValMutPrimitiveUnchanged(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f() {
+  val mut n = 5
+  return n
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> 5", values["f"])
+}
+
+// The construction upgrade fires only for a freshly constructed literal. Binding a
+// `mut` to a non-fresh source — here a parameter — does not upgrade it to
+// owned-mutable, since moving an existing owned value into a mutable binding is the
+// thaw move whose consume enforcement lands in PR 8. The binding stays at the
+// source's owned-immutable type for now.
+func TestInferValMutFromVariableNotUpgraded(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(src: {x: number}) {
+  val mut p = src
+  return p
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (src: {x: number}) -> {x: number}", values["f"])
+}
+
 // --- Rule 3 (binding initializer): annotated bindings --------------------------
 
 // `val q: {x} = p` for an owned-immutable p binds q at the annotated owned type.
