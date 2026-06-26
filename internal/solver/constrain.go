@@ -131,12 +131,10 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 }
 
 // needsResidualWriteBack reports whether a mutable borrow's inner needs an explicit
-// contravariant write view in the RefType arm (PR 14). The ObjectType and TupleType
-// arms pin their fields invariant via the mut-context flag, so a matched
-// object/object or tuple/tuple inner is already invariant and needs no residual.
-// Any other inner — a type variable mid-inference, or two mismatched structural
-// kinds — is not reached by the flag's structural arm, so the whole reverse
-// constraint pins it.
+// contravariant write view in the RefType arm (PR 14). The object/tuple arms pin
+// matched object/object and tuple/tuple inners via the mut-context flag, so those
+// need no residual. Any other inner — a type variable, or two mismatched kinds —
+// the flag's structural arm does not reach, so the whole reverse constraint pins it.
 func needsResidualWriteBack(sub, sup soltype.Type) bool {
 	if _, ok := sub.(*soltype.ObjectType); ok {
 		_, ok := sup.(*soltype.ObjectType)
@@ -149,12 +147,11 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 	return true
 }
 
-// constrain asserts sub <: super. mutCtx (PR 14) is the deep-mut context flag: it
-// is true when the constraint sits inside a mutable borrow's inner, where the
-// object/tuple arms treat each named field invariantly rather than covariantly.
-// The RefType arm sets it from the target borrow's mutability, the object/tuple
-// arms propagate it into their fields, and the function and promise arms reset it,
-// since each carries its own annotation context.
+// constrain asserts sub <: super. mutCtx (PR 14) is the deep-mut context flag: true
+// inside a mutable borrow's inner, where the object/tuple arms treat each named
+// field as invariant rather than covariant. The RefType arm sets it from the target
+// borrow's mutability, the object/tuple arms propagate it, and the function and
+// promise arms reset it since each carries its own annotation context.
 func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) []SolverError {
 	key := constraintKey{sub, super}
 	if seen.Contains(key) {
@@ -316,8 +313,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// function is unreachable from M3 source anyway (resolveTypeAnn resolves no
 			// function annotations), so the extra positions are left unchecked here for
 			// now. For every M3-reachable input (exact functions only) the loop is complete.
-			// A function is its own annotation context, so the deep-mut flag does
-			// not flow into its parameters or return type.
+			// A function is its own annotation context, so the deep-mut flag resets.
 			var errs []SolverError
 			n := min(len(sub.Params), len(sup.Params))
 			for i := 0; i < n; i++ {
@@ -356,8 +352,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			for i := range sup.Elems {
 				errs = append(errs, c.constrain(sub.Elems[i], sup.Elems[i], seen, mutCtx)...) // covariant read view
 				// Inside a mutable wrapper every element is invariant (PR 14): the
-				// contravariant write view pins it, mirroring the eager form's
-				// per-cell `mut`. Outside one, elements stay covariant.
+				// contravariant write view pins it. Outside one, elements stay covariant.
 				if mutCtx {
 					errs = append(errs, c.constrain(sup.Elems[i], sub.Elems[i], seen, mutCtx)...)
 				}
@@ -399,13 +394,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					continue
 				}
 				errs = append(errs, c.constrain(subProp.Type, superProp.Type, seen, mutCtx)...) // covariant read view
-				// Inside a mutable wrapper (PR 14), a writable field is also
-				// invariant: the contravariant write view pins it, so combined with
-				// the read view above the field set is invariant. This is the
-				// per-field write pin the eager form's constrainWriteBack did. A
-				// readonly TARGET field needs only the read view, so a wider source
-				// can fill it. A readonly SOURCE field cannot fill a writable target
-				// slot, the structural-flow twin of inferMemberAssign's upfront check.
+				// Inside a mutable wrapper (PR 14), a writable field is invariant: the
+				// contravariant write view below pins it, the per-field write the eager
+				// form's constrainWriteBack did. A readonly TARGET needs only the read
+				// view, so a wider source can fill it; a readonly SOURCE cannot fill a
+				// writable target slot, the structural twin of inferMemberAssign's check.
 				if mutCtx && !superProp.Readonly {
 					if subProp.Readonly {
 						errs = append(errs, &ReadonlyFieldSubtypeError{Field: superProp.Name})
@@ -440,8 +433,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// `Promise<T>` (Awaited<T> lands in M9). When the two sides are unrelated
 			// concretes (e.g. Promise<L> <: Tuple), fall through to the generic
 			// CannotConstrainError below, matching the function/tuple/record arms.
-			// A promise's payload is its own annotation context, so the deep-mut
-			// flag resets here.
+			// A promise's payload is its own annotation context, so the flag resets.
 			return c.constrain(sub.Inner, sup.Inner, seen, false)
 		}
 	case *soltype.RefType:
@@ -455,36 +447,26 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if !sub.Mut && sup.Mut {
 				return []SolverError{&MutabilityMismatchError{Sub: sub, Super: sup}}
 			}
-			// 2. Inner variance (PR 14): the read view is always covariant. A mutable
-			//    target also makes every field it NAMES invariant. That per-field
-			//    invariance is carried by the mut-context flag — set true here for a
-			//    mutable target — which the ObjectType/TupleType arms read to add the
-			//    contravariant write view per named field. An INEXACT target tolerates
-			//    extra fields on the source while still pinning its named fields. So
-			//    `mut {x, y} <: mut {x, ...}` SUCCEEDS — the inexact target names only
-			//    x, which stays invariant, and y is hidden, not writable through the
-			//    target — while `mut {x: 5} <: mut {x: number}` still rejects (x
-			//    invariant: number <: 5 fails) and an EXACT target still demands an
-			//    identical field set (the read view rejects extras).
+			// 2. Inner variance (PR 14): the read view is always covariant; a mutable
+			//    target also makes every field it NAMES invariant. That per-field pin is
+			//    carried by the mut-context flag, set to sup.Mut here, which the
+			//    ObjectType/TupleType arms read to add the contravariant write view. An
+			//    INEXACT target tolerates extra source fields while still pinning its
+			//    named ones, so `mut {x, y} <: mut {x, ...}` SUCCEEDS — the inexact target
+			//    names only x — while `mut {x: 5} <: mut {x: number}` still rejects (x
+			//    invariant) and an EXACT target demands an identical field set.
 			//
 			//    A literal-typed field like the `5` in `mut {x: 5}` only arises from an
-			//    ANNOTATION. A field WRITE never produces one: inferMemberAssign builds the
-			//    requirement with widen(source), so `obj.x = 5` lowers to `mut {x: number,
-			//    ...}`, not `mut {x: 5, ...}`. Writing through a mut receiver is itself a
-			//    mutation — a later write may store any number — so the stored literal widens
-			//    to its primitive before it becomes the field's type.
+			//    ANNOTATION. inferMemberAssign builds its requirement with widen(source),
+			//    so `obj.x = 5` lowers to `mut {x: number, ...}`, not `mut {x: 5, ...}`.
 			//
-			//    The flag passes `sup.Mut`, which is load-bearing-equivalent to
-			//    `sub.Mut && sup.Mut`: the mutability check above already returned for
-			//    `!sub.Mut && sup.Mut`, so reaching here with sup.Mut implies sub.Mut.
-			//    If that earlier gate is ever weakened, re-gate the flag explicitly
-			//    or it would impose a spurious contravariant constraint on an immutable
-			//    source.
+			//    The flag passes `sup.Mut`, equivalent to `sub.Mut && sup.Mut`: the check
+			//    above already returned for `!sub.Mut && sup.Mut`, so reaching here with
+			//    sup.Mut implies sub.Mut. If that gate is ever weakened, re-gate the flag.
 			errs := c.constrain(sub.Inner, sup.Inner, seen, sup.Mut)
-			// The structural arms only reach the write view when both inners are the
-			// same object/tuple kind. A non-structural inner — a type variable
-			// mid-inference, or two mismatched kinds — needs the whole reverse
-			// constraint to stay invariant, the write view's residual case.
+			// The arms above only reach the write view when both inners are the same
+			// object/tuple kind. Any other inner — a type variable, or two mismatched
+			// kinds — needs the whole reverse constraint to stay invariant.
 			if sup.Mut && needsResidualWriteBack(sub.Inner, sup.Inner) {
 				errs = append(errs, c.constrain(sup.Inner, sub.Inner, seen, false)...)
 			}
@@ -514,8 +496,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if sub.Lt != nil {
 				return []SolverError{&BorrowEscapeError{Sub: sub, Super: super}}
 			}
-			// Peeling an owned value into a bare slot is a covariant read, so the
-			// deep-mut flag resets.
+			// Peeling an owned value into a bare slot is a covariant read; flag resets.
 			return c.constrain(sub.Inner, super, seen, false)
 		}
 	case *soltype.Void:
@@ -586,9 +567,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		if soltype.LevelOf(super) <= subVar.Level {
 			c.addUpperBound(subVar, super)
 			var errs []SolverError
-			// A variable is a boundary for the deep-mut flag: each recorded bound
-			// carries its own RefType wrapper, which re-establishes the flag when it
-			// propagates, so the closure step itself runs flag-free.
+			// A variable is a boundary for the deep-mut flag: a recorded RefType bound
+			// re-establishes the flag when it propagates, so this step runs flag-free.
 			for _, lb := range subVar.LowerBounds {
 				errs = append(errs, c.constrain(lb, super, seen, false)...)
 			}
