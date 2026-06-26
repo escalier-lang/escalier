@@ -188,34 +188,12 @@ func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltyp
 	return t, true
 }
 
-// The deep-mut walk hand-rolls a structural rebuild rather than using the soltype
-// TypeVisitor, for two reasons. First, every rebuilt ObjectType or TupleType
-// inherits the source pointer's provenance entry, so blame survives the rewrite.
-// The visitor hides the original-to-new pointer mapping ExitType would need to
-// do this. Second, widen.go already hand-rolls the same shape, so this matches
-// the local pattern. If the visitor grows a way to thread the original alongside
-// the rewritten node, this and widen.go should both migrate together.
-
-// applyDeepMut sets `mut` on `ri` and recursively on every borrowable component
-// reachable through its concrete structure, then returns the rebuilt RefInner.
-// `mut` is deep, per PR 13. So `mut {a: {x}}` lowers to `mut {a: mut {x}}`,
-// reading `p.a` yields a mutable view, and `p.a.x = 5` is legal.
-//
-// The recursion stops at two kinds of slot. A type parameter is inert: a
-// TypeVarType is returned unchanged, so `mut Foo<Point>` applies `mut` to Foo's
-// body and leaves the substituted Point immutable. A value type is never a
-// RefInner, so it is never wrapped. The value types are primitives, functions,
-// and promises.
-//
-// A field that is already a borrow is left as it stands. Its own resolution
-// already applied this distribution, and an immutable `&` field states its own
-// mutability. Only a bare object or tuple component is deepened, via
-// deepMutComponent.
-//
-// Every rebuilt ObjectType/TupleType inherits the source's provenance entry so
-// that a structural mismatch against a nested annotation object keeps its
-// "expected here" related span. Without the carry-through, the new pointer has
-// no Prov entry and blame falls back to the constraint site.
+// applyDeepMut deepens `ri` by wrapping every reachable bare object/tuple
+// component in owned-mut, returning the rebuilt RefInner. Type parameters and
+// value types (primitives, functions, promises) are inert; an already-borrow
+// field is left as-is. Rebuilt nodes inherit the source's provenance so
+// "expected here" spans survive. Hand-rolled rather than visitor-based to keep
+// that prov carry-through, matching widen.go.
 func (c *checker) applyDeepMut(ri soltype.RefInner) soltype.RefInner {
 	switch t := ri.(type) {
 	case *soltype.ObjectType:
@@ -246,10 +224,8 @@ func (c *checker) applyDeepMut(ri soltype.RefInner) soltype.RefInner {
 	}
 }
 
-// deepMutComponent wraps a field or element value in owned-mutable and recurses
-// when it is a bare object or tuple, and leaves every other shape unchanged. A
-// value type stays a value, a type parameter stays inert, and a field that is
-// already a borrow keeps its own mutability rather than being re-wrapped.
+// deepMutComponent wraps a bare object/tuple field or element in owned-mut and
+// recurses; every other shape passes through unchanged.
 func (c *checker) deepMutComponent(t soltype.Type) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.ObjectType:
@@ -261,11 +237,9 @@ func (c *checker) deepMutComponent(t soltype.Type) soltype.Type {
 	}
 }
 
-// inheritProv copies the provenance entry from `from` onto `to`, when `from` has
-// one. Used by the deep-mut walk to keep a rebuilt object or tuple pointing at
-// the same annotation node the original did, so blame and "expected here" spans
-// survive the rewrite. Skips silently when `from` has no entry, since not every
-// minted type has provenance.
+// inheritProv copies `from`'s provenance entry onto `to`, used by the deep-mut
+// walk so a rebuilt object or tuple keeps the original annotation's blame span.
+// Skips silently when `from` has no entry.
 func (c *checker) inheritProv(to, from soltype.Type) {
 	if o, ok := c.prov[from].(FromAST); ok {
 		c.recordProv(to, o.Node, o.Kind)
@@ -303,9 +277,7 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 	if !ok {
 		return c.reportUnsupportedFeature(ta, "borrow of a non-borrowable type"), false
 	}
-	// `&mut` distributes the same way `mut` does (PR 13): the mutability reaches
-	// through the pointee's concrete structure, so `&mut {a: {x}}` lets you write
-	// `p.a.x`. An immutable `&` borrow leaves the pointee untouched.
+	// `&mut` deepens the pointee like `mut` does; `&` leaves it untouched.
 	if ta.Mut {
 		ri = c.applyDeepMut(ri)
 	}
