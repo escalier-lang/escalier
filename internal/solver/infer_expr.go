@@ -666,7 +666,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		c.recordType(e, recv)
 		return recv
 	}
-	_, recvMut, recvLt := soltype.UnwrapRef(recv)
+	_, _, recvLt := soltype.UnwrapRef(recv)
 	recvCarrier := soltype.CarrierOf(recv)
 	// Read-after-write cache. A usage-inferred receiver may carry a recorded
 	// write for this field. Take the cached value as the field's static shape
@@ -739,7 +739,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	// fieldReadBorrow makes the same wrap decision valueProp uses, so hover
 	// on the inner `obj.f` reads the same whether it stands alone or under
 	// `&obj.f` or `&mut obj.f`.
-	c.recordType(accessNode, c.fieldReadBorrow(chk, recvCarrier, propName, recvLt, recvMut, lvl))
+	c.recordType(accessNode, c.fieldReadBorrow(chk, recv, propName, lvl))
 	c.recordType(e, target)
 	return target
 }
@@ -1453,12 +1453,6 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 			}
 		}
 	}
-	// A borrowed receiver passes its lifetime through to the read. An owned
-	// receiver originates a fresh lifetime at the read site. PR 4 rule 4 makes
-	// a member read on a reference-shaped field yield a borrow bounded by the
-	// receiver, rather than the bare field value. Capture the receiver's mut
-	// and lifetime before peeling the borrow wrapper so the wrap site has them.
-	_, recvMut, recvLt := soltype.UnwrapRef(recv)
 	// Strip the borrow wrapper before building the field-read requirement (D2):
 	//   - Reading a field through a `mut`/`'a` borrow is always legal and yields
 	//     the field's value, not the borrow.
@@ -1475,7 +1469,9 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: res}},
 		Inexact: true, // "has at least this property" — width tolerance is inexactness
 	})
-	out := c.fieldReadBorrow(res, recvCarrier, name, recvLt, recvMut, lvl)
+	// fieldReadBorrow takes the whole receiver and unwraps mut/lifetime internally,
+	// applying PR 4 rule 4 to produce the field-bounded borrow.
+	out := c.fieldReadBorrow(res, recv, name, lvl)
 	c.recordType(blame, out)
 	return pathResult{value: out}
 }
@@ -1483,19 +1479,20 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // fieldReadBorrow applies PR 4 rule 4. A member read yields a borrow of the
 // field bounded by the receiver when the field is reference-shaped. An owned
 // receiver mints a fresh lifetime here. A borrowed receiver's lifetime passes
-// through via recvLt. The wrap reads the field's static shape off a concrete
-// receiver carrier. A primitive or function field stays a value, since
-// PrimType and FuncType are excluded from RefInner. A field whose static type
-// is itself an immutable borrow copies the borrow out flat rather than
-// nesting, setting up PR 9's nested-borrow normalization.
+// through. The wrap reads the field's static shape off a concrete receiver
+// carrier. A primitive or function field stays a value, since PrimType and
+// FuncType are excluded from RefInner. A field whose static type is itself an
+// immutable borrow copies the borrow out flat rather than nesting, setting up
+// PR 9's nested-borrow normalization.
 //
 // A receiver whose shape is not statically known returns the existing `res`
 // var unchanged. A usage-inferred TypeVar carrier and an index path with no
 // concrete property both fall into this branch. The inferred-receiver paths
 // keep their pre-PR-4 behaviour, so only annotated reference shapes pick up
 // the new borrow.
-func (c *checker) fieldReadBorrow(res *soltype.TypeVarType, recvCarrier soltype.Type, name string, recvLt soltype.Lifetime, recvMut bool, lvl int) soltype.Type {
-	obj, ok := recvCarrier.(*soltype.ObjectType)
+func (c *checker) fieldReadBorrow(res *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
+	_, recvMut, recvLt := soltype.UnwrapRef(recv)
+	obj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType)
 	if !ok {
 		return res
 	}
