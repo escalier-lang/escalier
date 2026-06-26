@@ -422,7 +422,7 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 		// rejects a caller passing the exact `{x: number}` the displayed signature
 		// shows, breaking the round-trip. Close BOTH bound directions so the operative
 		// type matches the display, which inlines the pinned var to its exact bound.
-		if boundsPin(v) {
+		if hasEqualBounds(v) {
 			v.UpperBounds = foldUsageBounds(v.UpperBounds, v.Open)
 			v.LowerBounds = foldUsageBounds(v.LowerBounds, v.Open)
 			continue

@@ -261,7 +261,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		return soltype.EnterResult{}
 	}
 	rep := c.simp.rep(v)
-	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !boundsPin(rep)
+	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep)
 	if c.seen.Contains(rep) {
 		// A cycle back to a variable already on the path: a retained type parameter
 		// keeps its name (a rough μ-reference, refined in M3's precise μ-rendering),
@@ -348,8 +348,8 @@ func renderScheme(s TypeScheme) string {
 	panic(fmt.Sprintf("renderScheme: unknown TypeScheme %T", s))
 }
 
-// boundsPin reports whether v is pinned to a single concrete type — its lower and
-// upper bound sets are non-empty and structurally equal — so it has no freedom as a
+// hasEqualBounds reports whether v's lower and upper bound sets are non-empty and
+// structurally equal, which pins it to a single concrete type: it has no freedom as a
 // type parameter and is inlined rather than retained. This arises for the receiver
 // var of a deep-mut nested write (#779): `obj.p.x = 5` makes obj.p invariant inside
 // the mut container, and the residual write-back gives it equal lower and upper
@@ -358,7 +358,7 @@ func renderScheme(s TypeScheme) string {
 // such as the `v` in `fn (obj, v) { obj.x = v }`, has no such matched bounds — its
 // invariance comes from the field write-view with no concrete bound on both sides —
 // so it is still retained.
-func boundsPin(v *soltype.TypeVarType) bool {
+func hasEqualBounds(v *soltype.TypeVarType) bool {
 	lo := withoutSelf(v, v.LowerBounds)
 	hi := withoutSelf(v, v.UpperBounds)
 	if len(lo) == 0 || len(hi) == 0 {
@@ -369,7 +369,7 @@ func boundsPin(v *soltype.TypeVarType) bool {
 
 // withoutSelf drops a vacuous self-reference (v <: v) from a bound list. The deep-mut
 // write chain can leave a var with a self-edge among its bounds; it constrains
-// nothing, so boundsPin ignores it when comparing the lower and upper bound sets.
+// nothing, so hasEqualBounds ignores it when comparing the lower and upper bound sets.
 func withoutSelf(v *soltype.TypeVarType, bounds []soltype.Type) []soltype.Type {
 	out := bounds[:0:0]
 	for _, b := range bounds {
