@@ -154,19 +154,15 @@ func isMutableType(t soltype.Type) bool {
 // where it outlives the function. D3's constrainEscape then pins its lifetime
 // `<: 'static`, so the value has a permanent outside alias of that borrow's mutability.
 //
-// The whole recorded type is walked, not just its top-level RefType (PR 5). A borrow
-// nested in a field or tuple element — for example the `&'static mut {…}` field of an
-// object stored into a global — is now seen, closing the nested-escape gap that made
-// a move past such a borrow unsound. Both mutabilities are reported because a value
-// can carry both a mutable and an immutable escaped borrow in different positions,
-// and Rule 1 and Rule 2 each conflict with one of them. An owned value, a borrow with
-// an unforced lifetime, or an unrecorded variable returns both false.
-//
-// REMAINING GAP (M4 G2 carry-over): a borrow reachable only through a usage-inferred
-// TypeVarType is still not seen, because the soltype visitor treats a type variable as
-// a leaf and does not descend into its bounds. Resolving a value's borrows through the
-// constraint graph rather than its structural type is the deeper G2 fix. See the G2
-// note in planning/simple_sub/m4-implementation-plan.md.
+// The whole recorded type is walked, every structural position and every type
+// variable's bounds, so a borrow forced to 'static is seen wherever it sits: at the
+// top level, nested in a field or tuple element such as the `&'static mut {…}` field
+// of an object stored into a global, or reachable only through a usage-inferred
+// TypeVarType such as the join variable of `sink = if c { p } else { … }`. Missing any
+// of these would make a move past that borrow unsound. Both mutabilities are reported
+// because a value can carry both a mutable and an immutable escaped borrow in different
+// positions, and Rule 1 and Rule 2 each conflict with one of them. An owned value, a
+// borrow with an unforced lifetime, or an unrecorded variable returns both false.
 func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (escapedMut, escapedImm bool) {
 	if c.fn == nil || c.fn.varIDTypes == nil {
 		return false, false
@@ -183,20 +179,50 @@ func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (escapedMut, escap
 // escapeDetectVisitor records whether the walked type carries any borrow forced to
 // 'static, split by the borrow's mutability. It rewrites nothing; EnterType inspects
 // each RefType and the shared visitor carries the descent through inner carriers,
-// object properties, and tuple elements. A TypeVarType is a visitor leaf, so a borrow
-// reachable only through a usage-inferred variable is not reached — the REMAINING GAP
-// on borrowEscapedToStatic.
+// object properties, and tuple elements.
+//
+// The shared visitor treats a TypeVarType as a leaf and does not descend into its
+// bounds, since those bounds are a side graph rather than tree children. So EnterType
+// walks a type variable's bounds itself to resolve a borrow reachable only through a
+// usage-inferred variable. It follows the bounds relevant to the current polarity, the
+// LowerBounds in Positive position, where the variable stands for what flowed into it.
+// An escaped borrow joined into a branch variable is therefore seen. The seen set
+// guards against cycles in the bounds graph. It keys on the variable together with the
+// polarity, since the bounds followed depend on the polarity, so a variable reached at
+// both polarities is explored once in each direction.
 type escapeDetectVisitor struct {
 	foundMut bool
 	foundImm bool
+	seen     set.Set[seenVar]
 }
 
-func (v *escapeDetectVisitor) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	if r, ok := t.(*soltype.RefType); ok && lifetimeEscapedToStatic(r.Lt) {
-		if r.Mut {
-			v.foundMut = true
-		} else {
-			v.foundImm = true
+// seenVar identifies one visited (type variable, polarity) pair in the bounds walk.
+type seenVar struct {
+	tv  *soltype.TypeVarType
+	pol soltype.Polarity
+}
+
+func (v *escapeDetectVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		if lifetimeEscapedToStatic(t.Lt) {
+			if t.Mut {
+				v.foundMut = true
+			} else {
+				v.foundImm = true
+			}
+		}
+	case *soltype.TypeVarType:
+		if v.seen == nil {
+			v.seen = set.NewSet[seenVar]()
+		}
+		key := seenVar{tv: t, pol: pol}
+		if v.seen.Contains(key) {
+			return soltype.EnterResult{}
+		}
+		v.seen.Add(key)
+		for _, bound := range t.BoundsAt(pol) {
+			bound.Accept(v, pol)
 		}
 	}
 	return soltype.EnterResult{}
