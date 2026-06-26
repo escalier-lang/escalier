@@ -100,7 +100,17 @@ func commonBorrowEscape(trials [][]SolverError) *BorrowEscapeError {
 // redundant cache entries, not infinite loops. M4's recursive types (aliases,
 // letrec) must preserve this property — see m1-implementation-plan §3.3
 // "Forward requirements for the named-ref node design".
-type constraintKey struct{ sub, super soltype.Type }
+//
+// mutCtx is part of the key (PR 14): the same (sub, super) pair means something
+// different inside a mutable borrow's inner, where the object/tuple arms add the
+// contravariant write view, than in a covariant position. Keying without it would
+// let a covariant visit cache-skip a later invariant visit and drop the write-view
+// check. The flag is position-determined and takes two values, so it keeps the key
+// set finite and the recursion terminating.
+type constraintKey struct {
+	sub, super soltype.Type
+	mutCtx     bool
+}
 
 // extrudeKey keys extrude's per-extrusion cache by both the origin variable's
 // ID and the polarity it was reached in, so the same variable copied in
@@ -153,7 +163,7 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 // borrow's mutability, the object/tuple arms propagate it, and the function and
 // promise arms reset it since each carries its own annotation context.
 func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) []SolverError {
-	key := constraintKey{sub, super}
+	key := constraintKey{sub, super, mutCtx}
 	if seen.Contains(key) {
 		return nil
 	}

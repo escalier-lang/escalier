@@ -69,6 +69,22 @@ func TestDeepMutLowersFreshLiteral(t *testing.T) {
 	require.Equal(t, "mut {a: {b: {c: number}}}", values["w"])
 }
 
+// A fresh literal also upgrades into a target with an EXPLICIT nested `mut` field
+// (#779): stripOwnedMut peels the owned-mut cell so the immutable literal flows in
+// covariantly, the same the whole way down for tuples.
+func TestDeepMutLowersFreshLiteralIntoExplicitNestedMut(t *testing.T) {
+	t.Run("object", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val w: mut {a: mut {x: number}} = {a: {x: 0}}`)
+		require.Empty(t, errs)
+		require.Equal(t, "mut {a: mut {x: number}}", values["w"])
+	})
+	t.Run("tuple", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val w: mut [mut {x: number}] = [{x: 0}]`)
+		require.Empty(t, errs)
+		require.Equal(t, "mut [mut {x: number}]", values["w"])
+	})
+}
+
 // `readonly` rejects `obj.a = …` even on an owned-mutable enclosing object.
 func TestReadonlyRejectsFieldReassignment(t *testing.T) {
 	_, _, errs := inferSource(t, "fn f(obj: mut {readonly a: number}) { obj.a = 5 }")

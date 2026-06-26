@@ -253,43 +253,48 @@ func TestPrintLazyDeepMutVerbatim(t *testing.T) {
 	staticBorrow := func(mut bool, inner RefInner) Type {
 		return &RefType{Mut: mut, Lt: &StaticLifetime{}, Inner: inner}
 	}
+	objX := func() RefInner {
+		return &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}
+	}
 
-	t.Run("mut over a bare nested object prints verbatim", func(t *testing.T) {
-		ty := mutOwned(&ObjectType{Elems: []ObjTypeElem{
-			&PropertyElem{Name: "a", Type: &ObjectType{Elems: []ObjTypeElem{
-				&PropertyElem{Name: "x", Type: numP()},
-			}}},
-		}})
-		require.Equal(t, "mut {a: {x: number}}", Print(ty))
-	})
-
-	t.Run("&mut over a bare nested object prints verbatim", func(t *testing.T) {
-		ty := staticBorrow(true, &ObjectType{Elems: []ObjTypeElem{
-			&PropertyElem{Name: "a", Type: &ObjectType{Elems: []ObjTypeElem{
-				&PropertyElem{Name: "x", Type: numP()},
-			}}},
-		}})
-		require.Equal(t, "&'static mut {a: {x: number}}", Print(ty))
-	})
-
-	t.Run("an explicit nested owned-mut cell is not hidden", func(t *testing.T) {
-		// No elision: a `mut` field under a `mut` wrapper renders its `mut`.
-		ty := mutOwned(&ObjectType{Elems: []ObjTypeElem{
-			&PropertyElem{Name: "a", Type: mutOwned(&ObjectType{Elems: []ObjTypeElem{
-				&PropertyElem{Name: "x", Type: numP()},
-			}})},
-		}})
-		require.Equal(t, "mut {a: mut {x: number}}", Print(ty))
-	})
-
-	t.Run("borrow field under mut keeps its & marker", func(t *testing.T) {
-		ty := mutOwned(&ObjectType{Elems: []ObjTypeElem{
-			&PropertyElem{Name: "a", Type: staticBorrow(true, &ObjectType{Elems: []ObjTypeElem{
-				&PropertyElem{Name: "x", Type: numP()},
-			}})},
-		}})
-		require.Equal(t, "mut {a: &'static mut {x: number}}", Print(ty))
-	})
+	cases := []struct {
+		name string
+		ty   Type
+		want string
+	}{
+		{
+			name: "mut over a bare nested object prints verbatim",
+			ty:   mutOwned(&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: objX()}}}),
+			want: "mut {a: {x: number}}",
+		},
+		{
+			name: "&mut over a bare nested object prints verbatim",
+			ty:   staticBorrow(true, &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: objX()}}}),
+			want: "&'static mut {a: {x: number}}",
+		},
+		{
+			// No elision: a `mut` field under a `mut` wrapper renders its `mut`.
+			name: "an explicit nested owned-mut object cell is not hidden",
+			ty:   mutOwned(&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: mutOwned(objX())}}}),
+			want: "mut {a: mut {x: number}}",
+		},
+		{
+			// The tuple-element path renders the nested `mut` verbatim too.
+			name: "an explicit nested owned-mut tuple element is not hidden",
+			ty:   mutOwned(&TupleType{Elems: []Type{mutOwned(objX())}}),
+			want: "mut [mut {x: number}]",
+		},
+		{
+			name: "borrow field under mut keeps its & marker",
+			ty:   mutOwned(&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: staticBorrow(true, objX())}}}),
+			want: "mut {a: &'static mut {x: number}}",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, Print(tc.ty))
+		})
+	}
 }
 
 // AnonLifetime renders as bare `&` / `&mut`, keeping a borrow distinguishable
