@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- PR 13: deep `mut`, type-parameter inertness, and `readonly` ---
+// --- PR 13: deep, uniform `mut` and `readonly` ---
 
 // `mut` is deep: every nested layer becomes writable, so `p.a.x = 5` is legal
 // through `mut {a: {x}}` and `&mut {a: {x}}`.

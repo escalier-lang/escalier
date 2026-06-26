@@ -140,9 +140,13 @@ way a `mut`/non-`mut` binding governs everything it owns. There is no "mutable
 container, immutable element" type; to hold immutable data, the owner is immutable. The
 one boundary is a **borrow** — a `&`/`&mut` field is a window into another value and
 carries its own mutability, not the enclosing modifier's. The one field-level modifier
-is **`readonly`**, which forbids *reassigning* a field and nothing more.
+is **`readonly`**, which forbids *reassigning* a field.
 `{readonly a: T}` rejects `obj.a = …` but says nothing about the deep mutability of
-`a`'s value; `readonly` governs the slot, `mut` governs depth.
+`a`'s value, so `readonly` governs the slot and `mut` governs depth. `readonly` also
+constrains structural compatibility. A `{readonly a: T}` value cannot satisfy a
+writable `{a: T}` target, because a holder of the target could reassign through `a`
+and break the source's read-only guarantee. The reverse is allowed: a writable
+`{a: T}` value satisfies a `{readonly a: T}` target, since the target only ever reads.
 
 ### Borrows of a mutable owned value
 
@@ -568,7 +572,20 @@ immutable edges. The freeze made every internal edge `&`, and the thaw makes eve
 internal edge `&mut`, so a freeze followed by a thaw recovers the original type only
 when the whole component was mutable to begin with. An edge authored `&` independent of
 any freeze comes back `&mut` — sound, since the consuming move leaves the thawed value
-the sole owner, but wider than the author wrote. `readonly` is unaffected: it is a
+the sole owner, but wider than the author wrote.
+
+```esc
+val mut g = build()   // g: mut {hot: &mut Node, cold: &Node} — `cold` authored `&`
+val frozen = g        // freeze: every internal edge reads `&`
+                      //   frozen: {hot: &Node, cold: &Node}
+val mut thawed = frozen // thaw: every internal edge comes back `&mut`
+                      //   thawed: mut {hot: &mut Node, cold: &mut Node}
+                      // `cold` widened from `&` to `&mut`. This is intentional and
+                      // sound: the consuming move leaves `thawed` the sole owner, so no
+                      // immutable view still depends on `cold`.
+```
+
+`readonly` is unaffected: it is a
 structural field annotation, not part of the `mut`/immutable wrapper, so it survives a
 freeze and thaw unchanged.
 
