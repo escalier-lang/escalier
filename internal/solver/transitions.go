@@ -193,7 +193,7 @@ func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (escapedMut, escap
 type escapeDetectVisitor struct {
 	foundMut bool
 	foundImm bool
-	seen     map[*soltype.TypeVarType]bool
+	seen     set.Set[*soltype.TypeVarType]
 }
 
 func (v *escapeDetectVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -208,12 +208,12 @@ func (v *escapeDetectVisitor) EnterType(t soltype.Type, pol soltype.Polarity) so
 		}
 	case *soltype.TypeVarType:
 		if v.seen == nil {
-			v.seen = map[*soltype.TypeVarType]bool{}
+			v.seen = set.NewSet[*soltype.TypeVarType]()
 		}
-		if v.seen[t] {
+		if v.seen.Contains(t) {
 			return soltype.EnterResult{}
 		}
-		v.seen[t] = true
+		v.seen.Add(t)
 		for _, bound := range t.BoundsAt(pol) {
 			bound.Accept(v, pol)
 		}
