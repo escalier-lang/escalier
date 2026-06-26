@@ -1106,7 +1106,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		// name, so emit nothing further and recover to void.
 		return voidT
 	}
-	recv := c.inferExpr(scope, lvl, m.Object)
+	recv := c.inferWriteReceiver(scope, lvl, m.Object)
 	w := widen(source)
 	// Catch a readonly write at the assignment site so the diagnostic blames it
 	// outright; a TypeVar receiver falls through to the structural
@@ -1144,6 +1144,82 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// `void` recovery type inferAssign recorded on e before dispatching here.
 	c.recordType(e, w)
 	return w
+}
+
+// inferWriteReceiver infers the receiver of a field write `recv.prop = …`. Each
+// member/index step in the receiver CHAIN imposes a MUTABLE requirement on its own
+// receiver rather than the immutable read a plain access would, so writing one nested
+// field marks the whole container `mut` (#779): `fn foo(obj) { obj.p.x = 5 }` infers
+// `obj: mut {p: …}`, the mutability propagating up to the outermost container. The
+// alternative — an owned-mut cell on the inner field inside an immutable container —
+// is no longer a valid annotation, so inference must not produce it.
+//
+// Only the direct receiver of an assignment takes this path; a plain read elsewhere
+// in the body stays immutable. A bare identifier reads through ordinary inferExpr,
+// since there is no enclosing container to mark.
+func (c *checker) inferWriteReceiver(scope *Scope, lvl int, e ast.Expr) soltype.Type {
+	switch e := e.(type) {
+	case *ast.MemberExpr:
+		if e.OptChain || e.Prop == nil || e.Prop.Name == "" {
+			return c.inferExpr(scope, lvl, e)
+		}
+		recv := c.inferWriteReceiver(scope, lvl, e.Object)
+		return c.mutFieldRead(lvl, e, e.Prop, e.Prop.Name, recv)
+	case *ast.IndexExpr:
+		// A constant-string index `obj["p"].x = …` reads the same field `obj.p` would,
+		// so it propagates mutability the same way. A dynamic key is not a supported
+		// place and falls through to the ordinary path.
+		if name, ok := constStringKey(e.Index); ok && !e.OptChain {
+			recv := c.inferWriteReceiver(scope, lvl, e.Object)
+			return c.mutFieldRead(lvl, e, e.Index, name, recv)
+		}
+		return c.inferExpr(scope, lvl, e)
+	default:
+		return c.inferExpr(scope, lvl, e)
+	}
+}
+
+// mutFieldRead reads property `name` off `recv` as the receiver of a write chain.
+// When the receiver's shape is still an inference variable, it imposes a MUTABLE
+// requirement `mut {name: fieldVar, ...}` so the inferred container folds `mut` at
+// coalesce time (#779) and hands back a mutable borrow of the field, the deep-mut read
+// view, so a deeper write relates the field covariantly under the mut-context
+// invariance. When the receiver is already concrete — an annotated `mut {…}` or a
+// borrow — it defers to valueProp's ordinary read: the deep-mut machinery already
+// yields a mutable borrow off a mut receiver, and imposing a fresh inexact requirement
+// would clash with the annotation's exact shape under the write-back. blame is the
+// access node a constraint failure points at; provNode is the node the fresh field
+// var's provenance records.
+func (c *checker) mutFieldRead(lvl int, blame ast.Node, provNode ast.Node, name string, recv soltype.Type) soltype.Type {
+	// Read-after-write (M4 C3): a field already written to the same receiver var
+	// returns the recorded concrete type, the same shortcut valueProp takes.
+	if c.fn != nil {
+		if v, ok := recv.(*soltype.TypeVarType); ok {
+			if t, found := c.fn.written[fieldKey{recvID: v.ID, field: name}]; found {
+				c.recordType(blame, t)
+				return t
+			}
+		}
+	}
+	if _, isVar := soltype.CarrierOf(recv).(*soltype.TypeVarType); !isVar {
+		// Concrete receiver: a plain read composes the chain correctly.
+		return c.valueProp(lvl, blame, provNode, name, recv).value
+	}
+	fieldVar := c.freshAt(lvl)
+	c.recordProv(fieldVar, provNode, MemberAccess)
+	c.constrain(blame, recv, &soltype.RefType{
+		Mut: true,
+		// A fresh lifetime imposes no obligation on the receiver (D2), matching the
+		// leaf write requirement in inferMemberAssign.
+		Lt: c.ctx.freshLifetime(lvl),
+		Inner: &soltype.ObjectType{
+			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: fieldVar}},
+			Inexact: true,
+		},
+	})
+	out := soltype.NewRef(true, c.ctx.freshLifetime(lvl), fieldVar)
+	c.recordType(blame, out)
+	return out
 }
 
 // recordWritten remembers that field `name` of receiver `recv` was written with
@@ -1501,11 +1577,13 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 	switch fieldType := prop.Type.(type) {
 	case *soltype.RefType:
 		if fieldType.Lt == nil {
-			// An owned-mutable field cell — an explicit `mut {x}` field, the awkward
-			// interior-mutability shape (#779). Read it as a receiver-bounded borrow,
-			// capping `mut` by the receiver's mutability. The lazy deep-mut form no
-			// longer mints these for a plain `mut {a: {x}}`; that field is bare,
-			// handled by the bare arm below.
+			// An owned-mutable field cell — formerly an explicit `mut {x}` field, the
+			// awkward interior-mutability shape now rejected at the annotation site
+			// (#779). Read it as a receiver-bounded borrow, capping `mut` by the
+			// receiver's mutability. The lazy deep-mut form does not mint these for a
+			// plain `mut {a: {x}}`; that field is bare, handled by the bare arm below.
+			// This arm is therefore defensive — kept for any owned-mut cell that still
+			// reaches a read.
 			lt := recvLt
 			if lt == nil {
 				lt = c.ctx.freshLifetime(lvl)

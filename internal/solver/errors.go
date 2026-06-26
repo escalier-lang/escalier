@@ -228,6 +228,18 @@ type InexactTupleSpreadError struct {
 	Operand *soltype.TupleType
 }
 
+// MutFieldError fires when a `mut T` annotation appears as an object property
+// value or a tuple element inside a non-mut container — `{a: mut {x}}` or
+// `[mut {x}]`. An owned-mutable cell nested inside an immutable container is
+// misleading: the enclosing container's immutability already reaches into the
+// field, so the field is not actually writable, and interior mutability (#618) is
+// the proper mechanism for the case the user wants. A borrow field (`&T`,
+// `&mut T`) is a reference to external storage, not an interior owned-mutable
+// cell, so it stays legal. The annotation node carries the blame span.
+type MutFieldError struct {
+	Ann *ast.MutableTypeAnn
+}
+
 // ReadonlyFieldError fires on a literal field-assignment `obj.f = …` whose target
 // field is declared `readonly`. The assignment-site check lives in
 // inferMemberAssign, which catches the case directly so the diagnostic blames the
@@ -251,6 +263,7 @@ type ReadonlyFieldSubtypeError struct {
 }
 
 func (*CannotConstrainError) isSolverError()      {}
+func (*MutFieldError) isSolverError()             {}
 func (*ReadonlyFieldError) isSolverError()        {}
 func (*ReadonlyFieldSubtypeError) isSolverError() {}
 func (*FuncArityMismatchError) isSolverError()    {}
@@ -932,12 +945,51 @@ func (e *OptionalPropertyError) Message() string {
 
 func (e *MutabilityMismatchError) Message() string {
 	return fmt.Sprintf("cannot constrain immutable %s <: mutable %s",
-		describe(e.Sub.Inner), describe(e.Super.Inner))
+		describeBorrowInner(e.Sub.Inner), describeBorrowInner(e.Super.Inner))
+}
+
+// describeBorrowInner renders the pointee of a borrow for a diagnostic. An immutable
+// field read routes its result through a fresh field-read variable (fieldReadBorrow),
+// so the borrow's inner can be an inference variable whose raw `t{N}` name means
+// nothing to a user. When it is, resolve it to a concrete bound so the message names
+// the actual shape — `immutable object`, not `immutable t3`. Prefer a lower bound, the
+// value that flowed in; fall back to an upper bound, then to the bare variable when it
+// carries no concrete bound.
+func describeBorrowInner(t soltype.Type) string {
+	if v, ok := t.(*soltype.TypeVarType); ok {
+		if b, ok := concreteBoundOf(v); ok {
+			return describe(b)
+		}
+	}
+	return describe(t)
+}
+
+// concreteBoundOf returns a non-variable bound of v, preferring lower bounds, or
+// ok=false when every bound is itself a variable or v has none. It never recurses
+// through a variable bound, so it cannot loop on a cyclic bound graph.
+func concreteBoundOf(v *soltype.TypeVarType) (soltype.Type, bool) {
+	for _, b := range v.LowerBounds {
+		if _, isVar := b.(*soltype.TypeVarType); !isVar {
+			return b, true
+		}
+	}
+	for _, b := range v.UpperBounds {
+		if _, isVar := b.(*soltype.TypeVarType); !isVar {
+			return b, true
+		}
+	}
+	return nil, false
 }
 
 func (e *BorrowEscapeError) Message() string {
 	return fmt.Sprintf("borrowed value %s does not live long enough to satisfy %s",
 		describe(e.Sub), describe(e.Super))
+}
+
+func (e *MutFieldError) Span() ast.Span      { return e.Ann.Span() }
+func (e *MutFieldError) Related() []ast.Span { return nil }
+func (e *MutFieldError) Message() string {
+	return "owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability"
 }
 
 func (e *ReadonlyFieldError) Span() ast.Span      { return spanOfNode(e.site) }

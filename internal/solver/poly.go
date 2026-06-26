@@ -411,7 +411,23 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 	propagateOpen(vars)
 
 	for id, v := range vars {
-		if v.Open || v.Level <= lvl || len(v.LowerBounds) > 0 {
+		if v.Open || v.Level <= lvl {
+			continue
+		}
+		// A deep-mut nested-write receiver, such as obj.p in `obj.p.x = 5` (#779), is
+		// PINNED: the residual write-back gives it equal inexact lower and upper bounds
+		// `{x: number, ...}`. It occurs in both polarities (invariant inside the mut
+		// container), so the negative-only test below skips it, yet it must still seal
+		// to an EXACT inner — otherwise the operative invariance check `t <: caller.p`
+		// rejects a caller passing the exact `{x: number}` the displayed signature
+		// shows, breaking the round-trip. Close BOTH bound directions so the operative
+		// type matches the display, which inlines the pinned var to its exact bound.
+		if hasEqualBounds(v) {
+			v.UpperBounds = foldUsageBounds(v.UpperBounds, v.Open)
+			v.LowerBounds = foldUsageBounds(v.LowerBounds, v.Open)
+			continue
+		}
+		if len(v.LowerBounds) > 0 {
 			continue
 		}
 		o := occ[id]

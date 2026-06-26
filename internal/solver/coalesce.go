@@ -32,6 +32,7 @@ import (
 // recursive rendering; this guard only keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType]()}, pol)
+	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 	return coalesceLifetimes(c, pol) // D4: resolve borrow lifetimes to their display form
 }
 
@@ -82,6 +83,82 @@ func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type 
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
 	return t
+}
+
+// bubbleOwnedMut rewrites a coalesced display type so no owned-mutable cell ever
+// sits inside an immutable object or tuple (#779). `mut` is deep, so an owned-mut
+// field is equivalent to making the whole container `mut`: `{p: mut {x}}` means the
+// same as `mut {p: {x}}`. The nested form is the one the C3 field-write fold produces
+// for `obj.p.x = 5`, and it is no longer a valid annotation, so the rendered
+// signature must take the bubbled-up form to stay re-writable.
+//
+// It runs at DISPLAY time only, over the already-coalesced type — the operative
+// bounds the solver checks against are untouched, so this changes only how an
+// inferred signature is printed, never what it accepts. A `&`/`&mut` borrow field
+// carries a lifetime and references external storage, so it is left in place; only an
+// owned-mut cell (Mut set, Lt nil) bubbles.
+func bubbleOwnedMut(t soltype.Type) soltype.Type {
+	return t.Accept(&mutBubbler{}, soltype.Positive)
+}
+
+// mutBubbler is the rewriting visitor behind bubbleOwnedMut. The lift happens in
+// ExitType, bottom-up: by the time an object/tuple is exited its children are already
+// bubbled, so a child that bubbled to an owned-mut cell is visible here and lifts the
+// cell one level further out.
+type mutBubbler struct{}
+
+func (b *mutBubbler) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	return soltype.EnterResult{}
+}
+
+func (b *mutBubbler) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		anyMut := false
+		elems := make([]soltype.ObjTypeElem, len(t.Elems))
+		for i, e := range t.Elems {
+			p := soltype.AsProperty(e)
+			ft := p.Type
+			if inner, isMut, lt := soltype.UnwrapRef(ft); isMut && lt == nil {
+				anyMut = true
+				ft = inner // strip the redundant cell; the container's `mut` covers it
+			}
+			elems[i] = &soltype.PropertyElem{Name: p.Name, Type: ft, Optional: p.Optional, Readonly: p.Readonly}
+		}
+		obj := &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
+		if anyMut {
+			return soltype.NewRef(true, nil, obj)
+		}
+		return obj
+	case *soltype.TupleType:
+		anyMut := false
+		elems := make([]soltype.Type, len(t.Elems))
+		for i, e := range t.Elems {
+			if inner, isMut, lt := soltype.UnwrapRef(e); isMut && lt == nil {
+				anyMut = true
+				e = inner
+			}
+			elems[i] = e
+		}
+		tup := &soltype.TupleType{Elems: elems, Inexact: t.Inexact}
+		if anyMut {
+			return soltype.NewRef(true, nil, tup)
+		}
+		return tup
+	case *soltype.RefType:
+		// An owned-mut wrapper over an inner that itself bubbled to owned-mut would be a
+		// redundant `mut mut {…}`. Collapse it so the wrapper stays single.
+		if t.Mut && t.Lt == nil {
+			if inner, isMut, lt := soltype.UnwrapRef(t.Inner); isMut && lt == nil {
+				if ri, ok := inner.(soltype.RefInner); ok {
+					return &soltype.RefType{Mut: true, Lt: nil, Inner: ri}
+				}
+			}
+		}
+		return t
+	default:
+		return t
+	}
 }
 
 // widenVar lowers a widenable `var` binding's coalesced value to its primitive
@@ -151,6 +228,7 @@ func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 		genLevel: genLevel,
 		seen:     set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
+	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 	// A scheme display is always coalesced from the Positive root.
 	return coalesceLifetimes(c, soltype.Positive) // D4: resolve borrow lifetimes to their display form
 }
@@ -183,7 +261,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		return soltype.EnterResult{}
 	}
 	rep := c.simp.rep(v)
-	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both()
+	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep)
 	if c.seen.Contains(rep) {
 		// A cycle back to a variable already on the path: a retained type parameter
 		// keeps its name (a rough μ-reference, refined in M3's precise μ-rendering),
@@ -268,6 +346,61 @@ func renderScheme(s TypeScheme) string {
 		})
 	}
 	panic(fmt.Sprintf("renderScheme: unknown TypeScheme %T", s))
+}
+
+// hasEqualBounds reports whether v's lower and upper bound sets are non-empty and
+// structurally equal, which pins it to a single concrete type: it has no freedom as a
+// type parameter and is inlined rather than retained. This arises for the receiver
+// var of a deep-mut nested write (#779): `obj.p.x = 5` makes obj.p invariant inside
+// the mut container, and the residual write-back gives it equal lower and upper
+// bounds `{x: number, ...}`. Retaining it would surface a spurious `T0 & {x: number}`
+// where the pinned `{x: number}` is exact. A var with a genuine type-parameter role,
+// such as the `v` in `fn (obj, v) { obj.x = v }`, has no such matched bounds — its
+// invariance comes from the field write-view with no concrete bound on both sides —
+// so it is still retained.
+func hasEqualBounds(v *soltype.TypeVarType) bool {
+	lo := withoutSelf(v, v.LowerBounds)
+	hi := withoutSelf(v, v.UpperBounds)
+	if len(lo) == 0 || len(hi) == 0 {
+		return false
+	}
+	return sameBoundSet(lo, hi)
+}
+
+// withoutSelf drops a vacuous self-reference (v <: v) from a bound list. The deep-mut
+// write chain can leave a var with a self-edge among its bounds; it constrains
+// nothing, so hasEqualBounds ignores it when comparing the lower and upper bound sets.
+func withoutSelf(v *soltype.TypeVarType, bounds []soltype.Type) []soltype.Type {
+	out := bounds[:0:0]
+	for _, b := range bounds {
+		if bv, ok := b.(*soltype.TypeVarType); ok && bv == v {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// sameBoundSet reports whether two bound lists hold structurally-equal types as sets,
+// ignoring order and multiplicity.
+func sameBoundSet(a, b []soltype.Type) bool {
+	return boundsSubset(a, b) && boundsSubset(b, a)
+}
+
+func boundsSubset(a, b []soltype.Type) bool {
+	for _, x := range a {
+		found := false
+		for _, y := range b {
+			if equalType(x, y) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // emptyOf returns the lattice identity for a polarity: never (⊥, the identity of

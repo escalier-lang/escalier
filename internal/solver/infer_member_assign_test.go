@@ -92,13 +92,16 @@ func TestInferMemberAssignWriteAfterRead(t *testing.T) {
 	require.Equal(t, "fn <T0>(obj: mut {x: T0 & number}) -> T0", values["foo"])
 }
 
-// A write through a nested receiver wraps only the INNER object in `mut`: `obj` is
-// read for `.p` but never written, so it stays immutable, while `obj.p` is the
-// mutable cell that field `x` is written through. The mut wrap is per-receiver.
+// A write through a nested receiver marks the WHOLE container `mut` (#779): writing
+// `obj.p.x` makes `obj` itself mutable rather than nesting an owned-mut cell on the
+// `p` field. `mut` is deep, so `mut {p: {x: number}}` already makes `p.x` writable,
+// and unlike the rejected `{p: mut {x: number}}` it is a valid annotation — the
+// displayed signature round-trips. The cost is precision: a caller must pass a mutable
+// container even though only the nested field is written.
 func TestInferMemberAssignNestedReceiver(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(obj) { obj.p.x = 5 }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: {p: mut {x: number}}) -> void", values["foo"])
+	require.Equal(t, "fn (obj: mut {p: {x: number}}) -> void", values["foo"])
 }
 
 // An `open` param's written object stays row-polymorphic: the C3 fold passes the
