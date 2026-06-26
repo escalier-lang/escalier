@@ -141,12 +141,15 @@ inspects only the top-level `RefType`, so a borrow nested in a field or reached
 through a usage-inferred type variable is missed, a known gap.
 
 Decision: the move engine **generalizes escape detection to every value-flow-out
-site** before any consume logic is written, and identifies consumption sites
-explicitly at returns, field and element stores, owned-parameter arguments, and
-escaping closure captures. The nested and type-variable escape gap is closed as
-part of this work, since a move that misses a nested escape is unsound. This is why
-the move engine is split across PR 5 (escape generalization and the consumed
-lattice) and PR 6 (the consume and use-after-move behaviour).
+site**, and identifies consumption sites explicitly at returns, field and element
+stores, owned-parameter arguments, and escaping closure captures. The nested and
+type-variable escape gap is closed as part of this work, since a move that misses a
+nested escape is unsound. This is why the move engine is split across PR 5 and PR 6.
+PR 5 landed the consumed lattice and the `borrowEscapedToStatic` detection-gap
+closure (#786, #787). The `constrainEscape` forcing at the non-global flow sites was
+deferred from PR 5 to PR 6, where it rides alongside the consume over the same sites
+rather than running as a separate earlier pass; see "Deferred from PR 5" under PR 6.
+The consume and use-after-move behaviour is PR 6's own scope.
 
 ### Narrowing comes from M6, not this plan
 
@@ -245,7 +248,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started.
 | 2 | Solver lowering of `&`, soltype `&` rendering, snapshot migration | 1 | Medium | ✅ done (#770) |
 | 3 | Annotation-literal ownership, owned/borrow params, auto-borrow | 2 | Medium | ✅ done (#771) |
 | 4 | Member reads borrow the receiver | 3 | Medium | ✅ done (#773) |
-| 5 | Move engine substrate: generalize escape detection, build the consumed lattice | 4 | Large | 🚧 in progress |
+| 5 | Move engine substrate: generalize escape detection, build the consumed lattice | 4 | Large | ✅ done (#786, #787); constrainEscape generalization deferred to PR 6 |
 | 6 | Consume and use-after-move at every flow site, conditional moves | 5 | Large | ⬜ not started |
 | 7 | Partial moves and field-level ownership | 6 | Medium | ⬜ not started |
 | 8 | Immutable→mutable thaw move and borrow-phase framing | 6 | Medium | ⬜ not started |
@@ -412,19 +415,19 @@ Goal: stand up the two pieces the move rule needs, with no use-after-move errors
 yet. See "Where the move analysis lives" and "Escape detection is generalized, not
 queried" above.
 
-Status: the consumed lattice and the `borrowEscapedToStatic` detection-gap closure
-have landed. What remains is the `constrainEscape` generalization to the non-global
-flow sites, the first half of the first bullet below. PR 5 stays in progress until
-that lands.
+Status: done. PR 5's scope is the consumed lattice and the `borrowEscapedToStatic`
+detection-gap closure, both of which landed. The `constrainEscape` generalization to
+the non-global flow sites, the forcing half of the first bullet below, was deferred to
+PR 6, where the same sites are revisited for the consume; see "Deferred from PR 5"
+under PR 6.
 
 - Generalize escape detection beyond the single module-level write site. Two halves:
   - Run `constrainEscape` at returns, field and element stores, owned-parameter
-    arguments, and escaping closure captures. **Remaining** — today only the
+    arguments, and escaping closure captures. **Deferred to PR 6** — today only the
     module-level global write forces escape
     ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go) at the
-    `b.ModuleLevel` store). Files:
-    [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go),
-    [internal/solver/infer_stmt.go](../../internal/solver/infer_stmt.go).
+    `b.ModuleLevel` store). This forcing is folded into PR 6's consume bullet so the
+    escape forcing and the consume land together over one pass of these sites.
   - Close the top-level-only gap in `borrowEscapedToStatic` so a borrow nested in a
     field, or reached through a usage-inferred type variable, is seen. **Done** — the
     nested field/element case landed in #786, and the usage-inferred `TypeVarType`
@@ -466,21 +469,44 @@ PR 6 reads the state at each use, passing `NotMoved` and rejecting `Moved` and
 `MaybeMoved`.
 
 Tests: unit tests that the consumed lattice merges correctly across if/else, match,
-and loops; tests that escape now fires at returns, stores, arguments, and captures.
+and loops; unit tests that `borrowEscapedToStatic` sees a borrow nested in a field or
+tuple element and one reachable only through a usage-inferred type variable. The tests
+that escape fires at returns, stores, arguments, and captures move to PR 6 with the
+`constrainEscape` forcing they exercise.
 
-Acceptance: escape is detected at every value-flow-out site, and the consumed
-lattice reports correct per-path state. No user-facing errors yet.
+Acceptance: the consumed lattice reports correct per-path state, and the escape query
+sees every borrow in a recorded type, including nested and type-variable positions. The
+"escape forced at every value-flow-out site" criterion moves to PR 6 with the deferred
+`constrainEscape` generalization. No user-facing errors yet.
 
 ### PR 6 — Consume and use-after-move at every flow site, conditional moves
 
 Goal: turn the PR 5 substrate into the affine rule. When an owned value escapes its
 source region, ownership moves, the source is consumed, and a later use is an error.
 
+Deferred from PR 5: the `constrainEscape` generalization to the non-global flow sites
+lands here, not in PR 5. PR 5 was scoped to the consumed lattice and the
+`borrowEscapedToStatic` detection-gap closure, both of which landed (#786 escape
+nesting, #787 the usage-inferred `TypeVarType` case). What did not land in PR 5 is the
+forcing half of its first bullet: today only the module-level global write runs
+`constrainEscape` ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go)
+at the `b.ModuleLevel` store), so a borrow that flows out through a return, a field or
+element store, an owned-parameter argument, or an escaping closure capture is not yet
+forced `<: 'static`. That generalization is folded into the consume bullet below,
+because PR 6 already revisits exactly these sites to consume the source, so the escape
+forcing and the consume are wired in together rather than in two passes over the same
+sites. Files for the deferred forcing:
+[internal/solver/infer_expr.go](../../internal/solver/infer_expr.go),
+[internal/solver/infer_stmt.go](../../internal/solver/infer_stmt.go).
+
 - Consume the source at each flow site: `val`/`var` binding, reassignment that drops
   the previous owner, `return`, field and element stores, owned-parameter arguments,
   and escaping closure captures. The global-write site stops dropping mutability and
   instead consumes, per "Move subsumes the escape-site logic." This is also where a
-  bare owned parameter finally consumes its argument, the behaviour PR 3 deferred.
+  bare owned parameter finally consumes its argument, the behaviour PR 3 deferred. At
+  each of these same sites, run the `constrainEscape` forcing deferred from PR 5 so a
+  borrow flowing out is pinned `<: 'static` before the source is consumed, closing the
+  forcing gap left after PR 5.
 - Conditional moves are path-sensitive through the consumed lattice: a value moved
   on one branch and untouched on another is consumed only on the moving paths, and a
   later use is an error only if some reaching path moved it.
@@ -508,9 +534,10 @@ capture by an escaping closure; an if/else where only one branch moves; a
 `val q: {x} = p_borrow` that was silently accepted under G3 is now rejected.
 
 Acceptance: every flow site moves or borrows correctly, including per-branch
-behaviour, and use-after-move names both sites. A borrowed source flowing into a
-bare owned annotation is rejected, with the explicit `&` form preserved as the
-opt-in for an alias.
+behaviour, and use-after-move names both sites. A borrow flowing out is forced
+`<: 'static` at every value-flow-out site, the `constrainEscape` generalization
+deferred from PR 5. A borrowed source flowing into a bare owned annotation is
+rejected, with the explicit `&` form preserved as the opt-in for an alias.
 
 ### PR 7 — Partial moves and field-level ownership
 
