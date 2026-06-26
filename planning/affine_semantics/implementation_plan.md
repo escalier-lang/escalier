@@ -249,7 +249,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started.
 | 3 | Annotation-literal ownership, owned/borrow params, auto-borrow | 2 | Medium | ✅ done (#771) |
 | 4 | Member reads borrow the receiver | 3 | Medium | ✅ done (#773) |
 | 5 | Move engine substrate: generalize escape detection, build the consumed lattice | 4 | Large | ✅ done (#786, #787); constrainEscape generalization deferred to PR 6 |
-| 6 | Consume and use-after-move at every flow site, conditional moves | 5 | Large | ⬜ not started |
+| 6 | Consume and use-after-move at every flow site, conditional moves | 5 | Large | ✅ done; escaping-closure-capture moves and the return/argument `constrainEscape` forcing deferred |
 | 7 | Partial moves and field-level ownership | 6 | Medium | ⬜ not started |
 | 8 | Immutable→mutable thaw move and borrow-phase framing | 6 | Medium | ⬜ not started |
 | 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3, M6 | Medium | ⬜ not started |

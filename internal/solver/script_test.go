@@ -68,14 +68,13 @@ func TestScriptTransitionParity(t *testing.T) {
 		stmts string
 		want  []string
 	}{
-		// Rule 1, the mut→immutable case, errors when the mutable source is live after
-		// the alias. This is the Accept example. A top-level `val items: mut {…}` aliased
-		// to an immutable binding and then used mutably reports the Rule 1 transition
-		// error.
+		// Rule 1, the mut→immutable case, errors when the mutable source is live after an
+		// immutable borrow of it. A top-level `val items: mut {…}` borrowed immutably and
+		// then used mutably reports the Rule 1 transition error.
 		"Rule1_SourceLive_Error": {
 			stmts: `
 				val items: mut {x: number} = {x: 1}
-				val snapshot: {x: number} = items
+				val snapshot: &{x: number} = items
 				items.x = 2
 				snapshot
 			`,
@@ -83,31 +82,31 @@ func TestScriptTransitionParity(t *testing.T) {
 				"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
 			},
 		},
-		// Rule 1: safe when the mutable source is dead after the alias.
+		// Rule 1: safe when the mutable source is dead after the borrow.
 		"Rule1_SourceDead_OK": {
 			stmts: `
 				val items: mut {x: number} = {x: 1}
 				items.x = 2
-				val snapshot: {x: number} = items
+				val snapshot: &{x: number} = items
 				snapshot
 			`,
 		},
-		// Rule 3: two mutable aliases of the same value are always allowed.
+		// Rule 3: two mutable borrows of the same value are always allowed.
 		"Rule3_MultipleMutableAliases_OK": {
 			stmts: `
 				val a: mut {x: number} = {x: 1}
-				val b: mut {x: number} = a
+				val b: &mut {x: number} = a
 				b.x = 2
 				a.x
 			`,
 		},
-		// Chain aliasing through a mutable intermediate: the conflict names the live
-		// mutable alias, not the source itself.
+		// Chain aliasing through a mutable borrow: the conflict names the live mutable
+		// alias, not the source itself.
 		"ChainAlias_TargetLive_Error": {
 			stmts: `
 				val a: mut {x: number} = {x: 1}
-				val b: mut {x: number} = a
-				val c: {x: number} = b
+				val b: &mut {x: number} = a
+				val c: &{x: number} = b
 				a.x = 2
 				c
 			`,
@@ -192,9 +191,9 @@ func TestScriptRedeclaration(t *testing.T) {
 // (inferAssign), distinct from the declaration-aliasing path the other parity cases
 // drive. inferAssign reads the enclosing statement from c.fn.currentStmt to find its
 // CFG StmtRef, which only exists because InferScript installs a funcCtx and runs the
-// liveness pre-pass over the script body. Reassigning a live mutable owned value into
-// an immutable binding is a Rule 1 transition. Mutating it before the reassignment
-// makes it dead, and the transition stays silent.
+// liveness pre-pass over the script body. Reassigning an owned value into an owned slot
+// moves it, so the later use of the source is a use-after-move. Mutating it before the
+// reassignment makes it dead, and the move stays silent.
 func TestScriptReassignTransition(t *testing.T) {
 	t.Run("source_live_error", func(t *testing.T) {
 		_, _, errs := inferScriptSource(t, `
@@ -205,7 +204,7 @@ func TestScriptReassignTransition(t *testing.T) {
 			snap
 		`)
 		require.Equal(t, []string{
-			"cannot assign 'items' to immutable 'snap': 'items' is still used mutably after this point",
+			"use of moved value 'items'",
 		}, transitionMessages(t, errs))
 	})
 

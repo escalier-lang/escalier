@@ -165,7 +165,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		a.AddAlias(tgt, src, liveness.AliasMutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
 		c.fn.varIDTypes[src] = staticBorrow(true)
-		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, false, false, transitionRef, transitionSite)
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 
@@ -184,7 +184,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		a.AddAlias(tgt, src, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
 		c.fn.varIDTypes[src] = &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: objT()}
-		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
 		}, transitionMessages(t, c.errs))
@@ -207,47 +207,17 @@ func TestStaticEscapeTransition(t *testing.T) {
 		a.AddAlias(tgt, src, liveness.AliasImmutable)
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{src}))
 		c.fn.varIDTypes[src] = staticBorrow(true)
-		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, transitionRef, transitionSite)
+		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, false, transitionRef, transitionSite)
 		require.Empty(t, transitionMessages(t, c.errs))
 	})
 }
 
-// TestStaticEscapeTransitionFromSource is the end-to-end counterpart. A `&mut`
-// borrow stored into module-level `sink` escapes to 'static (D3), creating a
-// permanent alias outside the function, then is aliased into the immutable
-// `snap`. The program surfaces two errors, both asserted.
-//
-//  1. The global-write transition at `sink = p`. Storing the mutable borrow into
-//     the immutable global `sink` while `p` stays live afterward is a
-//     mut→immutable transition against a permanent target.
-//  2. The static-escape transition at `val snap = p` (G2). `p` escaped to
-//     'static via the earlier store, so aliasing it into immutable `snap`
-//     conflicts. The query over `p`'s 'static-forced lifetime is what reports
-//     it, named as a `'static` escape.
-//
-// Before G2 the dropped HasStaticMutAlias bit was never set, so case 2 was
-// silently accepted as a false negative. Before the global-write check, case 1
-// was missed entirely because the module-level target is not a tracked local.
-//
-// `val snap: &{x} = p` aliases the borrow at a fresh lifetime. The lifetime sort
-// and the transition pass produce the verdict above, which is case 2.
-//
-// Case 2 also covers the source-dead property a unit test used to isolate. `p`
-// is dead after `val snap = p` because only `snap` is read afterward, so the
-// conflict fires purely because `p` escaped to 'static, not because `p` is
-// locally live. The liveness loop skips the dead `p`. Only the escape query
-// reports it.
-// DISABLED until PR 6 lands.
-//
-// PR 6 of the affine semantics plan moves the global-write site from the
-// transition-checker onto the move engine. The plan says: "The global-write
-// site stops dropping mutability and instead consumes, per 'Move subsumes the
-// escape-site logic.'" Once that lands, `sink = p` consumes `p`, the later
-// `val snap: &{x: number} = p` is a use-after-move, and the two transition
-// diagnostics asserted below are replaced by a single UseAfterMoveError
-// against the `p` in `val snap = p`. Re-enable then and switch the assertion
-// to the UseAfterMove message.
-/*
+// TestStaticEscapeTransitionFromSource is the end-to-end move-engine counterpart.
+// Storing the borrow `p` into the module-level `sink` consumes p: the store transfers
+// it into the permanent 'static slot, so the later `val snap: &{x: number} = p` reads a
+// moved value and is a use-after-move. The global-write exclusivity check skips the
+// consumed source's self-conflict, so the single UseAfterMoveError is the only
+// diagnostic.
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		var sink = {x: 0}
@@ -265,7 +235,6 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 		"use of moved value 'p'",
 	}, msgs)
 }
-*/
 
 // TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
 // mutability transition against a permanent, always-live target. The local reassignment
@@ -273,9 +242,10 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 // in-body check only; it does not catch a caller that retains a mutable alias to a value
 // stored into an immutable global (see the dead-source case below).
 func TestGlobalWriteMutTransition(t *testing.T) {
-	// Storing a mut borrow into the immutable global `sink`, then mutating through the
-	// borrow, is a mut→immutable transition: `sink` permanently observes a value that p
-	// still mutates. p stays live via the field write, so Rule 1 fires.
+	// Storing an owned-mutable value into the global `sink` moves it: the store
+	// transfers ownership into the permanent slot, so the later `p.x = 5` is a
+	// use-after-move. This is the motivating `leak` example — the move consumes p, so
+	// the mutation that would let `sink` observe a later write is rejected.
 	t.Run("mut_into_immutable_global_then_mutate_error", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			var sink = {x: 0}
@@ -285,7 +255,7 @@ func TestGlobalWriteMutTransition(t *testing.T) {
 			}
 		`)
 		require.Equal(t, []string{
-			"cannot assign 'p' to immutable 'sink': 'p' is still used mutably after this point",
+			"use of moved value 'p'",
 		}, transitionMessages(t, errs))
 	})
 
@@ -506,25 +476,13 @@ func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
 	}
 }
 
-// TestTransitionWiringReportsRule1Error is the error counterpart to
-// TestTransitionWiringNoSpuriousErrors. It proves the wired pre-pass reports a
-// real mut→immutable (Rule 1) transition error from source, not just that it
-// stays silent on benign bodies.
+// TestTransitionWiringReportsMoveError is the error counterpart to
+// TestTransitionWiringNoSpuriousErrors. It proves the wired body walk reports a real
+// use-after-move from source, not just that it stays silent on benign bodies.
 //
-// p is an owned-mutable parameter. The mut decay at `val q: {x} = p` aliases p
-// into the immutable q. p mutates `p.x = 5` and q stays live for the later
-// `q.x` read, so both are live across the alias. Rule 1 fires.
-//
-// DISABLED until PR 6 lands.
-//
-// PR 6 of the affine semantics plan makes `val`/`var` bindings flow sites
-// that consume the source. Once it lands, `val q: {x} = p` consumes p, so
-// `p.x = 5` is a use-after-move rather than a live-source Rule 1 transition,
-// and the diagnostic changes to a UseAfterMoveError that names both the
-// move site (the `val q` binding) and the use site (`p.x = 5`). Re-enable
-// then and update the assertion to match the new error.
-/*
-func TestTransitionWiringReportsRule1Error(t *testing.T) {
+// p is an owned-mutable parameter. Binding it into the owned `val q: {x} = p` moves
+// p and consumes it, so the later `p.x = 5` is a use-after-move.
+func TestTransitionWiringReportsMoveError(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn test(p: mut {x: number}) {
 			val q: {x: number} = p
@@ -540,7 +498,6 @@ func TestTransitionWiringReportsRule1Error(t *testing.T) {
 		"use of moved value 'p'",
 	}, msgs)
 }
-*/
 
 // TestCollectOuterBindingsPreludeCache covers the outer-binding collection that feeds
 // the rename pass: every reachable value name maps to a distinct negative id, the
@@ -565,21 +522,24 @@ func TestCollectOuterBindingsPreludeCache(t *testing.T) {
 	require.Equal(t, first, c.collectOuterBindings(scope))
 }
 
-// TestMutabilityTransitionsFromSource reproduces the old checker's transition cases at
-// the source level, now reachable because a fresh literal can be constructed into an
-// owned-mutable binding. Each case mints its mutable value with `val x: mut {…} = {…}`,
-// aliases it, and asserts the transition verdict. want is empty for the safe cases.
+// TestMutabilityTransitionsFromSource exercises the mutability-exclusivity rule from
+// source. Each case mints an owned-mutable value with `val x: mut {…} = {…}`, borrows
+// it with `&`/`&mut`, and asserts the transition verdict. The aliasing cases borrow
+// explicitly, since binding an owned value into another owned binding moves it rather
+// than aliasing it, which the move-engine tests cover separately. want is empty for the
+// safe cases.
 func TestMutabilityTransitionsFromSource(t *testing.T) {
 	tests := map[string]struct {
 		src  string
 		want []string
 	}{
-		// Rule 1 (mut→immutable): error when the mutable source is live after the alias.
+		// Rule 1 (mut→immutable): error when the mutable source is live after an
+		// immutable borrow of it.
 		"Rule1_SourceLive_Error": {
 			src: `
 				fn test() {
 					val items: mut {x: number} = {x: 1}
-					val snapshot: {x: number} = items
+					val snapshot: &{x: number} = items
 					items.x = 2
 					snapshot
 				}
@@ -588,13 +548,13 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
 			},
 		},
-		// Rule 1: safe when the mutable source is dead after the alias.
+		// Rule 1: safe when the mutable source is dead after the borrow.
 		"Rule1_SourceDead_OK": {
 			src: `
 				fn test() {
 					val items: mut {x: number} = {x: 1}
 					items.x = 2
-					val snapshot: {x: number} = items
+					val snapshot: &{x: number} = items
 					snapshot
 				}
 			`,
@@ -628,6 +588,9 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 		},
+		// Storing the owned `p` into the global `sink` moves it, so binding `p` again
+		// into `snap` is a use-after-move; the bind is also a type error, since an
+		// immutable value cannot satisfy a mutable slot.
 		"Rule2_ImmEscape_SourceDead_Error": {
 			src: `
 				var sink = {x: 0}
@@ -639,27 +602,28 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			`,
 			want: []string{
 				"cannot constrain immutable object <: mutable object",
+				"use of moved value 'p'",
 			},
 		},
-		// Rule 3: two mutable aliases of the same value are always allowed.
+		// Rule 3: two mutable borrows of the same value are always allowed.
 		"Rule3_MultipleMutableAliases_OK": {
 			src: `
 				fn test() {
 					val a: mut {x: number} = {x: 1}
-					val b: mut {x: number} = a
+					val b: &mut {x: number} = a
 					b.x = 2
 					a.x
 				}
 			`,
 		},
-		// Chain aliasing through a mutable intermediate: the conflict names the live
-		// mutable alias, not the source itself.
+		// Chain aliasing through a mutable borrow: the conflict names the live mutable
+		// alias, not the source itself.
 		"ChainAlias_TargetLive_Error": {
 			src: `
 				fn test() {
 					val a: mut {x: number} = {x: 1}
-					val b: mut {x: number} = a
-					val c: {x: number} = b
+					val b: &mut {x: number} = a
+					val c: &{x: number} = b
 					a.x = 2
 					c
 				}
@@ -683,27 +647,27 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
 			},
 		},
-		// Rule 1: safe when the immutable target is dead. snapshot is never read, so there
+		// Rule 1: safe when the immutable borrow is dead. snapshot is never read, so there
 		// is no window where the immutable view and the live mutable source overlap.
 		"Rule1_TargetDead_OK": {
 			src: `
 				fn test() {
 					val items: mut {x: number} = {x: 1}
-					val snapshot: {x: number} = items
+					val snapshot: &{x: number} = items
 					items.x = 2
 				}
 			`,
 		},
 		// Conditional aliasing where the SOURCE is mut and sits in two alias sets. c
-		// aliases both a and b, then c→frozen is the mut→immutable transition while c
-		// stays live. c is reported once, not once per set.
+		// aliases both a and b, then borrowing c immutably as frozen is the mut→immutable
+		// transition while c stays live. c is reported once, not once per set.
 		"Conditional_SourceMutInTwoSets_Error": {
 			src: `
 				fn test(cond: boolean) {
 					val a: mut {x: number} = {x: 0}
 					val b: mut {x: number} = {x: 1}
 					val c: mut {x: number} = if cond { a } else { b }
-					val frozen: {x: number} = c
+					val frozen: &{x: number} = c
 					c.x = 3
 					frozen
 				}
@@ -721,11 +685,12 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 	}
 }
 
-// TestRule2TransitionFromSource covers the Rule 2 immutable→mut transition from source.
-// Binding an immutable value into a `mut` slot is a type error, but the decl path runs
-// transition tracking unconditionally, so the Rule 2 transition error rides along with
-// it. config stays live, so the immutable→mut alias conflicts. Both messages are
-// asserted; this is the source-level home for the old constructed-state Rule 2 case.
+// TestRule2TransitionFromSource covers binding an immutable value into an owned `mut`
+// slot. The bind is a type error — an immutable object cannot satisfy a mutable slot —
+// and it also moves the owned `config` into `mutableConfig`, so the later `config.x`
+// read is a use-after-move. Both messages are asserted. Owned-into-owned is a move
+// under the affine rule, so the old Rule 2 exclusivity transition no longer applies
+// here; the move governs the source instead.
 func TestRule2TransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn test() {
@@ -741,7 +706,7 @@ func TestRule2TransitionFromSource(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{
 		"cannot constrain immutable object <: mutable object",
-		"cannot assign 'config' to mutable 'mutableConfig': 'config' is still used immutably after this point",
+		"use of moved value 'config'",
 	}, msgs)
 }
 
@@ -752,8 +717,9 @@ func TestRule2TransitionFromSource(t *testing.T) {
 // the owned-mutable source these cases reassign from.
 func TestMutabilityTransitionReassignFromSource(t *testing.T) {
 	t.Run("source_live_error", func(t *testing.T) {
-		// items is reassigned into immutable snap, then mutated, so both are live across
-		// the reassignment.
+		// Reassigning the owned `items` into the owned `snap` slot moves it: snap drops
+		// its old value and takes ownership of items, so the later `items.x = 2` is a
+		// use-after-move.
 		_, _, errs := inferSource(t, `
 			fn f() {
 				var snap: {x: number} = {x: 0}
@@ -764,7 +730,7 @@ func TestMutabilityTransitionReassignFromSource(t *testing.T) {
 			}
 		`)
 		require.Equal(t, []string{
-			"cannot assign 'items' to immutable 'snap': 'items' is still used mutably after this point",
+			"use of moved value 'items'",
 		}, transitionMessages(t, errs))
 	})
 

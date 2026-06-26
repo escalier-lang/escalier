@@ -112,6 +112,11 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr) path
 	if b, ok := scope.GetValue(e.Name); ok && len(b.Schemes) > 0 {
 		t := c.bindingValue(lvl, b)
 		c.recordType(e, t)
+		// PR 6: record this read so the post-walk use-after-move pass can test it
+		// against the consumed lattice. Use the binding's coalesced type for the
+		// reference-shape decision — a fresh instantiation can hide a mono owned
+		// shape behind a variable.
+		c.recordUse(e, bindingType(b))
 		return pathResult{value: t}
 	}
 	if ns, ok := scope.GetNamespace(e.Name); ok {
@@ -275,6 +280,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// produces the function's value. This mirrors the old checker's
 		// inferFuncBody.
 		c.inferBlock(fnScope, lvl, body)
+		// PR 6: with the whole body walked, every move site is recorded, so the
+		// consumed lattice is complete. Replay the recorded reads against it to
+		// report use-after-move. Runs before popFuncCtx restores the outer context,
+		// since it reads this body's move/use state off c.fn.
+		c.checkUseAfterMoves()
 		ret = c.joinReturnPoints(node, lvl, c.popFuncCtx(saved))
 	}
 	// Return-annotation handling diverges by async-ness.
@@ -844,9 +854,38 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	c.constrain(e, callee, callShape)
 	if resolved {
 		c.constrain(e, fn.Ret, res)
+		// PR 6: passing an owned argument to a bare owned parameter moves it; a `&`
+		// parameter auto-borrows and leaves the argument usable. consumeCallArgs reads
+		// each declared parameter's ownership to decide.
+		c.consumeCallArgs(e, fn)
 	}
 	c.recordType(e, res)
 	return res
+}
+
+// consumeCallArgs consumes each owned argument passed to a bare owned parameter of
+// the resolved callee. A `&`/`&mut` parameter borrows, so it leaves the argument
+// usable; an unannotated parameter, whose ownership is a fresh inference variable
+// rather than a concrete owned shape, is left to borrow conservatively, so only a
+// parameter typed as a concrete owned object, tuple, or owned RefType consumes its
+// argument here.
+func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType) {
+	if c.fn == nil || c.fn.cfg == nil {
+		return
+	}
+	ref, ok := c.currentStmtRef()
+	if !ok {
+		return
+	}
+	for i, arg := range e.Args {
+		if i >= len(fn.Params) {
+			break
+		}
+		if !isConcreteOwned(fn.Params[i].Type) {
+			continue
+		}
+		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)
+	}
 }
 
 // inferOverloadedCall types a direct call to an overloaded name (PR6). It infers
@@ -1034,6 +1073,17 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// not double-counted as a prior permanent alias.
 			c.checkGlobalWriteTransition(target, e.Right, bindingType(b), assignStmt)
 			c.constrainEscape(sourceT)
+			// PR 6: the store transfers the value into a permanent 'static slot, so it
+			// consumes the source binding. A later use of the source is then a
+			// use-after-move, the affine rule that closes the leak the global write
+			// otherwise allowed. checkGlobalWriteTransition above skips the source's own
+			// self-conflict, leaving the consume to govern the source and the exclusivity
+			// rule to govern any OTHER live alias of the same value.
+			if c.fn != nil {
+				if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
+					c.consumeAtGlobalWrite(e.Right, sourceT, e.Right, ref)
+				}
+			}
 			// KNOWN GAP (#762): this store is accepted even though it is not sound in
 			// general. checkGlobalWriteTransition is an in-body check only. The store
 			// escapes the source to 'static, but nothing forces the CALLER to pass a
@@ -1053,6 +1103,14 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// independent lifetime var that the escape never touches. isMutableType reads
 		// the same top-level Mut from either, so the alias mutability is unchanged.
 		c.trackAliasesForAssignment(target, e.Right, bindingType(b), assignStmt)
+		// PR 6: a non-module reassignment that moves its source consumes it. The
+		// global-write branch above runs its own consume, so this covers only the
+		// local-slot reassignment.
+		if !b.ModuleLevel && c.movesSourceInto(e.Right, bindingType(b)) {
+			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
+				c.consumeOwned(e.Right, c.info.TypeOf(e.Right), e.Right, ref)
+			}
+		}
 	}
 	// The assignment evaluates to the value just stored — the SAME read face as
 	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
@@ -1139,6 +1197,12 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// when the write type-checked, so a rejected write does not record a bogus alias.
 	if c.fn != nil && len(c.errs) == errsBefore {
 		c.trackAliasesForPropAssignment(e.Left, e.Right)
+		// PR 6: storing an owned value into a field transfers ownership into the
+		// receiver, so the source binding is consumed and a later use of it is a
+		// use-after-move.
+		if ref, ok := c.currentStmtRef(); ok {
+			c.consumeOwned(e.Right, source, e.Right, ref)
+		}
 	}
 	// The assignment evaluates to the value just stored. recordType overwrites the
 	// `void` recovery type inferAssign recorded on e before dispatching here.
@@ -1316,7 +1380,10 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 	for i, el := range e.Elems {
 		spread, ok := el.(*ast.ArraySpreadExpr)
 		if !ok {
-			elems = append(elems, c.inferExpr(scope, lvl, el))
+			elemT := c.inferExpr(scope, lvl, el)
+			elems = append(elems, elemT)
+			// PR 6: building an owned value into the tuple moves it.
+			c.consumeIntoLiteral(el, elemT)
 			continue
 		}
 		switch op := c.inferExpr(scope, lvl, spread.Value).(type) {
@@ -1384,6 +1451,8 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		}
 		ft := c.inferExpr(scope, lvl, prop.Value)
 		b.add(name, ft, false, false) // a literal property is never optional or readonly
+		// PR 6: building an owned value into the object moves it.
+		c.consumeIntoLiteral(prop.Value, ft)
 	}
 	t := &soltype.ObjectType{Elems: b.elems}
 	c.recordType(e, t)
