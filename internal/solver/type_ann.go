@@ -130,7 +130,7 @@ func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.
 				ft = t
 			}
 		}
-		b.addReadonly(name, ft, prop.Optional, prop.Readonly)
+		b.add(name, ft, prop.Optional, prop.Readonly)
 	}
 	if unsupported {
 		c.reportUnsupportedFeature(ta, "object type member other than a property")

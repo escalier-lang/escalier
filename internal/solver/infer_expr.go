@@ -1302,7 +1302,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			continue
 		}
 		ft := c.inferExpr(scope, lvl, prop.Value)
-		b.add(name, ft, false) // a literal property is never optional
+		b.add(name, ft, false, false) // a literal property is never optional or readonly
 	}
 	t := &soltype.ObjectType{Elems: b.elems}
 	c.recordType(e, t)
@@ -1333,14 +1333,7 @@ func newObjElemBuilder(capacity int) *objElemBuilder {
 	}
 }
 
-func (b *objElemBuilder) add(name string, t soltype.Type, optional bool) {
-	b.addReadonly(name, t, optional, false)
-}
-
-// addReadonly is add with an explicit `readonly` flag, used by
-// resolveObjectTypeAnn to carry the annotation through. Object literals are
-// never readonly, so inferObject keeps calling add.
-func (b *objElemBuilder) addReadonly(name string, t soltype.Type, optional, readonly bool) {
+func (b *objElemBuilder) add(name string, t soltype.Type, optional, readonly bool) {
 	pe := &soltype.PropertyElem{Name: name, Type: t, Optional: optional, Readonly: readonly}
 	if i, dup := b.pos[name]; dup {
 		b.elems[i] = pe // last value wins, first position kept
