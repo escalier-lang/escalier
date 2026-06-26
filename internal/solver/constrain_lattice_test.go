@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M6 PR2: lattice subtyping rules in constrain ---
+// --- Lattice subtyping rules in constrain ---
 //
 // The pre-switch lattice block carries every rule whose deciding operand is a
 // union/intersection super, plus the union-sub for-all rule. These tests
@@ -196,9 +196,9 @@ func TestConstrainUnionPrecedesRefArm(t *testing.T) {
 //	  - CannotConstrainError          string <: number
 //	  number <: number succeeds and contributes nothing
 //
-// The flag and the parser surface for `A | B | ...` land in PR4. Until then
-// the rule fires only against an internally-built inexact union, which the
-// test mints directly through the smart constructor.
+// Until the parser surface for `A | B | ...` exists, the rule fires only against
+// an internally-built inexact union, which the test mints directly through the
+// smart constructor.
 func TestConstrainInexactUnionIntoClosedRejects(t *testing.T) {
 	c := &Context{}
 	sub := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
@@ -262,7 +262,7 @@ func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
 //	(number | string | ...) <: unknown    inexact-into-closed gate does NOT fire
 //
 // The decomposition produces `number <: unknown` and `string <: unknown`.
-// PR5 lands the `_ <: unknown` rule. Until then those are CannotConstrain
+// Until the `_ <: unknown` rule exists, those are CannotConstrain
 // fall-throughs, so this case still errors. What the test asserts is that
 // the inexact-into-closed gate did not fire, since unknown is recognized
 // as accepting the open tail. No InexactUnionIntoExactError appears in the

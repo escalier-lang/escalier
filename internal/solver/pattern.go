@@ -7,9 +7,9 @@ import (
 
 // bindPattern types an ast.Pat against a scrutinee type, binding every leaf
 // identifier the pattern introduces into scope and returning the soltype.Pat
-// mirror used to render a destructured parameter (M4 E1). It is the
-// structural-pattern path shared by `val`/`var` destructuring and function-param
-// destructuring. E2's `match` arms reuse it too.
+// mirror used to render a destructured parameter. It is the structural-pattern
+// path shared by `val`/`var` destructuring and function-param destructuring.
+// `match` arms reuse it too.
 //
 // A pattern dispatches through the member-lookup constraint path, not subtyping.
 // An ObjectPat `{x, y}` against a scrutinee `s` emits `s <: {x: βx, ...}` and
@@ -30,7 +30,7 @@ import (
 // bindPattern places each leaf as a monomorphic binding in scope, the body-level
 // and function-param strategy. The top-level driver needs the leaves constrained
 // into pre-bound binding vars instead, so it calls bindPatternWith with its own
-// emit (M4 E3).
+// emit.
 func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type) soltype.Pat {
 	return c.bindPatternWith(scope, lvl, pat, scrutinee, leafTypes, defineLeafMono)
 }
@@ -38,7 +38,7 @@ func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 // leafEmit places one bound leaf: it receives the leaf's name, its projected type,
 // and its pattern node. defineLeafMono defines a fresh monomorphic binding in scope
 // for the body-level and function-param paths. The top-level driver passes an emit
-// that constrains the leaf's type into a pre-bound binding var instead (M4 E3).
+// that constrains the leaf's type into a pre-bound binding var instead.
 type leafEmit func(scope *Scope, name string, t soltype.Type, node ast.Node)
 
 // defineLeafMono is the default leaf-placement strategy: it defines the leaf as a
@@ -75,7 +75,7 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 		// arm. For a NESTED slot the scrutinee here is the field's covariant result
 		// var, which carries no upper bound. So a kind mismatch like `{x: "hi"}`
 		// against `{x: number}` is not yet rejected. The refutable literal-pattern
-		// check lands with E2's `match`, which this path is laid out to extend. A
+		// check lands with `match`, which this path is laid out to extend. A
 		// literal pattern binds nothing.
 		c.constrain(p, lt, scrutinee)
 		c.recordType(p, lt)
@@ -86,8 +86,8 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 		// long as the fixed prefix, so the requirement becomes an INEXACT tuple over
 		// the fixed elements. Without a rest the requirement stays exact and a wrong
 		// arity is a TupleLengthMismatchError. The rest element itself needs typed
-		// rest tuples, which arrive in M9, so it is reported unsupported and binds
-		// nothing.
+		// rest tuples, which are not yet implemented, so it is reported unsupported
+		// and binds nothing.
 		fixed := make([]ast.Pat, 0, len(p.Elems))
 		inexact := false
 		for _, e := range p.Elems {
@@ -157,7 +157,7 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 				sub := c.bindPatternWith(scope, lvl, e.Value, beta, leafTypes, emit)
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: sub})
 			default:
-				// ObjRestPat (`{...rest}`) needs object rest types, which arrive in M9.
+				// ObjRestPat (`{...rest}`) needs object rest types, which are not yet implemented.
 				c.reportUnsupported(elem)
 			}
 		}
@@ -165,9 +165,9 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 		return &soltype.ObjectPat{Fields: fields}
 
 	default:
-		// ExtractorPat and InstancePat are the constructor patterns; they are M5. A
-		// bare RestPat is only meaningful inside a tuple or object. Report and bind
-		// nothing.
+		// ExtractorPat and InstancePat are the constructor patterns; they are not yet
+		// implemented. A bare RestPat is only meaningful inside a tuple or object.
+		// Report and bind nothing.
 		c.reportUnsupported(pat)
 		return &soltype.WildcardPat{}
 	}
@@ -227,7 +227,7 @@ func propReq(name string, t soltype.Type, optional bool) *soltype.ObjectType {
 }
 
 // litTypeOf lowers an ast literal to its soltype LitType, mirroring inferLiteral.
-// ok=false for a literal kind outside the M-subset (the caller reports it).
+// ok=false for a literal kind that is not yet supported, which the caller reports.
 func (c *checker) litTypeOf(lit ast.Lit) (*soltype.LitType, bool) {
 	switch l := lit.(type) {
 	case *ast.NumLit:

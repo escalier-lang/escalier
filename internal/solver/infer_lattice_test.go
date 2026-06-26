@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M6 PR2: union/intersection annotation input through resolveTypeAnn ---
+// --- Union/intersection annotation input through resolveTypeAnn ---
 
 func TestInferUnionAnnotationAcceptsMember(t *testing.T) {
 	values, _, errs := inferSource(t, `val x: number | string = 5`)

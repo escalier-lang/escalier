@@ -13,7 +13,7 @@ import (
 )
 
 // Mutability-transition checking, ported from internal/checker/check_transitions.go
-// and internal/checker/liveness_prepass.go (M4 G1). The liveness/CFG/alias-tracking
+// and internal/checker/liveness_prepass.go. The liveness/CFG/alias-tracking
 // machinery in internal/liveness is reused verbatim. Only two pieces are reimplemented
 // over soltype rather than type_system:
 //
@@ -29,15 +29,14 @@ import (
 // nil, so every entry point below is a no-op. That is correct for a module, whose
 // top-level declarations are dependency-ordered rather than a linear body. A script is
 // different: its top-level statements run in source order with function-body semantics.
-// So when script inference lands it must give the script body the same per-body liveness
-// context a function gets, by running runLivenessPrePass over the script statements
-// under a funcCtx, or these checks stay silently skipped there. The old checker's
-// InferScript ran the pre-pass over the whole script body for this reason.
+// So InferScript gives the script body the same per-body liveness context a function
+// gets, by running runLivenessPrePass over the script statements under a funcCtx.
+// Without that the checks would stay silently skipped there.
 
 // staticConflictName is a sentinel placeholder used in
 // MutabilityTransitionError.ConflictingVars to represent a permanent alias from a
-// `'static` escape. M4 G2 populates it by querying the lifetime sort. A member of the
-// source's alias set whose borrow lifetime D3 forced `<: 'static` is the permanent
+// `'static` escape. It is populated by querying the lifetime sort. A member of the
+// source's alias set whose borrow lifetime is forced `<: 'static` is the permanent
 // outside reference this sentinel stands for. The message renders it specially rather
 // than printing the literal sentinel.
 const staticConflictName = "<static escape>"
@@ -150,19 +149,17 @@ func isMutableType(t soltype.Type) bool {
 
 // borrowEscapedToStatic reports whether the variable's recorded type carries a
 // top-level borrow whose lifetime is forced to 'static, and that borrow's
-// mutability. It is the lifetime-sort replacement for the dropped
-// HasStatic{Mut,Imm}Alias bits in M4 G2. A borrow escapes when it is stored where it
-// outlives the function. D3's constrainEscape then pins its lifetime `<: 'static`, so
-// the value has a permanent outside alias of its mutability.
+// mutability. A borrow escapes when it is stored where it outlives the function.
+// constrainEscape then pins its lifetime `<: 'static`, so the value has a permanent
+// outside alias of its mutability.
 //
-// Only the top-level RefType is inspected, matching the bits' "this value escaped"
-// semantics rather than "a field of this value escaped". An owned value, a borrow
-// with an unforced lifetime, or an unrecorded variable returns escaped=false.
+// Only the top-level RefType is inspected, matching "this value escaped" semantics
+// rather than "a field of this value escaped". An owned value, a borrow with an
+// unforced lifetime, or an unrecorded variable returns escaped=false.
 //
-// KNOWN GAP (M4 G2 carry-over): a borrow reachable only through a usage-inferred
-// TypeVarType, or one nested in a field, is not seen here. The deeper fix resolves a
-// value's borrows through the constraint graph rather than its top-level type. See the
-// G2 note in planning/simple_sub/m4-implementation-plan.md.
+// KNOWN GAP: a borrow reachable only through a usage-inferred TypeVarType, or one
+// nested in a field, is not seen here. The deeper fix resolves a value's borrows
+// through the constraint graph rather than its top-level type.
 func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (mut bool, escaped bool) {
 	if c.fn == nil || c.fn.varIDTypes == nil {
 		return false, false
@@ -187,7 +184,7 @@ func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (mut bool, escaped
 	return false, false
 }
 
-// recordVarIDType records a tracked variable's soltype into the G2 escape bridge,
+// recordVarIDType records a tracked variable's soltype into the escape bridge,
 // guarding the nil map at module top-level where no pre-pass ran.
 func (c *checker) recordVarIDType(varID liveness.VarID, t soltype.Type) {
 	if c.fn == nil || c.fn.varIDTypes == nil || varID <= 0 {
@@ -266,9 +263,8 @@ func (c *checker) checkMutabilityTransition(
 		for varID, aliasMut := range aliasSet.Members {
 			// A borrow on this member forced to 'static is a permanent outside
 			// reference. It outlives the function, so no liveness check is meaningful
-			// and it always counts as a live alias of its escaped mutability. This is
-			// G2's lifetime-sort replacement for the dropped HasStatic{Mut,Imm}Alias
-			// bits.
+			// and it always counts as a live alias of its escaped mutability. The
+			// lifetime sort records this through a forced `<: 'static` bound.
 			//
 			// The conflict test is escMut == sourceMut, compared against the SOURCE, not
 			// the target. Past the early return sourceMut != targetMut holds, so
@@ -323,8 +319,8 @@ func (c *checker) checkMutabilityTransition(
 // trackAliasesForVarDecl records the alias a body-level `val`/`var` with an
 // initializer creates, then checks its mutability transition. It covers an IdentPat
 // binding. It also covers closure capture when the initializer is a FuncExpr.
-// Destructuring patterns are unsupported in the new checker until the pattern PRs
-// land, and a non-IdentPat decl produces no binding anyway.
+// A non-IdentPat decl produces no binding here, so this path only handles the
+// IdentPat case.
 func (c *checker) trackAliasesForVarDecl(scope *Scope, decl *ast.VarDecl, bindingT soltype.Type, enclosingStmt ast.Stmt) {
 	if c.fn == nil || c.fn.aliases == nil || decl.Init == nil {
 		return
@@ -426,7 +422,7 @@ func (c *checker) trackCapturedAliases(
 		if !found || b.VarID <= 0 {
 			continue
 		}
-		// Cross-frame guard (M4 G1). A binding stores the VarID of the body that
+		// Cross-frame guard. A binding stores the VarID of the body that
 		// declared it. Module-wide numbering keeps those ids distinct across bodies, so
 		// they no longer collide, but a captured variable from an outer frame still does
 		// not appear in THIS frame's varIDNames or liveness tables. Track a capture only
@@ -434,8 +430,8 @@ func (c *checker) trackCapturedAliases(
 		// body's rename assigned b.VarID to this name. A capture from an outer frame
 		// reaches past its immediate enclosing function, so its liveness lives in another
 		// body's tables and cannot be queried here. Skipping is sound. It misses that
-		// transition rather than inventing one. The real cross-frame fix rides G2's
-		// lifetime-escape bridge; see the G2 note in m4-implementation-plan. This is
+		// transition rather than inventing one. The real cross-frame fix would resolve
+		// the capture through the lifetime-escape bridge. This is
 		// unreachable today because a captured mutable is a borrow, which cannot yet be
 		// aliased into a local.
 		if name, ok := c.fn.varIDNames[liveness.VarID(b.VarID)]; !ok || name != capture.Name {
@@ -512,11 +508,11 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 // parameter stored into an immutable global escapes to 'static, but the caller may
 // retain its own live mutable alias to the same value and mutate it after the call, so
 // the immutable global observes a mutation. Catching that needs the call site to enforce
-// the 'static borrow as unique, which is the borrow checker's job (#618 lifetime
-// enforcement, #762 move semantics), not this pass.
+// the 'static borrow as unique, which is the borrow checker's job through lifetime
+// enforcement and move semantics, not this pass.
 //
 // Run BEFORE constrainEscape so the source's own about-to-happen escape is not
-// double-counted by the G2 escape query as a prior permanent alias.
+// double-counted by the escape query as a prior permanent alias.
 func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr, slotType soltype.Type, enclosingStmt ast.Stmt) {
 	if c.fn == nil || c.fn.aliases == nil {
 		return
@@ -624,7 +620,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 
 	// Initialize the alias tracker and seed each parameter leaf so aliases from
 	// parameters are tracked and mutability transitions involving them are detected.
-	// varIDTypes is the VarID → soltype bridge the `'static`-escape query reads in G2.
+	// varIDTypes is the VarID → soltype bridge the `'static`-escape query reads.
 	// seedParamLeafAliases records each param leaf's type into it alongside the alias
 	// mutability it derives from the same type.
 	aliases := liveness.NewAliasTracker()
@@ -641,11 +637,11 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 // seedParamLeafAliases walks each parameter pattern recursively and seeds the alias
 // tracker with one alias set per leaf binding, reading each leaf's mutability from
 // paramTypes so transitions involving the leaf are checked correctly. It also records
-// each leaf's type into varIDTypes, the bridge the G2 `'static`-escape query reads.
+// each leaf's type into varIDTypes, the bridge the `'static`-escape query reads.
 //
 // paramTypes is keyed by leaf name. An IdentPat parameter contributes the parameter
-// itself, and a destructuring param (M4 E1) contributes one entry per leaf via
-// bindPattern, so the lookup below resolves every leaf.
+// itself, and a destructuring param contributes one entry per leaf via bindPattern,
+// so the lookup below resolves every leaf.
 //
 // KNOWN LIMITATION: a destructured leaf's type is a fresh inference variable at
 // pre-pass time, before constraints are coalesced, so isMutableType sees a bare var
@@ -664,7 +660,7 @@ func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.
 				if isMutableType(t) {
 					mut = liveness.AliasMutable
 				}
-				// Record the leaf's type for the G2 escape query. An IdentPat param
+				// Record the leaf's type for the escape query. An IdentPat param
 				// binding is mono, so the body's reads instantiate this same pointer
 				// and a lifetime it later escapes to 'static is visible through it. A
 				// destructured leaf records a fresh var, which is not a RefType, so the
@@ -733,10 +729,10 @@ func sortedValueNames(s *Scope) []string {
 }
 
 // recordParamVarIDs copies each parameter leaf's rename-assigned VarID onto its
-// scope binding (M4 G1), so a closure that captures the parameter resolves it to
-// its alias set through trackCapturedAliases. It walks every leaf, so a
-// destructuring parameter's leaves (M4 E1) are covered alongside a plain IdentPat
-// parameter. Runs after the pre-pass, since the rename is what assigns the VarIDs.
+// scope binding, so a closure that captures the parameter resolves it to its alias
+// set through trackCapturedAliases. It walks every leaf, so a destructuring
+// parameter's leaves are covered alongside a plain IdentPat parameter. Runs after
+// the pre-pass, since the rename is what assigns the VarIDs.
 func recordParamVarIDs(fnScope *Scope, params []*ast.Param) {
 	for _, p := range params {
 		ast.ForEachLeafBinding(p.Pattern, func(name string, varID int) {
@@ -752,7 +748,7 @@ func recordParamVarIDs(fnScope *Scope, params []*ast.Param) {
 }
 
 // trackDestructureLeaves wires a body-level destructuring `val`/`var`'s leaves
-// (M4 E1) into the liveness machinery, the IdentPat path's per-leaf analogue. For
+// into the liveness machinery, the IdentPat path's per-leaf analogue. For
 // each leaf it copies the rename-assigned VarID onto the binding — so a closure
 // capturing the leaf resolves its alias set — and registers the leaf as a tracked
 // value carrying its mutability, so a later mutation or reassignment through it is

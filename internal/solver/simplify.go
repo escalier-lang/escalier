@@ -8,7 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Co-occurrence merging (PR2). Single-polarity elimination already lives in
+// Co-occurrence merging. Single-polarity elimination already lives in
 // coalesceScheme — a variable occurring in only one polarity is dropped in favour
 // of its bound. The remaining simplification is merging DISTINCT quantified
 // variables that always appear together so a signature renders with one type
@@ -122,7 +122,7 @@ func (vc *varCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Typ
 // lower bounds or the intersection of its uppers. Adding the reverse edge to those
 // lists would pull a spurious variable into that union or intersection and change
 // the rendered type. So the symmetric view is built here, leaving the canonical
-// scheme body untouched. The spike instead mutated the bound lists in place.
+// scheme body untouched.
 type mirror struct {
 	lower map[int][]soltype.Type // extra lower-bound vars: u <: v recorded on u.UpperBounds
 	upper map[int][]soltype.Type // extra upper-bound vars: v <: u recorded on u.LowerBounds
@@ -164,7 +164,7 @@ func (m *mirror) effectiveBounds(v *soltype.TypeVarType, pol soltype.Polarity) [
 }
 
 // recordMutWriteView reflects a `mut` borrow's INVARIANCE into a polarity-recording
-// visitor (#737). The C2 constrain rule makes every field a `mut` target names
+// visitor. The constrain rule makes every field a `mut` target names
 // invariant — it adds a covariant read view and, under the mut-context flag, a
 // contravariant write view — but RefType.Accept walks the inner only covariantly
 // (the read view; see visitor.go). So a variable that appears only inside a `mut`

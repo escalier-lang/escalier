@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- PR 13: deep, uniform `mut` and `readonly` ---
+// --- deep, uniform `mut` and `readonly` ---
 
 // `mut` is deep: every nested layer becomes writable, so `p.a.x = 5` is legal
 // through `mut {a: {x}}` and `&mut {a: {x}}`.
@@ -71,7 +71,7 @@ func TestDeepMutLowersFreshLiteral(t *testing.T) {
 }
 
 // An explicit nested `mut` field or element inside a non-mut container is rejected at
-// the annotation site (#779): `mut {a: mut {x}}` and `mut [mut {x}]` each carry an
+// the annotation site. `mut {a: mut {x}}` and `mut [mut {x}]` each carry an
 // owned-mut cell on a field of an inner immutable container. The cell is recovered to
 // its bare inner so the surrounding annotation still resolves, and the fresh literal
 // upgrades into that bare target.
@@ -166,9 +166,9 @@ func TestReadonlySubtypingFlowsThroughCallAndReturn(t *testing.T) {
 	})
 }
 
-// An owned-mutable field inside an immutable container — `{a: mut {x}}` — is now
-// rejected at the annotation site (#779): interior mutability is the proper mechanism
-// for that case (#618), and inference never produces the shape either, so the type is
+// An owned-mutable field inside an immutable container — `{a: mut {x}}` — is
+// rejected at the annotation site. Interior mutability is the proper mechanism
+// for that case, and inference never produces the shape either, so the type is
 // no longer reachable. The annotation reports MutFieldError and recovers to the bare
 // `{a: {x}}`; the body's write through the immutable receiver then fails as before.
 func TestOwnedMutFieldAnnotationRejected(t *testing.T) {
@@ -220,9 +220,9 @@ func TestReadonlyRendersOnReadField(t *testing.T) {
 	require.Equal(t, "fn (obj: {readonly a: number}) -> number", values["f"])
 }
 
-// --- PR 14: lazy deep-mut representation ---
+// --- lazy deep-mut representation ---
 
-// Under the lazy form (PR 14), the mut-context flag pins a nested field invariant
+// Under the lazy form, the mut-context flag pins a nested field invariant
 // inside a mutable wrapper. A field whose type is a strict subtype of the target's
 // field passes the covariant read view but fails the contravariant write view, so a
 // `mut {a: {x: number}}` value cannot fill a `mut {a: {x: number | string}}` slot —
@@ -243,10 +243,10 @@ func TestImmutableWrapperKeepsNestedFieldCovariant(t *testing.T) {
 	require.Empty(t, errs)
 }
 
-// --- #779: no owned-mutable field inside a non-mut container ---
+// --- no owned-mutable field inside a non-mut container ---
 
 // A `&`/`&mut` borrow field inside a non-mut container stays legal: it references
-// external storage, not an interior owned-mutable cell, so #779 leaves it alone.
+// external storage, not an interior owned-mutable cell, so the rule leaves it alone.
 func TestBorrowFieldInImmutableContainerIsLegal(t *testing.T) {
 	t.Run("shared borrow field", func(t *testing.T) {
 		values, _, errs := inferSource(t, "fn f(p: {a: &{x: number}}) -> &{x: number} { return p.a }")
@@ -260,7 +260,7 @@ func TestBorrowFieldInImmutableContainerIsLegal(t *testing.T) {
 	})
 }
 
-// The #779 round-trip: a nested write infers a mut container whose displayed
+// The round-trip property: a nested write infers a mut container whose displayed
 // signature is a valid annotation, and a caller passing exactly that displayed type
 // is accepted. Inference never produces a `mut` field inside a non-mut container, so
 // what it prints can always be written back.
@@ -297,4 +297,3 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 		require.Empty(t, errs)
 	})
 }
-

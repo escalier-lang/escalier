@@ -28,8 +28,8 @@ func TestNewUnionNormalization(t *testing.T) {
 			name: "inexact nested member makes outer inexact",
 			// A nested inexact UnionType carries the inexact flag out to the
 			// outer mint. parseType cannot author an inexact union literal
-			// today (PR4 lands the surface marker), so the nested member is
-			// built from a parsed exact union with Inexact flipped.
+			// today, since the surface marker is not available, so the nested
+			// member is built from a parsed exact union with Inexact flipped.
 			parts:   []soltype.Type{&soltype.UnionType{Types: []soltype.Type{num()}, Inexact: true}, parseType(t, "string")},
 			inexact: false,
 			want:    &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true},
@@ -185,9 +185,9 @@ func TestNewIntersectionNormalization(t *testing.T) {
 	}
 }
 
-// TestNewUnionCanonicalOrder is the M6 PR1 gate against speculative-pinning
-// drift. A union of a member list and of its shuffle must render identically
-// and compare equalType-equal.
+// TestNewUnionCanonicalOrder is the gate against speculative-pinning drift. A
+// union of a member list and of its shuffle must render identically and compare
+// equalType-equal.
 func TestNewUnionCanonicalOrder(t *testing.T) {
 	a := newUnion(nil, parseTypes(t, "number", "string"), false)
 	b := newUnion(nil, parseTypes(t, "string", "number"), false)
@@ -231,9 +231,9 @@ func TestNewIntersectionSubsumeWithContext(t *testing.T) {
 	require.True(t, equalType(parseType(t, "{x: number, y: string, ...}"), got), "got %s", soltype.Print(got))
 }
 
-// TestSubsumeMutualPicksCanonicalSurvivor pins the M6 PR1 canonicalization
-// fix. When two members mutually subsume but are not equalType-equal, the
-// survivor must be deterministic across input shuffles.
+// TestSubsumeMutualPicksCanonicalSurvivor pins the canonicalization behavior.
+// When two members mutually subsume but are not equalType-equal, the survivor must
+// be deterministic across input shuffles.
 //
 // Function callback subtyping is the case that triggers mutual subsumption
 // today. A typed-rest function `(...xs: T[]) -> R` and an inexact
@@ -274,7 +274,7 @@ func TestSubsumeMutualPicksCanonicalSurvivor(t *testing.T) {
 // TestNewUnionNoSubsumeWithoutContext is the negative case. Without a
 // Context, the constructor leaves non-equal subsumable members in place.
 // This is the `combine` posture, where coalesced output is deduped and
-// lattice-pruned but not subsumed. PR8 closes this gap at the finalization
+// lattice-pruned but not subsumed. The gap is closed at the finalization
 // boundaries.
 func TestNewUnionNoSubsumeWithoutContext(t *testing.T) {
 	got := newUnion(nil, parseTypes(t, "number", "1"), false)

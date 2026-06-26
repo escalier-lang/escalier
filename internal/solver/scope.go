@@ -6,38 +6,37 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// ValueBinding is a name's value-sort binding. M3 (PR1) replaces M2's plain
-// MONOMORPHIC soltype.Type with a *slice* of TypeSchemes: exactly one for an
-// ordinary value (the let-generalization swap), and — once PR6 lands — more than
-// one for an overload set, in declaration order. Holding the slice now (rather
-// than a nullable OverloadSet field) makes "is the scheme nil when overloaded?"
-// unrepresentable: cardinality is just len(Schemes), and Schemes[i] lines up with
+// ValueBinding is a name's value-sort binding. It holds a slice of TypeSchemes:
+// exactly one for an ordinary value through the let-generalization swap, and more
+// than one for an overload set, in declaration order. Holding the slice rather
+// than a nullable OverloadSet field makes "is the scheme nil when overloaded?"
+// unrepresentable. Cardinality is just len(Schemes), and Schemes[i] lines up with
 // the arm at Sources[i].
 type ValueBinding struct {
-	Schemes []TypeScheme // 1 = ordinary binding; >1 = overload set (PR6)
-	// Sources holds every decl that contributes to this binding, in source order:
-	// for a plain `val`/`fn` that is the single introducing decl, but a name with
-	// multiple top-level FuncDecls (overloads) — or an erroneous redeclaration —
-	// accumulates one entry per arm, including arms M2 currently rejects. This lets
-	// a future go-to-definition navigate to all of them. Empty for prelude bindings.
+	Schemes []TypeScheme // 1 = ordinary binding; >1 = overload set
+	// Sources holds every decl that contributes to this binding, in source order.
+	// For a plain `val`/`fn` that is the single introducing decl, but a name with
+	// multiple top-level FuncDecls or an erroneous redeclaration accumulates one
+	// entry per arm. This lets a future go-to-definition navigate to all of them.
+	// Empty for prelude bindings.
 	Sources []provenance.Provenance
 	// Kind is the binding's declaration kind: VarKind for a reassignable `var`,
 	// ValKind for everything else (a `val`, a function, a parameter, and every
 	// prelude binding — all left at the zero value, ValKind). inferAssign gates
 	// reassignment on Kind == VarKind, reporting CannotAssignToImmutableError for any
-	// other kind. This is the binding-level REASSIGNABILITY gate only — deliberately
-	// SEPARATE from type-level mutability (`mut`-field / aliasing / lifetime
-	// transitions, M4), which is a property of the TYPE, not of this binding.
+	// other kind. This is the binding-level REASSIGNABILITY gate only, deliberately
+	// SEPARATE from type-level mutability such as `mut`-field, aliasing, and
+	// lifetime transitions, which is a property of the TYPE, not of this binding.
 	Kind ast.VariableKind
 	// ModuleLevel marks a top-level binding — one defined directly in the module
 	// scope, as opposed to a function parameter or body-local `val`/`var`. It is set
 	// only by inferComponent's phase-3 definitions, the module's SCC bindings, and
 	// left false for every nested binding. inferAssign reads it to recognise a GLOBAL
 	// WRITE: storing a value into module-level storage outlives every borrow region,
-	// so a borrowed value written there escapes to 'static (M4 D3).
+	// so a borrowed value written there escapes to 'static.
 	ModuleLevel bool
 	// VarID is the liveness VarID assigned to this binding's name by the function
-	// body's rename pass (M4 G1), or 0 for a binding outside any liveness-analysed
+	// body's rename pass, or 0 for a binding outside any liveness-analysed
 	// body (every top-level binding, and any binding minted before its enclosing
 	// body's prepass runs). The mutability-transition checker reads it to resolve a
 	// captured outer variable back to its alias set — the new-checker analogue of the
@@ -47,32 +46,30 @@ type ValueBinding struct {
 }
 
 // IsOverloaded reports whether this binding is an overload set. Consumers MUST
-// check it before routing: an ordinary call (false) keeps M2's shipped
-// subtype-constraint path, while an overloaded call (true) goes through
-// resolveOverload (PR6). inferIdent's value-position lookup branches on it too.
-// PR1 only ever builds single-scheme bindings, so this is always false today; the
-// helper lands now so the ordinary path reads !b.IsOverloaded() from the start.
+// check it before routing. An ordinary call, false, keeps the subtype-constraint
+// path, while an overloaded call, true, goes through resolveOverload. inferIdent's
+// value-position lookup branches on it too.
 func (b ValueBinding) IsOverloaded() bool { return len(b.Schemes) > 1 }
 
-// TypeBinding is a name's type-sort binding. M2 only ever populates this with
-// the hand-seeded stdlib-type placeholders (§3.8); real type aliases/classes are
-// M3+. The shape lands now because it is load-bearing for the two-map test
-// harness.
+// TypeBinding is a name's type-sort binding. It is currently populated only with
+// the hand-seeded stdlib-type placeholders; real type aliases and classes are not
+// yet wired in. The shape is load-bearing for the two-map test harness.
 type TypeBinding struct {
 	Type soltype.Type
 	// Sources holds every decl that contributes to this type binding, in source
 	// order — mirroring ValueBinding.Sources. A plain `type`/`class` has a single
-	// entry; interface declaration-merging (multiple `interface T` under one name)
+	// entry; interface declaration-merging, multiple `interface T` under one name,
 	// accumulates one per arm. Empty for the prelude type placeholders. Not yet
-	// populated — M2 only seeds stdlib-type placeholders here; real type aliases
-	// and classes (and their merging) land in M3+.
+	// populated. Only stdlib-type placeholders are seeded here; real type aliases
+	// and classes, and their merging, are not yet wired in.
 	Sources []provenance.Provenance
 }
 
-// Namespace is the third binding sort — a separate kind from a soltype.Type, so
-// a namespace never flows as a value. M2 keeps the structure (for qualified
-// BindingKey resolution across files) and the free-floating
-// NamespaceUsedAsValueError; the member-access *lookup* (Foo.bar) is M4.
+// Namespace is the third binding sort, a separate kind from a soltype.Type, so a
+// namespace never flows as a value. It keeps the structure for qualified
+// BindingKey resolution across files and the free-floating
+// NamespaceUsedAsValueError. The member-access lookup, Foo.bar, is not yet
+// implemented.
 type Namespace struct {
 	Name   string // qualified, from dep_graph.GetNamespace
 	Values map[string]ValueBinding
@@ -80,9 +77,8 @@ type Namespace struct {
 	Nested map[string]*Namespace
 }
 
-// Scope is the package-owned, multi-sorted analogue of type_system's scope (the
-// milestone forbids reusing type_system's). It has one map per binding sort plus
-// a parent link for lexical lookup.
+// Scope is the package-owned, multi-sorted analogue of type_system's scope. It
+// has one map per binding sort plus a parent link for lexical lookup.
 //
 // Why namespaces are stored by pointer while values/types are stored by value:
 // the distinction is by *kind*, not by slot. A Namespace is a shared, mutable,
@@ -122,9 +118,9 @@ func (s *Scope) Child() *Scope {
 
 // defineValue inserts b under name in THIS scope's value map. It OVERWRITES any
 // existing binding for name in this scope — it does not panic or error on a
-// duplicate the way the old checker's setValue does. Two M2 paths rely on the
-// overwrite: body-level variable redeclaration (§3.2) and inferComponent, which
-// binds each rec-group name twice (fresh var, then coalesced type) (§3.7).
+// duplicate the way the old checker's setValue does. Two paths rely on the
+// overwrite: body-level variable redeclaration, and inferComponent, which binds
+// each rec-group name twice, first a fresh var, then the coalesced type.
 func (s *Scope) defineValue(name string, b ValueBinding) {
 	s.values[name] = b
 }

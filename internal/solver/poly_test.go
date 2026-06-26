@@ -8,7 +8,7 @@ import (
 )
 
 // A MonoScheme instantiates to its exact type — same pointer, no freshening — so a
-// monomorphic binding behaves as M2's plain type did.
+// monomorphic binding behaves as a plain type does.
 func TestInstantiateMonoSchemeReturnsSameType(t *testing.T) {
 	c := newChecker()
 	ty := &soltype.PrimType{Prim: soltype.NumPrim}
@@ -77,9 +77,9 @@ func TestFreshenAboveFreshensBoundsAndHandlesCycles(t *testing.T) {
 }
 
 // instantiate records a FromInstantiation provenance edge for each freshened
-// variable, pointing back at the variable it was copied from — the first interior
-// Origin (M3, PR1). A MonoScheme instantiation records nothing (it freshens no
-// variable).
+// variable, pointing back at the variable it was copied from. This is the first
+// interior Origin. A MonoScheme instantiation records nothing because it freshens no
+// variable.
 func TestInstantiateRecordsFromInstantiation(t *testing.T) {
 	c := newChecker()
 	a := &soltype.TypeVarType{ID: 1, Level: 1}
@@ -92,7 +92,8 @@ func TestInstantiateRecordsFromInstantiation(t *testing.T) {
 	require.True(t, ok, "the edge is FromInstantiation")
 	require.Same(t, a, fi.From, "it points back at the original quantified var")
 
-	// NodeFor still resolves only FromAST leaves; the interior chain renderer is M11.5.
+	// NodeFor resolves only FromAST leaves; the interior chain renderer is not wired
+	// up yet.
 	_, ok = c.prov.NodeFor(got)
 	require.False(t, ok)
 }
@@ -110,7 +111,7 @@ func TestGeneralizeWrapsRawBody(t *testing.T) {
 }
 
 // IsOverloaded reflects the scheme-slice cardinality: one scheme is an ordinary
-// binding, more than one is an overload set (PR6). PR1 only ever builds the former.
+// binding, more than one is an overload set.
 func TestValueBindingIsOverloaded(t *testing.T) {
 	ordinary := ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.NeverType{})}}
 	require.False(t, ordinary.IsOverloaded())

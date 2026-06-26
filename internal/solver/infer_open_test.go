@@ -6,10 +6,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestInferOpenParam exercises the `open` parameter marker end to end (M4 B2): an
-// `open` param's usage-inferred object renders row-polymorphic (inexact), while an
-// un-`open` peer closes to exact (the B1 Policy-A close). Passing an object with
-// extra fields to the open param checks.
+// TestInferOpenParam exercises the `open` parameter marker end to end. An `open`
+// param's usage-inferred object renders row-polymorphic and inexact, while an
+// un-`open` peer closes to exact. Passing an object with extra fields to the open
+// param checks.
 func TestInferOpenParam(t *testing.T) {
 	t.Run("open param renders inexact", func(t *testing.T) {
 		values, _, errs := inferSource(t, "fn dist(open p) { p.x\n p.y }")
@@ -28,8 +28,8 @@ func TestInferOpenParam(t *testing.T) {
 		require.Empty(t, errs)
 	})
 
-	// The operative seal (B2): a closed param's requirement is sealed to exact at
-	// generalization, so a call passing an object with extra fields is rejected.
+	// A closed param's requirement is sealed to exact at generalization, so a call
+	// passing an object with extra fields is rejected.
 	t.Run("passing extra fields to a closed param rejects", func(t *testing.T) {
 		_, _, errs := inferSource(t, "fn foo(p) { p.x\n p.y }\nval r = foo({x: 1, y: 2, z: 3})")
 		require.Len(t, errs, 1)

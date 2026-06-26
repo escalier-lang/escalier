@@ -73,7 +73,7 @@ func TestInferTupleSpreadMultipleExact(t *testing.T) {
 	require.Len(t, tup.Elems, 4)  // 2 + 2 spliced elements
 }
 
-// Spreading a non-tuple value is a typed error: M4 splices concrete tuple
+// Spreading a non-tuple value is a typed error: the spread splices concrete tuple
 // literals only, so the operand must infer to a tuple.
 func TestInferTupleSpreadNonTuple(t *testing.T) {
 	c := newChecker()
@@ -205,8 +205,8 @@ func TestInferObjectDuplicateKeyLastWins(t *testing.T) {
 	require.True(t, equalType(obj, obj), "equalType must be reflexive for a deduped object")
 }
 
-// Shorthand ({x}) is a property with no value — deferred to M4. It reports a
-// clean UnsupportedNodeError and is skipped (the rest of the object still types).
+// Shorthand ({x}) is a property with no value and is not yet supported. It reports
+// a clean UnsupportedNodeError and is skipped, so the rest of the object still types.
 func TestInferObjectShorthandUnsupported(t *testing.T) {
 	c := newChecker()
 	shorthand := ast.NewProperty(ast.NewIdent("x", testSpan()), false, false, nil, testSpan())
@@ -217,8 +217,8 @@ func TestInferObjectShorthandUnsupported(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
-// A spread element ({...o}) is M4; it reports unsupported without walking its
-// value, so the unknown `o` inside it never surfaces a second error.
+// A spread element ({...o}) is not yet supported; it reports unsupported without
+// walking its value, so the unknown `o` inside it never surfaces a second error.
 func TestInferObjectSpreadUnsupported(t *testing.T) {
 	c := newChecker()
 	spread := ast.NewRestSpread(identExpr("o"), testSpan())
@@ -228,7 +228,7 @@ func TestInferObjectSpreadUnsupported(t *testing.T) {
 	require.Equal(t, "Unsupported: ObjSpreadExpr", c.errs[0].Message())
 }
 
-// A computed key ({[k]: v}) carries no static field name — M4.
+// A computed key ({[k]: v}) carries no static field name and is not yet supported.
 func TestInferObjectComputedKeyUnsupported(t *testing.T) {
 	c := newChecker()
 	computed := ast.NewProperty(ast.NewComputedKey(identExpr("k")), false, false, numExpr(1), testSpan())
@@ -266,13 +266,13 @@ func TestInferMemberMissingProperty(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
-// Optional chaining (recv?.prop) needs union/undefined handling — M6.
+// Optional chaining (recv?.prop) needs union/undefined handling and is not yet supported.
 func TestInferMemberOptionalChainUnsupported(t *testing.T) {
 	c := newChecker()
 	e := ast.NewMember(objExpr(prop("a", numExpr(5))), ast.NewIdentifier("a", testSpan()), true, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
-	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
+	require.IsType(t, &soltype.ErrorType{}, got) // report's recovery placeholder
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Unsupported: OptionalChain", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
@@ -294,7 +294,7 @@ func TestInferMemberOptionalChainDoesNotDescendIntoReceiver(t *testing.T) {
 // A malformed `recv.` (no valid property name) leaves Prop.Name empty; the
 // parser has already reported the missing identifier, so the walk must NOT layer
 // a spurious "object is missing property: " on top. It yields the ErrorType
-// recovery sentinel (PR8) — not a raw never — so that if the read flows into a
+// recovery sentinel — not a raw never — so that if the read flows into a
 // sink (`if recv. {}`, `await recv.`, `var x = recv.`) the sentinel absorbs in
 // constrain rather than cascading `never <: …`. It reports nothing itself.
 func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
@@ -309,8 +309,8 @@ func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
 }
 
 // A function reading a field of its param synthesizes an inexact "has at least this
-// field" requirement during body inference (A1's selection-vs-concrete split), then
-// SEALS it to exact at generalization (B1/B2's operative close): `p` is `non-open`
+// field" requirement during body inference via the selection-vs-concrete split, then
+// SEALS it to exact at generalization. `p` is `non-open`
 // and never escapes — `p.a`'s result is returned, but `p` itself is not — so its
 // requirement closes to exact `{a: number}` and a wider argument is rejected. An
 // `open` param keeps the row-polymorphic form and accepts the wider object. This

@@ -7,10 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- PR8: reassignment typing (`a = expr`) ---
+// --- Reassignment typing (`a = expr`) ---
 //
 // `a = expr` parses as an ast.BinaryExpr with Op == ast.Assign — the only binary
-// operator the M3 walk handles. The target must be a mutable (`var`) place; the
+// operator the walk handles. The target must be a mutable (`var`) place; the
 // source must be a subtype of the binding's type; the assignment expression evaluates
 // to the value just stored, so its type is the target's slot type. Reassignment
 // lives in expression position, so these tests exercise it inside a function body
@@ -35,7 +35,7 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 	})
 }
 
-// An un-annotated `var a = 5` widens its binding to `number` (M4 B3), so
+// An un-annotated `var a = 5` widens its binding to `number`, so
 // reassigning a DIFFERENT literal of the same primitive (`a = 6` ⇒ `6 <: number`)
 // checks. A `val` keeps the literal singleton (see TestInferAssignToValRejected).
 func TestInferAssignUnannotatedVarLiteralWidened(t *testing.T) {
@@ -72,8 +72,8 @@ func TestInferAssignToImmutableNonVal(t *testing.T) {
 }
 
 // A non-place target — a literal or a call — is an InvalidAssignmentTargetError that
-// blames the target. A member target takes a separate path (a field write, C3) and an
-// index target another (unsupported pending Array types, M7).
+// blames the target. A member target takes a separate path as a field write, and an
+// index target another that is unsupported pending Array types.
 func TestInferAssignInvalidTarget(t *testing.T) {
 	t.Run("literal target", func(t *testing.T) {
 		src := "val a = 5\nfn g() { 5 = a }"
@@ -153,8 +153,9 @@ func TestInferAssignTopLevelBrokenBindingNoCascade(t *testing.T) {
 }
 
 // Reassigning a union-typed var applies the union-target rule: a member assigns, a
-// non-member is rejected once. (Union subtyping in general is M6; inferAssign trials
-// the members under a probe so a legal member assignment isn't wrongly rejected.)
+// non-member is rejected once. General union subtyping is not yet available, so
+// inferAssign trials the members under a probe so a legal member assignment isn't
+// wrongly rejected.
 func TestInferAssignUnionTarget(t *testing.T) {
 	t.Run("member assigns", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
@@ -173,15 +174,15 @@ func TestInferAssignUnionTarget(t *testing.T) {
 	})
 }
 
-// KNOWN GAP (M6): assigning an inference-variable source into a union target
+// KNOWN GAP: assigning an inference-variable source into a union target
 // over-narrows the variable. `a = x` for an un-annotated param `x` and `a: 1 | 2`
 // commits the first matching member (`x <: 1`), so `x` infers as `1` rather than
-// the sound `1 | 2`. This is INCOMPLETE, not unsound (the committed bound is always
-// stronger than required, so no invalid program is accepted), and it is not fixable
+// the sound `1 | 2`. This is INCOMPLETE, not unsound. The committed bound is always
+// stronger than required, so no invalid program is accepted. It is not fixable
 // in constrainAssign — falling through to constrain(source, union) injects the
 // coalesced union node into source's bound list and panics the coalescer. The correct
-// fix is M6's first-class union subtyping with inference variables. This pins the
-// interim behavior so the M6 change is visible: when it lands, `x` becomes `1 | 2`
+// fix is first-class union subtyping with inference variables. This pins the
+// interim behavior so the change is visible: once it lands, `x` becomes `1 | 2`
 // and this assertion must be updated. See constrainAssign's KNOWN GAP note.
 func TestInferAssignUnionTargetVarRHSOverNarrows(t *testing.T) {
 	values, _, errs := inferSource(t, `
@@ -191,13 +192,13 @@ func TestInferAssignUnionTargetVarRHSOverNarrows(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	// M6 target: "fn (c: boolean, x: 1 | 2) -> void".
+	// Sound target: "fn (c: boolean, x: 1 | 2) -> void".
 	require.Equal(t, "fn (c: boolean, x: 1) -> void", values["f"])
 }
 
 // A namespace name as an assignment target reports NamespaceUsedAsValue, mirroring
 // inferIdent's value-position behavior (not UnknownIdentifier). Hand-built because
-// namespace declarations are themselves unsupported in M3, so a namespace never
+// namespace declarations are themselves unsupported, so a namespace never
 // enters scope via real source — same construction as TestInferIdentNamespaceUsedAsValue.
 func TestInferAssignNamespaceTarget(t *testing.T) {
 	c := newChecker()
@@ -209,18 +210,18 @@ func TestInferAssignNamespaceTarget(t *testing.T) {
 	require.Equal(t, "Namespace used as a value: Foo", c.errs[0].Message())
 }
 
-// A member target (obj.x = …) is a field write (M4 C3). Writing to a field of an
+// A member target (obj.x = …) is a field write. Writing to a field of an
 // IMMUTABLE object — here `o` is `val`-bound, so its `{x: 5}` is immutable — is
 // rejected: the write requires `o <: mut {x: number, ...}`, and an immutable object
-// cannot fill the mutable slot (the C2 gate's mutability rule).
+// cannot fill the mutable slot, which is the borrow gate's mutability rule.
 func TestInferAssignMemberTargetImmutable(t *testing.T) {
 	src := "val o = {x: 5}\nfn f() { o.x = 6 }"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "cannot constrain immutable object <: mutable object", "o.x = 6")
 }
 
-// An INDEX target (xs[i] = …) still needs Array and index types (M7), so it stays
-// an unsupported feature — distinct from a member target, which C3 now types.
+// An INDEX target (xs[i] = …) still needs Array and index types, so it stays
+// an unsupported feature — distinct from a member target, which is now typed.
 func TestInferAssignIndexTargetUnsupported(t *testing.T) {
 	src := "val xs = [1, 2]\nfn f() { xs[0] = 6 }"
 	_, _, errs := inferSource(t, src)

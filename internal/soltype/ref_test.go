@@ -7,7 +7,7 @@ import (
 )
 
 // NewRef collapses the degenerate immutable-no-lifetime cell to the bare inner, and
-// keeps the wrapper for every meaningful borrow. Lt is always nil in C1, so the
+// keeps the wrapper for every meaningful borrow. Lt is always nil today, so the
 // only meaningful borrow constructible here is the owned-mutable one.
 func TestNewRef(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: &PrimType{Prim: NumPrim}}}}

@@ -9,31 +9,25 @@ import (
 )
 
 // coalesce walks a bound-carrying soltype.Type and returns a *coalesced*
-// soltype.Type in which every TypeVarType has been inlined to its bounds
-// (Delta #1 in m1-implementation-plan §2.2): positive position ⇒ the union of
-// the variable's lower bounds, negative position ⇒ the intersection of its
-// upper bounds, with empty bounds collapsing to never (⊥, positive) or unknown
-// (⊤, negative).
+// soltype.Type in which every TypeVarType has been inlined to its bounds. A
+// positive position yields the union of the variable's lower bounds, a negative
+// position yields the intersection of its upper bounds, with empty bounds
+// collapsing to never (⊥, positive) or unknown (⊤, negative).
 //
-// It is a package-private free function in M1 — it needs no Context (no shared
-// counters or occurrence state until M3 reintroduces them). Unlike the spike,
-// M1's coalescer is uniformly inlining: no bipolar-variable retention, no
-// occurrence-analysis input, no named-ref output node. That whole
-// polymorphism-rendering bundle lands in M3 (§3.3).
+// It is a package-private free function that needs no Context, since it carries
+// no shared counters or occurrence state. The coalescer is uniformly inlining:
+// no bipolar-variable retention, no occurrence-analysis input, no named-ref
+// output node.
 //
-// M1 had no `seen` recursion guard: the M1 type set has no recursive formers
-// (no aliases, no recursive types), so a uniform-inline walk terminates on a
-// bound graph built from non-recursive source. M2's SCC driver (PR-5) breaks
-// that assumption — a mutually-recursive group can build a cyclic var↔var bound
-// graph (constrain appends var-to-var bounds and terminates on cycles via its
-// own coinductive seen-set; coalesce would not) — so PR-5 pulls forward the
-// path-scoped recursion guard the plan slated for M3 (m2-implementation-plan §7).
-// See coalesceRec for the guard's behavior. M3 still owns the *precise* μ-bound
-// recursive rendering; this guard only keeps the monomorphic walk total.
+// A mutually-recursive group can build a cyclic var↔var bound graph. constrain
+// appends var-to-var bounds and terminates on cycles via its own coinductive
+// seen-set, while coalesce would not, so coalesce carries a path-scoped
+// recursion guard. See coalesceRec for the guard's behavior. The guard only
+// keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType]()}, pol)
-	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
-	return coalesceLifetimes(c, pol) // D4: resolve borrow lifetimes to their display form
+	c = bubbleOwnedMut(c)            // lift an owned-mut cell out of an immutable container
+	return coalesceLifetimes(c, pol) // resolve borrow lifetimes to their display form
 }
 
 // coalescer is the soltype-visitor form of coalesce. The structural arms and the
@@ -57,10 +51,9 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 		return soltype.EnterResult{}
 	}
 	// Re-entering a variable already on the current path is an ungrounded recursive
-	// position (no concrete type breaks the cycle). It collapses to the polarity
+	// position, where no concrete type breaks the cycle. It collapses to the polarity
 	// identity — the same value the position degenerates to when its bounds are
-	// empty — which keeps the inline walk total. A precise μ-bound rendering of
-	// such recursion is M3.
+	// empty — which keeps the inline walk total.
 	if c.seen.Contains(v) {
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
@@ -81,14 +74,14 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
-	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
+	// post-pass, which needs the whole type to analyze lifetime occurrence.
 	return t
 }
 
 // bubbleOwnedMut rewrites a coalesced display type so no owned-mutable cell ever
-// sits inside an immutable object or tuple (#779). `mut` is deep, so an owned-mut
+// sits inside an immutable object or tuple. `mut` is deep, so an owned-mut
 // field is equivalent to making the whole container `mut`: `{p: mut {x}}` means the
-// same as `mut {p: {x}}`. The nested form is the one the C3 field-write fold produces
+// same as `mut {p: {x}}`. The nested form is the one the field-write fold produces
 // for `obj.p.x = 5`, and it is no longer a valid annotation, so the rendered
 // signature must take the bubbled-up form to stay re-writable.
 //
@@ -162,7 +155,7 @@ func (b *mutBubbler) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type
 }
 
 // widenVar lowers a widenable `var` binding's coalesced value to its primitive
-// (M4 B3) when it is read in covariant (Positive) position — `var a = 5` ⇒
+// when it is read in covariant (Positive) position — `var a = 5` ⇒
 // number, `var p = {x: 0}` ⇒ {x: number}. It runs AFTER combine, so a union of
 // literals from distinct branches (`var a = if c { 1 } else { 2 }`) is left as
 // `1 | 2`: widen passes a UnionType through, matching the reassignment rule that
@@ -212,25 +205,25 @@ type occKey struct {
 // reduces, node for node, to coalesce(t, Positive), keeping every monomorphic
 // render unchanged.
 //
-// simplifyScheme (PR2) runs the co-occurrence analysis up front and hands the
+// simplifyScheme runs the co-occurrence analysis up front and hands the
 // coalescer the resulting merge classes, which it only reads. Distinct quantified
 // variables that always appear together resolve to one representative and so share
 // a single type parameter. That collapses outer's
 // `fn <T0, T1>(y: T0 & T1) -> [T0, T1]` to `fn <T0>(y: T0) -> [T0, T0]`.
 //
-// The retain decision degenerates to PR1's when nothing merges and symmetrization
-// surfaces no extra occurrence. Each variable is then its own representative with
-// its own polarities, so the check is exactly PR1's per-variable both-polarities
-// test.
+// The retain decision degenerates to the per-variable test when nothing merges and
+// symmetrization surfaces no extra occurrence. Each variable is then its own
+// representative with its own polarities, so the check is exactly the per-variable
+// both-polarities test.
 func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 	c := t.Accept(&schemeCoalescer{
 		simp:     simplifyScheme(t, genLevel),
 		genLevel: genLevel,
 		seen:     set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
-	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
+	c = bubbleOwnedMut(c) // lift an owned-mut cell out of an immutable container
 	// A scheme display is always coalesced from the Positive root.
-	return coalesceLifetimes(c, soltype.Positive) // D4: resolve borrow lifetimes to their display form
+	return coalesceLifetimes(c, soltype.Positive) // resolve borrow lifetimes to their display form
 }
 
 // schemeCoalescer is the soltype-visitor form of coalesceScheme. It has the same
@@ -264,8 +257,8 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep)
 	if c.seen.Contains(rep) {
 		// A cycle back to a variable already on the path: a retained type parameter
-		// keeps its name (a rough μ-reference, refined in M3's precise μ-rendering),
-		// an inlined variable collapses to the polarity identity.
+		// keeps its name as a rough μ-reference, an inlined variable collapses to the
+		// polarity identity.
 		if retain {
 			return soltype.EnterResult{Type: rep, SkipChildren: true}
 		}
@@ -309,7 +302,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
-	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
+	// post-pass, which needs the whole type to analyze lifetime occurrence.
 	return t
 }
 
@@ -351,7 +344,7 @@ func renderScheme(s TypeScheme) string {
 // hasEqualBounds reports whether v's lower and upper bound sets are non-empty and
 // structurally equal, which pins it to a single concrete type: it has no freedom as a
 // type parameter and is inlined rather than retained. This arises for the receiver
-// var of a deep-mut nested write (#779): `obj.p.x = 5` makes obj.p invariant inside
+// var of a deep-mut nested write: `obj.p.x = 5` makes obj.p invariant inside
 // the mut container, and the residual write-back gives it equal lower and upper
 // bounds `{x: number, ...}`. Retaining it would surface a spurious `T0 & {x: number}`
 // where the pinned `{x: number}` is exact. A var with a genuine type-parameter role,
@@ -416,28 +409,26 @@ func emptyOf(pol soltype.Polarity) soltype.Type {
 
 // combine builds a soltype.UnionType (Positive) or soltype.IntersectionType
 // (Negative) of parts, returning the sole element directly when only one
-// remains. The UnionType/IntersectionType nodes ship in M1 (soltype/type.go) so
-// combine can always return a native soltype.Type.
+// remains.
 //
 // In Negative position the object parts are first folded into a single object by
-// foldUsageBounds (B1) so member-access requirements on one receiver render as one
+// foldUsageBounds so member-access requirements on one receiver render as one
 // compact object rather than an intersection of one-property objects. The folded
-// object closes to exact unless `open` is set — an `open` parameter (B2) stays
+// object closes to exact unless `open` is set — an `open` parameter stays
 // row-polymorphic (inexact). This is the DISPLAY fold; sealUsageObjects runs the
 // same foldUsageBounds operatively on the stored bounds at generalization.
 func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type {
 	if pol == soltype.Negative {
 		parts = foldUsageBounds(parts, open)
 	}
-	// Route through the M6 PR1 smart constructors so the coalesced output is
+	// Route through the smart constructors so the coalesced output is
 	// flattened, deduped, lattice-identity-pruned, and canonically ordered.
 	// The Context is nil here. Members are already coalesced and concrete, so
 	// the core normalization is enough. Subsumption is reserved for the
-	// Context-bearing mint sites resolveTypeAnn in PR2 and joinBorrows in PR6.
+	// Context-bearing mint sites resolveTypeAnn and joinBorrows.
 	// The single-member collapse is handled by the constructor.
 	//
-	// Coalesced unions are exact by default. An inferred shape is closed
-	// unless PR4 threads an inexact source flag through to here.
+	// Coalesced unions are exact by default. An inferred shape is closed.
 	if pol == soltype.Positive {
 		return newUnion(nil, parts, false)
 	}
@@ -468,26 +459,26 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 // non-member object to mergeObjectGroup/AsProperty.
 //
 // Member-access requirements on one receiver arrive as separate inexact
-// one-property objects: A1's inferMember lowers `obj.a; obj.b` to the upper bounds
+// one-property objects: inferMember lowers `obj.a; obj.b` to the upper bounds
 // `{a: β, ...}` and `{b: γ, ...}` on the receiver var. Folding them yields
 // `{a: β, b: γ}` instead of the non-compact `{a: β, ...} & {b: γ, ...}`. A
 // property appearing in several parts becomes the intersection of its types,
 // because `obj <: {a: β}` and `obj <: {a: γ}` together require `obj.a <: β & γ`.
 //
-// Policy A (exact-types spec §8.1): the folded usage object closes to EXACT once
+// The folded usage object closes to EXACT once
 // body inference has produced every selection on the receiver. The per-access
-// requirements stay inexact (A1); only this folded result is sealed. The `open`
-// parameter marker (B2) is the opt-out: when set, the folded object stays inexact
+// requirements stay inexact; only this folded result is sealed. The `open`
+// parameter marker is the opt-out: when set, the folded object stays inexact
 // so the param is row-polymorphic and callers may pass objects with extra fields.
 //
-// Whole-object `mut` merge (M4 C3): the field-write path records a write `obj.x =
+// Whole-object `mut` merge: the field-write path records a write `obj.x =
 // 5` as a MUTABLE inexact requirement `mut {x: number, ...}` on the receiver var,
 // alongside the bare inexact reads. When ANY write is present, every selection —
 // reads and writes alike — folds into ONE object wrapped in `mut`, following
-// internal/checker rather than the spike's per-field partition: `obj.x = 5; obj.y =
+// internal/checker rather than a per-field partition: `obj.x = 5; obj.y =
 // 10` ⇒ `mut {x, y}` and the mixed `val x = obj.bar; obj.baz = 5` ⇒
 // `mut {bar, baz}` — a single object, not `{bar} & mut {baz}`. With
-// no write the reads fold into a bare (immutable) object, the pre-C3 behavior. The
+// no write the reads fold into a bare immutable object. The
 // tradeoff: wrapping the whole object in `mut` makes read-only fields invariant
 // rather than covariant; for a generalized function this is invisible because each
 // read-only field is a fresh-per-call type parameter.
@@ -591,7 +582,7 @@ func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType
 		// coalesced, so the core normalization is enough.
 		elems[i] = &soltype.PropertyElem{Name: name, Type: newIntersection(nil, types[name]), Optional: optional[name], Readonly: readonly[name]}
 	}
-	// Closed (Inexact: false) by Policy A; an `open` param leaves it inexact (B2).
+	// Closed (Inexact: false) by the close-to-exact rule; an `open` param leaves it inexact.
 	return &soltype.ObjectType{Elems: elems, Inexact: open}
 }
 
@@ -608,9 +599,7 @@ func appendDistinct(parts []soltype.Type, t soltype.Type) []soltype.Type {
 }
 
 // dedup removes structurally-equal parts, preserving first-occurrence order.
-// The spike deduplicated by rendered string (via type_system.PrintType); M1
-// has no printer in `solver` yet (it ships in PR4, in `soltype`), so M1
-// deduplicates by structural equality instead.
+// It deduplicates by structural equality.
 func dedup(parts []soltype.Type) []soltype.Type {
 	out := make([]soltype.Type, 0, len(parts))
 	for _, p := range parts {
@@ -710,7 +699,7 @@ func equalType(a, b soltype.Type) bool {
 	case *soltype.RefType:
 		b, ok := b.(*soltype.RefType)
 		// Mut must match — a mutable borrow never equals an immutable one — and the
-		// lifetimes must match: D2 mints borrow lifetimes, so two borrows differing only
+		// lifetimes must match. Borrows carry lifetimes, so two borrows differing only
 		// in lifetime are NOT equal. Without the Lt check, dedup would collapse them and
 		// silently drop a lifetime the solver computed. ltEqual compares a LifetimeVar by
 		// pointer and 'static by value.
@@ -718,7 +707,7 @@ func equalType(a, b soltype.Type) bool {
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
 		// Inexact flags must match, since an open union never equals a closed
-		// one. The M6 PR1 newUnion imposes canonical member order at
+		// one. newUnion imposes canonical member order at
 		// construction, so the positional equalTypeSlice is order-stable and
 		// two unions over the same member set are now equal whatever order
 		// their members were minted in.
@@ -730,13 +719,13 @@ func equalType(a, b soltype.Type) bool {
 	return false
 }
 
-// ltEqual reports lifetime equality for equalType's RefType arm (D2). Each lifetime
+// ltEqual reports lifetime equality for equalType's RefType arm. Each lifetime
 // form has its own equality rule:
 //   - A LifetimeVar is identity-keyed. Two are equal only when they are the same
 //     pointer.
 //   - 'static is a value, so any two StaticLifetimes are equal.
 //   - A nil lifetime is an owned-mutable borrow. It equals only another nil.
-//   - A LifetimeUnion is the union form a join variable coalesces to in D3, such as
+//   - A LifetimeUnion is the union form a join variable coalesces to, such as
 //     'a | 'b. Two are equal when they hold the same members, pairwise equal in
 //     order. This lets two RefTypes carrying the same coalesced union dedup.
 //

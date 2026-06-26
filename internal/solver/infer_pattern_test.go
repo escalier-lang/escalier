@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M4 E1: structural destructuring patterns ---
+// --- structural destructuring patterns ---
 
 // An object pattern in a `val` binds each named field at its field type. The
 // function below reads the bound names back, so the inferred return shows the
@@ -88,7 +88,7 @@ func TestInferObjectPatternParam(t *testing.T) {
 }
 
 // An UN-annotated destructuring parameter infers its shape from the leaves' uses
-// (usage-based inference), closing the coalesced object to exact (Policy A).
+// through usage-based inference, closing the coalesced object to exact.
 func TestInferObjectPatternParamInferred(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn g({a, b}) {
@@ -165,7 +165,7 @@ func TestInferObjectPatternLeafDefault(t *testing.T) {
 
 // A trailing rest element relaxes the tuple requirement to an inexact prefix, so
 // the fixed slots bind without a spurious arity error. The rest element itself is
-// reported unsupported, since typed rest tuples are M9.
+// reported unsupported, since typed rest tuples are not implemented yet.
 func TestInferTuplePatternRestPrefix(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(t: [number, string, boolean]) {
@@ -194,8 +194,8 @@ func TestInferDestructuredLeafClosureCapture(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number}) -> number", values["f"])
 }
 
-// A `var` tuple destructuring widens each leaf to its primitive, the B3 widening
-// applied through the initializer.
+// A `var` tuple destructuring widens each leaf to its primitive, applying the
+// literal widening through the initializer.
 func TestInferVarTupleDestructureWidens(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f() {
@@ -245,7 +245,7 @@ func TestInferObjectPatternLeafDefaultViolatesAnnotation(t *testing.T) {
 	require.Equal(t, `cannot constrain "hi" <: number`, errs[0].Message())
 }
 
-// --- M4 E2: the `match` expression ---
+// --- the `match` expression ---
 
 // A match over a structural pattern binds the pattern's leaves and types the arm
 // body against them. An exact-object scrutinee with a matching structural arm is
@@ -265,7 +265,7 @@ func TestInferMatchBindsArm(t *testing.T) {
 // An unannotated param used only as a match scrutinee infers its shape from the arm
 // patterns, the same usage-based inference a member read drives. Each arm's pattern
 // emits its member-lookup requirements onto the scrutinee var. A bound field the body
-// never uses lands as `unknown`, and the inferred object closes to exact (Policy A).
+// never uses lands as `unknown`, and the inferred object closes to exact.
 func TestInferMatchParamUsageObject(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(p) {

@@ -8,32 +8,31 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Overload resolution, introduced in PR6. A name with more than one top-level FuncDecl
-// is an overload set. Its ValueBinding carries one TypeScheme per arm ordered by source
-// position. armPosLess in module.go defines that order as file path, then line, then column.
-// A set whose arms span several files in a lib/ therefore reads top-to-bottom, file by
-// file alphabetically, independent of the order sources reached the parser.
+// Overload resolution. A name with more than one top-level FuncDecl is an overload set.
+// Its ValueBinding carries one TypeScheme per arm ordered by source position. armPosLess
+// in module.go defines that order as file path, then line, then column. A set whose arms
+// span several files in a lib/ therefore reads top-to-bottom, file by file alphabetically,
+// independent of the order sources reached the parser.
 //
 // Resolution is a phase distinct from constrain. The disjunction "callable in several
-// ways" stays out of the subtype lattice. It is driven by the PR5 probe. Each candidate
+// ways" stays out of the subtype lattice. It is driven by the probe. Each candidate
 // is trialled under a probe and the losers are rolled back, so a failed trial leaves no
 // bounds on the argument variables and no stray Info or Prov entries.
 //
-// Specificity ordering is the one documented rule, reused by M4 object-arg and M5 method
-// overloads. When every argument carries type information, meaning none is an
-// unconstrained variable, candidates are tried most-specific-first. Arm A is more
-// specific than B when they share an arity and every parameter of A is a structural
-// subtype of B's, with at least one strict. So a concrete `(x: number)` outranks a
-// generic `(x: T)`.
+// Specificity ordering is the one documented rule. When every argument carries type
+// information, meaning none is an unconstrained variable, candidates are tried
+// most-specific-first. Arm A is more specific than B when they share an arity and every
+// parameter of A is a structural subtype of B's, with at least one strict. So a concrete
+// `(x: number)` outranks a generic `(x: T)`.
 //
 // Specificity is only a partial order. Incomparable arms fall back to declaration order
 // through a stable sort. Arms are incomparable when they have different literal tags,
 // disjoint shapes, or different arities.
 //
 // When an argument is still a fully-unconstrained variable, the call cannot rank arms
-// confidently, so resolution defers to plain declaration-order first-match. This is the
-// documented MVP fallback, with no speculative pinning and backtracking. The first arm
-// whose argument constraints succeed wins. Its bounds are committed and the rest roll back.
+// confidently, so resolution defers to plain declaration-order first-match. There is no
+// speculative pinning and backtracking. The first arm whose argument constraints succeed
+// wins. Its bounds are committed and the rest roll back.
 
 // resolveOverload picks one arm of the overload set b for the call and returns that
 // arm's instantiated return type. It commits the winning arm's argument constraints and
@@ -71,12 +70,12 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 // error-returning Context.Constrain rather than the accumulating checker.constrain, so a
 // rejected argument never reaches c.errs even before the probe's errs rollback.
 //
-// Arity follows the direct-call accept-set from #677, reusing acceptSet so the overload
-// arity gate and the FuncType<:FuncType constraint gate can never drift. A count below
-// acceptSet's lower bound is too few, and a count above its upper bound is too many.
-// Either is a non-match, unless the arm is inexact or has a rest. Extra arguments that
-// such an arm absorbs impose no per-element constraint here. That per-element check needs
-// Array types, which arrive in M4.
+// Arity follows the direct-call accept-set, reusing acceptSet so the overload arity gate
+// and the FuncType<:FuncType constraint gate can never drift. A count below acceptSet's
+// lower bound is too few, and a count above its upper bound is too many. Either is a
+// non-match, unless the arm is inexact or has a rest. Extra arguments that such an arm
+// absorbs impose no per-element constraint here. That per-element check needs Array types,
+// which are not yet implemented.
 func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) bool {
 	n := len(args)
 	if lo, hi := acceptSet(inst); n < lo || n > hi {
@@ -87,7 +86,7 @@ func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) bo
 			// Past the fixed params, or AT a trailing rest param. The rest or inexact tail
 			// absorbs this and every later argument. Don't constrain a scalar argument
 			// against the rest param's ARRAY element type, since Params[i].Type is `T[]`.
-			// Per-element checking is M4.
+			// Per-element checking is not yet implemented.
 			break
 		}
 		if errs := c.ctx.Constrain(arg, inst.Params[i].Type); len(errs) > 0 {
@@ -169,7 +168,7 @@ func specificityOrder(funcs []*soltype.FuncType) []int {
 // hasUnconstrainedArg reports whether any top-level call argument is a fully-unconstrained
 // inference variable — a bare var with no bounds either way, which carries no type
 // information to rank overloads by. overloadOrder treats a true result as "can't rank the
-// arms" and falls back to declaration order (see there and #723).
+// arms" and falls back to declaration order.
 //
 // The check is shallow by design: a compound that merely WRAPS a bare var (a tuple,
 // record, or func) doesn't count, since structuralSubtype ranks such shapes as a tie and

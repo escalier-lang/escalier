@@ -23,11 +23,11 @@ func restP(name string, t Type) *FuncParam {
 	return &FuncParam{Pattern: &IdentPat{Name: name}, Type: t, Rest: true}
 }
 
-// TestPrintRoundTrips covers the short, stable round-trips for the M1 coalesced
-// type set: primitives, literals, the lattice bounds, tuples, multi-arg
-// functions, and multi-element unions/intersections. Per CLAUDE.md these are the
-// short stable strings, so they use require.Equal; the richer nested shapes
-// (which exercise precedence parenthesization) use MatchInlineSnapshot below.
+// TestPrintRoundTrips covers the short, stable round-trips for the coalesced type
+// set: primitives, literals, the lattice bounds, tuples, multi-arg functions, and
+// multi-element unions/intersections. Per CLAUDE.md these are the short stable
+// strings, so they use require.Equal. The richer nested shapes that exercise
+// precedence parenthesization use MatchInlineSnapshot below.
 func TestPrintRoundTrips(t *testing.T) {
 	tests := []struct {
 		name string
@@ -48,7 +48,7 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"never", &NeverType{}, "never"},
 		{"unknown", &UnknownType{}, "unknown"},
 		{"void", &Void{}, "void"},
-		{"error", &ErrorType{}, "error"}, // PR8 recovery sentinel
+		{"error", &ErrorType{}, "error"}, // recovery sentinel
 
 		// Tuples.
 		{"empty tuple", &TupleType{}, "[]"},
@@ -134,11 +134,11 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"null atom", &NullType{}, "null"},
 		{"intersection pair", &IntersectionType{Types: []Type{numP(), strP()}}, "number & string"},
 
-		// Promises (M3).
+		// Promises.
 		{"promise of prim", &PromiseType{Inner: numP()}, "Promise<number>"},
 		{"nested promise", &PromiseType{Inner: &PromiseType{Inner: strP()}}, "Promise<Promise<string>>"},
 
-		// Borrows (M4). Ownership and the borrow `&` split on Lt. An owned value has Lt
+		// Borrows. Ownership and the borrow `&` split on Lt. An owned value has Lt
 		// nil and renders bare, as owned-mutable `mut {x}`. A borrow has Lt set and leads
 		// with `&`. The inner object or tuple is brace- or bracket-delimited, so it needs
 		// no parens. An un-named LifetimeVar is an inferred borrow and prints as a bare
@@ -242,10 +242,10 @@ func TestPrintNestedPrecedence(t *testing.T) {
 	})
 }
 
-// Under the lazy deep-mut form (PR 14) the stored type matches the surface
-// annotation, so the printer renders it verbatim with no elision pass: a `mut`
-// wrapper over a bare object prints `mut {a: {x}}`, and any explicit nested
-// owned-mut cell prints its `mut` rather than being hidden.
+// Under the lazy deep-mut form the stored type matches the surface annotation, so
+// the printer renders it verbatim with no elision pass. A `mut` wrapper over a
+// bare object prints `mut {a: {x}}`, and any explicit nested owned-mut cell prints
+// its `mut` rather than being hidden.
 func TestPrintLazyDeepMutVerbatim(t *testing.T) {
 	mutOwned := func(inner RefInner) Type {
 		return &RefType{Mut: true, Inner: inner}
@@ -312,10 +312,10 @@ func TestPrintAnonLifetime(t *testing.T) {
 }
 
 // TestPrintRawTypeVar verifies that Print tolerates a raw, un-coalesced
-// TypeVarType (rendering it as `t{ID}`) instead of panicking — the M2 walk
-// records var-carrying types in Info and only coalesces at binding boundaries,
-// so a consumer can hand Print a live variable, standalone or nested in a
-// function. See print.go's printType TypeVarType arm.
+// TypeVarType, rendering it as `t{ID}` instead of panicking. The walk records
+// var-carrying types in Info and only coalesces at binding boundaries, so a
+// consumer can hand Print a live variable, standalone or nested in a function.
+// See print.go's printType TypeVarType arm.
 func TestPrintRawTypeVar(t *testing.T) {
 	t.Run("bare variable", func(t *testing.T) {
 		require.Equal(t, "t7", Print(&TypeVarType{ID: 7}))
@@ -331,9 +331,9 @@ func TestPrintRawTypeVar(t *testing.T) {
 }
 
 // TestPrintUnnamedParamFallback verifies that a parameter with no IdentPat
-// pattern falls back to a positional name (arg0, arg1, ...), numbered by param
-// index. This path isn't reachable in M1 (params are always IdentPat), but the
-// fallback exists for nil/unknown patterns, so it's covered directly here.
+// pattern falls back to a positional name such as arg0 or arg1, numbered by param
+// index. The fallback exists for nil or unknown patterns, so it is covered
+// directly here.
 func TestPrintUnnamedParamFallback(t *testing.T) {
 	fn := &FuncType{
 		Params: []*FuncParam{
@@ -345,9 +345,9 @@ func TestPrintUnnamedParamFallback(t *testing.T) {
 	require.Equal(t, "fn (arg0: number, arg1: string) -> boolean", Print(fn))
 }
 
-// A destructuring parameter renders its pattern (M4 E1). Each Pat concrete in the
-// sealed set has a printPat arm, including the M5 constructor patterns
-// ExtractorPat and InstancePat, which are forward-declared members of the set.
+// A destructuring parameter renders its pattern. Each Pat concrete in the sealed
+// set has a printPat arm, including the constructor patterns ExtractorPat and
+// InstancePat, which are forward-declared members of the set.
 func TestPrintDestructuringParamPatterns(t *testing.T) {
 	tests := []struct {
 		name string
@@ -401,9 +401,9 @@ func TestPrintDestructuringParamPatterns(t *testing.T) {
 	}
 }
 
-// TestPrintScheme covers the M3 quantifier-prefix rendering: a generalized type's
-// free variables are collected into a <T0, T1, …> prefix (named by first
-// appearance in print order) and rendered under those names, while a variable-free
+// TestPrintScheme covers the quantifier-prefix rendering. A generalized type's
+// free variables are collected into a <T0, T1, …> prefix, named by first
+// appearance in print order, and rendered under those names, while a variable-free
 // type renders exactly as Print would.
 func TestPrintScheme(t *testing.T) {
 	t.Run("no free vars renders as Print", func(t *testing.T) {
@@ -466,8 +466,8 @@ func TestPrintScheme(t *testing.T) {
 		a := &TypeVarType{ID: 1, Level: 1}
 		// fn (p: mut {x: a}) -> a: freeTypeVars must descend through the RefType
 		// wrapper into its inner object to find a, so the borrowed param and the
-		// return share the one type parameter T0. This is the realistic C3 shape — a
-		// field-write makes the receiver a `mut` object — surviving M3 generalization.
+		// return share the one type parameter T0. This is the realistic shape where a
+		// field-write makes the receiver a `mut` object, surviving generalization.
 		ty := &FuncType{
 			Params: []*FuncParam{identP("p", &RefType{Mut: true,
 				Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: a}}}})},

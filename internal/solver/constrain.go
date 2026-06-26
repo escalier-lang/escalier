@@ -13,7 +13,7 @@ const unboundedArity = math.MaxInt
 
 // hasRest reports whether f's LAST parameter is a typed rest param (`...xs: T[]`).
 // A rest param binds zero or more trailing arguments, so it never counts toward the
-// required floor and lifts the accept-set upper bound to ∞ (#677 §4.2.3) — the same
+// required floor and lifts the accept-set upper bound to ∞ — the same
 // upper-bound effect as the inexact `...` marker, reached a different way.
 func hasRest(f *soltype.FuncType) bool {
 	n := len(f.Params)
@@ -40,9 +40,9 @@ func requiredCount(f *soltype.FuncType) int {
 }
 
 // acceptSet is the inclusive range [lo, hi] of argument counts f tolerates when
-// invoked (#677 §4.2.1): lo = requiredCount(f); hi = len(f.Params) when f has a
+// invoked: lo = requiredCount(f); hi = len(f.Params) when f has a
 // finite arity, and unboundedArity when its upper bound is open — either because it
-// is inexact (the `...` marker) OR because its last param is a typed rest (§4.2.3).
+// is inexact (the `...` marker) OR because its last param is a typed rest.
 // Read a supertype callback slot's accept-set as "the argument counts whoever holds
 // this slot may invoke the supplied function with."
 func acceptSet(f *soltype.FuncType) (lo, hi int) {
@@ -92,16 +92,15 @@ func commonBorrowEscape(trials [][]SolverError) *BorrowEscapeError {
 }
 
 // constraintKey keys the coinductive seen-set by pointer identity (Go's
-// interface == on pointer-backed soltype concretes). Sufficient for M1: cycles
+// interface == on pointer-backed soltype concretes). Cycles
 // in subtype-checking can only form via TypeVarTypes, and TypeVarType pointers
 // are stable throughout inference (extrude allocates fresh vars, but those are
 // stable thereafter; structural decomposition hands child pointers around
 // without copying). Structurally-equal-but-pointer-distinct duplicates produce
-// redundant cache entries, not infinite loops. M4's recursive types (aliases,
-// letrec) must preserve this property — see m1-implementation-plan §3.3
-// "Forward requirements for the named-ref node design".
+// redundant cache entries, not infinite loops. Recursive types such as aliases
+// and letrec must preserve this property.
 //
-// mutCtx is part of the key (PR 14): the same (sub, super) pair means something
+// mutCtx is part of the key: the same (sub, super) pair means something
 // different inside a mutable borrow's inner, where the object/tuple arms add the
 // contravariant write view, than in a covariant position. Keying without it would
 // let a covariant visit cache-skip a later invariant visit and drop the write-view
@@ -120,7 +119,7 @@ type extrudeKey struct {
 	pol soltype.Polarity
 }
 
-// ltExtrudeKey is the lifetime-sort twin of extrudeKey (M4 D2.5): it keys the
+// ltExtrudeKey is the lifetime-sort twin of extrudeKey: it keys the
 // lifetime extrusion cache by the origin LifetimeVar's ID and polarity, so a
 // lifetime reached in both polarities yields two fresh vars with opposite outlives
 // wiring, exactly as the type-var cache does.
@@ -141,7 +140,7 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 }
 
 // needsResidualWriteBack reports whether a mutable borrow's inner needs an explicit
-// contravariant write view in the RefType arm (PR 14). The object/tuple arms pin
+// contravariant write view in the RefType arm. The object/tuple arms pin
 // matched object/object and tuple/tuple inners via the mut-context flag, so those
 // need no residual. Any other inner — a type variable, or two mismatched kinds —
 // the flag's structural arm does not reach, so the whole reverse constraint pins it.
@@ -157,7 +156,7 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 	return true
 }
 
-// constrain asserts sub <: super. mutCtx (PR 14) is the deep-mut context flag: true
+// constrain asserts sub <: super. mutCtx is the deep-mut context flag: true
 // inside a mutable borrow's inner, where the object/tuple arms treat each named
 // field as invariant rather than covariant. The RefType arm sets it from the target
 // borrow's mutability, the object/tuple arms propagate it, and the function and
@@ -169,7 +168,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	}
 	seen.Add(key)
 
-	// Error-recovery sentinel (PR8): an ErrorType operand carries an
+	// Error-recovery sentinel: an ErrorType operand carries an
 	// already-reported diagnostic, so it ABSORBS in both directions — the
 	// constraint trivially succeeds. Short-circuiting here, ABOVE the structural
 	// switch and the variable arms, keeps it out of every bound list, so a
@@ -184,7 +183,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		return nil
 	}
 
-	// M6 PR2 pre-switch lattice block. The structural switch below dispatches
+	// Pre-switch lattice block. The structural switch below dispatches
 	// on sub and several arms return early on a non-variable super (the
 	// RefType arm most importantly), so a union/intersection super has to be
 	// matched here or it would be intercepted as a concrete-non-var demand
@@ -293,7 +292,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	case *soltype.FuncType:
 		if sup, ok := super.(*soltype.FuncType); ok {
-			// Accept-set subtyping (#677 §4.2.1): read super as a callback slot.
+			// Accept-set subtyping: read super as a callback slot.
 			// sub <: super iff accept(sub) ⊇ accept(super) — sub must tolerate every
 			// argument count a holder of super may invoke it with. With
 			// accept(sub) = [loSub, hiSub] and accept(super) = [loSup, hiSup]:
@@ -302,8 +301,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// The upper-bound clause is what exactness governs (an exact sub caps hiSub
 			// at len(sub.Params), so it can't fill a wider/inexact slot); the lower-bound
 			// clause is the `required` part (a typed-rest/optional lowers it). This
-			// subsumes M2's exact-same-arity rule: two EXACT functions have accept
-			// [r, n], so ⊇ forces equal upper bounds, i.e. the old same-arity check.
+			// subsumes the exact-same-arity rule: two EXACT functions have accept
+			// [r, n], so ⊇ forces equal upper bounds, i.e. the same-arity check.
 			loSub, hiSub := acceptSet(sub)
 			loSup, hiSup := acceptSet(sup)
 			if loSub > loSup || hiSub < hiSup {
@@ -315,14 +314,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// declares there must be optional (the lo gate forced loSub <= loSup) and so
 			// is simply never passed.
 			//
-			// KNOWN GAP (M4): when super is INEXACT and sub declares MORE params than
+			// KNOWN GAP: when super is INEXACT and sub declares MORE params than
 			// super, super's `...` tail may supply arbitrarily-typed args at sub's extra
 			// positions, so soundness demands `unknown <: sub.Params[i].Type` there —
-			// exact-types §4.2.1.2 "Variation B", the load-bearing rejection. That check
-			// needs the `_ <: unknown` (⊤) rule constrain lacks until M6, and an inexact
-			// function is unreachable from M3 source anyway (resolveTypeAnn resolves no
+			// the load-bearing rejection. That check
+			// needs the `_ <: unknown` (⊤) rule constrain does not yet have, and an inexact
+			// function is unreachable from current source anyway (resolveTypeAnn resolves no
 			// function annotations), so the extra positions are left unchecked here for
-			// now. For every M3-reachable input (exact functions only) the loop is complete.
+			// now. For every reachable input (exact functions only) the loop is complete.
 			// A function is its own annotation context, so the deep-mut flag resets.
 			var errs []SolverError
 			n := min(len(sub.Params), len(sup.Params))
@@ -361,7 +360,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// This walks the shared prefix and keeps sup.Elems[i] in bounds.
 			for i := range sup.Elems {
 				errs = append(errs, c.constrain(sub.Elems[i], sup.Elems[i], seen, mutCtx)...) // covariant read view
-				// Inside a mutable wrapper every element is invariant (PR 14): the
+				// Inside a mutable wrapper every element is invariant: the
 				// contravariant write view pins it. Outside one, elements stay covariant.
 				if mutCtx {
 					errs = append(errs, c.constrain(sup.Elems[i], sub.Elems[i], seen, mutCtx)...)
@@ -371,7 +370,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	case *soltype.ObjectType:
 		if sup, ok := super.(*soltype.ObjectType); ok {
-			// One ObjectType <: ObjectType rule serves both uses the M2 arm
+			// One ObjectType <: ObjectType rule serves both uses an earlier arm
 			// conflated: member-access field SELECTION (the super is an inexact
 			// "has at least this field" requirement minted by inferMember) and
 			// concrete object <: object SUBTYPING for object-typed params/annotations.
@@ -391,7 +390,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			//     optional): covariant on the property type.
 			var errs []SolverError
 			for _, superElem := range sup.Elems {
-				superProp := soltype.AsProperty(superElem) // M4: every elem is a property
+				superProp := soltype.AsProperty(superElem) // every elem is a property
 				subProp, ok := sub.Prop(superProp.Name)
 				if !ok {
 					if !superProp.Optional {
@@ -404,7 +403,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					continue
 				}
 				errs = append(errs, c.constrain(subProp.Type, superProp.Type, seen, mutCtx)...) // covariant read view
-				// Inside a mutable wrapper (PR 14), a writable field is invariant: the
+				// Inside a mutable wrapper, a writable field is invariant: the
 				// contravariant write view below pins it, the per-field write the eager
 				// form's constrainWriteBack did. A readonly TARGET needs only the read
 				// view, so a wider source can fill it; a readonly SOURCE cannot fill a
@@ -417,7 +416,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					errs = append(errs, c.constrain(superProp.Type, subProp.Type, seen, mutCtx)...) // contravariant write view
 				}
 			}
-			// One-way exactness (02-design-notes §"Exactness"):
+			// One-way exactness:
 			//   exact <: inexact    ok (width)      inexact <: inexact   ok (width)
 			//   exact <: exact      same member set  inexact <: exact     rejected
 			// When the super is inexact, width tolerance is the complete rule and the
@@ -440,15 +439,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		if sup, ok := super.(*soltype.PromiseType); ok {
 			// PromiseType is covariant in its Inner: Promise<L> <: Promise<R> iff
 			// L <: R. No auto-flatten — `await Promise<Promise<T>>` yields
-			// `Promise<T>` (Awaited<T> lands in M9). When the two sides are unrelated
+			// `Promise<T>`. When the two sides are unrelated
 			// concretes (e.g. Promise<L> <: Tuple), fall through to the generic
 			// CannotConstrainError below, matching the function/tuple/record arms.
 			// A promise's payload is its own annotation context, so the flag resets.
 			return c.constrain(sub.Inner, sup.Inner, seen, false)
 		}
 	case *soltype.RefType:
-		// THE GATE (M4 C2): the single RefType <: RefType rule. The mut-driven inner
-		// invariance is the highest-risk encoding in the migration — see the M4 plan.
+		// THE GATE: the single RefType <: RefType rule. The mut-driven inner
+		// invariance is the highest-risk encoding in the migration.
 		if sup, ok := super.(*soltype.RefType); ok {
 			// 1. Mutability compatibility: an immutable source cannot fill a mutable
 			//    slot (writing through the target would mutate a read-only borrow). The
@@ -457,7 +456,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if !sub.Mut && sup.Mut {
 				return []SolverError{&MutabilityMismatchError{Sub: sub, Super: sup}}
 			}
-			// 2. Inner variance (PR 14): the read view is always covariant; a mutable
+			// 2. Inner variance: the read view is always covariant; a mutable
 			//    target also makes every field it NAMES invariant. That per-field pin is
 			//    carried by the mut-context flag, set to sup.Mut here, which the
 			//    ObjectType/TupleType arms read to add the contravariant write view. An
@@ -480,8 +479,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if sup.Mut && needsResidualWriteBack(sub.Inner, sup.Inner) {
 				errs = append(errs, c.constrain(sup.Inner, sub.Inner, seen, false)...)
 			}
-			// 3. Lifetime outlives, covariant (M4 D2). Active now that borrows carry
-			//    lifetimes. D1 minted the sort. Each borrow site mints a lifetime:
+			// 3. Lifetime outlives, covariant. Active now that borrows carry
+			//    lifetimes. Each borrow site mints a lifetime:
 			//    resolveLifetimeAnn for an `&` annotation and inferBorrow for an
 			//    `&p` expression.
 			switch {
@@ -499,7 +498,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 		// RefType <: a concrete non-borrow: peel to the inner. An owned value (Lt nil)
 		// satisfies a bare slot; a borrow escaping into an owned slot is a
-		// BorrowEscapeError (live in D2). When super is a VARIABLE, fall through to the
+		// BorrowEscapeError. When super is a VARIABLE, fall through to the
 		// var arm so the WHOLE borrow is recorded as a bound — peeling there would drop
 		// its mutability.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
@@ -527,7 +526,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		//     overloaded value's arms so a let-bound overload called through the
 		//     binding (`g = f; g(x)`) resolves the arm via the same trial loop a
 		//     direct call would, in the same order.
-		//   - Annotation input (M6 PR2). `val x: A & B = e` resolves through
+		//   - Annotation input. `val x: A & B = e` resolves through
 		//     resolveTypeAnn into an IntersectionType and reaches here when the
 		//     binding flows into a constraint. specificityOrder ranks
 		//     non-function arms last in declaration order, so a non-function
@@ -611,7 +610,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 type ltPair struct{ sub, super soltype.Lifetime }
 
 // constrainLt asserts the outlives relation sub <: super between lifetimes,
-// mirroring constrain for the type sort. It is the M4 D1 lifetime-sort solver: a
+// mirroring constrain for the type sort. It is the lifetime-sort solver: a
 // variable on the left gains an upper bound, a variable on the right a lower
 // bound, and a var-to-var constraint records BOTH directions so each variable
 // sees the full relationship at coalescing — the type sort gets symmetry from a
@@ -625,8 +624,8 @@ type ltPair struct{ sub, super soltype.Lifetime }
 //
 // Bound appends route through addLowerLtBound/addUpperLtBound so a speculation
 // trial journals them; the (sub, super)-keyed seen-set terminates cycles. The
-// rule is written and unit-tested now; the RefType constrain arm activates it in
-// D2 (its lifetime step is inert while every Lt is nil).
+// rule is written and unit-tested now; the RefType constrain arm activates it
+// (its lifetime step is inert while every Lt is nil).
 func (c *Context) constrainLt(sub, super soltype.Lifetime) {
 	c.constrainLtSeen(sub, super, set.NewSet[ltPair]())
 }
@@ -645,8 +644,8 @@ func (c *Context) constrainLtSeen(sub, super soltype.Lifetime, seen set.Set[ltPa
 	superVar, superIsVar := super.(*soltype.LifetimeVar)
 	if subIsVar {
 		// Maintain the level invariant: a bound's level must not exceed the var's, or
-		// the freshener/extruder level prune over the lifetime sort becomes unsound (M4
-		// D2.5). super sits in subVar's upper bounds, a negative-position slot, so when
+		// the freshener/extruder level prune over the lifetime sort becomes unsound.
+		// super sits in subVar's upper bounds, a negative-position slot, so when
 		// it is inner to subVar extrude it out before recording, mirroring constrain's
 		// var arm. extrudeOuterAsUpper reuses an existing outer-extruded proxy of super
 		// if one is already a bound, so a repeated constraint does not mint a second
@@ -675,7 +674,7 @@ func (c *Context) constrainLtSeen(sub, super soltype.Lifetime, seen set.Set[ltPa
 }
 
 // extrudeOuterAsUpper returns the lifetime to record as v's upper bound when
-// constraining v <: lt (M4 D2.5). lt is shared when it is not inner to v. When it
+// constraining v <: lt. lt is shared when it is not inner to v. When it
 // is, it is extruded out to v's level so v's bound is never inner to v. A repeated
 // constraint must not mint a fresh proxy each time, or the ContainsLifetime dedup —
 // which keys on identity — never matches and bounds accumulate. So an existing
@@ -720,7 +719,7 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 
 // extrudeLt copies a lifetime so a LifetimeVar inner to lvl is replaced by a fresh
 // lifetime at lvl, wired to the original through the polarity-appropriate outlives
-// bound (M4 D2.5) — the lifetime-sort twin of extrude's var node. The cache is
+// bound — the lifetime-sort twin of extrude's var node. The cache is
 // keyed by (var ID, polarity) for the same reason the type-var cache is. A
 // 'static, nil slot, or lifetime at lvl or outside it extrudes to itself. Bound
 // appends route through the journaling helpers; mutating the ORIGINAL var's bound is
@@ -740,7 +739,7 @@ func (c *Context) extrudeLt(lt soltype.Lifetime, pol soltype.Polarity, lvl int, 
 	cache[key] = nlv
 	// Remember which lifetime nlv is an outer-extruded proxy of, so a repeated outlives
 	// constraint can reuse this proxy instead of minting a second one (constrainLt's
-	// findExtrudedLtBound dedup, M4 D2.5).
+	// findExtrudedLtBound dedup).
 	c.recordLtProxy(nlv, lv)
 	if pol == soltype.Positive {
 		c.addUpperLtBound(lv, nlv)
@@ -765,7 +764,7 @@ type extruder struct {
 	c     *Context
 	lvl   int
 	cache map[extrudeKey]*soltype.TypeVarType
-	// ltCache is the lifetime-sort twin of cache (M4 D2.5); see extrudeLt.
+	// ltCache is the lifetime-sort twin of cache; see extrudeLt.
 	ltCache map[ltExtrudeKey]*soltype.LifetimeVar
 }
 
@@ -776,7 +775,7 @@ func (e *extruder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Enter
 	}
 	if r, ok := t.(*soltype.RefType); ok {
 		// A borrow's lifetime is covariant on the wrapper and never walked by Accept, so
-		// extrude it here in the wrapper's polarity (M4 D2.5). refLifetimeResult then
+		// extrude it here in the wrapper's polarity. refLifetimeResult then
 		// hands back a RefType carrying the fresh lifetime for the descend path to
 		// rebuild Inner around, or signals an ordinary rebuild when no extrusion was
 		// needed. The cache is allocated on first use so a borrow-free pass pays nothing.

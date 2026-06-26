@@ -9,7 +9,7 @@ import (
 )
 
 // requireOrigin asserts the Prov table records ty as minted from node for reason
-// kind — the FromAST leaf the M2.5 population sites write (§3.3).
+// kind — the FromAST leaf the population sites write.
 func requireOrigin(t *testing.T, c *checker, ty soltype.Type, node ast.Node, kind ASTOriginKind) {
 	t.Helper()
 	o, ok := c.prov[ty]
@@ -92,7 +92,7 @@ func TestProvFuncTypeAndParamBinding(t *testing.T) {
 
 // An annotated param's fresh PrimType is recorded against its annotation
 // (AnnotationType), and the ParamBinding origin is NOT recorded for it — its blame
-// rides on the annotation (the fresh-atom discipline, §3.3).
+// rides on the annotation, following the fresh-atom discipline.
 func TestProvAnnotatedParamUsesAnnotationOrigin(t *testing.T) {
 	c := newChecker()
 	ann := numAnn()
@@ -114,7 +114,7 @@ func TestProvAnnotationType(t *testing.T) {
 	requireOrigin(t, c, ty, ta, AnnotationType)
 }
 
-// An identifier use records NOTHING (§3.3): recording against the binding's shared
+// An identifier use records NOTHING: recording against the binding's shared
 // atom would overwrite the definition's origin. So inferring a bare ident over a
 // pre-bound atom leaves the table empty.
 func TestProvIdentRecordsNothing(t *testing.T) {
@@ -125,7 +125,7 @@ func TestProvIdentRecordsNothing(t *testing.T) {
 	require.Empty(t, c.prov, "an ident use must record no provenance")
 }
 
-// The honest absence (§3.2): a synthesized (coalesced) type has no Prov entry, so
+// The honest absence: a synthesized coalesced type has no Prov entry, so
 // NodeFor reports a miss rather than lying.
 func TestProvCoalescedTypeHasNoEntry(t *testing.T) {
 	c := newChecker()
@@ -135,7 +135,7 @@ func TestProvCoalescedTypeHasNoEntry(t *testing.T) {
 	require.False(t, ok, "a coalesced type must have no provenance entry")
 }
 
-// The debugProv guard (finding #5) enforces the unique-pointer invariant: recording
+// The debugProv guard enforces the unique-pointer invariant: recording
 // the SAME type pointer against a DIFFERENT node panics (catching a future
 // interned/coalesced-pointer reuse that would silently mis-blame), while
 // re-recording against the same node is idempotent and allowed.

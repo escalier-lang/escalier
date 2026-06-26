@@ -5,19 +5,18 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeAnn converts an M2-supported type annotation into a soltype.Type,
-// returning ok=false when the annotation is outside the supported set. M2 needs
-// only the primitive annotations that annotated params and return types use
-// (number/string/boolean); everything richer — type references, generics,
-// object/tuple/function annotations, unions — is represented by types later
-// milestones add (M3/M4/M6) and resolves to an UnsupportedNodeError here, with
+// resolveTypeAnn converts a supported type annotation into a soltype.Type,
+// returning ok=false when the annotation is outside the supported set. The
+// primitive annotations that annotated params and return types use
+// (number/string/boolean) are supported here. An annotation whose representation
+// is not yet supported resolves to an UnsupportedNodeError, with
 // ok=false and a `never` placeholder so a caller can recover by keeping the type
 // it already inferred (rather than constraining against / adopting `never`, which
 // would cascade a spurious `<: never` error and poison the binding). It takes the
 // current inference level `lvl` so a supported generic with an UNSUPPORTED inner (a
 // malformed `Promise<…>`) can recover its inner to a fresh var at the right level
 // while keeping the wrapper; the primitive arms ignore lvl. Full name resolution
-// against the type scope still arrives with TypeRef support (M7).
+// against the type scope still arrives with later TypeRef support.
 func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
@@ -27,24 +26,24 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	case *ast.BooleanTypeAnn:
 		return c.annPrim(ta, soltype.BoolPrim), true
 	case *ast.TypeRefTypeAnn:
-		// M3 (PR3) recognises a single generic stdlib reference: Promise<T>. The
-		// real, alias-driven TypeRef resolution arrives in M7 — until then, any
+		// Only a single generic stdlib reference is recognised here: Promise<T>. The
+		// real, alias-driven TypeRef resolution arrives later — until then, any
 		// other name (or arity) reports unsupported with a `never` placeholder so
 		// the caller can recover by keeping the inferred type.
 		//
-		// FOOTGUN (removed in M7): this matches the bare NAME "Promise" WITHOUT
+		// FOOTGUN: this matches the bare NAME "Promise" WITHOUT
 		// consulting the type scope, so it would preempt any user-defined
 		// `type Promise<T> = …` alias. That is harmless today (user type aliases
 		// don't resolve yet, and the prelude only seeds Promise as an opaque
-		// placeholder), but M7's scope-driven TypeRef resolution MUST replace this
-		// hardcoded check — resolve the name through the scope first — so a real
+		// placeholder), but the eventual scope-driven TypeRef resolution MUST replace
+		// this hardcoded check — resolve the name through the scope first — so a real
 		// alias wins instead of being silently shadowed by this stub.
 		if ast.QualIdentToString(ta.Name) == "Promise" && len(ta.TypeArgs) == 1 {
 			// A lifetime-annotated Promise (`'a Promise<T>` or `Promise<'a, T>`) is not
-			// supported: M3's PromiseType carries no lifetime, so silently accepting it
+			// supported: PromiseType carries no lifetime, so silently accepting it
 			// would drop the lifetime. Reject it as an unsupported feature rather than
-			// coercing to a plain Promise<T>. (Lifetimes on referenced types land with
-			// the wider TypeRef/lifetime work.)
+			// coercing to a plain Promise<T>. Lifetimes on referenced types land with
+			// the wider TypeRef/lifetime work.
 			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
 				return c.reportUnsupportedFeature(ta, "lifetime annotation on Promise"), false
 			}
@@ -61,11 +60,11 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 				// `unknown` inner would instead cascade a spurious `<: never` / `<:
 				// unknown`, since constrain has no rule for either as an input).
 				//
-				// PR8 (planning/simple_sub/m3-implementation-plan.md) deliberately
-				// KEEPS this fresh var rather than substituting its ErrorType sentinel:
-				// PR8 repoints only the no-good-type recovery, and this one yields a
-				// strictly better type — the fresh var generalizes (`Promise<_>` ⇒
-				// `Promise<T0>`) where ErrorType would freeze it to `Promise<error>`.
+				// This deliberately KEEPS the fresh var rather than substituting the
+				// ErrorType sentinel: the sentinel recovery applies only to the
+				// no-good-type case, and this one yields a strictly better type — the
+				// fresh var generalizes (`Promise<_>` ⇒ `Promise<T0>`) where ErrorType
+				// would freeze it to `Promise<error>`.
 				inner = c.freshAt(lvl)
 			}
 			t := &soltype.PromiseType{Inner: inner}
@@ -101,10 +100,10 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 }
 
 // resolveObjectTypeAnn lowers an object type annotation to a soltype.ObjectType,
-// honoring the trailing `...` inexact marker. M4 ships PropertyElem only: a
-// `name: T` / `name?: T` property resolves to a PropertyElem; method/getter/setter
-// members (M5), mapped/index signatures and the object rest/spread (M9) are not
-// part of M4's object and report an unsupported feature, with the object still
+// honoring the trailing `...` inexact marker. Only PropertyElem is supported: a
+// `name: T` / `name?: T` property resolves to a PropertyElem. Method/getter/setter
+// members, mapped/index signatures, and the object rest/spread are not yet
+// supported and report an unsupported feature, with the object still
 // built from the properties that do resolve. Duplicate keys follow the
 // last-wins-first-position dedup inferObject uses, keeping property names unique.
 //
@@ -131,7 +130,7 @@ func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.
 		var ft soltype.Type = c.freshAt(lvl)
 		if prop.Value != nil {
 			value := prop.Value
-			// An owned-mutable field `{a: mut {x}}` is rejected (#779): a `mut` cell
+			// An owned-mutable field `{a: mut {x}}` is rejected: a `mut` cell
 			// nested inside a non-mut container is misleading, since the container's
 			// immutability already reaches into the field. Recover to the field's bare
 			// inner so the object keeps a sensible shape. A `&`/`&mut` borrow field is a
@@ -156,8 +155,8 @@ func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.
 
 // resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType,
 // honoring the trailing `...` inexact marker. A rest-spread / variadic element
-// (`[...P]`, `[number, ...Array<number>]`) defers with its type-level feature
-// (M9 / M7) and reports unsupported; the bare trailing `...` inexact marker is
+// (`[...P]`, `[number, ...Array<number>]`) is not yet supported and reports
+// unsupported; the bare trailing `...` inexact marker is
 // carried on ta.Inexact, not as an element. An element whose annotation is
 // unsupported recovers to a fresh var so the tuple keeps its arity.
 func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
@@ -168,7 +167,7 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 			unsupported = true
 			continue
 		}
-		// An owned-mutable element `[mut {x}]` is rejected (#779), the tuple twin of
+		// An owned-mutable element `[mut {x}]` is rejected, the tuple twin of
 		// the object-property rejection above: a `mut` cell nested inside a non-mut
 		// container is misleading. Recover to the element's bare inner. A `&`/`&mut`
 		// borrow element stays legal — it references external storage.
@@ -193,7 +192,7 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 // resolveUnionTypeAnn lowers `A | B | …` through newUnion. An unsupported
 // member recovers to a fresh var so the union shape survives, mirroring the
 // Promise<bad> and object/tuple cascade-safe recovery. The Inexact flag and
-// its parser surface land in PR4.
+// its parser surface are not yet implemented.
 func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))
 	for i, m := range ta.Types {
@@ -235,16 +234,16 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 }
 
 // resolveMutableTypeAnn lowers a `mut T` annotation to an owned-mutable borrow,
-// RefType{Mut: true, Lt: nil, Inner: T} (the C1 RefType wrapper). The lifetime
-// borrow forms (`'a T`, `mut 'a T`) still defer: a named lifetime needs the
-// lifetime sort (D1), and the parser already rejects a lifetime before a non-
-// reference inner, so only the no-lifetime `mut` form reaches here.
+// RefType{Mut: true, Lt: nil, Inner: T}. The lifetime borrow forms (`'a T`,
+// `mut 'a T`) still defer: a named lifetime needs the lifetime sort, and the
+// parser already rejects a lifetime before a non-reference inner, so only the
+// no-lifetime `mut` form reaches here.
 //
 // `mut` over a non-borrowable inner (a primitive, function, promise — anything
 // outside RefInner) is a no-op in the value-types model: there is nothing to
 // borrow. It reports an unsupported feature rather than fabricating a borrow over
 // a type the wrapper cannot hold.
-// resolveMutableTypeAnn stores the lazy deep-mut form (PR 14): the inner is wrapped
+// resolveMutableTypeAnn stores the lazy deep-mut form: the inner is wrapped
 // in one owned-mutable RefType without rewriting its children. `mut {a: {x}}` stays
 // `mut {a: {x}}` rather than deepening to `mut {a: mut {x}}`. The deep-mut rule —
 // every nested object/tuple field is invariant and reads back mutable — is applied
@@ -291,7 +290,7 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 	if !ok {
 		return c.reportUnsupportedFeature(ta, "borrow of a non-borrowable type"), false
 	}
-	// The lazy deep-mut form (PR 14) stores `&mut {a: {x}}` verbatim; the deep-mut
+	// The lazy deep-mut form stores `&mut {a: {x}}` verbatim; the deep-mut
 	// rule is applied at access and constrain time rather than by rewriting the
 	// pointee's children here.
 	t := &soltype.RefType{Mut: ta.Mut, Lt: c.resolveLifetimeAnn(ta.Lifetime, lvl), Inner: ri}
@@ -336,7 +335,7 @@ func (c *checker) namedLifetime(name string, lvl int) *soltype.LifetimeVar {
 }
 
 // annPrim mints a FRESH PrimType for an annotation and records it against the
-// annotation node (AnnotationType origin) — the "fresh-atom discipline" (§3.3).
+// annotation node (AnnotationType origin) — the "fresh-atom discipline".
 //
 // Why fresh, rather than a single shared/interned `number` value? Provenance is
 // the reason. The Prov side table is keyed by POINTER IDENTITY
@@ -347,7 +346,7 @@ func (c *checker) namedLifetime(name string, lvl int) *soltype.LifetimeVar {
 //   - Precise blame. A unique atom per annotation lets `val x: number = "hi"`
 //     resolve its `number` operand back to the exact annotation node — surfaced as
 //     the related "expected here" span — and lets a prim/prim mismatch blame the
-//     offending annotation instead of degrading to the constraint site (§3.3, §3.7).
+//     offending annotation instead of degrading to the constraint site.
 //   - No Prov-invariant conflict. recordProv requires each type pointer to map to a
 //     single node; the debugProv guard panics when a pointer is re-recorded against
 //     a DIFFERENT node (prov.go). A shared `number` would be recorded against every

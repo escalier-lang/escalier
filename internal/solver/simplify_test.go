@@ -16,8 +16,8 @@ func fparam(name string, t soltype.Type) *soltype.FuncParam {
 // Co-occurrence merging collapses distinct quantified variables that always appear
 // together. The shape mirrors `outer` from the polymorphism suite: a parameter
 // variable a flows to two result variables b, c (a's upper bounds), both returned
-// in a tuple. PR1 retained all three as separate type parameters
-// (`fn <T0, T1>(x: T0 & T1) -> [T0, T1]`); PR2 merges them to one.
+// in a tuple. Without the merge all three stay separate type parameters
+// (`fn <T0, T1>(x: T0 & T1) -> [T0, T1]`); the merge collapses them to one.
 func TestCoalesceSchemeMergesCoOccurring(t *testing.T) {
 	b := &soltype.TypeVarType{ID: 2, Level: 1}
 	c := &soltype.TypeVarType{ID: 3, Level: 1}

@@ -54,7 +54,7 @@ func TestInferScriptSourceOrder(t *testing.T) {
 	require.Equal(t, "5", values["y"])
 }
 
-// TestScriptTransitionParity is the milestone's central claim: a `mut`→immutable
+// TestScriptTransitionParity is the central claim: a `mut`→immutable
 // transition at script top level is checked identically to the same statements
 // wrapped in a function body. Each case runs through InferScript directly, then again
 // through InferModule after being indented into `fn test() { … }`. The two error lists

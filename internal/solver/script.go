@@ -26,9 +26,8 @@ import (
 //     seed the alias/liveness tables;
 //  4. walk the block in source order through inferBlock.
 //
-// M4 shipped every building block this uses: the pre-pass, the per-body funcCtx, the
-// alias tracker, and the transition checker. The only new code is this entry point
-// that runs them over a script body. There is no new inference.
+// This entry point reuses the pre-pass, the per-body funcCtx, the alias tracker, and
+// the transition checker, running them over a script body. It adds no new inference.
 //
 // The pushed funcCtx carries no async flag and a nil node. A top-level `await` is
 // rejected the same way it is at module top level. There is no enclosing function to

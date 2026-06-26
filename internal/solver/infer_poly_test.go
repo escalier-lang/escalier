@@ -6,16 +6,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// PR1 let-generalization, Category-A acceptance against real source. M2 froze
-// every top-level binding to a coalesced monotype; PR1 generalizes at the SCC
-// boundary so a polymorphic binding is instantiated fresh per use.
+// Let-generalization acceptance against real source. Generalization
+// happens at the SCC boundary so a polymorphic binding is instantiated fresh per
+// use.
 //
 // Each test pins the rendered signature, exercising the printer's <T0, …> prefix.
 // A render is COMPACT when the signature names the fewest type parameters it can,
 // with no two always-together variables left as separate parameters.
 //
 // Identity is compact from the same variable appearing in both positions; the
-// captured-param case (InnerCapturesOuterParam) needs PR2's co-occurrence merging
+// captured-param case (InnerCapturesOuterParam) needs co-occurrence merging
 // to collapse its three always-together variables into one type parameter. The
 // two-types-of-use BEHAVIOR is asserted alongside the render as the real proof of
 // polymorphism.
@@ -27,7 +27,8 @@ import (
 func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 	t.Run("render", func(t *testing.T) {
 		// Identity's param and return are the same variable, so its render is
-		// compact even before PR2 — this pins the <T0> quantifier prefix.
+		// compact even without co-occurrence merging — this pins the <T0>
+		// quantifier prefix.
 		values, _, errs := inferSource(t, `fn id(x) { return x }`)
 		require.Empty(t, errs)
 		require.Equal(t, map[string]string{"id": "fn <T0>(x: T0) -> T0"}, values)
@@ -50,7 +51,7 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 
 // Applying a polymorphic identity at two different argument types in one
 // expression yields each argument's own type (not their union), so the tuple is
-// ["hello", 5]. This is the headline Category-A render — compact in PR1 because
+// ["hello", 5]. This is the headline render — compact because
 // every remaining variable coalesces to a concrete literal.
 func TestInferModuleIdentityPolymorphism(t *testing.T) {
 	values, _, errs := inferSource(t, `
@@ -65,12 +66,12 @@ func TestInferModuleIdentityPolymorphism(t *testing.T) {
 }
 
 // A body-level inner function that captures an outer parameter keeps the capture
-// through generalization (M2's eager body-level coalescing froze it to `never`).
-// The param flows to both tuple positions through two fresh result variables, so
-// the raw scheme carries three distinct quantified variables — PR1 rendered the
-// non-compact `fn <T0, T1>(y: T0 & T1) -> [T0, T1]`. PR2's co-occurrence merging
-// recognises that the three always appear together and collapses them to one type
-// parameter: `fn <T0>(y: T0) -> [T0, T0]`. Applying outer to 5 still yields [5, 5],
+// through generalization. The param flows to both tuple positions through two
+// fresh result variables, so the raw scheme carries three distinct quantified
+// variables, which without merging would render the non-compact
+// `fn <T0, T1>(y: T0 & T1) -> [T0, T1]`. Co-occurrence merging recognises that the
+// three always appear together and collapses them to one type parameter:
+// `fn <T0>(y: T0) -> [T0, T0]`. Applying outer to 5 still yields [5, 5],
 // confirming the merge preserves the input→output connection.
 func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
@@ -87,7 +88,7 @@ func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 
 // Let-polymorphism extends to body-level `val`s: an inner polymorphic function
 // used at two types within the same body resolves each use independently. A
-// monomorphic body-level binding (M2) would render [5 | "hi", 5 | "hi"].
+// monomorphic body-level binding would render [5 | "hi", 5 | "hi"].
 func TestInferModuleBodyLevelLetPolymorphism(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val f = fn () {
@@ -126,8 +127,8 @@ func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 	}, values)
 }
 
-// A recursive group generalizes without looping (the coalesce seen-guard, shipped
-// in M2 PR-5, keeps the cyclic var↔var bound graph total under generalization too).
+// A recursive group generalizes without looping. The coalesce seen-guard keeps the
+// cyclic var↔var bound graph total under generalization too.
 // The ungrounded mutual recursion bottoms out: each param is unused (parameter-only
 // ⇒ unknown) and each return is an ungrounded recursive position (⇒ never). The
 // real contract is that inference TERMINATES rather than hangs.

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M4 G1: mutability-transition checking ---
+// --- Mutability-transition checking ---
 //
 // The transition checker is ported from the old checker (check_transitions.go), with
 // its two type predicates reimplemented over soltype.
@@ -26,7 +26,7 @@ import (
 // What stays at the unit level cannot be reproduced cleanly from source:
 //   - The type predicates isValueType / isMutableType / isSourceMutable and the
 //     borrowEscapedToStatic query are Go-level functions, tested directly.
-//   - The G2 static-escape cases (TestStaticEscapeTransition) isolate the lifetime
+//   - The static-escape cases (TestStaticEscapeTransition) isolate the lifetime
 //     query, its polarity, the transitive-member reach, and the target-dead early
 //     return. From source those are confounded by the global-write store error and the
 //     borrow-into-owned-slot escape, or are not constructible at all. The feature's
@@ -130,14 +130,14 @@ func transitionMessages(t *testing.T, errs []SolverError) []string {
 }
 
 // staticBorrow builds a mut/immutable borrow whose lifetime is forced to 'static,
-// the shape borrowEscapedToStatic recognizes as a permanent outside alias (G2). The
-// 'static upper bound is what D3's constrainEscape adds when a borrow escapes.
+// the shape borrowEscapedToStatic recognizes as a permanent outside alias. The
+// 'static upper bound is what constrainEscape adds when a borrow escapes.
 func staticBorrow(mut bool) *soltype.RefType {
 	lt := &soltype.LifetimeVar{ID: 1, UpperBounds: []soltype.Lifetime{soltype.Static}}
 	return &soltype.RefType{Mut: mut, Lt: lt, Inner: objT()}
 }
 
-// TestStaticEscapeTransition covers G2's lifetime-sort replacement for the dropped
+// TestStaticEscapeTransition covers the lifetime-sort replacement for the dropped
 // HasStatic{Mut,Imm}Alias bits: a source whose borrow escaped to 'static is a
 // permanent outside alias, so a transition conflicts even when the source is locally
 // dead after the transition point. Without the escape the same state is conflict-free.
@@ -177,7 +177,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 	// drives the same conflict. This covers borrowEscapedToStatic's *StaticLifetime
 	// branch through the full transition path. The source-level form above is not
 	// constructible yet: a lifetime annotation attaches only to a type reference, which
-	// needs M7's TypeRef resolution, so this stays at the unit level until then.
+	// needs TypeRef resolution, so this stays at the unit level until then.
 	t.Run("Rule1_ExplicitStaticLifetime_Error", func(t *testing.T) {
 		a := liveness.NewAliasTracker()
 		a.NewValue(src, liveness.AliasMutable)
@@ -198,7 +198,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 	//
 	// It does NOT model the escape-creating store. In a full program that store, e.g.
 	// `sink = p` into an immutable global with p staying live, is itself a Rule 1 error
-	// once Option 1 checks module-level write targets. TestStaticEscapeTransitionFromSource
+	// once the checker checks module-level write targets. TestStaticEscapeTransitionFromSource
 	// runs the whole program and reports it; this unit test checks a single transition,
 	// so the two are not the same situation and this one correctly reports nothing.
 	t.Run("MutEscape_TargetDead_OK", func(t *testing.T) {
@@ -213,21 +213,22 @@ func TestStaticEscapeTransition(t *testing.T) {
 }
 
 // TestStaticEscapeTransitionFromSource is the end-to-end counterpart. A `&mut`
-// borrow stored into module-level `sink` escapes to 'static (D3), creating a
+// borrow stored into module-level `sink` escapes to 'static, creating a
 // permanent alias outside the function, then is aliased into the immutable
 // `snap`. The program surfaces two errors, both asserted.
 //
 //  1. The global-write transition at `sink = p`. Storing the mutable borrow into
 //     the immutable global `sink` while `p` stays live afterward is a
 //     mut→immutable transition against a permanent target.
-//  2. The static-escape transition at `val snap = p` (G2). `p` escaped to
+//  2. The static-escape transition at `val snap = p`. `p` escaped to
 //     'static via the earlier store, so aliasing it into immutable `snap`
 //     conflicts. The query over `p`'s 'static-forced lifetime is what reports
 //     it, named as a `'static` escape.
 //
-// Before G2 the dropped HasStaticMutAlias bit was never set, so case 2 was
-// silently accepted as a false negative. Before the global-write check, case 1
-// was missed entirely because the module-level target is not a tracked local.
+// Before the static-escape query, the dropped HasStaticMutAlias bit was never
+// set, so case 2 was silently accepted as a false negative. Before the
+// global-write check, case 1 was missed entirely because the module-level target
+// is not a tracked local.
 //
 // `val snap: &{x} = p` aliases the borrow at a fresh lifetime. The lifetime sort
 // and the transition pass produce the verdict above, which is case 2.
@@ -237,16 +238,14 @@ func TestStaticEscapeTransition(t *testing.T) {
 // conflict fires purely because `p` escaped to 'static, not because `p` is
 // locally live. The liveness loop skips the dead `p`. Only the escape query
 // reports it.
-// DISABLED until PR 6 lands.
 //
-// PR 6 of the affine semantics plan moves the global-write site from the
-// transition-checker onto the move engine. The plan says: "The global-write
-// site stops dropping mutability and instead consumes, per 'Move subsumes the
-// escape-site logic.'" Once that lands, `sink = p` consumes `p`, the later
-// `val snap: &{x: number} = p` is a use-after-move, and the two transition
-// diagnostics asserted below are replaced by a single UseAfterMoveError
-// against the `p` in `val snap = p`. Re-enable then and switch the assertion
-// to the UseAfterMove message.
+// DISABLED until the global-write site consumes its source.
+//
+// Once the global-write site stops dropping mutability and instead consumes
+// its source, `sink = p` consumes `p`, the later `val snap: &{x: number} = p`
+// is a use-after-move, and the two transition diagnostics asserted below are
+// replaced by a single UseAfterMoveError against the `p` in `val snap = p`.
+// Re-enable then and switch the assertion to the UseAfterMove message.
 /*
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
@@ -267,11 +266,11 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 }
 */
 
-// TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
-// mutability transition against a permanent, always-live target. The local reassignment
-// path skips module-level targets, so before this the store went unchecked. This is an
-// in-body check only; it does not catch a caller that retains a mutable alias to a value
-// stored into an immutable global (see the dead-source case below).
+// TestGlobalWriteMutTransition covers the global-write check: a store into a module-level
+// binding is a mutability transition against a permanent, always-live target. The local
+// reassignment path skips module-level targets, so before this the store went unchecked.
+// This is an in-body check only; it does not catch a caller that retains a mutable alias
+// to a value stored into an immutable global (see the dead-source case below).
 func TestGlobalWriteMutTransition(t *testing.T) {
 	// Storing a mut borrow into the immutable global `sink`, then mutating through the
 	// borrow, is a mut→immutable transition: `sink` permanently observes a value that p
@@ -289,12 +288,12 @@ func TestGlobalWriteMutTransition(t *testing.T) {
 		}, transitionMessages(t, errs))
 	})
 
-	// When the source is dead within this body, Option 1's in-body check reports
+	// When the source is dead within this body, the in-body check reports
 	// nothing. This is NOT a soundness guarantee. The store still escapes p to 'static,
 	// and the CALLER may keep a live mutable alias to the same value and mutate it after
 	// the call, so the immutable `sink` observes a mutation. Catching that needs the call
-	// site to enforce the 'static borrow as unique, which is the borrow checker's job
-	// (#618, #762), not this pass. The assertion pins current behavior and is expected to
+	// site to enforce the 'static borrow as unique, which is the borrow checker's job,
+	// not this pass. The assertion pins current behavior and is expected to
 	// gain an error once the caller-side check lands.
 	t.Run("dead_in_body_source_no_inbody_conflict", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
@@ -318,7 +317,7 @@ func TestGlobalWriteMutTransition(t *testing.T) {
 	})
 }
 
-// TestBorrowEscapedToStatic locks the lifetime-sort query G2 uses in place of the
+// TestBorrowEscapedToStatic locks the lifetime-sort query used in place of the
 // dropped escape bits: a borrow forced to 'static is recognized with its mutability, an
 // owned value or an unforced borrow is not.
 func TestBorrowEscapedToStatic(t *testing.T) {
@@ -438,14 +437,14 @@ func TestTransitionWiringNoSpuriousErrors(t *testing.T) {
 // into the immutable q. p mutates `p.x = 5` and q stays live for the later
 // `q.x` read, so both are live across the alias. Rule 1 fires.
 //
-// DISABLED until PR 6 lands.
+// DISABLED until val/var bindings consume their source.
 //
-// PR 6 of the affine semantics plan makes `val`/`var` bindings flow sites
-// that consume the source. Once it lands, `val q: {x} = p` consumes p, so
-// `p.x = 5` is a use-after-move rather than a live-source Rule 1 transition,
-// and the diagnostic changes to a UseAfterMoveError that names both the
-// move site (the `val q` binding) and the use site (`p.x = 5`). Re-enable
-// then and update the assertion to match the new error.
+// Once `val`/`var` bindings become flow sites that consume the source,
+// `val q: {x} = p` consumes p, so `p.x = 5` is a use-after-move rather than a
+// live-source Rule 1 transition, and the diagnostic changes to a
+// UseAfterMoveError that names both the move site (the `val q` binding) and the
+// use site (`p.x = 5`). Re-enable then and update the assertion to match the
+// new error.
 /*
 func TestTransitionWiringReportsRule1Error(t *testing.T) {
 	_, _, errs := inferSource(t, `
@@ -540,10 +539,10 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				"cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
 			},
 		},
-		// G3 binds a `mut` borrow into a bare annotation by reborrowing it as a local
+		// Binding a `mut` borrow into a bare annotation reborrows it as a local
 		// immutable view. `snap` dies within `p`'s region and never escapes, so the
 		// lifetime sort accepts it, matching internal/checker, which has no borrow-escape
-		// concept here. Before G3 this reported the divergent "does not live long enough".
+		// concept here. Earlier this reported the divergent "does not live long enough".
 		"UnforcedLifetime_LocalReborrow_OK": {
 			src: `
 				fn f(p: mut {x: number}) {

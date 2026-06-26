@@ -8,12 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// PR3 — async / await / return-point join, against real source through
-// inferSource. The PR builds on M2's monomorphic walk: the body of an `async fn`
-// types exactly like a plain function, then its EXTERNAL return wraps in
-// Promise<T>; `await e` constrains `e <: Promise<U>` and yields `U`; the
-// collected ReturnStmts join before constraining against the return annotation.
-// No auto-flatten of nested Promise<Promise<T>> — that is M9's Awaited<T>.
+// Async / await / return-point join, against real source through inferSource. The
+// body of an `async fn` types exactly like a plain function, then its EXTERNAL
+// return wraps in Promise<T>; `await e` constrains `e <: Promise<U>` and yields
+// `U`; the collected ReturnStmts join before constraining against the return
+// annotation. There is no auto-flatten of nested Promise<Promise<T>>; that is a
+// later Awaited<T>.
 
 // --- async fn external wrap ---
 
@@ -60,7 +60,7 @@ func TestInferAwaitUnwrapsPromise(t *testing.T) {
 
 // No auto-flatten: `await p` where `p: Promise<Promise<number>>` yields
 // `Promise<number>` — one layer peeled, the rest preserved (the constraint is
-// `p <: Promise<U>`, so U = Promise<number>; Awaited<T>'s recursive flatten is M9).
+// `p <: Promise<U>`, so U = Promise<number>; a recursive Awaited<T> flatten is future work).
 // With NO return annotation the async fn wraps that inferred return, so the external
 // type is Promise<Promise<number>> — which only holds if await peeled exactly one
 // layer (a full flatten would give `number`, wrapping to `Promise<number>`).
@@ -130,7 +130,7 @@ func TestInferAsyncPromiseWildcardReturnInferred(t *testing.T) {
 
 // `await` outside an `async fn` is a WALK rejection — not a type rule failure.
 // The AwaitOutsideAsyncError carries the await node and produces the ErrorType
-// recovery placeholder (PR8) so a downstream consumer doesn't cascade.
+// recovery placeholder so a downstream consumer doesn't cascade.
 func TestInferAwaitOutsideAsyncRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(p: Promise<string>) {
@@ -213,7 +213,7 @@ func TestInferAwaitInOuterAfterInnerAsync(t *testing.T) {
 
 // --- Block return-point join ---
 
-// The headline PR3 join: `fn () { if c { return 1 } return "x" }` collects BOTH
+// The headline join: `fn () { if c { return 1 } return "x" }` collects BOTH
 // returns and joins them with the tail. The function externally returns
 // 1 | "x".
 func TestInferBlockReturnJoinAcrossIf(t *testing.T) {
@@ -224,9 +224,8 @@ func TestInferBlockReturnJoinAcrossIf(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	// The two return points coalesce into a union, canonicalized by M6 PR1's
-	// newUnion. NumLit sorts before StrLit within the LitType kind, so 1
-	// comes before "x".
+	// The two return points coalesce into a union, canonicalized by newUnion.
+	// NumLit sorts before StrLit within the LitType kind, so 1 comes before "x".
 	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["h"])
 }
 
@@ -245,8 +244,8 @@ func TestInferBlockReturnAnnotationCheckedAgainstAllReturns(t *testing.T) {
 }
 
 // A non-tail return whose type CONFLICTS with the declared return annotation
-// must be reported. Pre-PR3 (M2) the non-tail return was dropped silently; PR3
-// joins it with the tail and constrains the join against the annotation.
+// must be reported. The non-tail return joins with the tail, and the join is
+// constrained against the annotation.
 func TestInferBlockNonTailReturnCheckedAgainstAnnotation(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(c: boolean) -> number {
@@ -263,8 +262,7 @@ func TestInferBlockNonTailReturnCheckedAgainstAnnotation(t *testing.T) {
 }
 
 // An `async fn` joined with multiple returns wraps the join in Promise. The
-// external return is Promise<1 | "x">. Members are in canonical order under
-// M6 PR1.
+// external return is Promise<1 | "x">. Members are in canonical order.
 func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		async fn f(c: boolean) {
@@ -280,8 +278,8 @@ func TestInferAsyncFnWithJoinedReturnsWrapped(t *testing.T) {
 
 // An if/else used as an expression is the join of its branches, observed
 // through an explicit `return` (a bare tail would be discarded). Without
-// generalization on the binding (PR1's value-only generalization for `val =
-// fn`), the binding here is monomorphic-frozen to the join.
+// value-only generalization on the binding, the binding here is
+// monomorphic-frozen to the join.
 func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn pick(c: boolean) {
@@ -293,7 +291,7 @@ func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 }
 
 // An if without an else folds in void from the missing alt, so
-// `return if c { 5 }` returns `5 | void`. Void sorts last in M6 PR1's
+// `return if c { 5 }` returns `5 | void`. Void sorts last in the
 // canonical order, so the data member 5 leads.
 func TestInferIfElseExprMissingAltIsVoid(t *testing.T) {
 	values, _, errs := inferSource(t, `
@@ -364,11 +362,11 @@ func TestInferNestedFnReturnsScoped(t *testing.T) {
 // --- Error-recovery: no cascading on a failed sub-expression ---
 //
 // A reported diagnostic leaves the ErrorType recovery placeholder in expression
-// position (c.report, PR8). ErrorType absorbs in both directions inside constrain,
+// position via c.report. ErrorType absorbs in both directions inside constrain,
 // so the if-condition and await-argument checks no longer cascade a spurious second
 // `cannot constrain … <: …` on top of the real error — exactly ONE diagnostic
-// surfaces. (Before PR8, inferIfElse/inferAwait hand-guarded against a `never`
-// placeholder at each site; PR8 retired those guards for the absorbing sentinel.)
+// surfaces. The absorbing sentinel replaces per-site hand-guards against a `never`
+// placeholder in inferIfElse and inferAwait.
 
 // A failed `if` condition (unknown identifier) yields a single UnknownIdentifierError
 // — not also a `never <: boolean`. The branches still type, so the if value is their
@@ -430,7 +428,7 @@ func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
 	require.Equal(t, "fn <T0>(p: Promise<T0>) -> Promise<T0>", values["f"])
 }
 
-// --- Rejected forms (#6, #7) ---
+// --- Rejected forms ---
 
 // A lifetime-annotated Promise is rejected, not silently coerced to a plain
 // Promise<T> — the soltype PromiseType carries no lifetime, so accepting it would
@@ -523,7 +521,7 @@ func TestInferIfElseBothBranchesDivergeYieldsNever(t *testing.T) {
 	require.Equal(t, "never", values["x"])
 }
 
-// #719/#720: dead code after a diverging statement no longer contributes to the
+// Dead code after a diverging statement does not contribute to the
 // function's value. Both branches return, so x's initializer diverges entirely
 // and the unreachable `[x]` statement is walked but discarded — the function's
 // return type is exactly the join of its return points, 1 | 2.
@@ -538,7 +536,7 @@ func TestInferDeadTailAfterDivergingValDiscarded(t *testing.T) {
 	require.Equal(t, "fn (c: boolean) -> 1 | 2", values["f"])
 }
 
-// #719/#720: a statement after a `return` is dead code and does not contribute
+// A statement after a `return` is dead code and does not contribute
 // to the function's value — `fn g() { return 1; 2 }` is `1`, not `1 | 2`.
 func TestInferStatementAfterReturnDiscarded(t *testing.T) {
 	values, _, errs := inferSource(t, `

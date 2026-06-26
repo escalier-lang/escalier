@@ -5,9 +5,9 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Probe is the M3 (PR5) speculation journal: it records the mutations a
-// tentative inference does so a *discarded* trial leaves no trace. Two kinds of
-// mutation are journaled:
+// Probe is the speculation journal: it records the mutations a tentative
+// inference does so a *discarded* trial leaves no trace. Two kinds of mutation
+// are journaled:
 //
 //  1. Bound appends. Every TypeVarType the trial appends a bound to (via
 //     addLowerBound/addUpperBound) is recorded once, with its bound-list lengths
@@ -38,14 +38,14 @@ import (
 // top-level commit makes the mutations permanent and drops the journal. The
 // active probe lives on *Context (the engine's bound-mutating core is there); the
 // push/pop discipline and side-table registration live on the checker carrier
-// (openProbe/closeProbe), which owns Info/Prov/errs. PR6 (overloading) is the
-// first consumer: each candidate overload is trialled under a probe and the
-// losers rolled back.
+// (openProbe/closeProbe), which owns Info/Prov/errs. Overloading is the first
+// consumer: each candidate overload is trialled under a probe and the losers
+// rolled back.
 //
-// M4 D1 adds a SECOND bounded sort, LifetimeVar. The probe stays concrete instead
-// of abstracting over "things with bound lists". The plan's discarded `Bounded`
-// interface would have been that abstraction, but Go can't fit it because the
-// truncate methods would be unexported on soltype types. So the probe carries a
+// The probe also journals a SECOND bounded sort, LifetimeVar. The probe stays
+// concrete instead of abstracting over "things with bound lists". A `Bounded`
+// interface would be that abstraction, but Go can't fit it because the truncate
+// methods would be unexported on soltype types. So the probe carries a
 // PARALLEL journal of its own: ltEntries, ltTouched, and recordLt. That journal
 // follows the same length-snapshot and truncate-on-discard discipline as the
 // *TypeVarType path. The cost is two near-identical discard paths. The gain is no

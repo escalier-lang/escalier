@@ -7,27 +7,27 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// TypeScheme is a name's generalized type — the M3 replacement for M2's plain
-// soltype.Type binding. A MonoScheme is a value that does not generalize (a
-// parameter, a current-level initializer during inference, a body-level `val`, a prelude
-// operator); a PolyScheme carries a generalize-level so each use can be
-// instantiated with fresh variables (let-polymorphism). The IsAnnotated bit is
-// forward-looking metadata for PR6's overload-recursion gate — PR1 sets it false
-// and never reads it.
+// TypeScheme is a name's generalized type. A MonoScheme is a value that does not
+// generalize, such as a parameter, a current-level initializer during inference,
+// a body-level `val`, or a prelude operator. A PolyScheme carries a
+// generalize-level so each use can be instantiated with fresh variables, the
+// let-polymorphism path. The IsAnnotated bit is forward-looking metadata for the
+// overload-recursion gate. It is currently always false and never read.
 type TypeScheme interface {
 	isScheme()
 	// IsAnnotated reports whether this scheme came from a user-written signature.
-	// PR1 always returns false; PR6 sets it per overload arm and folds it over a
-	// binding's arms for the mutual-recursion-needs-annotation rule.
+	// It is currently always false. Overload resolution sets it per overload arm
+	// and folds it over a binding's arms for the mutual-recursion-needs-annotation
+	// rule.
 	IsAnnotated() bool
 }
 
 // MonoScheme is a non-generalized type. instantiate returns its Ty unchanged, so
-// every use shares the same variables — the monomorphic discipline M2 had for
-// every binding, now scoped to the bindings that genuinely must not generalize.
+// every use shares the same variables. This monomorphic discipline is scoped to
+// the bindings that genuinely must not generalize.
 type MonoScheme struct {
 	Ty        soltype.Type
-	Annotated bool // PR6 only — consulted solely for overload arms
+	Annotated bool // consulted solely for overload arms
 }
 
 // PolyScheme is a generalized type. Body is the RAW (variable-carrying) type so
@@ -38,7 +38,7 @@ type MonoScheme struct {
 type PolyScheme struct {
 	Level     int
 	Body      soltype.Type
-	Annotated bool // PR6 only — set per overload arm; folds for the recursion gate
+	Annotated bool // set per overload arm; folds for the recursion gate
 
 	// coalesced memoizes the display type. A Body is immutable after
 	// generalization. Later components instantiate fresh copies rather than
@@ -67,17 +67,17 @@ func (sc *PolyScheme) display() soltype.Type {
 func (s *MonoScheme) IsAnnotated() bool { return s.Annotated }
 func (s *PolyScheme) IsAnnotated() bool { return s.Annotated }
 
-// monoScheme wraps a raw type as a single-scheme value binding's scheme — the
-// common case for the param/prelude/body-level/raw-def bindings PR1 does not
-// generalize.
+// monoScheme wraps a raw type as a single-scheme value binding's scheme, the
+// common case for the param, prelude, body-level, and raw-def bindings that do
+// not generalize.
 func monoScheme(t soltype.Type) TypeScheme { return &MonoScheme{Ty: t} }
 
 // instantiate produces a usable type from a scheme at level lvl. A MonoScheme
 // instantiates to its type unchanged; a PolyScheme freshens every quantified
 // variable (Level > scheme.Level) with a fresh variable at lvl, bounds and all,
 // so two uses of a polymorphic binding never share inference variables. This is
-// the inferIdent value-position hook M2 left as a TODO — M2 returned the binding
-// type directly; PR1 routes it through here.
+// the inferIdent value-position hook: rather than returning the binding type
+// directly, the value position routes it through here.
 func (c *checker) instantiate(s TypeScheme, lvl int) soltype.Type {
 	switch sc := s.(type) {
 	case *MonoScheme:
@@ -96,9 +96,10 @@ func (c *checker) instantiate(s TypeScheme, lvl int) soltype.Type {
 // the cache BEFORE its bounds are freshened so a recursive bound that references
 // the original resolves to the in-progress copy rather than looping.
 //
-// PR1 lands this hand-rolled, parallel to coalesce/extrude; PR7 collapses all
-// three onto a shared soltype rewriting visitor with no behavior change. Unlike
-// those two it ignores polarity (it freshens uniformly, no variance flip).
+// This is hand-rolled, parallel to coalesce/extrude. A future change could
+// collapse all three onto a shared soltype rewriting visitor with no behavior
+// change. Unlike those two it ignores polarity, freshening uniformly with no
+// variance flip.
 func (c *checker) freshenAbove(lim int, t soltype.Type, lvl int, cache map[*soltype.TypeVarType]*soltype.TypeVarType) soltype.Type {
 	return t.Accept(&freshener{
 		c:     c,
@@ -121,7 +122,7 @@ type freshener struct {
 	lvl   int
 	cache map[*soltype.TypeVarType]*soltype.TypeVarType
 	// lt freshens a borrow's lifetime, the second quantifiable sort Accept does not
-	// walk (M4 D2.5). It shares the freshener's lim/lvl and lazily allocates its own
+	// walk. It shares the freshener's lim/lvl and lazily allocates its own
 	// cache, so a borrow that flows to both a parameter and the return type keeps one
 	// shared fresh lifetime across them.
 	lt ltFreshener
@@ -137,12 +138,12 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	//     does NOT descend into the var's bounds — so this prune is sound only because
 	//     the MLsub level invariant holds (a var's level >= the level of everything in
 	//     its bounds, maintained by constrain/extrude). LevelOf DOES recurse into the
-	//     structural formers, INCLUDING Union/Intersection (PR6 made an overloaded
-	//     value's arm IntersectionType a legal scheme-body/constrain input — see
-	//     soltype.LevelOf): without that, a generic arm's Level>lim var would hide under
+	//     structural formers, INCLUDING Union/Intersection, because an overloaded
+	//     value's arm IntersectionType is a legal scheme-body and constrain input, see
+	//     soltype.LevelOf. Without that, a generic arm's Level>lim var would hide under
 	//     the level-0 intersection and two instantiations of a let-bound overload would
-	//     alias a variable that should have been fresh. The analogous extrude
-	//     (constrain.go) rests on the same level invariant.
+	//     alias a variable that should have been fresh. The analogous extrude in
+	//     constrain.go rests on the same level invariant.
 	//  2. (Identity) The shared subtree's pointer is reused across every instantiation
 	//     and the scheme body, so compound nodes are NOT uniquely minted per use. Prov
 	//     and Info are pointer-keyed; a shared monomorphic node keeps its one original
@@ -155,8 +156,8 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	}
 	if r, ok := t.(*soltype.RefType); ok {
 		// A borrow's lifetime is not a Type, so Accept carries it through unchanged and
-		// neither the structural rebuild below nor the var arm would ever freshen it
-		// (M4 D2.5). ltFreshener.fresh replaces a quantified param lifetime
+		// neither the structural rebuild below nor the var arm would ever freshen it.
+		// ltFreshener.fresh replaces a quantified param lifetime
 		// (Level > lim) and shares a captured, 'static, or nil one; refLifetimeResult
 		// then either hands back a RefType carrying the fresh lifetime or signals an
 		// ordinary descent so Accept rebuilds Inner.
@@ -180,8 +181,8 @@ func (f *freshener) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 	nv.Widenable = v.Widenable
 	f.cache[v] = nv
 	// Mint the FromInstantiation interior edge: the fresh var was copied from v.
-	// PR1 only records the edge; the multi-hop renderer that chases it back to an
-	// AST leaf is M11.5 (NodeFor still resolves only FromAST today).
+	// Only the edge is recorded; the multi-hop renderer that chases it back to an
+	// AST leaf is not yet implemented, so NodeFor still resolves only FromAST today.
 	f.c.recordInstantiation(nv, v)
 	// nv is freshly minted here, so these whole-slice bound assignments are
 	// intentionally NOT journaled by the probe (see Probe's doc): a fresh var is
@@ -226,8 +227,8 @@ type allFreshener struct {
 	c     *checker
 	lvl   int
 	cache map[*soltype.TypeVarType]*soltype.TypeVarType
-	// lt freshens a borrow's lifetime, which Accept does not walk (M4 D2.5). Without
-	// this arm a reassigned borrow-typed binding would keep its scheme's lifetime, so
+	// lt freshens a borrow's lifetime, which Accept does not walk. Without this arm
+	// a reassigned borrow-typed binding would keep its scheme's lifetime, so
 	// constraining the reassignment source would mutate the binding's own lifetime —
 	// the cross-use contamination freshenAll exists to prevent, here for the lifetime
 	// sort.
@@ -269,8 +270,8 @@ func (f *allFreshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 	return out
 }
 
-// ltFreshener freshens lifetime variables for the rewriting visitors (M4 D2.5).
-// Accept never walks a RefType's lifetime, because a Lifetime is not a Type, so each
+// ltFreshener freshens lifetime variables for the rewriting visitors. Accept
+// never walks a RefType's lifetime, because a Lifetime is not a Type, so each
 // lifetime-aware visitor delegates here through refLifetimeResult. A LifetimeVar
 // inside lim is a quantified lifetime: fresh replaces it with a fresh lifetime at
 // lvl and freshens its bounds, so each use gets its own lifetime and constraining
@@ -363,13 +364,13 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 //
 // sealUsageObjects runs first, the one body rewrite generalize performs: it is the
 // finalize point where a non-escaping usage-inferred object closes to exact in the
-// OPERATIVE body, so callers cannot pass extra fields (Policy A / B2). See its doc.
+// OPERATIVE body, so callers cannot pass extra fields. See its doc.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	c.sealUsageObjects(t, lvl)
 	return &PolyScheme{Level: lvl, Body: t}
 }
 
-// sealUsageObjects is the operative half of Policy A (B2). Body inference records a
+// sealUsageObjects is the operative half of the usage-object sealing rule. Body inference records a
 // member access `p.x` as an INEXACT upper bound `{x: β, ...}` on the receiver var,
 // and it must stay inexact while the body is walked: two exact requirements on one
 // var contradict (`p <: {x}` and `p <: {y}` cannot both hold for an object with
@@ -381,7 +382,7 @@ func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 //
 // A var is sealed only when ALL of these hold, so the row stays open exactly where
 // it must:
-//   - it is not `open` (the explicit row-polymorphic opt-out, B2),
+//   - it is not `open`, the explicit row-polymorphic opt-out,
 //   - it occurs only in NEGATIVE position: a var that also reaches an output
 //     position escapes, and its object must keep the open row so the returned value
 //     retains the caller's extra fields (`fn (obj) { obj.x; return obj }`),
@@ -414,7 +415,7 @@ func (c *checker) sealUsageObjects(t soltype.Type, lvl int) {
 		if v.Open || v.Level <= lvl {
 			continue
 		}
-		// A deep-mut nested-write receiver, such as obj.p in `obj.p.x = 5` (#779), is
+		// A deep-mut nested-write receiver, such as obj.p in `obj.p.x = 5`, is
 		// PINNED: the residual write-back gives it equal inexact lower and upper bounds
 		// `{x: number, ...}`. It occurs in both polarities (invariant inside the mut
 		// container), so the negative-only test below skips it, yet it must still seal

@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// F1: namespace member lookup (resolvePath). Namespaces never enter scope via real
-// source yet (namespace declarations are unsupported in M3), so these tests
-// hand-build the Namespace structure and feed path expressions straight into the
-// walk — the same construction as TestInferIdentNamespaceUsedAsValue.
+// Namespace member lookup via resolvePath. Namespace declarations are not yet
+// supported in source, so these tests hand-build the Namespace structure and feed
+// path expressions straight into the walk, the same construction as
+// TestInferIdentNamespaceUsedAsValue.
 
 func numScheme() []TypeScheme {
 	return []TypeScheme{monoScheme(&soltype.PrimType{Prim: soltype.NumPrim})}
@@ -139,8 +139,9 @@ func TestInferNamespaceDynamicIndex(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
-// An index into a value (array element / index-signature read) is M7, still
-// outside the supported subset — the namespace path doesn't accidentally accept it.
+// An index into a value, such as an array element or index-signature read, is
+// not yet in the supported subset, so the namespace path must not accidentally
+// accept it.
 func TestInferValueIndexUnsupported(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
@@ -157,7 +158,7 @@ func TestInferValueIndexUnsupported(t *testing.T) {
 // resolves through the namespace path and borrows the resolved value. The
 // receiver-bounded path in inferBorrowOfMember bails to wrapBorrow when the
 // receiver is a namespace, since a namespace has no value region to bound the
-// borrow's lifetime. Pre-fix this case errored with NamespaceUsedAsValueError
+// borrow's lifetime. This case previously errored with NamespaceUsedAsValueError
 // because the intercept routed the receiver through inferExpr, which rejects
 // a namespace in value position.
 func TestInferBorrowOfNamespaceMember(t *testing.T) {

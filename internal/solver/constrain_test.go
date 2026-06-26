@@ -148,7 +148,7 @@ func TestConstrainFunctionVariance(t *testing.T) {
 	})
 }
 
-// TestConstrainFunctionAcceptSet exercises the PR4 accept-set rule (#677 §4.2.1):
+// TestConstrainFunctionAcceptSet exercises the accept-set rule:
 // G <: F iff accept(G) ⊇ accept(F), with params contravariant and return covariant.
 // Read F (the super) as the callback slot.
 func TestConstrainFunctionAcceptSet(t *testing.T) {
@@ -176,7 +176,7 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 		require.Same(t, f, fa.Super)
 	})
 
-	// The #677 callback matrix for an exact fn(x, y) slot: fn(x, y), fn(x, ...), and
+	// The callback matrix for an exact fn(x, y) slot: fn(x, y), fn(x, ...), and
 	// fn(...) are all accepted; exact fn(x) (too narrow upper bound) and a 3-param
 	// function (demands more than the slot supplies) are rejected.
 	slot := func() *soltype.FuncType { return exactFn(num(), identParam("x", num()), identParam("y", num())) }
@@ -213,7 +213,7 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 	})
 
 	// Exact </: inexact: an exact function's finite upper bound cannot cover an
-	// inexact slot's ∞ (the asymmetry §4.2.1.1 explains).
+	// inexact slot's ∞. This asymmetry is what exactness encodes.
 	t.Run("exact fn(x) rejected by inexact fn(x, ...) slot", func(t *testing.T) {
 		c := &Context{}
 		require.Equal(t,
@@ -244,7 +244,7 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 }
 
 // TestAcceptSetRestParam pins the arity arithmetic for a typed rest param: it lifts
-// the upper bound to ∞ and never counts toward the required floor (#677 §4.2.3).
+// the upper bound to ∞ and never counts toward the required floor.
 func TestAcceptSetRestParam(t *testing.T) {
 	t.Run("fn(a, b, ...rest): required 2, upper unbounded", func(t *testing.T) {
 		f := &soltype.FuncType{Params: []*soltype.FuncParam{identParam("a", num()), identParam("b", num()), restParam("rest", num())}, Ret: num()}
@@ -343,7 +343,7 @@ func TestConstrainTuple(t *testing.T) {
 	})
 
 	// [number, string, boolean] <: [number, ...]: a longer tuple satisfies an
-	// inexact super, matching the shared prefix element-wise (the A2 width arm).
+	// inexact super, matching the shared prefix element-wise via the width arm.
 	t.Run("longer fills inexact (width)", func(t *testing.T) {
 		c := &Context{}
 		t1 := &soltype.TupleType{Elems: []soltype.Type{num(), str(), boolT()}}
@@ -402,17 +402,17 @@ func propElem(name string, t soltype.Type) *soltype.PropertyElem {
 	return &soltype.PropertyElem{Name: name, Type: t}
 }
 
-// mutRef builds an owned-mutable borrow for the RefType constrain tests (C2). Lt is
-// always nil in C2 — the lifetime sort lands in D1 — so the owned-mutable wrapper is
-// the only meaningful borrow constructible here. A real immutable borrow needs a
-// lifetime (`Mut: false, Lt: 'a`), so its helper arrives in D2; the bare <: RefType
+// mutRef builds an owned-mutable borrow for the RefType constrain tests. Lt is
+// always nil here, so the owned-mutable wrapper is the only meaningful borrow
+// constructible at this point. A real immutable borrow needs a lifetime
+// (`Mut: false, Lt: 'a`), so its helper exists elsewhere; the bare <: RefType
 // arm mints the degenerate `Mut: false, Lt: nil` view internally with a struct
 // literal, not through a helper.
 func mutRef(inner soltype.RefInner) *soltype.RefType {
 	return &soltype.RefType{Mut: true, Inner: inner}
 }
 
-// TestConstrainDescribesRefOperand pins review finding 2: describe must NAME a
+// TestConstrainDescribesRefOperand pins that describe must NAME a
 // RefType operand in a constraint failure, not render it as `?`. A non-borrowable
 // source (a primitive) against a mut-borrow target is not wrappable by the
 // bare <: RefType arm, so it falls through to CannotConstrainError carrying the
@@ -433,7 +433,7 @@ func inexactObj(elems ...soltype.ObjTypeElem) *soltype.ObjectType {
 	return &soltype.ObjectType{Elems: elems, Inexact: true}
 }
 
-// TestConstrainObject exercises the one-way object exactness rule (A1): width
+// TestConstrainObject exercises the one-way object exactness rule: width
 // tolerance is inexactness on the super, and an exact super fixes its member set.
 //
 // want is the expected rendered messages (nil for a clean constraint); check, when
@@ -648,7 +648,7 @@ func TestConstrainObject(t *testing.T) {
 	}
 }
 
-// TestConstrainRef exercises the single RefType <: RefType rule — THE GATE (C2).
+// TestConstrainRef exercises the single RefType <: RefType rule — THE GATE.
 // The headline property is mut-driven inner invariance: a mutable target takes both
 // a covariant read view and a contravariant write view, so the inner is invariant.
 func TestConstrainRef(t *testing.T) {
@@ -702,7 +702,7 @@ func TestConstrainRef(t *testing.T) {
 		{
 			// The same two object inners as bare (immutable) values width-succeed: an
 			// immutable borrow is covariant, so the missing-on-write-view problem never
-			// arises. This is the contrast the plan draws against the mut case above.
+			// arises. This is the contrast against the mut case above.
 			name:  "immutable width succeeds where mut invariance rejects",
 			sub:   exactObj(propElem("x", num()), propElem("y", num())),
 			super: inexactObj(propElem("x", num())),
@@ -739,7 +739,7 @@ func TestConstrainRef(t *testing.T) {
 		},
 		{
 			// number <: mut {x}: a non-borrowable source cannot be wrapped, so it falls
-			// through to CannotConstrainError naming the borrow (review finding 2).
+			// through to CannotConstrainError naming the borrow.
 			name:  "non-borrowable source <: borrow names the borrow",
 			sub:   num(),
 			super: mutRef(exactObj(propElem("x", num()))),
@@ -803,7 +803,7 @@ func TestConstrainVoid(t *testing.T) {
 		Messages(c.Constrain(&soltype.Void{}, num())))
 }
 
-// PR8: the ErrorType recovery sentinel ABSORBS in both directions — a constraint
+// The ErrorType recovery sentinel ABSORBS in both directions — a constraint
 // with an ErrorType operand trivially succeeds, so a reported diagnostic's
 // placeholder never cascades. Pinned against every concrete shape, on both sides.
 func TestConstrainErrorTypeAbsorbs(t *testing.T) {
@@ -831,7 +831,7 @@ func TestConstrainErrorTypeAbsorbs(t *testing.T) {
 	}
 }
 
-// PR8: ErrorType short-circuits ABOVE the variable arms, so it never enters a
+// ErrorType short-circuits ABOVE the variable arms, so it never enters a
 // var's bound list — coalesce / extrude / freshenAbove then never see it
 // propagated through bounds.
 func TestConstrainErrorTypeNeverEntersVarBounds(t *testing.T) {

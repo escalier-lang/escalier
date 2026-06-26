@@ -7,14 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M4 D2.5: lifetime-sort generalization (levels + per-instantiation freshening) ---
+// --- lifetime-sort generalization: levels and per-instantiation freshening ---
 //
-// A lifetime carried by a borrow now rides the same let-generalization level
-// hierarchy as a type variable: a lifetime minted above its scheme's
-// generalize-level is a quantified param lifetime, freshened per instantiation, so
-// two uses of a borrow-passing function never share one LifetimeVar's bounds.
-// These tests drive freshenAbove (the instantiation copy) directly, mirroring how
-// lifetime_test.go drives constrainLt directly.
+// A lifetime carried by a borrow rides the same let-generalization level hierarchy
+// as a type variable: a lifetime minted above its scheme's generalize-level is a
+// quantified param lifetime, freshened per instantiation, so two uses of a
+// borrow-passing function never share one LifetimeVar's bounds. These tests drive
+// freshenAbove, the instantiation copy, directly, mirroring how lifetime_test.go
+// drives constrainLt directly.
 
 // mutObjAt builds `mut <lt> {x: number}` — a borrow carrying the given lifetime,
 // the minimal shape that exercises a RefType lifetime through the rewriters.
@@ -83,8 +83,9 @@ func TestFreshenTwoInstantiationsGetDistinctLifetimes(t *testing.T) {
 
 // Constraining one instantiation's lifetime does not perturb another's: the two
 // freshened lifetimes have independent bound lists. This is the contamination a
-// shared LifetimeVar would have caused — before D2.5 both call sites aliased the
-// scheme's one lifetime var, so a bound from one site leaked into the other.
+// shared LifetimeVar would have caused. Without per-instantiation freshening both
+// call sites aliased the scheme's one lifetime var, so a bound from one site leaked
+// into the other.
 func TestFreshenInstantiationsAreNonContaminating(t *testing.T) {
 	c := newChecker()
 	lt := c.ctx.freshLifetime(1)
@@ -142,10 +143,10 @@ func TestFreshenCopiesLifetimeBoundsUnderProbe(t *testing.T) {
 	require.Len(t, lt.UpperBounds, 1, "the original scheme lifetime's bound is untouched by the discarded trial")
 }
 
-// Source-level regression: the D2 IdentityRefReturn acceptance still renders the
-// shared param lifetime on the generalized scheme. D2.5 freshens lifetimes at
-// instantiation, but the scheme body keeps its original param lifetime. D4 names it
-// `'a` since it reaches both the parameter and the return.
+// Source-level regression: an identity-returning borrow function still renders the
+// shared param lifetime on the generalized scheme. Freshening copies lifetimes at
+// instantiation, but the scheme body keeps its original param lifetime. Lifetime
+// naming names it `'a` since it reaches both the parameter and the return.
 func TestInferIdentityRefReturnStillRendersAfterGeneralization(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return p }`)
 	require.Empty(t, errs)
@@ -153,9 +154,9 @@ func TestInferIdentityRefReturnStillRendersAfterGeneralization(t *testing.T) {
 }
 
 // Source-level regression: a borrow-passing function called at two distinct sites
-// typechecks cleanly. Before D2.5 both calls shared the callee's one param
-// lifetime, linking the two borrows; freshening per instantiation keeps them
-// independent so neither call contaminates the other.
+// typechecks cleanly. Previously both calls shared the callee's one param lifetime,
+// linking the two borrows. Freshening per instantiation keeps them independent so
+// neither call contaminates the other.
 func TestInferBorrowFnCalledAtTwoSites(t *testing.T) {
 	src := `fn use(o: mut {x: number}) -> number {
   return o.x
@@ -172,7 +173,7 @@ fn f(a: mut {x: number}, b: mut {x: number}) {
 // --- extruder lifetime arm ---
 //
 // extrude copies a type so a variable above the target level is replaced by a
-// fresh var at that level, wired to the original. D2.5 extends it to the lifetime
+// fresh var at that level, wired to the original. It also extends to the lifetime
 // sort: a borrow's lifetime above the level is extruded too. These drive extrude
 // directly, the first tests to do so.
 

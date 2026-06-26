@@ -7,7 +7,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Display-time lifetime coalescing (M4 D4). The structural coalescers (coalesce /
+// Display-time lifetime coalescing. The structural coalescers (coalesce /
 // coalesceScheme) rebuild a type through the shared visitor, which carries every
 // RefType lifetime through unchanged because a Lifetime is not a Type. They leave
 // the RAW lifetime variables in place: a borrow parameter's originated lifetime, a
@@ -43,11 +43,11 @@ import (
 //     argument lifetime and the callee's freshened parameter lifetime, related only
 //     by a mix of upper and lower bounds, so reachability cannot be confined to one
 //     bound direction. A lifetime forced to 'static renders 'static and absorbs.
-//     FUTURE (M6.5, lifetime bounds): this undirected grouping is a D4
-//     approximation, sound only because independent param lifetimes never share a
-//     bound-graph component. M6.5 replaces it with directional reasoning over the
-//     LowerBounds/UpperBounds edges, rendering a join as precise where-clauses like
-//     `where 'a: 'c, 'b: 'c` rather than collapsing it to the union ('a | 'b).
+//     This undirected grouping is an approximation, sound only because independent
+//     param lifetimes never share a bound-graph component. A future directional
+//     reasoning over the LowerBounds/UpperBounds edges could render a join as
+//     precise where-clauses like `where 'a: 'c, 'b: 'c` rather than collapsing it
+//     to the union ('a | 'b).
 //
 // coalesceLifetimes resolves the borrow lifetimes left raw by the structural
 // coalescers. pol is the root polarity the type was coalesced at, threaded through
@@ -115,9 +115,9 @@ type ltAnalysis struct {
 // independent param borrows through a shared intermediary would break it. The two
 // would be unioned and both kept, rendering a spurious `('a | 'b)`. Distinguishing
 // that case needs directional reasoning, or first-class lifetime bounds, which the
-// union rendering deliberately does not yet model. M6.5 (lifetime bounds) is the
-// milestone that retires this undirected grouping, replacing it with directional
-// reasoning over the LowerBounds/UpperBounds edges. See the join-expansion note above.
+// union rendering deliberately does not yet model. Directional reasoning over the
+// LowerBounds/UpperBounds edges would retire this undirected grouping. See the
+// join-expansion note above.
 func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity) *ltAnalysis {
 	uf := newUnionFind()
 	vars := map[int]*soltype.LifetimeVar{}

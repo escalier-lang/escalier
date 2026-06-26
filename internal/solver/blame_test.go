@@ -11,8 +11,8 @@ import (
 
 // spanText returns the source substring covered by s. Columns are 1-indexed and
 // the end is exclusive (the lexer's convention), so a token at columns [c, c+n)
-// renders n characters. M2.5's error spans are single-line; a multi-line span is
-// not expected here and yields "".
+// renders n characters. Error spans are single-line; a multi-line span is not
+// expected here and yields "".
 func spanText(src string, s ast.Span) string {
 	lines := strings.Split(src, "\n")
 	if s.Start.Line < 1 || s.Start.Line > len(lines) || s.Start.Line != s.End.Line {
@@ -27,7 +27,7 @@ func spanText(src string, s ast.Span) string {
 
 // requireBlame asserts the sole error's message, the source text its primary span
 // covers, and the source text each related span covers (in order). The golden
-// span fixtures (§3.10) use it to pin exact blame against real-parser spans.
+// span fixtures use it to pin exact blame against real-parser spans.
 func requireBlame(t *testing.T, src string, errs []SolverError, msg, primary string, related ...string) {
 	t.Helper()
 	require.Len(t, errs, 1)
@@ -44,10 +44,10 @@ func requireBlame(t *testing.T, src string, errs []SolverError, msg, primary str
 	require.Equal(t, want, got, "related blame")
 }
 
-// --- Golden span fixtures (§3.10): exact blame against real-parser spans ---
+// --- Golden span fixtures: exact blame against real-parser spans ---
 
 // A val-annotation mismatch blames the offending literal, with the annotation as
-// the related expected-source — the milestone's headline fixture (§3.7).
+// the related expected-source. This is the headline fixture.
 func TestBlameValAnnotationLiteral(t *testing.T) {
 	src := `val x: number = "hi"`
 	_, _, errs := inferSource(t, src)
@@ -62,12 +62,11 @@ func TestBlameCallArgument(t *testing.T) {
 	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
 }
 
-// A too-many-args direct call is the PR4 extra-arg lint (TooManyArgsError), a
-// BRIDGE error that self-blames the whole call and relates the callee expression.
-// (It supersedes the FuncArityMismatch this fixture asserted before PR4 — too-many
-// is now the lint's uniform message, while FuncArityMismatch keeps the too-few /
+// A too-many-args direct call is the extra-arg lint (TooManyArgsError), a BRIDGE
+// error that self-blames the whole call and relates the callee expression. Too-many
+// is the lint's uniform message, while FuncArityMismatch keeps the too-few and
 // callback-arity failures. The related span is the callee `f` here, derived from
-// the AST, not the callee's definition span resolved through Prov.)
+// the AST, not the callee's definition span resolved through Prov.
 func TestBlameCallTooManyArgs(t *testing.T) {
 	src := "fn f(x: number) -> number { return x }\nval r = f(1, 2)"
 	_, _, errs := inferSource(t, src)
@@ -75,10 +74,10 @@ func TestBlameCallTooManyArgs(t *testing.T) {
 		"Too many arguments: expected at most 1, but got 2", "f(1, 2)", "f")
 }
 
-// A too-few-args direct call is the PR4 too-few lint (NotEnoughArgsError), a BRIDGE
-// error symmetric to TooManyArgsError: it self-blames the whole call and relates the
-// callee expression (`f` here, from the AST — not the callee's definition resolved
-// through Prov). `f` requires two params; the call supplies one.
+// A too-few-args direct call is the too-few lint (NotEnoughArgsError), a BRIDGE
+// error symmetric to TooManyArgsError. It self-blames the whole call and relates
+// the callee expression, `f` here, from the AST rather than the callee's definition
+// resolved through Prov. `f` requires two params; the call supplies one.
 func TestBlameCallTooFewArgs(t *testing.T) {
 	src := "fn f(x: number, y: number) -> number { return x }\nval r = f(1)"
 	_, _, errs := inferSource(t, src)
@@ -87,14 +86,12 @@ func TestBlameCallTooFewArgs(t *testing.T) {
 }
 
 // A missing-property read blames the member's prop (.foo), not the receiver, with
-// the receiver's definition as the related span. Like TestBlameCallArity, M2.5
-// resolved that related span only for an inline receiver (a named receiver was
-// coalesced to a fresh ObjectType with no Prov entry); M3's generalize-and-share
-// instantiation keeps a VAR-FREE receiver's original object — here `{a: 5}` is
-// monomorphic, so it is shared unchanged through instantiation (recorded
-// ObjectField against the literal) — so the named receiver's related span now
-// resolves. A receiver whose value flowed through an instantiation that REBUILT it
-// (e.g. the result of a polymorphic call) does not keep the entry; see
+// the receiver's definition as the related span. Generalize-and-share
+// instantiation keeps a VAR-FREE receiver's original object. Here `{a: 5}` is
+// monomorphic, so it is shared unchanged through instantiation with an ObjectField
+// recorded against the literal, so the named receiver's related span resolves. A
+// receiver whose value flowed through an instantiation that REBUILT it, such as the
+// result of a polymorphic call, does not keep the entry; see
 // TestBlameMissingPropertyPolymorphicReceiverLosesRelated.
 func TestBlameMissingProperty(t *testing.T) {
 	src := "val o = {a: 5}\nval x = o.b"
@@ -102,8 +99,8 @@ func TestBlameMissingProperty(t *testing.T) {
 	requireBlame(t, src, errs, "object is missing property: b", "b", "{a: 5}")
 }
 
-// The bound of M3's related-span improvement: a receiver derived from a
-// POLYMORPHIC call loses its related "defined here" span. Instantiating `mk`
+// The bound of the related-span improvement. A receiver derived from a POLYMORPHIC
+// call loses its related "defined here" span. Instantiating `mk`
 // freshens its body, rebuilding the record into a fresh pointer with no Prov
 // entry, so the missing-property error carries no related receiver span — unlike
 // the direct var-free literal in TestBlameMissingProperty. Documents that the
@@ -115,9 +112,9 @@ func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
 	requireBlame(t, src, errs, "object is missing property: b", "b")
 }
 
-// An identifier-flow mismatch blames the USE, not the definition: x's type traces
+// An identifier-flow mismatch blames the USE, not the definition. x's type traces
 // to its definition, which is not inside the use's constraint node, so the
-// containment guard falls back to the use (§3.8). The annotation is the related
+// containment guard falls back to the use. The annotation is the related
 // expected-source.
 func TestBlameIdentifierUseNotDefinition(t *testing.T) {
 	src := "val x = \"hi\"\nval a: number = x"
@@ -196,12 +193,12 @@ func tspan(sl, sc, el, ec int) ast.Span {
 }
 
 // The three site-carrying constraint kinds degrade to the constraint site when
-// NEITHER operand resolves through Prov, rather than returning the zero span
-// (which a consumer would mis-render as 0:0). Unlike every fixture above, this path
-// is UNREACHABLE from M2.5 source — FuncArity always records the call-shape,
+// NEITHER operand resolves through Prov, rather than returning the zero span that a
+// consumer would mis-render as 0:0. Unlike every fixture above, this path is
+// UNREACHABLE from source today. FuncArity always records the call-shape,
 // MissingProperty always records the field var, and tuple <: tuple cannot fire
-// without a tuple sink — so it must be exercised with hand-built errors and a
-// seeded Prov here; it becomes live with M4 record/tuple sinks.
+// without a tuple sink, so it must be exercised with hand-built errors and a seeded
+// Prov here. It becomes live once record/tuple sinks land.
 func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 	site := ast.NewIdent("site", tspan(7, 3, 7, 12))
 
@@ -260,11 +257,11 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 
 // checker.constrain stamps prov + the constraint node onto EVERY constraint-error
 // kind it forwards, so each error's Span() resolves to a real source span instead
-// of the zero span. The object errors (InexactIntoExactError, ExtraPropertyError,
-// OptionalPropertyError) were added in M4 A1; this pins that their switch arms
-// exist — a missing arm leaves prov/site nil and Span() degrades to 0:0. Exercised
-// directly through c.constrain because an exact-object sink is not reachable from
-// source until object annotations land (A3).
+// of the zero span. This pins that the switch arms for the object errors
+// InexactIntoExactError, ExtraPropertyError, and OptionalPropertyError exist. A
+// missing arm leaves prov/site nil and Span() degrades to 0:0. Exercised directly
+// through c.constrain because an exact-object sink is not reachable from source
+// until object annotations land.
 func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 	node := ast.NewIdent("site", tspan(4, 2, 4, 6))
 
@@ -300,7 +297,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 	})
 }
 
-// --- M2.5 finding #1: unsupported-annotation recovery (no spurious `<: never`) ---
+// --- Unsupported-annotation recovery: no spurious `<: never` ---
 
 // An unsupported annotation reports ITS OWN error once and the binding recovers to
 // the type it would otherwise infer — no cascade `cannot constrain e <: never`, no
@@ -328,10 +325,11 @@ func TestUnsupportedAnnotationRecovers(t *testing.T) {
 	}
 }
 
-// A VarDecl with a nil pattern (not produced by the parser, which synthesizes a
-// placeholder, but possible in a hand-built AST) must blame the decl without
-// panicking — honoring M2's "never a panic" guarantee now that Span() is lazy
-// (it derefs the stored node on demand). Mirrors inferFunc's nil-param fallback.
+// A VarDecl with a nil pattern must blame the decl without panicking. The parser
+// synthesizes a placeholder instead, so a nil pattern is only possible in a
+// hand-built AST. This honors the "never a panic" guarantee now that Span() is
+// lazy and derefs the stored node on demand. Mirrors inferFunc's nil-param
+// fallback.
 func TestNilVarDeclPatternBlamesDeclWithoutPanic(t *testing.T) {
 	c := newChecker()
 	d := ast.NewVarDecl(ast.ValKind, nil, nil, numExpr(5), false, false, testSpan())

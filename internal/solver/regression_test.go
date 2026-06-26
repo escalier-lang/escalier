@@ -22,10 +22,10 @@ import (
 // conflate "terminates" with "renders this exact shape".
 //
 // NOTE: a regression that bypasses the `seen` guard stack-overflows here, which
-// is a fatal (uncatchable) crash that takes down the whole package test binary
-// rather than failing this test in isolation. Tracked in
-// https://github.com/escalier-lang/escalier/issues/702 (add a recursion-depth
-// ceiling to coalesce so a guard bypass fails cleanly instead of crashing).
+// is a fatal uncatchable crash that takes down the whole package test binary
+// rather than failing this test in isolation. Tracked in #702, which proposes a
+// recursion-depth ceiling for coalesce so a guard bypass fails cleanly instead
+// of crashing.
 func TestInferModuleRecursiveRecordTerminates(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() { return {x: f()} }`)
 	require.Empty(t, errs, "unexpected inference errors")
@@ -63,9 +63,9 @@ func TestInferModuleFuncDeclRecordsInfoType(t *testing.T) {
 
 // A POLYMORPHIC binding's Info entry retains its quantified type-parameter vars, so
 // it must be rendered with soltype.PrintAsScheme (the var-aware renderer); plain
-// soltype.Print shows the raw t{ID} debug form. (PR1: the recorded display type is
-// NOT var-free for generalized bindings — the inverse of
-// TestInferModuleFuncDeclRecordsInfoType, whose fixture is monomorphic.)
+// soltype.Print shows the raw t{ID} debug form. The recorded display type is
+// NOT var-free for generalized bindings, the inverse of
+// TestInferModuleFuncDeclRecordsInfoType, whose fixture is monomorphic.
 func TestInferModulePolymorphicFuncDeclInfoNeedsPrintScheme(t *testing.T) {
 	module := parseModule(t, `fn id(x) { return x }`)
 	_, info, errs := InferModule(module)

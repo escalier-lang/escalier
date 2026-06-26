@@ -24,9 +24,9 @@ import (
 //
 // A union or intersection is built through newUnion / newIntersection with no
 // Context, so the result is normalized exactly as the production combine path
-// would produce it. ast.UnionTypeAnn carries no Inexact flag today (that
-// arrives with M6 PR4), so parseType always produces an exact union. A test
-// that needs an inexact union mints one through newUnion(..., true).
+// would produce it. ast.UnionTypeAnn carries no Inexact flag today, so parseType
+// always produces an exact union. A test that needs an inexact union mints one
+// through newUnion(..., true).
 func parseType(t *testing.T, s string) soltype.Type {
 	t.Helper()
 	ta, errs := parser.ParseTypeAnn(context.Background(), s)

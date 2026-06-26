@@ -7,20 +7,20 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Prov is the inverse of Info: soltype.Type → the origin that minted it. Sparse —
-// shared/interned/synthesized types may be absent (an honest miss, not a lie: see
-// the leaf/interior split in planning/simple_sub/m2.5-implementation-plan.md §3.8).
-// Keyed by pointer identity, exactly like Info.
+// Prov is the inverse of Info: soltype.Type → the origin that minted it. Sparse.
+// Shared, interned, or synthesized types may be absent, an honest miss rather
+// than a lie, following the leaf/interior split. Keyed by pointer identity,
+// exactly like Info.
 //
-// M2.5 shipped the FromAST leaf variant; M3 (PR1) adds the first interior edge,
-// FromInstantiation. The remaining interior variants
-// (FromBoundPropagation/FromExtrusion/FromCoalesce) ride along with the later
-// operations that mint them — which is why Origin is an interface, so each adds a
-// variant rather than changing the map's value type.
+// The FromAST leaf variant and the FromInstantiation interior edge are
+// implemented. The remaining interior variants FromBoundPropagation,
+// FromExtrusion, and FromCoalesce ride along with the operations that mint them.
+// That is why Origin is an interface, so each adds a variant rather than changing
+// the map's value type.
 type Prov map[soltype.Type]Origin
 
-// Origin is a tagged sum naming the kind of hop that minted a type. M2.5 shipped
-// the FromAST leaf; M3 adds FromInstantiation; the rest are deferred.
+// Origin is a tagged sum naming the kind of hop that minted a type. The FromAST
+// leaf and FromInstantiation are implemented; the rest are deferred.
 type Origin interface{ isOrigin() }
 
 // FromAST is the leaf: a direct AST cause for a freshly-minted type.
@@ -31,11 +31,11 @@ type FromAST struct {
 
 func (FromAST) isOrigin() {}
 
-// FromInstantiation is the first interior edge (M3, PR1): a variable minted by
-// instantiating a polymorphic scheme (freshenAbove) copied it from From, the
-// pre-freshening type. It carries no AST node of its own — the renderer that
-// chases the From chain back to the nearest AST leaf is deferred to M11.5, so
-// NodeFor still resolves only FromAST. PR1 mints the edge; nothing reads it yet.
+// FromInstantiation is the first interior edge. A variable minted by
+// instantiating a polymorphic scheme through freshenAbove copied it from From, the
+// pre-freshening type. It carries no AST node of its own. The renderer that chases
+// the From chain back to the nearest AST leaf is not yet implemented, so NodeFor
+// still resolves only FromAST. The edge is minted but nothing reads it yet.
 type FromInstantiation struct {
 	From soltype.Type
 }
@@ -44,7 +44,7 @@ func (FromInstantiation) isOrigin() {}
 
 // ASTOriginKind tags WHY a node minted a type, so a renderer/LSP can phrase blame
 // ("the literal here", "this argument", "field `x`") without re-deriving it from
-// the AST node's concrete type. M2.5's blame only needs the node, so the kind is
+// the AST node's concrete type. Current blame only needs the node, so the kind is
 // forward-looking metadata.
 type ASTOriginKind int
 
@@ -67,10 +67,10 @@ const (
 	BorrowExprOrigin                        // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
 )
 
-// NodeResolver resolves an operand type to the AST node that minted it. M2.5's
-// Prov implements it as a single map lookup; M3+ can supply a resolver that
-// chases interior Origin edges (FromInstantiation, …) to the nearest AST leaf
-// without changing any caller — that is the "follow the provenance chain" path.
+// NodeResolver resolves an operand type to the AST node that minted it. Prov
+// implements it as a single map lookup. A future resolver can chase interior
+// Origin edges such as FromInstantiation to the nearest AST leaf without changing
+// any caller, the "follow the provenance chain" path.
 //
 // Named NodeResolver rather than Provenance to avoid shadowing the imported
 // `provenance` package / `provenance.Provenance` binding-source marker used
@@ -80,8 +80,8 @@ type NodeResolver interface {
 }
 
 // NodeFor returns the AST node that minted t, when one was recorded. An
-// unrecorded operand (a Void result, a shared atom resolved elsewhere, or an
-// M3+ synthesized type) is an honest miss.
+// unrecorded operand is an honest miss, such as a Void result, a shared atom
+// resolved elsewhere, or a synthesized type.
 func (p Prov) NodeFor(t soltype.Type) (ast.Node, bool) {
 	if o, ok := p[t].(FromAST); ok {
 		return o.Node, true
@@ -97,9 +97,9 @@ func (c *checker) hasProv(t soltype.Type) bool {
 
 // recordProv records that t was minted from node n for reason kind — the inverse
 // of recordType (info.setType). Sparse by intent: only the node-derived
-// construction sites call it; synthesized types (coalesced/extruded, M3+) get no
-// entry. Called only in the walk (construction), never in constrain/coalesce, so
-// the hot inference path never consults Prov (the perf invariant, §3.9).
+// construction sites call it; synthesized types such as coalesced or extruded
+// types get no entry. Called only in the walk, never in constrain/coalesce, so
+// the hot inference path never consults Prov, the perf invariant.
 //
 // Invariant: every type passed here is a FRESHLY-minted, unique pointer, so a
 // record never collides with a different node. Blame correctness depends on it —

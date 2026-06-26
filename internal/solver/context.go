@@ -2,17 +2,17 @@ package solver
 
 import "github.com/escalier-lang/escalier/internal/soltype"
 
-// Context owns the engine's mutable counters. M1 carries ONLY varCounter; M4 D1
-// adds lifetimeCounter for the lifetime sort. M4 C3's read-after-write cache,
-// the `written` map, lives on the checker's per-function context, not here.
+// Context owns the engine's mutable counters: varCounter for type vars and
+// lifetimeCounter for the lifetime sort. The read-after-write cache, the
+// `written` map, lives on the checker's per-function context, not here.
 //
-// M3 (PR5) adds the nullable probe pointer. The engine's bound-mutating core
-// (constrain/extrude) lives on *Context, so the speculation journal must live
-// here too: when probe is non-nil, every bound append snapshots the variable's
-// bound-list lengths so a discarded trial can truncate them back. nil is the
-// non-speculative path — the common case — and pays only a nil check per append.
-// The push/pop discipline (openProbe/closeProbe) lives on the checker carrier,
-// which also owns the side-table cleanups (Info/Prov).
+// The nullable probe pointer drives speculation. The engine's bound-mutating
+// core, constrain and extrude, lives on *Context, so the speculation journal
+// lives here too. When probe is non-nil, every bound append snapshots the
+// variable's bound-list lengths so a discarded trial can truncate them back. nil
+// is the non-speculative path, the common case, and pays only a nil check per
+// append. The push/pop discipline, openProbe and closeProbe, lives on the
+// checker carrier, which also owns the Info and Prov side-table cleanups.
 //
 // Bound lists are extended ONLY through addLowerBound/addUpperBound, which fuse
 // the probe snapshot with the append. A bare `v.LowerBounds = append(...)` must
@@ -23,16 +23,16 @@ type Context struct {
 	varCounter int
 	probe      *Probe
 
-	// lifetimeCounter mints the next LifetimeVar id (M4 D1). Lifetimes are a
-	// SECOND bounded sort solved by the same machinery as types: a fresh lifetime
-	// gets the next id here, its bounds are extended only through
-	// addLowerLtBound/addUpperLtBound, and a speculation trial journals it under
-	// the same probe discipline as a TypeVarType.
+	// lifetimeCounter mints the next LifetimeVar id. Lifetimes are a SECOND bounded
+	// sort solved by the same machinery as types. A fresh lifetime gets the next id
+	// here, its bounds are extended only through addLowerLtBound/addUpperLtBound, and
+	// a speculation trial journals it under the same probe discipline as a
+	// TypeVarType.
 	lifetimeCounter int
 
 	// ltProxyOrigin maps an outer-extruded lifetime proxy to the lifetime it was
-	// extruded from (M4 D2.5). constrainLt consults it through findLtProxy to reuse
-	// an existing proxy for a repeated cross-level outlives constraint, so the bound
+	// extruded from. constrainLt consults it through findLtProxy to reuse an existing
+	// proxy for a repeated cross-level outlives constraint, so the bound
 	// dedup is not defeated by minting a fresh proxy each time. It is metadata only
 	// and is never rolled back: a stale entry for a proxy that a discarded trial
 	// removed from its bound list is simply never matched, since findLtProxy scans
@@ -49,19 +49,19 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 }
 
 // freshLifetime allocates a new lifetime variable at the given level, assigning it
-// the next id in sequence. Lifetimes now ride the same let-generalization level
-// hierarchy as types (M4 D2.5): a lifetime minted inside its scheme's
-// generalize-level is freshened per instantiation, so two uses of a
-// borrow-passing function never share one LifetimeVar.
+// the next id in sequence. Lifetimes ride the same let-generalization level
+// hierarchy as types. A lifetime minted inside its scheme's generalize-level is
+// freshened per instantiation, so two uses of a borrow-passing function never
+// share one LifetimeVar.
 func (c *Context) freshLifetime(level int) *soltype.LifetimeVar {
 	lv := &soltype.LifetimeVar{ID: c.lifetimeCounter, Level: level}
 	c.lifetimeCounter++
 	return lv
 }
 
-// freshJoinLifetime allocates a lifetime variable for a multi-source join site
-// (M4 D3). A join site is a return or branch uniting several borrows. It is
-// identical to freshLifetime but sets Join, so coalesceLifetime expands it to the
+// freshJoinLifetime allocates a lifetime variable for a multi-source join site.
+// A join site is a return or branch uniting several borrows. It is identical to
+// freshLifetime but sets Join, so coalesceLifetime expands it to the
 // union of the param lifetimes it reaches rather than naming it as a borrow origin.
 func (c *Context) freshJoinLifetime(level int) *soltype.LifetimeVar {
 	lv := c.freshLifetime(level)
@@ -86,8 +86,8 @@ func (c *Context) addUpperLtBound(v *soltype.LifetimeVar, lt soltype.Lifetime) {
 }
 
 // recordLtProxy notes that proxy is an outer-extruded copy of origin, so a later
-// repeated outlives constraint can reuse the proxy rather than mint a new one (M4
-// D2.5). Lazily allocates the map.
+// repeated outlives constraint can reuse the proxy rather than mint a new one.
+// Lazily allocates the map.
 func (c *Context) recordLtProxy(proxy *soltype.LifetimeVar, origin soltype.Lifetime) {
 	if c.ltProxyOrigin == nil {
 		c.ltProxyOrigin = map[*soltype.LifetimeVar]soltype.Lifetime{}

@@ -7,10 +7,10 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// newUnion and newIntersection are the M6 PR1 smart constructors. They are
+// newUnion and newIntersection are the smart constructors. They are
 // the single mint path for UnionType and IntersectionType. Every site that
 // builds a lattice node routes through them, so coalesced output, the
-// shared-property meet in mergeObjectGroup, PR2's annotation input, and PR6's
+// shared-property meet in mergeObjectGroup, the annotation input, and the
 // permissive borrow join all produce well-formed, canonical, deduplicated
 // lattice nodes without re-spelling the rules.
 //
@@ -19,8 +19,8 @@ import (
 // identities, ErrorType elision, dedup, canonical order, and collapse. Every
 // caller needs it. Subsumption runs only when the caller passes a Context,
 // because the subtype test it uses calls c.constrain under a probe. combine
-// and mergeObjectGroup pass nil. resolveTypeAnn from PR2 and joinBorrows from
-// PR6 pass their checker's Context.
+// and mergeObjectGroup pass nil. resolveTypeAnn and joinBorrows pass their
+// checker's Context.
 //
 // Canonical member order keeps equalType positional and cheap. Two unions
 // over the same members hold them in the same order, so equalTypeSlice
@@ -247,7 +247,7 @@ func collapseIntersection(pruned []soltype.Type, hadError bool) soltype.Type {
 // pass pre-sorts the input by compareType, so the iteration order is
 // canonical and newUnion([A, B]) and newUnion([B, A]) drop the same member
 // when A and B subsume each other but differ structurally. That is the
-// canonicalization contract the M6 plan asserts.
+// canonicalization contract.
 func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, sibling soltype.Type) bool) []soltype.Type {
 	if len(parts) < 2 {
 		return parts

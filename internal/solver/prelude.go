@@ -27,16 +27,14 @@ func sharedPrelude() *Scope {
 // two hand-seeded sorts:
 //
 //   - operator/builtin value bindings — the monomorphic-over-primitives schemes
-//     the BinaryExpr/UnaryExpr walk resolves (the BinaryExpr walk itself is a
-//     later PR; the bindings live here from PR-1). A near-mechanical port of the
-//     old checker's addOperatorBindings from type_system constructors to soltype
-//     ones.
-//   - placeholder stdlib *type* bindings (§3.8) — opaque stubs so a reference to
-//     Promise/Iterable/… resolves without an unbound-name error. M2 seeds
-//     placeholders only; real ingestion (real structures, arity) is M7.
+//     the BinaryExpr/UnaryExpr walk resolves. A port of the old checker's
+//     addOperatorBindings from type_system constructors to soltype ones.
+//   - placeholder stdlib *type* bindings — opaque stubs so a reference to
+//     Promise/Iterable/… resolves without an unbound-name error. These are
+//     placeholders only, with no real structure or arity.
 //
-// Nothing here imports internal/checker or internal/type_system — that is the
-// M2 gate.
+// Nothing here imports internal/checker or internal/type_system, so the package
+// stays acyclic.
 func NewPrelude() *Scope {
 	s := NewScope()
 	addOperatorBindings(s)
@@ -63,20 +61,14 @@ func opFunc(ret soltype.Type, params ...soltype.Type) *soltype.FuncType {
 }
 
 // addOperatorBindings seeds the built-in operators, every one monomorphic over
-// primitives (so they need no generics/unions/lib types). Richer forms (bigint
-// arithmetic, string <, generic equality) are refinements that land with their
-// enabling milestone (overloads M3, unions M6), not M2.
+// primitives so they need no generics, unions, or lib types. Richer forms such
+// as bigint arithmetic, string `<`, and generic equality are not yet modeled.
 //
-// LATENT TRAP for PR-3 (==/!= over unknown): the equality operators are seeded
-// with `unknown` (⊤) parameters, but M1's constrain has NO `T <: UnknownType`
-// rule — its switch handles prim/lit/func/tuple/void plus the two TypeVar arms,
-// and an UnknownType super falls through to CannotConstrainError. Nothing applies
-// the operators in PR-1 (BinaryExpr is still UnsupportedNodeError), so this is
-// inert today; but the moment the operator/call walk lands, `1 == 2` will
-// constrain `1 <: unknown` and fail with a spurious "cannot constrain 1 <:
-// unknown". When wiring PR-3, either give the engine an `_ <: UnknownType => ok`
-// arm (UnknownType as ⊤) or seed ==/!= with fresh per-call vars instead, and add
-// a `1 == 2 ⇒ boolean` regression test.
+// The equality operators are seeded with `unknown` (⊤) parameters. constrain has
+// no `T <: UnknownType` rule, so an UnknownType super falls through to
+// CannotConstrainError. Applying ==/!= to a non-unknown operand therefore needs
+// either an `_ <: UnknownType => ok` arm treating UnknownType as ⊤, or ==/!=
+// seeded with fresh per-call vars instead.
 func addOperatorBindings(s *Scope) {
 	num := func() soltype.Type { return prim(soltype.NumPrim) }
 	str := func() soltype.Type { return prim(soltype.StrPrim) }
@@ -86,7 +78,7 @@ func addOperatorBindings(s *Scope) {
 	define := func(t soltype.Type, names ...string) {
 		for _, name := range names {
 			// Prelude operators are monomorphic over primitives — a MonoScheme that
-			// instantiates to itself (generic operators are a later milestone).
+			// instantiates to itself.
 			s.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(t)}})
 		}
 	}
@@ -99,10 +91,9 @@ func addOperatorBindings(s *Scope) {
 	define(opFunc(str(), str(), str()), "++")
 }
 
-// stdlibTypePlaceholders are the names downstream type rules reference (await,
-// for-in, yield, iteration built-ins). M2 must make them *resolve* even though
-// the rules that consume them — and the real generic definitions — land later
-// (real ingestion is M7).
+// stdlibTypePlaceholders are the names downstream type rules reference for
+// await, for-in, yield, and the iteration built-ins. They exist so those names
+// *resolve*, even though the real generic definitions are not yet ingested.
 var stdlibTypePlaceholders = []string{
 	"Promise",
 	"Iterable",
@@ -113,8 +104,8 @@ var stdlibTypePlaceholders = []string{
 }
 
 // addStdlibTypePlaceholders seeds each stdlib type name as an opaque unknown
-// stub so a reference resolves without an unbound-name error. No structure, no
-// arity — M7 swaps these for real types.
+// stub so a reference resolves without an unbound-name error. The stubs carry no
+// structure and no arity.
 func addStdlibTypePlaceholders(s *Scope) {
 	for _, name := range stdlibTypePlaceholders {
 		s.defineType(name, TypeBinding{Type: &soltype.UnknownType{}})

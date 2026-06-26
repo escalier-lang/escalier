@@ -10,7 +10,7 @@ import (
 // with whether the block DIVERGES (always transfers control out before reaching
 // its tail, so it completes no value). The block runs in the scope it is given —
 // the caller establishes it (inferFunc passes the param scope, so body-level
-// val/var redeclarations overwrite alongside the params, per §3.2). soltype.Void
+// val/var redeclarations overwrite alongside the params). soltype.Void
 // is the result of a block that ends in a declaration or a value-free statement.
 //
 // The divergence flag is the single source of truth for "this block produces no
@@ -40,12 +40,12 @@ func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type,
 // inferStmt types a single statement and returns the value it contributes to
 // the enclosing block (void for declarations and bare returns without an
 // operand). Body-level declarations are VarDecl-only: a DeclStmt wrapping any
-// other decl kind is a permanent BodyDeclNotAllowedError (§3.2), not the
-// temporary subset gate. Each val/var introduces a fresh, independent binding
+// other decl kind is a BodyDeclNotAllowedError. Each val/var introduces a
+// fresh, independent binding
 // and overwrites the name's slot in the current scope, so redeclaration rebinds
 // without constraining the old and new types together.
 func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
-	// M4 G1: record the enclosing statement so a reassignment in expression position
+	// Record the enclosing statement so a reassignment in expression position
 	// can find its CFG StmtRef for transition checking. A no-op outside a function
 	// body (c.fn == nil), where no liveness analysis ran.
 	if c.fn != nil {
@@ -87,18 +87,18 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 				c.reportUnsupported(vd)
 				return &soltype.Void{}
 			}
-			// M4 E1: a destructuring `val`/`var` such as `{x, y} = …` or `[a, b] = …`.
+			// A destructuring `val`/`var` such as `{x, y} = …` or `[a, b] = …`.
 			// Type the initializer, then bind the pattern's leaves against it as
 			// monomorphic projections.
 			c.inferDestructureDecl(scope, lvl, vd)
 			return &soltype.Void{}
 		}
 		// Unlike the module driver (inferComponent), a body-level redeclaration is
-		// allowed and overwrites the name's slot (§3.2). inferVarDecl reports a
+		// allowed and overwrites the name's slot. inferVarDecl reports a
 		// missing initializer itself and returns ok=false; bind only when it
 		// produced a type.
 		if b, ok := c.inferVarDecl(scope, lvl, vd); ok {
-			// M4 G1: carry the rename-assigned VarID onto the binding so a later
+			// Carry the rename-assigned VarID onto the binding so a later
 			// closure capture resolves this body-level binding to its alias set, then
 			// track the alias the declaration creates and check its mutability
 			// transition. Both are no-ops outside a function body (c.fn == nil).

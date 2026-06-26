@@ -19,14 +19,14 @@ import (
 //
 // A top-level destructuring VarDecl never reaches here. inferComponent intercepts
 // each of its leaf keys via destructureDecl and binds them through
-// bindModuleDestructureLeaf (M4 E3). The destructuring arm below is a defensive
+// bindModuleDestructureLeaf. The destructuring arm below is a defensive
 // guard for a hand-built AST that bypasses that path.
 //
 // ok=false cases, each already reported:
 //   - VarDecl without an initializer → MissingInitializerError
-//   - VarDecl with a destructuring pattern → UnsupportedNodeError (initializer
-//     still walked first, so it surfaces its own errors)
-//   - any decl kind outside the M2 subset → UnsupportedNodeError
+//   - VarDecl with a destructuring pattern → UnsupportedNodeError, with the
+//     initializer still walked first so it surfaces its own errors
+//   - any other decl kind → UnsupportedNodeError
 func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type, provenance.Provenance, bool) {
 	switch d := d.(type) {
 	case *ast.VarDecl:
@@ -35,12 +35,11 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 			return nil, nil, false
 		}
 		if _, named := varName(d); !named {
-			// Destructuring patterns (TuplePat/ObjectPat) need the tuple/record
-			// types that arrive in M4. The initializer was already walked above
-			// (its errors surfaced); report the pattern and produce no binding. A
-			// nil pattern (not produced by the parser, which synthesizes a
-			// placeholder, but possible in a hand-built AST) blames the decl instead,
-			// mirroring inferFunc — never a nil-node Span() panic.
+			// A top-level destructuring pattern is not bound here. The initializer
+			// was already walked above, so its errors surfaced; report the pattern
+			// and produce no binding. A nil pattern blames the decl instead,
+			// mirroring inferFunc, so a hand-built AST never triggers a nil-node
+			// Span() panic. The parser itself synthesizes a placeholder pattern.
 			if d.Pattern != nil {
 				c.reportUnsupported(d.Pattern)
 			} else {
@@ -70,8 +69,8 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 // Walks the initializer regardless so it still surfaces its own errors, and
 // binds nothing — the caller owns scope placement.
 //
-// A `val`/`var` with no initializer needs a type annotation (TypeAnn support lands
-// in a later PR); for now it reports MissingInitializerError and returns ok=false.
+// A `val`/`var` with no initializer reports MissingInitializerError and returns
+// ok=false.
 func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (soltype.Type, bool) {
 	if d.Init == nil {
 		c.report(&MissingInitializerError{Decl: d})
@@ -80,11 +79,11 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	initT := c.inferExpr(scope, lvl, d.Init)
 	switch {
 	case d.TypeAnn != nil:
-		// M2.5: constrain the initializer against the annotation (the one
-		// non-provenance addition, §3.7), so `val x: number = "hi"` produces a
-		// CannotConstrainError whose Sub (the "hi" literal) carries a
-		// LiteralInference origin — precise blame, with the annotation as the
-		// related node. The constraint node is the initializer, so even the
+		// Constrain the initializer against the annotation, so
+		// `val x: number = "hi"` produces a CannotConstrainError whose Sub, the
+		// "hi" literal, carries a LiteralInference origin. Blame is precise, with
+		// the annotation as the related node. The constraint node is the
+		// initializer, so even the
 		// fallback span is the initializer, not the whole decl; the binding then
 		// adopts the annotated type.
 		//
@@ -92,14 +91,14 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// (ok=false): resolveTypeAnn already reported it and returned a `never`
 		// placeholder, so constraining `initT <: never` would cascade a spurious
 		// error and adopting `never` would poison the binding. Keep the inferred
-		// initializer type instead (error recovery).
+		// initializer type instead for error recovery.
 		if annT, ok := c.resolveTypeAnn(d.TypeAnn, lvl); ok {
 			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT, lvl)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
 	case d.Kind == ast.VarKind:
-		// M4 B3: eager-widen a DIRECT literal initializer to its primitive at the
+		// Eager-widen a DIRECT literal initializer to its primitive at the
 		// constraint level (`5` ⇒ number), recursively through objects/tuples. This
 		// is the constraint-level half of widening: the widened type propagates
 		// through the bound graph, so a read of the binding widens too
@@ -119,12 +118,12 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // the written annotation in two refinements over a plain constrain.
 //
 // 1. A freshly constructed, unaliased initializer flowing into an OWNED-mutable
-// annotation is allowed to take that mutable type. The C2 gate rejects immutable <:
+// annotation is allowed to take that mutable type. The strict path rejects immutable <:
 // mutable structurally, because writing through the target would otherwise mutate a
 // read-only value. But that is only unsound when a live immutable alias to the source
 // exists. A freshly constructed literal has none. It is uniquely owned, so granting it
-// the annotated mutable type is safe. This is Rule 2 with an empty alias set. The
-// construction case is `val items: mut {x} = {x: 1}`. The decision belongs at this
+// the annotated mutable type is safe. This is the empty-alias-set case of the
+// owned-mutable upgrade. The construction case is `val items: mut {x} = {x: 1}`. The decision belongs at this
 // value-flow site, which can see the source is fresh, not in the liveness-blind
 // constrain engine. The upgrade constrains the initializer's shape against the borrow's
 // INNER, its covariant read view, exactly as the non-mut path constrains against the
@@ -133,7 +132,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // source flowing into it stays on the strict path.
 //
 // 2. A bare object/tuple annotation whose initializer is a borrow lowers to an immutable
-// reborrow of the initializer rather than an owned slot (M4 G3). See reborrowAnnotation.
+// reborrow of the initializer rather than an owned slot. See reborrowAnnotation.
 // Binding a borrow into a bare annotation, as in `val q: {x} = p` for `p: mut {x}`, would
 // otherwise trip BorrowEscapeError, since the borrow flows into an owned slot. The old
 // checker accepts this and treats the annotation as a local immutable view of `p` that
@@ -143,9 +142,9 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, lvl int) soltype.Type {
 	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && isFreshlyConstructed(init) {
 		// Constrain a fresh literal against the borrow's immutable skeleton, then
-		// grant the owned-mutable type. Under the lazy deep-mut form (PR 14) the inner
+		// grant the owned-mutable type. Under the lazy deep-mut form the inner
 		// is already bare, and a nested `mut {x}` field inside a non-mut container is
-		// now rejected at the annotation site (#779), so stripOwnedMut is a defensive
+		// rejected at the annotation site, so stripOwnedMut is a defensive
 		// no-op here. It is kept so a fresh literal still flows covariantly into any
 		// owned-mut cell that reaches this point. A fully fresh literal is uniquely
 		// owned at every level, so the upgrade is sound the whole way down.
@@ -161,7 +160,7 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 }
 
 // reborrowAnnotation lowers a bare object/tuple annotation to an immutable borrow with a
-// fresh lifetime, returning ok=false when the refinement does not apply (M4 G3). It
+// fresh lifetime, returning ok=false when the refinement does not apply. It
 // applies only when the initializer's type is itself a borrow carrying a lifetime and
 // the annotation is a bare object or tuple, not an already-borrow `mut`/lifetime form or
 // a non-borrowable primitive.
@@ -176,9 +175,9 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 // The fresh lifetime carries no obligation on its own. The RefType <: RefType constrain
 // arm relates it to the source's lifetime through constrainLt. This reborrow constraint
 // runs exactly as the borrow-into-borrow argument path does. A binding that escapes
-// carries D3's escape-to-'static constraint, which the lifetime sort weighs against the
+// carries the escape-to-'static constraint, which the lifetime sort weighs against the
 // reborrow. A binding that stays local and dies within the source's region leaves the
-// fresh lifetime free, so D4's display-time elision drops the wrapper and the binding
+// fresh lifetime free, so the display-time elision drops the wrapper and the binding
 // renders as the bare inner.
 func (c *checker) reborrowAnnotation(initT, annT soltype.Type, lvl int) (soltype.Type, bool) {
 	if src, ok := initT.(*soltype.RefType); !ok || src.Lt == nil {
@@ -195,10 +194,10 @@ func (c *checker) reborrowAnnotation(initT, annT soltype.Type, lvl int) (soltype
 }
 
 // stripOwnedMut returns t's deeply-immutable skeleton by peeling every owned-mut
-// cell (Mut set, Lt nil) and recursing through objects and tuples. Borrows are
-// left untouched. Under the lazy deep-mut form (PR 14) a plain `mut {a: {x}}` stores
-// a bare inner, and a nested `mut {x}` field inside a non-mut container is now
-// rejected at the annotation site (#779), so there is usually nothing to strip; the
+// cell with Mut set and Lt nil, recursing through objects and tuples. Borrows are
+// left untouched. Under the lazy deep-mut form a plain `mut {a: {x}}` stores
+// a bare inner, and a nested `mut {x}` field inside a non-mut container is
+// rejected at the annotation site, so there is usually nothing to strip. The
 // peel is retained defensively so a fresh literal can upgrade into any deeply-mutable
 // target the whole way down.
 func stripOwnedMut(t soltype.Type) soltype.Type {
@@ -234,7 +233,7 @@ func stripOwnedMut(t soltype.Type) soltype.Type {
 // variable could alias a value held immutably elsewhere. Being identifier-free also
 // makes it sound without VarIDs, so it holds at module top level where the liveness
 // pre-pass has not run. A richer freshness judgment over provably-unique non-literal
-// expressions is the lifetime/region work (M4 G2).
+// expressions is left to the lifetime/region machinery.
 func isFreshlyConstructed(e ast.Expr) bool {
 	switch e := e.(type) {
 	case *ast.LiteralExpr:
@@ -262,7 +261,7 @@ func isFreshlyConstructed(e ast.Expr) bool {
 	}
 }
 
-// checkExcessLiteralMembers is the construction-site excess check (M4 A3): a
+// checkExcessLiteralMembers is the construction-site excess check. A
 // syntactic object/tuple LITERAL checked against an object/tuple annotation may
 // not carry members the target does not declare, EVEN when the target is inexact
 // (`{x, ...}` / `[number, ...]`). It is the construction-site twin of the
@@ -270,18 +269,18 @@ func isFreshlyConstructed(e ast.Expr) bool {
 // subtyping (an inexact target admits extras), but a literal spells out its
 // members, so an undeclared one is a construction error.
 //
-// SCOPE (M4 A3): it is wired here, at annotated `val`/`var` bindings, only. The
-// twin sites the rule will eventually cover — literal call arguments and return
-// positions checked against an inexact annotation — defer to the milestone work
-// that adds annotated call/return checking; until then a literal flowing into an
-// inexact target through those paths takes ordinary width subtyping.
+// It is wired here, at annotated `val`/`var` bindings, only. The twin sites the
+// rule does not yet cover are literal call arguments and return positions checked
+// against an inexact annotation. Until annotated call/return checking adds them, a
+// literal flowing into an inexact target through those paths takes ordinary width
+// subtyping.
 //
 // It fires only for an INEXACT target. An exact target already rejects extras
 // through the ordinary ObjectType/TupleType constrain arm (ExtraPropertyError /
 // TupleLengthMismatchError run by the c.constrain call above), so checking it here
-// too would double-report. The errors reuse A1's ExtraPropertyError for objects
-// and the parallel ExtraElementError for tuples, wired with the same Prov table /
-// site as the constraint path so blame resolves to the offending member.
+// too would double-report. The errors reuse ExtraPropertyError for objects
+// and the parallel ExtraElementError for tuples, wired with the same Prov table
+// and site as the constraint path so blame resolves to the offending member.
 //
 // A `mut T` annotation resolves to a RefType wrapping the object/tuple, so peel
 // the borrow first: the excess rule is about the literal's SHAPE versus the
@@ -350,13 +349,12 @@ func (c *checker) checkExcessLiteralMembers(e ast.Expr, sub, annT soltype.Type) 
 	}
 }
 
-// inferVarDecl types a body-level `val`/`var` into a GENERALIZED ValueBinding —
-// the let-polymorphism rule (M3, PR1) that replaces M2's coalesce-at-binding
-// freeze. It infers the initializer one level deeper (lvl+1) and generalizes at
+// inferVarDecl types a body-level `val`/`var` into a GENERALIZED ValueBinding
+// under the let-polymorphism rule. It infers the initializer one level deeper (lvl+1) and generalizes at
 // lvl: variables created in the initializer (level > lvl) become reusable type parameters,
 // while variables captured from an enclosing scope (level <= lvl) stay shared — so
 // `fn (y) { val getY = fn () { y }; [getY(), getY()] }` keeps getY's captured `y`
-// instead of freezing it to `never`, the bug eager coalescing caused. A body-level
+// instead of freezing it to `never`, the bug that eager coalescing caused. A body-level
 // `val` is never recursive (the name is bound only after its initializer is typed),
 // so there is no pre-binding or binding var; the SCC driver owns the recursive top-level
 // path (see inferDeclDef). ok=false when there is no initializer.
@@ -366,7 +364,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 		return ValueBinding{}, false
 	}
 	bound := initType
-	// M4 B3: an un-annotated body-level `var` widens at coalesce time like its
+	// An un-annotated body-level `var` widens at coalesce time like its
 	// top-level peer. The top-level SCC path flags the binding var it already
 	// mints; a body-level binding has none — it generalizes the initializer
 	// directly — so wrap the initializer in a fresh widenable var (initType <: v)
@@ -390,8 +388,8 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 	// not var-free), so Info consumers must render it with soltype.PrintAsScheme, not
 	// plain soltype.Print — same contract as the top-level path (see module.go).
 	c.recordType(d.Pattern, schemeType(scheme))
-	// PR8: carry the introducing decl's kind so inferAssign can gate reassignment —
-	// only a `var` is reassignable, a `val` is not.
+	// Carry the introducing decl's kind so inferAssign can gate reassignment.
+	// Only a `var` is reassignable, a `val` is not.
 	return ValueBinding{
 		Schemes: []TypeScheme{scheme},
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: d}},
@@ -400,7 +398,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 }
 
 // inferDestructureDecl types a body-level destructuring `val`/`var` such as
-// `val {x, y} = p` or `val [a, b] = t` (M4 E1). It types the initializer through
+// `val {x, y} = p` or `val [a, b] = t`. It types the initializer through
 // the shared inferVarDeclInit core, so an annotation is honored and a `var`
 // initializer is widened, then binds the pattern's leaves against that type via
 // bindPattern.
@@ -426,9 +424,8 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
 }
 
 // varName returns the bound name of a VarDecl whose pattern is an IdentPat, with
-// ok=false for any other pattern shape. M2 binds IdentPat-only patterns,
-// mirroring M1's IdentPat-only FuncParam. Body-level destructuring such as
-// `val [a, b] = …` is handled by inferDestructureDecl (M4 E1). Top-level
+// ok=false for any other pattern shape. Body-level destructuring such as
+// `val [a, b] = …` is handled by inferDestructureDecl. Top-level
 // destructuring still defers, since it needs the SCC driver to bind several names
 // from one decl.
 func varName(d *ast.VarDecl) (string, bool) {
@@ -443,11 +440,11 @@ func varName(d *ast.VarDecl) (string, bool) {
 // driver (inferComponent) owns scope placement and generalization. It binds a
 // self/mutually recursive group to a fresh var first so each body can see itself
 // (and its group peers), constrains this raw type into that var, and generalizes
-// the group once complete (PR1). Returning the raw type directly (rather than
-// round-tripping through a single-MonoScheme ValueBinding) removes the unchecked
+// the group once complete. Returning the raw type directly, rather than
+// round-tripping through a single-MonoScheme ValueBinding, removes the unchecked
 // `.(*MonoScheme)` assertion the SCC driver would otherwise need. Repeated
 // top-level FuncDecls under one name are constrained into the same var as
-// monomorphic overload arms; the overload-intersection representation is M3.
+// monomorphic overload arms, then represented as an overload intersection.
 func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) (soltype.Type, provenance.Provenance) {
 	t := c.inferFunc(scope, lvl, d.FuncSig, d.Body, d)
 	return t, &ast.NodeProvenance{Node: d}

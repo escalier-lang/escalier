@@ -7,8 +7,7 @@ import (
 
 // Info is the AST->type side table (à la go/types.Info). The new checker records
 // inferred types here rather than mutating ast nodes via InferredType() /
-// SetInferredType(). No probe/cleanup discipline in M1 — that arrives with
-// Prov/Probe in a later milestone.
+// SetInferredType().
 type Info struct {
 	types map[ast.Node]soltype.Type
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// M4 E3: a top-level destructuring `val [a, b] = …` binds SEVERAL names from one
+// A top-level destructuring `val [a, b] = …` binds SEVERAL names from one
 // decl. The SCC driver fans the decl across its leaf binding keys, types the
 // initializer once, and lowers each leaf's projected type into its pre-bound var.
 // This replaces the former TestInferModuleDestructuringPatternUnsupported, which
@@ -34,7 +34,7 @@ func TestInferModuleDestructuring(t *testing.T) {
 		{
 			// A `var` tuple destructuring widens each leaf to its primitive, the
 			// constraint-level widening inferVarDeclInit applies to a direct literal
-			// initializer (M4 B3), so the leaves read back as `number`.
+			// initializer, so the leaves read back as `number`.
 			name:   "tuple var widens",
 			src:    `var [a, b] = [1, 2]`,
 			values: map[string]string{"a": "number", "b": "number"},
@@ -91,7 +91,7 @@ func TestInferModuleDestructuring(t *testing.T) {
 			values: map[string]string{"x": "5", "z": "5"},
 		},
 		{
-			// Phase 3 generalizes each leaf key independently, so a destructured leaf
+			// Generalization treats each leaf key independently, so a destructured leaf
 			// bound to a polymorphic function generalizes to its own scheme and
 			// instantiates fresh at each call site. That is full let-polymorphism, not a
 			// shared monomorphic projection.
@@ -105,7 +105,7 @@ func TestInferModuleDestructuring(t *testing.T) {
 		},
 		{
 			// An un-annotated `var` object destructuring widens each leaf to its
-			// primitive, the object twin of the tuple case (M4 B3), so a later
+			// primitive, the object twin of the tuple case, so a later
 			// reassignment of the same primitive checks.
 			name:   "object var widens",
 			src:    `var {x} = {x: 5}`,

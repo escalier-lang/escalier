@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- PR 3: annotation-literal ownership, owned/borrow params, auto-borrow ---
+// --- Annotation-literal ownership, owned/borrow params, auto-borrow ---
 //
 // Rule 2: a `&` parameter is a borrow and a bare parameter is owned. Rule 3:
 // `val q = p` / `val q = &p` and the annotated forms `val q: {x} = p` /
@@ -15,7 +15,7 @@ import (
 
 // --- Rule 2 (params) -----------------------------------------------------------
 
-// A bare `mut` parameter is OWNED-mutable, not a borrow. Under the pre-PR 3
+// A bare `mut` parameter is OWNED-mutable, not a borrow. Under the earlier
 // borrow-by-default convention, a `mut T` param picked up a fresh inferred
 // lifetime. Now only an explicit `&` annotation borrows, so the rendered
 // signature carries no lifetime quantifier on a bare-mut returning function.
@@ -35,8 +35,8 @@ func TestInferBareImmutableParamIsOwned(t *testing.T) {
 
 // --- Rule 3 (binding initializer): inferred bindings, owned operand ------------
 
-// `val q = p` for an owned-immutable p establishes q as owned-immutable. PR 6
-// will make this consume p. For now it only establishes the owned binding.
+// `val q = p` for an owned-immutable p establishes q as owned-immutable. A later
+// change will make this consume p. For now it only establishes the owned binding.
 func TestInferValOwnedImmFromOwnedImm(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: {x: number}) {
   val q = p
@@ -49,16 +49,16 @@ func TestInferValOwnedImmFromOwnedImm(t *testing.T) {
 // `val q = &p` for an owned-immutable p establishes q as an immutable borrow.
 // The borrow lifetime is inferred and carried through to the return.
 //
-// DISABLED until lifetime-bounds (M6.5) lands.
+// DISABLED until directional lifetime bounds land.
 //
 // Returning a borrow of a locally-owned `p` is unsound: `p` is destroyed when
 // `f` returns, so `q` dangles. The current solver under-checks this because
-// the fresh lifetime on `&p` has no upper bound from `p` (an owned value has
-// no lifetime), and D4 elides the unconstrained lifetime to render the result
-// as owned. PR 5 of the affine plan generalizes escape detection at returns,
-// which will force the lifetime to 'static and change the rendering, but the
-// hard rejection needs M6.5's directional lifetime bounds. Re-enable then and
-// assert the borrow-of-local diagnostic instead of the empty error list.
+// the fresh lifetime on `&p` has no upper bound from `p`, since an owned value
+// has no lifetime, and the elision pass drops the unconstrained lifetime to
+// render the result as owned. Generalizing escape detection at returns will
+// force the lifetime to 'static and change the rendering, but the hard
+// rejection needs directional lifetime bounds. Re-enable then and assert the
+// borrow-of-local diagnostic instead of the empty error list.
 /*
 func TestInferValBorrowFromOwnedImm(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f(p: {x: number}) {
@@ -83,10 +83,10 @@ func TestInferValMutOwnedFromOwnedMut(t *testing.T) {
 
 // `val q = &mut p` for an owned-mutable p establishes q as a mutable borrow.
 //
-// DISABLED until lifetime-bounds (M6.5) lands. Same under-checking as
+// DISABLED until directional lifetime bounds land. Same under-checking as
 // TestInferValBorrowFromOwnedImm: the borrow of a locally-owned `p` escapes
 // through the return without a lifetime that can refute it. Re-enable when
-// M6.5 lifetime bounds catch the dangling-borrow case.
+// lifetime bounds catch the dangling-borrow case.
 /*
 func TestInferValMutBorrowFromOwnedMut(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
@@ -126,7 +126,7 @@ func TestInferValAnnotatedOwnedImm(t *testing.T) {
 // `val q: &{x} = p` for an owned p auto-borrows p into the annotated borrow slot.
 // The constrain rule's bare<:RefType arm wraps p as an immutable view.
 //
-// DISABLED until lifetime-bounds (M6.5) lands. The annotated borrow form has
+// DISABLED until directional lifetime bounds land. The annotated borrow form has
 // the same dangling-borrow soundness gap as the inferred `val q = &p` case
 // in TestInferValBorrowFromOwnedImm.
 /*
@@ -143,7 +143,7 @@ func TestInferValAnnotatedBorrowImm(t *testing.T) {
 
 // `val q: &mut {x} = p` for an owned-mutable p auto-borrows p as a mutable borrow.
 //
-// DISABLED until lifetime-bounds (M6.5) lands. Mutable analogue of
+// DISABLED until directional lifetime bounds land. Mutable analogue of
 // TestInferValAnnotatedBorrowImm.
 /*
 func TestInferValAnnotatedBorrowMut(t *testing.T) {
@@ -216,14 +216,14 @@ func TestInferBorrowExprImmReturnedCarriesLifetime(t *testing.T) {
 
 // `&mut p` on an owned-mutable p infers a mutable borrow.
 //
-// DISABLED until lifetime-bounds (M6.5) lands.
+// DISABLED until directional lifetime bounds land.
 //
 // Returning a borrow expression `&mut p` for a locally-owned `p` is unsound:
 // `p` is destroyed when the function returns, so the borrow dangles. The
 // current solver under-checks this because the fresh lifetime on `&mut p`
-// has no anchor and D4 elides it to render the result as `mut {x: number}`.
-// PR 5 will force the lifetime to 'static at the return, but the hard
-// rejection still needs M6.5's directional lifetime bounds.
+// has no anchor and the elision pass drops it to render the result as
+// `mut {x: number}`. Forcing the lifetime to 'static at the return is part of
+// it, but the hard rejection still needs directional lifetime bounds.
 /*
 func TestInferBorrowExprMutFromOwnedMut(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return &mut p }`)

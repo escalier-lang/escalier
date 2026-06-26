@@ -6,14 +6,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- PR8 Part 1: the ErrorType error-recovery sentinel, end-to-end ---
+// --- The ErrorType error-recovery sentinel, end-to-end ---
 //
 // report mints ErrorType (not never) as the value-position recovery placeholder
 // after emitting a diagnostic. ErrorType absorbs in both directions inside
-// constrain, so a single reported error never cascades a spurious second one — at
+// constrain, so a single reported error never cascades a spurious second one at
 // any sink the broken value later flows into. These exercise that through the real
-// parser, complementing the constrain-level unit tests (constrain_test.go) and the
-// if/await cascade tests (infer_async_test.go).
+// parser, complementing the constrain-level unit tests in constrain_test.go and the
+// if/await cascade tests in infer_async_test.go.
 
 // A value bound to a broken (unknown-identifier) initializer flows into a call
 // argument WITHOUT producing a second error: the ErrorType placeholder absorbs the
@@ -34,8 +34,8 @@ func TestInferErrorBindingFlowsIntoCallNoCascade(t *testing.T) {
 }
 
 // An unsupported expression recovers to the ErrorType sentinel and flows on without
-// cascading. Here the unsupported expression is an object spread, which is M9. The
-// only error is the unsupported-node one, and the surrounding object still builds.
+// cascading. Here the unsupported expression is an object spread. The only error is
+// the unsupported-node one, and the surrounding object still builds.
 func TestInferUnsupportedExprRecoversWithoutCascade(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val o = {...xs}

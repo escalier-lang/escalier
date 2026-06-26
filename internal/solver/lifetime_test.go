@@ -114,8 +114,8 @@ func TestConstrainLtReflexiveIsNoOp(t *testing.T) {
 }
 
 // A borrowed value flowing into 'static storage has its lifetime forced to outlive
-// 'static. This is the EscapingRefIntoStatic acceptance (M4 D3). constrainEscape
-// constrains the borrow's lifetime `<: 'static`, so coalescing the borrow renders it
+// 'static. constrainEscape constrains the borrow's lifetime `<: 'static`, so
+// coalescing the borrow renders it
 // `&'static mut {x: number}` rather than under the param's own name. No Escalier
 // construct routes a borrow into static storage yet, since a borrow originates only
 // at a parameter, so this exercises the rule's mechanism directly.
@@ -172,10 +172,10 @@ func mutPointRef(lt soltype.Lifetime) *soltype.RefType {
 }
 
 // borrowFn wraps a return type in a function whose parameters carry the given borrow
-// lifetimes. D4 names a lifetime only when it originates at a parameter, which means
-// it occurs in a negative position. So a join's member lifetimes must appear on
-// parameters to be named or expanded, exactly how joinBorrows produces them from
-// real source.
+// lifetimes. Lifetime naming names a lifetime only when it originates at a parameter,
+// which means it occurs in a negative position. So a join's member lifetimes must
+// appear on parameters to be named or expanded, exactly how joinBorrows produces them
+// from real source.
 func borrowFn(ret soltype.Type, paramLts ...soltype.Lifetime) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(paramLts))
 	for i, lt := range paramLts {
@@ -188,9 +188,9 @@ func borrowFn(ret soltype.Type, paramLts ...soltype.Lifetime) *soltype.FuncType 
 }
 
 // Escaping a JOINED borrow forces every param lifetime the join reaches to outlive
-// 'static, so the whole `('a | 'b)` union collapses to a single 'static. This is the
-// join↔escape interaction (M4 D3). constrainEscape constrains the join lifetime
-// `<: 'static`, which propagates through its lower bounds to each member, and
+// 'static, so the whole `('a | 'b)` union collapses to a single 'static.
+// constrainEscape constrains the join lifetime `<: 'static`, which propagates
+// through its lower bounds to each member, and
 // coalesceLifetimes then absorbs the union to 'static rather than expanding it.
 func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	c := newChecker()
@@ -218,8 +218,8 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
-// D4 elision keeps the `&` on a connect-nothing borrow by parking its lifetime on
-// the Anon sentinel, so an immutable borrow whose lifetime reaches no output
+// Lifetime elision keeps the `&` on a connect-nothing borrow by parking its lifetime
+// on the Anon sentinel, so an immutable borrow whose lifetime reaches no output
 // still renders as `&{x}` rather than collapsing to the bare inner. The mutable
 // case keeps the `&mut` form for the same reason.
 func TestImmutableConnectNothingBorrowKeepsRef(t *testing.T) {
@@ -349,7 +349,7 @@ func TestProbeLifetimeCommittedChildCoveredByParentDiscard(t *testing.T) {
 	require.Empty(t, b.LowerBounds)
 }
 
-// Test 1 — the lower-bound propagation branch. TestConstrainLtPropagatesTransitively
+// The lower-bound propagation branch. TestConstrainLtPropagatesTransitively
 // exercises propagation through the SUPER variable's upper bounds; this exercises the
 // distinct `subVar.LowerBounds` loop: with lb <: a already recorded, constraining
 // a <: super must propagate lb <: super through a's existing lower bound.
@@ -367,7 +367,7 @@ func TestConstrainLtPropagatesThroughLowerBounds(t *testing.T) {
 	require.Contains(t, super.LowerBounds, soltype.Lifetime(lb), "super sees lb as a lower bound from the same propagation")
 }
 
-// Test 2 — a probe discard rolls back vars touched TRANSITIVELY, not just the ones
+// A probe discard rolls back vars touched TRANSITIVELY, not just the ones
 // named at the constrainLt call site. With a <: b set pre-probe, a single
 // constrainLt(x, a) under the probe touches x, a, AND b (x <: a <: b), and the
 // discard must truncate every probe-era bound while leaving the pre-probe ones.
@@ -397,7 +397,7 @@ func TestProbeDiscardRollsBackTransitivelyTouchedLifetimes(t *testing.T) {
 	require.Equal(t, soltype.Lifetime(a), b.LowerBounds[0], "b's pre-probe lower bound survives")
 }
 
-// Test 3 — recordLt journals a lifetime var at most once per probe, even across
+// recordLt journals a lifetime var at most once per probe, even across
 // several appends to it, so the single snapshot truncates every later append on
 // discard. Mirrors the type sort's TestProbeRecordDedupsPerVariable. Each
 // constrainLt(a, …) also touches its super var, so the probe holds three entries
@@ -425,7 +425,7 @@ func TestProbeRecordLtDedupsPerLifetimeVar(t *testing.T) {
 	require.Empty(t, a.UpperBounds, "both speculative bounds on a are truncated via the single journal entry")
 }
 
-// Test 5 — a probe built directly as &Probe{} (bypassing newProbe) is safe for the
+// A probe built directly as &Probe{} (bypassing newProbe) is safe for the
 // lifetime sort too: ltTouched is lazily created on first recordLt, so there is no
 // nil-map panic. Mirrors the type sort's TestProbeBareLiteralIsNilMapSafe.
 func TestProbeBareLiteralLifetimeIsNilMapSafe(t *testing.T) {
@@ -444,7 +444,7 @@ func TestProbeBareLiteralLifetimeIsNilMapSafe(t *testing.T) {
 	require.Empty(t, b.LowerBounds)
 }
 
-// Test 6a — a discarded child reverts only ITS OWN lifetime appends, leaving the
+// A discarded child reverts only ITS OWN lifetime appends, leaving the
 // parent's journal and the var's parent-era bounds intact. Mirrors the type sort's
 // TestDiscardedChildLeavesParentJournalIntact.
 func TestProbeLifetimeDiscardedChildLeavesParentJournalIntact(t *testing.T) {
@@ -468,7 +468,7 @@ func TestProbeLifetimeDiscardedChildLeavesParentJournalIntact(t *testing.T) {
 	require.Empty(t, a.UpperBounds, "the parent discard reverts its own lifetime bound")
 }
 
-// Test 6b — when the parent has NOT touched a lifetime var the committed child did,
+// When the parent has NOT touched a lifetime var the committed child did,
 // the child's snapshot is inherited so the parent discard reverts the child's bound
 // to the var's pre-child length. Mirrors TestCommittedChildInheritsUntouchedVarSnapshot.
 func TestProbeLifetimeCommittedChildInheritsUntouchedVarSnapshot(t *testing.T) {
@@ -487,7 +487,7 @@ func TestProbeLifetimeCommittedChildInheritsUntouchedVarSnapshot(t *testing.T) {
 	require.Empty(t, b.LowerBounds)
 }
 
-// Test 7 — re-constraining a lifetime bound already present journals nothing: the
+// Re-constraining a lifetime bound already present journals nothing: the
 // ContainsLifetime guard skips the append, so no recordLt fires and a discard is a
 // clean no-op that leaves the pre-probe bound untouched. This verifies the
 // "no journal entry without an append" invariant for the lifetime sort.
@@ -508,12 +508,12 @@ func TestProbeReconstrainingPresentLifetimeBoundJournalsNothing(t *testing.T) {
 	require.Equal(t, soltype.Lifetime(b), a.UpperBounds[0])
 }
 
-// Test 8 — the lifetime bound minted by the RefType constrain arm itself is
+// The lifetime bound minted by the RefType constrain arm itself is
 // journaled, so a discarded trial rolls it back. The earlier probe tests drive
-// constrainLt directly; this drives it THROUGH constrain over two `mut` borrows
-// (the now-active step 3, D2), confirming the RefType arm participates in the same
-// speculation discipline as a direct constrainLt call. Without journaling here, a
-// failed overload trial that constrained two borrows would leak a lifetime bound.
+// constrainLt directly. This drives it THROUGH constrain over two `mut` borrows,
+// confirming the RefType arm participates in the same speculation discipline as a
+// direct constrainLt call. Without journaling here, a failed overload trial that
+// constrained two borrows would leak a lifetime bound.
 func TestProbeRollsBackLifetimeBoundFromRefArm(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)

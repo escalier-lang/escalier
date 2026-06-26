@@ -17,7 +17,7 @@ func TestCoalesceAtomsPassThrough(t *testing.T) {
 		{"void", &soltype.Void{}},
 		{"never", &soltype.NeverType{}},
 		{"unknown", &soltype.UnknownType{}},
-		{"error", &soltype.ErrorType{}}, // PR8 recovery sentinel: a childless atom
+		{"error", &soltype.ErrorType{}}, // recovery sentinel: a childless atom
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -95,9 +95,10 @@ func TestCoalesceMultiBound(t *testing.T) {
 	})
 }
 
-// TestCoalesceNegativeObjectMerge pins B1: a negative variable carrying several
-// member-access requirements as separate inexact one-property objects coalesces to
-// a single EXACT object (Policy A), not an intersection of one-property objects.
+// TestCoalesceNegativeObjectMerge pins the negative-object merge: a negative
+// variable carrying several member-access requirements as separate inexact
+// one-property objects coalesces to a single EXACT object, not an intersection of
+// one-property objects.
 // This is the receiver of `fn (p) { p.a; p.b }`, whose body lands `{a: …, ...}` and
 // `{b: …, ...}` on p's upper bounds.
 func TestCoalesceNegativeObjectMerge(t *testing.T) {
@@ -153,7 +154,7 @@ func TestCoalesceNegativeObjectMerge(t *testing.T) {
 			num(),
 		}
 		got := coalesce(p, soltype.Negative)
-		// Members are in canonical order (M6 PR1): PrimType ranks before
+		// Members are in canonical order: PrimType ranks before
 		// ObjectType, so `number & {a: number}`.
 		want := &soltype.IntersectionType{Types: []soltype.Type{
 			num(),
@@ -163,7 +164,7 @@ func TestCoalesceNegativeObjectMerge(t *testing.T) {
 	})
 }
 
-// TestCoalesceMutWriteFold pins the C3 whole-object mut merge: a field-write bound
+// TestCoalesceMutWriteFold pins the whole-object mut merge: a field-write bound
 // (a mut-wrapped inexact object) folds with the receiver's reads into ONE object,
 // and the presence of any write wraps the merged object in `mut`. usageObject is the
 // classifier that routes both read and write requirements into the fold.
@@ -192,7 +193,7 @@ func TestCoalesceMutWriteFold(t *testing.T) {
 		require.True(t, equalType(want, got), "got %s", soltype.Print(got))
 	})
 
-	// With no write, reads fold into a bare (immutable) object — the pre-C3 behavior,
+	// With no write, reads fold into a bare immutable object,
 	// confirming the mut wrap is gated on an actual write.
 	t.Run("reads only fold to a bare object", func(t *testing.T) {
 		c := &Context{}
@@ -232,9 +233,9 @@ func TestUsageObject(t *testing.T) {
 	}
 }
 
-// TestCoalesceOpenVarStaysInexact pins B2: an `open` parameter var's folded usage
-// object stays inexact (row-polymorphic) instead of closing to exact. The Open flag
-// on the var is the opt-out from B1's Policy-A close.
+// TestCoalesceOpenVarStaysInexact pins the open-var rule: an `open` parameter var's
+// folded usage object stays inexact and row-polymorphic instead of closing to exact.
+// The Open flag on the var is the opt-out from the close to exact.
 func TestCoalesceOpenVarStaysInexact(t *testing.T) {
 	// An open var with two member-access requirements folds to one INEXACT object.
 	t.Run("open var folds to inexact object", func(t *testing.T) {
@@ -260,7 +261,7 @@ func TestCoalesceOpenVarStaysInexact(t *testing.T) {
 		require.True(t, equalType(inexactObj(propElem("x", num())), got), "got %s", soltype.Print(got))
 	})
 
-	// The un-open peer closes to exact (the B1 baseline), so the flag is what
+	// The un-open peer closes to exact, so the flag is what
 	// distinguishes them.
 	t.Run("closed peer folds to exact object", func(t *testing.T) {
 		c := &Context{}
@@ -280,7 +281,8 @@ func TestCoalesceStructuralRecursion(t *testing.T) {
 	// the parameter type (negative) and the return type (positive). With empty
 	// bounds, the uniform-inline coalescer renders the degenerate
 	// `fn (x: unknown) -> never`: the param var is negative-empty ⇒ unknown, the
-	// return var is positive-empty ⇒ never. (The named-`<T0>` rendering is M3.)
+	// return var is positive-empty ⇒ never. The named-`<T0>` rendering arrives with
+	// generalization.
 	c := &Context{}
 	a := c.freshVar(0)
 	fn := &soltype.FuncType{
@@ -296,7 +298,7 @@ func TestCoalesceStructuralRecursion(t *testing.T) {
 	require.True(t, equalType(want, got))
 }
 
-// TestCoalesceBorrowedVarInnerPeels pins review finding 1: coalescing a borrow whose
+// TestCoalesceBorrowedVarInnerPeels pins borrow-inner peeling: coalescing a borrow whose
 // inner is an inference variable inlines that variable to its bounds. RefInner admits
 // *TypeVarType, so `mut β` is well-formed mid-inference. When β inlines to a
 // non-borrowable type — a primitive bound, or never for empty bounds — the borrow
@@ -325,7 +327,7 @@ func TestCoalesceBorrowedVarInnerPeels(t *testing.T) {
 // when the borrow's inner stays a RefInner after coalescing (here the inner is an
 // OBJECT containing a variable, not a bare variable), the `mut` wrapper must SURVIVE.
 // `mut {x: β}` with β bounded by number coalesces to `mut {x: number}`, not a peeled
-// `{x: number}` — the realistic shape C3's field-write inference produces.
+// `{x: number}` — the realistic shape the field-write inference produces.
 func TestCoalesceBorrowPreservesWrapper(t *testing.T) {
 	c := &Context{}
 	v := c.freshVar(0)
@@ -378,9 +380,8 @@ func TestEqualTypeRef(t *testing.T) {
 
 // equalType on ObjectType must discriminate on the Inexact flag and on each
 // property's Optional marker (mirroring the FuncType arm's Inexact / param-Optional
-// checks), and must be order-independent. Without the Optional check (M4 A1 review
-// fix #2) {a: T} and {a?: T} would compare equal and coalesce/simplify would drop
-// optionality.
+// checks), and must be order-independent. Without the Optional check {a: T} and
+// {a?: T} would compare equal and coalesce/simplify would drop optionality.
 func TestEqualTypeObject(t *testing.T) {
 	optProp := func(name string, ty soltype.Type) *soltype.PropertyElem {
 		return &soltype.PropertyElem{Name: name, Type: ty, Optional: true}

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// M4 B3: an un-annotated `var` binding widens its initializer's literal types to
+// An un-annotated `var` binding widens its initializer's literal types to
 // their primitives, recursively through objects and tuples, so a mutable cell can
 // later hold a different value of the same primitive. A `val` is a fixed
 // singleton and keeps its literal type. These exercise the rendered binding type
@@ -82,13 +82,13 @@ func TestInferVarWideningReassignment(t *testing.T) {
 	})
 }
 
-// widen's structural arms are exercised directly here because no M4 source can
-// yet produce a borrow-typed or inexact var initializer — C3's field-write path
-// is the first consumer of the RefType arm, and inexactness only reaches a var
-// binding through annotations (which take the annotation, not widening). These
-// pin the helper's full contract — literal lowering, recursive object/tuple
-// descent preserving Inexact, RefType peel/re-wrap preserving Mut, and
-// passthrough of already-widened or still-variable types — that C3 relies on.
+// widen's structural arms are exercised directly here because no source can yet
+// produce a borrow-typed or inexact var initializer. A field-write path is the
+// first consumer of the RefType arm, and inexactness only reaches a var binding
+// through an annotation, which takes the annotation rather than widening. These
+// pin the helper's full contract: literal lowering, recursive object and tuple
+// descent preserving Inexact, RefType peel and re-wrap preserving Mut, and
+// passthrough of already-widened or still-variable types.
 func TestWidenHelper(t *testing.T) {
 	numLit := &soltype.LitType{Lit: &soltype.NumLit{Value: 5}}
 	objLit := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
@@ -166,13 +166,13 @@ func TestInferVarWideningThroughReference(t *testing.T) {
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["y"])
 	})
-	// Reference widening rides the Widenable flag at coalesce time (display, the
-	// reassignment slot, the binding's own type), but the literal still flows into
-	// the bound graph unwidened, so a read of the reference-widened var into a new
-	// binding keeps the precise literal: `val z = y` ⇒ z: 5. A direct literal
-	// widens at the constraint level instead, so ITS reads widen (see
-	// TestInferVarWideningPropagatesToReads). z: 5 is sound — z is an immutable
-	// snapshot of the value 5 — and this pins the narrow remaining corner.
+	// Reference widening rides the Widenable flag at coalesce time, covering
+	// display, the reassignment slot, and the binding's own type. The literal still
+	// flows into the bound graph unwidened, so a read of the reference-widened var
+	// into a new binding keeps the precise literal: `val z = y` ⇒ z: 5. A direct
+	// literal widens at the constraint level instead, so ITS reads widen. See
+	// TestInferVarWideningPropagatesToReads. z: 5 is sound because z is an immutable
+	// snapshot of the value 5, and this pins the narrow remaining corner.
 	t.Run("reading a reference-widened var keeps the literal", func(t *testing.T) {
 		values, _, errs := inferSource(t, "val x = 5\nvar y = x\nval z = y")
 		require.Empty(t, errs)

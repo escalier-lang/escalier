@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- PR4: function exactness (#677), source-level behaviors ---
+// --- function exactness, source-level behaviors ---
 
 // A written function value is EXACT, so calling it with exactly its declared arity
 // type-checks. This is the regression the exact call-demand guards: an INEXACT
@@ -80,10 +80,9 @@ func TestInferNonTrailingOptionalRequiresAllArgs(t *testing.T) {
 	require.Equal(t, "Not enough arguments: expected at least 2, but got 1", errs[0].Message())
 }
 
-// A function value declared with the trailing `...` marker now parses (PR4 parser
-// support) and is inferred INEXACT: its rendered type carries the `...`, but the
-// direct-call lint still rejects extra args (§4.2.3 — inexactness governs callback
-// subtyping, not direct calls).
+// A function value declared with the trailing `...` marker parses and is inferred
+// INEXACT: its rendered type carries the `...`, but the direct-call lint still
+// rejects extra args. Inexactness governs callback subtyping, not direct calls.
 func TestInferInexactFunctionValue(t *testing.T) {
 	t.Run("renders with the inexact marker", func(t *testing.T) {
 		values, _, errs := inferSource(t, `fn f(x: number, ...) -> number { return x }`)
@@ -113,9 +112,9 @@ func TestInferTooFewArgsRespectsOptional(t *testing.T) {
 }
 
 // A typed rest param absorbs trailing arguments, so a direct call with more args
-// than declared is NOT too-many (#677 §4.2.3) — but too-few still applies to the
-// fixed params. Rest params have no source syntax in M3 (inferFunc reports them
-// unsupported), so this is built by hand — unlike the inexact `...` marker, which is
+// than declared is NOT too-many, but too-few still applies to the fixed params.
+// Rest params have no source syntax yet, since inferFunc reports them unsupported,
+// so this is built by hand. This is unlike the inexact `...` marker, which is
 // source-expressible and covered via inferSource in TestInferInexactFunctionValue.
 func TestInferCallRestCalleeArity(t *testing.T) {
 	// fn g(x: number, ...rest: number): one fixed param + a rest.

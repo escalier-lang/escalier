@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// PR6 — function overloading for free functions. A name with more than one
-// top-level FuncDecl is an overload set; a direct call resolves to the arm whose
-// parameter accepts the argument, via resolveOverload (a phase distinct from
-// constrain, driven by the PR5 probe).
+// Function overloading for free functions. A name with more than one top-level
+// FuncDecl is an overload set. A direct call resolves to the arm whose parameter
+// accepts the argument, via resolveOverload, a phase distinct from constrain and
+// driven by the resolution probe.
 
 // Per-argument-type resolution: f(5) picks the number arm, f("hi") the string arm,
 // each call yielding that arm's return type.
@@ -102,8 +102,8 @@ func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 // A call with an unconstrained argument (a still-unconstrained parameter variable)
 // falls back to declaration-order first-match: f(y) inside `fn (y) {…}` resolves to
 // the first arm and pins y to that arm's parameter type. This over-narrows the
-// enclosing function (g then rejects a later g("hi")) — a documented MVP limitation
-// whose real fix (deferred resolution) is tracked in #723.
+// enclosing function, so g then rejects a later g("hi"). It is a known limitation
+// whose real fix is deferred resolution.
 func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { return x }
@@ -146,8 +146,8 @@ func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
 // A self-recursive fully-annotated overload type-checks: each arm's recursive call
 // resolves against the whole pre-bound overload set (the number arm's f(x) hits the
 // number arm, the string arm's hits the string arm), so neither arm is wrongly
-// checked against the other. (Before the pre-binding fix this reported two spurious
-// `cannot constrain` errors because the recursive reference saw only the first arm.)
+// checked against the other. Before the pre-binding fix this reported two spurious
+// `cannot constrain` errors because the recursive reference saw only the first arm.
 func TestInferOverloadSelfRecursiveAnnotated(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { return f(x) }
@@ -188,9 +188,9 @@ func TestInferOverloadNonRecursiveAnnotatedAllowed(t *testing.T) {
 	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"])
 }
 
-// Value-position use (PR6 scoped lattice exception): a let-bound overloaded name is
-// the INTERSECTION of its arms, and calling THROUGH that binding resolves each call
-// via constrain's function-intersection-sub arm — g(5) ⇒ number, g("hi") ⇒ string.
+// Value-position use: a let-bound overloaded name is the INTERSECTION of its arms,
+// and calling THROUGH that binding resolves each call via constrain's
+// function-intersection-sub arm — g(5) ⇒ number, g("hi") ⇒ string.
 func TestInferOverloadValuePosition(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { return x }
@@ -264,7 +264,7 @@ func TestInferOverloadThreeArmSpecificity(t *testing.T) {
 	require.Equal(t, "true", values["r"], "falls back to the generic arm")
 }
 
-// Resolution rollback (exercising the PR5 probe): the first-tried arm (string) is a
+// Resolution rollback exercising the resolution probe: the first-tried arm (string) is a
 // non-match for a number-bounded argument variable; its speculative `arg <: string`
 // upper bound must be rolled back, so after resolution the argument var carries ONLY
 // the winning (number) arm's bound — never the loser's. Built directly so the

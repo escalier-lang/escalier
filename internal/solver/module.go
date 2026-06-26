@@ -16,24 +16,18 @@ import (
 // stdlib-type placeholders resolve through the parent), the Info side table, and
 // any SolverErrors.
 //
-// PR-5 replaces PR-2's source-order loop with dep_graph SCC ordering: a decl that
-// forward-references a name defined later in the source, or that mutually
-// recurses with another decl, now infers correctly because BuildDepGraph
-// topologically orders the strongly connected components and inferComponent makes
-// every member of a group visible before inferring any of their bodies.
-// Inference is MONOMORPHIC — M1 ships no schemes, so each binding's var stays as its
-// coalesced monomorphic type; the generalization that yields <T0> rendering is
-// M3.
+// Declarations are ordered by dep_graph SCC ordering rather than source order: a
+// decl that forward-references a name defined later in the source, or that mutually
+// recurses with another decl, infers correctly because BuildDepGraph topologically
+// orders the strongly connected components and inferComponent makes every member of
+// a group visible before inferring any of their bodies.
 //
-// Multi-file (PR-6) needs no separate entry point: parser.ParseLibFiles already
+// Multi-file inference needs no separate entry point. parser.ParseLibFiles already
 // assembles several sources into one *ast.Module, unioning files that share a
 // path-derived namespace into the same Namespace.Decls. BuildDepGraph then spans
 // every file, so a `val`/`fn` in one file resolving a top-level `val`/`fn` in
 // another is just an ordinary cross-component reference the SCC ordering already
-// handles — that is the M2 "multi-file module resolves via the dep graph" exit
-// criterion. Cross-file references in M2 use root-namespace short names; qualified
-// namespace-member access (`Foo.bar`) is M4, and third-party `@types`/`.d.ts`
-// ingestion (internal/resolver) is M7 — M2 engages neither.
+// handles.
 func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
 	c := newChecker()
 	scope := sharedPrelude().Child()
@@ -52,7 +46,7 @@ func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
 // graph did not model.
 func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph) {
 	handled := set.NewSet[ast.Decl]()
-	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
+	// dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
 	// once, memoized here on the first leaf reached. Each leaf component then
 	// constrains its own projected type into its binding var.
@@ -75,9 +69,9 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	})
 }
 
-// overloadArm is one collected arm of an overload set (PR6): a top-level FuncDecl's
-// raw inferred type plus whether its signature is fully annotated (the recursion
-// gate) and the decl itself (for per-arm Info recording in phase 3).
+// overloadArm is one collected arm of an overload set: a top-level FuncDecl's
+// raw inferred type plus whether its signature is fully annotated for the recursion
+// gate and the decl itself for per-arm Info recording in phase 3.
 type overloadArm struct {
 	decl      *ast.FuncDecl
 	t         soltype.Type // the arm's RAW (variable-carrying) inferred FuncType
@@ -96,22 +90,22 @@ type componentBinding struct {
 	// infoNode is the AST node phase 3 records the binding's generalized display type
 	// on, for Info and go-to-definition. It is the binding's own name-bearing node: a
 	// VarDecl's pattern, a FuncDecl's name, or — for a top-level destructuring — the
-	// individual pattern leaf this key binds, e.g. the `a` IdentPat of `val [a, b] = …`
-	// (M4 E3). A destructuring records per leaf rather than on the whole decl pattern,
+	// individual pattern leaf this key binds, e.g. the `a` IdentPat of `val [a, b] = …`.
+	// A destructuring records per leaf rather than on the whole decl pattern,
 	// which its sibling leaf keys share.
 	infoNode ast.Node
 	bound    bool // a definition was inferred and constrained
 	// isVarDecl reports whether the primary decl is a VarDecl, i.e. a `val` or a `var`
 	// rather than a function. It is NOT the `var`-vs-`val` distinction — that is kind.
 	isVarDecl bool
-	kind      ast.VariableKind // PR8: the primary definition's kind — VarKind ⇒ reassignable
+	kind      ast.VariableKind // the primary definition's kind — VarKind ⇒ reassignable
 	// recovered marks that a contributing definition was WHOLLY the ErrorType recovery
 	// sentinel (e.g. `val a = <unknown ident>`). ErrorType absorbs in constrain, so it
 	// leaves no bound on the binding var; phase 3 uses this to recover the binding AS
-	// ErrorType rather than freezing an unbound var to `never` (which would cascade
-	// `<: never` at every later use). See PR8 / inferComponent phase 3.
+	// ErrorType rather than freezing an unbound var to `never`, which would cascade
+	// `<: never` at every later use. See inferComponent phase 3.
 	recovered bool
-	// arms collects every top-level FuncDecl under this key (PR6). len <= 1 is an
+	// arms collects every top-level FuncDecl under this key. len <= 1 is an
 	// ordinary function (or a non-function binding, len == 0); len > 1 is an overload
 	// set, bound as a multi-scheme ValueBinding in phase 3. arms[i] lines up with the
 	// FuncDecl's entry in sources.
@@ -123,28 +117,20 @@ type componentBinding struct {
 	// first-arm var; phase 2 only checks each arm's body. An overload with any
 	// un-annotated arm cannot be signature-bound (its signature isn't known without
 	// inferring the body), so it stays on the ordinary group-var path and cannot be
-	// mutually recursive (the gate forbids it). See checkOverloadAnnotations / annotatedOverloadArms.
+	// mutually recursive, since the gate forbids it. See checkOverloadAnnotations / annotatedOverloadArms.
 	signatureBound bool
 }
 
 // inferComponent infers one strongly connected component — a group of
-// mutually-recursive (or, in the singleton case, independent) top-level bindings
-// — and binds each name in scope. It follows the spike's LetRecGroup discipline
-// with NO placeholder/patching phase (the single biggest simplification the
-// simple-sub bridge buys over the old checker's two-phase
-// placeholder/definition pass):
+// mutually-recursive, or in the singleton case independent, top-level bindings —
+// and binds each name in scope. It runs in three phases with no
+// placeholder/patching pass:
 //
 //  1. give every VALUE binding in the component a fresh var at lvl+1 and define
 //     it in scope BEFORE any body is inferred, so a mutually-recursive reference
 //     resolves through the var;
 //  2. infer each declaration's definition at lvl+1 and constrain it <: its var;
-//  3. rebind each name to the coalesced MONOMORPHIC type of its var.
-//
-// M2 does NOT generalize (M1 ships no schemes): step 3 freezes each binding at
-// its coalesced monomorphic type rather than wrapping it in a PolyScheme. The
-// generalization that turns these into reusable polymorphic bindings — the <T0>
-// rendering — is M3. M2's contribution is correct ordering and recursive
-// resolution.
+//  3. generalize each name's var into a scheme and rebind it.
 func (c *checker) inferComponent(
 	scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph,
 	component []dep_graph.BindingKey, handled set.Set[ast.Decl],
@@ -152,8 +138,8 @@ func (c *checker) inferComponent(
 ) {
 	inner := lvl + 1
 
-	// Recursion gate (PR6): an overloaded function in a mutually-recursive component
-	// (more than one binding) must have fully-annotated arms, since the overload set
+	// Recursion gate: an overloaded function in a mutually-recursive component of
+	// more than one binding must have fully-annotated arms, since the overload set
 	// has to be ground before bodies are inferred — fixed-point iteration over
 	// overload choices is not guaranteed to converge under subtyping. The gate reports
 	// the offending participants and returns the set of keys to degrade to a single
@@ -162,14 +148,14 @@ func (c *checker) inferComponent(
 	rejected := c.checkOverloadAnnotations(g, component)
 
 	// Phase 1: a fresh var per value binding, all defined before any body so a
-	// mutually-recursive reference resolves through the var. M2 only infers value
-	// bindings; type-sort keys are handled (as unsupported) after the value walk.
+	// mutually-recursive reference resolves through the var. Only value bindings are
+	// inferred; type-sort keys are reported as unsupported after the value walk.
 	bindings := make(map[dep_graph.BindingKey]*componentBinding, len(component))
 	for _, key := range component {
 		if key.Kind() != dep_graph.DepKindValue {
 			continue
 		}
-		// PR6: a fully-annotated overload set is pre-bound to the whole SET, built from
+		// A fully-annotated overload set is pre-bound to the whole SET, built from
 		// arm signatures alone (body-free), so references within the component resolve
 		// against every arm via resolveOverload instead of seeing only a single
 		// first-arm binding var (which would make a recursive arm — or a value capture —
@@ -230,7 +216,7 @@ func (c *checker) inferComponent(
 			continue
 		}
 		for _, d := range g.GetDecls(key) {
-			// M4 E3: a top-level destructuring `val [a, b] = …` / `val {x, y} = …`
+			// A top-level destructuring `val [a, b] = …` / `val {x, y} = …`
 			// registers one decl under one leaf key per bound name. Bind it per key it
 			// appears under, before the handled-dedup that gates ordinary decls, so a
 			// destructuring decl sharing a name with another decl still binds its other
@@ -262,8 +248,8 @@ func (c *checker) inferComponent(
 			// list is kept only for a future multi-target go-to-definition that wants to
 			// reach every contributing decl, duplicates included.
 			b.sources = append(b.sources, src)
-			// PR8: a definition that is wholly the ErrorType recovery sentinel leaves no
-			// bound on the binding var (ErrorType absorbs in constrain). Remember it so
+			// A definition that is wholly the ErrorType recovery sentinel leaves no
+			// bound on the binding var, since ErrorType absorbs in constrain. Remember it so
 			// phase 3 can recover the binding as ErrorType instead of `never`.
 			if _, isErr := t.(*soltype.ErrorType); isErr {
 				b.recovered = true
@@ -283,12 +269,12 @@ func (c *checker) inferComponent(
 				} else if isFunc {
 					b.infoNode = fd.Name
 				}
-				// PR8: carry the decl's kind so phase 3 can gate reassignment — a top-level
-				// `var` is reassignable (e.g. from a function body that closes over it);
+				// Carry the decl's kind so phase 3 can gate reassignment. A top-level
+				// `var` is reassignable, e.g. from a function body that closes over it;
 				// a `val`/`fn` is not. A FuncDecl leaves kind at its ValKind zero value.
 				if isVarDecl {
 					b.kind = vd.Kind
-					// M4 B3: an un-annotated `var` widens at coalesce time, so its literal
+					// An un-annotated `var` widens at coalesce time, so its literal
 					// initializer reads back as the primitive (`var a = 5` ⇒ number) and a
 					// later reassignment of the same primitive checks. An annotated `var`
 					// adopts its annotation, which needs no widening.
@@ -296,7 +282,7 @@ func (c *checker) inferComponent(
 						b.v.Widenable = true
 					}
 				}
-				// PR6: when the primary decl is a function, record it as the first arm. If
+				// When the primary decl is a function, record it as the first arm. If
 				// more FuncDecls follow under this name it becomes an overload set; otherwise
 				// it stays a lone function.
 				if isFunc {
@@ -304,8 +290,8 @@ func (c *checker) inferComponent(
 				}
 				continue
 			}
-			// Past the first decl, the binding already has its primary definition. PR6
-			// treats a repeated FuncDecl as another overload arm. It was already inferred
+			// Past the first decl, the binding already has its primary definition. A
+			// repeated FuncDecl is treated as another overload arm. It was already inferred
 			// independently above, so collect it and let phase 3 bind the full set as a
 			// multi-scheme overload binding. Every other repeat keeps the first decl and
 			// reports a duplicate — a second `val`/`var`, or a FuncDecl colliding with a
@@ -322,9 +308,9 @@ func (c *checker) inferComponent(
 		}
 	}
 
-	// Non-value keys (type aliases, classes, …) are outside the M2 subset. Report
-	// each contributing decl once, skipping any already handled by a value key (a
-	// class/enum contributes both a value and a type key for the same decl).
+	// Non-value keys such as type aliases and classes are not yet supported. Report
+	// each contributing decl once, skipping any already handled by a value key, since
+	// a class/enum contributes both a value and a type key for the same decl.
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
@@ -341,8 +327,8 @@ func (c *checker) inferComponent(
 	// Phase 3: rebind each value name to its coalesced monomorphic type. A binding
 	// whose declarations all failed to produce a definition (missing initializer,
 	// destructuring, unsupported kind) is removed rather than left as a `never`
-	// placeholder, matching PR-2: a later reference to it is then a genuine
-	// unknown-identifier error instead of resolving to a stray binding.
+	// placeholder, so a later reference to it is a genuine unknown-identifier error
+	// instead of resolving to a stray binding.
 	for _, key := range component {
 		b, isValue := bindings[key]
 		if !isValue {
@@ -352,7 +338,7 @@ func (c *checker) inferComponent(
 			scope.removeValue(key.Name())
 			continue
 		}
-		// A PR6 overload set is a name with more than one FuncDecl arm. This branch binds
+		// An overload set is a name with more than one FuncDecl arm. This branch binds
 		// such a set when the recursion gate did not reject it. A rejected set is a
 		// mutually-recursive unannotated overload. It is excluded here and degrades to its
 		// first arm below.
@@ -413,19 +399,18 @@ func (c *checker) inferComponent(
 			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes, Sources: srcs, ModuleLevel: true})
 			continue
 		}
-		// Generalize the binding var at the component's level (was: coalesce to a
-		// monotype). Every variable at Level > lvl becomes a quantified type
-		// parameter, captured outer variables do not — turning M2's monomorphic
-		// freeze into real let-polymorphism (PR1). A rejected overload degrades here to
-		// its first arm: b.v carries only the primary (first arm) definition.
+		// Generalize the binding var at the component's level. Every variable at
+		// Level > lvl becomes a quantified type parameter, while captured outer
+		// variables do not, giving real let-polymorphism. A rejected overload degrades
+		// here to its first arm: b.v carries only the primary first-arm definition.
 		//
-		// PR8: a binding whose definition was wholly the ErrorType sentinel left its
-		// binding var with no bound (ErrorType absorbs in constrain), so generalizing it
+		// A binding whose definition was wholly the ErrorType sentinel left its binding
+		// var with no bound, since ErrorType absorbs in constrain, so generalizing it
 		// would freeze the binding to `never` and cascade `<: never` at every later use
-		// (a reassignment, a call arg, …). Recover it AS the error sentinel instead,
-		// matching the body-level path (inferVarDecl) and keeping downstream uses
+		// such as a reassignment or a call arg. Recover it AS the error sentinel instead,
+		// matching the body-level path inferVarDecl and keeping downstream uses
 		// absorbing. Guarded by an empty binding var so a binding that ALSO picked up a
-		// real type (a recovered overload arm alongside a good one) still generalizes.
+		// real type, a recovered overload arm alongside a good one, still generalizes.
 		var scheme TypeScheme
 		if b.recovered && len(b.v.LowerBounds) == 0 {
 			scheme = &MonoScheme{Ty: &soltype.ErrorType{}}
@@ -450,8 +435,8 @@ func (c *checker) inferComponent(
 	}
 }
 
-// moduleDestructure memoizes a top-level destructuring decl's typed pattern (M4
-// E3). dep_graph fans one `val {x, y} = …` across one component per bound name, so
+// moduleDestructure memoizes a top-level destructuring decl's typed pattern.
+// dep_graph fans one `val {x, y} = …` across one component per bound name, so
 // every leaf key points at the same decl. The pattern must be typed and bound only
 // ONCE — typing the initializer or re-binding the pattern per leaf would re-report
 // its errors and duplicate work — so the first leaf key whose component is processed
@@ -495,7 +480,7 @@ func asDestructureDecl(d ast.Decl) *ast.VarDecl {
 }
 
 // bindModuleDestructureLeaf binds one leaf of a top-level destructuring decl into
-// its pre-bound binding var (M4 E3). destructurePattern types the decl's pattern
+// its pre-bound binding var. destructurePattern types the decl's pattern
 // once and memoizes it. This call looks up THIS key's projected leaf type and
 // constrains it into b.v, so phase 3 generalizes the leaf independently. `key` is
 // this leaf's binding key. Its bound name is the key name minus the decl's namespace
@@ -533,7 +518,7 @@ func (c *checker) bindModuleDestructureLeaf(
 	if md.recovered {
 		b.recovered = true
 	}
-	// M4 B3: an un-annotated `var` leaf widens at coalesce time, so a literal it
+	// An un-annotated `var` leaf widens at coalesce time, so a literal it
 	// binds reads back as the primitive and a later reassignment of the same
 	// primitive checks. An annotated `var` adopts its annotation, which needs no
 	// widening. A `val` leaf is a fixed singleton.
@@ -544,7 +529,7 @@ func (c *checker) bindModuleDestructureLeaf(
 
 // destructurePattern types a top-level destructuring decl's initializer and binds
 // its pattern ONCE, memoizing the per-leaf projected types so each leaf component
-// reuses them (M4 E3). The initializer flows through the shared inferVarDeclInit
+// reuses them. The initializer flows through the shared inferVarDeclInit
 // core, so an annotation is honored and a `var` initializer is widened, exactly as
 // the body-level path does. The pattern is bound with a collecting emit that records
 // each leaf's projection without defining it in scope. Phase 1 already pre-bound
@@ -586,7 +571,7 @@ func leafName(g *dep_graph.DepGraph, key dep_graph.BindingKey) string {
 	return name
 }
 
-// checkOverloadAnnotations enforces the PR6 recursion gate. It returns the set of
+// checkOverloadAnnotations enforces the recursion gate. It returns the set of
 // overloaded keys that failed the gate; phase 3 degrades each of them to its first arm.
 // A singleton component is never gated, since self-recursion is softer. Only a
 // genuinely mutually-recursive group of more than one binding requires its overloaded
@@ -639,7 +624,7 @@ func funcOnlyDecls(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*ast.FuncD
 }
 
 // annotatedOverloadArms returns key's FuncDecls when it is a function-only overload
-// set that can be PRE-BOUND from signatures alone (PR6): more than one FuncDecl, NO
+// set that can be PRE-BOUND from signatures alone: more than one FuncDecl, NO
 // `val`/`var` mixed under the name, and every arm fully annotated (so its signature
 // is known without inferring the body). Returns nil otherwise — those keys take the
 // ordinary group-var path, where each arm is inferred independently and the set is

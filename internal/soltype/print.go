@@ -9,10 +9,10 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// Precedence levels for type operators, matching the Escalier parser (and
-// type_system/print_type.go). Higher values bind more tightly. M4 adds precPrefix
-// for the `mut`/lifetime borrow prefix (RefType); type_system's other prefix forms
-// (keyof, ...T) land with their later milestones.
+// Precedence levels for type operators, matching the Escalier parser and
+// type_system/print_type.go. Higher values bind more tightly. precPrefix covers
+// the `mut`/lifetime borrow prefix on a RefType. type_system's other prefix forms
+// such as keyof and ...T are added later.
 const (
 	precFunc         = 2 // fn (...) -> T — return type is greedy, needs parens in union/intersection
 	precUnion        = 3 // A | B
@@ -21,7 +21,7 @@ const (
 	precAtom         = 6 // primary types, never need parens
 )
 
-// typePrec returns the printing precedence of a coalesced M1 type.
+// typePrec returns the printing precedence of a coalesced type.
 func typePrec(t Type) int {
 	switch t.(type) {
 	case *FuncType:
@@ -43,36 +43,36 @@ func typePrec(t Type) int {
 
 // Print renders a coalesced Type as an Escalier type-annotation string.
 //
-// This is Delta #2 of m1-implementation-plan §2.2: a native soltype printer that
-// shares NO code with type_system.PrintType but deliberately mirrors its surface
-// forms so the two checkers' rendered types stay string-comparable in M7's
-// differential harness. It renders the M1 coalesced type set only
-// (PrimType/LitType/FuncType/TupleType/Void/NeverType/UnknownType/UnionType/
-// IntersectionType). Print itself emits no <T0, ...> quantifier prefix — a
-// monotype has no parameters to name; PrintAsScheme renders the generalized form.
+// It is a native soltype printer that shares NO code with type_system.PrintType
+// but deliberately mirrors its surface forms so the two checkers' rendered types
+// stay string-comparable in the differential harness. It renders the coalesced
+// type set PrimType, LitType, FuncType, TupleType, Void, NeverType, UnknownType,
+// UnionType, and IntersectionType. Print itself emits no <T0, ...> quantifier
+// prefix, since a monotype has no parameters to name. PrintAsScheme renders the
+// generalized form.
 //
-// Print is distinct from solver's describe(): describe renders a RAW,
-// uncoalesced type (t0, function, number) mid-constrain for error messages,
-// whereas Print renders a COALESCED type as user-facing syntax. They look
-// similar but operate at different stages and must not be merged (§2.2).
+// Print is distinct from the solver's describe(). describe renders a RAW,
+// uncoalesced type such as t0, function, or number mid-constrain for error
+// messages, whereas Print renders a COALESCED type as user-facing syntax. They
+// look similar but operate at different stages and must not be merged.
 //
 // Print's normal input is a coalesced type, but it also tolerates a raw,
-// un-coalesced TypeVarType (rendering it as `t{ID}`) rather than panicking: the
-// M2 walk records var-carrying types in its Info side table and coalesces only
-// at binding boundaries, so a consumer may legitimately print an inner node's
-// still-raw type (M2 plan §7).
+// un-coalesced TypeVarType, rendering it as `t{ID}` rather than panicking. The
+// walk records var-carrying types in its Info side table and coalesces only at
+// binding boundaries, so a consumer may legitimately print an inner node's
+// still-raw type.
 func Print(t Type) string {
 	return (&namedPrinter{}).printType(t)
 }
 
-// PrintAsScheme renders a coalesced GENERALIZED type (M3): it collects the type's
-// free variables into a <T0, T1, …> quantifier prefix and renders each as its
-// assigned name. A type with no free variables renders exactly as Print would (no
-// prefix), so PrintAsScheme is safe on a monotype. The prefix attaches to a
-// function (`fn <T0>(…) -> …`, matching Escalier's generic-function surface
-// syntax); a non-function body carrying free variables — not produced by M3's
-// generalization, which only generalizes function values — falls back to a
-// leading <…> group.
+// PrintAsScheme renders a coalesced GENERALIZED type. It collects the type's free
+// variables into a <T0, T1, …> quantifier prefix and renders each as its assigned
+// name. A type with no free variables renders exactly as Print would, with no
+// prefix, so PrintAsScheme is safe on a monotype. The prefix attaches to a
+// function as `fn <T0>(…) -> …`, matching Escalier's generic-function surface
+// syntax. A non-function body carrying free variables, which generalization does
+// not produce since it only generalizes function values, falls back to a leading
+// <…> group.
 //
 // Variables are named by first appearance in print order (params left to right,
 // then return; tuple elements; record fields), so the same coalesced variable
@@ -103,7 +103,7 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
 		names[v] = name
 		labels = append(labels, name)
 	}
-	// Borrow lifetimes left in the coalesced type by D4's coalesceLifetimes are all
+	// Borrow lifetimes left in the coalesced type by coalesceLifetimes are all
 	// nameable param lifetimes. A connect-nothing one was already elided, and a join
 	// expanded to a union of these. Name each 'a, 'b, … in first-appearance order and
 	// add it to the quantifier prefix after the type parameters.
@@ -128,7 +128,7 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
 }
 
 // typeParamName is the surface name for the i-th quantified type parameter: T0,
-// T1, …, matching the planned `fn <T0>(x: T0) -> T0` rendering.
+// T1, …, matching the `fn <T0>(x: T0) -> T0` rendering.
 func typeParamName(i int) string {
 	return "T" + strconv.Itoa(i)
 }
@@ -251,7 +251,7 @@ type namedPrinter struct {
 	names map[*TypeVarType]string
 	// ltNames maps a retained lifetime variable to its surface name (`'a`, `'b`,
 	// …). It is nil for plain Print, where a lifetime var renders as the raw
-	// `'l{ID}` debug form; D4's display-time coalescing populates it so a
+	// `'l{ID}` debug form. Display-time coalescing populates it so a
 	// param-originated lifetime renders under its quantified name.
 	ltNames map[*LifetimeVar]string
 }
@@ -322,20 +322,19 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 	return result
 }
 
-// printType renders a coalesced type. Under the lazy deep-mut form (PR 14) the
-// stored type already matches the surface annotation the user wrote, so the
-// printer needs no special elision pass — `mut {a: {x}}` is stored and printed
-// verbatim.
+// printType renders a coalesced type. Under the lazy deep-mut form the stored type
+// already matches the surface annotation the user wrote, so the printer needs no
+// special elision pass. `mut {a: {x}}` is stored and printed verbatim.
 func (p *namedPrinter) printType(t Type) string {
 	switch t := t.(type) {
 	case *TypeVarType:
 		// A retained type parameter renders under its assigned name; otherwise a
-		// raw, un-coalesced variable. Coalesced monotype output never contains one
-		// (every variable is inlined to its bounds, m1-implementation-plan Delta #1),
-		// but the M2 walk records raw, var-carrying types in Info and only coalesces
-		// at binding boundaries — so a consumer printing an inner node's type
-		// directly may hand Print a live variable. Render it as `t{ID}` (matching
-		// solver's describe()) rather than panicking. See the M2 plan §7.
+		// raw, un-coalesced variable. Coalesced monotype output never contains one,
+		// since every variable is inlined to its bounds, but the walk records raw,
+		// var-carrying types in Info and only coalesces at binding boundaries. A
+		// consumer printing an inner node's type directly may hand Print a live
+		// variable. Render it as `t{ID}`, matching the solver's describe(), rather
+		// than panicking.
 		if p.names != nil {
 			if name, ok := p.names[t]; ok {
 				return name
@@ -397,8 +396,8 @@ func (p *namedPrinter) printType(t Type) string {
 		//	&{x}        &mut {x}        &'a {x}        &'a mut {x}
 		//
 		// The inner prints at precPrefix so a looser inner such as a union or function
-		// gets parenthesized. Under the lazy deep-mut form (PR 14) the inner is the
-		// bare shape the user wrote, so it prints verbatim with no elision pass.
+		// gets parenthesized. Under the lazy deep-mut form the inner is the bare shape
+		// the user wrote, so it prints verbatim with no elision pass.
 		prefix := ""
 		if t.Lt != nil {
 			prefix = "&"
@@ -436,10 +435,10 @@ func (p *namedPrinter) printType(t Type) string {
 // leading "fn" keyword. Kept as a separate helper so PrintAsScheme can compose it
 // with a <...> quantifier prefix without byte-slicing the "fn " back off.
 //
-// PR4 markers: an optional parameter renders as `x?: T`, and an INEXACT function
-// renders a trailing `...` entry (`fn (x: T, ...) -> R`) so the exactness it
-// carries round-trips to surface syntax. An exact function (the common case)
-// renders with no marker.
+// Surface markers: an optional parameter renders as `x?: T`, and an INEXACT
+// function renders a trailing `...` entry such as `fn (x: T, ...) -> R` so the
+// exactness it carries round-trips to surface syntax. An exact function, the
+// common case, renders with no marker.
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	ps := make([]string, 0, len(t.Params)+1)
 	for i, param := range t.Params {
@@ -459,11 +458,10 @@ func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
 }
 
-// paramName renders p.Pattern. M1's only Pat concrete is IdentPat; a nil or
-// otherwise-unknown pattern falls back to a positional name ("arg0", "arg1",
-// ...). M2's destructuring Pat concretes add their own arms here. The optional
-// `?` marker is appended by printFuncTail, not here, so callers that only want
-// the bare name (none today) stay unaffected.
+// paramName renders p.Pattern. A nil or otherwise-unknown pattern falls back to a
+// positional name such as "arg0" or "arg1". The destructuring Pat concretes add
+// their own arms here. The optional `?` marker is appended by printFuncTail, not
+// here, so a caller that only wants the bare name stays unaffected.
 func paramName(p *FuncParam, i int) string {
 	if s, ok := printPat(p.Pattern); ok {
 		return s
@@ -471,7 +469,7 @@ func paramName(p *FuncParam, i int) string {
 	return "arg" + strconv.Itoa(i)
 }
 
-// printPat renders a parameter pattern in Escalier surface syntax (M4 E1). A
+// printPat renders a parameter pattern in Escalier surface syntax. A
 // pattern carries only sub-patterns and literal values, never a Type, so it
 // renders without the namedPrinter's type context. ok=false for a nil or unknown
 // pattern, so paramName falls back to a positional name.

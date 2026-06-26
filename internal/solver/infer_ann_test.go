@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M4 A3: object / tuple / mut type annotations + the construction-site
-// excess-member check (exact-types §§2.2.4, 3.2.4) ---
+// --- object / tuple / mut type annotations and the construction-site
+// excess-member check ---
 
 // An object annotation resolves to an ObjectType and an annotated binding adopts
 // it, so the rendered binding type is the annotation, trailing `...` and all.
@@ -35,8 +35,8 @@ func TestInferInexactObjectAnnotationDeclaredFields(t *testing.T) {
 }
 
 // A literal carrying a field the inexact target does not declare is rejected — the
-// construction-site excess check fires even though the target is inexact (parallel
-// to the direct-call extra-arg rejection, exact-types §2.2.4).
+// construction-site excess check fires even though the target is inexact, parallel
+// to the direct-call extra-arg rejection.
 func TestInferInexactObjectAnnotationRejectsExcessLiteralField(t *testing.T) {
 	_, _, errs := inferSource(t, `val r: {x: number, ...} = {x: 1, y: 2}`)
 	require.Len(t, errs, 1)
@@ -198,9 +198,9 @@ func TestInferOwnedMutNestedMutFieldUpgraded(t *testing.T) {
 }
 
 // A `mut T` annotation lowers to a borrow (RefType{Mut: true}); a function
-// parameter typed `mut {x: number}` originates a fresh borrow lifetime (D2), and a
+// parameter typed `mut {x: number}` originates a fresh borrow lifetime, and a
 // member read through it peels the borrow to resolve the inner property. The lifetime
-// is unused in the result, since the body returns a number, not the borrow, so D4's
+// is unused in the result, since the body returns a number, not the borrow, so
 // display-time elision drops it and the param renders as plain owned-mutable `mut {…}`.
 func TestInferMutObjectAnnotation(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) -> number { return p.x }`)

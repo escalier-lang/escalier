@@ -6,9 +6,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M4 D2/D4: borrow origination + display-time lifetime naming and elision ---
+// --- Borrow origination + display-time lifetime naming and elision ---
 //
-// These assert the D4 display form. A param lifetime that reaches the output is
+// These assert the display form. A param lifetime that reaches the output is
 // named 'a, 'b, … and quantified in a leading <…> prefix. A param lifetime that
 // connects nothing, never reaching an output, has its NAME elided but its `&`
 // kept, so the displayed borrow stays distinguishable from an owned value.
@@ -16,7 +16,7 @@ import (
 // A `&mut` param returned unchanged carries its lifetime to the result: the same
 // lifetime appears on both the parameter and the return type, so the borrow flows
 // out at the lifetime it came in. Occurring in both positions, it is named `'a`
-// and quantified. This is the IdentityRefReturn acceptance (M4 D4).
+// and quantified. This is the IdentityRefReturn acceptance.
 func TestInferIdentityRefReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: &mut {x: number}) { return p }`)
 	require.Empty(t, errs)
@@ -52,8 +52,7 @@ func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
 // Passing a borrow into a function whose parameter is an OWNED (bare) object is the
 // borrow-into-owned-slot escape: the RefType<:bare arm rejects because the source
 // carries a lifetime and the target owns its value. This is the only path that
-// exercises the escape guard D2 activated — before D2 every Lt was nil, so it never
-// fired.
+// exercises the escape guard. It fires once a borrow carries a non-nil lifetime.
 func TestInferBorrowEscapesIntoOwnedArg(t *testing.T) {
 	src := `fn use(o: {x: number}) -> number {
   return o.x
@@ -102,7 +101,7 @@ func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
 
 // Writing a field of a NON-`mut` owned object is rejected: the write lowers to the
 // mutable requirement `mut {x, ...}`, and an immutable owned object cannot fill a
-// mutable slot. This confirms the field-write requirement's fresh lifetime (D2) did
+// mutable slot. This confirms the field-write requirement's fresh lifetime did
 // not loosen the mutability gate — an owned-but-immutable receiver still fails.
 func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 	src := `fn g(o: {x: number}) {
@@ -116,10 +115,10 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 
 // Returning one of two borrows with DISTINCT lifetimes joins them into a single
 // borrow whose lifetime is the union of theirs. This is the ConditionalUnionReturn
-// acceptance (M4 D3). The return-point join mints a fresh join lifetime bounded
+// acceptance. The return-point join mints a fresh join lifetime bounded
 // below by 'l0 and 'l1, which coalesces to `('l0 | 'l1)` in the positive return
 // position. The param lifetimes 'l0/'l1 stay named on the borrows they originate.
-// D4 renders them `'a`/`'b` and the union `('a | 'b)`.
+// The display renders them `'a`/`'b` and the union `('a | 'b)`.
 func TestInferConditionalUnionReturn(t *testing.T) {
 	src := `fn f(p: &mut {x: number}, q: &mut {x: number}) {
   if true {
@@ -139,7 +138,7 @@ func TestInferConditionalUnionReturn(t *testing.T) {
 // object's field set is invariant, so uniting `mut {x}` and `mut {y}` would invent a
 // writable field absent from one branch. joinBorrows rejects the mismatch and the
 // return falls back to the generic union, preserving both borrows with their own
-// lifetimes (M4 D3).
+// lifetimes.
 func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
 	src := `fn f(p: &mut {x: number}, q: &mut {y: number}) {
   if true {
@@ -180,11 +179,11 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 // A GENERALIZED joined-borrow function keeps its lifetime union after instantiation.
 // A caller that passes two of its own borrows still sees a two-lifetime union, not a
 // single name. This is the only end-to-end exercise of the Join flag riding through
-// freshenAbove/extrude (D2.5). If the flag were dropped on the freshened join
+// freshenAbove/extrude. If the flag were dropped on the freshened join
 // lifetime, the instantiated return would coalesce to one lifetime instead of a
 // union. `pick` renders `mut ('a | 'b) {…}` over its two param lifetimes.
 // Instantiating it inside `use` freshens the join and its two members to use-level
-// lifetimes. D4's component-based expansion resolves those intermediaries back to
+// lifetimes. The component-based expansion resolves those intermediaries back to
 // `use`'s own param lifetimes, so `use` renders the same clean `mut ('a | 'b) {…}`
 // over `a` and `b` rather than the raw freshened ids.
 func TestInferInstantiatedJoinReturnsUnion(t *testing.T) {
@@ -208,13 +207,12 @@ fn use(a: &mut {x: number}, b: &mut {x: number}) {
 // object's fields are observable in both directions, so the join pins each shared
 // field invariant, and `number` vs `string` for `x` fails that pin in both
 // directions. This locks in that the soundness constraint actually fires rather than
-// silently unifying incompatible borrows (M4 D3).
+// silently unifying incompatible borrows.
 //
-// FUTURE (M6): this error is the conservative M4 default. M6 may relax it to a
+// FUTURE: this error is the conservative default. A later relaxation may turn it into a
 // read-until-narrowed union — `(&'a mut {x: number}) | (&'b mut {x: string})`, readable
-// always and writable only after narrowing — to match TypeScript. See 01-milestones.md
-// M6, "Permissive mut-borrow joins". When that lands, this test changes from asserting
-// an error to asserting the union.
+// always and writable only after narrowing — to match TypeScript. When that lands, this
+// test changes from asserting an error to asserting the union.
 func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
 	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
   if true {
@@ -234,16 +232,15 @@ func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
 // requires every input to be a mutable borrow carrying a lifetime, and an object
 // literal is owned rather than a RefType. The all-borrows gate falls back to the
 // generic union, so the result keeps the borrow's lifetime alongside the owned
-// literal (M4 D3).
+// literal.
 //
-// DISABLED until PR 9 lands.
+// DISABLED until mixed-ownership unions are rejected.
 //
-// PR 9 of the affine semantics plan ("Reject mixed-ownership unions and
-// intersections") makes a type whose members disagree on ownership an error
-// rather than a silent union. Once it lands, this source should fail at the
-// if-else join with a "mixed-ownership union" diagnostic against the union
-// site instead of producing the union shown below. Re-enable then and flip
-// the assertion from a successful render to an error list.
+// Once a type whose members disagree on ownership becomes an error rather than a
+// silent union, this source should fail at the if-else join with a
+// "mixed-ownership union" diagnostic against the union site instead of producing
+// the union shown below. Re-enable then and flip the assertion from a successful
+// render to an error list.
 /*
 func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 	src := `fn f(p: &mut {x: number}) {
@@ -261,7 +258,7 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 */
 
 // A borrowed parameter written into module-level storage escapes to 'static. This is
-// the EscapingRefIntoStatic acceptance (M4 D3), now reachable from real source.
+// the EscapingRefIntoStatic acceptance, now reachable from real source.
 // `cache` stores its borrow `p` into the module-level `var sink`, a global write. The
 // stored value outlives every borrow region, so p's lifetime is forced `<: 'static`
 // and the parameter renders `&'static mut {x: number}` rather than under a borrow
@@ -310,7 +307,7 @@ func TestInferImmutableBorrowAliasLocally(t *testing.T) {
 
 // An immutable borrow alias that is RETURNED carries its lifetime to the output.
 // The borrow flows out at p's lifetime, so the return renders an immutable borrow
-// over the same named lifetime as the parameter. This is the D4 display path for
+// over the same named lifetime as the parameter. This is the display path for
 // a borrow alias that reaches an output.
 func TestInferImmutableBorrowAliasReturnedCarriesLifetime(t *testing.T) {
 	src := `fn f(p: &mut {x: number}) {
@@ -406,7 +403,7 @@ func TestInferInexactBorrowAlias(t *testing.T) {
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number, y: number}) -> &'a {x: number, ...}", values["f"])
 }
 
-// --- PR2: lowering `&` borrow annotations to RefType ---
+// --- Lowering `&` borrow annotations to RefType ---
 
 // A bare `&` parameter lowers to an immutable borrow with a fresh inferred lifetime.
 // Returned, the borrow carries that lifetime to the output, which is then load-bearing
@@ -444,7 +441,7 @@ func TestInferBorrowOfNonBorrowableRejected(t *testing.T) {
 	require.Equal(t, []string{"Unsupported: borrow of a non-borrowable type"}, Messages(errs))
 }
 
-// --- PR 4: member reads borrow the receiver ---
+// --- Member reads borrow the receiver ---
 
 // A member read that escapes carries the receiver's borrow lifetime through.
 // Deep `mut` makes the field owned-mutable, so the read yields a mutable borrow.
@@ -460,7 +457,7 @@ func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {
 }
 
 // A member read consumed inside the body leaves the receiver lifetime free,
-// so D4's display-time elision drops it from the rendered signature. `obj.a`
+// so the display-time elision drops it from the rendered signature. `obj.a`
 // reads as a borrow inside the body, but the binding `q` never escapes, so
 // the param's borrow lifetime does not need to be named.
 func TestInferMemberReadLocalElidesLifetime(t *testing.T) {
@@ -475,7 +472,7 @@ func TestInferMemberReadLocalElidesLifetime(t *testing.T) {
 // A field whose static type is itself an immutable borrow reads through as
 // the same borrow rather than nesting under the receiver's lifetime. The
 // flat copy-out keeps reads of `&T` fields from producing `& &T` types,
-// setting up PR 9's nested-borrow normalization. Here `obj.a: &{x: number}`
+// setting up later nested-borrow normalization. Here `obj.a: &{x: number}`
 // reads back as a `&'a {x: number}` at the field's own annotation-minted
 // lifetime, not a depth-two borrow over the receiver.
 func TestInferMemberReadFlatBorrowOfRefField(t *testing.T) {
@@ -494,7 +491,7 @@ func TestInferMemberReadFlatBorrowOfRefField(t *testing.T) {
 // nesting under the receiver's. The TypeVar result var coalesces to the
 // concrete field type, and the function returns that `&mut` borrow at the
 // annotation-minted lifetime. Aliasing exclusivity on the surviving mut
-// borrow needs the move-engine work in PR 6, and PR 9 normalizes the
+// borrow needs later move-engine work, and a later normalization handles the
 // otherwise uninhabitable `&mut &mut` shape.
 func TestInferMemberReadOfMutBorrowField(t *testing.T) {
 	src := `fn f(p: {a: &mut {x: number}}) {
@@ -508,10 +505,10 @@ func TestInferMemberReadOfMutBorrowField(t *testing.T) {
 }
 
 // A primitive field stays a value, since `PrimType` is not a `RefInner`. The
-// PR 4 wrap is skipped and the read returns the primitive directly. This is
-// the same shape pre-PR-4 returned. Pinning it here guards against the wrap
-// firing on non-borrowable fields and tripping the bare<:RefType escape
-// guard when the field flows into a primitive sink.
+// receiver-borrow wrap is skipped and the read returns the primitive directly.
+// Pinning it here guards against the wrap firing on non-borrowable fields and
+// tripping the bare<:RefType escape guard when the field flows into a primitive
+// sink.
 func TestInferMemberReadPrimitiveStaysValue(t *testing.T) {
 	src := `fn f(p: &mut {x: number}) {
   return p.x
@@ -522,7 +519,7 @@ func TestInferMemberReadPrimitiveStaysValue(t *testing.T) {
 }
 
 // An explicit `&obj.f` shares the receiver-bounded lifetime of the implicit
-// read. PR 4 routes a `&`-of-MemberExpr through inferBorrowOfMember, which
+// read. A `&`-of-MemberExpr routes through inferBorrowOfMember, which
 // produces a `&` borrow at the receiver lifetime. This matches the shape the
 // implicit read produces, with no extra wrapping. Both the param and the
 // return render at the receiver's named lifetime.
@@ -540,7 +537,7 @@ func TestInferExplicitBorrowOfMemberSharesLifetime(t *testing.T) {
 // An explicit `&mut obj.g` mutably borrows the field at the receiver's
 // lifetime when the receiver supports a mutable view. The receiver is an
 // owned-mut object, so the mut requirement lowers via the RefType <: RefType
-// rule. The partial-moves work in PR 7 adds path-granular tracking that
+// rule. Later partial-moves work adds path-granular tracking that
 // leaves a disjoint sibling such as `obj.a` independently usable. This test
 // pins the typing rule only.
 func TestInferExplicitMutBorrowOfMemberAcceptsMutReceiver(t *testing.T) {
@@ -569,7 +566,7 @@ func TestInferExplicitMutBorrowOfMemberOnImmutableRejected(t *testing.T) {
 	}, Messages(errs))
 }
 
-// A usage-inferred receiver keeps its pre-PR-4 read behaviour. A
+// A usage-inferred receiver keeps its plain field-read behaviour. A
 // usage-inferred receiver is an un-annotated param whose shape the body's
 // uses determine. The wrap fires only off a concrete ObjectType carrier, so
 // a TypeVar carrier returns the field's result var directly. The param

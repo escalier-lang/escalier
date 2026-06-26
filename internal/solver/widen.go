@@ -10,7 +10,7 @@ import "github.com/escalier-lang/escalier/internal/soltype"
 // and re-wrapped via NewRef. Every other type passes through unchanged.
 //
 // It is the new-checker analogue of internal/checker's widenLiteral /
-// widenObjectLiterals / widenTupleLiterals (unify.go). M4 B3 calls it in two
+// widenObjectLiterals / widenTupleLiterals (unify.go). It is called in two
 // places, both for an un-annotated `var`:
 //   - eagerly on a DIRECT literal initializer in inferVarDeclInit, widening at
 //     the constraint level so the widened type propagates through the bound graph
@@ -19,7 +19,7 @@ import "github.com/escalier-lang/escalier/internal/soltype"
 //     which catches a literal that arrives through a REFERENCE (`var y = x`) and
 //     is still a variable when inferVarDeclInit runs.
 //
-// A `val` keeps its fixed literal. C3's field-write path reuses it: writing
+// A `val` keeps its fixed literal. The field-write path reuses it. Writing
 // through a `mut` receiver is itself a mutation, so the stored value widens too.
 func widen(t soltype.Type) soltype.Type {
 	switch t := t.(type) {

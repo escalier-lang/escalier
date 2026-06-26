@@ -15,12 +15,11 @@ import (
 // error refers to — e.g. navigate to a type's declaration — without reparsing
 // the message. Modeled on internal/checker/error.go's shape.
 //
-// M2.5 makes every Span() node-derived: bridge kinds self-blame from the AST node
-// they carry, and constraint kinds resolve their offending operand to its minting
-// node through the Prov side table (per-operand blame, §3.5). Related() exposes
-// secondary contributing nodes (the expected-source alongside the actual-source;
-// the prior declaration alongside the duplicate). errSpan/setSpan are gone — no
-// error is stamped after the fact.
+// Every Span() is node-derived. Bridge kinds self-blame from the AST node they
+// carry, and constraint kinds resolve their offending operand to its minting node
+// through the Prov side table for per-operand blame. Related() exposes secondary
+// contributing nodes, the expected-source alongside the actual-source and the prior
+// declaration alongside the duplicate. No error is stamped after the fact.
 type SolverError interface {
 	isSolverError()
 	Message() string
@@ -32,51 +31,44 @@ type SolverError interface {
 // prim/prim mismatch, lit/lit mismatch, lit/prim mismatch, and the generic
 // "no rule applies" fall-through at the end of constrain.
 //
-// Sub is the "actual" value, Super the "expected"; blame follows Sub to its minting
-// node (when that node lies inside the constraint site — the containment guard
-// that keeps identifier-flow blame on the use, not the definition, §3.8) and falls
-// back to site otherwise. This is the only constraint kind that keeps a site
-// fallback: its actual-value operand can legitimately resolve outside the
-// constraint (an ident's definition) or not at all (a Void result).
+// Sub is the "actual" value, Super the "expected". Blame follows Sub to its minting
+// node when that node lies inside the constraint site, the containment guard that
+// keeps identifier-flow blame on the use rather than the definition, and falls back
+// to site otherwise. This is the only constraint kind that keeps a site fallback:
+// its actual-value operand can legitimately resolve outside the constraint, as an
+// ident's definition, or not at all, as a Void result.
 type CannotConstrainError struct {
 	Sub, Super soltype.Type
-	prov       NodeResolver // M2.5: type→node index; assigned after Constrain returns (§3.5)
-	site       ast.Node     // M2.5: the constraint node n — the use, the fallback when Sub has no entry
+	prov       NodeResolver // type→node index; assigned after Constrain returns
+	site       ast.Node     // the constraint node n — the use, the fallback when Sub has no entry
 }
 
 // FuncArityMismatchError fires on FuncType <: FuncType when the two arities
-// differ (M1's exact-function rule; exact-by-default requires the same number
-// of params). Holds the full FuncTypes, not just the arities, so consumers can
-// report param/return types too. M3 narrows the firing conditions when the
-// exactness flag adds the inexact fewer-params-is-subtype arm.
+// differ, the exact-function rule where exact-by-default requires the same number
+// of params. Holds the full FuncTypes, not just the arities, so consumers can
+// report param/return types too.
 //
-// The subject is the super call-shape (a fresh FuncType{args, res} minted per call,
-// recorded against the CallExpr), so Span() resolves precisely to the call;
+// The subject is the super call-shape, a fresh FuncType{args, res} minted per call
+// and recorded against the CallExpr, so Span() resolves precisely to the call.
 // Related() follows the sub callee to a "defined here" span. site is the
-// constraint node, used as a coarse fallback when neither operand resolves (e.g.
-// once M3 produces higher-order FuncArity errors whose super isn't a recorded
-// call-shape) so blame never degrades to the zero span.
+// constraint node, used as a coarse fallback when neither operand resolves, so
+// blame never degrades to the zero span.
 type FuncArityMismatchError struct {
 	Sub, Super *soltype.FuncType
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: constraint node fallback when no operand resolves
+	prov       NodeResolver // type→node index
+	site       ast.Node     // constraint node fallback when no operand resolves
 }
 
 // TupleLengthMismatchError fires on TupleType <: TupleType with different
-// lengths (M1's exact-tuple case; M4 may narrow the firing conditions when the
-// inexact flag is added).
+// lengths, the exact-tuple case.
 //
-// The subject is the sub tuple literal (recorded by inferTuple); Related() points
-// at the super expected-source. Not actually reachable in M2.5 — a tuple <: tuple
-// constraint needs a tuple sink (annotation/param) resolveTypeAnn does not yet
-// produce — so its blame is wired but exercised from M4. site is the constraint
-// node, the coarse fallback when neither tuple resolves (e.g. an M4 tuple
-// annotation whose elements aren't recorded) so blame never degrades to the zero
-// span.
+// The subject is the sub tuple literal recorded by inferTuple. Related() points
+// at the super expected-source. site is the constraint node, the coarse fallback
+// when neither tuple resolves, so blame never degrades to the zero span.
 type TupleLengthMismatchError struct {
 	Sub, Super *soltype.TupleType
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: constraint node fallback when no operand resolves
+	prov       NodeResolver // type→node index
+	site       ast.Node     // constraint node fallback when no operand resolves
 }
 
 // MissingPropertyError fires on ObjectType <: ObjectType when the super requires a
@@ -88,18 +80,18 @@ type TupleLengthMismatchError struct {
 //
 // The subject is the property's inner result var (Super.Prop(Name)), minted by
 // inferMember and recorded against the .prop identifier — so Span() blames the
-// member's prop (.foo), not the receiver. Name stays: the absent property name is
-// not recoverable from a single node (the super may require several properties).
+// member's prop (.foo), not the receiver. Name stays, since the absent property name
+// is not recoverable from a single node when the super requires several properties.
 // site is the constraint node, the coarse fallback when the property var has no
-// entry — reachable for a concrete object <: object requirement whose property
-// types are coalesced/annotation-minted (and therefore not recorded by
-// inferMember); for member access it never fires, but it keeps blame off the zero
+// entry. It is reachable for a concrete object <: object requirement whose property
+// types are coalesced or annotation-minted and therefore not recorded by
+// inferMember. For member access it never fires, but it keeps blame off the zero
 // span.
 type MissingPropertyError struct {
 	Sub, Super *soltype.ObjectType
 	Name       string
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: constraint node fallback when the property var has no entry
+	prov       NodeResolver // type→node index
+	site       ast.Node     // constraint node fallback when the property var has no entry
 }
 
 // InexactIntoExactError fires on ObjectType <: ObjectType when the super is exact
@@ -107,8 +99,8 @@ type MissingPropertyError struct {
 // properties, so it cannot satisfy an exact target that fixes its member set.
 type InexactIntoExactError struct {
 	Sub, Super *soltype.ObjectType
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: constraint node fallback
+	prov       NodeResolver // type→node index
+	site       ast.Node     // constraint node fallback
 }
 
 // InexactTupleIntoExactError is the tuple twin of InexactIntoExactError. An
@@ -125,9 +117,7 @@ type InexactTupleIntoExactError struct {
 // inexact union `A | B | ...` carries an open tail of unknown additional
 // members, so it cannot flow into a closed target. A closed target is either
 // an exact union or any non-union concrete the open tail could violate. The
-// base form lands in M6 PR2. The flag itself and the parser surface for
-// `A | B | ...` land in PR4. Until then the rule fires only against an
-// internally-built inexact union.
+// rule currently fires only against an internally-built inexact union.
 type InexactUnionIntoExactError struct {
 	Sub   *soltype.UnionType
 	Super soltype.Type
@@ -141,12 +131,12 @@ type InexactUnionIntoExactError struct {
 type ExtraPropertyError struct {
 	Sub, Super *soltype.ObjectType
 	Name       string
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: constraint node fallback
+	prov       NodeResolver // type→node index
+	site       ast.Node     // constraint node fallback
 }
 
 // ExtraElementError is the tuple analogue of ExtraPropertyError, fired by the
-// construction-site excess check (A3): a tuple LITERAL checked against a tuple
+// construction-site excess check: a tuple LITERAL checked against a tuple
 // annotation may not carry elements beyond the target's declared set, even when
 // the target is inexact (`[number, ...]`). It is the parallel of the direct-call
 // extra-arg lint: an inexact tail tolerates extra elements from a non-literal
@@ -156,8 +146,8 @@ type ExtraPropertyError struct {
 type ExtraElementError struct {
 	Sub, Super *soltype.TupleType
 	Index      int
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: the excess element node fallback
+	prov       NodeResolver // type→node index
+	site       ast.Node     // the excess element node fallback
 }
 
 // OptionalPropertyError fires on ObjectType <: ObjectType when a property is
@@ -169,8 +159,8 @@ type ExtraElementError struct {
 type OptionalPropertyError struct {
 	Sub, Super *soltype.ObjectType
 	Name       string
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: constraint node fallback
+	prov       NodeResolver // type→node index
+	site       ast.Node     // constraint node fallback
 }
 
 // MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
@@ -181,32 +171,30 @@ type OptionalPropertyError struct {
 // bare source is wrapped as an immutable view before re-dispatch.
 type MutabilityMismatchError struct {
 	Sub, Super *soltype.RefType
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: constraint node fallback
+	prov       NodeResolver // type→node index
+	site       ast.Node     // constraint node fallback
 }
 
 // BorrowEscapeError fires when a borrow outlives the slot it flows into: a borrowed
 // value (Lt != nil) constrained against an owned slot (Lt == nil), either a bare
-// supertype or a RefType super with no lifetime. The firing path is INERT in C2 —
-// every RefType carries Lt == nil until the lifetime sort lands (D1) and borrows
-// originate (D2) — so the struct is wired now and exercised from D2.
+// supertype or a RefType super with no lifetime. The firing path is currently inert.
+// Every RefType carries Lt == nil until the lifetime sort lands and borrows
+// originate, so the struct is wired but not yet exercised.
 //
-// It is intentionally UNTESTED until then, and currently unconstructible: soltype.Lifetime
-// has no concrete implementors, so no non-nil Lt exists to drive any firing branch.
-// The Message format and the describe-the-whole-borrow choice are first observed in
-// D2; coverage of Message/Span/Related is deferred to that PR.
+// It is currently unconstructible: soltype.Lifetime has no concrete implementors, so
+// no non-nil Lt exists to drive any firing branch.
 type BorrowEscapeError struct {
 	Sub   *soltype.RefType
 	Super soltype.Type
-	prov  NodeResolver // M2.5: type→node index (§3.5)
-	site  ast.Node     // M2.5: constraint node fallback
+	prov  NodeResolver // type→node index
+	site  ast.Node     // constraint node fallback
 }
 
 // SpreadNotTupleError fires when a tuple-literal spread element ([...xs]) has an
-// operand that does not infer to a tuple. M4 handles only the concrete-literal
-// splice: the operand's element types are copied into the literal in order, so it
-// must be a TupleType. A spread of any other type, such as an Array (M7), cannot
-// be spliced statically. Two type-level cousins defer to M7/M9: a tuple-spread
+// operand that does not infer to a tuple. Only the concrete-literal splice is
+// handled: the operand's element types are copied into the literal in order, so it
+// must be a TupleType. A spread of any other type, such as an Array, cannot be
+// spliced statically. Two type-level cousins are not yet handled: a tuple-spread
 // type over an abstract operand [...P, x], and a typed variadic tail
 // [number, ...Array<number>]. Spread is the offending spread element and carries
 // the blame span. Operand is the type it inferred to.
@@ -220,8 +208,8 @@ type SpreadNotTupleError struct {
 // element of the literal. An inexact tuple has unknown length, so an element written
 // after the spread would land at an unknown position and the result tuple's shape
 // could not be pinned. A trailing inexact spread is allowed and makes the whole
-// result inexact. The variadic-tail forms such as [number, ...Array<number>] defer
-// to M7/M9. Spread is the offending spread element and carries the blame span.
+// result inexact. The variadic-tail forms such as [number, ...Array<number>] are
+// not yet handled. Spread is the offending spread element and carries the blame span.
 // Operand is the inexact tuple it inferred to.
 type InexactTupleSpreadError struct {
 	Spread  *ast.ArraySpreadExpr
@@ -232,7 +220,7 @@ type InexactTupleSpreadError struct {
 // value or a tuple element inside a non-mut container — `{a: mut {x}}` or
 // `[mut {x}]`. An owned-mutable cell nested inside an immutable container is
 // misleading: the enclosing container's immutability already reaches into the
-// field, so the field is not actually writable, and interior mutability (#618) is
+// field, so the field is not actually writable, and interior mutability is
 // the proper mechanism for the case the user wants. A borrow field (`&T`,
 // `&mut T`) is a reference to external storage, not an interior owned-mutable
 // cell, so it stays legal. The annotation node carries the blame span.
@@ -262,26 +250,26 @@ type ReadonlyFieldSubtypeError struct {
 	site  ast.Node
 }
 
-func (*CannotConstrainError) isSolverError()      {}
-func (*MutFieldError) isSolverError()             {}
-func (*ReadonlyFieldError) isSolverError()        {}
-func (*ReadonlyFieldSubtypeError) isSolverError() {}
-func (*FuncArityMismatchError) isSolverError()    {}
-func (*TupleLengthMismatchError) isSolverError() {}
-func (*SpreadNotTupleError) isSolverError()      {}
-func (*InexactTupleSpreadError) isSolverError()  {}
-func (*MissingPropertyError) isSolverError()     {}
-func (*InexactIntoExactError) isSolverError()    {}
+func (*CannotConstrainError) isSolverError()       {}
+func (*MutFieldError) isSolverError()              {}
+func (*ReadonlyFieldError) isSolverError()         {}
+func (*ReadonlyFieldSubtypeError) isSolverError()  {}
+func (*FuncArityMismatchError) isSolverError()     {}
+func (*TupleLengthMismatchError) isSolverError()   {}
+func (*SpreadNotTupleError) isSolverError()        {}
+func (*InexactTupleSpreadError) isSolverError()    {}
+func (*MissingPropertyError) isSolverError()       {}
+func (*InexactIntoExactError) isSolverError()      {}
 func (*InexactTupleIntoExactError) isSolverError() {}
 func (*InexactUnionIntoExactError) isSolverError() {}
-func (*ExtraPropertyError) isSolverError()       {}
-func (*ExtraElementError) isSolverError()        {}
-func (*OptionalPropertyError) isSolverError()    {}
-func (*MutabilityMismatchError) isSolverError()  {}
-func (*BorrowEscapeError) isSolverError()        {}
+func (*ExtraPropertyError) isSolverError()         {}
+func (*ExtraElementError) isSolverError()          {}
+func (*OptionalPropertyError) isSolverError()      {}
+func (*MutabilityMismatchError) isSolverError()    {}
+func (*BorrowEscapeError) isSolverError()          {}
 
-// --- Per-operand blame (§3.5): each constraint kind follows its operands through
-// Prov on demand, falling back to its own site (where it keeps one) ---
+// --- Per-operand blame: each constraint kind follows its operands through
+// Prov on demand, falling back to its own site where it keeps one ---
 
 func (e *CannotConstrainError) Span() ast.Span      { return spanOf(e.prov, e.Sub, e.site) }
 func (e *CannotConstrainError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
@@ -377,13 +365,12 @@ func (e *BorrowEscapeError) Span() ast.Span {
 func (e *BorrowEscapeError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
-// site, and the site itself otherwise (or when op has no entry). The containment
-// guard is the M2.5 fix for identifier-flow blame: for f("hi") the operand ("hi")
-// is minted inside the call, so the narrower operand wins; for val a: number = x
-// the operand (x's type) traces to x's *definition*, which is NOT inside the use
-// site, so the use (site) wins — an ident-use error points at the use, not the
-// definition (§3.8). In M3+, NodeFor chases interior Origin edges to the nearest
-// AST leaf; in M2.5 it is a single lookup.
+// site, and the site itself otherwise, or when op has no entry. The containment
+// guard handles identifier-flow blame. For f("hi") the operand "hi" is minted
+// inside the call, so the narrower operand wins. For val a: number = x the operand,
+// x's type, traces to x's *definition*, which is NOT inside the use site, so the use
+// wins: an ident-use error points at the use, not the definition. NodeFor is a
+// single lookup.
 func spanOf(p NodeResolver, op soltype.Type, site ast.Node) ast.Span {
 	if p != nil && site != nil {
 		if n, ok := p.NodeFor(op); ok && site.Span().ContainsSpan(n.Span()) {
@@ -399,7 +386,7 @@ func spanOf(p NodeResolver, op soltype.Type, site ast.Node) ast.Span {
 // callers' subject operands are minted *at* the constraint (a call-shape, a tuple
 // literal, a member's field var), so the first resolved operand is already the
 // narrowest blame. The site fallback keeps blame off the zero span when an
-// operand is unrecorded (a degrade path reachable from M4).
+// operand is unrecorded on a degrade path.
 func spanOfFirst(p NodeResolver, site ast.Node, ops ...soltype.Type) ast.Span {
 	if p != nil {
 		for _, op := range ops {
@@ -422,8 +409,8 @@ func spanOfNode(site ast.Node) ast.Span {
 }
 
 // relatedOf resolves each operand that has an entry to a related span and drops
-// the ones that don't (no fallback — a missing related node is simply omitted),
-// deduped by span (§3.6).
+// the ones that don't, with no fallback so a missing related node is simply omitted,
+// deduped by span.
 func relatedOf(p NodeResolver, ops ...soltype.Type) []ast.Span {
 	if p == nil {
 		return nil
@@ -448,8 +435,8 @@ func appendUnique(spans []ast.Span, s ast.Span) []ast.Span {
 	return append(spans, s)
 }
 
-// --- M2 bridge errors (born in the walk with the offending ast.Node in hand,
-// so they self-blame: Span() is the node's own span, no post-hoc stamping) ---
+// --- Bridge errors born in the walk with the offending ast.Node in hand,
+// so they self-blame. Span() is the node's own span, with no post-hoc stamping ---
 
 // UnknownIdentifierError fires when a value-position identifier resolves to no
 // binding in the scope chain.
@@ -459,8 +446,8 @@ type UnknownIdentifierError struct {
 
 // NamespaceUsedAsValueError fires when a path expression resolves to a namespace
 // in value position. Namespaces are a separate binding sort and never flow as
-// values. M4 moves the rejection off inferIdent to the value-position consumer
-// (demandValue): a namespace is legal in the object position of a member/index
+// values. The rejection sits in the value-position consumer demandValue rather than
+// in inferIdent, since a namespace is legal in the object position of a member/index
 // chain, so this fires for both a bare `f(Foo)` and a partial chain `f(A.B)` where
 // the chain stops at a namespace. Node is the offending path expression (the blame
 // span); NS is the namespace it resolved to.
@@ -488,19 +475,20 @@ type DynamicNamespaceIndexError struct {
 	NS    *Namespace
 }
 
-// UnsupportedNodeError is the M2-subset guard: an AST node whose KIND is outside
-// the M2 walk's coverage (kind = astKind(Node)). Unlike BodyDeclNotAllowedError
-// this is a temporary scope gate, not a permanent language rule — later milestones
-// widen coverage and remove arms. The "the node is fine, a FEATURE of it isn't"
-// case (e.g. optional chaining on a supported MemberExpr) is UnsupportedFeatureError.
+// UnsupportedNodeError is the subset guard: an AST node whose KIND is outside
+// the walk's current coverage (kind = astKind(Node)). Unlike BodyDeclNotAllowedError
+// this is a temporary scope gate, not a permanent language rule, so widening coverage
+// removes arms. The "the node is fine, a FEATURE of it isn't" case, such as optional
+// chaining on a supported MemberExpr, is UnsupportedFeatureError.
 type UnsupportedNodeError struct {
 	Node ast.Node
 }
 
 // UnsupportedFeatureError is the sibling of UnsupportedNodeError for the case
-// where the node kind IS supported but a feature of it is not — e.g. a generic
-// function (the FuncExpr is fine, type params are M3) or optional chaining (the
-// MemberExpr is fine, recv?.foo is M6). The node carries the blame span; Feature
+// where the node kind IS supported but a feature of it is not. Examples are a generic
+// function, where the FuncExpr is fine but type params are not yet supported, and
+// optional chaining, where the MemberExpr is fine but recv?.foo is not yet supported.
+// The node carries the blame span; Feature
 // names what is unsupported (not derivable from astKind, which would name the
 // supported parent).
 type UnsupportedFeatureError struct {
@@ -509,40 +497,40 @@ type UnsupportedFeatureError struct {
 }
 
 // BodyDeclNotAllowedError fires when a statement-level declaration in a function
-// body is anything other than a VarDecl. This is a permanent language rule
-// (§3.2), not the temporary subset gate above: body decls are VarDecl-only.
+// body is anything other than a VarDecl. This is a permanent language rule,
+// not the temporary subset gate above: body decls are VarDecl-only.
 type BodyDeclNotAllowedError struct {
 	Decl ast.Decl
 }
 
 // MissingInitializerError fires when a `val`/`var` declaration has no
-// initializer. M2 has no way to bind such a name yet — annotation-only binding
-// needs TypeAnn→soltype resolution that lands in a later PR — so this is its own
-// kind rather than a generic UnsupportedNodeError: it marks an annotation-driven
-// binding the walk can't infer, not an AST node shape outside the subset.
+// initializer. There is no way to bind such a name yet, since annotation-only
+// binding needs TypeAnn→soltype resolution that is not yet implemented, so this is
+// its own kind rather than a generic UnsupportedNodeError: it marks an
+// annotation-driven binding the walk can't infer, not an AST node shape outside the
+// subset.
 type MissingInitializerError struct {
 	Decl *ast.VarDecl
 }
 
 // DuplicateDeclarationError fires when a top-level `val`/`var` rebinds a name
-// already declared in the module scope. Unlike a function (whose repeated
-// top-level declarations are overloads, supported from PR-3), a variable may be
-// declared only once per scope; the first binding is kept.
+// already declared in the module scope. Unlike a function, whose repeated
+// top-level declarations are overloads, a variable may be declared only once per
+// scope; the first binding is kept.
 //
 // Decl is the rejected redeclaration (the blame span); Previous is the kept first
 // declaration, surfaced via Related() as "previously declared here". Name is the
 // resolved binding-key name — retained alongside the nodes because it may be a
 // qualified key name distinct from the decl's local identifier, and the message
-// wants the canonical name (§3.4 caveat).
+// wants the canonical name.
 type DuplicateDeclarationError struct {
 	Decl, Previous ast.Decl
 	Name           string
 }
 
-// NoMatchingOverloadError fires when a call to an overloaded name (PR6) matches
+// NoMatchingOverloadError fires when a call to an overloaded name matches
 // none of the overload set's arms — every candidate either disagreed on arity or
-// failed to accept the supplied argument types. It replaces M2's interim
-// OverloadNotSupportedError (overloading is now real).
+// failed to accept the supplied argument types.
 //
 // It is a BRIDGE error: born in resolveOverload with the *ast.CallExpr in hand, so
 // it self-blames (Span() is the call) and relates the callee expression. Candidates
@@ -555,7 +543,7 @@ type NoMatchingOverloadError struct {
 
 // UnannotatedRecursiveOverloadError fires when an overloaded function participates
 // in a mutually-recursive group (a dep-graph component with more than one binding)
-// without fully-annotated overload signatures (PR6). Fixed-point iteration over
+// without fully-annotated overload signatures. Fixed-point iteration over
 // overload choices is not guaranteed to converge under subtyping, so the overload
 // set must be ground before the group is inferred; self-recursion (a singleton
 // component) is softer and does not trip this. The binding degrades to its first
@@ -569,7 +557,7 @@ type UnannotatedRecursiveOverloadError struct {
 	Name string
 }
 
-// DuplicateOverloadError fires when two arms of an overload set (PR6) are
+// DuplicateOverloadError fires when two arms of an overload set are
 // indistinguishable for dispatch: they share an arity and have pointwise-equal
 // parameter types, so no call could ever select one over the other. An overload set
 // compiles to a single runtime function that dispatches on argument types, so two
@@ -584,7 +572,7 @@ type DuplicateOverloadError struct {
 }
 
 // TooManyArgsError fires when a DIRECT call supplies more arguments than the
-// (concrete) callee declares — the #677 §4.2.3 extra-arg lint, which rejects
+// (concrete) callee declares — the extra-arg lint, which rejects
 // too-many for exact AND inexact callees alike (an inexact function tolerates
 // extras only as a callback, not at a visible call site). It is the uniform
 // too-many message; the surviving FuncArityMismatchError covers "too few /
@@ -615,10 +603,10 @@ type NotEnoughArgsError struct {
 }
 
 // AwaitOutsideAsyncError fires when an `await` expression appears outside the
-// body of an `async fn` (the walk's rule, not the type rule — per M3's plan,
-// "Awaiting outside an `async` function is rejected by the AST walk, not by the
-// type rule"). The argument is still walked (so any errors inside it surface),
-// but the await contributes a `never` placeholder so callers don't cascade.
+// body of an `async fn`. This is the walk's rule, not the type rule: awaiting
+// outside an `async` function is rejected by the AST walk. The argument is still
+// walked so any errors inside it surface, but the await contributes a `never`
+// placeholder so callers don't cascade.
 //
 // EnclosingFn is the (non-async) function the await sits in, when there is one —
 // the function the user would mark `async` to fix the error, surfaced via
@@ -653,11 +641,11 @@ type AsyncReturnNotPromiseError struct {
 }
 
 // InvalidAssignmentTargetError fires when the left-hand side of an assignment
-// (`a = expr`) is not an assignable place. M3's only assignable target is an
+// (`a = expr`) is not an assignable place. The only assignable target is an
 // IdentExpr resolving to a `var` binding; a literal, call, or any other non-place
 // target is rejected here. A member or index target such as `obj.x = …` is instead
 // reported as an UnsupportedFeatureError: it is a valid place whose type rule needs
-// object/array types (M4), not a fundamentally invalid target.
+// object/array types not yet supported, not a fundamentally invalid target.
 //
 // It is a BRIDGE error: born in inferAssign with the offending target node in hand,
 // so it self-blames (Span() is the target's own span); it carries no related node.
@@ -667,8 +655,8 @@ type InvalidAssignmentTargetError struct {
 
 // CannotAssignToImmutableError fires when a reassignment (`a = expr`) targets a
 // binding that is not a `var` — a `val`, a function, a parameter, or a prelude
-// binding. The binding-level mutability gate (PR8); `mut`-field / alias / lifetime
-// mutability is M4.
+// binding. This is the binding-level mutability gate; `mut`-field, alias, and
+// lifetime mutability are not yet supported.
 //
 // It is a BRIDGE error: born in inferAssign with the assignment node in hand, so
 // it self-blames the whole assignment (Span()). Decl is the introducing
@@ -683,12 +671,12 @@ type CannotAssignToImmutableError struct {
 }
 
 // NonExhaustiveMatchError fires when a `match` expression does not cover every
-// value its scrutinee can take, so a value could fall through every arm. In M4 the
+// value its scrutinee can take, so a value could fall through every arm. The
 // coverage decision reads only the scrutinee's structural exactness. An exact object
 // or tuple scrutinee is covered by a structural arm matching its shape. An inexact
 // scrutinee carries an open tail of unknown values, so it requires a catch-all arm.
 // A catch-all is an unguarded wildcard `_` or identifier pattern. Union-scrutinee
-// exhaustiveness is M6 and enum exhaustiveness is M5, and both extend this same form.
+// and enum exhaustiveness are not yet handled, and both extend this same form.
 //
 // It is a bridge error born in inferMatch with the match node in hand, so it
 // self-blames the whole match through Span and carries no related node.
@@ -1006,9 +994,8 @@ func (e *ReadonlyFieldSubtypeError) Message() string {
 
 // describe renders a RAW, uncoalesced type for in-flight error messages (t0,
 // function, number). Distinct from soltype.Print, which renders coalesced
-// output as user-facing Escalier syntax (see m1-implementation-plan §2.2). It
-// lives in solver because it walks bound-carrying variables, and its wording
-// matches the spike's verbatim so test assertions stay stable.
+// output as user-facing Escalier syntax. It lives in solver because it walks
+// bound-carrying variables.
 func describe(t soltype.Type) string {
 	switch t := t.(type) {
 	case *soltype.PrimType:
@@ -1043,10 +1030,9 @@ func describe(t soltype.Type) string {
 		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
-		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2
-		// attaches lifetimes, so Lt may be non-nil here, but a raw `'l{id}` in a
-		// diagnostic is noise. Naming lands in D4; until then an escape message reads
-		// `mut object` without naming which borrow escaped.
+		// recursing like the Promise arm. The lifetime is deliberately NOT rendered:
+		// Lt may be non-nil here, but a raw `'l{id}` in a diagnostic is noise. An escape
+		// message reads `mut object` without naming which borrow escaped.
 		prefix := ""
 		if t.Mut {
 			prefix = "mut "

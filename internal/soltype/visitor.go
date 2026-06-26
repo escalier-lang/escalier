@@ -15,12 +15,12 @@ type EnterResult struct {
 
 // TypeVisitor is a polarity-threading rewriting visitor over soltype.Type. Unlike
 // type_system's visitor it carries Polarity, and Accept flips it on contravariant
-// positions (function parameters) so variance knowledge lives in ONE place rather
-// than being re-spelled in every type→type transform (coalesce / extrude /
-// freshenAbove). EnterType fires before child traversal — it may prune, replace,
-// or take over the recursion via SkipChildren (the var node's bounds are a side
-// graph, not tree children, so each transform handles TypeVarType itself in
-// EnterType). ExitType fires after, bottom-up, as a function of the
+// positions such as function parameters so variance knowledge lives in ONE place
+// rather than being re-spelled in every type→type transform such as coalesce,
+// extrude, and freshenAbove. EnterType fires before child traversal. It may prune,
+// replace, or take over the recursion via SkipChildren. The var node's bounds are
+// a side graph, not tree children, so each transform handles TypeVarType itself in
+// EnterType. ExitType fires after, bottom-up, as a function of the
 // already-rewritten children.
 type TypeVisitor interface {
 	EnterType(t Type, pol Polarity) EnterResult
@@ -146,25 +146,25 @@ func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	// The inner is visited ONCE in the current polarity — the read view. When Mut,
-	// the inner is also a write view (the contravariant constrain step in C2), but
+	// The inner is visited ONCE in the current polarity, the read view. When Mut,
+	// the inner is also a write view through the contravariant constrain step, but
 	// the rewriting transforms visit it a single time and share fresh vars through
-	// their own cache, exactly as the spike's extrude treated a Mut inner. The
-	// lifetime is not a Type, so Accept never walks it; only the lifetime-aware
-	// passes (D4) do.
+	// their own cache. The lifetime is not a Type, so Accept never walks it; only
+	// the lifetime-aware passes do.
 	//
-	// KNOWN GAP (D2): C2's constrain rule makes a Mut borrow's inner INVARIANT (it
-	// adds both a read and a write constraint), but this single covariant visit means
+	// KNOWN GAP: the constrain rule makes a Mut borrow's inner INVARIANT, adding both
+	// a read and a write constraint, but this single covariant visit means
 	// extrude/freshenAbove wire an out-of-level inner var through only one bound
-	// direction. This is inert today — no inference path mints a RefType, so extrude
-	// never sees a real Mut borrow — and Accept is shared with coalesce, which WANTS a
-	// single covariant visit, so the fix belongs in extrude/freshenAbove (not here)
-	// once borrows originate (D2) and the case becomes reachable and testable.
+	// direction. This is inert today, since no inference path mints a RefType, so
+	// extrude never sees a real Mut borrow. Accept is shared with coalesce, which
+	// WANTS a single covariant visit, so the fix belongs in extrude/freshenAbove
+	// rather than here once borrows originate and the case becomes reachable and
+	// testable.
 	//
 	// The OCCURRENCE-analysis half of this invariance is already handled separately,
-	// not here: simplify.go's recordMutWriteView walks a Mut inner in the flipped
+	// not here. simplify.go's recordMutWriteView walks a Mut inner in the flipped
 	// polarity for the occurrence and co-occurrence visitors, so a var written through
-	// a mut field is retained as a type parameter rather than dropped (#737). That is a
+	// a mut field is retained as a type parameter rather than dropped. That is a
 	// record-only pass, so it can add the write view without the double visit coalesce
 	// must avoid.
 	inner := cur.Inner.Accept(v, pol)
@@ -251,8 +251,8 @@ func acceptParams(ps []*FuncParam, v TypeVisitor, pol Polarity) ([]*FuncParam, b
 }
 
 // acceptObjElems walks each property's type covariantly, copy-on-write like
-// acceptParams. M4's elements are all PropertyElem; later member kinds add their
-// own variance treatment here.
+// acceptParams. The elements are currently all PropertyElem; later member kinds
+// add their own variance treatment here.
 func acceptObjElems(es []ObjTypeElem, v TypeVisitor, pol Polarity) ([]ObjTypeElem, bool) {
 	out := es
 	changed := false
@@ -298,4 +298,3 @@ func (s *typeVarSeeker) EnterType(t Type, _ Polarity) EnterResult {
 }
 
 func (s *typeVarSeeker) ExitType(t Type, _ Polarity) Type { return t }
-

@@ -4,7 +4,7 @@ package soltype
 // cell back to the bare inner so no *RefType ever names a value that isn't really a
 // borrow. A type-switch on *RefType can therefore assume the wrapper is meaningful.
 // Construct a &RefType literal directly when that cell must survive — the
-// bare<:RefType constrain arm (C2) does, to re-dispatch a source as an immutable
+// bare<:RefType constrain arm does, to re-dispatch a source as an immutable
 // view without recursing forever.
 func NewRef(mut bool, lt Lifetime, inner RefInner) Type {
 	if !mut && lt == nil {

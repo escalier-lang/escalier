@@ -6,29 +6,28 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// checker is the per-inference-run carrier for the M2 constraint-generating
-// walk. It wraps M1's *Context (the fresh-var counter + Constrain), threads the
-// Info side table that records node→type, and accumulates SolverErrors. It is
-// the method receiver for the whole walk.
+// checker is the per-inference-run carrier for the constraint-generating walk. It
+// wraps the *Context (the fresh-var counter + Constrain), threads the Info side
+// table that records node→type, and accumulates SolverErrors. It is the method
+// receiver for the whole walk.
 //
 // The walk is a direct recursive switch over ast.Expr/Stmt/Decl, NOT the shared
 // ast.Visitor. This is a deliberate deviation from the CLAUDE.md "use the
 // existing visitor" convention: constraint generation is bottom-up and
 // value-producing (every node synthesizes a soltype.Type), which the visitor —
 // shaped for enter/exit transformation with no per-node synthesized value — does
-// not model cleanly. The shape matches both the simplesub spike's typeTerm and
-// the old checker's inferExpr. See m2-implementation-plan §3.2.
+// not model cleanly.
 type checker struct {
-	ctx  *Context      // M1: freshVar(level), Constrain(sub, super) []SolverError
-	info *Info         // M1: node → soltype.Type side table (unexported setType)
-	prov Prov          // M2.5: soltype.Type → Origin (leaf FromAST only), the inverse of info
-	errs []SolverError // accumulated; mirrors the spike's []error threading
+	ctx  *Context      // freshVar(level), Constrain(sub, super) []SolverError
+	info *Info         // node → soltype.Type side table (unexported setType)
+	prov Prov          // soltype.Type → Origin (leaf FromAST only), the inverse of info
+	errs []SolverError // accumulated
 
 	// fn is the enclosing function context for the body currently being walked —
 	// its async flag (does `await` here resolve?), the function's AST node (for
 	// await-outside-async blame), and the live list of every ReturnStmt expression
-	// type collected from the body so far (PR3). It is nil at module top-level (and
-	// inside a top-level `val` initializer): a top-level `await` is rejected by
+	// type collected from the body so far. It is nil at module top-level and
+	// inside a top-level `val` initializer: a top-level `await` is rejected by
 	// inferAwait, and a top-level `return` — reachable inside an `if` in a `val`
 	// initializer — by inferStmt's ReturnOutsideFunctionError. inferFunc pushes a
 	// fresh context on entry and pops it on exit, so a nested function has its own
@@ -42,7 +41,7 @@ type checker struct {
 	// by tests that exercise the guard. See recordProv.
 	debugProv bool
 
-	// varIDCounter is the module-wide running allocator for liveness VarIDs (M4 G1).
+	// varIDCounter is the module-wide running allocator for liveness VarIDs.
 	// Each function body's pre-pass renames its locals starting from this counter and
 	// then advances it, so VarIDs are unique across every body in one inference run
 	// rather than restarting at 1 per body. That makes a binding's VarID name the same
@@ -53,7 +52,7 @@ type checker struct {
 
 	// preludeNames caches the immutable prelude root scope's sorted value names so the
 	// liveness pre-pass collects them once instead of re-walking and re-sorting the
-	// prelude for every function body (M4 G1). preludeNamesRoot is the scope the cache
+	// prelude for every function body. preludeNamesRoot is the scope the cache
 	// was computed for. collectOuterBindings recomputes if a different root appears.
 	preludeNames     []string
 	preludeNamesRoot *Scope
@@ -67,7 +66,7 @@ type checker struct {
 }
 
 // fieldKey identifies a written field by the receiver variable's ID and the
-// property name — the key into a function body's `written` map (M4 C3).
+// property name — the key into a function body's `written` map.
 type fieldKey struct {
 	recvID int
 	field  string
@@ -91,7 +90,7 @@ type funcCtx struct {
 	returns []soltype.Type
 
 	// written records the widened type stored into a receiver variable's field by a
-	// field-write `recv.prop = source` (M4 C3), keyed by the receiver var's ID and
+	// field-write `recv.prop = source`, keyed by the receiver var's ID and
 	// the property name. A later read of the same field returns this concrete type
 	// instead of minting a fresh var, so `obj.x = 5; obj.x` is `number`
 	// (read-after-write). It is purely a precision win: write-after-read already
@@ -107,7 +106,7 @@ type funcCtx struct {
 	written map[fieldKey]soltype.Type
 
 	// liveness, aliases, stmtToRef, and varIDNames are the mutability-transition
-	// checking state for THIS function body (M4 G1), populated by runLivenessPrePass
+	// checking state for THIS function body, populated by runLivenessPrePass
 	// before the body is walked. They are the new-checker analogue of the old
 	// checker's Context.Liveness/Aliases/StmtToRef/VarIDNames. Scoping them to funcCtx
 	// gives a nested function its own liveness analysis for free. Push/pop isolates them
@@ -118,16 +117,16 @@ type funcCtx struct {
 	stmtToRef  map[ast.Stmt]liveness.StmtRef
 	varIDNames map[liveness.VarID]string
 	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
-	// the transition checker uses to query the lifetime sort for a `'static` escape in
-	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow
-	// lifetime D3 forced `<: 'static` has a permanent outside alias, and that borrow's
-	// Mut supplies its mutability. The stored type is the SAME pointer the inference
-	// graph mutates. So a lifetime that a later global write `sink = p` forces to
+	// the transition checker uses to query the lifetime sort for a `'static` escape.
+	// A value whose borrow lifetime was forced `<: 'static` has a permanent outside
+	// alias, and that borrow's Mut supplies its mutability. The stored type is the SAME
+	// pointer the inference graph mutates. So a lifetime that a later global write
+	// `sink = p` forces to
 	// 'static after the binding is recorded is visible here through the shared
 	// LifetimeVar. Populated at the same sites that seed alias mutability: parameter
 	// leaves, decl bindings, and reassignment targets.
 	varIDTypes map[liveness.VarID]soltype.Type
-	// currentStmt is the enclosing statement currently being walked (M4 G1), set by
+	// currentStmt is the enclosing statement currently being walked, set by
 	// inferStmt. A reassignment `a = e` lives in expression position, so the transition
 	// checker reads the enclosing statement from here to find its CFG StmtRef.
 	currentStmt ast.Stmt
@@ -179,10 +178,10 @@ func (c *checker) freshAt(lvl int) *soltype.TypeVarType {
 //  1. Assign the Prov table and the constraint node n to the error.
 //  2. The error's Span()/Related() then resolve per-operand blame through Prov on
 //     demand. When an operand has no Prov entry, blame falls back to n's span,
-//     never the zero span (§3.5).
+//     never the zero span.
 //
 // The engine never touches Prov. These fields are assigned after Constrain returns,
-// so the hot loop stays off the table. That is the perf invariant, §3.9. Bridge
+// so the hot loop stays off the table. That is the perf invariant. Bridge
 // errors never flow through here; they self-blame from their own node.
 func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
 	for _, e := range c.ctx.Constrain(source, target) {
@@ -219,11 +218,11 @@ func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
 }
 
 // report accumulates a structured error and returns the error-recovery sentinel
-// (PR8) so a caller can `return c.report(...)` in value position. ErrorType
+// so a caller can `return c.report(...)` in value position. ErrorType
 // absorbs in both directions inside constrain, so this placeholder never cascades
-// a second, spurious failure — replacing M2's overloaded `never` placeholder
-// (never is the lattice bottom, coalesced-output only, with no constrain-input
-// rule). It is minted ONLY here, where a diagnostic was definitely emitted, never
+// a second, spurious failure. It avoids overloading the `never` placeholder, which
+// is the lattice bottom, coalesced-output only, with no constrain-input rule. It is
+// minted ONLY here, where a diagnostic was definitely emitted, never
 // by freshVar — the discipline that keeps absorption from silently hiding a
 // genuine checker bug.
 func (c *checker) report(e SolverError) soltype.Type {
@@ -232,7 +231,7 @@ func (c *checker) report(e SolverError) soltype.Type {
 }
 
 // reportUnsupported records an UnsupportedNodeError for an AST node whose kind is
-// outside the M2 subset. The node self-blames: both the span and the rendered kind
+// outside the supported subset. The node self-blames: both the span and the rendered kind
 // (astKind) come from it. When the unsupported thing is a child carried by its
 // parent — an object property's computed key, a function's destructuring pattern —
 // pass that child node directly (it embeds ast.Node and carries its own, narrower
@@ -251,11 +250,11 @@ func (c *checker) reportUnsupportedFeature(node ast.Node, feature string) soltyp
 }
 
 // recordType records t as the inferred type of n in the Info side table. Wraps
-// the unexported setType — which is why the whole M2 walk lives in package
+// the unexported setType — which is why the whole walk lives in package
 // solver. The AST stays untouched (no InferredType() writes); Info is the single
 // source of truth for node→type.
 //
-// Under a probe (M3 PR5) snapshotMapEntry captures the prior entry and registers
+// Under a probe, snapshotMapEntry captures the prior entry and registers
 // a rollback closure, so a discarded speculative trial leaves Info exactly as it
 // was — the entry restored if n had one, deleted if it did not.
 func (c *checker) recordType(n ast.Node, t soltype.Type) {
@@ -263,12 +262,12 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 	c.info.setType(n, t)
 }
 
-// inferExpr dispatches on the concrete expression kind. PR-1 wired the two leaf
-// cases (literals, identifiers); PR-3 adds the function/application walk
-// (FuncExpr, CallExpr — the block/statement walk they drive lives in
-// infer_stmt.go); PR-4 adds tuples, object literals, and member access; M3 adds
-// await/if-else and (PR8) the assignment form of BinaryExpr. Every remaining kind
-// falls through to a clean UnsupportedNodeError (never a panic).
+// inferExpr dispatches on the concrete expression kind. It covers the leaf
+// cases (literals, identifiers), the function/application walk (FuncExpr,
+// CallExpr — the block/statement walk they drive lives in infer_stmt.go), tuples,
+// object literals, member access, await/if-else, and the assignment form of
+// BinaryExpr. Every remaining kind falls through to a clean UnsupportedNodeError
+// (never a panic).
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	switch e := e.(type) {
 	case *ast.LiteralExpr:
@@ -296,9 +295,9 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	case *ast.BorrowExpr:
 		return c.inferBorrow(scope, lvl, e)
 	case *ast.BinaryExpr:
-		// PR8 handles the ASSIGNMENT op only (`a = expr`); every other binary
+		// Only the ASSIGNMENT op is handled here (`a = expr`); every other binary
 		// operator (+, ==, &&, ++, …) needs the operator-scheme walk over the prelude
-		// bindings, a separate unlanded PR, so it stays UnsupportedNodeError.
+		// bindings, which is not yet implemented, so it stays UnsupportedNodeError.
 		if e.Op == ast.Assign {
 			return c.inferAssign(scope, lvl, e)
 		}

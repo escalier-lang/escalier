@@ -24,7 +24,7 @@ type Lifetime interface{ isLifetime() }
 // a discarded speculation trial truncates them back.
 //
 // Level brings the lifetime sort into the let-generalization hierarchy that
-// TypeVarType already rides (M4 D2.5). A lifetime minted onto a generalizable
+// TypeVarType already rides. A lifetime minted onto a generalizable
 // parameter sits ABOVE its scheme's generalize-level, so instantiate freshens it
 // per use just as it does a type parameter, and two call sites of a
 // borrow-passing function never share one LifetimeVar's bounds. The MLsub level
@@ -38,7 +38,7 @@ type LifetimeVar struct {
 	LowerBounds []Lifetime
 	UpperBounds []Lifetime
 
-	// Join marks an internal lifetime minted at a multi-source join site (M4 D3).
+	// Join marks an internal lifetime minted at a multi-source join site.
 	// A join site is a return or branch that unites several borrows with distinct
 	// lifetimes. A join variable is NOT a borrow origin, so it is never named in
 	// the output. It renders as the union of the param lifetimes it reaches through
@@ -68,8 +68,9 @@ func (v *LifetimeVar) BoundsAt(pol Polarity) []Lifetime {
 type StaticLifetime struct{}
 
 // AnonLifetime is a display-only marker that keeps the `&` on a borrow whose
-// lifetime is not load-bearing. The lifetime coalescer (D4) inserts it where it
-// used to drop the lifetime entirely, so an `&mut {x}` parameter still renders
+// lifetime is not load-bearing. The lifetime coalescer inserts it where
+// dropping the lifetime entirely would change the rendering, so an `&mut {x}`
+// parameter still renders
 // as `&mut {x}` instead of collapsing to owned-mutable `mut {x}`. It is never a
 // constrain input. Only coalesce produces it, only the printer reads it, and it
 // carries no bounds since the underlying lifetime variable has already been

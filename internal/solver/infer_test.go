@@ -55,8 +55,8 @@ func inferModule(module *ast.Module) (values, types map[string]string, errs []So
 	values = make(map[string]string, len(scope.values))
 	for name, b := range scope.values {
 		if b.IsOverloaded() {
-			// PR6: an overload set renders as the intersection of its arms (declaration
-			// order), matching the value-position type of the overloaded name.
+			// An overload set renders as the intersection of its arms in declaration
+			// order, matching the value-position type of the overloaded name.
 			arms := make([]soltype.Type, len(b.Schemes))
 			for i, s := range b.Schemes {
 				arms[i] = schemeType(s)
@@ -64,7 +64,7 @@ func inferModule(module *ast.Module) (values, types map[string]string, errs []So
 			values[name] = soltype.Print(&soltype.IntersectionType{Types: arms})
 			continue
 		}
-		// PR1: an ordinary binding holds exactly one scheme; renderScheme adds the
+		// An ordinary binding holds exactly one scheme; renderScheme adds the
 		// <T0, …> quantifier prefix when generalization left type parameters behind.
 		values[name] = renderScheme(b.Schemes[0])
 	}
@@ -72,17 +72,17 @@ func inferModule(module *ast.Module) (values, types map[string]string, errs []So
 	return values, types, errs
 }
 
-// inferSource is the single-file table harness (§3.6) — fast, no on-disk
-// fixtures. It is the one-file case of inferSources.
+// inferSource is the single-file table harness — fast, no on-disk fixtures. It is
+// the one-file case of inferSources.
 func inferSource(t *testing.T, src string) (values, types map[string]string, errs []SolverError) {
 	t.Helper()
 	return inferSources(t, map[string]string{"input.esc": src})
 }
 
-// inferSources is the multi-file table harness (§3.6): several in-memory sources
-// keyed by file path, parsed into one combined module and inferred together. This
+// inferSources is the multi-file table harness. Several in-memory sources keyed by
+// file path are parsed into one combined module and inferred together. This
 // exercises the exact dep-graph-spanning-files path an on-disk fixture would, with
-// no package.json / file-discovery ceremony (the real fixture harness is M8).
+// no package.json or file-discovery ceremony.
 func inferSources(t *testing.T, srcs map[string]string) (values, types map[string]string, errs []SolverError) {
 	t.Helper()
 	return inferModule(parseModuleFiles(t, srcs))
@@ -146,8 +146,8 @@ func TestInferModuleValDecls(t *testing.T) {
 	}
 }
 
-// PR-4: object literals, tuple literals, and member access infer end-to-end
-// through the real parser pipeline. Field reads resolve through a record-typed
+// Object literals, tuple literals, and member access infer end-to-end through the
+// real parser pipeline. Field reads resolve through a record-typed
 // binding (constrain's record <: record arm lowers the result from the matching
 // field), and a read of an absent field surfaces a MissingPropertyError.
 func TestInferModuleObjectsAndTuples(t *testing.T) {
@@ -204,14 +204,14 @@ func TestInferModuleFieldReadMissingProperty(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "object is missing property: b", errs[0].Message())
-	// M2.5: blame the member's prop, not the whole decl.
+	// Blame the member's prop, not the whole decl.
 	require.Equal(t, "b", spanText(src, errs[0].Span()))
 	require.Equal(t, map[string]string{"o": "{a: 5}", "x": "never"}, values)
 }
 
-// A forward reference — a decl that uses a name defined later in the source —
-// failed in PR-2 (source-order walk). PR-5 orders declarations by the dep graph,
-// so x's component is inferred before y's and the reference now resolves.
+// A forward reference is a decl that uses a name defined later in the source.
+// Declarations are ordered by the dep graph, so x's component is inferred before
+// y's and the reference resolves.
 func TestInferModuleForwardReferenceResolves(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val y = x
@@ -221,33 +221,32 @@ func TestInferModuleForwardReferenceResolves(t *testing.T) {
 	require.Equal(t, map[string]string{"x": "5", "y": "5"}, values)
 }
 
-// A top-level declaration outside the M2 subset reports a clean
-// UnsupportedNodeError rather than panicking. A type alias is such a decl — type
-// bindings are M3+ — so it registers a type-sort dep_graph key the SCC driver
-// reports as unsupported. (FuncDecl, unsupported at the module level through
-// PR-2, is now wired in by PR-5; see the func/recursion tests.)
+// A top-level declaration outside the supported subset reports a clean
+// UnsupportedNodeError rather than panicking. A type alias is such a decl, so it
+// registers a type-sort dep_graph key the SCC driver reports as unsupported.
+// FuncDecl is wired into the module walk; see the func/recursion tests.
 func TestInferModuleUnsupportedDecl(t *testing.T) {
 	src := `type Foo = number`
 	_, types, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "Unsupported: TypeDecl", errs[0].Message())
-	// M2.5: the error self-blames from the decl node.
+	// The error self-blames from the decl node.
 	require.Equal(t, src, spanText(src, errs[0].Span()))
 	// The unsupported decl must not leak a type binding.
 	require.NotContains(t, types, "Foo")
 }
 
-// A `val` with no initializer can't be inferred in M2 (annotation-driven binding
-// needs TypeAnn support that lands later); it reports MissingInitializerError and
-// binds NOTHING, so a later reference still fails as an unknown identifier rather
-// than silently resolving to a placeholder.
+// A `val` with no initializer can't be inferred yet, since annotation-driven
+// binding needs TypeAnn support. It reports MissingInitializerError and binds
+// NOTHING, so a later reference still fails as an unknown identifier rather than
+// silently resolving to a placeholder.
 func TestInferModuleVarDeclWithoutInitializer(t *testing.T) {
 	src := `declare val x: number`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "Variable declaration requires an initializer: x", errs[0].Message())
-	// M2.5: the error self-blames from the decl node (whose span, per the parser,
-	// covers the binder but not the trailing annotation).
+	// The error self-blames from the decl node, whose span, per the parser,
+	// covers the binder but not the trailing annotation.
 	require.Equal(t, "declare val x", spanText(src, errs[0].Span()))
 	require.Empty(t, values)
 }
@@ -262,8 +261,8 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 	require.Len(t, errs, 2)
 	require.Equal(t, "Variable declaration requires an initializer: x", errs[0].Message())
 	require.Equal(t, "Unknown identifier: x", errs[1].Message())
-	// PR8 (Fix A): a binding whose definition is wholly the ErrorType recovery
-	// sentinel (`val y = <unknown>`) recovers AS `error` rather than freezing to
+	// A binding whose definition is wholly the ErrorType recovery sentinel,
+	// as in `val y = <unknown>`, recovers AS `error` rather than freezing to
 	// `never`, so downstream uses of y absorb instead of cascading `<: never`.
 	require.Equal(t, map[string]string{"y": "error"}, values)
 }
@@ -278,15 +277,15 @@ func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "Duplicate declaration: x", errs[0].Message())
-	// M2.5: blame the second decl; relate the first ("previously declared here").
+	// Blame the second decl; relate the first as "previously declared here".
 	require.Equal(t, `val x = "hi"`, spanText(src, errs[0].Span()))
 	require.Len(t, errs[0].Related(), 1)
 	require.Equal(t, `val x = 5`, spanText(src, errs[0].Related()[0]))
 	require.Equal(t, map[string]string{"x": "5"}, values)
 }
 
-// #720: a function body's last expression is NOT an implicit return — only an
-// explicit `return` produces the function's value, mirroring the old checker's
+// A function body's last expression is NOT an implicit return — only an explicit
+// `return` produces the function's value, mirroring the old checker's
 // inferFuncBody. The bare tail is still walked for its checking side effects,
 // but its value is discarded and the body returns void.
 func TestInferFuncBodyTailIsNotImplicitReturn(t *testing.T) {
@@ -309,10 +308,10 @@ func TestInferFuncBodyDiscardedTailStillChecked(t *testing.T) {
 	require.Equal(t, "fn () -> void", values["f"])
 }
 
-// PR-5: dep_graph SCC ordering wires top-level FuncDecls into the module walk and
-// makes inference order-independent. Each case asserts the rendered MONOMORPHIC
-// binding types end-to-end — recursion resolves through the group var, but M1
-// ships no schemes so nothing generalizes (no <T0>); that is M3.
+// dep_graph SCC ordering wires top-level FuncDecls into the module walk and makes
+// inference order-independent. Each case asserts the rendered MONOMORPHIC binding
+// types end-to-end. Recursion resolves through the group var, but no schemes ship
+// yet so nothing generalizes and no <T0> appears.
 func TestInferModuleSCCOrdering(t *testing.T) {
 	tests := []struct {
 		name string
@@ -333,8 +332,9 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 			},
 		},
 		{
-			// A self-recursive function with no base case (M2 has no conditionals)
-			// never returns, so its return type coalesces to never. It resolves
+			// A self-recursive function with no base case, since conditionals are
+			// not supported yet, never returns, so its return type coalesces to
+			// never. It resolves
 			// because the SCC driver pre-binds foo to a var before its body.
 			name: "SelfRecursive",
 			src:  `fn foo(x: number) { return foo(x) }`,
@@ -375,13 +375,11 @@ func TestInferModuleSCCOrdering(t *testing.T) {
 	}
 }
 
-// An ungrounded mutually-recursive group — each body calls the other with no
-// return annotation and no base case — builds a cyclic var↔var bound graph.
-// M1's coalesce had no recursion guard, so a guard-free inline walk would loop
-// here forever; PR-5 pulls the M3 path-scoped guard forward (coalesce.go,
-// m2-implementation-plan §7), collapsing the ungrounded recursive return to
-// never (⊥). The assertion is really a termination test: it must complete rather
-// than hang.
+// An ungrounded mutually-recursive group, where each body calls the other with no
+// return annotation and no base case, builds a cyclic var↔var bound graph. A
+// guard-free inline walk would loop here forever. The path-scoped guard in
+// coalesce.go collapses the ungrounded recursive return to never (⊥). The
+// assertion is really a termination test. It must complete rather than hang.
 func TestInferModuleUngroundedMutualRecursionTerminates(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn a(n: number) { return b(n) }
@@ -414,10 +412,10 @@ func TestInferModuleValInRecursiveGroupUsesRawType(t *testing.T) {
 	}, values)
 }
 
-// PR6: repeated top-level functions of the same name are an OVERLOAD SET. The
-// binding renders as the intersection of its arms, and a call resolves to the arm
-// whose parameter accepts the argument — f(5) picks the number arm, f("hi") the
-// string arm. (This replaces M2's interim OverloadNotSupportedError.)
+// Repeated top-level functions of the same name are an OVERLOAD SET. The binding
+// renders as the intersection of its arms, and a call resolves to the arm whose
+// parameter accepts the argument. f(5) picks the number arm, f("hi") the string
+// arm.
 func TestInferModuleFunctionOverloadResolves(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { return x }
@@ -451,13 +449,13 @@ func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
 	require.NotContains(t, types, "Foo")
 }
 
-// PR-6: multi-file resolution. Several in-memory files are parsed into one
-// combined module (parser.ParseLibFiles unions files that share a path-derived
-// namespace) and inferred together; a top-level `val`/`fn` in one file resolves a
-// binding from another by root-namespace short name. This is the M2 exit
-// criterion — a multi-file module resolving via the dep graph — exercised
-// end-to-end through the real parser + InferModule + soltype printer. All
-// inference is MONOMORPHIC (M1 ships no schemes; <T0> generalization is M3).
+// Multi-file resolution. Several in-memory files are parsed into one combined
+// module, where parser.ParseLibFiles unions files that share a path-derived
+// namespace, and inferred together. A top-level `val`/`fn` in one file resolves a
+// binding from another by root-namespace short name. A multi-file module resolving
+// via the dep graph is exercised end-to-end through the real parser, InferModule,
+// and the soltype printer. All inference is MONOMORPHIC, since no schemes ship yet
+// and no <T0> generalization appears.
 func TestInferMultiFile(t *testing.T) {
 	tests := []struct {
 		name string
@@ -531,19 +529,20 @@ func TestInferMultiFileUnknownIdentifier(t *testing.T) {
 	})
 	require.Len(t, errs, 1)
 	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
-	// M2.5: the error self-blames from the ident node.
+	// The error self-blames from the ident node.
 	require.Equal(t, "missing", spanText(srcA, errs[0].Span()))
-	// PR8 (Fix A): a binding whose definition is wholly the ErrorType recovery
-	// sentinel recovers AS `error` rather than freezing to `never`.
+	// A binding whose definition is wholly the ErrorType recovery sentinel
+	// recovers AS `error` rather than freezing to `never`.
 	require.Equal(t, map[string]string{"y": "error", "z": "5"}, values)
 }
 
-// Error recovery for a NAMED callee: a too-many-args call still yields the
-// callee's declared return type (not `never`), matching the inline-callee recovery
-// asserted by TestInferCallTooManyArgs. M3's inferIdent returns an instantiated
-// var rather than a concrete FuncType, so inferCall recovers the return through the
-// var's FuncType lower bound (resolveFunc); without that, `r` regressed to `never`.
-// PR4: too-many is the extra-arg lint (TooManyArgsError), not a FuncArityMismatch.
+// Error recovery for a NAMED callee. A too-many-args call still yields the
+// callee's declared return type, not `never`, matching the inline-callee recovery
+// asserted by TestInferCallTooManyArgs. inferIdent returns an instantiated var
+// rather than a concrete FuncType, so inferCall recovers the return through the
+// var's FuncType lower bound via resolveFunc. Without that, `r` regressed to
+// `never`. Too-many is the extra-arg lint (TooManyArgsError), not a
+// FuncArityMismatch.
 func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { return x }

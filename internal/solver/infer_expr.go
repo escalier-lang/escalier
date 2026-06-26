@@ -11,10 +11,10 @@ import (
 )
 
 // inferLiteral types a literal expression as its singleton soltype.LitType and
-// records it in Info. M1's soltype.Lit set is num/str/bool only; the remaining
-// ast literal kinds (regex, bigint, null, undefined) fall through to the M2
-// subset guard until later milestones extend soltype.Lit (§ soltype/type.go
-// Prim/Lit note).
+// records it in Info. The soltype.Lit set is num/str/bool only; the remaining
+// ast literal kinds (regex, bigint, null, undefined) fall through to the
+// subset guard until soltype.Lit is extended. See the Prim/Lit note in
+// soltype/type.go.
 func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 	var lit soltype.Lit
 	switch l := e.Lit.(type) {
@@ -33,21 +33,19 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 	return t
 }
 
-// inferIdent resolves a value-position identifier through the scope chain — the
-// production form of the spike's *Var case crossed with design-notes §"The
-// constraint-generating AST walk". M3 (PR1) slots in the instantiation hook M2
-// left as a TODO: an ordinary binding instantiates its sole scheme at the current
-// level, so a polymorphic let gives each use fresh variables (a MonoScheme
-// instantiates to itself, preserving M2's behavior for the monomorphic bindings).
+// inferIdent resolves a value-position identifier through the scope chain. An
+// ordinary binding instantiates its sole scheme at the current level, so a
+// polymorphic let gives each use fresh variables (a MonoScheme instantiates to
+// itself, leaving the monomorphic bindings unchanged).
 //
 // An overloaded binding's value-position type is the intersection of its arms,
-// resolved through the probe — that is PR6 and unreachable today (M2 rejects
-// multi-FuncDecl names, so no overloaded binding is ever bound), so PR1 asserts
-// the single-scheme invariant rather than branching on it.
+// resolved through the probe — that is unreachable today, since multi-FuncDecl
+// names are rejected, so no overloaded binding is ever bound. The single-scheme
+// invariant is therefore asserted rather than branched on.
 //
 // A namespace name in value position is an error — namespaces are a separate
-// binding sort and never flow as values. M4 moves that rejection OFF inferIdent
-// to the value-position consumer (demandValue): a namespace is legal in the
+// binding sort and never flow as values. That rejection lives OFF inferIdent,
+// in the value-position consumer (demandValue): a namespace is legal in the
 // OBJECT position of a member/index chain (Foo.bar, A.B.c), so resolvePath
 // surfaces it and only a consumer that needs a value rejects it. The error then
 // fires once for both `f(Foo)` and a partial chain `f(A.B)`.
@@ -122,7 +120,7 @@ func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr) path
 }
 
 // bindingValue instantiates a value binding at lvl for value position. An
-// overloaded binding (PR6) — `val g = f`, or `f` passed as an argument — is the
+// overloaded binding — `val g = f`, or `f` passed as an argument — is the
 // intersection of its arms (the one scoped lattice exception; see
 // overloadIntersection and constrain's IntersectionType arm). An ordinary binding
 // instantiates its sole scheme, so each use gets fresh variables. A direct call
@@ -136,7 +134,7 @@ func (c *checker) bindingValue(lvl int, b ValueBinding) soltype.Type {
 }
 
 // astKind returns a short surface name for any AST node — an expression,
-// literal, declaration, or pattern — used in the M2 subset-guard error messages.
+// literal, declaration, or pattern — used in the subset-guard error messages.
 // It strips the leading "*ast." from the Go type name so e.g. *ast.BinaryExpr
 // renders as "BinaryExpr". One helper serves every guard site (inferExpr,
 // inferLiteral, inferDeclDef) so the format lives in a single place.
@@ -145,13 +143,12 @@ func astKind(n any) string {
 }
 
 // inferFuncExpr types a function expression as a soltype.FuncType and records it
-// in Info. It delegates to inferFunc, the shared core also used by inferFuncDecl
-// (the plan's "reuse inferFuncExpr on the decl's sig+body", factored so neither
-// side owns the other). M2 is monomorphic: any TypeParams on the signature are a
-// generic function (M3) and are diagnosed as unsupported by inferFunc, not
-// silently erased; an un-annotated param simply gets a fresh var, which
-// coalesces to unknown/never at render time rather than a <T0> quantifier
-// (generalization is M3).
+// in Info. It delegates to inferFunc, the shared core also used by inferFuncDecl,
+// factored so neither side owns the other. The walk is monomorphic: any TypeParams
+// on the signature are a generic function and are diagnosed as unsupported by
+// inferFunc, not silently erased; an un-annotated param simply gets a fresh var,
+// which coalesces to unknown/never at render time rather than a <T0> quantifier,
+// since generalization is not yet implemented.
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
 	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e)
 	c.recordType(e, t)
@@ -179,25 +176,25 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	defer func() { c.namedLifetimes = savedNamedLts }()
 	if len(sig.TypeParams) > 0 {
 		// Generic functions (fn <T>(...)) need type schemes / generalization,
-		// which are M3. The FuncExpr/FuncDecl kind itself is supported — it is the
-		// type-param feature that is not — so diagnose it as an unsupported feature
+		// which are not yet implemented. The FuncExpr/FuncDecl kind itself is
+		// supported — it is the type-param feature that is not — so diagnose it
+		// as an unsupported feature
 		// (blaming the function node) rather than silently erasing the params, then
 		// continue inferring monomorphically.
 		c.reportUnsupportedFeature(node, "TypeParam")
 	}
 	fnScope := scope.Child()
 	params := make([]*soltype.FuncParam, len(sig.Params))
-	// paramTypes maps each bound parameter name to its soltype, consumed by the M4
-	// G1 liveness pre-pass to seed parameter alias mutability.
+	// paramTypes maps each bound parameter name to its soltype, consumed by the
+	// liveness pre-pass to seed parameter alias mutability.
 	paramTypes := make(map[string]soltype.Type, len(sig.Params))
 	for i, p := range sig.Params {
 		pt := c.paramType(p, lvl)
-		// Rule 2 of PR 3. A bare annotation is owned and only an `&` annotation
-		// borrows. An `&` annotation already mints its lifetime in
-		// resolveLifetimeAnn, so a parameter has nothing to attach here. A bare
-		// `mut T` stays owned-mutable.
+		// A bare annotation is owned and only an `&` annotation borrows. An `&`
+		// annotation already mints its lifetime in resolveLifetimeAnn, so a parameter
+		// has nothing to attach here. A bare `mut T` stays owned-mutable.
 		// An `open` un-annotated param keeps its usage-inferred object inexact at
-		// display time (B2). The marker only makes sense for an inferred var; an
+		// display time. The marker only makes sense for an inferred var; an
 		// annotated param's exactness is fixed by its annotation, and paramType
 		// returns the resolved annotation (not a var) in that case.
 		if p.Open {
@@ -223,13 +220,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			paramTypes[name] = pt
 			// An `x?` parameter (parsed onto ast.Param.Optional) lowers the function's
 			// `required` count without dropping the param — carried onto the soltype so
-			// the accept-set rule and the printer (x?: T) see it. KNOWN GAP (M6): the
+			// the accept-set rule and the printer (x?: T) see it. KNOWN GAP: the
 			// in-body binding keeps the param's declared type (pt), NOT widened to
 			// `pt | undefined`, so a body that reads an omitted optional sees it at the
-			// narrower type. Widening needs undefined/unions (M6); M3 has neither.
+			// narrower type. Widening needs undefined and unions, which are not yet
+			// available.
 			params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
 		} else if p.Pattern != nil {
-			// M4 E1: a destructuring parameter such as `{x, y}` or `[a, b]`. bindPattern
+			// A destructuring parameter such as `{x, y}` or `[a, b]`. bindPattern
 			// binds each leaf into the function scope against the param's type and returns
 			// the soltype mirror the printer renders. It also writes each leaf's type into
 			// paramTypes, keyed by leaf name, so the liveness pre-pass seeds the leaf's
@@ -256,11 +254,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	var ret soltype.Type = &soltype.Void{}
 	hasBody := body != nil
 	if hasBody {
-		// PR3: open a fresh function context so every ReturnStmt encountered while
+		// Open a fresh function context so every ReturnStmt encountered while
 		// walking the body lands in our own returns list (a nested fn inside this
 		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node)
-		// M4 G1: run the liveness pre-pass before walking the body so mutability
+		// Run the liveness pre-pass before walking the body so mutability
 		// transitions are checked. It renames the body's variable nodes (writing the
 		// VarIDs DetermineAliasSource and the alias tracker read) and seeds the
 		// parameter alias sets onto c.fn. recordParamVarIDs then copies each param's
@@ -289,8 +287,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// for a bare annotation like `async fn () -> number`).
 	//
 	// Non-async: the annotation governs the return directly — the body is
-	// constrained `<: annotation` and the function returns the annotation (M2's
-	// rule). An unsupported annotation (ok=false) was already reported by
+	// constrained `<: annotation` and the function returns the annotation. An
+	// unsupported annotation (ok=false) was already reported by
 	// resolveTypeAnn; recover by keeping the inferred body type (or unknown when
 	// there is no body, since a synthetic Void would falsely signal "returns
 	// nothing").
@@ -311,7 +309,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	}
 	// A bare function value is exact (accept-set [required, len(Params)]): it rejects
 	// extra arguments. A trailing `...` in the signature (sig.Inexact) marks it
-	// inexact — it tolerates extra args when used as a callback (#677 §4.1), accept
+	// inexact — it tolerates extra args when used as a callback, accept
 	// [required, ∞). Note exactness governs callback subtyping, not direct calls: an
 	// inexact value still rejects extras at a visible call site (the inferCall lint).
 	ft := &soltype.FuncType{Params: params, Ret: ret, Inexact: sig.Inexact}
@@ -319,7 +317,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// non-function requirement blames the function, and FuncArityMismatchError can
 	// carry a "defined here" related span. (For a named callee this raw FuncType is
 	// re-minted by coalescing at binding time, so the entry is exact for inline
-	// callees; M3's FromInstantiation makes named-callee blame precise.)
+	// callees; FromInstantiation makes named-callee blame precise.)
 	c.recordProv(ft, node, FuncInference)
 	return ft
 }
@@ -331,7 +329,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 // do, and match are not walked yet, so such a body cannot be recognized as
 // diverging, and constrain has no `never <: T` arm — a raw NeverType minted here
 // would spuriously fail the body-vs-annotation check. Recovery placeholders are
-// the absorbing ErrorType sentinel (PR8), never a raw NeverType. A single return
+// the absorbing ErrorType sentinel, never a raw NeverType. A single return
 // is the return type directly — no join var, no indirection. Multiple returns
 // flow through a fresh join variable whose coalesced positive face is their
 // union, constrained in source order so the rendered union reflects source
@@ -343,7 +341,7 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 	case 1:
 		return collected[0]
 	default:
-		// M4 D3: several returns of borrowed objects that differ only in lifetime join
+		// Several returns of borrowed objects that differ only in lifetime join
 		// into one borrow whose lifetime unites theirs. So `if c { return p } else {
 		// return q }` over two `&mut` params is `&('a | 'b) mut {…}` rather than the
 		// un-joined `&'a mut {…} | &'b mut {…}`. A mixed or non-borrow set falls through to
@@ -361,7 +359,7 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 }
 
 // joinBorrows synthesizes the join of several borrowed objects that differ only in
-// lifetime (M4 D3). It applies only when EVERY input is a mutable borrow of an
+// lifetime. It applies only when EVERY input is a mutable borrow of an
 // object, all sharing the same field-name set with each carrying a lifetime. The
 // result is one mutable borrow whose lifetime is a fresh JOIN variable bounded below
 // by each input's lifetime, so a positive-position result coalesces to `('a | 'b)`.
@@ -371,8 +369,8 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 // absent from one input.
 //
 // ok=false leaves the caller on its generic union path. A usage-inferred borrow is a
-// type variable here, not a concrete RefType, so it returns ok=false. This matches
-// the spike, which joins only concrete mut records.
+// type variable here, not a concrete RefType, so it returns ok=false. Only concrete
+// mut records are joined.
 func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
 	refs := make([]*soltype.RefType, len(types))
 	objs := make([]*soltype.ObjectType, len(types))
@@ -411,7 +409,7 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 }
 
 // constrainEscape constrains every borrow lifetime reachable in t to outlive
-// 'static (M4 D3). It is the rule for a value flowing into module-level or otherwise
+// 'static. It is the rule for a value flowing into module-level or otherwise
 // 'static storage. A borrow that escapes its region must live forever, so each
 // lifetime variable v gains the upper bound 'static. coalesceLifetime then resolves
 // such a forced lifetime to 'static.
@@ -423,8 +421,8 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 //
 // There is one boundary. The visitor treats a TypeVarType as a leaf, so a borrow
 // reachable only through a usage-inferred variable is not forced here. That is the
-// same place the global-write CarrierOf peel stops, and the deeper handling rides
-// M4 G2.
+// same place the global-write CarrierOf peel stops; the deeper handling is not yet
+// implemented.
 func (c *checker) constrainEscape(t soltype.Type) {
 	t.Accept(escapeVisitor{c: c}, soltype.Positive)
 }
@@ -470,10 +468,10 @@ func sameObjectKeys(a, b *soltype.ObjectType) bool {
 // a fresh var the body's return flows into, inferring the inner. A bare annotation
 // (`async fn () -> number`) is an AsyncReturnNotPromiseError; recovery wraps the
 // inferred body return so the external face stays Promise-shaped. With no
-// annotation the inferred body return (bodyType) is wrapped directly — preserving
-// M3's "wrap an inferred return" model and its no-auto-flatten behavior (a body
+// annotation the inferred body return (bodyType) is wrapped directly — following
+// the "wrap an inferred return" model and its no-auto-flatten behavior (a body
 // that already returns a Promise still wraps: `async fn (p: Promise<T>) { return
-// await p }` is `Promise<Promise<T>>`; Awaited<T> is M9).
+// await p }` is `Promise<Promise<T>>`; Awaited<T> is not yet supported).
 func (c *checker) asyncReturn(node ast.Node, ann ast.TypeAnn, bodyType soltype.Type, hasBody bool, lvl int) soltype.Type {
 	if ann == nil {
 		return c.wrapPromise(node, bodyType)
@@ -516,7 +514,7 @@ func (c *checker) wrapPromise(node ast.Node, inner soltype.Type) soltype.Type {
 }
 
 // paramType resolves a param's type: its annotation when present, else a fresh
-// inference variable at the current level (the spike's "fresh var per param").
+// inference variable at the current level — a fresh var per param.
 // An unsupported annotation (ok=false) already reported its own error; the param
 // adopts a fresh var rather than the `never` placeholder so the body and any
 // call site recover against an unconstrained variable instead of cascading
@@ -545,23 +543,23 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // Concretely, `fn f(p: mut {x: number}) { return &mut p }` renders as
 // `fn (p: mut {x: number}) -> mut {x: number}`. The fresh lifetime on `&mut p`
 // has no upper bound from `p` because `p` is owned (Lt nil), so it occurs only
-// positively in the return, fails the param-lifetime test, and D4 elides the
-// wrapper. The borrow is real in the type graph; the elision just hides it at
+// positively in the return, fails the param-lifetime test, and the display rule
+// elides the wrapper. The borrow is real in the type graph; the elision just hides it at
 // display time. A proper rejection of this dangling-borrow case needs the
-// directional lifetime bounds slated for M6.5.
+// directional lifetime bounds, which are not yet implemented.
 //
-// PR 3 introduces `&p` and `&mut p` as the explicit borrow form. A binding
-// initializer uses one of them to choose "borrow" over "move", as in
-// `val q = &p` and `val q = &mut p`. The move side establishes ownership only.
-// Consume and use-after-move enforcement lands in PR 6.
+// `&p` and `&mut p` are the explicit borrow form. A binding initializer uses one
+// of them to choose "borrow" over "move", as in `val q = &p` and `val q = &mut p`.
+// The move side establishes ownership only. Consume and use-after-move enforcement
+// is not yet implemented.
 func (c *checker) inferBorrow(scope *Scope, lvl int, e *ast.BorrowExpr) soltype.Type {
-	// PR 4. An explicit borrow of a field path takes the receiver-bounded
+	// An explicit borrow of a field path takes the receiver-bounded
 	// lifetime of the implicit read at field granularity. The dispatch covers
 	// both `MemberExpr` and the constant-string `IndexExpr` form, so
 	// `&mut obj["foo"]` behaves the same as `&mut obj.foo`. A `&mut` of a
 	// reference-shaped field has to go through this path. The ordinary borrow
 	// path would reject it as a mutability mismatch against the immutable
-	// wrap PR 4's `fieldReadBorrow` puts on an implicit read.
+	// wrap `fieldReadBorrow` puts on an implicit read.
 	switch arg := e.Arg.(type) {
 	case *ast.MemberExpr:
 		if !arg.OptChain && arg.Prop != nil && arg.Prop.Name != "" {
@@ -618,8 +616,8 @@ func (c *checker) wrapBorrow(e *ast.BorrowExpr, lvl int, sub soltype.Type) solty
 }
 
 // inferBorrowOfMember types `&obj.f` and `&mut obj.f`, plus the constant-string
-// index form `&obj["foo"]` and `&mut obj["foo"]`, applying PR 4 rule 4. It
-// reads the field as a borrow bounded by the receiver at the requested
+// index form `&obj["foo"]` and `&mut obj["foo"]`, applying the field-borrow rule.
+// It reads the field as a borrow bounded by the receiver at the requested
 // mutability. An owned receiver mints a fresh lifetime. A borrowed receiver's
 // lifetime passes through. A `&mut` borrow requires the receiver to support a
 // mutable view of the field, expressed as the same mutable inexact requirement
@@ -630,11 +628,11 @@ func (c *checker) wrapBorrow(e *ast.BorrowExpr, lvl int, sub soltype.Type) solty
 // `&Foo.bar` for namespace `Foo` is the form that hits this case. There is no
 // receiver region to bound the borrow's lifetime. The namespace case resolves
 // the member through resolveNamespaceMember and falls through to wrapBorrow on
-// the resolved value, matching the pre-PR-4 path.
+// the resolved value, matching the plain-value path.
 //
 // Path-granular tracking that leaves a disjoint sibling such as `obj.g`
-// independently usable is the partial-moves work in PR 7. PR 4 ships only the
-// typing rule.
+// independently usable is the partial-moves work, not yet implemented. Only the
+// typing rule is shipped here.
 //
 // The arguments name the parts of the field access uniformly across the two
 // shapes the dispatch in inferBorrow accepts. recvExpr is the receiver
@@ -744,7 +742,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 }
 
 // borrowInnerOf returns the RefInner an explicit `&`/`&mut obj.f` should re-wrap
-// at the receiver's lifetime. The lazy deep-mut form (PR 14) no longer synthesizes
+// at the receiver's lifetime. The lazy deep-mut form no longer synthesizes
 // owned-mut cells for a plain `mut {a: {x}}`, so a field is usually the bare
 // object/tuple the user wrote, returned by the ordinary RefInner cast. Two RefType
 // cases remain, the same shapes fieldReadBorrow distinguishes:
@@ -766,8 +764,8 @@ func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
 }
 
 // inferCall types a function application. It types the callee and each argument,
-// allocates a fresh result var, and constrains callee <: fn(args) -> res — the
-// production form of the spike's *App case. The result var picks up the callee's
+// allocates a fresh result var, and constrains callee <: fn(args) -> res. The
+// result var picks up the callee's
 // return type (covariantly) and renders as that once coalesced; an arity or
 // argument mismatch surfaces as a constraint error stamped with the call's span.
 //
@@ -780,10 +778,10 @@ func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
 // named/generalized callee, which inferIdent now resolves through instantiate — see
 // resolveFunc); both recover, so recovery no longer regresses for named callees.
 //
-// PR4 adds two #677 pieces: an EXACT all-required call demand, and the extra-arg
-// lint that rejects passing more arguments than a concrete callee declares.
+// Two call-site pieces apply here: an EXACT all-required call demand, and the
+// extra-arg lint that rejects passing more arguments than a concrete callee declares.
 func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
-	// PR6: a DIRECT call to an overloaded name resolves against the overload set via
+	// A DIRECT call to an overloaded name resolves against the overload set via
 	// resolveOverload, a phase distinct from constrain — so the disjunction stays out of
 	// the lattice. A call through an intermediate binding (`g = f; g(x)`) doesn't match
 	// here; it routes through the value-position intersection (constrain's
@@ -801,7 +799,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, Application)
 
-	// Arity lints (#677 §4.2.3): a DIRECT call rejects too-many AND too-few arguments
+	// Arity lints: a DIRECT call rejects too-many AND too-few arguments
 	// — for exact AND inexact callees alike. These are call-site checks the subtype
 	// lattice does not model uniformly (an inexact callee tolerates extras as a
 	// *callback*, accept-set [required, ∞), but supplying extras to a call you can see
@@ -849,7 +847,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	return res
 }
 
-// inferOverloadedCall types a direct call to an overloaded name (PR6). It infers
+// inferOverloadedCall types a direct call to an overloaded name. It infers
 // the types of the arguments, records the callee's overload type for Info, and
 // resolves the call through resolveOverload, which trials each arm under a probe
 // and commits the winner. Unlike the ordinary path it emits no callee <: callShape
@@ -878,8 +876,8 @@ func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b 
 // function would lose return recovery and yield `never`.
 //
 // ok=false means no concrete func was found (e.g. a deferred callee with no lower
-// bound yet) — the caller skips return recovery. PR1 bindings have at most one
-// func lower bound; overload sets (PR6) resolve through resolveOverload, not here.
+// bound yet) — the caller skips return recovery. Ordinary bindings have at most one
+// func lower bound; overload sets resolve through resolveOverload, not here.
 func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:
@@ -895,13 +893,13 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 }
 
 // inferAssign types a reassignment `target = source` — the only BinaryExpr form the
-// M3 walk handles. The source value is typed first (so its own errors surface
+// walk handles. The source value is typed first (so its own errors surface
 // regardless of the target's validity), then the target is resolved and gated:
 //
 //   - The target must be a place: an IdentExpr resolving to a value binding. A
-//     literal, call, member, or any other non-place target is an
-//     InvalidAssignmentTargetError (member targets `obj.x = …` need record types,
-//     M4). An ident that resolves to no binding is an UnknownIdentifierError.
+//     literal, call, or any other non-place target is an
+//     InvalidAssignmentTargetError. An ident that resolves to no binding is an
+//     UnknownIdentifierError.
 //   - The binding must be reassignable: only a `var` (Kind == VarKind) is. A `val`,
 //     function, parameter, or prelude binding is a CannotAssignToImmutableError.
 //
@@ -909,7 +907,7 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 // the new-solver form of the old checker's `Unify(rightType, leftType)`: the value
 // being stored must be a subtype of the slot. Reassigning an annotated `var a:
 // number = 5` with `a = 6` checks; an un-annotated `var a = 5` now widens its
-// binding to `number` (M4 B3), so `a = 6` checks there too.
+// binding to `number`, so `a = 6` checks there too.
 //
 // The assignment EXPRESSION evaluates to the value just stored, so its type is the
 // target binding's slot type — `val b = (a = 6)` for `var a: number` yields
@@ -924,7 +922,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	if e.Left == nil || e.Right == nil {
 		return c.reportUnsupported(e)
 	}
-	// M4 G1: snapshot the enclosing statement BEFORE walking the RHS. Reassignment
+	// Snapshot the enclosing statement BEFORE walking the RHS. Reassignment
 	// transition checking needs this assignment's statement to find its CFG StmtRef,
 	// but walking an RHS that contains statements re-enters inferStmt and overwrites
 	// c.fn.currentStmt. A `b = if c { … } else { … }`, a match, or a block expression
@@ -943,8 +941,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	target, ok := e.Left.(*ast.IdentExpr)
 	if !ok {
 		// A member target (obj.x = …) is a field write: the receiver must accept a
-		// write to that field (M4 C3). An index target (xs[i] = …) still needs Array
-		// and index types (M7), so it stays unsupported, distinct from a fundamentally
+		// write to that field. An index target (xs[i] = …) still needs Array
+		// and index types, so it stays unsupported, distinct from a fundamentally
 		// invalid target like `5 = x` or `f() = x`, which is an
 		// InvalidAssignmentTargetError.
 		switch left := e.Left.(type) {
@@ -982,8 +980,8 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// fresh instantiation: instantiating a generalized binding yields a var carrying
 	// only its LOWER bounds (the read/covariant face), so `a = "x"` for `var a:
 	// number` would merely add another lower bound and wrongly succeed. The coalesced
-	// type is the concrete slot type — `number` for an annotated var, and (since M4
-	// B3) the widened `number` for an un-annotated `var a = 5`, so `a = 6` ⇒
+	// type is the concrete slot type — `number` for an annotated var, and now
+	// the widened `number` for an un-annotated `var a = 5`, so `a = 6` ⇒
 	// `6 <: number` checks.
 	//
 	// freshenAll copies the coalesced type so constraining the source cannot mutate
@@ -1001,7 +999,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// the `b.Kind != ast.VarKind` gate above before reaching here.
 	targetT := c.freshenAll(schemeType(b.Schemes[0]), lvl)
 	c.recordType(target, targetT)
-	// M4 G1: track the alias this reassignment creates and check its mutability
+	// Track the alias this reassignment creates and check its mutability
 	// transition, but only when the constraint below succeeds — an ill-typed
 	// reassignment must not seed a false-positive transition error off types that
 	// never matched. assignErrsBefore captures the pre-constraint error count.
@@ -1009,7 +1007,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	if b.ModuleLevel {
 		// This is a global write, a store into module-level storage that lives for the
 		// program's whole run. Any borrow the value carries must outlive every borrow
-		// region, so it escapes to 'static (M4 D3).
+		// region, so it escapes to 'static.
 		//
 		// The value-compatibility check runs against the source's CARRIER, not the
 		// borrow itself. A borrow forced to 'static is owned-forever, so it satisfies an
@@ -1018,7 +1016,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// NOT escape. CarrierOf is the identity on a non-borrow source, so an ordinary
 		// global write such as `n = 5` is unaffected. The peel only looks through a
 		// top-level borrow and drops the source's mutability check. The fuller treatment
-		// of an escaped borrow's mutability rides M4 G2.
+		// of an escaped borrow's mutability is not yet implemented.
 		//
 		// Escape runs only when the compatibility check passes, so a rejected store does
 		// not leave the source's lifetime forced to 'static. So `var sink = {…}; fn(p:
@@ -1034,20 +1032,20 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// not double-counted as a prior permanent alias.
 			c.checkGlobalWriteTransition(target, e.Right, bindingType(b), assignStmt)
 			c.constrainEscape(sourceT)
-			// KNOWN GAP (#762): this store is accepted even though it is not sound in
+			// KNOWN GAP: this store is accepted even though it is not sound in
 			// general. checkGlobalWriteTransition is an in-body check only. The store
 			// escapes the source to 'static, but nothing forces the CALLER to pass a
 			// unique 'static borrow, so the caller may retain a live mutable alias to the
 			// same value and mutate it after the call, which the immutable global then
 			// observes. Closing this needs the call site to enforce the 'static borrow as
-			// unique, which is the borrow checker's job. Move/affine semantics (#762),
-			// under the sound borrow checker (#618), will eventually reject it.
+			// unique, which is the borrow checker's job. Move/affine semantics, under a
+			// sound borrow checker, will eventually reject it.
 		}
 	} else {
 		c.constrainAssign(e, sourceT, targetT)
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && target.VarID > 0 {
-		// Track against the binding's own type, not the freshened targetT. The G2
+		// Track against the binding's own type, not the freshened targetT. The
 		// escape query reads the recorded type, and a later global write forces the
 		// lifetime on the binding's shared pointer. The freshened copy carries an
 		// independent lifetime var that the escape never touches. isMutableType reads
@@ -1066,20 +1064,20 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	return valueT
 }
 
-// inferMemberAssign types a field write `recv.prop = source` (M4 C3). It extends
+// inferMemberAssign types a field write `recv.prop = source`. It extends
 // inferAssign's member-target branch: the receiver must ACCEPT a write to prop, so
 // the source is constrained against a mutable, inexact one-property requirement
 //
 //	recv <: mut {prop: widen(source), ...}
 //
 // The inexact requirement says "must accept a write to this field," not "is exactly
-// this shape." The mut wrapper makes the receiver a mutable cell, which the C3
+// this shape." The mut wrapper makes the receiver a mutable cell, which the
 // coalesce fold collapses with the receiver's other selections into one `mut`
 // object. The stored value is WIDENED (5 ⇒ number) because writing through a `mut`
 // receiver is itself a mutation — a later write may store any number — mirroring
-// the `var`-binding widening (B3).
+// the `var`-binding widening.
 //
-// The write requirement carries a fresh lifetime (D2): a mut-borrow receiver of
+// The write requirement carries a fresh lifetime: a mut-borrow receiver of
 // any lifetime is accepted (the fresh var imposes no obligation), and an owned
 // receiver satisfies the borrow slot by the RefType rule.
 //
@@ -1097,7 +1095,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	voidT := soltype.Type(&soltype.Void{})
 	if m.OptChain {
 		// `recv?.prop = …` is not a meaningful assignment target; optional chaining is
-		// M6 regardless, so report the whole target as unsupported rather than typing it.
+		// unsupported regardless, so report the whole target as unsupported rather than typing it.
 		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
 		return voidT
 	}
@@ -1121,7 +1119,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	}
 	req := &soltype.RefType{
 		Mut: true,
-		// A fresh lifetime imposes no obligation on the receiver (D2): constrainLt
+		// A fresh lifetime imposes no obligation on the receiver: constrainLt
 		// gives the new variable an upper bound and constrains nothing back, so a
 		// mut-borrow receiver of ANY lifetime satisfies the write requirement. A
 		// nil slot lifetime would instead reject a borrow receiver as an escape.
@@ -1134,7 +1132,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	errsBefore := len(c.errs)
 	c.constrain(e, recv, req)
 	c.recordWritten(recv, m.Prop.Name, w)
-	// M4 G1: when the written value aliases a variable, merge the receiver's and the
+	// When the written value aliases a variable, merge the receiver's and the
 	// source's alias sets so a later transition off either sees the shared value. Only
 	// when the write type-checked, so a rejected write does not record a bogus alias.
 	if c.fn != nil && len(c.errs) == errsBefore {
@@ -1149,7 +1147,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 // inferWriteReceiver infers the receiver of a field write `recv.prop = …`. Each
 // member/index step in the receiver CHAIN imposes a MUTABLE requirement on its own
 // receiver rather than the immutable read a plain access would, so writing one nested
-// field marks the whole container `mut` (#779): `fn foo(obj) { obj.p.x = 5 }` infers
+// field marks the whole container `mut`: `fn foo(obj) { obj.p.x = 5 }` infers
 // `obj: mut {p: …}`, the mutability propagating up to the outermost container. The
 // alternative — an owned-mut cell on the inner field inside an immutable container —
 // is no longer a valid annotation, so inference must not produce it.
@@ -1182,7 +1180,7 @@ func (c *checker) inferWriteReceiver(scope *Scope, lvl int, e ast.Expr) soltype.
 // mutFieldRead reads property `name` off `recv` as the receiver of a write chain.
 // When the receiver's shape is still an inference variable, it imposes a MUTABLE
 // requirement `mut {name: fieldVar, ...}` so the inferred container folds `mut` at
-// coalesce time (#779) and hands back a mutable borrow of the field, the deep-mut read
+// coalesce time and hands back a mutable borrow of the field, the deep-mut read
 // view, so a deeper write relates the field covariantly under the mut-context
 // invariance. When the receiver is already concrete — an annotated `mut {…}` or a
 // borrow — it defers to valueProp's ordinary read: the deep-mut machinery already
@@ -1191,7 +1189,7 @@ func (c *checker) inferWriteReceiver(scope *Scope, lvl int, e ast.Expr) soltype.
 // access node a constraint failure points at; provNode is the node the fresh field
 // var's provenance records.
 func (c *checker) mutFieldRead(lvl int, blame ast.Node, provNode ast.Node, name string, recv soltype.Type) soltype.Type {
-	// Read-after-write (M4 C3): a field already written to the same receiver var
+	// Read-after-write: a field already written to the same receiver var
 	// returns the recorded concrete type, the same shortcut valueProp takes.
 	if c.fn != nil {
 		if v, ok := recv.(*soltype.TypeVarType); ok {
@@ -1209,7 +1207,7 @@ func (c *checker) mutFieldRead(lvl int, blame ast.Node, provNode ast.Node, name 
 	c.recordProv(fieldVar, provNode, MemberAccess)
 	c.constrain(blame, recv, &soltype.RefType{
 		Mut: true,
-		// A fresh lifetime imposes no obligation on the receiver (D2), matching the
+		// A fresh lifetime imposes no obligation on the receiver, matching the
 		// leaf write requirement in inferMemberAssign.
 		Lt: c.ctx.freshLifetime(lvl),
 		Inner: &soltype.ObjectType{
@@ -1240,11 +1238,11 @@ func (c *checker) recordWritten(recv soltype.Type, name string, t soltype.Type) 
 // constrainAssign asserts `source <: target` for a reassignment. For a UNION target
 // it applies the union-target rule — X <: (A | B) iff X <: A or X <: B — by trying
 // each member speculatively under a probe, committing the first that holds. constrain
-// itself has no UnionType-super rule until M6, so without this a legal assignment of a
+// itself has no UnionType-super rule yet, so without this a legal assignment of a
 // union member (`var a = if c { 1 } else { 2 }; a = 1`) would be wrongly rejected.
 // A non-union target takes the ordinary single-constraint path.
 //
-// KNOWN GAP (M6): when `source` is (or contains) an inference variable, committing the
+// KNOWN GAP: when `source` is (or contains) an inference variable, committing the
 // first matching member over-narrows it. `var a = 1 | 2; a = x` for an un-annotated
 // param `x` commits `x <: 1` and infers `x: 1` instead of the sound `x: 1 | 2`,
 // which can wrongly reject a later use of `x` that needs `2`. This is INCOMPLETE,
@@ -1253,7 +1251,7 @@ func (c *checker) recordWritten(recv soltype.Type, name string, t soltype.Type) 
 // through to constrain(source, target)" injects the COALESCED union node into source's
 // bound list and panics the coalescer (coalesced output must never re-enter the
 // graph). A correct fix needs first-class union subtyping with inference variables
-// — M6's deferred union/intersection rules in constrain. Pinned by
+// — the deferred union/intersection rules in constrain. Pinned by
 // TestInferAssignUnionTargetVarRHSOverNarrows.
 func (c *checker) constrainAssign(n ast.Node, source, target soltype.Type) {
 	union, ok := target.(*soltype.UnionType)
@@ -1300,15 +1298,15 @@ func bindingDecl(b ValueBinding) ast.Node {
 //
 // A spread element ([...xs]) splices the operand's element types into the literal.
 // For example, [...pair, 3] over pair: [number, string] builds
-// [number, string, number]. M4 handles only this concrete-literal splice: the
+// [number, string, number]. Only this concrete-literal splice is handled: the
 // operand must infer to a TupleType. An inexact operand ([number, ...]) has unknown
 // length, so it may only be spread as the last element. There its known prefix
 // extends the literal and its unknown tail makes the result inexact too. An inexact
 // operand anywhere else would put a later element at an unknown position, which is an
 // InexactTupleSpreadError. A spread of any other type is a SpreadNotTupleError. A
 // spread whose operand already errored is absorbed silently, so the recovery
-// sentinel does not cascade a second diagnostic. Two type-level cousins defer to
-// M7/M9: a tuple-spread type over an abstract operand [...P, x], and a typed
+// sentinel does not cascade a second diagnostic. Two type-level cousins are not yet
+// supported: a tuple-spread type over an abstract operand [...P, x], and a typed
 // variadic tail [number, ...Array<number>].
 func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Type {
 	elems := make([]soltype.Type, 0, len(e.Elems))
@@ -1346,9 +1344,9 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 // with a static key folds into the object. A static key is an identifier label, a
 // string-literal key, or a numeric key like {0: v}. The forms it does not cover
 // each report an UnsupportedNodeError and are skipped rather than panicking:
-//   - spreads ({...o}), deferred to M9 with object rest/spread,
-//   - method/constructor elements, which arrive with classes in M5,
-//   - computed keys ({[k]: v}), which need M9 index signatures,
+//   - spreads ({...o}), part of the not-yet-supported object rest/spread,
+//   - method/constructor elements, which arrive with classes,
+//   - computed keys ({[k]: v}), which need index signatures,
 //   - shorthand ({x}, a property with no value).
 //
 // Usage-inference depth builds on this elsewhere, for example inferring an open
@@ -1363,9 +1361,9 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	for _, elem := range e.Elems {
 		prop, ok := elem.(*ast.PropertyExpr)
 		if !ok {
-			// ObjSpreadExpr is object rest/spread, which is M9. The method and
+			// ObjSpreadExpr is object rest/spread, not yet supported. The method and
 			// constructor elements CallableExpr and ConstructorExpr arrive with
-			// classes in M5.
+			// classes.
 			c.reportUnsupported(elem)
 			continue
 		}
@@ -1376,8 +1374,8 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		}
 		name, ok := objKeyName(prop.Name)
 		if !ok {
-			// A computed key ({[k]: v}) carries no static property name, so it is M9.
-			// Blame the key itself, which has its own narrower span, not the whole
+			// A computed key ({[k]: v}) carries no static property name, so it is not
+			// yet supported. Blame the key itself, which has its own narrower span, not the whole
 			// property.
 			c.reportUnsupported(prop.Name)
 			continue
@@ -1427,14 +1425,14 @@ func (b *objElemBuilder) add(name string, t soltype.Type, optional, readonly boo
 // inferMember types a field read (recv.prop) in value position: it resolves the
 // member as a path and demands a value, so a property read returns its type while
 // a member that resolves to a namespace (A.B used as a value) is rejected.
-// Optional chaining (recv?.prop) needs union/undefined handling and is M6.
+// Optional chaining (recv?.prop) needs union/undefined handling and is not yet supported.
 func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.Type {
 	return c.demandValue(c.resolveMemberPath(scope, lvl, e), e)
 }
 
 // inferIndex types `obj[index]` in value position — namespace index access
 // (Foo["bar"]) and the constant-string bracket form of property access
-// (obj["foo-bar"]); dynamic value indexing is M7.
+// (obj["foo-bar"]); dynamic value indexing is not yet supported.
 func (c *checker) inferIndex(scope *Scope, lvl int, e *ast.IndexExpr) soltype.Type {
 	return c.demandValue(c.resolveIndexPath(scope, lvl, e), e)
 }
@@ -1445,7 +1443,7 @@ func (c *checker) inferIndex(scope *Scope, lvl int, e *ast.IndexExpr) soltype.Ty
 // the property structurally.
 func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pathResult {
 	if e.OptChain {
-		// Optional chaining (recv?.prop) is wholesale unsupported in M2; report it
+		// Optional chaining (recv?.prop) is wholesale unsupported; report it
 		// up front and do NOT descend into the receiver, so a single diagnostic
 		// stands for the construct instead of cascading the receiver's errors. The
 		// MemberExpr kind is supported — it is the optional-chain feature that is
@@ -1461,7 +1459,7 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pa
 		// A malformed `recv.` with no valid property name: the parser already
 		// reported the missing identifier, so constraining recv <: {"": res} here
 		// would only layer a spurious "object is missing property: " on top. Yield
-		// the ErrorType recovery sentinel (PR8) — NOT a raw never — so that if this
+		// the ErrorType recovery sentinel — NOT a raw never — so that if this
 		// read flows into a sink (`if recv. {}`, `await recv.`, `var x = recv.`) the
 		// sentinel absorbs in constrain rather than cascading `never <: …`. report
 		// already emitted the diagnostic here (via the parser), so no extra error.
@@ -1476,17 +1474,17 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pa
 }
 
 // valueMember reads property prop off a value receiver: it allocates a fresh
-// result var and constrains recv <: {prop: fieldVar, ...} — the basic form from the
-// plan's §3.2 table. The requirement is INEXACT: a member read asks only that the
+// result var and constrains recv <: {prop: fieldVar, ...} — the basic member-read
+// form. The requirement is INEXACT: a member read asks only that the
 // receiver has AT LEAST this property, so width tolerance is expressed as
 // inexactness rather than as an unconditionally width-tolerant arm.
 //
 // This inexactness currently flows out to the inferred param type. A param used
 // only through member reads coalesces to its upper bound, so `fn (p) { p.foo }`
-// infers an inexact param `{foo: number, ...}`. M4 phase B PR B1 ("close
-// usage-inferred shapes to exact") will seal that coalesced result to exact via
-// the Policy-A close, rendering `{foo: number}`. The per-access requirement minted
-// here stays inexact; only the coalesced result is closed.
+// infers an inexact param `{foo: number, ...}`. A later close of usage-inferred
+// shapes to exact will seal that coalesced result to exact,
+// rendering `{foo: number}`. The per-access requirement minted here stays inexact;
+// only the coalesced result is closed.
 //
 // The ObjectType <: ObjectType arm of constrain lowers fieldVar from the receiver's
 // matching property (so fieldVar coalesces to that property's type); a receiver
@@ -1506,7 +1504,7 @@ func (c *checker) valueMember(lvl int, e *ast.MemberExpr, recv soltype.Type) pat
 // — so a missing-property read blames the property, not the receiver. name is the
 // property key being read.
 func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name string, recv soltype.Type) pathResult {
-	// Read-after-write (M4 C3): a read of a field just written to the same receiver
+	// Read-after-write: a read of a field just written to the same receiver
 	// var returns the recorded concrete type instead of minting a fresh var, so
 	// `obj.x = 5; obj.x` is `number`. The write already constrained the receiver to
 	// carry the field, so no additional requirement is needed here.
@@ -1527,7 +1525,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 			}
 		}
 	}
-	// Strip the borrow wrapper before building the field-read requirement (D2):
+	// Strip the borrow wrapper before building the field-read requirement:
 	//   - Reading a field through a `mut`/`'a` borrow is always legal and yields
 	//     the field's value, not the borrow.
 	//   - It keeps the requirement off the RefType, so the RefType<:bare escape
@@ -1537,32 +1535,32 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	fieldVar := c.freshAt(lvl)
 	// The member-requirement record {prop: fieldVar} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner fieldVar, so the record would be a dead
-	// entry (§3.3).
+	// entry.
 	c.recordProv(fieldVar, provNode, MemberAccess)
 	c.constrain(blame, recvCarrier, &soltype.ObjectType{
 		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: fieldVar}},
 		Inexact: true, // "has at least this property" — width tolerance is inexactness
 	})
 	// fieldReadBorrow takes the whole receiver and unwraps mut/lifetime internally,
-	// applying PR 4 rule 4 to produce the field-bounded borrow.
+	// applying the field-borrow rule to produce the field-bounded borrow.
 	out := c.fieldReadBorrow(fieldVar, recv, name, lvl)
 	c.recordType(blame, out)
 	return pathResult{value: out}
 }
 
-// fieldReadBorrow applies PR 4 rule 4. A member read yields a borrow of the
-// field bounded by the receiver when the field is reference-shaped. An owned
+// fieldReadBorrow applies the field-borrow rule. A member read yields a borrow of
+// the field bounded by the receiver when the field is reference-shaped. An owned
 // receiver mints a fresh lifetime here. A borrowed receiver's lifetime passes
 // through. The wrap reads the field's static shape off a concrete receiver
 // carrier. A primitive or function field stays a value, since PrimType and
 // FuncType are excluded from RefInner. A field whose static type is itself an
 // immutable borrow copies the borrow out flat rather than nesting, setting up
-// PR 9's nested-borrow normalization.
+// the nested-borrow normalization.
 //
 // A receiver whose shape is not statically known returns the existing `fieldVar`
 // unchanged. A usage-inferred TypeVar carrier and an index path with no
 // concrete property both fall into this branch. The inferred-receiver paths
-// keep their pre-PR-4 behaviour, so only annotated reference shapes pick up
+// keep their earlier behaviour, so only annotated reference shapes pick up
 // the new borrow.
 func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
 	_, recvMut, recvLt := soltype.UnwrapRef(recv)
@@ -1578,8 +1576,8 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 	case *soltype.RefType:
 		if fieldType.Lt == nil {
 			// An owned-mutable field cell — formerly an explicit `mut {x}` field, the
-			// awkward interior-mutability shape now rejected at the annotation site
-			// (#779). Read it as a receiver-bounded borrow, capping `mut` by the
+			// awkward interior-mutability shape now rejected at the annotation site.
+			// Read it as a receiver-bounded borrow, capping `mut` by the
 			// receiver's mutability. The lazy deep-mut form does not mint these for a
 			// plain `mut {a: {x}}`; that field is bare, handled by the bare arm below.
 			// This arm is therefore defensive — kept for any owned-mut cell that still
@@ -1595,14 +1593,14 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 			// freely duplicable, so the read hands back the field's borrow at
 			// its own lifetime rather than nesting under the receiver's. A
 			// `&mut` field falls through to the no-wrap branch. Aliasing a
-			// mutable borrow needs the move-engine work in PR 6, and PR 9
+			// mutable borrow needs the move-engine work, and a later change
 			// retires the depth-two `&mut &mut` shape entirely.
 			return fieldType
 		}
 		return fieldVar
 	case *soltype.ObjectType, *soltype.TupleType:
 		// A bare object/tuple field is a value the receiver owns. Read it as a
-		// receiver-bounded borrow whose mutability follows the receiver (PR 14): a
+		// receiver-bounded borrow whose mutability follows the receiver: a
 		// mutable receiver yields `&mut`, an immutable one `&`. This is where the
 		// lazy deep-mut rule lives — under `mut {a: {x}}`, `p.a` reads `&mut {x}`.
 		lt := recvLt
@@ -1617,7 +1615,7 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 			// polarities and widen it into a union that peels the borrow.
 			return &soltype.RefType{Mut: true, Lt: lt, Inner: fieldType.(soltype.RefInner)}
 		}
-		// Immutable read: route through the fresh field-read var (PR 4).
+		// Immutable read: route through the fresh field-read var.
 		return &soltype.RefType{Mut: false, Lt: lt, Inner: fieldVar}
 	default:
 		return fieldVar
@@ -1630,7 +1628,7 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 // key is the bracket form of property access — obj["foo-bar"] reads the same
 // property as obj.foo would, and lets the source name a property whose key is not
 // a valid identifier. A dynamic key over a value (array element / index-signature
-// read) needs Array and index types from M7, so it stays unsupported here.
+// read) needs Array and index types, so it stays unsupported here.
 func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr) pathResult {
 	if e.OptChain {
 		c.reportUnsupportedFeature(e, "OptionalChain")
@@ -1652,8 +1650,8 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr) path
 		return c.valueProp(lvl, e, e.Index, name, obj.value)
 	}
 	// A dynamic key over a value (array element / index-signature read) needs Array
-	// and index types, which land in M7; until then it is outside the supported
-	// subset.
+	// and index types, which are not yet implemented; until then it is outside the
+	// supported subset.
 	c.reportUnsupported(e)
 	return pathResult{err: true}
 }
@@ -1695,7 +1693,7 @@ func constStringKey(e ast.Expr) (string, bool) {
 // key all map to a field. A numeric key is coerced to its string form the way
 // JavaScript does, so {0: v} names the field "0". A computed key ({[k]: v}) carries
 // no static name and returns false so the caller can raise a structured error.
-// Full index-signature support rides M9.
+// Full index-signature support is not yet implemented.
 func objKeyName(k ast.ObjKey) (string, bool) {
 	switch k := k.(type) {
 	case *ast.IdentExpr:
@@ -1709,9 +1707,9 @@ func objKeyName(k ast.ObjKey) (string, bool) {
 	}
 }
 
-// identPatName reads the name of an IdentPat. M2 binds IdentPat-only patterns
-// (mirroring M1's IdentPat-only FuncParam); the comma-ok form lets callers raise
-// a structured error for the destructuring patterns deferred to M4.
+// identPatName reads the name of an IdentPat. Only IdentPat patterns are bound
+// directly here; the comma-ok form lets callers raise a structured error for
+// destructuring patterns.
 func identPatName(pat ast.Pat) (string, bool) {
 	if ip, ok := pat.(*ast.IdentPat); ok {
 		return ip.Name, true
@@ -1720,10 +1718,9 @@ func identPatName(pat ast.Pat) (string, bool) {
 }
 
 // inferAwait types `await e`. The argument is constrained `<: Promise<U>` for a
-// fresh U, and U is the await's value type — exactly the rule M3's milestone
-// pins ("`await e` requires `e <: Promise<U>` for some `U` and produces `U`",
-// 01-milestones.md §M3). No auto-flatten: U may itself be a Promise, so
-// `await Promise<Promise<T>>` yields `Promise<T>` (Awaited<T> is M9). `await`
+// fresh U, and U is the await's value type — `await e` requires `e <: Promise<U>`
+// for some `U` and produces `U`. No auto-flatten: U may itself be a Promise, so
+// `await Promise<Promise<T>>` yields `Promise<T>` (Awaited<T> is not yet supported). `await`
 // outside an `async` function is rejected by the WALK (this function), not the
 // type rule — the argument is still walked so its own errors surface, and the
 // await contributes a `never` placeholder so a downstream consumer doesn't see a
@@ -1738,7 +1735,7 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 		if c.fn != nil {
 			enclosing = c.fn.node
 		}
-		// report returns the ErrorType recovery placeholder (PR8), so the rejected
+		// report returns the ErrorType recovery placeholder, so the rejected
 		// await never cascades a downstream `<unknown> <: T` on top of this error.
 		t := c.report(&AwaitOutsideAsyncError{Await: e, EnclosingFn: enclosing})
 		c.recordType(e, t)
@@ -1752,10 +1749,10 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 	// (`e.Arg`), already recorded by inferExpr; the synthesized Promise wrapper is
 	// internal scaffolding for the constraint, not a user-authored type.
 	//
-	// PR8: a failed argument is the ErrorType recovery placeholder, which absorbs in
+	// A failed argument is the ErrorType recovery placeholder, which absorbs in
 	// constrain, so `<unknown> <: Promise<U>` no longer cascades a spurious second
 	// diagnostic — res then stays unbound and coalesces to `never`, the right
-	// recovery for awaiting something broken. The M2-era isRecoveryPlaceholder guard
+	// recovery for awaiting something broken. The earlier isRecoveryPlaceholder guard
 	// this site used is gone.
 	c.constrain(e, arg, &soltype.PromiseType{Inner: res})
 	c.recordType(e, res)
@@ -1790,9 +1787,9 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	// Related() echo Span(). This matches inferAwait's synthesized Promise and
 	// inferMember's synthesized record requirement, both deliberately unrecorded.
 	//
-	// PR8: a failed condition is the ErrorType recovery placeholder, which absorbs
+	// A failed condition is the ErrorType recovery placeholder, which absorbs
 	// in constrain, so `<unknown> <: boolean` no longer cascades a spurious second
-	// diagnostic — the M2-era isRecoveryPlaceholder guard this site used is gone.
+	// diagnostic — the earlier isRecoveryPlaceholder guard this site used is gone.
 	c.constrain(e.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
 	consT, consDiverges := c.inferBlock(scope.Child(), lvl, &e.Cons)
 	var altT soltype.Type = &soltype.Void{}
@@ -1819,7 +1816,7 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 
 // inferMatch types a `match` expression. The scrutinee is inferred once. Each arm
 // then types its pattern against the scrutinee in a child scope carrying the arm's
-// bindings, the same E1 bindPattern path `val` destructuring uses. An optional `if`
+// bindings, the same bindPattern path `val` destructuring uses. An optional `if`
 // guard is typed as a boolean, then the arm body is inferred. Every non-diverging
 // arm body is constrained into one fresh branch-join var, exactly as inferIfElse
 // joins its two branches. A diverging arm contributes `never`, so when every arm
@@ -1856,13 +1853,13 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 }
 
 // checkMatchExhaustive reports a NonExhaustiveMatchError when no arm covers every
-// value the scrutinee can take. M4 drives the decision solely from the scrutinee's
+// value the scrutinee can take. The decision is driven solely from the scrutinee's
 // structural exactness. An exact object or tuple has a fixed shape, so a structural
 // arm matching it covers every value. An inexact object or tuple carries an open
 // tail of unknown values, so only an unguarded catch-all covers it. A catch-all is
 // a wildcard `_` or an identifier pattern. A scrutinee that is neither an object nor
-// a tuple is not checked here. Union-scrutinee exhaustiveness is M6 and enum
-// exhaustiveness is M5, and both extend this same path.
+// a tuple is not checked here. Union-scrutinee and enum exhaustiveness are not yet
+// implemented, and both extend this same path.
 func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type) {
 	inexact, isStructural := structuralInexact(soltype.CarrierOf(scrutinee))
 	if !isStructural {
@@ -1879,7 +1876,7 @@ func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type)
 }
 
 // structuralInexact returns the Inexact flag of an object or tuple type and whether
-// the type is one of those structural forms at all. M4's match exhaustiveness reads
+// the type is one of those structural forms at all. Match exhaustiveness reads
 // nothing else off the scrutinee.
 func structuralInexact(t soltype.Type) (inexact bool, ok bool) {
 	switch t := t.(type) {
@@ -1914,8 +1911,8 @@ func armCoversShape(p ast.Pat, inexact bool) bool {
 // irrefutablePat reports whether a pattern matches every value of a compatible
 // type, so it can never fail at runtime. A wildcard or identifier binds
 // unconditionally. An object or tuple pattern is irrefutable only when all of its
-// sub-patterns are. A literal pattern can fail, and the constructor patterns deferred
-// to M5 are refutable, so both return false.
+// sub-patterns are. A literal pattern can fail, and the not-yet-supported constructor
+// patterns are refutable, so both return false.
 func irrefutablePat(p ast.Pat) bool {
 	switch p := p.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
@@ -1937,7 +1934,7 @@ func irrefutablePat(p ast.Pat) bool {
 					return false
 				}
 			default:
-				// ObjRestPat is M9; treat anything else as refutable.
+				// ObjRestPat is not yet supported; treat anything else as refutable.
 				return false
 			}
 		}
@@ -1984,7 +1981,7 @@ func stmtDiverges(s ast.Stmt) bool {
 // arguments). The recursive switch is the right shape; the visitor is for the dual
 // problem of collecting every `return` regardless of position.
 //
-// MatchExpr is walked by inferMatch in M4 E2, so its arm reflects real source. A
+// MatchExpr is walked by inferMatch, so its arm reflects real source. A
 // match diverges when every arm body does. ThrowExpr and DoExpr are not yet walked
 // by the solver, which reports them unsupported, so those arms are unreachable from
 // real source today. They are kept in place so a form's divergence is already

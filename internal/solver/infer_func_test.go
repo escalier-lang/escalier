@@ -17,9 +17,9 @@ func render(t soltype.Type) string {
 	return soltype.Print(coalesce(t, soltype.Positive))
 }
 
-// renderBinding renders a value binding's (sole, in PR1) scheme to its Escalier
-// type string — the test-side view of what a name resolves to, including any
-// <T0, …> quantifier prefix generalization left behind.
+// renderBinding renders a value binding's sole scheme to its Escalier type string,
+// the test-side view of what a name resolves to, including any <T0, …> quantifier
+// prefix generalization left behind.
 func renderBinding(b ValueBinding) string {
 	return renderScheme(b.Schemes[0])
 }
@@ -37,10 +37,10 @@ func TestInferFuncExprAnnotated(t *testing.T) {
 	require.Same(t, got, c.info.TypeOf(e))
 }
 
-// An un-annotated param gets a fresh var. M2 is monomorphic — without
-// generalization (M3) the var coalesces to the lattice bounds (unknown in
-// contravariant param position, never in covariant return position) rather than
-// a <T0> quantifier.
+// An un-annotated param gets a fresh var. Inference is monomorphic here. Without
+// generalization the var coalesces to the lattice bounds, unknown in contravariant
+// param position and never in covariant return position, rather than a <T0>
+// quantifier.
 func TestInferFuncExprUnannotatedIsMonomorphic(t *testing.T) {
 	c := newChecker()
 	// fn (x) { return x }
@@ -118,14 +118,14 @@ func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 	require.Equal(t, "fn () -> number", render(ty))
 }
 
-// A bodyless function with an UNSUPPORTED return annotation recovers to `unknown`
-// (the honest "couldn't resolve the declared return"), not the synthetic `void`
-// (which would falsely signal "returns nothing" to callers). The annotation error
-// is still reported once. Reachable only via a nil-body AST — from source the
-// parser gives a declare fn a non-nil empty block (so hasBody is true).
+// A bodyless function with an UNSUPPORTED return annotation recovers to `unknown`,
+// the honest "couldn't resolve the declared return", not the synthetic `void` that
+// would falsely signal "returns nothing" to callers. The annotation error is still
+// reported once. Reachable only via a nil-body AST. From source the parser gives a
+// declare fn a non-nil empty block, so hasBody is true.
 func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
 	c := newChecker()
-	// declare fn now() -> bigint   (bigint is unsupported in M2)
+	// declare fn now() -> bigint   (bigint is unsupported)
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("now", testSpan()), nil, nil,
 		nil, ast.NewBigintTypeAnn(testSpan()), nil,
@@ -140,8 +140,8 @@ func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
 }
 
 // A param that arrives without a pattern must report a clean error, not panic on
-// p.Span() (which dereferences the nil pattern). Not reachable from the real
-// parser, but the walk must uphold M2's "never a panic" guarantee.
+// p.Span() which dereferences the nil pattern. Not reachable from the real parser,
+// but the walk must uphold the "never a panic" guarantee.
 func TestInferFuncExprNilParamPatternNoPanic(t *testing.T) {
 	c := newChecker()
 	e := funcExpr([]*ast.Param{{Pattern: nil}}, nil, block(exprStmt(numExpr(1))))
@@ -151,9 +151,9 @@ func TestInferFuncExprNilParamPatternNoPanic(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
-// A destructuring parameter binds its leaves and renders its pattern (M4 E1). The
-// leaves below go unused, so each slot coalesces to `unknown`. The point is that
-// the param is accepted and rendered, not reported as unsupported.
+// A destructuring parameter binds its leaves and renders its pattern. The leaves
+// below go unused, so each slot coalesces to `unknown`. The point is that the param
+// is accepted and rendered, not reported as unsupported.
 func TestInferFuncExprDestructuringParam(t *testing.T) {
 	c := newChecker()
 	// fn ([a, b]) { 1 }
@@ -169,7 +169,8 @@ func TestInferFuncExprDestructuringParam(t *testing.T) {
 }
 
 // A generic function (fn <T>() { ... }) is diagnosed rather than silently erased
-// to a monomorphic type — type schemes / generalization are M3.
+// to a monomorphic type, since type schemes and generalization are not supported
+// yet.
 func TestInferFuncExprGenericUnsupported(t *testing.T) {
 	c := newChecker()
 	// fn <T>() { 1 }
@@ -211,8 +212,8 @@ func TestInferCallArgMismatch(t *testing.T) {
 	require.Equal(t, "number", render(got))
 }
 
-// Too-many args at a direct call is the PR4 extra-arg lint (TooManyArgsError, the
-// uniform too-many message), not a FuncArityMismatch — and the constraint receives
+// Too-many args at a direct call is the extra-arg lint (TooManyArgsError, the
+// uniform too-many message), not a FuncArityMismatch, and the constraint receives
 // only the arity-matched prefix, so the lint is the SOLE diagnostic.
 func TestInferCallTooManyArgs(t *testing.T) {
 	c := newChecker()
@@ -228,8 +229,8 @@ func TestInferCallTooManyArgs(t *testing.T) {
 	require.Equal(t, "number", render(got))
 }
 
-// Too-few args at a direct call is the PR4 too-few lint (NotEnoughArgsError, the
-// symmetric twin of TooManyArgsError) — the demand is padded to the callee's arity
+// Too-few args at a direct call is the too-few lint (NotEnoughArgsError, the
+// symmetric twin of TooManyArgsError). The demand is padded to the callee's arity
 // so the lint is the SOLE diagnostic, not a doubled lint + FuncArityMismatch.
 func TestInferCallTooFewArgs(t *testing.T) {
 	c := newChecker()
@@ -298,9 +299,9 @@ func TestInferBlockReturnStmt(t *testing.T) {
 	require.Equal(t, "5", render(got))
 }
 
-// Each val introduces a fresh, independent binding; a later val of the same name
-// rebinds it (overwrite, no constraint linking the two), so the tail sees the
-// later type even though it is unrelated to the earlier one (§3.2).
+// Each val introduces a fresh, independent binding. A later val of the same name
+// rebinds it as an overwrite with no constraint linking the two, so the tail sees
+// the later type even though it is unrelated to the earlier one.
 func TestInferBlockRedeclarationRebinds(t *testing.T) {
 	c := newChecker()
 	// { val x = "hello"; val x = 5; x }
@@ -346,13 +347,13 @@ func TestInferFuncDecl(t *testing.T) {
 	require.Equal(t, "fn (x: number) -> number", render(ty))
 }
 
-// A truly recursive function: foo's body calls itself. PR-3 has no SCC driver
-// (that's PR-5), so foo is pre-bound to a fresh var the way inferComponent will,
-// letting the body reference itself through inferCall. With unconditional
-// recursion the function never returns — a base case would need a conditional,
-// which arrives in a later milestone — so its return type coalesces to `never`.
-// (`foo(x + 1)` would be the textbook shape, but `+` is a BinaryExpr, which
-// PR-3 doesn't type yet; `foo(x)` exercises the same recursive-call path.)
+// A truly recursive function: foo's body calls itself. Without an SCC driver here,
+// foo is pre-bound to a fresh var the way inferComponent will, letting the body
+// reference itself through inferCall. With unconditional recursion the function
+// never returns, since a base case would need a conditional, so its return type
+// coalesces to `never`. `foo(x + 1)` would be the textbook shape, but `+` is a
+// BinaryExpr that is not typed here; `foo(x)` exercises the same recursive-call
+// path.
 func TestInferFuncDeclSelfReference(t *testing.T) {
 	c := newChecker()
 	scope := NewScope()
