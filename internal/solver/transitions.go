@@ -182,12 +182,12 @@ func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (escapedMut, escap
 // object properties, and tuple elements.
 //
 // The shared visitor treats a TypeVarType as a leaf and does not descend into its
-// bounds (its bounds are a side graph, not tree children). So EnterType walks a type
-// variable's bounds itself, resolving a borrow reachable only through a usage-inferred
-// variable (#787). The bounds relevant to the current polarity are followed —
-// LowerBounds in Positive position, where the variable stands for what flowed into it
-// — so an escaped borrow joined into a branch variable is seen. seen guards the
-// pointer-keyed cycles a bounds graph can hold.
+// bounds, since those bounds are a side graph rather than tree children. So EnterType
+// walks a type variable's bounds itself to resolve a borrow reachable only through a
+// usage-inferred variable. It follows the bounds relevant to the current polarity, the
+// LowerBounds in Positive position, where the variable stands for what flowed into it.
+// An escaped borrow joined into a branch variable is therefore seen. The seen set
+// guards against cycles in the bounds graph.
 type escapeDetectVisitor struct {
 	foundMut bool
 	foundImm bool

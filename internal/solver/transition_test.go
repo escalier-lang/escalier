@@ -375,10 +375,10 @@ func TestBorrowEscapedToStatic(t *testing.T) {
 			Lt:    &soltype.LifetimeVar{ID: 8},
 			Inner: objT(),
 		}), false, false},
-		// #787: a borrow reachable only through a usage-inferred type variable. The
-		// recorded type is a bare TypeVarType whose LOWER bounds hold an escaped mut
-		// borrow, the shape a branch-join variable such as `sink = if c { p } else { … }`
-		// produces. The query descends into the bounds and reports the mutable escape.
+		// A borrow reachable only through a usage-inferred type variable. The recorded
+		// type is a bare TypeVarType whose LOWER bounds hold an escaped mut borrow, the
+		// shape a branch-join variable such as `sink = if c { p } else { … }` produces.
+		// The query descends into the bounds and reports the mutable escape.
 		{"mut escape in type-var lower bound", 9, &soltype.TypeVarType{
 			ID:          9,
 			LowerBounds: []soltype.Type{staticBorrow(true)},
