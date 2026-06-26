@@ -187,11 +187,19 @@ func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (escapedMut, escap
 // usage-inferred variable. It follows the bounds relevant to the current polarity, the
 // LowerBounds in Positive position, where the variable stands for what flowed into it.
 // An escaped borrow joined into a branch variable is therefore seen. The seen set
-// guards against cycles in the bounds graph.
+// guards against cycles in the bounds graph. It keys on the variable together with the
+// polarity, since the bounds followed depend on the polarity, so a variable reached at
+// both polarities is explored once in each direction.
 type escapeDetectVisitor struct {
 	foundMut bool
 	foundImm bool
-	seen     set.Set[*soltype.TypeVarType]
+	seen     set.Set[seenVar]
+}
+
+// seenVar identifies one visited (type variable, polarity) pair in the bounds walk.
+type seenVar struct {
+	tv  *soltype.TypeVarType
+	pol soltype.Polarity
 }
 
 func (v *escapeDetectVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -206,12 +214,13 @@ func (v *escapeDetectVisitor) EnterType(t soltype.Type, pol soltype.Polarity) so
 		}
 	case *soltype.TypeVarType:
 		if v.seen == nil {
-			v.seen = set.NewSet[*soltype.TypeVarType]()
+			v.seen = set.NewSet[seenVar]()
 		}
-		if v.seen.Contains(t) {
+		key := seenVar{tv: t, pol: pol}
+		if v.seen.Contains(key) {
 			return soltype.EnterResult{}
 		}
-		v.seen.Add(t)
+		v.seen.Add(key)
 		for _, bound := range t.BoundsAt(pol) {
 			bound.Accept(v, pol)
 		}

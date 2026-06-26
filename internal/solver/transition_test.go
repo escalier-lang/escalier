@@ -327,6 +327,21 @@ func objWithBorrowField(borrow *soltype.RefType) *soltype.ObjectType {
 	}}
 }
 
+// escapeVarBothPolarities builds `{a: V, g: fn(V) -> void}` where the one type variable
+// V carries an escaped mut borrow in its UpperBounds. Field `a` reaches V covariantly
+// and field `g`'s parameter reaches it contravariantly, so the walk meets V at both
+// polarities and only the contravariant meeting follows the UpperBounds to the escape.
+func escapeVarBothPolarities() *soltype.ObjectType {
+	v := &soltype.TypeVarType{ID: 13, UpperBounds: []soltype.Type{staticBorrow(true)}}
+	return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+		&soltype.PropertyElem{Name: "a", Type: v},
+		&soltype.PropertyElem{Name: "g", Type: &soltype.FuncType{
+			Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "p"}, Type: v}},
+			Ret:    &soltype.Void{},
+		}},
+	}}
+}
+
 // TestBorrowEscapedToStatic locks the lifetime-sort query G2 uses in place of the
 // dropped escape bits: a borrow forced to 'static is recognized at its mutability, an
 // owned value or an unforced borrow is not. PR 5 generalizes it to walk the whole
@@ -404,6 +419,13 @@ func TestBorrowEscapedToStatic(t *testing.T) {
 				Inner: objT(),
 			}},
 		}, false, false},
+		// The same type variable reached at both polarities, with its escaped borrow only
+		// in the UpperBounds. Field `a` reaches V covariantly, where BoundsAt follows the
+		// empty LowerBounds, and field `g`'s parameter reaches the same V contravariantly,
+		// where BoundsAt follows the UpperBounds and finds the escape. Memoizing the visited
+		// variable per polarity is what lets the second, contravariant visit run after the
+		// first; a variable-only memo would skip it and miss the escape.
+		{"escape in upper bound of a type var reached at both polarities", 13, escapeVarBothPolarities(), true, false},
 	}
 
 	for _, tc := range cases {
