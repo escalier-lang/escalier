@@ -135,7 +135,11 @@ func TestReadonlySubtypingFlowsThroughCallAndReturn(t *testing.T) {
 }
 
 // An owned-mutable field through an immutable receiver is read-only: the
-// container's immutability reaches into the field via recvMut.
+// container's immutability reaches into the field via recvMut. The annotation
+// itself is the awkward part — `{a: mut {x}}` shouldn't be writable as a user
+// type at all, since interior mutability is the proper mechanism (#618). #779
+// tracks rejecting the annotation outright once inference is updated to never
+// produce the same shape in a return type.
 func TestOwnedMutFieldThroughImmutableReceiverRejectsWrite(t *testing.T) {
 	src := "fn f(p: {a: mut {x: number}}) { p.a.x = 5 }"
 	_, _, errs := inferSource(t, src)
