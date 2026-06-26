@@ -148,43 +148,77 @@ func isMutableType(t soltype.Type) bool {
 	return false
 }
 
-// borrowEscapedToStatic reports whether the variable's recorded type carries a
-// top-level borrow whose lifetime is forced to 'static, and that borrow's
-// mutability. It is the lifetime-sort replacement for the dropped
-// HasStatic{Mut,Imm}Alias bits in M4 G2. A borrow escapes when it is stored where it
-// outlives the function. D3's constrainEscape then pins its lifetime `<: 'static`, so
-// the value has a permanent outside alias of its mutability.
+// borrowEscapedToStatic reports, for the variable's recorded type, whether it
+// carries a borrow forced to 'static at each mutability — escapedMut for a mutable
+// escaped borrow, escapedImm for an immutable one. It is the lifetime-sort
+// replacement for the dropped HasStatic{Mut,Imm}Alias bits in M4 G2. A borrow
+// escapes when it is stored where it outlives the function. D3's constrainEscape
+// then pins its lifetime `<: 'static`, so the value has a permanent outside alias of
+// that borrow's mutability.
 //
-// Only the top-level RefType is inspected, matching the bits' "this value escaped"
-// semantics rather than "a field of this value escaped". An owned value, a borrow
-// with an unforced lifetime, or an unrecorded variable returns escaped=false.
+// The whole recorded type is walked, not just its top-level RefType (PR 5). A borrow
+// nested in a field or tuple element — for example the `&'static mut {…}` field of an
+// object stored into a global — is now seen, closing the nested-escape gap that made
+// a move past such a borrow unsound. Both mutabilities are reported because a value
+// can carry both a mutable and an immutable escaped borrow in different positions,
+// and Rule 1 and Rule 2 each conflict with one of them. An owned value, a borrow with
+// an unforced lifetime, or an unrecorded variable returns both false.
 //
-// KNOWN GAP (M4 G2 carry-over): a borrow reachable only through a usage-inferred
-// TypeVarType, or one nested in a field, is not seen here. The deeper fix resolves a
-// value's borrows through the constraint graph rather than its top-level type. See the
-// G2 note in planning/simple_sub/m4-implementation-plan.md.
-func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (mut bool, escaped bool) {
+// REMAINING GAP (M4 G2 carry-over): a borrow reachable only through a usage-inferred
+// TypeVarType is still not seen, because the soltype visitor treats a type variable as
+// a leaf and does not descend into its bounds. Resolving a value's borrows through the
+// constraint graph rather than its structural type is the deeper G2 fix. See the G2
+// note in planning/simple_sub/m4-implementation-plan.md.
+func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (escapedMut, escapedImm bool) {
 	if c.fn == nil || c.fn.varIDTypes == nil {
 		return false, false
 	}
-	r, ok := c.fn.varIDTypes[varID].(*soltype.RefType)
-	if !ok || r.Lt == nil {
+	t, ok := c.fn.varIDTypes[varID]
+	if !ok || t == nil {
 		return false, false
 	}
-	switch lt := r.Lt.(type) {
-	case *soltype.StaticLifetime:
-		return r.Mut, true
-	case *soltype.LifetimeVar:
-		// The escape is the constraint `v <: 'static`, which adds 'static as an
-		// UPPER bound. Query that bound directly rather than the display-time
-		// forcedToStatic, which also matches a lower-bound 'static. A lower-bound
-		// 'static can arise from a join member and does not mean v escaped, so
-		// reusing forcedToStatic here would over-report an escape.
-		if soltype.ContainsLifetime(lt.UpperBounds, soltype.Static) {
-			return r.Mut, true
+	v := &escapeDetectVisitor{}
+	t.Accept(v, soltype.Positive)
+	return v.foundMut, v.foundImm
+}
+
+// escapeDetectVisitor records whether the walked type carries any borrow forced to
+// 'static, split by the borrow's mutability. It rewrites nothing; EnterType inspects
+// each RefType and the shared visitor carries the descent through inner carriers,
+// object properties, and tuple elements. A TypeVarType is a visitor leaf, so a borrow
+// reachable only through a usage-inferred variable is not reached — the REMAINING GAP
+// on borrowEscapedToStatic.
+type escapeDetectVisitor struct {
+	foundMut bool
+	foundImm bool
+}
+
+func (v *escapeDetectVisitor) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if r, ok := t.(*soltype.RefType); ok && lifetimeEscapedToStatic(r.Lt) {
+		if r.Mut {
+			v.foundMut = true
+		} else {
+			v.foundImm = true
 		}
 	}
-	return false, false
+	return soltype.EnterResult{}
+}
+
+func (*escapeDetectVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// lifetimeEscapedToStatic reports whether a borrow's lifetime has been forced to
+// outlive 'static — the escape constraint `v <: 'static`, which adds 'static as an
+// UPPER bound. A literal *StaticLifetime escapes outright. A lower-bound 'static does
+// not: it can arise from a join member and does not mean the borrow escaped, so the
+// display-time forcedToStatic, which also matches a lower bound, would over-report.
+func lifetimeEscapedToStatic(lt soltype.Lifetime) bool {
+	switch lt := lt.(type) {
+	case *soltype.StaticLifetime:
+		return true
+	case *soltype.LifetimeVar:
+		return soltype.ContainsLifetime(lt.UpperBounds, soltype.Static)
+	}
+	return false
 }
 
 // recordVarIDType records a tracked variable's soltype into the G2 escape bridge,
@@ -283,8 +317,12 @@ func (c *checker) checkMutabilityTransition(
 			// under Rule 1 and aliasMut == Immutable under Rule 2, i.e. aliasMut ==
 			// sourceMut. The escape check runs that same predicate for a permanent alias
 			// rather than a live local one. Checked before the liveness skip so a member
-			// that is locally dead but has escaped still counts.
-			if escMut, escaped := c.borrowEscapedToStatic(varID); escaped && escMut == sourceMut {
+			// that is locally dead but has escaped still counts. A value can carry an
+			// escaped borrow of each mutability, so select the one matching sourceMut:
+			// Rule 1's source is mutable and conflicts with a permanent MUTABLE escape,
+			// Rule 2's immutable source with a permanent IMMUTABLE escape.
+			escMut, escImm := c.borrowEscapedToStatic(varID)
+			if (sourceMut && escMut) || (!sourceMut && escImm) {
 				conflictingSet.Add(staticConflictName)
 			}
 			if !fn.liveness.IsLiveAfter(assignRef, varID) {
