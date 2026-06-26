@@ -126,8 +126,9 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 	}
 
 	// Fixed-point iteration. State rises monotonically in the finite three-point
-	// lattice, so this terminates. Reverse block order is a forward-analysis
-	// heuristic; back edges from loops are why more than one pass is needed.
+	// lattice, so this terminates. Forward block order is the heuristic for a
+	// forward analysis, the mirror of AnalyzeFunction's reverse order for backward
+	// liveness; back edges from loops are why more than one pass is needed.
 	changed := true
 	for changed {
 		changed = false
