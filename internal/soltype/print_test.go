@@ -92,6 +92,12 @@ func TestPrintRoundTrips(t *testing.T) {
 			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP(), Optional: true}}},
 			"{a?: number}",
 		},
+		{
+			// A readonly property renders a leading `readonly ` prefix.
+			"readonly property renders readonly",
+			&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP(), Readonly: true}}},
+			"{readonly a: number}",
+		},
 
 		// Functions. A bare (exact) function renders with no trailing marker; an
 		// inexact one renders a trailing `...`, and an optional param renders `x?: T`.
@@ -233,6 +239,91 @@ func TestPrintNestedPrecedence(t *testing.T) {
 			strP(),
 		}}
 		snaps.MatchInlineSnapshot(t, Print(ty), snaps.Inline(`{f: fn () -> number} | string`))
+	})
+}
+
+// A nested owned-mutable cell elides under a mutable wrapper so the rendered
+// type matches the surface annotation. An immutable wrapper does not elide.
+func TestPrintDeepMutElision(t *testing.T) {
+	mutOwned := func(inner RefInner) Type {
+		return &RefType{Mut: true, Inner: inner}
+	}
+	staticBorrow := func(mut bool, inner RefInner) Type {
+		return &RefType{Mut: mut, Lt: &StaticLifetime{}, Inner: inner}
+	}
+
+	t.Run("owned mut elides one nested level", func(t *testing.T) {
+		// mut {a: mut {x: number}} stored, prints as mut {a: {x: number}}.
+		ty := mutOwned(&ObjectType{Elems: []ObjTypeElem{
+			&PropertyElem{Name: "a", Type: mutOwned(&ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "x", Type: numP()},
+			}})},
+		}})
+		require.Equal(t, "mut {a: {x: number}}", Print(ty))
+	})
+
+	t.Run("owned mut elides three nested levels", func(t *testing.T) {
+		ty := mutOwned(&ObjectType{Elems: []ObjTypeElem{
+			&PropertyElem{Name: "a", Type: mutOwned(&ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "b", Type: mutOwned(&ObjectType{Elems: []ObjTypeElem{
+					&PropertyElem{Name: "c", Type: numP()},
+				}})},
+			}})},
+		}})
+		require.Equal(t, "mut {a: {b: {c: number}}}", Print(ty))
+	})
+
+	t.Run("&mut activates the same elision", func(t *testing.T) {
+		ty := staticBorrow(true, &ObjectType{Elems: []ObjTypeElem{
+			&PropertyElem{Name: "a", Type: mutOwned(&ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "x", Type: numP()},
+			}})},
+		}})
+		require.Equal(t, "&'static mut {a: {x: number}}", Print(ty))
+	})
+
+	t.Run("immutable wrapper preserves a user-explicit nested mut", func(t *testing.T) {
+		// An immutable outer is not deep-mut output, so the inner is preserved.
+		ty := &ObjectType{Elems: []ObjTypeElem{
+			&PropertyElem{Name: "a", Type: mutOwned(&ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "x", Type: numP()},
+			}})},
+		}}
+		require.Equal(t, "{a: mut {x: number}}", Print(ty))
+	})
+
+	t.Run("borrow field under mut keeps its & marker", func(t *testing.T) {
+		// A real borrow field keeps its `&mut` even under a mutable wrapper.
+		ty := mutOwned(&ObjectType{Elems: []ObjTypeElem{
+			&PropertyElem{Name: "a", Type: staticBorrow(true, &ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "x", Type: numP()},
+			}})},
+		}})
+		require.Equal(t, "mut {a: &'static mut {x: number}}", Print(ty))
+	})
+
+	t.Run("tuple element elides under mut", func(t *testing.T) {
+		ty := mutOwned(&TupleType{Elems: []Type{
+			numP(),
+			mutOwned(&ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "x", Type: numP()},
+			}}),
+		}})
+		require.Equal(t, "mut [number, {x: number}]", Print(ty))
+	})
+}
+
+// AnonLifetime renders as bare `&` / `&mut`, keeping a borrow distinguishable
+// from an owned value when its lifetime is elided.
+func TestPrintAnonLifetime(t *testing.T) {
+	body := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}
+	t.Run("mutable anon", func(t *testing.T) {
+		ty := &RefType{Mut: true, Lt: Anon, Inner: body}
+		require.Equal(t, "&mut {x: number}", Print(ty))
+	})
+	t.Run("immutable anon", func(t *testing.T) {
+		ty := &RefType{Mut: false, Lt: Anon, Inner: body}
+		require.Equal(t, "&{x: number}", Print(ty))
 	})
 }
 

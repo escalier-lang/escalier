@@ -144,19 +144,58 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 // mid-inference, a tuple — fall back to a full contravariant constraint, the prior
 // whole-inner behavior.
 func (c *Context) constrainWriteBack(target, source soltype.Type, seen set.Set[constraintKey]) []SolverError {
-	targetObj, ok1 := target.(*soltype.ObjectType)
-	sourceObj, ok2 := source.(*soltype.ObjectType)
-	if !ok1 || !ok2 {
+	targetObj, ok := target.(*soltype.ObjectType)
+	if !ok {
 		return c.constrain(target, source, seen)
 	}
 	var errs []SolverError
 	for _, elem := range targetObj.Elems {
 		p := soltype.AsProperty(elem)
-		if sp, ok := sourceObj.Prop(p.Name); ok {
-			errs = append(errs, c.constrain(p.Type, sp.Type, seen)...)
+		// A readonly source field can't fill a writable target slot. The literal
+		// `obj.f = v` site is caught in inferMemberAssign; this arm fires on
+		// structural subtyping flows (call args, returns, re-bindings).
+		if !p.Readonly && sourceFieldIsReadonly(source, p.Name) {
+			errs = append(errs, &ReadonlyFieldSubtypeError{Field: p.Name})
+			continue
+		}
+		// A readonly target needs only the covariant read view above, so skip the
+		// invariance-pinning writeBack. This lets a more specific source field
+		// fill a readonly target.
+		if p.Readonly {
+			continue
+		}
+		if sourceObj, ok := source.(*soltype.ObjectType); ok {
+			if sp, ok := sourceObj.Prop(p.Name); ok {
+				errs = append(errs, c.constrain(p.Type, sp.Type, seen)...)
+			}
 		}
 	}
+	// A non-object source (TypeVar, intersection, tuple) takes the prior whole-
+	// inner contravariant constraint; the readonly check above already inspected
+	// it via sourceFieldIsReadonly.
+	if _, ok := source.(*soltype.ObjectType); !ok {
+		errs = append(errs, c.constrain(target, source, seen)...)
+	}
 	return errs
+}
+
+// sourceFieldIsReadonly reports whether `source`'s named field is readonly. An
+// intersection inherits readonly from any object member. A TypeVar's readonly
+// flows through mergeObjectGroup at coalesce time, so it's not consulted here.
+func sourceFieldIsReadonly(source soltype.Type, name string) bool {
+	switch s := source.(type) {
+	case *soltype.ObjectType:
+		if p, ok := s.Prop(name); ok {
+			return p.Readonly
+		}
+	case *soltype.IntersectionType:
+		for _, m := range s.Types {
+			if sourceFieldIsReadonly(m, name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]) []SolverError {

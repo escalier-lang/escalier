@@ -149,6 +149,7 @@ func TestInferOwnedMutFromFreshLiteral(t *testing.T) {
 		require.Equal(t, "mut {x: number}", values["items"])
 	})
 	t.Run("nested object", func(t *testing.T) {
+		// Deep `mut` makes the upgrade reach every nested literal.
 		values, _, errs := inferSource(t, `val w: mut {p: {x: number}} = {p: {x: 0}}`)
 		require.Empty(t, errs)
 		require.Equal(t, "mut {p: {x: number}}", values["w"])
@@ -188,17 +189,12 @@ func TestInferOwnedMutFreshnessRecurses(t *testing.T) {
 	})
 }
 
-// The upgrade fires only at the top-level annotation, not recursively per nested `mut`
-// field. The fresh literal `{p: {x: 0}}` upgrades the outer object to owned-mutable, but
-// the inner `{x: 0}` is then constrained against the inner `mut {x: number}`, which the C2
-// gate rejects. The binding still adopts the annotation under error recovery. G2's
-// "immutable→mutable upgrade at every value-flow site" is what generalizes the upgrade to
-// reach a nested `mut` target.
-func TestInferOwnedMutNestedMutFieldNotUpgraded(t *testing.T) {
-	values, _, errs := inferSource(t, `val w: mut {p: mut {x: number}} = {p: {x: 0}}`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain immutable object <: mutable object", errs[0].Message())
-	require.Equal(t, "mut {p: mut {x: number}}", values["w"])
+// A fully fresh literal is uniquely owned at every level, so it upgrades to a
+// nested `mut` target the same way it does to a top-level one.
+func TestInferOwnedMutNestedMutFieldUpgraded(t *testing.T) {
+	values, _, errs := inferSource(t, `val w: mut {p: {x: number}} = {p: {x: 0}}`)
+	require.Empty(t, errs)
+	require.Equal(t, "mut {p: {x: number}}", values["w"])
 }
 
 // A `mut T` annotation lowers to a borrow (RefType{Mut: true}); a function

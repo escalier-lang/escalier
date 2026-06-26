@@ -240,15 +240,12 @@ func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 	}
 	resolved, elide := r.a.resolveLt(lv)
 	if elide {
-		if rt.Mut {
-			// Drop the elided lifetime to owned-mutable. (true, nil) is a valid borrow
-			// cell — NewRef does NOT collapse it — so keep the wrapper. Only the
-			// immutable (false, nil) cell below is the degenerate one.
-			return &soltype.RefType{Mut: true, Lt: nil, Inner: rt.Inner}
-		}
-		// RefType{false, nil} is the forbidden degenerate cell NewRef collapses — drop
-		// the wrapper and return the bare inner.
-		return rt.Inner
+		// Keep the `&` on an elided borrow by parking the lifetime on the Anon
+		// sentinel. The printer renders it as the bare `&`/`&mut` with no
+		// lifetime name, so the displayed type still records owned vs borrowed.
+		// Dropping to nil instead would collapse the wrapper to owned-mutable for
+		// mut and to the bare inner for immutable, hiding the borrow at call sites.
+		return &soltype.RefType{Mut: rt.Mut, Lt: soltype.Anon, Inner: rt.Inner}
 	}
 	return &soltype.RefType{Mut: rt.Mut, Lt: resolved, Inner: rt.Inner}
 }

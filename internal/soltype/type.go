@@ -233,6 +233,7 @@ type PropertyElem struct {
 	Name     string
 	Type     Type
 	Optional bool // `x?: T`; the M9 object-spread show-through rule keys off it
+	Readonly bool // `readonly f: T`; forbids `obj.f = …` only, orthogonal to deep mut
 }
 
 func (*PropertyElem) isObjTypeElem() {}
