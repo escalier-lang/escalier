@@ -148,6 +148,16 @@ writable `{a: T}` target, because a holder of the target could reassign through 
 and break the source's read-only guarantee. The reverse is allowed: a writable
 `{a: T}` value satisfies a `{readonly a: T}` target, since the target only ever reads.
 
+The borrow boundary is what lets one data structure **mix** mutable and immutable
+data. A borrow carries its own mutability, so it decouples a container's mutability
+from its elements'. `mut Array<&Point>` is a mutable array of immutable points. You
+may push, reorder, and reassign elements, but each `&Point` element is a read-only
+window, so you cannot mutate a point through it. Its dual, `Array<&mut Point>`, is an
+immutable array of mutable points. The array's shape is fixed, with no push, reorder,
+or reassign, yet each `&mut Point` element lets you write through to its point. The
+trade-off is ownership. The array holds borrows, so the points live elsewhere rather
+than in the array, and their lifetimes must outlive it.
+
 ### Borrows of a mutable owned value
 
 A mutable owned value may be borrowed many times over. Its borrows fall into two
