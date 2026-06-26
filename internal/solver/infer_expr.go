@@ -693,10 +693,10 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	// pass widen it into a union node that is not a `RefInner` and peel the borrow
 	// wrapper away. The pass widens because the mut-context flag pins the field
 	// invariant, so the same var occurs in both polarities.
-	chk := c.freshAt(lvl)
-	c.recordProv(chk, provNode, MemberAccess)
+	fieldVar := c.freshAt(lvl)
+	c.recordProv(fieldVar, provNode, MemberAccess)
 	propSelection := soltype.ObjectType{
-		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: propName, Type: chk}},
+		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: propName, Type: fieldVar}},
 		Inexact: true,
 	}
 	if e.Mut {
@@ -710,13 +710,13 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		c.constrain(e, recvCarrier, &propSelection)
 	}
 	// Choose the inner so the borrow wrapper survives. The co-occurrence pass
-	// peels any borrow whose inner is the bare check var `chk`, so giving the
+	// peels any borrow whose inner is the bare field var `fieldVar`, so giving the
 	// result a concrete inner is what keeps it rendering as a `RefType`. Pick
 	// the most precise shape available: a read-after-write cache hit first,
-	// then the property type from the receiver's annotation, and `chk` itself
+	// then the property type from the receiver's annotation, and `fieldVar` itself
 	// only when neither is known. borrowInnerOf peels owned-mut cells (deep-mut
 	// output) but leaves borrow fields intact so they keep their own lifetime.
-	var inner soltype.RefInner = chk
+	var inner soltype.RefInner = fieldVar
 	if cachedT != nil {
 		if ri, ok := borrowInnerOf(cachedT); ok {
 			inner = ri
@@ -738,7 +738,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	// fieldReadBorrow makes the same wrap decision valueProp uses, so hover
 	// on the inner `obj.f` reads the same whether it stands alone or under
 	// `&obj.f` or `&mut obj.f`.
-	c.recordType(accessNode, c.fieldReadBorrow(chk, recv, propName, lvl))
+	c.recordType(accessNode, c.fieldReadBorrow(fieldVar, recv, propName, lvl))
 	c.recordType(e, target)
 	return target
 }
@@ -1400,7 +1400,7 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pa
 }
 
 // valueMember reads property prop off a value receiver: it allocates a fresh
-// result var and constrains recv <: {prop: res, ...} — the basic form from the
+// result var and constrains recv <: {prop: fieldVar, ...} — the basic form from the
 // plan's §3.2 table. The requirement is INEXACT: a member read asks only that the
 // receiver has AT LEAST this property, so width tolerance is expressed as
 // inexactness rather than as an unconditionally width-tolerant arm.
@@ -1412,9 +1412,9 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pa
 // the Policy-A close, rendering `{foo: number}`. The per-access requirement minted
 // here stays inexact; only the coalesced result is closed.
 //
-// The ObjectType <: ObjectType arm of constrain lowers res from the receiver's
-// matching property (so res coalesces to that property's type); a receiver missing
-// the property surfaces as a MissingPropertyError stamped with the member's span.
+// The ObjectType <: ObjectType arm of constrain lowers fieldVar from the receiver's
+// matching property (so fieldVar coalesces to that property's type); a receiver
+// missing the property surfaces as a MissingPropertyError stamped with the member's span.
 func (c *checker) valueMember(lvl int, e *ast.MemberExpr, recv soltype.Type) pathResult {
 	// Record the fresh result var against the .prop IDENTIFIER (not the whole
 	// MemberExpr), so a missing-property read blames the property (.foo), not the
@@ -1436,7 +1436,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// carry the field, so no additional requirement is needed here.
 	//
 	// Provenance is deliberately NOT recorded on the returned type. Unlike the fresh
-	// `res` below, the recorded type is SHARED — it also sits in the `written` map, in
+	// `fieldVar` below, the recorded type is SHARED — it also sits in the `written` map, in
 	// the write's requirement, and is handed to every read of this field — so it is not
 	// the freshly-minted unique pointer recordProv requires (recording it would panic
 	// under debugProv and mis-blame the other aliases). A later constraint failure on
@@ -1458,18 +1458,18 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	//     guard fires only when the borrow flows into an owned slot, not on a read.
 	//   - A non-borrow receiver is returned unchanged, leaving plain vars untouched.
 	recvCarrier := soltype.CarrierOf(recv)
-	res := c.freshAt(lvl)
-	// The member-requirement record {prop: res} is deliberately NOT recorded —
-	// MissingPropertyError blames this inner res var, so the record would be a dead
+	fieldVar := c.freshAt(lvl)
+	// The member-requirement record {prop: fieldVar} is deliberately NOT recorded —
+	// MissingPropertyError blames this inner fieldVar, so the record would be a dead
 	// entry (§3.3).
-	c.recordProv(res, provNode, MemberAccess)
+	c.recordProv(fieldVar, provNode, MemberAccess)
 	c.constrain(blame, recvCarrier, &soltype.ObjectType{
-		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: res}},
+		Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: fieldVar}},
 		Inexact: true, // "has at least this property" — width tolerance is inexactness
 	})
 	// fieldReadBorrow takes the whole receiver and unwraps mut/lifetime internally,
 	// applying PR 4 rule 4 to produce the field-bounded borrow.
-	out := c.fieldReadBorrow(res, recv, name, lvl)
+	out := c.fieldReadBorrow(fieldVar, recv, name, lvl)
 	c.recordType(blame, out)
 	return pathResult{value: out}
 }
@@ -1483,24 +1483,24 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // immutable borrow copies the borrow out flat rather than nesting, setting up
 // PR 9's nested-borrow normalization.
 //
-// A receiver whose shape is not statically known returns the existing `res`
-// var unchanged. A usage-inferred TypeVar carrier and an index path with no
+// A receiver whose shape is not statically known returns the existing `fieldVar`
+// unchanged. A usage-inferred TypeVar carrier and an index path with no
 // concrete property both fall into this branch. The inferred-receiver paths
 // keep their pre-PR-4 behaviour, so only annotated reference shapes pick up
 // the new borrow.
-func (c *checker) fieldReadBorrow(res *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
+func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
 	_, recvMut, recvLt := soltype.UnwrapRef(recv)
 	obj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType)
 	if !ok {
-		return res
+		return fieldVar
 	}
 	prop, ok := obj.Prop(name)
 	if !ok {
-		return res
+		return fieldVar
 	}
-	switch ft := prop.Type.(type) {
+	switch fieldType := prop.Type.(type) {
 	case *soltype.RefType:
-		if ft.Lt == nil {
+		if fieldType.Lt == nil {
 			// An owned-mutable field cell — an explicit `mut {x}` field, the awkward
 			// interior-mutability shape (#779). Read it as a receiver-bounded borrow,
 			// capping `mut` by the receiver's mutability. The lazy deep-mut form no
@@ -1510,18 +1510,18 @@ func (c *checker) fieldReadBorrow(res *soltype.TypeVarType, recv soltype.Type, n
 			if lt == nil {
 				lt = c.ctx.freshLifetime(lvl)
 			}
-			return &soltype.RefType{Mut: ft.Mut && recvMut, Lt: lt, Inner: ft.Inner}
+			return &soltype.RefType{Mut: fieldType.Mut && recvMut, Lt: lt, Inner: fieldType.Inner}
 		}
-		if !ft.Mut {
+		if !fieldType.Mut {
 			// Flat copy-out of an immutable borrow field. Immutable borrows are
 			// freely duplicable, so the read hands back the field's borrow at
 			// its own lifetime rather than nesting under the receiver's. A
 			// `&mut` field falls through to the no-wrap branch. Aliasing a
 			// mutable borrow needs the move-engine work in PR 6, and PR 9
 			// retires the depth-two `&mut &mut` shape entirely.
-			return ft
+			return fieldType
 		}
-		return res
+		return fieldVar
 	case *soltype.ObjectType, *soltype.TupleType:
 		// A bare object/tuple field is a value the receiver owns. Read it as a
 		// receiver-bounded borrow whose mutability follows the receiver (PR 14): a
@@ -1535,14 +1535,14 @@ func (c *checker) fieldReadBorrow(res *soltype.TypeVarType, recv soltype.Type, n
 			// Mutable read: keep the concrete field shape as the borrow's inner, the
 			// role the eager form's owned-mut cell played, so a chained read `p.a.b.c`
 			// sees the nested structure and the borrow survives the co-occurrence pass.
-			// Routing it through `res` would pin the var invariant in both polarities
-			// and widen it into a union that peels the borrow.
-			return &soltype.RefType{Mut: true, Lt: lt, Inner: ft.(soltype.RefInner)}
+			// Routing it through `fieldVar` would pin the var invariant in both
+			// polarities and widen it into a union that peels the borrow.
+			return &soltype.RefType{Mut: true, Lt: lt, Inner: fieldType.(soltype.RefInner)}
 		}
 		// Immutable read: route through the fresh field-read var (PR 4).
-		return &soltype.RefType{Mut: false, Lt: lt, Inner: res}
+		return &soltype.RefType{Mut: false, Lt: lt, Inner: fieldVar}
 	default:
-		return res
+		return fieldVar
 	}
 }
 
