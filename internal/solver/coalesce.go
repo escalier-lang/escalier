@@ -441,15 +441,10 @@ func mergeObjectGroup(objs []*soltype.ObjectType, open bool) *soltype.ObjectType
 			} else {
 				optional[pe.Name] = optional[pe.Name] && pe.Optional // optional iff optional in all
 			}
-			// readonly is conservative: a merged field stays read-only if any
-			// contributing object marks it so, since a single read-only view forbids
-			// the reassignment the merged field must also forbid. Today this never
-			// over-rejects, since every requirement-builder mints PropertyElems with
-			// Readonly:false. The only sources of Readonly:true are user annotations
-			// resolved through resolveObjectTypeAnn. A future requirement-builder that
-			// emits a readonly field would let this `||` poison a writable use folded
-			// into the same group, surfacing a spurious ReadonlyFieldSubtypeError. New
-			// builders must keep Readonly:false to preserve that invariant.
+			// Conservative `||`: a merged field is readonly if any contributing
+			// object marks it so. Sound today only because requirement-builders
+			// always mint Readonly:false; a builder that ever emits true would
+			// poison co-folded writable uses with a spurious subtype error.
 			readonly[pe.Name] = readonly[pe.Name] || pe.Readonly
 			types[pe.Name] = appendDistinct(types[pe.Name], pe.Type)
 		}
