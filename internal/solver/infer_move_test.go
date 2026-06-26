@@ -169,6 +169,47 @@ func TestMoveFieldStoreConsumesSource(t *testing.T) {
 	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
 }
 
+// The move reconciliation is path-sensitive. A consuming move of `p` on one branch
+// does not suppress the exclusivity check for `p` on a sibling branch where it was not
+// moved: the immutable borrow `snapshot` of a still-mutated `p` is a real Rule 1
+// conflict and is reported, even though `p` is moved on the other branch. The consumed
+// lattice reads `p` as NotMoved on the else path, so the transition survives
+// reconciliation.
+func TestMovePathSensitiveExclusivityKept(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn store(p: {x: number}) {}
+		fn test(cond: boolean) {
+			val p: mut {x: number} = {x: 0}
+			if cond {
+				store(p)
+			} else {
+				val snapshot: &{x: number} = p
+				p.x = 5
+				snapshot
+			}
+		}
+	`)
+	require.Equal(t, []string{
+		"cannot assign 'p' to immutable 'snapshot': 'p' is still used mutably after this point",
+	}, Messages(errs))
+}
+
+// The reconciliation drops the redundant exclusivity conflict when the source really is
+// moved before the transition: storing `p` into the global consumes it, so the later
+// borrow `val snap = p` is a single use-after-move, not also a stale 'static-escape
+// transition.
+func TestMoveGlobalEscapeReportsSingleUseAfterMove(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		var sink = {x: 0}
+		fn cache(p: &mut {x: number}) {
+			sink = p
+			val snap: &{x: number} = p
+			snap
+		}
+	`)
+	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
+}
+
 // PR 6 retires the M4 G3 implicit reborrow: binding a borrowed source into a bare
 // owned annotation is now a borrow-into-owned escape, rejected rather than silently
 // reborrowed. The explicit `&` form remains the opt-in for an alias.

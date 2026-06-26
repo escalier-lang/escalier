@@ -140,13 +140,6 @@ type funcCtx struct {
 	// whole body — including loop back edges — has been walked, so a use that some
 	// reaching path moved is caught even when the move is textually later.
 	useSites []moveUse
-	// consumed holds the VarIDs the walk has moved so far, in straight-line order. It
-	// is the synchronous companion to moveSites: where moveSites feeds the post-pass
-	// lattice, consumed lets a flow site see, while walking, that its source was
-	// already moved. The mutability-transition check reads it to skip a binding whose
-	// source is a moved value, since the use-after-move the move engine reports
-	// subsumes the exclusivity conflict the stale 'static-escape query would raise.
-	consumed set.Set[liveness.VarID]
 	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
 	// the transition checker uses to query the lifetime sort for a `'static` escape in
 	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow

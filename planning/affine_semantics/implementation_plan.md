@@ -511,6 +511,18 @@ sites. Files for the deferred forcing:
   on one branch and untouched on another is consumed only on the moving paths, and a
   later use is an error only if some reaching path moved it.
 - Add `UseAfterMoveError`, reported against both the move site and the use site.
+- Reconcile the residual exclusivity check against the lattice. The mut/immut
+  transition check runs inline during the walk, so when a global write consumes a
+  source it would also raise the M4 G2 `borrowEscapedToStatic` self-conflict at a
+  later alias of that source, double-reporting alongside the use-after-move.
+  `reconcileMovedTransitions`
+  ([internal/solver/moves.go](../../internal/solver/moves.go)) drops a
+  `MutabilityTransitionError` whose source the lattice finds moved at the
+  transition's program point, since the move engine reports the use-after-move
+  there. The lattice query keeps this path-sensitive: a source moved on one branch
+  is `NotMoved` on a sibling, so a real exclusivity conflict there survives. PR 8
+  finishes this by driving the phase decision from the lattice directly rather than
+  inline-plus-reconcile; see PR 8.
 - This subsumes the "no Copy bound" requirement: reusing an owned type-parameter
   value triggers a second move and a use-after-move error, with no extra machinery.
   Add a test showing `fn dup<T>(x: T) -> [T, T]` fails and the `&T` form succeeds.
@@ -580,12 +592,32 @@ exclusivity.
   number of `&` borrows or a mutable phase with any number of `&mut` borrows, and
   the two never overlap. The existing liveness-driven mut/immut conflict check is
   the mechanism; this PR aligns it to phases over lifetimes.
+- Move the exclusivity check fully onto the consumed lattice. PR 6 runs the
+  mut/immut transition check inline during the walk and then reconciles it against
+  the lattice in a post-pass: `reconcileMovedTransitions`
+  ([internal/solver/moves.go](../../internal/solver/moves.go)) drops a
+  `MutabilityTransitionError` whose source the lattice finds moved at the transition
+  point, since the move engine already reports a use-after-move there. That
+  reconciliation is the seed of the phase reframing, not the end state. The inline
+  check still mutates the alias tracker as it walks and cannot consult the
+  post-walk lattice while running, so a transition that depends on per-path move
+  state is decided in two steps rather than one. PR 8 should finish the move:
+  drive the phase/exclusivity decision from the lattice and the alias set directly
+  in the post-pass, so the inline check and the separate reconciliation collapse
+  into one lattice-driven pass. With that done, the
+  [internal/solver/transition_test.go](../../internal/solver/transition_test.go)
+  static-escape unit tests, which pin the M4 G2 `borrowEscapedToStatic` self-conflict
+  the move now subsumes, can be retired or rephrased as phase tests.
 
 Tests: the thaw example with a use-after-move on the immutable source; the
 multiple-`&mut` example staying legal; an immutable borrow overlapping a `&mut`
-being rejected.
+being rejected; a borrow-alias exclusivity conflict on a branch where the value is
+NOT moved still reported, while the same conflict on a branch where it IS moved
+reads as a single use-after-move.
 
-Acceptance: both transitions are moves, and exclusivity reads as the phase rule.
+Acceptance: both transitions are moves, exclusivity reads as the phase rule, and
+the phase decision is taken in one lattice-driven post-pass rather than an inline
+check plus a reconciliation.
 
 ### PR 9 — Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization
 

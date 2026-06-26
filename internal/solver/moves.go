@@ -278,36 +278,10 @@ func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref livene
 		return
 	}
 	at.Add(varID)
-	if c.fn.consumed != nil {
-		c.fn.consumed.Add(varID)
-	}
 	if c.fn.moveNodes == nil {
 		c.fn.moveNodes = map[liveness.VarID]ast.Node{}
 	}
 	c.fn.moveNodes[varID] = moveNode
-}
-
-// sourceAlreadyMoved reports whether source names a binding the walk has already
-// consumed. A binding that borrows or aliases such a source is a use-after-move, which
-// the move engine reports, so the mutability-transition check skips it rather than
-// raising a redundant exclusivity conflict off the moved value's stale 'static-escape
-// state.
-//
-// The consumed set accumulates over the whole walk and is not path-sensitive, so a
-// move on one branch suppresses the exclusivity check for the same binding on a
-// sibling branch where it was not moved. That is a narrow false negative in the
-// exclusivity diagnostic, traded for keeping the common straight-line case free of a
-// double report. A path-sensitive answer would need the consumed lattice, which is not
-// built until after the walk.
-func (c *checker) sourceAlreadyMoved(source ast.Expr) bool {
-	if c.fn == nil || c.fn.consumed == nil {
-		return false
-	}
-	ident, ok := source.(*ast.IdentExpr)
-	if !ok || ident.VarID <= 0 {
-		return false
-	}
-	return c.fn.consumed.Contains(liveness.VarID(ident.VarID))
 }
 
 // checkUseAfterMoves runs the consumed-lattice dataflow over the function body's
@@ -319,8 +293,16 @@ func (c *checker) sourceAlreadyMoved(source ast.Expr) bool {
 // StateBefore reads the binding's state just before the read's statement, so a move
 // recorded AT that statement — the consume in `val q = p`, where reading p and
 // moving it share one statement — does not flag its own source read.
+//
+// It also reconciles the exclusivity diagnostic against the same lattice: a
+// mutability-transition error whose source the lattice finds already moved at the
+// transition point is subsumed by a use-after-move, so reconcileMovedTransitions drops
+// it.
 func (c *checker) checkUseAfterMoves() {
-	if c.fn == nil || c.fn.cfg == nil || len(c.fn.useSites) == 0 {
+	if c.fn == nil || c.fn.cfg == nil {
+		return
+	}
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
@@ -336,4 +318,35 @@ func (c *checker) checkUseAfterMoves() {
 			moveSite:    c.fn.moveNodes[u.varID],
 		})
 	}
+	c.reconcileMovedTransitions(info)
+}
+
+// reconcileMovedTransitions drops every mutability-transition error whose source the
+// consumed lattice finds moved on a path reaching the transition. Such an error is a
+// stale exclusivity conflict off a value the move engine already reports a
+// use-after-move for, so keeping it would double-report. Querying the path-sensitive
+// lattice rather than a synchronous flag is what makes this precise: a source moved on
+// only one branch is NotMoved on a sibling branch, so a real exclusivity conflict there
+// survives.
+//
+// The query is scoped to this body for free. Module-wide VarID numbering means this
+// body's lattice never marks another body's source moved, so an error from a different
+// body reads NotMoved here and is kept.
+//
+// A MaybeMoved source — moved on some but not all paths reaching the transition — is
+// dropped too, since keeping it would double-report alongside the conditional
+// use-after-move on the moving paths. That loses a real exclusivity conflict on the
+// non-moving paths of such a source, a narrow residual the PR 8 phase reframing closes
+// by deciding exclusivity from the lattice and alias set in one pass.
+func (c *checker) reconcileMovedTransitions(info *liveness.MoveInfo) {
+	kept := c.errs[:0]
+	for _, e := range c.errs {
+		if mt, ok := e.(*MutabilityTransitionError); ok && mt.sourceVarID > 0 {
+			if info.StateBefore(mt.ref, mt.sourceVarID) != liveness.NotMoved {
+				continue
+			}
+		}
+		kept = append(kept, e)
+	}
+	c.errs = kept
 }

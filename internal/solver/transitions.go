@@ -59,6 +59,13 @@ type MutabilityTransitionError struct {
 	MutToImmutable bool
 	// node is the transition site, used for blame (the decl or assignment).
 	node ast.Node
+	// sourceVarID and ref locate the transition's source binding and program point
+	// for the post-pass move reconciliation. When the consumed lattice finds the
+	// source already moved on a path reaching ref, the move engine reports a
+	// use-after-move there, which subsumes this exclusivity conflict, so
+	// reconcileMovedTransitions drops it.
+	sourceVarID liveness.VarID
+	ref         liveness.StmtRef
 }
 
 func (*MutabilityTransitionError) isSolverError()        {}
@@ -386,6 +393,8 @@ func (c *checker) checkMutabilityTransition(
 		ConflictingVars: conflicting,
 		MutToImmutable:  sourceMut && !targetMut,
 		node:            node,
+		sourceVarID:     sourceVarID,
+		ref:             assignRef,
 	})
 }
 
@@ -462,16 +471,6 @@ func (c *checker) trackAliasesForIdentPat(
 	// exclusivity rule that governs a retained borrow. consumeBindingInit records the
 	// consume for the same binding.
 	if c.movesSourceInto(init, bindingT) {
-		c.fn.aliases.NewValue(targetVarID, aliasMut)
-		return
-	}
-
-	// PR 6: borrowing or aliasing a source the walk has already moved is a
-	// use-after-move, which the move engine reports against this read. Register the
-	// target as a fresh value and skip the exclusivity check, so the stale
-	// 'static-escape state the consumed source still carries does not raise a second,
-	// redundant transition error.
-	if c.sourceAlreadyMoved(init) {
 		c.fn.aliases.NewValue(targetVarID, aliasMut)
 		return
 	}
@@ -575,14 +574,6 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	// aliasing, and let the move engine govern a later use of p. consumeReassignSource
 	// records the consume for the same assignment.
 	if c.movesSourceInto(rhs, targetType) {
-		c.fn.aliases.Reassign(targetVarID, nil, aliasMut)
-		return
-	}
-
-	// PR 6: reassigning from a source the walk has already moved is a use-after-move,
-	// reported by the move engine. Reassign to no source and skip the exclusivity
-	// check, matching the binding path.
-	if c.sourceAlreadyMoved(rhs) {
 		c.fn.aliases.Reassign(targetVarID, nil, aliasMut)
 		return
 	}
@@ -745,11 +736,9 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	c.fn.varIDTypes = varIDTypes
 	// Retain the CFG and the move-engine state. The body walk records consume sites
 	// into moveSites, which liveness.AnalyzeMoves folds into the branch-merged consumed
-	// lattice over these same blocks. consumed mirrors that synchronously for the
-	// transition check; both start empty for this body.
+	// lattice over these same blocks once the whole body is walked.
 	c.fn.cfg = cfg
 	c.fn.moveSites = map[liveness.StmtRef]set.Set[liveness.VarID]{}
-	c.fn.consumed = set.NewSet[liveness.VarID]()
 }
 
 // seedParamLeafAliases walks each parameter pattern recursively and seeds the alias
