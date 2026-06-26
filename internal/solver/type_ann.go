@@ -130,7 +130,17 @@ func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.
 		// the object shape cascade-safe — mirroring the Promise<bad> recovery.
 		var ft soltype.Type = c.freshAt(lvl)
 		if prop.Value != nil {
-			if t, ok := c.resolveTypeAnn(prop.Value, lvl); ok {
+			value := prop.Value
+			// An owned-mutable field `{a: mut {x}}` is rejected (#779): a `mut` cell
+			// nested inside a non-mut container is misleading, since the container's
+			// immutability already reaches into the field. Recover to the field's bare
+			// inner so the object keeps a sensible shape. A `&`/`&mut` borrow field is a
+			// reference to external storage, not an interior cell, so it stays legal.
+			if mta, ok := value.(*ast.MutableTypeAnn); ok {
+				c.report(&MutFieldError{Ann: mta})
+				value = mta.Target
+			}
+			if t, ok := c.resolveTypeAnn(value, lvl); ok {
 				ft = t
 			}
 		}
@@ -157,6 +167,14 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 		if _, isRest := el.(*ast.RestSpreadTypeAnn); isRest {
 			unsupported = true
 			continue
+		}
+		// An owned-mutable element `[mut {x}]` is rejected (#779), the tuple twin of
+		// the object-property rejection above: a `mut` cell nested inside a non-mut
+		// container is misleading. Recover to the element's bare inner. A `&`/`&mut`
+		// borrow element stays legal — it references external storage.
+		if mta, ok := el.(*ast.MutableTypeAnn); ok {
+			c.report(&MutFieldError{Ann: mta})
+			el = mta.Target
 		}
 		if t, ok := c.resolveTypeAnn(el, lvl); ok {
 			elems = append(elems, t)

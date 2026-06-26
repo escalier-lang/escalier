@@ -144,11 +144,11 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && isFreshlyConstructed(init) {
 		// Constrain a fresh literal against the borrow's immutable skeleton, then
 		// grant the owned-mutable type. Under the lazy deep-mut form (PR 14) the inner
-		// is usually already bare, so stripOwnedMut is a no-op; an explicit nested
-		// `mut {x}` field (#779) still carries owned-mut cells, which the strip peels
-		// so the immutable fresh literal flows into them covariantly. A fully fresh
-		// literal is uniquely owned at every level, so the upgrade is sound the whole
-		// way down.
+		// is already bare, and a nested `mut {x}` field inside a non-mut container is
+		// now rejected at the annotation site (#779), so stripOwnedMut is a defensive
+		// no-op here. It is kept so a fresh literal still flows covariantly into any
+		// owned-mut cell that reaches this point. A fully fresh literal is uniquely
+		// owned at every level, so the upgrade is sound the whole way down.
 		c.constrain(init, initT, stripOwnedMut(ref.Inner))
 		return annT
 	}
@@ -196,10 +196,11 @@ func (c *checker) reborrowAnnotation(initT, annT soltype.Type, lvl int) (soltype
 
 // stripOwnedMut returns t's deeply-immutable skeleton by peeling every owned-mut
 // cell (Mut set, Lt nil) and recursing through objects and tuples. Borrows are
-// left untouched. The lazy deep-mut form (PR 14) usually leaves nothing to strip,
-// since a plain `mut {a: {x}}` stores a bare inner; this peels the owned-mut cells
-// an explicit nested `mut {x}` field (#779) still carries, so a fresh literal can
-// upgrade into a deeply-mutable target the whole way down.
+// left untouched. Under the lazy deep-mut form (PR 14) a plain `mut {a: {x}}` stores
+// a bare inner, and a nested `mut {x}` field inside a non-mut container is now
+// rejected at the annotation site (#779), so there is usually nothing to strip; the
+// peel is retained defensively so a fresh literal can upgrade into any deeply-mutable
+// target the whole way down.
 func stripOwnedMut(t soltype.Type) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.RefType:
