@@ -150,11 +150,9 @@ func isMutableType(t soltype.Type) bool {
 
 // borrowEscapedToStatic reports, for the variable's recorded type, whether it
 // carries a borrow forced to 'static at each mutability — escapedMut for a mutable
-// escaped borrow, escapedImm for an immutable one. It is the lifetime-sort
-// replacement for the dropped HasStatic{Mut,Imm}Alias bits in M4 G2. A borrow
-// escapes when it is stored where it outlives the function. D3's constrainEscape
-// then pins its lifetime `<: 'static`, so the value has a permanent outside alias of
-// that borrow's mutability.
+// escaped borrow, escapedImm for an immutable one. A borrow escapes when it is stored
+// where it outlives the function. D3's constrainEscape then pins its lifetime
+// `<: 'static`, so the value has a permanent outside alias of that borrow's mutability.
 //
 // The whole recorded type is walked, not just its top-level RefType (PR 5). A borrow
 // nested in a field or tuple element — for example the `&'static mut {…}` field of an
@@ -300,9 +298,7 @@ func (c *checker) checkMutabilityTransition(
 		for varID, aliasMut := range aliasSet.Members {
 			// A borrow on this member forced to 'static is a permanent outside
 			// reference. It outlives the function, so no liveness check is meaningful
-			// and it always counts as a live alias of its escaped mutability. This is
-			// G2's lifetime-sort replacement for the dropped HasStatic{Mut,Imm}Alias
-			// bits.
+			// and it always counts as a live alias of its escaped mutability.
 			//
 			// The conflict test is escMut == sourceMut, compared against the SOURCE, not
 			// the target. Past the early return sourceMut != targetMut holds, so

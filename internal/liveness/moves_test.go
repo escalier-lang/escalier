@@ -10,7 +10,7 @@ import (
 
 // newBlock builds a CFG basic block with nStmts statement slots. AnalyzeMoves
 // reads only len(Stmts) to size its per-statement arrays, so nil slots are fine.
-func mvBlock(id, nStmts int) *BasicBlock {
+func newBlock(id, nStmts int) *BasicBlock {
 	return &BasicBlock{ID: id, Stmts: make([]ast.Stmt, nStmts)}
 }
 
@@ -21,9 +21,9 @@ func mvEdge(from, to *BasicBlock) {
 	to.Predecessors = append(to.Predecessors, from)
 }
 
-// mvCFG assembles a CFG from blocks. Blocks must be passed with IDs equal to
+// newCFG assembles a CFG from blocks. Blocks must be passed with IDs equal to
 // their index, matching BuildCFG's newBlock numbering.
-func mvCFG(blocks ...*BasicBlock) *CFG {
+func newCFG(blocks ...*BasicBlock) *CFG {
 	return &CFG{Entry: blocks[0], Exit: blocks[len(blocks)-1], Blocks: blocks}
 }
 
@@ -59,15 +59,15 @@ func TestJoinMoveState(t *testing.T) {
 // one reaching path moved it, the other did not.
 func TestMovesIfElseOneBranch(t *testing.T) {
 	const x VarID = 1
-	entry := mvBlock(0, 1) // cond
-	then := mvBlock(1, 1)  // move x
-	els := mvBlock(2, 0)
-	merge := mvBlock(3, 1) // use x
+	entry := newBlock(0, 1) // cond
+	then := newBlock(1, 1)  // move x
+	els := newBlock(2, 0)
+	merge := newBlock(3, 1) // use x
 	mvEdge(entry, then)
 	mvEdge(entry, els)
 	mvEdge(then, merge)
 	mvEdge(els, merge)
-	cfg := mvCFG(entry, then, els, merge)
+	cfg := newCFG(entry, then, els, merge)
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 1, StmtIdx: 0}: {x},
@@ -81,15 +81,15 @@ func TestMovesIfElseOneBranch(t *testing.T) {
 // When both branches move x it is Moved at the merge: every reaching path moved it.
 func TestMovesIfElseBothBranches(t *testing.T) {
 	const x VarID = 1
-	entry := mvBlock(0, 1)
-	then := mvBlock(1, 1)
-	els := mvBlock(2, 1)
-	merge := mvBlock(3, 1)
+	entry := newBlock(0, 1)
+	then := newBlock(1, 1)
+	els := newBlock(2, 1)
+	merge := newBlock(3, 1)
 	mvEdge(entry, then)
 	mvEdge(entry, els)
 	mvEdge(then, merge)
 	mvEdge(els, merge)
-	cfg := mvCFG(entry, then, els, merge)
+	cfg := newCFG(entry, then, els, merge)
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 1, StmtIdx: 0}: {x},
@@ -102,15 +102,15 @@ func TestMovesIfElseBothBranches(t *testing.T) {
 // A binding no path moves is NotMoved at the merge.
 func TestMovesIfElseNeitherBranch(t *testing.T) {
 	const x VarID = 1
-	entry := mvBlock(0, 1)
-	then := mvBlock(1, 1)
-	els := mvBlock(2, 1)
-	merge := mvBlock(3, 1)
+	entry := newBlock(0, 1)
+	then := newBlock(1, 1)
+	els := newBlock(2, 1)
+	merge := newBlock(3, 1)
 	mvEdge(entry, then)
 	mvEdge(entry, els)
 	mvEdge(then, merge)
 	mvEdge(els, merge)
-	cfg := mvCFG(entry, then, els, merge)
+	cfg := newCFG(entry, then, els, merge)
 
 	info := AnalyzeMoves(cfg, moves(nil))
 	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 3, StmtIdx: 0}, x))
@@ -121,16 +121,16 @@ func TestMovesIfElseNeitherBranch(t *testing.T) {
 func TestMovesMatchArms(t *testing.T) {
 	const x VarID = 1
 	build := func(armsMoving []int) *MoveInfo {
-		entry := mvBlock(0, 1)
-		arm1 := mvBlock(1, 1)
-		arm2 := mvBlock(2, 1)
-		arm3 := mvBlock(3, 1)
-		merge := mvBlock(4, 1)
+		entry := newBlock(0, 1)
+		arm1 := newBlock(1, 1)
+		arm2 := newBlock(2, 1)
+		arm3 := newBlock(3, 1)
+		merge := newBlock(4, 1)
 		for _, arm := range []*BasicBlock{arm1, arm2, arm3} {
 			mvEdge(entry, arm)
 			mvEdge(arm, merge)
 		}
-		cfg := mvCFG(entry, arm1, arm2, arm3, merge)
+		cfg := newCFG(entry, arm1, arm2, arm3, merge)
 		entries := map[StmtRef][]VarID{}
 		for _, arm := range armsMoving {
 			entries[StmtRef{BlockID: arm, StmtIdx: 0}] = []VarID{x}
@@ -150,15 +150,15 @@ func TestMovesMatchArms(t *testing.T) {
 // edge joins those into MaybeMoved.
 func TestMovesLoopBackEdge(t *testing.T) {
 	const x VarID = 1
-	entry := mvBlock(0, 0)
-	header := mvBlock(1, 1) // cond, use x
-	body := mvBlock(2, 1)   // move x
-	exit := mvBlock(3, 1)   // use x
+	entry := newBlock(0, 0)
+	header := newBlock(1, 1) // cond, use x
+	body := newBlock(2, 1)   // move x
+	exit := newBlock(3, 1)   // use x
 	mvEdge(entry, header)
 	mvEdge(header, body)
 	mvEdge(header, exit)
 	mvEdge(body, header) // back edge
-	cfg := mvCFG(entry, header, body, exit)
+	cfg := newCFG(entry, header, body, exit)
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 2, StmtIdx: 0}: {x},
@@ -172,8 +172,8 @@ func TestMovesLoopBackEdge(t *testing.T) {
 // the move, Moved after it and at every later statement.
 func TestMovesSequentialWithinBlock(t *testing.T) {
 	const x VarID = 1
-	b := mvBlock(0, 3) // s0: nothing, s1: move x, s2: use x
-	cfg := mvCFG(b)
+	b := newBlock(0, 3) // s0: nothing, s1: move x, s2: use x
+	cfg := newCFG(b)
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 0, StmtIdx: 1}: {x},
@@ -189,8 +189,8 @@ func TestMovesSequentialWithinBlock(t *testing.T) {
 // analysis: the state stays Moved, the unconditional use-after-move PR 6 reports.
 func TestMovesDoubleMoveStaysMoved(t *testing.T) {
 	const x VarID = 1
-	b := mvBlock(0, 2)
-	cfg := mvCFG(b)
+	b := newBlock(0, 2)
+	cfg := newCFG(b)
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 0, StmtIdx: 0}: {x},
@@ -205,15 +205,15 @@ func TestMovesDoubleMoveStaysMoved(t *testing.T) {
 // disturb y, which no path moves.
 func TestMovesIndependentBindings(t *testing.T) {
 	const x, y VarID = 1, 2
-	entry := mvBlock(0, 1)
-	then := mvBlock(1, 1)
-	els := mvBlock(2, 1)
-	merge := mvBlock(3, 1)
+	entry := newBlock(0, 1)
+	then := newBlock(1, 1)
+	els := newBlock(2, 1)
+	merge := newBlock(3, 1)
 	mvEdge(entry, then)
 	mvEdge(entry, els)
 	mvEdge(then, merge)
 	mvEdge(els, merge)
-	cfg := mvCFG(entry, then, els, merge)
+	cfg := newCFG(entry, then, els, merge)
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 1, StmtIdx: 0}: {x},
@@ -227,8 +227,8 @@ func TestMovesIndependentBindings(t *testing.T) {
 // DeclStmt's StmtRef points — takes effect at block entry, before statement 0.
 func TestMovesSyntheticEntryPosition(t *testing.T) {
 	const x VarID = 1
-	b := mvBlock(0, 1)
-	cfg := mvCFG(b)
+	b := newBlock(0, 1)
+	cfg := newCFG(b)
 
 	info := AnalyzeMoves(cfg, moves(map[StmtRef][]VarID{
 		{BlockID: 0, StmtIdx: -1}: {x},

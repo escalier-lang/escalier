@@ -1,6 +1,10 @@
 package liveness
 
-import "github.com/escalier-lang/escalier/internal/set"
+import (
+	"maps"
+
+	"github.com/escalier-lang/escalier/internal/set"
+)
 
 // MoveState is one binding's position in the consumed lattice — the per-binding
 // move tracking the affine move engine joins at every CFG merge. A binding moves
@@ -72,20 +76,27 @@ type MoveInfo struct {
 	// after[blockID][stmtIdx][v] is v's move state just after that statement —
 	// before with the statement's own moves applied.
 	after [][]map[VarID]MoveState
-	// blockIn[blockID][v] is v's state at the block's entry, the join of every
-	// predecessor's blockOut, before any move recorded at the synthetic -1
-	// position. StateBefore reads it for a StmtIdx -1 query, the position a
-	// decomposed DeclStmt's StmtRef points at (see BuildStmtToRef).
+	// A DeclStmt whose initializer branches is decomposed during CFG construction,
+	// so it occupies no real index in any block's statement list. BuildStmtToRef
+	// instead assigns its StmtRef the index -1, a synthetic position meaning "block
+	// entry, just before statement 0". A StateBefore or StateAfter call whose
+	// ref.StmtIdx is -1 — a "-1 query" — asks for v's move state at that entry
+	// position. blockIn and blockEntry hold the two answers such a query returns.
+	//
+	// blockIn[blockID][v] is v's state on entry to the block: the join of every
+	// predecessor's blockOut, taken before any move recorded at the -1 position is
+	// applied. StateBefore returns it for a -1 query.
 	blockIn []map[VarID]MoveState
-	// blockEntry[blockID][v] is blockIn with the block's -1 entry-position moves
-	// applied — the state just after the synthetic -1 position, which equals
-	// before[blockID][0] for a non-empty block. StateAfter reads it for a -1 query.
+	// blockEntry[blockID][v] is blockIn after the moves recorded at the block's -1
+	// position are applied, so it is the state just after that position. For a
+	// non-empty block it equals before[blockID][0], the state before statement 0.
+	// StateAfter returns it for a -1 query.
 	blockEntry []map[VarID]MoveState
 }
 
-// AnalyzeMoves runs the forward move-state dataflow over a CFG. moves names, per
-// statement, the VarIDs that statement moves — the consume sites PR 6 records
-// while walking the body. A statement absent from the map moves nothing.
+// AnalyzeMoves runs the forward move-state dataflow over a CFG. The moves map
+// records, for each statement, the VarIDs that statement moves — the consume sites
+// PR 6 collects while walking the body. A statement absent from the map moves nothing.
 //
 // The dataflow mirrors AnalyzeFunction's structure but runs FORWARD: liveness
 // flows backward from uses, moves flow forward from consume sites.
@@ -100,7 +111,7 @@ type MoveInfo struct {
 // fixed point converges because state only ever rises in the finite lattice.
 //
 // A StmtRef.StmtIdx of -1 is the synthetic position before a block's first
-// statement. moves entries at index -1 are applied at block entry, before
+// statement. The moves map entries at index -1 are applied at block entry, before
 // statement 0, matching how a decomposed DeclStmt's move would land.
 func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 	numBlocks := len(cfg.Blocks)
@@ -147,7 +158,11 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 	}
 
 	// Per-statement state within each block: start from blockIn and walk forward,
-	// applying each statement's moves in order.
+	// applying each statement's moves in order. applyMoves returns a fresh map and
+	// never mutates its input, so each map the cursor produces is immutable once
+	// created. The slots can therefore store the reference directly — logically equal
+	// points such as after[idx] and before[idx+1] share one map, which is safe because
+	// nothing writes to these maps after AnalyzeMoves returns.
 	before := make([][]map[VarID]MoveState, numBlocks)
 	after := make([][]map[VarID]MoveState, numBlocks)
 	blockEntry := make([]map[VarID]MoveState, numBlocks)
@@ -158,11 +173,11 @@ func AnalyzeMoves(cfg *CFG, moves map[StmtRef]set.Set[VarID]) *MoveInfo {
 
 		// Apply any moves recorded at the synthetic -1 entry position first.
 		state := applyMoves(blockIn[block.ID], movesAt(moves, block.ID, -1))
-		blockEntry[block.ID] = cloneMoveMap(state)
-		for idx := 0; idx < n; idx++ {
-			before[block.ID][idx] = cloneMoveMap(state)
+		blockEntry[block.ID] = state
+		for idx := range n {
+			before[block.ID][idx] = state
 			state = applyMoves(state, movesAt(moves, block.ID, idx))
-			after[block.ID][idx] = cloneMoveMap(state)
+			after[block.ID][idx] = state
 		}
 	}
 
@@ -192,6 +207,7 @@ func joinPreds(block *BasicBlock, blockOut []map[VarID]MoveState) map[VarID]Move
 				joined = JoinMoveState(joined, s)
 			}
 		}
+		// Keep the map sparse: an absent key already means NotMoved, so never store it.
 		if joined != NotMoved {
 			in[v] = joined
 		}
@@ -222,9 +238,7 @@ func movesAt(moves map[StmtRef]set.Set[VarID], blockID, stmtIdx int) set.Set[Var
 
 func cloneMoveMap(m map[VarID]MoveState) map[VarID]MoveState {
 	out := make(map[VarID]MoveState, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	return out
 }
 
