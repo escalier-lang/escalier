@@ -36,6 +36,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - Use the `Set` ADT from [internal/set/](internal/set/) (`set.NewSet[T]()`, `set.FromSlice(...)`) instead of `map[T]struct{}` or `map[T]bool`.
 - Don't shadow Go builtins (`any`, `error`, `new`, `len`, etc.) or imported type/package aliases with local identifiers. Pick a distinct name (e.g. `anyT`, `errVal`).
 - Avoid parentheticals in comments — they make comments hard to read, especially when nested or combined with em-dashes. Rewrite the aside as a plain sentence, fold it into the main clause, or drop it. Reserve parentheses for short, essential clarifications like a code reference or a concrete example. Prefer several short sentences over one sentence carrying multiple asides.
+- Write comments about what the code does now, not what it did before a change. Drop phrasing like "previously", "used to", "is now", "no longer", and "the old behavior", and don't make a PR number or milestone the subject of a sentence. A comment that narrates the diff goes stale the moment the next change lands. Describe the current behavior and its rationale instead, and leave the history to git.
 
 ## Writing tests
 
