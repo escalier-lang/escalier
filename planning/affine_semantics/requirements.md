@@ -115,37 +115,34 @@ responsible for the value and whether a transfer consumes the source. Mutability
 decides whether writes are allowed. Move/affine semantics governs the ownership
 axis; the mutability axis is governed by the existing exclusivity rule.
 
-### Mutability depth and type parameters
+### Mutability depth
 
-Mutability is **deep**. A `mut` applies to a type constructor's body and propagates
-through its concrete structure, so `mut {a: {b: {c: number}}}` makes every layer
+Mutability is **deep and uniform**. A `mut` applies to a type and propagates through
+its entire reachable structure, so `mut {a: {b: {c: number}}}` makes every layer
 writable, and `&mut {a: {x: number}}` lets you write `p.a.x`, not only `p.a`. The
 borrow and the mutability of `&mut` distribute together — the whole modifier applies
 to the body — so `&` reaches exactly as far as `mut`.
 
-A modifier stops only at a **type parameter**, which is inert: it does not cross into
-the type substituted for a parameter. Equivalently, `mut Foo<Point>` is
-`(mut Foo)<Point>` — apply `mut` to `Foo`'s body, leaving the `T` slot untouched, then
-substitute `Point` into that inert slot. For `type Foo<T> = {a: {b: {c: T}}}`,
-`mut Foo<Point>` makes the `a`, `b`, and `c` layers writable but leaves the `Point`
-immutable.
+The modifier flows through **type arguments** too; it does not stop at a type
+parameter. `mut Foo<Point>` makes both `Foo`'s body and the `Point` it holds writable.
+For `type Foo<T> = {a: {b: {c: T}}}`, `mut Foo<Point>` makes the `a`, `b`, and `c`
+layers and the `Point` itself all writable.
 
-The common container case falls out of this. `Array<T>` holds its elements in a
-type-parameter slot, so `mut Array<Point>` is a mutable array of immutable points:
-you may push, reorder, and reassign elements, but not mutate a point's fields. To get
-mutable elements you write the mutability into the argument, `mut Array<mut Point>`,
-and an immutable array of mutable points is `Array<mut Point>`. A `mut` written on a
-bare parameter is inert until the parameter is known, then takes its natural meaning,
-so `mut T` at `T = Point` is `mut Point`.
+The common container case follows. `Array<T>` owns its elements, so `mut Array<Point>`
+is a fully mutable array of mutable points: you may push, reorder, and reassign
+elements, *and* mutate a point's fields. `Array<Point>` with no `mut` is immutable all
+the way down. A bare `mut T` takes its natural meaning at every instantiation, so
+`mut T` at `T = Point` is `mut Point`, and the elements of `mut Array<T>` are `mut T`.
 
-Because deep `mut` flows through concrete structure, differentiating an inner object's
-mutability from its container's is done by **parameterizing**. Write
-`type Line<P> = {p1: P, p2: P}` and use `mut Line<Point>` for a mutable line of
-immutable points; a plain `type Line = {p1: Point, p2: Point}` under `mut` is mutable
-all the way down. The one field-level modifier is **`readonly`**, which forbids
-*reassigning* a field and nothing more. `{readonly a: T}` rejects `obj.a = …` but says
-nothing about the deep mutability of `a`'s value; `readonly` governs the slot, while
-`mut` and parameterization govern depth.
+Because mutability is uniform through the structure a value **owns**, depth is
+all-or-nothing: an owned value is mutable to its leaves or immutable to its leaves, the
+way a `mut`/non-`mut` binding governs everything it owns. There is no "mutable
+container, immutable element" type; to hold immutable data, the owner is immutable. The
+one boundary is a **borrow** — a `&`/`&mut` field is a window into another value and
+carries its own mutability, not the enclosing modifier's. The one field-level modifier
+is **`readonly`**, which forbids *reassigning* a field and nothing more.
+`{readonly a: T}` rejects `obj.a = …` but says nothing about the deep mutability of
+`a`'s value; `readonly` governs the slot, `mut` governs depth.
 
 ### Borrows of a mutable owned value
 
@@ -497,53 +494,46 @@ component moves as a whole: a program may return or store the graph, or keep usi
 its nodes locally, but not both. This is the single-binding move rule lifted to the
 connected component.
 
-## Freeze and Thaw
+## Freezing and thawing
 
-Freezing a value by moving it into an immutable binding is deep through the value's
-concrete structure, but it stops at type-parameter boundaries, since a modifier is
-inert to type parameters. So freezing a `Node` makes its `value` and its `peers`
-array immutable, but the `peers` elements have type `&mut Node` — the element type of
-`Array`, a type argument — so the container freeze never reaches them and they stay
-mutable. Closing that gap is exactly what `Freeze<T>` is for.
+Freezing a value means moving it into an immutable binding; thawing means moving it
+into a `val mut` binding. Because mutability is deep and uniform, both reach the whole
+structure the value owns — including container elements, which `mut` flows into through
+the element type argument. There is no separate utility type to convert mutable and
+immutable forms; the binding's mutability already governs the whole reachable owned
+structure, so the move *is* the freeze or thaw.
 
-To convert a whole structure between mutable and immutable, use the `Freeze<T>` and
-`Thaw<T>` utility types. `Freeze<T>` is a deep, recursive mapped type that rewrites
-every reachable `&mut` to `&` and every `mut` container to its immutable form;
-`Thaw<T>` is the opposite direction. For the node type above:
-
-```esc
-type Freeze<Node>        // { value: number, peers: Array<&Freeze<Node>> }
-type Thaw<Freeze<Node>>  // { value: number, peers: Array<&mut Node> } — recovers Node
-```
-
-`Freeze<Node>` recurses into the peer references, so a frozen node's edges point at
-frozen nodes; the result is a recursive, self-referential type, resolved by the same
-machinery that resolves `Node`.
-
-The types are purely type-level and carry no runtime cost: the value is unchanged,
-the type is stricter or looser. Soundness comes from the move, not the mapped type.
-Assigning a value into `Freeze<T>` is the mutable-to-immutable freeze move — it
-consumes the source and requires every mutable path to the reachable structure to be
-dead. `Thaw<T>` is the immutable-to-mutable move and requires no live immutable
-observer. The mapped type names the deep target; the move supplies the guarantee
-that no conflicting path survives.
+The transition carries no runtime cost: the value is unchanged, the type is stricter or
+looser. Soundness comes from the move. The freeze consumes the source and requires
+every mutable path to the reachable structure to be dead; the thaw consumes the source
+and requires no live immutable observer. The move is what guarantees no conflicting path
+survives, so the frozen value's type can read its formerly-`&mut` edges as `&`.
 
 This pairs with the connected-component move. When a graph is owned as a single
 component — a returned component, or an arena whose one binding owns every node —
 consuming that binding kills every mutable path at once, so the whole graph freezes
-in one sound move. Take the `build` function from the previous section, whose `Node`
-edges are `&mut` and so leave the returned graph mutable through them:
+in one sound move. Take the `build` function from the previous section. Binding its
+result immutably freezes the whole component, edges included:
 
 ```esc
-val g = build()                 // g: Node — the moved-out {a, b} component
-g.peers[0].value = 20           // OK — the `&mut` edge is a type argument of `Array`,
-                                // inert to g's immutability; this is the type-parameter gap
+val g = build()                 // g: Node — the moved-out {a, b} component, bound
+                                // immutably, so the whole component is now immutable
+// g.peers[0].value = 20        // ERROR: g is immutable to its leaves; the move that
+                                // produced it left no mutable path, so the edges read `&`
+print(g.peers[0].value)         // OK — read
+```
 
-val frozen: Freeze<Node> = g    // deep-freeze the whole component in one move; g consumed
-print(frozen.peers[0].value)    // OK — read
-// frozen.peers[0].value = 5    // ERROR: Freeze<Node> is deeply immutable; the edges are now `&`
+To keep the component writable, bind it mutably; to freeze one that is currently
+mutable, move it into an immutable binding, which consumes the source:
 
-val mut h: Thaw<Freeze<Node>> = frozen   // thaw back to a mutable graph; recovers Node; frozen consumed
+```esc
+val mut g = build()             // keep the component mutable
+g.peers[0].value = 20           // OK — mutable to the leaves
+
+val frozen = g                  // deep-freeze the whole component in one move; g consumed
+// frozen.peers[0].value = 5    // ERROR: frozen is deeply immutable; the edges are now `&`
+
+val mut h = frozen              // thaw back to a mutable graph in one move; frozen consumed
 h.peers[0].value = 7            // mutation allowed again
 ```
 
@@ -558,9 +548,9 @@ freeze creates a second mutable path into the component, and the freeze is then
 rejected:
 
 ```esc
-val g = build()
+val mut g = build()
 val first = g.peers[0]          // first: &mut Node — a live mutable borrow into the component
-val frozen: Freeze<Node> = g    // ERROR: `first` is a live mutable path into the
+val frozen = g                  // ERROR: `first` is a live mutable path into the
                                 // component, so "every mutable path dead" fails
 first.value = 5                 // the later use that keeps `first` live across the freeze
 ```
@@ -573,12 +563,14 @@ mutate a value an immutable view now depends on. Catching this needs alias track
 that reaches a borrow of an internal node, not only a borrow of the root `g`, which
 is the alias-set reasoning in "Relationship to the mutability-transition checker."
 
-Two caveats. `Thaw` is not a faithful inverse for a type with genuinely-immutable
-fields. It deep-mutables everything, so `Thaw<Freeze<T>>` recovers `T` only when `T`
-was fully mutable. And `Freeze<T>` is the opt-in to deep immutability *through type
-parameters*. A bare type is already deeply immutable in its own concrete structure,
-but a modifier is inert to type arguments, so a container's elements stay as their
-argument type spells them; `Freeze<T>` is what rewrites those element types too.
+One caveat. Thawing is not a faithful inverse for a component that mixes mutable and
+immutable edges. The freeze made every internal edge `&`, and the thaw makes every
+internal edge `&mut`, so a freeze followed by a thaw recovers the original type only
+when the whole component was mutable to begin with. An edge authored `&` independent of
+any freeze comes back `&mut` — sound, since the consuming move leaves the thawed value
+the sole owner, but wider than the author wrote. `readonly` is unaffected: it is a
+structural field annotation, not part of the `mut`/immutable wrapper, so it survives a
+freeze and thaw unchanged.
 
 ## Why the invariant holds
 
@@ -932,9 +924,10 @@ policy choosing it.
   moves apply at element granularity, as in the partial-moves section.
 - **Functions** are value types. They copy and are never wrapped in `RefType`. The
   lifetimes inside a function signature elide or show by the display rules.
-- **Generic containers** such as `Array<T>` own their elements, so `arr[i]` yields a
-  `&T` bounded by the array's lifetime, and `&mut Array<T>` is a mutable borrow of
-  the container.
+- **Generic containers** such as `Array<T>` own their elements, so an index read
+  borrows an element bounded by the array's lifetime. Mutability is uniform with the
+  container: `arr[i]` off an immutable array yields `&T`, and off a `mut`/`&mut` array
+  yields `&mut T`, since `mut` reaches through the element type argument.
 - **Conditional and mapped types** compute a shape without reference to ownership.
   The wrapper is applied to the computed result, so a conditional type that selects
   between branches yields a pointee shape that a borrow then wraps.
@@ -944,11 +937,11 @@ policy choosing it.
 - **Linearity / mandatory consumption.** Values need not be consumed; unused
   owned values are dropped. Out of scope.
 - **Interior-mutability escape hatches.** Moving a self-contained cyclic or acyclic
-  graph is specified above under "Moving a graph," and `Freeze`/`Thaw` convert such a
-  graph between mutable and immutable. What remains out of scope is the case those do
-  not cover: a mutable cyclic structure whose nodes are referenced from outside the
-  graph, with no single owner — a `Cell`-like wrapper, noted in #618 as a separate
-  concern.
+  graph is specified above under "Moving a graph," and the freeze/thaw moves convert
+  such a graph between mutable and immutable. What remains out of scope is the case
+  those do not cover: a mutable cyclic structure whose nodes are referenced from
+  outside the graph, with no single owner — a `Cell`-like wrapper, noted in #618 as a
+  separate concern.
 - **Field-granular tracking depth.** Partial moves target field granularity. How
   deep the tracking goes through nested objects and through dynamic index
   expressions is an implementation-precision question for the plan, with the

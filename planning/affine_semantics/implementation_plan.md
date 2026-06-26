@@ -48,13 +48,15 @@ The move-engine work, PRs 1 through 8, builds only on this M4 substrate. The
 type-former PRs, 9 and 10, additionally depend on **M6** of
 [planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md), which lands
 union and intersection formers together with union-scrutinee narrowing. PR 11, the
-connected-component moves, is a further move-engine extension and stays on M4. PR 12,
-`Freeze`/`Thaw`, additionally depends on **M9**, the mapped and conditional type
-operators. PR 13, deep `mut` with `readonly`, is foundational mut-semantics work that
-stays on M4 and is best sequenced early, since PR 12 and the affine model's mutability
-all build on it. PR 14 reshapes the PR 13 representation from an eager lowering to a
-lazy one that stores the surface annotation, also on M4. So PRs 1 through 8, 11, 13,
-and 14 can proceed once M4 is in place, 9 and 10 wait on M6, and 12 waits on M9.
+connected-component moves, is a further move-engine extension and stays on M4. PR 12 is
+retired: because mutability is uniformly deep, the freeze/thaw binding moves (PR 8) and
+the connected-component move (PR 11) already convert a whole graph between mutable and
+immutable, so no `Freeze`/`Thaw` mapped type and no M9 dependency remain. PR 13, deep
+uniform `mut` with `readonly`, is foundational mut-semantics work that stays on M4 and
+is best sequenced early, since the affine model's mutability builds on it. PR 14
+reshapes the PR 13 representation from an eager lowering to a lazy one that stores the
+surface annotation, also on M4. So PRs 1 through 8, 11, 13, and 14 can proceed once M4
+is in place, and 9 and 10 wait on M6.
 
 ## Parsing borrows without a syntax mode
 
@@ -248,8 +250,8 @@ lifetime. Chained access `a.b.c` composes the rule at each link.
 | 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3, M6 | Medium |
 | 10 | Mutable narrowed binding with pinned discriminant | 8, 9, M6 | Medium |
 | 11 | Connected-component moves for graphs | 6, 7 | Large |
-| 12 | `Freeze`/`Thaw` deep mut↔immut utility types | 8, 11, 13, M9 | Large |
-| 13 | Deep `mut`, type-parameter inertness, and `readonly` | 1, 2 | Medium |
+| 12 | ~~`Freeze`/`Thaw` utility types~~ — retired; subsumed by uniform deep `mut` + the freeze/thaw moves (PR 8, 11) | — | — |
+| 13 | Deep, uniform `mut` and `readonly` | 1, 2 | Medium |
 | 14 | Lazy deep `mut`: store the surface form, push the rule to access and constrain | 13 | Large |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
@@ -647,52 +649,40 @@ binding is rejected.
 Acceptance: a self-contained graph, cyclic or acyclic, can be returned or stored;
 externally-aliased nodes still error.
 
-### PR 12 — `Freeze`/`Thaw` deep mut↔immut utility types
+### PR 12 — retired (`Freeze`/`Thaw` utility types)
 
-Goal: the `Freeze<T>` and `Thaw<T>` utility types for deep mutability conversion that
-reaches *through type-parameter boundaries* — the one place deep `mut` and the
-freeze/thaw moves stop (PR 13), so a container's element types get rewritten too. See
-"Freeze and Thaw" in the requirements. Depends on the mapped/conditional-type
-machinery (M9), the freeze/thaw moves (PR 8), and deep `mut` (PR 13).
+This PR is removed. It existed to convert a structure between mutable and immutable
+*through type-parameter boundaries*, the one place an earlier design let deep `mut`
+stop. With mutability uniformly deep (PR 13), `mut` already flows through type
+arguments into a container's element types, so there is no boundary left for a mapped
+type to cross. Freezing and thawing are then just the binding moves: moving a value
+into an immutable binding freezes it, into a `val mut` binding thaws it, each reaching
+the whole owned structure. A whole graph converts in one move via the connected-
+component move (PR 11) — consuming the one owning binding kills every mutable path at
+once, which is what licenses reading the component's `&mut` edges as `&`. The M9
+mapped/conditional-type machinery is no longer a dependency of the affine model. See
+"Freezing and thawing" in the requirements.
 
-- Add the modifier-rewrite capability to mapped/conditional types: a type-level
-  operator that matches a `&mut`/`mut` reference and yields its immutable form, and
-  the inverse, analogous to TypeScript's `-readonly`/`+readonly` but on the
-  borrow/`mut` axis, applied recursively.
-- Define `Freeze<T>` and `Thaw<T>` as recursive mapped-plus-conditional types over
-  objects, arrays, tuples, and borrows, with the self-referential recursion resolved
-  by the existing recursion machinery, so `Freeze<Node>` is the recursive
-  `{ value: number, peers: Array<&Freeze<Node>> }`.
-- Wire soundness to the move, not the mapped type: assigning into `Freeze<T>` is the
-  mutable-to-immutable freeze move from PR 8, and `Thaw<T>` the immutable-to-mutable
-  move, each reusing that PR's preconditions — all mutable paths dead, or no live
-  immutable observer. There is no runtime transformation; the value is unchanged.
-- Compose with PR 11: a single-owner or component-moved graph freezes in one move,
-  because consuming the one binding kills every mutable path at once.
+### PR 13 — Deep, uniform `mut` and `readonly`
 
-Tests: `Freeze<Node>` renders as the deep-immutable recursive type; `Thaw<Freeze<Node>>`
-recovers `Node`; a component-owned graph frozen in one move; a write through a
-`Freeze<>` value rejected; the immutable-field over-thaw caveat asserted.
-
-Acceptance: `Freeze`/`Thaw` produce the deep types and are sound through the
-freeze/thaw moves, with no runtime cost.
-
-### PR 13 — Deep `mut`, type-parameter inertness, and `readonly`
-
-Goal: make `mut` deep with type parameters inert, and add the `readonly` field
-modifier. This is foundational mut-semantics work that the affine model and PR 12
-build on; it depends only on the parser (PR 1) and the `&`/`mut` lowering (PR 2) and
-can land early, independent of the move engine. See "Mutability depth and type
-parameters" in the requirements.
+Goal: make `mut` deep and uniform — flowing through a type's concrete structure *and*
+through its type arguments — and add the `readonly` field modifier. This is
+foundational mut-semantics work that the affine model builds on; it depends only on the
+parser (PR 1) and the `&`/`mut` lowering (PR 2) and can land early, independent of the
+move engine. See "Mutability depth" in the requirements.
 
 - Lower a `mut`/`&mut` annotation by setting `RefType.Mut` deeply through the type's
-  concrete structure, not just the outermost `RefType`. Apply the modifier to the
-  type constructor's body *before* type-argument substitution, so a type parameter is
-  inert: `mut Foo<Point>` is `(mut Foo)<Point>`. The same distribution covers the `&`
-  of `&mut`, so borrow-ness and mutability reach equally far and both stop at the
-  parameter slot.
-- Treat a bare `mut T` as inert until `T` is instantiated, then take its natural
-  meaning, so `mut T` at `T = Point` lowers to `mut Point`.
+  whole reachable structure, not just the outermost `RefType`. The modifier flows
+  through type arguments as well, so `mut Foo<Point>` makes both `Foo`'s body and the
+  substituted `Point` writable; the same distribution covers the `&` of `&mut`, so
+  borrow-ness and mutability reach equally far. A `&`/`&mut` field is the one boundary:
+  the enclosing modifier does not flip an explicitly-written borrow field's mutability.
+- Treat a bare `mut T` as the mutable view at every instantiation, so `mut T` at
+  `T = Point` lowers to `mut Point`, and `mut Array<T>` yields `mut T` elements. Real
+  type-argument resolution for stdlib containers lands with TypeRef support (M7); until
+  then the uniform-deep rule is exercised on the structural object/tuple forms, and the
+  container element case follows the same `recvMut` propagation once `Array<T>`
+  resolves.
 - Parser: add the `readonly` field modifier to object type annotations
   ([internal/parser/type_ann.go](../../internal/parser/type_ann.go)), and lower it to
   a per-field no-reassignment flag on the object type. `readonly` governs only whether
@@ -700,13 +690,13 @@ parameters" in the requirements.
 - This changes the current shallow-`mut` lowering, so migrate the affected solver
   snapshots.
 
-Tests: `mut Array<Point>` is a mutable array of immutable points; `mut {a: {b}}` and
-`&mut {a: {x}}` are deep; `mut Line<Point>` over `type Line<P> = {p1: P, p2: P}` keeps
-the points immutable while a concrete `mut Line` is deep; `readonly` rejects field
-reassignment but still permits mutating the field's value when that value is mutable.
+Tests: `mut Array<Point>` is a fully mutable array of mutable points; `mut {a: {b}}`
+and `&mut {a: {x}}` are deep; `mut Foo<Point>` over `type Foo<T> = {a: T}` makes both
+the `a` layer and the `Point` writable; `readonly` rejects field reassignment but still
+permits mutating the field's value when that value is mutable.
 
-Acceptance: `mut`/`&mut` are deep with type parameters inert, and `readonly` forbids
-reassignment only.
+Acceptance: `mut`/`&mut` are deep and uniform, flowing through type arguments, and
+`readonly` forbids reassignment only.
 
 ### PR 14 — Lazy deep `mut`: store the surface form, push the rule to access and constrain
 
@@ -788,11 +778,11 @@ than through the field types.
 - **Cross-package moves.** Move behaviour at the boundary of imported, body-less
   declarations depends on declared lifetimes and is left to the library-import
   work, consistent with the requirements.
-- **Interior-mutability escape hatches.** Moving a self-contained graph (PR 11) and
-  `Freeze`/`Thaw` (PR 12) cover the cyclic and acyclic cases where the graph owns its
-  own nodes. What stays deferred is the case they do not: a mutable cyclic structure
-  whose nodes are referenced from outside the graph, with no single owner — a
-  `Cell`-like wrapper, tracked separately under #618.
+- **Interior-mutability escape hatches.** Moving a self-contained graph (PR 11) plus
+  the freeze/thaw binding moves (PR 8) cover the cyclic and acyclic cases where the
+  graph owns its own nodes. What stays deferred is the case they do not: a mutable
+  cyclic structure whose nodes are referenced from outside the graph, with no single
+  owner — a `Cell`-like wrapper, tracked separately under #618.
 - **Diagnostic wording.** Each PR ships a working diagnostic; final wording and
   blame spans for use-after-move and move-on-escape are tuned as the engine
   settles.
