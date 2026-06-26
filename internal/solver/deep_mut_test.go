@@ -76,7 +76,7 @@ func TestDeepMutLowersFreshLiteral(t *testing.T) {
 // upgrades into that bare target.
 func TestNestedMutFieldAnnotationRejected(t *testing.T) {
 	want := []string{
-		"owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or wait for interior mutability (#618)",
+		"owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability",
 	}
 	t.Run("object", func(t *testing.T) {
 		values, _, errs := inferSource(t, `val w: mut {a: mut {x: number}} = {a: {x: 0}}`)
@@ -174,7 +174,7 @@ func TestOwnedMutFieldAnnotationRejected(t *testing.T) {
 	src := "fn f(p: {a: mut {x: number}}) { p.a.x = 5 }"
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or wait for interior mutability (#618)",
+		"owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability",
 		"cannot constrain immutable t3 <: mutable object",
 	}, Messages(errs))
 }

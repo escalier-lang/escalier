@@ -956,7 +956,7 @@ func (e *BorrowEscapeError) Message() string {
 func (e *MutFieldError) Span() ast.Span      { return e.Ann.Span() }
 func (e *MutFieldError) Related() []ast.Span { return nil }
 func (e *MutFieldError) Message() string {
-	return "owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or wait for interior mutability (#618)"
+	return "owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability"
 }
 
 func (e *ReadonlyFieldError) Span() ast.Span      { return spanOfNode(e.site) }
