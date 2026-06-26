@@ -334,73 +334,59 @@ func objWithBorrowField(borrow *soltype.RefType) *soltype.ObjectType {
 func TestBorrowEscapedToStatic(t *testing.T) {
 	c := transitionFixture(nil, liveness.NewAliasTracker(), set.NewSet[liveness.VarID]())
 
-	// `mut {x}` whose lifetime a global write forced to 'static, e.g. a `mut` param
-	// after `sink = p`. Escaped, mutably.
-	c.fn.varIDTypes[1] = staticBorrow(true)
-	escMut, escImm := c.borrowEscapedToStatic(1)
-	require.True(t, escMut)
-	require.False(t, escImm)
-
-	// The immutable analogue: a `{x}` borrow forced to 'static. Escaped, immutably.
-	c.fn.varIDTypes[2] = staticBorrow(false)
-	escMut, escImm = c.borrowEscapedToStatic(2)
-	require.False(t, escMut)
-	require.True(t, escImm)
-
-	// An explicit annotation `mut 'static {x}` escapes too.
-	c.fn.varIDTypes[3] = &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: objT()}
-	escMut, escImm = c.borrowEscapedToStatic(3)
-	require.True(t, escMut)
-	require.False(t, escImm)
-
-	// An owned value such as `val v = {x: 0}` never escapes.
-	c.fn.varIDTypes[4] = objT()
-	escMut, escImm = c.borrowEscapedToStatic(4)
-	require.False(t, escMut)
-	require.False(t, escImm)
-
-	// An unrecorded variable does not escape.
-	escMut, escImm = c.borrowEscapedToStatic(99)
-	require.False(t, escMut)
-	require.False(t, escImm)
-
-	// 'static in the LOWER bounds is not an escape. The escape constraint `v <:
-	// 'static` adds an UPPER bound, so a lower-bound 'static, which can arise from a
-	// join member, must not be read as an escape. forcedToStatic would over-report it.
-	c.fn.varIDTypes[5] = &soltype.RefType{
-		Mut:   true,
-		Lt:    &soltype.LifetimeVar{ID: 5, LowerBounds: []soltype.Lifetime{soltype.Static}},
-		Inner: objT(),
+	cases := []struct {
+		name string
+		// varID is the tracked variable to query. typ is its recorded type, or nil to
+		// leave the variable unrecorded.
+		varID            liveness.VarID
+		typ              soltype.Type
+		wantMut, wantImm bool
+	}{
+		// `mut {x}` whose lifetime a global write forced to 'static, e.g. a `mut` param
+		// after `sink = p`. Escaped, mutably.
+		{"top-level mut borrow forced to 'static", 1, staticBorrow(true), true, false},
+		// The immutable analogue: a `{x}` borrow forced to 'static. Escaped, immutably.
+		{"top-level imm borrow forced to 'static", 2, staticBorrow(false), false, true},
+		// An explicit annotation `mut 'static {x}` escapes too.
+		{"explicit mut 'static annotation", 3, &soltype.RefType{Mut: true, Lt: soltype.Static, Inner: objT()}, true, false},
+		// An owned value such as `val v = {x: 0}` never escapes.
+		{"owned value never escapes", 4, objT(), false, false},
+		// An unrecorded variable does not escape.
+		{"unrecorded variable", 99, nil, false, false},
+		// 'static in the LOWER bounds is not an escape. The escape constraint `v <:
+		// 'static` adds an UPPER bound, so a lower-bound 'static, which can arise from a
+		// join member, must not be read as an escape. forcedToStatic would over-report it.
+		{"lower-bound 'static is not an escape", 5, &soltype.RefType{
+			Mut:   true,
+			Lt:    &soltype.LifetimeVar{ID: 5, LowerBounds: []soltype.Lifetime{soltype.Static}},
+			Inner: objT(),
+		}, false, false},
+		// PR 5 nested case: an owned object `{f: mut 'static {x}}` whose FIELD is a borrow
+		// forced to 'static. The top-level type is an owned object, so the pre-PR-5
+		// top-level-only query missed it; the structural walk now reports the mutable
+		// escape in the field.
+		{"nested mut borrow field forced to 'static", 6, objWithBorrowField(staticBorrow(true)), true, false},
+		// A nested IMMUTABLE escaped borrow is reported on the immutable side.
+		{"nested imm borrow field forced to 'static", 7, objWithBorrowField(staticBorrow(false)), false, true},
+		// A nested borrow whose lifetime is NOT forced to 'static does not escape, just
+		// as at the top level.
+		{"nested borrow field with unforced lifetime", 8, objWithBorrowField(&soltype.RefType{
+			Mut:   true,
+			Lt:    &soltype.LifetimeVar{ID: 8},
+			Inner: objT(),
+		}), false, false},
 	}
-	escMut, escImm = c.borrowEscapedToStatic(5)
-	require.False(t, escMut)
-	require.False(t, escImm)
 
-	// PR 5 nested case: an owned object `{f: mut 'static {x}}` whose FIELD is a borrow
-	// forced to 'static. The top-level type is an owned object, so the pre-PR-5
-	// top-level-only query missed it; the structural walk now reports the mutable
-	// escape in the field.
-	c.fn.varIDTypes[6] = objWithBorrowField(staticBorrow(true))
-	escMut, escImm = c.borrowEscapedToStatic(6)
-	require.True(t, escMut)
-	require.False(t, escImm)
-
-	// A nested IMMUTABLE escaped borrow is reported on the immutable side.
-	c.fn.varIDTypes[7] = objWithBorrowField(staticBorrow(false))
-	escMut, escImm = c.borrowEscapedToStatic(7)
-	require.False(t, escMut)
-	require.True(t, escImm)
-
-	// A nested borrow whose lifetime is NOT forced to 'static does not escape, just as
-	// at the top level.
-	c.fn.varIDTypes[8] = objWithBorrowField(&soltype.RefType{
-		Mut:   true,
-		Lt:    &soltype.LifetimeVar{ID: 8},
-		Inner: objT(),
-	})
-	escMut, escImm = c.borrowEscapedToStatic(8)
-	require.False(t, escMut)
-	require.False(t, escImm)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.typ != nil {
+				c.fn.varIDTypes[tc.varID] = tc.typ
+			}
+			escMut, escImm := c.borrowEscapedToStatic(tc.varID)
+			require.Equal(t, tc.wantMut, escMut)
+			require.Equal(t, tc.wantImm, escImm)
+		})
+	}
 }
 
 // TestTransitionReassignNestedRHS guards the currentStmt fix: a reassignment whose

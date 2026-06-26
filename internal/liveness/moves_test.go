@@ -74,7 +74,10 @@ func TestMovesIfElseOneBranch(t *testing.T) {
 	}))
 
 	require.Equal(t, Moved, info.StateAfter(StmtRef{BlockID: 1, StmtIdx: 0}, x))
-	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 2, StmtIdx: 0}, x))
+	// The else block has no statements, so query its entry position (StmtIdx -1).
+	// StmtIdx 0 would hit the out-of-range fallback and pass without reading the
+	// block's real joined entry state.
+	require.Equal(t, NotMoved, info.StateBefore(StmtRef{BlockID: 2, StmtIdx: -1}, x))
 	require.Equal(t, MaybeMoved, info.StateBefore(StmtRef{BlockID: 3, StmtIdx: 0}, x))
 }
 

@@ -271,8 +271,11 @@ func (m *MoveInfo) StateBefore(ref StmtRef, v VarID) MoveState {
 }
 
 // StateAfter returns v's move state just after the statement at ref — StateBefore
-// with that statement's own moves applied. A StmtIdx of -1 reads the block entry,
-// where no statement has run, so it equals StateBefore there.
+// with that statement's own moves applied. A StmtIdx of -1 reads block-entry
+// semantics: the block's joined entry state with any synthetic -1 entry-position
+// moves applied, the state just after that synthetic position. It does NOT equal
+// StateBefore at -1 when an entry-position move is recorded, since StateBefore reads
+// the entry state before that move.
 func (m *MoveInfo) StateAfter(ref StmtRef, v VarID) MoveState {
 	if ref.StmtIdx < 0 {
 		return lookupMoveState(m.blockEntry, ref.BlockID, v)
