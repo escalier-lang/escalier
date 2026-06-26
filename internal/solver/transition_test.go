@@ -375,6 +375,36 @@ func TestBorrowEscapedToStatic(t *testing.T) {
 			Lt:    &soltype.LifetimeVar{ID: 8},
 			Inner: objT(),
 		}), false, false},
+		// #787: a borrow reachable only through a usage-inferred type variable. The
+		// recorded type is a bare TypeVarType whose LOWER bounds hold an escaped mut
+		// borrow, the shape a branch-join variable such as `sink = if c { p } else { … }`
+		// produces. The shared visitor treats a type variable as a leaf, so the pre-fix
+		// query missed it; descending into the bounds reports the mutable escape.
+		{"mut escape in type-var lower bound", 9, &soltype.TypeVarType{
+			ID:          9,
+			LowerBounds: []soltype.Type{staticBorrow(true)},
+		}, true, false},
+		// The immutable analogue through a type variable.
+		{"imm escape in type-var lower bound", 10, &soltype.TypeVarType{
+			ID:          10,
+			LowerBounds: []soltype.Type{staticBorrow(false)},
+		}, false, true},
+		// The escaped borrow nested in a field of a type variable's lower bound, so the
+		// walk must descend through both the bounds side graph and the field.
+		{"escape in field of type-var lower bound", 11, &soltype.TypeVarType{
+			ID:          11,
+			LowerBounds: []soltype.Type{objWithBorrowField(staticBorrow(true))},
+		}, true, false},
+		// A type variable whose lower bound is an unforced borrow does not escape, matching
+		// the structural cases.
+		{"type-var lower bound with unforced lifetime", 12, &soltype.TypeVarType{
+			ID: 12,
+			LowerBounds: []soltype.Type{&soltype.RefType{
+				Mut:   true,
+				Lt:    &soltype.LifetimeVar{ID: 12},
+				Inner: objT(),
+			}},
+		}, false, false},
 	}
 
 	for _, tc := range cases {

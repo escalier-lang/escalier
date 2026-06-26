@@ -412,15 +412,26 @@ Goal: stand up the two pieces the move rule needs, with no use-after-move errors
 yet. See "Where the move analysis lives" and "Escape detection is generalized, not
 queried" above.
 
-- Generalize escape detection beyond the single module-level write site. Run
-  `constrainEscape` at returns, field and element stores, owned-parameter
-  arguments, and escaping closure captures, and close the top-level-only gap in
-  `borrowEscapedToStatic` so a borrow nested in a field or reached through a
-  usage-inferred type variable is seen. Files:
-  [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go),
-  [internal/solver/infer_stmt.go](../../internal/solver/infer_stmt.go),
-  [internal/solver/transitions.go](../../internal/solver/transitions.go).
-- Build the branch-merged per-binding consumed lattice over the existing CFG. Add
+Status: the consumed lattice and the `borrowEscapedToStatic` detection-gap closure
+have landed. What remains is the `constrainEscape` generalization to the non-global
+flow sites, the first half of the first bullet below. PR 5 stays in progress until
+that lands.
+
+- Generalize escape detection beyond the single module-level write site. Two halves:
+  - Run `constrainEscape` at returns, field and element stores, owned-parameter
+    arguments, and escaping closure captures. **Remaining** — today only the
+    module-level global write forces escape
+    ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go) at the
+    `b.ModuleLevel` store). Files:
+    [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go),
+    [internal/solver/infer_stmt.go](../../internal/solver/infer_stmt.go).
+  - Close the top-level-only gap in `borrowEscapedToStatic` so a borrow nested in a
+    field, or reached through a usage-inferred type variable, is seen. **Done** — the
+    nested field/element case landed in #786, and the usage-inferred `TypeVarType`
+    case landed for #787 by descending into a type variable's bounds in
+    `escapeDetectVisitor` ([internal/solver/transitions.go](../../internal/solver/transitions.go)).
+- Build the branch-merged per-binding consumed lattice over the existing CFG. **Done**
+  in #786. Add
   "moved on some path" and "moved on all paths" state that joins at the CFG merge
   blocks from [internal/liveness](../../internal/liveness), keyed by `VarID` and
   queried at `StmtRef` granularity, alongside the existing liveness and alias state

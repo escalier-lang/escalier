@@ -156,17 +156,15 @@ func isMutableType(t soltype.Type) bool {
 //
 // The whole recorded type is walked, not just its top-level RefType (PR 5). A borrow
 // nested in a field or tuple element — for example the `&'static mut {…}` field of an
-// object stored into a global — is now seen, closing the nested-escape gap that made
-// a move past such a borrow unsound. Both mutabilities are reported because a value
-// can carry both a mutable and an immutable escaped borrow in different positions,
-// and Rule 1 and Rule 2 each conflict with one of them. An owned value, a borrow with
-// an unforced lifetime, or an unrecorded variable returns both false.
-//
-// REMAINING GAP (M4 G2 carry-over): a borrow reachable only through a usage-inferred
-// TypeVarType is still not seen, because the soltype visitor treats a type variable as
-// a leaf and does not descend into its bounds. Resolving a value's borrows through the
-// constraint graph rather than its structural type is the deeper G2 fix. See the G2
-// note in planning/simple_sub/m4-implementation-plan.md.
+// object stored into a global — is seen, closing the nested-escape gap that made a
+// move past such a borrow unsound. A borrow reachable only through a usage-inferred
+// TypeVarType is also seen (#787): the walk descends into a type variable's bounds,
+// so an escape hidden behind a branch-join variable such as `sink = if c { p } else
+// { … }`, whose source is the join variable rather than a bare RefType, is no longer
+// missed. Both mutabilities are reported because a value can carry both a mutable and
+// an immutable escaped borrow in different positions, and Rule 1 and Rule 2 each
+// conflict with one of them. An owned value, a borrow with an unforced lifetime, or an
+// unrecorded variable returns both false.
 func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (escapedMut, escapedImm bool) {
 	if c.fn == nil || c.fn.varIDTypes == nil {
 		return false, false
@@ -183,20 +181,41 @@ func (c *checker) borrowEscapedToStatic(varID liveness.VarID) (escapedMut, escap
 // escapeDetectVisitor records whether the walked type carries any borrow forced to
 // 'static, split by the borrow's mutability. It rewrites nothing; EnterType inspects
 // each RefType and the shared visitor carries the descent through inner carriers,
-// object properties, and tuple elements. A TypeVarType is a visitor leaf, so a borrow
-// reachable only through a usage-inferred variable is not reached — the REMAINING GAP
-// on borrowEscapedToStatic.
+// object properties, and tuple elements.
+//
+// The shared visitor treats a TypeVarType as a leaf and does not descend into its
+// bounds (its bounds are a side graph, not tree children). So EnterType walks a type
+// variable's bounds itself, resolving a borrow reachable only through a usage-inferred
+// variable (#787). The bounds relevant to the current polarity are followed —
+// LowerBounds in Positive position, where the variable stands for what flowed into it
+// — so an escaped borrow joined into a branch variable is seen. seen guards the
+// pointer-keyed cycles a bounds graph can hold.
 type escapeDetectVisitor struct {
 	foundMut bool
 	foundImm bool
+	seen     map[*soltype.TypeVarType]bool
 }
 
-func (v *escapeDetectVisitor) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	if r, ok := t.(*soltype.RefType); ok && lifetimeEscapedToStatic(r.Lt) {
-		if r.Mut {
-			v.foundMut = true
-		} else {
-			v.foundImm = true
+func (v *escapeDetectVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		if lifetimeEscapedToStatic(t.Lt) {
+			if t.Mut {
+				v.foundMut = true
+			} else {
+				v.foundImm = true
+			}
+		}
+	case *soltype.TypeVarType:
+		if v.seen == nil {
+			v.seen = map[*soltype.TypeVarType]bool{}
+		}
+		if v.seen[t] {
+			return soltype.EnterResult{}
+		}
+		v.seen[t] = true
+		for _, bound := range t.BoundsAt(pol) {
+			bound.Accept(v, pol)
 		}
 	}
 	return soltype.EnterResult{}
