@@ -202,20 +202,20 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 }
 
 // tryUpgradeIntoMutSlot grants the immutable→mutable upgrade when a value of type srcT,
-// built by src, flows into the target type slot. The upgrade fires only when slot is
-// owned-mutable — a RefType with Mut set and a nil lifetime — and src is uniquely owned
-// per canUpgradeToOwnedMut. It then constrains srcT against the slot's immutable
-// read view, stripOwnedMut of the inner, the same covariant check the non-mut path runs,
-// and returns true. Otherwise it constrains nothing and returns false, leaving the
-// caller to run its ordinary constraint against slot.
+// built by src, flows into the target type targetSlot. The upgrade fires only when
+// targetSlot is owned-mutable — a RefType with Mut set and a nil lifetime — and src is
+// uniquely owned per canUpgradeToOwnedMut. It then constrains srcT against the slot's
+// immutable read view, stripOwnedMut of the inner, the same covariant check the non-mut
+// path runs, and returns true. Otherwise it constrains nothing and returns false, leaving
+// the caller to run its ordinary constraint against targetSlot.
 //
 // This is the one shared decision every value-flow site into a `mut` slot consults: the
 // declaration initializer, a reassignment target, a `mut` call argument, a `mut` return,
 // and a `mut` field write. site is the node blamed on failure. src is the source
 // expression, which canUpgradeToOwnedMut inspects for the syntactic fresh-literal fast
 // path and the place-move path.
-func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, slot soltype.Type) bool {
-	ref, ok := slot.(*soltype.RefType)
+func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, targetSlot soltype.Type) bool {
+	ref, ok := targetSlot.(*soltype.RefType)
 	if !ok || !ref.Mut || ref.Lt != nil || !c.canUpgradeToOwnedMut(src) {
 		return false
 	}
