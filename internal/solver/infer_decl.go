@@ -211,13 +211,6 @@ func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, slot 
 	if !ok || !ref.Mut || ref.Lt != nil || !c.canUpgradeToOwnedMut(src) {
 		return false
 	}
-	// An already-owned-mutable source satisfies the slot through the ordinary mut<:mut
-	// constraint, which pins nested fields invariant. The upgrade only grants mutability
-	// to a value that lacks it, so skip it here and let the strict path run. Constraining
-	// against the stripped inner would otherwise drop that invariance.
-	if isOwnedMut(srcT) {
-		return false
-	}
 	// Under the lazy deep-mut form the inner is already bare, and a nested `mut {x}` field
 	// inside a non-mut container is rejected at the annotation site (#779), so stripOwnedMut
 	// is a defensive no-op for most slots. It still lets a uniquely-owned source flow
@@ -237,16 +230,23 @@ func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, slot 
 //   - A syntactically fresh literal, unaliased by construction: a primitive literal, or
 //     an object/tuple literal whose every element itself qualifies. This shape needs no
 //     VarID, so it holds at module top level where the liveness pre-pass has not run.
-//   - A consuming move of a uniquely-owned place: a variable or field path bound to a
-//     concrete owned value, recognised by movesOwnedPlace. exprPlace ties the place to a
-//     VarID, so this shape holds only inside a function body, where the move engine
-//     consumes the source and a later use of it is a use-after-move.
+//   - A consuming move of a uniquely-owned place that carries no owned-mutable cell: a
+//     variable or field path bound to a concrete owned value whose type has no owned-mut
+//     anywhere, recognised by movesOwnedPlace and containsOwnedMut. exprPlace ties the
+//     place to a VarID, so this shape holds only inside a function body, where the move
+//     engine consumes the source and a later use of it is a use-after-move.
 //
 // It generalizes the fresh-literal-only isFreshlyConstructed: both share the
 // freshLiteralShape recursion and differ only at a non-literal leaf, where this predicate
 // accepts an owned-place move. The recursion reaches a moved place nested inside a fresh
 // literal, so `{p: cfg}` qualifies when `cfg` is a dead owned variable even though the
 // literal is not identifier-free.
+//
+// An owned-mutable leaf is rejected at every depth. The upgrade constrains the source
+// against the slot's covariant read view, which is sound only when the source carries no
+// mutable cell to widen. An already-mutable cell, top-level or nested, must instead take
+// the strict mut<:mut path that pins its element type invariant, so `{p: inner}` with
+// `inner: mut {x}` falls through to that path rather than widening `inner` covariantly.
 //
 // SOUNDNESS: a leaf this predicate admits must be consumed by the move engine, so a later
 // use of it is a use-after-move. That holds because movesOwnedPlace gates on
@@ -256,7 +256,8 @@ func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, slot 
 // no backing move.
 func (c *checker) canUpgradeToOwnedMut(src ast.Expr) bool {
 	return freshLiteralShape(src, func(leaf ast.Expr) bool {
-		return movesOwnedPlace(leaf, c.info.TypeOf(leaf))
+		t := c.info.TypeOf(leaf)
+		return !containsOwnedMut(t) && movesOwnedPlace(leaf, t)
 	})
 }
 
@@ -344,12 +345,12 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 }
 
 // movesOwnedPlace reports whether init names a uniquely-owned place whose value moves
-// when it flows into an owning slot: init is a place — a binding or a field path, so
-// exprPlace succeeds — bound to a concrete owned object, tuple, or owned RefType. The
-// move consumes the place, leaving the destination its sole owner. exprPlace fails
-// outside a function body, where the rename pass has assigned no VarID, so a move is
-// confined to bodies where the move engine enforces the consume. It is the place-move
-// half of both bindingMovesOwnedPlace and the canUpgradeToOwnedMut leaf check.
+// when it flows into an owning slot. A place is a binding or a field path, so exprPlace
+// succeeds on it. Its value moves when it is a concrete owned object, tuple, or owned
+// RefType. The move consumes the place and leaves the destination its sole owner.
+// exprPlace fails outside a function body, where the rename pass has assigned no VarID, so
+// a move is confined to bodies where the move engine enforces the consume. This is the
+// place-move half of both bindingMovesOwnedPlace and the canUpgradeToOwnedMut leaf check.
 func movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
 	if _, ok := exprPlace(init); !ok {
 		return false
@@ -359,11 +360,40 @@ func movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
 
 // isOwnedMut reports whether t is an owned-mutable cell — a RefType with Mut set and a
 // nil lifetime. It is the shape a `mut T` annotation lowers to and the shape the
-// immutable→mutable upgrade grants, so both the slot and the source are tested against it
-// at the value-flow sites.
+// immutable→mutable upgrade grants.
 func isOwnedMut(t soltype.Type) bool {
 	ref, ok := t.(*soltype.RefType)
 	return ok && ref.Mut && ref.Lt == nil
+}
+
+// containsOwnedMut reports whether t is an owned-mutable cell or holds one nested inside
+// an object or tuple. It detects exactly what stripOwnedMut would peel. The
+// immutable→mutable upgrade constrains the source against the slot's covariant read view,
+// which is sound only when the source has no mutable cell to widen, so canUpgradeToOwnedMut
+// rejects a source where this returns true and routes it to the strict mut<:mut path. A
+// borrow's pointee belongs to another region, so it is left to the borrow rules and not
+// recursed into.
+func containsOwnedMut(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		return isOwnedMut(t)
+	case *soltype.ObjectType:
+		for _, e := range t.Elems {
+			if containsOwnedMut(soltype.AsProperty(e).Type) {
+				return true
+			}
+		}
+		return false
+	case *soltype.TupleType:
+		for _, e := range t.Elems {
+			if containsOwnedMut(e) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
 }
 
 // isMutableIdentPat reports whether p is a simple identifier binding written with

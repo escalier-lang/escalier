@@ -401,18 +401,17 @@ func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, retExprs []ast
 	c.constrain(node, ret, annT)
 }
 
-// allReturnsUpgradable reports whether every return operand is uniquely owned and lacks
-// mutability per canUpgradeToOwnedMut. An empty set, a bare `return` with a nil operand,
-// an already-owned-mutable operand, or any non-upgradable operand makes it false. An
-// already-mutable return satisfies the slot through the strict mut<:mut constraint, which
-// pins nested fields invariant, so the grant applies only when the whole join is
-// uniquely owned and immutable.
+// allReturnsUpgradable reports whether every return operand is upgradable per
+// canUpgradeToOwnedMut, which already rejects an operand carrying an owned-mutable cell at
+// any depth. An empty set, a bare `return` with a nil operand, or any non-upgradable
+// operand makes it false, so the grant applies only when the whole join is uniquely owned
+// and immutable.
 func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
 	if len(retExprs) == 0 {
 		return false
 	}
 	for _, e := range retExprs {
-		if e == nil || isOwnedMut(c.info.TypeOf(e)) || !c.canUpgradeToOwnedMut(e) {
+		if e == nil || !c.canUpgradeToOwnedMut(e) {
 			return false
 		}
 	}
@@ -1140,7 +1139,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// not leave the source's lifetime forced to 'static. So `var sink = {…}; fn(p:
 		// mut {…}) { sink = p }` reports p as `mut 'static {…}`.
 		errsBefore := len(c.errs)
-		c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
+		// A uniquely-owned source stored into an owned-mutable global takes the same
+		// immutable→mutable upgrade as the local reassignment path, so `sink = {x: 1}`
+		// type-checks. The carrier feeds the upgrade for the same reason it feeds the
+		// strict check below: a borrow forced to 'static satisfies the owned slot.
+		if !c.tryUpgradeIntoMutSlot(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
+			c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
+		}
 		if len(c.errs) == errsBefore {
 			// The store aliases the source into a permanent module-level slot. If the
 			// source's mutability differs from the slot's and the source stays live at

@@ -192,10 +192,12 @@ func TestInferOwnedMutFromMovedVariable(t *testing.T) {
 // use-after-move, since building the literal consumed it.
 func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 	t.Run("object field is a moved variable", func(t *testing.T) {
+		// The write through m.p proves the upgrade reaches the nested field: m.p is
+		// mutable, so storing a new number into m.p.x type-checks.
 		src := `fn f() {
 	val cfg = {x: 1}
 	val m: mut {p: {x: number}} = {p: cfg}
-	m
+	m.p.x = 9
 }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
@@ -318,6 +320,62 @@ func TestInferOwnedMutReturn(t *testing.T) {
 		values, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 		require.Equal(t, "fn () -> mut {x: number}", values["f"])
+	})
+}
+
+// A source carrying an already-owned-mutable cell is not upgraded, even when the cell is
+// nested inside a fresh literal. The covariant read view the upgrade constrains against
+// would widen that cell's element type, so the source falls through to the strict mut<:mut
+// path, which rejects the immutable wrapper against the mutable slot. This guards against
+// covariantly widening `{p: inner}` with `inner: mut {x: number}` into a wider field.
+func TestInferOwnedMutNestedOwnedMutRejected(t *testing.T) {
+	t.Run("declaration", func(t *testing.T) {
+		src := `fn f() {
+	val inner: mut {x: number} = {x: 0}
+	val m: mut {p: {x: number | string}} = {p: inner}
+	m
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"3:13-3:14: cannot constrain immutable object <: mutable object"}, messagesWithSpan(errs))
+	})
+	t.Run("return", func(t *testing.T) {
+		src := `fn f() -> mut {p: {x: number | string}} {
+	val inner: mut {x: number} = {x: 0}
+	return {p: inner}
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"1:15-1:16: cannot constrain immutable object <: mutable object"}, messagesWithSpan(errs))
+	})
+}
+
+// A module-level `mut` global takes the upgrade on reassignment just like a local `mut`
+// var, so a fresh literal and a moved owned variable both store into it. The store
+// consumes a moved source, so a later read of it is a use-after-move.
+func TestInferOwnedMutModuleGlobalWrite(t *testing.T) {
+	t.Run("fresh literal", func(t *testing.T) {
+		src := `var sink: mut {x: number} = {x: 0}
+fn f() { sink = {x: 1} }`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+	t.Run("moved variable", func(t *testing.T) {
+		src := `var sink: mut {x: number} = {x: 0}
+fn f() {
+	val cfg: {x: number} = {x: 1}
+	sink = cfg
+}`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+	t.Run("live source is a use-after-move", func(t *testing.T) {
+		src := `var sink: mut {x: number} = {x: 0}
+fn f() {
+	val cfg: {x: number} = {x: 1}
+	sink = cfg
+	cfg.x
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"5:2-5:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
 	})
 }
 
