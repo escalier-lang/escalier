@@ -90,6 +90,11 @@ type funcCtx struct {
 	async   bool
 	node    ast.Node
 	returns []soltype.Type
+	// returnExprs holds each ReturnStmt's operand expression in the same source order as
+	// returns, with a nil entry for a bare `return`. inferFunc reads it to decide the
+	// immutable→mutable upgrade at a `mut` return annotation. The upgrade fires only when
+	// every returned value is uniquely owned, so the join of the returns is too.
+	returnExprs []ast.Expr
 
 	// written records the widened type stored into a receiver variable's field by a
 	// field-write `recv.prop = source` (M4 C3), keyed by the receiver var's ID and

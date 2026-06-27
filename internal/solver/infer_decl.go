@@ -166,19 +166,27 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // resolved annotation and returns the type the binding adopts, which may differ from
 // the written annotation in two refinements over a plain constrain.
 //
-// 1. A freshly constructed, unaliased initializer flowing into an OWNED-mutable
-// annotation is allowed to take that mutable type. The C2 gate rejects immutable <:
-// mutable structurally, because writing through the target would otherwise mutate a
-// read-only value. But that is only unsound when a live immutable alias to the source
-// exists. A freshly constructed literal has none. It is uniquely owned, so granting it
-// the annotated mutable type is safe. This is Rule 2 with an empty alias set. The
-// construction case is `val items: mut {x} = {x: 1}`. The decision belongs at this
-// value-flow site, which can see the source is fresh, not in the liveness-blind
-// constrain engine. The upgrade constrains the initializer's shape against the borrow's
-// INNER, its covariant read view, exactly as the non-mut path constrains against the
-// annotation directly. It is gated on an owned-mutable annotation whose `Lt` is nil. A
-// borrow annotation is a reference into a caller's region, not an owned value, so a fresh
-// source flowing into it stays on the strict path.
+// 1. A uniquely-owned initializer flowing into an OWNED-mutable annotation is allowed to
+// take that mutable type. The C2 gate rejects immutable <: mutable structurally, because
+// writing through the target would otherwise mutate a read-only value. But that is only
+// unsound when a live immutable alias to the source exists. A uniquely-owned source has
+// none, so granting it the annotated mutable type is safe. This is Rule 2 with an empty
+// alias set. Two sources qualify, both recognised by canUpgradeToOwnedMut: a freshly
+// constructed literal such as `val items: mut {x} = {x: 1}`, and a consuming move of an
+// owned place such as `val m: mut {x} = cfg` where `cfg` is dead afterward.
+//
+// The decision belongs at this value-flow site rather than inside the constraint solver.
+// The solver, c.constrain, compares only the two types. It has no access to the source
+// expression, to variable liveness, or to the move analysis, so it cannot tell whether
+// the source is the sole owner of its value or is shared with a live immutable alias.
+// Lacking that information it always rejects immutable <: mutable. That information is
+// visible only here, so this site decides whether the source is uniquely owned and then
+// hands the solver a check it can do soundly.
+//
+// tryUpgradeToOwnedMut constrains the initializer's shape against the borrow's INNER, its
+// covariant read view, exactly as the non-mut path constrains against the annotation
+// directly. A borrow annotation is a reference into a caller's region, not an owned value,
+// so a source flowing into it stays on the strict path.
 //
 // 2. A bare owned annotation whose initializer is a borrow is a borrow-into-owned
 // escape. A `val` binding consumes an owned source, so a borrowed `p` flowing into a
@@ -186,19 +194,114 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
 // `val q: &{x} = p` is the opt-in for an alias.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
-	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && isFreshlyConstructed(init) {
-		// Constrain a fresh literal against the borrow's immutable skeleton, then
-		// grant the owned-mutable type. Under the lazy deep-mut form (PR 14) the inner
-		// is already bare, and a nested `mut {x}` field inside a non-mut container is
-		// now rejected at the annotation site (#779), so stripOwnedMut is a defensive
-		// no-op here. It is kept so a fresh literal still flows covariantly into any
-		// owned-mut cell that reaches this point. A fully fresh literal is uniquely
-		// owned at every level, so the upgrade is sound the whole way down.
-		c.constrain(init, initT, stripOwnedMut(ref.Inner))
+	if c.tryUpgradeToOwnedMut(init, init, initT, annT) {
 		return annT
 	}
 	c.constrain(init, initT, annT)
 	return annT
+}
+
+// tryUpgradeToOwnedMut grants the immutable→mutable upgrade when a value of type srcT,
+// built by src, flows into the type target. The upgrade fires only when target is
+// owned-mutable — a RefType with Mut set and a nil lifetime — and src is uniquely owned
+// per canUpgradeToOwnedMut. It then constrains srcT against target's immutable read view,
+// stripOwnedMut of the inner, the same covariant check the non-mut path runs, and returns
+// true. Otherwise it constrains nothing and returns false, leaving the caller to run its
+// ordinary constraint against target.
+//
+// target is whatever owned-mutable type the value flows into at a given site, and every
+// such site routes through here: the declaration initializer's annotation, the binding
+// type of a reassignment, a `mut` parameter type, a `mut` return annotation, and a `mut`
+// field's type. site is the node blamed on failure. src is the source expression, which
+// canUpgradeToOwnedMut inspects for the syntactic fresh-literal fast path and the
+// place-move path.
+func (c *checker) tryUpgradeToOwnedMut(site ast.Node, src ast.Expr, srcT, target soltype.Type) bool {
+	ref, ok := target.(*soltype.RefType)
+	if !ok || !ref.Mut || ref.Lt != nil || !c.canUpgradeToOwnedMut(src) {
+		return false
+	}
+	// Under the lazy deep-mut form the inner is already bare, and a nested `mut {x}` field
+	// inside a non-mut container is rejected at the annotation site (#779), so stripOwnedMut
+	// is a defensive no-op for most target types. It still lets a uniquely-owned source
+	// flow covariantly into any owned-mut cell that reaches here. A fully uniquely-owned
+	// source is owned at every level, so the upgrade is sound the whole way down.
+	c.constrain(site, srcT, stripOwnedMut(ref.Inner))
+	return true
+}
+
+// canUpgradeToOwnedMut reports whether the value built by src may be granted an
+// owned-mutable type when it flows into an owned-mutable target. The grant is sound only
+// when the value is uniquely owned, so no live immutable alias can observe a write through
+// the new mutable view. This is Rule 2 of the mutability-transition checker with an empty
+// alias set. Three cases show what it returns and why:
+//
+//   - A syntactically fresh literal returns true. In `val m: mut {x} = {x: 1}` the literal
+//     is newly built and nothing else refers to it, so it is uniquely owned and granting it
+//     mutability aliases nothing. A fresh literal carries no identifier and needs no VarID,
+//     so this case holds at module top level where the liveness pre-pass has not run.
+//
+//   - A consuming move of an owned place returns true. In `val m: mut {x} = cfg` the move
+//     consumes `cfg` and leaves `m` the sole owner, so again no live alias remains, and a
+//     later use of `cfg` is a use-after-move. exprPlace ties the place to a VarID, so this
+//     case holds only inside a function body where the move engine records the consume.
+//
+//   - A literal wrapping an owned-mutable leaf returns false. In `{p: inner}` with
+//     `inner: mut {x: number}`, `inner` already holds a mutable cell. The upgrade constrains
+//     the source against the target's covariant read view, which would widen that cell — for
+//     example accept it where `mut {x: number | string}` is expected — and that is unsound.
+//     Returning false routes the source to the strict mut<:mut path, which pins the cell's
+//     element type invariant. containsOwnedMut is recursive, so an owned-mutable cell at any
+//     depth rejects the whole source.
+//
+// It generalizes the fresh-literal-only isFreshlyConstructed: both share the
+// freshLiteralShape recursion and differ only at a non-literal leaf, which this predicate
+// accepts when it is an owned-place move carrying no owned-mutable cell. The recursion
+// reaches such a leaf nested inside a fresh literal, so `{p: cfg}` qualifies when `cfg` is a
+// dead owned variable even though the literal is not identifier-free.
+//
+// SOUNDNESS: every leaf this predicate admits must be consumed by the move engine, so a
+// later use of it is a use-after-move. That holds because movesOwnedPlace gates on
+// isConcreteOwned, a strict subset of the isOwnedMovable set consumeOwned moves at every
+// flow site, so the upgrade set is a subset of the consume set. Widening movesOwnedPlace
+// toward a place consumeOwned does not move would break this and grant a mutable view with
+// no backing move.
+func (c *checker) canUpgradeToOwnedMut(src ast.Expr) bool {
+	return freshLiteralShape(src, func(leaf ast.Expr) bool {
+		t := c.info.TypeOf(leaf)
+		return !containsOwnedMut(t) && movesOwnedPlace(leaf, t)
+	})
+}
+
+// freshLiteralShape reports whether e is a primitive literal, or an object/tuple literal
+// whose every element satisfies leafOK. It is the structural recursion shared by
+// isFreshlyConstructed and canUpgradeToOwnedMut, which differ only in what they accept at
+// a non-literal leaf. isFreshlyConstructed accepts nothing there; canUpgradeToOwnedMut
+// accepts a uniquely-owned place move.
+func freshLiteralShape(e ast.Expr, leafOK func(ast.Expr) bool) bool {
+	switch e := e.(type) {
+	case *ast.LiteralExpr:
+		return true
+	case *ast.TupleExpr:
+		for _, elem := range e.Elems {
+			if !freshLiteralShape(elem, leafOK) {
+				return false
+			}
+		}
+		return true
+	case *ast.ObjectExpr:
+		for _, elem := range e.Elems {
+			prop, ok := elem.(*ast.PropertyExpr)
+			if !ok || prop.Value == nil {
+				return false
+			}
+			if !freshLiteralShape(prop.Value, leafOK) {
+				return false
+			}
+		}
+		return true
+	default:
+		return leafOK(e)
+	}
 }
 
 // stripOwnedMut returns t's deeply-immutable skeleton by peeling every owned-mut
@@ -249,10 +352,59 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 	if _, ok := pat.(*ast.IdentPat); !ok {
 		return false
 	}
+	return movesOwnedPlace(init, initT)
+}
+
+// movesOwnedPlace reports whether init names a uniquely-owned place whose value moves
+// when it flows into an owning destination. A place is a binding or a field path, so
+// exprPlace succeeds on it. Its value moves when it is a concrete owned object, tuple, or owned
+// RefType. The move consumes the place and leaves the destination its sole owner.
+// exprPlace fails outside a function body, where the rename pass has assigned no VarID, so
+// a move is confined to bodies where the move engine enforces the consume. This is the
+// place-move half of both bindingMovesOwnedPlace and the canUpgradeToOwnedMut leaf check.
+func movesOwnedPlace(init ast.Expr, initT soltype.Type) bool {
 	if _, ok := exprPlace(init); !ok {
 		return false
 	}
 	return isConcreteOwned(initT)
+}
+
+// isOwnedMut reports whether t is an owned-mutable cell — a RefType with Mut set and a
+// nil lifetime. It is the shape a `mut T` annotation lowers to and the shape the
+// immutable→mutable upgrade grants.
+func isOwnedMut(t soltype.Type) bool {
+	ref, ok := t.(*soltype.RefType)
+	return ok && ref.Mut && ref.Lt == nil
+}
+
+// containsOwnedMut reports whether t is an owned-mutable cell or holds one nested inside
+// an object or tuple. It detects exactly what stripOwnedMut would peel. The
+// immutable→mutable upgrade constrains the source against the target's covariant read view,
+// which is sound only when the source has no mutable cell to widen, so canUpgradeToOwnedMut
+// rejects a source where this returns true and routes it to the strict mut<:mut path. A
+// borrow's pointee belongs to another region, so it is left to the borrow rules and not
+// recursed into.
+func containsOwnedMut(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		return isOwnedMut(t)
+	case *soltype.ObjectType:
+		for _, e := range t.Elems {
+			if containsOwnedMut(soltype.AsProperty(e).Type) {
+				return true
+			}
+		}
+		return false
+	case *soltype.TupleType:
+		for _, e := range t.Elems {
+			if containsOwnedMut(e) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
 }
 
 // isMutableIdentPat reports whether p is a simple identifier binding written with
@@ -271,33 +423,11 @@ func isMutableIdentPat(p ast.Pat) bool {
 // call, member access, or spread disqualifies the whole expression, because a captured
 // variable could alias a value held immutably elsewhere. Being identifier-free also
 // makes it sound without VarIDs, so it holds at module top level where the liveness
-// pre-pass has not run. A richer freshness judgment over provably-unique non-literal
-// expressions is the lifetime/region work (M4 G2).
+// pre-pass has not run. canUpgradeToOwnedMut is the richer judgment that also admits an
+// owned-place move; both run through freshLiteralShape and differ only at a non-literal
+// leaf, which this predicate always rejects.
 func isFreshlyConstructed(e ast.Expr) bool {
-	switch e := e.(type) {
-	case *ast.LiteralExpr:
-		return true
-	case *ast.TupleExpr:
-		for _, elem := range e.Elems {
-			if !isFreshlyConstructed(elem) {
-				return false
-			}
-		}
-		return true
-	case *ast.ObjectExpr:
-		for _, elem := range e.Elems {
-			prop, ok := elem.(*ast.PropertyExpr)
-			if !ok || prop.Value == nil {
-				return false
-			}
-			if !isFreshlyConstructed(prop.Value) {
-				return false
-			}
-		}
-		return true
-	default:
-		return false
-	}
+	return freshLiteralShape(e, func(ast.Expr) bool { return false })
 }
 
 // checkExcessLiteralMembers is the construction-site excess check (M4 A3): a

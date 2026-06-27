@@ -271,6 +271,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	}
 
 	var ret soltype.Type = &soltype.Void{}
+	var retExprs []ast.Expr
 	hasBody := body != nil
 	if hasBody {
 		// PR3: open a fresh function context so every ReturnStmt encountered while
@@ -297,6 +298,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// use-after-move. This runs before popFuncCtx restores the outer context, since
 		// it reads this body's move and use state off c.fn.
 		c.checkUseAfterMoves()
+		retExprs = c.fn.returnExprs
 		ret = c.joinReturnPoints(node, lvl, c.popFuncCtx(saved))
 	}
 	// Return-annotation handling diverges by async-ness.
@@ -324,7 +326,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// function simply adopts the annotation (constraining the synthetic Void
 			// would raise a spurious `void <: T`).
 			if hasBody {
-				c.constrain(node, ret, annT) // body <: declared return
+				c.constrainReturnAgainstAnnotation(node, retExprs, ret, annT) // body <: declared return
 			}
 			ret = annT
 		} else if !hasBody {
@@ -380,6 +382,40 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 		}
 		return joinVar
 	}
+}
+
+// constrainReturnAgainstAnnotation constrains a function body's joined return type
+// against its declared return annotation, granting the immutable→mutable upgrade when
+// the return annotation is owned-mutable and EVERY return value is uniquely owned. A
+// function yields a value as owned-mutable only when each returned value is uniquely
+// owned, so a single non-upgradable return on any path blocks the grant and the strict
+// constraint runs. With the grant the joined return shape is constrained against the
+// return annotation's immutable read view, the same covariant check tryUpgradeToOwnedMut
+// runs at the other value-flow sites. The join is not a single source expression, so the
+// decision is made here rather than through that per-expression helper.
+func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, retExprs []ast.Expr, ret, annT soltype.Type) {
+	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && c.allReturnsUpgradable(retExprs) {
+		c.constrain(node, ret, stripOwnedMut(ref.Inner))
+		return
+	}
+	c.constrain(node, ret, annT)
+}
+
+// allReturnsUpgradable reports whether every return operand is upgradable per
+// canUpgradeToOwnedMut, which already rejects an operand carrying an owned-mutable cell at
+// any depth. An empty set, a bare `return` with a nil operand, or any non-upgradable
+// operand makes it false, so the grant applies only when the whole join is uniquely owned
+// and immutable.
+func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
+	if len(retExprs) == 0 {
+		return false
+	}
+	for _, e := range retExprs {
+		if e == nil || !c.canUpgradeToOwnedMut(e) {
+			return false
+		}
+	}
+	return true
 }
 
 // joinBorrows synthesizes the join of several borrowed objects that differ only in
@@ -859,6 +895,29 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		}
 	}
 
+	// Grant the immutable→mutable upgrade per argument: a uniquely-owned argument
+	// flowing into an owned-mutable parameter takes the mutable type, the same grant the
+	// annotated declaration makes, so `f({x: 1})` and `f(cfg)` for an owned-mutable
+	// parameter type-check. The argument's shape is constrained covariantly against the
+	// parameter's immutable read view, and the demand entry for that argument is pinned to
+	// the parameter's own type so the callee <: callShape constraint below does not re-check
+	// it strictly.
+	// consumeCallArgs still moves the argument, since an owned-mutable parameter is
+	// concrete-owned. It runs only for a resolved callee, where the parameter types are
+	// known. A deferred callee, one called through a `var`, keeps every argument on the
+	// strict path.
+	if resolved {
+		for i := 0; i < len(e.Args) && i < len(fn.Params); i++ {
+			if c.tryUpgradeToOwnedMut(e.Args[i], e.Args[i], demand[i].Type, fn.Params[i].Type) {
+				// The upgrade constrained the argument's shape against the parameter's
+				// immutable read view, so pin this argument's demand entry to the parameter's
+				// own type; the callee <: callShape constraint below then re-checks it as
+				// param<:param rather than strictly rejecting the immutable argument.
+				demand[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
+			}
+		}
+	}
+
 	// callShape is built EXACT with all N params required, on purpose. That gives
 	// it accept-set [N, N] (N = arg count), so the callee <: callShape constraint
 	// reads "the callee must accept exactly N args" — it holds iff
@@ -1081,7 +1140,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// not leave the source's lifetime forced to 'static. So `var sink = {…}; fn(p:
 		// mut {…}) { sink = p }` reports p as `mut 'static {…}`.
 		errsBefore := len(c.errs)
-		c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
+		// A uniquely-owned source stored into an owned-mutable global takes the same
+		// immutable→mutable upgrade as the local reassignment path, so `sink = {x: 1}`
+		// type-checks. The carrier feeds the upgrade for the same reason it feeds the
+		// strict check below: a borrow forced to 'static satisfies the owned global.
+		if !c.tryUpgradeToOwnedMut(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
+			c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
+		}
 		if len(c.errs) == errsBefore {
 			// The store aliases the source into a permanent module-level slot. If the
 			// source's mutability differs from the slot's and the source stays live at
@@ -1111,7 +1176,11 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// unique, which is the borrow checker's job. Move/affine semantics (#762),
 			// under the sound borrow checker (#618), will eventually reject it.
 		}
-	} else {
+	} else if !c.tryUpgradeToOwnedMut(e, e.Right, sourceT, targetT) {
+		// A uniquely-owned source reassigned into an owned-mutable `var` takes the
+		// immutable→mutable upgrade, the same grant the annotated declaration makes. The
+		// upgrade fires only for a RefType target, so a union target still routes through
+		// constrainAssign's per-member trial below.
 		c.constrainAssign(e, sourceT, targetT)
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && target.VarID > 0 {
@@ -1184,6 +1253,18 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	}
 	recv := c.inferWriteReceiver(scope, lvl, m.Object)
 	w := widen(source)
+	// An owned-mutable field takes the immutable→mutable upgrade through the same shared
+	// helper as the other value-flow sites, so the field write stays consistent with them:
+	// a uniquely-owned source is constrained covariantly against the field's read view, and
+	// the field's owned-mutable type is stored. The field's declared type is read off the
+	// receiver's carrier. An owned-mutable field arises only through inference, since #779
+	// rejects the annotation, so no source program reaches this branch today. The guard
+	// keeps the field write consistent for when one does.
+	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
+		if prop, ok := recvObj.Prop(m.Prop.Name); ok && c.tryUpgradeToOwnedMut(e.Right, e.Right, source, prop.Type) {
+			w = prop.Type
+		}
+	}
 	// Catch a readonly write at the assignment site so the diagnostic blames it
 	// outright; a TypeVar receiver falls through to the structural
 	// ReadonlyFieldSubtypeError the ObjectType write view raises.
