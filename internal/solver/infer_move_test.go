@@ -354,6 +354,20 @@ func TestMoveSemantics(t *testing.T) {
 			`,
 			want: []string{"use of moved value 'pair.a.inner'"},
 		},
+		// A field whose key is not a valid identifier is reached by constant-string
+		// index and renders in bracket notation, so the moved place reads back as
+		// `pair["a.b"]` rather than collapsing into the `pair.a.b` nested access.
+		"BracketKeyPartialMove": {
+			src: `
+				fn store(p: {x: number}) {}
+				fn test() {
+					val pair = {"a.b": {x: 1}, c: {x: 2}}
+					store(pair["a.b"])
+					pair["a.b"].x
+				}
+			`,
+			want: []string{`use of moved value 'pair["a.b"]'`},
+		},
 	}
 
 	for name, tc := range tests {

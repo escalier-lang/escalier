@@ -2,7 +2,9 @@ package solver
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
@@ -36,8 +38,8 @@ import (
 // movePlace docstring for its shape and examples. The consumed lattice keys on the
 // place rather than the binding. Moving `pair.a` consumes only that field's place, so
 // the sibling `pair.b` stays usable while a later read of `pair.a` is a
-// use-after-move. A whole binding is the path-empty place, so whole-binding moves are
-// unchanged. A use of place U conflicts
+// use-after-move. A whole binding is the path-empty place, which a move consumes as a
+// unit. A use of place U conflicts
 // with a moved place M when one path is a prefix of the other under one root, which
 // catches a read of the moved field, a read of a field beneath it, and a read of the
 // whole object that would expose it.
@@ -254,7 +256,7 @@ func placeKey(p movePlace) string {
 }
 
 // placeID maps a place to the VarID the consumed lattice keys on. A whole-binding
-// place reuses its root VarID, so whole-binding moves stay keyed exactly as before.
+// place reuses its root VarID, so it shares the lattice key the binding already has.
 // A field place is assigned a fresh synthetic VarID drawn from the module-wide
 // counter — unique across every body, so it never collides with a real binding —
 // and the mapping is stable within a body, so the same field named at a move site
@@ -291,15 +293,45 @@ func pathPrefixRelated(a, b []placeSeg) bool {
 
 // renderPlace names a place for a diagnostic: the root binding's name followed by
 // its field path, so a whole-binding move renders as `pair` and a field move as
-// `pair.a`.
+// `pair.a`. A segment whose name is not a valid identifier renders in bracket
+// notation, so a constant-index access such as `obj["a.b"]` reads back as
+// `obj["a.b"]` rather than collapsing into the `obj.a.b` nested access.
 func (c *checker) renderPlace(p movePlace) string {
 	var b strings.Builder
 	b.WriteString(c.varIDToName(p.root))
 	for _, seg := range p.path {
-		b.WriteString(".")
-		b.WriteString(seg.name)
+		if isDotPlaceSegment(seg.name) {
+			b.WriteByte('.')
+			b.WriteString(seg.name)
+		} else {
+			b.WriteByte('[')
+			b.WriteString(strconv.Quote(seg.name))
+			b.WriteByte(']')
+		}
 	}
 	return b.String()
+}
+
+// isDotPlaceSegment reports whether a field name can be rendered with dot notation:
+// a valid Escalier identifier, with a leading letter or underscore and
+// letter/underscore/digit runes thereafter. Any other name, such as `a.b` or
+// `foo-bar` from a constant-string index, renders in bracket notation instead.
+func isDotPlaceSegment(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if i == 0 {
+			if !unicode.IsLetter(r) && r != '_' {
+				return false
+			}
+			continue
+		}
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // moveNameOf names the moved value behind a lattice VarID for a diagnostic. A field
@@ -583,8 +615,8 @@ func (c *checker) movedConflict(info *liveness.MoveInfo, u moveUse) (liveness.Mo
 		}
 		// Keep this conflict only if it is a stronger blame target than the best so
 		// far: the first one found, an unconditional Moved that supersedes a MaybeMoved,
-		// or the same state with a lower lattice id, which is the earlier move in source
-		// order and makes the choice deterministic.
+		// or the same state with a lower lattice id, the tiebreak that makes the choice
+		// deterministic across the unordered movePlaces map iteration.
 		if !(best == liveness.NotMoved ||
 			(s == liveness.Moved && best == liveness.MaybeMoved) ||
 			(s == best && id < bestID)) {
