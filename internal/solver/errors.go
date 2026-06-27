@@ -716,11 +716,26 @@ func (*AwaitOutsideAsyncError) isSolverError()            {}
 func (*ReturnOutsideFunctionError) isSolverError()        {}
 func (*AsyncReturnNotPromiseError) isSolverError()        {}
 func (*NonExhaustiveMatchError) isSolverError()           {}
+func (*MutLeafThroughSharedBorrowError) isSolverError()   {}
 
 func (e *NonExhaustiveMatchError) Span() ast.Span      { return e.Match.Span() }
 func (e *NonExhaustiveMatchError) Related() []ast.Span { return nil }
 func (e *NonExhaustiveMatchError) Message() string {
 	return "match is not exhaustive; add a catch-all branch"
+}
+
+// MutLeafThroughSharedBorrowError fires when a destructuring pattern marks a leaf
+// `mut` while the scrutinee is an immutable `&` borrow. A `mut` leaf projects mutable
+// access to its slot, which cannot be obtained through a shared borrow, so the leaf is
+// rejected. It self-blames the leaf's pattern node.
+type MutLeafThroughSharedBorrowError struct {
+	Node ast.Node
+}
+
+func (e *MutLeafThroughSharedBorrowError) Span() ast.Span      { return e.Node.Span() }
+func (e *MutLeafThroughSharedBorrowError) Related() []ast.Span { return nil }
+func (e *MutLeafThroughSharedBorrowError) Message() string {
+	return "cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"
 }
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }

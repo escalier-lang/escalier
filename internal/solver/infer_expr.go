@@ -1946,9 +1946,10 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	c.recordProv(res, e, MatchBranch)
 	for _, arm := range e.Cases {
 		// Each arm binds its pattern's leaves in a fresh child scope so a name bound
-		// by one arm is invisible to the next. bindPattern peels any borrow wrapper
-		// and emits the inexact member-lookup requirements, surfacing a missing field
-		// or wrong tuple arity as it does for `val` destructuring.
+		// by one arm is invisible to the next. bindPattern peels the scrutinee's borrow
+		// for the member-lookup requirements but reapplies the binding mode to each
+		// leaf, so a leaf of a `&mut` scrutinee binds as a `&mut` borrow, just as `val`
+		// destructuring does. A missing field or wrong tuple arity surfaces here too.
 		armScope := scope.Child()
 		c.bindPattern(armScope, lvl, arm.Pattern, scrutinee, nil)
 		if arm.Guard != nil {

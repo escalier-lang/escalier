@@ -48,14 +48,70 @@ func defineLeafMono(scope *Scope, name string, t soltype.Type, _ ast.Node) {
 	scope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(t)}})
 }
 
+// bindMode records how a pattern's leaves bind to the scrutinee, derived from the
+// scrutinee's outermost borrow and propagated unchanged into nested sub-patterns
+// (Rust match ergonomics). An owned scrutinee moves each leaf out; a borrowed
+// scrutinee projects a receiver-bounded borrow of each leaf, never a move. The
+// `lt` is the scrutinee's borrow lifetime, which every projected leaf borrow shares,
+// so a leaf cannot outlive the scrutinee.
+type bindMode struct {
+	borrow borrowMode
+	lt     soltype.Lifetime
+}
+
+type borrowMode byte
+
+const (
+	// bmOwned: the scrutinee is an owned value. Each leaf is moved out, taking its
+	// declared mutability — a plain leaf is owned-immutable, a `mut` leaf owned-mutable.
+	bmOwned borrowMode = iota
+	// bmShared: the scrutinee is an immutable `&` borrow. Each leaf is a shared borrow
+	// bounded by the scrutinee's lifetime. A `mut` leaf is an error: mutable access
+	// cannot be obtained through an immutable borrow.
+	bmShared
+	// bmMut: the scrutinee is a `&mut` borrow. Each leaf is a mutable borrow bounded by
+	// the scrutinee's lifetime (Rust match ergonomics), so a `mut` marker is redundant.
+	bmMut
+)
+
+// bindModeOf derives the binding mode from the scrutinee's outermost borrow. Only a
+// borrow with a real lifetime is a reference; an owned-mutable cell (`mut {…}` with a
+// nil lifetime) is an owned value, so its leaves move out and take their own declared
+// mutability rather than projecting a borrow.
+func bindModeOf(scrutinee soltype.Type) bindMode {
+	if r, ok := scrutinee.(*soltype.RefType); ok && r.Lt != nil {
+		if r.Mut {
+			return bindMode{borrow: bmMut, lt: r.Lt}
+		}
+		return bindMode{borrow: bmShared, lt: r.Lt}
+	}
+	return bindMode{borrow: bmOwned}
+}
+
 // bindPatternWith is bindPattern parameterized by the leaf-placement strategy. See
 // bindPattern for the pattern-typing contract. The emit decides where each bound
-// leaf lands.
+// leaf lands. The binding mode is derived from the scrutinee here and threaded into
+// the recursive walk so nested leaves inherit the scrutinee's borrow.
 func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+	return c.bindPatMode(scope, lvl, pat, scrutinee, soltype.CarrierOf(scrutinee), bindModeOf(scrutinee), leafTypes, emit)
+}
+
+// bindPatMode is bindPatternWith's recursive core, carrying the binding mode the
+// top-level scrutinee fixed. The mode propagates unchanged into every sub-pattern, so
+// a leaf of `&mut [a, [b]]` binds `b` as a `&mut` borrow just as it binds `a`.
+//
+// concrete is the scrutinee's resolved type for this level when it is statically known
+// — the tuple element or object field a leaf projects, rather than the fresh
+// projection variable carried in `scrutinee`. An owned `mut` leaf thaws this concrete
+// type so it renders as a clean `mut {…}` cell instead of a variable inside the cell.
+// It is nil when the scrutinee's shape is not statically known, where the thaw falls
+// back to the projection variable.
+func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, concrete soltype.Type, mode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
 	scrutinee = soltype.CarrierOf(scrutinee)
 	switch p := pat.(type) {
 	case *ast.IdentPat:
 		t := c.applyLeafExtras(scope, lvl, p, scrutinee, p.TypeAnn, p.Default)
+		t = c.applyBindMode(lvl, p, p.Mutable, t, c.concreteLeaf(concrete, p.TypeAnn), mode)
 		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit)
 		return &soltype.IdentPat{Name: p.Name}
 
@@ -110,16 +166,26 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 		// bound, which cannot reject a refutable literal sub-pattern of the wrong kind.
 		// The upper bound makes a nested literal flow against the real element type, so
 		// `[a, "hi"]` against `[number, number]` reports the mismatch.
-		if tup, ok := scrutinee.(*soltype.TupleType); ok {
+		tup, _ := scrutinee.(*soltype.TupleType)
+		if tup != nil {
 			for i := range fixed {
 				if i < len(tup.Elems) {
 					c.constrain(fixed[i], elemTypes[i], tup.Elems[i])
 				}
 			}
 		}
+		// Child concrete types come from the threaded concrete tuple, not from the
+		// scrutinee: at a nested level the scrutinee is the parent's element variable,
+		// so only the threaded concrete still carries the element shape a borrowed leaf
+		// must inspect to decide whether to borrow.
+		concreteTup, _ := concrete.(*soltype.TupleType)
 		subs := make([]soltype.Pat, len(fixed))
 		for i, e := range fixed {
-			subs[i] = c.bindPatternWith(scope, lvl, e, elemTypes[i], leafTypes, emit)
+			var elemConcrete soltype.Type
+			if concreteTup != nil && i < len(concreteTup.Elems) {
+				elemConcrete = concreteTup.Elems[i]
+			}
+			subs[i] = c.bindPatMode(scope, lvl, e, elemTypes[i], elemConcrete, mode, leafTypes, emit)
 		}
 		c.recordType(p, scrutinee)
 		return &soltype.TuplePat{Elems: subs}
@@ -134,6 +200,7 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 				beta := c.freshAt(lvl)
 				c.constrain(e, scrutinee, propReq(e.Key.Name, beta, e.Default != nil))
 				t := c.applyLeafExtras(scope, lvl, e, beta, e.TypeAnn, e.Default)
+				t = c.applyBindMode(lvl, e, e.Mutable, t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), mode)
 				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit)
 				fields = append(fields, &soltype.ObjectPatField{
 					Name:  e.Key.Name,
@@ -154,7 +221,7 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 						c.constrain(e, beta, prop.Type)
 					}
 				}
-				sub := c.bindPatternWith(scope, lvl, e.Value, beta, leafTypes, emit)
+				sub := c.bindPatMode(scope, lvl, e.Value, beta, fieldConcrete(concrete, e.Key.Name), mode, leafTypes, emit)
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: sub})
 			default:
 				// ObjRestPat (`{...rest}`) needs object rest types, which arrive in M9.
@@ -193,6 +260,119 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, slot sol
 		c.constrain(def, defT, bound)
 	}
 	return bound
+}
+
+// applyBindMode wraps a destructured leaf's slot type according to the scrutinee's
+// binding mode and the leaf's own `mut` marker, returning the type the leaf binds at.
+//
+//   - Owned scrutinee: the leaf is moved out. A `mut` leaf thaws into an owned-mutable
+//     cell so a later write through it succeeds; a plain leaf keeps the slot's immutable
+//     type.
+//   - `&` scrutinee: the leaf is a shared borrow bounded by the scrutinee's lifetime.
+//     A `mut` leaf is rejected — mutable access cannot be projected out of an immutable
+//     borrow — and recovers as the shared borrow.
+//   - `&mut` scrutinee: the leaf is a mutable borrow bounded by the scrutinee's
+//     lifetime, so the `mut` marker is redundant.
+//
+// The borrow wrap is gated on the concrete element being borrowable, mirroring
+// fieldReadBorrow: a primitive or function element is copied, not borrowed, so it is
+// returned unchanged. A leaf whose element shape is not statically known — concrete is
+// nil — is also returned unchanged rather than borrowed, the same conservative choice
+// fieldReadBorrow makes for an unknown receiver.
+func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, slot, concrete soltype.Type, mode bindMode) soltype.Type {
+	switch mode.borrow {
+	case bmShared:
+		if mut {
+			c.report(&MutLeafThroughSharedBorrowError{Node: node})
+		}
+		if ri, ok := slot.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
+			return soltype.NewRef(false, mode.lt, ri)
+		}
+		return slot
+	case bmMut:
+		if _, ok := slot.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
+			// Route the projection through a fresh variable rather than wrapping the
+			// slot directly. A tuple/object pattern pins each leaf's slot to the
+			// scrutinee's concrete element as an upper bound, which makes the slot
+			// invariantly exact under the `&mut` wrapper, so an inexact write
+			// requirement `mut {y, ...}` would clash with the exact element. The fresh
+			// variable takes the slot only as a lower bound, leaving its shape free to
+			// absorb the write requirement.
+			v := c.freshAt(lvl)
+			c.constrain(node, slot, v)
+			return soltype.NewRef(true, mode.lt, v)
+		}
+		return slot
+	default: // bmOwned
+		if mut {
+			return c.thawOwnedLeaf(lvl, node, slot, concrete)
+		}
+		return slot
+	}
+}
+
+// thawOwnedLeaf turns a `mut` leaf moved out of an owned scrutinee into an
+// owned-mutable cell, the destructuring analogue of the `val mut q = p` thaw in
+// inferVarDeclInit. When the leaf's projected type is statically known — the common
+// case where the scrutinee is a concrete tuple or object — the cell wraps the
+// widened concrete type directly, so it renders as a clean `mut {y: number}` and a
+// later write checks against the concrete shape, exactly as the IdentPat thaw does.
+//
+// When the projected type is not statically known, concrete is nil and the thaw
+// routes the projection variable through a fresh widenable variable: the slot flows
+// in as a lower bound and widening at coalesce time turns a literal field into its
+// primitive. The cell then carries a variable rather than a concrete object, which is
+// less precise to render but still admits the write.
+func (c *checker) thawOwnedLeaf(lvl int, node ast.Node, slot, concrete soltype.Type) soltype.Type {
+	if concrete != nil {
+		widened := widen(stripOwnedMut(concrete))
+		inner, ok := widened.(soltype.RefInner)
+		if !ok {
+			// A primitive or function leaf is not borrowable, so `mut` is a no-op — it
+			// keeps its slot type, mirroring `val mut a = 1` keeping the primitive. Only
+			// an object or tuple leaf thaws into a mutable cell.
+			return slot
+		}
+		ref := soltype.NewRef(true, nil, inner)
+		c.recordProv(ref, node, OwnedMutConstruction)
+		return ref
+	}
+	v := c.freshAt(lvl)
+	v.Widenable = true
+	c.constrain(node, slot, v)
+	ref := soltype.NewRef(true, nil, v)
+	c.recordProv(ref, node, OwnedMutConstruction)
+	return ref
+}
+
+// concreteLeaf resolves the concrete type a leaf binds at. A leaf with its own type
+// annotation adopts that annotation rather than the scrutinee's projected type, so the
+// scrutinee-derived concrete hint does not apply and is dropped. Otherwise the
+// scrutinee-derived concrete type is used, which is non-nil only when the scrutinee's
+// shape is statically known. A concrete type that is still an inference variable is
+// treated as unknown, since wrapping a variable defeats the clean-rendering the hint
+// exists to provide.
+func (c *checker) concreteLeaf(concrete soltype.Type, typeAnn ast.TypeAnn) soltype.Type {
+	if typeAnn != nil {
+		return nil
+	}
+	if _, isVar := concrete.(*soltype.TypeVarType); isVar {
+		return nil
+	}
+	return concrete
+}
+
+// fieldConcrete returns field `name`'s type from a concrete object type, or nil when
+// t is not a concrete object or lacks the field. It reads the threaded concrete type,
+// so it resolves a field even at a nested level where the scrutinee is a projection
+// variable. It is the object-pattern analogue of indexing a concrete tuple's elements.
+func fieldConcrete(t soltype.Type, name string) soltype.Type {
+	if o, ok := t.(*soltype.ObjectType); ok {
+		if prop, found := o.Prop(name); found {
+			return prop.Type
+		}
+	}
+	return nil
 }
 
 // patternDefaultsField reports whether a destructured field's value sub-pattern
