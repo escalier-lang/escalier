@@ -173,6 +173,24 @@ type funcCtx struct {
 	// inferStmt. A reassignment `a = e` lives in expression position, so the transition
 	// checker reads the enclosing statement from here to find its CFG StmtRef.
 	currentStmt ast.Stmt
+	// pendingTransitions holds the phase/exclusivity conflicts the walk found, deferred
+	// for emission until the consumed lattice is complete. checkMutabilityTransition
+	// computes each conflict against the alias and liveness state at the transition's
+	// program point and records it here rather than reporting it inline. After the body
+	// walk, resolvePhaseTransitions emits each one unless the consumed lattice finds its
+	// source moved on every reaching path, in which case the move engine's
+	// use-after-move subsumes it. Deferring the emission lets the phase decision read
+	// the complete post-walk lattice, so each conflict's path-sensitivity is decided in
+	// one pass.
+	//
+	// INVARIANT: this slice must not be mutated under a discardable probe. The conflicts
+	// here bypass openProbe's errs snapshot, since they reach c.errs only later through
+	// resolvePhaseTransitions, so a discarded trial would not roll them back. It holds
+	// today because checkMutabilityTransition runs only on the non-speculative statement
+	// walk, never inside a probe. A probe opened around a statement walk that can reach
+	// checkMutabilityTransition would have to journal this slice's length in openProbe,
+	// the way errs is journaled.
+	pendingTransitions []*MutabilityTransitionError
 }
 
 // pushFuncCtx enters the inference context for function `node` (async controls

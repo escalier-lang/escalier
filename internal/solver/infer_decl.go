@@ -99,6 +99,34 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		} else if d.Kind == ast.VarKind {
 			initT = widened
 		}
+	case d.TypeAnn == nil && c.bindingMovesOwnedPlace(d.Pattern, d.Init, initT):
+		// `val q = p` / `val mut q = p` moves an owned value out of the place `p`
+		// into the new binding `q`. The move consumes `p` and leaves `q` the sole
+		// owner, so `q`'s mutability is taken from the binding pattern rather than
+		// inherited from `p`. A `val mut q` thaws an owned-immutable source into an
+		// owned-mutable binding, and a plain `val q` freezes an owned-mutable source
+		// into an owned-immutable one. consumeBindingInit records the consume for the
+		// same binding, and trackAliasesForIdentPat seeds `q` as a fresh owner.
+		if isMutableIdentPat(d.Pattern) {
+			// Thaw: widen the source's literal fields and wrap the result in an
+			// owned-mutable cell, the same owned-mutable cell the fresh-literal
+			// `val mut q = {…}` upgrade above produces. A place move's source is an
+			// object, tuple, or owned RefType, so the widened type is a RefInner and
+			// the wrap always applies.
+			if inner, ok := widen(stripOwnedMut(initT)).(soltype.RefInner); ok {
+				ref := soltype.NewRef(true, nil, inner)
+				c.recordProv(ref, d.Init, OwnedMutConstruction)
+				initT = ref
+			}
+		} else {
+			// Freeze: take the source's immutable skeleton, so a later write through
+			// `q` is rejected. A `var` slot still widens so a reassignment can store
+			// another value of the widened shape.
+			initT = stripOwnedMut(initT)
+			if d.Kind == ast.VarKind {
+				initT = widen(initT)
+			}
+		}
 	case d.TypeAnn != nil:
 		// M2.5: constrain the initializer against the annotation (the one
 		// non-provenance addition, §3.7), so `val x: number = "hi"` produces a
@@ -203,6 +231,28 @@ func stripOwnedMut(t soltype.Type) soltype.Type {
 	default:
 		return t
 	}
+}
+
+// bindingMovesOwnedPlace reports whether the unannotated initializer of an IdentPat
+// binding moves an owned value out of a place. A place is a binding or a field path
+// such as `p` or `pair.a`, and its value moves when it is a concrete owned object,
+// tuple, or owned RefType. Such a binding takes ownership of the value, so the
+// binding's declared mutability replaces the source's. A `val mut q` thaws an
+// owned-immutable source into a mutable binding, and a plain `val q` freezes an
+// owned-mutable source into an immutable one.
+//
+// A borrow, value type, fresh literal, generic type-parameter value, or non-place
+// initializer is not a place move and keeps the ordinary inference. exprPlace also
+// fails outside a function body, where the rename pass has assigned no VarID, so the
+// mutability rewrite is confined to bodies where the move engine enforces the consume.
+func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT soltype.Type) bool {
+	if _, ok := pat.(*ast.IdentPat); !ok {
+		return false
+	}
+	if _, ok := exprPlace(init); !ok {
+		return false
+	}
+	return isConcreteOwned(initT)
 }
 
 // isMutableIdentPat reports whether p is a simple identifier binding written with

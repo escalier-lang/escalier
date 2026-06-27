@@ -387,7 +387,11 @@ func (c *checker) checkMutabilityTransition(
 	conflicting := conflictingSet.ToSlice()
 	sort.Strings(conflicting)
 
-	c.errs = append(c.errs, &MutabilityTransitionError{
+	// Record the conflict rather than reporting it now. It is computed from the alias
+	// and liveness state at this program point. Whether it survives depends on the
+	// consumed lattice, which is complete only after the whole body is walked, so
+	// resolvePhaseTransitions makes that call in the post-pass.
+	c.fn.pendingTransitions = append(c.fn.pendingTransitions, &MutabilityTransitionError{
 		SourceVar:       sourceVarName,
 		TargetVar:       targetVarName,
 		ConflictingVars: conflicting,

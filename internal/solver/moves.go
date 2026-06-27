@@ -550,15 +550,15 @@ func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref livene
 // recorded AT that statement — the consume in `val q = p`, where reading p and
 // moving it share one statement — does not flag its own source read.
 //
-// It also reconciles the exclusivity diagnostic against the same lattice: a
-// mutability-transition error whose source the lattice finds already moved at the
-// transition point is subsumed by a use-after-move, so reconcileMovedTransitions drops
-// it.
+// It also resolves the phase/exclusivity diagnostics against the same lattice:
+// resolvePhaseTransitions emits each conflict the walk recorded unless the lattice
+// finds its source moved on every path reaching the transition, where the
+// use-after-move subsumes it.
 func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 {
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
@@ -586,7 +586,7 @@ func (c *checker) checkUseAfterMoves() {
 			moveSite:    c.fn.moveNodes[movedID],
 		})
 	}
-	c.reconcileMovedTransitions(info)
+	c.resolvePhaseTransitions(info)
 }
 
 // movedConflict finds the strongest consumed state among the moved places that
@@ -628,32 +628,30 @@ func (c *checker) movedConflict(info *liveness.MoveInfo, u moveUse) (liveness.Mo
 	return best, bestID
 }
 
-// reconcileMovedTransitions drops every mutability-transition error whose source the
-// consumed lattice finds moved on a path reaching the transition. Such an error is a
-// stale exclusivity conflict off a value the move engine already reports a
-// use-after-move for, so keeping it would double-report. Querying the path-sensitive
-// lattice rather than a synchronous flag is what makes this precise: a source moved on
-// only one branch is NotMoved on a sibling branch, so a real exclusivity conflict there
-// survives.
+// resolvePhaseTransitions emits the phase/exclusivity conflicts the walk recorded,
+// deciding each against the now-complete consumed lattice. A mutable owned value sits
+// in one of two phases that never overlap: an immutable phase with any number of `&`
+// borrows, or a mutable phase with any number of `&mut` borrows. A recorded conflict
+// is a borrow of the opposite phase still live across the transition.
+//
+// The lattice makes the decision path-sensitive:
+//   - Moved on every path reaching the transition: the move engine already reports a
+//     use-after-move at that point, which subsumes the conflict, so it is dropped.
+//   - MaybeMoved, moved on some reaching paths but not all: the non-moving paths are a
+//     real phase conflict, so the error is kept. The moving paths read as the
+//     conditional use-after-move the move engine reports there, so both diagnostics
+//     stand, each describing the paths it governs.
+//   - NotMoved: an ordinary phase conflict, kept.
 //
 // The query is scoped to this body for free. Module-wide VarID numbering means this
-// body's lattice never marks another body's source moved, so an error from a different
-// body reads NotMoved here and is kept.
-//
-// A MaybeMoved source — moved on some but not all paths reaching the transition — is
-// dropped too, since keeping it would double-report alongside the conditional
-// use-after-move on the moving paths. That loses a real exclusivity conflict on the
-// non-moving paths of such a source, a narrow residual the PR 8 phase reframing closes
-// by deciding exclusivity from the lattice and alias set in one pass.
-func (c *checker) reconcileMovedTransitions(info *liveness.MoveInfo) {
-	kept := c.errs[:0]
-	for _, e := range c.errs {
-		if mt, ok := e.(*MutabilityTransitionError); ok && mt.sourceVarID > 0 {
-			if info.StateBefore(mt.ref, mt.sourceVarID) != liveness.NotMoved {
-				continue
-			}
+// body's lattice never marks another body's source moved, so a conflict whose source
+// lives in a different body reads NotMoved here and is kept.
+func (c *checker) resolvePhaseTransitions(info *liveness.MoveInfo) {
+	for _, e := range c.fn.pendingTransitions {
+		if e.sourceVarID > 0 && info.StateBefore(e.ref, e.sourceVarID) == liveness.Moved {
+			continue
 		}
-		kept = append(kept, e)
+		c.errs = append(c.errs, e)
 	}
-	c.errs = kept
+	c.fn.pendingTransitions = nil
 }

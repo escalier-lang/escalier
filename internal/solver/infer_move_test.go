@@ -377,3 +377,58 @@ func TestMoveSemantics(t *testing.T) {
 		})
 	}
 }
+
+// TestThawMove covers the immutable→mutable thaw. `val mut q = p` for an
+// owned-immutable `p` moves `p` into the mutable binding `q` and consumes it. The move
+// leaves `q` the sole owner, so `q` may be mutable, and `q.x = 5` is accepted with no
+// immutable-object error. The later `p.x` reads `p` after it was moved. That read is a
+// use-after-move, and it is the only diagnostic. This is the requirements' thawing
+// example.
+func TestThawMove(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn test() {
+			val p = {x: 0}
+			val mut q = p
+			q.x = 5
+			p.x
+		}
+	`)
+	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
+}
+
+// TestFreezeMove covers the mutable→immutable freeze. A plain `val q = p` for an
+// owned-mutable `p` moves `p` into the immutable binding `q` and consumes it. The
+// binding's mutability comes from the pattern, so `q` is immutable and the write
+// `q.x = 5` is rejected. The later `p.x` is a use-after-move on the consumed source.
+// Both diagnostics stand. This is the plan's freeze example.
+func TestFreezeMove(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn test() {
+			val mut p = {x: 0}
+			p.x = 42
+			val q = p
+			q.x = 5
+			p.x
+		}
+	`)
+	require.Equal(t, []string{
+		"cannot constrain immutable object <: mutable object",
+		"use of moved value 'p'",
+	}, Messages(errs))
+}
+
+// TestFreezeMoveAllowed shows the freeze move itself is allowed. Binding an
+// owned-mutable `p` into a plain `val q` moves the value into an immutable owner and
+// consumes `p`. With `p` never used again, the move produces no error. `q` is
+// owned-immutable, so the function returns the value at the frozen type
+// `fn (p: mut {x: number}) -> {x: number}`. This is the mirror of
+// TestInferValMutThawFromVariable, which thaws an owned-immutable source into an
+// owned-mutable binding.
+func TestFreezeMoveAllowed(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
+  val q = p
+  return q
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {x: number}) -> {x: number}", values["f"])
+}

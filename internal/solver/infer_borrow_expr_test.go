@@ -189,18 +189,59 @@ func TestInferValMutPrimitiveUnchanged(t *testing.T) {
 	require.Equal(t, "fn () -> 5", values["f"])
 }
 
-// The construction upgrade fires only for a freshly constructed literal. Binding a
-// `mut` to a non-fresh source — here a parameter — does not upgrade it to
-// owned-mutable, since moving an existing owned value into a mutable binding is the
-// thaw move whose consume enforcement lands in PR 8. The binding stays at the
-// source's owned-immutable type for now.
-func TestInferValMutFromVariableNotUpgraded(t *testing.T) {
+// `val mut p = src` thaws an owned-immutable source into an owned-mutable binding.
+// The move consumes `src` and leaves `p` the sole owner. No reference to the value
+// survives to observe `p`'s later mutations, so it is sound for `p` to be mutable. The
+// binding's mutability comes from the `mut` pattern, not from the source. So `p` is
+// `mut {x: number}` and the function returns it at that type.
+func TestInferValMutThawFromVariable(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(src: {x: number}) {
   val mut p = src
   return p
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (src: {x: number}) -> {x: number}", values["f"])
+	require.Equal(t, "fn (src: {x: number}) -> mut {x: number}", values["f"])
+}
+
+// Thawing widens the source's literal fields to their primitive type. `p` holds the
+// singleton `{x: 0}`, and thawing it into `val mut q` yields `mut {x: number}` rather
+// than `mut {x: 0}`. A mutable cell admits any value of the field's primitive type, so
+// a write like `q.x = 5` would otherwise be rejected against a `0` singleton. This is
+// the same widening the fresh-literal `val mut q = {x: 0}` upgrade applies.
+func TestInferValMutThawWidensLiteral(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f() {
+  val p = {x: 0}
+  val mut q = p
+  return q
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+}
+
+// Freezing into a `var` binding widens the source's literal fields, since a `var` slot
+// must admit any later reassignment of the field's primitive type. Freezing the
+// singleton `{x: 0}` into `var q` yields `{x: number}`. A plain `val q` keeps the
+// singleton, because an immutable, non-reassignable binding has no widening reason.
+// Both freeze the value immutably; only the `var` slot widens.
+func TestFreezeVarWidensLiteral(t *testing.T) {
+	t.Run("var_widens", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn f() {
+  val p = {x: 0}
+  var q = p
+  return q
+}`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn () -> {x: number}", values["f"])
+	})
+	t.Run("val_keeps_singleton", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn f() {
+  val p = {x: 0}
+  val q = p
+  return q
+}`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn () -> {x: 0}", values["f"])
+	})
 }
 
 // --- Rule 3 (binding initializer): annotated bindings --------------------------

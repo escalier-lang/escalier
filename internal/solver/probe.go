@@ -235,6 +235,17 @@ func (p *Probe) Commit() {
 // completes the "leaves no trace" guarantee alongside the bound + Info/Prov
 // journaling, so a speculative trial may safely route failures through the
 // error-accumulating walk, not only the error-returning Constrain.
+//
+// The "leaves no trace" guarantee covers errs, bounds, and the Info/Prov side
+// tables. It does NOT cover funcCtx.pendingTransitions, the deferred phase/exclusivity
+// conflicts. Those are recorded by the statement walk (checkMutabilityTransition) and
+// emitted only after the body walk by resolvePhaseTransitions, so they never pass
+// through the errs snapshot above. This is sound only because the transition checks run
+// outside any open probe: every openProbe site wraps a type-level Context.Constrain
+// trial, not a statement or assignment walk. If a probe is ever opened around a body
+// walk that can reach checkMutabilityTransition, a discarded trial would leak a spurious
+// phase conflict. Journal len(c.fn.pendingTransitions) here and truncate it on rollback
+// at that point, mirroring the errs snapshot.
 func (c *checker) openProbe() *Probe {
 	p := newProbe(c.ctx.probe)
 	c.ctx.probe = p
