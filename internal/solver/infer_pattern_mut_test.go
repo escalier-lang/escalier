@@ -247,6 +247,17 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 					}
 				}
 			}`},
+		// `&mut` scrutinee, object pattern (Rust ergonomics): an unmarked field leaf is
+		// also a mutable borrow, so the write succeeds without the `mut` marker.
+		"MutBorrowObjectPlainLeaf": {src: `
+			fn f(pt: &mut {a: {x: number}, b: {y: number}}) {
+				match pt {
+					{a: m, b: n} => {
+						m.x = 5
+						0
+					}
+				}
+			}`},
 		// `&` scrutinee: a `mut` leaf of a match arm is rejected — mutable access cannot
 		// be projected out of an immutable borrow.
 		"SharedBorrowMutLeafRejected": {src: `
