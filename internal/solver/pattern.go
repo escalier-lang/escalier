@@ -65,10 +65,10 @@ const (
 	// bmOwned marks an owned scrutinee. Each leaf is moved out and takes its declared
 	// mutability. A plain leaf is owned-immutable. A `mut` leaf is owned-mutable.
 	bmOwned borrowMode = iota
-	// bmShared marks an immutable `&` borrow scrutinee. Each leaf is a shared borrow
+	// bmImm marks an immutable `&` borrow scrutinee. Each leaf is a shared borrow
 	// bounded by the scrutinee's lifetime. A `mut` leaf is an error. Mutable access
 	// cannot be obtained through an immutable borrow.
-	bmShared
+	bmImm
 	// bmMut marks a `&mut` borrow scrutinee. Each leaf is a mutable borrow bounded by
 	// the scrutinee's lifetime, following Rust's match ergonomics. A `mut` marker is
 	// redundant here.
@@ -84,7 +84,7 @@ func bindModeOf(scrutinee soltype.Type) bindMode {
 		if r.Mut {
 			return bindMode{borrow: bmMut, lt: r.Lt}
 		}
-		return bindMode{borrow: bmShared, lt: r.Lt}
+		return bindMode{borrow: bmImm, lt: r.Lt}
 	}
 	return bindMode{borrow: bmOwned}
 }
@@ -282,7 +282,7 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, slot sol
 // fieldReadBorrow makes for an unknown receiver.
 func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, slot, concrete soltype.Type, mode bindMode) soltype.Type {
 	switch mode.borrow {
-	case bmShared:
+	case bmImm:
 		if mut {
 			c.report(&MutLeafThroughSharedBorrowError{Node: node})
 		}
