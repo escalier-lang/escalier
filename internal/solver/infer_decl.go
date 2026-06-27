@@ -204,14 +204,15 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 // tryUpgradeIntoMutSlot grants the immutable→mutable upgrade when a value of type srcT,
 // built by src, flows into the target type targetSlot. The upgrade fires only when
 // targetSlot is owned-mutable — a RefType with Mut set and a nil lifetime — and src is
-// uniquely owned per canUpgradeToOwnedMut. It then constrains srcT against the slot's
+// uniquely owned per canUpgradeToOwnedMut. It then constrains srcT against targetSlot's
 // immutable read view, stripOwnedMut of the inner, the same covariant check the non-mut
 // path runs, and returns true. Otherwise it constrains nothing and returns false, leaving
 // the caller to run its ordinary constraint against targetSlot.
 //
-// This is the one shared decision every value-flow site into a `mut` slot consults: the
-// declaration initializer, a reassignment target, a `mut` call argument, a `mut` return,
-// and a `mut` field write. site is the node blamed on failure. src is the source
+// targetSlot is whatever owned-mutable type the value flows into at a given site, and
+// every such site routes through here: the declaration initializer's annotation, a
+// reassignment target's binding type, a `mut` parameter type, a `mut` return annotation,
+// and a `mut` field's type. site is the node blamed on failure. src is the source
 // expression, which canUpgradeToOwnedMut inspects for the syntactic fresh-literal fast
 // path and the place-move path.
 func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, targetSlot soltype.Type) bool {
@@ -221,18 +222,18 @@ func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, targe
 	}
 	// Under the lazy deep-mut form the inner is already bare, and a nested `mut {x}` field
 	// inside a non-mut container is rejected at the annotation site (#779), so stripOwnedMut
-	// is a defensive no-op for most slots. It still lets a uniquely-owned source flow
-	// covariantly into any owned-mut cell that reaches here. A fully uniquely-owned source
-	// is owned at every level, so the upgrade is sound the whole way down.
+	// is a defensive no-op for most targetSlot types. It still lets a uniquely-owned source
+	// flow covariantly into any owned-mut cell that reaches here. A fully uniquely-owned
+	// source is owned at every level, so the upgrade is sound the whole way down.
 	c.constrain(site, srcT, stripOwnedMut(ref.Inner))
 	return true
 }
 
 // canUpgradeToOwnedMut reports whether the value built by src may be granted an
-// owned-mutable type when it flows into an owned-mutable slot. The grant is sound only when
-// the value is uniquely owned, so no live immutable alias can observe a write through the
-// new mutable view. This is Rule 2 of the mutability-transition checker with an empty alias
-// set. Three cases show what it returns and why:
+// owned-mutable type when it flows into an owned-mutable target. The grant is sound only
+// when the value is uniquely owned, so no live immutable alias can observe a write through
+// the new mutable view. This is Rule 2 of the mutability-transition checker with an empty
+// alias set. Three cases show what it returns and why:
 //
 //   - A syntactically fresh literal returns true. In `val m: mut {x} = {x: 1}` the literal
 //     is newly built and nothing else refers to it, so it is uniquely owned and granting it
@@ -246,7 +247,7 @@ func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, targe
 //
 //   - A literal wrapping an owned-mutable leaf returns false. In `{p: inner}` with
 //     `inner: mut {x: number}`, `inner` already holds a mutable cell. The upgrade constrains
-//     the source against the slot's covariant read view, which would widen that cell — for
+//     the source against the target's covariant read view, which would widen that cell — for
 //     example accept it where `mut {x: number | string}` is expected — and that is unsound.
 //     Returning false routes the source to the strict mut<:mut path, which pins the cell's
 //     element type invariant. containsOwnedMut is recursive, so an owned-mutable cell at any
@@ -355,8 +356,8 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 }
 
 // movesOwnedPlace reports whether init names a uniquely-owned place whose value moves
-// when it flows into an owning slot. A place is a binding or a field path, so exprPlace
-// succeeds on it. Its value moves when it is a concrete owned object, tuple, or owned
+// when it flows into an owning destination. A place is a binding or a field path, so
+// exprPlace succeeds on it. Its value moves when it is a concrete owned object, tuple, or owned
 // RefType. The move consumes the place and leaves the destination its sole owner.
 // exprPlace fails outside a function body, where the rename pass has assigned no VarID, so
 // a move is confined to bodies where the move engine enforces the consume. This is the
@@ -378,7 +379,7 @@ func isOwnedMut(t soltype.Type) bool {
 
 // containsOwnedMut reports whether t is an owned-mutable cell or holds one nested inside
 // an object or tuple. It detects exactly what stripOwnedMut would peel. The
-// immutable→mutable upgrade constrains the source against the slot's covariant read view,
+// immutable→mutable upgrade constrains the source against the target's covariant read view,
 // which is sound only when the source has no mutable cell to widen, so canUpgradeToOwnedMut
 // rejects a source where this returns true and routes it to the strict mut<:mut path. A
 // borrow's pointee belongs to another region, so it is left to the borrow rules and not

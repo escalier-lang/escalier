@@ -386,13 +386,13 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 
 // constrainReturnAgainstAnnotation constrains a function body's joined return type
 // against its declared return annotation, granting the immutable→mutable upgrade when
-// the annotation is an owned-mutable slot and EVERY return value is uniquely owned. A
+// the return annotation is owned-mutable and EVERY return value is uniquely owned. A
 // function yields a value as owned-mutable only when each returned value is uniquely
 // owned, so a single non-upgradable return on any path blocks the grant and the strict
 // constraint runs. With the grant the joined return shape is constrained against the
-// slot's immutable read view, the same covariant check tryUpgradeIntoMutSlot runs at the
-// other value-flow sites. The join is not a single source expression, so the decision is
-// made here rather than through that per-expression helper.
+// return annotation's immutable read view, the same covariant check tryUpgradeIntoMutSlot
+// runs at the other value-flow sites. The join is not a single source expression, so the
+// decision is made here rather than through that per-expression helper.
 func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, retExprs []ast.Expr, ret, annT soltype.Type) {
 	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && c.allReturnsUpgradable(retExprs) {
 		c.constrain(node, ret, stripOwnedMut(ref.Inner))
@@ -899,8 +899,9 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// flowing into an owned-mutable parameter takes the mutable type, the same grant the
 	// annotated declaration makes, so `f({x: 1})` and `f(cfg)` for an owned-mutable
 	// parameter type-check. The argument's shape is constrained covariantly against the
-	// parameter's immutable read view, and the demand slot is pinned to the parameter's
-	// own type so the callee <: callShape constraint below does not re-check it strictly.
+	// parameter's immutable read view, and the demand entry for that argument is pinned to
+	// the parameter's own type so the callee <: callShape constraint below does not re-check
+	// it strictly.
 	// consumeCallArgs still moves the argument, since an owned-mutable parameter is
 	// concrete-owned. It runs only for a resolved callee, where the parameter types are
 	// known. A deferred callee, one called through a `var`, keeps every argument on the
@@ -909,9 +910,9 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		for i := 0; i < len(e.Args) && i < len(fn.Params); i++ {
 			if c.tryUpgradeIntoMutSlot(e.Args[i], e.Args[i], demand[i].Type, fn.Params[i].Type) {
 				// The upgrade constrained the argument's shape against the parameter's
-				// immutable read view, so pin the demand slot to the parameter's own type;
-				// the callee <: callShape constraint below then re-checks it as param<:param
-				// rather than strictly rejecting the immutable argument.
+				// immutable read view, so pin this argument's demand entry to the parameter's
+				// own type; the callee <: callShape constraint below then re-checks it as
+				// param<:param rather than strictly rejecting the immutable argument.
 				demand[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
 			}
 		}
@@ -1142,7 +1143,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// A uniquely-owned source stored into an owned-mutable global takes the same
 		// immutable→mutable upgrade as the local reassignment path, so `sink = {x: 1}`
 		// type-checks. The carrier feeds the upgrade for the same reason it feeds the
-		// strict check below: a borrow forced to 'static satisfies the owned slot.
+		// strict check below: a borrow forced to 'static satisfies the owned global.
 		if !c.tryUpgradeIntoMutSlot(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
 			c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
 		}
