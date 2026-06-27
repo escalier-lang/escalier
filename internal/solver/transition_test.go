@@ -227,13 +227,9 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 			snap
 		}
 	`)
-	msgs := make([]string, len(errs))
-	for i, e := range errs {
-		msgs[i] = e.Message()
-	}
 	require.ElementsMatch(t, []string{
 		"use of moved value 'p'",
-	}, msgs)
+	}, Messages(errs))
 }
 
 // TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
@@ -490,13 +486,9 @@ func TestTransitionWiringReportsMoveError(t *testing.T) {
 			q.x
 		}
 	`)
-	msgs := make([]string, len(errs))
-	for i, e := range errs {
-		msgs[i] = e.Message()
-	}
 	require.ElementsMatch(t, []string{
 		"use of moved value 'p'",
-	}, msgs)
+	}, Messages(errs))
 }
 
 // TestCollectOuterBindingsPreludeCache covers the outer-binding collection that feeds
@@ -700,14 +692,10 @@ func TestRule2TransitionFromSource(t *testing.T) {
 			config.x
 		}
 	`)
-	msgs := make([]string, len(errs))
-	for i, e := range errs {
-		msgs[i] = e.Message()
-	}
 	require.ElementsMatch(t, []string{
 		"cannot constrain immutable object <: mutable object",
 		"use of moved value 'config'",
-	}, msgs)
+	}, Messages(errs))
 }
 
 // TestMutabilityTransitionReassignFromSource exercises the reassignment transition path

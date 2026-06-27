@@ -57,9 +57,9 @@ func InferScript(script *ast.Script) (*Scope, *Info, []SolverError) {
 	// and divergence flag are discarded, just as inferFunc discards them. A script,
 	// like a function body, produces no value from its last statement.
 	c.inferBlock(scope, 0, scriptBody)
-	// PR 6: a script body runs with function-body semantics, so the move engine
-	// applies here too. With the whole body walked, replay the recorded reads
-	// against the consumed lattice to report use-after-move.
+	// A script body runs with function-body semantics, so the move engine applies
+	// here too. With the whole body walked, replay the recorded reads against the
+	// consumed lattice to report use-after-move.
 	c.checkUseAfterMoves()
 
 	return scope, c.info, c.errs

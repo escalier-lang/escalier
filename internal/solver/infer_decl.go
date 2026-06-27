@@ -154,7 +154,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 //
 // 2. A bare owned annotation whose initializer is a borrow is a borrow-into-owned
 // escape. A `val` binding consumes an owned source, so a borrowed `p` flowing into a
-// bare owned slot, as in `val q: {x} = p`, does not alias `p`; the constraint takes the
+// bare owned slot, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
 // ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
 // `val q: &{x} = p` is the opt-in for an alias.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {

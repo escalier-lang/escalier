@@ -6,221 +6,248 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Move / use-after-move tests for PR 6 of the affine-semantics plan. Each flow site
-// — a binding, a reassignment, a return, an owned-parameter argument, and a
-// module-level write — consumes an owned source, so a later use of it is a
-// use-after-move. A borrow site leaves the source usable.
+// Move and use-after-move tests for the affine move engine. Each flow site consumes
+// an owned source, so a later use of it is a use-after-move. The flow sites are a
+// binding, a reassignment, a return, an owned-parameter argument, a field store, an
+// object or tuple literal element, and a module-level write. A borrow site leaves the
+// source usable. want is nil for the cases that check cleanly.
+func TestMoveSemantics(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// Binding an owned value into another owned binding moves it, so the later use of
+		// the source is a use-after-move.
+		"ValBindingConsumesSource": {
+			src: `
+				fn test() {
+					val p: mut {x: number} = {x: 0}
+					val q = p
+					p.x
+				}
+			`,
+			want: []string{"use of moved value 'p'"},
+		},
+		// An explicit `&` borrow does not move the source.
+		"BorrowBindingKeepsSource": {
+			src: `
+				fn test() {
+					val p: mut {x: number} = {x: 0}
+					val q = &p
+					p.x
+				}
+			`,
+		},
+		// A `&` annotation borrows rather than moves, so the source stays usable.
+		"BorrowAnnotationKeepsSource": {
+			src: `
+				fn test() {
+					val p: mut {x: number} = {x: 0}
+					val q: &{x: number} = p
+					p.x
+				}
+			`,
+		},
+		// Passing an owned value to a bare owned parameter moves it into the callee.
+		"OwnedArgumentConsumed": {
+			src: `
+				fn store(p: {x: number}) {}
+				fn test() {
+					val p = {x: 0}
+					store(p)
+					p.x
+				}
+			`,
+			want: []string{"use of moved value 'p'"},
+		},
+		// Passing an owned value to a `&` parameter auto-borrows and keeps it usable.
+		"BorrowParameterKeepsArgument": {
+			src: `
+				fn read(p: &{x: number}) {}
+				fn test() {
+					val p = {x: 0}
+					read(p)
+					p.x
+				}
+			`,
+		},
+		// A call rejected for an arity mismatch records no moves, so a wrong argument
+		// count does not also cascade a use-after-move.
+		"ArityMismatchSkipsConsume": {
+			src: `
+				fn store(p: {x: number}) {}
+				fn test() {
+					val p = {x: 0}
+					store(p, p)
+					p.x
+				}
+			`,
+			want: []string{"Too many arguments: expected at most 1, but got 2"},
+		},
+		// Returning an owned value moves it out of the frame. A second occurrence of the
+		// same owned binding in the returned tuple is a use-after-move within one
+		// statement.
+		"ReturnDuplicateIsUseAfterMove": {
+			src: `
+				fn dup(x: {a: number}) -> [{a: number}, {a: number}] {
+					return [x, x]
+				}
+			`,
+			want: []string{"use of moved value 'x'"},
+		},
+		// A borrow parameter is copied, not moved, so the body may return it twice. This
+		// is the concrete counterpart to the generic `fn dup<T>(x: &T)`; the
+		// type-parameter form awaits TypeParam support in the new solver.
+		"DupBorrowParameterAccepted": {
+			src: `
+				fn dup(x: &{a: number}) -> [&{a: number}, &{a: number}] {
+					return [x, x]
+				}
+			`,
+		},
+		// Spreading an owned tuple moves its elements into the new tuple.
+		"TupleSpreadConsumesSource": {
+			src: `
+				fn test() {
+					val xs: [{a: number}] = [{a: 1}]
+					val ys = [...xs]
+					xs
+				}
+			`,
+			want: []string{"use of moved value 'xs'"},
+		},
+		// A value moved on only one branch is a conditional use-after-move at a later
+		// read, since some reaching path moved it.
+		"ConditionalUseAfterMove": {
+			src: `
+				fn store(p: {x: number}) {}
+				fn test(cond: boolean) {
+					val p = {x: 0}
+					if cond {
+						store(p)
+					} else {
+					}
+					p.x
+				}
+			`,
+			want: []string{"use of moved value 'p'"},
+		},
+		// A value moved on every branch is an unconditional use-after-move at a later
+		// read.
+		"BothBranchesUseAfterMove": {
+			src: `
+				fn store(p: {x: number}) {}
+				fn test(cond: boolean) {
+					val p = {x: 0}
+					if cond {
+						store(p)
+					} else {
+						store(p)
+					}
+					p.x
+				}
+			`,
+			want: []string{"use of moved value 'p'"},
+		},
+		// A move confined to one branch does not consume the source on the path that did
+		// not move it, so a use inside the untouched branch is allowed.
+		"BranchLocalDoesNotLeak": {
+			src: `
+				fn store(p: {x: number}) {}
+				fn test(cond: boolean) {
+					val p = {x: 0}
+					if cond {
+						store(p)
+					} else {
+						p.x
+					}
+				}
+			`,
+		},
+		// Storing an owned value into a field moves it into the receiver.
+		"FieldStoreConsumesSource": {
+			src: `
+				fn test() {
+					val obj: mut {f: {x: number}} = {f: {x: 0}}
+					val p = {x: 1}
+					obj.f = p
+					p.x
+				}
+			`,
+			want: []string{"use of moved value 'p'"},
+		},
+		// The move reconciliation is path-sensitive. A consuming move of p on one branch
+		// does not suppress the exclusivity check for p on a sibling branch where it was
+		// not moved, so the immutable borrow of a still-mutated p is a real Rule 1
+		// conflict and is reported.
+		"PathSensitiveExclusivityKept": {
+			src: `
+				fn store(p: {x: number}) {}
+				fn test(cond: boolean) {
+					val p: mut {x: number} = {x: 0}
+					if cond {
+						store(p)
+					} else {
+						val snapshot: &{x: number} = p
+						p.x = 5
+						snapshot
+					}
+				}
+			`,
+			want: []string{
+				"cannot assign 'p' to immutable 'snapshot': 'p' is still used mutably after this point",
+			},
+		},
+		// Storing p into the global consumes it, so the later borrow `val snap = p` is a
+		// single use-after-move, not also a stale 'static-escape transition.
+		"GlobalEscapeReportsSingleUseAfterMove": {
+			src: `
+				var sink = {x: 0}
+				fn cache(p: &mut {x: number}) {
+					sink = p
+					val snap: &{x: number} = p
+					snap
+				}
+			`,
+			want: []string{"use of moved value 'p'"},
+		},
+		// Moving a value while a mutable borrow of it is live is rejected: freezing p
+		// into immutable q while r still holds a mutable borrow would let r mutate a
+		// value q reads as immutable.
+		"MoveWithLiveBorrowRejected": {
+			src: `
+				fn test() {
+					val p: mut {x: number} = {x: 0}
+					val r: &mut {x: number} = p
+					val q: {x: number} = p
+					r.x = 5
+					q.x
+				}
+			`,
+			want: []string{
+				"cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
+			},
+		},
+		// Binding a borrowed source into a bare owned annotation is a borrow-into-owned
+		// escape, rejected rather than silently reborrowed. The explicit `&` form remains
+		// the opt-in for an alias.
+		"BorrowedIntoOwnedAnnotationRejected": {
+			src: `
+				fn f(p: &mut {x: number}) {
+					val q: {x: number} = p
+					return q
+				}
+			`,
+			want: []string{
+				"borrowed value mut object does not live long enough to satisfy object",
+			},
+		},
+	}
 
-// A `val` binding of an owned value into another owned binding moves it, so the
-// later use of the source is a use-after-move. This is the freeze direction: the
-// owned-mutable source is moved into an immutable binding and consumed.
-func TestMoveValBindingConsumesSource(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn test() {
-			val p: mut {x: number} = {x: 0}
-			val q = p
-			p.x
-		}
-	`)
-	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
-}
-
-// Binding through an explicit `&` borrow does NOT move the source: `val q = &p`
-// borrows p, so the later read of p is allowed.
-func TestMoveBorrowBindingKeepsSource(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn test() {
-			val p: mut {x: number} = {x: 0}
-			val q = &p
-			p.x
-		}
-	`)
-	require.Empty(t, Messages(errs))
-}
-
-// A `&` annotation borrows rather than moves, so the source stays usable.
-func TestMoveBorrowAnnotationKeepsSource(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn test() {
-			val p: mut {x: number} = {x: 0}
-			val q: &{x: number} = p
-			p.x
-		}
-	`)
-	require.Empty(t, Messages(errs))
-}
-
-// Passing an owned value to a bare owned parameter moves it into the callee, so the
-// caller's later use is a use-after-move. This is the `storeGlobally` example.
-func TestMoveOwnedArgumentConsumed(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn store(p: {x: number}) {}
-		fn test() {
-			val p = {x: 0}
-			store(p)
-			p.x
-		}
-	`)
-	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
-}
-
-// Passing an owned value to a `&` parameter auto-borrows, so the caller keeps the
-// value and its later use is fine.
-func TestMoveBorrowParameterKeepsArgument(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn read(p: &{x: number}) {}
-		fn test() {
-			val p = {x: 0}
-			read(p)
-			p.x
-		}
-	`)
-	require.Empty(t, Messages(errs))
-}
-
-// Returning an owned value moves it out of the frame. A second occurrence of the
-// same owned binding in the returned tuple is a use-after-move, the `dup` reuse
-// within a single statement.
-func TestMoveReturnDuplicateIsUseAfterMove(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn dup(x: {a: number}) -> [{a: number}, {a: number}] {
-			return [x, x]
-		}
-	`)
-	require.Equal(t, []string{"use of moved value 'x'"}, Messages(errs))
-}
-
-// The `&` form of the duplicate succeeds: a borrow parameter is copied, not moved, so
-// the body may return it twice. This is the concrete counterpart to the generic
-// `fn dup<T>(x: &T)`; the type-parameter form awaits TypeParam support in the new
-// solver (M7), where `fn dup<T>(x: T) -> [T, T]` is the no-Copy rejection case and
-// the `&T` form the accepted one.
-func TestMoveDupBorrowParameterAccepted(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn dup(x: &{a: number}) -> [&{a: number}, &{a: number}] {
-			return [x, x]
-		}
-	`)
-	require.Empty(t, Messages(errs))
-}
-
-// A value moved on only one branch of an if/else is a conditional use-after-move at
-// a later read: some reaching path moved it.
-func TestMoveConditionalUseAfterMove(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn store(p: {x: number}) {}
-		fn test(cond: boolean) {
-			val p = {x: 0}
-			if cond {
-				store(p)
-			} else {
-			}
-			p.x
-		}
-	`)
-	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
-}
-
-// A value moved on every branch is an unconditional use-after-move at a later read.
-func TestMoveBothBranchesUseAfterMove(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn store(p: {x: number}) {}
-		fn test(cond: boolean) {
-			val p = {x: 0}
-			if cond {
-				store(p)
-			} else {
-				store(p)
-			}
-			p.x
-		}
-	`)
-	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
-}
-
-// A move confined to one branch does not consume the source on the path that did
-// not move it: a use INSIDE the untouched branch is allowed.
-func TestMoveBranchLocalDoesNotLeak(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn store(p: {x: number}) {}
-		fn test(cond: boolean) {
-			val p = {x: 0}
-			if cond {
-				store(p)
-			} else {
-				p.x
-			}
-		}
-	`)
-	require.Empty(t, Messages(errs))
-}
-
-// Storing an owned value into a field moves it into the receiver, so the source's
-// later use is a use-after-move.
-func TestMoveFieldStoreConsumesSource(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn test() {
-			val obj: mut {f: {x: number}} = {f: {x: 0}}
-			val p = {x: 1}
-			obj.f = p
-			p.x
-		}
-	`)
-	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
-}
-
-// The move reconciliation is path-sensitive. A consuming move of `p` on one branch
-// does not suppress the exclusivity check for `p` on a sibling branch where it was not
-// moved: the immutable borrow `snapshot` of a still-mutated `p` is a real Rule 1
-// conflict and is reported, even though `p` is moved on the other branch. The consumed
-// lattice reads `p` as NotMoved on the else path, so the transition survives
-// reconciliation.
-func TestMovePathSensitiveExclusivityKept(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn store(p: {x: number}) {}
-		fn test(cond: boolean) {
-			val p: mut {x: number} = {x: 0}
-			if cond {
-				store(p)
-			} else {
-				val snapshot: &{x: number} = p
-				p.x = 5
-				snapshot
-			}
-		}
-	`)
-	require.Equal(t, []string{
-		"cannot assign 'p' to immutable 'snapshot': 'p' is still used mutably after this point",
-	}, Messages(errs))
-}
-
-// The reconciliation drops the redundant exclusivity conflict when the source really is
-// moved before the transition: storing `p` into the global consumes it, so the later
-// borrow `val snap = p` is a single use-after-move, not also a stale 'static-escape
-// transition.
-func TestMoveGlobalEscapeReportsSingleUseAfterMove(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		var sink = {x: 0}
-		fn cache(p: &mut {x: number}) {
-			sink = p
-			val snap: &{x: number} = p
-			snap
-		}
-	`)
-	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
-}
-
-// PR 6 retires the M4 G3 implicit reborrow: binding a borrowed source into a bare
-// owned annotation is now a borrow-into-owned escape, rejected rather than silently
-// reborrowed. The explicit `&` form remains the opt-in for an alias.
-func TestMoveBorrowedIntoOwnedAnnotationRejected(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(p: &mut {x: number}) {
-			val q: {x: number} = p
-			return q
-		}
-	`)
-	require.Equal(t, []string{
-		"borrowed value mut object does not live long enough to satisfy object",
-	}, Messages(errs))
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, Messages(errs))
+		})
+	}
 }

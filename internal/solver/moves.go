@@ -9,14 +9,13 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// The move engine (PR 6 of the affine-semantics plan). When an owned value flows
-// out of its source binding at a flow site — a `val`/`var` binding, a
-// reassignment, a `return`, a field or element store, a consuming argument, an
-// escaping closure capture, or a module-level write — ownership MOVES out of that
-// binding, the binding is CONSUMED, and any later use of it is a use-after-move
-// error.
+// The move engine implements affine move semantics. When an owned value flows out of
+// its source binding at a flow site, ownership moves out of that binding, the binding
+// is consumed, and any later use of it is a use-after-move error. The flow sites are a
+// `val`/`var` binding, a reassignment, a `return`, a field or element store, a
+// consuming argument, an escaping closure capture, and a module-level write.
 //
-// The engine has three parts:
+// The engine has three parts.
 //
 //   - The flow sites call consumeOwned to record a move into c.fn.moveSites, the
 //     per-statement consume map AnalyzeMoves folds into the branch-merged consumed
@@ -28,7 +27,7 @@ import (
 //     binding was Moved or MaybeMoved on a path reaching the read.
 //
 // Running the use check as a post-pass rather than inline is what makes conditional
-// and loop moves correct: the lattice is a fixed point over the whole CFG, so a use
+// and loop moves correct. The lattice is a fixed point over the whole CFG, so a use
 // that a later or back-edge move reaches is still caught.
 //
 // Known limitation: the lattice only ever raises a binding to Moved, never lowers it.
@@ -38,9 +37,9 @@ import (
 // later precision pass.
 
 // UseAfterMoveError is reported when a binding is read after an owned value has
-// moved out of it. It blames the read and points its related span at the move
-// site. Conditional records whether only SOME reaching paths moved the binding —
-// a MaybeMoved lattice state — so a diagnostic consumer can distinguish a definite
+// moved out of it. It blames the read and points its related span at the move site.
+// Conditional records whether only some reaching paths moved the binding, the
+// MaybeMoved lattice state, so a diagnostic consumer can distinguish a definite
 // use-after-move from a possible one.
 type UseAfterMoveError struct {
 	// Name is the consumed binding's source name, for the message.
@@ -85,11 +84,11 @@ func isBorrowType(t soltype.Type) bool {
 	return ok && r.Lt != nil
 }
 
-// isReferenceShaped reports whether t is a reference-shaped value — an object,
-// tuple, borrow, owned RefType, or type-parameter variable. These are the values a
-// move can consume, so every read of one is recorded as a use to test against the
-// consumed lattice. Value types — primitives, functions, promises — copy and are
-// never consumed, so their reads are not tracked.
+// isReferenceShaped reports whether t is a reference-shaped value: an object, tuple,
+// borrow, owned RefType, or type-parameter variable. These are the values a move can
+// consume, so every read of one is recorded as a use to test against the consumed
+// lattice. Value types copy and are never consumed, so their reads are not tracked. A
+// value type is a primitive, a function, or a promise.
 func isReferenceShaped(t soltype.Type) bool {
 	switch t.(type) {
 	case *soltype.ObjectType, *soltype.TupleType, *soltype.RefType, *soltype.TypeVarType:
@@ -190,10 +189,11 @@ func (c *checker) consumeOwned(source ast.Expr, sourceT soltype.Type, moveNode a
 // movesSourceInto reports whether flowing source into a destination of type destT
 // moves the owned binding source names: source is an identifier bound to an
 // owned-movable value and the destination takes ownership rather than borrowing. A
-// borrow destination — a `&` annotation or an explicit `&source` initializer, which
-// is a BorrowExpr rather than a plain identifier — keeps the source aliased and
-// governed by the exclusivity rule, not consumed. It is the shared move-or-borrow
-// decision for `val`/`var` bindings and reassignments.
+// borrow destination keeps the source aliased and governed by the exclusivity rule,
+// not consumed. A borrow destination is either a `&` annotation or an explicit
+// `&source` initializer, which is a BorrowExpr rather than a plain identifier and so
+// names no owned source. It is the shared move-or-borrow decision for `val`/`var`
+// bindings and reassignments.
 func (c *checker) movesSourceInto(source ast.Expr, destT soltype.Type) bool {
 	if source == nil || isBorrowType(destT) {
 		return false
@@ -241,15 +241,14 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 }
 
 // consumeIntoLiteral moves an owned identifier built into a fresh object or tuple
-// literal: storing an owned value into the literal transfers ownership into it, so a
-// later use of the source is a use-after-move. A value-type element copies and a
-// non-identifier element names no binding, so neither consumes.
-func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type) {
-	if c.fn == nil || c.fn.cfg == nil {
-		return
-	}
-	ref, ok := c.currentStmtRef()
-	if !ok {
+// literal, recording the move at ref, the literal's statement. Storing an owned value
+// into the literal transfers ownership into it, so a later use of the source is a
+// use-after-move. A value-type element copies and a non-identifier element names no
+// binding, so neither consumes. hasRef is false when the literal has no resolvable
+// statement point, in which case nothing is recorded rather than mis-attributing the
+// move to the zero StmtRef.
+func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref liveness.StmtRef, hasRef bool) {
+	if !hasRef {
 		return
 	}
 	c.consumeOwned(el, elemT, el, ref)
