@@ -63,8 +63,8 @@ fn f(p: &mut {x: number}) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"borrowed value mut object does not live long enough to satisfy object",
-	}, Messages(errs))
+		"4:9-4:25: borrowed value mut object does not live long enough to satisfy object",
+	}, messagesWithSpan(errs))
 }
 
 // The companion to the escape case: passing the same borrow into a function
@@ -110,8 +110,8 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"cannot constrain immutable object <: mutable object",
-	}, Messages(errs))
+		"2:3-2:10: cannot constrain immutable object <: mutable object",
+	}, messagesWithSpan(errs))
 }
 
 // Returning one of two borrows with DISTINCT lifetimes joins them into a single
@@ -225,9 +225,9 @@ func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"cannot constrain number <: string",
-		"cannot constrain string <: number",
-	}, Messages(errs))
+		"1:18-1:24: cannot constrain number <: string",
+		"1:39-1:45: cannot constrain string <: number",
+	}, messagesWithSpan(errs))
 }
 
 // A return set mixing a borrow with an OWNED value does not join. joinBorrows
@@ -256,7 +256,7 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
 		"mixed-ownership union: members disagree on ownership; make ownership uniform first",
-	}, Messages(errs))
+	}, messagesWithSpan(errs))
 }
 */
 
@@ -332,8 +332,8 @@ func TestInferBorrowAliasEscapingOwnedReturnRejected(t *testing.T) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"borrowed value object does not live long enough to satisfy object",
-	}, Messages(errs))
+		"1:30-1:41: borrowed value object does not live long enough to satisfy object",
+	}, messagesWithSpan(errs))
 }
 
 // An owned-immutable source binds through an owned annotation as an owned
@@ -441,7 +441,7 @@ func TestInferNamedBorrowLifetimeShared(t *testing.T) {
 // fabricating a borrow over a non-borrowable type.
 func TestInferBorrowOfNonBorrowableRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f(p: &number) -> number { return 0 }`)
-	require.Equal(t, []string{"Unsupported: borrow of a non-borrowable type"}, Messages(errs))
+	require.Equal(t, []string{"1:9-1:16: Unsupported: borrow of a non-borrowable type"}, messagesWithSpan(errs))
 }
 
 // --- PR 4: member reads borrow the receiver ---
@@ -580,8 +580,8 @@ func TestInferExplicitMutBorrowOfMemberOnImmutableRejected(t *testing.T) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"cannot constrain immutable object <: mutable object",
-	}, Messages(errs))
+		"1:11-1:28: cannot constrain immutable object <: mutable object",
+	}, messagesWithSpan(errs))
 }
 
 // A usage-inferred receiver keeps its pre-PR-4 read behaviour. A

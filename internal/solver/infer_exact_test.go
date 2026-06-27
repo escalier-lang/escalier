@@ -32,7 +32,7 @@ func TestInferCallExactTooManyArgsSingleDiagnostic(t *testing.T) {
 		val r = f(1, 2, 3)
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Too many arguments: expected at most 2, but got 3", errs[0].Message())
+	require.Equal(t, "3:11-3:21: Too many arguments: expected at most 2, but got 3", msgWithSpan(errs[0]))
 }
 
 // An `x?` optional parameter parsed from source carries onto the function type: it
@@ -62,7 +62,7 @@ func TestInferOptionalParamCallArity(t *testing.T) {
 			val c = f(1, 2, 3)
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "Too many arguments: expected at most 2, but got 3", errs[0].Message())
+		require.Equal(t, "3:12-3:22: Too many arguments: expected at most 2, but got 3", msgWithSpan(errs[0]))
 	})
 }
 
@@ -77,7 +77,7 @@ func TestInferNonTrailingOptionalRequiresAllArgs(t *testing.T) {
 		val r = f(1)
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Not enough arguments: expected at least 2, but got 1", errs[0].Message())
+	require.Equal(t, "3:11-3:15: Not enough arguments: expected at least 2, but got 1", msgWithSpan(errs[0]))
 }
 
 // A function value declared with the trailing `...` marker now parses (PR4 parser
@@ -97,7 +97,7 @@ func TestInferInexactFunctionValue(t *testing.T) {
 			val r = f(1, 2)
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "Too many arguments: expected at most 1, but got 2", errs[0].Message())
+		require.Equal(t, "3:12-3:19: Too many arguments: expected at most 1, but got 2", msgWithSpan(errs[0]))
 	})
 }
 
@@ -109,7 +109,7 @@ func TestInferTooFewArgsRespectsOptional(t *testing.T) {
 		val r = f()
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Not enough arguments: expected at least 1, but got 0", errs[0].Message())
+	require.Equal(t, "3:11-3:14: Not enough arguments: expected at least 1, but got 0", msgWithSpan(errs[0]))
 }
 
 // A typed rest param absorbs trailing arguments, so a direct call with more args

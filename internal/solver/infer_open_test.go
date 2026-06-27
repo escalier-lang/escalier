@@ -33,7 +33,7 @@ func TestInferOpenParam(t *testing.T) {
 	t.Run("passing extra fields to a closed param rejects", func(t *testing.T) {
 		_, _, errs := inferSource(t, "fn foo(p) { p.x\n p.y }\nval r = foo({x: 1, y: 2, z: 3})")
 		require.Len(t, errs, 1)
-		require.Equal(t, "object has extra property: z", errs[0].Message())
+		require.Equal(t, "3:29-3:30: object has extra property: z", msgWithSpan(errs[0]))
 	})
 
 	// An exact argument still checks against a closed param.
@@ -81,12 +81,12 @@ func TestInferOpenParamNested(t *testing.T) {
 	t.Run("closed rejects an extra field on the nested object", func(t *testing.T) {
 		_, _, errs := inferSource(t, "fn foo(p) { p.a.b }\nval r = foo({a: {b: 1, c: 2}})")
 		require.Len(t, errs, 1)
-		require.Equal(t, "object has extra property: c", errs[0].Message())
+		require.Equal(t, "2:27-2:28: object has extra property: c", msgWithSpan(errs[0]))
 	})
 
 	t.Run("closed rejects an extra field on the outer object", func(t *testing.T) {
 		_, _, errs := inferSource(t, "fn foo(p) { p.a.b }\nval r = foo({a: {b: 1}, d: 2})")
 		require.Len(t, errs, 1)
-		require.Equal(t, "object has extra property: d", errs[0].Message())
+		require.Equal(t, "2:28-2:29: object has extra property: d", msgWithSpan(errs[0]))
 	})
 }

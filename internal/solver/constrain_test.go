@@ -20,6 +20,27 @@ func Messages(errs []SolverError) []string {
 	return msgs
 }
 
+// msgWithSpan renders a single error as "line:col-line:col: message", the same
+// span-prefixed form the parser uses. Source-driven tests assert against this so
+// the expected string shows where in the source the error is blamed, which makes
+// the test cases easier to review.
+func msgWithSpan(e SolverError) string {
+	return e.Span().String() + ": " + e.Message()
+}
+
+// messagesWithSpan is the span-prefixed counterpart to Messages, for source-driven
+// tests whose errors carry real source spans.
+func messagesWithSpan(errs []SolverError) []string {
+	if len(errs) == 0 {
+		return nil
+	}
+	msgs := make([]string, len(errs))
+	for i, e := range errs {
+		msgs[i] = msgWithSpan(e)
+	}
+	return msgs
+}
+
 func num() *soltype.PrimType   { return &soltype.PrimType{Prim: soltype.NumPrim} }
 func str() *soltype.PrimType   { return &soltype.PrimType{Prim: soltype.StrPrim} }
 func boolT() *soltype.PrimType { return &soltype.PrimType{Prim: soltype.BoolPrim} }

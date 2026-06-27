@@ -94,7 +94,7 @@ func TestInferTupleSpreadInexactNotLast(t *testing.T) {
 		fn f(z: [number, ...]) { return [...z, 1] }
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot spread an inexact tuple except as the last element", errs[0].Message())
+	require.Equal(t, "2:36-2:40: cannot spread an inexact tuple except as the last element", msgWithSpan(errs[0]))
 }
 
 // A trailing inexact spread is sound: the operand's known prefix extends the
@@ -323,7 +323,7 @@ func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
 		`
 		_, _, errs := inferSource(t, src)
 		require.Len(t, errs, 1)
-		require.Equal(t, "object has extra property: b", errs[0].Message())
+		require.Equal(t, "3:24-3:25: object has extra property: b", msgWithSpan(errs[0]))
 	})
 
 	t.Run("wider object is accepted for an open param", func(t *testing.T) {
@@ -345,8 +345,8 @@ func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
 		// missing `a` and the extra `b`. The object arm reports missing properties
 		// before extra ones.
 		require.Len(t, errs, 2)
-		require.Equal(t, "object is missing property: a", errs[0].Message())
-		require.Equal(t, "object has extra property: b", errs[1].Message())
+		require.Equal(t, "3:14-3:20: object is missing property: a", msgWithSpan(errs[0]))
+		require.Equal(t, "3:18-3:19: object has extra property: b", msgWithSpan(errs[1]))
 		// Blame the offending argument {b: 2} — the object that lacks the field — not
 		// the whole call. The requirement's field var is freshened on instantiation
 		// and carries no prov, so MissingPropertyError's blame degrades to the Sub

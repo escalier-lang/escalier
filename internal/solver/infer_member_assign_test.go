@@ -156,9 +156,9 @@ func TestInferMemberAssignAnnotatedMutObject(t *testing.T) {
 func TestInferMemberAssignAnnotatedMutWrongType(t *testing.T) {
 	_, _, errs := inferSource(t, "fn f(obj: mut {x: number, y: string}) { obj.x = \"bad\" }")
 	require.Equal(t, []string{
-		"cannot constrain number <: string",
-		"cannot constrain string <: number",
-	}, Messages(errs))
+		"1:41-1:54: cannot constrain number <: string",
+		"1:41-1:54: cannot constrain string <: number",
+	}, messagesWithSpan(errs))
 }
 
 // Writing a field absent from an EXACT annotated mut object still errors: the read
@@ -166,7 +166,7 @@ func TestInferMemberAssignAnnotatedMutWrongType(t *testing.T) {
 func TestInferMemberAssignAnnotatedMutMissingField(t *testing.T) {
 	src := "fn f(obj: mut {x: number}) { obj.z = 5 }"
 	_, _, errs := inferSource(t, src)
-	require.Equal(t, []string{"object is missing property: z"}, Messages(errs))
+	require.Equal(t, []string{"1:15-1:26: object is missing property: z"}, messagesWithSpan(errs))
 }
 
 // KNOWN GAP: two writes of INCOMPATIBLE types to one field produce an uninhabited

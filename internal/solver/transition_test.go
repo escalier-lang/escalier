@@ -129,6 +129,17 @@ func transitionMessages(t *testing.T, errs []SolverError) []string {
 	return msgs
 }
 
+// transitionMessagesWithSpan is the span-prefixed counterpart to transitionMessages,
+// for source-driven tests whose errors carry real source spans.
+func transitionMessagesWithSpan(t *testing.T, errs []SolverError) []string {
+	t.Helper()
+	var msgs []string
+	for _, e := range errs {
+		msgs = append(msgs, msgWithSpan(e))
+	}
+	return msgs
+}
+
 // pendingMessages renders the phase conflicts checkMutabilityTransition recorded on the
 // checker's funcCtx. A direct call to checkMutabilityTransition records its conflict for
 // the post-pass rather than emitting it, so a unit test that drives the check in
@@ -248,8 +259,8 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 		}
 	`)
 	require.ElementsMatch(t, []string{
-		"use of moved value 'p'",
-	}, Messages(errs))
+		"5:29-5:30: use of moved value 'p'",
+	}, messagesWithSpan(errs))
 }
 
 // TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
@@ -271,8 +282,8 @@ func TestGlobalWriteMutTransition(t *testing.T) {
 			}
 		`)
 		require.Equal(t, []string{
-			"use of moved value 'p'",
-		}, transitionMessages(t, errs))
+			"5:5-5:6: use of moved value 'p'",
+		}, transitionMessagesWithSpan(t, errs))
 	})
 
 	// When the source is dead within this body, Option 1's in-body check reports
@@ -507,8 +518,8 @@ func TestTransitionWiringReportsMoveError(t *testing.T) {
 		}
 	`)
 	require.ElementsMatch(t, []string{
-		"use of moved value 'p'",
-	}, Messages(errs))
+		"4:4-4:5: use of moved value 'p'",
+	}, messagesWithSpan(errs))
 }
 
 // TestCollectOuterBindingsPreludeCache covers the outer-binding collection that feeds
@@ -557,7 +568,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
+				"4:6-4:40: cannot assign 'items' to immutable 'snapshot': 'items' is still used mutably after this point",
 			},
 		},
 		// Rule 1: safe when the mutable source is dead after the borrow.
@@ -586,7 +597,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
+				"5:7-5:11: cannot assign 'z' to immutable 'sink': 'p' still has mutable access to 'z' after this point",
 			},
 		},
 		// G3 binds a `mut` borrow into a bare annotation by reborrowing it as a local
@@ -613,8 +624,8 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot constrain immutable object <: mutable object",
-				"use of moved value 'p'",
+				"5:21-5:22: cannot constrain immutable object <: mutable object",
+				"5:35-5:36: use of moved value 'p'",
 			},
 		},
 		// Rule 3: two mutable borrows of the same value are always allowed.
@@ -641,7 +652,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot assign 'b' to immutable 'c': 'a' still has mutable access to 'b' after this point",
+				"5:6-5:29: cannot assign 'b' to immutable 'c': 'a' still has mutable access to 'b' after this point",
 			},
 		},
 		// Conditional aliasing: c aliases both branches; a is live after the transition.
@@ -656,7 +667,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
+				"5:6-5:51: cannot assign 'a' to immutable 'c': 'a' is still used mutably after this point",
 			},
 		},
 		// Rule 1: safe when the immutable borrow is dead. snapshot is never read, so there
@@ -685,14 +696,14 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
+				"6:6-6:34: cannot assign 'c' to immutable 'frozen': 'c' is still used mutably after this point",
 			},
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, transitionMessages(t, errs))
+			require.Equal(t, tc.want, transitionMessagesWithSpan(t, errs))
 		})
 	}
 }
@@ -713,9 +724,9 @@ func TestRule2TransitionFromSource(t *testing.T) {
 		}
 	`)
 	require.ElementsMatch(t, []string{
-		"cannot constrain immutable object <: mutable object",
-		"use of moved value 'config'",
-	}, Messages(errs))
+		"4:27-4:28: cannot constrain immutable object <: mutable object",
+		"6:4-6:12: use of moved value 'config'",
+	}, messagesWithSpan(errs))
 }
 
 // TestMutabilityTransitionReassignFromSource exercises the reassignment transition path
@@ -738,8 +749,8 @@ func TestMutabilityTransitionReassignFromSource(t *testing.T) {
 			}
 		`)
 		require.Equal(t, []string{
-			"use of moved value 'items'",
-		}, transitionMessages(t, errs))
+			"6:5-6:10: use of moved value 'items'",
+		}, transitionMessagesWithSpan(t, errs))
 	})
 
 	t.Run("source_dead_ok", func(t *testing.T) {
@@ -754,7 +765,7 @@ func TestMutabilityTransitionReassignFromSource(t *testing.T) {
 				snap
 			}
 		`)
-		require.Empty(t, transitionMessages(t, errs))
+		require.Empty(t, transitionMessagesWithSpan(t, errs))
 	})
 }
 
@@ -794,7 +805,7 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot assign 'a' to immutable 's': 'm' still has mutable access to 'a' after this point",
+				"5:6-5:29: cannot assign 'a' to immutable 's': 'm' still has mutable access to 'a' after this point",
 			},
 		},
 		// Two mutable borrows of one value stay within the mutable phase, so both are
@@ -816,7 +827,7 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, transitionMessages(t, errs))
+			require.Equal(t, tc.want, transitionMessagesWithSpan(t, errs))
 		})
 	}
 }
@@ -853,9 +864,9 @@ func TestPhaseConflictUnderConditionalMove(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"use of moved value 'a'",
-				"use of moved value 'a'",
-				"cannot assign 'a' to immutable 'snapshot': 'a' is still used mutably after this point",
+				"10:35-10:36: use of moved value 'a'",
+				"11:6-11:7: use of moved value 'a'",
+				"10:6-10:36: cannot assign 'a' to immutable 'snapshot': 'a' is still used mutably after this point",
 			},
 		},
 		// `a` is moved unconditionally before the transition, so it is moved on every
@@ -874,15 +885,15 @@ func TestPhaseConflictUnderConditionalMove(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"use of moved value 'a'",
-				"use of moved value 'a'",
+				"6:35-6:36: use of moved value 'a'",
+				"7:6-7:7: use of moved value 'a'",
 			},
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, transitionMessages(t, errs))
+			require.Equal(t, tc.want, transitionMessagesWithSpan(t, errs))
 		})
 	}
 }

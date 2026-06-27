@@ -203,7 +203,7 @@ func TestInferModuleFieldReadMissingProperty(t *testing.T) {
 	`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "object is missing property: b", errs[0].Message())
+	require.Equal(t, "3:13-3:14: object is missing property: b", msgWithSpan(errs[0]))
 	// M2.5: blame the member's prop, not the whole decl.
 	require.Equal(t, "b", spanText(src, errs[0].Span()))
 	require.Equal(t, map[string]string{"o": "{a: 5}", "x": "never"}, values)
@@ -230,7 +230,7 @@ func TestInferModuleUnsupportedDecl(t *testing.T) {
 	src := `type Foo = number`
 	_, types, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported: TypeDecl", errs[0].Message())
+	require.Equal(t, "1:1-1:18: Unsupported: TypeDecl", msgWithSpan(errs[0]))
 	// M2.5: the error self-blames from the decl node.
 	require.Equal(t, src, spanText(src, errs[0].Span()))
 	// The unsupported decl must not leak a type binding.
@@ -245,7 +245,7 @@ func TestInferModuleVarDeclWithoutInitializer(t *testing.T) {
 	src := `declare val x: number`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Variable declaration requires an initializer: x", errs[0].Message())
+	require.Equal(t, "1:1-1:14: Variable declaration requires an initializer: x", msgWithSpan(errs[0]))
 	// M2.5: the error self-blames from the decl node (whose span, per the parser,
 	// covers the binder but not the trailing annotation).
 	require.Equal(t, "declare val x", spanText(src, errs[0].Span()))
@@ -260,8 +260,8 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 		val y = x
 	`)
 	require.Len(t, errs, 2)
-	require.Equal(t, "Variable declaration requires an initializer: x", errs[0].Message())
-	require.Equal(t, "Unknown identifier: x", errs[1].Message())
+	require.Equal(t, "2:3-2:16: Variable declaration requires an initializer: x", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-3:12: Unknown identifier: x", msgWithSpan(errs[1]))
 	// PR8 (Fix A): a binding whose definition is wholly the ErrorType recovery
 	// sentinel (`val y = <unknown>`) recovers AS `error` rather than freezing to
 	// `never`, so downstream uses of y absorb instead of cascading `<: never`.
@@ -277,7 +277,7 @@ func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {
 	`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Duplicate declaration: x", errs[0].Message())
+	require.Equal(t, "3:3-3:15: Duplicate declaration: x", msgWithSpan(errs[0]))
 	// M2.5: blame the second decl; relate the first ("previously declared here").
 	require.Equal(t, `val x = "hi"`, spanText(src, errs[0].Span()))
 	require.Len(t, errs[0].Related(), 1)
@@ -305,7 +305,7 @@ func TestInferFuncBodyDiscardedTailStillChecked(t *testing.T) {
 	src := `fn f() { missing }`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
+	require.Equal(t, "1:10-1:17: Unknown identifier: missing", msgWithSpan(errs[0]))
 	require.Equal(t, "fn () -> void", values["f"])
 }
 
@@ -445,7 +445,7 @@ func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported: NamespaceDecl", errs[0].Message())
+	require.Equal(t, "2:3-4:4: Unsupported: NamespaceDecl", msgWithSpan(errs[0]))
 	require.Empty(t, values)
 	// The unsupported decl must not leak a type binding for the namespace.
 	require.NotContains(t, types, "Foo")
@@ -530,7 +530,7 @@ func TestInferMultiFileUnknownIdentifier(t *testing.T) {
 		"b.esc": `val z = 5`,
 	})
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
+	require.Equal(t, "1:9-1:16: Unknown identifier: missing", msgWithSpan(errs[0]))
 	// M2.5: the error self-blames from the ident node.
 	require.Equal(t, "missing", spanText(srcA, errs[0].Span()))
 	// PR8 (Fix A): a binding whose definition is wholly the ErrorType recovery
@@ -550,6 +550,6 @@ func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
 		val r = f(1, 2)
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Too many arguments: expected at most 1, but got 2", errs[0].Message())
+	require.Equal(t, "3:11-3:18: Too many arguments: expected at most 1, but got 2", msgWithSpan(errs[0]))
 	require.Equal(t, "number", values["r"], "the result recovers to the declared return, not never")
 }

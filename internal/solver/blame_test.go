@@ -25,13 +25,14 @@ func spanText(src string, s ast.Span) string {
 	return line[s.Start.Column-1 : s.End.Column-1]
 }
 
-// requireBlame asserts the sole error's message, the source text its primary span
-// covers, and the source text each related span covers (in order). The golden
-// span fixtures (§3.10) use it to pin exact blame against real-parser spans.
+// requireBlame asserts the sole error's span-prefixed message ("line:col-line:col:
+// message"), the source text its primary span covers, and the source text each
+// related span covers (in order). The golden span fixtures (§3.10) use it to pin
+// exact blame against real-parser spans.
 func requireBlame(t *testing.T, src string, errs []SolverError, msg, primary string, related ...string) {
 	t.Helper()
 	require.Len(t, errs, 1)
-	require.Equal(t, msg, errs[0].Message())
+	require.Equal(t, msg, msgWithSpan(errs[0]))
 	require.Equal(t, primary, spanText(src, errs[0].Span()), "primary blame")
 	got := []string{}
 	for _, s := range errs[0].Related() {
@@ -51,7 +52,7 @@ func requireBlame(t *testing.T, src string, errs []SolverError, msg, primary str
 func TestBlameValAnnotationLiteral(t *testing.T) {
 	src := `val x: number = "hi"`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
+	requireBlame(t, src, errs, `1:17-1:21: cannot constrain "hi" <: number`, `"hi"`, "number")
 }
 
 // A call-arg mismatch blames the offending argument, with the callee's param
@@ -59,7 +60,7 @@ func TestBlameValAnnotationLiteral(t *testing.T) {
 func TestBlameCallArgument(t *testing.T) {
 	src := "fn f(x: number) -> number { return x }\nval r = f(\"hi\")"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
+	requireBlame(t, src, errs, `2:11-2:15: cannot constrain "hi" <: number`, `"hi"`, "number")
 }
 
 // A too-many-args direct call is the PR4 extra-arg lint (TooManyArgsError), a
@@ -72,7 +73,7 @@ func TestBlameCallTooManyArgs(t *testing.T) {
 	src := "fn f(x: number) -> number { return x }\nval r = f(1, 2)"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"Too many arguments: expected at most 1, but got 2", "f(1, 2)", "f")
+		"2:9-2:16: Too many arguments: expected at most 1, but got 2", "f(1, 2)", "f")
 }
 
 // A too-few-args direct call is the PR4 too-few lint (NotEnoughArgsError), a BRIDGE
@@ -83,7 +84,7 @@ func TestBlameCallTooFewArgs(t *testing.T) {
 	src := "fn f(x: number, y: number) -> number { return x }\nval r = f(1)"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"Not enough arguments: expected at least 2, but got 1", "f(1)", "f")
+		"2:9-2:13: Not enough arguments: expected at least 2, but got 1", "f(1)", "f")
 }
 
 // A missing-property read blames the member's prop (.foo), not the receiver, with
@@ -99,7 +100,7 @@ func TestBlameCallTooFewArgs(t *testing.T) {
 func TestBlameMissingProperty(t *testing.T) {
 	src := "val o = {a: 5}\nval x = o.b"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "object is missing property: b", "b", "{a: 5}")
+	requireBlame(t, src, errs, "2:11-2:12: object is missing property: b", "b", "{a: 5}")
 }
 
 // The bound of M3's related-span improvement: a receiver derived from a
@@ -112,7 +113,7 @@ func TestBlameMissingProperty(t *testing.T) {
 func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
 	src := "val mk = fn (v) { return {a: v} }\nval o = mk(5)\nval x = o.b"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "object is missing property: b", "b")
+	requireBlame(t, src, errs, "3:11-3:12: object is missing property: b", "b")
 }
 
 // An identifier-flow mismatch blames the USE, not the definition: x's type traces
@@ -122,7 +123,7 @@ func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
 func TestBlameIdentifierUseNotDefinition(t *testing.T) {
 	src := "val x = \"hi\"\nval a: number = x"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, "x", "number")
+	requireBlame(t, src, errs, `2:17-2:18: cannot constrain "hi" <: number`, "x", "number")
 }
 
 // An inline receiver DOES resolve its related span: {a: 5} is used directly (not
@@ -131,7 +132,7 @@ func TestBlameIdentifierUseNotDefinition(t *testing.T) {
 func TestBlameMissingPropertyInlineReceiverRelated(t *testing.T) {
 	src := `val x = {a: 5}.b`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "object is missing property: b", "b", "{a: 5}")
+	requireBlame(t, src, errs, "1:16-1:17: object is missing property: b", "b", "{a: 5}")
 }
 
 // --- Bridge-error span fixtures (self-blaming, no Prov) ---
@@ -140,7 +141,7 @@ func TestBlameMissingPropertyInlineReceiverRelated(t *testing.T) {
 func TestBlameUnknownIdentifier(t *testing.T) {
 	src := `val y = missing`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Unknown identifier: missing", "missing")
+	requireBlame(t, src, errs, "1:9-1:16: Unknown identifier: missing", "missing")
 }
 
 // A duplicate top-level `val` blames the second decl and exposes the first as a
@@ -148,7 +149,7 @@ func TestBlameUnknownIdentifier(t *testing.T) {
 func TestBlameDuplicateDeclarationRelatesPrevious(t *testing.T) {
 	src := "val x = 5\nval x = \"hi\""
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Duplicate declaration: x", `val x = "hi"`, "val x = 5")
+	requireBlame(t, src, errs, "2:1-2:13: Duplicate declaration: x", `val x = "hi"`, "val x = 5")
 }
 
 // An unsupported feature (optional chaining) blames the member, not a separate
@@ -156,7 +157,7 @@ func TestBlameDuplicateDeclarationRelatesPrevious(t *testing.T) {
 func TestBlameUnsupportedFeatureOptionalChain(t *testing.T) {
 	src := "val o = {a: 5}\nval x = o?.a"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Unsupported: OptionalChain", "o?.a")
+	requireBlame(t, src, errs, "2:9-2:13: Unsupported: OptionalChain", "o?.a")
 }
 
 // --- Site-fallback fixtures ---
@@ -171,7 +172,7 @@ func TestBlameUnsupportedFeatureOptionalChain(t *testing.T) {
 func TestBlameVoidSubjectFallsBackToCallSite(t *testing.T) {
 	src := "fn f() {}\nval x: number = f()"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "cannot constrain void <: number", "f()", "number")
+	requireBlame(t, src, errs, "2:17-2:20: cannot constrain void <: number", "f()", "number")
 }
 
 // The too-many-args lint on an immediately-invoked function blames the call and
@@ -184,7 +185,7 @@ func TestBlameCallTooManyArgsInlineCalleeRelated(t *testing.T) {
 	src := `val r = (fn (x: number) -> number { return x })(1, 2)`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"Too many arguments: expected at most 1, but got 2",
+		"1:10-1:54: Too many arguments: expected at most 1, but got 2",
 		`fn (x: number) -> number { return x })(1, 2)`,
 		`fn (x: number) -> number { return x }`)
 }

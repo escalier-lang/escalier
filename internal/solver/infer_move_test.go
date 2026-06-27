@@ -26,7 +26,7 @@ func TestMoveSemantics(t *testing.T) {
 					p.x
 				}
 			`,
-			want: []string{"use of moved value 'p'"},
+			want: []string{"5:6-5:9: use of moved value 'p'"},
 		},
 		// An explicit `&` borrow does not move the source.
 		"BorrowBindingKeepsSource": {
@@ -58,7 +58,7 @@ func TestMoveSemantics(t *testing.T) {
 					p.x
 				}
 			`,
-			want: []string{"use of moved value 'p'"},
+			want: []string{"6:6-6:9: use of moved value 'p'"},
 		},
 		// Passing an owned value to a `&` parameter auto-borrows and keeps it usable.
 		"BorrowParameterKeepsArgument": {
@@ -84,8 +84,8 @@ func TestMoveSemantics(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"Too many arguments: expected at most 1, but got 2",
-				"use of moved value 'p'",
+				"5:6-5:17: Too many arguments: expected at most 1, but got 2",
+				"6:6-6:9: use of moved value 'p'",
 			},
 		},
 		// Returning an owned value moves it out of the frame. A second occurrence of the
@@ -97,7 +97,7 @@ func TestMoveSemantics(t *testing.T) {
 					return [x, x]
 				}
 			`,
-			want: []string{"use of moved value 'x'"},
+			want: []string{"3:17-3:18: use of moved value 'x'"},
 		},
 		// A borrow parameter is copied, not moved, so the body may return it twice. This
 		// is the concrete counterpart to the generic `fn dup<T>(x: &T)`; the
@@ -118,7 +118,7 @@ func TestMoveSemantics(t *testing.T) {
 					xs
 				}
 			`,
-			want: []string{"use of moved value 'xs'"},
+			want: []string{"5:6-5:8: use of moved value 'xs'"},
 		},
 		// A value moved on only one branch is a conditional use-after-move at a later
 		// read, since some reaching path moved it.
@@ -134,7 +134,7 @@ func TestMoveSemantics(t *testing.T) {
 					p.x
 				}
 			`,
-			want: []string{"use of moved value 'p'"},
+			want: []string{"9:6-9:9: use of moved value 'p'"},
 		},
 		// A value moved on every branch is an unconditional use-after-move at a later
 		// read.
@@ -151,7 +151,7 @@ func TestMoveSemantics(t *testing.T) {
 					p.x
 				}
 			`,
-			want: []string{"use of moved value 'p'"},
+			want: []string{"10:6-10:9: use of moved value 'p'"},
 		},
 		// A move confined to one branch does not consume the source on the path that did
 		// not move it, so a use inside the untouched branch is allowed.
@@ -178,7 +178,7 @@ func TestMoveSemantics(t *testing.T) {
 					p.x
 				}
 			`,
-			want: []string{"use of moved value 'p'"},
+			want: []string{"6:6-6:9: use of moved value 'p'"},
 		},
 		// The move reconciliation is path-sensitive. A consuming move of p on one branch
 		// does not suppress the exclusivity check for p on a sibling branch where it was
@@ -199,7 +199,7 @@ func TestMoveSemantics(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot assign 'p' to immutable 'snapshot': 'p' is still used mutably after this point",
+				"8:7-8:37: cannot assign 'p' to immutable 'snapshot': 'p' is still used mutably after this point",
 			},
 		},
 		// Storing p into the global consumes it, so the later borrow `val snap = p` is a
@@ -213,7 +213,7 @@ func TestMoveSemantics(t *testing.T) {
 					snap
 				}
 			`,
-			want: []string{"use of moved value 'p'"},
+			want: []string{"5:31-5:32: use of moved value 'p'"},
 		},
 		// Moving a value while a mutable borrow of it is live is rejected: freezing p
 		// into immutable q while r still holds a mutable borrow would let r mutate a
@@ -229,7 +229,7 @@ func TestMoveSemantics(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
+				"5:6-5:28: cannot assign 'p' to immutable 'q': 'r' still has mutable access to 'p' after this point",
 			},
 		},
 		// Binding a borrowed source into a bare owned annotation is a borrow-into-owned
@@ -243,7 +243,7 @@ func TestMoveSemantics(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"borrowed value mut object does not live long enough to satisfy object",
+				"2:13-2:29: borrowed value mut object does not live long enough to satisfy object",
 			},
 		},
 		// Moving one field out of an owned object consumes only that field's slot. The
@@ -259,7 +259,7 @@ func TestMoveSemantics(t *testing.T) {
 					pair.a.id
 				}
 			`,
-			want: []string{"use of moved value 'pair.a'"},
+			want: []string{"7:6-7:15: use of moved value 'pair.a'"},
 		},
 		// Reading a sibling field after a partial move is allowed on its own.
 		"SiblingAfterPartialMoveAccepted": {
@@ -283,7 +283,7 @@ func TestMoveSemantics(t *testing.T) {
 					pair
 				}
 			`,
-			want: []string{"use of partially moved value 'pair'; field 'pair.a' was moved out"},
+			want: []string{"6:6-6:10: use of partially moved value 'pair'; field 'pair.a' was moved out"},
 		},
 		// Binding a field into an owned binding moves that field; a later read of it is a
 		// use-after-move.
@@ -295,7 +295,7 @@ func TestMoveSemantics(t *testing.T) {
 					pair.a.id
 				}
 			`,
-			want: []string{"use of moved value 'pair.a'"},
+			want: []string{"5:6-5:15: use of moved value 'pair.a'"},
 		},
 		// Storing a field into a longer-lived object moves it; the sibling stays usable.
 		"PartialMoveViaFieldStore": {
@@ -308,7 +308,7 @@ func TestMoveSemantics(t *testing.T) {
 					pair.a.id
 				}
 			`,
-			want: []string{"use of moved value 'pair.a'"},
+			want: []string{"7:6-7:15: use of moved value 'pair.a'"},
 		},
 		// A field built into a tuple literal moves as a partial move, the gap PR 6 left
 		// for PR 7 to close; the sibling stays usable.
@@ -321,7 +321,7 @@ func TestMoveSemantics(t *testing.T) {
 					pair.a.id
 				}
 			`,
-			want: []string{"use of moved value 'pair.a'"},
+			want: []string{"6:6-6:15: use of moved value 'pair.a'"},
 		},
 		// A field moved on only one branch is a conditional use-after-move at a later
 		// read, joined to MaybeMoved at the branch merge.
@@ -337,7 +337,7 @@ func TestMoveSemantics(t *testing.T) {
 					pair.a.id
 				}
 			`,
-			want: []string{"use of moved value 'pair.a'"},
+			want: []string{"9:6-9:15: use of moved value 'pair.a'"},
 		},
 		// Tracking reaches nested field paths. Moving `pair.a.inner` consumes only that
 		// deep slot, so the sibling `pair.a.keep` stays usable and a read of the moved
@@ -352,7 +352,7 @@ func TestMoveSemantics(t *testing.T) {
 					pair.a.inner.id
 				}
 			`,
-			want: []string{"use of moved value 'pair.a.inner'"},
+			want: []string{"7:6-7:21: use of moved value 'pair.a.inner'"},
 		},
 		// A field whose key is not a valid identifier is reached by constant-string
 		// index and renders in bracket notation, so the moved place reads back as
@@ -366,14 +366,14 @@ func TestMoveSemantics(t *testing.T) {
 					pair["a.b"].x
 				}
 			`,
-			want: []string{`use of moved value 'pair["a.b"]'`},
+			want: []string{`6:6-6:19: use of moved value 'pair["a.b"]'`},
 		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, Messages(errs))
+			require.Equal(t, tc.want, messagesWithSpan(errs))
 		})
 	}
 }
@@ -393,7 +393,7 @@ func TestThawMove(t *testing.T) {
 			p.x
 		}
 	`)
-	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
+	require.Equal(t, []string{"6:4-6:7: use of moved value 'p'"}, messagesWithSpan(errs))
 }
 
 // TestFreezeMove covers the mutable→immutable freeze. A plain `val q = p` for an
@@ -412,9 +412,9 @@ func TestFreezeMove(t *testing.T) {
 		}
 	`)
 	require.Equal(t, []string{
-		"cannot constrain immutable object <: mutable object",
-		"use of moved value 'p'",
-	}, Messages(errs))
+		"6:4-6:11: cannot constrain immutable object <: mutable object",
+		"7:4-7:7: use of moved value 'p'",
+	}, messagesWithSpan(errs))
 }
 
 // TestFreezeMoveAllowed shows the freeze move itself is allowed. Binding an

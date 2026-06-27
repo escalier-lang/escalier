@@ -28,7 +28,7 @@ func TestInferErrorBindingFlowsIntoCallNoCascade(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
+	require.Equal(t, "4:12-4:19: Unknown identifier: missing", msgWithSpan(errs[0]))
 	// id's call still recovers its declared return type — the error arg absorbs.
 	require.Equal(t, "fn () -> number", values["f"])
 }
@@ -43,6 +43,6 @@ func TestInferUnsupportedExprRecoversWithoutCascade(t *testing.T) {
 	// One error for the spread itself; `xs` is never walked (so no extra
 	// unknown-identifier), and the broken element does not cascade.
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported: ObjSpreadExpr", errs[0].Message())
+	require.Equal(t, "2:12-2:17: Unsupported: ObjSpreadExpr", msgWithSpan(errs[0]))
 	require.Equal(t, "{}", values["o"])
 }

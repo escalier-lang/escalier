@@ -30,7 +30,7 @@ func TestInferUnionAnnotationRejectsNonMember(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "cannot constrain boolean <: number | string", errs[0].Message())
+	require.Equal(t, "3:29-3:30: cannot constrain boolean <: number | string", msgWithSpan(errs[0]))
 }
 
 func TestInferUnionAnnotationRoundTrip(t *testing.T) {
@@ -51,7 +51,7 @@ func TestInferIntersectionAnnotationRejectsMissingMember(t *testing.T) {
 	_, _, errs := inferSource(t, `val r: {x: number, ...} & {y: string, ...} = {x: 1}`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &MissingPropertyError{}, errs[0])
-	require.Equal(t, "object is missing property: y", errs[0].Message())
+	require.Equal(t, "1:31-1:37: object is missing property: y", msgWithSpan(errs[0]))
 }
 
 func TestInferUnionAnnotationFlattens(t *testing.T) {
@@ -65,7 +65,7 @@ func TestInferUnionAnnotationFlattens(t *testing.T) {
 // resolveTypeAnn first.
 func TestInferUnionAnnotationDedups(t *testing.T) {
 	values, _, errs := inferSource(t, `val x: number | number = 5`)
-	require.Equal(t, []string(nil), Messages(errs))
+	require.Equal(t, []string(nil), messagesWithSpan(errs))
 	require.Equal(t, "number", values["x"])
 }
 
@@ -78,6 +78,6 @@ func TestInferUnionAnnotationBorrowMember(t *testing.T) {
 			val v: &mut {x: number} | number = r
 		}
 	`)
-	require.Equal(t, []string(nil), Messages(errs))
+	require.Equal(t, []string(nil), messagesWithSpan(errs))
 	require.Equal(t, "fn (r: &mut {x: number}) -> void", values["check"])
 }

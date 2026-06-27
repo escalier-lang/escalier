@@ -78,7 +78,7 @@ func TestInferVarWideningReassignment(t *testing.T) {
 	t.Run("different-primitive reassignment rejected", func(t *testing.T) {
 		src := "var a = 5\nfn f() { a = \"x\" }"
 		_, _, errs := inferSource(t, src)
-		requireBlame(t, src, errs, `cannot constrain "x" <: number`, `"x"`)
+		requireBlame(t, src, errs, `2:14-2:17: cannot constrain "x" <: number`, `"x"`)
 	})
 }
 
