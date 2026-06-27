@@ -35,7 +35,7 @@ func TestDestructureMutLeaf(t *testing.T) {
 				val [p, q] = line
 				q.y = 5
 				return p
-			}`, want: []string{"cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"5:5-5:12: cannot constrain immutable object <: mutable object"}},
 		// Owned scrutinee, object key-value form: `{a: mut m}` is mutable, `{b: n}` not.
 		"OwnedObjectKeyValueMutLeaf": {src: `
 			fn f() {
@@ -50,7 +50,7 @@ func TestDestructureMutLeaf(t *testing.T) {
 				val {a: m, b: n} = pt
 				m.x = 5
 				return n
-			}`, want: []string{"cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"5:5-5:12: cannot constrain immutable object <: mutable object"}},
 		// Owned scrutinee, object shorthand form: `{mut x}` is mutable.
 		"OwnedObjectShorthandMutLeaf": {src: `
 			fn f() {
@@ -80,7 +80,7 @@ func TestDestructureMutLeaf(t *testing.T) {
 						p
 					}
 				}
-			}`, want: []string{"cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"6:7-6:14: cannot constrain immutable object <: mutable object"}},
 		// A destructured `mut` parameter leaf is mutable.
 		"OwnedParamMutLeaf": {src: `
 			fn f([a, mut b]: [{x: number}, {y: number}]) {
@@ -91,20 +91,20 @@ func TestDestructureMutLeaf(t *testing.T) {
 			fn f([a, b]: [{x: number}, {y: number}]) {
 				b.y = 5
 				return a
-			}`, want: []string{"cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"3:5-3:12: cannot constrain immutable object <: mutable object"}},
 		// Shared `&` borrow scrutinee: a `mut` leaf is rejected.
 		"SharedBorrowMutLeafRejected": {src: `
 			fn f(line: &[{x: number}, {y: number}]) {
 				val [p, mut q] = line
 				return p
-			}`, want: []string{"cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"}},
+			}`, want: []string{"3:13-3:18: cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"}},
 		// Shared `&` borrow scrutinee: an unmarked leaf is a shared borrow, so a write errors.
 		"SharedBorrowPlainLeafWriteErrors": {src: `
 			fn f(line: &[{x: number}, {y: number}]) {
 				val [p, q] = line
 				q.y = 5
 				return p
-			}`, want: []string{"cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"4:5-4:12: cannot constrain immutable object <: mutable object"}},
 		// `&mut` borrow scrutinee: a `mut` leaf is a mutable borrow, so a write succeeds.
 		"MutBorrowMutLeafWrite": {src: `
 			fn f(line: &mut [{x: number}, {y: number}]) {
@@ -148,7 +148,7 @@ func TestDestructureMutLeaf(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, Messages(errs))
+			require.Equal(t, tc.want, messagesWithSpan(errs))
 		})
 	}
 }
@@ -254,7 +254,7 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 				match line {
 					[p, mut q] => { 0 }
 				}
-			}`, want: []string{"cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"}},
+			}`, want: []string{"4:10-4:15: cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"}},
 		// `&` scrutinee: an unmarked leaf is a shared borrow, so a write through it errors.
 		"SharedBorrowPlainLeafWriteErrors": {src: `
 			fn f(line: &[{x: number}, {y: number}]) {
@@ -264,7 +264,7 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 						0
 					}
 				}
-			}`, want: []string{"cannot constrain immutable object <: mutable object"}},
+			}`, want: []string{"5:7-5:14: cannot constrain immutable object <: mutable object"}},
 		// A `mut` leaf is rejected against a `&` borrow EXPRESSION scrutinee too, not
 		// only a `&` parameter.
 		"SharedBorrowExprMutLeafRejected": {src: `
@@ -273,7 +273,7 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 				match (&line) {
 					[p, mut q] => { 0 }
 				}
-			}`, want: []string{"cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"}},
+			}`, want: []string{"5:10-5:15: cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"}},
 		// The binding mode propagates into a nested pattern of a borrowed `match`
 		// scrutinee, so a deeply nested `mut` leaf is a mutable borrow.
 		"NestedMutBorrowLeaf": {src: `
@@ -289,7 +289,7 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, Messages(errs))
+			require.Equal(t, tc.want, messagesWithSpan(errs))
 		})
 	}
 }
