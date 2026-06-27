@@ -134,11 +134,25 @@ type funcCtx struct {
 	// binding moved on more than one path keeps the last-recorded move node, which
 	// is a coarse but adequate blame target.
 	moveNodes map[liveness.VarID]ast.Node
-	// useSites records every read of an owned-movable binding while walking the
-	// body, each with the binding's VarID, the CFG point of the read, and the node
-	// to blame. checkUseAfterMoves replays them against the consumed lattice once the
-	// whole body — including loop back edges — has been walked, so a use that some
-	// reaching path moved is caught even when the move is textually later.
+	// placeIDs interns a field-level place to the synthetic VarID the consumed lattice
+	// keys on (PR 7). A field-level place is a root binding plus a path of field names
+	// such as `pair.a`. A whole-binding place reuses its root VarID and is never
+	// interned here, so this holds only sub-binding places. The synthetic IDs come from
+	// the module-wide varIDCounter, so they never collide with a real binding's VarID.
+	placeIDs map[string]liveness.VarID
+	// movePlaces records, for every VarID the move engine has consumed, the place it
+	// stands for: a whole binding maps its root VarID to the path-empty place, and a
+	// field move maps its synthetic VarID to the field place. checkUseAfterMoves
+	// scans it to find a moved place whose path is a prefix of, or extends, the place
+	// a use reads — the partial-move conflict test that keeps a moved `pair.a` from
+	// blocking a read of the sibling `pair.b`.
+	movePlaces map[liveness.VarID]movePlace
+	// useSites records every read of a reference-shaped place while walking the body,
+	// each with the place read, the CFG point of the read, and the node to blame. The
+	// place carries the field path, so a read of `pair.a` is distinguished from the
+	// sibling `pair.b`. checkUseAfterMoves replays them against the consumed lattice
+	// once the whole body, loop back edges included, has been walked, so a use that
+	// some reaching path moved is caught even when the move is textually later.
 	useSites []moveUse
 	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
 	// the transition checker uses to query the lifetime sort for a `'static` escape in

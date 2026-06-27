@@ -446,6 +446,21 @@ func TestInferBorrowOfNonBorrowableRejected(t *testing.T) {
 
 // --- PR 4: member reads borrow the receiver ---
 
+// A member read off an OWNED receiver yields the field's owned value, not a
+// receiver-bounded borrow, so the field can be moved out of the object (PR 7).
+// Here `pair.a` returns as the owned `{id: number}` and moves out of the frame,
+// where a borrow of a frame-local would be rejected as not living long enough. A
+// borrowed receiver still yields a borrow; the tests below pin that path.
+func TestInferOwnedReceiverFieldReadIsOwned(t *testing.T) {
+	src := `fn f() -> {id: number} {
+  val pair = {a: {id: 1}, b: {id: 2}}
+  return pair.a
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> {id: number}", values["f"])
+}
+
 // A member read that escapes carries the receiver's borrow lifetime through.
 // Deep `mut` makes the field owned-mutable, so the read yields a mutable borrow.
 func TestInferMemberReadEscapingBorrowsReceiver(t *testing.T) {

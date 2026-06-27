@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
@@ -20,15 +21,25 @@ import (
 //   - The flow sites call consumeOwned to record a move into c.fn.moveSites, the
 //     per-statement consume map AnalyzeMoves folds into the branch-merged consumed
 //     lattice from internal/liveness.
-//   - inferIdent calls recordUse for every read of a reference-shaped binding,
-//     accumulating the read sites into c.fn.useSites.
+//   - A read of a reference-shaped binding calls recordUse and a field read calls
+//     recordMemberUse, accumulating the read sites into c.fn.useSites.
 //   - After the body walk, checkUseAfterMoves runs AnalyzeMoves once and replays
-//     each recorded use against the lattice, reporting a UseAfterMoveError when the
-//     binding was Moved or MaybeMoved on a path reaching the read.
+//     each recorded use against the lattice, reporting a UseAfterMoveError when a
+//     conflicting place was Moved or MaybeMoved on a path reaching the read.
 //
 // Running the use check as a post-pass rather than inline is what makes conditional
 // and loop moves correct. The lattice is a fixed point over the whole CFG, so a use
 // that a later or back-edge move reaches is still caught.
+//
+// Moves and uses are tracked at field granularity, not just per binding (PR 7). A
+// move or use names a movePlace: a root binding plus a path of field names such as
+// `pair.a`. The consumed lattice keys on the place rather than the binding. Moving
+// `pair.a` consumes only that field's place, so the sibling `pair.b` stays usable
+// while a later read of `pair.a` is a use-after-move. A whole binding is the
+// path-empty place, so whole-binding moves are unchanged. A use of place U conflicts
+// with a moved place M when one path is a prefix of the other under one root, which
+// catches a read of the moved field, a read of a field beneath it, and a read of the
+// whole object that would expose it.
 //
 // Known limitation: the lattice only ever raises a binding to Moved, never lowers it.
 // Reassigning a `var` after it was moved gives it a fresh value, but the lattice still
@@ -67,13 +78,14 @@ func (e *UseAfterMoveError) Message() string {
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
 
-// moveUse is one recorded read of an owned-movable binding: the binding's VarID,
-// the CFG point of the read, and the node to blame.
+// moveUse is one recorded read of a reference-shaped place: the place read, the CFG
+// point of the read, and the node to blame. The place carries the field path so a
+// read of `pair.a.id` is tested against a partial move of `pair.a`, while a read of
+// the sibling `pair.b` is not.
 type moveUse struct {
-	varID liveness.VarID
+	place movePlace
 	ref   liveness.StmtRef
 	node  ast.Node
-	name  string
 }
 
 // isBorrowType reports whether t is a borrow — a RefType carrying a lifetime.
@@ -136,6 +148,131 @@ func isOwnedMovable(t soltype.Type) bool {
 	return isReferenceShaped(t)
 }
 
+// movePlace identifies the storage location the move engine tracks: a root binding
+// plus a path of field names reached from it by static member or constant-index
+// access. The empty path is the whole binding, so whole-binding moves are the
+// path-length-zero case and need no interning. A move of `pair.a` is the place
+// {root: pair, path: ["a"]}; a later read of `pair.a.id` is {root: pair, path:
+// ["a", "id"]}, and the two conflict because one path is a prefix of the other. A
+// read of `pair.b` is {root: pair, path: ["b"]}, disjoint from `pair.a`, so a
+// partial move of `pair.a` leaves it usable.
+type movePlace struct {
+	root liveness.VarID
+	path []string
+}
+
+// exprPlace returns the place a place-expression names: a binding, or a chain of
+// static member and constant-string index accesses rooted at one binding. ok is
+// false for anything that is not such a place, such as a call result or a literal.
+// A dynamic index falls back to its container place, since the checker cannot prove
+// two dynamic indices disjoint — `arr[i]` and `arr[j]` both resolve to `arr`, so a
+// move through one conservatively blocks a use through the other.
+func exprPlace(e ast.Expr) (movePlace, bool) {
+	switch e := e.(type) {
+	case *ast.IdentExpr:
+		if e.VarID <= 0 {
+			return movePlace{}, false
+		}
+		return movePlace{root: liveness.VarID(e.VarID)}, true
+	case *ast.MemberExpr:
+		if e.OptChain || e.Prop == nil || e.Prop.Name == "" {
+			return movePlace{}, false
+		}
+		base, ok := exprPlace(e.Object)
+		if !ok {
+			return movePlace{}, false
+		}
+		return extendPlace(base, e.Prop.Name), true
+	case *ast.IndexExpr:
+		if e.OptChain {
+			return movePlace{}, false
+		}
+		base, ok := exprPlace(e.Object)
+		if !ok {
+			return movePlace{}, false
+		}
+		if name, ok := constStringKey(e.Index); ok {
+			return extendPlace(base, name), true
+		}
+		// A dynamic index is approximated by its container.
+		return base, true
+	}
+	return movePlace{}, false
+}
+
+// extendPlace returns base with one more field name appended, copying the path so
+// sibling places built from the same base never share backing storage.
+func extendPlace(base movePlace, field string) movePlace {
+	path := make([]string, len(base.path)+1)
+	copy(path, base.path)
+	path[len(base.path)] = field
+	return movePlace{root: base.root, path: path}
+}
+
+// placeKey is the interning key for a field place. A field name cannot contain a
+// NUL, so joining the root and path on NUL keeps `{root, [a, b]}` distinct from
+// `{root, [ab]}`.
+func placeKey(p movePlace) string {
+	return fmt.Sprintf("%d\x00%s", p.root, strings.Join(p.path, "\x00"))
+}
+
+// placeID maps a place to the VarID the consumed lattice keys on. A whole-binding
+// place reuses its root VarID, so whole-binding moves stay keyed exactly as before.
+// A field place interns to a fresh synthetic VarID drawn from the module-wide
+// counter — unique across every body, so it never collides with a real binding —
+// and the mapping is stable within a body, so the same field named at a move site
+// and at a use site resolves to one ID.
+func (c *checker) placeID(p movePlace) liveness.VarID {
+	if len(p.path) == 0 {
+		return p.root
+	}
+	key := placeKey(p)
+	if id, ok := c.fn.placeIDs[key]; ok {
+		return id
+	}
+	id := liveness.VarID(c.varIDCounter)
+	c.varIDCounter++
+	c.fn.placeIDs[key] = id
+	return id
+}
+
+// pathPrefixRelated reports whether two field paths under one root conflict: one is
+// a prefix of the other. Moving `pair.a` conflicts with a use of `pair.a` itself
+// when the paths are equal, of a field beneath it like `pair.a.id` when the move
+// path is a prefix, and of the whole `pair` when the use path is a prefix, since the
+// read would expose the moved field. A use of the disjoint sibling `pair.b` shares
+// no prefix and does not conflict.
+func pathPrefixRelated(a, b []string) bool {
+	n := min(len(a), len(b))
+	for i := range n {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// renderPlace names a place for a diagnostic: the root binding's name followed by
+// its field path, so a whole-binding move renders as `pair` and a field move as
+// `pair.a`.
+func (c *checker) renderPlace(p movePlace) string {
+	name := c.varIDToName(p.root)
+	if len(p.path) == 0 {
+		return name
+	}
+	return name + "." + strings.Join(p.path, ".")
+}
+
+// moveNameOf names the moved value behind a lattice VarID for a diagnostic. A field
+// move resolves through movePlaces to its rendered path; a whole-binding move falls
+// back to the binding name.
+func (c *checker) moveNameOf(id liveness.VarID) string {
+	if p, ok := c.fn.movePlaces[id]; ok {
+		return c.renderPlace(p)
+	}
+	return c.varIDToName(id)
+}
+
 // currentStmtRef resolves the statement currently being walked to its CFG point.
 // It is the program point a use or move records against. ok is false outside a
 // function body or when the statement has no CFG ref.
@@ -164,17 +301,38 @@ func (c *checker) recordUse(e *ast.IdentExpr, t soltype.Type) {
 		return
 	}
 	c.fn.useSites = append(c.fn.useSites, moveUse{
-		varID: liveness.VarID(e.VarID),
+		place: movePlace{root: liveness.VarID(e.VarID)},
 		ref:   ref,
 		node:  e,
-		name:  e.Name,
 	})
 }
 
-// consumeOwned records a move of the owned binding the source expression names,
-// at the given program point, blaming moveNode for the consume. The source must be
-// a plain identifier bound to an owned-movable value; a borrow, value type, fresh
-// literal, or member path consumes nothing here.
+// recordMemberUse records a read of a field place so the use-after-move scan can
+// test it against a partial move of the same place or a prefix of it. The whole
+// member or index expression names the place, even when the field read yields a
+// value type, because reading `pair.a.id` still dereferences `pair.a` and is a
+// use-after-move if `pair.a` was moved. A receiver that is not a tracked place, such
+// as a namespace member, names no movable root and records nothing.
+func (c *checker) recordMemberUse(e ast.Expr) {
+	if c.fn == nil || c.fn.cfg == nil {
+		return
+	}
+	p, ok := exprPlace(e)
+	if !ok || len(p.path) == 0 {
+		return
+	}
+	ref, ok := c.currentStmtRef()
+	if !ok {
+		return
+	}
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e})
+}
+
+// consumeOwned records a move of the owned place the source expression names, at the
+// given program point, blaming moveNode for the consume. The source must be a place —
+// a binding or a field path such as `pair.a` — whose value is owned-movable. A borrow,
+// value type, fresh literal, or non-place expression consumes nothing here. A field
+// path consumes only that field's slot, the partial move from PR 7.
 //
 // It does NOT force the moved value's borrows to 'static. A return or local store
 // flows the value out at the call's own lifetime, not 'static, so forcing here would
@@ -185,30 +343,29 @@ func (c *checker) consumeOwned(source ast.Expr, sourceT soltype.Type, moveNode a
 	if c.fn == nil || c.fn.cfg == nil || sourceT == nil {
 		return
 	}
-	ident, ok := source.(*ast.IdentExpr)
-	if !ok || ident.VarID <= 0 {
+	p, ok := exprPlace(source)
+	if !ok {
 		return
 	}
 	if !isOwnedMovable(sourceT) {
 		return
 	}
-	c.recordMove(liveness.VarID(ident.VarID), moveNode, ref)
+	c.recordMovePlace(p, moveNode, ref)
 }
 
 // movesSourceInto reports whether flowing source into a destination of type destT
-// moves the owned binding source names: source is an identifier bound to an
-// owned-movable value and the destination takes ownership rather than borrowing. A
-// borrow destination keeps the source aliased and governed by the exclusivity rule,
-// not consumed. A borrow destination is either a `&` annotation or an explicit
-// `&source` initializer, which is a BorrowExpr rather than a plain identifier and so
+// moves the owned place source names: source is a place — a binding or a field path
+// — bound to an owned-movable value and the destination takes ownership rather than
+// borrowing. A borrow destination keeps the source aliased and governed by the
+// exclusivity rule, not consumed. A borrow destination is either a `&` annotation or
+// an explicit `&source` initializer, which is a BorrowExpr rather than a place and so
 // names no owned source. It is the shared move-or-borrow decision for `val`/`var`
 // bindings and reassignments.
 func (c *checker) movesSourceInto(source ast.Expr, destT soltype.Type) bool {
 	if source == nil || isBorrowType(destT) {
 		return false
 	}
-	ident, ok := source.(*ast.IdentExpr)
-	if !ok || ident.VarID <= 0 {
+	if _, ok := exprPlace(source); !ok {
 		return false
 	}
 	return isOwnedMovable(c.info.TypeOf(source))
@@ -230,49 +387,45 @@ func (c *checker) consumeBindingInit(vd *ast.VarDecl, bindingT soltype.Type, stm
 	c.consumeOwned(vd.Init, c.info.TypeOf(vd.Init), vd.Init, ref)
 }
 
-// consumeAtGlobalWrite consumes the source binding of a module-level store. A store
+// consumeAtGlobalWrite consumes the source place of a module-level store. A store
 // into a 'static global permanently transfers the value, so it consumes the source
 // whether owned or a borrow — using the source afterward could mutate what the global
 // now reads, the leak the affine rule closes. A value-type source copies and a
-// non-identifier source names no binding, so neither consumes.
+// non-place source names no storage, so neither consumes.
 func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, moveNode ast.Node, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.cfg == nil || sourceT == nil {
 		return
 	}
-	ident, ok := source.(*ast.IdentExpr)
-	if !ok || ident.VarID <= 0 {
+	p, ok := exprPlace(source)
+	if !ok {
 		return
 	}
 	if !isReferenceShaped(sourceT) {
 		return
 	}
-	c.recordMove(liveness.VarID(ident.VarID), moveNode, ref)
+	c.recordMovePlace(p, moveNode, ref)
 }
 
-// consumeIntoLiteral moves an owned identifier built into a fresh object or tuple
-// literal, recording the move at ref, the literal's statement. Storing an owned value
-// into the literal transfers ownership into it, so a later use of the source is a
-// use-after-move. A value-type element copies and a non-identifier element names no
-// binding, so neither consumes. hasRef is false when the literal has no resolvable
+// consumeIntoLiteral moves an owned place built into a fresh object or tuple literal,
+// recording the move at ref, the literal's statement. Storing an owned value into the
+// literal transfers ownership into it, so a later use of the source is a
+// use-after-move. A value-type element copies and a non-place element names no
+// storage, so neither consumes. hasRef is false when the literal has no resolvable
 // statement point, in which case nothing is recorded rather than mis-attributing the
 // move to the zero StmtRef.
 //
-// inferTuple and inferObject call it for each element built from a source binding:
+// inferTuple and inferObject call it for each element built from a source place:
 //
 //	val mut a = {foo: "hello"}
 //	val ys = [a]   // a moves into the tuple
 //	a.foo          // ERROR: use of moved value 'a'
 //
-// Limitation: only a whole-binding identifier element consumes. A member-path element
-// names a sub-place the whole-binding move engine cannot key on, so building one into a
-// literal records no move and a later use of it is not caught:
+// A field-path element consumes only that field, the partial move from PR 7:
 //
 //	val mut pair = {a: {foo: "hi"}, b: {bar: 1}}
-//	val ys = [pair.a]   // pair.a is NOT consumed
-//	pair.a              // accepted today; should be a use-after-move
-//
-// Closing this needs the element/field-level ownership tracking planned for partial
-// moves (PR 7).
+//	val ys = [pair.a]   // pair.a moves into the tuple
+//	pair.a              // ERROR: use of moved value 'pair.a'
+//	pair.b              // OK: sibling untouched
 func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref liveness.StmtRef, hasRef bool) {
 	if !hasRef {
 		return
@@ -280,11 +433,21 @@ func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref livene
 	c.consumeOwned(el, elemT, el, ref)
 }
 
-// recordMove marks varID consumed at ref. A second move of the same binding at the
-// same program point is an intra-statement reuse — `return [x, x]`, `f(x, x)`, the
-// `dup` double move — so it is reported immediately as a use-after-move rather than
-// waiting for the lattice, which is statement-granular and cannot order two moves
-// within one statement.
+// recordMovePlace consumes the place at the given program point, blaming moveNode. It
+// interns the place to its lattice VarID, registers the mapping so the
+// use-after-move scan can recover the path for the prefix test, and records the move
+// into the consumed lattice through recordMove.
+func (c *checker) recordMovePlace(p movePlace, moveNode ast.Node, ref liveness.StmtRef) {
+	id := c.placeID(p)
+	c.fn.movePlaces[id] = p
+	c.recordMove(id, moveNode, ref)
+}
+
+// recordMove marks varID consumed at ref. A second move of the same place at the same
+// program point is an intra-statement reuse — `return [x, x]`, `f(x, x)`, the `dup`
+// double move — so it is reported immediately as a use-after-move rather than waiting
+// for the lattice, which is statement-granular and cannot order two moves within one
+// statement.
 func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.moveSites == nil || varID <= 0 {
 		return
@@ -296,7 +459,7 @@ func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref livene
 	}
 	if at.Contains(varID) {
 		c.report(&UseAfterMoveError{
-			Name:     c.varIDToName(varID),
+			Name:     c.moveNameOf(varID),
 			use:      moveNode,
 			moveSite: c.fn.moveNodes[varID],
 		})
@@ -315,7 +478,7 @@ func (c *checker) recordMove(varID liveness.VarID, moveNode ast.Node, ref livene
 // after the whole body is walked, so a move on a later or loop-back path is
 // already recorded when a use is checked.
 //
-// StateBefore reads the binding's state just before the read's statement, so a move
+// StateBefore reads the place's state just before the read's statement, so a move
 // recorded AT that statement — the consume in `val q = p`, where reading p and
 // moving it share one statement — does not flag its own source read.
 //
@@ -332,18 +495,55 @@ func (c *checker) checkUseAfterMoves() {
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 	for _, u := range c.fn.useSites {
-		state := info.StateBefore(u.ref, u.varID)
+		state, movedID := c.movedConflict(info, u)
 		if state == liveness.NotMoved {
 			continue
 		}
 		c.report(&UseAfterMoveError{
-			Name:        u.name,
+			Name:        c.moveNameOf(movedID),
 			Conditional: state == liveness.MaybeMoved,
 			use:         u.node,
-			moveSite:    c.fn.moveNodes[u.varID],
+			moveSite:    c.fn.moveNodes[movedID],
 		})
 	}
 	c.reconcileMovedTransitions(info)
+}
+
+// movedConflict finds the strongest consumed state among the moved places that
+// conflict with the use, returning that state and the conflicting move's lattice
+// VarID. A moved place conflicts when it shares the use's root and one path is a
+// prefix of the other, so a use of `pair.a.id` conflicts with a move of `pair.a`, of
+// `pair`, or of `pair.a.id`, while a use of `pair.b` conflicts with none of them. An
+// unconditional Moved is preferred over a conditional MaybeMoved when both reach the
+// use, so the diagnostic reports the definite use-after-move.
+//
+// When two conflicting moves share the strongest state — a whole-object read that
+// exposes both moved `pair.a` and moved `pair.b` — the lower lattice id wins, which
+// is the earlier move in source order, since the synthetic ids are allocated as the
+// walk meets each place. The tiebreak makes the blamed move deterministic across the
+// unordered movePlaces map iteration.
+func (c *checker) movedConflict(info *liveness.MoveInfo, u moveUse) (liveness.MoveState, liveness.VarID) {
+	best := liveness.NotMoved
+	var bestID liveness.VarID
+	for id, p := range c.fn.movePlaces {
+		if p.root != u.place.root || !pathPrefixRelated(p.path, u.place.path) {
+			continue
+		}
+		s := info.StateBefore(u.ref, id)
+		if s == liveness.NotMoved {
+			continue
+		}
+		switch {
+		case best == liveness.NotMoved:
+		case s == liveness.Moved && best == liveness.MaybeMoved:
+		case s == best && id < bestID:
+		default:
+			continue
+		}
+		best = s
+		bestID = id
+	}
+	return best, bestID
 }
 
 // reconcileMovedTransitions drops every mutability-transition error whose source the

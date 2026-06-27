@@ -246,6 +246,114 @@ func TestMoveSemantics(t *testing.T) {
 				"borrowed value mut object does not live long enough to satisfy object",
 			},
 		},
+		// Moving one field out of an owned object consumes only that field's slot. The
+		// sibling stays usable and a later read of the moved field is a use-after-move
+		// naming the field place (PR 7).
+		"PartialMoveConsumesFieldKeepsSibling": {
+			src: `
+				fn store(p: {id: number}) {}
+				fn test() {
+					val pair = {a: {id: 1}, b: {id: 2}}
+					store(pair.a)
+					pair.b.id
+					pair.a.id
+				}
+			`,
+			want: []string{"use of moved value 'pair.a'"},
+		},
+		// Reading a sibling field after a partial move is allowed on its own.
+		"SiblingAfterPartialMoveAccepted": {
+			src: `
+				fn store(p: {id: number}) {}
+				fn test() {
+					val pair = {a: {id: 1}, b: {id: 2}}
+					store(pair.a)
+					pair.b.id
+				}
+			`,
+		},
+		// A read of the whole object after a partial move exposes the moved field, so it
+		// is a use-after-move even though a sibling is still live.
+		"WholeObjectReadAfterPartialMove": {
+			src: `
+				fn store(p: {id: number}) {}
+				fn test() {
+					val pair = {a: {id: 1}, b: {id: 2}}
+					store(pair.a)
+					pair
+				}
+			`,
+			want: []string{"use of moved value 'pair.a'"},
+		},
+		// Binding a field into an owned binding moves that field; a later read of it is a
+		// use-after-move.
+		"PartialMoveViaBinding": {
+			src: `
+				fn test() {
+					val pair = {a: {id: 1}, b: {id: 2}}
+					val q = pair.a
+					pair.a.id
+				}
+			`,
+			want: []string{"use of moved value 'pair.a'"},
+		},
+		// Storing a field into a longer-lived object moves it; the sibling stays usable.
+		"PartialMoveViaFieldStore": {
+			src: `
+				fn test() {
+					val pair = {a: {id: 1}, b: {id: 2}}
+					val obj: mut {f: {id: number}} = {f: {id: 0}}
+					obj.f = pair.a
+					pair.b.id
+					pair.a.id
+				}
+			`,
+			want: []string{"use of moved value 'pair.a'"},
+		},
+		// A field built into a tuple literal moves as a partial move, the gap PR 6 left
+		// for PR 7 to close; the sibling stays usable.
+		"PartialMoveIntoLiteral": {
+			src: `
+				fn test() {
+					val pair = {a: {id: 1}, b: {id: 2}}
+					val ys = [pair.a]
+					pair.b.id
+					pair.a.id
+				}
+			`,
+			want: []string{"use of moved value 'pair.a'"},
+		},
+		// A field moved on only one branch is a conditional use-after-move at a later
+		// read, joined to MaybeMoved at the branch merge.
+		"ConditionalPartialMove": {
+			src: `
+				fn store(p: {id: number}) {}
+				fn test(cond: boolean) {
+					val pair = {a: {id: 1}, b: {id: 2}}
+					if cond {
+						store(pair.a)
+					} else {
+					}
+					pair.a.id
+				}
+			`,
+			want: []string{"use of moved value 'pair.a'"},
+		},
+		// Tracking reaches nested field paths. Moving `pair.a.inner` consumes only that
+		// deep slot, so the sibling `pair.a.keep` stays usable and a read of the moved
+		// slot is a use-after-move naming the full path.
+		"NestedFieldPartialMove": {
+			src: `
+				fn store(p: {id: number}) {}
+				fn test() {
+					val pair = {a: {inner: {id: 1}, keep: {id: 2}}, b: {id: 3}}
+					store(pair.a.inner)
+					pair.a.keep.id
+					pair.a.inner.id
+				}
+			`,
+			want: []string{"use of moved value 'pair.a.inner'"},
+		},
 	}
 
 	for name, tc := range tests {

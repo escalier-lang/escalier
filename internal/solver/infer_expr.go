@@ -53,7 +53,7 @@ func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
 // surfaces it and only a consumer that needs a value rejects it. The error then
 // fires once for both `f(Foo)` and a partial chain `f(A.B)`.
 func (c *checker) inferIdent(scope *Scope, lvl int, e *ast.IdentExpr) soltype.Type {
-	return c.demandValue(c.resolveIdentPath(scope, lvl, e), e)
+	return c.demandValue(c.resolveIdentPath(scope, lvl, e, false), e)
 }
 
 // pathResult is the sum returned by resolvePath: a path expression resolves to
@@ -73,14 +73,22 @@ type pathResult struct {
 // namespace (so Foo.bar and A.B.c walk through), while demandValue — called by
 // every value-position consumer — rejects a namespace result. Any other
 // expression kind in path position is an ordinary value expression.
-func (c *checker) resolvePath(scope *Scope, lvl int, e ast.Expr) pathResult {
+// objPos marks that e sits in the OBJECT position of a member/index chain — a step
+// on the path's spine rather than the whole place read. A spine step records no
+// use-after-move use of its own, since the outermost place read records the full
+// place that subsumes it: reading `pair.a.id` records one use of `pair.a.id`, not a
+// separate whole-binding use of `pair` that would wrongly collide with a partial
+// move of a sibling. inferExpr never threads objPos, so an off-spine subexpression
+// such as a call argument or an index key resolves with objPos false and records its
+// own uses.
+func (c *checker) resolvePath(scope *Scope, lvl int, e ast.Expr, objPos bool) pathResult {
 	switch e := e.(type) {
 	case *ast.IdentExpr:
-		return c.resolveIdentPath(scope, lvl, e)
+		return c.resolveIdentPath(scope, lvl, e, objPos)
 	case *ast.MemberExpr:
-		return c.resolveMemberPath(scope, lvl, e)
+		return c.resolveMemberPath(scope, lvl, e, objPos)
 	case *ast.IndexExpr:
-		return c.resolveIndexPath(scope, lvl, e)
+		return c.resolveIndexPath(scope, lvl, e, objPos)
 	default:
 		return pathResult{value: c.inferExpr(scope, lvl, e)}
 	}
@@ -109,15 +117,18 @@ func (c *checker) demandValue(r pathResult, node ast.Expr) soltype.Type {
 // len > 0 check should never fail in practice — but Schemes is a slice, not a
 // guaranteed-non-empty field, so we guard it anyway: a malformed empty binding
 // degrades to an unknown-identifier error instead of panicking on Schemes[0].
-func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr) pathResult {
+func (c *checker) resolveIdentPath(scope *Scope, lvl int, e *ast.IdentExpr, objPos bool) pathResult {
 	if b, ok := scope.GetValue(e.Name); ok && len(b.Schemes) > 0 {
 		t := c.bindingValue(lvl, b)
 		c.recordType(e, t)
 		// Record this read so the post-walk use-after-move pass can test it against the
 		// consumed lattice. The binding's coalesced type drives the reference-shape
 		// decision, since a fresh instantiation can hide a mono owned shape behind a
-		// variable.
-		c.recordUse(e, bindingType(b))
+		// variable. A spine step of a member chain records nothing here; the outermost
+		// member read records the full place instead.
+		if !objPos {
+			c.recordUse(e, bindingType(b))
+		}
 		return pathResult{value: t}
 	}
 	if ns, ok := scope.GetNamespace(e.Name); ok {
@@ -654,7 +665,7 @@ func (c *checker) wrapBorrow(e *ast.BorrowExpr, lvl int, sub soltype.Type) solty
 // literal key. accessNode is the whole MemberExpr or IndexExpr, used for the
 // Info record on the inner access shape.
 func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, recvExpr ast.Expr, propName string, provNode ast.Node, accessNode ast.Expr) soltype.Type {
-	obj := c.resolvePath(scope, lvl, recvExpr)
+	obj := c.resolvePath(scope, lvl, recvExpr, true)
 	if obj.err {
 		recovery := soltype.Type(&soltype.ErrorType{})
 		c.recordType(accessNode, recovery)
@@ -676,6 +687,10 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		c.recordType(e, recv)
 		return recv
 	}
+	// Borrowing a field reads its place, so a use-after-move test sees `&obj.f` as a
+	// use of `obj.f`. The receiver resolved with objPos set, so it recorded no
+	// whole-receiver use that would collide with a partial move of a sibling.
+	c.recordMemberUse(accessNode)
 	_, _, recvLt := soltype.UnwrapRef(recv)
 	recvCarrier := soltype.CarrierOf(recv)
 	// Read-after-write cache. A usage-inferred receiver may carry a recorded
@@ -1513,21 +1528,21 @@ func (b *objElemBuilder) add(name string, t soltype.Type, optional, readonly boo
 // a member that resolves to a namespace (A.B used as a value) is rejected.
 // Optional chaining (recv?.prop) needs union/undefined handling and is M6.
 func (c *checker) inferMember(scope *Scope, lvl int, e *ast.MemberExpr) soltype.Type {
-	return c.demandValue(c.resolveMemberPath(scope, lvl, e), e)
+	return c.demandValue(c.resolveMemberPath(scope, lvl, e, false), e)
 }
 
 // inferIndex types `obj[index]` in value position — namespace index access
 // (Foo["bar"]) and the constant-string bracket form of property access
 // (obj["foo-bar"]); dynamic value indexing is M7.
 func (c *checker) inferIndex(scope *Scope, lvl int, e *ast.IndexExpr) soltype.Type {
-	return c.demandValue(c.resolveIndexPath(scope, lvl, e), e)
+	return c.demandValue(c.resolveIndexPath(scope, lvl, e, false), e)
 }
 
 // resolveMemberPath resolves `obj.prop`. It first resolves the object as a path —
 // so a namespace object (Foo.bar, A.B.c) walks through as a non-lexical member
 // lookup — and otherwise types the object as an ordinary value receiver and reads
 // the property structurally.
-func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pathResult {
+func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, objPos bool) pathResult {
 	if e.OptChain {
 		// Optional chaining (recv?.prop) is wholesale unsupported in M2; report it
 		// up front and do NOT descend into the receiver, so a single diagnostic
@@ -1537,7 +1552,7 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pa
 		c.reportUnsupportedFeature(e, "OptionalChain")
 		return pathResult{err: true}
 	}
-	obj := c.resolvePath(scope, lvl, e.Object)
+	obj := c.resolvePath(scope, lvl, e.Object, true)
 	if obj.err {
 		return pathResult{err: true}
 	}
@@ -1555,6 +1570,13 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr) pa
 	}
 	if obj.ns != nil {
 		return c.resolveNamespaceMember(lvl, e, obj.ns, e.Prop.Name)
+	}
+	// Record the read of this place as the outermost read of the chain, so a later
+	// use-after-move test sees the full path `pair.a` rather than the spine's bare
+	// root. A spine step has objPos true and records nothing; the full place subsumes
+	// it.
+	if !objPos {
+		c.recordMemberUse(e)
 	}
 	return c.valueMember(lvl, e, obj.value)
 }
@@ -1685,13 +1707,19 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 		}
 		return fieldVar
 	case *soltype.ObjectType, *soltype.TupleType:
-		// A bare object/tuple field is a value the receiver owns. Read it as a
+		// A bare object/tuple field a borrowed receiver lends is read as a
 		// receiver-bounded borrow whose mutability follows the receiver (PR 14): a
-		// mutable receiver yields `&mut`, an immutable one `&`. This is where the
-		// lazy deep-mut rule lives — under `mut {a: {x}}`, `p.a` reads `&mut {x}`.
+		// mutable borrow yields `&mut`, an immutable one `&`. This is where the lazy
+		// deep-mut rule lives — under a `&mut {a: {x}}` receiver, `p.a` reads `&mut {x}`.
 		lt := recvLt
 		if lt == nil {
-			lt = c.ctx.freshLifetime(lvl)
+			// An owned receiver yields the field's owned value, not a borrow, so a
+			// field read can be moved out of it. `pair.a` off an owned `pair` is the
+			// owned field `{x}` and flows into an owned binding, argument, return, or
+			// store as a move that consumes `pair.a`. The move engine keys the consume
+			// on the field's place (PR 7). A mutable receiver yields an owned-mutable
+			// field and an immutable one the bare field.
+			return soltype.NewRef(recvMut, nil, fieldType.(soltype.RefInner))
 		}
 		if recvMut {
 			// Mutable read: keep the concrete field shape as the borrow's inner, the
@@ -1715,12 +1743,12 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 // property as obj.foo would, and lets the source name a property whose key is not
 // a valid identifier. A dynamic key over a value (array element / index-signature
 // read) needs Array and index types from M7, so it stays unsupported here.
-func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr) pathResult {
+func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objPos bool) pathResult {
 	if e.OptChain {
 		c.reportUnsupportedFeature(e, "OptionalChain")
 		return pathResult{err: true}
 	}
-	obj := c.resolvePath(scope, lvl, e.Object)
+	obj := c.resolvePath(scope, lvl, e.Object, true)
 	if obj.err {
 		return pathResult{err: true}
 	}
@@ -1733,6 +1761,9 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr) path
 		return c.resolveNamespaceMember(lvl, e, obj.ns, name)
 	}
 	if name, ok := constStringKey(e.Index); ok {
+		if !objPos {
+			c.recordMemberUse(e)
+		}
 		return c.valueProp(lvl, e, e.Index, name, obj.value)
 	}
 	// A dynamic key over a value (array element / index-signature read) needs Array

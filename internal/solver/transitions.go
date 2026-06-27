@@ -759,6 +759,8 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	// lattice over these same blocks once the whole body is walked.
 	c.fn.cfg = cfg
 	c.fn.moveSites = map[liveness.StmtRef]set.Set[liveness.VarID]{}
+	c.fn.placeIDs = map[string]liveness.VarID{}
+	c.fn.movePlaces = map[liveness.VarID]movePlace{}
 }
 
 // seedParamLeafAliases walks each parameter pattern recursively and seeds the alias
