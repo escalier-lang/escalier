@@ -161,43 +161,163 @@ func TestInferOwnedMutFromFreshLiteral(t *testing.T) {
 	})
 }
 
-// The upgrade applies only to a freshly constructed value. A non-fresh source — here a
-// variable — still rejects an immutable→mutable assignment, because the variable could
-// alias a value held immutably elsewhere. That case waits on the lifetime/region work.
-func TestInferOwnedMutFromVariableRejected(t *testing.T) {
-	src := `fn f() {
+// A non-fresh source that is a consuming MOVE of a uniquely-owned place upgrades into an
+// owned-mutable annotation. `val m: mut {x} = cfg` with cfg dead afterward grants m the
+// mutable type, so the write `m.x = 2` succeeds. The move consumes cfg, so the same
+// source with cfg still read afterward is a use-after-move rather than an upgrade error.
+func TestInferOwnedMutFromMovedVariable(t *testing.T) {
+	t.Run("dead source upgrades", func(t *testing.T) {
+		src := `fn f() {
 	val cfg: {x: number} = {x: 1}
 	val m: mut {x: number} = cfg
 	m.x = 2
 }`
-	_, _, errs := inferSource(t, src)
-	require.Equal(t, "3:13-3:14: cannot constrain immutable object <: mutable object", msgWithSpan(errs[0]))
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+	t.Run("live source is a use-after-move", func(t *testing.T) {
+		src := `fn f() {
+	val cfg: {x: number} = {x: 1}
+	val m: mut {x: number} = cfg
+	cfg.x
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+	})
 }
 
-// The freshness check recurses, so a literal that WRAPS a non-fresh element is itself not
-// freshly constructed and gets no upgrade. This is the recursive false path of
-// isFreshlyConstructed, distinct from TestInferOwnedMutFromVariableRejected's top-level
-// variable: the outer literal is fresh, but a field or element reads a variable.
-func TestInferOwnedMutFreshnessRecurses(t *testing.T) {
-	t.Run("object field is a variable", func(t *testing.T) {
+// The upgrade recurses through a literal that wraps a moved place: the outer literal is
+// fresh and the wrapped `cfg` is a consuming move of an owned variable, so the whole
+// value is uniquely owned and upgrades. A live read of `cfg` afterward is a
+// use-after-move, since building the literal consumed it.
+func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
+	t.Run("object field is a moved variable", func(t *testing.T) {
 		src := `fn f() {
 	val cfg = {x: 1}
 	val m: mut {p: {x: number}} = {p: cfg}
 	m
 }`
 		_, _, errs := inferSource(t, src)
-		require.Len(t, errs, 1)
-		require.Equal(t, "3:13-3:14: cannot constrain immutable object <: mutable object", msgWithSpan(errs[0]))
+		require.Empty(t, errs)
 	})
-	t.Run("tuple element is a variable", func(t *testing.T) {
+	t.Run("tuple element is a moved variable", func(t *testing.T) {
 		src := `fn f() {
 	val cfg = {x: 1}
 	val t: mut [number, {x: number}] = [1, cfg]
 	t
 }`
 		_, _, errs := inferSource(t, src)
-		require.Len(t, errs, 1)
-		require.Equal(t, "3:13-3:14: cannot constrain immutable tuple <: mutable tuple", msgWithSpan(errs[0]))
+		require.Empty(t, errs)
+	})
+	t.Run("live nested source is a use-after-move", func(t *testing.T) {
+		src := `fn f() {
+	val cfg = {x: 1}
+	val m: mut {p: {x: number}} = {p: cfg}
+	cfg.x
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+	})
+}
+
+// The immutable→mutable upgrade is consulted at every value-flow site into an
+// owned-mutable slot through the shared tryUpgradeIntoMutSlot helper, not only the
+// declaration initializer. A reassignment into a `mut` var, an argument against a `mut`
+// parameter, and a `mut` return annotation each accept a fresh literal and a moved
+// owned variable, and each move consumes the source.
+
+// A reassignment into a `mut` var grants the upgrade: both a fresh literal and a moved
+// owned variable satisfy the var's mutable type. The moved source is consumed, so a read
+// of it after the reassignment is a use-after-move.
+func TestInferOwnedMutReassign(t *testing.T) {
+	t.Run("fresh literal", func(t *testing.T) {
+		src := `fn f() {
+	var m: mut {x: number} = {x: 0}
+	m = {x: 1}
+	m.x = 2
+}`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+	t.Run("moved variable", func(t *testing.T) {
+		src := `fn f() {
+	var m: mut {x: number} = {x: 0}
+	val cfg: {x: number} = {x: 1}
+	m = cfg
+	m.x = 2
+}`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+	t.Run("live source is a use-after-move", func(t *testing.T) {
+		src := `fn f() {
+	var m: mut {x: number} = {x: 0}
+	val cfg: {x: number} = {x: 1}
+	m = cfg
+	cfg.x
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"5:2-5:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+	})
+}
+
+// An argument against a `mut` parameter grants the upgrade, so `f({x: 1})` and `f(cfg)`
+// type-check for an owned-mutable parameter. Passing the moved variable consumes it, so a
+// later read is a use-after-move.
+func TestInferOwnedMutCallArgument(t *testing.T) {
+	t.Run("fresh literal", func(t *testing.T) {
+		src := `fn sink(q: mut {x: number}) {}
+fn f() { sink({x: 1}) }`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+	t.Run("moved variable", func(t *testing.T) {
+		src := `fn sink(q: mut {x: number}) {}
+fn f() {
+	val cfg: {x: number} = {x: 1}
+	sink(cfg)
+}`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+	t.Run("live argument is a use-after-move", func(t *testing.T) {
+		src := `fn sink(q: mut {x: number}) {}
+fn f() {
+	val cfg: {x: number} = {x: 1}
+	sink(cfg)
+	cfg.x
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"5:2-5:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+	})
+	t.Run("already-mutable argument keeps strict invariance", func(t *testing.T) {
+		// An owned-mutable argument is not upgraded; it flows through the strict mut<:mut
+		// constraint, which pins the nested field invariant, so a narrower field is
+		// rejected rather than silently accepted through the upgrade's covariant view.
+		src := `fn sink(q: mut {a: {x: number | string}}) {}
+fn f(p: mut {a: {x: number}}) { sink(p) }`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"2:33-2:40: cannot constrain string <: number"}, messagesWithSpan(errs))
+	})
+}
+
+// A `mut` return annotation grants the upgrade for a uniquely-owned body value, so a
+// function returning a fresh literal or a moved owned variable is typed as returning the
+// owned-mutable value.
+func TestInferOwnedMutReturn(t *testing.T) {
+	t.Run("fresh literal", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn f() -> mut {x: number} { return {x: 1} }`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn () -> mut {x: number}", values["f"])
+	})
+	t.Run("moved variable", func(t *testing.T) {
+		src := `fn f() -> mut {x: number} {
+	val cfg: {x: number} = {x: 1}
+	return cfg
+}`
+		values, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+		require.Equal(t, "fn () -> mut {x: number}", values["f"])
 	})
 }
 

@@ -65,6 +65,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		}
 		if c.fn != nil {
 			c.fn.returns = append(c.fn.returns, t)
+			c.fn.returnExprs = append(c.fn.returnExprs, s.Expr)
 			// Returning an owned value moves it out of the call frame, so the source
 			// binding is consumed and a later use is a use-after-move. A returned borrow
 			// flows out at its own lifetime and is not consumed here.

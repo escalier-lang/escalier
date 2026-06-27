@@ -612,8 +612,8 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 			`,
 		},
 		// Storing the owned `p` into the global `sink` moves it, so binding `p` again
-		// into `snap` is a use-after-move; the bind is also a type error, since an
-		// immutable value cannot satisfy a mutable slot.
+		// into `snap` is a use-after-move. The bind itself takes the immutable→mutable
+		// upgrade, since `p` is a uniquely-owned place, so the move is the only error.
 		"Rule2_ImmEscape_SourceDead_Error": {
 			src: `
 				var sink = {x: 0}
@@ -624,7 +624,6 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 				}
 			`,
 			want: []string{
-				"5:21-5:22: cannot constrain immutable object <: mutable object",
 				"5:35-5:36: use of moved value 'p'",
 			},
 		},
@@ -709,11 +708,11 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 }
 
 // TestRule2TransitionFromSource covers binding an immutable value into an owned `mut`
-// slot. The bind is a type error — an immutable object cannot satisfy a mutable slot —
-// and it also moves the owned `config` into `mutableConfig`, so the later `config.x`
-// read is a use-after-move. Both messages are asserted. Owned-into-owned is a move
-// under the affine rule, so the old Rule 2 exclusivity transition no longer applies
-// here; the move governs the source instead.
+// slot while the source stays live afterward. The bind takes the immutable→mutable
+// upgrade — config is a uniquely-owned place, so granting mutableConfig the mutable type
+// aliases nothing live — and the move consumes config, so the later `config.x` read is a
+// use-after-move. Owned-into-owned is a move under the affine rule, so the move governs
+// the source rather than a Rule 2 exclusivity transition or an immutable<:mutable error.
 func TestRule2TransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn test() {
@@ -723,8 +722,7 @@ func TestRule2TransitionFromSource(t *testing.T) {
 			config.x
 		}
 	`)
-	require.ElementsMatch(t, []string{
-		"4:27-4:28: cannot constrain immutable object <: mutable object",
+	require.Equal(t, []string{
 		"6:4-6:12: use of moved value 'config'",
 	}, messagesWithSpan(errs))
 }
