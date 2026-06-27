@@ -390,7 +390,7 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 // function yields a value as owned-mutable only when each returned value is uniquely
 // owned, so a single non-upgradable return on any path blocks the grant and the strict
 // constraint runs. With the grant the joined return shape is constrained against the
-// return annotation's immutable read view, the same covariant check tryUpgradeIntoMutSlot
+// return annotation's immutable read view, the same covariant check tryUpgradeToOwnedMut
 // runs at the other value-flow sites. The join is not a single source expression, so the
 // decision is made here rather than through that per-expression helper.
 func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, retExprs []ast.Expr, ret, annT soltype.Type) {
@@ -908,7 +908,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// strict path.
 	if resolved {
 		for i := 0; i < len(e.Args) && i < len(fn.Params); i++ {
-			if c.tryUpgradeIntoMutSlot(e.Args[i], e.Args[i], demand[i].Type, fn.Params[i].Type) {
+			if c.tryUpgradeToOwnedMut(e.Args[i], e.Args[i], demand[i].Type, fn.Params[i].Type) {
 				// The upgrade constrained the argument's shape against the parameter's
 				// immutable read view, so pin this argument's demand entry to the parameter's
 				// own type; the callee <: callShape constraint below then re-checks it as
@@ -1144,7 +1144,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// immutable→mutable upgrade as the local reassignment path, so `sink = {x: 1}`
 		// type-checks. The carrier feeds the upgrade for the same reason it feeds the
 		// strict check below: a borrow forced to 'static satisfies the owned global.
-		if !c.tryUpgradeIntoMutSlot(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
+		if !c.tryUpgradeToOwnedMut(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
 			c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
 		}
 		if len(c.errs) == errsBefore {
@@ -1176,7 +1176,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// unique, which is the borrow checker's job. Move/affine semantics (#762),
 			// under the sound borrow checker (#618), will eventually reject it.
 		}
-	} else if !c.tryUpgradeIntoMutSlot(e, e.Right, sourceT, targetT) {
+	} else if !c.tryUpgradeToOwnedMut(e, e.Right, sourceT, targetT) {
 		// A uniquely-owned source reassigned into an owned-mutable `var` takes the
 		// immutable→mutable upgrade, the same grant the annotated declaration makes. The
 		// upgrade fires only for a RefType target, so a union target still routes through
@@ -1261,7 +1261,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// rejects the annotation, so no source program reaches this branch today. The guard
 	// keeps the field write consistent for when one does.
 	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
-		if prop, ok := recvObj.Prop(m.Prop.Name); ok && c.tryUpgradeIntoMutSlot(e.Right, e.Right, source, prop.Type) {
+		if prop, ok := recvObj.Prop(m.Prop.Name); ok && c.tryUpgradeToOwnedMut(e.Right, e.Right, source, prop.Type) {
 			w = prop.Type
 		}
 	}

@@ -183,7 +183,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // visible only here, so this site decides whether the source is uniquely owned and then
 // hands the solver a check it can do soundly.
 //
-// tryUpgradeIntoMutSlot constrains the initializer's shape against the borrow's INNER, its
+// tryUpgradeToOwnedMut constrains the initializer's shape against the borrow's INNER, its
 // covariant read view, exactly as the non-mut path constrains against the annotation
 // directly. A borrow annotation is a reference into a caller's region, not an owned value,
 // so a source flowing into it stays on the strict path.
@@ -194,35 +194,35 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
 // `val q: &{x} = p` is the opt-in for an alias.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
-	if c.tryUpgradeIntoMutSlot(init, init, initT, annT) {
+	if c.tryUpgradeToOwnedMut(init, init, initT, annT) {
 		return annT
 	}
 	c.constrain(init, initT, annT)
 	return annT
 }
 
-// tryUpgradeIntoMutSlot grants the immutable→mutable upgrade when a value of type srcT,
-// built by src, flows into the target type targetSlot. The upgrade fires only when
-// targetSlot is owned-mutable — a RefType with Mut set and a nil lifetime — and src is
-// uniquely owned per canUpgradeToOwnedMut. It then constrains srcT against targetSlot's
-// immutable read view, stripOwnedMut of the inner, the same covariant check the non-mut
-// path runs, and returns true. Otherwise it constrains nothing and returns false, leaving
-// the caller to run its ordinary constraint against targetSlot.
+// tryUpgradeToOwnedMut grants the immutable→mutable upgrade when a value of type srcT,
+// built by src, flows into the type target. The upgrade fires only when target is
+// owned-mutable — a RefType with Mut set and a nil lifetime — and src is uniquely owned
+// per canUpgradeToOwnedMut. It then constrains srcT against target's immutable read view,
+// stripOwnedMut of the inner, the same covariant check the non-mut path runs, and returns
+// true. Otherwise it constrains nothing and returns false, leaving the caller to run its
+// ordinary constraint against target.
 //
-// targetSlot is whatever owned-mutable type the value flows into at a given site, and
-// every such site routes through here: the declaration initializer's annotation, a
-// reassignment target's binding type, a `mut` parameter type, a `mut` return annotation,
-// and a `mut` field's type. site is the node blamed on failure. src is the source
-// expression, which canUpgradeToOwnedMut inspects for the syntactic fresh-literal fast
-// path and the place-move path.
-func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, targetSlot soltype.Type) bool {
-	ref, ok := targetSlot.(*soltype.RefType)
+// target is whatever owned-mutable type the value flows into at a given site, and every
+// such site routes through here: the declaration initializer's annotation, the binding
+// type of a reassignment, a `mut` parameter type, a `mut` return annotation, and a `mut`
+// field's type. site is the node blamed on failure. src is the source expression, which
+// canUpgradeToOwnedMut inspects for the syntactic fresh-literal fast path and the
+// place-move path.
+func (c *checker) tryUpgradeToOwnedMut(site ast.Node, src ast.Expr, srcT, target soltype.Type) bool {
+	ref, ok := target.(*soltype.RefType)
 	if !ok || !ref.Mut || ref.Lt != nil || !c.canUpgradeToOwnedMut(src) {
 		return false
 	}
 	// Under the lazy deep-mut form the inner is already bare, and a nested `mut {x}` field
 	// inside a non-mut container is rejected at the annotation site (#779), so stripOwnedMut
-	// is a defensive no-op for most targetSlot types. It still lets a uniquely-owned source
+	// is a defensive no-op for most target types. It still lets a uniquely-owned source
 	// flow covariantly into any owned-mut cell that reaches here. A fully uniquely-owned
 	// source is owned at every level, so the upgrade is sound the whole way down.
 	c.constrain(site, srcT, stripOwnedMut(ref.Inner))

@@ -223,7 +223,7 @@ func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 }
 
 // The immutable→mutable upgrade is consulted at every value-flow site into an
-// owned-mutable target through the shared tryUpgradeIntoMutSlot helper, not only the
+// owned-mutable target through the shared tryUpgradeToOwnedMut helper, not only the
 // declaration initializer. A reassignment into a `mut` var, an argument against a `mut`
 // parameter, and a `mut` return annotation each accept a fresh literal and a moved
 // owned variable, and each move consumes the source.
