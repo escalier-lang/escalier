@@ -125,11 +125,21 @@ type funcCtx struct {
 	cfg *liveness.CFG
 	// moveSites records, per CFG statement position, the VarIDs the ordered walk
 	// has consumed there — a binding moved by a return, a store, a consuming
-	// argument, or an escaping capture. PR 6 records into it while walking the body;
-	// AnalyzeMoves(cfg, moveSites) then yields the branch-merged consumed lattice
-	// the use-after-move check reads. PR 5 builds the analysis and this collector;
-	// the recording and reading land in PR 6, so it stays empty until then.
+	// argument, or an escaping capture. The walk records into it while walking the
+	// body; AnalyzeMoves(cfg, moveSites) then yields the branch-merged consumed
+	// lattice the use-after-move check reads after the body walk completes.
 	moveSites map[liveness.StmtRef]set.Set[liveness.VarID]
+	// moveNodes maps a consumed binding's VarID to the node that moved it, so a
+	// UseAfterMoveError can point its "moved here" related span at the move site. A
+	// binding moved on more than one path keeps the last-recorded move node, which
+	// is a coarse but adequate blame target.
+	moveNodes map[liveness.VarID]ast.Node
+	// useSites records every read of an owned-movable binding while walking the
+	// body, each with the binding's VarID, the CFG point of the read, and the node
+	// to blame. checkUseAfterMoves replays them against the consumed lattice once the
+	// whole body — including loop back edges — has been walked, so a use that some
+	// reaching path moved is caught even when the move is textually later.
+	useSites []moveUse
 	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
 	// the transition checker uses to query the lifetime sort for a `'static` escape in
 	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow

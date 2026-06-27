@@ -114,7 +114,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		if annT, ok := c.resolveTypeAnn(d.TypeAnn, lvl); ok {
-			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT, lvl)
+			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
@@ -152,15 +152,12 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // borrow annotation is a reference into a caller's region, not an owned value, so a fresh
 // source flowing into it stays on the strict path.
 //
-// 2. A bare object/tuple annotation whose initializer is a borrow lowers to an immutable
-// reborrow of the initializer rather than an owned slot (M4 G3). See reborrowAnnotation.
-// Binding a borrow into a bare annotation, as in `val q: {x} = p` for `p: mut {x}`, would
-// otherwise trip BorrowEscapeError, since the borrow flows into an owned slot. The old
-// checker accepts this and treats the annotation as a local immutable view of `p` that
-// never escapes. Reborrowing makes the lifetime sort decide. A local view that dies
-// within the source's region carries no escape constraint and is accepted, while one that
-// escapes through a return or a module store still errors.
-func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, lvl int) soltype.Type {
+// 2. A bare owned annotation whose initializer is a borrow is a borrow-into-owned
+// escape. A `val` binding consumes an owned source, so a borrowed `p` flowing into a
+// bare owned slot, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
+// ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
+// `val q: &{x} = p` is the opt-in for an alias.
+func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
 	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && isFreshlyConstructed(init) {
 		// Constrain a fresh literal against the borrow's immutable skeleton, then
 		// grant the owned-mutable type. Under the lazy deep-mut form (PR 14) the inner
@@ -172,46 +169,8 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 		c.constrain(init, initT, stripOwnedMut(ref.Inner))
 		return annT
 	}
-	if borrow, ok := c.reborrowAnnotation(initT, annT, lvl); ok {
-		c.constrain(init, initT, borrow)
-		return borrow
-	}
 	c.constrain(init, initT, annT)
 	return annT
-}
-
-// reborrowAnnotation lowers a bare object/tuple annotation to an immutable borrow with a
-// fresh lifetime, returning ok=false when the refinement does not apply (M4 G3). It
-// applies only when the initializer's type is itself a borrow carrying a lifetime and
-// the annotation is a bare object or tuple, not an already-borrow `mut`/lifetime form or
-// a non-borrowable primitive.
-//
-// The gate is the source TYPE, not the source syntax. An owned source, whether an
-// immutable object or an owned-mutable one, has no lifetime to outlive, so the existing
-// owned-slot path already accepts it by peeling. Reborrowing it would instead make the
-// binding a borrow with a free lifetime, which then trips BorrowEscapeError the moment
-// the binding flows into any owned position, such as an owned parameter. Only a source
-// that already carries a borrow lifetime needs the reborrow.
-//
-// The fresh lifetime carries no obligation on its own. The RefType <: RefType constrain
-// arm relates it to the source's lifetime through constrainLt. This reborrow constraint
-// runs exactly as the borrow-into-borrow argument path does. A binding that escapes
-// carries D3's escape-to-'static constraint, which the lifetime sort weighs against the
-// reborrow. A binding that stays local and dies within the source's region leaves the
-// fresh lifetime free, so D4's display-time elision drops the wrapper and the binding
-// renders as the bare inner.
-func (c *checker) reborrowAnnotation(initT, annT soltype.Type, lvl int) (soltype.Type, bool) {
-	if src, ok := initT.(*soltype.RefType); !ok || src.Lt == nil {
-		return nil, false
-	}
-	switch inner := annT.(type) {
-	case *soltype.ObjectType:
-		return &soltype.RefType{Mut: false, Lt: c.ctx.freshLifetime(lvl), Inner: inner}, true
-	case *soltype.TupleType:
-		return &soltype.RefType{Mut: false, Lt: c.ctx.freshLifetime(lvl), Inner: inner}, true
-	default:
-		return nil, false
-	}
 }
 
 // stripOwnedMut returns t's deeply-immutable skeleton by peeling every owned-mut

@@ -65,6 +65,14 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		}
 		if c.fn != nil {
 			c.fn.returns = append(c.fn.returns, t)
+			// Returning an owned value moves it out of the call frame, so the source
+			// binding is consumed and a later use is a use-after-move. A returned borrow
+			// flows out at its own lifetime and is not consumed here.
+			if s.Expr != nil {
+				if ref, ok := c.fn.stmtToRef[s]; ok {
+					c.consumeOwned(s.Expr, t, s.Expr, ref)
+				}
+			}
 		} else {
 			// A `return` reached outside any function body — e.g. inside an `if` that
 			// is part of a top-level `val` initializer (`val x = if c { return 1 }
@@ -108,6 +116,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			scope.defineValue(name, b) // overwrite ⇒ same-name redeclaration rebinds
 			if c.fn != nil {
 				c.trackAliasesForVarDecl(scope, vd, bindingType(b), s)
+				c.consumeBindingInit(vd, bindingType(b), s)
 			}
 		}
 		return &soltype.Void{}

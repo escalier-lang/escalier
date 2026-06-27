@@ -59,6 +59,13 @@ type MutabilityTransitionError struct {
 	MutToImmutable bool
 	// node is the transition site, used for blame (the decl or assignment).
 	node ast.Node
+	// sourceVarID and ref locate the transition's source binding and program point
+	// for the post-pass move reconciliation. When the consumed lattice finds the
+	// source already moved on a path reaching ref, the move engine reports a
+	// use-after-move there, which subsumes this exclusivity conflict, so
+	// reconcileMovedTransitions drops it.
+	sourceVarID liveness.VarID
+	ref         liveness.StmtRef
 }
 
 func (*MutabilityTransitionError) isSolverError()        {}
@@ -297,6 +304,7 @@ func (c *checker) checkMutabilityTransition(
 	sourceMut bool,
 	targetMut bool,
 	targetAlwaysLive bool,
+	sourceConsumed bool,
 	assignRef liveness.StmtRef,
 	node ast.Node,
 ) {
@@ -322,6 +330,14 @@ func (c *checker) checkMutabilityTransition(
 	conflictingSet := set.NewSet[string]()
 	for _, aliasSet := range fn.aliases.GetAliasSets(sourceVarID) {
 		for varID, aliasMut := range aliasSet.Members {
+			// PR 6: when the move engine consumes the source at this site — a
+			// module-level write moves the stored value out — the source's own later
+			// use is a use-after-move, not an exclusivity conflict. Skip the source's
+			// self-conflict so the consume governs it and only OTHER live aliases of the
+			// value raise a transition error, the alias-set residual the move leaves.
+			if sourceConsumed && varID == sourceVarID {
+				continue
+			}
 			// A borrow on this member forced to 'static is a permanent outside
 			// reference. It outlives the function, so no liveness check is meaningful
 			// and it always counts as a live alias of its escaped mutability.
@@ -377,6 +393,8 @@ func (c *checker) checkMutabilityTransition(
 		ConflictingVars: conflicting,
 		MutToImmutable:  sourceMut && !targetMut,
 		node:            node,
+		sourceVarID:     sourceVarID,
+		ref:             assignRef,
 	})
 }
 
@@ -409,6 +427,9 @@ func (c *checker) trackAliasesForVarDecl(scope *Scope, decl *ast.VarDecl, bindin
 // point. It is the shared core of the decl and reassignment paths. The single-source
 // case is just the one-element instance of this loop, so neither path open-codes its
 // own copy. A no-op when the statement has no StmtRef.
+// sourceConsumed marks that the move engine consumes each source at this site, so the
+// check skips the source's own self-conflict — the use-after-move governs the source —
+// and reports only OTHER live aliases that conflict with the new view.
 func (c *checker) checkTransitionsAgainst(
 	sourceIDs []liveness.VarID,
 	targetVarID liveness.VarID,
@@ -416,6 +437,7 @@ func (c *checker) checkTransitionsAgainst(
 	targetMut bool,
 	enclosingStmt ast.Stmt,
 	node ast.Node,
+	sourceConsumed bool,
 ) {
 	stmtRef, hasRef := c.fn.stmtToRef[enclosingStmt]
 	if !hasRef {
@@ -425,7 +447,7 @@ func (c *checker) checkTransitionsAgainst(
 		c.checkMutabilityTransition(
 			sourceVarID, targetVarID,
 			c.varIDToName(sourceVarID), targetName,
-			c.isSourceMutable(sourceVarID), targetMut, false, stmtRef, node,
+			c.isSourceMutable(sourceVarID), targetMut, false, sourceConsumed, stmtRef, node,
 		)
 	}
 }
@@ -447,6 +469,24 @@ func (c *checker) trackAliasesForIdentPat(
 	aliasMut := aliasMutability(targetMut)
 	c.recordVarIDType(targetVarID, bindingT)
 
+	// A binding that MOVES its source is not an alias of it. The source is consumed and
+	// the target becomes a fresh owner, so register a new value rather than an alias
+	// edge, and let the move engine's use-after-move check govern a later use of the
+	// source. consumeBindingInit records the consume for the same binding. The move
+	// still requires the source to have no conflicting live borrow at this point, so
+	// run the exclusivity check against the source's OTHER aliases with sourceConsumed
+	// set, which skips the source's own self-conflict.
+	if c.movesSourceInto(init, bindingT) {
+		if ident, ok := init.(*ast.IdentExpr); ok && ident.VarID > 0 {
+			c.checkTransitionsAgainst(
+				[]liveness.VarID{liveness.VarID(ident.VarID)},
+				targetVarID, identPat.Name, targetMut, enclosingStmt, node, true,
+			)
+		}
+		c.fn.aliases.NewValue(targetVarID, aliasMut)
+		return
+	}
+
 	source := liveness.DetermineAliasSource(init)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
@@ -457,7 +497,7 @@ func (c *checker) trackAliasesForIdentPat(
 		for _, sourceVarID := range sourceIDs {
 			c.fn.aliases.AddAlias(targetVarID, sourceVarID, aliasMut)
 		}
-		c.checkTransitionsAgainst(sourceIDs, targetVarID, identPat.Name, targetMut, enclosingStmt, node)
+		c.checkTransitionsAgainst(sourceIDs, targetVarID, identPat.Name, targetMut, enclosingStmt, node, false)
 	case liveness.AliasSourceFresh, liveness.AliasSourceUnknown:
 		c.fn.aliases.NewValue(targetVarID, aliasMut)
 	}
@@ -514,7 +554,7 @@ func (c *checker) trackCapturedAliases(
 		// frame, so the helper's varIDToName(enclosingVarID) is capture.Name.
 		c.checkTransitionsAgainst(
 			[]liveness.VarID{enclosingVarID}, closureVarID,
-			c.varIDToName(closureVarID), capture.IsMutable, enclosingStmt, node,
+			c.varIDToName(closureVarID), capture.IsMutable, enclosingStmt, node, false,
 		)
 	}
 }
@@ -540,20 +580,38 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	aliasMut := aliasMutability(targetMut)
 	c.recordVarIDType(targetVarID, targetType)
 
+	// A reassignment that MOVES its source — `q = p` for an owned p into an owned slot
+	// — drops the previous value of q and takes ownership of p's value, so q becomes a
+	// fresh owner and p is consumed. Reassign to no source rather than aliasing, and let
+	// the move engine govern a later use of p; inferAssign records the consume through
+	// consumeOwned for the same assignment. The move still requires no conflicting live
+	// borrow of the source, so run the exclusivity check against p's OTHER aliases with
+	// sourceConsumed set, which skips p's own self-conflict.
+	if c.movesSourceInto(rhs, targetType) {
+		if ident, ok := rhs.(*ast.IdentExpr); ok && ident.VarID > 0 {
+			c.checkTransitionsAgainst(
+				[]liveness.VarID{liveness.VarID(ident.VarID)},
+				targetVarID, target.Name, targetMut, enclosingStmt, target, true,
+			)
+		}
+		c.fn.aliases.Reassign(targetVarID, nil, aliasMut)
+		return
+	}
+
 	source := liveness.DetermineAliasSource(rhs)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable:
 		// Check the transition before reassigning. The single-source reassign rewires
 		// the target's membership, so checking first reads the pre-reassign alias state.
 		sourceVarID := source.UniqueVarIDs()[0]
-		c.checkTransitionsAgainst([]liveness.VarID{sourceVarID}, targetVarID, target.Name, targetMut, enclosingStmt, target)
+		c.checkTransitionsAgainst([]liveness.VarID{sourceVarID}, targetVarID, target.Name, targetMut, enclosingStmt, target, false)
 		c.fn.aliases.Reassign(targetVarID, &sourceVarID, aliasMut)
 	case liveness.AliasSourceMultiple:
 		// Conditional aliasing: reassign to all sources BEFORE checking transitions so
 		// alias state stays consistent regardless of whether errors are reported.
 		sourceIDs := source.UniqueVarIDs()
 		c.fn.aliases.ReassignMulti(targetVarID, sourceIDs, aliasMut)
-		c.checkTransitionsAgainst(sourceIDs, targetVarID, target.Name, targetMut, enclosingStmt, target)
+		c.checkTransitionsAgainst(sourceIDs, targetVarID, target.Name, targetMut, enclosingStmt, target, false)
 	case liveness.AliasSourceFresh, liveness.AliasSourceUnknown:
 		c.fn.aliases.Reassign(targetVarID, nil, aliasMut)
 	}
@@ -593,7 +651,7 @@ func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr
 			c.checkMutabilityTransition(
 				sourceVarID, 0,
 				c.varIDToName(sourceVarID), target.Name,
-				c.isSourceMutable(sourceVarID), targetMut, true, stmtRef, target,
+				c.isSourceMutable(sourceVarID), targetMut, true, true, stmtRef, target,
 			)
 		}
 	}
@@ -696,9 +754,9 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	c.fn.stmtToRef = stmtToRef
 	c.fn.varIDNames = renameResult.VarIDNames
 	c.fn.varIDTypes = varIDTypes
-	// Retain the CFG and a fresh consume-site collector for the move engine (PR 5).
-	// The branch-merged consumed lattice (liveness.AnalyzeMoves) joins over these
-	// same blocks. PR 6 records consume sites into moveSites while walking the body.
+	// Retain the CFG and the move-engine state. The body walk records consume sites
+	// into moveSites, which liveness.AnalyzeMoves folds into the branch-merged consumed
+	// lattice over these same blocks once the whole body is walked.
 	c.fn.cfg = cfg
 	c.fn.moveSites = map[liveness.StmtRef]set.Set[liveness.VarID]{}
 }
