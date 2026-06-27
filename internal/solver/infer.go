@@ -182,6 +182,14 @@ type funcCtx struct {
 	// use-after-move subsumes it. Deferring the emission lets the phase decision read
 	// the complete post-walk lattice, so each conflict's path-sensitivity is decided in
 	// one pass.
+	//
+	// INVARIANT: this slice must not be mutated under a discardable probe. The conflicts
+	// here bypass openProbe's errs snapshot, since they reach c.errs only later through
+	// resolvePhaseTransitions, so a discarded trial would not roll them back. It holds
+	// today because checkMutabilityTransition runs only on the non-speculative statement
+	// walk, never inside a probe. A probe opened around a statement walk that can reach
+	// checkMutabilityTransition would have to journal this slice's length in openProbe,
+	// the way errs is journaled.
 	pendingTransitions []*MutabilityTransitionError
 }
 
