@@ -189,18 +189,18 @@ func TestInferValMutPrimitiveUnchanged(t *testing.T) {
 	require.Equal(t, "fn () -> 5", values["f"])
 }
 
-// The construction upgrade fires only for a freshly constructed literal. Binding a
-// `mut` to a non-fresh source — here a parameter — does not upgrade it to
-// owned-mutable, since moving an existing owned value into a mutable binding is the
-// thaw move whose consume enforcement lands in PR 8. The binding stays at the
-// source's owned-immutable type for now.
-func TestInferValMutFromVariableNotUpgraded(t *testing.T) {
+// `val mut p = src` thaws an owned-immutable source into an owned-mutable binding.
+// The move consumes `src` and leaves `p` the sole owner, so it is sound for `p` to be
+// mutable: no reference to the value survives to observe `p`'s later mutations. The
+// binding's mutability comes from the `mut` pattern, not from the source, so `p` is
+// `mut {x: number}` and the function returns it at that type.
+func TestInferValMutThawFromVariable(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(src: {x: number}) {
   val mut p = src
   return p
 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (src: {x: number}) -> {x: number}", values["f"])
+	require.Equal(t, "fn (src: {x: number}) -> mut {x: number}", values["f"])
 }
 
 // --- Rule 3 (binding initializer): annotated bindings --------------------------

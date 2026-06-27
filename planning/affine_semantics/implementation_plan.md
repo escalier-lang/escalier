@@ -251,7 +251,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started.
 | 5 | Move engine substrate: generalize escape detection, build the consumed lattice | 4 | Large | ✅ done (#786, #787); constrainEscape generalization deferred to PR 6 |
 | 6 | Consume and use-after-move at every flow site, conditional moves | 5 | Large | ✅ done; escaping-closure-capture moves and the return/argument `constrainEscape` forcing deferred |
 | 7 | Partial moves and field-level ownership | 6 | Medium | ⬜ not started |
-| 8 | Immutable→mutable thaw move and borrow-phase framing | 6 | Medium | ⬜ not started |
+| 8 | Immutable→mutable thaw move and borrow-phase framing | 6 | Medium | ✅ done |
 | 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3, M6 | Medium | ⬜ not started |
 | 10 | Mutable narrowed binding with pinned discriminant | 8, 9, M6 | Medium | ⬜ not started |
 | 11 | Connected-component moves for graphs | 6, 7 | Large | ⬜ not started |

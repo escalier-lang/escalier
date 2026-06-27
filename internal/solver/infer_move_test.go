@@ -377,3 +377,42 @@ func TestMoveSemantics(t *testing.T) {
 		})
 	}
 }
+
+// TestThawMove covers the immutable→mutable thaw of PR 8: `val mut q = p` for an
+// owned-immutable `p` moves `p` into the mutable binding `q` and consumes it. The move
+// leaves `q` the sole owner, so `q` may be mutable and `q.x = 5` is accepted with no
+// immutable-object error. The later `p.x` reads `p` after it was moved, a
+// use-after-move, which is the only diagnostic. This is the requirements' thawing
+// example.
+func TestThawMove(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn test() {
+			val p = {x: 0}
+			val mut q = p
+			q.x = 5
+			p.x
+		}
+	`)
+	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
+}
+
+// TestFreezeMove covers the mutable→immutable freeze of PR 8: a plain `val q = p` for
+// an owned-mutable `p` moves `p` into the immutable binding `q` and consumes it. The
+// binding's mutability comes from the pattern, so `q` is immutable and the write
+// `q.x = 5` is rejected, while the later `p.x` is a use-after-move on the consumed
+// source. Both diagnostics stand. This is the plan's freeze example.
+func TestFreezeMove(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn test() {
+			val mut p = {x: 0}
+			p.x = 42
+			val q = p
+			q.x = 5
+			p.x
+		}
+	`)
+	require.Equal(t, []string{
+		"cannot constrain immutable object <: mutable object",
+		"use of moved value 'p'",
+	}, Messages(errs))
+}

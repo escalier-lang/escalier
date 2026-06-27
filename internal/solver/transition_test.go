@@ -129,6 +129,20 @@ func transitionMessages(t *testing.T, errs []SolverError) []string {
 	return msgs
 }
 
+// pendingMessages renders the phase conflicts checkMutabilityTransition recorded on the
+// checker's funcCtx. A direct call to checkMutabilityTransition records its conflict for
+// the post-pass rather than emitting it, so a unit test that drives the check in
+// isolation reads the recorded conflict here. The from-source tests instead read
+// c.errs, since their full-pipeline run lets resolvePhaseTransitions drain the recorded
+// conflicts into the error list.
+func pendingMessages(c *checker) []string {
+	var msgs []string
+	for _, e := range c.fn.pendingTransitions {
+		msgs = append(msgs, e.Message())
+	}
+	return msgs
+}
+
 // staticBorrow builds a mut/immutable borrow whose lifetime is forced to 'static,
 // the shape borrowEscapedToStatic recognizes as a permanent outside alias (G2). The
 // 'static upper bound is what D3's constrainEscape adds when a borrow escapes.
@@ -141,6 +155,12 @@ func staticBorrow(mut bool) *soltype.RefType {
 // HasStatic{Mut,Imm}Alias bits: a source whose borrow escaped to 'static is a
 // permanent outside alias, so a transition conflicts even when the source is locally
 // dead after the transition point. Without the escape the same state is conflict-free.
+//
+// checkMutabilityTransition records its conflict for the post-pass rather than
+// emitting it, so these unit tests read the recorded conflict through pendingMessages.
+// They isolate the conflict computation — the escape query, its polarity, and the
+// target-dead early return — which runs at the transition point regardless of the
+// later lattice decision.
 func TestStaticEscapeTransition(t *testing.T) {
 	const (
 		src = liveness.VarID(1)
@@ -166,7 +186,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{tgt}))
 		c.fn.varIDTypes[src] = staticBorrow(true)
 		c.checkMutabilityTransition(src, tgt, "p", "snap", false, true, false, false, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c.errs))
+		require.Empty(t, pendingMessages(c))
 	})
 
 	// Would correspond to:
@@ -187,7 +207,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, false, transitionRef, transitionSite)
 		require.Equal(t, []string{
 			"cannot assign 'p' to immutable 'snap': a `'static` escape still has mutable access to 'p' after this point",
-		}, transitionMessages(t, c.errs))
+		}, pendingMessages(c))
 	})
 
 	// This isolates ONE transition: aliasing p into the immutable `snap`, where snap is
@@ -208,7 +228,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 		c := transitionFixture(names, a, set.FromSlice([]liveness.VarID{src}))
 		c.fn.varIDTypes[src] = staticBorrow(true)
 		c.checkMutabilityTransition(src, tgt, "p", "snap", true, false, false, false, transitionRef, transitionSite)
-		require.Empty(t, transitionMessages(t, c.errs))
+		require.Empty(t, pendingMessages(c))
 	})
 }
 
@@ -736,4 +756,121 @@ func TestMutabilityTransitionReassignFromSource(t *testing.T) {
 		`)
 		require.Empty(t, transitionMessages(t, errs))
 	})
+}
+
+// TestBorrowPhaseExclusion covers the borrow-phase reframing of PR 8: a mutable owned
+// value sits in either an immutable phase, with any number of `&` borrows, or a mutable
+// phase, with any number of `&mut` borrows, and the two never overlap. An immutable
+// borrow taken while a mutable borrow of the same value is live crosses the phases and
+// is rejected, while several mutable borrows of one value coexist.
+func TestBorrowPhaseExclusion(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// An immutable borrow `s` taken while the mutable borrow `m` is still live mixes
+		// the immutable and mutable phases, so it is rejected. `m` is the live mutable
+		// access the message names.
+		"ImmutableBorrowWhileMutableLive_Error": {
+			src: `
+				fn test() {
+					val a: mut {x: number} = {x: 1}
+					val m: &mut {x: number} = a
+					val s: &{x: number} = a
+					m.x = 2
+					s
+				}
+			`,
+			want: []string{
+				"cannot assign 'a' to immutable 's': 'm' still has mutable access to 'a' after this point",
+			},
+		},
+		// Two mutable borrows of one value stay within the mutable phase, so both are
+		// legal. Escalier is single-threaded, so simultaneous mutable borrows race
+		// nothing; the phase rule forbids only mixing the two kinds.
+		"MultipleMutableBorrows_OK": {
+			src: `
+				fn test() {
+					val a: mut {x: number} = {x: 1}
+					val b: &mut {x: number} = a
+					val c: &mut {x: number} = a
+					b.x = 2
+					c.x = 3
+					a.x
+				}
+			`,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, transitionMessages(t, errs))
+		})
+	}
+}
+
+// TestPhaseConflictUnderConditionalMove covers the path-sensitive phase decision of
+// PR 8, taken from the consumed lattice in one post-pass. A phase conflict is dropped
+// only when the source is moved on EVERY path reaching the transition, where the move
+// engine's use-after-move subsumes it. When the source is moved on only some paths, the
+// conflict survives for the paths that did not move it.
+func TestPhaseConflictUnderConditionalMove(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// `a` is moved on the `if` arm and untouched on the `else` arm, so it is moved on
+		// some but not all paths reaching the `val snapshot` transition. The immutable
+		// borrow there conflicts with the later mutable use `a.x = 2` on the paths that
+		// did not move `a`, so the phase conflict is reported. The paths that did move it
+		// read each later use of `a` — the borrow and the mutation — as a conditional
+		// use-after-move.
+		"SomePathsMove_ConflictSurvives": {
+			src: `
+				fn sink(p: mut {x: number}) {}
+				fn test(cond: boolean) {
+					val a: mut {x: number} = {x: 1}
+					if cond {
+						sink(a)
+					} else {
+						a.x = 1
+					}
+					val snapshot: &{x: number} = a
+					a.x = 2
+					snapshot
+				}
+			`,
+			want: []string{
+				"use of moved value 'a'",
+				"use of moved value 'a'",
+				"cannot assign 'a' to immutable 'snapshot': 'a' is still used mutably after this point",
+			},
+		},
+		// `a` is moved unconditionally before the transition, so it is moved on every
+		// path reaching it. The move engine reports the later uses of `a` as
+		// use-after-move, and the phase conflict is subsumed, so no transition error is
+		// reported alongside them.
+		"AllPathsMove_ConflictSubsumed": {
+			src: `
+				fn sink(p: mut {x: number}) {}
+				fn test() {
+					val a: mut {x: number} = {x: 1}
+					sink(a)
+					val snapshot: &{x: number} = a
+					a.x = 2
+					snapshot
+				}
+			`,
+			want: []string{
+				"use of moved value 'a'",
+				"use of moved value 'a'",
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, transitionMessages(t, errs))
+		})
+	}
 }
