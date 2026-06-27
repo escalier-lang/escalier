@@ -202,9 +202,9 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 }
 
 // tryUpgradeIntoMutSlot grants the immutable→mutable upgrade when a value of type srcT,
-// built by src, flows into the owned-mutable slot slot. The upgrade fires only when slot
-// is owned-mutable — a RefType with Mut set and a nil lifetime — and src is uniquely
-// owned per canUpgradeToOwnedMut. It then constrains srcT against the slot's immutable
+// built by src, flows into the target type slot. The upgrade fires only when slot is
+// owned-mutable — a RefType with Mut set and a nil lifetime — and src is uniquely owned
+// per canUpgradeToOwnedMut. It then constrains srcT against the slot's immutable
 // read view, stripOwnedMut of the inner, the same covariant check the non-mut path runs,
 // and returns true. Otherwise it constrains nothing and returns false, leaving the
 // caller to run its ordinary constraint against slot.
