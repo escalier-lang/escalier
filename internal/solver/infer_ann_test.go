@@ -323,6 +323,47 @@ func TestInferOwnedMutReturn(t *testing.T) {
 	})
 }
 
+// A field write into a mutable container's field is the fifth value-flow site. A fresh
+// literal and a moved owned variable both store into the field, the move consumes its
+// source, and an immutable receiver is rejected. The container's field is bare under the
+// lazy deep-mut form, so the shared helper is consulted and declines, leaving the ordinary
+// path to accept the owned value. The helper's owned-mutable-field upgrade branch itself
+// needs a field whose type is owned-mutable, which #779 makes unconstructible from source
+// today, so no case here drives that branch.
+func TestInferOwnedMutFieldWrite(t *testing.T) {
+	t.Run("fresh literal", func(t *testing.T) {
+		src := `fn f(obj: mut {a: {x: number}}) {
+	obj.a = {x: 5}
+}`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+	t.Run("moved variable", func(t *testing.T) {
+		src := `fn f(obj: mut {a: {x: number}}) {
+	val cfg: {x: number} = {x: 5}
+	obj.a = cfg
+}`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+	})
+	t.Run("live source is a use-after-move", func(t *testing.T) {
+		src := `fn f(obj: mut {a: {x: number}}) {
+	val cfg: {x: number} = {x: 5}
+	obj.a = cfg
+	cfg.x
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+	})
+	t.Run("immutable receiver rejected", func(t *testing.T) {
+		src := `fn f(obj: {a: {x: number}}) {
+	obj.a = {x: 5}
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"2:2-2:16: cannot constrain immutable object <: mutable object"}, messagesWithSpan(errs))
+	})
+}
+
 // A source carrying an already-owned-mutable cell is not upgraded, even when the cell is
 // nested inside a fresh literal. The covariant read view the upgrade constrains against
 // would widen that cell's element type, so the source falls through to the strict mut<:mut
