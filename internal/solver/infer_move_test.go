@@ -246,7 +246,7 @@ func TestMoveSemantics(t *testing.T) {
 				"2:13-2:29: borrowed value mut object does not live long enough to satisfy object",
 			},
 		},
-		// Moving one field out of an owned object consumes only that field's slot. The
+		// Moving one field out of an owned object consumes only that field. The
 		// sibling stays usable and a later read of the moved field is a use-after-move
 		// naming the field place (PR 7).
 		"PartialMoveConsumesFieldKeepsSibling": {
@@ -340,8 +340,8 @@ func TestMoveSemantics(t *testing.T) {
 			want: []string{"9:6-9:15: use of moved value 'pair.a'"},
 		},
 		// Tracking reaches nested field paths. Moving `pair.a.inner` consumes only that
-		// deep slot, so the sibling `pair.a.keep` stays usable and a read of the moved
-		// slot is a use-after-move naming the full path.
+		// deep field, so the sibling `pair.a.keep` stays usable and a read of the moved
+		// field is a use-after-move naming the full path.
 		"NestedFieldPartialMove": {
 			src: `
 				fn store(p: {id: number}) {}

@@ -165,7 +165,7 @@ func TestScriptEmpty(t *testing.T) {
 }
 
 // TestScriptRedeclaration checks that a script allows a name to be redeclared, the
-// function-body rule rather than the module rule. inferStmt overwrites the name's slot
+// function-body rule rather than the module rule. inferStmt overwrites the name's binding
 // on a body-level `val`/`var`, so a second declaration rebinds without constraining
 // the old and new types together. A later reference sees the new type. The identical
 // source as a module is rejected, because the dep-graph driver reports a duplicate
@@ -191,7 +191,7 @@ func TestScriptRedeclaration(t *testing.T) {
 // (inferAssign), distinct from the declaration-aliasing path the other parity cases
 // drive. inferAssign reads the enclosing statement from c.fn.currentStmt to find its
 // CFG StmtRef, which only exists because InferScript installs a funcCtx and runs the
-// liveness pre-pass over the script body. Reassigning an owned value into an owned slot
+// liveness pre-pass over the script body. Reassigning an owned value into an owned destination
 // moves it, so the later use of the source is a use-after-move. Mutating it before the
 // reassignment makes it dead, and the move stays silent.
 func TestScriptReassignTransition(t *testing.T) {
