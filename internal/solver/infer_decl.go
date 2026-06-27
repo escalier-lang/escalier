@@ -173,12 +173,20 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // none, so granting it the annotated mutable type is safe. This is Rule 2 with an empty
 // alias set. Two sources qualify, both recognised by canUpgradeToOwnedMut: a freshly
 // constructed literal such as `val items: mut {x} = {x: 1}`, and a consuming move of an
-// owned place such as `val m: mut {x} = cfg` where `cfg` is dead afterward. The decision
-// belongs at this value-flow site, which can see the source, not in the liveness-blind
-// constrain engine. tryUpgradeIntoMutSlot constrains the initializer's shape against the
-// borrow's INNER, its covariant read view, exactly as the non-mut path constrains
-// against the annotation directly. A borrow annotation is a reference into a caller's
-// region, not an owned value, so a source flowing into it stays on the strict path.
+// owned place such as `val m: mut {x} = cfg` where `cfg` is dead afterward.
+//
+// The decision belongs at this value-flow site rather than inside the constraint solver.
+// The solver, c.constrain, compares only the two types. It has no access to the source
+// expression, to variable liveness, or to the move analysis, so it cannot tell whether
+// the source is the sole owner of its value or is shared with a live immutable alias.
+// Lacking that information it always rejects immutable <: mutable. That information is
+// visible only here, so this site decides whether the source is uniquely owned and then
+// hands the solver a check it can do soundly.
+//
+// tryUpgradeIntoMutSlot constrains the initializer's shape against the borrow's INNER, its
+// covariant read view, exactly as the non-mut path constrains against the annotation
+// directly. A borrow annotation is a reference into a caller's region, not an owned value,
+// so a source flowing into it stays on the strict path.
 //
 // 2. A bare owned annotation whose initializer is a borrow is a borrow-into-owned
 // escape. A `val` binding consumes an owned source, so a borrowed `p` flowing into a
