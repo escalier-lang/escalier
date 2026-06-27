@@ -203,6 +203,21 @@ func TestInferValMutThawFromVariable(t *testing.T) {
 	require.Equal(t, "fn (src: {x: number}) -> mut {x: number}", values["f"])
 }
 
+// Thawing widens the source's literal fields to their primitive type. `p` holds the
+// singleton `{x: 0}`, and thawing it into `val mut q` yields `mut {x: number}` rather
+// than `mut {x: 0}`. A mutable cell admits any value of the field's primitive type, so
+// a write like `q.x = 5` would otherwise be rejected against a `0` singleton. This is
+// the same widening the fresh-literal `val mut q = {x: 0}` upgrade applies.
+func TestInferValMutThawWidensLiteral(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f() {
+  val p = {x: 0}
+  val mut q = p
+  return q
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+}
+
 // --- Rule 3 (binding initializer): annotated bindings --------------------------
 
 // `val q: {x} = p` for an owned-immutable p binds q at the annotated owned type.
