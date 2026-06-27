@@ -283,7 +283,7 @@ func TestMoveSemantics(t *testing.T) {
 					pair
 				}
 			`,
-			want: []string{"use of moved value 'pair.a'"},
+			want: []string{"use of partially moved value 'pair'; field 'pair.a' was moved out"},
 		},
 		// Binding a field into an owned binding moves that field; a later read of it is a
 		// use-after-move.

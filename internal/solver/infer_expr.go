@@ -781,8 +781,7 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
 	if r, ok := t.(*soltype.RefType); ok {
 		if r.Lt == nil {
-			ri, ok := r.Inner.(soltype.RefInner)
-			return ri, ok
+			return r.Inner, ok
 		}
 		return nil, false
 	}

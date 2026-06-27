@@ -1096,6 +1096,38 @@ now resolve to real `soltype` structures rather than opaque placeholders.
       "needs Array types — M7" note (m4-implementation-plan §C3). The write path
       reuses the tuple/array read classification above plus C3's `mut` receiver
       requirement and `widen`.
+- **Field-level move tracking of computed keys (PR 7 follow-up).** The move engine
+  tracks moves and uses at field granularity over a `movePlace` — a root binding plus
+  a path of `placeSeg` segments (`solver/moves.go`). Today the segment representation is
+  already a tagged struct, `placeSeg{kind, name}`, but only the `namedSeg` kind exists,
+  built from a static member (`pair.a`) or a *string-literal* index key (`obj["a"]`) via
+  `constStringKey`. A computed key — `obj[k]`, `obj[Symbol.iterator]` — currently isn't a
+  supported access form, so `exprPlace`/`resolveIndexPath` reach `reportUnsupported` and
+  the move engine never sees it. When this milestone makes computed-key and symbol-keyed
+  member access infer a type, extend the move engine to derive a segment from the index
+  expression's *resolved type*, not its syntax, so a key behind a variable tracks the
+  same place as the literal. Concretely:
+    - **Generalize `constStringKey` to a type-aware `constKey`** for the move engine,
+      keeping the existing syntactic `constStringKey` for the name-resolution call sites
+      that need the literal. Priority: an index whose inferred type is a *singleton*
+      string or number `LitType` → a `namedSeg` carrying that literal, so `obj[k]` with
+      `k: "foo"` keys the same as `obj.foo`; a key whose type is `unique symbol` → a new
+      `symbolSeg` kind keyed on the symbol's stable id. A non-singleton or otherwise
+      non-constant key falls back to the container place, exactly as a dynamic index does
+      now — sound, at worst over-conservative, never a missed use-after-move.
+    - **`soltype` prerequisite for the symbol case.** `soltype` has only the `symbol`
+      primitive (`SymbolPrim`), no unique-symbol type carrying a stable id; the
+      `UniqueSymbolType{Value int}` with that id lives in `internal/type_system`, the old
+      checker. So a unique-symbol `soltype` kind must land first, plumbed through the
+      visitor/printer/constrain/coalesce, before a `symbolSeg` can key on it. Keying on
+      that type id rather than the binding makes `val it = Symbol.iterator` and the
+      original `Symbol.iterator` resolve to one place.
+    - **Wiring.** Add the `symbolSeg` kind to `placeSeg` and render it as
+      `[Symbol.iterator]` in `renderPlace`; thread the index expression's type into
+      `exprPlace` (today a free, purely syntactic function), `recordMemberUse`, and
+      `consumeOwned`; and give `objKeyName` a `ComputedKey` arm so a symbol-keyed object
+      field is tracked. `placeKey` already encodes each segment's kind and length-prefixed
+      name, so it admits a new kind without change.
 
 **Open design question — free type-var members in a union-super exists trial.**
 M6 PR2's union-super exists rule trials each member of `sub <: (A | B | …)`

@@ -32,11 +32,12 @@ import (
 // that a later or back-edge move reaches is still caught.
 //
 // Moves and uses are tracked at field granularity, not just per binding (PR 7). A
-// move or use names a movePlace: a root binding plus a path of field names such as
-// `pair.a`. The consumed lattice keys on the place rather than the binding. Moving
-// `pair.a` consumes only that field's place, so the sibling `pair.b` stays usable
-// while a later read of `pair.a` is a use-after-move. A whole binding is the
-// path-empty place, so whole-binding moves are unchanged. A use of place U conflicts
+// move or use names a movePlace: a root binding plus a path of field names, see the
+// movePlace docstring for its shape and examples. The consumed lattice keys on the
+// place rather than the binding. Moving `pair.a` consumes only that field's place, so
+// the sibling `pair.b` stays usable while a later read of `pair.a` is a
+// use-after-move. A whole binding is the path-empty place, so whole-binding moves are
+// unchanged. A use of place U conflicts
 // with a moved place M when one path is a prefix of the other under one root, which
 // catches a read of the moved field, a read of a field beneath it, and a read of the
 // whole object that would expose it.
@@ -53,8 +54,16 @@ import (
 // MaybeMoved lattice state, so a diagnostic consumer can distinguish a definite
 // use-after-move from a possible one.
 type UseAfterMoveError struct {
-	// Name is the consumed binding's source name, for the message.
+	// Name is the moved place's source name, for the message — `pair.a` when the
+	// field `pair.a` was consumed.
 	Name string
+	// ReadName is the read place's source name, set only for a partial-move read where
+	// it differs from Name — `pair` when the whole object is read after `pair.a` moved.
+	ReadName string
+	// Partial is true when the read place is a strict ancestor of the moved place, so
+	// the read exposes a field that moved out rather than the moved place itself. It
+	// selects the partially-moved wording and pairs with ReadName.
+	Partial bool
 	// Conditional is true when the binding is moved on some but not all paths
 	// reaching the use (the MaybeMoved lattice state), false when every reaching
 	// path moved it (Moved).
@@ -75,6 +84,9 @@ func (e *UseAfterMoveError) Related() []ast.Span {
 	return []ast.Span{e.moveSite.Span()}
 }
 func (e *UseAfterMoveError) Message() string {
+	if e.Partial {
+		return fmt.Sprintf("use of partially moved value '%s'; field '%s' was moved out", e.ReadName, e.Name)
+	}
 	return fmt.Sprintf("use of moved value '%s'", e.Name)
 }
 
@@ -148,17 +160,35 @@ func isOwnedMovable(t soltype.Type) bool {
 	return isReferenceShaped(t)
 }
 
+// placeSeg is one step of a movePlace path: a field reached from the place before it.
+// The kind tags how the field is named. Every segment built today is a namedSeg
+// carrying a field name, so a path models the same field chains as a plain name list.
+// The tag leaves room for a symbol-keyed segment without conflating a symbol key with a
+// string field of the same text. Adding that kind is part of the M7 computed-key work.
+type placeSeg struct {
+	kind placeSegKind
+	name string
+}
+
+type placeSegKind uint8
+
+const (
+	// namedSeg names a field by its string name — a static member `pair.a` or a
+	// string-literal index `obj["a"]`. The segment's name holds that field name.
+	namedSeg placeSegKind = iota
+)
+
 // movePlace identifies the storage location the move engine tracks: a root binding
-// plus a path of field names reached from it by static member or constant-index
+// plus a path of field segments reached from it by static member or constant-index
 // access. The empty path is the whole binding, so whole-binding moves are the
 // path-length-zero case and need no interning. A move of `pair.a` is the place
-// {root: pair, path: ["a"]}; a later read of `pair.a.id` is {root: pair, path:
-// ["a", "id"]}, and the two conflict because one path is a prefix of the other. A
-// read of `pair.b` is {root: pair, path: ["b"]}, disjoint from `pair.a`, so a
-// partial move of `pair.a` leaves it usable.
+// {root: pair, path: [a]}; a later read of `pair.a.id` is {root: pair, path: [a, id]},
+// and the two conflict because one path is a prefix of the other. A read of `pair.b`
+// is {root: pair, path: [b]}, disjoint from `pair.a`, so a partial move of `pair.a`
+// leaves it usable.
 type movePlace struct {
 	root liveness.VarID
-	path []string
+	path []placeSeg
 }
 
 // exprPlace returns the place a place-expression names: a binding, or a chain of
@@ -200,25 +230,32 @@ func exprPlace(e ast.Expr) (movePlace, bool) {
 	return movePlace{}, false
 }
 
-// extendPlace returns base with one more field name appended, copying the path so
-// sibling places built from the same base never share backing storage.
+// extendPlace returns base with one more named field segment appended, copying the
+// path so sibling places built from the same base never share backing storage.
 func extendPlace(base movePlace, field string) movePlace {
-	path := make([]string, len(base.path)+1)
+	path := make([]placeSeg, len(base.path)+1)
 	copy(path, base.path)
-	path[len(base.path)] = field
+	path[len(base.path)] = placeSeg{kind: namedSeg, name: field}
 	return movePlace{root: base.root, path: path}
 }
 
-// placeKey is the interning key for a field place. A field name cannot contain a
-// NUL, so joining the root and path on NUL keeps `{root, [a, b]}` distinct from
-// `{root, [ab]}`.
+// placeKey is the interning key for a field place. Each segment is encoded as its
+// kind and its length-prefixed name, so the encoding is injective for any field name:
+// `{root, [a, b]}` and `{root, [ab]}` stay distinct regardless of which bytes a name
+// contains, since the length prefix delimits each name rather than a separator the name
+// might itself include.
 func placeKey(p movePlace) string {
-	return fmt.Sprintf("%d\x00%s", p.root, strings.Join(p.path, "\x00"))
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d", p.root)
+	for _, seg := range p.path {
+		fmt.Fprintf(&b, "|%d:%d:%s", seg.kind, len(seg.name), seg.name)
+	}
+	return b.String()
 }
 
 // placeID maps a place to the VarID the consumed lattice keys on. A whole-binding
 // place reuses its root VarID, so whole-binding moves stay keyed exactly as before.
-// A field place interns to a fresh synthetic VarID drawn from the module-wide
+// A field place is assigned a fresh synthetic VarID drawn from the module-wide
 // counter — unique across every body, so it never collides with a real binding —
 // and the mapping is stable within a body, so the same field named at a move site
 // and at a use site resolves to one ID.
@@ -242,7 +279,7 @@ func (c *checker) placeID(p movePlace) liveness.VarID {
 // path is a prefix, and of the whole `pair` when the use path is a prefix, since the
 // read would expose the moved field. A use of the disjoint sibling `pair.b` shares
 // no prefix and does not conflict.
-func pathPrefixRelated(a, b []string) bool {
+func pathPrefixRelated(a, b []placeSeg) bool {
 	n := min(len(a), len(b))
 	for i := range n {
 		if a[i] != b[i] {
@@ -256,11 +293,13 @@ func pathPrefixRelated(a, b []string) bool {
 // its field path, so a whole-binding move renders as `pair` and a field move as
 // `pair.a`.
 func (c *checker) renderPlace(p movePlace) string {
-	name := c.varIDToName(p.root)
-	if len(p.path) == 0 {
-		return name
+	var b strings.Builder
+	b.WriteString(c.varIDToName(p.root))
+	for _, seg := range p.path {
+		b.WriteString(".")
+		b.WriteString(seg.name)
 	}
-	return name + "." + strings.Join(p.path, ".")
+	return b.String()
 }
 
 // moveNameOf names the moved value behind a lattice VarID for a diagnostic. A field
@@ -300,11 +339,8 @@ func (c *checker) recordUse(e *ast.IdentExpr, t soltype.Type) {
 	if !ok {
 		return
 	}
-	c.fn.useSites = append(c.fn.useSites, moveUse{
-		place: movePlace{root: liveness.VarID(e.VarID)},
-		ref:   ref,
-		node:  e,
-	})
+	p := movePlace{root: liveness.VarID(e.VarID)}
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e})
 }
 
 // recordMemberUse records a read of a field place so the use-after-move scan can
@@ -434,7 +470,7 @@ func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref livene
 }
 
 // recordMovePlace consumes the place at the given program point, blaming moveNode. It
-// interns the place to its lattice VarID, registers the mapping so the
+// resolves the place to its lattice VarID, registers the mapping so the
 // use-after-move scan can recover the path for the prefix test, and records the move
 // into the consumed lattice through recordMove.
 func (c *checker) recordMovePlace(p movePlace, moveNode ast.Node, ref liveness.StmtRef) {
@@ -499,8 +535,20 @@ func (c *checker) checkUseAfterMoves() {
 		if state == liveness.NotMoved {
 			continue
 		}
+		// The read place is a partial-move read when it is a strict ancestor of the
+		// moved place: reading the whole `pair` after `pair.a` moved exposes the moved
+		// field. ReadName then names the read; otherwise the read is the moved place
+		// itself or a field beneath it, and Name alone is enough.
+		moved := c.fn.movePlaces[movedID]
+		partial := len(u.place.path) < len(moved.path)
+		readName := ""
+		if partial {
+			readName = c.renderPlace(u.place)
+		}
 		c.report(&UseAfterMoveError{
 			Name:        c.moveNameOf(movedID),
+			ReadName:    readName,
+			Partial:     partial,
 			Conditional: state == liveness.MaybeMoved,
 			use:         u.node,
 			moveSite:    c.fn.moveNodes[movedID],
@@ -533,11 +581,13 @@ func (c *checker) movedConflict(info *liveness.MoveInfo, u moveUse) (liveness.Mo
 		if s == liveness.NotMoved {
 			continue
 		}
-		switch {
-		case best == liveness.NotMoved:
-		case s == liveness.Moved && best == liveness.MaybeMoved:
-		case s == best && id < bestID:
-		default:
+		// Keep this conflict only if it is a stronger blame target than the best so
+		// far: the first one found, an unconditional Moved that supersedes a MaybeMoved,
+		// or the same state with a lower lattice id, which is the earlier move in source
+		// order and makes the choice deterministic.
+		if !(best == liveness.NotMoved ||
+			(s == liveness.Moved && best == liveness.MaybeMoved) ||
+			(s == best && id < bestID)) {
 			continue
 		}
 		best = s

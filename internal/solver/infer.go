@@ -134,18 +134,23 @@ type funcCtx struct {
 	// binding moved on more than one path keeps the last-recorded move node, which
 	// is a coarse but adequate blame target.
 	moveNodes map[liveness.VarID]ast.Node
-	// placeIDs interns a field-level place to the synthetic VarID the consumed lattice
-	// keys on (PR 7). A field-level place is a root binding plus a path of field names
-	// such as `pair.a`. A whole-binding place reuses its root VarID and is never
-	// interned here, so this holds only sub-binding places. The synthetic IDs come from
-	// the module-wide varIDCounter, so they never collide with a real binding's VarID.
+	// placeIDs assigns each field-level place one synthetic VarID (PR 7). A field-level
+	// place is a root binding plus a path of field segments, such as `pair.a`. The key is
+	// placeKey's encoding of the place, its root VarID followed by each segment's kind and
+	// length-prefixed name, so two places with distinct roots or paths never share a key.
+	// The value is the synthetic VarID the consumed lattice uses to track moves of that
+	// place. Looking up the same place at its move site and at its use site returns one
+	// stable VarID, so the use-after-move check can match them. Whole-binding places are
+	// not stored here; they reuse their root VarID directly. The synthetic VarIDs come
+	// from the module-wide varIDCounter, so they never collide with a real binding's VarID.
 	placeIDs map[string]liveness.VarID
 	// movePlaces records, for every VarID the move engine has consumed, the place it
 	// stands for: a whole binding maps its root VarID to the path-empty place, and a
-	// field move maps its synthetic VarID to the field place. checkUseAfterMoves
-	// scans it to find a moved place whose path is a prefix of, or extends, the place
-	// a use reads — the partial-move conflict test that keeps a moved `pair.a` from
-	// blocking a read of the sibling `pair.b`.
+	// field move maps its synthetic VarID to the field place. A field place's synthetic
+	// VarID is the one placeIDs assigned it, so the two maps agree on which VarID names
+	// the place. checkUseAfterMoves scans it to find a moved place whose path is a prefix
+	// of, or extends, the place a use reads — the partial-move conflict test that keeps a
+	// moved `pair.a` from blocking a read of the sibling `pair.b`.
 	movePlaces map[liveness.VarID]movePlace
 	// useSites records every read of a reference-shaped place while walking the body,
 	// each with the place read, the CFG point of the read, and the node to blame. The
