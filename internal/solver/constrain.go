@@ -43,8 +43,8 @@ func requiredCount(f *soltype.FuncType) int {
 // invoked (#677 §4.2.1): lo = requiredCount(f); hi = len(f.Params) when f has a
 // finite arity, and unboundedArity when its upper bound is open — either because it
 // is inexact (the `...` marker) OR because its last param is a typed rest (§4.2.3).
-// Read a supertype callback slot's accept-set as "the argument counts whoever holds
-// this slot may invoke the supplied function with."
+// Read a supertype callback parameter's accept-set as "the argument counts whoever
+// holds this parameter may invoke the supplied function with."
 func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	lo = requiredCount(f)
 	if f.Inexact || hasRest(f) {
@@ -64,7 +64,7 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 // actionable diagnostic would be lost.
 //
 // Example. With `&'a {x: number} <: (number | string)`:
-//   - trial `&'a {x: number} <: number`: BorrowEscapeError (the borrow can't fit a number slot)
+//   - trial `&'a {x: number} <: number`: BorrowEscapeError (the borrow can't fit a number destination)
 //   - trial `&'a {x: number} <: string`: BorrowEscapeError (same)
 //
 // Both trials returned the same shape, so commonBorrowEscape returns one of
@@ -293,14 +293,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	case *soltype.FuncType:
 		if sup, ok := super.(*soltype.FuncType); ok {
-			// Accept-set subtyping (#677 §4.2.1): read super as a callback slot.
+			// Accept-set subtyping (#677 §4.2.1): read super as a callback parameter.
 			// sub <: super iff accept(sub) ⊇ accept(super) — sub must tolerate every
 			// argument count a holder of super may invoke it with. With
 			// accept(sub) = [loSub, hiSub] and accept(super) = [loSup, hiSup]:
 			//   - loSub <= loSup — sub must not DEMAND more args than super might supply,
 			//   - hiSub >= hiSup — sub must not REFUSE an arg count super might supply.
 			// The upper-bound clause is what exactness governs (an exact sub caps hiSub
-			// at len(sub.Params), so it can't fill a wider/inexact slot); the lower-bound
+			// at len(sub.Params), so it can't fill a wider/inexact parameter); the lower-bound
 			// clause is the `required` part (a typed-rest/optional lowers it). This
 			// subsumes M2's exact-same-arity rule: two EXACT functions have accept
 			// [r, n], so ⊇ forces equal upper bounds, i.e. the old same-arity check.
@@ -384,7 +384,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			//   - absent on the sub: a MissingPropertyError only when the super
 			//     property is REQUIRED; an optional super property may be absent.
 			//   - present on both, optional on the sub but required on the super: the
-			//     source may omit it, so it cannot fill a required slot —
+			//     source may omit it, so it cannot fill a required property —
 			//     OptionalPropertyError, and skip the covariant type check (the
 			//     presence mismatch already rejects the constraint).
 			//   - otherwise (required<:required, required<:optional, optional<:
@@ -408,7 +408,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 				// contravariant write view below pins it, the per-field write the eager
 				// form's constrainWriteBack did. A readonly TARGET needs only the read
 				// view, so a wider source can fill it; a readonly SOURCE cannot fill a
-				// writable target slot, the structural twin of inferMemberAssign's check.
+				// writable target field, the structural twin of inferMemberAssign's check.
 				if mutCtx && !superProp.Readonly {
 					if subProp.Readonly {
 						errs = append(errs, &ReadonlyFieldSubtypeError{Field: superProp.Name})
@@ -451,7 +451,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		// invariance is the highest-risk encoding in the migration — see the M4 plan.
 		if sup, ok := super.(*soltype.RefType); ok {
 			// 1. Mutability compatibility: an immutable source cannot fill a mutable
-			//    slot (writing through the target would mutate a read-only borrow). The
+			//    target (writing through the target would mutate a read-only borrow). The
 			//    reverse, mut-decay (mut sub, immutable super), is allowed and falls
 			//    through to the covariant read view below.
 			if !sub.Mut && sup.Mut {
@@ -490,15 +490,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 				// outlives lattice, mirroring the covariant read view on the inner.
 				c.constrainLt(sup.Lt, sub.Lt)
 			case sub.Lt == nil && sup.Lt != nil:
-				// An owned source satisfies any borrow slot — no lifetime constraint.
+				// An owned source satisfies any borrow destination — no lifetime constraint.
 			case sub.Lt != nil && sup.Lt == nil:
-				// A borrow flowing into an owned slot escapes its region.
+				// A borrow flowing into an owned destination escapes its region.
 				errs = append(errs, &BorrowEscapeError{Sub: sub, Super: sup})
 			}
 			return errs
 		}
 		// RefType <: a concrete non-borrow: peel to the inner. An owned value (Lt nil)
-		// satisfies a bare slot; a borrow escaping into an owned slot is a
+		// satisfies a bare destination; a borrow escaping into an owned destination is a
 		// BorrowEscapeError (live in D2). When super is a VARIABLE, fall through to the
 		// var arm so the WHOLE borrow is recorded as a bound — peeling there would drop
 		// its mutability.
@@ -506,7 +506,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if sub.Lt != nil {
 				return []SolverError{&BorrowEscapeError{Sub: sub, Super: super}}
 			}
-			// Peeling an owned value into a bare slot is a covariant read; flag resets.
+			// Peeling an owned value into a bare destination is a covariant read; flag resets.
 			return c.constrain(sub.Inner, super, seen, false)
 		}
 	case *soltype.Void:
@@ -646,7 +646,7 @@ func (c *Context) constrainLtSeen(sub, super soltype.Lifetime, seen set.Set[ltPa
 	if subIsVar {
 		// Maintain the level invariant: a bound's level must not exceed the var's, or
 		// the freshener/extruder level prune over the lifetime sort becomes unsound (M4
-		// D2.5). super sits in subVar's upper bounds, a negative-position slot, so when
+		// D2.5). super sits in subVar's upper bounds, a negative position, so when
 		// it is inner to subVar extrude it out before recording, mirroring constrain's
 		// var arm. extrudeOuterAsUpper reuses an existing outer-extruded proxy of super
 		// if one is already a bound, so a repeated constraint does not mint a second
@@ -661,7 +661,7 @@ func (c *Context) constrainLtSeen(sub, super soltype.Lifetime, seen set.Set[ltPa
 		}
 	}
 	if superIsVar {
-		// sub sits in superVar's lower bounds, a positive-position slot; extrude it out
+		// sub sits in superVar's lower bounds, a positive position; extrude it out
 		// to superVar's level for the same invariant, reusing an existing proxy.
 		recSub := c.extrudeOuterAsLower(sub, superVar)
 		if !soltype.ContainsLifetime(superVar.LowerBounds, recSub) {
@@ -722,7 +722,7 @@ func (c *Context) extrude(t soltype.Type, pol soltype.Polarity, lvl int, cache m
 // lifetime at lvl, wired to the original through the polarity-appropriate outlives
 // bound (M4 D2.5) — the lifetime-sort twin of extrude's var node. The cache is
 // keyed by (var ID, polarity) for the same reason the type-var cache is. A
-// 'static, nil slot, or lifetime at lvl or outside it extrudes to itself. Bound
+// 'static, nil lifetime, or lifetime at lvl or outside it extrudes to itself. Bound
 // appends route through the journaling helpers; mutating the ORIGINAL var's bound is
 // the append a Discard must truncate. The fresh var's appends are a harmless no-op,
 // since a fresh var is unreachable after a Discard.

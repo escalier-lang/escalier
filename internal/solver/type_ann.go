@@ -299,7 +299,7 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 	return t, true
 }
 
-// resolveLifetimeAnn resolves the lifetime slot of a borrow annotation. A nil node is
+// resolveLifetimeAnn resolves the lifetime of a borrow annotation. A nil node is
 // an inferred borrow and mints a fresh lifetime. A named `'a` resolves to the variable
 // that name denotes. A `('a | 'b)` union resolves each member and joins them in a
 // LifetimeUnion.

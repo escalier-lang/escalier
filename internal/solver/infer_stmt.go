@@ -42,7 +42,7 @@ func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type,
 // operand). Body-level declarations are VarDecl-only: a DeclStmt wrapping any
 // other decl kind is a permanent BodyDeclNotAllowedError (§3.2), not the
 // temporary subset gate. Each val/var introduces a fresh, independent binding
-// and overwrites the name's slot in the current scope, so redeclaration rebinds
+// and overwrites the name's binding in the current scope, so redeclaration rebinds
 // without constraining the old and new types together.
 func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 	// M4 G1: record the enclosing statement so a reassignment in expression position
@@ -58,7 +58,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		// A return contributes both as the block's tail value (consumed only by
 		// value-position blocks; inferFunc discards the tail) AND as one of the
 		// enclosing function's return points. Bare `return` contributes Void in
-		// both slots.
+		// both roles.
 		var t soltype.Type = &soltype.Void{}
 		if s.Expr != nil {
 			t = c.inferExpr(scope, lvl, s.Expr)
@@ -103,7 +103,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			return &soltype.Void{}
 		}
 		// Unlike the module driver (inferComponent), a body-level redeclaration is
-		// allowed and overwrites the name's slot (§3.2). inferVarDecl reports a
+		// allowed and overwrites the name's binding (§3.2). inferVarDecl reports a
 		// missing initializer itself and returns ok=false; bind only when it
 		// produced a type.
 		if b, ok := c.inferVarDecl(scope, lvl, vd); ok {

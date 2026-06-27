@@ -535,7 +535,7 @@ func litKindOrder(l soltype.Lit) int {
 }
 
 // compareLifetime orders the lifetime forms a RefType.Lt can take. A nil
-// slot, which marks an owned value, sorts first. Then 'static. Then
+// lifetime, which marks an owned value, sorts first. Then 'static. Then
 // LifetimeVar, ordered by ID. Then LifetimeUnion, ordered by length first
 // and members second.
 func compareLifetime(a, b soltype.Lifetime) int {

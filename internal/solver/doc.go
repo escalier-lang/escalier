@@ -36,7 +36,7 @@
 //		return [getY(), getY()]
 //	}
 //
-// reaches both tuple slots through two result variables, so the raw
+// reaches both tuple elements through two result variables, so the raw
 // `fn <T0, T1>(y: T0 & T1) -> [T0, T1]` becomes `fn <T0>(y: T0) -> [T0, T0]`.
 // Simplification runs at display time, leaving the raw scheme body intact for
 // instantiation.

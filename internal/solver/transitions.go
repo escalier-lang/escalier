@@ -294,7 +294,7 @@ func bindingType(b ValueBinding) soltype.Type {
 //	Rule 3: multiple mutable aliases are always allowed (mut → mut is not a transition).
 //
 // targetAlwaysLive marks a target that outlives the function, the permanent
-// module-level slot checkGlobalWriteTransition passes. Such a target has no liveness
+// module-level storage location checkGlobalWriteTransition passes. Such a target has no liveness
 // window, so the dead-target early return below is skipped for it.
 func (c *checker) checkMutabilityTransition(
 	sourceVarID liveness.VarID,
@@ -584,7 +584,7 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 	aliasMut := aliasMutability(targetMut)
 	c.recordVarIDType(targetVarID, targetType)
 
-	// A reassignment that MOVES its source — `q = p` for an owned p into an owned slot
+	// A reassignment that MOVES its source — `q = p` for an owned p into an owned destination
 	// — drops the previous value of q and takes ownership of p's value, so q becomes a
 	// fresh owner and p is consumed. Reassign to no source rather than aliasing, and let
 	// the move engine govern a later use of p; inferAssign records the consume through
@@ -627,7 +627,7 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 // source holds. Storing a mutable borrow into an immutable global, or an immutable one
 // into a mutable global, is therefore a mut↔immutable transition against a permanent,
 // always-live target. It conflicts when the source stays live at the conflicting
-// mutability after the store, WITHIN this body. slotType is the global binding's own
+// mutability after the store, WITHIN this body. targetType is the global binding's own
 // type, whose mutability is the target side of the transition.
 //
 // This is an in-body check only. It does NOT make a store into a global sound: a borrow
@@ -639,7 +639,7 @@ func (c *checker) trackAliasesForAssignment(target *ast.IdentExpr, rhs ast.Expr,
 //
 // Run BEFORE constrainEscape so the source's own about-to-happen escape is not
 // double-counted by the G2 escape query as a prior permanent alias.
-func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr, slotType soltype.Type, enclosingStmt ast.Stmt) {
+func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr, targetType soltype.Type, enclosingStmt ast.Stmt) {
 	if c.fn == nil || c.fn.aliases == nil {
 		return
 	}
@@ -650,7 +650,7 @@ func (c *checker) checkGlobalWriteTransition(target *ast.IdentExpr, rhs ast.Expr
 	source := liveness.DetermineAliasSource(rhs)
 	switch source.RootKind() {
 	case liveness.AliasSourceVariable, liveness.AliasSourceMultiple:
-		targetMut := isMutableType(slotType)
+		targetMut := isMutableType(targetType)
 		for _, sourceVarID := range source.UniqueVarIDs() {
 			c.checkMutabilityTransition(
 				sourceVarID, 0,

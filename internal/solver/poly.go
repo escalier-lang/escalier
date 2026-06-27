@@ -202,7 +202,7 @@ func (f *freshener) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { 
 // coalesced Union/Intersection nodes whose LevelOf is 0 (which freshenAbove's
 // LevelOf prune would skip) — and freshens vars wherever they occur.
 //
-// inferAssign uses it on a binding's coalesced slot type: coalesceScheme RETAINS
+// inferAssign uses it on a binding's coalesced type: coalesceScheme RETAINS
 // type-parameter vars by pointer, so constraining the source against that type would
 // mutate the binding's own vars and poison a reassigned polymorphic var for every
 // later use. Freshening first makes the constraint mutate throwaway copies instead.
@@ -275,7 +275,7 @@ func (f *allFreshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // inside lim is a quantified lifetime: fresh replaces it with a fresh lifetime at
 // lvl and freshens its bounds, so each use gets its own lifetime and constraining
 // one site does not perturb another. A LifetimeVar at lim or outside it, 'static,
-// and a nil slot are shared. The freshener passes its own lim; allFreshener passes
+// and a nil lifetime are shared. The freshener passes its own lim; allFreshener passes
 // math.MinInt so every lifetime is freshened.
 //
 // The cache is allocated lazily, so a borrow-free rewrite pays no allocation. It is
