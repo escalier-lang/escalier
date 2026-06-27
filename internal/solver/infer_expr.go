@@ -830,14 +830,12 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// the missing slots with fresh vars, which impose no constraint on absent args.
 	fn, resolved := resolveFunc(callee)
 	demand := args
-	arityOK := true
 	switch {
 	case resolved && !hasRest(fn) && len(args) > len(fn.Params):
 		// A typed rest param (hasRest) absorbs any number of trailing args, so it is
 		// never "too many" — only a fixed-arity (non-rest) callee trips this lint.
 		c.errs = append(c.errs, &TooManyArgsError{Call: e, Fn: fn})
 		demand = args[:len(fn.Params)]
-		arityOK = false
 	case resolved && len(args) < requiredCount(fn):
 		c.errs = append(c.errs, &NotEnoughArgsError{Call: e, Fn: fn})
 		demand = make([]*soltype.FuncParam, len(fn.Params))
@@ -845,7 +843,6 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		for i := len(args); i < len(fn.Params); i++ {
 			demand[i] = &soltype.FuncParam{Type: c.freshAt(lvl)}
 		}
-		arityOK = false
 	}
 
 	// callShape is built EXACT with all N params required, on purpose. That gives
@@ -863,10 +860,11 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	if resolved {
 		c.constrain(e, fn.Ret, res)
 		// Passing an owned argument to a bare owned parameter moves it; a `&`/`&mut`
-		// parameter auto-borrows and leaves the argument usable. A call already rejected
-		// for an arity mismatch records no moves, so a wrong number of arguments does not
-		// also cascade a use-after-move.
-		if arityOK && hasConsumeRef {
+		// parameter auto-borrows and leaves the argument usable. An arity-mismatched call
+		// still moves each argument that lines up with a parameter, so `store(p, p)` moves
+		// the first p and a later use of p is a use-after-move. consumeCallArgs skips the
+		// extra arguments that have no corresponding parameter.
+		if hasConsumeRef {
 			c.consumeCallArgs(e, fn, consumeRef)
 		}
 	}
@@ -879,7 +877,9 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 // parameter borrows, so it leaves the argument usable. An unannotated parameter, whose
 // ownership is a fresh inference variable rather than a concrete owned shape, is left
 // to borrow conservatively, so only a parameter typed as a concrete owned object,
-// tuple, or owned RefType consumes its argument.
+// tuple, or owned RefType consumes its argument. An extra argument beyond the declared
+// parameters, the surplus of a too-many-arguments call, has no parameter to move into,
+// so it is skipped.
 func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
 	for i, arg := range e.Args {
 		if i >= len(fn.Params) {
@@ -1383,7 +1383,7 @@ func bindingDecl(b ValueBinding) ast.Node {
 func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Type {
 	// Resolve the enclosing statement's CFG point before inferring elements, which can
 	// overwrite c.fn.currentStmt with an inner branch statement.
-	litRef, hasLitRef := c.currentStmtRef()
+	stmtRef, hasStmtRef := c.currentStmtRef()
 	elems := make([]soltype.Type, 0, len(e.Elems))
 	inexact := false
 	for i, el := range e.Elems {
@@ -1392,7 +1392,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			elemT := c.inferExpr(scope, lvl, el)
 			elems = append(elems, elemT)
 			// Building an owned value into the tuple moves it.
-			c.consumeIntoLiteral(el, elemT, litRef, hasLitRef)
+			c.consumeIntoLiteral(el, elemT, stmtRef, hasStmtRef)
 			continue
 		}
 		switch op := c.inferExpr(scope, lvl, spread.Value).(type) {
@@ -1407,7 +1407,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 			}
 			// Spreading an owned tuple moves its elements into the new tuple, so the
 			// spread operand is consumed.
-			c.consumeIntoLiteral(spread.Value, op, litRef, hasLitRef)
+			c.consumeIntoLiteral(spread.Value, op, stmtRef, hasStmtRef)
 		case *soltype.ErrorType:
 			// The operand already reported its own failure; absorb it rather than
 			// layering a SpreadNotTupleError on the recovery sentinel.
@@ -1440,7 +1440,7 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.Type {
 	// Resolve the enclosing statement's CFG point before inferring property values,
 	// which can overwrite c.fn.currentStmt with an inner branch statement.
-	litRef, hasLitRef := c.currentStmtRef()
+	stmtRef, hasStmtRef := c.currentStmtRef()
 	b := newObjElemBuilder(len(e.Elems))
 	for _, elem := range e.Elems {
 		prop, ok := elem.(*ast.PropertyExpr)
@@ -1467,7 +1467,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 		ft := c.inferExpr(scope, lvl, prop.Value)
 		b.add(name, ft, false, false) // a literal property is never optional or readonly
 		// Building an owned value into the object moves it.
-		c.consumeIntoLiteral(prop.Value, ft, litRef, hasLitRef)
+		c.consumeIntoLiteral(prop.Value, ft, stmtRef, hasStmtRef)
 	}
 	t := &soltype.ObjectType{Elems: b.elems}
 	c.recordType(e, t)

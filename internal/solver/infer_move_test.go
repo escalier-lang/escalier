@@ -71,9 +71,10 @@ func TestMoveSemantics(t *testing.T) {
 				}
 			`,
 		},
-		// A call rejected for an arity mismatch records no moves, so a wrong argument
-		// count does not also cascade a use-after-move.
-		"ArityMismatchSkipsConsume": {
+		// A too-many-arguments call still moves each argument that lines up with a
+		// parameter, so the first p in store(p, p) is consumed and the later p.x is a
+		// use-after-move. The surplus second argument has no parameter to move into.
+		"ArityMismatchConsumesMatchedArgs": {
 			src: `
 				fn store(p: {x: number}) {}
 				fn test() {
@@ -82,7 +83,10 @@ func TestMoveSemantics(t *testing.T) {
 					p.x
 				}
 			`,
-			want: []string{"Too many arguments: expected at most 1, but got 2"},
+			want: []string{
+				"Too many arguments: expected at most 1, but got 2",
+				"use of moved value 'p'",
+			},
 		},
 		// Returning an owned value moves it out of the frame. A second occurrence of the
 		// same owned binding in the returned tuple is a use-after-move within one
