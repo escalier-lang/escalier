@@ -89,6 +89,10 @@ func isBorrowType(t soltype.Type) bool {
 // consume, so every read of one is recorded as a use to test against the consumed
 // lattice. Value types copy and are never consumed, so their reads are not tracked. A
 // value type is a primitive, a function, or a promise.
+//
+// A bare type variable counts here but is excluded by isConcreteOwned, so the two are
+// conservative in opposite directions on an unresolved variable. This side tracks the
+// read so a use-after-move is not missed if the variable resolves to a movable shape.
 func isReferenceShaped(t soltype.Type) bool {
 	switch t.(type) {
 	case *soltype.ObjectType, *soltype.TupleType, *soltype.RefType, *soltype.TypeVarType:
@@ -101,6 +105,11 @@ func isReferenceShaped(t soltype.Type) bool {
 // object, tuple, or owned RefType — excluding a bare type variable. A consuming
 // parameter must be spelled as a concrete owned shape, so a fresh inference variable
 // for an unannotated parameter does not consume its argument.
+//
+// Excluding the bare type variable is the opposite of isReferenceShaped, which includes
+// it, so the two are conservative in opposite directions on an unresolved variable. This
+// side consumes nothing it cannot confirm is owned, so the caller's argument is not
+// over-consumed if the variable resolves to a value type.
 func isConcreteOwned(t soltype.Type) bool {
 	switch t.(type) {
 	case *soltype.ObjectType, *soltype.TupleType:
@@ -247,6 +256,23 @@ func (c *checker) consumeAtGlobalWrite(source ast.Expr, sourceT soltype.Type, mo
 // binding, so neither consumes. hasRef is false when the literal has no resolvable
 // statement point, in which case nothing is recorded rather than mis-attributing the
 // move to the zero StmtRef.
+//
+// inferTuple and inferObject call it for each element built from a source binding:
+//
+//	val mut a = {foo: "hello"}
+//	val ys = [a]   // a moves into the tuple
+//	a.foo          // ERROR: use of moved value 'a'
+//
+// Limitation: only a whole-binding identifier element consumes. A member-path element
+// names a sub-place the whole-binding move engine cannot key on, so building one into a
+// literal records no move and a later use of it is not caught:
+//
+//	val mut pair = {a: {foo: "hi"}, b: {bar: 1}}
+//	val ys = [pair.a]   // pair.a is NOT consumed
+//	pair.a              // accepted today; should be a use-after-move
+//
+// Closing this needs the element/field-level ownership tracking planned for partial
+// moves (PR 7).
 func (c *checker) consumeIntoLiteral(el ast.Expr, elemT soltype.Type, ref liveness.StmtRef, hasRef bool) {
 	if !hasRef {
 		return
