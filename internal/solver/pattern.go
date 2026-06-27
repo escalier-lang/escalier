@@ -107,12 +107,12 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 // renders as a clean `mut {…}` cell rather than a variable inside the cell. concrete
 // is nil when the scrutinee's shape is not statically known. The thaw then falls back
 // to the projection variable.
-func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, concrete soltype.Type, mode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, concrete soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
 	scrutinee = soltype.CarrierOf(scrutinee)
 	switch p := pat.(type) {
 	case *ast.IdentPat:
 		t := c.applyLeafExtras(scope, lvl, p, scrutinee, p.TypeAnn, p.Default)
-		t = c.applyBindMode(lvl, p, p.Mutable, t, c.concreteLeaf(concrete, p.TypeAnn), mode)
+		t = c.applyBindMode(lvl, p, p.Mutable, t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
 		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit)
 		return &soltype.IdentPat{Name: p.Name}
 
@@ -186,7 +186,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			if concreteTup != nil && i < len(concreteTup.Elems) {
 				elemConcrete = concreteTup.Elems[i]
 			}
-			subs[i] = c.bindPatMode(scope, lvl, e, elemTypes[i], elemConcrete, mode, leafTypes, emit)
+			subs[i] = c.bindPatMode(scope, lvl, e, elemTypes[i], elemConcrete, scrutineeMode, leafTypes, emit)
 		}
 		c.recordType(p, scrutinee)
 		return &soltype.TuplePat{Elems: subs}
@@ -201,7 +201,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				beta := c.freshAt(lvl)
 				c.constrain(e, scrutinee, propReq(e.Key.Name, beta, e.Default != nil))
 				t := c.applyLeafExtras(scope, lvl, e, beta, e.TypeAnn, e.Default)
-				t = c.applyBindMode(lvl, e, e.Mutable, t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), mode)
+				t = c.applyBindMode(lvl, e, e.Mutable, t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
 				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit)
 				fields = append(fields, &soltype.ObjectPatField{
 					Name:  e.Key.Name,
@@ -222,7 +222,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 						c.constrain(e, beta, prop.Type)
 					}
 				}
-				sub := c.bindPatMode(scope, lvl, e.Value, beta, fieldConcrete(concrete, e.Key.Name), mode, leafTypes, emit)
+				sub := c.bindPatMode(scope, lvl, e.Value, beta, fieldConcrete(concrete, e.Key.Name), scrutineeMode, leafTypes, emit)
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: sub})
 			default:
 				// ObjRestPat (`{...rest}`) needs object rest types, which arrive in M9.
@@ -280,14 +280,14 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, slot sol
 // returned unchanged. A leaf whose element shape is not statically known has a nil
 // concrete and is also returned unchanged. This is the same conservative choice
 // fieldReadBorrow makes for an unknown receiver.
-func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, slot, concrete soltype.Type, mode bindMode) soltype.Type {
-	switch mode.borrow {
+func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, slot, concrete soltype.Type, scrutineeMode bindMode) soltype.Type {
+	switch scrutineeMode.borrow {
 	case bmImm:
 		if mut {
 			c.report(&MutLeafThroughSharedBorrowError{Node: node})
 		}
 		if ri, ok := slot.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
-			return soltype.NewRef(false, mode.lt, ri)
+			return soltype.NewRef(false, scrutineeMode.lt, ri)
 		}
 		return slot
 	case bmMut:
@@ -301,7 +301,7 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, slot, concrete
 			// absorb the write requirement.
 			v := c.freshAt(lvl)
 			c.constrain(node, slot, v)
-			return soltype.NewRef(true, mode.lt, v)
+			return soltype.NewRef(true, scrutineeMode.lt, v)
 		}
 		return slot
 	default: // bmOwned
