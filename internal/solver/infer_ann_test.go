@@ -41,7 +41,7 @@ func TestInferInexactObjectAnnotationRejectsExcessLiteralField(t *testing.T) {
 	_, _, errs := inferSource(t, `val r: {x: number, ...} = {x: 1, y: 2}`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &ExtraPropertyError{}, errs[0])
-	require.Equal(t, "object has extra property: y", errs[0].Message())
+	require.Equal(t, "1:37-1:38: object has extra property: y", msgWithSpan(errs[0]))
 }
 
 // The variable escape hatch: a NON-literal source against an inexact target takes
@@ -61,7 +61,7 @@ func TestInferExactObjectAnnotationRejectsExtraField(t *testing.T) {
 	_, _, errs := inferSource(t, `val r: {x: number} = {x: 1, y: 2}`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &ExtraPropertyError{}, errs[0])
-	require.Equal(t, "object has extra property: y", errs[0].Message())
+	require.Equal(t, "1:32-1:33: object has extra property: y", msgWithSpan(errs[0]))
 }
 
 // A tuple annotation resolves to a TupleType and an annotated binding adopts it.
@@ -77,8 +77,8 @@ func TestInferInexactTupleAnnotationRejectsExcessLiteralElements(t *testing.T) {
 	values, _, errs := inferSource(t, `val t: [number, ...] = [1, 2, 3]`)
 	require.Len(t, errs, 2)
 	require.IsType(t, &ExtraElementError{}, errs[0])
-	require.Equal(t, "tuple has extra element at index 1", errs[0].Message())
-	require.Equal(t, "tuple has extra element at index 2", errs[1].Message())
+	require.Equal(t, "1:28-1:29: tuple has extra element at index 1", msgWithSpan(errs[0]))
+	require.Equal(t, "1:31-1:32: tuple has extra element at index 2", msgWithSpan(errs[1]))
 	// The binding still adopts the inexact annotation (error recovery).
 	require.Equal(t, "[number, ...]", values["t"])
 }
@@ -93,8 +93,8 @@ func TestInferInexactTupleAnnotationExcessThroughSpread(t *testing.T) {
 	// Inferred [5, 6, 7] against [number]: indices 1 and 2 are excess, so two errors.
 	require.Len(t, errs, 2)
 	require.IsType(t, &ExtraElementError{}, errs[0])
-	require.Equal(t, "tuple has extra element at index 1", errs[0].Message())
-	require.Equal(t, "tuple has extra element at index 2", errs[1].Message())
+	require.Equal(t, "1:32-1:33: tuple has extra element at index 1", msgWithSpan(errs[0]))
+	require.Equal(t, "1:36-1:37: tuple has extra element at index 2", msgWithSpan(errs[1]))
 	// Per-element blame resolves through prov to each spliced element's own node:
 	// index 1 is the spread's `6`, index 2 is the trailing `7`.
 	require.Equal(t, "6", spanText(src, errs[0].Span()))
@@ -122,19 +122,19 @@ func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 		_, _, errs := inferSource(t, `val r: mut {x: number, ...} = {x: 1, y: 2}`)
 		msgs := make([]string, len(errs))
 		for i, e := range errs {
-			msgs[i] = e.Message()
+			msgs[i] = msgWithSpan(e)
 		}
-		require.Equal(t, []string{"object has extra property: y"}, msgs)
+		require.Equal(t, []string{"1:41-1:42: object has extra property: y"}, msgs)
 	})
 	t.Run("tuple", func(t *testing.T) {
 		_, _, errs := inferSource(t, `val t: mut [number, ...] = [1, 2, 3]`)
 		msgs := make([]string, len(errs))
 		for i, e := range errs {
-			msgs[i] = e.Message()
+			msgs[i] = msgWithSpan(e)
 		}
 		require.ElementsMatch(t, []string{
-			"tuple has extra element at index 1",
-			"tuple has extra element at index 2",
+			"1:32-1:33: tuple has extra element at index 1",
+			"1:35-1:36: tuple has extra element at index 2",
 		}, msgs)
 	})
 }
@@ -165,9 +165,13 @@ func TestInferOwnedMutFromFreshLiteral(t *testing.T) {
 // variable — still rejects an immutable→mutable assignment, because the variable could
 // alias a value held immutably elsewhere. That case waits on the lifetime/region work.
 func TestInferOwnedMutFromVariableRejected(t *testing.T) {
-	src := "fn f() {\n\tval cfg: {x: number} = {x: 1}\n\tval m: mut {x: number} = cfg\n\tm.x = 2\n}"
+	src := `fn f() {
+	val cfg: {x: number} = {x: 1}
+	val m: mut {x: number} = cfg
+	m.x = 2
+}`
 	_, _, errs := inferSource(t, src)
-	require.Equal(t, "cannot constrain immutable object <: mutable object", errs[0].Message())
+	require.Equal(t, "3:13-3:14: cannot constrain immutable object <: mutable object", msgWithSpan(errs[0]))
 }
 
 // The freshness check recurses, so a literal that WRAPS a non-fresh element is itself not
@@ -176,16 +180,24 @@ func TestInferOwnedMutFromVariableRejected(t *testing.T) {
 // variable: the outer literal is fresh, but a field or element reads a variable.
 func TestInferOwnedMutFreshnessRecurses(t *testing.T) {
 	t.Run("object field is a variable", func(t *testing.T) {
-		src := "fn f() {\n\tval cfg = {x: 1}\n\tval m: mut {p: {x: number}} = {p: cfg}\n\tm\n}"
+		src := `fn f() {
+	val cfg = {x: 1}
+	val m: mut {p: {x: number}} = {p: cfg}
+	m
+}`
 		_, _, errs := inferSource(t, src)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain immutable object <: mutable object", errs[0].Message())
+		require.Equal(t, "3:13-3:14: cannot constrain immutable object <: mutable object", msgWithSpan(errs[0]))
 	})
 	t.Run("tuple element is a variable", func(t *testing.T) {
-		src := "fn f() {\n\tval cfg = {x: 1}\n\tval t: mut [number, {x: number}] = [1, cfg]\n\tt\n}"
+		src := `fn f() {
+	val cfg = {x: 1}
+	val t: mut [number, {x: number}] = [1, cfg]
+	t
+}`
 		_, _, errs := inferSource(t, src)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain immutable tuple <: mutable tuple", errs[0].Message())
+		require.Equal(t, "3:13-3:14: cannot constrain immutable tuple <: mutable tuple", msgWithSpan(errs[0]))
 	})
 }
 

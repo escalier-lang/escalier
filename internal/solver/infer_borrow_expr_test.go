@@ -67,7 +67,7 @@ func TestInferValBorrowFromOwnedImm(t *testing.T) {
 }`)
 	require.Equal(t, []string{
 		"cannot return borrow of local 'p': 'p' does not live long enough",
-	}, Messages(errs))
+	}, messagesWithSpan(errs))
 }
 */
 
@@ -95,7 +95,7 @@ func TestInferValMutBorrowFromOwnedMut(t *testing.T) {
 }`)
 	require.Equal(t, []string{
 		"cannot return borrow of local 'p': 'p' does not live long enough",
-	}, Messages(errs))
+	}, messagesWithSpan(errs))
 }
 */
 
@@ -107,8 +107,8 @@ func TestInferBorrowMutOnImmutableRejected(t *testing.T) {
   return q
 }`)
 	require.Equal(t, []string{
-		"cannot constrain immutable object <: mutable object",
-	}, Messages(errs))
+		"2:11-2:17: cannot constrain immutable object <: mutable object",
+	}, messagesWithSpan(errs))
 }
 
 // --- Rule 3 (binding initializer): owned-mutable construction ------------------
@@ -270,7 +270,7 @@ func TestInferValAnnotatedBorrowImm(t *testing.T) {
 }`)
 	require.Equal(t, []string{
 		"cannot return borrow of local 'p': 'p' does not live long enough",
-	}, Messages(errs))
+	}, messagesWithSpan(errs))
 }
 */
 
@@ -286,7 +286,7 @@ func TestInferValAnnotatedBorrowMut(t *testing.T) {
 }`)
 	require.Equal(t, []string{
 		"cannot return borrow of local 'p': 'p' does not live long enough",
-	}, Messages(errs))
+	}, messagesWithSpan(errs))
 }
 */
 
@@ -331,8 +331,8 @@ fn f(p: {x: number}) {
 }`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"cannot constrain immutable object <: mutable object",
-	}, Messages(errs))
+		"5:10-5:16: cannot constrain immutable object <: mutable object",
+	}, messagesWithSpan(errs))
 }
 
 // --- Borrow expressions infer to borrow types ----------------------------------
@@ -362,7 +362,7 @@ func TestInferBorrowExprMutFromOwnedMut(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f(p: mut {x: number}) { return &mut p }`)
 	require.Equal(t, []string{
 		"cannot return borrow of local 'p': 'p' does not live long enough",
-	}, Messages(errs))
+	}, messagesWithSpan(errs))
 }
 */
 
@@ -373,8 +373,8 @@ func TestInferBorrowExprMutFromOwnedMut(t *testing.T) {
 func TestInferBorrowExprAbsorbsUnknownIdentifier(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f() { return &q }`)
 	require.Equal(t, []string{
-		"Unknown identifier: q",
-	}, Messages(errs))
+		"1:18-1:19: Unknown identifier: q",
+	}, messagesWithSpan(errs))
 }
 
 // A borrow of a primitive value reports the unsupported-borrow diagnostic once.
@@ -383,8 +383,8 @@ func TestInferBorrowExprAbsorbsUnknownIdentifier(t *testing.T) {
 func TestInferBorrowExprOfPrimitiveRecovers(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f() { return &5 }`)
 	require.Equal(t, []string{
-		"Unsupported: borrow of a non-borrowable type",
-	}, Messages(errs))
+		"1:17-1:19: Unsupported: borrow of a non-borrowable type",
+	}, messagesWithSpan(errs))
 }
 
 // Passing an explicit `&p` argument into a `&` parameter type-checks the same as

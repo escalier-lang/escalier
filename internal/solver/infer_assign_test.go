@@ -29,9 +29,10 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 		require.Equal(t, "fn () -> void", values["f"]) // no return, so the body produces no value
 	})
 	t.Run("mismatched type reports one subtype error", func(t *testing.T) {
-		src := "var a: number = 5\nfn f() { a = \"x\" }"
+		src := `var a: number = 5
+fn f() { a = "x" }`
 		_, _, errs := inferSource(t, src)
-		requireBlame(t, src, errs, `cannot constrain "x" <: number`, `"x"`, "number")
+		requireBlame(t, src, errs, `2:14-2:17: cannot constrain "x" <: number`, `"x"`, "number")
 	})
 }
 
@@ -39,7 +40,8 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 // reassigning a DIFFERENT literal of the same primitive (`a = 6` ⇒ `6 <: number`)
 // checks. A `val` keeps the literal singleton (see TestInferAssignToValRejected).
 func TestInferAssignUnannotatedVarLiteralWidened(t *testing.T) {
-	values, _, errs := inferSource(t, "var a = 5\nfn f() { a = 6 }")
+	values, _, errs := inferSource(t, `var a = 5
+fn f() { a = 6 }`)
 	require.Empty(t, errs)
 	require.Equal(t, "number", values["a"])
 }
@@ -47,27 +49,29 @@ func TestInferAssignUnannotatedVarLiteralWidened(t *testing.T) {
 // Reassigning a `val` is rejected: only a `var` is reassignable. The error blames
 // the assignment and relates the `val` declaration ("declared immutable here").
 func TestInferAssignToValRejected(t *testing.T) {
-	src := "val a = 5\nfn f() { a = 6 }"
+	src := `val a = 5
+fn f() { a = 6 }`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"Cannot assign to immutable binding: a", "a = 6", "val a = 5")
+		"2:10-2:15: Cannot assign to immutable binding: a", "a = 6", "val a = 5")
 }
 
 // A function name and a parameter are likewise immutable. A parameter carries no
 // introducing declaration source node, so its error has no related span.
 func TestInferAssignToImmutableNonVal(t *testing.T) {
 	t.Run("function name", func(t *testing.T) {
-		src := "fn h() -> number { return 5 }\nfn f() { h = 6 }"
+		src := `fn h() -> number { return 5 }
+fn f() { h = 6 }`
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs,
-			"Cannot assign to immutable binding: h", "h = 6", "fn h() -> number { return 5 }")
+			"2:10-2:15: Cannot assign to immutable binding: h", "h = 6", "fn h() -> number { return 5 }")
 	})
 	t.Run("parameter", func(t *testing.T) {
 		src := "fn f(p: number) { p = 6 }"
 		_, _, errs := inferSource(t, src)
 		// A parameter's binding records its pattern as the source, so Related() points
 		// at the param ("declared immutable here").
-		requireBlame(t, src, errs, "Cannot assign to immutable binding: p", "p = 6", "p")
+		requireBlame(t, src, errs, "1:19-1:24: Cannot assign to immutable binding: p", "p = 6", "p")
 	})
 }
 
@@ -76,14 +80,17 @@ func TestInferAssignToImmutableNonVal(t *testing.T) {
 // index target another (unsupported pending Array types, M7).
 func TestInferAssignInvalidTarget(t *testing.T) {
 	t.Run("literal target", func(t *testing.T) {
-		src := "val a = 5\nfn g() { 5 = a }"
+		src := `val a = 5
+fn g() { 5 = a }`
 		_, _, errs := inferSource(t, src)
-		requireBlame(t, src, errs, "Invalid assignment target: LiteralExpr", "5")
+		requireBlame(t, src, errs, "2:10-2:11: Invalid assignment target: LiteralExpr", "5")
 	})
 	t.Run("call target", func(t *testing.T) {
-		src := "fn f() -> number { return 5 }\nvar a: number = 0\nfn g() { f() = a }"
+		src := `fn f() -> number { return 5 }
+var a: number = 0
+fn g() { f() = a }`
 		_, _, errs := inferSource(t, src)
-		requireBlame(t, src, errs, "Invalid assignment target: CallExpr", "f()")
+		requireBlame(t, src, errs, "3:10-3:13: Invalid assignment target: CallExpr", "f()")
 	})
 }
 
@@ -112,7 +119,7 @@ func TestInferAssignThroughBrokenBindingNoCascade(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
+	require.Equal(t, "3:12-3:19: Unknown identifier: missing", msgWithSpan(errs[0]))
 }
 
 // Assigning to an undeclared name surfaces an UnknownIdentifierError on the target
@@ -120,7 +127,7 @@ func TestInferAssignThroughBrokenBindingNoCascade(t *testing.T) {
 func TestInferAssignUnknownTarget(t *testing.T) {
 	src := "fn f() { nope = 5 }"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Unknown identifier: nope", "nope")
+	requireBlame(t, src, errs, "1:10-1:14: Unknown identifier: nope", "nope")
 }
 
 // Reassigning a POLYMORPHIC var must not corrupt the binding. inferAssign freshens
@@ -148,7 +155,7 @@ func TestInferAssignTopLevelBrokenBindingNoCascade(t *testing.T) {
 		fn f() { a = 5 }
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unknown identifier: missing", errs[0].Message())
+	require.Equal(t, "2:11-2:18: Unknown identifier: missing", msgWithSpan(errs[0]))
 	require.Equal(t, "error", values["a"]) // recovered as the sentinel, not never
 }
 
@@ -166,10 +173,13 @@ func TestInferAssignUnionTarget(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("non-member rejected once", func(t *testing.T) {
-		src := "fn f(c: boolean) {\n  var a = if c { 1 } else { 2 }\n  a = 3\n}"
+		src := `fn f(c: boolean) {
+  var a = if c { 1 } else { 2 }
+  a = 3
+}`
 		_, _, errs := inferSource(t, src)
 		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain 3 <: 1 | 2", errs[0].Message())
+		require.Equal(t, "3:7-3:8: cannot constrain 3 <: 1 | 2", msgWithSpan(errs[0]))
 	})
 }
 
@@ -214,17 +224,19 @@ func TestInferAssignNamespaceTarget(t *testing.T) {
 // rejected: the write requires `o <: mut {x: number, ...}`, and an immutable object
 // cannot fill the mutable slot (the C2 gate's mutability rule).
 func TestInferAssignMemberTargetImmutable(t *testing.T) {
-	src := "val o = {x: 5}\nfn f() { o.x = 6 }"
+	src := `val o = {x: 5}
+fn f() { o.x = 6 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "cannot constrain immutable object <: mutable object", "o.x = 6")
+	requireBlame(t, src, errs, "2:10-2:17: cannot constrain immutable object <: mutable object", "o.x = 6")
 }
 
 // An INDEX target (xs[i] = …) still needs Array and index types (M7), so it stays
 // an unsupported feature — distinct from a member target, which C3 now types.
 func TestInferAssignIndexTargetUnsupported(t *testing.T) {
-	src := "val xs = [1, 2]\nfn f() { xs[0] = 6 }"
+	src := `val xs = [1, 2]
+fn f() { xs[0] = 6 }`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Unsupported: assignment to a member or index", "xs[0]")
+	requireBlame(t, src, errs, "2:10-2:15: Unsupported: assignment to a member or index", "xs[0]")
 }
 
 // An immutable target with an independently-broken source reports BOTH errors — they
@@ -236,9 +248,9 @@ func TestInferAssignImmutableWithBadRHSReportsBoth(t *testing.T) {
 		fn f() { a = missing }
 	`)
 	require.Equal(t, []string{
-		"Unknown identifier: missing",
-		"Cannot assign to immutable binding: a",
-	}, Messages(errs))
+		"3:16-3:23: Unknown identifier: missing",
+		"3:12-3:23: Cannot assign to immutable binding: a",
+	}, messagesWithSpan(errs))
 }
 
 // A malformed assignment node with a nil operand (hand-built; the real parser

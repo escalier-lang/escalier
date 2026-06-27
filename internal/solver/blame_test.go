@@ -25,13 +25,14 @@ func spanText(src string, s ast.Span) string {
 	return line[s.Start.Column-1 : s.End.Column-1]
 }
 
-// requireBlame asserts the sole error's message, the source text its primary span
-// covers, and the source text each related span covers (in order). The golden
-// span fixtures (§3.10) use it to pin exact blame against real-parser spans.
+// requireBlame asserts the sole error's span-prefixed message ("line:col-line:col:
+// message"), the source text its primary span covers, and the source text each
+// related span covers (in order). The golden span fixtures (§3.10) use it to pin
+// exact blame against real-parser spans.
 func requireBlame(t *testing.T, src string, errs []SolverError, msg, primary string, related ...string) {
 	t.Helper()
 	require.Len(t, errs, 1)
-	require.Equal(t, msg, errs[0].Message())
+	require.Equal(t, msg, msgWithSpan(errs[0]))
 	require.Equal(t, primary, spanText(src, errs[0].Span()), "primary blame")
 	got := []string{}
 	for _, s := range errs[0].Related() {
@@ -51,15 +52,16 @@ func requireBlame(t *testing.T, src string, errs []SolverError, msg, primary str
 func TestBlameValAnnotationLiteral(t *testing.T) {
 	src := `val x: number = "hi"`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
+	requireBlame(t, src, errs, `1:17-1:21: cannot constrain "hi" <: number`, `"hi"`, "number")
 }
 
 // A call-arg mismatch blames the offending argument, with the callee's param
 // annotation as the related source.
 func TestBlameCallArgument(t *testing.T) {
-	src := "fn f(x: number) -> number { return x }\nval r = f(\"hi\")"
+	src := `fn f(x: number) -> number { return x }
+val r = f("hi")`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, `"hi"`, "number")
+	requireBlame(t, src, errs, `2:11-2:15: cannot constrain "hi" <: number`, `"hi"`, "number")
 }
 
 // A too-many-args direct call is the PR4 extra-arg lint (TooManyArgsError), a
@@ -69,10 +71,11 @@ func TestBlameCallArgument(t *testing.T) {
 // callback-arity failures. The related span is the callee `f` here, derived from
 // the AST, not the callee's definition span resolved through Prov.)
 func TestBlameCallTooManyArgs(t *testing.T) {
-	src := "fn f(x: number) -> number { return x }\nval r = f(1, 2)"
+	src := `fn f(x: number) -> number { return x }
+val r = f(1, 2)`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"Too many arguments: expected at most 1, but got 2", "f(1, 2)", "f")
+		"2:9-2:16: Too many arguments: expected at most 1, but got 2", "f(1, 2)", "f")
 }
 
 // A too-few-args direct call is the PR4 too-few lint (NotEnoughArgsError), a BRIDGE
@@ -80,10 +83,11 @@ func TestBlameCallTooManyArgs(t *testing.T) {
 // callee expression (`f` here, from the AST — not the callee's definition resolved
 // through Prov). `f` requires two params; the call supplies one.
 func TestBlameCallTooFewArgs(t *testing.T) {
-	src := "fn f(x: number, y: number) -> number { return x }\nval r = f(1)"
+	src := `fn f(x: number, y: number) -> number { return x }
+val r = f(1)`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"Not enough arguments: expected at least 2, but got 1", "f(1)", "f")
+		"2:9-2:13: Not enough arguments: expected at least 2, but got 1", "f(1)", "f")
 }
 
 // A missing-property read blames the member's prop (.foo), not the receiver, with
@@ -97,9 +101,10 @@ func TestBlameCallTooFewArgs(t *testing.T) {
 // (e.g. the result of a polymorphic call) does not keep the entry; see
 // TestBlameMissingPropertyPolymorphicReceiverLosesRelated.
 func TestBlameMissingProperty(t *testing.T) {
-	src := "val o = {a: 5}\nval x = o.b"
+	src := `val o = {a: 5}
+val x = o.b`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "object is missing property: b", "b", "{a: 5}")
+	requireBlame(t, src, errs, "2:11-2:12: object is missing property: b", "b", "{a: 5}")
 }
 
 // The bound of M3's related-span improvement: a receiver derived from a
@@ -110,9 +115,11 @@ func TestBlameMissingProperty(t *testing.T) {
 // improvement holds for var-free callees/receivers, not values that flowed through
 // instantiation.
 func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
-	src := "val mk = fn (v) { return {a: v} }\nval o = mk(5)\nval x = o.b"
+	src := `val mk = fn (v) { return {a: v} }
+val o = mk(5)
+val x = o.b`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "object is missing property: b", "b")
+	requireBlame(t, src, errs, "3:11-3:12: object is missing property: b", "b")
 }
 
 // An identifier-flow mismatch blames the USE, not the definition: x's type traces
@@ -120,9 +127,10 @@ func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
 // containment guard falls back to the use (§3.8). The annotation is the related
 // expected-source.
 func TestBlameIdentifierUseNotDefinition(t *testing.T) {
-	src := "val x = \"hi\"\nval a: number = x"
+	src := `val x = "hi"
+val a: number = x`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, `cannot constrain "hi" <: number`, "x", "number")
+	requireBlame(t, src, errs, `2:17-2:18: cannot constrain "hi" <: number`, "x", "number")
 }
 
 // An inline receiver DOES resolve its related span: {a: 5} is used directly (not
@@ -131,7 +139,7 @@ func TestBlameIdentifierUseNotDefinition(t *testing.T) {
 func TestBlameMissingPropertyInlineReceiverRelated(t *testing.T) {
 	src := `val x = {a: 5}.b`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "object is missing property: b", "b", "{a: 5}")
+	requireBlame(t, src, errs, "1:16-1:17: object is missing property: b", "b", "{a: 5}")
 }
 
 // --- Bridge-error span fixtures (self-blaming, no Prov) ---
@@ -140,23 +148,25 @@ func TestBlameMissingPropertyInlineReceiverRelated(t *testing.T) {
 func TestBlameUnknownIdentifier(t *testing.T) {
 	src := `val y = missing`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Unknown identifier: missing", "missing")
+	requireBlame(t, src, errs, "1:9-1:16: Unknown identifier: missing", "missing")
 }
 
 // A duplicate top-level `val` blames the second decl and exposes the first as a
 // related "previously declared here" span.
 func TestBlameDuplicateDeclarationRelatesPrevious(t *testing.T) {
-	src := "val x = 5\nval x = \"hi\""
+	src := `val x = 5
+val x = "hi"`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Duplicate declaration: x", `val x = "hi"`, "val x = 5")
+	requireBlame(t, src, errs, "2:1-2:13: Duplicate declaration: x", `val x = "hi"`, "val x = 5")
 }
 
 // An unsupported feature (optional chaining) blames the member, not a separate
 // node, and reports the feature name.
 func TestBlameUnsupportedFeatureOptionalChain(t *testing.T) {
-	src := "val o = {a: 5}\nval x = o?.a"
+	src := `val o = {a: 5}
+val x = o?.a`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "Unsupported: OptionalChain", "o?.a")
+	requireBlame(t, src, errs, "2:9-2:13: Unsupported: OptionalChain", "o?.a")
 }
 
 // --- Site-fallback fixtures ---
@@ -169,9 +179,10 @@ func TestBlameUnsupportedFeatureOptionalChain(t *testing.T) {
 // and operand-outside-site branches are already covered by TestBlameCallArgument
 // and TestBlameIdentifierUseNotDefinition above.)
 func TestBlameVoidSubjectFallsBackToCallSite(t *testing.T) {
-	src := "fn f() {}\nval x: number = f()"
+	src := `fn f() {}
+val x: number = f()`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "cannot constrain void <: number", "f()", "number")
+	requireBlame(t, src, errs, "2:17-2:20: cannot constrain void <: number", "f()", "number")
 }
 
 // The too-many-args lint on an immediately-invoked function blames the call and
@@ -184,7 +195,7 @@ func TestBlameCallTooManyArgsInlineCalleeRelated(t *testing.T) {
 	src := `val r = (fn (x: number) -> number { return x })(1, 2)`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
-		"Too many arguments: expected at most 1, but got 2",
+		"1:10-1:54: Too many arguments: expected at most 1, but got 2",
 		`fn (x: number) -> number { return x })(1, 2)`,
 		`fn (x: number) -> number { return x }`)
 }

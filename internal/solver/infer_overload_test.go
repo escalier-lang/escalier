@@ -58,8 +58,8 @@ func TestInferOverloadDuplicateParamTypesRejected(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"Overload arms must have distinguishable parameter types: f",
-		errs[0].Message())
+		"3:3-3:45: Overload arms must have distinguishable parameter types: f",
+		msgWithSpan(errs[0]))
 }
 
 // Cross-file declaration order is pinned to SOURCE POSITION (file path alphabetically,
@@ -74,7 +74,8 @@ func TestInferOverloadCrossFileDeclarationOrder(t *testing.T) {
 	defer cancel()
 	sources := []*ast.Source{
 		{ID: 0, Path: "b.esc", Contents: `fn f(x: string) -> boolean { return true }`},
-		{ID: 1, Path: "a.esc", Contents: "fn f(x: number) -> string { return \"s\" }\nval r = f(5)"},
+		{ID: 1, Path: "a.esc", Contents: `fn f(x: number) -> string { return "s" }
+val r = f(5)`},
 	}
 	module, parseErrs := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrs, "expected no parse errors")
@@ -124,8 +125,8 @@ func TestInferOverloadNoMatch(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"No matching overload for this call\n  fn (x: number) -> number\n  fn (x: string) -> string",
-		errs[0].Message())
+		"4:11-4:18: No matching overload for this call\n  fn (x: number) -> number\n  fn (x: string) -> string",
+		msgWithSpan(errs[0]))
 }
 
 // A mutually-recursive group containing an overloaded function with un-annotated
@@ -139,8 +140,8 @@ func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"Overloaded function in a recursive group must have fully-annotated signatures: f",
-		errs[0].Message())
+		"2:3-2:19: Overloaded function in a recursive group must have fully-annotated signatures: f",
+		msgWithSpan(errs[0]))
 }
 
 // A self-recursive fully-annotated overload type-checks: each arm's recursive call
@@ -325,7 +326,7 @@ func TestInferOverloadMixedWithValIsDuplicate(t *testing.T) {
 		val f = 5
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Duplicate declaration: f", errs[0].Message())
+	require.Equal(t, "4:3-4:12: Duplicate declaration: f", msgWithSpan(errs[0]))
 	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"],
 		"the two functions still overload; only the val is rejected")
 }
@@ -341,7 +342,7 @@ func TestInferOverloadMixedWithValCrossFileIsDuplicate(t *testing.T) {
 		"b.esc": `val f = 5`,
 	})
 	require.Len(t, errs, 1)
-	require.Equal(t, "Duplicate declaration: f", errs[0].Message())
+	require.Equal(t, "1:1-1:10: Duplicate declaration: f", msgWithSpan(errs[0]))
 	require.Equal(t, "fn (x: number) -> number", values["f"],
 		"the cross-file val is rejected; the fn binding survives")
 }
