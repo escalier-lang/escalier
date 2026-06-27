@@ -228,36 +228,38 @@ func (c *checker) tryUpgradeIntoMutSlot(site ast.Node, src ast.Expr, srcT, targe
 	return true
 }
 
-// canUpgradeToOwnedMut reports whether a value built by src may be granted an
-// owned-mutable type when it flows into an owned-mutable slot. The grant is sound when
+// canUpgradeToOwnedMut reports whether the value built by src may be granted an
+// owned-mutable type when it flows into an owned-mutable slot. The grant is sound only when
 // the value is uniquely owned, so no live immutable alias can observe a write through the
-// new mutable view. This is Rule 2 of the mutability-transition checker with an empty
-// alias set.
+// new mutable view. This is Rule 2 of the mutability-transition checker with an empty alias
+// set. Three cases show what it returns and why:
 //
-// Two source shapes qualify:
-//   - A syntactically fresh literal, unaliased by construction: a primitive literal, or
-//     an object/tuple literal whose every element itself qualifies. This shape needs no
-//     VarID, so it holds at module top level where the liveness pre-pass has not run.
-//   - A consuming move of a uniquely-owned place that carries no owned-mutable cell: a
-//     variable or field path bound to a concrete owned value whose type has no owned-mut
-//     anywhere, recognised by movesOwnedPlace and containsOwnedMut. exprPlace ties the
-//     place to a VarID, so this shape holds only inside a function body, where the move
-//     engine consumes the source and a later use of it is a use-after-move.
+//   - A syntactically fresh literal returns true. In `val m: mut {x} = {x: 1}` the literal
+//     is newly built and nothing else refers to it, so it is uniquely owned and granting it
+//     mutability aliases nothing. A fresh literal carries no identifier and needs no VarID,
+//     so this case holds at module top level where the liveness pre-pass has not run.
+//
+//   - A consuming move of an owned place returns true. In `val m: mut {x} = cfg` the move
+//     consumes `cfg` and leaves `m` the sole owner, so again no live alias remains, and a
+//     later use of `cfg` is a use-after-move. exprPlace ties the place to a VarID, so this
+//     case holds only inside a function body where the move engine records the consume.
+//
+//   - A literal wrapping an owned-mutable leaf returns false. In `{p: inner}` with
+//     `inner: mut {x: number}`, `inner` already holds a mutable cell. The upgrade constrains
+//     the source against the slot's covariant read view, which would widen that cell — for
+//     example accept it where `mut {x: number | string}` is expected — and that is unsound.
+//     Returning false routes the source to the strict mut<:mut path, which pins the cell's
+//     element type invariant. containsOwnedMut is recursive, so an owned-mutable cell at any
+//     depth rejects the whole source.
 //
 // It generalizes the fresh-literal-only isFreshlyConstructed: both share the
-// freshLiteralShape recursion and differ only at a non-literal leaf, where this predicate
-// accepts an owned-place move. The recursion reaches a moved place nested inside a fresh
-// literal, so `{p: cfg}` qualifies when `cfg` is a dead owned variable even though the
-// literal is not identifier-free.
+// freshLiteralShape recursion and differ only at a non-literal leaf, which this predicate
+// accepts when it is an owned-place move carrying no owned-mutable cell. The recursion
+// reaches such a leaf nested inside a fresh literal, so `{p: cfg}` qualifies when `cfg` is a
+// dead owned variable even though the literal is not identifier-free.
 //
-// An owned-mutable leaf is rejected at every depth. The upgrade constrains the source
-// against the slot's covariant read view, which is sound only when the source carries no
-// mutable cell to widen. An already-mutable cell, top-level or nested, must instead take
-// the strict mut<:mut path that pins its element type invariant, so `{p: inner}` with
-// `inner: mut {x}` falls through to that path rather than widening `inner` covariantly.
-//
-// SOUNDNESS: a leaf this predicate admits must be consumed by the move engine, so a later
-// use of it is a use-after-move. That holds because movesOwnedPlace gates on
+// SOUNDNESS: every leaf this predicate admits must be consumed by the move engine, so a
+// later use of it is a use-after-move. That holds because movesOwnedPlace gates on
 // isConcreteOwned, a strict subset of the isOwnedMovable set consumeOwned moves at every
 // flow site, so the upgrade set is a subset of the consume set. Widening movesOwnedPlace
 // toward a place consumeOwned does not move would break this and grant a mutable view with
