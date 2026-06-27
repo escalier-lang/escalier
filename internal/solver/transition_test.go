@@ -768,6 +768,18 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 		src  string
 		want []string
 	}{
+		// An immutable borrow of a mutable owned value is legal on its own. The borrow
+		// puts the value in the immutable phase for its lifetime, and no mutable access
+		// overlaps it here, so there is no phase conflict.
+		"ImmutableBorrowOfMutable_OK": {
+			src: `
+				fn test() {
+					val a: mut {x: number} = {x: 1}
+					val s: &{x: number} = a
+					s
+				}
+			`,
+		},
 		// An immutable borrow `s` taken while the mutable borrow `m` is still live mixes
 		// the immutable and mutable phases, so it is rejected. `m` is the live mutable
 		// access the message names.
