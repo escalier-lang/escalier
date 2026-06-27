@@ -167,8 +167,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		// bound, which cannot reject a refutable literal sub-pattern of the wrong kind.
 		// The upper bound makes a nested literal flow against the real element type, so
 		// `[a, "hi"]` against `[number, number]` reports the mismatch.
-		tup, _ := scrutinee.(*soltype.TupleType)
-		if tup != nil {
+		if tup, ok := scrutinee.(*soltype.TupleType); ok {
 			for i := range fixed {
 				if i < len(tup.Elems) {
 					c.constrain(fixed[i], elemTypes[i], tup.Elems[i])
