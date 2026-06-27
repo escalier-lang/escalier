@@ -190,9 +190,9 @@ func TestInferValMutPrimitiveUnchanged(t *testing.T) {
 }
 
 // `val mut p = src` thaws an owned-immutable source into an owned-mutable binding.
-// The move consumes `src` and leaves `p` the sole owner, so it is sound for `p` to be
-// mutable: no reference to the value survives to observe `p`'s later mutations. The
-// binding's mutability comes from the `mut` pattern, not from the source, so `p` is
+// The move consumes `src` and leaves `p` the sole owner. No reference to the value
+// survives to observe `p`'s later mutations, so it is sound for `p` to be mutable. The
+// binding's mutability comes from the `mut` pattern, not from the source. So `p` is
 // `mut {x: number}` and the function returns it at that type.
 func TestInferValMutThawFromVariable(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(src: {x: number}) {

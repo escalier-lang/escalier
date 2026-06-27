@@ -237,7 +237,9 @@ func stripOwnedMut(t soltype.Type) soltype.Type {
 // binding moves an owned value out of a place. A place is a binding or a field path
 // such as `p` or `pair.a`, and its value moves when it is a concrete owned object,
 // tuple, or owned RefType. Such a binding takes ownership of the value, so the
-// binding's declared mutability replaces the source's, the thaw and freeze of PR 8.
+// binding's declared mutability replaces the source's. A `val mut q` thaws an
+// owned-immutable source into a mutable binding, and a plain `val q` freezes an
+// owned-mutable source into an immutable one.
 //
 // A borrow, value type, fresh literal, generic type-parameter value, or non-place
 // initializer is not a place move and keeps the ordinary inference. exprPlace also

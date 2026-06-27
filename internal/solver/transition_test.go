@@ -758,11 +758,11 @@ func TestMutabilityTransitionReassignFromSource(t *testing.T) {
 	})
 }
 
-// TestBorrowPhaseExclusion covers the borrow-phase reframing of PR 8: a mutable owned
-// value sits in either an immutable phase, with any number of `&` borrows, or a mutable
-// phase, with any number of `&mut` borrows, and the two never overlap. An immutable
-// borrow taken while a mutable borrow of the same value is live crosses the phases and
-// is rejected, while several mutable borrows of one value coexist.
+// TestBorrowPhaseExclusion covers the borrow-phase rule. A mutable owned value sits in
+// one of two phases that never overlap. The immutable phase holds any number of `&`
+// borrows. The mutable phase holds any number of `&mut` borrows. An immutable borrow
+// taken while a mutable borrow of the same value is live crosses the phases and is
+// rejected, while several mutable borrows of one value coexist.
 func TestBorrowPhaseExclusion(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -787,7 +787,7 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 		},
 		// Two mutable borrows of one value stay within the mutable phase, so both are
 		// legal. Escalier is single-threaded, so simultaneous mutable borrows race
-		// nothing; the phase rule forbids only mixing the two kinds.
+		// nothing. The phase rule forbids only mixing the two kinds.
 		"MultipleMutableBorrows_OK": {
 			src: `
 				fn test() {
@@ -809,11 +809,11 @@ func TestBorrowPhaseExclusion(t *testing.T) {
 	}
 }
 
-// TestPhaseConflictUnderConditionalMove covers the path-sensitive phase decision of
-// PR 8, taken from the consumed lattice in one post-pass. A phase conflict is dropped
-// only when the source is moved on EVERY path reaching the transition, where the move
-// engine's use-after-move subsumes it. When the source is moved on only some paths, the
-// conflict survives for the paths that did not move it.
+// TestPhaseConflictUnderConditionalMove covers the path-sensitive phase decision taken
+// from the consumed lattice in one post-pass. A phase conflict is dropped only when the
+// source is moved on EVERY path reaching the transition. There the move engine's
+// use-after-move subsumes it. When the source is moved on only some paths, the conflict
+// survives for the paths that did not move it.
 func TestPhaseConflictUnderConditionalMove(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -822,9 +822,9 @@ func TestPhaseConflictUnderConditionalMove(t *testing.T) {
 		// `a` is moved on the `if` arm and untouched on the `else` arm, so it is moved on
 		// some but not all paths reaching the `val snapshot` transition. The immutable
 		// borrow there conflicts with the later mutable use `a.x = 2` on the paths that
-		// did not move `a`, so the phase conflict is reported. The paths that did move it
-		// read each later use of `a` — the borrow and the mutation — as a conditional
-		// use-after-move.
+		// did not move `a`, so the phase conflict is reported. On the paths that did
+		// move `a`, each later use of it, the borrow and the mutation, reads as a
+		// conditional use-after-move.
 		"SomePathsMove_ConflictSurvives": {
 			src: `
 				fn sink(p: mut {x: number}) {}

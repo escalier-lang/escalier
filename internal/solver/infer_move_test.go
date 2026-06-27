@@ -378,11 +378,11 @@ func TestMoveSemantics(t *testing.T) {
 	}
 }
 
-// TestThawMove covers the immutable→mutable thaw of PR 8: `val mut q = p` for an
+// TestThawMove covers the immutable→mutable thaw. `val mut q = p` for an
 // owned-immutable `p` moves `p` into the mutable binding `q` and consumes it. The move
-// leaves `q` the sole owner, so `q` may be mutable and `q.x = 5` is accepted with no
-// immutable-object error. The later `p.x` reads `p` after it was moved, a
-// use-after-move, which is the only diagnostic. This is the requirements' thawing
+// leaves `q` the sole owner, so `q` may be mutable, and `q.x = 5` is accepted with no
+// immutable-object error. The later `p.x` reads `p` after it was moved. That read is a
+// use-after-move, and it is the only diagnostic. This is the requirements' thawing
 // example.
 func TestThawMove(t *testing.T) {
 	_, _, errs := inferSource(t, `
@@ -396,11 +396,11 @@ func TestThawMove(t *testing.T) {
 	require.Equal(t, []string{"use of moved value 'p'"}, Messages(errs))
 }
 
-// TestFreezeMove covers the mutable→immutable freeze of PR 8: a plain `val q = p` for
-// an owned-mutable `p` moves `p` into the immutable binding `q` and consumes it. The
+// TestFreezeMove covers the mutable→immutable freeze. A plain `val q = p` for an
+// owned-mutable `p` moves `p` into the immutable binding `q` and consumes it. The
 // binding's mutability comes from the pattern, so `q` is immutable and the write
-// `q.x = 5` is rejected, while the later `p.x` is a use-after-move on the consumed
-// source. Both diagnostics stand. This is the plan's freeze example.
+// `q.x = 5` is rejected. The later `p.x` is a use-after-move on the consumed source.
+// Both diagnostics stand. This is the plan's freeze example.
 func TestFreezeMove(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn test() {
@@ -417,12 +417,13 @@ func TestFreezeMove(t *testing.T) {
 	}, Messages(errs))
 }
 
-// TestFreezeMoveAllowed shows the freeze move itself is allowed: binding an
+// TestFreezeMoveAllowed shows the freeze move itself is allowed. Binding an
 // owned-mutable `p` into a plain `val q` moves the value into an immutable owner and
-// consumes `p`. With `p` never used again, the move produces no error, and `q` is
-// owned-immutable — `fn (p: mut {x: number}) -> {x: number}` — so the value is returned
-// at the frozen type. This is the mirror of TestInferValMutThawFromVariable, which
-// thaws an owned-immutable source into an owned-mutable binding.
+// consumes `p`. With `p` never used again, the move produces no error. `q` is
+// owned-immutable, so the function returns the value at the frozen type
+// `fn (p: mut {x: number}) -> {x: number}`. This is the mirror of
+// TestInferValMutThawFromVariable, which thaws an owned-immutable source into an
+// owned-mutable binding.
 func TestFreezeMoveAllowed(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
   val q = p
