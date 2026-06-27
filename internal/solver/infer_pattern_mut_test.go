@@ -191,3 +191,94 @@ func TestDestructureMutBorrowLeafRendersBorrow(t *testing.T) {
 		require.Empty(t, errs)
 	})
 }
+
+// TestMatchBorrowedScrutineeMutLeaf covers per-leaf mutability in `match` arms whose
+// scrutinee is a borrowed reference, the pattern-matching analogue of the `val`
+// destructuring cases. The binding mode flows from the scrutinee's borrow into each
+// arm's pattern: a `&mut` scrutinee projects mutable leaves, a `&` scrutinee projects
+// shared leaves and rejects a `mut` leaf. A leaf never moves out of a borrowed
+// scrutinee. The scrutinee is a borrow PARAMETER, the supported `&mut`/`&` path; a
+// `&mut` borrow expression of a local owned value is a separate, unlanded path.
+func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// `&mut` scrutinee: a `mut` leaf of a match arm is a mutable borrow, so a write
+		// through it succeeds.
+		"MutBorrowMutLeafWrite": {src: `
+			fn f(line: &mut [{x: number}, {y: number}]) {
+				match line {
+					[p, mut q] => {
+						q.y = 5
+						0
+					}
+				}
+			}`},
+		// `&mut` scrutinee (Rust ergonomics): an unmarked leaf is also a mutable borrow,
+		// so a write through it succeeds without the `mut` marker.
+		"MutBorrowPlainLeafWrite": {src: `
+			fn f(line: &mut [{x: number}, {y: number}]) {
+				match line {
+					[p, q] => {
+						q.y = 5
+						0
+					}
+				}
+			}`},
+		// `&mut` scrutinee, object pattern: `{a: mut m}` is a mutable borrow leaf.
+		"MutBorrowObjectMutLeaf": {src: `
+			fn f(pt: &mut {a: {x: number}, b: {y: number}}) {
+				match pt {
+					{a: mut m, b: n} => {
+						m.x = 5
+						0
+					}
+				}
+			}`},
+		// `&` scrutinee: a `mut` leaf of a match arm is rejected — mutable access cannot
+		// be projected out of an immutable borrow.
+		"SharedBorrowMutLeafRejected": {src: `
+			fn f(line: &[{x: number}, {y: number}]) {
+				match line {
+					[p, mut q] => { 0 }
+				}
+			}`, want: []string{"cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"}},
+		// `&` scrutinee: an unmarked leaf is a shared borrow, so a write through it errors.
+		"SharedBorrowPlainLeafWriteErrors": {src: `
+			fn f(line: &[{x: number}, {y: number}]) {
+				match line {
+					[p, q] => {
+						q.y = 5
+						0
+					}
+				}
+			}`, want: []string{"cannot constrain immutable object <: mutable object"}},
+		// A `mut` leaf is rejected against a `&` borrow EXPRESSION scrutinee too, not
+		// only a `&` parameter.
+		"SharedBorrowExprMutLeafRejected": {src: `
+			fn f() {
+				val line = [{x: 0}, {y: 0}]
+				match (&line) {
+					[p, mut q] => { 0 }
+				}
+			}`, want: []string{"cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"}},
+		// The binding mode propagates into a nested pattern of a borrowed `match`
+		// scrutinee, so a deeply nested `mut` leaf is a mutable borrow.
+		"NestedMutBorrowLeaf": {src: `
+			fn f(line: &mut [[{x: number}]]) {
+				match line {
+					[[mut a]] => {
+						a.x = 5
+						0
+					}
+				}
+			}`},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, Messages(errs))
+		})
+	}
+}
