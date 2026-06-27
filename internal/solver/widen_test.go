@@ -71,12 +71,14 @@ func TestInferVarLiteralWidening(t *testing.T) {
 // binding is the widened primitive, not `any`.
 func TestInferVarWideningReassignment(t *testing.T) {
 	t.Run("same-primitive reassignment checks", func(t *testing.T) {
-		values, _, errs := inferSource(t, "var a = 5\nfn f() { a = 6 }")
+		values, _, errs := inferSource(t, `var a = 5
+fn f() { a = 6 }`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["a"])
 	})
 	t.Run("different-primitive reassignment rejected", func(t *testing.T) {
-		src := "var a = 5\nfn f() { a = \"x\" }"
+		src := `var a = 5
+fn f() { a = "x" }`
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs, `2:14-2:17: cannot constrain "x" <: number`, `"x"`)
 	})
@@ -157,12 +159,15 @@ func TestWidenHelper(t *testing.T) {
 // behaves like a direct literal.
 func TestInferVarWideningThroughReference(t *testing.T) {
 	t.Run("var from a val reference widens to the primitive", func(t *testing.T) {
-		values, _, errs := inferSource(t, "val x = 5\nvar y = x")
+		values, _, errs := inferSource(t, `val x = 5
+var y = x`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["y"])
 	})
 	t.Run("reassigning the widened var checks", func(t *testing.T) {
-		values, _, errs := inferSource(t, "val x = 5\nvar y = x\nfn f() { y = 6 }")
+		values, _, errs := inferSource(t, `val x = 5
+var y = x
+fn f() { y = 6 }`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["y"])
 	})
@@ -174,7 +179,9 @@ func TestInferVarWideningThroughReference(t *testing.T) {
 	// TestInferVarWideningPropagatesToReads). z: 5 is sound — z is an immutable
 	// snapshot of the value 5 — and this pins the narrow remaining corner.
 	t.Run("reading a reference-widened var keeps the literal", func(t *testing.T) {
-		values, _, errs := inferSource(t, "val x = 5\nvar y = x\nval z = y")
+		values, _, errs := inferSource(t, `val x = 5
+var y = x
+val z = y`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["y"])
 		require.Equal(t, "5", values["z"])
@@ -188,13 +195,15 @@ func TestInferVarWideningThroughReference(t *testing.T) {
 // unwidened).
 func TestInferVarWideningPropagatesToReads(t *testing.T) {
 	t.Run("scalar read widens", func(t *testing.T) {
-		values, _, errs := inferSource(t, "var a = 5\nval z = a")
+		values, _, errs := inferSource(t, `var a = 5
+val z = a`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["a"])
 		require.Equal(t, "number", values["z"])
 	})
 	t.Run("object read widens", func(t *testing.T) {
-		values, _, errs := inferSource(t, "var p = {x: 0}\nval q = p")
+		values, _, errs := inferSource(t, `var p = {x: 0}
+val q = p`)
 		require.Empty(t, errs)
 		require.Equal(t, "{x: number}", values["q"])
 	})
@@ -205,7 +214,9 @@ func TestInferVarWideningPropagatesToReads(t *testing.T) {
 // inside the same function checks and the binding reads back as the primitive.
 func TestInferVarWideningBodyLevel(t *testing.T) {
 	t.Run("direct literal widens and reassigns", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn f() { var a = 5\n  a = 6\n  return a }")
+		values, _, errs := inferSource(t, `fn f() { var a = 5
+  a = 6
+  return a }`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn () -> number", values["f"])
 	})
@@ -213,7 +224,9 @@ func TestInferVarWideningBodyLevel(t *testing.T) {
 	// Widenable flag, so the reassignment slot is the primitive and `y = 6` checks
 	// — the body-level twin of TestInferVarWideningThroughReference.
 	t.Run("reference widens and reassigns", func(t *testing.T) {
-		_, _, errs := inferSource(t, "fn f() { val x = 5\n  var y = x\n  y = 6 }")
+		_, _, errs := inferSource(t, `fn f() { val x = 5
+  var y = x
+  y = 6 }`)
 		require.Empty(t, errs)
 	})
 }
@@ -225,12 +238,14 @@ func TestInferVarWideningBodyLevel(t *testing.T) {
 // `var p = {x: 0}` at the constraint level.
 func TestInferVarWideningReferenceStructural(t *testing.T) {
 	t.Run("object", func(t *testing.T) {
-		values, _, errs := inferSource(t, "val o = {x: 0}\nvar p = o")
+		values, _, errs := inferSource(t, `val o = {x: 0}
+var p = o`)
 		require.Empty(t, errs)
 		require.Equal(t, "{x: number}", values["p"])
 	})
 	t.Run("tuple", func(t *testing.T) {
-		values, _, errs := inferSource(t, "val o = [1, 2]\nvar p = o")
+		values, _, errs := inferSource(t, `val o = [1, 2]
+var p = o`)
 		require.Empty(t, errs)
 		require.Equal(t, "[number, number]", values["p"])
 	})

@@ -165,7 +165,11 @@ func TestInferOwnedMutFromFreshLiteral(t *testing.T) {
 // variable — still rejects an immutable→mutable assignment, because the variable could
 // alias a value held immutably elsewhere. That case waits on the lifetime/region work.
 func TestInferOwnedMutFromVariableRejected(t *testing.T) {
-	src := "fn f() {\n\tval cfg: {x: number} = {x: 1}\n\tval m: mut {x: number} = cfg\n\tm.x = 2\n}"
+	src := `fn f() {
+	val cfg: {x: number} = {x: 1}
+	val m: mut {x: number} = cfg
+	m.x = 2
+}`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, "3:13-3:14: cannot constrain immutable object <: mutable object", msgWithSpan(errs[0]))
 }
@@ -176,13 +180,21 @@ func TestInferOwnedMutFromVariableRejected(t *testing.T) {
 // variable: the outer literal is fresh, but a field or element reads a variable.
 func TestInferOwnedMutFreshnessRecurses(t *testing.T) {
 	t.Run("object field is a variable", func(t *testing.T) {
-		src := "fn f() {\n\tval cfg = {x: 1}\n\tval m: mut {p: {x: number}} = {p: cfg}\n\tm\n}"
+		src := `fn f() {
+	val cfg = {x: 1}
+	val m: mut {p: {x: number}} = {p: cfg}
+	m
+}`
 		_, _, errs := inferSource(t, src)
 		require.Len(t, errs, 1)
 		require.Equal(t, "3:13-3:14: cannot constrain immutable object <: mutable object", msgWithSpan(errs[0]))
 	})
 	t.Run("tuple element is a variable", func(t *testing.T) {
-		src := "fn f() {\n\tval cfg = {x: 1}\n\tval t: mut [number, {x: number}] = [1, cfg]\n\tt\n}"
+		src := `fn f() {
+	val cfg = {x: 1}
+	val t: mut [number, {x: number}] = [1, cfg]
+	t
+}`
 		_, _, errs := inferSource(t, src)
 		require.Len(t, errs, 1)
 		require.Equal(t, "3:13-3:14: cannot constrain immutable tuple <: mutable tuple", msgWithSpan(errs[0]))

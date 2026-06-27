@@ -29,7 +29,8 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 		require.Equal(t, "fn () -> void", values["f"]) // no return, so the body produces no value
 	})
 	t.Run("mismatched type reports one subtype error", func(t *testing.T) {
-		src := "var a: number = 5\nfn f() { a = \"x\" }"
+		src := `var a: number = 5
+fn f() { a = "x" }`
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs, `2:14-2:17: cannot constrain "x" <: number`, `"x"`, "number")
 	})
@@ -39,7 +40,8 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 // reassigning a DIFFERENT literal of the same primitive (`a = 6` ⇒ `6 <: number`)
 // checks. A `val` keeps the literal singleton (see TestInferAssignToValRejected).
 func TestInferAssignUnannotatedVarLiteralWidened(t *testing.T) {
-	values, _, errs := inferSource(t, "var a = 5\nfn f() { a = 6 }")
+	values, _, errs := inferSource(t, `var a = 5
+fn f() { a = 6 }`)
 	require.Empty(t, errs)
 	require.Equal(t, "number", values["a"])
 }
@@ -47,7 +49,8 @@ func TestInferAssignUnannotatedVarLiteralWidened(t *testing.T) {
 // Reassigning a `val` is rejected: only a `var` is reassignable. The error blames
 // the assignment and relates the `val` declaration ("declared immutable here").
 func TestInferAssignToValRejected(t *testing.T) {
-	src := "val a = 5\nfn f() { a = 6 }"
+	src := `val a = 5
+fn f() { a = 6 }`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
 		"2:10-2:15: Cannot assign to immutable binding: a", "a = 6", "val a = 5")
@@ -57,7 +60,8 @@ func TestInferAssignToValRejected(t *testing.T) {
 // introducing declaration source node, so its error has no related span.
 func TestInferAssignToImmutableNonVal(t *testing.T) {
 	t.Run("function name", func(t *testing.T) {
-		src := "fn h() -> number { return 5 }\nfn f() { h = 6 }"
+		src := `fn h() -> number { return 5 }
+fn f() { h = 6 }`
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs,
 			"2:10-2:15: Cannot assign to immutable binding: h", "h = 6", "fn h() -> number { return 5 }")
@@ -76,12 +80,15 @@ func TestInferAssignToImmutableNonVal(t *testing.T) {
 // index target another (unsupported pending Array types, M7).
 func TestInferAssignInvalidTarget(t *testing.T) {
 	t.Run("literal target", func(t *testing.T) {
-		src := "val a = 5\nfn g() { 5 = a }"
+		src := `val a = 5
+fn g() { 5 = a }`
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs, "2:10-2:11: Invalid assignment target: LiteralExpr", "5")
 	})
 	t.Run("call target", func(t *testing.T) {
-		src := "fn f() -> number { return 5 }\nvar a: number = 0\nfn g() { f() = a }"
+		src := `fn f() -> number { return 5 }
+var a: number = 0
+fn g() { f() = a }`
 		_, _, errs := inferSource(t, src)
 		requireBlame(t, src, errs, "3:10-3:13: Invalid assignment target: CallExpr", "f()")
 	})
@@ -166,7 +173,10 @@ func TestInferAssignUnionTarget(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("non-member rejected once", func(t *testing.T) {
-		src := "fn f(c: boolean) {\n  var a = if c { 1 } else { 2 }\n  a = 3\n}"
+		src := `fn f(c: boolean) {
+  var a = if c { 1 } else { 2 }
+  a = 3
+}`
 		_, _, errs := inferSource(t, src)
 		require.Len(t, errs, 1)
 		require.Equal(t, "3:7-3:8: cannot constrain 3 <: 1 | 2", msgWithSpan(errs[0]))
@@ -214,7 +224,8 @@ func TestInferAssignNamespaceTarget(t *testing.T) {
 // rejected: the write requires `o <: mut {x: number, ...}`, and an immutable object
 // cannot fill the mutable slot (the C2 gate's mutability rule).
 func TestInferAssignMemberTargetImmutable(t *testing.T) {
-	src := "val o = {x: 5}\nfn f() { o.x = 6 }"
+	src := `val o = {x: 5}
+fn f() { o.x = 6 }`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "2:10-2:17: cannot constrain immutable object <: mutable object", "o.x = 6")
 }
@@ -222,7 +233,8 @@ func TestInferAssignMemberTargetImmutable(t *testing.T) {
 // An INDEX target (xs[i] = …) still needs Array and index types (M7), so it stays
 // an unsupported feature — distinct from a member target, which C3 now types.
 func TestInferAssignIndexTargetUnsupported(t *testing.T) {
-	src := "val xs = [1, 2]\nfn f() { xs[0] = 6 }"
+	src := `val xs = [1, 2]
+fn f() { xs[0] = 6 }`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "2:10-2:15: Unsupported: assignment to a member or index", "xs[0]")
 }

@@ -74,7 +74,8 @@ func TestInferOverloadCrossFileDeclarationOrder(t *testing.T) {
 	defer cancel()
 	sources := []*ast.Source{
 		{ID: 0, Path: "b.esc", Contents: `fn f(x: string) -> boolean { return true }`},
-		{ID: 1, Path: "a.esc", Contents: "fn f(x: number) -> string { return \"s\" }\nval r = f(5)"},
+		{ID: 1, Path: "a.esc", Contents: `fn f(x: number) -> string { return "s" }
+val r = f(5)`},
 	}
 	module, parseErrs := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrs, "expected no parse errors")

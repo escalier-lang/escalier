@@ -20,7 +20,8 @@ import (
 // contributes a mutable one-property requirement, and the fold unions them and wraps
 // the whole object in `mut`.
 func TestInferMemberAssignTwoWrites(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n obj.y = 10 }")
+	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+ obj.y = 10 }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (obj: mut {x: number, y: number}) -> void", values["foo"])
 }
@@ -29,7 +30,8 @@ func TestInferMemberAssignTwoWrites(t *testing.T) {
 // recorded concrete (widened) type, not a fresh var, so `obj.x = 5; return obj.x` is
 // `number`. The receiver renders `mut {x: number}` from the single write.
 func TestInferMemberAssignReadAfterWrite(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n return obj.x }")
+	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+ return obj.x }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (obj: mut {x: number}) -> number", values["foo"])
 }
@@ -41,7 +43,8 @@ func TestInferMemberAssignReadAfterWrite(t *testing.T) {
 // polarities and is retained as a type parameter `T0` the caller picks, rather than
 // inlined to `unknown`. The written `baz` is the widened `number`.
 func TestInferMemberAssignMixedReadWrite(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { val x = obj.bar\n obj.baz = 5 }")
+	values, _, errs := inferSource(t, `fn foo(obj) { val x = obj.bar
+ obj.baz = 5 }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T0>(obj: mut {bar: T0, baz: number}) -> void", values["foo"])
 }
@@ -58,7 +61,8 @@ func TestInferMemberAssignCompoundValueWidens(t *testing.T) {
 // widened source: `val r = (obj.x = 5)` ⇒ r: number, used inside a function so the
 // receiver is an inferable place.
 func TestInferMemberAssignValueIsStored(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { val r = (obj.x = 5)\n return r }")
+	values, _, errs := inferSource(t, `fn foo(obj) { val r = (obj.x = 5)
+ return r }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (obj: mut {x: number}) -> number", values["foo"])
 }
@@ -66,7 +70,8 @@ func TestInferMemberAssignValueIsStored(t *testing.T) {
 // Writing different literal values to the same field is the same widened primitive,
 // so the field stays `number` (no contradiction between `5` and `10`).
 func TestInferMemberAssignSameFieldTwice(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n obj.x = 10 }")
+	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+ obj.x = 10 }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (obj: mut {x: number}) -> void", values["foo"])
 }
@@ -76,7 +81,8 @@ func TestInferMemberAssignSameFieldTwice(t *testing.T) {
 // type parameter rather than collapsing to `unknown`, because it occurs in an output
 // position. This is the key interplay between the C3 mut-merge and generalization.
 func TestInferMemberAssignWrittenAndEscapingReadField(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n return obj.y }")
+	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+ return obj.y }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T0>(obj: mut {x: number, y: T0}) -> T0", values["foo"])
 }
@@ -87,7 +93,9 @@ func TestInferMemberAssignWrittenAndEscapingReadField(t *testing.T) {
 // value (returned `x`) stays `T0`. This pins the plan's claim that write-after-read
 // falls out of ordinary constraint accumulation, the reverse of read-after-write.
 func TestInferMemberAssignWriteAfterRead(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { val x = obj.x\n obj.x = 5\n return x }")
+	values, _, errs := inferSource(t, `fn foo(obj) { val x = obj.x
+ obj.x = 5
+ return x }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T0>(obj: mut {x: T0 & number}) -> T0", values["foo"])
 }
@@ -117,7 +125,8 @@ func TestInferMemberAssignOpenParam(t *testing.T) {
 // occurs in an output position, so the param keeps an open row and renders as the
 // written requirement intersected with the returned type parameter.
 func TestInferMemberAssignWrittenObjectEscapes(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n return obj }")
+	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+ return obj }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T0>(obj: T0 & mut {x: number}) -> T0", values["foo"])
 }
@@ -177,7 +186,8 @@ func TestInferMemberAssignAnnotatedMutMissingField(t *testing.T) {
 // TODO(#738): report conflicting writes to one field instead of folding to an
 // uninhabited intersection.
 func TestInferMemberAssignConflictingWritesNoError(t *testing.T) {
-	values, _, errs := inferSource(t, "fn foo(obj) { obj.x = 5\n obj.x = \"hi\" }")
+	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
+ obj.x = "hi" }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (obj: mut {x: number & string}) -> void", values["foo"])
 }

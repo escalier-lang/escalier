@@ -58,7 +58,8 @@ func TestBlameValAnnotationLiteral(t *testing.T) {
 // A call-arg mismatch blames the offending argument, with the callee's param
 // annotation as the related source.
 func TestBlameCallArgument(t *testing.T) {
-	src := "fn f(x: number) -> number { return x }\nval r = f(\"hi\")"
+	src := `fn f(x: number) -> number { return x }
+val r = f("hi")`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, `2:11-2:15: cannot constrain "hi" <: number`, `"hi"`, "number")
 }
@@ -70,7 +71,8 @@ func TestBlameCallArgument(t *testing.T) {
 // callback-arity failures. The related span is the callee `f` here, derived from
 // the AST, not the callee's definition span resolved through Prov.)
 func TestBlameCallTooManyArgs(t *testing.T) {
-	src := "fn f(x: number) -> number { return x }\nval r = f(1, 2)"
+	src := `fn f(x: number) -> number { return x }
+val r = f(1, 2)`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
 		"2:9-2:16: Too many arguments: expected at most 1, but got 2", "f(1, 2)", "f")
@@ -81,7 +83,8 @@ func TestBlameCallTooManyArgs(t *testing.T) {
 // callee expression (`f` here, from the AST — not the callee's definition resolved
 // through Prov). `f` requires two params; the call supplies one.
 func TestBlameCallTooFewArgs(t *testing.T) {
-	src := "fn f(x: number, y: number) -> number { return x }\nval r = f(1)"
+	src := `fn f(x: number, y: number) -> number { return x }
+val r = f(1)`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs,
 		"2:9-2:13: Not enough arguments: expected at least 2, but got 1", "f(1)", "f")
@@ -98,7 +101,8 @@ func TestBlameCallTooFewArgs(t *testing.T) {
 // (e.g. the result of a polymorphic call) does not keep the entry; see
 // TestBlameMissingPropertyPolymorphicReceiverLosesRelated.
 func TestBlameMissingProperty(t *testing.T) {
-	src := "val o = {a: 5}\nval x = o.b"
+	src := `val o = {a: 5}
+val x = o.b`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "2:11-2:12: object is missing property: b", "b", "{a: 5}")
 }
@@ -111,7 +115,9 @@ func TestBlameMissingProperty(t *testing.T) {
 // improvement holds for var-free callees/receivers, not values that flowed through
 // instantiation.
 func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
-	src := "val mk = fn (v) { return {a: v} }\nval o = mk(5)\nval x = o.b"
+	src := `val mk = fn (v) { return {a: v} }
+val o = mk(5)
+val x = o.b`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "3:11-3:12: object is missing property: b", "b")
 }
@@ -121,7 +127,8 @@ func TestBlameMissingPropertyPolymorphicReceiverLosesRelated(t *testing.T) {
 // containment guard falls back to the use (§3.8). The annotation is the related
 // expected-source.
 func TestBlameIdentifierUseNotDefinition(t *testing.T) {
-	src := "val x = \"hi\"\nval a: number = x"
+	src := `val x = "hi"
+val a: number = x`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, `2:17-2:18: cannot constrain "hi" <: number`, "x", "number")
 }
@@ -147,7 +154,8 @@ func TestBlameUnknownIdentifier(t *testing.T) {
 // A duplicate top-level `val` blames the second decl and exposes the first as a
 // related "previously declared here" span.
 func TestBlameDuplicateDeclarationRelatesPrevious(t *testing.T) {
-	src := "val x = 5\nval x = \"hi\""
+	src := `val x = 5
+val x = "hi"`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "2:1-2:13: Duplicate declaration: x", `val x = "hi"`, "val x = 5")
 }
@@ -155,7 +163,8 @@ func TestBlameDuplicateDeclarationRelatesPrevious(t *testing.T) {
 // An unsupported feature (optional chaining) blames the member, not a separate
 // node, and reports the feature name.
 func TestBlameUnsupportedFeatureOptionalChain(t *testing.T) {
-	src := "val o = {a: 5}\nval x = o?.a"
+	src := `val o = {a: 5}
+val x = o?.a`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "2:9-2:13: Unsupported: OptionalChain", "o?.a")
 }
@@ -170,7 +179,8 @@ func TestBlameUnsupportedFeatureOptionalChain(t *testing.T) {
 // and operand-outside-site branches are already covered by TestBlameCallArgument
 // and TestBlameIdentifierUseNotDefinition above.)
 func TestBlameVoidSubjectFallsBackToCallSite(t *testing.T) {
-	src := "fn f() {}\nval x: number = f()"
+	src := `fn f() {}
+val x: number = f()`
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, "2:17-2:20: cannot constrain void <: number", "f()", "number")
 }
