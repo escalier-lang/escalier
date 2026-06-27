@@ -774,14 +774,11 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 //
 // paramTypes is keyed by leaf name. An IdentPat parameter contributes the parameter
 // itself, and a destructuring param (M4 E1) contributes one entry per leaf via
-// bindPattern, so the lookup below resolves every leaf.
-//
-// KNOWN LIMITATION: a destructured leaf's type is a fresh inference variable at
-// pre-pass time, before constraints are coalesced, so isMutableType sees a bare var
-// rather than a RefType and a `mut` leaf still seeds AliasImmutable. Seeding a
-// destructured `mut` leaf accurately needs the leaf's resolved type, which is not
-// available until after the body walk. This is deferred with the rest of the
-// destructuring mutability work.
+// bindPattern, so the lookup below resolves every leaf. bindPattern runs before this
+// pre-pass for parameters and applies each leaf's binding mode, so a `mut` leaf moved
+// out of an owned param already carries its thawed owned-mutable type and a leaf
+// projected from a `&mut` param its mutable borrow. isMutableType therefore sees a
+// RefType and seeds AliasMutable for those leaves.
 func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.Type, aliases *liveness.AliasTracker, varIDTypes map[liveness.VarID]soltype.Type) {
 	for _, param := range astParams {
 		ast.ForEachLeafBinding(param.Pattern, func(name string, varID int) {
@@ -796,9 +793,8 @@ func seedParamLeafAliases(astParams []*ast.Param, paramTypes map[string]soltype.
 				// Record the leaf's type for the G2 escape query. An IdentPat param
 				// binding is mono, so the body's reads instantiate this same pointer
 				// and a lifetime it later escapes to 'static is visible through it. A
-				// destructured leaf records a fresh var, which is not a RefType, so the
-				// escape query returns escaped=false for it, matching the KNOWN
-				// LIMITATION above.
+				// destructured leaf records the type bindPattern resolved for it,
+				// including the `mut`/borrow wrapper its binding mode applied.
 				varIDTypes[liveness.VarID(varID)] = t
 			}
 			aliases.NewValue(liveness.VarID(varID), mut)
@@ -891,9 +887,10 @@ func recordParamVarIDs(fnScope *Scope, params []*ast.Param) {
 // the initializer. A destructured leaf reads a PROJECTION of the initializer. For
 // example `x` from `val {x} = p` is `p.x`, not `p`. That projection is not a
 // variable the liveness graph names, so the leaf is registered as its own value.
-// A leaf whose resolved type is a `mut` borrow still seeds AliasImmutable here,
-// since the leaf's type is an unresolved inference variable at this point. That
-// timing gap is the destructuring-mutability work deferred with the rest.
+// bindPattern runs before this and applies each leaf's binding mode, so a `mut` leaf
+// already carries its thawed owned-mutable type or its mutable borrow. The leaf's
+// scope binding therefore reports the resolved mutability, which isMutableType reads
+// to seed AliasMutable.
 func (c *checker) trackDestructureLeaves(scope *Scope, pat ast.Pat) {
 	ast.ForEachLeafBinding(pat, func(name string, varID int) {
 		if varID <= 0 {

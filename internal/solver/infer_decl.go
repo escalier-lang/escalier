@@ -257,8 +257,8 @@ func (c *checker) bindingMovesOwnedPlace(pat ast.Pat, init ast.Expr, initT solty
 
 // isMutableIdentPat reports whether p is a simple identifier binding written with
 // the `mut` prefix, as in `val mut q = …`. The construction upgrade applies only to
-// an IdentPat; a `mut` leaf inside a destructuring pattern carries the same flag but
-// needs the per-leaf projection work the destructuring mutability path owns.
+// an IdentPat. A `mut` leaf inside a destructuring pattern carries the same flag and
+// is thawed per-leaf by applyBindMode during bindPattern, not here.
 func isMutableIdentPat(p ast.Pat) bool {
 	ip, ok := p.(*ast.IdentPat)
 	return ok && ip.Mutable
