@@ -113,10 +113,11 @@ func TestDestructureMutLeaf(t *testing.T) {
 				return p
 			}`},
 		// `&mut` borrow scrutinee (Rust ergonomics): an unmarked leaf is also a mutable
-		// borrow, so a write through it succeeds without the `mut` marker.
+		// borrow, so a write through it succeeds without the `mut` marker. Both leaves
+		// are plain, so the write-through-unmarked path is exercised on its own.
 		"MutBorrowPlainLeafWrite": {src: `
 			fn f(line: &mut [{x: number}, {y: number}]) {
-				val [mut p, q] = line
+				val [p, q] = line
 				q.y = 5
 				p.x = 1
 				return 0
@@ -169,26 +170,36 @@ func TestDestructureMutLeafRendersThawedCell(t *testing.T) {
 }
 
 // TestDestructureMutBorrowLeafRendersBorrow checks that a leaf projected from a `&mut`
-// scrutinee renders as a mutable borrow bounded by the scrutinee, and a `&` scrutinee
-// projects a shared borrow. The return annotations pin the expected leaf types.
+// scrutinee is a mutable borrow bounded by the scrutinee, and a `&` scrutinee projects
+// a shared borrow.
 func TestDestructureMutBorrowLeafRendersBorrow(t *testing.T) {
+	// A shared-borrow leaf renders cleanly, so the inferred function type pins the
+	// projected `&'a {y: number}` directly: the leaf shares the scrutinee's lifetime.
+	t.Run("SharedBorrow", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			fn f(line: &[{x: number}, {y: number}]) {
+				val [p, q] = line
+				return q
+			}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn <'a>(line: &'a [{x: number}, {y: number}]) -> &'a {y: number}", values["f"])
+	})
+	// A `mut` leaf routes its projection through a fresh variable so a write can widen
+	// the element, which does not survive the return-join cleanly — a returned `&mut`
+	// leaf renders as `T0 | {y: number}` rather than `&mut {y: number}`. So the leaf is
+	// pinned against a `&mut {y: number}` return annotation instead: an owned or shared
+	// `q` would fail that constraint, so acceptance confirms `q` is a `&mut` borrow. The
+	// write-through behavior is covered by TestDestructureMutLeaf.
 	t.Run("MutBorrow", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
+		values, _, errs := inferSource(t, `
 			fn f(line: &mut [{x: number}, {y: number}]) -> &mut {y: number} {
 				val [p, mut q] = line
 				return q
 			}
 		`)
 		require.Empty(t, errs)
-	})
-	t.Run("SharedBorrow", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			fn f(line: &[{x: number}, {y: number}]) -> &{y: number} {
-				val [p, q] = line
-				return q
-			}
-		`)
-		require.Empty(t, errs)
+		require.Equal(t, "fn <'a>(line: &'a mut [{x: number}, {y: number}]) -> &'a mut {y: number}", values["f"])
 	})
 }
 
