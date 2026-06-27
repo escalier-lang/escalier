@@ -416,3 +416,18 @@ func TestFreezeMove(t *testing.T) {
 		"use of moved value 'p'",
 	}, Messages(errs))
 }
+
+// TestFreezeMoveAllowed shows the freeze move itself is allowed: binding an
+// owned-mutable `p` into a plain `val q` moves the value into an immutable owner and
+// consumes `p`. With `p` never used again, the move produces no error, and `q` is
+// owned-immutable — `fn (p: mut {x: number}) -> {x: number}` — so the value is returned
+// at the frozen type. This is the mirror of TestInferValMutThawFromVariable, which
+// thaws an owned-immutable source into an owned-mutable binding.
+func TestFreezeMoveAllowed(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) {
+  val q = p
+  return q
+}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: mut {x: number}) -> {x: number}", values["f"])
+}
