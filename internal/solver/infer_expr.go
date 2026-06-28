@@ -2060,7 +2060,9 @@ func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) b
 
 // unionMemberCovered reports whether some unguarded arm matches one union member via
 // a catch-all or an equal literal pattern. Other shapes read uncovered, so coverage
-// is sound but only complete for literal members.
+// is sound but only complete for literal members. Nominal members are covered
+// instead by M5's enum leg through constructor patterns; coverage of plain
+// structural-object members by object patterns is not yet handled.
 func (c *checker) unionMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
 	memberLit, memberIsLit := member.(*soltype.LitType)
 	for _, arm := range arms {
