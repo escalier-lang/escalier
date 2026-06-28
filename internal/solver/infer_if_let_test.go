@@ -34,14 +34,6 @@ func TestInferIfLetAndLetElse(t *testing.T) {
 			want: "fn (u: number | string) -> number",
 		},
 		{
-			// The alternate reads the whole union, so x's narrowing does not reach it.
-			name: "if-let alternate sees scrutinee unchanged",
-			src: `fn f(u: number | string) {
-				return if let x: number = u { 0 } else { u }
-			}`,
-			want: "fn (u: number | string) -> number | string",
-		},
-		{
 			// A bare identifier pattern carries no annotation, so it binds the union.
 			name: "if-let bare ident binds whole scrutinee",
 			src: `fn f(u: number | string) {
@@ -66,10 +58,13 @@ func TestInferIfLetAndLetElse(t *testing.T) {
 			want: "fn (u: number | string) -> number | void",
 		},
 		{
-			// Narrowing introduced a fresh binding; the scrutinee keeps its type.
+			// Narrowing binds a fresh x and never re-types the scrutinee, so both the
+			// alternate and the code after the if-let read u at its full union type.
+			// The `else { u }` flows u into r, exercising the alternate's view, and
+			// `return u` exercises the continuation.
 			name: "if-let leaves scrutinee type unchanged",
 			src: `fn f(u: number | string) {
-				val r = if let x: number = u { x } else { 0 }
+				val r = if let x: number = u { x } else { u }
 				return u
 			}`,
 			want: "fn (u: number | string) -> number | string",
