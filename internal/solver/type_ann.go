@@ -5,19 +5,11 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeAnn converts an M2-supported type annotation into a soltype.Type,
-// returning ok=false when the annotation is outside the supported set. M2 needs
-// only the primitive annotations that annotated params and return types use
-// (number/string/boolean); everything richer — type references, generics,
-// object/tuple/function annotations, unions — is represented by types later
-// milestones add (M3/M4/M6) and resolves to an UnsupportedNodeError here, with
-// ok=false and a `never` placeholder so a caller can recover by keeping the type
-// it already inferred (rather than constraining against / adopting `never`, which
-// would cascade a spurious `<: never` error and poison the binding). It takes the
-// current inference level `lvl` so a supported generic with an UNSUPPORTED inner (a
-// malformed `Promise<…>`) can recover its inner to a fresh var at the right level
-// while keeping the wrapper; the primitive arms ignore lvl. Full name resolution
-// against the type scope still arrives with TypeRef support (M7).
+// resolveTypeAnn converts a supported type annotation into a soltype.Type,
+// returning ok=false with a `never` placeholder when the annotation is unsupported
+// so a caller can recover by keeping the type it already inferred. The level `lvl`
+// lets a supported wrapper with an unsupported inner recover that inner to a fresh
+// var at the right level.
 func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
@@ -85,6 +77,8 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 		return c.resolveUnionTypeAnn(ta, lvl)
 	case *ast.IntersectionTypeAnn:
 		return c.resolveIntersectionTypeAnn(ta, lvl)
+	case *ast.FuncTypeAnn:
+		return c.resolveFuncTypeAnn(ta, lvl)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -232,6 +226,110 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 		c.recordProv(t, ta, AnnotationType)
 	}
 	return t, true
+}
+
+// resolveFuncTypeAnn lowers a monomorphic function type annotation
+// `fn(p: A, ...) -> R` into a soltype.FuncType, mapping ta.Inexact to
+// FuncType.Inexact. An unsupported part recovers to a fresh var so the function
+// shape survives, cascade-safe like the Promise/object/tuple arms. Generic, throws,
+// lifetime-param'd, and rest-param annotations report an unsupported feature and
+// recover as a monomorphic function.
+func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
+	if len(ta.TypeParams) > 0 {
+		c.reportUnsupportedFeature(ta, "generic function type annotation")
+	}
+	if ta.Throws != nil {
+		c.reportUnsupportedFeature(ta, "throws clause in function type annotation")
+	}
+	if len(ta.LifetimeParams) > 0 {
+		c.reportUnsupportedFeature(ta, "lifetime parameters in function type annotation")
+	}
+
+	params := make([]*soltype.FuncParam, len(ta.Params))
+	for i, p := range ta.Params {
+		pat := p.Pattern
+		// A rest param recovers to a normal positional param. acceptSet/hasRest assume
+		// a rest param is last, which the parser does not enforce, so Rest is unset.
+		if rp, ok := pat.(*ast.RestPat); ok {
+			c.reportUnsupportedFeature(rp, "rest parameter in function type annotation")
+			pat = rp.Pattern
+		}
+		// A missing or unsupported parameter annotation recovers to a fresh var so
+		// the function keeps its arity and shape, cascade-safe like Promise<bad>.
+		var pt soltype.Type = c.freshAt(lvl)
+		if p.TypeAnn != nil {
+			if t, ok := c.resolveTypeAnn(p.TypeAnn, lvl); ok {
+				pt = t
+			}
+		}
+		// The pattern is carried for rendering and round-tripping only, with no scope
+		// binding. mirrorParamPat preserves its full shape.
+		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: p.Optional}
+	}
+
+	// The parser requires `-> R`, so ta.Return is normally non-nil. Guard
+	// defensively and recover an unsupported or absent return to a fresh var,
+	// keeping the function shape.
+	var ret soltype.Type = c.freshAt(lvl)
+	if ta.Return != nil {
+		if t, ok := c.resolveTypeAnn(ta.Return, lvl); ok {
+			ret = t
+		}
+	}
+
+	t := &soltype.FuncType{Params: params, Ret: ret, Inexact: ta.Inexact}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// mirrorParamPat structurally mirrors a function-type-annotation parameter pattern
+// into its soltype.Pat for rendering. A shape with no soltype counterpart is dropped.
+func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {
+	switch p := pat.(type) {
+	case *ast.IdentPat:
+		return &soltype.IdentPat{Name: p.Name}
+	case *ast.WildcardPat:
+		return &soltype.WildcardPat{}
+	case *ast.LitPat:
+		if lt, ok := c.litTypeOf(p.Lit); ok {
+			return &soltype.LitPat{Lit: lt.Lit}
+		}
+		return nil
+	case *ast.TuplePat:
+		elems := make([]soltype.Pat, 0, len(p.Elems))
+		for _, e := range p.Elems {
+			// soltype.TuplePat has no rest element, so a `...rest` is dropped.
+			if _, isRest := e.(*ast.RestPat); isRest {
+				continue
+			}
+			elems = append(elems, c.mirrorParamPat(e))
+		}
+		return &soltype.TuplePat{Elems: elems}
+	case *ast.ObjectPat:
+		fields := make([]*soltype.ObjectPatField, 0, len(p.Elems))
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjShorthandPat:
+				// A bare `{x}` mirrors to a field whose value is the IdentPat `x`.
+				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: &soltype.IdentPat{Name: e.Key.Name}})
+			case *ast.ObjKeyValuePat:
+				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: c.mirrorParamPat(e.Value)})
+			}
+			// ObjRestPat has no soltype counterpart and is dropped.
+		}
+		return &soltype.ObjectPat{Fields: fields}
+	case *ast.ExtractorPat:
+		args := make([]soltype.Pat, len(p.Args))
+		for i, a := range p.Args {
+			args[i] = c.mirrorParamPat(a)
+		}
+		return &soltype.ExtractorPat{Name: ast.QualIdentToString(p.Name), Args: args}
+	case *ast.InstancePat:
+		obj, _ := c.mirrorParamPat(p.Object).(*soltype.ObjectPat)
+		return &soltype.InstancePat{ClassName: ast.QualIdentToString(p.ClassName), Object: obj}
+	default:
+		return nil
+	}
 }
 
 // resolveMutableTypeAnn lowers a `mut T` annotation to an owned-mutable borrow,
