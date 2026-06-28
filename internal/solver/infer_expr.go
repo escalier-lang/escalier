@@ -416,10 +416,10 @@ func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
 	return true
 }
 
-// joinBorrows joins several mutable borrows of objects (M4 D3). It applies only when
-// EVERY input is a mutable borrow of an object, all sharing the same field-name set
-// with each carrying a lifetime, and returns ok=false otherwise so the caller falls
-// back to its generic union path. The result depends on whether the shared fields
+// joinBorrows joins several mutable borrows of objects. It applies only when EVERY
+// input is a mutable borrow of an object, all sharing the same field-name set with
+// each carrying a lifetime, and returns ok=false otherwise so the caller falls back
+// to its generic union path. The result depends on whether the shared fields
 // reconcile:
 //
 //   - Reconcilable: one mutable borrow `&('a | 'b) mut {…}` whose lifetime is a fresh
@@ -428,9 +428,9 @@ func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
 //   - Conflicting: the read-until-narrowed union of the distinct borrows,
 //     `&'a mut {x: number} | &'b mut {x: string}`, rather than erroring on the pin.
 //
-// The pin runs under a discard-only probe, so the union path leaves no trace: a
-// successful pin commits the single carrier, a failed pin rolls back its bounds and
-// error and yields the union instead.
+// The pin runs under a probe. A successful pin commits the single carrier. A failed
+// pin discards its bounds and error and yields the union instead, so the union path
+// leaves no trace.
 //
 // The union is governed by a read-until-narrowed contract: it is readable everywhere
 // but writable at its conflicting fields only after narrowing. A read off the union
@@ -458,9 +458,10 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 		objs[i] = obj
 	}
 
-	// Pin each shared field invariant across the inputs under a discard-only probe. A
-	// mut object's fields are read AND written through the single carrier, so it is
-	// sound only when they agree. The probe lets the union path leave no trace.
+	// Pin each shared field invariant across the inputs under a probe. A mut object's
+	// fields are read AND written through the single carrier, so it is sound only when
+	// they agree. Committing on success and discarding on failure lets the union path
+	// leave no trace.
 	errsBefore := len(c.errs)
 	p := c.openProbe()
 	for _, e := range objs[0].Elems {

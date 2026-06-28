@@ -205,11 +205,10 @@ fn use(a: &mut {x: number}, b: &mut {x: number}) {
 }
 
 // Joining borrows that share a field NAME but disagree on its TYPE degrades to the
-// read-until-narrowed union of the distinct borrows rather than erroring (M6,
-// "Permissive mut-borrow joins"). A single mut carrier would have to pin `x`
-// invariant across the inputs, and `number` vs `string` fails that pin, so the join
-// falls back to the type-level union, readable everywhere and writable at `x` only
-// after narrowing.
+// read-until-narrowed union of the distinct borrows rather than erroring. A single
+// mut carrier would have to pin `x` invariant across the inputs, and `number` vs
+// `string` fails that pin, so the join falls back to the type-level union, readable
+// everywhere and writable at `x` only after narrowing.
 func TestInferIncompatibleBorrowJoinReturnsUnion(t *testing.T) {
 	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
   if true {
