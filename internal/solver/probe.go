@@ -285,17 +285,9 @@ func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError)
 }
 
 // trialUnderProbe trials `sub <: super` under a discard-only probe and returns
-// the trial's errors, keeping no bound it appended. An empty result means the
-// trial succeeded. The seen-set starts fresh so the trial is an honest,
-// self-contained subtype check that never inherits an in-progress coinductive
-// assumption from the surrounding walk; such an assumption could otherwise
-// short-circuit the check to a false success. The mut context starts at false:
-// every caller trials a covariant read view.
-//
-// The probe push/pop runs directly on *Context. openProbe and closeProbe are the
-// checker-level path and additionally snapshot c.errs, which a type-level trial
-// does not need, since (*Context).constrain returns its errors through the
-// return value and never appends to checker state.
+// the trial's errors, leaving no bound behind; an empty result means it
+// succeeded. The seen-set starts fresh and the mut context at false, so the
+// trial is a self-contained covariant read check.
 func (c *Context) trialUnderProbe(sub, super soltype.Type) []SolverError {
 	p := newProbe(c.probe)
 	c.probe = p
