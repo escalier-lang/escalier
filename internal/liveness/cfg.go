@@ -225,14 +225,18 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 	return current
 }
 
-// processLetElse decomposes a `val pat = init else { … }` binding. The initializer
-// is evaluated in the current block, the else block becomes a branch that runs on a
-// failed match, and the join block carries the pattern's bindings, which are visible
-// only on the matched path. The else is required to diverge, so it normally has no
-// edge to the join.
+// processLetElse decomposes a `val pat = init else { … }` binding into an else
+// branch and a join block that carries the pattern's bindings on the matched path.
 func (b *cfgBuilder) processLetElse(vd *ast.VarDecl, current *BasicBlock) *BasicBlock {
-	// Evaluate the initializer in the current block so its uses are collected.
-	current.Stmts = append(current.Stmts, ast.NewExprStmt(vd.Init, vd.Init.Span()))
+	// A branchy initializer such as `if c { a } else { b }` contributes its own CFG
+	// edges; decomposeBranch returns the block reached after it converges. A plain
+	// initializer is recorded as an eval in the current block so its uses are
+	// collected.
+	if afterInit := b.decomposeBranch(vd.Init, nil, current); afterInit != nil {
+		current = afterInit
+	} else {
+		current.Stmts = append(current.Stmts, ast.NewExprStmt(vd.Init, vd.Init.Span()))
+	}
 
 	join := b.newBlock()
 	join.ExtraDefs = collectPatVarDefs(vd.Pattern)

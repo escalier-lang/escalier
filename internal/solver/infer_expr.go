@@ -2087,16 +2087,10 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	return res
 }
 
-// inferIfLet types `if let pat = target { cons } else { alt }`, the one-arm
-// refutable-binding form. The target is inferred once. The pattern binds fresh
-// names in the consequent at the NARROWED member type, while the alternate sees
-// the target's own type unchanged — narrowing lives on the pattern's bindings, not
-// on the scrutinee, so the original binding keeps its type for its whole scope.
-//
-// The result joins the two branches exactly as inferIfElse does: a fresh var with
-// each non-diverging branch as a lower bound. A missing else contributes Void. A
-// diverging branch drops out of the branch union, so `val x = if let y = u {
-// return y } else { 0 }` is `0`.
+// inferIfLet types `if let pat = target { cons } else { alt }`. The pattern binds
+// fresh names in the consequent at the NARROWED member type, while the alternate
+// sees the target unchanged. The result joins the two branches like inferIfElse: a
+// fresh var with each non-diverging branch as a lower bound.
 func (c *checker) inferIfLet(scope *Scope, lvl int, e *ast.IfLetExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	consScope := scope.Child()
@@ -2133,15 +2127,12 @@ func patternNarrowAnn(pat ast.Pat) ast.TypeAnn {
 
 // bindRefutable binds a refutable pattern's names against a scrutinee for an
 // `if let` consequent or a `let`-`else` body. ann is the narrowing annotation, the
-// matched member type. `if let x: T = u` carries it on the pattern, while
-// `val x: T = u else { … }` carries it on the decl. When ann is non-nil the pattern
-// must be a bare identifier, bound at the narrowed type, and the annotation is
-// constrained as an admissible value of the scrutinee. For a union scrutinee that
-// constraint is the union-super exists rule, which picks the matching member, so
-// `if let x: number = u` over `u: number | string` binds x at number. With no
-// annotation, the pattern reuses the structural binding path that `val` destructuring
-// and match arms share. An identifier then binds to the whole scrutinee, and an
-// object or tuple pattern destructures against it.
+// matched member type, carried on the pattern for `if let x: T = u` and on the decl
+// for `val x: T = u else { … }`. When ann is non-nil the pattern must be a bare
+// identifier, bound at the narrowed type; constraining the annotation as an
+// admissible value of a union scrutinee is the union-super exists rule, which picks
+// the matching member. With no annotation the pattern reuses the structural binding
+// path `val` destructuring and match arms share.
 func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.TypeAnn, scrutinee soltype.Type) {
 	if ann == nil {
 		c.bindPattern(scope, lvl, pat, scrutinee, nil)
@@ -2166,30 +2157,32 @@ func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.Type
 	} else {
 		c.constrain(pat, narrowed, scrutinee)
 	}
-	scope.defineValue(ip.Name, ValueBinding{Schemes: []TypeScheme{monoScheme(narrowed)}})
+	binding := ValueBinding{Schemes: []TypeScheme{monoScheme(narrowed)}}
+	// Carry the rename-assigned VarID onto the binding so a later closure capture or
+	// alias-set check resolves this name, matching the ordinary body-level decl path.
+	if ip.VarID > 0 {
+		binding.VarID = ip.VarID
+	}
+	scope.defineValue(ip.Name, binding)
 	c.recordType(ip, narrowed)
 }
 
-// inferLetElse types a `val pat = init else { … }` binding. The pattern binds its
-// names into the enclosing scope for the rest of the block at the NARROWED type,
-// exactly like an `if let` consequent, and the `else` block runs when the pattern
-// fails to match. The `else` must diverge. Execution continues past the binding with
-// the names in scope, so a fall-through `else` would leave them unmatched. A
-// diverging block has bottom (`never`) type, the dual of an `if let` alternate that
-// may produce a value.
+// inferLetElse types a `val pat = init else { … }` binding. The pattern narrows the
+// initializer and binds its names into the enclosing scope for the rest of the
+// block, while the `else` runs on a failed match and must diverge.
 func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	if d.Init == nil {
 		c.reportUnsupported(d)
 		return
 	}
 	initType := c.inferExpr(scope, lvl, d.Init)
-	c.bindRefutable(scope, lvl, d.Pattern, d.TypeAnn, initType)
-	// The else runs in its own child scope. It cannot see the pattern's bindings,
-	// which are in scope only on the matching path.
+	// The else runs only on a failed match, so it cannot see the pattern's bindings.
+	// Type it in a child scope BEFORE binding the pattern into the enclosing scope.
 	c.inferBlock(scope.Child(), lvl, d.Else)
 	if !blockDiverges(d.Else) {
 		c.report(&LetElseMustDivergeError{Decl: d})
 	}
+	c.bindRefutable(scope, lvl, d.Pattern, d.TypeAnn, initType)
 }
 
 // inferMatch types a `match` expression. The scrutinee is inferred once. Each arm

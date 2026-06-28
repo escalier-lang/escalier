@@ -2541,15 +2541,9 @@ func simplifyTrueLiterals(stmt Stmt) Stmt {
 }
 
 // buildPatternCondition builds the condition expression and binding statements for a pattern
-// buildLetElse lowers `val pat = init else { … }`. The initializer is hoisted into
-// a temp so the refutable check and the bindings read one evaluated value. An `if`
-// over the pattern's match condition runs the diverging `else` in its else branch
-// and leaves its then branch empty, so the match condition is used as-is rather than
-// negated — the printer does not parenthesize, so a negated binary condition would
-// mis-associate. The pattern's bindings are declared after that guard, so they are in
-// scope for the rest of the block only on the matching path. A decl-level type
-// annotation narrows the union to one member, so the check is a type guard on the
-// temp rather than the pattern's own condition.
+// buildLetElse lowers `val pat = init else { … }` into a temp-hoisted match check
+// whose `if`/empty-then/else-runs-the-block shape avoids a printer-unsafe negation,
+// followed by the pattern's bindings so they bind only on the matching path.
 func (b *Builder) buildLetElse(d *ast.VarDecl, initExpr Expr) []Stmt {
 	tempVar, tempDeclStmt := b.createTempVar(d.Init)
 	initAssign := &ExprStmt{
@@ -2559,7 +2553,12 @@ func (b *Builder) buildLetElse(d *ast.VarDecl, initExpr Expr) []Stmt {
 
 	condition, bindingStmts := b.buildPatternCondition(d.Pattern, tempVar)
 	if d.TypeAnn != nil {
-		condition = b.buildTypeGuard(tempVar, d.TypeAnn)
+		// A decl-level type annotation narrows the union to one member. Combine its
+		// type guard WITH the pattern's structural condition rather than replacing it,
+		// so an annotated destructuring still validates shape before binding.
+		// combineConditions drops the trivial `true` a bare identifier contributes.
+		typeGuard := b.buildTypeGuard(tempVar, d.TypeAnn)
+		condition = combineConditions([]Expr{condition, typeGuard}, d)
 	}
 
 	elseStmts := b.buildStmts(d.Else.Stmts)

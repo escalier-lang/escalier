@@ -127,6 +127,41 @@ func TestCFGLetElse(t *testing.T) {
 	require.Equal(t, []VarID{VarID(x.VarID)}, []VarID(join.ExtraDefs))
 }
 
+func TestCFGLetElseBranchyInit(t *testing.T) {
+	// val x = if cond { a } else { b } else { return d }
+	// A branchy initializer must contribute its own CFG edges, so the entry block
+	// branches into the if's two arms rather than collapsing the init into one block.
+	x := identPat("x")
+	aRef := ident("a")
+	bRef := ident("b")
+	dRef := ident("d")
+
+	ifInit := ast.NewIfElse(
+		ident("cond"),
+		block(exprStmt(aRef)),
+		&ast.BlockOrExpr{Block: &ast.Block{
+			Stmts: []ast.Stmt{exprStmt(bRef)},
+			Span:  span(),
+		}},
+		span(),
+	)
+	letElse := ast.NewDeclStmt(
+		ast.NewVarDecl(ast.ValKind, x, nil, ifInit, false, false, span()),
+		span(),
+	)
+	letElse.Decl.(*ast.VarDecl).Else = &ast.Block{
+		Stmts: []ast.Stmt{ast.NewReturnStmt(dRef, span())},
+		Span:  span(),
+	}
+	body := block(letElse)
+	Rename(nil, body, map[string]VarID{"cond": -1, "a": -2, "b": -3, "d": -4})
+
+	cfg := BuildCFG(body)
+
+	// The entry holds the if's condition and branches into the if's two arms.
+	require.Equal(t, 2, len(cfg.Entry.Successors))
+}
+
 func TestCFGReturn(t *testing.T) {
 	// val x = 1; return x; print(x)
 	// return terminates the path; print(x) is unreachable

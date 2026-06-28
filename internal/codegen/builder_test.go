@@ -795,12 +795,9 @@ func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
 	}
 }
 
-// TestBuildLetElse pins the lowering of a `val pat = init else { … }` binding. The
-// initializer is hoisted into a temp, the refutable check guards an `if` whose else
-// branch runs the diverging block, and the pattern's bindings are declared after the
-// guard so they are in scope only on the matching path. The then branch is left
-// empty so the match condition is emitted without a negation, which the
-// precedence-naive printer would otherwise mis-associate.
+// TestBuildLetElse pins the lowering of a `val pat = init else { … }` binding: a
+// temp-hoisted match guard whose else branch runs the diverging block, then the
+// pattern's bindings declared after it so they bind only on the matching path.
 func TestBuildLetElse(t *testing.T) {
 	tests := map[string]struct {
 		src      string
@@ -829,6 +826,22 @@ func TestBuildLetElse(t *testing.T) {
   if (temp2.length == 2) {
   } else {
     return 0;
+  }
+  const [a, b] = temp2;
+  return a;
+}`,
+		},
+		// A decl-level type annotation on a structural pattern keeps the pattern's
+		// arity check AND adds the type guard, so the shape is validated before binding.
+		"AnnotatedDestructure": {
+			src: "fn h(u) {\n\tval [a, b]: [number, string] = u else { return }\n\treturn a\n}",
+			expected: `export function h(temp1) {
+  const u = temp1;
+  let temp2;
+  temp2 = u;
+  if (temp2.length == 2 && Array.isArray(temp2)) {
+  } else {
+    return;
   }
   const [a, b] = temp2;
   return a;

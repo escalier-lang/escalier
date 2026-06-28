@@ -204,9 +204,10 @@ func (r *renamer) renameDecl(decl ast.Decl) {
 		if d.Init != nil {
 			r.renameExpr(d.Init)
 		}
-		// A `let`-`else` binding's else block runs only when the pattern fails to
-		// match, so it cannot see the pattern's bindings. Rename it in its own scope
-		// before the pattern defines them, mirroring the if-let alternate.
+		// Assign VarIDs to the identifiers in a `let`-`else` binding's else block, the
+		// same renaming every block gets. The else runs only on a failed match, so it
+		// cannot see the pattern's bindings; rename it in its own scope before the
+		// pattern defines them, mirroring the if-let alternate.
 		if d.Else != nil {
 			r.pushScope()
 			r.renameBlock(*d.Else)
