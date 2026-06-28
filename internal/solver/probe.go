@@ -284,6 +284,19 @@ func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError)
 	return false, trialErrs
 }
 
+// trialUnderProbe trials `sub <: super` under a discard-only probe and returns
+// the trial's errors, leaving no bound behind; an empty result means it
+// succeeded. The seen-set starts fresh and the mut context at false, so the
+// trial is a self-contained covariant read check.
+func (c *Context) trialUnderProbe(sub, super soltype.Type) []SolverError {
+	p := newProbe(c.probe)
+	c.probe = p
+	errs := c.constrain(sub, super, set.NewSet[constraintKey](), false)
+	c.probe = p.parent
+	p.Discard()
+	return errs
+}
+
 // snapshotMapEntry registers, under the active probe (else a no-op), a closure
 // that restores m[k] to its current value — or deletes the key if it is currently
 // absent — so a discarded trial leaves m exactly as it was. Shared by the Info

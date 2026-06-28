@@ -55,42 +55,6 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	return lo, hi
 }
 
-// commonBorrowEscape returns a representative BorrowEscapeError when every
-// per-trial error is itself a BorrowEscapeError. That means sub is a borrow
-// with a lifetime and no super-union member could host it. The caller uses
-// the returned value to emit one union-level BorrowEscapeError so the
-// lifetime cause survives. Without this collapse the union-super exists
-// rule would shadow BorrowEscape with a generic CannotConstrain and the
-// actionable diagnostic would be lost.
-//
-// Example. With `&'a {x: number} <: (number | string)`:
-//   - trial `&'a {x: number} <: number`: BorrowEscapeError (the borrow can't fit a number destination)
-//   - trial `&'a {x: number} <: string`: BorrowEscapeError (same)
-//
-// Both trials returned the same shape, so commonBorrowEscape returns one of
-// them. The caller emits `BorrowEscapeError{Sub: borrow, Super: union}` and
-// the user sees "borrow does not live long enough" rather than the unhelpful
-// "cannot constrain mut object <: number | string".
-func commonBorrowEscape(trials [][]SolverError) *BorrowEscapeError {
-	if len(trials) == 0 {
-		return nil
-	}
-	var first *BorrowEscapeError
-	for _, errs := range trials {
-		if len(errs) != 1 {
-			return nil
-		}
-		esc, ok := errs[0].(*BorrowEscapeError)
-		if !ok {
-			return nil
-		}
-		if first == nil {
-			first = esc
-		}
-	}
-	return first
-}
-
 // constraintKey keys the coinductive seen-set by pointer identity (Go's
 // interface == on pointer-backed soltype concretes). Sufficient for M1: cycles
 // in subtype-checking can only form via TypeVarTypes, and TypeVarType pointers
@@ -238,7 +202,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
 			order := concreteSpecificityOrder(supU.Types)
 			if len(order) > 0 {
-				committed, trialErrs := c.trialAndCommit(order, func(idx int) []SolverError {
+				committed, _ := c.trialAndCommit(order, func(idx int) []SolverError {
 					// A cloned seen keeps each member's coinductive cache independent, so a
 					// failed member's entries can't wrongly short-circuit a later member.
 					return c.constrain(sub, supU.Types[idx], seen.Clone(), mutCtx)
@@ -253,11 +217,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					// into a closed super because that open tail can't be absorbed.
 					return nil
 				}
-				// Every concrete branch failed. Promote a uniform BorrowEscape outcome
-				// so the lifetime cause survives; otherwise emit the generic union-level
-				// error.
-				if commonBorrowEscape(trialErrs) != nil {
-					return []SolverError{&BorrowEscapeError{Sub: sub.(*soltype.RefType), Super: super}}
+				// Every concrete branch failed. Promote a BorrowEscapeError when sub's
+				// peeled inner still satisfies the union; else emit the generic error.
+				if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil {
+					if len(c.trialUnderProbe(ref.Inner, super)) == 0 {
+						return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}
+					}
 				}
 				return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 			}
@@ -501,6 +466,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		// its mutability.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if sub.Lt != nil {
+				// Emit BorrowEscapeError only when the peeled inner satisfies super, so
+				// the lifetime is the blocker; otherwise surface the inner's mismatch.
+				if innerErrs := c.trialUnderProbe(sub.Inner, super); len(innerErrs) > 0 {
+					return innerErrs
+				}
 				return []SolverError{&BorrowEscapeError{Sub: sub, Super: super}}
 			}
 			// Peeling an owned value into a bare destination is a covariant read; flag resets.
