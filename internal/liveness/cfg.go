@@ -208,9 +208,9 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 	}
 
 	// A `let`-`else` binding is itself a branch: the else block runs when the
-	// pattern fails to match and must diverge, while the matched path continues with
-	// the pattern's bindings in scope. Decompose it so the else's statements get
-	// their own block rather than being lumped into the current one.
+	// pattern fails to match, while the matched path continues with the pattern's
+	// bindings in scope. Decompose it so the else's statements get their own block
+	// rather than being lumped into the current one.
 	if vd.Else != nil {
 		return b.processLetElse(vd, current)
 	}
@@ -245,8 +245,8 @@ func (b *cfgBuilder) processLetElse(vd *ast.VarDecl, current *BasicBlock) *Basic
 	b.addEdge(current, elseBlock)
 	elseEnd := b.processStmts(vd.Else.Stmts, elseBlock)
 	if elseEnd != nil {
-		// A diverging else has no fall-through. Keep an edge for soundness if it can
-		// still reach its end; the checker separately rejects a non-diverging else.
+		// A non-diverging else falls through to the join, supplying the binding's
+		// fallback value. A diverging else ends in `return`/`throw` and has no edge.
 		b.addEdge(elseEnd, join)
 	}
 

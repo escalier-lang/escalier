@@ -796,14 +796,14 @@ func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
 }
 
 // TestBuildLetElse pins the lowering of a `val pat = init else { … }` binding: a
-// temp-hoisted match guard whose else branch runs the diverging block, then the
-// pattern's bindings declared after it so they bind only on the matching path.
+// temp-hoisted match guard whose else branch either diverges or assigns its tail
+// value back to the temp as a fallback, then the pattern's bindings read the temp.
 func TestBuildLetElse(t *testing.T) {
 	tests := map[string]struct {
 		src      string
 		expected string
 	}{
-		"Narrowing": {
+		"DivergingElse": {
 			src: "fn f(u) {\n\tval x: number = u else { return 0 }\n\treturn x\n}",
 			expected: `export function f(temp1) {
   const u = temp1;
@@ -812,6 +812,22 @@ func TestBuildLetElse(t *testing.T) {
   if (typeof temp2 === "number") {
   } else {
     return 0;
+  }
+  const x = temp2;
+  return x;
+}`,
+		},
+		// A non-diverging else assigns its tail value back to the temp, so the binding
+		// reads the matched value or that fallback.
+		"FallbackElse": {
+			src: "fn f(u) {\n\tval x: number = u else { 0 }\n\treturn x\n}",
+			expected: `export function f(temp1) {
+  const u = temp1;
+  let temp2;
+  temp2 = u;
+  if (typeof temp2 === "number") {
+  } else {
+    temp2 = 0;
   }
   const x = temp2;
   return x;

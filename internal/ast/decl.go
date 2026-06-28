@@ -42,7 +42,8 @@ type VarDecl struct {
 	Pattern Pat
 	TypeAnn TypeAnn // optional
 	Init    Expr    // optional
-	// Else is the diverging `else` block of a `let`-`else` binding, nil for a plain `val`/`var`.
+	// Else is the `else` block of a `let`-`else` binding, run when the pattern fails
+	// to match. It is nil for a plain `val`/`var`.
 	Else         *Block
 	Decorators   []*Decorator
 	export       bool

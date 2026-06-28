@@ -127,6 +127,40 @@ func TestCFGLetElse(t *testing.T) {
 	require.Equal(t, []VarID{VarID(x.VarID)}, []VarID(join.ExtraDefs))
 }
 
+func TestCFGLetElseNonDivergingFallback(t *testing.T) {
+	// val x = u else { d }
+	// print(x)
+	// The else does not diverge; it supplies a fallback, so its block falls through to
+	// the same join the matched path reaches.
+	x := identPat("x")
+	uRef := ident("u")
+	dRef := ident("d")
+	xRef := ident("x")
+
+	letElse := ast.NewDeclStmt(
+		ast.NewVarDecl(ast.ValKind, x, nil, uRef, false, false, span()),
+		span(),
+	)
+	letElse.Decl.(*ast.VarDecl).Else = &ast.Block{
+		Stmts: []ast.Stmt{exprStmt(dRef)},
+		Span:  span(),
+	}
+	body := block(
+		letElse,
+		exprStmt(call(ident("print"), xRef)),
+	)
+	Rename(nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
+
+	cfg := BuildCFG(body)
+
+	require.Equal(t, 2, len(cfg.Entry.Successors))
+	elseBlock := cfg.Entry.Successors[0]
+	join := cfg.Entry.Successors[1]
+	// The non-diverging else falls through to the same join as the matched path.
+	require.Equal(t, 1, len(elseBlock.Successors))
+	require.Equal(t, join, elseBlock.Successors[0])
+}
+
 func TestCFGLetElseBranchyInit(t *testing.T) {
 	// val x = if cond { a } else { b } else { return d }
 	// A branchy initializer must contribute its own CFG edges, so the entry block

@@ -2541,9 +2541,13 @@ func simplifyTrueLiterals(stmt Stmt) Stmt {
 }
 
 // buildPatternCondition builds the condition expression and binding statements for a pattern
-// buildLetElse lowers `val pat = init else { … }` into a temp-hoisted match check
-// whose `if`/empty-then/else-runs-the-block shape avoids a printer-unsafe negation,
-// followed by the pattern's bindings so they bind only on the matching path.
+// buildLetElse lowers `val pat = init else { … }` into a temp-hoisted match check.
+// The temp starts as the initializer; on a failed match the else block runs, and its
+// tail value is assigned back to the temp so the binding takes it as a fallback. An
+// else that diverges with a `return`/`throw` leaves the temp untouched and skips past
+// the bindings. The `if`/empty-then/else-runs-the-block shape keeps the condition
+// un-negated, which the precedence-naive printer needs. The pattern's bindings read
+// the temp after the guard, binding the matched value or the fallback.
 func (b *Builder) buildLetElse(d *ast.VarDecl, initExpr Expr) []Stmt {
 	tempVar, tempDeclStmt := b.createTempVar(d.Init)
 	initAssign := &ExprStmt{
@@ -2561,7 +2565,9 @@ func (b *Builder) buildLetElse(d *ast.VarDecl, initExpr Expr) []Stmt {
 		condition = combineConditions([]Expr{condition, typeGuard}, d)
 	}
 
-	elseStmts := b.buildStmts(d.Else.Stmts)
+	// Assigning the else block's tail value to the temp makes a non-diverging else a
+	// fallback; a diverging else emits its `return`/`throw` and assigns nothing.
+	elseStmts := b.buildBlockStmtsWithTempAssignment(d.Else.Stmts, tempVar, d.Init)
 	guard := NewIfStmt(
 		condition,
 		NewBlockStmt(nil, d),

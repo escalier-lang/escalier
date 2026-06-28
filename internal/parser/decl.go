@@ -1029,9 +1029,9 @@ func (p *Parser) varDecl(
 	}
 
 	// A trailing `else { … }` makes this a `let`-`else` binding: the pattern is
-	// refutable and the block runs when it fails to match. The block must diverge,
-	// which the checker enforces. A `declare` binding has no initializer to match
-	// against, so it takes no `else`.
+	// refutable and the block runs when it fails to match, either diverging or
+	// supplying the binding's fallback value. A `declare` binding has no initializer
+	// to match against, so it takes no `else`.
 	var elseBlock *ast.Block
 	if !declare && p.lexer.peek().Type == Else {
 		p.lexer.consume() // consume 'else'

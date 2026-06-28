@@ -146,13 +146,33 @@ func TestInferIfLetAndLetElse(t *testing.T) {
 			want: `fn (u: {x: number, y: string}) -> [number, string]`,
 		},
 		{
-			// A non-diverging else would leave the bindings unmatched, so it is rejected.
-			name: "let-else non-diverging else is rejected",
+			// A non-diverging else supplies a fallback. The annotation pins x to number,
+			// and the fallback 0 fits, so x is number on both the match and no-match path.
+			name: "let-else non-diverging else supplies a fallback",
 			src: `fn f(u: number | string) {
 				val x: number = u else { 0 }
 				return x
 			}`,
-			wantErrs: []string{"2:5-2:33: the `else` of a `let`-`else` binding must diverge; end it with `return` or `throw`"},
+			want: "fn (u: number | string) -> number",
+		},
+		{
+			// A non-diverging else's fallback must fit the annotated binding type.
+			name: "let-else fallback must fit the annotation",
+			src: `fn f(u: number | string) {
+				val x: number = u else { "no" }
+				return x
+			}`,
+			wantErrs: []string{`2:30-2:34: cannot constrain "no" <: number`},
+		},
+		{
+			// With no annotation the binding's type joins the initializer with the
+			// fallback. Subsumption then drops the literal 0 into number.
+			name: "let-else unannotated joins init and fallback",
+			src: `fn f(u: number | string) {
+				val n = u else { 0 }
+				return n
+			}`,
+			want: "fn (u: number | string) -> number | string",
 		},
 		{
 			// A let-else is a body-level form; at module top level it is rejected.

@@ -2126,17 +2126,18 @@ func patternNarrowAnn(pat ast.Pat) ast.TypeAnn {
 }
 
 // bindRefutable binds a refutable pattern's names against a scrutinee for an
-// `if let` consequent or a `let`-`else` body. ann is the narrowing annotation, the
-// matched member type, carried on the pattern for `if let x: T = u` and on the decl
-// for `val x: T = u else { … }`. When ann is non-nil the pattern must be a bare
-// identifier, bound at the narrowed type; constraining the annotation as an
-// admissible value of a union scrutinee is the union-super exists rule, which picks
-// the matching member. With no annotation the pattern reuses the structural binding
-// path `val` destructuring and match arms share.
-func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.TypeAnn, scrutinee soltype.Type) {
+// `if let` consequent or a `let`-`else` body, returning the type the binding is at.
+// ann is the narrowing annotation, the matched member type, carried on the pattern
+// for `if let x: T = u` and on the decl for `val x: T = u else { … }`. When ann is
+// non-nil the pattern must be a bare identifier, bound at the narrowed type;
+// constraining the annotation as an admissible value of a union scrutinee is the
+// union-super exists rule, which picks the matching member. With no annotation the
+// pattern reuses the structural binding path `val` destructuring and match arms
+// share, and the scrutinee is returned unchanged.
+func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	if ann == nil {
 		c.bindPattern(scope, lvl, pat, scrutinee, nil)
-		return
+		return scrutinee
 	}
 	ip, ok := pat.(*ast.IdentPat)
 	if !ok {
@@ -2146,7 +2147,7 @@ func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.Type
 		// scrutinee.
 		c.reportUnsupportedFeature(pat, "narrowing type annotation on a destructuring pattern")
 		c.bindPattern(scope, lvl, pat, scrutinee, nil)
-		return
+		return scrutinee
 	}
 	narrowed, resolved := c.resolveTypeAnn(ann, lvl)
 	if !resolved {
@@ -2165,11 +2166,15 @@ func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.Type
 	}
 	scope.defineValue(ip.Name, binding)
 	c.recordType(ip, narrowed)
+	return narrowed
 }
 
 // inferLetElse types a `val pat = init else { … }` binding. The pattern narrows the
 // initializer and binds its names into the enclosing scope for the rest of the
-// block, while the `else` runs on a failed match and must diverge.
+// block. The `else` runs on a failed match: it may diverge with a `return`/`throw`,
+// or supply a FALLBACK value that the binding takes on the no-match path, so the
+// binding holds the matched value OR the else's value, like an `if let` whose result
+// is bound. A non-diverging else's value must fit the binding.
 func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	if d.Init == nil {
 		c.reportUnsupported(d)
@@ -2178,11 +2183,30 @@ func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	initType := c.inferExpr(scope, lvl, d.Init)
 	// The else runs only on a failed match, so it cannot see the pattern's bindings.
 	// Type it in a child scope BEFORE binding the pattern into the enclosing scope.
-	c.inferBlock(scope.Child(), lvl, d.Else)
-	if !blockDiverges(d.Else) {
-		c.report(&LetElseMustDivergeError{Decl: d})
+	elseT, elseDiverges := c.inferBlock(scope.Child(), lvl, d.Else)
+
+	if d.TypeAnn != nil {
+		// An annotated narrowing pins the binding to the annotation. A non-diverging
+		// else's fallback value must satisfy that pinned type.
+		bound := c.bindRefutable(scope, lvl, d.Pattern, d.TypeAnn, initType)
+		if !elseDiverges {
+			c.constrain(d, elseT, bound)
+		}
+		return
 	}
-	c.bindRefutable(scope, lvl, d.Pattern, d.TypeAnn, initType)
+
+	// With no annotation the binding's type is inferred. The pattern binds against the
+	// matched initializer joined with a non-diverging else's fallback value, so the
+	// leaves read either source.
+	source := initType
+	if !elseDiverges {
+		res := c.freshAt(lvl)
+		c.recordProv(res, d, LetElseBranch)
+		c.constrain(d, initType, res)
+		c.constrain(d, elseT, res)
+		source = res
+	}
+	c.bindRefutable(scope, lvl, d.Pattern, nil, source)
 }
 
 // inferMatch types a `match` expression. The scrutinee is inferred once. Each arm
