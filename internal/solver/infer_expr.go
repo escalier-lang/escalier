@@ -373,12 +373,61 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 		if joined, ok := c.joinBorrows(node, lvl, collected); ok {
 			return joined
 		}
+		c.checkUniformOwnership(node, collected)
 		joinVar := c.freshAt(lvl)
 		c.recordProv(joinVar, node, ReturnJoin)
 		for _, rt := range collected {
 			c.constrain(node, rt, joinVar)
 		}
 		return joinVar
+	}
+}
+
+// collectBranchOwnership classifies how a branch result type participates in the
+// owned-or-borrowed ownership axis, recursing through union and intersection members
+// so a branch that is itself a union is judged by its members:
+//   - sawBorrowed becomes true for a borrow, a RefType carrying a lifetime.
+//   - sawOwned becomes true for an owned reference: a bare object or tuple, or an
+//     owned-mutable RefType whose lifetime is nil.
+//
+// A value type such as a primitive, literal, function, or promise carries no
+// ownership and touches neither flag, as do inference variables and the lattice
+// bounds, which have no settled ownership to judge.
+func collectBranchOwnership(t soltype.Type, sawOwned, sawBorrowed *bool) {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		if t.Lt != nil {
+			*sawBorrowed = true
+		} else {
+			*sawOwned = true
+		}
+	case *soltype.UnionType:
+		for _, m := range t.Types {
+			collectBranchOwnership(m, sawOwned, sawBorrowed)
+		}
+	case *soltype.IntersectionType:
+		for _, m := range t.Types {
+			collectBranchOwnership(m, sawOwned, sawBorrowed)
+		}
+	case *soltype.ObjectType, *soltype.TupleType:
+		*sawOwned = true
+	}
+}
+
+// checkUniformOwnership reports a MixedOwnershipError when the branch types a join is
+// about to union disagree on ownership, some owned and some borrowed. The union the
+// join would form then has no single owned-or-borrowed verdict, since ownership is the
+// outer wrapper shared by the whole value. Each branch is coalesced first so an
+// inference variable resolves to the shape that flowed into it. A branch that stays a
+// variable, or is a value type, contributes no ownership and is skipped. node is the
+// join expression the error blames.
+func (c *checker) checkUniformOwnership(node ast.Node, branches []soltype.Type) {
+	sawOwned, sawBorrowed := false, false
+	for _, b := range branches {
+		collectBranchOwnership(coalesce(b, soltype.Positive), &sawOwned, &sawBorrowed)
+	}
+	if sawOwned && sawBorrowed {
+		c.report(&MixedOwnershipError{Node: node})
 	}
 }
 
@@ -2077,12 +2126,16 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	// above (reporting branch-local errors and collecting its `return` as a function
 	// return point); only its block-tail VALUE is dropped here. When both branches
 	// diverge, res keeps no lower bounds and coalesces to `never`.
+	var branches []soltype.Type
 	if !consDiverges {
 		c.constrain(e, consT, res)
+		branches = append(branches, consT)
 	}
 	if !altDiverges {
 		c.constrain(e, altT, res)
+		branches = append(branches, altT)
 	}
+	c.checkUniformOwnership(e, branches)
 	c.recordType(e, res)
 	return res
 }
@@ -2107,6 +2160,7 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, MatchBranch)
+	var armBodies []soltype.Type
 	for _, arm := range e.Cases {
 		// Each arm binds its pattern's leaves in a fresh child scope so a name bound
 		// by one arm is invisible to the next. bindPattern peels the scrutinee's borrow
@@ -2126,8 +2180,10 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 		bodyT, diverges := c.inferBlockOrExpr(armScope, lvl, &arm.Body)
 		if !diverges {
 			c.constrain(e, bodyT, res)
+			armBodies = append(armBodies, bodyT)
 		}
 	}
+	c.checkUniformOwnership(e, armBodies)
 	c.checkMatchExhaustive(e, matchShape)
 	c.recordType(e, res)
 	return res

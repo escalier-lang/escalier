@@ -301,17 +301,23 @@ type RefType struct {
 //
 // M4 admits ObjectType / TupleType / TypeVarType. The TypeVarType arm covers a
 // borrow whose content is still an inference variable; the content invariant — that
-// it resolves to a borrowable type — is checked at constrain time. UnionType /
-// IntersectionType (M6 inputs), AliasType (M7), and ClassType (M5) add their
-// isRefInner arms with those milestones.
+// it resolves to a borrowable type — is checked at constrain time. UnionType and
+// IntersectionType join as RefInner so `&(A | B)` is one borrow over a union
+// pointee, with a single lifetime and mutability for the whole value rather than
+// `&A | &B` with independent lifetimes. A union or intersection must have uniform
+// ownership. A borrowed member beside an owned one has no single owned-or-borrowed
+// verdict and is rejected at the inference join where it forms. AliasType (M7) and
+// ClassType (M5) add their isRefInner arms with those milestones.
 type RefInner interface {
 	Type
 	isRefInner()
 }
 
-func (*ObjectType) isRefInner()  {}
-func (*TupleType) isRefInner()   {}
-func (*TypeVarType) isRefInner() {}
+func (*ObjectType) isRefInner()       {}
+func (*TupleType) isRefInner()        {}
+func (*TypeVarType) isRefInner()      {}
+func (*UnionType) isRefInner()        {}
+func (*IntersectionType) isRefInner() {}
 
 // PromiseType is the result of an `async fn` and the requirement of an `await`.
 // M3 carries it as a dedicated concrete (not a generic TypeRefType), keeping the

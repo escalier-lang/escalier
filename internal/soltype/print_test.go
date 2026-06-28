@@ -297,6 +297,47 @@ func TestPrintLazyDeepMutVerbatim(t *testing.T) {
 	}
 }
 
+// A borrow over a union or intersection prints with the pointee parenthesized. The
+// inner renders at precPrefix, looser than precUnion and precIntersection, so
+// `&(A | B)` and `&mut (A & B)` round-trip to surface syntax. The wrapper is outer
+// and shared: one `&`, one lifetime, one mutability for the whole pointee, never
+// `&A | &B`.
+func TestPrintBorrowOverLatticePointee(t *testing.T) {
+	objX := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}
+	objY := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "y", Type: strP()}}}
+	cases := []struct {
+		name string
+		ty   Type
+		want string
+	}{
+		{
+			name: "immutable borrow over a union",
+			ty:   &RefType{Lt: &StaticLifetime{}, Inner: &UnionType{Types: []Type{objX, objY}}},
+			want: "&'static ({x: number} | {y: string})",
+		},
+		{
+			name: "mutable borrow over a union",
+			ty:   &RefType{Mut: true, Lt: Anon, Inner: &UnionType{Types: []Type{objX, objY}}},
+			want: "&mut ({x: number} | {y: string})",
+		},
+		{
+			name: "owned-mutable union prints with mut and parens",
+			ty:   &RefType{Mut: true, Inner: &UnionType{Types: []Type{objX, objY}}},
+			want: "mut ({x: number} | {y: string})",
+		},
+		{
+			name: "immutable borrow over an intersection",
+			ty:   &RefType{Lt: Anon, Inner: &IntersectionType{Types: []Type{objX, objY}}},
+			want: "&({x: number} & {y: string})",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, Print(tc.ty))
+		})
+	}
+}
+
 // AnonLifetime renders as bare `&` / `&mut`, keeping a borrow distinguishable
 // from an owned value when its lifetime is elided.
 func TestPrintAnonLifetime(t *testing.T) {
