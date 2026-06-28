@@ -164,6 +164,16 @@ type funcCtx struct {
 	// once the whole body, loop back edges included, has been walked, so a use that
 	// some reaching path moved is caught even when the move is textually later.
 	useSites []moveUse
+	// borrowEdges records, per binding root VarID, the function-local binding roots
+	// whose data it borrows through an explicit `&`/`&mut` in its initializer. The
+	// initializer `val a = {peer: &mut b}` records the edge a → b. The return-escape
+	// check (PR 15) follows these edges from a returned binding to find a borrow of a
+	// local that cannot outlive the frame. A parameter root is never recorded, since a
+	// borrow of a parameter carries a caller lifetime that already outlives the return.
+	borrowEdges map[liveness.VarID]set.Set[liveness.VarID]
+	// paramVarIDs holds the VarID of every parameter leaf binding. A borrow of a
+	// parameter is returnable, so the return-escape check skips a referent in this set.
+	paramVarIDs set.Set[liveness.VarID]
 	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
 	// the transition checker uses to query the lifetime sort for a `'static` escape in
 	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow

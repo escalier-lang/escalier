@@ -166,15 +166,18 @@ func TestInferValMutConstructedAllowsFieldWrite(t *testing.T) {
 // A constructed owned-mutable value can be borrowed `&mut`. The mutable cell fills
 // the mutable borrow destination, so `&mut q` checks where an owned-immutable q would fail
 // the mutability gate. This is the construction-side companion to
-// TestInferValMutBorrowFromOwnedMut, which sources owned-mutable from a parameter.
+// TestInferValMutBorrowFromOwnedMut, which sources owned-mutable from a parameter. The
+// borrow checks, but returning it escapes the local q, which dies at the frame end, so
+// PR 15's return-escape rule rejects the return while leaving the borrow itself legal.
 func TestInferValMutConstructedBorrowsMut(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f() {
+	_, _, errs := inferSource(t, `fn f() {
   val mut q = {x: 0}
   val r = &mut q
   return r
 }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn () -> &mut {x: number}", values["f"])
+	require.Equal(t, []string{
+		"4:10-4:11: borrowed value 'q' does not live long enough to escape the function",
+	}, messagesWithSpan(errs))
 }
 
 // A `mut` binding of a primitive is unchanged: a primitive is a value type with no
