@@ -324,24 +324,29 @@ func (s *finalSubsumer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 	return soltype.EnterResult{}
 }
 
-// ExitType re-mints a lattice node, then returns the original when the re-mint is
-// equalType-equal to it. newUnion / newIntersection always allocate a fresh node,
-// so keeping the original when nothing was subsumed preserves pointer identity up
-// the spine. Both sides are canonical, so the equalType compare is positional.
+// ExitType subsumes a lattice node's members and rebuilds it only when a member
+// was dropped. The input is a coalesced display type, so it is already flattened,
+// pruned, deduped, and canonically ordered — newUnion's other normalization steps
+// would be no-ops here, so only subsumeMembers runs. subsumeMembers only ever
+// removes members, so a length drop is an O(1) signal that the node changed, which
+// avoids a structural re-comparison. When nothing dropped the original node is
+// returned, preserving pointer identity up the spine.
 func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	var got soltype.Type
 	switch t := t.(type) {
 	case *soltype.UnionType:
-		got = newUnion(s.ctx, t.Types, t.Inexact)
+		kept := subsumeMembers(s.ctx, t.Types, unionDrops)
+		if len(kept) == len(t.Types) {
+			return t
+		}
+		return collapseUnion(kept, t.Inexact, false)
 	case *soltype.IntersectionType:
-		got = newIntersection(s.ctx, t.Types)
-	default:
-		return t
+		kept := subsumeMembers(s.ctx, t.Types, intersectionDrops)
+		if len(kept) == len(t.Types) {
+			return t
+		}
+		return collapseIntersection(kept, false)
 	}
-	if equalType(got, t) {
-		return t
-	}
-	return got
+	return t
 }
 
 // sortTypes orders parts in place under compareType. The sort is stable so a
