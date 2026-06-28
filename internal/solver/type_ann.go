@@ -389,14 +389,10 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 	lt := c.resolveLifetimeAnn(ta.Lifetime, lvl)
 	inner, ok := c.resolveTypeAnn(ta.Inner, lvl)
 	if !ok {
-		// The inner annotation was unsupported and already reported its own error.
-		// Recover it to a fresh var so the borrow wrapper survives and the binding
-		// stays cascade-safe, matching the Promise/object/tuple recovery.
+		// Recover an unsupported inner to a fresh var so the borrow wrapper survives, cascade-safe.
 		inner = c.freshAt(lvl)
 	}
-	// Nested-borrow normalization (PR 9): a borrow whose pointee is itself a borrow
-	// collapses to depth one, since the JS target compiles every borrow to the same
-	// bare object reference and cannot represent a borrow of a borrow.
+	// A borrow whose pointee is itself a borrow collapses to depth one (PR 9).
 	if nested, isRef := inner.(*soltype.RefType); isRef {
 		return c.normalizeNestedBorrow(ta, lt, nested)
 	}
@@ -412,19 +408,13 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 	return t, true
 }
 
-// normalizeNestedBorrow collapses a borrow whose pointee is itself a borrow to
-// depth one, the PR 9 rule for a nested borrow such as `&&Point`. Two cases:
+// normalizeNestedBorrow collapses a borrow whose pointee is itself a borrow to depth
+// one, the PR 9 rule for a nested borrow such as `&&Point`. Two cases:
 //
-//   - An immutable outer layer collapses. An immutable borrow is Copy, duplicating
-//     the reference and never the referenced data, so `&'a &'b Point` is just another
-//     immutable alias and reduces to `&'a Point`, the inner carrier at the outer,
-//     shorter lifetime. The inner lifetime must outlive the outer, so 'b outlives 'a.
-//     A `& &mut` collapses the same way, downgrading to an immutable view, since the
-//     read-only outer can never hand out the inner's mutable access.
-//   - A mutable outer layer is uninhabitable. `&mut &…` would mean "repoint the inner
-//     borrow," which needs a storage cell holding that reference. A borrow compiles to
-//     the bare object reference with no cell of its own, and JS offers no lvalue
-//     reference to a binding, so the form has no inhabitant and is rejected.
+//   - An immutable outer layer collapses, since an immutable borrow is Copy. `&'a &'b
+//     Point` reduces to `&'a Point` at the outer lifetime, with 'b outliving 'a.
+//   - A mutable outer layer is uninhabitable, since `&mut &…` would repoint the inner
+//     borrow, which needs a storage cell the JS target cannot express. It is rejected.
 func (c *checker) normalizeNestedBorrow(ta *ast.RefTypeAnn, outerLt soltype.Lifetime, inner *soltype.RefType) (soltype.Type, bool) {
 	if ta.Mut {
 		return c.reportUnsupportedFeature(ta, "mutable borrow of a borrow is uninhabitable"), false

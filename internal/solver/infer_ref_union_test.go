@@ -141,10 +141,7 @@ func TestConstrainRefUnion(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			// Writing a `B` through the wider `mut (A | B)` target would corrupt the
-			// caller's `A`-typed storage, so `mut A` does not satisfy `mut (A | B)`. The
-			// residual reverse write view the RefType rule adds for a mutable target
-			// drives the rejection.
+			// mut A </: mut (A | B): a mutable borrow is invariant in its pointee.
 			name: "mutable borrow pointee is invariant",
 			build: func(c *Context) (soltype.Type, soltype.Type) {
 				sub := &soltype.RefType{Mut: true, Inner: exactObj(propElem("x", num()))}
@@ -154,9 +151,7 @@ func TestConstrainRefUnion(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			// An immutable borrow reads only, so `&A` is usable where `&(A | B)` is
-			// wanted. No write view fires for an immutable target, so the covariant inner
-			// read `A <: (A | B)` succeeds.
+			// &A <: &(A | B): an immutable borrow is covariant in its pointee.
 			name: "immutable borrow pointee factors",
 			build: func(c *Context) (soltype.Type, soltype.Type) {
 				sub := &soltype.RefType{Lt: c.freshLifetime(0), Inner: exactObj(propElem("x", num()))}
@@ -166,8 +161,7 @@ func TestConstrainRefUnion(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			// The bare<:RefType arm wraps a borrowable owned source as an immutable view,
-			// so a bare `(A | B)` auto-borrows into `&(A | B)`.
+			// (A | B) <: &(A | B): a bare owned union auto-borrows into a borrow.
 			name: "bare owned union auto-borrows into a borrow",
 			build: func(c *Context) (soltype.Type, soltype.Type) {
 				return unionXY(), &soltype.RefType{Lt: c.freshLifetime(0), Inner: unionXY()}
