@@ -128,3 +128,110 @@ func TestReturnEscape(t *testing.T) {
 		})
 	}
 }
+
+// TestEscapeAtStoreAndArgSites covers PR 15's other two flow-out sites: a field store
+// into a parameter, where the value flows into the caller's object, and a consuming
+// argument, where it flows into the callee. A borrow of a local that flows out either
+// way escapes, while a parameter borrow and a plain owned value do not.
+func TestEscapeAtStoreAndArgSites(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// Storing a borrow of a local into a parameter's field escapes: the parameter's
+		// object outlives the frame, so the stored local would dangle in the caller.
+		"StoreLocalBorrowIntoParamField": {
+			src: `
+				fn f(p: mut {peer: &mut {value: number}}) {
+					val mut b = {value: 0}
+					p.peer = &mut b
+				}
+			`,
+			want: []string{"4:15-4:21: borrowed value 'b' does not live long enough to escape the function"},
+		},
+		// Storing a parameter borrow into a parameter's field is sound: the stored borrow
+		// carries the caller's lifetime, which outlives the frame.
+		"StoreParamBorrowIntoParamFieldOk": {
+			src: `
+				fn f(p: mut {peer: &mut {value: number}}, q: &mut {value: number}) {
+					p.peer = q
+				}
+			`,
+			want: nil,
+		},
+		// Passing a value that borrows a local as a consuming argument escapes: the callee
+		// takes ownership of the value and could retain it past the frame.
+		"ConsumingArgCarriesLocalBorrow": {
+			src: `
+				fn store(x: {peer: &mut {value: number}}) {}
+				fn f() {
+					val mut b = {value: 0}
+					val a = {peer: &mut b}
+					store(a)
+				}
+			`,
+			want: []string{"6:12-6:13: borrowed value 'b' does not live long enough to escape the function"},
+		},
+		// Auto-borrowing a local into a `&mut` parameter is sound: the parameter borrows
+		// for the call rather than consuming, so the local outlives the borrow.
+		"BorrowArgToRefParamOk": {
+			src: `
+				fn read(x: &mut {value: number}) {}
+				fn f() {
+					val mut b = {value: 0}
+					read(&mut b)
+				}
+			`,
+			want: nil,
+		},
+		// A consuming argument that is a plain owned value carries no borrow, so it moves
+		// into the callee with no escape.
+		"ConsumingArgOwnedValueOk": {
+			src: `
+				fn store(x: {value: number}) {}
+				fn f() {
+					val a = {value: 0}
+					store(a)
+				}
+			`,
+			want: nil,
+		},
+		// A borrow passed to an inner call is consumed by that call, not carried out by
+		// the owned value the call yields. Wrapping the call in a consuming call does not
+		// escape the local, so the scan must stop at the inner call boundary.
+		"BorrowConsumedByInnerCallDoesNotEscape": {
+			src: `
+				fn read(x: &mut {value: number}) -> {value: number} {
+					return {value: 1}
+				}
+				fn store(y: {value: number}) {}
+				fn f() {
+					val mut b = {value: 0}
+					store(read(&mut b))
+				}
+			`,
+			want: nil,
+		},
+		// A single escape through a consuming call inside a return is reported once, at the
+		// argument where the local borrow flows into the callee, not a second time at the
+		// enclosing return.
+		"EscapeThroughConsumingCallReportedOnce": {
+			src: `
+				fn id(y: {peer: &mut {value: number}}) -> {peer: &mut {value: number}} {
+					return y
+				}
+				fn f() -> {peer: &mut {value: number}} {
+					val mut b = {value: 0}
+					return id({peer: &mut b})
+				}
+			`,
+			want: []string{"7:16-7:30: borrowed value 'b' does not live long enough to escape the function"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(errs))
+		})
+	}
+}
