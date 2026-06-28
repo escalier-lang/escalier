@@ -2064,21 +2064,25 @@ func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) b
 			return false
 		}
 	}
+
+	if !hasNonLiteralMember {
+		return true
+	}
+
 	// A non-literal member needs the structural or nominal coverage M5 adds. Only a
 	// literal pattern or a catch-all covers a union member today, so flag each
 	// unguarded structural arm as unsupported rather than pass the match silently.
 	// The catch-all case has already returned above.
-	if hasNonLiteralMember {
-		for _, arm := range e.Cases {
-			if arm.Guard != nil {
-				continue
-			}
-			if _, isLit := arm.Pattern.(*ast.LitPat); isLit {
-				continue
-			}
-			c.reportUnsupportedFeature(arm.Pattern, "non-literal match arm pattern over a union scrutinee")
+	for _, arm := range e.Cases {
+		if arm.Guard != nil {
+			continue
 		}
+		if _, isLit := arm.Pattern.(*ast.LitPat); isLit {
+			continue
+		}
+		c.reportUnsupportedFeature(arm.Pattern, "non-literal match arm pattern over a union scrutinee")
 	}
+
 	return true
 }
 
