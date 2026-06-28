@@ -22,7 +22,7 @@ func TestReturnEscape(t *testing.T) {
 		// which dies with the frame.
 		"ReturnBindingBorrowingLocal": {
 			src: `
-				fn build() -> {peer: &mut {value: number}} {
+				fn build() {
 					val mut b = {value: 2}
 					val a = {peer: &mut b}
 					return a
@@ -35,7 +35,7 @@ func TestReturnEscape(t *testing.T) {
 		// way, with no intervening binding.
 		"ReturnInlineBorrowOfLocal": {
 			src: `
-				fn build() -> {peer: &mut {value: number}} {
+				fn build() {
 					val mut b = {value: 2}
 					return {peer: &mut b}
 				}
@@ -46,7 +46,7 @@ func TestReturnEscape(t *testing.T) {
 		// Returning the borrow itself, `return &mut b`, escapes the local b.
 		"ReturnDirectBorrowOfLocal": {
 			src: `
-				fn build() -> &mut {value: number} {
+				fn build() {
 					val mut b = {value: 2}
 					return &mut b
 				}
@@ -57,7 +57,7 @@ func TestReturnEscape(t *testing.T) {
 		// A binding that borrows two locals escapes both, reported in source order.
 		"ReturnBindingBorrowingTwoLocals": {
 			src: `
-				fn build() -> {p: &mut {x: number}, q: &mut {x: number}} {
+				fn build() {
 					val mut b = {x: 0}
 					val mut c = {x: 1}
 					val a = {p: &mut b, q: &mut c}
@@ -74,7 +74,7 @@ func TestReturnEscape(t *testing.T) {
 		// borrow and all, into a2, so returning a2 escapes the same local a would.
 		"ReturnMovedCarrierEscapes": {
 			src: `
-				fn build() -> {peer: &mut {value: number}} {
+				fn build() {
 					val mut b = {value: 2}
 					val a = {peer: &mut b}
 					val a2 = a
@@ -102,7 +102,7 @@ func TestReturnEscape(t *testing.T) {
 		// which outlives the call.
 		"ReturnParamBorrowOk": {
 			src: `
-				fn pass(p: &mut {x: number}) -> &mut {x: number} {
+				fn pass(p: &mut {x: number}) {
 					return p
 				}
 			`,
@@ -123,7 +123,7 @@ func TestReturnEscape(t *testing.T) {
 		// is never recorded, so returning the local raises no escape.
 		"LocalBorrowsParamThenReturnOk": {
 			src: `
-				fn pass(p: &mut {x: number}) -> {peer: &mut {x: number}} {
+				fn pass(p: &mut {x: number}) {
 					val a = {peer: p}
 					return a
 				}
@@ -250,10 +250,10 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// enclosing return.
 		"EscapeThroughConsumingCallReportedOnce": {
 			src: `
-				fn id(y: {peer: &mut {value: number}}) -> {peer: &mut {value: number}} {
+				fn id(y: {peer: &mut {value: number}}) {
 					return y
 				}
-				fn f() -> {peer: &mut {value: number}} {
+				fn f() {
 					val mut b = {value: 0}
 					return id({peer: &mut b})
 				}
