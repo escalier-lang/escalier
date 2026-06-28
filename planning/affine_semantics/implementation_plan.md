@@ -695,6 +695,15 @@ stored value that borrows a function-local binding is silently accepted today. T
 makes that case the escape error it should be, which is the baseline PR 11 then relaxes
 for a self-contained component.
 
+Status: the return, parameter-field-store, and consuming-argument sites have landed in
+[internal/solver/return_escape.go](../../internal/solver/return_escape.go), built over a
+per-binding borrow-edge graph on `funcCtx` rather than the lifetime sort, so the check
+does not wait on M6.5. Deferred: element stores `xs[i] = …` need index-assignment support
+from M7; extending the borrow graph through a field store into a *local* receiver is left
+to PR 11, since storing a borrow into a borrow-typed field is itself rejected by the type
+system today; field-granular escape such as `return a.peer` waits on PR 11's per-field
+tracking; escaping-closure-capture escape stays deferred with PR 6's closure-capture work.
+
 This is the forcing half of PR 5's first bullet, deferred through PR 6 to here. PR 5
 landed the consumed lattice and the `borrowEscapedToStatic` detection-gap closure; PR 6
 landed the consume at every flow site. Only the `constrainEscape` forcing at the
