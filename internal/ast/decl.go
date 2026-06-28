@@ -38,10 +38,15 @@ const (
 )
 
 type VarDecl struct {
-	Kind         VariableKind
-	Pattern      Pat
-	TypeAnn      TypeAnn // optional
-	Init         Expr    // optional
+	Kind    VariableKind
+	Pattern Pat
+	TypeAnn TypeAnn // optional
+	Init    Expr    // optional
+	// Else is the `else` block of a `let`-`else` binding (`val pat = init else
+	// { … }`). It is non-nil only for that refutable form, where the pattern may
+	// fail to match and the block runs and must diverge. A plain `val`/`var` leaves
+	// it nil.
+	Else         *Block
 	Decorators   []*Decorator
 	export       bool
 	declare      bool
@@ -87,6 +92,9 @@ func (d *VarDecl) Accept(v Visitor) {
 		}
 		if d.Init != nil {
 			d.Init.Accept(v)
+		}
+		if d.Else != nil {
+			d.Else.Accept(v)
 		}
 	}
 	v.ExitDecl(d)

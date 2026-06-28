@@ -64,6 +64,7 @@ const (
 	ReturnJoin                              // a fresh return-join var from inferFunc (the union of every return point)
 	IfElseBranch                            // a fresh branch-join var from inferIfElse (the union of cons / alt)
 	MatchBranch                             // a fresh branch-join var from inferMatch (the union of every arm body)
+	IfLetBranch                             // a fresh branch-join var from inferIfLet (the union of cons / alt)
 	BorrowExprOrigin                        // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
 	OwnedMutConstruction                    // an owned-mutable RefType minted for `val mut q = {…}` from a fresh literal
 )

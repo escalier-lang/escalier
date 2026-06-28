@@ -795,6 +795,73 @@ func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
 	}
 }
 
+// TestBuildLetElse pins the lowering of a `val pat = init else { … }` binding. The
+// initializer is hoisted into a temp, the refutable check guards an `if` whose else
+// branch runs the diverging block, and the pattern's bindings are declared after the
+// guard so they are in scope only on the matching path. The then branch is left
+// empty so the match condition is emitted without a negation, which the
+// precedence-naive printer would otherwise mis-associate.
+func TestBuildLetElse(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		expected string
+	}{
+		"Narrowing": {
+			src: "fn f(u) {\n\tval x: number = u else { return 0 }\n\treturn x\n}",
+			expected: `export function f(temp1) {
+  const u = temp1;
+  let temp2;
+  temp2 = u;
+  if (typeof temp2 === "number") {
+  } else {
+    return 0;
+  }
+  const x = temp2;
+  return x;
+}`,
+		},
+		"Destructure": {
+			src: "fn g(pair) {\n\tval [a, b] = pair else { return 0 }\n\treturn a\n}",
+			expected: `export function g(temp1) {
+  const pair = temp1;
+  let temp2;
+  temp2 = pair;
+  if (temp2.length == 2) {
+  } else {
+    return 0;
+  }
+  const [a, b] = temp2;
+  return a;
+}`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: test.src},
+			})
+			require.Empty(t, errors)
+
+			depGraph := dep_graph.BuildDepGraph(module)
+			builder := &Builder{tempId: 0, depGraph: depGraph}
+			outModule := builder.BuildTopLevelDecls(depGraph)
+
+			printer := NewPrinter()
+			for i, stmt := range outModule.Stmts {
+				if i > 0 {
+					printer.NewLine()
+				}
+				printer.PrintStmt(stmt)
+			}
+			require.Equal(t, test.expected, printer.Output)
+		})
+	}
+}
+
 func TestBuildDecls_WithDependencies(t *testing.T) {
 	tests := map[string]struct {
 		sources  []*ast.Source

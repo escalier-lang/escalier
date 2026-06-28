@@ -30,6 +30,14 @@ import (
 func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type, provenance.Provenance, bool) {
 	switch d := d.(type) {
 	case *ast.VarDecl:
+		if d.Else != nil {
+			// A `let`-`else` binding is a body-level statement form: its `else` must
+			// diverge and its bindings cover the rest of the enclosing block. Neither
+			// is meaningful at module top level, so reject it rather than silently
+			// dropping the else.
+			c.reportUnsupportedFeature(d, "`let`-`else` binding at module top level")
+			return nil, nil, false
+		}
 		initType, ok := c.inferVarDeclInit(scope, lvl, d)
 		if !ok {
 			return nil, nil, false

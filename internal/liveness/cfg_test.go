@@ -89,6 +89,44 @@ func TestCFGIfElse(t *testing.T) {
 	require.Equal(t, 2, len(cfg.Entry.Successors))
 }
 
+func TestCFGLetElse(t *testing.T) {
+	// val x = u else { return d }
+	// print(x)
+	// The else block is its own branch off the initializer's block; the matched path
+	// flows to a join carrying x, then continues to print(x).
+	x := identPat("x")
+	uRef := ident("u")
+	dRef := ident("d")
+	xRef := ident("x")
+
+	letElse := ast.NewDeclStmt(
+		ast.NewVarDecl(ast.ValKind, x, nil, uRef, false, false, span()),
+		span(),
+	)
+	letElse.Decl.(*ast.VarDecl).Else = &ast.Block{
+		Stmts: []ast.Stmt{ast.NewReturnStmt(dRef, span())},
+		Span:  span(),
+	}
+	body := block(
+		letElse,
+		exprStmt(call(ident("print"), xRef)),
+	)
+	Rename(nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
+
+	cfg := BuildCFG(body)
+
+	// Entry evaluates the initializer and branches to the else block and the join.
+	require.Equal(t, 1, len(cfg.Entry.Stmts)) // ExprStmt(u)
+	require.Equal(t, 2, len(cfg.Entry.Successors))
+	// The else block diverges via `return`, so it edges to the exit, not the join.
+	elseBlock := cfg.Entry.Successors[0]
+	require.Equal(t, 1, len(elseBlock.Successors))
+	require.Equal(t, cfg.Exit, elseBlock.Successors[0])
+	// The join defines x and continues to print(x).
+	join := cfg.Entry.Successors[1]
+	require.Equal(t, []VarID{VarID(x.VarID)}, []VarID(join.ExtraDefs))
+}
+
 func TestCFGReturn(t *testing.T) {
 	// val x = 1; return x; print(x)
 	// return terminates the path; print(x) is unreachable

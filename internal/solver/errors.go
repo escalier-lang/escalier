@@ -716,12 +716,32 @@ func (*AwaitOutsideAsyncError) isSolverError()            {}
 func (*ReturnOutsideFunctionError) isSolverError()        {}
 func (*AsyncReturnNotPromiseError) isSolverError()        {}
 func (*NonExhaustiveMatchError) isSolverError()           {}
+func (*LetElseMustDivergeError) isSolverError()           {}
 func (*MutLeafThroughSharedBorrowError) isSolverError()   {}
 
 func (e *NonExhaustiveMatchError) Span() ast.Span      { return e.Match.Span() }
 func (e *NonExhaustiveMatchError) Related() []ast.Span { return nil }
 func (e *NonExhaustiveMatchError) Message() string {
 	return "match is not exhaustive; add a catch-all branch"
+}
+
+// LetElseMustDivergeError fires when a `val pat = init else { … }` binding has an
+// `else` block that can fall through. The `else` runs only when the pattern fails
+// to match, and execution then continues past the binding with the pattern's names
+// in scope, so a non-diverging `else` would leave them bound to nothing. The block
+// must transfer control out with a trailing `return` or `throw`, giving it bottom
+// (`never`) type.
+//
+// It is a bridge error born in inferLetElse with the decl node in hand, so it
+// self-blames the whole binding through Span and carries no related node.
+type LetElseMustDivergeError struct {
+	Decl *ast.VarDecl
+}
+
+func (e *LetElseMustDivergeError) Span() ast.Span      { return e.Decl.Span() }
+func (e *LetElseMustDivergeError) Related() []ast.Span { return nil }
+func (e *LetElseMustDivergeError) Message() string {
+	return "the `else` of a `let`-`else` binding must diverge; end it with `return` or `throw`"
 }
 
 // MutLeafThroughSharedBorrowError fires when a destructuring pattern marks a leaf

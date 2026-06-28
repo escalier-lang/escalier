@@ -207,6 +207,14 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 		return current
 	}
 
+	// A `let`-`else` binding is itself a branch: the else block runs when the
+	// pattern fails to match and must diverge, while the matched path continues with
+	// the pattern's bindings in scope. Decompose it so the else's statements get
+	// their own block rather than being lumped into the current one.
+	if vd.Else != nil {
+		return b.processLetElse(vd, current)
+	}
+
 	joinDefs := collectPatVarDefs(vd.Pattern)
 	if join := b.decomposeBranch(vd.Init, joinDefs, current); join != nil {
 		b.recordDecomposed(s, join)
@@ -215,6 +223,32 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 
 	current.Stmts = append(current.Stmts, s)
 	return current
+}
+
+// processLetElse decomposes a `val pat = init else { … }` binding. The initializer
+// is evaluated in the current block, the else block becomes a branch that runs on a
+// failed match, and the join block carries the pattern's bindings, which are visible
+// only on the matched path. The else is required to diverge, so it normally has no
+// edge to the join.
+func (b *cfgBuilder) processLetElse(vd *ast.VarDecl, current *BasicBlock) *BasicBlock {
+	// Evaluate the initializer in the current block so its uses are collected.
+	current.Stmts = append(current.Stmts, ast.NewExprStmt(vd.Init, vd.Init.Span()))
+
+	join := b.newBlock()
+	join.ExtraDefs = collectPatVarDefs(vd.Pattern)
+
+	elseBlock := b.newBlock()
+	b.addEdge(current, elseBlock)
+	elseEnd := b.processStmts(vd.Else.Stmts, elseBlock)
+	if elseEnd != nil {
+		// A diverging else has no fall-through. Keep an edge for soundness if it can
+		// still reach its end; the checker separately rejects a non-diverging else.
+		b.addEdge(elseEnd, join)
+	}
+
+	// The matched path falls through to the continuation with the bindings in scope.
+	b.addEdge(current, join)
+	return join
 }
 
 // decomposeBranch decomposes a branching expression into separate basic

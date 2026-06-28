@@ -738,6 +738,10 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			return initStmts
 		}
 
+		if d.Else != nil {
+			return slices.Concat(initStmts, b.buildLetElse(d, initExpr))
+		}
+
 		// Ignore checks returned by buildPattern
 		// Only export if we're in module mode AND not inside a block scope
 		export := b.isModule && !b.inBlockScope
@@ -2537,6 +2541,39 @@ func simplifyTrueLiterals(stmt Stmt) Stmt {
 }
 
 // buildPatternCondition builds the condition expression and binding statements for a pattern
+// buildLetElse lowers `val pat = init else { … }`. The initializer is hoisted into
+// a temp so the refutable check and the bindings read one evaluated value. An `if`
+// over the pattern's match condition runs the diverging `else` in its else branch
+// and leaves its then branch empty, so the match condition is used as-is rather than
+// negated — the printer does not parenthesize, so a negated binary condition would
+// mis-associate. The pattern's bindings are declared after that guard, so they are in
+// scope for the rest of the block only on the matching path. A decl-level type
+// annotation narrows the union to one member, so the check is a type guard on the
+// temp rather than the pattern's own condition.
+func (b *Builder) buildLetElse(d *ast.VarDecl, initExpr Expr) []Stmt {
+	tempVar, tempDeclStmt := b.createTempVar(d.Init)
+	initAssign := &ExprStmt{
+		Expr:   NewBinaryExpr(tempVar, Assign, initExpr, d.Init),
+		source: d.Init,
+	}
+
+	condition, bindingStmts := b.buildPatternCondition(d.Pattern, tempVar)
+	if d.TypeAnn != nil {
+		condition = b.buildTypeGuard(tempVar, d.TypeAnn)
+	}
+
+	elseStmts := b.buildStmts(d.Else.Stmts)
+	guard := NewIfStmt(
+		condition,
+		NewBlockStmt(nil, d),
+		NewBlockStmt(elseStmts, d),
+		d,
+	)
+
+	stmts := []Stmt{tempDeclStmt, initAssign, guard}
+	return slices.Concat(stmts, bindingStmts)
+}
+
 func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr, []Stmt) {
 	switch pat := pattern.(type) {
 	case *ast.IdentPat:

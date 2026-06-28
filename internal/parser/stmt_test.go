@@ -341,6 +341,15 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"AsyncGeneratorFuncDecl": {
 			input: `async fn fetch() { yield await x }`,
 		},
+		"LetElseBareIdent": {
+			input: `val x = u else { return }`,
+		},
+		"LetElseNarrowing": {
+			input: `val x: number = u else { return 0 }`,
+		},
+		"LetElseDestructure": {
+			input: `val [a, b] = u else { throw "no" }`,
+		},
 	}
 
 	for name, test := range tests {

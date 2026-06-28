@@ -2087,6 +2087,111 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	return res
 }
 
+// inferIfLet types `if let pat = target { cons } else { alt }`, the one-arm
+// refutable-binding form. The target is inferred once. The pattern binds fresh
+// names in the consequent at the NARROWED member type, while the alternate sees
+// the target's own type unchanged — narrowing lives on the pattern's bindings, not
+// on the scrutinee, so the original binding keeps its type for its whole scope.
+//
+// The result joins the two branches exactly as inferIfElse does: a fresh var with
+// each non-diverging branch as a lower bound. A missing else contributes Void. A
+// diverging branch drops out of the branch union, so `val x = if let y = u {
+// return y } else { 0 }` is `0`.
+func (c *checker) inferIfLet(scope *Scope, lvl int, e *ast.IfLetExpr) soltype.Type {
+	scrutinee := c.inferExpr(scope, lvl, e.Target)
+	consScope := scope.Child()
+	c.bindRefutable(consScope, lvl, e.Pattern, patternNarrowAnn(e.Pattern), scrutinee)
+	consT, consDiverges := c.inferBlock(consScope, lvl, &e.Cons)
+	// The alternate runs in the original scope, so it sees the scrutinee at its full
+	// type without the narrowing the consequent's bindings carry.
+	var altT soltype.Type = &soltype.Void{}
+	altDiverges := false
+	if e.Alt != nil {
+		altT, altDiverges = c.inferBlockOrExpr(scope, lvl, e.Alt)
+	}
+	res := c.freshAt(lvl)
+	c.recordProv(res, e, IfLetBranch)
+	if !consDiverges {
+		c.constrain(e, consT, res)
+	}
+	if !altDiverges {
+		c.constrain(e, altT, res)
+	}
+	c.recordType(e, res)
+	return res
+}
+
+// patternNarrowAnn returns the narrowing type annotation an `if let` pattern
+// carries directly, as in `if let x: number = u`. Only a bare identifier pattern
+// carries one; every other pattern narrows structurally and has none.
+func patternNarrowAnn(pat ast.Pat) ast.TypeAnn {
+	if ip, ok := pat.(*ast.IdentPat); ok {
+		return ip.TypeAnn
+	}
+	return nil
+}
+
+// bindRefutable binds a refutable pattern's names against a scrutinee for an
+// `if let` consequent or a `let`-`else` body. ann is the narrowing annotation, the
+// matched member type. `if let x: T = u` carries it on the pattern, while
+// `val x: T = u else { … }` carries it on the decl. When ann is non-nil the pattern
+// must be a bare identifier, bound at the narrowed type, and the annotation is
+// constrained as an admissible value of the scrutinee. For a union scrutinee that
+// constraint is the union-super exists rule, which picks the matching member, so
+// `if let x: number = u` over `u: number | string` binds x at number. With no
+// annotation, the pattern reuses the structural binding path that `val` destructuring
+// and match arms share. An identifier then binds to the whole scrutinee, and an
+// object or tuple pattern destructures against it.
+func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.TypeAnn, scrutinee soltype.Type) {
+	if ann == nil {
+		c.bindPattern(scope, lvl, pat, scrutinee, nil)
+		return
+	}
+	ip, ok := pat.(*ast.IdentPat)
+	if !ok {
+		// A narrowing annotation on a destructuring pattern would need the annotation
+		// distributed across the pattern's leaves, which the checker does not do.
+		// Report it and fall back to binding the pattern structurally against the
+		// scrutinee.
+		c.reportUnsupportedFeature(pat, "narrowing type annotation on a destructuring pattern")
+		c.bindPattern(scope, lvl, pat, scrutinee, nil)
+		return
+	}
+	narrowed, resolved := c.resolveTypeAnn(ann, lvl)
+	if !resolved {
+		// The annotation was unsupported and already reported. Bind the name to the
+		// whole scrutinee so the body still type-checks against a real type rather
+		// than cascading a second error off a `never` placeholder.
+		narrowed = scrutinee
+	} else {
+		c.constrain(pat, narrowed, scrutinee)
+	}
+	scope.defineValue(ip.Name, ValueBinding{Schemes: []TypeScheme{monoScheme(narrowed)}})
+	c.recordType(ip, narrowed)
+}
+
+// inferLetElse types a `val pat = init else { … }` binding. The pattern binds its
+// names into the enclosing scope for the rest of the block at the NARROWED type,
+// exactly like an `if let` consequent, and the `else` block runs when the pattern
+// fails to match. The `else` must diverge. Execution continues past the binding with
+// the names in scope, so a fall-through `else` would leave them unmatched. A
+// diverging block has bottom (`never`) type, the dual of an `if let` alternate that
+// may produce a value.
+func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
+	if d.Init == nil {
+		c.reportUnsupported(d)
+		return
+	}
+	initType := c.inferExpr(scope, lvl, d.Init)
+	c.bindRefutable(scope, lvl, d.Pattern, d.TypeAnn, initType)
+	// The else runs in its own child scope. It cannot see the pattern's bindings,
+	// which are in scope only on the matching path.
+	c.inferBlock(scope.Child(), lvl, d.Else)
+	if !blockDiverges(d.Else) {
+		c.report(&LetElseMustDivergeError{Decl: d})
+	}
+}
+
 // inferMatch types a `match` expression. The scrutinee is inferred once. Each arm
 // then types its pattern against the scrutinee in a child scope carrying the arm's
 // bindings, the same E1 bindPattern path `val` destructuring uses. An optional `if`

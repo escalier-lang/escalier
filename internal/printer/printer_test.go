@@ -64,6 +64,28 @@ func parseTypeAnn(t *testing.T, input string) ast.TypeAnn {
 // declarations, expressions, and type annotations (#677 §4.1).
 // TestPrintInexactObjectAndTupleAnnotations covers the trailing `...` marker on
 // object and tuple type annotations (M4 A3) round-tripping through the printer.
+// A `let`-`else` binding round-trips through the printer: the `else` block is
+// rendered after the initializer, including the narrowing type annotation.
+func TestPrintLetElse(t *testing.T) {
+	opts := DefaultOptions()
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"bare", "val x = u else { return }", "val x = u else {\n    return\n}"},
+		{"narrowing", "val x: number = u else { return 0 }", "val x: number = u else {\n    return 0\n}"},
+		{"destructure", "val [a, b] = u else { throw e }", "val [a, b] = u else {\n    throw e\n}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Print(parseDecl(t, tt.input), opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestPrintInexactObjectAndTupleAnnotations(t *testing.T) {
 	opts := DefaultOptions()
 

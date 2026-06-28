@@ -204,6 +204,14 @@ func (r *renamer) renameDecl(decl ast.Decl) {
 		if d.Init != nil {
 			r.renameExpr(d.Init)
 		}
+		// A `let`-`else` binding's else block runs only when the pattern fails to
+		// match, so it cannot see the pattern's bindings. Rename it in its own scope
+		// before the pattern defines them, mirroring the if-let alternate.
+		if d.Else != nil {
+			r.pushScope()
+			r.renameBlock(*d.Else)
+			r.popScope()
+		}
 		r.renamePat(d.Pattern)
 	case *ast.FuncDecl:
 		// The function name is a binding in the current scope.
