@@ -42,6 +42,7 @@ func (p *Parser) typeAnnRequired() ast.TypeAnn {
 func (p *Parser) typeAnn() ast.TypeAnn {
 	typeAnns := NewStack[ast.TypeAnn]()
 	ops := NewStack[*TypeAnnOp]()
+	unionInexact := false
 
 	token := p.lexer.peek()
 	//nolint: exhaustive
@@ -94,6 +95,18 @@ loop:
 		}
 
 		p.lexer.consume()
+
+		// A trailing `...` after a `|` marks the union inexact. An inexact union
+		// holds at least the members listed, plus an unknown-typed tail. The
+		// marker ends the operand loop, so the operator stack drains over the
+		// members already collected. The flag is applied to the popped top-level
+		// union below.
+		if nextOp.Kind == Union && p.lexer.peek().Type == DotDotDot {
+			p.lexer.consume()
+			unionInexact = true
+			break loop
+		}
+
 		skipOp := false
 
 		if !ops.IsEmpty() {
@@ -173,7 +186,13 @@ loop:
 		p.reportError(span, "internal error: type annotation stack invariant violated")
 		return ast.NewErrorTypeAnn(span)
 	}
-	return typeAnns.Pop()
+	result := typeAnns.Pop()
+	if unionInexact {
+		if u, ok := result.(*ast.UnionTypeAnn); ok {
+			u.Inexact = true
+		}
+	}
+	return result
 }
 
 func (p *Parser) primaryTypeAnn() ast.TypeAnn {

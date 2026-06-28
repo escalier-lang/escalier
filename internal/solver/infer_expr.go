@@ -1980,6 +1980,19 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 // Exhaustiveness is checked from structural exactness by checkMatchExhaustive.
 func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
+	// Snapshot the scrutinee's shape for the exhaustiveness check before any arm
+	// binds. A literal pattern records its literal as a lower bound on a scrutinee
+	// variable, so reading the union after the arm loop would fold every arm
+	// literal into it. Over `x: "a" | "b"` the arm `"z" if guard => …` would then
+	// leak `"z"` as a phantom member and report a false non-exhaustive error.
+	// Coalescing a variable to its positive form here reads only the bounds
+	// established before the match, so an inferred union such as `"a" | "b"` from
+	// an if/else over two literals is checked while an annotated scrutinee, which
+	// is already concrete, is left untouched.
+	matchShape := scrutinee
+	if _, isVar := soltype.CarrierOf(scrutinee).(*soltype.TypeVarType); isVar {
+		matchShape = coalesce(scrutinee, soltype.Positive)
+	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, MatchBranch)
 	for _, arm := range e.Cases {
@@ -2003,7 +2016,7 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 			c.constrain(e, bodyT, res)
 		}
 	}
-	c.checkMatchExhaustive(e, scrutinee)
+	c.checkMatchExhaustive(e, matchShape)
 	c.recordType(e, res)
 	return res
 }
@@ -2014,10 +2027,18 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 // arm matching it covers every value. An inexact object or tuple carries an open
 // tail of unknown values, so only an unguarded catch-all covers it. A catch-all is
 // a wildcard `_` or an identifier pattern. A scrutinee that is neither an object nor
-// a tuple is not checked here. Union-scrutinee exhaustiveness is M6 and enum
-// exhaustiveness is M5, and both extend this same path.
+// a tuple is not checked here. Enum-scrutinee exhaustiveness is M5 and extends
+// this same path. The caller passes the scrutinee already coalesced to its
+// pre-match shape, so an inferred union reaches here as a UnionType.
 func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type) {
-	inexact, isStructural := structuralInexact(soltype.CarrierOf(scrutinee))
+	carrier := soltype.CarrierOf(scrutinee)
+	if u, ok := carrier.(*soltype.UnionType); ok {
+		if !c.unionMatchExhaustive(e, u) {
+			c.report(&NonExhaustiveMatchError{Match: e})
+		}
+		return
+	}
+	inexact, isStructural := structuralInexact(carrier)
 	if !isStructural {
 		return
 	}
@@ -2029,6 +2050,55 @@ func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type)
 		}
 	}
 	c.report(&NonExhaustiveMatchError{Match: e})
+}
+
+// unionMatchExhaustive reports whether the unguarded arms cover every value a
+// union scrutinee can take. An unguarded catch-all covers any union, exact or
+// inexact. An inexact union also carries an open tail of unknown values, so only
+// a catch-all covers it. An exact union is covered when the unguarded arms
+// collectively match every member. For example, a literal member `"a"` of
+// `"a" | "b"` is matched by an arm whose literal pattern is `"a"`.
+func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) bool {
+	for _, arm := range e.Cases {
+		if arm.Guard == nil && isCatchAll(arm.Pattern) {
+			return true
+		}
+	}
+	if u.Inexact {
+		return false
+	}
+	for _, member := range u.Types {
+		if !c.unionMemberCovered(member, e.Cases) {
+			return false
+		}
+	}
+	return true
+}
+
+// unionMemberCovered reports whether some unguarded arm matches a single union
+// member. A catch-all matches any member. A literal pattern matches a literal
+// member of equal value. Any other member or pattern shape is conservatively
+// treated as uncovered, so such a union still needs a catch-all to be
+// exhaustive. This is sound but not complete, which keeps the union leg scoped
+// to literal members until structural-member coverage lands.
+func (c *checker) unionMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
+	memberLit, memberIsLit := member.(*soltype.LitType)
+	for _, arm := range arms {
+		if arm.Guard != nil {
+			continue
+		}
+		if isCatchAll(arm.Pattern) {
+			return true
+		}
+		armLit, ok := arm.Pattern.(*ast.LitPat)
+		if !ok || !memberIsLit {
+			continue
+		}
+		if lt, ok := c.litTypeOf(armLit.Lit); ok && memberLit.Equal(lt) {
+			return true
+		}
+	}
+	return false
 }
 
 // structuralInexact returns the Inexact flag of an object or tuple type and whether
@@ -2054,11 +2124,24 @@ func structuralInexact(t soltype.Type) (inexact bool, ok bool) {
 // values the pattern cannot see, so it still needs a true catch-all. A literal
 // pattern is refutable and never covers.
 func armCoversShape(p ast.Pat, inexact bool) bool {
+	if isCatchAll(p) {
+		return true
+	}
+	switch p.(type) {
+	case *ast.ObjectPat, *ast.TuplePat:
+		return !inexact && irrefutablePat(p)
+	default:
+		return false
+	}
+}
+
+// isCatchAll reports whether a pattern matches every value unconditionally, so an
+// unguarded arm with it alone makes any match exhaustive. A wildcard or
+// identifier binds without testing the value. Every other pattern is refutable.
+func isCatchAll(p ast.Pat) bool {
 	switch p.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
 		return true
-	case *ast.ObjectPat, *ast.TuplePat:
-		return !inexact && irrefutablePat(p)
 	default:
 		return false
 	}

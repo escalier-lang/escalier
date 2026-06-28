@@ -51,6 +51,15 @@ func TestParseInexactMarker(t *testing.T) {
 		require.True(t, fn.Inexact)
 		require.Empty(t, fn.Params)
 	})
+
+	t.Run("union type annotation", func(t *testing.T) {
+		ta, errs := ParseTypeAnn(ctx, "number | string | ...")
+		require.Empty(t, errs)
+		u, ok := ta.(*ast.UnionTypeAnn)
+		require.True(t, ok)
+		require.True(t, u.Inexact)
+		require.Len(t, u.Types, 2) // the `...` does not become a member
+	})
 }
 
 // A bare function (no trailing `...`) is exact, and a `...rest` is an ordinary rest
@@ -73,5 +82,13 @@ func TestParseExactAndRestAreNotInexact(t *testing.T) {
 		require.Len(t, fd.Params, 2) // x and the rest param
 		_, isRest := fd.Params[1].Pattern.(*ast.RestPat)
 		require.True(t, isRest)
+	})
+
+	t.Run("bare union is exact", func(t *testing.T) {
+		ta, errs := ParseTypeAnn(ctx, "number | string")
+		require.Empty(t, errs)
+		u, ok := ta.(*ast.UnionTypeAnn)
+		require.True(t, ok)
+		require.False(t, u.Inexact)
 	})
 }

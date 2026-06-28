@@ -381,6 +381,7 @@ func (t *TupleTypeAnn) Accept(v Visitor) {
 
 type UnionTypeAnn struct {
 	Types        []TypeAnn
+	Inexact      bool // trailing `...` marker: `A | B | ...` tolerates an unknown tail
 	span         Span
 	inferredType Type
 }
