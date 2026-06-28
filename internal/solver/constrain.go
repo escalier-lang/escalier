@@ -289,13 +289,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// param to be optional, so it is never passed.
 			//
 			// An inexact super passes unknown-typed arguments past its arity, so each
-			// surplus sub param must accept unknown, contravariantly. This is the
-			// Variation-B rule from exact-types §4.2.1.2. A surplus param typed number is
-			// rejected, since unknown is not a subtype of number, while unknown or an
-			// inference variable is accepted. A surplus rest param is left arity-only,
-			// because checking its trailing arguments against the element type needs
-			// Array<T>, which lands in M7. A function is its own annotation context, so
-			// the deep-mut flag resets.
+			// surplus sub param must accept unknown, contravariantly. For example,
+			//
+			//	val wide: fn(a: number, b?: number, ...) -> number = ...
+			//	val slot: fn(x: number, ...) -> number = wide
+			//
+			// is rejected, because slot's `...` tail may pass any type at b's position,
+			// which b's number cannot accept. A surplus param typed unknown or an
+			// inference variable is accepted instead. A surplus rest param is left
+			// arity-only, because checking its trailing arguments against the element
+			// type needs Array<T>, which lands in M7. A function is its own annotation
+			// context, so the deep-mut flag resets.
 			var errs []SolverError
 			n := min(len(sub.Params), len(sup.Params))
 			for i := 0; i < n; i++ {
