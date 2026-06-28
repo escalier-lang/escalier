@@ -9,11 +9,13 @@ import (
 // TestReturnEscape covers the return-escape rule: a value flowing out of the frame
 // may not borrow a function-local, since the local dies when the frame returns. A borrow
 // of a parameter is exempt, because its lifetime is supplied by the caller and already
-// outlives the return.
+// outlives the return. Each case also pins the function's inferred type, since the escape
+// is reported alongside ordinary inference rather than replacing it.
 func TestReturnEscape(t *testing.T) {
 	tests := map[string]struct {
-		src  string
-		want []string
+		src   string
+		want  []string
+		types map[string]string
 	}{
 		// Returning a binding that borrows a local escapes the local it borrows. The
 		// binding a holds `&mut b`, so returning a would leave a's edge dangling at b,
@@ -26,7 +28,8 @@ func TestReturnEscape(t *testing.T) {
 					return a
 				}
 			`,
-			want: []string{"5:13-5:14: borrowed value 'b' does not live long enough to escape the function"},
+			want:  []string{"5:13-5:14: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
 		},
 		// A borrow of a local written directly into the returned literal escapes the same
 		// way, with no intervening binding.
@@ -37,7 +40,8 @@ func TestReturnEscape(t *testing.T) {
 					return {peer: &mut b}
 				}
 			`,
-			want: []string{"4:13-4:27: borrowed value 'b' does not live long enough to escape the function"},
+			want:  []string{"4:13-4:27: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
 		},
 		// Returning the borrow itself, `return &mut b`, escapes the local b.
 		"ReturnDirectBorrowOfLocal": {
@@ -47,7 +51,8 @@ func TestReturnEscape(t *testing.T) {
 					return &mut b
 				}
 			`,
-			want: []string{"4:13-4:19: borrowed value 'b' does not live long enough to escape the function"},
+			want:  []string{"4:13-4:19: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> &mut {value: number}"},
 		},
 		// A binding that borrows two locals escapes both, reported in source order.
 		"ReturnBindingBorrowingTwoLocals": {
@@ -63,6 +68,7 @@ func TestReturnEscape(t *testing.T) {
 				"6:13-6:14: borrowed value 'b' does not live long enough to escape the function",
 				"6:13-6:14: borrowed value 'c' does not live long enough to escape the function",
 			},
+			types: map[string]string{"build": "fn () -> {p: &mut {x: number}, q: &mut {x: number}}"},
 		},
 		// A whole-binding move carries the borrow forward: `val a2 = a` moves a's value,
 		// borrow and all, into a2, so returning a2 escapes the same local a would.
@@ -75,7 +81,8 @@ func TestReturnEscape(t *testing.T) {
 					return a2
 				}
 			`,
-			want: []string{"6:13-6:15: borrowed value 'b' does not live long enough to escape the function"},
+			want:  []string{"6:13-6:15: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
 		},
 		// Returning a disjoint owned field of a binding that also has a borrow field does
 		// not escape: `a.data` carries none of a's borrow of b. The whole-binding edge is
@@ -88,7 +95,8 @@ func TestReturnEscape(t *testing.T) {
 					return a.data
 				}
 			`,
-			want: nil,
+			want:  nil,
+			types: map[string]string{"build": "fn () -> {value: number}"},
 		},
 		// Returning a parameter borrow is sound: the borrow carries the caller's lifetime,
 		// which outlives the call.
@@ -98,7 +106,8 @@ func TestReturnEscape(t *testing.T) {
 					return p
 				}
 			`,
-			want: nil,
+			want:  nil,
+			types: map[string]string{"pass": "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}"},
 		},
 		// Borrowing a parameter and returning the borrow is sound for the same reason.
 		"ReturnBorrowOfParamOk": {
@@ -107,7 +116,8 @@ func TestReturnEscape(t *testing.T) {
 					return &mut p
 				}
 			`,
-			want: nil,
+			want:  nil,
+			types: map[string]string{"pass": "fn (p: mut {x: number}) -> &mut {x: number}"},
 		},
 		// A local that only borrows a parameter is returnable: the edge to the parameter
 		// is never recorded, so returning the local raises no escape.
@@ -118,13 +128,15 @@ func TestReturnEscape(t *testing.T) {
 					return a
 				}
 			`,
-			want: nil,
+			want:  nil,
+			types: map[string]string{"pass": "fn <'a>(p: &'a mut {x: number}) -> {peer: &'a mut {x: number}}"},
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, _, errs := inferSource(t, tc.src)
+			values, _, errs := inferSource(t, tc.src)
 			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.types, values)
 		})
 	}
 }
@@ -132,11 +144,13 @@ func TestReturnEscape(t *testing.T) {
 // TestEscapeAtStoreAndArgSites covers the other two flow-out sites: a field store
 // into a parameter, where the value flows into the caller's object, and a consuming
 // argument, where it flows into the callee. A borrow of a local that flows out either
-// way escapes, while a parameter borrow and a plain owned value do not.
+// way escapes, while a parameter borrow and a plain owned value do not. Each case also
+// pins the inferred type of every function it declares.
 func TestEscapeAtStoreAndArgSites(t *testing.T) {
 	tests := map[string]struct {
-		src  string
-		want []string
+		src   string
+		want  []string
+		types map[string]string
 	}{
 		// Storing a borrow of a local into a parameter's field escapes: the parameter's
 		// object outlives the frame, so the stored local would dangle in the caller.
@@ -147,7 +161,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 					p.peer = &mut b
 				}
 			`,
-			want: []string{"4:15-4:21: borrowed value 'b' does not live long enough to escape the function"},
+			want:  []string{"4:15-4:21: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}) -> void"},
 		},
 		// Storing a parameter borrow into a parameter's field is sound: the stored borrow
 		// carries the caller's lifetime, which outlives the frame.
@@ -157,7 +172,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 					p.peer = q
 				}
 			`,
-			want: nil,
+			want:  nil,
+			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}, q: &mut {value: number}) -> void"},
 		},
 		// Passing a value that borrows a local as a consuming argument escapes: the callee
 		// takes ownership of the value and could retain it past the frame.
@@ -171,6 +187,10 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				}
 			`,
 			want: []string{"6:12-6:13: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{
+				"store": "fn (x: {peer: &mut {value: number}}) -> void",
+				"f":     "fn () -> void",
+			},
 		},
 		// Auto-borrowing a local into a `&mut` parameter is sound: the parameter borrows
 		// for the call rather than consuming, so the local outlives the borrow.
@@ -183,6 +203,10 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				}
 			`,
 			want: nil,
+			types: map[string]string{
+				"read": "fn (x: &mut {value: number}) -> void",
+				"f":    "fn () -> void",
+			},
 		},
 		// A consuming argument that is a plain owned value carries no borrow, so it moves
 		// into the callee with no escape.
@@ -195,6 +219,10 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				}
 			`,
 			want: nil,
+			types: map[string]string{
+				"store": "fn (x: {value: number}) -> void",
+				"f":     "fn () -> void",
+			},
 		},
 		// A borrow passed to an inner call is consumed by that call, not carried out by
 		// the owned value the call yields. Wrapping the call in a consuming call does not
@@ -211,6 +239,11 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				}
 			`,
 			want: nil,
+			types: map[string]string{
+				"read":  "fn (x: &mut {value: number}) -> {value: number}",
+				"store": "fn (y: {value: number}) -> void",
+				"f":     "fn () -> void",
+			},
 		},
 		// A single escape through a consuming call inside a return is reported once, at the
 		// argument where the local borrow flows into the callee, not a second time at the
@@ -226,12 +259,17 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				}
 			`,
 			want: []string{"7:16-7:30: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{
+				"id": "fn <'a>(y: {peer: &'a mut {value: number}}) -> {peer: &'a mut {value: number}}",
+				"f":  "fn () -> {peer: &mut {value: number}}",
+			},
 		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, _, errs := inferSource(t, tc.src)
+			values, _, errs := inferSource(t, tc.src)
 			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.types, values)
 		})
 	}
 }
