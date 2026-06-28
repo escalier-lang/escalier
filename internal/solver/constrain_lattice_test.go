@@ -160,6 +160,29 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 	})
 }
 
+// TestConstrainInexactUnionSuperAcceptsViaTail covers the union-super exists rule for
+// an INEXACT super. The open tail is unknown-typed, so a concrete sub that matches no
+// named member is still subsumed by the tail and accepted, rather than reported as a
+// union-level CannotConstrainError.
+//
+//	boolean <: (number | string | ...)    accepted via the open tail
+//
+// This is the dual of TestConstrainInexactUnionIntoClosedRejects, where an inexact SUB
+// into a closed super is rejected because that tail can't be absorbed. The parser surface
+// for `A | B | ...` lands in PR4, so until then the rule fires only against an
+// internally-built inexact union, minted directly through the smart constructor.
+func TestConstrainInexactUnionSuperAcceptsViaTail(t *testing.T) {
+	c := &Context{}
+	t.Run("non-member accepted via the open tail", func(t *testing.T) {
+		super := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
+		require.Empty(t, c.Constrain(boolT(), super))
+	})
+	t.Run("a named member still commits its branch", func(t *testing.T) {
+		super := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
+		require.Empty(t, c.Constrain(num(), super))
+	})
+}
+
 // TestConstrainUnionPrecedesRefArm proves the pre-switch placement: a
 // borrow flowing into a union of borrows must match a member, NOT hit the
 // RefType arm's "non-variable super" path that treats a union super as a

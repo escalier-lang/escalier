@@ -231,40 +231,37 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	}
 
-	// sub <: (A | B) ⟹ sub <: A OR sub <: B. Trial each member under a probe;
-	// the first success commits, the losers roll back. Free TypeVar members
-	// are skipped to avoid speculatively pinning them to sub.
+	// sub <: (A | B) ⟹ sub <: A OR sub <: B. Trial each concrete member under a
+	// probe most-specific-first; the first success commits, the losers roll back.
+	// Free TypeVar members are skipped to avoid speculatively pinning them to sub.
 	if supU, ok := super.(*soltype.UnionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
-			var trialErrs [][]SolverError
-			triedAny := false
-			for _, m := range supU.Types {
-				if _, isVar := m.(*soltype.TypeVarType); isVar {
-					continue
-				}
-				triedAny = true
-				p := newProbe(c.probe)
-				c.probe = p
-				errs := c.constrain(sub, m, seen.Clone(), mutCtx)
-				c.probe = p.parent
-				if len(errs) == 0 {
-					p.Commit()
+			order := concreteSpecificityOrder(supU.Types)
+			if len(order) > 0 {
+				committed, trialErrs := c.trialAndCommit(order, func(idx int) []SolverError {
+					// A cloned seen keeps each member's coinductive cache independent, so a
+					// failed member's entries can't wrongly short-circuit a later member.
+					return c.constrain(sub, supU.Types[idx], seen.Clone(), mutCtx)
+				})
+				if committed {
 					return nil
 				}
-				p.Discard()
-				trialErrs = append(trialErrs, errs)
-			}
-			if !triedAny {
-				// Every member was a free var; fall through to the var arms.
-			} else {
-				// Every concrete branch failed. Promote a uniform
-				// BorrowEscape outcome so the lifetime cause survives;
-				// otherwise emit the generic union-level error.
+				if supU.Inexact {
+					// An inexact union super has an open, unknown-typed tail. A sub that
+					// matches no named member is subsumed by that tail, so accept it. This
+					// is the dual of the union-sub arm above, which rejects an inexact sub
+					// into a closed super because that open tail can't be absorbed.
+					return nil
+				}
+				// Every concrete branch failed. Promote a uniform BorrowEscape outcome
+				// so the lifetime cause survives; otherwise emit the generic union-level
+				// error.
 				if commonBorrowEscape(trialErrs) != nil {
 					return []SolverError{&BorrowEscapeError{Sub: sub.(*soltype.RefType), Super: super}}
 				}
 				return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 			}
+			// Every member was a free var; fall through to the var arms.
 		}
 	}
 
@@ -529,31 +526,22 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		//     direct call would, in the same order.
 		//   - Annotation input (M6 PR2). `val x: A & B = e` resolves through
 		//     resolveTypeAnn into an IntersectionType and reaches here when the
-		//     binding flows into a constraint. specificityOrder ranks
-		//     non-function arms last in declaration order, so a non-function
-		//     intersection trials in declaration order without a separate code
-		//     path.
+		//     binding flows into a constraint. specificityOrder ranks general
+		//     types, so a non-function intersection trials its more-specific
+		//     members first; incomparable members keep declaration order.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && len(sub.Types) > 0 {
-			funcs := make([]*soltype.FuncType, len(sub.Types))
-			for i, m := range sub.Types {
-				funcs[i], _ = m.(*soltype.FuncType)
-			}
-			var lastErrs []SolverError
-			for _, idx := range specificityOrder(funcs) {
-				p := newProbe(c.probe)
-				c.probe = p
+			committed, trialErrs := c.trialAndCommit(specificityOrder(sub.Types), func(idx int) []SolverError {
 				// A cloned seen keeps each arm's coinductive cache independent, so a failed
 				// arm's entries can't wrongly short-circuit a later arm to success.
-				errs := c.constrain(sub.Types[idx], super, seen.Clone(), mutCtx)
-				c.probe = p.parent
-				if len(errs) == 0 {
-					p.Commit()
-					return nil
-				}
-				p.Discard()
-				lastErrs = errs
+				return c.constrain(sub.Types[idx], super, seen.Clone(), mutCtx)
+			})
+			if committed {
+				return nil
 			}
-			return lastErrs
+			if len(trialErrs) > 0 {
+				return trialErrs[len(trialErrs)-1] // no arm matched: surface the last arm's failure
+			}
+			return nil
 		}
 	}
 
