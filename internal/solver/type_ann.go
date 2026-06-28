@@ -248,12 +248,8 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 	params := make([]*soltype.FuncParam, len(ta.Params))
 	for i, p := range ta.Params {
 		pat := p.Pattern
-		// A rest param is reported unsupported and recovered as a normal positional
-		// param. The value-function path also rejects RestPat. acceptSet, hasRest,
-		// and requiredCount all assume a rest param is the last one. The parser does
-		// not enforce that for a non-last `...x`, so setting Rest here could corrupt
-		// the accept-set. Modeling the rest arity effect rides M4/M9 with rest
-		// element-type checking.
+		// A rest param recovers to a normal positional param. acceptSet/hasRest assume
+		// a rest param is last, which the parser does not enforce, so Rest is unset.
 		if rp, ok := pat.(*ast.RestPat); ok {
 			c.reportUnsupportedFeature(rp, "rest parameter in function type annotation")
 			pat = rp.Pattern
@@ -266,11 +262,8 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 				pt = t
 			}
 		}
-		// A function type annotation binds no values, so the parameter name is
-		// carried for rendering only. There is no scope binding or constraint, unlike
-		// bindPattern. An IdentPat mirrors by name. Any other shape leaves the
-		// pattern nil, which the printer renders as a positional name such as arg0,
-		// without affecting the parameter's type.
+		// The parameter name is carried for rendering only, with no scope binding. A
+		// non-IdentPat leaves the pattern nil, which the printer renders as arg0, arg1.
 		var mirror soltype.Pat
 		if name, ok := identPatName(pat); ok {
 			mirror = &soltype.IdentPat{Name: name}
