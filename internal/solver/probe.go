@@ -254,17 +254,19 @@ func (c *checker) openProbe() *Probe {
 	return p
 }
 
-// trialAndCommit trials each index in order under a fresh child probe, returning at the
-// first trial whose body reports no errors. That winning trial's bound mutations commit,
-// and every losing trial rolls back so it leaves no bound behind. The boolean reports
-// whether a trial committed. When none does, the per-trial error lists are returned in
-// trial order so the caller can promote a shared failure, such as the union-super rule's
-// uniform BorrowEscapeError, or surface the last trial's diagnostics.
+// trialAndCommit tries each index in order, running its trial under a fresh child probe.
+// The first trial whose body reports no errors wins. Its bound mutations commit, and the
+// method returns (true, nil). Every losing trial rolls back, so it leaves no bound behind.
 //
-// It is the one mint path for the speculative member trials the lattice arms run.
-// constrain's IntersectionType-sub exists rule and UnionType-super exists rule both route
-// through it, so the probe push/pop discipline lives in one place. The trial body owns its
-// own coinductive seen clone, since only the caller holds the constraint key.
+// When no trial wins, the method returns false with each trial's errors in trial order.
+// The caller decides what to do with them. It can promote a shared failure or report the
+// last trial's diagnostics. The union-super rule, for example, promotes a uniform
+// BorrowEscapeError when every trial reports one.
+//
+// This is the single path for the speculative member trials the lattice arms run. Both
+// constrain's IntersectionType-sub exists rule and its UnionType-super exists rule route
+// through it, so the probe push-and-pop discipline lives in one place. Each trial body
+// owns its own coinductive seen clone, since only the caller holds the constraint key.
 func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError) (bool, [][]SolverError) {
 	var trialErrs [][]SolverError
 	for _, idx := range order {
