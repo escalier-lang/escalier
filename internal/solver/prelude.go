@@ -67,10 +67,11 @@ func opFunc(ret soltype.Type, params ...soltype.Type) *soltype.FuncType {
 // arithmetic, string <, generic equality) are refinements that land with their
 // enabling milestone (overloads M3, unions M6), not M2.
 //
-// The equality operators are seeded with `unknown` (⊤) parameters, so an operand
-// of any type fills them. The `_ <: unknown` (⊤) rule in constrain accepts that
-// directly, so `1 == 2` constrains `1 <: unknown` and succeeds. When the
-// operator/call walk lands, add a `1 == 2 ⇒ boolean` regression test.
+// unknown is the top type, so an operand of any type is a subtype of it. The
+// equality operators are seeded with `unknown` parameters, so an operand of any
+// type fills them. The `_ <: unknown` rule in constrain accepts that directly, so
+// `1 == 2` constrains `1 <: unknown` and succeeds. When the operator/call walk
+// lands, add a `1 == 2 ⇒ boolean` regression test.
 func addOperatorBindings(s *Scope) {
 	num := func() soltype.Type { return prim(soltype.NumPrim) }
 	str := func() soltype.Type { return prim(soltype.StrPrim) }

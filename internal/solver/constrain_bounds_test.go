@@ -7,11 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M6 PR5: the unknown (⊤) and never (⊥) lattice-bound rules ---
-
-// TestConstrainTopRule covers `sub <: unknown`. unknown is the top of the
-// subtype lattice, so every sub succeeds. A variable sub records no upper bound,
-// since unknown is the meet identity and would add nothing.
+// TestConstrainTopRule covers `sub <: unknown`. unknown is the top of the subtype
+// lattice, so every sub succeeds. A variable sub records no upper bound, since
+// unknown as an upper bound is the meet identity and would add nothing.
 func TestConstrainTopRule(t *testing.T) {
 	t.Run("a primitive is a subtype of unknown", func(t *testing.T) {
 		c := &Context{}
@@ -40,7 +38,8 @@ func TestConstrainTopRule(t *testing.T) {
 
 // TestConstrainBottomRule covers `never <: super`. never is the bottom of the
 // subtype lattice, so it is a subtype of every super. A variable super records no
-// lower bound, since never is the join identity and would add nothing.
+// lower bound, since never as a lower bound is the join identity and would add
+// nothing.
 func TestConstrainBottomRule(t *testing.T) {
 	t.Run("never is a subtype of a primitive", func(t *testing.T) {
 		c := &Context{}
@@ -61,21 +60,22 @@ func TestConstrainBottomRule(t *testing.T) {
 	})
 }
 
-// TestConstrainFuncVariationB covers the function-arm Variation-B check on the
+// TestConstrainFuncVariationB covers the function-arm Variation-B check on a
 // hand-built FuncType. When the super is inexact and the sub declares more params
-// than the super, the super's `...` tail may pass an arg of any type at the sub's
-// extra position, so soundness demands `unknown <: sub.Params[i].Type` there
-// (exact-types §4.2.1.2). The extra param's required count must stay low enough to
-// pass the arity gate, so it is optional here.
+// than the super, the super's open tail may pass an argument of any type at the
+// sub's extra position. Soundness then demands `unknown <: sub.Params[i].Type`
+// there. This is the Variation-B rule from exact-types §4.2.1.2. The extra param
+// is optional so its required count stays low enough to pass the arity gate.
 func TestConstrainFuncVariationB(t *testing.T) {
-	// super: fn(a: number, ...) — one named param, open tail.
+	// The super is fn(a: number, ...), with one named param and an open tail.
 	super := func() *soltype.FuncType {
 		return inexactFn(num(), identParam("a", num()))
 	}
 
 	t.Run("a concrete extra param is rejected by the open tail", func(t *testing.T) {
-		// sub: fn(a: number, b?: number, ...). The extra param b is number, which
-		// cannot accept the tail's arbitrarily-typed arg, so unknown <: number fails.
+		// The sub is fn(a: number, b?: number, ...). Its extra param b is number,
+		// which cannot accept the tail's arbitrarily-typed argument, so unknown <:
+		// number fails.
 		c := &Context{}
 		sub := inexactFn(num(), identParam("a", num()), optParam("b", num()))
 		require.Equal(t,
@@ -84,7 +84,7 @@ func TestConstrainFuncVariationB(t *testing.T) {
 	})
 
 	t.Run("an unknown extra param accepts the open tail", func(t *testing.T) {
-		// sub: fn(a: number, b?: unknown, ...). The extra param is unknown, so
+		// The sub is fn(a: number, b?: unknown, ...). Its extra param is unknown, so
 		// unknown <: unknown holds and the fill is accepted.
 		c := &Context{}
 		sub := inexactFn(num(), identParam("a", num()), optParam("b", &soltype.UnknownType{}))

@@ -341,15 +341,14 @@ func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
 	require.True(t, lb.Inexact, "inexact flag must survive the bound record")
 }
 
-// TestConstrainInexactUnionIntoUnknownAccepts covers the other accepting
-// super for an inexact sub union. `unknown` is the lattice top, so it
-// absorbs the open tail.
+// TestConstrainInexactUnionIntoUnknownAccepts covers the other accepting super for
+// an inexact sub union. unknown is the lattice top, so it absorbs the open tail.
 //
 //	(number | string | ...) <: unknown    accepted with no error
 //
-// The `_ <: unknown` (⊤) rule short-circuits any sub against an unknown super,
-// so the constraint succeeds before the inexact-into-closed gate is reached.
-// The gate must not fire against unknown, since unknown accepts the open tail.
+// The `_ <: unknown` rule short-circuits any sub against an unknown super, so the
+// constraint succeeds before the inexact-into-closed gate is reached. The gate
+// must not fire against unknown, since unknown accepts the open tail.
 func TestConstrainInexactUnionIntoUnknownAccepts(t *testing.T) {
 	c := &Context{}
 	sub := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}

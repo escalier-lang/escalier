@@ -308,11 +308,12 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 	})
 
 	// A rest fn fills an inexact callback parameter only when its rest element type
-	// absorbs the slot's unknown-typed tail. An inexact super's `...` tail is
-	// equivalent to `...rest: unknown`: its holder may pass an arg of any type at the
-	// rest position, so soundness demands `unknown <: rest element type` there —
-	// exact-types §4.2.1.2 "Variation B". A `...rest: number` cannot accept the
-	// arbitrary tail, so the fill is rejected; only `...rest: unknown` accepts.
+	// absorbs the slot's unknown-typed tail. An inexact super's open tail behaves
+	// like `...rest: unknown`. Its holder may pass an argument of any type at the
+	// rest position, so soundness demands that the rest element type accept unknown.
+	// This is the Variation-B rule from exact-types §4.2.1.2. A `...rest: number`
+	// cannot accept the arbitrary tail, so the fill is rejected. Only `...rest:
+	// unknown` accepts it.
 	t.Run("rest fn with a number rest is rejected by an inexact callback parameter", func(t *testing.T) {
 		c := &Context{}
 		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
@@ -327,6 +328,28 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 		g := restFn(num(), identParam("a", num()), restParam("rest", &soltype.UnknownType{}))
 		f := inexactFn(num(), identParam("a", num()))
 		require.Empty(t, c.Constrain(g, f))
+	})
+
+	// A callback parameter with a typed rest param is open like an inexact one, so
+	// its surplus positions are checked too. The tail type there is the rest element
+	// type rather than unknown. The super fn(a: number, ...rest: string) passes a
+	// string at every position past a, so a sub whose extra param is number is
+	// rejected with `string <: number`, while a sub whose extra param is string is
+	// accepted.
+	t.Run("typed-rest callback parameter rejects a mismatched surplus param", func(t *testing.T) {
+		c := &Context{}
+		super := restFn(num(), identParam("a", num()), restParam("rest", str()))
+		sub := inexactFn(num(), identParam("a", num()), optParam("b", str()), optParam("c", num()))
+		require.Equal(t,
+			[]string{"cannot constrain string <: number"},
+			Messages(c.Constrain(sub, super)))
+	})
+
+	t.Run("typed-rest callback parameter accepts a matching surplus param", func(t *testing.T) {
+		c := &Context{}
+		super := restFn(num(), identParam("a", num()), restParam("rest", str()))
+		sub := inexactFn(num(), identParam("a", num()), optParam("b", str()), optParam("c", str()))
+		require.Empty(t, c.Constrain(sub, super))
 	})
 
 	// An exact fn(a, b) (accept [2, 2]) is REJECTED by a `fn(...rest)` callback parameter

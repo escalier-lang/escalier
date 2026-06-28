@@ -125,14 +125,13 @@ func TestInferRestParamFuncAnnotationReportsUnsupported(t *testing.T) {
 	require.Equal(t, "fn (xs: number) -> number", values["f"])
 }
 
-// --- M6 PR5: the function-arm Variation-B check, reachable through PR3 annotations ---
-
 // The Variation-B check fires end-to-end through inexact function annotations.
 // `wide` declares an extra param b typed number beyond the inexact slot's single
 // named param. Assigning wide into the slot demands `unknown <: number` at b's
-// position, since the slot's open tail may pass an arg of any type there and a
-// number param cannot accept it — exact-types §4.2.1.2. The extra param is optional
-// so the accept-set arity gate passes and the per-param check is reached.
+// position. The slot's open tail may pass an argument of any type there, and a
+// number param cannot accept it. This is the Variation-B rule from exact-types
+// §4.2.1.2. The extra param is optional so the accept-set arity gate passes and
+// the per-param check is reached.
 func TestInferFuncAnnotationVariationBRejectsExtraParam(t *testing.T) {
 	src := `val wide: fn(a: number, b?: number, ...) -> number = fn (a, ...) { return 1 }
 val slot: fn(x: number, ...) -> number = wide`

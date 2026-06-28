@@ -148,14 +148,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		return nil
 	}
 
-	// Lattice bounds (M6 PR5). unknown (⊤) is the top of the subtype lattice and
-	// never (⊥) is the bottom, so a super of unknown or a sub of never succeeds
-	// unconditionally. Both short-circuit here, above the structural switch and the
-	// variable arms. Recording the bound would add nothing: ⊤ as an upper bound is
-	// the meet identity and ⊥ as a lower bound is the join identity. Normalization
-	// drops never from unions and unknown from intersections, but a bare coalesced
-	// never can still flow as a sub and an annotation's unknown as a super, so the
-	// rules keep those operands sound.
+	// unknown is the top of the subtype lattice. Every type is a subtype of it, so a
+	// super of unknown succeeds. never is the bottom of the lattice. It is a subtype
+	// of every type, so a sub of never succeeds. Both short-circuit here, above the
+	// structural switch and the variable arms. Recording the bound would add nothing.
+	// unknown as an upper bound is the meet identity, and never as a lower bound is
+	// the join identity. Normalization drops never from unions and unknown from
+	// intersections, but a bare coalesced never can still flow as a sub and an
+	// annotation's unknown can flow as a super, so these rules keep those operands
+	// sound.
 	if _, ok := super.(*soltype.UnknownType); ok {
 		return nil
 	}
@@ -173,10 +174,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 
 	// (A | B) <: super ⟹ A <: super AND B <: super. An inexact sub against a
 	// closed super also emits one InexactUnionIntoExactError for the open tail.
-	// A super of unknown is already accepted by the ⊤ rule above, so the only
-	// open super reachable here is another inexact union. When super is a
-	// TypeVar, fall through to the superVar arm so the whole union, including its
-	// Inexact flag, is recorded as one lower bound on the var.
+	// A super of unknown is already accepted by the unknown rule above, so the only
+	// open super reachable here is another inexact union. When super is a TypeVar,
+	// fall through to the superVar arm so the whole union, including its Inexact
+	// flag, is recorded as one lower bound on the var.
 	if subU, ok := sub.(*soltype.UnionType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			var errs []SolverError
@@ -285,30 +286,36 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if loSub > loSup || hiSub < hiSup {
 				return []SolverError{&FuncArityMismatchError{Sub: sub, Super: sup}}
 			}
-			// Shared positions are checked per-parameter (params contravariant,
-			// return covariant). When super is EXACT this is complete: super never
-			// supplies an argument beyond its declared params, and any extra param sub
-			// declares there must be optional (the lo gate forced loSub <= loSup) and so
-			// is simply never passed.
+			// Shared positions are checked per-parameter. Params are contravariant and
+			// the return is covariant. An exact super supplies no argument beyond its
+			// declared params, so this loop is the complete rule for it. Any extra param
+			// the sub declares there is optional, forced by the lower-bound gate above,
+			// and is never passed.
 			//
-			// When super is INEXACT and sub declares MORE params than super, super's
-			// `...` tail may supply arbitrarily-typed args at sub's extra positions, so
-			// soundness demands `unknown <: sub.Params[i].Type` there — exact-types
-			// §4.2.1.2 "Variation B", the load-bearing rejection. Only an extra param
-			// typed unknown (⊤) or an inference variable tolerates the unknown-typed
-			// tail. A concrete type such as `number` is rejected. The extra-position
-			// loop is empty unless sub is longer, so the exact-super case keeps the
-			// shared loop as its complete rule. A function is its own annotation
-			// context, so the deep-mut flag resets.
+			// An open super tolerates extra arguments past its declared arity, so each
+			// surplus sub param must accept whatever the super supplies there. An inexact
+			// super supplies values of unknown type at its tail. A typed rest param
+			// supplies values of its element type. The loop below constrains that tail
+			// type against every sub param beyond the super's arity, contravariantly.
+			// This is the Variation-B rule from exact-types §4.2.1.2. It rejects a
+			// surplus param typed number against an inexact super, since unknown is not a
+			// subtype of number. A surplus param typed unknown or an inference variable
+			// is accepted. The loop is empty unless the sub is longer. A function is its
+			// own annotation context, so the deep-mut flag resets.
 			var errs []SolverError
 			n := min(len(sub.Params), len(sup.Params))
 			for i := 0; i < n; i++ {
 				errs = append(errs, c.constrain(sup.Params[i].Type, sub.Params[i].Type, seen, false)...) // contravariant
 			}
-			if sup.Inexact {
-				unknownT := &soltype.UnknownType{}
+			var tail soltype.Type
+			if hasRest(sup) {
+				tail = sup.Params[len(sup.Params)-1].Type
+			} else if sup.Inexact {
+				tail = &soltype.UnknownType{}
+			}
+			if tail != nil {
 				for i := n; i < len(sub.Params); i++ {
-					errs = append(errs, c.constrain(unknownT, sub.Params[i].Type, seen, false)...)
+					errs = append(errs, c.constrain(tail, sub.Params[i].Type, seen, false)...)
 				}
 			}
 			return append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant
