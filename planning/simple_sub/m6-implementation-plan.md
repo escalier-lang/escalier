@@ -727,8 +727,9 @@ M6's reachable inexact source is the annotation; the borrow-join union (PR6) and
   per-member shape test rather than inventing a new coverage engine. The
   `NonExhaustiveMatchError` is unchanged; only its trigger condition widens. A
   union of structural-object members needs object-pattern-covers-member
-  discrimination, which M6 leaves to M5's coverage generalization
-  ([01-milestones.md](01-milestones.md) §M5, "Structural-object union
+  discrimination M6 does not implement, so a structural arm over such a union is
+  reported as an unsupported feature until M5's coverage generalization replaces
+  it ([01-milestones.md](01-milestones.md) §M5, "Structural-object union
   exhaustiveness").
 
 **Tests.** An exact-union `match` covering all members needs no default; an

@@ -436,11 +436,11 @@ func TestInferMatchInexactUnionWithCatchAll(t *testing.T) {
 	require.Empty(t, errs)
 }
 
-// An exact union of structural members is left unchecked rather than falsely
-// flagged: covering structural-object and tuple members is M5 work, so the union
-// leg only flags a provably-uncovered literal member. A tuple-union match whose
-// single arm binds both members reports no non-exhaustive error.
-func TestInferMatchStructuralUnionNotFalselyFlagged(t *testing.T) {
+// Covering structural-object and tuple union members is M5 work, so the union leg
+// cannot yet evaluate a structural arm pattern against a union member. Rather than
+// falsely flag the match non-exhaustive or silently accept it, each unguarded
+// structural arm over a union with a non-literal member is reported unsupported.
+func TestInferMatchStructuralUnionArmUnsupported(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(b: boolean) {
 			val x = if b { [1, 2] } else { [3, 4] }
@@ -449,7 +449,8 @@ func TestInferMatchStructuralUnionNotFalselyFlagged(t *testing.T) {
 			}
 		}
 	`)
-	require.Empty(t, errs)
+	require.Len(t, errs, 1)
+	require.Equal(t, "5:5-5:11: Unsupported: non-literal match arm pattern over a union scrutinee", msgWithSpan(errs[0]))
 }
 
 // A guarded arm can always fail its guard, so it never makes a match exhaustive. An
