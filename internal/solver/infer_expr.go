@@ -383,16 +383,9 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 	}
 }
 
-// collectBranchOwnership classifies how a branch result type participates in the
-// owned-or-borrowed ownership axis, recursing through union and intersection members
-// so a branch that is itself a union is judged by its members:
-//   - sawBorrowed becomes true for a borrow, a RefType carrying a lifetime.
-//   - sawOwned becomes true for an owned reference: a bare object or tuple, or an
-//     owned-mutable RefType whose lifetime is nil.
-//
-// A value type such as a primitive, literal, function, or promise carries no
-// ownership and touches neither flag, as do inference variables and the lattice
-// bounds, which have no settled ownership to judge.
+// collectBranchOwnership sets sawBorrowed for a borrow and sawOwned for an owned
+// object, tuple, or owned-mutable RefType, recursing through union and intersection
+// members. Value types and inference variables carry no ownership and set neither.
 func collectBranchOwnership(t soltype.Type, sawOwned, sawBorrowed *bool) {
 	switch t := t.(type) {
 	case *soltype.RefType:
@@ -414,13 +407,9 @@ func collectBranchOwnership(t soltype.Type, sawOwned, sawBorrowed *bool) {
 	}
 }
 
-// checkUniformOwnership reports a MixedOwnershipError when the branch types a join is
-// about to union disagree on ownership, some owned and some borrowed. The union the
-// join would form then has no single owned-or-borrowed verdict, since ownership is the
-// outer wrapper shared by the whole value. Each branch is coalesced first so an
-// inference variable resolves to the shape that flowed into it. A branch that stays a
-// variable, or is a value type, contributes no ownership and is skipped. node is the
-// join expression the error blames.
+// checkUniformOwnership reports a MixedOwnershipError against node when the branches a
+// join is about to union are some owned and some borrowed. Each branch is coalesced
+// first so an inference variable resolves to the shape that flowed into it.
 func (c *checker) checkUniformOwnership(node ast.Node, branches []soltype.Type) {
 	sawOwned, sawBorrowed := false, false
 	for _, b := range branches {

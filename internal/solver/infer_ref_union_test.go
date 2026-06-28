@@ -11,10 +11,7 @@ import (
 // in the mixed-ownership rows below.
 const mixedOwnershipMsg = "union or intersection mixes owned and borrowed members; make ownership uniform — clone the borrowed member to own it, or borrow the owned member"
 
-// TestInferRefUnion exercises R9 end to end through the inference pipeline: a borrow
-// over a union or intersection pointee, mixed-ownership rejection at the inference
-// join sites, and nested-borrow normalization. Each row either pins the rendered type
-// of binding `f` when wantErrs is nil, or asserts the exact diagnostics when it is set.
+// TestInferRefUnion pins binding `f`'s rendered type when wantErrs is nil, else asserts the exact diagnostics.
 func TestInferRefUnion(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -23,10 +20,6 @@ func TestInferRefUnion(t *testing.T) {
 		wantErrs []string // exact diagnostics; nil means the source must check cleanly
 	}{
 		// --- unions/intersections as RefInner ---
-		//
-		// The borrow wrapper is outer and shared: `&(A | B)` is one borrow over a union
-		// pointee, with a single lifetime and mutability for the whole value, never
-		// `&A | &B` with independent lifetimes.
 		{
 			name: "immutable borrow over a union",
 			src:  `fn f(p: &({a: number} | {b: number})) { return p }`,
@@ -51,11 +44,6 @@ func TestInferRefUnion(t *testing.T) {
 		},
 
 		// --- mixed-ownership rejection at join sites ---
-		//
-		// A union or intersection must have uniform ownership. Inference joins branches
-		// of different ownership at an if/else, a match arm set, or several return
-		// points. A borrowed member beside an owned one there has no single
-		// owned-or-borrowed verdict and is rejected.
 		{
 			name: "mixed ownership in an if/else value",
 			src: `fn f(p: &mut {x: number}) {

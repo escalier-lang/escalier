@@ -696,14 +696,9 @@ type NonExhaustiveMatchError struct {
 	Match *ast.MatchExpr
 }
 
-// MixedOwnershipError fires when an inferred union or intersection has members that
-// disagree on ownership, a borrowed member beside an owned one such as
-// `{x: number} | &{y: number}`. Ownership is the outer wrapper shared by the whole
-// value, so a mix has no single owned-or-borrowed verdict. It forms where inference
-// joins branches of different ownership: an if/else, a `match` arm set, or several
-// return points. It self-blames that join node through Span and carries no related
-// node. The fix is to make ownership uniform before the join: clone the borrowed
-// member to own it, or borrow the owned member.
+// MixedOwnershipError fires when an inferred union or intersection has a borrowed
+// member beside an owned one, such as `{x: number} | &{y: number}`, which has no
+// single owned-or-borrowed verdict. It blames the inference join where it forms.
 type MixedOwnershipError struct {
 	Node ast.Node
 }
