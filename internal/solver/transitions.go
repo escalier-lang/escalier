@@ -769,10 +769,9 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	c.fn.paramVarIDs = collectParamVarIDs(astParams)
 }
 
-// collectParamVarIDs returns the VarID of every parameter leaf binding. The
-// return-escape check (PR 15) consults it to tell a returnable borrow of a parameter
-// from an escaping borrow of a function-local: a parameter borrow carries a
-// caller-supplied lifetime that already outlives the return, so it is exempt.
+// collectParamVarIDs returns the VarID of every parameter leaf binding. The escape check
+// consults it to exempt a borrow of a parameter, which carries a caller-supplied lifetime
+// that already outlives the frame, from an escaping borrow of a function-local.
 func collectParamVarIDs(astParams []*ast.Param) set.Set[liveness.VarID] {
 	ids := set.NewSet[liveness.VarID]()
 	for _, param := range astParams {

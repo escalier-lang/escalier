@@ -471,13 +471,14 @@ PR 6 reads the state at each use, passing `NotMoved` and rejecting `Moved` and
 Tests: unit tests that the consumed lattice merges correctly across if/else, match,
 and loops; unit tests that `borrowEscapedToStatic` sees a borrow nested in a field or
 tuple element and one reachable only through a usage-inferred type variable. The tests
-that escape fires at returns, stores, arguments, and captures move to PR 15 with the
-`constrainEscape` forcing they exercise.
+that escape fires at returns, stores, and arguments move to PR 15, which forces escape
+over the move engine's borrow tracking at those sites. Escaping-closure-capture escape
+stays deferred.
 
 Acceptance: the consumed lattice reports correct per-path state, and the escape query
 sees every borrow in a recorded type, including nested and type-variable positions. The
-"escape forced at every value-flow-out site" criterion moves to PR 15 with the deferred
-`constrainEscape` generalization. No user-facing errors yet.
+"escape forced at the value-flow-out sites" criterion moves to PR 15, which covers
+returns, parameter-field stores, and consuming arguments. No user-facing errors yet.
 
 ### PR 6 — Consume and use-after-move at every flow site, conditional moves
 
@@ -711,36 +712,34 @@ non-global sites remained, since today only the module-level global write runs i
 ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go) at the
 `b.ModuleLevel` store).
 
-- Force escape at returns, field and element stores, and owned-parameter arguments, the
-  three non-global value-flow-out sites. A returned or stored value flows out at the
-  call's own region, not `'static`, so the forcing is **not** the `'static` pin
-  `consumeAtGlobalWrite` applies. The constraint is that each borrow the flowed-out
-  value carries must outlive the destination region: the caller's region for a return,
-  the receiver's region for a field or element store, the callee's region for a
-  consuming argument.
+- Force escape at the non-global value-flow-out sites: a `return`, a field store into a
+  parameter, and a consuming argument. A flowed-out value travels at the call's own
+  region, not `'static`, so the forcing is **not** the `'static` pin
+  `consumeAtGlobalWrite` applies. Each borrow the value carries must outlive its
+  destination: the caller's region for a return, the receiver's region for a field
+  store, the callee's region for a consuming argument.
 - Distinguish a function-local borrow from a parameter borrow. A borrow of a parameter
-  carries a caller-supplied lifetime that already outlives the call, so returning it is
-  sound — `fn (p: &'a {x}) -> &'a {x}` returns `p` at `'a`, not `'static`, and must keep
-  checking. A borrow of a function-local binding carries a body-region lifetime that
-  cannot outlive the frame, so flowing it out is a `BorrowEscapeError`. The lifetime
-  sort already separates the two: a param lifetime occurs in a negative position
-  (`isParam` in [internal/solver/lifetime_coalesce.go](../../internal/solver/lifetime_coalesce.go)),
-  and the level invariant places a body-minted lifetime deeper than the signature.
-- Generalize the existing `escapeVisitor`
-  ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go)) so it reaches a
-  borrow in any structural position — object property, tuple element, union member —
-  rather than only the top-level `RefType`, mirroring the nested-escape closure PR 5
-  landed for `borrowEscapedToStatic`. The visitor already descends through the shared
-  soltype walk; the new caller points it at the return and store sites.
+  carries a caller-supplied lifetime that already outlives the call, so flowing it out is
+  sound — `fn (p: &'a {x}) -> &'a {x}` returns `p` at `'a` and keeps checking. A borrow
+  of a function-local cannot outlive the frame, so flowing it out is an
+  `EscapingBorrowError`. `collectParamVarIDs` records the parameter leaf VarIDs on
+  `funcCtx`, and `isLocalReferent` exempts a referent in that set.
+- Detect the carried borrows over the move engine's borrow tracking rather than the
+  lifetime sort, so the check does not wait on M6.5. A per-binding borrow-edge graph on
+  `funcCtx` records which function-locals each binding borrows, populated by
+  `recordBorrowEdges` at `val`/`var` bindings. At each flow-out site, `escapingLocalsOf`
+  scans the outgoing expression for direct `&`/`&mut` borrows with `borrowCollector` and
+  follows the edges of a whole-binding place with `collectBorrowedLocals`.
 - Files: the return site in
-  [internal/solver/infer_stmt.go](../../internal/solver/infer_stmt.go) where each
-  `ReturnStmt` is collected and the source is consumed, the field and element store
-  sites and the consuming-argument site in
-  [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go).
+  [internal/solver/infer_stmt.go](../../internal/solver/infer_stmt.go); the field-store
+  and consuming-argument sites in
+  [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go); the borrow-edge
+  graph, the detection, and `EscapingBorrowError` in
+  [internal/solver/return_escape.go](../../internal/solver/return_escape.go).
 
-Tests: returning a borrow of a function-local is a `BorrowEscapeError`; returning a
-parameter borrow `fn (p: &'a {x}) -> &'a {x}` still checks; storing a local borrow into
-a receiver field escapes; passing a local borrow as a consuming argument escapes; the
+Tests: returning a borrow of a function-local is an `EscapingBorrowError`; returning a
+parameter borrow `fn (p: &'a {x}) -> &'a {x}` still checks; storing a local borrow into a
+parameter's field escapes; passing a local borrow as a consuming argument escapes; the
 existing global-write escape tests are unchanged.
 
 Acceptance: a borrow flowing out through a return, a store, or a consuming argument is

@@ -647,6 +647,10 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
 	}
 	c.bindPattern(scope, lvl, d.Pattern, initType, nil)
 	c.trackDestructureLeaves(scope, d.Pattern)
+	// A borrow projected into a destructuring leaf records no borrow edge, so a return
+	// of such a leaf is not yet caught as an escape. Tracking it precisely needs the
+	// per-leaf correspondence the field-granular move work introduces; a whole-binding
+	// approximation would over-report a disjoint leaf.
 }
 
 // varName returns the bound name of a VarDecl whose pattern is an IdentPat, with

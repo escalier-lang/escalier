@@ -163,12 +163,10 @@ func TestInferValMutConstructedAllowsFieldWrite(t *testing.T) {
 	require.Equal(t, "fn () -> mut {x: number}", values["f"])
 }
 
-// A constructed owned-mutable value can be borrowed `&mut`. The mutable cell fills
-// the mutable borrow destination, so `&mut q` checks where an owned-immutable q would fail
-// the mutability gate. This is the construction-side companion to
-// TestInferValMutBorrowFromOwnedMut, which sources owned-mutable from a parameter. The
-// borrow checks, but returning it escapes the local q, which dies at the frame end, so
-// PR 15's return-escape rule rejects the return while leaving the borrow itself legal.
+// A constructed owned-mutable value can be borrowed `&mut`. The mutable cell fills the
+// mutable borrow destination, so `&mut q` checks where an owned-immutable q would fail the
+// mutability gate. The borrow itself is legal, but returning it escapes the local q, which
+// dies at the frame end, so the return is rejected while the borrow stands.
 func TestInferValMutConstructedBorrowsMut(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f() {
   val mut q = {x: 0}

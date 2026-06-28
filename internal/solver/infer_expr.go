@@ -1116,9 +1116,10 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 			continue
 		}
 		c.consumeOwned(arg, c.info.TypeOf(arg), arg, ref)
-		// PR 15: a consuming argument carries its value out of the frame into the callee,
-		// so a borrow of a local it carries escapes. A `&`/`&mut` parameter borrows
-		// instead of consuming and is skipped by the isConcreteOwned gate above.
+		// A consuming argument carries its value out of the frame into the callee, so a
+		// borrow of a local the argument carries escapes. reportEscapingLocals flags each
+		// local escapingLocalsOf finds in the argument. A `&`/`&mut` parameter borrows
+		// instead of consuming, so the isConcreteOwned gate above skips it.
 		c.reportEscapingLocals(c.escapingLocalsOf(arg), arg)
 	}
 }
@@ -1462,8 +1463,9 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 			c.consumeOwned(e.Right, source, e.Right, ref)
 		}
-		// PR 15: storing a value that borrows a local into a parameter's field escapes,
-		// since the parameter's object outlives the frame.
+		// Storing a value that borrows a local into a parameter's field escapes, since the
+		// parameter's object outlives the frame and the stored local would dangle in the
+		// caller. checkStoreEscape applies only when the receiver is a parameter.
 		c.checkStoreEscape(m.Object, e.Right)
 	}
 	// The assignment evaluates to the value just stored. recordType overwrites the

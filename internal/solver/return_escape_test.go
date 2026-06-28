@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestReturnEscape covers PR 15's return-escape rule: a value flowing out of the frame
+// TestReturnEscape covers the return-escape rule: a value flowing out of the frame
 // may not borrow a function-local, since the local dies when the frame returns. A borrow
 // of a parameter is exempt, because its lifetime is supplied by the caller and already
 // outlives the return.
@@ -129,7 +129,7 @@ func TestReturnEscape(t *testing.T) {
 	}
 }
 
-// TestEscapeAtStoreAndArgSites covers PR 15's other two flow-out sites: a field store
+// TestEscapeAtStoreAndArgSites covers the other two flow-out sites: a field store
 // into a parameter, where the value flows into the caller's object, and a consuming
 // argument, where it flows into the callee. A borrow of a local that flows out either
 // way escapes, while a parameter borrow and a plain owned value do not.
@@ -234,4 +234,28 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 			require.Equal(t, tc.want, messagesWithSpan(errs))
 		})
 	}
+}
+
+// TestDestructuredBorrowLeafEscapes pins a known under-check: a borrow projected into a
+// destructuring leaf records no borrow edge, so returning the leaf escapes the local
+// with no error. recordBorrowEdges runs only for a named `val`/`var` binding. Catching
+// the leaf case needs the per-leaf pattern correspondence the field-granular move work
+// introduces.
+//
+// DISABLED until field-granular move tracking lands: when a destructuring leaf tracks
+// its borrow, `return peer` below escapes the local `b` and this assertion holds.
+// Re-enable by removing the `/* */` wrapper around the body.
+func TestDestructuredBorrowLeafEscapes(t *testing.T) {
+	/*
+		_, _, errs := inferSource(t, `
+			fn f() -> &mut {value: number} {
+				val mut b = {value: 0}
+				val {peer} = {peer: &mut b}
+				return peer
+			}
+		`)
+		require.Equal(t, []string{
+			"5:12-5:16: borrowed value 'b' does not live long enough to escape the function",
+		}, messagesWithSpan(errs))
+	*/
 }

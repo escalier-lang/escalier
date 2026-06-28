@@ -9,35 +9,32 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// Escape forcing (PR 15). A value flowing out of the function frame must not carry a
-// borrow of a function-local binding, since a local dies when the frame returns and the
-// borrow would dangle. The move engine consumes the flowed-out source but does not check
-// the borrows it carries, so a value that borrows a local escapes with no error. This
+// Escape forcing. A value flowing out of the function frame must not carry a borrow of a
+// function-local binding, since a local dies when the frame returns and the borrow would
+// dangle. The move engine consumes the flowed-out source but does not check the borrows
+// it carries, so a value that borrows a local would otherwise escape with no error. This
 // pass reports it at the three non-global value-flow-out sites:
 //
 //   - a `return`, where the value flows out to the caller;
 //   - a field store into a parameter, where it flows into the caller's object;
 //   - a consuming argument, where it flows into the callee.
 //
-// The check works over the move engine's own state rather than the lifetime sort, which
-// is why it does not depend on the directional lifetime bounds slated for M6.5. A
+// The check works over the move engine's borrow tracking rather than the lifetime sort. A
 // per-binding borrow-edge graph drives it. As each binding is walked, recordBorrowEdges
 // records which function-locals it borrows: an explicit `&`/`&mut` of a local in its
 // initializer, and the edges of a whole-binding move that carries a borrow forward. At
 // each flow-out site, escapingLocalsOf follows those edges and scans for direct borrows
-// to find the locals the outgoing value carries. Extending the graph through a field
-// store into a local receiver is left to PR 11, which builds the connected-component
-// graph through field mutations.
+// to find the locals the outgoing value carries.
 //
 // A borrow of a parameter is exempt. It carries a caller-supplied lifetime that already
 // outlives the frame, so `fn (p: &mut {x}) -> &mut {x} { return p }` still checks.
 // recordBorrowEdges drops a parameter referent, so a local that only borrows a parameter
 // records no edge and a flow-out through it raises no escape.
 //
-// Edges and the flow-out checks are whole-binding granular. A borrow held in a field
-// that is moved or returned on its own, such as `return a.peer`, is not tracked, since
-// the edge graph is keyed by root binding rather than by field place. That field-level
-// precision is left to PR 11, which builds on PR 7's per-field tracking.
+// Edges and the flow-out checks are whole-binding granular. A borrow held in a field that
+// is moved or returned on its own, such as `return a.peer`, is not tracked, and neither
+// is a borrow stored into a local receiver's field. The edge graph is keyed by root
+// binding rather than by field place.
 
 // EscapingBorrowError fires when a value flowing out of the frame carries a borrow of a
 // function-local binding, which cannot outlive the frame. It blames the outgoing
@@ -176,7 +173,7 @@ func (c *checker) checkReturnEscape(retExpr ast.Expr) {
 // checkStoreEscape handles a field store `recv.f = source`. Storing a value that borrows
 // a local into a parameter's field escapes. The parameter's object outlives the frame,
 // so the stored local would dangle in the caller. A store into a local receiver does not
-// escape here. Extending the borrow graph through such a store is left to PR 11.
+// escape here, and the borrow graph is not extended through such a store.
 func (c *checker) checkStoreEscape(recv, source ast.Expr) {
 	if c.fn == nil || c.fn.borrowEdges == nil {
 		return
