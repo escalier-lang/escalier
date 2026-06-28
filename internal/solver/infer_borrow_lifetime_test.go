@@ -244,6 +244,28 @@ func TestInferIncompatibleBorrowUnionFieldReads(t *testing.T) {
 		values["f"])
 }
 
+// Reading a conflicting field that is ITSELF a borrow keeps each branch's borrowed
+// field result. `r.a` over `&mut {a: &'a mut {x: number}} | &mut {a: &'b mut {x:
+// string}}` reads `&'a mut {x: number} | &'b mut {x: string}`, each member's field
+// borrow at its own lifetime. The field-read result var coalesces to the union of the
+// member field types rather than collapsing to a single lifetime, so the per-branch
+// borrows survive the read.
+func TestInferIncompatibleBorrowUnionReadsBorrowedField(t *testing.T) {
+	src := `fn f(p: &mut {a: &mut {x: number}}, q: &mut {a: &mut {x: string}}) {
+  val r = if true {
+    p
+  } else {
+    q
+  }
+  return r.a
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a, 'b>(p: &mut {a: &'a mut {x: number}}, q: &mut {a: &'b mut {x: string}}) -> &'a mut {x: number} | &'b mut {x: string}",
+		values["f"])
+}
+
 // An incompatible join over THREE borrows keeps every distinct lifetime in the
 // union, even when two members share a field set and differ only in lifetime. The
 // pin fails on `r`'s `string` field, so the union path runs over all three borrows.
