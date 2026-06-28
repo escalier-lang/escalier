@@ -141,18 +141,21 @@ and the *rules*.
 
 ## Sequencing rationale
 
+**Status.** PR1–PR6 and the two cleanups PR2.5/PR2.7 have landed; PR7 and PR8
+remain. Completed PRs are marked ✅ with their merged PR number; the rest are ⬜.
+
 ```
-PR1 (representation + normalization)
- ├─► PR2 (constrain lattice rules + union/intersection annotation input)
- │     ├─► PR2.5 (trial-and-commit cleanup: shared helper, specificity order,
- │     │          delete constrainAssign)
- │     ├─► PR2.7 (tighter BorrowEscape promotion: lifetime-blocker check)
- │     └─► PR4 (union exactness flag + match exhaustiveness leg)
- ├─► PR3 (monomorphic function-type annotations)
- │     └─► PR5 (⊤/⊥ rules + Variation-B close — now testable end-to-end)
- ├─► PR6 (permissive mut-borrow join)
- ├─► PR7 (if-let / let-else — needs PR4 + PR5)
- └─► PR8 (subsume inferred types at finalization — needs PR1 + PR2)
+PR1 ✅ #774 (representation + normalization)
+ ├─► PR2 ✅ #776 (constrain lattice rules + union/intersection annotation input)
+ │     ├─► PR2.5 ✅ #800 (trial-and-commit cleanup: shared helper, specificity
+ │     │          order, delete constrainAssign)
+ │     ├─► PR2.7 ✅ #801 (tighter BorrowEscape promotion: lifetime-blocker check)
+ │     └─► PR4 ✅ #803 (union exactness flag + match exhaustiveness leg)
+ ├─► PR3 ✅ #802 (monomorphic function-type annotations)
+ │     └─► PR5 ✅ #804 (⊤/⊥ rules + Variation-B close — now testable end-to-end)
+ ├─► PR6 ✅ #805 (permissive mut-borrow join)
+ ├─► PR7 ⬜ (if-let / let-else — needs PR4 + PR5)
+ └─► PR8 ⬜ (subsume inferred types at finalization — needs PR1 + PR2)
 ```
 
 - **PR1 is first because every other PR mints or compares a union/intersection**,
