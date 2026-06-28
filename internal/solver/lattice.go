@@ -324,14 +324,24 @@ func (s *finalSubsumer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 	return soltype.EnterResult{}
 }
 
+// ExitType re-mints a lattice node, then returns the original when the re-mint is
+// equalType-equal to it. newUnion / newIntersection always allocate a fresh node,
+// so keeping the original when nothing was subsumed preserves pointer identity up
+// the spine. Both sides are canonical, so the equalType compare is positional.
 func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	var got soltype.Type
 	switch t := t.(type) {
 	case *soltype.UnionType:
-		return newUnion(s.ctx, t.Types, t.Inexact)
+		got = newUnion(s.ctx, t.Types, t.Inexact)
 	case *soltype.IntersectionType:
-		return newIntersection(s.ctx, t.Types)
+		got = newIntersection(s.ctx, t.Types)
+	default:
+		return t
 	}
-	return t
+	if equalType(got, t) {
+		return t
+	}
+	return got
 }
 
 // sortTypes orders parts in place under compareType. The sort is stable so a

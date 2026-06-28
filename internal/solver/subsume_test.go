@@ -156,3 +156,13 @@ func TestSubsumeFinalLeavesFreeVar(t *testing.T) {
 	require.IsType(t, &soltype.UnionType{}, got, "got %s", soltype.Print(got))
 	require.Len(t, got.(*soltype.UnionType).Types, 2)
 }
+
+// When nothing is subsumed the original node is returned, so pointer identity is
+// preserved up the spine rather than reallocating an equal node. `1 | 2` has no
+// subsumable member, so subsumeFinal returns the same union pointer.
+func TestSubsumeFinalPreservesIdentityWhenUnchanged(t *testing.T) {
+	c := newChecker()
+	in := newUnion(nil, parseTypes(t, "1", "2"), false)
+	require.IsType(t, &soltype.UnionType{}, in)
+	require.Same(t, in, c.subsumeFinal(in))
+}
