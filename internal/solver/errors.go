@@ -696,6 +696,13 @@ type NonExhaustiveMatchError struct {
 	Match *ast.MatchExpr
 }
 
+// MixedOwnershipError fires when an inferred union or intersection has a borrowed
+// member beside an owned one, such as `{x: number} | &{y: number}`, which has no
+// single owned-or-borrowed verdict. It blames the inference join where it forms.
+type MixedOwnershipError struct {
+	Node ast.Node
+}
+
 func (*UnknownIdentifierError) isSolverError()            {}
 func (*NamespaceUsedAsValueError) isSolverError()         {}
 func (*UnknownNamespaceMemberError) isSolverError()       {}
@@ -716,7 +723,14 @@ func (*AwaitOutsideAsyncError) isSolverError()            {}
 func (*ReturnOutsideFunctionError) isSolverError()        {}
 func (*AsyncReturnNotPromiseError) isSolverError()        {}
 func (*NonExhaustiveMatchError) isSolverError()           {}
+func (*MixedOwnershipError) isSolverError()               {}
 func (*MutLeafThroughSharedBorrowError) isSolverError()   {}
+
+func (e *MixedOwnershipError) Span() ast.Span      { return spanOfNode(e.Node) }
+func (e *MixedOwnershipError) Related() []ast.Span { return nil }
+func (e *MixedOwnershipError) Message() string {
+	return "a union or intersection mixes owned and borrowed members. Make ownership uniform first. Clone the borrowed member to own it, or borrow the owned member."
+}
 
 func (e *NonExhaustiveMatchError) Span() ast.Span      { return e.Match.Span() }
 func (e *NonExhaustiveMatchError) Related() []ast.Span { return nil }

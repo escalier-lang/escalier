@@ -373,12 +373,50 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 		if joined, ok := c.joinBorrows(node, lvl, collected); ok {
 			return joined
 		}
+		c.checkUniformOwnership(node, collected)
 		joinVar := c.freshAt(lvl)
 		c.recordProv(joinVar, node, ReturnJoin)
 		for _, rt := range collected {
 			c.constrain(node, rt, joinVar)
 		}
 		return joinVar
+	}
+}
+
+// collectBranchOwnership sets sawBorrowed for a borrow and sawOwned for an owned
+// object, tuple, or owned-mutable RefType, recursing through union and intersection
+// members. Value types and inference variables carry no ownership and set neither.
+func collectBranchOwnership(t soltype.Type, sawOwned, sawBorrowed *bool) {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		if t.Lt != nil {
+			*sawBorrowed = true
+		} else {
+			*sawOwned = true
+		}
+	case *soltype.UnionType:
+		for _, m := range t.Types {
+			collectBranchOwnership(m, sawOwned, sawBorrowed)
+		}
+	case *soltype.IntersectionType:
+		for _, m := range t.Types {
+			collectBranchOwnership(m, sawOwned, sawBorrowed)
+		}
+	case *soltype.ObjectType, *soltype.TupleType:
+		*sawOwned = true
+	}
+}
+
+// checkUniformOwnership reports a MixedOwnershipError against node when the branches a
+// join is about to union are some owned and some borrowed. Each branch is coalesced
+// first so an inference variable resolves to the shape that flowed into it.
+func (c *checker) checkUniformOwnership(node ast.Node, branches []soltype.Type) {
+	sawOwned, sawBorrowed := false, false
+	for _, b := range branches {
+		collectBranchOwnership(coalesce(b, soltype.Positive), &sawOwned, &sawBorrowed)
+	}
+	if sawOwned && sawBorrowed {
+		c.report(&MixedOwnershipError{Node: node})
 	}
 }
 
@@ -2077,12 +2115,16 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	// above (reporting branch-local errors and collecting its `return` as a function
 	// return point); only its block-tail VALUE is dropped here. When both branches
 	// diverge, res keeps no lower bounds and coalesces to `never`.
+	var branches []soltype.Type
 	if !consDiverges {
 		c.constrain(e, consT, res)
+		branches = append(branches, consT)
 	}
 	if !altDiverges {
 		c.constrain(e, altT, res)
+		branches = append(branches, altT)
 	}
+	c.checkUniformOwnership(e, branches)
 	c.recordType(e, res)
 	return res
 }
@@ -2107,6 +2149,7 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, MatchBranch)
+	var armBodies []soltype.Type
 	for _, arm := range e.Cases {
 		// Each arm binds its pattern's leaves in a fresh child scope so a name bound
 		// by one arm is invisible to the next. bindPattern peels the scrutinee's borrow
@@ -2126,8 +2169,10 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 		bodyT, diverges := c.inferBlockOrExpr(armScope, lvl, &arm.Body)
 		if !diverges {
 			c.constrain(e, bodyT, res)
+			armBodies = append(armBodies, bodyT)
 		}
 	}
+	c.checkUniformOwnership(e, armBodies)
 	c.checkMatchExhaustive(e, matchShape)
 	c.recordType(e, res)
 	return res

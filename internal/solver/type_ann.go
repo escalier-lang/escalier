@@ -358,8 +358,9 @@ func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltyp
 	return t, true
 }
 
-// borrowInner resolves the pointee of a `mut` or `&` annotation to a RefInner, the
-// shared inner-resolution step of resolveMutableTypeAnn and resolveRefTypeAnn. An
+// borrowInner resolves the pointee of a `mut` annotation to a RefInner, the
+// inner-resolution step of resolveMutableTypeAnn. resolveRefTypeAnn resolves its own
+// inner directly so it can intercept a nested borrow before the RefInner cast. An
 // unsupported inner recovers to a fresh var, which IS a RefInner, so the wrapper is
 // preserved and the binding stays cascade-safe. ok=false means the inner resolved to a
 // concrete non-borrowable type such as a primitive, function, or promise. The caller
@@ -385,14 +386,43 @@ func (c *checker) borrowInner(ta ast.TypeAnn, lvl int) (soltype.RefInner, bool) 
 // connects nothing elides. Unlike resolveMutableTypeAnn, this arm always sets Lt, so the
 // result is a genuine borrow rather than an owned value.
 func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, bool) {
-	ri, ok := c.borrowInner(ta.Inner, lvl)
+	lt := c.resolveLifetimeAnn(ta.Lifetime, lvl)
+	inner, ok := c.resolveTypeAnn(ta.Inner, lvl)
 	if !ok {
+		// Recover an unsupported inner to a fresh var so the borrow wrapper survives, cascade-safe.
+		inner = c.freshAt(lvl)
+	}
+	// A borrow whose pointee is itself a borrow collapses to depth one.
+	if nested, isRef := inner.(*soltype.RefType); isRef {
+		return c.normalizeNestedBorrow(ta, lt, nested)
+	}
+	ri, isRI := inner.(soltype.RefInner)
+	if !isRI {
 		return c.reportUnsupportedFeature(ta, "borrow of a non-borrowable type"), false
 	}
-	// The lazy deep-mut form (PR 14) stores `&mut {a: {x}}` verbatim; the deep-mut
-	// rule is applied at access and constrain time rather than by rewriting the
-	// pointee's children here.
-	t := &soltype.RefType{Mut: ta.Mut, Lt: c.resolveLifetimeAnn(ta.Lifetime, lvl), Inner: ri}
+	// The lazy deep-mut form stores `&mut {a: {x}}` verbatim. The deep-mut rule is
+	// applied at access and constrain time rather than by rewriting the pointee's
+	// children here.
+	t := &soltype.RefType{Mut: ta.Mut, Lt: lt, Inner: ri}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// normalizeNestedBorrow collapses a borrow whose pointee is itself a borrow to depth
+// one, for a nested borrow such as `&&Point`. Two cases:
+//
+//   - An immutable outer layer collapses, since an immutable borrow is Copy. `&'a &'b
+//     Point` reduces to `&'a Point` at the outer lifetime, with 'b outliving 'a.
+//   - A mutable outer layer is uninhabitable, since `&mut &…` would repoint the inner
+//     borrow, which needs a storage cell the JS target cannot express. It is rejected.
+func (c *checker) normalizeNestedBorrow(ta *ast.RefTypeAnn, outerLt soltype.Lifetime, inner *soltype.RefType) (soltype.Type, bool) {
+	if ta.Mut {
+		return c.reportUnsupportedFeature(ta, "mutable borrow of a borrow is uninhabitable"), false
+	}
+	if inner.Lt != nil && outerLt != nil {
+		c.ctx.constrainLt(inner.Lt, outerLt)
+	}
+	t := soltype.NewRef(false, outerLt, inner.Inner)
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
