@@ -366,7 +366,15 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // OPERATIVE body, so callers cannot pass extra fields (Policy A / B2). See its doc.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	c.sealUsageObjects(t, lvl)
-	return &PolyScheme{Level: lvl, Body: t}
+	sc := &PolyScheme{Level: lvl, Body: t}
+	// Subsume the display type now, while the ambient Context is available.
+	// display() computes and caches the coalesced form, which combine builds
+	// Context-free and so leaves un-subsumed. Overwriting the cache with the
+	// subsumed form seals it once at generalization, so every later read —
+	// schemeType for Info and renderScheme for the printed string — sees the
+	// canonical type. An inferred `1 | number` thus renders `number`.
+	sc.coalesced = c.subsumeFinal(sc.display())
+	return sc
 }
 
 // sealUsageObjects is the operative half of Policy A (B2). Body inference records a

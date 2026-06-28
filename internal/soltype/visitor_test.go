@@ -283,3 +283,27 @@ func TestAcceptRefCopyOnWrite(t *testing.T) {
 	require.NotSame(t, inner, gotInner, "the changed inner is a fresh object")
 	require.Same(t, str, gotInner.Elems[0].(*PropertyElem).Type, "the variable took the replacement")
 }
+
+// HasLifetimeVar finds a LifetimeVar in a borrow's lifetime slot, nested at any
+// depth, and reports false for a borrow whose lifetime is a non-variable form.
+func TestHasLifetimeVar(t *testing.T) {
+	obj := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: &PrimType{Prim: NumPrim}}}}
+
+	t.Run("bare lifetime var", func(t *testing.T) {
+		require.True(t, HasLifetimeVar(&RefType{Mut: true, Lt: &LifetimeVar{ID: 0}, Inner: obj}))
+	})
+	t.Run("lifetime var in a union member", func(t *testing.T) {
+		lt := &LifetimeUnion{Lifetimes: []Lifetime{&StaticLifetime{}, &LifetimeVar{ID: 1}}}
+		require.True(t, HasLifetimeVar(&RefType{Mut: true, Lt: lt, Inner: obj}))
+	})
+	t.Run("nested inside a tuple", func(t *testing.T) {
+		ref := &RefType{Mut: true, Lt: &LifetimeVar{ID: 2}, Inner: obj}
+		require.True(t, HasLifetimeVar(&TupleType{Elems: []Type{ref}}))
+	})
+	t.Run("static lifetime is not a var", func(t *testing.T) {
+		require.False(t, HasLifetimeVar(&RefType{Mut: true, Lt: &StaticLifetime{}, Inner: obj}))
+	})
+	t.Run("no borrow at all", func(t *testing.T) {
+		require.False(t, HasLifetimeVar(obj))
+	})
+}

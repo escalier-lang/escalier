@@ -243,6 +243,12 @@ func collapseIntersection(pruned []soltype.Type, hadError bool) soltype.Type {
 // variable could pin it speculatively. The trial uses a discard-only probe
 // so a successful trial leaves no bound mutation behind.
 //
+// A free lifetime variable disqualifies a member the same way. Two borrows
+// that differ only in lifetime, such as `&'a mut {x: number}` and
+// `&'b mut {x: number}`, mutually subsume by a discardable lifetime
+// constraint, so dropping one would silently lose a distinct lifetime the
+// signature quantifies over. Gating on the lifetime sort keeps both borrows.
+//
 // When two members mutually subsume, the survivor must be deterministic. The
 // pass pre-sorts the input by compareType, so the iteration order is
 // canonical and newUnion([A, B]) and newUnion([B, A]) drop the same member
@@ -254,17 +260,17 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 	}
 	parts = append([]soltype.Type(nil), parts...)
 	sortTypes(parts)
-	hasVar := make([]bool, len(parts))
+	notGround := make([]bool, len(parts))
 	for i, p := range parts {
-		hasVar[i] = soltype.HasTypeVar(p)
+		notGround[i] = soltype.HasTypeVar(p) || soltype.HasLifetimeVar(p)
 	}
 	dropped := set.NewSet[int]()
 	for i, a := range parts {
-		if dropped.Contains(i) || hasVar[i] {
+		if dropped.Contains(i) || notGround[i] {
 			continue
 		}
 		for j, b := range parts {
-			if i == j || dropped.Contains(j) || hasVar[j] {
+			if i == j || dropped.Contains(j) || notGround[j] {
 				continue
 			}
 			if drops(c, a, b) {
@@ -297,6 +303,49 @@ func unionDrops(c *Context, m, sibling soltype.Type) bool {
 // one to discard.
 func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
 	return len(c.trialUnderProbe(sibling, m)) == 0
+}
+
+// subsumeFinal runs the Context-gated subsumed-member elimination over a
+// finalized display type t and returns the canonicalized result. combine and
+// coalesceScheme build lattice nodes without a Context, so a coalesced
+// `1 | number` keeps both members. This pass re-mints every UnionType and
+// IntersectionType node in t through newUnion / newIntersection with the
+// ambient Context, so each node drops a member that a concrete sibling
+// subsumes. An inferred `1 | number` becomes `number` and an inferred
+// `{x, ...} & {x, y, ...}` becomes `{x, y, ...}`.
+//
+// It runs once per finalized type at generalization, off the constrain and
+// coalesce inner loops, so it cannot reenter coalescing. The walk re-mints
+// bottom-up in ExitType, so a nested union is already subsumed when its parent
+// re-mints. The concrete gate in subsumeMembers leaves a member carrying a
+// free type variable untouched, so a scheme whose union is not yet ground is
+// unchanged.
+//
+// The reduction is sound in any variance position: a union and its subsumed
+// form denote the same set, since the dropped member is a subtype of the
+// survivor, and likewise an intersection equals its narrowest member. So
+// neither soundness nor assignability changes.
+func (c *checker) subsumeFinal(t soltype.Type) soltype.Type {
+	return t.Accept(&finalSubsumer{ctx: c.ctx}, soltype.Positive)
+}
+
+// finalSubsumer is the rewriting visitor behind subsumeFinal. It re-mints a
+// lattice node in ExitType, after its children, so each member is itself
+// already subsumed before the enclosing node runs its own subsumption.
+type finalSubsumer struct{ ctx *Context }
+
+func (s *finalSubsumer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	return soltype.EnterResult{}
+}
+
+func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	switch t := t.(type) {
+	case *soltype.UnionType:
+		return newUnion(s.ctx, t.Types, t.Inexact)
+	case *soltype.IntersectionType:
+		return newIntersection(s.ctx, t.Types)
+	}
+	return t
 }
 
 // sortTypes orders parts in place under compareType. The sort is stable so a
