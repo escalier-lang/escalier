@@ -275,6 +275,12 @@ func TestInferIncompatibleBorrowJoinKeepsDistinctLifetimes(t *testing.T) {
 // in one branch and `string` in the other, so writing `5` must satisfy both and
 // fails the invariant pin in each direction. The read-until-narrowed contract is
 // sound only because this write is rejected. To write, narrow to one branch first.
+//
+// The write reports two messages for the one mistake: the `string` member's `x` is
+// pinned invariant against the `number` write requirement, so both the read view
+// (`string <: number`) and the write view (`number <: string`) fail. Collapsing this
+// to a single diagnostic is tracked in escalier-lang/escalier#806; update this
+// assertion when that lands.
 func TestInferIncompatibleBorrowUnionWriteRejected(t *testing.T) {
 	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
   val r = if true {
