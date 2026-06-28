@@ -729,7 +729,7 @@ func (*MutLeafThroughSharedBorrowError) isSolverError()   {}
 func (e *MixedOwnershipError) Span() ast.Span      { return spanOfNode(e.Node) }
 func (e *MixedOwnershipError) Related() []ast.Span { return nil }
 func (e *MixedOwnershipError) Message() string {
-	return "union or intersection mixes owned and borrowed members; make ownership uniform — clone the borrowed member to own it, or borrow the owned member"
+	return "a union or intersection mixes owned and borrowed members. Make ownership uniform first. Clone the borrowed member to own it, or borrow the owned member."
 }
 
 func (e *NonExhaustiveMatchError) Span() ast.Span      { return e.Match.Span() }

@@ -392,7 +392,7 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 		// Recover an unsupported inner to a fresh var so the borrow wrapper survives, cascade-safe.
 		inner = c.freshAt(lvl)
 	}
-	// A borrow whose pointee is itself a borrow collapses to depth one (PR 9).
+	// A borrow whose pointee is itself a borrow collapses to depth one.
 	if nested, isRef := inner.(*soltype.RefType); isRef {
 		return c.normalizeNestedBorrow(ta, lt, nested)
 	}
@@ -400,16 +400,16 @@ func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, 
 	if !isRI {
 		return c.reportUnsupportedFeature(ta, "borrow of a non-borrowable type"), false
 	}
-	// The lazy deep-mut form (PR 14) stores `&mut {a: {x}}` verbatim; the deep-mut
-	// rule is applied at access and constrain time rather than by rewriting the
-	// pointee's children here.
+	// The lazy deep-mut form stores `&mut {a: {x}}` verbatim. The deep-mut rule is
+	// applied at access and constrain time rather than by rewriting the pointee's
+	// children here.
 	t := &soltype.RefType{Mut: ta.Mut, Lt: lt, Inner: ri}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
 
 // normalizeNestedBorrow collapses a borrow whose pointee is itself a borrow to depth
-// one, the PR 9 rule for a nested borrow such as `&&Point`. Two cases:
+// one, for a nested borrow such as `&&Point`. Two cases:
 //
 //   - An immutable outer layer collapses, since an immutable borrow is Copy. `&'a &'b
 //     Point` reduces to `&'a Point` at the outer lifetime, with 'b outliving 'a.

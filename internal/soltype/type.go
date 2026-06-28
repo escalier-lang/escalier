@@ -306,8 +306,8 @@ type RefType struct {
 // pointee, with a single lifetime and mutability for the whole value rather than
 // `&A | &B` with independent lifetimes. A union or intersection must have uniform
 // ownership. A borrowed member beside an owned one has no single owned-or-borrowed
-// verdict and is rejected at the inference join where it forms. AliasType (M7) and
-// ClassType (M5) add their isRefInner arms with those milestones.
+// verdict and is rejected at the inference join where it forms. AliasType and
+// ClassType add their isRefInner arms when those types are introduced.
 type RefInner interface {
 	Type
 	isRefInner()

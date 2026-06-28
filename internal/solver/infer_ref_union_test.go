@@ -9,7 +9,7 @@ import (
 
 // mixedOwnershipMsg is the MixedOwnershipError message, asserted with a span prefix
 // in the mixed-ownership rows below.
-const mixedOwnershipMsg = "union or intersection mixes owned and borrowed members; make ownership uniform — clone the borrowed member to own it, or borrow the owned member"
+const mixedOwnershipMsg = "a union or intersection mixes owned and borrowed members. Make ownership uniform first. Clone the borrowed member to own it, or borrow the owned member."
 
 // TestInferRefUnion pins binding `f`'s rendered type when wantErrs is nil, else asserts the exact diagnostics.
 func TestInferRefUnion(t *testing.T) {
