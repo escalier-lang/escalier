@@ -109,53 +109,59 @@ func (c *checker) overloadOrder(schemes []TypeScheme, args []soltype.Type) []int
 		}
 		return order // an unconstrained arg can't rank arms, so try in declaration order
 	}
-	funcs := make([]*soltype.FuncType, len(schemes))
+	cands := make([]soltype.Type, len(schemes))
 	for i, s := range schemes {
-		funcs[i] = schemeFunc(s)
+		// A non-function arm's body is not a FuncType, so leave its slot a nil
+		// interface. specificityOrder ranks a nil candidate last. Boxing a typed
+		// nil *FuncType here would instead pass typeSpecificity a non-nil interface
+		// over a nil pointer and panic on the param access.
+		if ft := schemeFunc(s); ft != nil {
+			cands[i] = ft
+		}
 	}
-	return specificityOrder(funcs)
+	return specificityOrder(cands)
 }
 
-// specificityOrder returns funcs' indices most-specific-first, with declaration order
-// breaking ties. It ranks each arm by its DOMINATION COUNT — the number of other arms
-// strictly more specific than it, i.e. that "dominate" it — and sorts ascending on that
-// count, so an arm dominated by nobody comes first and the generic catch-all that every
-// other arm beats comes last.
+// specificityOrder returns cands' indices most-specific-first, with declaration order
+// breaking ties. It ranks each candidate by its DOMINATION COUNT — the number of other
+// candidates strictly more specific than it, i.e. that "dominate" it — and sorts ascending
+// on that count, so a candidate dominated by nobody comes first and the generic catch-all
+// that every other candidate beats comes last.
 //
-// For example, given arms (x: number), (x: T), and (x: string): each concrete arm is
-// dominated by nobody (number and string are incomparable), so both get count 0; the
-// generic (x: T) is dominated by both, count 2. Ascending order is therefore number,
-// string, T — the concretes first (their tie kept in declaration order), the generic last.
+// For example, given candidates number, T, and string: each concrete candidate is
+// dominated by nobody, since number and string are incomparable, so both get count 0; the
+// variable T is dominated by both, count 2. Ascending order is therefore number, string,
+// T — the concretes first with their tie kept in declaration order, the variable last.
 //
-// The domination count exists to dodge a partial-order sort hazard. The moreSpecific
-// relation is only a partial order: some arm pairs are incomparable (the tie cases —
-// different literal tags, disjoint shapes, different arities), and incomparability is not
-// transitive (A incomparable to B and B to C does not make A incomparable to C). Feeding
-// moreSpecific straight to sort.SliceStable would therefore violate the strict-weak-ordering
-// contract and yield undefined results. Projecting each arm onto its integer domination
-// count yields a TOTAL order on integers, so the sort is well-defined. An arm dominated by
-// none gets count 0 and sorts first; equal counts keep declaration order through the
-// stable sort.
+// The domination count exists to dodge a partial-order sort hazard. The typeSpecificity
+// relation is only a partial order: some pairs are incomparable, the tie cases such as
+// different literal tags, disjoint shapes, or different function arities, and
+// incomparability is not transitive, so A incomparable to B and B to C does not make A
+// incomparable to C. Feeding typeSpecificity straight to sort.SliceStable would therefore
+// violate the strict-weak-ordering contract and yield undefined results. Projecting each
+// candidate onto its integer domination count yields a TOTAL order on integers, so the
+// sort is well-defined. A candidate dominated by none gets count 0 and sorts first; equal
+// counts keep declaration order through the stable sort.
 //
-// overloadOrder uses this for direct calls and constrain's IntersectionType arm uses it
-// for value-position calls, so both resolve in the same order. A nil entry is a
-// non-function arm and sorts last.
-func specificityOrder(funcs []*soltype.FuncType) []int {
-	order := make([]int, len(funcs))
+// overloadOrder uses this for direct calls, and constrain's IntersectionType-sub and
+// UnionType-super exists arms use it for their member trials, so every trial site resolves
+// in the same order. A nil candidate is a non-function overload arm and sorts last.
+func specificityOrder(cands []soltype.Type) []int {
+	order := make([]int, len(cands))
 	for i := range order {
 		order[i] = i
 	}
-	dominators := make([]int, len(funcs))
-	for i := range funcs {
-		if funcs[i] == nil {
-			dominators[i] = len(funcs) + 1 // non-function arms sort last
+	dominators := make([]int, len(cands))
+	for i := range cands {
+		if cands[i] == nil {
+			dominators[i] = len(cands) + 1 // a non-rankable candidate sorts last
 			continue
 		}
-		for j := range funcs {
-			if i == j || funcs[j] == nil {
+		for j := range cands {
+			if i == j || cands[j] == nil {
 				continue
 			}
-			if moreSpecific(funcs[j], funcs[i]) < 0 {
+			if typeSpecificity(cands[j], cands[i]) < 0 {
 				dominators[i]++
 			}
 		}
@@ -163,6 +169,56 @@ func specificityOrder(funcs []*soltype.FuncType) []int {
 	sort.SliceStable(order, func(a, b int) bool {
 		return dominators[order[a]] < dominators[order[b]]
 	})
+	return order
+}
+
+// typeSpecificity compares two trial candidates by specificity. It returns -1 when a is
+// strictly more specific than b, +1 when b is, and 0 when the two are incomparable or
+// equally specific.
+//
+// Two functions compare parameter-wise through moreSpecific, so a concrete (x: number)
+// still outranks a generic (x: T). Any other pair compares through structuralSubtype: a
+// is more specific when it is a structural subtype of b and b is not a structural subtype
+// of a. So a literal outranks its primitive, 1 before number, and a concrete type outranks
+// a bare variable. structuralSubtype ranks disjoint shapes as incomparable, which yields a
+// 0 tie that the stable sort resolves in declaration order.
+func typeSpecificity(a, b soltype.Type) int {
+	if fa, ok := a.(*soltype.FuncType); ok {
+		if fb, ok := b.(*soltype.FuncType); ok {
+			return moreSpecific(fa, fb)
+		}
+	}
+	aSubB := structuralSubtype(a, b)
+	bSubA := structuralSubtype(b, a)
+	switch {
+	case aSubB && !bSubA:
+		return -1
+	case bSubA && !aSubB:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// concreteSpecificityOrder returns the indices of types' concrete members in
+// most-specific-first order, skipping any member that is a free type variable. The
+// union-super exists rule trials these. The skip keeps the trial from speculatively
+// pinning a variable member to sub, and the specificity order keeps a less-specific
+// member from changing which branch commits.
+func concreteSpecificityOrder(types []soltype.Type) []int {
+	var concrete []soltype.Type
+	var origIdx []int
+	for i, m := range types {
+		if _, isVar := m.(*soltype.TypeVarType); isVar {
+			continue
+		}
+		concrete = append(concrete, m)
+		origIdx = append(origIdx, i)
+	}
+	order := make([]int, len(concrete))
+	for k, pos := range specificityOrder(concrete) {
+		order[k] = origIdx[pos]
+	}
 	return order
 }
 

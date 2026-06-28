@@ -254,6 +254,36 @@ func (c *checker) openProbe() *Probe {
 	return p
 }
 
+// trialAndCommit tries each index in order, running its trial under a fresh child probe.
+// The first trial whose body reports no errors wins. Its bound mutations commit, and the
+// method returns (true, nil). Every losing trial rolls back, so it leaves no bound behind.
+//
+// When no trial wins, the method returns false with each trial's errors in trial order.
+// The caller decides what to do with them. It can promote a shared failure or report the
+// last trial's diagnostics. The union-super rule, for example, promotes a uniform
+// BorrowEscapeError when every trial reports one.
+//
+// This is the single path for the speculative member trials the lattice arms run. Both
+// constrain's IntersectionType-sub exists rule and its UnionType-super exists rule route
+// through it, so the probe push-and-pop discipline lives in one place. Each trial body
+// owns its own coinductive seen clone, since only the caller holds the constraint key.
+func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError) (bool, [][]SolverError) {
+	var trialErrs [][]SolverError
+	for _, idx := range order {
+		p := newProbe(c.probe)
+		c.probe = p
+		errs := trial(idx)
+		c.probe = p.parent
+		if len(errs) == 0 {
+			p.Commit()
+			return true, nil
+		}
+		p.Discard()
+		trialErrs = append(trialErrs, errs)
+	}
+	return false, trialErrs
+}
+
 // snapshotMapEntry registers, under the active probe (else a no-op), a closure
 // that restores m[k] to its current value — or deletes the key if it is currently
 // absent — so a discarded trial leaves m exactly as it was. Shared by the Info

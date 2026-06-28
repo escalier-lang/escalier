@@ -1145,7 +1145,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// type-checks. The carrier feeds the upgrade for the same reason it feeds the
 		// strict check below: a borrow forced to 'static satisfies the owned global.
 		if !c.tryUpgradeToOwnedMut(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
-			c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
+			c.constrain(e, soltype.CarrierOf(sourceT), targetT)
 		}
 		if len(c.errs) == errsBefore {
 			// The store aliases the source into a permanent module-level storage location. If the
@@ -1179,9 +1179,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	} else if !c.tryUpgradeToOwnedMut(e, e.Right, sourceT, targetT) {
 		// A uniquely-owned source reassigned into an owned-mutable `var` takes the
 		// immutable→mutable upgrade, the same grant the annotated declaration makes. The
-		// upgrade fires only for a RefType target, so a union target still routes through
-		// constrainAssign's per-member trial below.
-		c.constrainAssign(e, sourceT, targetT)
+		// upgrade fires only for a RefType target, so a union target instead routes through
+		// constrain's union-super exists rule, which trials each member under a probe.
+		c.constrain(e, sourceT, targetT)
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && target.VarID > 0 {
 		// Track against the binding's own type, not the freshened targetT. The G2
@@ -1400,49 +1400,6 @@ func (c *checker) recordWritten(recv soltype.Type, name string, t soltype.Type) 
 	if v, ok := recv.(*soltype.TypeVarType); ok {
 		c.fn.written[fieldKey{recvID: v.ID, field: name}] = t
 	}
-}
-
-// constrainAssign asserts `source <: target` for a reassignment. For a UNION target
-// it applies the union-target rule — X <: (A | B) iff X <: A or X <: B — by trying
-// each member speculatively under a probe, committing the first that holds. constrain
-// itself has no UnionType-super rule until M6, so without this a legal assignment of a
-// union member (`var a = if c { 1 } else { 2 }; a = 1`) would be wrongly rejected.
-// A non-union target takes the ordinary single-constraint path.
-//
-// KNOWN GAP (M6): when `source` is (or contains) an inference variable, committing the
-// first matching member over-narrows it. `var a = 1 | 2; a = x` for an un-annotated
-// param `x` commits `x <: 1` and infers `x: 1` instead of the sound `x: 1 | 2`,
-// which can wrongly reject a later use of `x` that needs `2`. This is INCOMPLETE,
-// not unsound — the committed bound is always stronger than required, so no invalid
-// program is accepted. It is not fixable here: the obvious "don't commit, fall
-// through to constrain(source, target)" injects the COALESCED union node into source's
-// bound list and panics the coalescer (coalesced output must never re-enter the
-// graph). A correct fix needs first-class union subtyping with inference variables
-// — M6's deferred union/intersection rules in constrain. Pinned by
-// TestInferAssignUnionTargetVarRHSOverNarrows.
-func (c *checker) constrainAssign(n ast.Node, source, target soltype.Type) {
-	union, ok := target.(*soltype.UnionType)
-	if !ok {
-		c.constrain(n, source, target)
-		return
-	}
-	for _, member := range union.Types {
-		p := c.openProbe()
-		errs := c.ctx.Constrain(source, member)
-		c.closeProbe(p, len(errs) == 0) // commit the first member that holds; else roll back
-		if len(errs) == 0 {
-			return
-		}
-	}
-	if union.Inexact {
-		// An inexact union target has an open tail of unknown type, so a
-		// value that does not match any named member still satisfies the
-		// tail. Skip the failure report. The tail accepts everything.
-		return
-	}
-	// No member matched: report once against the whole union (CannotConstrainError),
-	// blaming the assignment.
-	c.constrain(n, source, target)
 }
 
 // bindingDecl returns the AST node of the binding's introducing declaration — the

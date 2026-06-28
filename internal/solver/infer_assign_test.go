@@ -159,9 +159,9 @@ func TestInferAssignTopLevelBrokenBindingNoCascade(t *testing.T) {
 	require.Equal(t, "error", values["a"]) // recovered as the sentinel, not never
 }
 
-// Reassigning a union-typed var applies the union-target rule: a member assigns, a
-// non-member is rejected once. (Union subtyping in general is M6; inferAssign trials
-// the members under a probe so a legal member assignment isn't wrongly rejected.)
+// Reassigning a union-typed var applies the union-super exists rule in constrain: a
+// member assigns, a non-member is rejected once. constrain trials each member under a
+// probe so a legal member assignment isn't wrongly rejected.
 func TestInferAssignUnionTarget(t *testing.T) {
 	t.Run("member assigns", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
@@ -183,17 +183,12 @@ func TestInferAssignUnionTarget(t *testing.T) {
 	})
 }
 
-// KNOWN GAP (M6): assigning an inference-variable source into a union target
-// over-narrows the variable. `a = x` for an un-annotated param `x` and `a: 1 | 2`
-// commits the first matching member (`x <: 1`), so `x` infers as `1` rather than
-// the sound `1 | 2`. This is INCOMPLETE, not unsound (the committed bound is always
-// stronger than required, so no invalid program is accepted), and it is not fixable
-// in constrainAssign — falling through to constrain(source, union) injects the
-// coalesced union node into source's bound list and panics the coalescer. The correct
-// fix is M6's first-class union subtyping with inference variables. This pins the
-// interim behavior so the M6 change is visible: when it lands, `x` becomes `1 | 2`
-// and this assertion must be updated. See constrainAssign's KNOWN GAP note.
-func TestInferAssignUnionTargetVarRHSOverNarrows(t *testing.T) {
+// Assigning an inference-variable source into a union target records the WHOLE union as
+// the variable's upper bound rather than committing to one member. `a = x` for an
+// un-annotated param `x` and `a: 1 | 2` defers, because the union-super exists rule is
+// gated to a concrete sub. The variable falls through to the subVar arm, which records
+// the whole union, so `x` coalesces as the sound and complete `1 | 2`.
+func TestInferAssignUnionTargetVarRHSWidensToUnion(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(c: boolean, x) {
 			var a = if c { 1 } else { 2 }
@@ -201,8 +196,7 @@ func TestInferAssignUnionTargetVarRHSOverNarrows(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	// M6 target: "fn (c: boolean, x: 1 | 2) -> void".
-	require.Equal(t, "fn (c: boolean, x: 1) -> void", values["f"])
+	require.Equal(t, "fn (c: boolean, x: 1 | 2) -> void", values["f"])
 }
 
 // A namespace name as an assignment target reports NamespaceUsedAsValue, mirroring
