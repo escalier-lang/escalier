@@ -305,26 +305,10 @@ func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
 	return len(c.trialUnderProbe(sibling, m)) == 0
 }
 
-// subsumeFinal runs the Context-gated subsumed-member elimination over a
-// finalized display type t and returns the canonicalized result. combine and
-// coalesceScheme build lattice nodes without a Context, so a coalesced
-// `1 | number` keeps both members. This pass re-mints every UnionType and
-// IntersectionType node in t through newUnion / newIntersection with the
-// ambient Context, so each node drops a member that a concrete sibling
-// subsumes. An inferred `1 | number` becomes `number` and an inferred
-// `{x, ...} & {x, y, ...}` becomes `{x, y, ...}`.
-//
-// It runs once per finalized type at generalization, off the constrain and
-// coalesce inner loops, so it cannot reenter coalescing. The walk re-mints
-// bottom-up in ExitType, so a nested union is already subsumed when its parent
-// re-mints. The concrete gate in subsumeMembers leaves a member carrying a
-// free type variable untouched, so a scheme whose union is not yet ground is
-// unchanged.
-//
-// The reduction is sound in any variance position: a union and its subsumed
-// form denote the same set, since the dropped member is a subtype of the
-// survivor, and likewise an intersection equals its narrowest member. So
-// neither soundness nor assignability changes.
+// subsumeFinal re-mints every UnionType and IntersectionType node in a finalized
+// display type through newUnion / newIntersection with the ambient Context, so a
+// member a concrete sibling subsumes is dropped. An inferred `1 | number` becomes
+// `number`; an inferred `{x, ...} & {x, y, ...}` becomes `{x, y, ...}`.
 func (c *checker) subsumeFinal(t soltype.Type) soltype.Type {
 	return t.Accept(&finalSubsumer{ctx: c.ctx}, soltype.Positive)
 }

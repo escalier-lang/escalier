@@ -367,12 +367,8 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	c.sealUsageObjects(t, lvl)
 	sc := &PolyScheme{Level: lvl, Body: t}
-	// Subsume the display type now, while the ambient Context is available.
-	// display() computes and caches the coalesced form, which combine builds
-	// Context-free and so leaves un-subsumed. Overwriting the cache with the
-	// subsumed form seals it once at generalization, so every later read —
-	// schemeType for Info and renderScheme for the printed string — sees the
-	// canonical type. An inferred `1 | number` thus renders `number`.
+	// Seal the subsumed display now, while the ambient Context is available, so
+	// every later read sees the canonical type and an inferred `1 | number` renders `number`.
 	sc.coalesced = c.subsumeFinal(sc.display())
 	return sc
 }

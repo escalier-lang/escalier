@@ -304,10 +304,7 @@ func TestNewUnionSubsumptionSkipsVar(t *testing.T) {
 }
 
 // TestNewUnionSubsumptionSkipsLifetimeVar pins the lifetime half of the concrete
-// gate. Two mut borrows over the same inner that differ only in lifetime variable
-// mutually subsume by a discardable lifetime constraint, so an ungated pass would
-// drop one and lose a distinct lifetime. The gate keeps both. The lifetimes have
-// no surface form parseType can author, so the borrows are built directly.
+// gate: two mut borrows differing only in lifetime variable both survive.
 func TestNewUnionSubsumptionSkipsLifetimeVar(t *testing.T) {
 	c := &Context{}
 	a := &soltype.RefType{Mut: true, Lt: &soltype.LifetimeVar{ID: 0}, Inner: exactObj(propElem("x", num()))}

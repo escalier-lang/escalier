@@ -136,11 +136,8 @@ func TestInferSubsumedTypePreservesAssignability(t *testing.T) {
 	}
 }
 
-// An inferred intersection of inexact objects collapses to its narrowest member.
-// `{x, ...} & {x, y, ...}` reduces to `{x, y, ...}`, since the wider object is a
-// subtype of the narrower under inexact width subtyping. An inferred intersection
-// has no if/else source form that survives combine's usage-object fold, so the
-// type is built directly and run through subsumeFinal.
+// An inferred intersection collapses to its narrowest member: `{x, ...} & {x, y, ...}`
+// reduces to `{x, y, ...}`. It has no source form that survives combine's fold, so it is built directly.
 func TestSubsumeFinalIntersectionObjects(t *testing.T) {
 	c := newChecker()
 	in := newIntersection(nil, parseTypes(t, "{x: number, ...}", "{x: number, y: string, ...}"))
