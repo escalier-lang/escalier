@@ -432,10 +432,12 @@ func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
 // successful pin commits the single carrier, a failed pin rolls back its bounds and
 // error and yields the union instead.
 //
-// Read-until-narrowed contract. A read off the union yields the covariant union of
-// the conflicting fields via the union read rule. A write to a conflicting field is
-// rejected, which keeps the union sound: it is read-only at its conflicting fields,
-// and a rejected write never changes its type. To write, narrow to one branch with
+// The union is governed by a read-until-narrowed contract: it is readable everywhere
+// but writable at its conflicting fields only after narrowing. A read off the union
+// yields the covariant union of the conflicting fields via the union read rule. A
+// write to a conflicting field is rejected, which keeps the union sound: it is
+// read-only at its conflicting fields, and a rejected write never changes its type.
+// To write, narrow to one branch with
 // `if let r2: mut {x: number} = r` and write through the fresh mutable view.
 func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
 	refs := make([]*soltype.RefType, len(types))
@@ -475,10 +477,17 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 	if !reconciled {
 		// The fields conflict. Discarding the probe rolled back the failed pin and
 		// its error, so each borrow keeps its own lifetime. Build the
-		// read-until-narrowed union of the original borrows. Pass no Context, so
-		// subsumption does not run. Two borrows differing only in lifetime would
-		// otherwise mutually subsume through a lifetime constraint the subtype trial
-		// discards, unsoundly collapsing the distinct lifetimes the union must keep.
+		// read-until-narrowed union of the original borrows.
+		//
+		// Pass no Context, so subsumption does not run. Each union member is a
+		// distinct borrow the value can take at runtime, with its own lifetime.
+		// Subsumption would trial one member <: another and drop the "subtype",
+		// but two borrows differing only in lifetime each subtype the other
+		// through a lifetime constraint the trial then discards. Dropping either
+		// would retype a value that may be the shorter-lived borrow as the
+		// longer-lived one, so a later read could outlive the borrowed data. The
+		// distinct lifetimes must survive into the union for the borrow check to
+		// stay sound.
 		return newUnion(nil, types, false), true
 	}
 	// Reconcilable fields: unite the input lifetimes under one fresh join lifetime,
@@ -535,11 +544,19 @@ func (escapeVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 // lower bounds — the shape a `val`-bound or call-result borrow takes — would
 // otherwise propagate un-peeled into the requirement and escape-error, so the
 // variable case peels its lower bounds, the same look-through resolveFunc uses to
-// find a concrete callee behind a binding var.
+// find a concrete callee behind a binding var. For example, in
 //
-// A variable with no borrow lower bound is returned unchanged, so an inferred-param
-// read (`fn f(p) { p.x }`) keeps recording its requirement against the variable and
-// coalesces to an owned object rather than a borrow.
+//	val r = if c { p } else { q }   // p, q are &mut borrows
+//	r.x                             // recv is r's variable, lower-bounded by both borrows
+//
+// the read peels the two borrow lower bounds to `{x: …} | {x: …}` rather than
+// constraining the borrows against the field requirement directly.
+//
+// The peel keys off the receiver variable's lower bounds, not the kind of read. A
+// variable with no borrow lower bound is returned unchanged. A parameter read like
+// `fn f(p) { p.x }` is one such case: nothing flows into p inside the body, so p's
+// variable has no lower bound, only the upper-bound field requirement the read adds,
+// and it coalesces to an owned object rather than a borrow.
 func readCarrier(recv soltype.Type) soltype.Type {
 	v, ok := recv.(*soltype.TypeVarType)
 	if !ok {
@@ -552,7 +569,11 @@ func readCarrier(recv soltype.Type) soltype.Type {
 	sawBorrow := false
 	for _, lb := range v.LowerBounds {
 		if lb == soltype.Type(v) {
-			continue // a self-edge would point the read back at the receiver variable
+			// A nested mut write such as `obj.p.x = 5` can leave the receiver
+			// variable with a vacuous `v <: v` self-edge among its bounds, the same
+			// case withoutSelf drops in coalesce. It constrains nothing, so skip it
+			// rather than point the read back at the receiver variable.
+			continue
 		}
 		if hasBorrowShape(lb) {
 			sawBorrow = true
