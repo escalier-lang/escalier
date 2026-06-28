@@ -288,27 +288,26 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// this loop is its complete rule. The lower-bound gate forced any extra sub
 			// param to be optional, so it is never passed.
 			//
-			// An open super does pass arguments past its arity, so each surplus sub param
-			// must accept the super's tail type, contravariantly. That tail type is
-			// unknown for an inexact super and the rest element type for a typed rest
-			// param. This is the Variation-B rule from exact-types §4.2.1.2. A surplus
-			// param typed number is rejected, since unknown is not a subtype of number,
-			// while unknown or an inference variable is accepted. A function is its own
-			// annotation context, so the deep-mut flag resets.
+			// An inexact super passes unknown-typed arguments past its arity, so each
+			// surplus sub param must accept unknown, contravariantly. This is the
+			// Variation-B rule from exact-types §4.2.1.2. A surplus param typed number is
+			// rejected, since unknown is not a subtype of number, while unknown or an
+			// inference variable is accepted. A surplus rest param is left arity-only,
+			// because checking its trailing arguments against the element type needs
+			// Array<T>, which lands in M7. A function is its own annotation context, so
+			// the deep-mut flag resets.
 			var errs []SolverError
 			n := min(len(sub.Params), len(sup.Params))
 			for i := 0; i < n; i++ {
 				errs = append(errs, c.constrain(sup.Params[i].Type, sub.Params[i].Type, seen, false)...) // contravariant
 			}
-			var tail soltype.Type
-			if hasRest(sup) {
-				tail = sup.Params[len(sup.Params)-1].Type
-			} else if sup.Inexact {
-				tail = &soltype.UnknownType{}
-			}
-			if tail != nil {
+			if sup.Inexact {
+				unknownT := &soltype.UnknownType{}
 				for i := n; i < len(sub.Params); i++ {
-					errs = append(errs, c.constrain(tail, sub.Params[i].Type, seen, false)...)
+					if sub.Params[i].Rest {
+						continue // rest-param element checking against Array<T> is M7
+					}
+					errs = append(errs, c.constrain(unknownT, sub.Params[i].Type, seen, false)...)
 				}
 			}
 			return append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant
