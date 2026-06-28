@@ -2136,7 +2136,7 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 func (c *checker) inferIfLet(scope *Scope, lvl int, e *ast.IfLetExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	consScope := scope.Child()
-	c.bindRefutable(consScope, lvl, e.Pattern, patternNarrowAnn(e.Pattern), scrutinee)
+	c.bindRefutable(consScope, lvl, e.Pattern, scrutinee)
 	consT, consDiverges := c.inferBlock(consScope, lvl, &e.Cons)
 	// The alternate runs in the original scope, so it sees the scrutinee at its full
 	// type without the narrowing the consequent's bindings carry.
@@ -2157,36 +2157,26 @@ func (c *checker) inferIfLet(scope *Scope, lvl int, e *ast.IfLetExpr) soltype.Ty
 	return res
 }
 
-// patternNarrowAnn returns the narrowing type annotation an `if let` pattern
-// carries directly, as in `if let x: number = u`. Only a bare identifier pattern
-// carries one; every other pattern narrows structurally and has none.
-func patternNarrowAnn(pat ast.Pat) ast.TypeAnn {
-	if ip, ok := pat.(*ast.IdentPat); ok {
-		return ip.TypeAnn
+// bindRefutable binds a refutable pattern's names against a scrutinee, returning the
+// bound type. A bare identifier pattern carrying a narrowing annotation, as in
+// `if let x: number = u`, binds the name at the narrowed member through
+// bindNarrowedIdent. Every other pattern destructures the scrutinee through the shared
+// structural path. The annotation is read from the pattern's own IdentPat.TypeAnn, which
+// the if-let parser fills in.
+func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type) soltype.Type {
+	if ip, ok := pat.(*ast.IdentPat); ok && ip.TypeAnn != nil {
+		return c.bindNarrowedIdent(scope, lvl, ip, ip.TypeAnn, scrutinee)
 	}
-	return nil
+	c.bindPattern(scope, lvl, pat, scrutinee, nil)
+	return scrutinee
 }
 
-// bindRefutable binds a refutable pattern's names against a scrutinee, returning the
-// bound type. A non-nil narrowing annotation `ann` binds a bare identifier at the
-// narrowed member, picked by the union-super exists rule; otherwise the pattern
-// destructures the scrutinee through the shared structural path.
-func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
-	if ann == nil {
-		c.bindPattern(scope, lvl, pat, scrutinee, nil)
-		return scrutinee
-	}
-	ip, ok := pat.(*ast.IdentPat)
-	if !ok {
-		// A narrowing annotation on a destructuring pattern, as in
-		// `val [a, b]: [number, string] = u else { … }`, would need the annotation
-		// distributed across the pattern's leaves, which the checker does not do.
-		// Report it and fall back to binding the pattern structurally against the
-		// scrutinee.
-		c.reportUnsupportedFeature(pat, "narrowing type annotation on a destructuring pattern")
-		c.bindPattern(scope, lvl, pat, scrutinee, nil)
-		return scrutinee
-	}
+// bindNarrowedIdent binds a single identifier at the type the narrowing annotation `ann`
+// resolves to, picked from the scrutinee by the union-super exists rule, and returns it.
+// It is the shared core of the refutable identifier-narrowing path. Both if-let and
+// let-else pass the annotation in directly, if-let from its pattern and let-else from
+// the decl, so the annotation never moves between AST nodes.
+func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	narrowed, resolved := c.resolveTypeAnn(ann, lvl)
 	if !resolved {
 		// The annotation was unsupported and already reported. Bind the name to the
@@ -2194,7 +2184,7 @@ func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.Type
 		// than cascading a second error off a `never` placeholder.
 		narrowed = scrutinee
 	} else {
-		c.constrain(pat, narrowed, scrutinee)
+		c.constrain(ip, narrowed, scrutinee)
 	}
 	binding := ValueBinding{Schemes: []TypeScheme{monoScheme(narrowed)}}
 	// Carry the rename-assigned VarID onto the binding so a later closure capture or
@@ -2221,9 +2211,19 @@ func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	elseT, elseDiverges := c.inferBlock(scope.Child(), lvl, d.Else)
 
 	if d.TypeAnn != nil {
-		// An annotated narrowing pins the binding to the annotation. A non-diverging
-		// else's fallback value must satisfy that pinned type.
-		bound := c.bindRefutable(scope, lvl, d.Pattern, d.TypeAnn, initType)
+		// A let-else annotation lives on the decl. A bare identifier narrows to it through
+		// bindNarrowedIdent, pinning the binding so a non-diverging else's fallback value
+		// must fit the pinned type. A destructuring pattern cannot distribute the
+		// annotation across its leaves, as in `val [a, b]: [number, string] = u else { … }`,
+		// so report it unsupported and bind structurally.
+		var bound soltype.Type
+		if ip, ok := d.Pattern.(*ast.IdentPat); ok {
+			bound = c.bindNarrowedIdent(scope, lvl, ip, d.TypeAnn, initType)
+		} else {
+			c.reportUnsupportedFeature(d.Pattern, "narrowing type annotation on a destructuring pattern")
+			c.bindPattern(scope, lvl, d.Pattern, initType, nil)
+			bound = initType
+		}
 		if !elseDiverges {
 			c.constrain(d, elseT, bound)
 		}
@@ -2241,7 +2241,7 @@ func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 		c.constrain(d, elseT, res)
 		source = res
 	}
-	c.bindRefutable(scope, lvl, d.Pattern, nil, source)
+	c.bindRefutable(scope, lvl, d.Pattern, source)
 }
 
 // inferMatch types a `match` expression. The scrutinee is inferred once. Each arm
