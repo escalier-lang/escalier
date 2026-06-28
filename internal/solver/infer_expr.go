@@ -416,39 +416,27 @@ func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
 	return true
 }
 
-// joinBorrows synthesizes the join of several borrowed objects (M4 D3). It applies
-// only when EVERY input is a mutable borrow of an object, all sharing the same
-// field-name set with each carrying a lifetime. Two outcomes are possible depending
-// on whether the shared fields reconcile:
+// joinBorrows joins several mutable borrows of objects (M4 D3). It applies only when
+// EVERY input is a mutable borrow of an object, all sharing the same field-name set
+// with each carrying a lifetime, and returns ok=false otherwise so the caller falls
+// back to its generic union path. The result depends on whether the shared fields
+// reconcile:
 //
-//   - Reconcilable fields join to one mutable borrow whose lifetime is a fresh JOIN
-//     variable bounded below by each input's lifetime, so a positive-position result
-//     coalesces to `&('a | 'b) mut {…}`. The shared fields are pinned invariant
-//     across the inputs, since a mut object's fields are read AND written through
-//     the join and a sound single carrier needs them to agree.
-//   - Conflicting fields degrade to the type-level union of the distinct borrows,
-//     `&'a mut {x: number} | &'b mut {x: string}`, instead of erroring on the pin.
-//     This is the read-until-narrowed treatment of a union of mutable objects.
+//   - Reconcilable: one mutable borrow `&('a | 'b) mut {…}` whose lifetime is a fresh
+//     join variable bounded below by each input's. The shared fields are pinned
+//     invariant, since a mut field is read AND written through the single carrier.
+//   - Conflicting: the read-until-narrowed union of the distinct borrows,
+//     `&'a mut {x: number} | &'b mut {x: string}`, rather than erroring on the pin.
 //
-// The reconcile attempt runs under a discard-only probe so it leaves no trace on the
-// union path. When the pin reports no error the probe commits the single carrier;
-// when it reports an error the probe discards both the pinned bounds and the error,
-// and the union of the original borrows is returned.
+// The pin runs under a discard-only probe, so the union path leaves no trace: a
+// successful pin commits the single carrier, a failed pin rolls back its bounds and
+// error and yields the union instead.
 //
-// Read-until-narrowed contract. A read off the un-narrowed union yields the
-// covariant union of the conflicting fields, `number | string`, via the union read
-// rule. A WRITE to a conflicting field through the un-narrowed union is rejected,
-// which is sound: an un-narrowed union of mutable objects is read-only at its
-// conflicting fields, and a rejected write never changes the union's type. To write,
-// narrow to one branch with an `if let r2: mut {x: number} = r` and write through the
-// fresh mutable view. The un-narrowed binding stays read-only at its conflicting
-// fields for its whole scope by design, not as a deferral.
-//
-// Uniting differing field-NAME sets returns ok=false, because the single-carrier
-// shape would invent writable fields absent from one input and the value-level union
-// is the caller's generic-union job. ok=false leaves the caller on its generic union
-// path. A usage-inferred borrow is a type variable here, not a concrete RefType, so
-// it returns ok=false.
+// Read-until-narrowed contract. A read off the union yields the covariant union of
+// the conflicting fields via the union read rule. A write to a conflicting field is
+// rejected, which keeps the union sound: it is read-only at its conflicting fields,
+// and a rejected write never changes its type. To write, narrow to one branch with
+// `if let r2: mut {x: number} = r` and write through the fresh mutable view.
 func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
 	refs := make([]*soltype.RefType, len(types))
 	objs := make([]*soltype.ObjectType, len(types))
@@ -542,26 +530,16 @@ func (v escapeVisitor) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Ent
 func (escapeVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // readCarrier peels the borrow wrapper for a field-read requirement so the
-// borrow-escape guard does not fire on a read. Reading a field through a borrow is
-// always legal and yields the field's value, so the requirement is built against the
-// peeled carrier rather than the borrow. The receiver reaches valueProp in three
-// shapes:
+// borrow-escape guard does not fire on a read, which is always legal. A concrete
+// RefType or a union of borrows peels directly. A borrow held in a join variable's
+// lower bounds — the shape a `val`-bound or call-result borrow takes — would
+// otherwise propagate un-peeled into the requirement and escape-error, so the
+// variable case peels its lower bounds, the same look-through resolveFunc uses to
+// find a concrete callee behind a binding var.
 //
-//   - A concrete RefType peels to its inner carrier.
-//   - A union peels each member, so a read off a union of borrows reads each member
-//     through the union for-all rule and the field coalesces to their union.
-//   - A join variable holding borrow lower bounds peels each such bound. A
-//     `val`-bound or call-result borrow reaches valueProp as the join variable
-//     holding the borrow, not the concrete RefType, so a read off it would otherwise
-//     propagate the un-peeled borrow into the requirement and escape-error. The peel
-//     looks through the variable's lower bounds, the same technique resolveFunc uses
-//     to find a concrete callee behind a binding var.
-//
-// A variable with no borrow lower bound is left unchanged, so an inferred-param read
-// (`fn f(p) { p.x }`) still records its inexact upper-bound requirement against the
-// variable, keeping its coalesced shape an owned object rather than a borrow. A join
-// over non-borrow objects likewise stays on the variable so each object lower bound
-// propagates as before.
+// A variable with no borrow lower bound is returned unchanged, so an inferred-param
+// read (`fn f(p) { p.x }`) keeps recording its requirement against the variable and
+// coalesces to an owned object rather than a borrow.
 func readCarrier(recv soltype.Type) soltype.Type {
 	v, ok := recv.(*soltype.TypeVarType)
 	if !ok {
