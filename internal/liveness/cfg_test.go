@@ -162,37 +162,38 @@ func TestCFGLetElseNonDivergingFallback(t *testing.T) {
 }
 
 func TestCFGLetElseBranchyInit(t *testing.T) {
-	// val x: number = if cond { a } else { b } else { return d }
-	// The initializer is the `if cond { a } else { b }` expression; the trailing
-	// `else { return d }` is the let-else's own else, reachable because the annotation
-	// makes the binding refutable. A branchy initializer must contribute its own CFG
-	// edges, so the entry block branches into the if's two arms rather than collapsing
-	// the init into one block.
+	// val x: number = match u { 1 => a, _ => b } else { return d }
+	// The initializer is the `match` expression; `else { return d }` is the let-else's
+	// own else. A branchy initializer must contribute its own CFG edges, so the entry
+	// block branches into the match's arms rather than collapsing the init into one
+	// block. A `match` init is used rather than an `if` init: after an `if`, a trailing
+	// `else` is consumed by that `if`, so a let-else over an `if` either can't be
+	// written or needs a confusing second `else`.
 	x := identPat("x")
+	uRef := ident("u")
 	aRef := ident("a")
 	bRef := ident("b")
 	dRef := ident("d")
 
-	ifInit := ast.NewIfElse(
-		ident("cond"),
-		block(exprStmt(aRef)),
-		&ast.BlockOrExpr{Block: &ast.Block{
-			Stmts: []ast.Stmt{exprStmt(bRef)},
-			Span:  span(),
-		}},
+	matchInit := ast.NewMatch(
+		uRef,
+		[]*ast.MatchCase{
+			ast.NewMatchCase(ast.NewLitPat(ast.NewNumber(1, span()), span()), nil, ast.BlockOrExpr{Expr: aRef}, span()),
+			ast.NewMatchCase(ast.NewWildcardPat(span()), nil, ast.BlockOrExpr{Expr: bRef}, span()),
+		},
 		span(),
 	)
-	vd := ast.NewVarDecl(ast.ValKind, x, ast.NewNumberTypeAnn(span()), ifInit, false, false, span())
+	vd := ast.NewVarDecl(ast.ValKind, x, ast.NewNumberTypeAnn(span()), matchInit, false, false, span())
 	vd.Else = &ast.Block{
 		Stmts: []ast.Stmt{ast.NewReturnStmt(dRef, span())},
 		Span:  span(),
 	}
 	body := block(ast.NewDeclStmt(vd, span()))
-	Rename(nil, body, map[string]VarID{"cond": -1, "a": -2, "b": -3, "d": -4})
+	Rename(nil, body, map[string]VarID{"u": -1, "a": -2, "b": -3, "d": -4})
 
 	cfg := BuildCFG(body)
 
-	// The entry holds the if's condition and branches into the if's two arms.
+	// The entry holds the match target and branches into the match's two arms.
 	require.Equal(t, 2, len(cfg.Entry.Successors))
 }
 
