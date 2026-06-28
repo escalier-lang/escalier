@@ -301,20 +301,9 @@ func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
 
 // subtypeUnderProbe trials sub <: super under a discard-only probe and
 // reports whether the trial succeeded. A successful trial means subsumption
-// holds. The probe is always Discarded so the bound mutations it would
-// otherwise leave behind never become visible.
-//
-// The probe push/pop runs directly on *Context. openProbe and closeProbe are
-// the checker-level path and additionally snapshot c.errs, which subsumption
-// does not need. (*Context).constrain returns its errors through the return
-// value and never appends to checker state.
+// holds.
 func subtypeUnderProbe(c *Context, sub, super soltype.Type) bool {
-	p := newProbe(c.probe)
-	c.probe = p
-	errs := c.constrain(sub, super, set.NewSet[constraintKey](), false)
-	c.probe = p.parent
-	p.Discard()
-	return len(errs) == 0
+	return len(c.trialUnderProbe(sub, super)) == 0
 }
 
 // sortTypes orders parts in place under compareType. The sort is stable so a

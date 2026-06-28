@@ -233,24 +233,87 @@ func TestConstrainInexactUnionIntoClosedRejects(t *testing.T) {
 	require.Equal(t, "cannot constrain string <: number", errs[1].Message())
 }
 
-// Regression: a borrow with a lifetime flowing into a union of owned types
-// must surface as a BorrowEscapeError rather than collapsing to a generic
-// union-level CannotConstrainError.
+// Regression: a borrow with a lifetime that would satisfy a union member once
+// its lifetime is stripped must surface as a union-level BorrowEscapeError
+// rather than collapsing to a generic CannotConstrainError. The shape here is
+// the meaningful one: branch 2 of the union matches the borrow's inner, so the
+// lifetime is the genuine blocker.
 //
-//	&'a {x: number} <: (number | string)    BorrowEscapeError, not CannotConstrain
+//	&'a {x: number} <: (number | {x: number})    BorrowEscapeError, not CannotConstrain
 //
-// Each per-member trial reports BorrowEscape internally. The union-super
-// exists rule promotes that to a single union-level BorrowEscape so the
-// lifetime cause survives.
+// The checker decides this by peeling the borrow's inner against the whole
+// union: one matching branch promotes a union-level BorrowEscape so the lifetime
+// cause survives. Contrast TestBorrowEscapePromotionByPeeledInner, where no
+// branch matches the inner, so the union error stays a shape mismatch.
 func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
 	c := &Context{}
 	lt := c.freshLifetime(0)
 	borrow := &soltype.RefType{Mut: false, Lt: lt, Inner: exactObj(propElem("x", num()))}
-	super := newUnion(nil, []soltype.Type{num(), str()}, false)
+	super := newUnion(nil, []soltype.Type{num(), exactObj(propElem("x", num()))}, false)
 
 	errs := c.Constrain(borrow, super)
 	require.Len(t, errs, 1)
-	require.IsType(t, &BorrowEscapeError{}, errs[0])
+	require.Equal(t,
+		"borrowed value object does not live long enough to satisfy number | object",
+		errs[0].Message())
+}
+
+// TestBorrowEscapePromotionByPeeledInner pins the firing condition for both the
+// single-trial RefType arm and the union-level promotion. BorrowEscapeError is
+// emitted only when peeling the borrow's inner would have satisfied the
+// destination — when the lifetime is the genuine blocker. When the inner is
+// itself a shape mismatch, the clearer shape error surfaces instead, so
+// "does not live long enough" never blames the lifetime for a mismatch that
+// extending it could not fix.
+func TestBorrowEscapePromotionByPeeledInner(t *testing.T) {
+	// A fresh immutable borrow of `{x: number}` with a lifetime, rebuilt per
+	// case so trials never share bound state across the table.
+	borrow := func(c *Context) *soltype.RefType {
+		return &soltype.RefType{Mut: false, Lt: c.freshLifetime(0), Inner: exactObj(propElem("x", num()))}
+	}
+
+	tests := []struct {
+		name  string
+		super func() soltype.Type
+		want  string
+	}{
+		{
+			// Inner {x: number} <: number fails — shape, not lifetime. Surface the
+			// shape error rather than BorrowEscape.
+			name:  "non-union shape mismatch surfaces the shape error",
+			super: func() soltype.Type { return num() },
+			want:  "cannot constrain object <: number",
+		},
+		{
+			// Inner {x: number} <: {x: number} succeeds — the lifetime IS the blocker.
+			name:  "non-union shape match keeps BorrowEscape",
+			super: func() soltype.Type { return exactObj(propElem("x", num())) },
+			want:  "borrowed value object does not live long enough to satisfy object",
+		},
+		{
+			// Every union branch is a shape mismatch — the lifetime is incidental.
+			name:  "union with no matching branch surfaces the shape error",
+			super: func() soltype.Type { return newUnion(nil, []soltype.Type{num(), str()}, false) },
+			want:  "cannot constrain object <: number | string",
+		},
+		{
+			// Branch 2 matches the inner — the lifetime IS the blocker.
+			name:  "union with a matching branch keeps BorrowEscape",
+			super: func() soltype.Type {
+				return newUnion(nil, []soltype.Type{num(), exactObj(propElem("x", num()))}, false)
+			},
+			want: "borrowed value object does not live long enough to satisfy number | object",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			errs := c.Constrain(borrow(c), tt.super())
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
 }
 
 // Regression: an inexact union flowing into a free inference variable must
