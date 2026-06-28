@@ -283,11 +283,7 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 }
 
 // mirrorParamPat structurally mirrors a function-type-annotation parameter pattern
-// into its soltype.Pat for rendering and round-tripping. A function type annotation
-// binds no values, so this carries the pattern shape only, with no scope binding or
-// constraint, unlike bindPattern. A sub-pattern with no soltype counterpart, an
-// ObjRestPat or a bare RestPat, is dropped, and an entirely unmappable pattern
-// yields nil, which the printer renders as a positional name such as arg0.
+// into its soltype.Pat for rendering. A shape with no soltype counterpart is dropped.
 func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {
 	switch p := pat.(type) {
 	case *ast.IdentPat:
