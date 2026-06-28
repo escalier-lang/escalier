@@ -6,19 +6,10 @@ import (
 )
 
 // resolveTypeAnn converts a supported type annotation into a soltype.Type,
-// returning ok=false when the annotation is outside the supported set. The
-// supported set has grown across milestones: primitives, Promise, objects, tuples,
-// borrows, unions, intersections, and the monomorphic function type. What still
-// reports an UnsupportedNodeError is the general type reference (M7), the operator
-// type forms such as keyof and conditional types, and the deferred function
-// features the function arm names. An unsupported annotation returns ok=false and a
-// `never` placeholder so a caller can recover by keeping the type it already
-// inferred. Adopting `never` instead would cascade a spurious `<: never` error and
-// poison the binding. It takes the
-// current inference level `lvl` so a supported generic with an UNSUPPORTED inner (a
-// malformed `Promise<…>`) can recover its inner to a fresh var at the right level
-// while keeping the wrapper; the primitive arms ignore lvl. Full name resolution
-// against the type scope still arrives with TypeRef support (M7).
+// returning ok=false with a `never` placeholder when the annotation is unsupported
+// so a caller can recover by keeping the type it already inferred. The level `lvl`
+// lets a supported wrapper with an unsupported inner recover that inner to a fresh
+// var at the right level.
 func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
@@ -238,21 +229,11 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 }
 
 // resolveFuncTypeAnn lowers a monomorphic function type annotation
-// `fn(p1: A, p2: B) -> R` and the inexact `fn(p1: A, ...) -> R` into a
-// soltype.FuncType, so a function type is writable as a binding annotation, a
-// parameter or return annotation, and a union/intersection member. Each
-// parameter's value annotation resolves through resolveTypeAnn. ta.Inexact maps to
-// FuncType.Inexact so the accept-set rule and the printer see the trailing `...`.
-//
-// An unsupported part recovers to a fresh var and the function shape survives. This
-// is cascade-safe like the Promise<bad>, object, and tuple arms. A `fn(x: Bad) -> R`
-// stays function-shaped so `f(x)` and the rendered signature still read as a
-// function rather than collapsing the binding to an unconstrained var.
-//
-// Generic, throws, and lifetime-param'd function annotations report an unsupported
-// feature and recover the rest as a monomorphic function. A written type parameter
-// `T` needs the type-name scope M7 adds, `throws` is M9, and lifetime parameters
-// ride the lifetime-annotation surface (M6.5).
+// `fn(p: A, ...) -> R` into a soltype.FuncType, mapping ta.Inexact to
+// FuncType.Inexact. An unsupported part recovers to a fresh var so the function
+// shape survives, cascade-safe like the Promise/object/tuple arms. Generic, throws,
+// lifetime-param'd, and rest-param annotations report an unsupported feature and
+// recover as a monomorphic function.
 func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
 	if len(ta.TypeParams) > 0 {
 		c.reportUnsupportedFeature(ta, "generic function type annotation")
