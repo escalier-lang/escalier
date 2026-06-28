@@ -9,62 +9,69 @@ import (
 
 // --- M6 PR8: subsume inferred types at finalization ---
 
-// subsumeFinal collapses a coalesced `number | 1` to `number`, since `1 <: number`.
-// combine builds the union Context-free, so the redundant literal survives until
-// the finalization pass re-mints it with the ambient Context.
-func TestSubsumeFinalUnionLiteralIntoPrimitive(t *testing.T) {
-	c := newChecker()
-	in := newUnion(nil, parseTypes(t, "number", "1"), false)
-	require.IsType(t, &soltype.UnionType{}, in, "precondition: combine leaves both members")
-	got := c.subsumeFinal(in)
-	require.True(t, equalType(parseType(t, "number"), got), "got %s", soltype.Print(got))
-}
-
-// The meet twin: `{x, ...} & {x, y, ...}` collapses to `{x, y, ...}`, since the
-// wider object is a subtype of the narrower one under inexact width subtyping, so
-// the narrower member already constrains the value.
-func TestSubsumeFinalIntersectionObjects(t *testing.T) {
-	c := newChecker()
-	in := newIntersection(nil, parseTypes(t,
-		"{x: number, ...}",
-		"{x: number, y: string, ...}",
-	))
-	require.IsType(t, &soltype.IntersectionType{}, in, "precondition: combine leaves both members")
-	got := c.subsumeFinal(in)
-	require.True(t, equalType(parseType(t, "{x: number, y: string, ...}"), got), "got %s", soltype.Print(got))
-}
-
-// A member that still carries a free type variable is left in place. The pass is
-// concrete-gated, so a scheme whose union is not yet ground is unchanged.
-func TestSubsumeFinalLeavesFreeVar(t *testing.T) {
-	c := newChecker()
-	v := c.ctx.freshVar(0)
-	got := c.subsumeFinal(newUnion(nil, []soltype.Type{parseType(t, "number"), v}, false))
-	require.IsType(t, &soltype.UnionType{}, got, "got %s", soltype.Print(got))
-	require.Len(t, got.(*soltype.UnionType).Types, 2)
-}
-
-// The walk re-mints bottom-up, so a union nested inside another type is subsumed
-// too. A tuple `[number | 1]` finalizes to `[number]`.
-func TestSubsumeFinalNestedUnion(t *testing.T) {
-	c := newChecker()
-	nested := newUnion(nil, parseTypes(t, "number", "1"), false)
-	in := &soltype.TupleType{Elems: []soltype.Type{nested}}
-	got := c.subsumeFinal(in)
-	require.True(t, equalType(parseType(t, "[number]"), got), "got %s", soltype.Print(got))
-}
-
-// An inferred `1 | number` renders `number` end to end. The two return points are
-// the literal `1` and the `number` param `n`, so the join is `1 | number`, which
-// the generalization-time subsumption collapses to `number`.
-func TestInferSubsumesUnionToPrimitive(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(b: boolean, n: number) {
-			return if b { 1 } else { n }
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (b: boolean, n: number) -> number", values["f"])
+// An inferred union whose member a concrete sibling subsumes collapses to that
+// sibling at generalization. Each case joins an if/else into a union, which
+// combine builds Context-free, and the finalization pass subsumes it. Distinct
+// literals that nothing subsumes are left intact.
+func TestInferSubsumesInferredUnion(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "literal into primitive",
+			src: `
+				fn f(b: boolean, n: number) {
+					return if b { 1 } else { n }
+				}
+			`,
+			want: "fn (b: boolean, n: number) -> number",
+		},
+		{
+			name: "several literals into primitive",
+			src: `
+				fn f(b: boolean, n: number) {
+					return if b { 1 } else { if b { 2 } else { n } }
+				}
+			`,
+			want: "fn (b: boolean, n: number) -> number",
+		},
+		{
+			name: "string literal into string",
+			src: `
+				fn f(b: boolean, s: string) {
+					return if b { "a" } else { s }
+				}
+			`,
+			want: "fn (b: boolean, s: string) -> string",
+		},
+		{
+			name: "union nested in a tuple",
+			src: `
+				fn f(b: boolean, n: number) {
+					return [if b { 1 } else { n }]
+				}
+			`,
+			want: "fn (b: boolean, n: number) -> [number]",
+		},
+		{
+			name: "distinct literals are not subsumed",
+			src: `
+				fn f(b: boolean) {
+					return if b { 1 } else { 2 }
+				}
+			`,
+			want: "fn (b: boolean) -> 1 | 2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
 }
 
 // The finalized inferred type is equalType-equal to the annotated form, so caching
@@ -86,30 +93,69 @@ func TestInferSubsumedTypeEqualsAnnotation(t *testing.T) {
 		soltype.Print(inferredFn.Ret), soltype.Print(annotated))
 }
 
-// Subsumption is display-only: the scheme's operative body keeps `1 | number`,
-// so assignability is unchanged. A `number` sink accepts the value and a `string`
-// sink rejects it, with the rejection decomposing the union for-all exactly as it
-// would against the un-subsumed form.
+// Subsumption is display-only: the scheme's operative body keeps `1 | number`, so
+// assignability is unchanged. A `number` sink accepts the value and a `string`
+// sink rejects it, the rejection decomposing the union for-all exactly as it would
+// against the un-subsumed form. Both sink keywords are six characters, so `r` sits
+// at the same column and the rejection spans match.
 func TestInferSubsumedTypePreservesAssignability(t *testing.T) {
-	t.Run("number accepted", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			fn f(b: boolean, n: number) {
-				val r = if b { 1 } else { n }
-				val s: number = r
-			}
-		`)
-		require.Empty(t, errs)
-	})
-	t.Run("string rejected", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			fn f(b: boolean, n: number) {
-				val r = if b { 1 } else { n }
-				val s: string = r
-			}
-		`)
-		require.Equal(t, []string{
-			"4:21-4:22: cannot constrain 1 <: string",
-			"4:21-4:22: cannot constrain number <: string",
-		}, messagesWithSpan(errs))
-	})
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "number sink accepts",
+			src: `
+				fn f(b: boolean, n: number) {
+					val r = if b { 1 } else { n }
+					val s: number = r
+				}
+			`,
+			want: nil,
+		},
+		{
+			name: "string sink rejects both union members",
+			src: `
+				fn f(b: boolean, n: number) {
+					val r = if b { 1 } else { n }
+					val s: string = r
+				}
+			`,
+			want: []string{
+				"4:22-4:23: cannot constrain 1 <: string",
+				"4:22-4:23: cannot constrain number <: string",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(errs))
+		})
+	}
+}
+
+// An inferred intersection of inexact objects collapses to its narrowest member.
+// `{x, ...} & {x, y, ...}` reduces to `{x, y, ...}`, since the wider object is a
+// subtype of the narrower under inexact width subtyping. An inferred intersection
+// has no if/else source form that survives combine's usage-object fold, so the
+// type is built directly and run through subsumeFinal.
+func TestSubsumeFinalIntersectionObjects(t *testing.T) {
+	c := newChecker()
+	in := newIntersection(nil, parseTypes(t, "{x: number, ...}", "{x: number, y: string, ...}"))
+	require.IsType(t, &soltype.IntersectionType{}, in, "precondition: combine leaves both members")
+	got := c.subsumeFinal(in)
+	require.True(t, equalType(parseType(t, "{x: number, y: string, ...}"), got), "got %s", soltype.Print(got))
+}
+
+// A member that still carries a free type variable is left in place. The concrete
+// gate skips it, so a scheme whose union is not yet ground is unchanged. The free
+// var has no surface form parseType can author, so the union is built directly.
+func TestSubsumeFinalLeavesFreeVar(t *testing.T) {
+	c := newChecker()
+	v := c.ctx.freshVar(0)
+	got := c.subsumeFinal(newUnion(nil, []soltype.Type{parseType(t, "number"), v}, false))
+	require.IsType(t, &soltype.UnionType{}, got, "got %s", soltype.Print(got))
+	require.Len(t, got.(*soltype.UnionType).Types, 2)
 }
