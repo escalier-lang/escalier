@@ -42,6 +42,8 @@ func (p *Parser) typeAnnRequired() ast.TypeAnn {
 func (p *Parser) typeAnn() ast.TypeAnn {
 	typeAnns := NewStack[ast.TypeAnn]()
 	ops := NewStack[*TypeAnnOp]()
+	unionInexact := false
+	var unionInexactSpan ast.Span
 
 	token := p.lexer.peek()
 	//nolint: exhaustive
@@ -94,6 +96,19 @@ loop:
 		}
 
 		p.lexer.consume()
+
+		// A trailing `...` after a `|` marks the union inexact. An inexact union
+		// holds at least the members listed, plus an unknown-typed tail. The
+		// marker ends the operand loop, so the operator stack drains over the
+		// members already collected. The flag is applied to the popped top-level
+		// union below, or reported as an error when no union was built.
+		if nextOp.Kind == Union && p.lexer.peek().Type == DotDotDot {
+			unionInexactSpan = p.lexer.peek().Span
+			p.lexer.consume()
+			unionInexact = true
+			break loop
+		}
+
 		skipOp := false
 
 		if !ops.IsEmpty() {
@@ -173,7 +188,18 @@ loop:
 		p.reportError(span, "internal error: type annotation stack invariant violated")
 		return ast.NewErrorTypeAnn(span)
 	}
-	return typeAnns.Pop()
+	result := typeAnns.Pop()
+	if unionInexact {
+		if u, ok := result.(*ast.UnionTypeAnn); ok {
+			u.Inexact = true
+		} else {
+			// The `...` followed a single member or a non-union top operator, so
+			// no UnionTypeAnn was built to carry the flag. A trailing `...` is
+			// only meaningful on a union of two or more members.
+			p.reportError(unionInexactSpan, "a trailing `...` must follow two or more union members, as in `A | B | ...`")
+		}
+	}
+	return result
 }
 
 func (p *Parser) primaryTypeAnn() ast.TypeAnn {

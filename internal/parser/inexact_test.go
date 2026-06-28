@@ -51,6 +51,28 @@ func TestParseInexactMarker(t *testing.T) {
 		require.True(t, fn.Inexact)
 		require.Empty(t, fn.Params)
 	})
+
+	t.Run("union type annotation", func(t *testing.T) {
+		ta, errs := ParseTypeAnn(ctx, "number | string | ...")
+		require.Empty(t, errs)
+		u, ok := ta.(*ast.UnionTypeAnn)
+		require.True(t, ok)
+		require.True(t, u.Inexact)
+		require.Len(t, u.Types, 2) // the `...` does not become a member
+	})
+}
+
+// A trailing `...` is only meaningful on a union of two or more members. After a
+// single member, or after a higher-precedence operator that leaves a non-union at
+// the top, no UnionTypeAnn carries the flag, so the parser reports an error rather
+// than silently dropping the marker and reducing the annotation to the bare member.
+func TestParseInexactUnionMarkerRequiresUnion(t *testing.T) {
+	ctx := context.Background()
+	for _, src := range []string{"number | ...", "number & string | ..."} {
+		_, errs := ParseTypeAnn(ctx, src)
+		require.Len(t, errs, 1, "input %q", src)
+		require.Equal(t, "a trailing `...` must follow two or more union members, as in `A | B | ...`", errs[0].Message)
+	}
 }
 
 // A bare function (no trailing `...`) is exact, and a `...rest` is an ordinary rest
@@ -73,5 +95,13 @@ func TestParseExactAndRestAreNotInexact(t *testing.T) {
 		require.Len(t, fd.Params, 2) // x and the rest param
 		_, isRest := fd.Params[1].Pattern.(*ast.RestPat)
 		require.True(t, isRest)
+	})
+
+	t.Run("bare union is exact", func(t *testing.T) {
+		ta, errs := ParseTypeAnn(ctx, "number | string")
+		require.Empty(t, errs)
+		u, ok := ta.(*ast.UnionTypeAnn)
+		require.True(t, ok)
+		require.False(t, u.Inexact)
 	})
 }

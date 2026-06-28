@@ -1980,6 +1980,13 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 // Exhaustiveness is checked from structural exactness by checkMatchExhaustive.
 func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
+	// Snapshot the scrutinee for the exhaustiveness check before any arm binds. A
+	// literal pattern adds its literal as a lower bound, which would otherwise leak
+	// a phantom member into the coalesced union read after the arm loop.
+	matchShape := scrutinee
+	if _, isVar := soltype.CarrierOf(scrutinee).(*soltype.TypeVarType); isVar {
+		matchShape = coalesce(scrutinee, soltype.Positive)
+	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, MatchBranch)
 	for _, arm := range e.Cases {
@@ -2003,21 +2010,22 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 			c.constrain(e, bodyT, res)
 		}
 	}
-	c.checkMatchExhaustive(e, scrutinee)
+	c.checkMatchExhaustive(e, matchShape)
 	c.recordType(e, res)
 	return res
 }
 
 // checkMatchExhaustive reports a NonExhaustiveMatchError when no arm covers every
-// value the scrutinee can take. M4 drives the decision solely from the scrutinee's
-// structural exactness. An exact object or tuple has a fixed shape, so a structural
-// arm matching it covers every value. An inexact object or tuple carries an open
-// tail of unknown values, so only an unguarded catch-all covers it. A catch-all is
-// a wildcard `_` or an identifier pattern. A scrutinee that is neither an object nor
-// a tuple is not checked here. Union-scrutinee exhaustiveness is M6 and enum
-// exhaustiveness is M5, and both extend this same path.
+// value the coalesced scrutinee can take, dispatching on its union or object/tuple shape.
 func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type) {
-	inexact, isStructural := structuralInexact(soltype.CarrierOf(scrutinee))
+	carrier := soltype.CarrierOf(scrutinee)
+	if u, ok := carrier.(*soltype.UnionType); ok {
+		if !c.unionMatchExhaustive(e, u) {
+			c.report(&NonExhaustiveMatchError{Match: e})
+		}
+		return
+	}
+	inexact, isStructural := structuralInexact(carrier)
 	if !isStructural {
 		return
 	}
@@ -2029,6 +2037,72 @@ func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type)
 		}
 	}
 	c.report(&NonExhaustiveMatchError{Match: e})
+}
+
+// unionMatchExhaustive reports whether the unguarded arms cover a union scrutinee.
+// An inexact union needs a catch-all. An exact one is flagged non-exhaustive only
+// when a literal member is provably uncovered. A non-literal member needs the
+// structural or nominal coverage M5 adds, so its arms are reported unsupported
+// rather than silently accepted or falsely flagged non-exhaustive.
+func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) bool {
+	for _, arm := range e.Cases {
+		if arm.Guard == nil && isCatchAll(arm.Pattern) {
+			return true
+		}
+	}
+	if u.Inexact {
+		return false
+	}
+	hasNonLiteralMember := false
+	for _, member := range u.Types {
+		lit, ok := member.(*soltype.LitType)
+		if !ok {
+			hasNonLiteralMember = true
+			continue
+		}
+		if !c.litMemberCovered(lit, e.Cases) {
+			return false
+		}
+	}
+
+	if !hasNonLiteralMember {
+		return true
+	}
+
+	// A non-literal member needs the structural or nominal coverage M5 adds. Only a
+	// literal pattern or a catch-all covers a union member today, so flag each
+	// unguarded structural arm as unsupported rather than pass the match silently.
+	// The catch-all case has already returned above.
+	for _, arm := range e.Cases {
+		if arm.Guard != nil {
+			continue
+		}
+		if _, isLit := arm.Pattern.(*ast.LitPat); isLit {
+			continue
+		}
+		c.reportUnsupportedFeature(arm.Pattern, "non-literal match arm pattern over a union scrutinee")
+	}
+
+	return true
+}
+
+// litMemberCovered reports whether some unguarded arm is a literal pattern equal to
+// the given literal union member. The caller has already excluded an unguarded
+// catch-all, which would otherwise cover the member too.
+func (c *checker) litMemberCovered(member *soltype.LitType, arms []*ast.MatchCase) bool {
+	for _, arm := range arms {
+		if arm.Guard != nil {
+			continue
+		}
+		armLit, ok := arm.Pattern.(*ast.LitPat)
+		if !ok {
+			continue
+		}
+		if lt, ok := c.litTypeOf(armLit.Lit); ok && member.Equal(lt) {
+			return true
+		}
+	}
+	return false
 }
 
 // structuralInexact returns the Inexact flag of an object or tuple type and whether
@@ -2054,11 +2128,24 @@ func structuralInexact(t soltype.Type) (inexact bool, ok bool) {
 // values the pattern cannot see, so it still needs a true catch-all. A literal
 // pattern is refutable and never covers.
 func armCoversShape(p ast.Pat, inexact bool) bool {
+	if isCatchAll(p) {
+		return true
+	}
+	switch p.(type) {
+	case *ast.ObjectPat, *ast.TuplePat:
+		return !inexact && irrefutablePat(p)
+	default:
+		return false
+	}
+}
+
+// isCatchAll reports whether a pattern matches every value unconditionally, so an
+// unguarded arm with it alone makes any match exhaustive. A wildcard or
+// identifier binds without testing the value. Every other pattern is refutable.
+func isCatchAll(p ast.Pat) bool {
 	switch p.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
 		return true
-	case *ast.ObjectPat, *ast.TuplePat:
-		return !inexact && irrefutablePat(p)
 	default:
 		return false
 	}

@@ -186,8 +186,8 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 
 // resolveUnionTypeAnn lowers `A | B | …` through newUnion. An unsupported
 // member recovers to a fresh var so the union shape survives, mirroring the
-// Promise<bad> and object/tuple cascade-safe recovery. The Inexact flag and
-// its parser surface land in PR4.
+// Promise<bad> and object/tuple cascade-safe recovery. A trailing `...` in the
+// source sets ta.Inexact, which carries onto the resolved union.
 func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))
 	for i, m := range ta.Types {
@@ -200,7 +200,7 @@ func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Ty
 			members[i] = c.freshAt(lvl)
 		}
 	}
-	t := newUnion(c.ctx, members, false)
+	t := newUnion(c.ctx, members, ta.Inexact)
 	// newUnion can collapse to an input member's pointer (single-member
 	// dedup, or subsumption). Re-recording Prov on a pointer that already
 	// carries it would overwrite the narrower child-annotation blame and

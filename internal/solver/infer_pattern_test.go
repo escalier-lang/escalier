@@ -352,6 +352,107 @@ func TestInferMatchInexactWithCatchAll(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number, y: number, ...}) -> number | 0", values["f"])
 }
 
+// An exact union scrutinee whose arms cover every member needs no catch-all. An
+// if/else over two string literals infers the exact union `"a" | "b"`, and the two
+// literal patterns match one member each, so the arms together are exhaustive.
+func TestInferMatchExactUnionCoversMembers(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x = if b { "a" } else { "b" }
+			return match x {
+				"a" => 1,
+				"b" => 2
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (b: boolean) -> 1 | 2`, values["f"])
+}
+
+// An exact union scrutinee with a member left uncovered is non-exhaustive. The
+// arms match `"a"` only, so `"b"` escapes and a catch-all is required.
+func TestInferMatchExactUnionMissingMember(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x = if b { "a" } else { "b" }
+			return match x {
+				"a" => 1
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+}
+
+// A guarded arm binds its pattern before its guard runs, so a literal pattern in a
+// guarded arm records its literal as a lower bound on the scrutinee. Exhaustiveness
+// reads the scrutinee's shape from before any arm binds, so a guarded arm's foreign
+// literal does not leak into the union as a phantom uncovered member. The two
+// unguarded arms cover `"a" | "b"`, so the match is exhaustive despite the guarded
+// `"z"` arm.
+func TestInferMatchExactUnionGuardedArmNoPhantomMember(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x = if b { "a" } else { "b" }
+			return match x {
+				"a" => 1,
+				"b" => 2,
+				"z" if b => 3
+			}
+		}
+	`)
+	require.Empty(t, errs)
+}
+
+// An inexact union scrutinee carries an open tail of unknown values, so covering
+// every listed member is not enough — only an unguarded catch-all makes it
+// exhaustive. The scrutinee is annotated inexact through a binding.
+func TestInferMatchInexactUnionNeedsCatchAll(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x: number | string | ... = if b { 1 } else { "b" }
+			return match x {
+				1 => 1,
+				"b" => 2
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "4:11-7:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+}
+
+// An inexact union scrutinee with an unguarded catch-all arm is exhaustive.
+func TestInferMatchInexactUnionWithCatchAll(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x: number | string | ... = if b { 1 } else { "b" }
+			return match x {
+				1 => 1,
+				"b" => 2,
+				_ => 0
+			}
+		}
+	`)
+	require.Empty(t, errs)
+}
+
+// Covering structural-object and tuple union members is M5 work, so the union leg
+// cannot yet evaluate a structural arm pattern against a union member. Rather than
+// falsely flag the match non-exhaustive or silently accept it, each unguarded
+// structural arm over a union with a non-literal member is reported unsupported.
+func TestInferMatchStructuralUnionArmUnsupported(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x = if b { [1, 2] } else { [3, 4] }
+			return match x {
+				[a, c] => a
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "5:5-5:11: Unsupported: non-literal match arm pattern over a union scrutinee", msgWithSpan(errs[0]))
+}
+
 // A guarded arm can always fail its guard, so it never makes a match exhaustive. An
 // inexact scrutinee still needs a separate catch-all even when a guarded arm names
 // its whole shape.

@@ -670,50 +670,74 @@ recovers function-shaped.
 
 ---
 
-### PR4 — Union exactness flag end to end + `match` exhaustiveness (union leg)
+### PR4 — Union exactness flag: surface syntax + `match` exhaustiveness (union leg)
 
-Thread the flag from surface syntax to the exhaustiveness payoff.
+Thread the `Inexact` flag from surface syntax to the exhaustiveness payoff. The
+representation and the constrain rule already exist, so this PR is the missing
+two ends — the parser/AST marker that lets source write an inexact union, and the
+`match`-exhaustiveness leg that reads the flag.
+
+**Already landed — out of this PR's scope.** Three pieces the original PR4 listed
+shipped earlier:
+
+- `soltype.UnionType.Inexact`, its `Accept` flag-carry, and the printer's
+  trailing-`...` rendering landed in **PR1**
+  ([soltype/type.go:353](../../internal/soltype/type.go),
+  [print.go:413](../../internal/soltype/print.go)).
+- The one-way exactness rule in `constrain` landed in **PR2 (#776)**: a
+  `UnionType` sub decomposes for-all, and an **inexact** sub against a closed
+  super emits `InexactUnionIntoExactError`
+  ([constrain.go:159-175](../../internal/solver/constrain.go)). It already reads
+  the real flag, so there is no separate "activate against the flag" step.
 
 **AST + parser.** Add `Inexact bool` to `ast.UnionTypeAnn`
-([ast/type_ann.go:381](../../internal/ast/type_ann.go)) and teach the parser to
-set it on a trailing `...` in a union, mirroring the object/tuple/function
-inexact markers already parsed ([ast/type_ann.go:316](../../internal/ast/type_ann.go)
-and siblings). `IntersectionTypeAnn` gets no marker.
+([ast/type_ann.go:382](../../internal/ast/type_ann.go)) and teach `typeAnn`
+([parser/type_ann.go:42](../../internal/parser/type_ann.go)) to set it on a
+trailing `...` in a union, mirroring the object/tuple/function inexact markers
+already parsed. The union annotation is built by a shunting-yard operator parser,
+not `parseDelimSeqInexact`, so the marker is recognized inline: when the operator
+just consumed is a `|` and the next token is `...`, consume it, flag the union
+inexact, and stop the operand loop. The flag is set on the popped top-level
+`UnionTypeAnn` after the operator stack drains. `IntersectionTypeAnn` gets no
+marker.
 
-**Resolve and thread.** `resolveTypeAnn`'s union arm (PR2) passes
-`ta.Inexact` into `newUnion`. Coalesced **output** unions are **exact by
-default** — `combine` ([coalesce.go:295](../../internal/solver/coalesce.go)) mints
-`newUnion(parts, false)` — matching exact-by-default for inferred shapes. The
-flag must be **threaded by coalescing, not just stored**: where a union's
-exactness derives from a source former's exactness it is carried through. M6's
-reachable case is the annotation and the borrow-join union (PR6); `keyof` /
-tuple-element-union propagation is M9.
-
-**Constrain.** Activate the full one-way rule from PR2 against the real flag:
-exact `<:` inexact ok, inexact `<:` exact rejected, exact `<:` exact requires the
-member sets to match after normalization.
+**Resolve and thread.** `resolveUnionTypeAnn`
+([type_ann.go:197](../../internal/solver/type_ann.go)) passes `ta.Inexact` into
+`newUnion` instead of the hardcoded `false`. Coalesced **output** unions stay
+exact by default — `combine` ([coalesce.go:295](../../internal/solver/coalesce.go))
+mints `newUnion(..., false)` — matching exact-by-default for inferred shapes.
+M6's reachable inexact source is the annotation; the borrow-join union (PR6) and
+`keyof` / tuple-element-union propagation (M9) are separate.
 
 **`match` exhaustiveness — the union leg.** Extend the M4 path
-([infer_expr.go:1475](../../internal/solver/infer_expr.go) `checkMatchExhaustive`):
+([infer_expr.go:2019](../../internal/solver/infer_expr.go) `checkMatchExhaustive`):
 
-- `structuralInexact` ([infer_expr.go:1493](../../internal/solver/infer_expr.go))
+- `structuralInexact` ([infer_expr.go:2037](../../internal/solver/infer_expr.go))
   grows a `UnionType` arm returning its `Inexact` flag, so an **exact** union
   scrutinee with arms covering every member needs no catch-all, while an
   **inexact** union requires one — the third leg after structural (M4) and ahead
-  of enum (M5).
-- Covering "every member" for a union of literal/structural members extends
-  `armCoversShape` ([infer_expr.go:1512](../../internal/solver/infer_expr.go)): an
-  exact union is exhaustive when the arm patterns collectively match each member.
-  For an exact union of literals this is literal-pattern coverage of the member
-  set; reuse the per-member shape test rather than inventing a new coverage
-  engine. The `NonExhaustiveMatchError`
-  ([errors.go:622](../../internal/solver/errors.go)) is unchanged; only its
-  trigger condition widens.
+  of enum (M5). `checkMatchExhaustive` already peels the scrutinee through
+  `soltype.CarrierOf` ([ref.go:28](../../internal/soltype/ref.go)), the affine
+  borrow-unwrap added after the original PR4 draft, so a union behind a borrow
+  reaches the new arm already unwrapped — no extra handling needed.
+- Covering "every member" for a union of literal members extends `armCoversShape`
+  ([infer_expr.go:2056](../../internal/solver/infer_expr.go)): an exact union is
+  exhaustive when the arm patterns collectively match each member. For an exact
+  union of literals this is literal-pattern coverage of the member set; reuse the
+  per-member shape test rather than inventing a new coverage engine. The
+  `NonExhaustiveMatchError` is unchanged; only its trigger condition widens. A
+  union of structural-object members needs object-pattern-covers-member
+  discrimination M6 does not implement, so a structural arm over such a union is
+  reported as an unsupported feature until M5's coverage generalization replaces
+  it ([01-milestones.md](01-milestones.md) §M5, "Structural-object union
+  exhaustiveness").
 
-**Tests.** An exact union `"a" | "b"` is assignable to inexact `"a" | "b" | ...`
-but not the reverse; an exact-union `match` covering all members needs no
-default; an inexact-union `match` requires a default; printer round-trip for the
-inexact marker.
+**Tests.** An exact-union `match` covering all members needs no default; an
+exact-union `match` missing a member is non-exhaustive; an inexact-union `match`
+requires a default; printer round-trip for the inexact marker; the parser sets
+`Inexact` on a trailing `...` and leaves a bare `A | B` exact. The exact-union
+scrutinee is built by inference, since a literal type annotation does not yet
+resolve.
 
 ---
 
