@@ -31,12 +31,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 	switch d := d.(type) {
 	case *ast.VarDecl:
 		if d.Else != nil {
-			// A `let`-`else` binding is a body-level statement form: its `else` must
-			// diverge and its bindings cover the rest of the enclosing block. Neither
-			// is meaningful at module top level, so reject it rather than silently
-			// dropping the else.
-			c.reportUnsupportedFeature(d, "`let`-`else` binding at module top level")
-			return nil, nil, false
+			return c.inferModuleLetElse(scope, lvl, d)
 		}
 		initType, ok := c.inferVarDeclInit(scope, lvl, d)
 		if !ok {
@@ -68,6 +63,59 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 		c.reportUnsupported(d)
 		return nil, nil, false
 	}
+}
+
+// inferModuleLetElse types a module-level `val pat = init else { … }` binding,
+// returning the bound type for the SCC driver to place and generalize. A
+// non-diverging else supplies the binding's fallback value, exactly as at body level,
+// so `val num: number = u else { 0 }` is a valid top-level binding. A diverging else's
+// `return` reports ReturnOutsideFunctionError on its own, since module scope has no
+// enclosing function. Only a single identifier is bound at module scope; module-level
+// destructuring is deferred, mirroring the plain `val`/`var` path.
+func (c *checker) inferModuleLetElse(scope *Scope, lvl int, d *ast.VarDecl) (soltype.Type, provenance.Provenance, bool) {
+	if d.Init == nil {
+		c.report(&MissingInitializerError{Decl: d})
+		return nil, nil, false
+	}
+	ip, ok := d.Pattern.(*ast.IdentPat)
+	if !ok {
+		if d.Pattern != nil {
+			c.reportUnsupported(d.Pattern)
+		} else {
+			c.reportUnsupported(d)
+		}
+		return nil, nil, false
+	}
+	initType := c.inferExpr(scope, lvl, d.Init)
+	// The else runs only on a failed match, so it cannot see the binding.
+	elseT, elseDiverges := c.inferBlock(scope.Child(), lvl, d.Else)
+
+	var bound soltype.Type
+	switch {
+	case d.TypeAnn != nil:
+		// An annotated narrowing pins the binding; a non-diverging fallback must fit it.
+		narrowed, resolved := c.resolveTypeAnn(d.TypeAnn, lvl)
+		if !resolved {
+			narrowed = initType
+		} else {
+			c.constrain(d, narrowed, initType)
+		}
+		if !elseDiverges {
+			c.constrain(d, elseT, narrowed)
+		}
+		bound = narrowed
+	case elseDiverges:
+		bound = initType
+	default:
+		// The binding is the matched initializer OR the non-diverging fallback.
+		res := c.freshAt(lvl)
+		c.recordProv(res, d, LetElseBranch)
+		c.constrain(d, initType, res)
+		c.constrain(d, elseT, res)
+		bound = res
+	}
+	c.recordType(ip, bound)
+	return bound, &ast.NodeProvenance{Node: d}, true
 }
 
 // inferVarDeclInit types a `val`/`var` initializer and returns its RAW

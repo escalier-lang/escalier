@@ -76,6 +76,7 @@ func TestPrintLetElse(t *testing.T) {
 		{"bare", "val x = u else { return }", "val x = u else {\n    return\n}"},
 		{"narrowing", "val x: number = u else { return 0 }", "val x: number = u else {\n    return 0\n}"},
 		{"destructure", "val [a, b] = u else { throw e }", "val [a, b] = u else {\n    throw e\n}"},
+		{"non-diverging fallback", "val x: number = u else { 0 }", "val x: number = u else {\n    0\n}"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

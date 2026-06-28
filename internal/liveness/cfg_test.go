@@ -162,9 +162,12 @@ func TestCFGLetElseNonDivergingFallback(t *testing.T) {
 }
 
 func TestCFGLetElseBranchyInit(t *testing.T) {
-	// val x = if cond { a } else { b } else { return d }
-	// A branchy initializer must contribute its own CFG edges, so the entry block
-	// branches into the if's two arms rather than collapsing the init into one block.
+	// val x: number = if cond { a } else { b } else { return d }
+	// The initializer is the `if cond { a } else { b }` expression; the trailing
+	// `else { return d }` is the let-else's own else, reachable because the annotation
+	// makes the binding refutable. A branchy initializer must contribute its own CFG
+	// edges, so the entry block branches into the if's two arms rather than collapsing
+	// the init into one block.
 	x := identPat("x")
 	aRef := ident("a")
 	bRef := ident("b")
@@ -179,15 +182,12 @@ func TestCFGLetElseBranchyInit(t *testing.T) {
 		}},
 		span(),
 	)
-	letElse := ast.NewDeclStmt(
-		ast.NewVarDecl(ast.ValKind, x, nil, ifInit, false, false, span()),
-		span(),
-	)
-	letElse.Decl.(*ast.VarDecl).Else = &ast.Block{
+	vd := ast.NewVarDecl(ast.ValKind, x, ast.NewNumberTypeAnn(span()), ifInit, false, false, span())
+	vd.Else = &ast.Block{
 		Stmts: []ast.Stmt{ast.NewReturnStmt(dRef, span())},
 		Span:  span(),
 	}
-	body := block(letElse)
+	body := block(ast.NewDeclStmt(vd, span()))
 	Rename(nil, body, map[string]VarID{"cond": -1, "a": -2, "b": -3, "d": -4})
 
 	cfg := BuildCFG(body)

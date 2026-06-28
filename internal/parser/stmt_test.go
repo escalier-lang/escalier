@@ -350,6 +350,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"LetElseDestructure": {
 			input: `val [a, b] = u else { throw "no" }`,
 		},
+		"LetElseNonDivergingFallback": {
+			input: `val x: number = u else { 0 }`,
+		},
 	}
 
 	for name, test := range tests {

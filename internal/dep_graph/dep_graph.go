@@ -400,12 +400,9 @@ func (v *DependencyVisitor) EnterStmt(stmt ast.Stmt) bool {
 				if decl.Init != nil {
 					decl.Init.Accept(v)
 				}
-				// In a `let`-`else` binding, the else block can reference other
-				// module-level names, and those references are dependencies of this
-				// declaration just like ones in the initializer. Visiting the block
-				// here records them. Do it before the pattern adds its own bindings to
-				// scope, so a name the else shares with the pattern still resolves to
-				// the outer binding it depends on.
+				// A `let`-`else` else block's references are dependencies too. Visit it
+				// before the pattern binds, so a name it shares with the pattern still
+				// resolves to the outer binding.
 				if decl.Else != nil {
 					decl.Else.Accept(v)
 				}

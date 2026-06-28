@@ -175,10 +175,19 @@ func TestInferIfLetAndLetElse(t *testing.T) {
 			want: "fn (u: number | string) -> number | string",
 		},
 		{
-			// A let-else is a body-level form; at module top level it is rejected.
-			name:     "let-else at module top level is rejected",
-			src:      `val x: number = u else { 0 }`,
-			wantErrs: []string{"1:1-1:29: Unsupported: `let`-`else` binding at module top level"},
+			// A module-level let-else with a non-diverging else is a valid top-level
+			// binding: the fallback gives num a value on the no-match path.
+			name:    "let-else at module top level with a fallback binds",
+			src:     "val u: number | string = 5\nval num: number = u else { 0 }",
+			binding: "num",
+			want:    "number",
+		},
+		{
+			// A diverging else at module top level has no enclosing function to return
+			// from, so its `return` is rejected.
+			name:     "let-else at module top level with a diverging else is rejected",
+			src:      "val u: number | string = 5\nval num: number = u else { return }",
+			wantErrs: []string{"2:28-2:34: return can only be used inside a function"},
 		},
 	}
 

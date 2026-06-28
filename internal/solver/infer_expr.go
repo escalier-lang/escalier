@@ -2087,10 +2087,10 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	return res
 }
 
-// inferIfLet types `if let pat = target { cons } else { alt }`. The pattern binds
-// fresh names in the consequent at the NARROWED member type, while the alternate
-// sees the target unchanged. The result joins the two branches like inferIfElse: a
-// fresh var with each non-diverging branch as a lower bound.
+// inferIfLet types `if let pat = target { cons }` with an optional `else { alt }`.
+// The pattern's names are bound ONLY in the consequent, at the narrowed member type;
+// the alternate runs in the enclosing scope and never sees them. The result joins the
+// consequent and alternate like inferIfElse, each non-diverging branch a lower bound.
 func (c *checker) inferIfLet(scope *Scope, lvl int, e *ast.IfLetExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	consScope := scope.Child()
@@ -2125,15 +2125,10 @@ func patternNarrowAnn(pat ast.Pat) ast.TypeAnn {
 	return nil
 }
 
-// bindRefutable binds a refutable pattern's names against a scrutinee for an
-// `if let` consequent or a `let`-`else` body, returning the type the binding is at.
-// ann is the narrowing annotation, the matched member type, carried on the pattern
-// for `if let x: T = u` and on the decl for `val x: T = u else { … }`. When ann is
-// non-nil the pattern must be a bare identifier, bound at the narrowed type;
-// constraining the annotation as an admissible value of a union scrutinee is the
-// union-super exists rule, which picks the matching member. With no annotation the
-// pattern reuses the structural binding path `val` destructuring and match arms
-// share, and the scrutinee is returned unchanged.
+// bindRefutable binds a refutable pattern's names against a scrutinee, returning the
+// bound type. A non-nil narrowing annotation `ann` binds a bare identifier at the
+// narrowed member, picked by the union-super exists rule; otherwise the pattern
+// destructures the scrutinee through the shared structural path.
 func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	if ann == nil {
 		c.bindPattern(scope, lvl, pat, scrutinee, nil)
@@ -2170,11 +2165,8 @@ func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.Type
 }
 
 // inferLetElse types a `val pat = init else { … }` binding. The pattern narrows the
-// initializer and binds its names into the enclosing scope for the rest of the
-// block. The `else` runs on a failed match: it may diverge with a `return`/`throw`,
-// or supply a FALLBACK value that the binding takes on the no-match path, so the
-// binding holds the matched value OR the else's value, like an `if let` whose result
-// is bound. A non-diverging else's value must fit the binding.
+// initializer and binds for the rest of the block; the `else` runs on a failed match
+// and either diverges or supplies the binding's fallback value, which must fit it.
 func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	if d.Init == nil {
 		c.reportUnsupported(d)

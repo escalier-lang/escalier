@@ -4300,3 +4300,37 @@
     span: 1:1-1:36,
 }
 ---
+
+[TestParseStmtNoErrors/LetElseNonDivergingFallback - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.IdentPat{
+            Name: "x",
+            span: 1:5-1:6,
+        },
+        TypeAnn: &ast.NumberTypeAnn{
+            span: 1:8-1:14,
+        },
+        Init: &ast.IdentExpr{
+            Name: "u",
+            span: 1:17-1:18,
+        },
+        Else: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ExprStmt{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            span: 1:26-1:27,
+                        },
+                        span: 1:26-1:27,
+                    },
+                    span: 1:26-1:27,
+                },
+            },
+            Span: 1:24-1:29,
+        },
+        span: 1:1-1:29,
+    },
+    span: 1:1-1:29,
+}
+---
