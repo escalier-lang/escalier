@@ -5,15 +5,16 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeAnn converts an M2-supported type annotation into a soltype.Type,
-// returning ok=false when the annotation is outside the supported set. M2 needs
-// only the primitive annotations that annotated params and return types use
-// (number/string/boolean); everything richer — type references, generics,
-// object/tuple/function annotations, unions — is represented by types later
-// milestones add (M3/M4/M6) and resolves to an UnsupportedNodeError here, with
-// ok=false and a `never` placeholder so a caller can recover by keeping the type
-// it already inferred (rather than constraining against / adopting `never`, which
-// would cascade a spurious `<: never` error and poison the binding). It takes the
+// resolveTypeAnn converts a supported type annotation into a soltype.Type,
+// returning ok=false when the annotation is outside the supported set. The
+// supported set has grown across milestones: primitives, Promise, objects, tuples,
+// borrows, unions, intersections, and the monomorphic function type. What still
+// reports an UnsupportedNodeError is the general type reference (M7), the operator
+// type forms such as keyof and conditional types, and the deferred function
+// features the function arm names. An unsupported annotation returns ok=false and a
+// `never` placeholder so a caller can recover by keeping the type it already
+// inferred. Adopting `never` instead would cascade a spurious `<: never` error and
+// poison the binding. It takes the
 // current inference level `lvl` so a supported generic with an UNSUPPORTED inner (a
 // malformed `Promise<…>`) can recover its inner to a fresh var at the right level
 // while keeping the wrapper; the primitive arms ignore lvl. Full name resolution
@@ -85,6 +86,8 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 		return c.resolveUnionTypeAnn(ta, lvl)
 	case *ast.IntersectionTypeAnn:
 		return c.resolveIntersectionTypeAnn(ta, lvl)
+	case *ast.FuncTypeAnn:
+		return c.resolveFuncTypeAnn(ta, lvl)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -231,6 +234,81 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 	if !c.hasProv(t) {
 		c.recordProv(t, ta, AnnotationType)
 	}
+	return t, true
+}
+
+// resolveFuncTypeAnn lowers a monomorphic function type annotation
+// `fn(p1: A, p2: B) -> R` and the inexact `fn(p1: A, ...) -> R` into a
+// soltype.FuncType, so a function type is writable as a binding annotation, a
+// parameter or return annotation, and a union/intersection member. Each
+// parameter's value annotation resolves through resolveTypeAnn. ta.Inexact maps to
+// FuncType.Inexact so the accept-set rule and the printer see the trailing `...`.
+//
+// An unsupported part recovers to a fresh var and the function shape survives. This
+// is cascade-safe like the Promise<bad>, object, and tuple arms. A `fn(x: Bad) -> R`
+// stays function-shaped so `f(x)` and the rendered signature still read as a
+// function rather than collapsing the binding to an unconstrained var.
+//
+// Generic, throws, and lifetime-param'd function annotations report an unsupported
+// feature and recover the rest as a monomorphic function. A written type parameter
+// `T` needs the type-name scope M7 adds, `throws` is M9, and lifetime parameters
+// ride the lifetime-annotation surface (M6.5).
+func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
+	if len(ta.TypeParams) > 0 {
+		c.reportUnsupportedFeature(ta, "generic function type annotation")
+	}
+	if ta.Throws != nil {
+		c.reportUnsupportedFeature(ta, "throws clause in function type annotation")
+	}
+	if len(ta.LifetimeParams) > 0 {
+		c.reportUnsupportedFeature(ta, "lifetime parameters in function type annotation")
+	}
+
+	params := make([]*soltype.FuncParam, len(ta.Params))
+	for i, p := range ta.Params {
+		pat := p.Pattern
+		// A rest param is reported unsupported and recovered as a normal positional
+		// param. The value-function path also rejects RestPat. acceptSet, hasRest,
+		// and requiredCount all assume a rest param is the last one. The parser does
+		// not enforce that for a non-last `...x`, so setting Rest here could corrupt
+		// the accept-set. Modeling the rest arity effect rides M4/M9 with rest
+		// element-type checking.
+		if rp, ok := pat.(*ast.RestPat); ok {
+			c.reportUnsupportedFeature(rp, "rest parameter in function type annotation")
+			pat = rp.Pattern
+		}
+		// A missing or unsupported parameter annotation recovers to a fresh var so
+		// the function keeps its arity and shape, cascade-safe like Promise<bad>.
+		var pt soltype.Type = c.freshAt(lvl)
+		if p.TypeAnn != nil {
+			if t, ok := c.resolveTypeAnn(p.TypeAnn, lvl); ok {
+				pt = t
+			}
+		}
+		// A function type annotation binds no values, so the parameter name is
+		// carried for rendering only. There is no scope binding or constraint, unlike
+		// bindPattern. An IdentPat mirrors by name. Any other shape leaves the
+		// pattern nil, which the printer renders as a positional name such as arg0,
+		// without affecting the parameter's type.
+		var mirror soltype.Pat
+		if name, ok := identPatName(pat); ok {
+			mirror = &soltype.IdentPat{Name: name}
+		}
+		params[i] = &soltype.FuncParam{Pattern: mirror, Type: pt, Optional: p.Optional}
+	}
+
+	// The parser requires `-> R`, so ta.Return is normally non-nil. Guard
+	// defensively and recover an unsupported or absent return to a fresh var,
+	// keeping the function shape.
+	var ret soltype.Type = c.freshAt(lvl)
+	if ta.Return != nil {
+		if t, ok := c.resolveTypeAnn(ta.Return, lvl); ok {
+			ret = t
+		}
+	}
+
+	t := &soltype.FuncType{Params: params, Ret: ret, Inexact: ta.Inexact}
+	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
 
