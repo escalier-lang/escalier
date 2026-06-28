@@ -687,16 +687,16 @@ M4 substrate without retrofitting.
   target-dispatched rule above: an inexact object target admits a
   structurally-conforming class instance.
 - **Structural-object union exhaustiveness — the home for the case M6 left
-  open.** M6's union `match` leg covers only literal union members, so an exact
-  union of structural objects such as `{x: number} | {y: string}` still demands a
-  catch-all even when the arms name every member. The per-member coverage engine
-  M5 builds for the enum leg extends to these members. An object pattern covers a
-  union member when that member carries every field the pattern names, so the arms
-  are exhaustive when they collectively cover each member. This is the third
-  coverage case after literal members in M6 and nominal variants in M5's enum leg.
-  It lands in `unionMemberCovered` and `armCoversShape`
-  ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go)), which
-  M6's union leg deliberately scoped to literals.
+  open.** M6's union `match` leg checks only literal union members. It leaves an
+  exact union of structural objects such as `{x: number} | {y: string}` unchecked,
+  so a genuinely non-exhaustive structural union is not flagged. The per-member
+  coverage engine M5 builds for the enum leg extends to these members. An object
+  pattern covers a union member when that member carries every field the pattern
+  names, so the arms are exhaustive when they collectively cover each member. This
+  is the third coverage case after literal members in M6 and nominal variants in
+  M5's enum leg. It extends the member loop in `unionMatchExhaustive`
+  ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go)), which M6
+  skips for non-literal members rather than risk a false non-exhaustive error.
 - **Per-type-parameter variance via polarity (Option 2).** Each class's type
   parameters get their variance inferred from how they appear in the class body,
   exactly as SimpleSub already does for inference variables. A parameter that

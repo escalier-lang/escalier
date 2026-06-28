@@ -436,6 +436,22 @@ func TestInferMatchInexactUnionWithCatchAll(t *testing.T) {
 	require.Empty(t, errs)
 }
 
+// An exact union of structural members is left unchecked rather than falsely
+// flagged: covering structural-object and tuple members is M5 work, so the union
+// leg only flags a provably-uncovered literal member. A tuple-union match whose
+// single arm binds both members reports no non-exhaustive error.
+func TestInferMatchStructuralUnionNotFalselyFlagged(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x = if b { [1, 2] } else { [3, 4] }
+			return match x {
+				[a, c] => a
+			}
+		}
+	`)
+	require.Empty(t, errs)
+}
+
 // A guarded arm can always fail its guard, so it never makes a match exhaustive. An
 // inexact scrutinee still needs a separate catch-all even when a guarded arm names
 // its whole shape.

@@ -2040,7 +2040,9 @@ func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type)
 }
 
 // unionMatchExhaustive reports whether the unguarded arms cover a union scrutinee.
-// An inexact union needs a catch-all. An exact one needs every member covered.
+// An inexact union needs a catch-all. An exact one is flagged only when a literal
+// member is provably uncovered. Structural-object and nominal members defer to M5,
+// so an exact union carrying them is left unchecked rather than falsely flagged.
 func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) bool {
 	for _, arm := range e.Cases {
 		if arm.Guard == nil && isCatchAll(arm.Pattern) {
@@ -2051,32 +2053,26 @@ func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) b
 		return false
 	}
 	for _, member := range u.Types {
-		if !c.unionMemberCovered(member, e.Cases) {
+		if lit, ok := member.(*soltype.LitType); ok && !c.litMemberCovered(lit, e.Cases) {
 			return false
 		}
 	}
 	return true
 }
 
-// unionMemberCovered reports whether some unguarded arm matches one union member via
-// a catch-all or an equal literal pattern. Other shapes read uncovered, so coverage
-// is sound but only complete for literal members. Nominal members are covered
-// instead by M5's enum leg through constructor patterns; coverage of plain
-// structural-object members by object patterns is not yet handled.
-func (c *checker) unionMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
-	memberLit, memberIsLit := member.(*soltype.LitType)
+// litMemberCovered reports whether some unguarded arm is a literal pattern equal to
+// the given literal union member. The caller has already excluded an unguarded
+// catch-all, which would otherwise cover the member too.
+func (c *checker) litMemberCovered(member *soltype.LitType, arms []*ast.MatchCase) bool {
 	for _, arm := range arms {
 		if arm.Guard != nil {
 			continue
 		}
-		if isCatchAll(arm.Pattern) {
-			return true
-		}
 		armLit, ok := arm.Pattern.(*ast.LitPat)
-		if !ok || !memberIsLit {
+		if !ok {
 			continue
 		}
-		if lt, ok := c.litTypeOf(armLit.Lit); ok && memberLit.Equal(lt) {
+		if lt, ok := c.litTypeOf(armLit.Lit); ok && member.Equal(lt) {
 			return true
 		}
 	}
