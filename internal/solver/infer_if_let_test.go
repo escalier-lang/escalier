@@ -141,6 +141,16 @@ func TestInferIfLetAndLetElse(t *testing.T) {
 			want: `fn (u: {x: number, y: string}) -> [number, string]`,
 		},
 		{
+			// A decl-level annotation on a destructuring pattern would need the
+			// annotation distributed across the leaves, which is unsupported.
+			name: "let-else narrowing annotation on a destructuring pattern is unsupported",
+			src: `fn f(u: [number, string]) {
+				val [a, b]: [number, string] = u else { return }
+				return a
+			}`,
+			wantErrs: []string{"2:9-2:15: Unsupported: narrowing type annotation on a destructuring pattern"},
+		},
+		{
 			// A non-diverging else supplies a fallback. The annotation pins x to number,
 			// and the fallback 0 fits, so x is number on both the match and no-match path.
 			name: "let-else non-diverging else supplies a fallback",
