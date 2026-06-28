@@ -695,7 +695,8 @@ M4 substrate without retrofitting.
   member carries every field the pattern names, so the arms are exhaustive when
   they collectively cover each member. This is the third coverage case after
   literal members in M6 and nominal variants in M5's enum leg. It extends the
-  member loop in `unionMatchExhaustive` and removes `reportUnsupportedUnionArms`
+  member loop in `unionMatchExhaustive`, replacing the unsupported-feature report
+  that loop emits today for a structural arm
   ([internal/solver/infer_expr.go](../../internal/solver/infer_expr.go)).
 - **Per-type-parameter variance via polarity (Option 2).** Each class's type
   parameters get their variance inferred from how they appear in the class body,
