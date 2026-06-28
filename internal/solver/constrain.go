@@ -217,12 +217,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					// into a closed super because that open tail can't be absorbed.
 					return nil
 				}
-				// Every concrete branch failed. When sub is a borrow whose peeled inner
-				// satisfies some union member, the lifetime is the genuine blocker, so
-				// promote a union-level BorrowEscapeError. The peel reruns the same
-				// union-super exists rule against sub's inner, so one matching branch is
-				// enough. Otherwise every branch is a shape mismatch and the lifetime is
-				// incidental, so emit the generic union-level error.
+				// Every concrete branch failed. Promote a BorrowEscapeError when sub's
+				// peeled inner still satisfies the union; else emit the generic error.
 				if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil {
 					if len(c.trialUnderProbe(ref.Inner, super)) == 0 {
 						return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}
@@ -470,11 +466,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		// its mutability.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if sub.Lt != nil {
-				// A borrow flows into an owned destination. Emit BorrowEscapeError only
-				// when the lifetime is the genuine blocker, that is, when peeling to the
-				// inner would have satisfied super. If the inner is itself a shape
-				// mismatch, surface that error instead so the diagnostic does not blame
-				// the lifetime for a mismatch extending it could never fix.
+				// Emit BorrowEscapeError only when the peeled inner satisfies super, so
+				// the lifetime is the blocker; otherwise surface the inner's mismatch.
 				if innerErrs := c.trialUnderProbe(sub.Inner, super); len(innerErrs) > 0 {
 					return innerErrs
 				}
