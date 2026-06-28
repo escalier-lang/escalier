@@ -1980,15 +1980,9 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 // Exhaustiveness is checked from structural exactness by checkMatchExhaustive.
 func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
-	// Snapshot the scrutinee's shape for the exhaustiveness check before any arm
-	// binds. A literal pattern records its literal as a lower bound on a scrutinee
-	// variable, so reading the union after the arm loop would fold every arm
-	// literal into it. Over `x: "a" | "b"` the arm `"z" if guard => …` would then
-	// leak `"z"` as a phantom member and report a false non-exhaustive error.
-	// Coalescing a variable to its positive form here reads only the bounds
-	// established before the match, so an inferred union such as `"a" | "b"` from
-	// an if/else over two literals is checked while an annotated scrutinee, which
-	// is already concrete, is left untouched.
+	// Snapshot the scrutinee for the exhaustiveness check before any arm binds. A
+	// literal pattern adds its literal as a lower bound, which would otherwise leak
+	// a phantom member into the coalesced union read after the arm loop.
 	matchShape := scrutinee
 	if _, isVar := soltype.CarrierOf(scrutinee).(*soltype.TypeVarType); isVar {
 		matchShape = coalesce(scrutinee, soltype.Positive)
@@ -2022,14 +2016,7 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 }
 
 // checkMatchExhaustive reports a NonExhaustiveMatchError when no arm covers every
-// value the scrutinee can take. M4 drives the decision solely from the scrutinee's
-// structural exactness. An exact object or tuple has a fixed shape, so a structural
-// arm matching it covers every value. An inexact object or tuple carries an open
-// tail of unknown values, so only an unguarded catch-all covers it. A catch-all is
-// a wildcard `_` or an identifier pattern. A scrutinee that is neither an object nor
-// a tuple is not checked here. Enum-scrutinee exhaustiveness is M5 and extends
-// this same path. The caller passes the scrutinee already coalesced to its
-// pre-match shape, so an inferred union reaches here as a UnionType.
+// value the coalesced scrutinee can take, dispatching on its union or object/tuple shape.
 func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type) {
 	carrier := soltype.CarrierOf(scrutinee)
 	if u, ok := carrier.(*soltype.UnionType); ok {
@@ -2052,12 +2039,8 @@ func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type)
 	c.report(&NonExhaustiveMatchError{Match: e})
 }
 
-// unionMatchExhaustive reports whether the unguarded arms cover every value a
-// union scrutinee can take. An unguarded catch-all covers any union, exact or
-// inexact. An inexact union also carries an open tail of unknown values, so only
-// a catch-all covers it. An exact union is covered when the unguarded arms
-// collectively match every member. For example, a literal member `"a"` of
-// `"a" | "b"` is matched by an arm whose literal pattern is `"a"`.
+// unionMatchExhaustive reports whether the unguarded arms cover a union scrutinee.
+// An inexact union needs a catch-all. An exact one needs every member covered.
 func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) bool {
 	for _, arm := range e.Cases {
 		if arm.Guard == nil && isCatchAll(arm.Pattern) {
@@ -2075,12 +2058,9 @@ func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) b
 	return true
 }
 
-// unionMemberCovered reports whether some unguarded arm matches a single union
-// member. A catch-all matches any member. A literal pattern matches a literal
-// member of equal value. Any other member or pattern shape is conservatively
-// treated as uncovered, so such a union still needs a catch-all to be
-// exhaustive. This is sound but not complete, which keeps the union leg scoped
-// to literal members until structural-member coverage lands.
+// unionMemberCovered reports whether some unguarded arm matches one union member via
+// a catch-all or an equal literal pattern. Other shapes read uncovered, so coverage
+// is sound but only complete for literal members.
 func (c *checker) unionMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
 	memberLit, memberIsLit := member.(*soltype.LitType)
 	for _, arm := range arms {
