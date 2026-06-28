@@ -120,7 +120,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 			}
 		} else {
 			// Freeze: take the source's immutable skeleton, so a later write through
-			// `q` is rejected. A `var` slot still widens so a reassignment can store
+			// `q` is rejected. A `var` binding still widens so a reassignment can store
 			// another value of the widened shape.
 			initT = stripOwnedMut(initT)
 			if d.Kind == ast.VarKind {
@@ -154,7 +154,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// (`var a = 5; val z = a` ⇒ z: number). A literal that arrives through a
 		// REFERENCE (`var y = x`) is a type variable here, which widen passes
 		// through unchanged. The binding var's Widenable flag widens that at coalesce
-		// time. That covers display, the reassignment slot, and the binding's own
+		// time. That covers display, the reassignment target, and the binding's own
 		// rendered type. A `val` keeps its literal singleton; only a mutable cell
 		// widens.
 		initT = widen(initT)
@@ -190,7 +190,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 //
 // 2. A bare owned annotation whose initializer is a borrow is a borrow-into-owned
 // escape. A `val` binding consumes an owned source, so a borrowed `p` flowing into a
-// bare owned slot, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
+// bare owned destination, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
 // ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
 // `val q: &{x} = p` is the opt-in for an alias.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
@@ -539,7 +539,7 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 	// mints; a body-level binding has none — it generalizes the initializer
 	// directly — so wrap the initializer in a fresh widenable var (initType <: v)
 	// and generalize that. The flag rides v through coalescing, so the recorded
-	// display type, the reassignment slot, and any read of the binding all widen
+	// display type, the reassignment target, and any read of the binding all widen
 	// consistently. An annotated `var` adopts its annotation and needs no widening.
 	//
 	// Skip the wrap when the initializer recovered to the ErrorType sentinel: it
@@ -574,8 +574,8 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 // bindPattern.
 //
 // The leaves are MONOMORPHIC projections of the initializer, not independently
-// generalized bindings. A destructured name reads a slot of the initializer, so
-// it shares that slot's type rather than quantifying over it. Top-level
+// generalized bindings. A destructured name reads a component of the initializer, so
+// it shares that component's type rather than quantifying over it. Top-level
 // destructuring at module scope still defers. It needs the SCC driver to bind
 // several names from one decl, so this path is body-level only and inferDeclDef
 // reports a top-level destructuring decl as unsupported.

@@ -165,7 +165,7 @@ type ExtraElementError struct {
 // the property, so it cannot satisfy a target that requires it present (the object
 // analogue of TypeScript's "Property 'x' is optional in type … but required in
 // type …"). The converse — a required source property filling an optional target
-// slot — is fine, so only this direction errors.
+// property — is fine, so only this direction errors.
 type OptionalPropertyError struct {
 	Sub, Super *soltype.ObjectType
 	Name       string
@@ -176,7 +176,7 @@ type OptionalPropertyError struct {
 // MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
 // borrow but the super is mutable: writing through the mutable target would mutate a
 // value the source only lent out as read-only, so an immutable reference cannot fill
-// a mutable slot. The reverse — a mutable source decaying to an immutable target — is
+// a mutable target. The reverse — a mutable source decaying to an immutable target — is
 // fine, so only this direction errors. It also fires for `{x} <: mut {x}`, where the
 // bare source is wrapped as an immutable view before re-dispatch.
 type MutabilityMismatchError struct {
@@ -185,8 +185,8 @@ type MutabilityMismatchError struct {
 	site       ast.Node     // M2.5: constraint node fallback
 }
 
-// BorrowEscapeError fires when a borrow outlives the slot it flows into: a borrowed
-// value (Lt != nil) constrained against an owned slot (Lt == nil), either a bare
+// BorrowEscapeError fires when a borrow outlives the destination it flows into: a borrowed
+// value (Lt != nil) constrained against an owned destination (Lt == nil), either a bare
 // supertype or a RefType super with no lifetime. The firing path is INERT in C2 —
 // every RefType carries Lt == nil until the lifetime sort lands (D1) and borrows
 // originate (D2) — so the struct is wired now and exercised from D2.
@@ -251,7 +251,7 @@ type ReadonlyFieldError struct {
 
 // ReadonlyFieldSubtypeError fires when a readonly source field flows into a
 // non-readonly target field through structural subtyping under a mutable borrow:
-// a `mut {readonly a: T}` cannot fill a `mut {a: T}` slot, since the target view
+// a `mut {readonly a: T}` cannot fill a `mut {a: T}` target, since the target view
 // would otherwise let a holder write through and break the source's readonly
 // contract. The check sits in the ObjectType <: ObjectType arm under the
 // mut-context flag, the contravariant write view of a mutable borrow, and blames
@@ -370,7 +370,7 @@ func (e *MutabilityMismatchError) Span() ast.Span {
 func (e *MutabilityMismatchError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *BorrowEscapeError) Span() ast.Span {
-	// The escaping borrow is the subject; blame it, degrade to the slot it escaped
+	// The escaping borrow is the subject; blame it, degrade to the destination it escaped
 	// into, else the site.
 	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
 }
@@ -726,7 +726,7 @@ func (e *NonExhaustiveMatchError) Message() string {
 
 // MutLeafThroughSharedBorrowError fires when a destructuring pattern marks a leaf
 // `mut` while the scrutinee is an immutable `&` borrow. A `mut` leaf projects mutable
-// access to its slot, which cannot be obtained through a shared borrow, so the leaf is
+// access to the value it binds, which cannot be obtained through a shared borrow, so the leaf is
 // rejected. It self-blames the leaf's pattern node.
 type MutLeafThroughSharedBorrowError struct {
 	Node ast.Node

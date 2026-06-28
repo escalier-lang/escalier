@@ -301,7 +301,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 
 	t.Run("OptionalPropertyError", func(t *testing.T) {
 		c := newChecker()
-		// {x?: number} <: {x: number}: an optional source cannot fill a required slot.
+		// {x?: number} <: {x: number}: an optional source cannot fill a required property.
 		c.constrain(node,
 			exactObj(&soltype.PropertyElem{Name: "x", Type: num(), Optional: true}),
 			exactObj(propElem("x", num())))

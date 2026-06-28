@@ -261,7 +261,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// A pattern-less param is not reachable from the real parser, which
 			// synthesizes a placeholder. Blame the enclosing function rather than a nil
 			// Span(), honoring the "never a panic" guarantee. Bind a synthetic name so
-			// the param slot still types.
+			// the parameter still types.
 			c.reportUnsupported(node)
 			name := fmt.Sprintf("arg%d", i)
 			fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}})
@@ -592,7 +592,7 @@ func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
 // RefType over the operand's carrier, carrying a fresh inferred lifetime. The
 // operand is constrained against the wrapper so the existing RefType<:RefType
 // and bare<:RefType rules enforce the rest. An immutable operand fails the
-// mutability check against `&mut`, and an owned operand satisfies a borrow slot
+// mutability check against `&mut`, and an owned operand satisfies a borrow destination
 // the same way a call-site argument does.
 //
 // The inner is taken directly from the operand rather than a fresh variable, so
@@ -877,7 +877,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// (len(fn.Params)) so the EXACT synth's accept-set gate does NOT also report
 	// arity (the lint owns the single, uniform message; the constraint does pure
 	// type-flow on the supplied args). Too-many truncates to the prefix; too-few pads
-	// the missing slots with fresh vars, which impose no constraint on absent args.
+	// the missing parameters with fresh vars, which impose no constraint on absent args.
 	fn, resolved := resolveFunc(callee)
 	demand := args
 	switch {
@@ -1023,12 +1023,12 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 //
 // On success the source is constrained `<: target` (the binding's coalesced type),
 // the new-solver form of the old checker's `Unify(rightType, leftType)`: the value
-// being stored must be a subtype of the slot. Reassigning an annotated `var a:
+// being stored must be a subtype of the binding's type. Reassigning an annotated `var a:
 // number = 5` with `a = 6` checks; an un-annotated `var a = 5` now widens its
 // binding to `number` (M4 B3), so `a = 6` checks there too.
 //
 // The assignment EXPRESSION evaluates to the value just stored, so its type is the
-// target binding's slot type — `val b = (a = 6)` for `var a: number` yields
+// target binding's type — `val b = (a = 6)` for `var a: number` yields
 // `b: number`. On an error path (invalid / immutable / unknown target) no value is
 // stored, so it recovers to `void`.
 func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.Type {
@@ -1098,7 +1098,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// fresh instantiation: instantiating a generalized binding yields a var carrying
 	// only its LOWER bounds (the read/covariant face), so `a = "x"` for `var a:
 	// number` would merely add another lower bound and wrongly succeed. The coalesced
-	// type is the concrete slot type — `number` for an annotated var, and (since M4
+	// type is the concrete binding type — `number` for an annotated var, and (since M4
 	// B3) the widened `number` for an un-annotated `var a = 5`, so `a = 6` ⇒
 	// `6 <: number` checks.
 	//
@@ -1129,7 +1129,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		//
 		// The value-compatibility check runs against the source's CARRIER, not the
 		// borrow itself. A borrow forced to 'static is owned-forever, so it satisfies an
-		// owned slot. Comparing the whole borrow would instead trip the
+		// owned destination. Comparing the whole borrow would instead trip the
 		// borrow-into-owned BorrowEscapeError, the rule that rejects a borrow which does
 		// NOT escape. CarrierOf is the identity on a non-borrow source, so an ordinary
 		// global write such as `n = 5` is unaffected. The peel only looks through a
@@ -1148,15 +1148,15 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			c.constrainAssign(e, soltype.CarrierOf(sourceT), targetT)
 		}
 		if len(c.errs) == errsBefore {
-			// The store aliases the source into a permanent module-level slot. If the
-			// source's mutability differs from the slot's and the source stays live at
+			// The store aliases the source into a permanent module-level storage location. If the
+			// source's mutability differs from that location's and the source stays live at
 			// the conflicting mutability, that is a mut↔immutable transition the local
 			// reassignment path cannot see, since the global target is not a tracked
 			// local. Check it before forcing the escape so the source's own escape is
 			// not double-counted as a prior permanent alias.
 			c.checkGlobalWriteTransition(target, e.Right, bindingType(b), assignStmt)
 			c.constrainEscape(sourceT)
-			// The store transfers the value into a permanent 'static slot, so it consumes
+			// The store transfers the value into a permanent 'static storage location, so it consumes
 			// the source binding. A later use of the source is then a use-after-move, the
 			// affine rule that closes the leak the global write otherwise allowed.
 			// checkGlobalWriteTransition above skips the source's own self-conflict,
@@ -1191,7 +1191,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// the same top-level Mut from either, so the alias mutability is unchanged.
 		c.trackAliasesForAssignment(target, e.Right, bindingType(b), assignStmt)
 		// A non-module reassignment that moves its source consumes it. The global-write
-		// branch above runs its own consume, so this covers only the local-slot
+		// branch above runs its own consume, so this covers only the local-binding
 		// reassignment.
 		if !b.ModuleLevel && c.movesSourceInto(e.Right, bindingType(b)) {
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
@@ -1226,7 +1226,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 //
 // The write requirement carries a fresh lifetime (D2): a mut-borrow receiver of
 // any lifetime is accepted (the fresh var imposes no obligation), and an owned
-// receiver satisfies the borrow slot by the RefType rule.
+// receiver satisfies the borrow destination by the RefType rule.
 //
 // A write has no result borrow to construct, so it needs no counterpart to the
 // read path's fieldReadBorrow. That helper builds the value a read yields: a
@@ -1281,7 +1281,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		// A fresh lifetime imposes no obligation on the receiver (D2): constrainLt
 		// gives the new variable an upper bound and constrains nothing back, so a
 		// mut-borrow receiver of ANY lifetime satisfies the write requirement. A
-		// nil slot lifetime would instead reject a borrow receiver as an escape.
+		// nil lifetime would instead reject a borrow receiver as an escape.
 		Lt: c.ctx.freshLifetime(lvl),
 		Inner: &soltype.ObjectType{
 			Elems:   []soltype.ObjTypeElem{&soltype.PropertyElem{Name: m.Prop.Name, Type: w}},
@@ -1717,7 +1717,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	//   - Reading a field through a `mut`/`'a` borrow is always legal and yields
 	//     the field's value, not the borrow.
 	//   - It keeps the requirement off the RefType, so the RefType<:bare escape
-	//     guard fires only when the borrow flows into an owned slot, not on a read.
+	//     guard fires only when the borrow flows into an owned destination, not on a read.
 	//   - A non-borrow receiver is returned unchanged, leaving plain vars untouched.
 	recvCarrier := soltype.CarrierOf(recv)
 	fieldVar := c.freshAt(lvl)

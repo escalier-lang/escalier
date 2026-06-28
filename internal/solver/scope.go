@@ -85,7 +85,7 @@ type Namespace struct {
 // a parent link for lexical lookup.
 //
 // Why namespaces are stored by pointer while values/types are stored by value:
-// the distinction is by *kind*, not by slot. A Namespace is a shared, mutable,
+// the distinction is by *kind*, not by which scope map holds it. A Namespace is a shared, mutable,
 // recursive container — keyed by its qualified dep_graph BindingKey, referenced
 // from several scopes/files (so a pointer gives it one identity), populated
 // incrementally after insertion (a struct value in a map can't be field-mutated

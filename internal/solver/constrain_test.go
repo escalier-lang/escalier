@@ -171,7 +171,7 @@ func TestConstrainFunctionVariance(t *testing.T) {
 
 // TestConstrainFunctionAcceptSet exercises the PR4 accept-set rule (#677 §4.2.1):
 // G <: F iff accept(G) ⊇ accept(F), with params contravariant and return covariant.
-// Read F (the super) as the callback slot.
+// Read F (the super) as the callback parameter.
 func TestConstrainFunctionAcceptSet(t *testing.T) {
 	// Two EXACT functions relate by the old same-arity rule: accept is [n, n] on both
 	// sides, so ⊇ forces equal arity.
@@ -183,9 +183,9 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 		))
 	})
 
-	// An exact supplier cannot fill a WIDER exact slot: accept [1,1] does not contain
-	// the slot's count 2 (upper-bound failure, hiG < hiF).
-	t.Run("exact fn(x) rejected by fn(x, y) slot", func(t *testing.T) {
+	// An exact supplier cannot fill a WIDER exact callback parameter: accept [1,1] does
+	// not contain the callback parameter's count 2 (upper-bound failure, hiG < hiF).
+	t.Run("exact fn(x) rejected by fn(x, y) callback parameter", func(t *testing.T) {
 		c := &Context{}
 		g := exactFn(num(), identParam("x", num()))
 		f := exactFn(num(), identParam("x", num()), identParam("y", num()))
@@ -197,45 +197,46 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 		require.Same(t, f, fa.Super)
 	})
 
-	// The #677 callback matrix for an exact fn(x, y) slot: fn(x, y), fn(x, ...), and
-	// fn(...) are all accepted; exact fn(x) (too narrow upper bound) and a 3-param
-	// function (demands more than the slot supplies) are rejected.
-	slot := func() *soltype.FuncType { return exactFn(num(), identParam("x", num()), identParam("y", num())) }
-	t.Run("exact fn(x, y) fills fn(x, y) slot", func(t *testing.T) {
+	// The #677 callback matrix for an exact fn(x, y) callback parameter: fn(x, y),
+	// fn(x, ...), and fn(...) are all accepted; exact fn(x) (too narrow upper bound) and
+	// a 3-param function (demands more than the callback parameter supplies) are rejected.
+	callbackParam := func() *soltype.FuncType { return exactFn(num(), identParam("x", num()), identParam("y", num())) }
+	t.Run("exact fn(x, y) fills fn(x, y) callback parameter", func(t *testing.T) {
 		c := &Context{}
-		require.Empty(t, c.Constrain(exactFn(num(), identParam("x", num()), identParam("y", num())), slot()))
+		require.Empty(t, c.Constrain(exactFn(num(), identParam("x", num()), identParam("y", num())), callbackParam()))
 	})
-	t.Run("inexact fn(x, ...) fills fn(x, y) slot", func(t *testing.T) {
+	t.Run("inexact fn(x, ...) fills fn(x, y) callback parameter", func(t *testing.T) {
 		c := &Context{}
-		// accept(G) = [1, ∞) ⊇ accept(slot) = [2, 2]; the slot's arg 2 is tolerated,
-		// the single shared param checked contravariantly.
-		require.Empty(t, c.Constrain(inexactFn(num(), identParam("x", num())), slot()))
+		// accept(G) = [1, ∞) ⊇ accept(callbackParam) = [2, 2]; the callback parameter's
+		// arg 2 is tolerated, the single shared param checked contravariantly.
+		require.Empty(t, c.Constrain(inexactFn(num(), identParam("x", num())), callbackParam()))
 	})
-	t.Run("inexact fn(...) fills fn(x, y) slot", func(t *testing.T) {
+	t.Run("inexact fn(...) fills fn(x, y) callback parameter", func(t *testing.T) {
 		c := &Context{}
 		// accept(G) = [0, ∞) ⊇ [2, 2]: a zero-param inexact function fills any exact
-		// slot whose required count it meets. This is the case exactness exists to permit.
-		require.Empty(t, c.Constrain(inexactFn(num()), slot()))
+		// callback parameter whose required count it meets. This is the case exactness
+		// exists to permit.
+		require.Empty(t, c.Constrain(inexactFn(num()), callbackParam()))
 	})
-	t.Run("exact fn(x) rejected by fn(x, y) slot (matrix)", func(t *testing.T) {
+	t.Run("exact fn(x) rejected by fn(x, y) callback parameter (matrix)", func(t *testing.T) {
 		c := &Context{}
 		require.Equal(t,
 			[]string{"cannot constrain function of arity 1 <: function of arity 2"},
-			Messages(c.Constrain(exactFn(num(), identParam("x", num())), slot())))
+			Messages(c.Constrain(exactFn(num(), identParam("x", num())), callbackParam())))
 	})
-	t.Run("3-param fn rejected by fn(x, y) slot", func(t *testing.T) {
+	t.Run("3-param fn rejected by fn(x, y) callback parameter", func(t *testing.T) {
 		c := &Context{}
 		g := exactFn(num(), identParam("x", num()), identParam("y", num()), identParam("z", num()))
-		// accept(G) = [3, 3]; the slot supplies 2, below G's required 3 → lower-bound
-		// failure (loG > loF).
+		// accept(G) = [3, 3]; the callback parameter supplies 2, below G's required 3 →
+		// lower-bound failure (loG > loF).
 		require.Equal(t,
 			[]string{"cannot constrain function of arity 3 <: function of arity 2"},
-			Messages(c.Constrain(g, slot())))
+			Messages(c.Constrain(g, callbackParam())))
 	})
 
 	// Exact </: inexact: an exact function's finite upper bound cannot cover an
-	// inexact slot's ∞ (the asymmetry §4.2.1.1 explains).
-	t.Run("exact fn(x) rejected by inexact fn(x, ...) slot", func(t *testing.T) {
+	// inexact callback parameter's ∞ (the asymmetry §4.2.1.1 explains).
+	t.Run("exact fn(x) rejected by inexact fn(x, ...) callback parameter", func(t *testing.T) {
 		c := &Context{}
 		require.Equal(t,
 			[]string{"cannot constrain function of arity 1 <: function of arity 1"},
@@ -244,7 +245,7 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 
 	// Inexact <: inexact: the classic "fewer params is okay" rule — both upper bounds
 	// are ∞, the supplier just needs to handle the consumer's required params.
-	t.Run("inexact fn(x, ...) fills inexact fn(x, y, ...) slot", func(t *testing.T) {
+	t.Run("inexact fn(x, ...) fills inexact fn(x, y, ...) callback parameter", func(t *testing.T) {
 		c := &Context{}
 		require.Empty(t, c.Constrain(
 			inexactFn(num(), identParam("x", num())),
@@ -253,9 +254,9 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 	})
 
 	// Optional params lower `required` without changing arity: exact fn(a, b?)
-	// (accept [1, 2]) fills the narrower exact fn(a) slot (accept [1, 1]) — the slot
-	// never supplies the optional argument.
-	t.Run("exact fn(a, b?) fills fn(a) slot", func(t *testing.T) {
+	// (accept [1, 2]) fills the narrower exact fn(a) callback parameter (accept [1, 1]) —
+	// the callback parameter never supplies the optional argument.
+	t.Run("exact fn(a, b?) fills fn(a) callback parameter", func(t *testing.T) {
 		c := &Context{}
 		require.Empty(t, c.Constrain(
 			exactFn(num(), identParam("a", num()), optParam("b", num())),
@@ -296,9 +297,10 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 		return &soltype.FuncType{Params: params, Ret: ret}
 	}
 
-	// fn(a, ...rest) (accept [1, ∞)) fills a WIDER exact slot fn(a, b, c) (accept
-	// [3, 3]): the rest absorbs the slot's extra arguments — the case rest exists for.
-	t.Run("rest fn fills a wider exact slot", func(t *testing.T) {
+	// fn(a, ...rest) (accept [1, ∞)) fills a WIDER exact callback parameter fn(a, b, c)
+	// (accept [3, 3]): the rest absorbs the callback parameter's extra arguments — the
+	// case rest exists for.
+	t.Run("rest fn fills a wider exact callback parameter", func(t *testing.T) {
 		c := &Context{}
 		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
 		f := exactFn(num(), identParam("a", num()), identParam("b", num()), identParam("c", num()))
@@ -306,18 +308,18 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 	})
 
 	// A rest fn and an inexact fn have the same ∞ upper bound, so a rest fn fills an
-	// inexact slot of matching required arity.
-	t.Run("rest fn fills an inexact slot", func(t *testing.T) {
+	// inexact callback parameter of matching required arity.
+	t.Run("rest fn fills an inexact callback parameter", func(t *testing.T) {
 		c := &Context{}
 		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
 		f := inexactFn(num(), identParam("a", num()))
 		require.Empty(t, c.Constrain(g, f))
 	})
 
-	// An exact fn(a, b) (accept [2, 2]) is REJECTED by a `fn(...rest)` slot (accept
-	// [0, ∞)): the slot may invoke with zero args, but g demands two — a lower-bound
-	// failure (loG=2 > loF=0), exactness aside.
-	t.Run("exact fn rejected by a zero-required rest slot", func(t *testing.T) {
+	// An exact fn(a, b) (accept [2, 2]) is REJECTED by a `fn(...rest)` callback parameter
+	// (accept [0, ∞)): the callback parameter may invoke with zero args, but g demands
+	// two — a lower-bound failure (loG=2 > loF=0), exactness aside.
+	t.Run("exact fn rejected by a zero-required rest callback parameter", func(t *testing.T) {
 		c := &Context{}
 		g := exactFn(num(), identParam("a", num()), identParam("b", num()))
 		f := restFn(num(), restParam("rest", num()))
@@ -604,8 +606,8 @@ func TestConstrainObject(t *testing.T) {
 		},
 		// PropertyElem.Optional is part of the object shape, so subtyping is
 		// presence-aware: an optional target property may be absent on the source,
-		// and a required source property fills an optional target slot, but an
-		// optional source property cannot fill a required target slot.
+		// and a required source property fills an optional target property, but an
+		// optional source property cannot fill a required target property.
 		{
 			// {} <: {x?: number}: an optional target property may be absent.
 			name:  "absent source satisfies optional target property",
@@ -614,7 +616,7 @@ func TestConstrainObject(t *testing.T) {
 		},
 		{
 			// {x?: number} <: {x: number}: the source may omit x, so it cannot fill a
-			// required slot.
+			// required property.
 			name:  "optional source rejected by required target",
 			sub:   exactObj(optProp("x", num())),
 			super: exactObj(propElem("x", num())),
@@ -628,7 +630,7 @@ func TestConstrainObject(t *testing.T) {
 			},
 		},
 		{
-			// {x: number} <: {x?: number}: a required property fills an optional slot.
+			// {x: number} <: {x?: number}: a required property fills an optional property.
 			name:  "required source fills optional target property",
 			sub:   exactObj(propElem("x", num())),
 			super: exactObj(optProp("x", num())),
@@ -737,7 +739,7 @@ func TestConstrainRef(t *testing.T) {
 		},
 		{
 			// {x} <: mut {x}: the reverse is rejected. The bare source is wrapped as an
-			// immutable view, and an immutable source cannot fill a mutable slot.
+			// immutable view, and an immutable source cannot fill a mutable destination.
 			name:  "bare <: mut rejected (mutability)",
 			sub:   exactObj(propElem("x", num())),
 			super: mutRef(exactObj(propElem("x", num()))),

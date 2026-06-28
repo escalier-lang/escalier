@@ -164,7 +164,7 @@ func TestInferValMutConstructedAllowsFieldWrite(t *testing.T) {
 }
 
 // A constructed owned-mutable value can be borrowed `&mut`. The mutable cell fills
-// the mutable borrow slot, so `&mut q` checks where an owned-immutable q would fail
+// the mutable borrow destination, so `&mut q` checks where an owned-immutable q would fail
 // the mutability gate. This is the construction-side companion to
 // TestInferValMutBorrowFromOwnedMut, which sources owned-mutable from a parameter.
 func TestInferValMutConstructedBorrowsMut(t *testing.T) {
@@ -218,11 +218,11 @@ func TestInferValMutThawWidensLiteral(t *testing.T) {
 	require.Equal(t, "fn () -> mut {x: number}", values["f"])
 }
 
-// Freezing into a `var` binding widens the source's literal fields, since a `var` slot
+// Freezing into a `var` binding widens the source's literal fields, since a `var` binding
 // must admit any later reassignment of the field's primitive type. Freezing the
 // singleton `{x: 0}` into `var q` yields `{x: number}`. A plain `val q` keeps the
 // singleton, because an immutable, non-reassignable binding has no widening reason.
-// Both freeze the value immutably; only the `var` slot widens.
+// Both freeze the value immutably; only the `var` binding widens.
 func TestFreezeVarWidensLiteral(t *testing.T) {
 	t.Run("var_widens", func(t *testing.T) {
 		values, _, errs := inferSource(t, `fn f() {
@@ -256,7 +256,7 @@ func TestInferValAnnotatedOwnedImm(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number}) -> {x: number}", values["f"])
 }
 
-// `val q: &{x} = p` for an owned p auto-borrows p into the annotated borrow slot.
+// `val q: &{x} = p` for an owned p auto-borrows p into the annotated borrow destination.
 // The constrain rule's bare<:RefType arm wraps p as an immutable view.
 //
 // DISABLED until lifetime-bounds (M6.5) lands. The annotated borrow form has
@@ -292,9 +292,9 @@ func TestInferValAnnotatedBorrowMut(t *testing.T) {
 
 // --- Auto-borrow at call sites -------------------------------------------------
 
-// An owned-mutable argument auto-borrows into a `&mut` parameter slot. The
+// An owned-mutable argument auto-borrows into a `&mut` parameter. The
 // RefType<:RefType rule treats an owned source (Lt nil) as satisfying any borrow
-// slot, so the call type-checks without an explicit `&mut`.
+// destination, so the call type-checks without an explicit `&mut`.
 func TestInferAutoBorrowOwnedIntoMutParam(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
@@ -307,7 +307,7 @@ fn f(p: mut {x: number}) {
 	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
 }
 
-// An owned-immutable argument auto-borrows into a `&` parameter slot.
+// An owned-immutable argument auto-borrows into a `&` parameter.
 func TestInferAutoBorrowOwnedIntoImmParam(t *testing.T) {
 	src := `fn use(o: &{x: number}) -> number {
   return o.x
@@ -321,7 +321,7 @@ fn f(p: {x: number}) {
 }
 
 // An owned-immutable argument cannot auto-borrow into a `&mut` parameter: the
-// mutability check rejects an immutable source filling a mutable borrow slot.
+// mutability check rejects an immutable source filling a mutable borrow destination.
 func TestInferAutoBorrowImmIntoMutParamRejected(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x

@@ -400,7 +400,7 @@ func (c *checker) recordMemberUse(e ast.Expr) {
 // given program point, blaming moveNode for the consume. The source must be a place —
 // a binding or a field path such as `pair.a` — whose value is owned-movable. A borrow,
 // value type, fresh literal, or non-place expression consumes nothing here. A field
-// path consumes only that field's slot, the partial move from PR 7.
+// path consumes only that field, the partial move from PR 7.
 //
 // It does NOT force the moved value's borrows to 'static. A return or local store
 // flows the value out at the call's own lifetime, not 'static, so forcing here would

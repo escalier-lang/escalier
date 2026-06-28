@@ -12,7 +12,7 @@ import (
 // `a = expr` parses as an ast.BinaryExpr with Op == ast.Assign — the only binary
 // operator the M3 walk handles. The target must be a mutable (`var`) place; the
 // source must be a subtype of the binding's type; the assignment expression evaluates
-// to the value just stored, so its type is the target's slot type. Reassignment
+// to the value just stored, so its type is the target's type. Reassignment
 // lives in expression position, so these tests exercise it inside a function body
 // (or a top-level `val` initializer).
 
@@ -95,7 +95,7 @@ fn g() { f() = a }`
 }
 
 // The assignment expression evaluates to the value just stored, so its type is the
-// target's slot type: `val b = (a = 6)` for `var a: number` ⇒ b: number.
+// target's type: `val b = (a = 6)` for `var a: number` ⇒ b: number.
 func TestInferAssignValuePositionIsTargetType(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		var a: number = 5
@@ -131,7 +131,7 @@ func TestInferAssignUnknownTarget(t *testing.T) {
 }
 
 // Reassigning a POLYMORPHIC var must not corrupt the binding. inferAssign freshens
-// the binding's coalesced slot type before constraining, so the source flows into
+// the binding's coalesced type before constraining, so the source flows into
 // throwaway copies rather than the binding's retained type-parameter vars; `id`
 // keeps its generic type and a later `id("hello")` still type-checks.
 func TestInferAssignPolyVarNoCorruption(t *testing.T) {
@@ -222,7 +222,7 @@ func TestInferAssignNamespaceTarget(t *testing.T) {
 // A member target (obj.x = …) is a field write (M4 C3). Writing to a field of an
 // IMMUTABLE object — here `o` is `val`-bound, so its `{x: 5}` is immutable — is
 // rejected: the write requires `o <: mut {x: number, ...}`, and an immutable object
-// cannot fill the mutable slot (the C2 gate's mutability rule).
+// cannot fill the mutable destination (the C2 gate's mutability rule).
 func TestInferAssignMemberTargetImmutable(t *testing.T) {
 	src := `val o = {x: 5}
 fn f() { o.x = 6 }`

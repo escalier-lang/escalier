@@ -29,7 +29,7 @@ import (
 //   - The G2 static-escape cases (TestStaticEscapeTransition) isolate the lifetime
 //     query, its polarity, the transitive-member reach, and the target-dead early
 //     return. From source those are confounded by the global-write store error and the
-//     borrow-into-owned-slot escape, or are not constructible at all. The feature's
+//     borrow-into-owned destination escape, or are not constructible at all. The feature's
 //     end-to-end coverage is TestStaticEscapeTransitionFromSource.
 
 func numT() *soltype.PrimType { return &soltype.PrimType{Prim: soltype.NumPrim} }
@@ -245,7 +245,7 @@ func TestStaticEscapeTransition(t *testing.T) {
 
 // TestStaticEscapeTransitionFromSource is the end-to-end move-engine counterpart.
 // Storing the borrow `p` into the module-level `sink` consumes p: the store transfers
-// it into the permanent 'static slot, so the later `val snap: &{x: number} = p` reads a
+// it into the permanent 'static storage location, so the later `val snap: &{x: number} = p` reads a
 // moved value and is a use-after-move. The global-write exclusivity check skips the
 // consumed source's self-conflict, so the single UseAfterMoveError is the only
 // diagnostic.
@@ -270,7 +270,7 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 // stored into an immutable global (see the dead-source case below).
 func TestGlobalWriteMutTransition(t *testing.T) {
 	// Storing an owned-mutable value into the global `sink` moves it: the store
-	// transfers ownership into the permanent slot, so the later `p.x = 5` is a
+	// transfers ownership into the permanent storage location, so the later `p.x = 5` is a
 	// use-after-move. This is the motivating `leak` example — the move consumes p, so
 	// the mutation that would let `sink` observe a later write is rejected.
 	t.Run("mut_into_immutable_global_then_mutate_error", func(t *testing.T) {
@@ -708,7 +708,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 }
 
 // TestRule2TransitionFromSource covers binding an immutable value into an owned `mut`
-// slot while the source stays live afterward. The bind takes the immutable→mutable
+// destination while the source stays live afterward. The bind takes the immutable→mutable
 // upgrade — config is a uniquely-owned place, so granting mutableConfig the mutable type
 // aliases nothing live — and the move consumes config, so the later `config.x` read is a
 // use-after-move. Owned-into-owned is a move under the affine rule, so the move governs
@@ -734,7 +734,7 @@ func TestRule2TransitionFromSource(t *testing.T) {
 // the owned-mutable source these cases reassign from.
 func TestMutabilityTransitionReassignFromSource(t *testing.T) {
 	t.Run("source_live_error", func(t *testing.T) {
-		// Reassigning the owned `items` into the owned `snap` slot moves it: snap drops
+		// Reassigning the owned `items` into the owned `snap` destination moves it: snap drops
 		// its old value and takes ownership of items, so the later `items.x = 2` is a
 		// use-after-move.
 		_, _, errs := inferSource(t, `

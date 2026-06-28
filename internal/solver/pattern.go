@@ -129,7 +129,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		// A literal pattern asserts the literal is an admissible value of the
 		// scrutinee, so the literal flows INTO the scrutinee. `5 <: number` checks.
 		// The check is exact against a concrete scrutinee such as a top-level `match`
-		// arm. For a NESTED slot the scrutinee here is the field's covariant result
+		// arm. For a NESTED field the scrutinee here is the field's covariant result
 		// var, which carries no upper bound. So a kind mismatch like `{x: "hi"}`
 		// against `{x: number}` is not yet rejected. The refutable literal-pattern
 		// check lands with E2's `match`, which this path is laid out to extend. A
@@ -242,16 +242,16 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 
 // applyLeafExtras resolves a destructured leaf's optional type annotation
 // (`{x :: T}`, `[a :: T]`) and default value (`{x = d}`, `[a = d]`) against its
-// slot type, returning the type to bind. An annotation constrains the slot to
-// satisfy it and is then adopted as the leaf's type, mirroring how an annotated
+// leaf type, returning the type to bind. An annotation constrains the leaf type
+// to satisfy it and is then adopted as the leaf's type, mirroring how an annotated
 // `val` adopts its annotation. A default is required to satisfy that bound type
 // and flows into it, so a leaf bound from an absent-but-defaulted field reads the
 // default's type rather than `never`.
-func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, slot soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) soltype.Type {
-	bound := slot
+func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) soltype.Type {
+	bound := leafType
 	if typeAnn != nil {
 		if annT, ok := c.resolveTypeAnn(typeAnn, lvl); ok {
-			c.constrain(node, slot, annT)
+			c.constrain(node, leafType, annT)
 			bound = annT
 		}
 	}
@@ -262,11 +262,11 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, slot sol
 	return bound
 }
 
-// applyBindMode wraps a destructured leaf's slot type according to the scrutinee's
+// applyBindMode wraps a destructured leaf's leaf type according to the scrutinee's
 // binding mode and the leaf's own `mut` marker. It returns the type the leaf binds at.
 //
 //   - Owned scrutinee: the leaf is moved out. A `mut` leaf thaws into an owned-mutable
-//     cell, so a later write through it succeeds. A plain leaf keeps the slot's
+//     cell, so a later write through it succeeds. A plain leaf keeps the leaf's
 //     immutable type.
 //   - `&` scrutinee: the leaf is a shared borrow bounded by the scrutinee's lifetime.
 //     A `mut` leaf is rejected and recovers as the shared borrow. Mutable access cannot
@@ -279,35 +279,35 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, slot sol
 // returned unchanged. A leaf whose element shape is not statically known has a nil
 // concrete and is also returned unchanged. This is the same conservative choice
 // fieldReadBorrow makes for an unknown receiver.
-func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, slot, concrete soltype.Type, scrutineeMode bindMode) soltype.Type {
+func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, concrete soltype.Type, scrutineeMode bindMode) soltype.Type {
 	switch scrutineeMode.borrow {
 	case bmImm:
 		if mut {
 			c.report(&MutLeafThroughSharedBorrowError{Node: node})
 		}
-		if ri, ok := slot.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
+		if ri, ok := leafType.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
 			return soltype.NewRef(false, scrutineeMode.lt, ri)
 		}
-		return slot
+		return leafType
 	case bmMut:
-		if _, ok := slot.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
+		if _, ok := leafType.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
 			// Route the projection through a fresh variable rather than wrapping the
-			// slot directly. A tuple or object pattern pins each leaf's slot to the
-			// scrutinee's concrete element as an upper bound. That makes the slot
+			// leaf type directly. A tuple or object pattern pins each leaf type to the
+			// scrutinee's concrete element as an upper bound. That makes the leaf type
 			// invariantly exact under the `&mut` wrapper, so an inexact write
 			// requirement `mut {y, ...}` would clash with the exact element. The fresh
-			// variable takes the slot only as a lower bound. Its shape stays free to
+			// variable takes the leaf type only as a lower bound. Its shape stays free to
 			// absorb the write requirement.
 			v := c.freshAt(lvl)
-			c.constrain(node, slot, v)
+			c.constrain(node, leafType, v)
 			return soltype.NewRef(true, scrutineeMode.lt, v)
 		}
-		return slot
+		return leafType
 	default: // bmOwned
 		if mut {
-			return c.thawOwnedLeaf(lvl, node, slot, concrete)
+			return c.thawOwnedLeaf(lvl, node, leafType, concrete)
 		}
-		return slot
+		return leafType
 	}
 }
 
@@ -319,19 +319,19 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, slot, concrete
 // checks against the concrete shape, exactly as the IdentPat thaw does.
 //
 // When the projected type is not statically known, concrete is nil. The thaw then
-// routes the projection variable through a fresh widenable variable. The slot flows in
-// as a lower bound, and widening at coalesce time turns a literal field into its
-// primitive. The cell carries a variable rather than a concrete object. That is less
-// precise to render but still admits the write.
-func (c *checker) thawOwnedLeaf(lvl int, node ast.Node, slot, concrete soltype.Type) soltype.Type {
+// routes the projection variable through a fresh widenable variable. The leaf type
+// flows in as a lower bound, and widening at coalesce time turns a literal field into
+// its primitive. The cell carries a variable rather than a concrete object. That is
+// less precise to render but still admits the write.
+func (c *checker) thawOwnedLeaf(lvl int, node ast.Node, leafType, concrete soltype.Type) soltype.Type {
 	if concrete != nil {
 		widened := widen(stripOwnedMut(concrete))
 		inner, ok := widened.(soltype.RefInner)
 		if !ok {
 			// A primitive or function leaf is not borrowable, so `mut` is a no-op. It
-			// keeps its slot type, mirroring `val mut a = 1` keeping the primitive. Only
+			// keeps its leaf type, mirroring `val mut a = 1` keeping the primitive. Only
 			// an object or tuple leaf thaws into a mutable cell.
-			return slot
+			return leafType
 		}
 		ref := soltype.NewRef(true, nil, inner)
 		c.recordProv(ref, node, OwnedMutConstruction)
@@ -339,7 +339,7 @@ func (c *checker) thawOwnedLeaf(lvl int, node ast.Node, slot, concrete soltype.T
 	}
 	v := c.freshAt(lvl)
 	v.Widenable = true
-	c.constrain(node, slot, v)
+	c.constrain(node, leafType, v)
 	ref := soltype.NewRef(true, nil, v)
 	c.recordProv(ref, node, OwnedMutConstruction)
 	return ref

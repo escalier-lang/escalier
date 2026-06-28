@@ -136,7 +136,7 @@ func TestExplicitBorrowOfDeepMutFieldPeels(t *testing.T) {
 	require.Equal(t, "fn (p: mut {a: {x: number}}) -> &mut {x: number}", values["f"])
 }
 
-// A readonly source field can't fill a writable target slot, but the reverse is
+// A readonly source field can't fill a writable target field, but the reverse is
 // fine. A readonly target supports only the covariant read view, so a wider
 // source can fill it through width subtyping.
 func TestReadonlySubtypingFlowsThroughCallAndReturn(t *testing.T) {
@@ -226,7 +226,7 @@ func TestReadonlyRendersOnReadField(t *testing.T) {
 // Under the lazy form (PR 14), the mut-context flag pins a nested field invariant
 // inside a mutable wrapper. A field whose type is a strict subtype of the target's
 // field passes the covariant read view but fails the contravariant write view, so a
-// `mut {a: {x: number}}` value cannot fill a `mut {a: {x: number | string}}` slot —
+// `mut {a: {x: number}}` value cannot fill a `mut {a: {x: number | string}}` destination —
 // the same invariance the eager per-cell `mut` lowering produced.
 func TestLazyDeepMutPinsNestedFieldInvariant(t *testing.T) {
 	src := `fn sink(q: mut {a: {x: number | string}}) {}

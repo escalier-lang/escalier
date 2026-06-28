@@ -172,7 +172,7 @@ fn f() { y = 6 }`)
 		require.Equal(t, "number", values["y"])
 	})
 	// Reference widening rides the Widenable flag at coalesce time (display, the
-	// reassignment slot, the binding's own type), but the literal still flows into
+	// reassignment target, the binding's own type), but the literal still flows into
 	// the bound graph unwidened, so a read of the reference-widened var into a new
 	// binding keeps the precise literal: `val z = y` ⇒ z: 5. A direct literal
 	// widens at the constraint level instead, so ITS reads widen (see
@@ -221,7 +221,7 @@ func TestInferVarWideningBodyLevel(t *testing.T) {
 		require.Equal(t, "fn () -> number", values["f"])
 	})
 	// A body-level `var` initialized from a REFERENCE widens via the wrapper var's
-	// Widenable flag, so the reassignment slot is the primitive and `y = 6` checks
+	// Widenable flag, so the reassignment target is the primitive and `y = 6` checks
 	// — the body-level twin of TestInferVarWideningThroughReference.
 	t.Run("reference widens and reassigns", func(t *testing.T) {
 		_, _, errs := inferSource(t, `fn f() { val x = 5

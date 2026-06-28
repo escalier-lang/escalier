@@ -37,7 +37,7 @@ func TestCoalesceSchemeMergesCoOccurring(t *testing.T) {
 }
 
 // Variables that do NOT co-occur stay distinct: two independent parameters each
-// flowing to its own tuple slot share no union/intersection group, so each remains
+// flowing to its own tuple element share no union/intersection group, so each remains
 // its own type parameter.
 func TestCoalesceSchemeKeepsDistinctParams(t *testing.T) {
 	a := &soltype.TypeVarType{ID: 1, Level: 1}

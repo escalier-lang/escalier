@@ -50,7 +50,7 @@ func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
 }
 
 // Passing a borrow into a function whose parameter is an OWNED (bare) object is the
-// borrow-into-owned-slot escape: the RefType<:bare arm rejects because the source
+// borrow-into-owned destination escape: the RefType<:bare arm rejects because the source
 // carries a lifetime and the target owns its value. This is the only path that
 // exercises the escape guard D2 activated — before D2 every Lt was nil, so it never
 // fired.
@@ -70,7 +70,7 @@ fn f(p: &mut {x: number}) {
 // The companion to the escape case: passing the same borrow into a function
 // whose parameter is itself a `&mut` borrow checks. The RefType<:RefType arm
 // relates the two lifetimes via constrainLt instead of rejecting, so the borrow
-// slot admits the borrow.
+// destination admits the borrow.
 func TestInferBorrowIntoBorrowArg(t *testing.T) {
 	src := `fn use(o: &mut {x: number}) -> number {
   return o.x
@@ -102,7 +102,7 @@ func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
 
 // Writing a field of a NON-`mut` owned object is rejected: the write lowers to the
 // mutable requirement `mut {x, ...}`, and an immutable owned object cannot fill a
-// mutable slot. This confirms the field-write requirement's fresh lifetime (D2) did
+// mutable destination. This confirms the field-write requirement's fresh lifetime (D2) did
 // not loosen the mutability gate — an owned-but-immutable receiver still fails.
 func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 	src := `fn g(o: {x: number}) {
@@ -266,7 +266,7 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 // stored value outlives every borrow region, so p's lifetime is forced `<: 'static`
 // and the parameter renders `&'static mut {x: number}` rather than under a borrow
 // lifetime `'l{id}`. The store itself checks. A 'static borrow is owned-forever, so
-// it fills the owned slot instead of tripping BorrowEscapeError.
+// it fills the owned destination instead of tripping BorrowEscapeError.
 func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
 	src := `var sink = {x: 0}
 fn cache(p: &mut {x: number}) {
@@ -322,7 +322,7 @@ func TestInferImmutableBorrowAliasReturnedCarriesLifetime(t *testing.T) {
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a {x: number}", values["f"])
 }
 
-// Returning a local borrow into an OWNED return slot errors. The return
+// Returning a local borrow into an OWNED return destination errors. The return
 // annotation is owned, so the borrow flowing into it trips the escape guard. The
 // alias only relaxes the binding itself, not the function boundary.
 func TestInferBorrowAliasEscapingOwnedReturnRejected(t *testing.T) {
@@ -571,7 +571,7 @@ func TestInferExplicitMutBorrowOfMemberAcceptsMutReceiver(t *testing.T) {
 
 // An explicit `&mut obj.f` on an immutable receiver is rejected: the mut
 // requirement lowers to `mut {f: T, ...}`, and an immutable receiver cannot
-// fill the mutable slot. This is the same mutability gate inferMemberAssign
+// fill the mutable destination. This is the same mutability gate inferMemberAssign
 // imposes for a field write `obj.f = v`, surfacing here at the explicit mut
 // borrow.
 func TestInferExplicitMutBorrowOfMemberOnImmutableRejected(t *testing.T) {

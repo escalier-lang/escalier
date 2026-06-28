@@ -49,8 +49,8 @@ func TestInferValObjectPatternMissingField(t *testing.T) {
 	require.Equal(t, "2:11-2:22: object is missing property: z", msgWithSpan(errs[0]))
 }
 
-// A tuple pattern binds per slot at the slot's element type. Reordering the bound
-// names in the result confirms each slot bound the right element.
+// A tuple pattern binds per element at the element's type. Reordering the bound
+// names in the result confirms each position bound the right element.
 func TestInferValTuplePatternBinds(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn h(t: [number, string]) {
@@ -62,7 +62,7 @@ func TestInferValTuplePatternBinds(t *testing.T) {
 	require.Equal(t, "fn (t: [number, string]) -> [string, number]", values["h"])
 }
 
-// A tuple pattern is exact in arity: binding more (or fewer) slots than the
+// A tuple pattern is exact in arity: binding more or fewer elements than the
 // scrutinee has is a TupleLengthMismatchError.
 func TestInferValTuplePatternWrongArity(t *testing.T) {
 	_, _, errs := inferSource(t, `
@@ -112,7 +112,7 @@ func TestInferNestedObjectPattern(t *testing.T) {
 	require.Equal(t, "fn (p: {pt: {x: number, y: string}}) -> [number, string]", values["f"])
 }
 
-// A wildcard slot in a tuple pattern matches without binding a name.
+// A wildcard element in a tuple pattern matches without binding a name.
 func TestInferTuplePatternWildcard(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(t: [number, string]) {
@@ -164,7 +164,7 @@ func TestInferObjectPatternLeafDefault(t *testing.T) {
 }
 
 // A trailing rest element relaxes the tuple requirement to an inexact prefix, so
-// the fixed slots bind without a spurious arity error. The rest element itself is
+// the fixed elements bind without a spurious arity error. The rest element itself is
 // reported unsupported, since typed rest tuples are M9.
 func TestInferTuplePatternRestPrefix(t *testing.T) {
 	values, _, errs := inferSource(t, `
@@ -280,7 +280,7 @@ func TestInferMatchParamUsageObject(t *testing.T) {
 }
 
 // The same usage inference applies through a tuple pattern: the scrutinee infers a
-// tuple whose arity is the pattern's and whose unused slot lands as `unknown`.
+// tuple whose arity is the pattern's and whose unused element lands as `unknown`.
 func TestInferMatchParamUsageTuple(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(p) {
@@ -461,7 +461,7 @@ func TestInferMatchArmBindingScopedInDepGraph(t *testing.T) {
 }
 
 // Patterns nest across kinds: an object pattern whose field is a tuple pattern
-// binds the inner slots at the nested element types.
+// binds the inner elements at the nested element types.
 func TestInferObjectContainingTuplePattern(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(o: {pt: [number, string]}) {
