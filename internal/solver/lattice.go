@@ -260,6 +260,8 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 	}
 	parts = append([]soltype.Type(nil), parts...)
 	sortTypes(parts)
+	// notGround[i] is true when member i still carries a free type or lifetime
+	// variable, so it is skipped by the concrete gate below.
 	notGround := make([]bool, len(parts))
 	for i, p := range parts {
 		notGround[i] = soltype.HasTypeVar(p) || soltype.HasLifetimeVar(p)

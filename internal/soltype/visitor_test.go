@@ -288,22 +288,40 @@ func TestAcceptRefCopyOnWrite(t *testing.T) {
 // depth, and reports false for a borrow whose lifetime is a non-variable form.
 func TestHasLifetimeVar(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: &PrimType{Prim: NumPrim}}}}
-
-	t.Run("bare lifetime var", func(t *testing.T) {
-		require.True(t, HasLifetimeVar(&RefType{Mut: true, Lt: &LifetimeVar{ID: 0}, Inner: obj}))
-	})
-	t.Run("lifetime var in a union member", func(t *testing.T) {
-		lt := &LifetimeUnion{Lifetimes: []Lifetime{&StaticLifetime{}, &LifetimeVar{ID: 1}}}
-		require.True(t, HasLifetimeVar(&RefType{Mut: true, Lt: lt, Inner: obj}))
-	})
-	t.Run("nested inside a tuple", func(t *testing.T) {
-		ref := &RefType{Mut: true, Lt: &LifetimeVar{ID: 2}, Inner: obj}
-		require.True(t, HasLifetimeVar(&TupleType{Elems: []Type{ref}}))
-	})
-	t.Run("static lifetime is not a var", func(t *testing.T) {
-		require.False(t, HasLifetimeVar(&RefType{Mut: true, Lt: &StaticLifetime{}, Inner: obj}))
-	})
-	t.Run("no borrow at all", func(t *testing.T) {
-		require.False(t, HasLifetimeVar(obj))
-	})
+	tests := []struct {
+		name string
+		in   Type
+		want bool
+	}{
+		{
+			name: "bare lifetime var",
+			in:   &RefType{Mut: true, Lt: &LifetimeVar{ID: 0}, Inner: obj},
+			want: true,
+		},
+		{
+			name: "lifetime var in a union member",
+			in:   &RefType{Mut: true, Lt: &LifetimeUnion{Lifetimes: []Lifetime{&StaticLifetime{}, &LifetimeVar{ID: 1}}}, Inner: obj},
+			want: true,
+		},
+		{
+			name: "nested inside a tuple",
+			in:   &TupleType{Elems: []Type{&RefType{Mut: true, Lt: &LifetimeVar{ID: 2}, Inner: obj}}},
+			want: true,
+		},
+		{
+			name: "static lifetime is not a var",
+			in:   &RefType{Mut: true, Lt: &StaticLifetime{}, Inner: obj},
+			want: false,
+		},
+		{
+			name: "no borrow at all",
+			in:   obj,
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, HasLifetimeVar(tt.in))
+		})
+	}
 }
