@@ -2136,7 +2136,8 @@ func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, ann ast.Type
 	}
 	ip, ok := pat.(*ast.IdentPat)
 	if !ok {
-		// A narrowing annotation on a destructuring pattern would need the annotation
+		// A narrowing annotation on a destructuring pattern, as in
+		// `val [a, b]: [number, string] = u else { … }`, would need the annotation
 		// distributed across the pattern's leaves, which the checker does not do.
 		// Report it and fall back to binding the pattern structurally against the
 		// scrutinee.
