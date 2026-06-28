@@ -104,6 +104,15 @@ func TestInferLifetimeFuncAnnotationReportsUnsupported(t *testing.T) {
 	require.Equal(t, "fn (x: number) -> number", values["f"])
 }
 
+// A destructuring parameter pattern is preserved in the resolved function type, so
+// an object or tuple pattern renders and round-trips rather than degrading to a
+// positional name.
+func TestInferFuncAnnotationPreservesDestructuringPattern(t *testing.T) {
+	values, _, errs := inferSource(t, `val f: fn({x, y}: {x: number, y: number}, [a, b]: [number, string]) -> number = fn (p, q) { return 1 }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn ({x, y}: {x: number, y: number}, [a, b]: [number, string]) -> number", values["f"])
+}
+
 // A rest parameter reports the documented unsupported feature and recovers as a
 // normal positional param, so it never sets FuncParam.Rest. acceptSet / hasRest /
 // requiredCount assume a rest param is last, and the parser does not enforce that

@@ -262,13 +262,9 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 				pt = t
 			}
 		}
-		// The parameter name is carried for rendering only, with no scope binding. A
-		// non-IdentPat leaves the pattern nil, which the printer renders as arg0, arg1.
-		var mirror soltype.Pat
-		if name, ok := identPatName(pat); ok {
-			mirror = &soltype.IdentPat{Name: name}
-		}
-		params[i] = &soltype.FuncParam{Pattern: mirror, Type: pt, Optional: p.Optional}
+		// The pattern is carried for rendering and round-tripping only, with no scope
+		// binding. mirrorParamPat preserves its full shape.
+		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: p.Optional}
 	}
 
 	// The parser requires `-> R`, so ta.Return is normally non-nil. Guard
@@ -284,6 +280,60 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 	t := &soltype.FuncType{Params: params, Ret: ret, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// mirrorParamPat structurally mirrors a function-type-annotation parameter pattern
+// into its soltype.Pat for rendering and round-tripping. A function type annotation
+// binds no values, so this carries the pattern shape only, with no scope binding or
+// constraint, unlike bindPattern. A sub-pattern with no soltype counterpart, an
+// ObjRestPat or a bare RestPat, is dropped, and an entirely unmappable pattern
+// yields nil, which the printer renders as a positional name such as arg0.
+func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {
+	switch p := pat.(type) {
+	case *ast.IdentPat:
+		return &soltype.IdentPat{Name: p.Name}
+	case *ast.WildcardPat:
+		return &soltype.WildcardPat{}
+	case *ast.LitPat:
+		if lt, ok := c.litTypeOf(p.Lit); ok {
+			return &soltype.LitPat{Lit: lt.Lit}
+		}
+		return nil
+	case *ast.TuplePat:
+		elems := make([]soltype.Pat, 0, len(p.Elems))
+		for _, e := range p.Elems {
+			// soltype.TuplePat has no rest element, so a `...rest` is dropped.
+			if _, isRest := e.(*ast.RestPat); isRest {
+				continue
+			}
+			elems = append(elems, c.mirrorParamPat(e))
+		}
+		return &soltype.TuplePat{Elems: elems}
+	case *ast.ObjectPat:
+		fields := make([]*soltype.ObjectPatField, 0, len(p.Elems))
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjShorthandPat:
+				// A bare `{x}` mirrors to a field whose value is the IdentPat `x`.
+				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: &soltype.IdentPat{Name: e.Key.Name}})
+			case *ast.ObjKeyValuePat:
+				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: c.mirrorParamPat(e.Value)})
+			}
+			// ObjRestPat has no soltype counterpart and is dropped.
+		}
+		return &soltype.ObjectPat{Fields: fields}
+	case *ast.ExtractorPat:
+		args := make([]soltype.Pat, len(p.Args))
+		for i, a := range p.Args {
+			args[i] = c.mirrorParamPat(a)
+		}
+		return &soltype.ExtractorPat{Name: ast.QualIdentToString(p.Name), Args: args}
+	case *ast.InstancePat:
+		obj, _ := c.mirrorParamPat(p.Object).(*soltype.ObjectPat)
+		return &soltype.InstancePat{ClassName: ast.QualIdentToString(p.ClassName), Object: obj}
+	default:
+		return nil
+	}
 }
 
 // resolveMutableTypeAnn lowers a `mut T` annotation to an owned-mutable borrow,
