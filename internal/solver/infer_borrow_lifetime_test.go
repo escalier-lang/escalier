@@ -204,18 +204,13 @@ fn use(a: &mut {x: number}, b: &mut {x: number}) {
 		values["use"])
 }
 
-// Joining borrows that share a field NAME but disagree on its TYPE is rejected. A mut
-// object's fields are observable in both directions, so the join pins each shared
-// field invariant, and `number` vs `string` for `x` fails that pin in both
-// directions. This locks in that the soundness constraint actually fires rather than
-// silently unifying incompatible borrows (M4 D3).
-//
-// FUTURE (M6): this error is the conservative M4 default. M6 may relax it to a
-// read-until-narrowed union — `(&'a mut {x: number}) | (&'b mut {x: string})`, readable
-// always and writable only after narrowing — to match TypeScript. See 01-milestones.md
-// M6, "Permissive mut-borrow joins". When that lands, this test changes from asserting
-// an error to asserting the union.
-func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
+// Joining borrows that share a field NAME but disagree on its TYPE degrades to the
+// read-until-narrowed union of the distinct borrows rather than erroring (M6,
+// "Permissive mut-borrow joins"). A single mut carrier would have to pin `x`
+// invariant across the inputs, and `number` vs `string` fails that pin, so the join
+// falls back to the type-level union, readable everywhere and writable at `x` only
+// after narrowing.
+func TestInferIncompatibleBorrowJoinReturnsUnion(t *testing.T) {
 	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
   if true {
     return p
@@ -223,10 +218,76 @@ func TestInferIncompatibleBorrowJoinErrors(t *testing.T) {
     return q
   }
 }`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: string}) -> &'a mut {x: number} | &'b mut {x: string}",
+		values["f"])
+}
+
+// A read of a conflicting field off an incompatible-borrow union yields the
+// covariant union of the field types. `r.x` over `&'a mut {x: number} | &'b mut {x:
+// string}` reads `number | string` via the union read rule, the read-until-narrowed
+// view the permissive join enables.
+func TestInferIncompatibleBorrowUnionFieldReads(t *testing.T) {
+	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
+  val r = if true {
+    p
+  } else {
+    q
+  }
+  return r.x
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn (p: &mut {x: number}, q: &mut {x: string}) -> number | string",
+		values["f"])
+}
+
+// An incompatible join over THREE borrows keeps every distinct lifetime in the
+// union, even when two members share a field set and differ only in lifetime. The
+// pin fails on `r`'s `string` field, so the union path runs over all three borrows.
+// `p` and `q` are both `&mut {x: number}` and would mutually subsume by a discardable
+// lifetime constraint, so the union is built with no subsumption to keep `'a` and
+// `'b` separate rather than collapsing one borrow into the other.
+func TestInferIncompatibleBorrowJoinKeepsDistinctLifetimes(t *testing.T) {
+	src := `fn f(p: &mut {x: number}, q: &mut {x: number}, r: &mut {x: string}) {
+  if true {
+    return p
+  } else {
+    if true {
+      return q
+    } else {
+      return r
+    }
+  }
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: string}) -> &'a mut {x: number} | &'b mut {x: number} | &'c mut {x: string}",
+		values["f"])
+}
+
+// A write to a conflicting field through an un-narrowed incompatible-borrow union is
+// rejected. The union of mutable objects is read-only at `x`, since `x` is `number`
+// in one branch and `string` in the other, so writing `5` must satisfy both and
+// fails the invariant pin in each direction. The read-until-narrowed contract is
+// sound only because this write is rejected. To write, narrow to one branch first.
+func TestInferIncompatibleBorrowUnionWriteRejected(t *testing.T) {
+	src := `fn f(p: &mut {x: number}, q: &mut {x: string}) {
+  val r = if true {
+    p
+  } else {
+    q
+  }
+  r.x = 5
+}`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
-		"1:18-1:24: cannot constrain number <: string",
-		"1:39-1:45: cannot constrain string <: number",
+		"7:3-7:10: cannot constrain string <: number",
+		"7:3-7:10: cannot constrain number <: string",
 	}, messagesWithSpan(errs))
 }
 
