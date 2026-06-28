@@ -339,6 +339,9 @@ func TestInferMatchInexactNeedsCatchAll(t *testing.T) {
 }
 
 // An inexact-object scrutinee with an unguarded catch-all arm is exhaustive.
+// The arms return `x`, a `number` field, and the literal `0`. The join is
+// `number | 0`, which the finalization subsumption pass collapses to `number`
+// since `0 <: number`.
 func TestInferMatchInexactWithCatchAll(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(p: {x: number, y: number, ...}) {
@@ -349,7 +352,7 @@ func TestInferMatchInexactWithCatchAll(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number, y: number, ...}) -> number | 0", values["f"])
+	require.Equal(t, "fn (p: {x: number, y: number, ...}) -> number", values["f"])
 }
 
 // An exact union scrutinee whose arms cover every member needs no catch-all. An

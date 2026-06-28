@@ -303,6 +303,19 @@ func TestNewUnionSubsumptionSkipsVar(t *testing.T) {
 	require.Len(t, u.Types, 2)
 }
 
+// TestNewUnionSubsumptionSkipsLifetimeVar pins the lifetime half of the concrete
+// gate: two mut borrows differing only in lifetime variable both survive.
+func TestNewUnionSubsumptionSkipsLifetimeVar(t *testing.T) {
+	c := &Context{}
+	a := &soltype.RefType{Mut: true, Lt: &soltype.LifetimeVar{ID: 0}, Inner: exactObj(propElem("x", num()))}
+	b := &soltype.RefType{Mut: true, Lt: &soltype.LifetimeVar{ID: 1}, Inner: exactObj(propElem("x", num()))}
+	require.Empty(t, c.Constrain(a, b), "precondition: a <: b")
+	require.Empty(t, c.Constrain(b, a), "precondition: b <: a")
+	got := newUnion(c, []soltype.Type{a, b}, false)
+	require.IsType(t, &soltype.UnionType{}, got, "got %s", soltype.Print(got))
+	require.Len(t, got.(*soltype.UnionType).Types, 2)
+}
+
 // TestVoidAndNullSortLast pins the convention that the absence markers
 // NullType and Void appear after data members in canonical order, with
 // NullType before Void. A mixed union such as `number | null | void`

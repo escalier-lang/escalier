@@ -299,3 +299,8 @@ func (s *typeVarSeeker) EnterType(t Type, _ Polarity) EnterResult {
 
 func (s *typeVarSeeker) ExitType(t Type, _ Polarity) Type { return t }
 
+// HasLifetimeVar reports whether t contains any LifetimeVar in a borrow's
+// lifetime slot, the lifetime-sort twin of HasTypeVar. It reuses freeLifetimeVars.
+func HasLifetimeVar(t Type) bool {
+	return len(freeLifetimeVars(t)) > 0
+}

@@ -243,6 +243,12 @@ func collapseIntersection(pruned []soltype.Type, hadError bool) soltype.Type {
 // variable could pin it speculatively. The trial uses a discard-only probe
 // so a successful trial leaves no bound mutation behind.
 //
+// A free lifetime variable disqualifies a member the same way. Two borrows
+// that differ only in lifetime, such as `&'a mut {x: number}` and
+// `&'b mut {x: number}`, mutually subsume by a discardable lifetime
+// constraint, so dropping one would silently lose a distinct lifetime the
+// signature quantifies over. Gating on the lifetime sort keeps both borrows.
+//
 // When two members mutually subsume, the survivor must be deterministic. The
 // pass pre-sorts the input by compareType, so the iteration order is
 // canonical and newUnion([A, B]) and newUnion([B, A]) drop the same member
@@ -254,9 +260,11 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 	}
 	parts = append([]soltype.Type(nil), parts...)
 	sortTypes(parts)
+	// hasVar[i] is true when member i still carries a free type or lifetime
+	// variable, so it is skipped by the concrete gate below.
 	hasVar := make([]bool, len(parts))
 	for i, p := range parts {
-		hasVar[i] = soltype.HasTypeVar(p)
+		hasVar[i] = soltype.HasTypeVar(p) || soltype.HasLifetimeVar(p)
 	}
 	dropped := set.NewSet[int]()
 	for i, a := range parts {
@@ -297,6 +305,48 @@ func unionDrops(c *Context, m, sibling soltype.Type) bool {
 // one to discard.
 func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
 	return len(c.trialUnderProbe(sibling, m)) == 0
+}
+
+// subsumeFinal re-mints every UnionType and IntersectionType node in a finalized
+// display type through newUnion / newIntersection with the ambient Context, so a
+// member a concrete sibling subsumes is dropped. An inferred `1 | number` becomes
+// `number`; an inferred `{x, ...} & {x, y, ...}` becomes `{x, y, ...}`.
+func (c *checker) subsumeFinal(t soltype.Type) soltype.Type {
+	return t.Accept(&finalSubsumer{ctx: c.ctx}, soltype.Positive)
+}
+
+// finalSubsumer is the rewriting visitor behind subsumeFinal. It re-mints a
+// lattice node in ExitType, after its children, so each member is itself
+// already subsumed before the enclosing node runs its own subsumption.
+type finalSubsumer struct{ ctx *Context }
+
+func (s *finalSubsumer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	return soltype.EnterResult{}
+}
+
+// ExitType subsumes a lattice node's members and rebuilds it only when a member
+// was dropped. The input is a coalesced display type, so it is already flattened,
+// pruned, deduped, and canonically ordered — newUnion's other normalization steps
+// would be no-ops here, so only subsumeMembers runs. subsumeMembers only ever
+// removes members, so a length drop is an O(1) signal that the node changed, which
+// avoids a structural re-comparison. When nothing dropped the original node is
+// returned, preserving pointer identity up the spine.
+func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	switch t := t.(type) {
+	case *soltype.UnionType:
+		kept := subsumeMembers(s.ctx, t.Types, unionDrops)
+		if len(kept) == len(t.Types) {
+			return t
+		}
+		return collapseUnion(kept, t.Inexact, false)
+	case *soltype.IntersectionType:
+		kept := subsumeMembers(s.ctx, t.Types, intersectionDrops)
+		if len(kept) == len(t.Types) {
+			return t
+		}
+		return collapseIntersection(kept, false)
+	}
+	return t
 }
 
 // sortTypes orders parts in place under compareType. The sort is stable so a
