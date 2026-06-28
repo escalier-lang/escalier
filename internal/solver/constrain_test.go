@@ -308,7 +308,10 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 	})
 
 	// A rest fn and an inexact fn have the same ∞ upper bound, so a rest fn fills an
-	// inexact callback parameter of matching required arity.
+	// inexact callback parameter of matching required arity. Rest params are
+	// arity-only until M7, so the trailing element type is not checked here. The
+	// element check against `Array<T>` lands with M7, exercised by
+	// TestConstrainRestParamElementChecking.
 	t.Run("rest fn fills an inexact callback parameter", func(t *testing.T) {
 		c := &Context{}
 		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
@@ -327,6 +330,62 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 			[]string{"cannot constrain function of arity 2 <: function of arity 1"},
 			Messages(c.Constrain(g, f)))
 	})
+}
+
+// DISABLED until M7: rest-param element checking needs Array<T>, which the solver
+// gains in M7 (library type resolution). A typed rest param is written
+// `...rest: Array<T>`, and each trailing argument is checked against the element
+// type T. Until then rest params are arity-only and the element type is unchecked,
+// so the inexact-callback fill above succeeds regardless of the rest type. When M7
+// lands, build the rest type as Array<T>, teach the FuncType arm to read its
+// element, and remove the /* */ wrapper.
+func TestConstrainRestParamElementChecking(t *testing.T) {
+	/*
+		restFn := func(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType {
+			return &soltype.FuncType{Params: params, Ret: ret}
+		}
+
+		// An inexact super's tail passes unknown-typed arguments, so a sub whose rest
+		// absorbs them must accept unknown at the element type. `...rest: Array<number>`
+		// is rejected, since unknown is not a subtype of number.
+		t.Run("number rest is rejected by an inexact callback parameter", func(t *testing.T) {
+			c := &Context{}
+			g := restFn(num(), identParam("a", num()), restParam("rest", arrayOf(num())))
+			f := inexactFn(num(), identParam("a", num()))
+			require.Equal(t,
+				[]string{"cannot constrain unknown <: number"},
+				Messages(c.Constrain(g, f)))
+		})
+
+		// `...rest: Array<unknown>` accepts the unknown-typed tail, since unknown is a
+		// subtype of unknown.
+		t.Run("unknown rest fills an inexact callback parameter", func(t *testing.T) {
+			c := &Context{}
+			g := restFn(num(), identParam("a", num()), restParam("rest", arrayOf(&soltype.UnknownType{})))
+			f := inexactFn(num(), identParam("a", num()))
+			require.Empty(t, c.Constrain(g, f))
+		})
+
+		// A callback parameter with a typed rest passes its element type at every
+		// position past its named params. fn(a: number, ...rest: Array<string>) passes a
+		// string there, so a sub whose surplus param is number is rejected and one whose
+		// surplus param is string is accepted.
+		t.Run("typed-rest callback parameter rejects a mismatched surplus param", func(t *testing.T) {
+			c := &Context{}
+			super := restFn(num(), identParam("a", num()), restParam("rest", arrayOf(str())))
+			sub := inexactFn(num(), identParam("a", num()), optParam("b", str()), optParam("c", num()))
+			require.Equal(t,
+				[]string{"cannot constrain string <: number"},
+				Messages(c.Constrain(sub, super)))
+		})
+
+		t.Run("typed-rest callback parameter accepts a matching surplus param", func(t *testing.T) {
+			c := &Context{}
+			super := restFn(num(), identParam("a", num()), restParam("rest", arrayOf(str())))
+			sub := inexactFn(num(), identParam("a", num()), optParam("b", str()), optParam("c", str()))
+			require.Empty(t, c.Constrain(sub, super))
+		})
+	*/
 }
 
 func TestConstrainTuple(t *testing.T) {

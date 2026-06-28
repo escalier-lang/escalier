@@ -341,24 +341,16 @@ func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
 	require.True(t, lb.Inexact, "inexact flag must survive the bound record")
 }
 
-// TestConstrainInexactUnionIntoUnknownAccepts covers the other accepting
-// super for an inexact sub union. `unknown` is the lattice top, so it
-// absorbs the open tail.
+// TestConstrainInexactUnionIntoUnknownAccepts covers the other accepting super for
+// an inexact sub union. unknown is the lattice top, so it absorbs the open tail.
 //
-//	(number | string | ...) <: unknown    inexact-into-closed gate does NOT fire
+//	(number | string | ...) <: unknown    accepted with no error
 //
-// The decomposition produces `number <: unknown` and `string <: unknown`.
-// PR5 lands the `_ <: unknown` rule. Until then those are CannotConstrain
-// fall-throughs, so this case still errors. What the test asserts is that
-// the inexact-into-closed gate did not fire, since unknown is recognized
-// as accepting the open tail. No InexactUnionIntoExactError appears in the
-// error list.
+// The `_ <: unknown` rule short-circuits any sub against an unknown super, so the
+// constraint succeeds before the inexact-into-closed gate is reached. The gate
+// must not fire against unknown, since unknown accepts the open tail.
 func TestConstrainInexactUnionIntoUnknownAccepts(t *testing.T) {
 	c := &Context{}
 	sub := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
-	errs := c.Constrain(sub, &soltype.UnknownType{})
-	for _, e := range errs {
-		_, isInexact := e.(*InexactUnionIntoExactError)
-		require.False(t, isInexact, "inexact-into-closed should not fire against unknown super")
-	}
+	require.Empty(t, c.Constrain(sub, &soltype.UnknownType{}))
 }
