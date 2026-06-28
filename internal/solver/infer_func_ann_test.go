@@ -124,3 +124,20 @@ func TestInferRestParamFuncAnnotationReportsUnsupported(t *testing.T) {
 	require.Equal(t, "1:11-1:16: Unsupported: rest parameter in function type annotation", msgWithSpan(errs[0]))
 	require.Equal(t, "fn (xs: number) -> number", values["f"])
 }
+
+// --- M6 PR5: the function-arm Variation-B check, reachable through PR3 annotations ---
+
+// The Variation-B check fires end-to-end through inexact function annotations.
+// `wide` declares an extra param b typed number beyond the inexact slot's single
+// named param. Assigning wide into the slot demands `unknown <: number` at b's
+// position, since the slot's open tail may pass an arg of any type there and a
+// number param cannot accept it — exact-types §4.2.1.2. The extra param is optional
+// so the accept-set arity gate passes and the per-param check is reached.
+func TestInferFuncAnnotationVariationBRejectsExtraParam(t *testing.T) {
+	src := `val wide: fn(a: number, b?: number, ...) -> number = fn (a, ...) { return 1 }
+val slot: fn(x: number, ...) -> number = wide`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, "2:42-2:46: cannot constrain unknown <: number", msgWithSpan(errs[0]))
+}

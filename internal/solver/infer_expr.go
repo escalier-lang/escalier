@@ -351,15 +351,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 // joinReturnPoints builds a function's return type from the ReturnStmt types
 // collected while walking its body. No returns means the body produces no value,
 // so the function returns void. A return-less body that always diverges via
-// `throw` would be `never` in the old checker, but that case is deferred: throw,
-// do, and match are not walked yet, so such a body cannot be recognized as
-// diverging, and constrain has no `never <: T` arm — a raw NeverType minted here
-// would spuriously fail the body-vs-annotation check. Recovery placeholders are
-// the absorbing ErrorType sentinel (PR8), never a raw NeverType. A single return
-// is the return type directly — no join var, no indirection. Multiple returns
-// flow through a fresh join variable whose coalesced positive face is their
-// union, constrained in source order so the rendered union reflects source
-// order.
+// `throw` is conceptually `never`, but that case is deferred: throw, do, and
+// match are not walked yet, so such a body cannot be recognized as diverging.
+// Recovery placeholders are the absorbing ErrorType sentinel (PR8), never a raw
+// NeverType. A single return is the return type directly — no join var, no
+// indirection. Multiple returns flow through a fresh join variable whose
+// coalesced positive face is their union, constrained in source order so the
+// rendered union reflects source order.
 func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.Type) soltype.Type {
 	switch len(collected) {
 	case 0:

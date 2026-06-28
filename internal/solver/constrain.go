@@ -148,6 +148,21 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		return nil
 	}
 
+	// Lattice bounds (M6 PR5). unknown (⊤) is the top of the subtype lattice and
+	// never (⊥) is the bottom, so a super of unknown or a sub of never succeeds
+	// unconditionally. Both short-circuit here, above the structural switch and the
+	// variable arms. Recording the bound would add nothing: ⊤ as an upper bound is
+	// the meet identity and ⊥ as a lower bound is the join identity. Normalization
+	// drops never from unions and unknown from intersections, but a bare coalesced
+	// never can still flow as a sub and an annotation's unknown as a super, so the
+	// rules keep those operands sound.
+	if _, ok := super.(*soltype.UnknownType); ok {
+		return nil
+	}
+	if _, ok := sub.(*soltype.NeverType); ok {
+		return nil
+	}
+
 	// M6 PR2 pre-switch lattice block. The structural switch below dispatches
 	// on sub and several arms return early on a non-variable super (the
 	// RefType arm most importantly), so a union/intersection super has to be
@@ -156,19 +171,18 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	// falls through to the var arms instead of decomposing, so the whole
 	// union/intersection is recorded as one bound.
 
-	// (A | B) <: super ⟹ A <: super AND B <: super. Inexact sub against a
+	// (A | B) <: super ⟹ A <: super AND B <: super. An inexact sub against a
 	// closed super also emits one InexactUnionIntoExactError for the open tail.
-	// When super is a TypeVar, fall through to the superVar arm so the whole
-	// union (with its Inexact flag) is recorded as one lower bound on the var.
+	// A super of unknown is already accepted by the ⊤ rule above, so the only
+	// open super reachable here is another inexact union. When super is a
+	// TypeVar, fall through to the superVar arm so the whole union, including its
+	// Inexact flag, is recorded as one lower bound on the var.
 	if subU, ok := sub.(*soltype.UnionType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			var errs []SolverError
 			if subU.Inexact {
 				closed := true
-				switch s := super.(type) {
-				case *soltype.UnknownType:
-					closed = false
-				case *soltype.UnionType:
+				if s, ok := super.(*soltype.UnionType); ok {
 					closed = !s.Inexact
 				}
 				if closed {
@@ -277,19 +291,25 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// declares there must be optional (the lo gate forced loSub <= loSup) and so
 			// is simply never passed.
 			//
-			// KNOWN GAP (M4): when super is INEXACT and sub declares MORE params than
-			// super, super's `...` tail may supply arbitrarily-typed args at sub's extra
-			// positions, so soundness demands `unknown <: sub.Params[i].Type` there —
-			// exact-types §4.2.1.2 "Variation B", the load-bearing rejection. That check
-			// needs the `_ <: unknown` (⊤) rule constrain lacks until M6, and an inexact
-			// function is unreachable from M3 source anyway (resolveTypeAnn resolves no
-			// function annotations), so the extra positions are left unchecked here for
-			// now. For every M3-reachable input (exact functions only) the loop is complete.
-			// A function is its own annotation context, so the deep-mut flag resets.
+			// When super is INEXACT and sub declares MORE params than super, super's
+			// `...` tail may supply arbitrarily-typed args at sub's extra positions, so
+			// soundness demands `unknown <: sub.Params[i].Type` there — exact-types
+			// §4.2.1.2 "Variation B", the load-bearing rejection. Only an extra param
+			// typed unknown (⊤) or an inference variable tolerates the unknown-typed
+			// tail. A concrete type such as `number` is rejected. The extra-position
+			// loop is empty unless sub is longer, so the exact-super case keeps the
+			// shared loop as its complete rule. A function is its own annotation
+			// context, so the deep-mut flag resets.
 			var errs []SolverError
 			n := min(len(sub.Params), len(sup.Params))
 			for i := 0; i < n; i++ {
 				errs = append(errs, c.constrain(sup.Params[i].Type, sub.Params[i].Type, seen, false)...) // contravariant
+			}
+			if sup.Inexact {
+				unknownT := &soltype.UnknownType{}
+				for i := n; i < len(sub.Params); i++ {
+					errs = append(errs, c.constrain(unknownT, sub.Params[i].Type, seen, false)...)
+				}
 			}
 			return append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant
 		}

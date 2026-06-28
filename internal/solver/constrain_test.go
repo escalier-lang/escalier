@@ -307,11 +307,24 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 		require.Empty(t, c.Constrain(g, f))
 	})
 
-	// A rest fn and an inexact fn have the same ∞ upper bound, so a rest fn fills an
-	// inexact callback parameter of matching required arity.
-	t.Run("rest fn fills an inexact callback parameter", func(t *testing.T) {
+	// A rest fn fills an inexact callback parameter only when its rest element type
+	// absorbs the slot's unknown-typed tail. An inexact super's `...` tail is
+	// equivalent to `...rest: unknown`: its holder may pass an arg of any type at the
+	// rest position, so soundness demands `unknown <: rest element type` there —
+	// exact-types §4.2.1.2 "Variation B". A `...rest: number` cannot accept the
+	// arbitrary tail, so the fill is rejected; only `...rest: unknown` accepts.
+	t.Run("rest fn with a number rest is rejected by an inexact callback parameter", func(t *testing.T) {
 		c := &Context{}
 		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
+		f := inexactFn(num(), identParam("a", num()))
+		require.Equal(t,
+			[]string{"cannot constrain unknown <: number"},
+			Messages(c.Constrain(g, f)))
+	})
+
+	t.Run("rest fn with an unknown rest fills an inexact callback parameter", func(t *testing.T) {
+		c := &Context{}
+		g := restFn(num(), identParam("a", num()), restParam("rest", &soltype.UnknownType{}))
 		f := inexactFn(num(), identParam("a", num()))
 		require.Empty(t, c.Constrain(g, f))
 	})
