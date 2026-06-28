@@ -89,6 +89,114 @@ func TestCFGIfElse(t *testing.T) {
 	require.Equal(t, 2, len(cfg.Entry.Successors))
 }
 
+func TestCFGLetElse(t *testing.T) {
+	// val x = u else { return d }
+	// print(x)
+	// The else block is its own branch off the initializer's block; the matched path
+	// flows to a join carrying x, then continues to print(x).
+	x := identPat("x")
+	uRef := ident("u")
+	dRef := ident("d")
+	xRef := ident("x")
+
+	letElse := ast.NewDeclStmt(
+		ast.NewVarDecl(ast.ValKind, x, nil, uRef, false, false, span()),
+		span(),
+	)
+	letElse.Decl.(*ast.VarDecl).Else = &ast.Block{
+		Stmts: []ast.Stmt{ast.NewReturnStmt(dRef, span())},
+		Span:  span(),
+	}
+	body := block(
+		letElse,
+		exprStmt(call(ident("print"), xRef)),
+	)
+	Rename(nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
+
+	cfg := BuildCFG(body)
+
+	// Entry evaluates the initializer and branches to the else block and the join.
+	require.Equal(t, 1, len(cfg.Entry.Stmts)) // ExprStmt(u)
+	require.Equal(t, 2, len(cfg.Entry.Successors))
+	// The else block diverges via `return`, so it edges to the exit, not the join.
+	elseBlock := cfg.Entry.Successors[0]
+	require.Equal(t, 1, len(elseBlock.Successors))
+	require.Equal(t, cfg.Exit, elseBlock.Successors[0])
+	// The join defines x and continues to print(x).
+	join := cfg.Entry.Successors[1]
+	require.Equal(t, []VarID{VarID(x.VarID)}, []VarID(join.ExtraDefs))
+}
+
+func TestCFGLetElseNonDivergingFallback(t *testing.T) {
+	// val x = u else { d }
+	// print(x)
+	// The else does not diverge; it supplies a fallback, so its block falls through to
+	// the same join the matched path reaches.
+	x := identPat("x")
+	uRef := ident("u")
+	dRef := ident("d")
+	xRef := ident("x")
+
+	letElse := ast.NewDeclStmt(
+		ast.NewVarDecl(ast.ValKind, x, nil, uRef, false, false, span()),
+		span(),
+	)
+	letElse.Decl.(*ast.VarDecl).Else = &ast.Block{
+		Stmts: []ast.Stmt{exprStmt(dRef)},
+		Span:  span(),
+	}
+	body := block(
+		letElse,
+		exprStmt(call(ident("print"), xRef)),
+	)
+	Rename(nil, body, map[string]VarID{"u": -1, "d": -2, "print": -3})
+
+	cfg := BuildCFG(body)
+
+	require.Equal(t, 2, len(cfg.Entry.Successors))
+	elseBlock := cfg.Entry.Successors[0]
+	join := cfg.Entry.Successors[1]
+	// The non-diverging else falls through to the same join as the matched path.
+	require.Equal(t, 1, len(elseBlock.Successors))
+	require.Equal(t, join, elseBlock.Successors[0])
+}
+
+func TestCFGLetElseBranchyInit(t *testing.T) {
+	// val x: number = match u { 1 => a, _ => b } else { return d }
+	// The initializer is the `match` expression; `else { return d }` is the let-else's
+	// own else. A branchy initializer must contribute its own CFG edges, so the entry
+	// block branches into the match's arms rather than collapsing the init into one
+	// block. A `match` init is used rather than an `if` init: after an `if`, a trailing
+	// `else` is consumed by that `if`, so a let-else over an `if` either can't be
+	// written or needs a confusing second `else`.
+	x := identPat("x")
+	uRef := ident("u")
+	aRef := ident("a")
+	bRef := ident("b")
+	dRef := ident("d")
+
+	matchInit := ast.NewMatch(
+		uRef,
+		[]*ast.MatchCase{
+			ast.NewMatchCase(ast.NewLitPat(ast.NewNumber(1, span()), span()), nil, ast.BlockOrExpr{Expr: aRef}, span()),
+			ast.NewMatchCase(ast.NewWildcardPat(span()), nil, ast.BlockOrExpr{Expr: bRef}, span()),
+		},
+		span(),
+	)
+	vd := ast.NewVarDecl(ast.ValKind, x, ast.NewNumberTypeAnn(span()), matchInit, false, false, span())
+	vd.Else = &ast.Block{
+		Stmts: []ast.Stmt{ast.NewReturnStmt(dRef, span())},
+		Span:  span(),
+	}
+	body := block(ast.NewDeclStmt(vd, span()))
+	Rename(nil, body, map[string]VarID{"u": -1, "a": -2, "b": -3, "d": -4})
+
+	cfg := BuildCFG(body)
+
+	// The entry holds the match target and branches into the match's two arms.
+	require.Equal(t, 2, len(cfg.Entry.Successors))
+}
+
 func TestCFGReturn(t *testing.T) {
 	// val x = 1; return x; print(x)
 	// return terminates the path; print(x) is unreachable

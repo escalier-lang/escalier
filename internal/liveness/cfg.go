@@ -207,6 +207,14 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 		return current
 	}
 
+	// A `let`-`else` binding is itself a branch: the else block runs when the
+	// pattern fails to match, while the matched path continues with the pattern's
+	// bindings in scope. Decompose it so the else's statements get their own block
+	// rather than being lumped into the current one.
+	if vd.Else != nil {
+		return b.processLetElse(vd, current)
+	}
+
 	joinDefs := collectPatVarDefs(vd.Pattern)
 	if join := b.decomposeBranch(vd.Init, joinDefs, current); join != nil {
 		b.recordDecomposed(s, join)
@@ -215,6 +223,36 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 
 	current.Stmts = append(current.Stmts, s)
 	return current
+}
+
+// processLetElse decomposes a `val pat = init else { … }` binding into an else
+// branch and a join block that carries the pattern's bindings on the matched path.
+func (b *cfgBuilder) processLetElse(vd *ast.VarDecl, current *BasicBlock) *BasicBlock {
+	// A branchy initializer such as `if c { a } else { b }` contributes its own CFG
+	// edges; decomposeBranch returns the block reached after it converges. A plain
+	// initializer is recorded as an eval in the current block so its uses are
+	// collected.
+	if afterInit := b.decomposeBranch(vd.Init, nil, current); afterInit != nil {
+		current = afterInit
+	} else {
+		current.Stmts = append(current.Stmts, ast.NewExprStmt(vd.Init, vd.Init.Span()))
+	}
+
+	join := b.newBlock()
+	join.ExtraDefs = collectPatVarDefs(vd.Pattern)
+
+	elseBlock := b.newBlock()
+	b.addEdge(current, elseBlock)
+	elseEnd := b.processStmts(vd.Else.Stmts, elseBlock)
+	if elseEnd != nil {
+		// A non-diverging else falls through to the join, supplying the binding's
+		// fallback value. A diverging else ends in `return`/`throw` and has no edge.
+		b.addEdge(elseEnd, join)
+	}
+
+	// The matched path falls through to the continuation with the bindings in scope.
+	b.addEdge(current, join)
+	return join
 }
 
 // decomposeBranch decomposes a branching expression into separate basic

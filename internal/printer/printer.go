@@ -496,6 +496,11 @@ func (p *Printer) printVarDecl(decl *ast.VarDecl) {
 		p.writeString(" = ")
 		p.printExpr(decl.Init)
 	}
+
+	if decl.Else != nil {
+		p.writeString(" else ")
+		p.printBlock(decl.Else)
+	}
 }
 
 func (p *Printer) printFuncDecl(decl *ast.FuncDecl) {

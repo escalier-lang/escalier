@@ -795,6 +795,102 @@ func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
 	}
 }
 
+// TestBuildLetElse pins the lowering of a `val pat = init else { … }` binding: a
+// temp-hoisted match guard whose else branch either diverges or assigns its tail
+// value back to the temp as a fallback, then the pattern's bindings read the temp.
+func TestBuildLetElse(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		expected string
+	}{
+		"DivergingElse": {
+			src: "fn f(u) {\n\tval x: number = u else { return 0 }\n\treturn x\n}",
+			expected: `export function f(temp1) {
+  const u = temp1;
+  let temp2;
+  temp2 = u;
+  if (typeof temp2 === "number") {
+  } else {
+    return 0;
+  }
+  const x = temp2;
+  return x;
+}`,
+		},
+		// A non-diverging else assigns its tail value back to the temp, so the binding
+		// reads the matched value or that fallback.
+		"FallbackElse": {
+			src: "fn f(u) {\n\tval x: number = u else { 0 }\n\treturn x\n}",
+			expected: `export function f(temp1) {
+  const u = temp1;
+  let temp2;
+  temp2 = u;
+  if (typeof temp2 === "number") {
+  } else {
+    temp2 = 0;
+  }
+  const x = temp2;
+  return x;
+}`,
+		},
+		"Destructure": {
+			src: "fn g(pair) {\n\tval [a, b] = pair else { return 0 }\n\treturn a\n}",
+			expected: `export function g(temp1) {
+  const pair = temp1;
+  let temp2;
+  temp2 = pair;
+  if (temp2.length == 2) {
+  } else {
+    return 0;
+  }
+  const [a, b] = temp2;
+  return a;
+}`,
+		},
+		// A decl-level type annotation on a structural pattern keeps the pattern's
+		// arity check AND adds the type guard, so the shape is validated before binding.
+		"AnnotatedDestructure": {
+			src: "fn h(u) {\n\tval [a, b]: [number, string] = u else { return }\n\treturn a\n}",
+			expected: `export function h(temp1) {
+  const u = temp1;
+  let temp2;
+  temp2 = u;
+  if (temp2.length == 2 && Array.isArray(temp2)) {
+  } else {
+    return;
+  }
+  const [a, b] = temp2;
+  return a;
+}`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: test.src},
+			})
+			require.Empty(t, errors)
+
+			depGraph := dep_graph.BuildDepGraph(module)
+			builder := &Builder{tempId: 0, depGraph: depGraph}
+			outModule := builder.BuildTopLevelDecls(depGraph)
+
+			printer := NewPrinter()
+			for i, stmt := range outModule.Stmts {
+				if i > 0 {
+					printer.NewLine()
+				}
+				printer.PrintStmt(stmt)
+			}
+			require.Equal(t, test.expected, printer.Output)
+		})
+	}
+}
+
 func TestBuildDecls_WithDependencies(t *testing.T) {
 	tests := map[string]struct {
 		sources  []*ast.Source

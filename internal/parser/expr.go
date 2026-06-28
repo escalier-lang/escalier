@@ -911,8 +911,9 @@ func (p *Parser) ifElse() ast.Expr {
 	if token.Type == Let {
 		p.lexer.consume() // consume 'let'
 
-		// Parse the pattern
-		pattern := p.pattern(false, false)
+		// Parse the pattern. A top-level colon type annotation is allowed so a
+		// union scrutinee can narrow to one member, as in `if let x: number = u`.
+		pattern := p.pattern(false, true)
 		if pattern == nil {
 			p.reportError(token.Span, "Expected a pattern after 'let'")
 			return nil

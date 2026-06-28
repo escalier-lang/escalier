@@ -400,6 +400,12 @@ func (v *DependencyVisitor) EnterStmt(stmt ast.Stmt) bool {
 				if decl.Init != nil {
 					decl.Init.Accept(v)
 				}
+				// A `let`-`else` else block's references are dependencies too. Visit it
+				// before the pattern binds, so a name it shares with the pattern still
+				// resolves to the outer binding.
+				if decl.Else != nil {
+					decl.Else.Accept(v)
+				}
 				// THEN add bindings to scope
 				bindings := ast.FindBindings(decl.Pattern)
 				for binding := range bindings {

@@ -4197,3 +4197,140 @@
     span: 1:1-1:37,
 }
 ---
+
+[TestParseStmtNoErrors/LetElseDestructure - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.TuplePat{
+            Elems: []ast.Pat{
+                &ast.IdentPat{
+                    Name: "a",
+                    span: 1:6-1:7,
+                },
+                &ast.IdentPat{
+                    Name: "b",
+                    span: 1:9-1:10,
+                },
+            },
+            span: 1:5-1:11,
+        },
+        Init: &ast.IdentExpr{
+            Name: "u",
+            span: 1:14-1:15,
+        },
+        Else: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ExprStmt{
+                    Expr: &ast.ThrowExpr{
+                        Arg: &ast.LiteralExpr{
+                            Lit: &ast.StrLit{
+                                Value: "no",
+                                span: 1:29-1:33,
+                            },
+                            span: 1:29-1:33,
+                        },
+                        span: 1:23-1:33,
+                    },
+                    span: 1:23-1:33,
+                },
+            },
+            Span: 1:21-1:35,
+        },
+        span: 1:1-1:35,
+    },
+    span: 1:1-1:35,
+}
+---
+
+[TestParseStmtNoErrors/LetElseBareIdent - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.IdentPat{
+            Name: "x",
+            span: 1:5-1:6,
+        },
+        Init: &ast.IdentExpr{
+            Name: "u",
+            span: 1:9-1:10,
+        },
+        Else: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ReturnStmt{
+                    span: 1:18-1:24,
+                },
+            },
+            Span: 1:16-1:26,
+        },
+        span: 1:1-1:26,
+    },
+    span: 1:1-1:26,
+}
+---
+
+[TestParseStmtNoErrors/LetElseNarrowing - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.IdentPat{
+            Name: "x",
+            span: 1:5-1:6,
+        },
+        TypeAnn: &ast.NumberTypeAnn{
+            span: 1:8-1:14,
+        },
+        Init: &ast.IdentExpr{
+            Name: "u",
+            span: 1:17-1:18,
+        },
+        Else: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ReturnStmt{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            span: 1:33-1:34,
+                        },
+                        span: 1:33-1:34,
+                    },
+                    span: 1:26-1:34,
+                },
+            },
+            Span: 1:24-1:36,
+        },
+        span: 1:1-1:36,
+    },
+    span: 1:1-1:36,
+}
+---
+
+[TestParseStmtNoErrors/LetElseNonDivergingFallback - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.IdentPat{
+            Name: "x",
+            span: 1:5-1:6,
+        },
+        TypeAnn: &ast.NumberTypeAnn{
+            span: 1:8-1:14,
+        },
+        Init: &ast.IdentExpr{
+            Name: "u",
+            span: 1:17-1:18,
+        },
+        Else: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ExprStmt{
+                    Expr: &ast.LiteralExpr{
+                        Lit: &ast.NumLit{
+                            span: 1:26-1:27,
+                        },
+                        span: 1:26-1:27,
+                    },
+                    span: 1:26-1:27,
+                },
+            },
+            Span: 1:24-1:29,
+        },
+        span: 1:1-1:29,
+    },
+    span: 1:1-1:29,
+}
+---

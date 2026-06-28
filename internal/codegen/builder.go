@@ -738,6 +738,10 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			return initStmts
 		}
 
+		if d.Else != nil {
+			return slices.Concat(initStmts, b.buildLetElse(d, initExpr))
+		}
+
 		// Ignore checks returned by buildPattern
 		// Only export if we're in module mode AND not inside a block scope
 		export := b.isModule && !b.inBlockScope
@@ -2537,6 +2541,44 @@ func simplifyTrueLiterals(stmt Stmt) Stmt {
 }
 
 // buildPatternCondition builds the condition expression and binding statements for a pattern
+// buildLetElse lowers `val pat = init else { … }` into a temp-hoisted match check.
+// The temp starts as the initializer; on a failed match the else block runs, and its
+// tail value is assigned back to the temp so the binding takes it as a fallback. An
+// else that diverges with a `return`/`throw` leaves the temp untouched and skips past
+// the bindings. The `if`/empty-then/else-runs-the-block shape keeps the condition
+// un-negated, which the precedence-naive printer needs. The pattern's bindings read
+// the temp after the guard, binding the matched value or the fallback.
+func (b *Builder) buildLetElse(d *ast.VarDecl, initExpr Expr) []Stmt {
+	tempVar, tempDeclStmt := b.createTempVar(d.Init)
+	initAssign := &ExprStmt{
+		Expr:   NewBinaryExpr(tempVar, Assign, initExpr, d.Init),
+		source: d.Init,
+	}
+
+	condition, bindingStmts := b.buildPatternCondition(d.Pattern, tempVar)
+	if d.TypeAnn != nil {
+		// A decl-level type annotation narrows the union to one member. Combine its
+		// type guard WITH the pattern's structural condition rather than replacing it,
+		// so an annotated destructuring still validates shape before binding.
+		// combineConditions drops the trivial `true` a bare identifier contributes.
+		typeGuard := b.buildTypeGuard(tempVar, d.TypeAnn)
+		condition = combineConditions([]Expr{condition, typeGuard}, d)
+	}
+
+	// Assigning the else block's tail value to the temp makes a non-diverging else a
+	// fallback; a diverging else emits its `return`/`throw` and assigns nothing.
+	elseStmts := b.buildBlockStmtsWithTempAssignment(d.Else.Stmts, tempVar, d.Init)
+	guard := NewIfStmt(
+		condition,
+		NewBlockStmt(nil, d),
+		NewBlockStmt(elseStmts, d),
+		d,
+	)
+
+	stmts := []Stmt{tempDeclStmt, initAssign, guard}
+	return slices.Concat(stmts, bindingStmts)
+}
+
 func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr, []Stmt) {
 	switch pat := pattern.(type) {
 	case *ast.IdentPat:
