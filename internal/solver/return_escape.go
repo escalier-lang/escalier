@@ -119,8 +119,9 @@ func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 			out.Add(referent)
 		}
 	}
-	// When e names a whole binding, the locals that binding transitively borrows. A field
-	// place is skipped by the len(p.path) == 0 guard.
+	// When e names a whole binding, the locals that binding transitively borrows. For `a`
+	// bound by `val a = {peer: &mut b}`, this follows the a → b edge. A field place is
+	// skipped by the len(p.path) == 0 guard, so `a.peer` follows nothing.
 	if p, ok := exprPlace(e); ok && p.root > 0 && len(p.path) == 0 {
 		c.collectBorrowedLocals(p.root, out)
 	}
