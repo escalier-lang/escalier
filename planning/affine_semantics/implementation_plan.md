@@ -775,16 +775,17 @@ binding in the component is consumed.
 - Soundness rests on the GC keeping co-moved nodes alive and on there being no
   external observer, so the phase rules are unchanged; this is the requirements'
   "Moving a graph" argument.
-- Extend the borrow-edge graph beyond what PR 15 records. **Landed.** The graph now keys
-  edges by field place rather than root binding, tagging each edge with the field path that
-  holds the borrow, and records edges at three sites: a `val`/`var` initializer, a `var`
+- Extend the borrow-edge graph beyond what PR 15 records. **Landed.** The graph stays keyed
+  by root binding VarID, a `map[VarID][]fieldBorrow`, but each `fieldBorrow` entry now
+  carries the field path within the binding that holds the borrow rather than only the
+  borrowed local. Edges are recorded at three sites: a `val`/`var` initializer, a `var`
   reassignment such as `a = &mut b`, and a destructuring leaf such as `val {peer} = {peer:
   &mut b}`. Following discriminates a field return `return a.peer` from the disjoint `return
   a.data`, and a field read through a whole-binding borrow `val a = &mut b; return a.peer`
-  still escapes b. The reassignment and destructuring cases that `TestVarReassignBorrowEscapes`
-  and `TestDestructuredBorrowLeafEscapes` pin are re-enabled. The graph stays accumulate-only,
-  so a reassignment adds edges without clearing earlier ones; the full set-and-clear joined
-  at CFG merges, which the component move builds on, is the remaining flow-sensitivity work.
+  still escapes b. The reassignment and destructuring cases that the formerly-disabled tests
+  pin are re-enabled. The graph stays accumulate-only, so a reassignment adds edges without
+  clearing earlier ones; the full set-and-clear joined at CFG merges, which the component
+  move builds on, is the remaining flow-sensitivity work.
 
 Tests: the cyclic `build()` returns `a` with both `a` and `b` consumed; an acyclic
 shared graph returned the same way; a graph where a node is also held by a retained

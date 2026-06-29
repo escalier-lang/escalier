@@ -172,6 +172,64 @@ func TestReturnEscape(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"pass": "fn <'a>(p: &'a mut {x: number}) -> {peer: &'a mut {x: number}}"},
 		},
+		// A borrow projected into a destructuring leaf escapes: `val {peer} = {peer: &mut
+		// b}` binds peer to the borrow of the local b, so returning peer escapes b. The
+		// pattern leaf is matched to its initializer property and its edge recorded.
+		"ReturnDestructuredBorrowLeafEscapes": {
+			src: `
+				fn f() -> &mut {value: number} {
+					val mut b = {value: 0}
+					val {peer} = {peer: &mut b}
+					return peer
+				}
+			`,
+			want:  []string{"5:13-5:17: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"f": "fn () -> &mut {value: number}"},
+		},
+		// Destructuring from a place carries the place's field edges into the leaf: `val
+		// {peer} = a` binds peer to a.peer, so peer inherits a's borrow of b at [peer] and
+		// returning peer escapes b.
+		"ReturnDestructuredFromPlaceEscapes": {
+			src: `
+				fn build() -> &mut {value: number} {
+					val mut b = {value: 0}
+					val a = {peer: &mut b}
+					val {peer} = a
+					return peer
+				}
+			`,
+			want:  []string{"6:13-6:17: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> &mut {value: number}"},
+		},
+		// A shorthand destructuring default escapes: when `obj` may lack peer, `val {peer =
+		// &mut b} = obj` binds peer to the default `&mut b` on the absent-property path, so
+		// returning peer escapes the local b.
+		"ReturnShorthandDefaultEscapes": {
+			src: `
+				fn f(obj: {peer?: &mut {value: number}}) -> &mut {value: number} {
+					val mut b = {value: 0}
+					val {peer = &mut b} = obj
+					return peer
+				}
+			`,
+			want:  []string{"5:13-5:17: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"f": "fn <'a>(obj: {peer?: &'a mut {value: number}}) -> &'a mut {value: number}"},
+		},
+		// A borrow introduced by reassigning a `var` escapes: `a = &mut b` records the edge
+		// a → b, so returning a escapes the local b. The edge graph accumulates, so the
+		// reassignment adds the edge to a's earlier ones.
+		"ReturnVarReassignedToBorrowEscapes": {
+			src: `
+				fn f(seed: &mut {value: number}) {
+					var a = seed
+					val mut b = {value: 0}
+					a = &mut b
+					return a
+				}
+			`,
+			want:  []string{"6:13-6:14: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"f": "fn <'a>(seed: &'a mut {value: number}) -> &'a mut {value: number}"},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -313,38 +371,4 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 			require.Equal(t, tc.types, values)
 		})
 	}
-}
-
-// TestDestructuredBorrowLeafEscapes covers a borrow projected into a destructuring leaf:
-// `val {peer} = {peer: &mut b}` binds peer to the borrow of the local b, so returning peer
-// escapes b. recordDestructureBorrowEdges matches the pattern leaf to its initializer
-// property and records the leaf's edge.
-func TestDestructuredBorrowLeafEscapes(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f() -> &mut {value: number} {
-			val mut b = {value: 0}
-			val {peer} = {peer: &mut b}
-			return peer
-		}
-	`)
-	require.Equal(t, []string{
-		"5:11-5:15: borrowed value 'b' does not live long enough to escape the function",
-	}, messagesWithSpan(errs))
-}
-
-// TestVarReassignBorrowEscapes covers a borrow introduced by reassigning a `var`: `a =
-// &mut b` records the edge a → b, so returning a escapes the local b. The edge graph
-// accumulates, so the reassignment adds the edge to a's earlier ones.
-func TestVarReassignBorrowEscapes(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(seed: &mut {value: number}) {
-			var a = seed
-			val mut b = {value: 0}
-			a = &mut b
-			return a
-		}
-	`)
-	require.Equal(t, []string{
-		"6:11-6:12: borrowed value 'b' does not live long enough to escape the function",
-	}, messagesWithSpan(errs))
 }

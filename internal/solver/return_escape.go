@@ -182,13 +182,17 @@ func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.
 		for _, elem := range e.Elems {
 			switch el := elem.(type) {
 			case *ast.PropertyExpr:
-				if el.Value == nil {
-					continue
-				}
-				if name, ok := objKeyName(el.Name); ok {
-					c.walkBorrowSources(root, appendSeg(base, name), el.Value)
-				} else {
-					c.walkBorrowSources(root, base, el.Value)
+				if el.Value != nil {
+					if name, ok := objKeyName(el.Name); ok {
+						c.walkBorrowSources(root, appendSeg(base, name), el.Value)
+					} else {
+						c.walkBorrowSources(root, base, el.Value)
+					}
+				} else if ident, ok := el.Name.(*ast.IdentExpr); ok && ident.VarID > 0 {
+					// A shorthand property `{peer}` is `{peer: peer}`, so the field peer
+					// holds the value of the binding peer. Copy that binding's edges at the
+					// peer field.
+					c.copyPlaceEdges(root, appendSeg(base, ident.Name), movePlace{root: liveness.VarID(ident.VarID)})
 				}
 			case *ast.ObjSpreadExpr:
 				c.walkBorrowSources(root, base, el.Value)
@@ -203,22 +207,10 @@ func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.
 	case *ast.CallExpr, *ast.TaggedTemplateLitExpr, *ast.FuncExpr:
 		return
 	default:
-		// A place names another binding whose value e copies. Each of that binding's edges
-		// on the read place's field path transfers to root, re-rooted at base plus the part
-		// of the edge path below the read place. An edge is on the path when it sits at the
-		// read place, beneath it, or above it. An edge above the read place reaches the
-		// whole binding, so the read projects entirely within it and the suffix is empty.
+		// A place names another binding whose value e copies. copyPlaceEdges transfers that
+		// binding's edges to root, re-rooted at base.
 		if p, ok := exprPlace(e); ok && p.root > 0 {
-			for _, edge := range c.fn.borrowEdges[p.root] {
-				if !pathPrefixRelated(edge.path, p.path) || edge.referent == root {
-					continue
-				}
-				var suffix []placeSeg
-				if len(edge.path) > len(p.path) {
-					suffix = edge.path[len(p.path):]
-				}
-				c.addBorrowEdge(root, appendPath(base, suffix), edge.referent)
-			}
+			c.copyPlaceEdges(root, base, p)
 			return
 		}
 		// Any other carrier expression contributes its inline borrows of locals at base,
@@ -227,6 +219,60 @@ func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.
 			if referent, ok := c.isLocalReferent(b.Arg); ok && referent != root {
 				c.addBorrowEdge(root, base, referent)
 			}
+		}
+	}
+}
+
+// copyPlaceEdges transfers to the binding root the borrow edges of the source place src,
+// re-rooted at base. Each of src's edges on src's field path — at it, beneath it, or above
+// it where the source binding wholly borrows a local — transfers, re-rooted at base plus
+// the part of the edge path below the read place. An edge above the read place reaches the
+// whole binding, so the read projects entirely within it and the suffix is empty. It backs
+// both a place initializer `val c = a.peer` and a shorthand property `{peer}`.
+func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src movePlace) {
+	for _, edge := range c.fn.borrowEdges[src.root] {
+		if !pathPrefixRelated(edge.path, src.path) || edge.referent == root {
+			continue
+		}
+		var suffix []placeSeg
+		if len(edge.path) > len(src.path) {
+			suffix = edge.path[len(src.path):]
+		}
+		c.addBorrowEdge(root, appendPath(base, suffix), edge.referent)
+	}
+}
+
+// recordPatternPlaceEdges records borrow edges for a destructuring whose initializer is a
+// place, projecting the pattern over that place. `val {peer} = a` binds peer to a.peer, so
+// peer inherits a's edges on the [peer] path. An identifier pattern inherits the whole
+// place's edges; an object element extends the place by its key; a tuple element keeps the
+// place, since a tuple index has no field segment and the read approximates to the
+// container.
+func (c *checker) recordPatternPlaceEdges(pat ast.Pat, src movePlace) {
+	switch pat := pat.(type) {
+	case *ast.IdentPat:
+		if pat.VarID > 0 {
+			c.copyPlaceEdges(liveness.VarID(pat.VarID), nil, src)
+		}
+	case *ast.ObjectPat:
+		for _, elem := range pat.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjShorthandPat:
+				if e.VarID > 0 {
+					c.copyPlaceEdges(liveness.VarID(e.VarID), nil, extendPlace(src, e.Key.Name))
+				}
+				if e.Default != nil {
+					// The property may be absent, so the leaf can take the shorthand
+					// default, such as `val {peer = &mut b} = obj`.
+					c.recordBorrowEdges(e.VarID, e.Default)
+				}
+			case *ast.ObjKeyValuePat:
+				c.recordPatternPlaceEdges(e.Value, extendPlace(src, e.Key.Name))
+			}
+		}
+	case *ast.TuplePat:
+		for _, elem := range pat.Elems {
+			c.recordPatternPlaceEdges(elem, src)
 		}
 	}
 }

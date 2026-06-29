@@ -657,12 +657,18 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
 }
 
 // recordDestructureBorrowEdges records the borrow edges of each destructuring leaf by
-// matching the pattern against the initializer expression structurally. An identifier leaf
-// records edges from the sub-expression bound to it. An object pattern matches each element
-// to the initializer property of the same name, and a tuple pattern matches by position. A
-// leaf whose initializer sub-expression is not statically present, such as a property
-// supplied by a spread, records nothing.
+// matching the pattern against the initializer structurally. When the initializer is a
+// place, recordPatternPlaceEdges projects the pattern over it, so `val {peer} = a` carries
+// a's edges into peer. Otherwise an identifier leaf records edges from the sub-expression
+// bound to it, an object pattern matches each element to the initializer property of the
+// same name, and a tuple pattern matches by position. A leaf whose initializer
+// sub-expression is not statically present, such as a property supplied by a spread,
+// records nothing.
 func (c *checker) recordDestructureBorrowEdges(pat ast.Pat, init ast.Expr) {
+	if p, ok := exprPlace(init); ok && p.root > 0 {
+		c.recordPatternPlaceEdges(pat, p)
+		return
+	}
 	switch pat := pat.(type) {
 	case *ast.IdentPat:
 		c.recordBorrowEdges(pat.VarID, init)
@@ -684,6 +690,10 @@ func (c *checker) recordDestructureBorrowEdges(pat ast.Pat, init ast.Expr) {
 			case *ast.ObjShorthandPat:
 				if v, ok := props[e.Key.Name]; ok {
 					c.recordBorrowEdges(e.VarID, v)
+				} else if e.Default != nil {
+					// The property is absent from the initializer, so the leaf takes the
+					// shorthand default, such as `val {peer = &mut b} = obj`.
+					c.recordBorrowEdges(e.VarID, e.Default)
 				}
 			case *ast.ObjKeyValuePat:
 				if v, ok := props[e.Key.Name]; ok {
