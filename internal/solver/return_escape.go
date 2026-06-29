@@ -103,9 +103,11 @@ func (c *checker) isLocalReferent(arg ast.Expr) (liveness.VarID, bool) {
 	return p.root, true
 }
 
-// escapingLocalsOf returns the function-locals whose data e carries by value: a borrow of
-// a local written directly in e, and the borrow edges of a whole-binding place e names. A
-// field place is not followed, since the edge graph is keyed by root binding.
+// escapingLocalsOf returns the function-locals whose data e carries by value. A borrow of
+// a local written directly in e contributes its referent, such as the `&mut b` in
+// `{peer: &mut b}`. When e names a whole binding, the binding's borrow edges contribute the
+// locals they reach. A field place is not followed, since the edge graph is keyed by root
+// binding.
 func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 	out := set.NewSet[liveness.VarID]()
 	if c.fn == nil || c.fn.borrowEdges == nil || e == nil {
