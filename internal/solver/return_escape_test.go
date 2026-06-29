@@ -297,3 +297,28 @@ func TestDestructuredBorrowLeafEscapes(t *testing.T) {
 		}, messagesWithSpan(errs))
 	*/
 }
+
+// TestVarReassignBorrowEscapes pins a known under-check: recordBorrowEdges runs only at a
+// binding's initializer, so a borrow introduced by reassigning a `var`, such as the `a =
+// &mut b` below, records no edge. Returning the var then escapes the local with no error.
+// Tracking it soundly needs flow-sensitive borrow edges that clear on reassignment, since
+// the graph is accumulate-only.
+//
+// DISABLED until flow-sensitive borrow tracking lands: when reassignment records edges,
+// `return a` below escapes the local `b` and this assertion holds. Re-enable by removing
+// the `/* */` wrapper around the body.
+func TestVarReassignBorrowEscapes(t *testing.T) {
+	/*
+		_, _, errs := inferSource(t, `
+			fn f(seed: &mut {value: number}) {
+				var a = seed
+				val mut b = {value: 0}
+				a = &mut b
+				return a
+			}
+		`)
+		require.Equal(t, []string{
+			"6:12-6:13: borrowed value 'b' does not live long enough to escape the function",
+		}, messagesWithSpan(errs))
+	*/
+}

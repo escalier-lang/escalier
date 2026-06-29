@@ -170,6 +170,11 @@ type funcCtx struct {
 	// follows these edges from a binding flowing out of the frame to find a borrow of a
 	// local that cannot outlive it. A parameter root is never recorded, since a borrow
 	// of a parameter carries a caller lifetime that already outlives the frame.
+	//
+	// Only initializer borrows are recorded. A borrow introduced by reassigning a `var`,
+	// such as `a = &mut b`, is not tracked, so a later flow-out of that var under-checks.
+	// The graph is accumulate-only, so tracking reassignments soundly needs flow-sensitive
+	// edges that clear on reassignment, deferred to PR 11.
 	borrowEdges map[liveness.VarID]set.Set[liveness.VarID]
 	// paramVarIDs holds the VarID of every parameter leaf binding. A borrow of a
 	// parameter outlives the frame, so the escape check skips a referent in this set.
