@@ -113,11 +113,14 @@ func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 	if c.fn == nil || c.fn.borrowEdges == nil || e == nil {
 		return out
 	}
+	// Borrows of locals written directly in e, such as the `&mut b` in `{peer: &mut b}`.
 	for _, b := range borrowsIn(e) {
 		if referent, ok := c.isLocalReferent(b.Arg); ok {
 			out.Add(referent)
 		}
 	}
+	// When e names a whole binding, the locals that binding transitively borrows. A field
+	// place is skipped by the len(p.path) == 0 guard.
 	if p, ok := exprPlace(e); ok && p.root > 0 && len(p.path) == 0 {
 		c.collectBorrowedLocals(p.root, out)
 	}
