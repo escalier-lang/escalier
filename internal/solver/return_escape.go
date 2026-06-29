@@ -32,9 +32,14 @@ import (
 // A borrow of a parameter is exempt. Its lifetime outlives the frame, so
 // `fn (p: &mut {x}) -> &mut {x} { return p }` checks.
 //
-// Edges and the checks are whole-binding granular. A borrow held in a field returned on
-// its own, such as `return a.peer`, is not tracked, since the graph is keyed by root
-// binding, not field place.
+// Edges and the checks are whole-binding granular. An edge is keyed by root binding, so it
+// records that `a` borrows `b` without recording which field holds the borrow. The check
+// follows edges only from a whole-binding return like `return a`, never a field return
+// like `return a.peer`. Skipping field returns avoids a false positive. Following a root
+// edge for the disjoint owned field in `return a.data` would wrongly flag `b`, which
+// `a.data` does not borrow. The cost is a false negative. `return a.peer` returns the
+// borrow field itself, and the check does not catch it. Resolving a field return to its
+// own edge needs the per-field tracking deferred to PR 11.
 
 // EscapingBorrowError fires when a value flowing out of the frame carries a borrow of a
 // function-local. It blames the outgoing expression and names the escaping local.
