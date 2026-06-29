@@ -10,11 +10,21 @@ import (
 )
 
 // Escape forcing. A value flowing out of the function frame must not carry a borrow of a
-// function-local, since the local dies when the frame returns. This pass reports such an
+// function-local, since the local does not outlive the frame. This pass reports such an
 // escape at three sites: a `return`, a field store into a parameter, and a consuming
 // argument.
 //
-// A per-binding borrow-edge graph drives it, over the move engine's borrow tracking
+// The rejection is conservative. The runtime is garbage-collected, so a returned value
+// that references a local keeps it reachable rather than dangling. Returning a
+// self-contained graph is therefore sound. A graph is self-contained when an owned value's
+// internal `&mut` edges reach only locals that nothing outside the graph references. The
+// connected-component move (PR 11) will allow that case by co-moving and consuming those
+// locals, so the returned value's owner anchors them and exclusivity holds. Until it lands,
+// any borrow of a local flowing out is rejected here. A bare `return &mut b` has no owned
+// carrier and stays rejected even then, since the move re-anchors a graph's internal edges,
+// not a borrow that is itself the returned value.
+//
+// A per-binding borrow-edge graph drives the check, over the move engine's borrow tracking
 // rather than the lifetime sort. recordBorrowEdges records which locals each binding
 // borrows. At each site, escapingLocalsOf follows those edges and scans for direct borrows
 // to find the locals the outgoing value carries.
