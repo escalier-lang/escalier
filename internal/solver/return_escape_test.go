@@ -98,6 +98,33 @@ func TestReturnEscape(t *testing.T) {
 			want:  []string{"5:13-5:19: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{"build": "fn () -> &mut {value: number}"},
 		},
+		// Reading a field through a whole-binding borrow escapes the borrowed local: `a`
+		// borrows all of b, so `a.peer` projects into b and returning it leaves b dangling.
+		// The edge a → b sits at path [], above the read path [peer], so the field return
+		// still follows it.
+		"ReturnFieldThroughWholeBorrowEscapes": {
+			src: `
+				fn build() -> &mut {value: number} {
+					val mut b = {peer: {value: 0}}
+					val a = &mut b
+					return a.peer
+				}
+			`,
+			want:  []string{"5:13-5:19: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> &mut {value: number}"},
+		},
+		// A borrow of a local written inside a control-flow carrier escapes the same as one
+		// written directly: the scan descends the if/else branches to find the `&mut b`.
+		"ReturnBorrowInIfBranchEscapes": {
+			src: `
+				fn build() -> &mut {value: number} {
+					val mut b = {value: 0}
+					return if true { &mut b } else { &mut b }
+				}
+			`,
+			want:  []string{"4:12-4:47: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> &mut {value: number}"},
+		},
 		// Returning a disjoint owned field of a binding that also has a borrow field does
 		// not escape: `a.data` carries none of a's borrow of b. The field return follows
 		// only the edges at [data], finds none, and reports no spurious escape.
