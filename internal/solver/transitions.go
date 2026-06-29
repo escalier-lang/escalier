@@ -765,6 +765,23 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	c.fn.moveSites = map[liveness.StmtRef]set.Set[liveness.VarID]{}
 	c.fn.placeIDs = map[string]liveness.VarID{}
 	c.fn.movePlaces = map[liveness.VarID]movePlace{}
+	c.fn.borrowEdges = map[liveness.VarID]set.Set[liveness.VarID]{}
+	c.fn.paramVarIDs = collectParamVarIDs(astParams)
+}
+
+// collectParamVarIDs returns the VarID of every parameter leaf binding. The escape check
+// consults it to exempt a borrow of a parameter, which carries a caller-supplied lifetime
+// that already outlives the frame, from an escaping borrow of a function-local.
+func collectParamVarIDs(astParams []*ast.Param) set.Set[liveness.VarID] {
+	ids := set.NewSet[liveness.VarID]()
+	for _, param := range astParams {
+		ast.ForEachLeafBinding(param.Pattern, func(_ string, varID int) {
+			if varID > 0 {
+				ids.Add(liveness.VarID(varID))
+			}
+		})
+	}
+	return ids
 }
 
 // seedParamLeafAliases walks each parameter pattern recursively and seeds the alias

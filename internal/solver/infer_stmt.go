@@ -73,6 +73,10 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
 					c.consumeOwned(s.Expr, t, s.Expr, ref)
 				}
+				// A returned value must not borrow a function-local, which dies when the
+				// frame returns and would leave the borrow dangling. checkReturnEscape
+				// reports a returned borrow of a local.
+				c.checkReturnEscape(s.Expr)
 			}
 		} else {
 			// A `return` reached outside any function body — e.g. inside an `if` that
@@ -126,6 +130,10 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			if c.fn != nil {
 				c.trackAliasesForVarDecl(scope, vd, bindingType(b), s)
 				c.consumeBindingInit(vd, bindingType(b), s)
+				// Record which function-locals this binding's initializer borrows, so a
+				// later flow-out of the binding can find a borrow of a local that would
+				// escape the frame.
+				c.recordBorrowEdges(b.VarID, vd.Init)
 			}
 		}
 		return &soltype.Void{}
