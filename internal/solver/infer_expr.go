@@ -1466,7 +1466,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		// Storing a value that borrows a local into a parameter's field escapes, since the
 		// parameter's object outlives the frame and the stored local would dangle in the
 		// caller. checkStoreEscape applies only when the receiver is a parameter.
-		c.checkStoreEscape(m.Object, e.Right)
+		c.checkParamFieldStoreEscape(m.Object, e.Right)
 	}
 	// The assignment evaluates to the value just stored. recordType overwrites the
 	// `void` recovery type inferAssign recorded on e before dispatching here.

@@ -2,7 +2,7 @@ package solver
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
@@ -132,7 +132,7 @@ func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 // outgoing expression. Locals are reported in VarID order for deterministic diagnostics.
 func (c *checker) reportEscapingLocals(escaping set.Set[liveness.VarID], blame ast.Node) {
 	ids := escaping.ToSlice()
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 	for _, id := range ids {
 		c.report(&EscapingBorrowError{LocalName: c.varIDToName(id), node: blame})
 	}
@@ -170,10 +170,10 @@ func (c *checker) checkReturnEscape(retExpr ast.Expr) {
 	c.reportEscapingLocals(c.escapingLocalsOf(retExpr), retExpr)
 }
 
-// checkStoreEscape handles a field store `recv.f = source`. Storing a value that borrows a
+// checkParamFieldStoreEscape handles a field store `recv.f = source`. Storing a value that borrows a
 // local into a parameter's field escapes, since the parameter's object outlives the frame.
 // A store into a local receiver does not escape and is not tracked.
-func (c *checker) checkStoreEscape(recv, source ast.Expr) {
+func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr) {
 	if c.fn == nil || c.fn.borrowEdges == nil {
 		return
 	}
