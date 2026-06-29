@@ -647,10 +647,61 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
 	}
 	c.bindPattern(scope, lvl, d.Pattern, initType, nil)
 	c.trackDestructureLeaves(scope, d.Pattern)
-	// A borrow projected into a destructuring leaf records no borrow edge, so a return
-	// of such a leaf is not yet caught as an escape. Tracking it precisely needs the
-	// per-leaf correspondence the field-granular move work introduces; a whole-binding
-	// approximation would over-report a disjoint leaf.
+	// Record each leaf's borrow edges from the initializer sub-expression it binds, so a
+	// return of a leaf that projects a borrow of a local is caught. `val {peer} = {peer:
+	// &mut b}` records peer → b. The correspondence is structural, so it tracks a leaf
+	// only when the initializer's shape mirrors the pattern's.
+	if c.fn != nil && c.fn.borrowEdges != nil && d.Init != nil {
+		c.recordDestructureBorrowEdges(d.Pattern, d.Init)
+	}
+}
+
+// recordDestructureBorrowEdges records the borrow edges of each destructuring leaf by
+// matching the pattern against the initializer expression structurally. An identifier leaf
+// records edges from the sub-expression bound to it. An object pattern matches each element
+// to the initializer property of the same name, and a tuple pattern matches by position. A
+// leaf whose initializer sub-expression is not statically present, such as a property
+// supplied by a spread, records nothing.
+func (c *checker) recordDestructureBorrowEdges(pat ast.Pat, init ast.Expr) {
+	switch pat := pat.(type) {
+	case *ast.IdentPat:
+		c.recordBorrowEdges(pat.VarID, init)
+	case *ast.ObjectPat:
+		obj, ok := init.(*ast.ObjectExpr)
+		if !ok {
+			return
+		}
+		props := map[string]ast.Expr{}
+		for _, elem := range obj.Elems {
+			if p, ok := elem.(*ast.PropertyExpr); ok && p.Value != nil {
+				if name, ok := objKeyName(p.Name); ok {
+					props[name] = p.Value
+				}
+			}
+		}
+		for _, elem := range pat.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjShorthandPat:
+				if v, ok := props[e.Key.Name]; ok {
+					c.recordBorrowEdges(e.VarID, v)
+				}
+			case *ast.ObjKeyValuePat:
+				if v, ok := props[e.Key.Name]; ok {
+					c.recordDestructureBorrowEdges(e.Value, v)
+				}
+			}
+		}
+	case *ast.TuplePat:
+		tup, ok := init.(*ast.TupleExpr)
+		if !ok {
+			return
+		}
+		for i, elem := range pat.Elems {
+			if i < len(tup.Elems) {
+				c.recordDestructureBorrowEdges(elem, tup.Elems[i])
+			}
+		}
+	}
 }
 
 // varName returns the bound name of a VarDecl whose pattern is an IdentPat, with

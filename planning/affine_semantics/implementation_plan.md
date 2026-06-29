@@ -258,7 +258,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started.
 | 12 | ~~`Freeze`/`Thaw` utility types~~ — retired; subsumed by uniform deep `mut` + the freeze/thaw moves (PR 8, 11) | — | — | ❌ retired |
 | 13 | Deep, uniform `mut` and `readonly` | 1, 2 | Medium | ✅ done (#777, #781) |
 | 14 | Lazy deep `mut`: store the surface form, push the rule to access and constrain | 13 | Large | ✅ done (#780) |
-| 15 | Escape forcing at returns, stores, and consuming arguments (deferred from PR 6) | 6 | Large | 🚧 in progress |
+| 15 | Escape forcing at returns, stores, and consuming arguments (deferred from PR 6) | 6 | Large | ✅ done (#814); element stores deferred to M7, field-granular escape to PR 11 |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
@@ -696,7 +696,7 @@ stored value that borrows a function-local binding is silently accepted today. T
 makes that case the escape error it should be, which is the baseline PR 11 then relaxes
 for a self-contained component.
 
-Status: the return, parameter-field-store, and consuming-argument sites have landed in
+Status: done (#814). The return, parameter-field-store, and consuming-argument sites landed in
 [internal/solver/return_escape.go](../../internal/solver/return_escape.go), built over a
 per-binding borrow-edge graph on `funcCtx` rather than the lifetime sort, so the check
 does not wait on M6.5. Deferred: element stores `xs[i] = …` need index-assignment support

@@ -765,7 +765,7 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, param
 	c.fn.moveSites = map[liveness.StmtRef]set.Set[liveness.VarID]{}
 	c.fn.placeIDs = map[string]liveness.VarID{}
 	c.fn.movePlaces = map[liveness.VarID]movePlace{}
-	c.fn.borrowEdges = map[liveness.VarID]set.Set[liveness.VarID]{}
+	c.fn.borrowEdges = map[liveness.VarID][]fieldBorrow{}
 	c.fn.paramVarIDs = collectParamVarIDs(astParams)
 }
 

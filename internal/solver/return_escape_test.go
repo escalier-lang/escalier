@@ -84,9 +84,23 @@ func TestReturnEscape(t *testing.T) {
 			want:  []string{"6:13-6:15: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
 		},
+		// Returning the borrow field itself escapes the local it holds: `a.peer` is the
+		// `&mut b` borrow, so returning it leaves b dangling. The field-granular edge at
+		// [peer] is followed for the field return.
+		"ReturnBorrowFieldEscapes": {
+			src: `
+				fn build() -> &mut {value: number} {
+					val mut b = {value: 2}
+					val a = {peer: &mut b, data: {value: 7}}
+					return a.peer
+				}
+			`,
+			want:  []string{"5:13-5:19: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> &mut {value: number}"},
+		},
 		// Returning a disjoint owned field of a binding that also has a borrow field does
-		// not escape: `a.data` carries none of a's borrow of b. The whole-binding edge is
-		// not followed for a field return, so no spurious escape is reported.
+		// not escape: `a.data` carries none of a's borrow of b. The field return follows
+		// only the edges at [data], finds none, and reports no spurious escape.
 		"ReturnDisjointFieldOk": {
 			src: `
 				fn build() -> {value: number} {
@@ -274,51 +288,36 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 	}
 }
 
-// TestDestructuredBorrowLeafEscapes pins a known under-check: a borrow projected into a
-// destructuring leaf records no borrow edge, so returning the leaf escapes the local
-// with no error. recordBorrowEdges runs only for a named `val`/`var` binding. Catching
-// the leaf case needs the per-leaf pattern correspondence the field-granular move work
-// introduces.
-//
-// DISABLED until field-granular move tracking lands: when a destructuring leaf tracks
-// its borrow, `return peer` below escapes the local `b` and this assertion holds.
-// Re-enable by removing the `/* */` wrapper around the body.
+// TestDestructuredBorrowLeafEscapes covers a borrow projected into a destructuring leaf:
+// `val {peer} = {peer: &mut b}` binds peer to the borrow of the local b, so returning peer
+// escapes b. recordDestructureBorrowEdges matches the pattern leaf to its initializer
+// property and records the leaf's edge.
 func TestDestructuredBorrowLeafEscapes(t *testing.T) {
-	/*
-		_, _, errs := inferSource(t, `
-			fn f() -> &mut {value: number} {
-				val mut b = {value: 0}
-				val {peer} = {peer: &mut b}
-				return peer
-			}
-		`)
-		require.Equal(t, []string{
-			"5:12-5:16: borrowed value 'b' does not live long enough to escape the function",
-		}, messagesWithSpan(errs))
-	*/
+	_, _, errs := inferSource(t, `
+		fn f() -> &mut {value: number} {
+			val mut b = {value: 0}
+			val {peer} = {peer: &mut b}
+			return peer
+		}
+	`)
+	require.Equal(t, []string{
+		"5:11-5:15: borrowed value 'b' does not live long enough to escape the function",
+	}, messagesWithSpan(errs))
 }
 
-// TestVarReassignBorrowEscapes pins a known under-check: recordBorrowEdges runs only at a
-// binding's initializer, so a borrow introduced by reassigning a `var`, such as the `a =
-// &mut b` below, records no edge. Returning the var then escapes the local with no error.
-// Tracking it soundly needs flow-sensitive borrow edges that clear on reassignment, since
-// the graph is accumulate-only.
-//
-// DISABLED until flow-sensitive borrow tracking lands: when reassignment records edges,
-// `return a` below escapes the local `b` and this assertion holds. Re-enable by removing
-// the `/* */` wrapper around the body.
+// TestVarReassignBorrowEscapes covers a borrow introduced by reassigning a `var`: `a =
+// &mut b` records the edge a → b, so returning a escapes the local b. The edge graph
+// accumulates, so the reassignment adds the edge to a's earlier ones.
 func TestVarReassignBorrowEscapes(t *testing.T) {
-	/*
-		_, _, errs := inferSource(t, `
-			fn f(seed: &mut {value: number}) {
-				var a = seed
-				val mut b = {value: 0}
-				a = &mut b
-				return a
-			}
-		`)
-		require.Equal(t, []string{
-			"6:12-6:13: borrowed value 'b' does not live long enough to escape the function",
-		}, messagesWithSpan(errs))
-	*/
+	_, _, errs := inferSource(t, `
+		fn f(seed: &mut {value: number}) {
+			var a = seed
+			val mut b = {value: 0}
+			a = &mut b
+			return a
+		}
+	`)
+	require.Equal(t, []string{
+		"6:11-6:12: borrowed value 'b' does not live long enough to escape the function",
+	}, messagesWithSpan(errs))
 }
