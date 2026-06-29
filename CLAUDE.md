@@ -59,6 +59,11 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 
 - When creating issues with `gh`, do not escape strings or backticks in the Markdown body — `gh` passes the body through as-is, and escaping produces literal backslashes in the rendered issue.
 
+## Git cadence
+
+- While iterating on a PR, commit locally but don't `git push` until I explicitly ask.
+- Still push at the end of a session so nothing is lost.
+
 # Writing Prose: Punctuation and sentence structure
 
 - Use colons only for their standard jobs: introducing a list, a definition, or
