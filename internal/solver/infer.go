@@ -164,18 +164,21 @@ type funcCtx struct {
 	// once the whole body, loop back edges included, has been walked, so a use that
 	// some reaching path moved is caught even when the move is textually later.
 	useSites []moveUse
-	// borrowEdges records, per binding root VarID, the function-local binding roots
-	// whose data it borrows through an explicit `&`/`&mut` in its initializer. The
-	// initializer `val a = {peer: &mut b}` records the edge a → b. The escape check
-	// follows these edges from a binding flowing out of the frame to find a borrow of a
-	// local that cannot outlive it. A parameter root is never recorded, since a borrow
-	// of a parameter carries a caller lifetime that already outlives the frame.
+	// borrowEdges records, per binding root VarID, the function-locals it borrows through
+	// an explicit `&`/`&mut`, each tagged with the field path holding the borrow. The
+	// initializer `val a = {peer: &mut b}` records the edge a → b at path [peer]. The
+	// escape check follows these edges from a value flowing out of the frame to find a
+	// borrow of a local that cannot outlive it, discriminating a field return `return
+	// a.peer` from the disjoint `return a.data`. A parameter root is never recorded, since
+	// a borrow of a parameter carries a caller lifetime that already outlives the frame.
 	//
-	// Only initializer borrows are recorded. A borrow introduced by reassigning a `var`,
-	// such as `a = &mut b`, is not tracked, so a later flow-out of that var under-checks.
-	// The graph is accumulate-only, so tracking reassignments soundly needs flow-sensitive
-	// edges that clear on reassignment, deferred to PR 11.
-	borrowEdges map[liveness.VarID]set.Set[liveness.VarID]
+	// Edges are recorded at a `val`/`var` initializer, a `var` reassignment, and a
+	// destructuring leaf. The graph is accumulate-only, so a reassignment adds edges
+	// without clearing the binding's earlier ones — the conservative direction that
+	// over-reports a replaced borrow but never misses a real escape. Clearing on
+	// reassignment soundly needs CFG-merge-joined edges, which the connected-component
+	// move builds.
+	borrowEdges map[liveness.VarID][]fieldBorrow
 	// paramVarIDs holds the VarID of every parameter leaf binding. A borrow of a
 	// parameter outlives the frame, so the escape check skips a referent in this set.
 	paramVarIDs set.Set[liveness.VarID]

@@ -258,7 +258,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started.
 | 12 | ~~`Freeze`/`Thaw` utility types~~ — retired; subsumed by uniform deep `mut` + the freeze/thaw moves (PR 8, 11) | — | — | ❌ retired |
 | 13 | Deep, uniform `mut` and `readonly` | 1, 2 | Medium | ✅ done (#777, #781) |
 | 14 | Lazy deep `mut`: store the surface form, push the rule to access and constrain | 13 | Large | ✅ done (#780) |
-| 15 | Escape forcing at returns, stores, and consuming arguments (deferred from PR 6) | 6 | Large | 🚧 in progress |
+| 15 | Escape forcing at returns, stores, and consuming arguments (deferred from PR 6) | 6 | Large | ✅ done (#814); element stores deferred to M7, field-granular escape to PR 11 |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
@@ -696,7 +696,7 @@ stored value that borrows a function-local binding is silently accepted today. T
 makes that case the escape error it should be, which is the baseline PR 11 then relaxes
 for a self-contained component.
 
-Status: the return, parameter-field-store, and consuming-argument sites have landed in
+Status: done (#814). The return, parameter-field-store, and consuming-argument sites landed in
 [internal/solver/return_escape.go](../../internal/solver/return_escape.go), built over a
 per-binding borrow-edge graph on `funcCtx` rather than the lifetime sort, so the check
 does not wait on M6.5. Deferred: element stores `xs[i] = …` need index-assignment support
@@ -775,16 +775,17 @@ binding in the component is consumed.
 - Soundness rests on the GC keeping co-moved nodes alive and on there being no
   external observer, so the phase rules are unchanged; this is the requirements'
   "Moving a graph" argument.
-- Extend the borrow-edge graph beyond what PR 15 records. PR 15 records an edge only at a
-  binding's initializer and keys it on the root binding, so three cases under-check: a
-  borrow introduced by reassigning a `var` such as `a = &mut b`, a borrow projected into a
-  destructuring leaf such as `val {peer} = {peer: &mut b}`, and a borrow held in one field
-  returned on its own such as `return a.peer`. Closing them needs flow-sensitive,
-  field-granular edges — set-and-clear per assignment joined at CFG merges, keyed by field
-  place rather than root binding — which the component analysis here builds on anyway. The
-  reassignment and destructuring cases are pinned by the disabled
-  `TestVarReassignBorrowEscapes` and `TestDestructuredBorrowLeafEscapes`; the field-return
-  miss is noted in [internal/solver/return_escape.go](../../internal/solver/return_escape.go).
+- Extend the borrow-edge graph beyond what PR 15 records. **Landed.** The graph stays keyed
+  by root binding VarID, a `map[VarID][]fieldBorrow`, but each `fieldBorrow` entry now
+  carries the field path within the binding that holds the borrow rather than only the
+  borrowed local. Edges are recorded at three sites: a `val`/`var` initializer, a `var`
+  reassignment such as `a = &mut b`, and a destructuring leaf such as `val {peer} = {peer:
+  &mut b}`. Following discriminates a field return `return a.peer` from the disjoint `return
+  a.data`, and a field read through a whole-binding borrow `val a = &mut b; return a.peer`
+  still escapes b. The reassignment and destructuring cases that the formerly-disabled tests
+  pin are re-enabled. The graph stays accumulate-only, so a reassignment adds edges without
+  clearing earlier ones; the full set-and-clear joined at CFG merges, which the component
+  move builds on, is the remaining flow-sensitivity work.
 
 Tests: the cyclic `build()` returns `a` with both `a` and `b` consumed; an acyclic
 shared graph returned the same way; a graph where a node is also held by a retained
@@ -930,6 +931,24 @@ than through the field types.
 - **Diagnostic wording.** Each PR ships a working diagnostic; final wording and
   blame spans for use-after-move and move-on-escape are tuned as the engine
   settles.
+- **Tuple-index place segments.** The move/escape place model
+  ([internal/solver/moves.go](../../internal/solver/moves.go), `placeSeg`) keys a
+  field path by named segments only. A numeric tuple index `t[0]` has no name, so
+  `exprPlace` collapses it to the container `t`, and the borrow-edge walk records a
+  tuple element's borrow at the whole binding. This is conservative-sound but
+  imprecise in two places. The escape check over-reports: `val a = [&mut b, {x: 1}];
+  return a[1]` flags b even though `a[1]` carries none of the borrow. Partial moves
+  (PR 7) over-consume: moving `t[0]` consumes all of `t`, so a later read of `t[1]`
+  is a spurious use-after-move. Both gain object-field precision once a tuple index
+  yields its own place segment. The fix is small and already anticipated: `placeSeg`
+  carries a `kind` tag so a non-name segment can be added without conflating `t[0]`
+  with the string key `t["0"]`. It needs a distinct index-segment kind keyed by the
+  integer, `exprPlace` recognizing a `NumLit` index, `renderPlace` printing the
+  index, and the tuple-literal walk extending the path by the element index. A
+  dynamic `t[i]` still falls back to the container, as `arr[i]` does today. This
+  rides the M7 computed-key/index-segment work
+  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7);
+  pull it forward if tuple-heavy code makes the imprecision bite.
 
 ## Testing approach
 

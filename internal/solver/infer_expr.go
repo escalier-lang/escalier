@@ -1357,6 +1357,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 				c.consumeOwned(e.Right, c.info.TypeOf(e.Right), e.Right, ref)
 			}
 		}
+		// Record any borrow of a local the reassigned value introduces, so a later
+		// flow-out of the target finds it. `a = &mut b` records a → b. The edge graph
+		// accumulates, so this adds to the target's earlier edges rather than replacing
+		// them.
+		if !b.ModuleLevel {
+			c.recordBorrowEdges(target.VarID, e.Right)
+		}
 	}
 	// The assignment evaluates to the value just stored — the SAME read face as
 	// reading the target (inferIdent), so `val b = (a = 6)` ⇒ `b: number`. Use
