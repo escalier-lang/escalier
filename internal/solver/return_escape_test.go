@@ -493,6 +493,50 @@ func TestConnectedComponentMove(t *testing.T) {
 			want:  []string{"6:13-6:14: borrowed value 'd' does not live long enough to escape the function"},
 			types: map[string]string{"build": "fn () -> {peer: &mut {x: number}}"},
 		},
+		// Two mutable aliases of one node are fine when both live inside the moved component.
+		// b and c each hold `&mut d`, and a holds shared borrows of both, so the component
+		// reachable from a is {a, b, c, d} and both `&mut d` paths are internal to it. The
+		// model permits several `&mut` borrows live at once, so this is a legal value, and
+		// returning a re-anchors the whole graph — both internal mutable paths included — with
+		// no external observer. This is the mirror of MutableAliasRejectsMove: there the second
+		// `&mut d` was left outside the component and rejected; here a owns both, so it is not.
+		// The outer borrows are shared, so the carrier sidesteps the owned-mutable upgrade that
+		// blocks the all-`&mut` MutableDiamondRejected.
+		"InternalMutableAliasMovesAsUnit": {
+			src: `
+				fn build() {
+					val mut d = {x: 0}
+					val mut b = {peer: &mut d}
+					val mut c = {peer: &mut d}
+					val a = {l: &b, r: &c}
+					return a
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"build": "fn () -> {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}"},
+		},
+		// The co-move consumes the shared node exactly once despite the two internal mutable
+		// paths to it: storing the graph into a callee consumes d, so reading it afterward is a
+		// single use-after-move, with no spurious double-move from reaching d through both b
+		// and c.
+		"InternalMutableAliasConsumesSharedNode": {
+			src: `
+				fn store(x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) {}
+				fn f() {
+					val mut d = {x: 0}
+					val mut b = {peer: &mut d}
+					val mut c = {peer: &mut d}
+					val a = {l: &b, r: &c}
+					store(a)
+					val y = d
+				}
+			`,
+			want: []string{"9:14-9:15: use of moved value 'd'"},
+			types: map[string]string{
+				"store": "fn (x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) -> void",
+				"f":     "fn () -> void",
+			},
+		},
 		// A wider component with five borrowed locals moves out as one unit, the same as the
 		// two-local case, since every node is reachable only through a.
 		"ReturnLargeStar": {
