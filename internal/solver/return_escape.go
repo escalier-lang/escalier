@@ -33,12 +33,15 @@ import (
 // `fn (p: &mut {x}) -> &mut {x} { return p }` checks.
 //
 // An edge carries the field path within the binding that holds the borrow. `val a = {peer:
-// &mut b}` records the edge a → b at path [peer], so a return discriminates by field. A
-// whole-binding return `return a` follows every edge under a, since the returned value
-// exposes all its fields. A field return `return a.peer` follows the edges on the [peer]
-// path — at [peer], beneath it, or above it where `val a = &mut b` borrows all of b — so it
-// catches the escaping borrow of b. The disjoint field return `return a.data` follows the
-// edges on the [data] path, finds none, and is sound with no false positive.
+// &mut b}` records the edge a → b at path [peer], so a return discriminates by field:
+//
+//   - A whole-binding return `return a` follows every edge under a, since the returned value
+//     exposes all of a's fields.
+//   - A field return `return a.peer` follows the edges on the [peer] path. That covers an
+//     edge at [peer], beneath it, or above it where `val a = &mut b` borrows all of b. So it
+//     catches the escaping borrow of b.
+//   - A disjoint field return `return a.data` follows the edges on the [data] path, finds
+//     none, and is sound with no false positive.
 //
 // Edges are recorded at three sites: a `val`/`var` initializer, a `var` reassignment, and a
 // destructuring leaf. The graph is accumulate-only and not flow-sensitive, so a
@@ -121,12 +124,14 @@ func (c *checker) isLocalReferent(arg ast.Expr) (liveness.VarID, bool) {
 }
 
 // escapingLocalsOf returns the function-locals whose data e carries by value. Two sources
-// contribute. First, a borrow of a local written anywhere in e, such as the `&mut b` in
-// `{peer: &mut b}` or in an if/else branch, contributes its referent. borrowsIn finds these,
-// descending carriers and stopping at call and nested-function boundaries. Second, when e
-// names a place — a whole binding `a` or a field `a.peer` — the edges under that place
-// contribute the locals they transitively reach, filtered to the place's field path so a
-// field return follows only that field's edges.
+// contribute:
+//
+//   - A borrow of a local written anywhere in e, such as the `&mut b` in `{peer: &mut b}` or
+//     in an if/else branch. borrowsIn finds these, descending carriers and stopping at call
+//     and nested-function boundaries.
+//   - The edges under a place e names, a whole binding `a` or a field `a.peer`. They
+//     contribute the locals they transitively reach, filtered to the place's field path so a
+//     field return follows only that field's edges.
 func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 	out := set.NewSet[liveness.VarID]()
 	if c.fn == nil || c.fn.borrowEdges == nil || e == nil {
@@ -145,7 +150,8 @@ func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 
 // addBorrowEdge records that the binding root borrows the function-local referent at the
 // given field path, allocating the root's edge list on first use. A duplicate edge with
-// the same path and referent is dropped, so repeated walks do not accumulate copies.
+// the same path and referent is ignored, so repeated walks keep one copy rather than
+// accumulating identical edges.
 func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent liveness.VarID) {
 	for _, e := range c.fn.borrowEdges[root] {
 		if e.referent == referent && slices.Equal(e.path, path) {
@@ -166,12 +172,20 @@ func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
 }
 
 // walkBorrowSources records the borrow edges the expression e contributes to the binding
-// root, at base, the field path reached so far. A direct `&mut b` of a local records an
-// edge at base. An object property descends with base extended by the property name, while
-// a tuple element and a spread descend at base unchanged, since neither refines the field
-// path. A place expression copies that place's edges, re-rooted under root at base. Any
-// other carrier, such as an if/else branch, contributes its inline borrows at base through
-// borrowsIn. The walk stops at a call or nested-function boundary.
+// root, at base, the field path reached so far:
+//
+//   - A direct `&mut b` of a local records an edge at base.
+//   - An object property descends with base extended by the property name.
+//   - A tuple element and a spread descend at base unchanged. A field path is a chain of
+//     named segments, and neither a tuple index nor a spread contributes one: a tuple index
+//     is a number, not a field name, and a spread merges its source's fields without naming
+//     them. The place model approximates a read of either to its container, so the borrow
+//     stays attributed to base.
+//   - A place expression copies that place's edges, re-rooted under root at base.
+//   - Any other carrier, such as an if/else branch, contributes its inline borrows at base
+//     through borrowsIn.
+//
+// The walk stops at a call or nested-function boundary.
 func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.Expr) {
 	switch e := e.(type) {
 	case *ast.BorrowExpr:
@@ -186,12 +200,17 @@ func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.
 					if name, ok := objKeyName(el.Name); ok {
 						c.walkBorrowSources(root, appendSeg(base, name), el.Value)
 					} else {
+						// A computed key names no static field segment, so the borrow can't
+						// be addressed by a field path. Keep base, attributing the value to the
+						// enclosing object conservatively.
 						c.walkBorrowSources(root, base, el.Value)
 					}
 				} else if ident, ok := el.Name.(*ast.IdentExpr); ok && ident.VarID > 0 {
-					// A shorthand property `{peer}` is `{peer: peer}`, so the field peer
-					// holds the value of the binding peer. Copy that binding's edges at the
-					// peer field.
+					// A shorthand property `{peer}` is `{peer: peer}`: the field peer holds
+					// the value of the binding peer. objKeyName would give the field name,
+					// but the value's edges are reached through the binding's VarID, so read
+					// both the name and the VarID from the IdentExpr directly. A shorthand
+					// key is always an identifier, never a computed or string key.
 					c.copyPlaceEdges(root, appendSeg(base, ident.Name), movePlace{root: liveness.VarID(ident.VarID)})
 				}
 			case *ast.ObjSpreadExpr:
@@ -207,14 +226,15 @@ func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.
 	case *ast.CallExpr, *ast.TaggedTemplateLitExpr, *ast.FuncExpr:
 		return
 	default:
-		// A place names another binding whose value e copies. copyPlaceEdges transfers that
-		// binding's edges to root, re-rooted at base.
+		// A place names another binding whose value e copies, as in `val a2 = a` or `val c =
+		// a.peer`. copyPlaceEdges transfers that binding's edges to root, re-rooted at base.
 		if p, ok := exprPlace(e); ok && p.root > 0 {
 			c.copyPlaceEdges(root, base, p)
 			return
 		}
-		// Any other carrier expression contributes its inline borrows of locals at base,
-		// descending through it but stopping at call and nested-function boundaries.
+		// Any other carrier expression contributes its inline borrows of locals at base, as
+		// in the `if cond { &mut b } else { … }` of `val a = if cond { &mut b } else { … }`.
+		// The walk descends through it but stops at call and nested-function boundaries.
 		for _, b := range borrowsIn(e) {
 			if referent, ok := c.isLocalReferent(b.Arg); ok && referent != root {
 				c.addBorrowEdge(root, base, referent)
@@ -231,6 +251,9 @@ func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.
 // both a place initializer `val c = a.peer` and a shorthand property `{peer}`.
 func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src movePlace) {
 	for _, edge := range c.fn.borrowEdges[src.root] {
+		// Skip an edge off the read place's field path, and one pointing back at root. The
+		// self-edge guard matters because src's referent can be root: reassigning `b = a`
+		// where a holds a borrow of b would otherwise copy a → b into b as a b → b loop.
 		if !pathPrefixRelated(edge.path, src.path) || edge.referent == root {
 			continue
 		}
@@ -248,6 +271,10 @@ func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src moveP
 // place's edges; an object element extends the place by its key; a tuple element keeps the
 // place, since a tuple index has no field segment and the read approximates to the
 // container.
+//
+// It covers the destructuring patterns that bind a sub-place of the initializer. A rest
+// pattern and an extractor pattern record nothing today; projecting them would extend this
+// switch once they need borrow tracking.
 func (c *checker) recordPatternPlaceEdges(pat ast.Pat, src movePlace) {
 	switch pat := pat.(type) {
 	case *ast.IdentPat:
@@ -308,14 +335,21 @@ func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr) {
 }
 
 // collectBorrowedFrom adds to out every function-local the read place rooted at root, with
-// field path filter, exposes through borrow edges. The first hop keeps only edges on the
-// filter path: an edge at [peer], beneath it at [peer, …], or above it at [] where a wholly
-// borrows b. So a field read `a.peer` follows a → b on any of those but not a disjoint a → c
-// at [data]. Each local the first hop reaches is then followed in full through
-// collectAllFrom, since a borrow exposes the whole referent. root is the carrier binding,
-// the starting point for the first hop. It is added to out only when a borrow cycle reaches
-// back to it, which is sound: a local that borrows root, and itself escapes, carries root's
-// data out too.
+// field path filter, exposes through borrow edges.
+//
+// The first hop keeps only edges on the filter path:
+//
+//   - at the filter, such as a → b at [peer] for a read of a.peer;
+//   - beneath it, at [peer, …];
+//   - above it, at [] where a wholly borrows b.
+//
+// So a read of a.peer follows a → b on any of those, but not a disjoint a → c at [data].
+// Each local the first hop reaches is then followed in full through collectAllFrom, since a
+// borrow exposes the whole referent.
+//
+// root is the starting point, not itself collected, except when a borrow cycle reaches back
+// to it. Collecting it then is sound: a local that borrows root and itself escapes carries
+// root's data out too.
 func (c *checker) collectBorrowedFrom(root liveness.VarID, filter []placeSeg, out, seen set.Set[liveness.VarID]) {
 	for _, edge := range c.fn.borrowEdges[root] {
 		if !pathPrefixRelated(edge.path, filter) {
@@ -328,7 +362,9 @@ func (c *checker) collectBorrowedFrom(root liveness.VarID, filter []placeSeg, ou
 
 // collectAllFrom adds to out every function-local reachable from node through borrow edges,
 // following every edge regardless of field path, since reaching a binding through a borrow
-// exposes all of it. The seen set terminates borrow cycles.
+// exposes all of it. For node a with edges a → b at [peer] and a → c at [data], it collects
+// both b and c, then walks each of their edges in turn. The seen set terminates borrow
+// cycles.
 func (c *checker) collectAllFrom(node liveness.VarID, out, seen set.Set[liveness.VarID]) {
 	if seen.Contains(node) {
 		return
@@ -357,4 +393,3 @@ func appendPath(base, suffix []placeSeg) []placeSeg {
 	copy(out[len(base):], suffix)
 	return out
 }
-
