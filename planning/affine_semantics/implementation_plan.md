@@ -931,6 +931,24 @@ than through the field types.
 - **Diagnostic wording.** Each PR ships a working diagnostic; final wording and
   blame spans for use-after-move and move-on-escape are tuned as the engine
   settles.
+- **Tuple-index place segments.** The move/escape place model
+  ([internal/solver/moves.go](../../internal/solver/moves.go), `placeSeg`) keys a
+  field path by named segments only. A numeric tuple index `t[0]` has no name, so
+  `exprPlace` collapses it to the container `t`, and the borrow-edge walk records a
+  tuple element's borrow at the whole binding. This is conservative-sound but
+  imprecise in two places. The escape check over-reports: `val a = [&mut b, {x: 1}];
+  return a[1]` flags b even though `a[1]` carries none of the borrow. Partial moves
+  (PR 7) over-consume: moving `t[0]` consumes all of `t`, so a later read of `t[1]`
+  is a spurious use-after-move. Both gain object-field precision once a tuple index
+  yields its own place segment. The fix is small and already anticipated: `placeSeg`
+  carries a `kind` tag so a non-name segment can be added without conflating `t[0]`
+  with the string key `t["0"]`. It needs a distinct index-segment kind keyed by the
+  integer, `exprPlace` recognizing a `NumLit` index, `renderPlace` printing the
+  index, and the tuple-literal walk extending the path by the element index. A
+  dynamic `t[i]` still falls back to the container, as `arr[i]` does today. This
+  rides the M7 computed-key/index-segment work
+  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7);
+  pull it forward if tuple-heavy code makes the imprecision bite.
 
 ## Testing approach
 
