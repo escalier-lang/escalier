@@ -127,6 +127,12 @@ func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo) bool {
 //     A binding already moved is dead and does not count as an external reference, so a
 //     carrier consumed into the escaping value, as in `val a2 = a; return a2`, is not a false
 //     external alias of the component a2 now owns.
+//
+// The external-reference scan reads the same borrow-edge graph the escape check is built on,
+// so it sees the aliases recorded at a `val`/`var` initializer, a `var` reassignment, and a
+// destructuring leaf. An alias formed by a path the graph does not record, such as a `.push`
+// of a borrow into a container, is invisible here exactly as it is to the escape check, the
+// shared limitation the graph's three recording sites impose.
 func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarID], ref liveness.StmtRef, info *liveness.MoveInfo) bool {
 	if !c.escapesAsOwnedCarrier(e) {
 		return false
