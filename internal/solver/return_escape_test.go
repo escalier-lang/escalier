@@ -3,6 +3,9 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -420,6 +423,78 @@ func TestConnectedComponentMove(t *testing.T) {
 				"f":  "fn () -> {peer: &mut {value: number}}",
 			},
 		},
+		// A transitive chain moves as a unit: a borrows b, b borrows c, c borrows d, so the
+		// component reachable from a is {a, b, c, d}. Returning a co-moves all four. The
+		// chain uses shared borrows so the carriers nest without a mutable-view conflict.
+		"ReturnTransitiveChain": {
+			src: `
+				fn build() {
+					val d = {value: 4}
+					val c = {peer: &d}
+					val b = {peer: &c}
+					val a = {peer: &b}
+					return a
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"build": "fn () -> {peer: &{peer: &{peer: &{value: 4}}}}"},
+		},
+		// A diamond shares a node: a borrows b and c, and both b and c borrow d, so d is
+		// reachable through two paths. The component is still {a, b, c, d} and moves out as a
+		// unit; reaching d twice is collapsed by the reachability walk's seen set.
+		"ReturnDiamondSharedNode": {
+			src: `
+				fn build() {
+					val d = {x: 0}
+					val b = {peer: &d}
+					val c = {peer: &d}
+					val a = {l: &b, r: &c}
+					return a
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"build": "fn () -> {l: &{peer: &{x: 0}}, r: &{peer: &{x: 0}}}"},
+		},
+		// A wider component with five borrowed locals moves out as one unit, the same as the
+		// two-local case, since every node is reachable only through a.
+		"ReturnLargeStar": {
+			src: `
+				fn build() {
+					val mut b = {x: 1}
+					val mut c = {x: 2}
+					val mut d = {x: 3}
+					val mut e = {x: 4}
+					val mut g = {x: 5}
+					val a = {b1: &mut b, c1: &mut c, d1: &mut d, e1: &mut e, g1: &mut g}
+					return a
+				}
+			`,
+			want: nil,
+			types: map[string]string{
+				"build": "fn () -> {b1: &mut {x: number}, c1: &mut {x: number}, d1: &mut {x: number}, e1: &mut {x: number}, g1: &mut {x: number}}",
+			},
+		},
+		// The co-move reaches the deepest transitive node: storing the chain a → b → c → d
+		// into a callee consumes d, so reading it afterward is a use-after-move even though d
+		// is three borrows away from the moved binding.
+		"ChainMoveConsumesDeepestNode": {
+			src: `
+				fn store(x: {peer: &{peer: &{peer: &{value: number}}}}) {}
+				fn f() {
+					val d = {value: 4}
+					val c = {peer: &d}
+					val b = {peer: &c}
+					val a = {peer: &b}
+					store(a)
+					val y = d
+				}
+			`,
+			want: []string{"9:14-9:15: use of moved value 'd'"},
+			types: map[string]string{
+				"store": "fn (x: {peer: &{peer: &{peer: &{value: number}}}}) -> void",
+				"f":     "fn () -> void",
+			},
+		},
 		// A node also reachable from a live binding outside the component is not self-
 		// contained: keep holds a second borrow of b, so the move does not apply and
 		// returning a reports the ordinary escape.
@@ -441,6 +516,70 @@ func TestConnectedComponentMove(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
 			require.Equal(t, tc.want, messagesWithSpan(errs))
 			require.Equal(t, tc.types, values)
+		})
+	}
+}
+
+// TestComponentEscapeCyclicGraph drives the component reachability walk over a cyclic
+// borrow-edge graph. A genuine cycle — a borrows b and b borrows a — is not expressible in
+// source today, since it needs a recursive type alias (M7) for the mutually-referential
+// carriers, and the `.push` form the requirements' cyclic `build()` uses does not record
+// borrow edges. So the cycle handling is exercised by building the edge graph directly and
+// asserting escapingLocalsOf terminates and returns every node, the root included.
+//
+// escapingLocalsOf reaching the root back through the cycle is the case resolveComponentEscapes
+// guards when it skips the root while consuming co-moved locals, so a cyclic component does
+// not double-move its own root.
+func TestComponentEscapeCyclicGraph(t *testing.T) {
+	edge := func(referent liveness.VarID) fieldBorrow {
+		return fieldBorrow{path: nil, referent: referent}
+	}
+	tests := map[string]struct {
+		edges map[liveness.VarID][]fieldBorrow
+		root  liveness.VarID
+		want  []liveness.VarID
+	}{
+		// A two-node cycle: a ⇄ b. Reaching b follows b's edge back to a, so the escaping
+		// set closes over both nodes and includes the root a.
+		"TwoNodeCycle": {
+			edges: map[liveness.VarID][]fieldBorrow{
+				1: {edge(2)},
+				2: {edge(1)},
+			},
+			root: 1,
+			want: []liveness.VarID{1, 2},
+		},
+		// A three-node cycle: a → b → c → a. Every node is reachable, and the walk's seen set
+		// terminates the loop at the third hop rather than recurring forever.
+		"ThreeNodeCycle": {
+			edges: map[liveness.VarID][]fieldBorrow{
+				1: {edge(2)},
+				2: {edge(3)},
+				3: {edge(1)},
+			},
+			root: 1,
+			want: []liveness.VarID{1, 2, 3},
+		},
+		// A node with a self-loop plus an onward edge: a → a and a → b. The self-edge is
+		// followed once and collapsed by the seen set, and b is still reached.
+		"SelfLoopAndOnward": {
+			edges: map[liveness.VarID][]fieldBorrow{
+				1: {edge(1), edge(2)},
+			},
+			root: 1,
+			want: []liveness.VarID{1, 2},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := newChecker()
+			c.fn = &funcCtx{
+				borrowEdges: tc.edges,
+				paramVarIDs: set.NewSet[liveness.VarID](),
+			}
+			e := &ast.IdentExpr{Name: "root", VarID: int(tc.root)}
+			got := c.escapingLocalsOf(e).ToSlice()
+			require.ElementsMatch(t, tc.want, got)
 		})
 	}
 }
