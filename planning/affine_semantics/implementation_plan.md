@@ -254,7 +254,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started.
 | 8 | Immutable→mutable thaw move and borrow-phase framing | 6 | Medium | ✅ done |
 | 9 | Unions/intersections as `RefInner`, mixed-ownership rejection, nested-borrow normalization | 3, M6 | Medium | ✅ done (#811) |
 | 10 | Mutable narrowed binding with pinned discriminant | 8, 9, M6 | Medium | ⬜ not started |
-| 11 | Connected-component moves for graphs | 6, 7, 15 | Large | ⬜ not started |
+| 11 | Connected-component moves for graphs | 6, 7, 15 | Large | ✅ done; field-granular borrow-edge graph landed in #818, connected-component move follows |
 | 12 | ~~`Freeze`/`Thaw` utility types~~ — retired; subsumed by uniform deep `mut` + the freeze/thaw moves (PR 8, 11) | — | — | ❌ retired |
 | 13 | Deep, uniform `mut` and `readonly` | 1, 2 | Medium | ✅ done (#777, #781) |
 | 14 | Lazy deep `mut`: store the surface form, push the rule to access and constrain | 13 | Large | ✅ done (#780) |
@@ -762,16 +762,33 @@ binding in the component is consumed.
 
 - Compute the connected component reachable from an escaping value through its
   borrow edges, over the move/borrow state the engine already tracks on `funcCtx`
-  (PRs 5–7).
+  (PRs 5–7). **Landed.** The escape decision is deferred to a post-pass,
+  `resolveComponentEscapes`, run from `checkUseAfterMoves` once the body is fully
+  walked, so the borrow-edge graph is complete and the consumed lattice is available.
+  The component is the escaping value's root binding together with every local
+  `escapingLocalsOf` transitively reaches.
 - Establish the precondition that no node in the component is reachable from any
   binding or store outside it, reusing the alias and liveness state and the
-  per-path tracking from PR 7.
+  per-path tracking from PR 7. **Landed.** `componentMoveCovers` rejects the move when
+  any live binding outside the component holds a borrow edge into it. A binding the
+  lattice reads as `Moved` at the escape point is dead and does not count, so a
+  carrier consumed into the escaping value, `val a2 = a; return a2`, is not a false
+  external alias of the component `a2` now owns.
 - When it holds, treat the escape as a component move: re-anchor the internal borrow
-  lifetimes to the destination region — unify the mutual lifetimes into the
-  destination rather than failing the borrow-escape check — and consume every local
-  binding in the component, so any later use of any of them is a use-after-move.
+  lifetimes to the destination region and consume every local binding in the
+  component, so any later use of any of them is a use-after-move. **Landed.** The
+  re-anchoring needs no explicit lifetime work: an owned carrier returning its
+  internal graph already infers a clean type through the lifetime sort, so only the
+  escape error is relaxed. The post-pass records a move of each borrowed local;
+  the carrier root is consumed at the flow site already and is skipped, so a borrow
+  cycle routing an edge back to the root does not double-move it.
+- The move applies only to an owned carrier, not a bare borrow. `return &mut b`, a
+  borrowed field, or a borrow-typed binding is itself the outgoing value, with no
+  graph to re-anchor, so it stays an escape. `escapesAsOwnedCarrier` reads this off
+  the borrow-edge graph rather than the recorded type, since a field read auto-derefs
+  a borrow field to its owned inner and so a borrow reads back as owned.
 - When it fails — some node is externally aliased — fall back to the ordinary
-  borrow-escape error or phase conflict.
+  borrow-escape error or phase conflict. **Landed.**
 - Soundness rests on the GC keeping co-moved nodes alive and on there being no
   external observer, so the phase rules are unchanged; this is the requirements'
   "Moving a graph" argument.

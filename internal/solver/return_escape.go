@@ -18,11 +18,12 @@ import (
 // that references a local keeps it reachable rather than dangling. Returning a
 // self-contained graph is therefore sound. A graph is self-contained when an owned value's
 // internal `&mut` edges reach only locals that nothing outside the graph references. The
-// connected-component move (PR 11) will allow that case by co-moving and consuming those
-// locals, so the returned value's owner anchors them and exclusivity holds. Until it lands,
-// any borrow of a local flowing out is rejected here. A bare `return &mut b` has no owned
-// carrier and stays rejected even then, since the move re-anchors a graph's internal edges,
-// not a borrow that is itself the returned value.
+// connected-component move re-anchors that case: when the flowed-out value owns a graph
+// whose borrowed locals are reachable only through the graph, the escape becomes a move of
+// the whole component — every binding in it is consumed, and a later use of any of them is
+// a use-after-move. A bare `return &mut b` has no owned carrier and stays rejected, since
+// the move re-anchors a graph's internal edges, not a borrow that is itself the returned
+// value. See resolveComponentEscapes.
 //
 // A field-granular borrow-edge graph drives the check, over the move engine's borrow
 // tracking rather than the lifetime sort. recordBorrowEdges records which locals each
@@ -65,6 +66,137 @@ func (e *EscapingBorrowError) Span() ast.Span      { return e.node.Span() }
 func (e *EscapingBorrowError) Related() []ast.Span { return nil }
 func (e *EscapingBorrowError) Message() string {
 	return fmt.Sprintf("borrowed value '%s' does not live long enough to escape the function", e.LocalName)
+}
+
+// escapeSite is one value flowing out of the frame whose escape decision is deferred to
+// resolveComponentEscapes. It holds the outgoing expression and the CFG point it leaves the
+// frame at. The expression doubles as the diagnostic blame and as the source whose carried
+// locals the post-pass computes.
+type escapeSite struct {
+	expr ast.Expr
+	ref  liveness.StmtRef
+}
+
+// resolveComponentEscapes decides every recorded escape site once the body is fully walked,
+// so the borrow-edge graph is complete and the consumed lattice `info` is known. A site
+// whose outgoing value carries borrows of function-locals is either a self-contained
+// connected-component move — allowed, co-moving and consuming the component's locals — or an
+// ordinary escape, reported. It returns true when it consumed any co-moved local, so the
+// caller knows to recompute the lattice before the use-after-move scan reads it.
+func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo) bool {
+	consumed := false
+	for _, es := range c.fn.escapeSites {
+		escaping := c.escapingLocalsOf(es.expr)
+		if escaping.Len() == 0 {
+			continue
+		}
+		if c.componentMoveCovers(es.expr, escaping, es.ref, info) {
+			// Co-move the component: consume every borrowed local, so a later use of any of
+			// them is a use-after-move. The escaping value's own root is consumed at the flow
+			// site already, so it is skipped here — a borrow cycle can route an edge back to
+			// the root, and consuming it twice at one program point is a spurious double-move.
+			var rootID liveness.VarID
+			if p, ok := exprPlace(es.expr); ok {
+				rootID = p.root
+			}
+			ids := escaping.ToSlice()
+			slices.Sort(ids)
+			for _, id := range ids {
+				if id == rootID {
+					continue
+				}
+				c.recordMove(id, es.expr, es.ref)
+			}
+			consumed = true
+			continue
+		}
+		c.reportEscapingLocals(escaping, es.expr)
+	}
+	c.fn.escapeSites = nil
+	return consumed
+}
+
+// componentMoveCovers reports whether the escape of e is a self-contained connected-component
+// move rather than an ordinary escape. It holds when two conditions are met:
+//
+//   - e is an owned carrier, not a bare borrow. Only an owned value re-anchors its internal
+//     graph; a borrow that is itself the outgoing value — `return &mut b`, a borrowed field,
+//     a borrow-typed binding — has no graph to re-anchor and stays an escape.
+//   - The component is self-contained: no live binding outside it borrows a node inside it.
+//     The component is e's root binding together with every local it transitively borrows.
+//     A binding already moved is dead and does not count as an external reference, so a
+//     carrier consumed into the escaping value, as in `val a2 = a; return a2`, is not a false
+//     external alias of the component a2 now owns.
+func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarID], ref liveness.StmtRef, info *liveness.MoveInfo) bool {
+	if !c.escapesAsOwnedCarrier(e) {
+		return false
+	}
+	component := escaping.Clone()
+	if p, ok := exprPlace(e); ok && p.root > 0 {
+		component.Add(p.root)
+	}
+	for root, edges := range c.fn.borrowEdges {
+		if component.Contains(root) {
+			continue
+		}
+		if info.StateBefore(ref, root) == liveness.Moved {
+			continue
+		}
+		for _, edge := range edges {
+			if component.Contains(edge.referent) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// escapesAsOwnedCarrier reports whether the outgoing value e is an owned aggregate that
+// merely contains borrows of locals, as opposed to a value that is itself a borrow. Only an
+// owned carrier re-anchors an internal graph; a bare borrow has no graph to re-anchor and
+// stays an escape. The recorded type of e cannot make this call: a field read auto-derefs a
+// borrow field to its owned inner, so a borrow read back reads as owned. The borrow-edge
+// graph drives the decision instead.
+//
+//   - A `&mut b` / `&b` expression is the borrow itself.
+//   - A fresh object or tuple literal is an owned carrier; its borrows are nested fields.
+//   - A place is an owned carrier unless a borrow edge sits at or above the read place, which
+//     makes the read project onto a borrow. `return a` over a → b at [peer] reads the owned
+//     object a, while `return a.peer` over the same edge reads the borrow, and `return a` over
+//     a → b at [] reads a borrow-typed binding.
+//   - Any other carrier — an if/match, a call result — is conservatively a bare borrow, so an
+//     ambiguous outgoing value stays an escape rather than a speculative component move.
+func (c *checker) escapesAsOwnedCarrier(e ast.Expr) bool {
+	switch e.(type) {
+	case *ast.BorrowExpr:
+		return false
+	case *ast.ObjectExpr, *ast.TupleExpr:
+		return true
+	}
+	p, ok := exprPlace(e)
+	if !ok || p.root <= 0 {
+		return false
+	}
+	for _, edge := range c.fn.borrowEdges[p.root] {
+		if pathHasPrefix(p.path, edge.path) {
+			return false
+		}
+	}
+	return true
+}
+
+// pathHasPrefix reports whether prefix is a prefix of full: every segment of prefix matches
+// full at the same index, so an empty prefix matches any path and equal paths match.
+func pathHasPrefix(full, prefix []placeSeg) bool {
+	if len(prefix) > len(full) {
+		return false
+	}
+	for i := range prefix {
+		if prefix[i] != full[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // fieldBorrow is one borrow edge under a binding: the field path within the binding that
@@ -314,16 +446,28 @@ func (c *checker) reportEscapingLocals(escaping set.Set[liveness.VarID], blame a
 	}
 }
 
-// checkReturnEscape reports an escape for each function-local a returned value borrows.
-// `return a` where a borrows b, `return &mut b`, and `return {peer: &mut b}` all escape b.
-func (c *checker) checkReturnEscape(retExpr ast.Expr) {
-	c.reportEscapingLocals(c.escapingLocalsOf(retExpr), retExpr)
+// recordEscapeSite defers the escape decision for a value flowing out of the frame to the
+// post-pass, capturing the outgoing expression and the program point it flows out at. The
+// post-pass needs the complete borrow-edge graph and the consumed lattice, neither of which
+// is final mid-walk, so it cannot decide a self-contained component move inline.
+func (c *checker) recordEscapeSite(e ast.Expr, ref liveness.StmtRef) {
+	if c.fn == nil || e == nil {
+		return
+	}
+	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: e, ref: ref})
 }
 
-// checkParamFieldStoreEscape handles a field store `recv.f = source`. Storing a value that borrows a
-// local into a parameter's field escapes, since the parameter's object outlives the frame.
-// A store into a local receiver does not escape and is not tracked.
-func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr) {
+// checkReturnEscape records the return value as an escape site. `return a` where a borrows
+// b, `return &mut b`, and `return {peer: &mut b}` all carry a borrow of b out of the frame;
+// resolveComponentEscapes later decides each as a component move or an escape.
+func (c *checker) checkReturnEscape(retExpr ast.Expr, ref liveness.StmtRef) {
+	c.recordEscapeSite(retExpr, ref)
+}
+
+// checkParamFieldStoreEscape handles a field store `recv.f = source`. Storing a value that
+// borrows a local into a parameter's field escapes, since the parameter's object outlives
+// the frame. A store into a local receiver does not escape and is not tracked.
+func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.borrowEdges == nil {
 		return
 	}
@@ -331,7 +475,7 @@ func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr) {
 	if !ok || rp.root <= 0 || !c.fn.paramVarIDs.Contains(rp.root) {
 		return
 	}
-	c.reportEscapingLocals(c.escapingLocalsOf(source), source)
+	c.recordEscapeSite(source, ref)
 }
 
 // collectBorrowedFrom adds to out every function-local the read place rooted at root, with

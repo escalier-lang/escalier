@@ -11,38 +11,17 @@ import (
 // of a parameter is exempt, because its lifetime is supplied by the caller and already
 // outlives the return. Each case also pins the function's inferred type, since the escape
 // is reported alongside ordinary inference rather than replacing it.
+//
+// Every case here is a bare borrow flowing out: the outgoing value IS a borrow, so it has
+// no owned graph to re-anchor and stays an escape. An owned value carrying a self-contained
+// graph of borrowed locals is a connected-component move instead, covered by
+// TestConnectedComponentMove.
 func TestReturnEscape(t *testing.T) {
 	tests := map[string]struct {
 		src   string
 		want  []string
 		types map[string]string
 	}{
-		// Returning a binding that borrows a local escapes the local it borrows. The
-		// binding a holds `&mut b`, so returning a would leave a's edge dangling at b,
-		// which dies with the frame.
-		"ReturnBindingBorrowingLocal": {
-			src: `
-				fn build() {
-					val mut b = {value: 2}
-					val a = {peer: &mut b}
-					return a
-				}
-			`,
-			want:  []string{"5:13-5:14: borrowed value 'b' does not live long enough to escape the function"},
-			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
-		},
-		// A borrow of a local written directly into the returned literal escapes the same
-		// way, with no intervening binding.
-		"ReturnInlineBorrowOfLocal": {
-			src: `
-				fn build() {
-					val mut b = {value: 2}
-					return {peer: &mut b}
-				}
-			`,
-			want:  []string{"4:13-4:27: borrowed value 'b' does not live long enough to escape the function"},
-			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
-		},
 		// Returning the borrow itself, `return &mut b`, escapes the local b.
 		"ReturnDirectBorrowOfLocal": {
 			src: `
@@ -53,36 +32,6 @@ func TestReturnEscape(t *testing.T) {
 			`,
 			want:  []string{"4:13-4:19: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{"build": "fn () -> &mut {value: number}"},
-		},
-		// A binding that borrows two locals escapes both, reported in source order.
-		"ReturnBindingBorrowingTwoLocals": {
-			src: `
-				fn build() {
-					val mut b = {x: 0}
-					val mut c = {x: 1}
-					val a = {p: &mut b, q: &mut c}
-					return a
-				}
-			`,
-			want: []string{
-				"6:13-6:14: borrowed value 'b' does not live long enough to escape the function",
-				"6:13-6:14: borrowed value 'c' does not live long enough to escape the function",
-			},
-			types: map[string]string{"build": "fn () -> {p: &mut {x: number}, q: &mut {x: number}}"},
-		},
-		// A whole-binding move carries the borrow forward: `val a2 = a` moves a's value,
-		// borrow and all, into a2, so returning a2 escapes the same local a would.
-		"ReturnMovedCarrierEscapes": {
-			src: `
-				fn build() {
-					val mut b = {value: 2}
-					val a = {peer: &mut b}
-					val a2 = a
-					return a2
-				}
-			`,
-			want:  []string{"6:13-6:15: borrowed value 'b' does not live long enough to escape the function"},
-			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
 		},
 		// Returning the borrow field itself escapes the local it holds: `a.peer` is the
 		// `&mut b` borrow, so returning it leaves b dangling. The field-granular edge at
@@ -274,23 +223,6 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}, q: &mut {value: number}) -> void"},
 		},
-		// Passing a value that borrows a local as a consuming argument escapes: the callee
-		// takes ownership of the value and could retain it past the frame.
-		"ConsumingArgCarriesLocalBorrow": {
-			src: `
-				fn store(x: {peer: &mut {value: number}}) {}
-				fn f() {
-					val mut b = {value: 0}
-					val a = {peer: &mut b}
-					store(a)
-				}
-			`,
-			want: []string{"6:12-6:13: borrowed value 'b' does not live long enough to escape the function"},
-			types: map[string]string{
-				"store": "fn (x: {peer: &mut {value: number}}) -> void",
-				"f":     "fn () -> void",
-			},
-		},
 		// Auto-borrowing a local into a `&mut` parameter is sound: the parameter borrows
 		// for the call rather than consuming, so the local outlives the borrow.
 		"BorrowArgToRefParamOk": {
@@ -344,10 +276,135 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				"f":     "fn () -> void",
 			},
 		},
-		// A single escape through a consuming call inside a return is reported once, at the
-		// argument where the local borrow flows into the callee, not a second time at the
-		// enclosing return.
-		"EscapeThroughConsumingCallReportedOnce": {
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.types, values)
+		})
+	}
+}
+
+// TestConnectedComponentMove covers the connected-component move: an owned value carrying a
+// self-contained graph of borrowed locals flows out of the frame as a unit. The borrowed
+// locals are reachable only through the graph, so the move re-anchors them to the
+// destination region and consumes every binding in the component, rather than reporting an
+// escape. When a node is also reachable from a live binding outside the component, the move
+// does not apply and the ordinary escape stands.
+func TestConnectedComponentMove(t *testing.T) {
+	tests := map[string]struct {
+		src   string
+		want  []string
+		types map[string]string
+	}{
+		// The canonical case: the owned binding a holds `&mut b`, and nothing outside the
+		// {a, b} component references either node, so returning a moves the whole component
+		// out. No escape, and a and b are both consumed.
+		"ReturnSelfContainedComponent": {
+			src: `
+				fn build() {
+					val mut b = {value: 2}
+					val a = {peer: &mut b}
+					return a
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
+		},
+		// A component with two borrowed locals moves as a unit just the same: both b and c
+		// are reachable only through a, so returning a co-moves all three.
+		"ReturnComponentTwoLocals": {
+			src: `
+				fn build() {
+					val mut b = {x: 0}
+					val mut c = {x: 1}
+					val a = {p: &mut b, q: &mut c}
+					return a
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"build": "fn () -> {p: &mut {x: number}, q: &mut {x: number}}"},
+		},
+		// The owned carrier may be a fresh literal with no intervening binding: the returned
+		// object owns the borrow of b, and b is reachable only through it.
+		"ReturnInlineLiteralComponent": {
+			src: `
+				fn build() {
+					val mut b = {value: 2}
+					return {peer: &mut b}
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
+		},
+		// A whole-binding move carries the graph forward: `val a2 = a` moves a, borrow and
+		// all, into a2. The dead a is not a live external reference to b, so returning a2
+		// still moves the {a2, b} component out.
+		"ReturnMovedCarrierComponent": {
+			src: `
+				fn build() {
+					val mut b = {value: 2}
+					val a = {peer: &mut b}
+					val a2 = a
+					return a2
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"build": "fn () -> {peer: &mut {value: number}}"},
+		},
+		// An acyclic shared graph moves out the same way: a holds `&b`, and b is reachable
+		// only through a.
+		"ReturnSharedComponent": {
+			src: `
+				fn build() {
+					val mut b = {value: 2}
+					val a = {peer: &b}
+					return a
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"build": "fn () -> {peer: &{value: number}}"},
+		},
+		// A consuming argument moves the component into the callee, which now owns the graph.
+		"ConsumingArgComponentMove": {
+			src: `
+				fn store(x: {peer: &mut {value: number}}) {}
+				fn f() {
+					val mut b = {value: 0}
+					val a = {peer: &mut b}
+					store(a)
+				}
+			`,
+			want: nil,
+			types: map[string]string{
+				"store": "fn (x: {peer: &mut {value: number}}) -> void",
+				"f":     "fn () -> void",
+			},
+		},
+		// The component move consumes the borrowed local, not just the carrier: after the
+		// graph moves into store, reading b is a use-after-move even though b was never the
+		// argument. The carrier a is consumed by the ordinary argument move.
+		"ComponentMoveConsumesBorrowedLocal": {
+			src: `
+				fn store(x: {peer: &mut {value: number}}) {}
+				fn f() {
+					val mut b = {value: 0}
+					val a = {peer: &mut b}
+					store(a)
+					val y = b
+				}
+			`,
+			want: []string{"7:14-7:15: use of moved value 'b'"},
+			types: map[string]string{
+				"store": "fn (x: {peer: &mut {value: number}}) -> void",
+				"f":     "fn () -> void",
+			},
+		},
+		// An escape through a consuming call inside a return is a component move at the
+		// argument: the literal owning `&mut b` moves into id, b reachable only through it.
+		// No escape is reported at either the argument or the enclosing return.
+		"ComponentMoveThroughConsumingCall": {
 			src: `
 				fn id(y: {peer: &mut {value: number}}) {
 					return y
@@ -357,11 +414,26 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 					return id({peer: &mut b})
 				}
 			`,
-			want: []string{"7:16-7:30: borrowed value 'b' does not live long enough to escape the function"},
+			want: nil,
 			types: map[string]string{
 				"id": "fn <'a>(y: {peer: &'a mut {value: number}}) -> {peer: &'a mut {value: number}}",
 				"f":  "fn () -> {peer: &mut {value: number}}",
 			},
+		},
+		// A node also reachable from a live binding outside the component is not self-
+		// contained: keep holds a second borrow of b, so the move does not apply and
+		// returning a reports the ordinary escape.
+		"RetainedNodeRejectsMove": {
+			src: `
+				fn build() {
+					val mut b = {value: 2}
+					val a = {peer: &b}
+					val keep = &b
+					return a
+				}
+			`,
+			want:  []string{"6:13-6:14: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> {peer: &{value: number}}"},
 		},
 	}
 	for name, tc := range tests {
