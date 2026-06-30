@@ -230,6 +230,24 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}, q: &mut {value: number}) -> void"},
 		},
+		// Storing an owned carrier that holds a local borrow into a parameter's field is a
+		// connected-component move, not an escape: the stored `{peer: &mut b}` owns a
+		// self-contained graph whose only borrowed local b is reached just through it, so the
+		// store re-anchors the component to the parameter's region and consumes b. No escape
+		// fires, and reading b afterward is a use-after-move. This is the owned-carrier twin of
+		// StoreLocalBorrowIntoParamField, where the bare borrow `&mut b` had no graph to
+		// re-anchor and escaped.
+		"StoreCarrierIntoParamFieldMovesComponent": {
+			src: `
+				fn f(p: mut {node: {peer: &mut {value: number}}}) {
+					val mut b = {value: 0}
+					p.node = {peer: &mut b}
+					val y = b
+				}
+			`,
+			want:  []string{"5:14-5:15: use of moved value 'b'"},
+			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> void"},
+		},
 		// Auto-borrowing a local into a `&mut` parameter is sound: the parameter borrows
 		// for the call rather than consuming, so the local outlives the borrow.
 		"BorrowArgToRefParamOk": {
