@@ -170,6 +170,10 @@ func TestReturnEscape(t *testing.T) {
 		// A borrow introduced by reassigning a `var` escapes: `a = &mut b` records the edge
 		// a → b, so returning a escapes the local b. The edge graph accumulates, so the
 		// reassignment adds the edge to a's earlier ones.
+		// PR 16: flow-sensitive set-and-clear replaces the accumulate-only edge, so the
+		// reassignment clears a's prior edges and sets a → b. The escape result is unchanged
+		// here, since a's prior referent was the parameter seed, which records no edge; the
+		// comment's "accumulates" narrative is what updates.
 		"ReturnVarReassignedToBorrowEscapes": {
 			src: `
 				fn f(seed: &mut {value: number}) {
@@ -295,6 +299,14 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 // destination region and consumes every binding in the component, rather than reporting an
 // escape. When a node is also reachable from a live binding outside the component, the move
 // does not apply and the ordinary escape stands.
+//
+// Cases tagged `PR 16:` change when the flow-sensitivity work lands. Two behaviours move
+// them. Return borrow-stripping rewrites a returned `&`/`&mut` of a function-local reached
+// exactly once into an owned field, so a tree-shaped component move returns an owned type
+// while a diamond or cyclic graph keeps its borrows. The borrow-field owned-mutable upgrade
+// makes `&mut` graph carriers constructible, flipping the all-`&mut` diamond from a
+// construction error to a component move. See PR 16 in
+// planning/affine_semantics/implementation_plan.md.
 func TestConnectedComponentMove(t *testing.T) {
 	tests := map[string]struct {
 		src   string
@@ -304,6 +316,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// The canonical case: the owned binding a holds `&mut b`, and nothing outside the
 		// {a, b} component references either node, so returning a moves the whole component
 		// out. No escape, and a and b are both consumed.
+		// PR 16: b is reached once, so borrow-stripping rewrites the return to the owned
+		// `{peer: {value: number}}`.
 		"ReturnSelfContainedComponent": {
 			src: `
 				fn build() {
@@ -317,6 +331,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// A component with two borrowed locals moves as a unit just the same: both b and c
 		// are reachable only through a, so returning a co-moves all three.
+		// PR 16: b and c are each reached once, so borrow-stripping rewrites the return to the
+		// owned `{p: {x: number}, q: {x: number}}`.
 		"ReturnComponentTwoLocals": {
 			src: `
 				fn build() {
@@ -331,6 +347,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// The owned carrier may be a fresh literal with no intervening binding: the returned
 		// object owns the borrow of b, and b is reachable only through it.
+		// PR 16: b is reached once, so borrow-stripping rewrites the return to the owned
+		// `{peer: {value: number}}`.
 		"ReturnInlineLiteralComponent": {
 			src: `
 				fn build() {
@@ -344,6 +362,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// A whole-binding move carries the graph forward: `val a2 = a` moves a, borrow and
 		// all, into a2. The dead a is not a live external reference to b, so returning a2
 		// still moves the {a2, b} component out.
+		// PR 16: b is reached once, so borrow-stripping rewrites the return to the owned
+		// `{peer: {value: number}}`.
 		"ReturnMovedCarrierComponent": {
 			src: `
 				fn build() {
@@ -358,6 +378,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// An acyclic shared graph moves out the same way: a holds `&b`, and b is reachable
 		// only through a.
+		// PR 16: b is reached once, so borrow-stripping rewrites the return to the owned
+		// `{peer: {value: number}}` — stripping covers shared `&` borrows as well as `&mut`.
 		"ReturnSharedComponent": {
 			src: `
 				fn build() {
@@ -407,6 +429,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// An escape through a consuming call inside a return is a component move at the
 		// argument: the literal owning `&mut b` moves into id, b reachable only through it.
 		// No escape is reported at either the argument or the enclosing return.
+		// PR 16: f's returned value borrows b once, so borrow-stripping rewrites f's return to
+		// the owned `{peer: {value: number}}`; id keeps its borrow-typed parameter and result.
 		"ComponentMoveThroughConsumingCall": {
 			src: `
 				fn id(y: {peer: &mut {value: number}}) {
@@ -426,6 +450,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		// A transitive chain moves as a unit: a borrows b, b borrows c, c borrows d, so the
 		// component reachable from a is {a, b, c, d}. Returning a co-moves all four. The
 		// chain uses shared borrows so the carriers nest without a mutable-view conflict.
+		// PR 16: every node is reached once, so borrow-stripping rewrites the return to the
+		// owned `{peer: {peer: {peer: {value: 4}}}}`.
 		"ReturnTransitiveChain": {
 			src: `
 				fn build() {
@@ -442,6 +468,9 @@ func TestConnectedComponentMove(t *testing.T) {
 		// A diamond shares a node: a borrows b and c, and both b and c borrow d, so d is
 		// reachable through two paths. The component is still {a, b, c, d} and moves out as a
 		// unit; reaching d twice is collapsed by the reachability walk's seen set.
+		// PR 16: d is reached through two paths, so borrow-stripping KEEPS the borrows — an
+		// owned tree cannot express the shared node — and this return type is unchanged. This
+		// is the multiplicity case that bounds stripping.
 		"ReturnDiamondSharedNode": {
 			src: `
 				fn build() {
@@ -461,6 +490,12 @@ func TestConnectedComponentMove(t *testing.T) {
 		// builds. The aliasing question the shared diamond raises — d reached through two
 		// mutable paths — is therefore never reached here; the two-mutable-alias rejection is
 		// pinned separately by MutableAliasRejectsMove.
+		// PR 16: the borrow-field owned-mutable upgrade makes the `&mut` carriers
+		// constructible, so this flips from the two `cannot constrain` errors to a
+		// connected-component move with `want: nil`. d is reached through two paths, so
+		// borrow-stripping keeps the borrows and the moved type stays
+		// `{l: &mut {peer: &mut {x: number}}, r: &mut {peer: &mut {x: number}}}`. Rename to
+		// MutableDiamondMovesAsUnit when it lands.
 		"MutableDiamondRejected": {
 			src: `
 				fn build() {
@@ -502,6 +537,10 @@ func TestConnectedComponentMove(t *testing.T) {
 		// `&mut d` was left outside the component and rejected; here a owns both, so it is not.
 		// The outer borrows are shared, so the carrier sidesteps the owned-mutable upgrade that
 		// blocks the all-`&mut` MutableDiamondRejected.
+		// PR 16: two changes meet here but cancel. The borrow-field upgrade no longer blocks
+		// the all-`&mut` MutableDiamondRejected, so that cross-reference goes stale. And d is
+		// reached through two paths, so borrow-stripping keeps the borrows — this return type
+		// is unchanged.
 		"InternalMutableAliasMovesAsUnit": {
 			src: `
 				fn build() {
@@ -539,6 +578,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// A wider component with five borrowed locals moves out as one unit, the same as the
 		// two-local case, since every node is reachable only through a.
+		// PR 16: every node is reached once, so borrow-stripping rewrites the return to the
+		// owned `{b1: {x: number}, …}` with all five fields owned.
 		"ReturnLargeStar": {
 			src: `
 				fn build() {

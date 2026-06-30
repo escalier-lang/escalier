@@ -259,6 +259,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started.
 | 13 | Deep, uniform `mut` and `readonly` | 1, 2 | Medium | ✅ done (#777, #781) |
 | 14 | Lazy deep `mut`: store the surface form, push the rule to access and constrain | 13 | Large | ✅ done (#780) |
 | 15 | Escape forcing at returns, stores, and consuming arguments (deferred from PR 6) | 6 | Large | ✅ done (#814); element stores deferred to M7, field-granular escape to PR 11 |
+| 16 | CFG-merge-joined flow-sensitivity, field-store edges, mutable graph nodes, return borrow-stripping | 7, 11, 14 | Large | ⬜ not started |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
@@ -801,8 +802,9 @@ binding in the component is consumed.
   a.data`, and a field read through a whole-binding borrow `val a = &mut b; return a.peer`
   still escapes b. The reassignment and destructuring cases that the formerly-disabled tests
   pin are re-enabled. The graph stays accumulate-only, so a reassignment adds edges without
-  clearing earlier ones; the full set-and-clear joined at CFG merges, which the component
-  move builds on, is the remaining flow-sensitivity work.
+  clearing earlier ones; the full set-and-clear joined at CFG merges is the remaining
+  flow-sensitivity work, deferred to PR 16 along with field-store edges and the mutable
+  graph nodes and return borrow-stripping they unblock.
 
 Tests: the cyclic `build()` returns `a` with both `a` and `b` consumed; an acyclic
 shared graph returned the same way; a graph where a node is also held by a retained
@@ -930,6 +932,106 @@ Acceptance: deep-mut semantics is preserved end to end with no representational
 deepening. The stored type matches the surface annotation, the printer is unchanged,
 and the constrain pipeline carries the deep-mut rule through a context flag rather
 than through the field types.
+
+---
+
+### PR 16 — CFG-merge-joined flow-sensitivity, field-store edges, mutable graph nodes, return borrow-stripping
+
+Goal: make the borrow-edge graph flow-sensitive, record edges at field stores, and land the
+two behaviours that soundness gates on that precision — constructing mutable graph nodes that
+hold borrow fields, and stripping a returned function-local borrow to ownership for the
+tree case. These four pieces are bundled because the two user-facing behaviours are unsound
+without the two infrastructure pieces, as the #819 review confirmed.
+
+**Where PR 11 left the graph.** The field-granular borrow-edge graph (PR 11, #818) is
+**accumulate-only**: edges recorded at a `val`/`var` initializer, a `var` reassignment, and a
+destructuring leaf are never cleared. A reassignment adds edges without removing the ones it
+replaced, which over-reports a replaced borrow — conservative-sound but unable to support
+clearing. Field stores `recv.f = source` record **no** edges at all. PR 11 noted both gaps as
+"the remaining flow-sensitivity work."
+
+**The infrastructure delta.**
+
+1. **Set-and-clear flow-sensitive edges.** Compute the borrow-edge set per CFG point: set a
+   binding's edges where a borrow flows in, clear them on a reassignment or repoint, and join
+   the sets at branch merges. This mirrors the consumed lattice the move engine already builds
+   over the same CFG (`AnalyzeMoves` in [internal/liveness](../../internal/liveness)), so the
+   borrow-edge graph stops being a single accumulate-only map and becomes a per-point lattice
+   read at the escape and component-move sites. Reassigning `a = &mut e` after `a = &mut d`
+   then leaves only `a → e`, not both.
+
+2. **Field-store edge recording.** Record an edge at `recv.f = source` when `recv` is a local
+   and `source` borrows locals, rooted at `recv`'s place extended by `f` — the same
+   `walkBorrowSources` the initializer path uses, at base `[recv.path…, f]`. With clearing
+   from piece 1, a repoint `b.peer = &mut e` replaces `b → d at [peer]` rather than
+   accumulating a stale edge. The store into a *parameter* field stays the immediate escape
+   `checkParamFieldStoreEscape` already reports; this piece covers the store into a *local*,
+   which does not escape until that local later flows out.
+
+**What the infrastructure unblocks.**
+
+3. **Mutable graph nodes that hold borrow fields.** Admit a borrow leaf in the fresh-literal
+   owned-mutable upgrade — `canUpgradeToOwnedMut` and the unannotated `val mut q = {…}` path
+   in [infer_decl.go](../../internal/solver/infer_decl.go) — so `val mut b = {peer: &mut d}` is
+   owned-mutable `mut {peer: &mut d}` and `b` is `&mut`-borrowable. This is the natural way to
+   build the `Node` graph the requirements' "Moving a graph" example writes. It is **sound
+   only with pieces 1 and 2**: without field-store edges, the repoint-then-return
+
+   ```esc
+   fn f(p: &mut {x: number}) {
+       val mut d = {x: 0}
+       val mut b = {peer: p}
+       b.peer = &mut d        // repoint b's field to the local d
+       return b               // returns mut {peer: &'a mut {x}} — 'a is falsified
+   }
+   ```
+
+   carries a borrow of the local `d` out under the parameter's lifetime `'a`, and no escape
+   fires, because the field store records no edge. The construction and connected-component
+   cases are sound on their own; this repoint-then-escape case is exactly what the
+   flow-sensitive field-store edges catch. The borrow-leaf upgrade's own soundness — the
+   container's mutability lets the field be repointed but grants no write to the referent
+   beyond what the borrow already carries, and the borrow's pointee stays invariant through
+   the C2 RefType arm — was validated in the #819 review; only the escape-tracking gap blocks
+   it.
+
+4. **Return borrow-stripping for the tree case.** When a returned value borrows
+   function-locals and each local is reached **exactly once** from the return with **no
+   cycle**, strip the `&`/`&mut` wrapper and let the return value own the data. This is the
+   type-level reflection of the connected-component move: the move already re-anchors the
+   nodes at the value level and consumes the locals, so a uniquely-reached node has no owner
+   but the return value, and owning it in the type is honest. It removes the falsified-lifetime
+   class of return type that piece 3 would otherwise expose — a stripped field carries no
+   lifetime to falsify. **Keep the borrow** when a node is reached through two or more paths
+   (the diamond) or sits on a cycle: an owned type is a tree with no sharing, so it cannot
+   represent a shared or cyclic node without either duplicating it — wrong, since the paths are
+   one object whose mutation must be observable through both — or keeping the borrow that
+   expresses the sharing. The multiplicity test extends the component reachability walk's
+   `seen` set from "have I reached this node" to "have I reached it twice," and reuses the
+   self-containment precondition the component move already checks.
+
+**Tests.**
+
+- Flow-sensitivity: reassigning a `var`'s borrow clears the replaced edge, so a stale referent
+  no longer over-reports as escaping; a borrow set on only one branch joins to MaybeBorrowed at
+  the merge.
+- Field-store edges: `b.peer = &mut d; return b` reports the escape or component-moves d
+  rather than silently returning a falsified-lifetime borrow; a repoint replaces the edge.
+- Mutable graph nodes: `val mut b = {peer: &mut d}` is `mut {peer: &mut {x: number}}`,
+  `&mut b` checks, `b.peer = &mut e` repoints, `b.peer.x = 5` writes through; the all-`&mut`
+  diamond becomes a connected-component move.
+- Return borrow-stripping: a tree-shaped component move returns an owned type — `return a`
+  over `a = {peer: &mut d}` returns `{peer: {value: number}}`, not `{peer: &mut {value:
+  number}}` — while a diamond or a cyclic graph keeps its borrows; a node also aliased outside
+  the component still errors.
+
+**Acceptance.** The borrow-edge graph is flow-sensitive; mutable graph nodes that hold borrow
+fields are constructible and `&mut`-borrowable with no falsified-lifetime escape; a returned
+tree of function-local borrows is owned by the return value while a shared or cyclic graph
+keeps its borrows.
+
+**Depends on:** PR 11 (the borrow-edge graph and connected-component move), PR 7 (field-level
+places), PR 14 (the C2 mut-context flag the borrow-leaf upgrade's invariance rides on).
 
 ---
 
