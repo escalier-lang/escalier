@@ -455,6 +455,44 @@ func TestConnectedComponentMove(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"build": "fn () -> {l: &{peer: &{x: 0}}, r: &{peer: &{x: 0}}}"},
 		},
+		// The mutable analog of the shared diamond does not form. Borrowing `&mut b` and
+		// `&mut c` where b and c are owned objects already holding a `&mut` borrow is rejected,
+		// since a `&mut` of a borrow-carrying local is not yet supported, so the carrier never
+		// builds. The aliasing question the shared diamond raises — d reached through two
+		// mutable paths — is therefore never reached here; the two-mutable-alias rejection is
+		// pinned separately by MutableAliasRejectsMove.
+		"MutableDiamondRejected": {
+			src: `
+				fn build() {
+					val mut d = {x: 0}
+					val mut b = {peer: &mut d}
+					val mut c = {peer: &mut d}
+					val a = {l: &mut b, r: &mut c}
+					return a
+				}
+			`,
+			want: []string{
+				"6:18-6:24: cannot constrain immutable object <: mutable object",
+				"6:29-6:35: cannot constrain immutable object <: mutable object",
+			},
+			types: map[string]string{"build": "fn () -> {l: &mut {peer: &mut {x: number}}, r: &mut {peer: &mut {x: number}}}"},
+		},
+		// A node mutably aliased outside the moved component blocks the move: b and c each hold
+		// `&mut d`, so returning b cannot move d out while c is a live second mutable path to
+		// it. This is the same external-reference rejection as the shared case, and it is what
+		// keeps a mutable same-graph alias from being co-moved out from under a live writer.
+		"MutableAliasRejectsMove": {
+			src: `
+				fn build() {
+					val mut d = {x: 0}
+					val b = {peer: &mut d}
+					val c = {peer: &mut d}
+					return b
+				}
+			`,
+			want:  []string{"6:13-6:14: borrowed value 'd' does not live long enough to escape the function"},
+			types: map[string]string{"build": "fn () -> {peer: &mut {x: number}}"},
+		},
 		// A wider component with five borrowed locals moves out as one unit, the same as the
 		// two-local case, since every node is reachable only through a.
 		"ReturnLargeStar": {
