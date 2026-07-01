@@ -1243,6 +1243,20 @@ user. Land them once that happens:
   Roughly doubles the work for ambiguous unions, which matches the cost
   of the original failure mode. Worth landing once user reports of
   confusion start coming in.
+- **Unblocks (not owned here): affine borrow tracking through container methods.** The affine
+  connected-component move records a borrow alias only at a binding initializer, a `var`
+  reassignment, and a destructuring leaf, so a borrow stored into a container by a method
+  call — `a.peers.push(&mut b)` — is invisible to its escape check
+  ([internal/solver/return_escape.go](../../internal/solver/return_escape.go)). That is why the
+  affine requirements' canonical cyclic `build()`, which wires the graph with `.push`, is not
+  yet expressible. This milestone is the prerequisite: it resolves `Array<T>` and its method
+  surface (`push`, …), which `internal/solver` has no representation for today — there is no
+  `Array` type and no array/tuple method call. The fix itself — teaching the borrow-edge
+  recorder to model a call that stores an argument-borrow into its receiver, gated on a
+  container-method lifetime annotation that expresses that effect — is affine work that lands
+  after this milestone, tracked under "Deferred and out of scope" in
+  [affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md).
+  Recorded here so the dependency is visible from the milestone that unblocks it.
 
 **Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,
 `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/`IteratorResult<T>`, `console`) resolves
