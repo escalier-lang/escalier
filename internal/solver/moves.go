@@ -558,10 +558,15 @@ func (c *checker) checkUseAfterMoves() {
 	if c.fn == nil || c.fn.cfg == nil {
 		return
 	}
-	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 {
+	if len(c.fn.useSites) == 0 && len(c.fn.moveSites) == 0 && len(c.fn.pendingTransitions) == 0 && len(c.fn.escapeSites) == 0 {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
+	// Decide deferred escapes against the lattice, then fold any component-move consumes
+	// back into moveSites and recompute, so a use after a co-moved local is caught.
+	if len(c.fn.escapeSites) > 0 && c.resolveComponentEscapes(info) {
+		info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
+	}
 	for _, u := range c.fn.useSites {
 		state, movedID := c.movedConflict(info, u)
 		if state == liveness.NotMoved {

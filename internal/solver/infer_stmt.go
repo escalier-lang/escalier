@@ -72,11 +72,12 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			if s.Expr != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
 					c.consumeOwned(s.Expr, t, s.Expr, ref)
+					// A returned value must not borrow a function-local, which dies when the
+					// frame returns and would leave the borrow dangling, unless it owns a
+					// self-contained component the move re-anchors. checkReturnEscape records
+					// the return for the post-pass to decide.
+					c.checkReturnEscape(s.Expr, ref)
 				}
-				// A returned value must not borrow a function-local, which dies when the
-				// frame returns and would leave the borrow dangling. checkReturnEscape
-				// reports a returned borrow of a local.
-				c.checkReturnEscape(s.Expr)
 			}
 		} else {
 			// A `return` reached outside any function body — e.g. inside an `if` that

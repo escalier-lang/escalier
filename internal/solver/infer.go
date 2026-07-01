@@ -182,6 +182,13 @@ type funcCtx struct {
 	// paramVarIDs holds the VarID of every parameter leaf binding. A borrow of a
 	// parameter outlives the frame, so the escape check skips a referent in this set.
 	paramVarIDs set.Set[liveness.VarID]
+	// escapeSites records every value flowing out of the frame that might carry a borrow
+	// of a function-local: a return value, a value stored into a parameter's field, and a
+	// consuming argument. The decision is deferred to a post-pass, resolveComponentEscapes,
+	// which runs once the whole body is walked, so the borrow-edge graph is complete and
+	// the consumed lattice is available. A self-contained connected component re-anchors
+	// and co-moves; anything else reports an EscapingBorrowError.
+	escapeSites []escapeSite
 	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
 	// the transition checker uses to query the lifetime sort for a `'static` escape in
 	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow
