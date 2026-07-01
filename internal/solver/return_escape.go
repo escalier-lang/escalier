@@ -119,18 +119,12 @@ func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo) bool {
 // componentMoveCovers reports whether the escape of e is a self-contained connected-component
 // move rather than an ordinary escape. It holds when two conditions are met:
 //
-//   - e is an owned carrier, not a bare borrow. Only an owned value re-anchors its internal
-//     graph; a borrow that is itself the outgoing value — `return &mut b`, a borrowed field,
-//     a borrow-typed binding — has no graph to re-anchor and stays an escape.
+//   - e is an owned carrier, not a bare borrow. A borrow that is itself the outgoing value —
+//     `return &mut b`, a borrowed field, a borrow-typed binding — has no graph to re-anchor.
 //   - The component is self-contained: no live binding outside it borrows a node inside it.
-//     The component is e's root binding together with every local it transitively borrows.
-//     A binding that is dead at ref does not count as an external reference — a moved binding's
-//     value is gone, and a binding not live after ref is never read again, so neither can
-//     observe the re-anchoring. So a carrier consumed into the escaping value, as in `val a2 =
-//     a; return a2`, is not a false external alias, and a stray borrow left unused before a
-//     return does not block the move. At a return every local is dead, so only a parameter or
-//     a longer-lived store can pin a returned component; a live external alias at a store or
-//     argument site still blocks the move.
+//     The component is e's root together with every local it transitively borrows. A binding
+//     dead at ref does not count as an external reference, so a stray unused borrow before a
+//     return does not block the move. The loop below explains what "dead" covers.
 //
 // The external-reference scan reads the same borrow-edge graph the escape check is built on,
 // so it sees the aliases recorded at a `val`/`var` initializer, a `var` reassignment, and a
@@ -161,6 +155,9 @@ func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarI
 			continue
 		}
 		for _, edge := range edges {
+			// This live outside binding borrows a node inside the component, so the component
+			// is not self-contained: some node is referenced from outside. The move cannot
+			// apply, and the value escapes normally.
 			if component.Contains(edge.referent) {
 				return false
 			}
@@ -169,12 +166,12 @@ func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarI
 	return true
 }
 
-// escapesAsOwnedCarrier reports whether the outgoing value e is an owned aggregate that
-// merely contains borrows of locals, as opposed to a value that is itself a borrow. Only an
-// owned carrier re-anchors an internal graph; a bare borrow has no graph to re-anchor and
-// stays an escape. The recorded type of e cannot make this call: a field read auto-derefs a
-// borrow field to its owned inner, so a borrow read back reads as owned. The borrow-edge
-// graph drives the decision instead.
+// escapesAsOwnedCarrier reports whether the outgoing value e is an owned aggregate holding
+// borrows of locals in its fields, rather than being a borrow itself. Only an owned carrier
+// re-anchors an internal graph. When e is itself a borrow — `&mut b`, a borrow-typed binding,
+// a borrowed field — there is no graph to re-anchor and it stays an escape. The recorded type
+// of e cannot make this call: a field read auto-derefs a borrow field to its owned inner, so
+// a borrow read back reads as owned. The borrow-edge graph drives the decision instead.
 //
 //   - A `&mut b` / `&b` expression is the borrow itself.
 //   - A fresh object or tuple literal is an owned carrier; its borrows are nested fields.
