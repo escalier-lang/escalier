@@ -1127,6 +1127,15 @@ now resolve to real `soltype` structures rather than opaque placeholders.
       `symbolSeg` kind keyed on the symbol's stable id. A non-singleton or otherwise
       non-constant key falls back to the container place, exactly as a dynamic index does
       now — sound, at worst over-conservative, never a missed use-after-move.
+      - **Number keys — decide `namedSeg` vs a distinct `indexSeg`.** Mapping a
+        singleton-number key to a `namedSeg` carrying the literal conflates `a[0]` with the
+        string key `a["0"]`, since a `namedSeg` is keyed by string text. The
+        "Tuple-index place segments" item in
+        [affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md)
+        instead calls for a distinct index-segment kind keyed by the integer, so `a[0]` and
+        `a["0"]` stay separate. Both are sound; the distinct kind is more precise and is what
+        tuple-element tracking needs. Pick one here and apply it uniformly to `constKey`,
+        `renderPlace`, and the tuple-literal walk.
     - **`soltype` prerequisite for the symbol case.** `soltype` has only the `symbol`
       primitive (`SymbolPrim`), no unique-symbol type carrying a stable id; the
       `UniqueSymbolType{Value int}` with that id lives in `internal/type_system`, the old
