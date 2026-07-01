@@ -259,7 +259,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started.
 | 13 | Deep, uniform `mut` and `readonly` | 1, 2 | Medium | ✅ done (#777, #781) |
 | 14 | Lazy deep `mut`: store the surface form, push the rule to access and constrain | 13 | Large | ✅ done (#780) |
 | 15 | Escape forcing at returns, stores, and consuming arguments (deferred from PR 6) | 6 | Large | ✅ done (#814); element stores deferred to M7, field-granular escape to PR 11 |
-| 16 | CFG-merge-joined flow-sensitivity, field-store edges, mutable graph nodes, return borrow-stripping | 7, 11, 14 | Large | ⬜ not started |
+| 16 | CFG-merge-joined flow-sensitivity, field-store edges, mutable graph nodes, return borrow-stripping | 7, 11, 14 | Large | ✅ done; return borrow-stripping through a consuming call deferred |
 
 ### PR 1 — `&` grammar, `RefTypeAnn` node, printer
 
