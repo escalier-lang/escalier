@@ -124,9 +124,13 @@ func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo) bool {
 //     a borrow-typed binding — has no graph to re-anchor and stays an escape.
 //   - The component is self-contained: no live binding outside it borrows a node inside it.
 //     The component is e's root binding together with every local it transitively borrows.
-//     A binding already moved is dead and does not count as an external reference, so a
-//     carrier consumed into the escaping value, as in `val a2 = a; return a2`, is not a false
-//     external alias of the component a2 now owns.
+//     A binding that is dead at ref does not count as an external reference — a moved binding's
+//     value is gone, and a binding not live after ref is never read again, so neither can
+//     observe the re-anchoring. So a carrier consumed into the escaping value, as in `val a2 =
+//     a; return a2`, is not a false external alias, and a stray borrow left unused before a
+//     return does not block the move. At a return every local is dead, so only a parameter or
+//     a longer-lived store can pin a returned component; a live external alias at a store or
+//     argument site still blocks the move.
 //
 // The external-reference scan reads the same borrow-edge graph the escape check is built on,
 // so it sees the aliases recorded at a `val`/`var` initializer, a `var` reassignment, and a
@@ -145,7 +149,15 @@ func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarI
 		if component.Contains(root) {
 			continue
 		}
+		// A binding that is dead at ref does not pin the component: its borrow of a component
+		// node is never dereferenced again, so co-moving the node observes nothing. Dead means
+		// moved before ref, or not live after it. At a return every local is dead — nothing
+		// runs after — so only a parameter or a longer-lived store can pin a returned
+		// component; a live external alias at a store or argument site still blocks the move.
 		if info.StateBefore(ref, root) == liveness.Moved {
+			continue
+		}
+		if c.fn.liveness != nil && !c.fn.liveness.IsLiveAfter(ref, root) {
 			continue
 		}
 		for _, edge := range edges {

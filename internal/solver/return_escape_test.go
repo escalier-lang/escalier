@@ -531,20 +531,28 @@ func TestConnectedComponentMove(t *testing.T) {
 			types: map[string]string{"build": "fn () -> {l: &mut {peer: &mut {x: number}}, r: &mut {peer: &mut {x: number}}}"},
 		},
 		// A node mutably aliased outside the moved component blocks the move: b and c each hold
-		// `&mut d`, so returning b cannot move d out while c is a live second mutable path to
-		// it. This is the same external-reference rejection as the shared case, and it is what
-		// keeps a mutable same-graph alias from being co-moved out from under a live writer.
+		// `&mut d`, and c is read after the store, so it is a live second mutable path to d when
+		// storing b tries to move it out. This is the same external-reference rejection as the
+		// shared case, and it is what keeps a mutable same-graph alias from being co-moved out
+		// from under a live writer. The escape is demonstrated at a store site, not a return,
+		// because at a return every local is dead — see DeadExternalRefAllowsMove — so a live
+		// external alias only exists where it is used after the escape.
 		"MutableAliasRejectsMove": {
 			src: `
-				fn build() {
+				fn store(x: {peer: &mut {x: number}}) {}
+				fn f() {
 					val mut d = {x: 0}
 					val b = {peer: &mut d}
 					val c = {peer: &mut d}
-					return b
+					store(b)
+					val y = c
 				}
 			`,
-			want:  []string{"6:13-6:14: borrowed value 'd' does not live long enough to escape the function"},
-			types: map[string]string{"build": "fn () -> {peer: &mut {x: number}}"},
+			want: []string{"7:12-7:13: borrowed value 'd' does not live long enough to escape the function"},
+			types: map[string]string{
+				"store": "fn (x: {peer: &mut {x: number}}) -> void",
+				"f":     "fn () -> void",
+			},
 		},
 		// Two mutable aliases of one node are fine when both live inside the moved component.
 		// b and c each hold `&mut d`, and a holds shared borrows of both, so the component
@@ -636,10 +644,12 @@ func TestConnectedComponentMove(t *testing.T) {
 				"f":     "fn () -> void",
 			},
 		},
-		// A node also reachable from a live binding outside the component is not self-
-		// contained: keep holds a second borrow of b, so the move does not apply and
-		// returning a reports the ordinary escape.
-		"RetainedNodeRejectsMove": {
+		// A second borrow of a node that is dead by the escape point does not pin the
+		// component: keep holds `&b`, but it is never read after `return a`, and at a return
+		// every local is dead, so keep observes nothing once b is co-moved. The move applies
+		// and no escape is reported. Self-containment is about a LIVE external reference, so a
+		// stray unused borrow before a return is not one.
+		"DeadExternalRefAllowsMove": {
 			src: `
 				fn build() {
 					val mut b = {value: 2}
@@ -648,8 +658,30 @@ func TestConnectedComponentMove(t *testing.T) {
 					return a
 				}
 			`,
-			want:  []string{"6:13-6:14: borrowed value 'b' does not live long enough to escape the function"},
+			want:  nil,
 			types: map[string]string{"build": "fn () -> {peer: &{value: number}}"},
+		},
+		// A node reachable from a LIVE binding outside the component is not self-contained: keep
+		// holds `&b` and is read after the store, so it is a live external reference to b when
+		// storing a tries to move the {a, b} component out. The move does not apply and the
+		// ordinary escape stands. Contrast DeadExternalRefAllowsMove, where the same borrow was
+		// dead at a return.
+		"LiveExternalRefRejectsMove": {
+			src: `
+				fn store(x: {peer: &{value: number}}) {}
+				fn f() {
+					val mut b = {value: 2}
+					val a = {peer: &b}
+					val keep = &b
+					store(a)
+					val y = keep
+				}
+			`,
+			want: []string{"7:12-7:13: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{
+				"store": "fn (x: {peer: &{value: number}}) -> void",
+				"f":     "fn () -> void",
+			},
 		},
 	}
 	for name, tc := range tests {
