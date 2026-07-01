@@ -95,9 +95,9 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 	}{
 		// Repointing a field to a local then returning the carrier carries the stored borrow
 		// out: `b.peer = &mut d` records b → d, so returning b is a component move of d, the
-		// falsified-lifetime case the field-store edge catches. The initial referent c is
-		// cleared by the strong update, so only d is co-moved, and stripping owns d in the
-		// returned tree.
+		// falsified-lifetime case the field-store edge catches. The store is a strong update
+		// that clears the [peer] subtree before recording, so the replaced referent c is
+		// dropped and only d is co-moved, and stripping owns d in the returned tree.
 		"FieldStoreRepointThenReturn": {
 			src: `
 				fn f() {
@@ -105,21 +105,6 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 					val mut d = {x: 0}
 					val mut b = {peer: &mut c}
 					b.peer = &mut d
-					return b
-				}
-			`,
-			want:  nil,
-			types: map[string]string{"f": "fn () -> mut {peer: {x: number}}"},
-		},
-		// A repoint replaces the field's edge: `b.peer = &mut e` clears the [peer] subtree
-		// before recording b → e, so returning b co-moves e and leaves the replaced d untouched.
-		"FieldStoreRepointReplacesEdge": {
-			src: `
-				fn f() {
-					val mut d = {x: 0}
-					val mut e = {x: 9}
-					val mut b = {peer: &mut d}
-					b.peer = &mut e
 					return b
 				}
 			`,
