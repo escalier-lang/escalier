@@ -130,7 +130,9 @@ func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo) bool {
 // so it sees the aliases recorded at a `val`/`var` initializer, a `var` reassignment, and a
 // destructuring leaf. An alias formed by a path the graph does not record, such as a `.push`
 // of a borrow into a container, is invisible here exactly as it is to the escape check, the
-// shared limitation the graph's three recording sites impose.
+// shared limitation the graph's three recording sites impose. Recording a container-method
+// borrow needs `Array` and method-call support the solver lacks today; it is tracked as a
+// post-M7 item under "Deferred and out of scope" in planning/affine_semantics/implementation_plan.md.
 func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarID], ref liveness.StmtRef, info *liveness.MoveInfo) bool {
 	if !c.escapesAsOwnedCarrier(e) {
 		return false
