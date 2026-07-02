@@ -8,30 +8,30 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Return borrow-stripping. When a returned value owns a self-contained graph of borrowed
-// locals and that graph is a tree — every borrowed local reached exactly once from the return
-// with no cycle — the connected-component move has already re-anchored the nodes and consumed
-// the locals, so the return value is the sole owner of each node. Owning them in the type is
-// then honest, so the returned borrows are stripped to their owned pointees. `return a` over
-// `val a = {peer: &mut d}` returns `{peer: {value: number}}` rather than `{peer: &mut {value:
-// number}}`.
+// Return borrow-stripping rewrites a returned borrow of a self-contained local graph into the
+// owned pointee. The connected-component move has already re-anchored the nodes and consumed the
+// locals, so the return value is their sole owner, and owning them in the type is honest. `return
+// a` over `val a = {peer: &mut d}` then returns `{peer: {value: number}}` rather than `{peer:
+// &mut {value: number}}`.
 //
-// Stripping is withheld when a node is reached through two or more paths (a diamond) or sits on
-// a cycle. An owned type is a tree with no sharing, so it cannot represent a shared or cyclic
-// node without duplicating it, which is wrong since the paths are one object, or without
-// keeping the borrow that expresses the sharing. So a diamond or cyclic graph keeps its
-// borrows.
+// The reachable shape from the return decides whether a borrow is stripped:
 //
-// Only a direct place or object/tuple-literal carrier is stripped. A returned call result,
-// such as `return id(a)`, hides its borrows behind the call boundary, so its type is left
-// borrowed — sound, since the component move already keeps the nodes alive, just not stripped.
-// A borrow of a parameter carries no local edge and is never stripped.
+//   - Tree: every borrowed local is reached exactly once with no cycle. Strip every borrow to
+//     its owned pointee, since the return value uniquely owns each node.
+//   - Diamond or cycle: a node is reached through two or more paths, or sits on a cycle. Keep
+//     the borrows. An owned tree cannot represent a shared node without duplicating it, which
+//     would hide mutations across the shared paths.
+//
+// The carrier the return names decides whether stripping runs at all:
+//
+//   - A direct place or object/tuple literal is eligible.
+//   - A call result such as `return id(a)` is left borrowed, since its borrows are hidden behind
+//     the call boundary. This is sound. The component move already keeps the nodes alive.
+//   - A parameter borrow is never stripped, since it carries no local edge.
 
-// stripReturnBorrowsIfTree rewrites the return type of the return whose value is e to own the
-// data when e's reachable borrow graph is a tree. It is a no-op when e is not a return value,
-// when the carrier is not a direct place or literal, or when the graph is not a tree. The
-// borrow-edge graph read is c.fn.borrowEdges, which resolveComponentEscapes has set to the
-// snapshot at this return's program point.
+// stripReturnBorrowsIfTree rewrites the return whose value is e to own its borrowed locals when
+// e's reachable borrow graph is a tree. It is a no-op unless e is a return value with a
+// strippable carrier and a tree-shaped graph.
 func (c *checker) stripReturnBorrowsIfTree(e ast.Expr) {
 	idx := c.returnIndexOf(e)
 	if idx < 0 {
@@ -59,11 +59,9 @@ func (c *checker) returnIndexOf(e ast.Expr) int {
 	return -1
 }
 
-// carrierGraph returns the borrow-edge graph and the carrier root that describe the outgoing
-// value e's borrow fields. A whole-binding place `return a` uses a's VarID and the snapshot
-// graph directly. An object or tuple literal `return {peer: &mut b}` has no binding, so it is
-// walked into a private copy of the graph under a synthetic root. Any other carrier reports
-// ok=false, leaving its type unstripped.
+// carrierGraph returns the borrow-edge graph and the carrier root for e's borrow fields. A
+// whole-binding place uses its VarID and the snapshot graph; an object or tuple literal is walked
+// into a private copy under a synthetic root. Any other carrier reports ok=false.
 func (c *checker) carrierGraph(e ast.Expr) (map[liveness.VarID][]fieldBorrow, liveness.VarID, bool) {
 	if p, ok := exprPlace(e); ok && p.root > 0 && len(p.path) == 0 {
 		return c.fn.borrowEdges, p.root, true
@@ -76,7 +74,7 @@ func (c *checker) carrierGraph(e ast.Expr) (map[liveness.VarID][]fieldBorrow, li
 		c.fn.borrowEdges = cloneBorrowState(saved)
 		root := liveness.VarID(c.varIDCounter)
 		c.varIDCounter++
-		c.walkBorrowSources(root, nil, e)
+		c.recordBorrowSources(root, nil, e)
 		graph := c.fn.borrowEdges
 		c.fn.borrowEdges = saved
 		return graph, root, true
@@ -92,21 +90,19 @@ func (c *checker) carrierGraph(e ast.Expr) (map[liveness.VarID][]fieldBorrow, li
 func isTreeReachable(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID) bool {
 	counts := map[liveness.VarID]int{}
 	tree := true
-	var walk func(node liveness.VarID)
-	reach := func(referent liveness.VarID) {
-		counts[referent]++
-		if counts[referent] == 1 {
-			walk(referent)
-		} else {
-			tree = false
-		}
-	}
-	walk = func(node liveness.VarID) {
+	var visit func(node liveness.VarID)
+	visit = func(node liveness.VarID) {
 		for _, e := range graph[node] {
-			reach(e.referent)
+			counts[e.referent]++
+			if counts[e.referent] == 1 {
+				visit(e.referent)
+			} else {
+				// A second reach — a shared node or a cycle's back edge — breaks the tree.
+				tree = false
+			}
 		}
 	}
-	walk(root)
+	visit(root)
 	return tree
 }
 

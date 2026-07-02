@@ -962,7 +962,7 @@ clearing. Field stores `recv.f = source` record **no** edges at all. PR 11 noted
 
 2. **Field-store edge recording.** Record an edge at `recv.f = source` when `recv` is a local
    and `source` borrows locals, rooted at `recv`'s place extended by `f` — the same
-   `walkBorrowSources` the initializer path uses, at base `[recv.path…, f]`. With clearing
+   `recordBorrowSources` the initializer path uses, at base `[recv.path…, f]`. With clearing
    from piece 1, a repoint `b.peer = &mut e` replaces `b → d at [peer]` rather than
    accumulating a stale edge. The store into a *parameter* field stays the immediate escape
    `checkParamFieldStoreEscape` already reports; this piece covers the store into a *local*,

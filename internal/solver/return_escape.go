@@ -333,10 +333,10 @@ func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
 	}
 	root := liveness.VarID(destVarID)
 	c.clearEagerSubtree(root, nil)
-	c.walkBorrowSources(root, nil, init)
+	c.recordBorrowSources(root, nil, init)
 }
 
-// walkBorrowSources records the borrow edges the expression e contributes to the binding
+// recordBorrowSources records the borrow edges the expression e contributes to the binding
 // root, at base, the field path reached so far:
 //
 //   - A direct `&mut b` of a local records an edge at base.
@@ -351,7 +351,7 @@ func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
 //     through borrowsIn.
 //
 // The walk stops at a call or nested-function boundary.
-func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.Expr) {
+func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e ast.Expr) {
 	switch e := e.(type) {
 	case *ast.BorrowExpr:
 		if referent, ok := c.isLocalReferent(e.Arg); ok && referent != root {
@@ -363,12 +363,12 @@ func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.
 			case *ast.PropertyExpr:
 				if el.Value != nil {
 					if name, ok := objKeyName(el.Name); ok {
-						c.walkBorrowSources(root, appendSeg(base, name), el.Value)
+						c.recordBorrowSources(root, appendSeg(base, name), el.Value)
 					} else {
 						// A computed key names no static field segment, so the borrow can't
 						// be addressed by a field path. Keep base, attributing the value to the
 						// enclosing object conservatively.
-						c.walkBorrowSources(root, base, el.Value)
+						c.recordBorrowSources(root, base, el.Value)
 					}
 				} else if ident, ok := el.Name.(*ast.IdentExpr); ok && ident.VarID > 0 {
 					// A shorthand property `{peer}` is `{peer: peer}`: the field peer holds
@@ -379,15 +379,15 @@ func (c *checker) walkBorrowSources(root liveness.VarID, base []placeSeg, e ast.
 					c.copyPlaceEdges(root, appendSeg(base, ident.Name), movePlace{root: liveness.VarID(ident.VarID)})
 				}
 			case *ast.ObjSpreadExpr:
-				c.walkBorrowSources(root, base, el.Value)
+				c.recordBorrowSources(root, base, el.Value)
 			}
 		}
 	case *ast.TupleExpr:
 		for _, el := range e.Elems {
-			c.walkBorrowSources(root, base, el)
+			c.recordBorrowSources(root, base, el)
 		}
 	case *ast.ArraySpreadExpr:
-		c.walkBorrowSources(root, base, e.Value)
+		c.recordBorrowSources(root, base, e.Value)
 	case *ast.CallExpr, *ast.TaggedTemplateLitExpr, *ast.FuncExpr:
 		return
 	default:
@@ -529,7 +529,7 @@ func (c *checker) recordFieldStoreEdges(recv ast.Expr, field string, source ast.
 	}
 	base := appendSeg(rp.path, field)
 	c.clearEagerSubtree(rp.root, base)
-	c.walkBorrowSources(rp.root, base, source)
+	c.recordBorrowSources(rp.root, base, source)
 	c.flushBorrowGens(ref)
 }
 
