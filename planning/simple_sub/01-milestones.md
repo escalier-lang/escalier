@@ -737,6 +737,22 @@ M4 substrate without retrofitting.
   the existing dispatch path." Depends on `Iterable<T>` / `Iterator<T>` /
   `AsyncIterable<T>` / `IteratorResult<T>` being available from the stdlib
   (M2 placeholder; real resolution lands in M7).
+  - **Back-edge validation for the borrow-edge dataflow.** A `for` loop is the
+    first inferable source that gives the CFG a back edge, so it is where the
+    affine flow-sensitive analyses first meet one from real code. The move
+    consumed-lattice (`AnalyzeMoves`) and the borrow-edge dataflow
+    (`analyzeBorrows`, `internal/solver/borrow_flow.go`) already join at CFG
+    merges and iterate to a fixed point, but that path is exercised only by
+    hand-built graphs today. When `for` lands, add loop tests for both. The
+    borrow-edge case has a known subtlety: a borrow can reach a reassignment
+    through the back edge that the source-order eager map does not yet hold, so
+    `clearEagerSubtree` emits an unconditional kill for a whole-binding
+    reassignment (`a = seed` clears `a`'s stale edge). Confirm that with a loop
+    test. A field-store subtree update keeps the prune-gated kill, since the
+    dataflow replaces a root's whole edge set and an unconditional whole-root
+    kill could drop a sibling field's back-edge borrow and miss an escape. That
+    field-store-across-a-back-edge case is the remaining imprecision to
+    re-examine here.
 - **`mut` and lifetimes ride on it free.** `Class` is borrowed the same way
   records and tuples are — wrapped in `Ref{mut, lt, inner: Class{...}}`. The
   M4 lifetime machinery applies unchanged (`mut 'a Point` is `Ref{mut: true,
