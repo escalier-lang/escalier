@@ -154,11 +154,14 @@ func stripBorrowTree(t soltype.Type, root liveness.VarID, path []placeSeg, graph
 		}
 		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
 	case *soltype.TupleType:
-		elems := make([]soltype.Type, len(t.Elems))
-		for i, e := range t.Elems {
-			elems[i] = stripBorrowTree(e, root, path, graph)
-		}
-		return &soltype.TupleType{Elems: elems, Inexact: t.Inexact}
+		// Keep a tuple's borrows unstripped. Every tuple element's borrow is recorded at the
+		// container path, since placeSeg has no tuple-index kind yet, so findReferentAt cannot
+		// tell which element a same-path edge belongs to. Recursing each element at the shared
+		// path would strip it with a sibling's referent and follow the wrong subgraph. Leaving
+		// the tuple borrowed is sound: the component move still consumes the borrowed locals,
+		// only the type is not rewritten to owned. Per-element stripping lands once a tuple
+		// index yields its own place segment.
+		return t
 	default:
 		return t
 	}

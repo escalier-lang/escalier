@@ -45,10 +45,20 @@ func (c *checker) markBorrowDirty(root liveness.VarID) {
 }
 
 // clearEagerSubtree removes from root's eager edge set every edge whose path lies at or below
-// base, so a `var` reassignment clears the binding wholly with a nil base and a field store
-// clears only the stored field's subtree. It marks root dirty when it removed an edge, so a
-// reassignment away from a borrow emits an assignment that kills the prior referent in the
-// dataflow, while a borrow-free binding that clears nothing emits no spurious assignment.
+// base, so a `var` reassignment clears the binding wholly with an empty base and a field store
+// clears only the stored field's subtree.
+//
+// A whole-binding reassignment (empty base) always marks root dirty, so it emits a kill even
+// when the eager map held no edge to prune. The eager map is filled in source order, so a
+// borrow that reaches the reassignment only through a CFG back edge is absent here; without an
+// unconditional kill the dataflow would carry that stale edge past `a = seed`. A whole-binding
+// reassignment replaces the binding's entire edge set, so killing it wholesale is sound.
+//
+// A field-store subtree update (non-empty base) marks root dirty only when it pruned an edge.
+// Its dataflow assignment replaces root's WHOLE edge set with the source-order eager set, so an
+// unconditional whole-root emit could drop a sibling field's back-edge borrow and miss a real
+// escape. A store that adds a borrow is marked dirty separately by addBorrowEdge, and one that
+// prunes a prior borrow is caught by `removed`; a store that changes no borrow emits nothing.
 func (c *checker) clearEagerSubtree(root liveness.VarID, base []placeSeg) {
 	if c.fn == nil || c.fn.borrowEdges == nil || root <= 0 {
 		return
@@ -68,7 +78,7 @@ func (c *checker) clearEagerSubtree(root liveness.VarID, base []placeSeg) {
 	} else {
 		c.fn.borrowEdges[root] = kept
 	}
-	if removed {
+	if removed || len(base) == 0 {
 		c.markBorrowDirty(root)
 	}
 }
