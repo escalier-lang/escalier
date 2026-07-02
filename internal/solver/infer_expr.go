@@ -1359,11 +1359,15 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			}
 		}
 		// Record any borrow of a local the reassigned value introduces, so a later
-		// flow-out of the target finds it. `a = &mut b` records a → b. The edge graph
-		// accumulates, so this adds to the target's earlier edges rather than replacing
-		// them.
+		// flow-out of the target finds it. `a = &mut b` records a → b. Recording strong-
+		// updates the binding, clearing its prior referent, and the flush lands the new
+		// edge set at this statement's CFG point so the flow-sensitive graph joins it at
+		// later merges.
 		if !b.ModuleLevel {
 			c.recordBorrowEdges(target.VarID, e.Right)
+			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
+				c.flushBorrowGens(ref)
+			}
 		}
 	}
 	// The assignment evaluates to the value just stored — the SAME read face as
@@ -1475,6 +1479,10 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 			// the caller. checkParamFieldStoreEscape applies only when the receiver is a
 			// parameter, and records the store for the post-pass to decide.
 			c.checkParamFieldStoreEscape(m.Object, e.Right, ref)
+			// A store into a LOCAL receiver's field records a borrow edge instead, rooted at
+			// the field. It does not escape until the receiver itself flows out, at which
+			// point the recorded edge is followed. `b.peer = &mut d` records b → d at [peer].
+			c.recordFieldStoreEdges(m.Object, m.Prop.Name, e.Right, ref)
 		}
 	}
 	// The assignment evaluates to the value just stored. recordType overwrites the

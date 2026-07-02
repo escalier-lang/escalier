@@ -172,13 +172,27 @@ type funcCtx struct {
 	// a.peer` from the disjoint `return a.data`. A parameter root is never recorded, since
 	// a borrow of a parameter carries a caller lifetime that already outlives the frame.
 	//
-	// Edges are recorded at a `val`/`var` initializer, a `var` reassignment, and a
-	// destructuring leaf. The graph is accumulate-only, so a reassignment adds edges
-	// without clearing the binding's earlier ones — the conservative direction that
-	// over-reports a replaced borrow but never misses a real escape. Clearing on
-	// reassignment soundly needs CFG-merge-joined edges, which the connected-component
-	// move builds.
+	// While the body is walked this map holds the source-order-current edge set for each
+	// binding, updated by strong subtree replacement: a `var` reassignment clears the
+	// binding's prior edges before recording its new ones, and a field store `recv.f = …`
+	// clears only the [f] subtree. copyPlaceEdges reads it to project a source binding's
+	// edges into a destructuring leaf, so it must reflect the state at the copy point. The
+	// per-program-point graph the escape check reads is the flow-sensitive one analyzeBorrows
+	// computes from borrowGens, not this eager map. After the body walk, resolveComponentEscapes
+	// overwrites this field with the per-point snapshot at each escape site.
 	borrowEdges map[liveness.VarID][]fieldBorrow
+	// borrowGens records, per CFG statement position, the borrow-edge assignments that
+	// statement makes: for each binding it re-points, the full new edge set the eager
+	// walk computed. analyzeBorrows folds these forward over the CFG, joining edge sets at
+	// branch merges by union so a borrow set on one branch reaches the merge, and replacing
+	// a binding's whole edge set at each assignment so a reassignment clears the prior
+	// referent. It is the flow-sensitive counterpart of moveSites.
+	borrowGens map[liveness.StmtRef][]borrowAssign
+	// borrowDirty accumulates the roots whose eager edge set changed while recording the
+	// current statement's borrows. The recording sites flush it into borrowGens once the
+	// statement's borrows are recorded, emitting one assignment per dirtied root. It is
+	// reset after each flush.
+	borrowDirty set.Set[liveness.VarID]
 	// paramVarIDs holds the VarID of every parameter leaf binding. A borrow of a
 	// parameter outlives the frame, so the escape check skips a referent in this set.
 	paramVarIDs set.Set[liveness.VarID]
