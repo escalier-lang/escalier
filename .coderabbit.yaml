@@ -1,3 +1,5 @@
 reviews:
   poem: false
   fortune: false
+  auto_review:
+    enabled: false
