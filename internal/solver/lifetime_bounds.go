@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"maps"
+	"slices"
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -73,11 +75,7 @@ func buildLtBoundSet(occ map[*soltype.LifetimeVar]occPolarity) *ltBoundSet {
 		visit(v)
 	}
 
-	ids := make([]int, 0, len(vars))
-	for id := range vars {
-		ids = append(ids, id)
-	}
-	rep := condenseSCCs(ids, rawEdges)
+	rep := condenseSCCs(slices.Sorted(maps.Keys(vars)), rawEdges)
 
 	edges := map[int]set.Set[int]{}
 	for from, tos := range rawEdges {
