@@ -150,16 +150,10 @@ func (a *ltAnalysis) kept(v *soltype.LifetimeVar) bool {
 	return a.posComps.Contains(a.leaderOf(v))
 }
 
-// componentParams returns the kept param lifetimes sharing v's connected component,
-// sorted by variable ID. Sorting yields a canonical union member order, so a join
-// expanded here renders the same ('a | 'b) regardless of bound-list order, and
-// ltEqual's positional member compare stays order-insensitive. Members are keyed by
-// SCC representative so two mutually-outliving params list once, but the emitted
-// member is a param var, not bs.vars[rep]: the representative can be a non-param
-// bridge var that surfaces in no parameter slot, and resolveLt names a kept param
-// under its own var, so the union member must be a param var to name the same
-// lifetime the parameter slot does. The smallest-ID param per representative is kept
-// for a deterministic choice across map-iteration order.
+// componentParams returns the kept param lifetimes in v's connected component, sorted
+// by variable ID for a canonical union member order. Members are keyed by SCC
+// representative so mutually-outliving params list once, but emit a param var, since
+// the representative itself can be a non-param bridge var named in no parameter slot.
 func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []soltype.Lifetime {
 	leader := a.leaderOf(v)
 	byRep := map[int]*soltype.LifetimeVar{}
