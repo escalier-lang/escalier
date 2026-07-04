@@ -1,0 +1,225 @@
+package solver
+
+import (
+	"testing"
+
+	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/stretchr/testify/require"
+)
+
+// ltVarsFromEdges builds one LifetimeVar per ID mentioned in edges or staticIDs and
+// records each edge (x, y) as "'x outlives 'y" the way constrainLt does: y joins
+// x.UpperBounds and x joins y.LowerBounds. Each ID in staticIDs gains 'static as an
+// upper bound, the escape constraint that forces it to 'static. It returns the
+// occurrence map buildLtBoundSet consumes; the polarity value is irrelevant to graph
+// construction, so every variable is recorded as occNeg.
+func ltVarsFromEdges(edges [][2]int, staticIDs ...int) map[*soltype.LifetimeVar]occPolarity {
+	vars := map[int]*soltype.LifetimeVar{}
+	get := func(id int) *soltype.LifetimeVar {
+		v, ok := vars[id]
+		if !ok {
+			v = &soltype.LifetimeVar{ID: id}
+			vars[id] = v
+		}
+		return v
+	}
+	for _, e := range edges {
+		x, y := get(e[0]), get(e[1])
+		x.UpperBounds = append(x.UpperBounds, y)
+		y.LowerBounds = append(y.LowerBounds, x)
+	}
+	for _, id := range staticIDs {
+		get(id).UpperBounds = append(get(id).UpperBounds, soltype.Static)
+	}
+	occ := map[*soltype.LifetimeVar]occPolarity{}
+	for _, v := range vars {
+		occ[v] = occNeg
+	}
+	return occ
+}
+
+// buildReduced builds a bound set from edges plus 'static-forced IDs and reduces it.
+func buildReduced(edges [][2]int, staticIDs ...int) *ltBoundSet {
+	s := buildLtBoundSet(ltVarsFromEdges(edges, staticIDs...))
+	s.reduce()
+	return s
+}
+
+// Transitive reduction and 'static edge removal both collapse the edge set to its
+// non-redundant, meaningful bounds.
+func TestLtBoundSetReduce(t *testing.T) {
+	tests := []struct {
+		name      string
+		edges     [][2]int
+		staticIDs []int
+		want      [][2]int
+	}{
+		{
+			// '1: '2, '2: '3, '1: '3 — the shortcut '1: '3 drops.
+			name:  "transitive shortcut drops",
+			edges: [][2]int{{1, 2}, {2, 3}, {1, 3}},
+			want:  [][2]int{{1, 2}, {2, 3}},
+		},
+		{
+			// A diamond keeps its four rim edges and drops only the '1: '4 shortcut.
+			name:  "diamond keeps rim, drops shortcut",
+			edges: [][2]int{{1, 2}, {1, 3}, {2, 4}, {3, 4}, {1, 4}},
+			want:  [][2]int{{1, 2}, {1, 3}, {2, 4}, {3, 4}},
+		},
+		{
+			// The multi-source join '1: '3, '2: '3 keeps '1 and '2 independent.
+			name:  "independent join sources stay unrelated",
+			edges: [][2]int{{1, 3}, {2, 3}},
+			want:  [][2]int{{1, 3}, {2, 3}},
+		},
+		{
+			// An edge into a 'static-forced node drops.
+			name:      "edge into static drops",
+			edges:     [][2]int{{1, 2}},
+			staticIDs: []int{2},
+			want:      nil,
+		},
+		{
+			// An edge out of a 'static-forced node is trivially true and drops.
+			name:      "edge out of static drops",
+			edges:     [][2]int{{1, 2}},
+			staticIDs: []int{1},
+			want:      nil,
+		},
+		{
+			// A mutual-outlives cycle condenses to one node, so no edge survives.
+			name:  "two-node cycle collapses",
+			edges: [][2]int{{1, 2}, {2, 1}},
+			want:  nil,
+		},
+		{
+			// A three-node cycle likewise folds to one node.
+			name:  "three-node cycle collapses",
+			edges: [][2]int{{1, 2}, {2, 3}, {3, 1}},
+			want:  nil,
+		},
+		{
+			// A cycle that also outlives an outside lifetime keeps the one condensed edge.
+			name:  "cycle with outgoing edge",
+			edges: [][2]int{{1, 2}, {2, 1}, {2, 3}},
+			want:  [][2]int{{1, 3}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, buildReduced(tt.edges, tt.staticIDs...).canonicalEdges())
+		})
+	}
+}
+
+// canonicalEdges sorts by (from, to), so the edge order is the same no matter the order
+// the bounds were recorded in.
+func TestLtBoundSetCanonicalEdgeOrderShuffleInvariant(t *testing.T) {
+	want := [][2]int{{1, 2}, {1, 4}, {2, 3}}
+	require.Equal(t, want, buildReduced([][2]int{{1, 2}, {2, 3}, {1, 4}}).canonicalEdges())
+	require.Equal(t, want, buildReduced([][2]int{{1, 4}, {2, 3}, {1, 2}}).canonicalEdges())
+}
+
+// A mutual-outlives cycle condenses to its smallest-ID representative, so both members
+// share one representative and implies reports the equality in both directions.
+func TestLtBoundSetMutualOutlivesIsEquality(t *testing.T) {
+	s := buildReduced([][2]int{{1, 2}, {2, 1}})
+
+	require.Equal(t, 1, s.repOf(1), "the smaller ID is the representative")
+	require.Equal(t, 1, s.repOf(2))
+	require.True(t, s.implies(1, 2), "equal lifetimes outlive each other")
+	require.True(t, s.implies(2, 1))
+}
+
+// A three-node cycle folds to one node and reduce terminates on it rather than looping
+// over the collapsed cycle. Every member inherits the component's outgoing relations.
+func TestLtBoundSetThreeNodeCycleReducesWithoutLooping(t *testing.T) {
+	s := buildLtBoundSet(ltVarsFromEdges([][2]int{{1, 2}, {2, 3}, {3, 1}, {3, 4}}))
+	require.NotPanics(t, func() { s.reduce() })
+
+	require.Equal(t, 1, s.repOf(1))
+	require.Equal(t, 1, s.repOf(2))
+	require.Equal(t, 1, s.repOf(3))
+	require.True(t, s.implies(2, 4), "'2 shares the cycle's component, so it outlives '4")
+}
+
+// implies answers reachability over the reduced graph, including reflexivity and the
+// transitive relation the reduction elided from the edge set.
+func TestLtBoundSetImpliesReachability(t *testing.T) {
+	s := buildReduced([][2]int{{1, 2}, {2, 3}})
+
+	require.True(t, s.implies(1, 2), "'1: '2 is a direct edge")
+	require.True(t, s.implies(2, 3), "'2: '3 is a direct edge")
+	require.True(t, s.implies(1, 3), "'1: '3 holds transitively though the edge was reduced away")
+	require.True(t, s.implies(1, 1), "outlives is reflexive")
+	require.False(t, s.implies(3, 1), "'3 does not outlive '1")
+	require.False(t, s.implies(2, 1), "'2 does not outlive '1")
+}
+
+// A 'static-forced lifetime outlives every other lifetime, so it implies every target
+// regardless of the edges.
+func TestLtBoundSetImpliesStaticAbsorbs(t *testing.T) {
+	s := buildReduced([][2]int{{2, 3}}, 1)
+
+	require.True(t, s.static.Contains(s.repOf(1)), "'1 is forced to 'static")
+	require.True(t, s.implies(1, 2), "'static outlives '2")
+	require.True(t, s.implies(1, 3), "'static outlives '3")
+	require.False(t, s.implies(2, 1), "'2 does not outlive the 'static lifetime")
+}
+
+// 'static forcing propagates backward: a lifetime that outlives a 'static-forced
+// lifetime is itself forced to 'static, since only 'static outlives 'static.
+func TestLtBoundSetStaticPropagatesBackward(t *testing.T) {
+	// '1: '2, '2: 'static forces '1 to 'static too.
+	s := buildReduced([][2]int{{1, 2}}, 2)
+
+	require.True(t, s.static.Contains(s.repOf(1)), "'1 outlives the 'static '2, so '1 is 'static")
+	require.True(t, s.implies(1, 3), "the now-'static '1 outlives an unrelated '3")
+}
+
+// A lower-bound 'static is 'static outliving the variable, which is trivially true and
+// forces nothing. The variable must not be treated as absorbing.
+func TestLtBoundSetLowerBoundStaticDoesNotForce(t *testing.T) {
+	v := &soltype.LifetimeVar{ID: 1, LowerBounds: []soltype.Lifetime{soltype.Static}}
+	other := &soltype.LifetimeVar{ID: 2}
+	s := buildLtBoundSet(map[*soltype.LifetimeVar]occPolarity{v: occNeg, other: occNeg})
+	s.reduce()
+
+	require.False(t, s.static.Contains(s.repOf(1)), "a lower-bound 'static is not an escape")
+	require.False(t, s.implies(1, 2), "'1 does not outlive an unrelated '2")
+}
+
+// subsumes requires this set to prove every relation the other set asserts: kept edges,
+// mutual-outlives equalities condensed away, and 'static forcings.
+func TestLtBoundSetSubsumes(t *testing.T) {
+	chain := buildReduced([][2]int{{1, 2}, {2, 3}})
+
+	require.True(t, chain.subsumes(buildReduced([][2]int{{1, 3}})),
+		"the chain proves the transitively-implied '1: '3")
+	require.False(t, buildReduced([][2]int{{1, 3}}).subsumes(chain),
+		"the lone edge proves neither '1: '2 nor '2: '3")
+	require.False(t, chain.subsumes(buildReduced([][2]int{{3, 1}})),
+		"the chain does not prove the reversed '3: '1")
+}
+
+// A declared mutual-outlives bound is not satisfied vacuously: the collapsed equality
+// must actually hold in the subsuming set, even though it survives as no edge.
+func TestLtBoundSetSubsumesChecksCondensedEqualities(t *testing.T) {
+	declaredEqual := buildReduced([][2]int{{1, 2}, {2, 1}}) // '1 and '2 must be equal
+
+	require.False(t, buildReduced([][2]int{{1, 2}}).subsumes(declaredEqual),
+		"proving only '1: '2 does not prove the required '2: '1")
+	require.True(t, declaredEqual.subsumes(declaredEqual),
+		"an equal-lifetime set proves its own equality")
+}
+
+// A declared 'static forcing is not satisfied vacuously: it survives as no edge, so a
+// set that does not force the same lifetime to 'static must fail to subsume it.
+func TestLtBoundSetSubsumesChecksStaticForcing(t *testing.T) {
+	declaredStatic := buildReduced(nil, 1)      // '1: 'static
+	notStatic := buildReduced([][2]int{{1, 2}}) // '1 relates to '2 but is not 'static
+
+	require.False(t, notStatic.subsumes(declaredStatic),
+		"a non-'static '1 does not satisfy a declared '1: 'static")
+	require.True(t, declaredStatic.subsumes(declaredStatic))
+}
