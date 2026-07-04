@@ -19,10 +19,11 @@ import (
 // representative. Every edge, query, and rendering is keyed by representative ID, not
 // raw lifetime ID.
 type ltBoundSet struct {
-	edges  map[int]set.Set[int]         // rep -> reps it outlives, condensed then reduced
-	rep    map[int]int                  // lifetime ID -> its SCC representative ID
-	vars   map[int]*soltype.LifetimeVar // representative ID -> a member var, for rendering
-	static set.Set[int]                 // representative IDs forced to 'static, the absorbing bottom
+	edges      map[int]set.Set[int]         // rep -> reps it outlives, condensed then reduced
+	rep        map[int]int                  // lifetime ID -> its SCC representative ID
+	components map[int][]int                // rep -> member IDs, only for multi-member SCCs
+	vars       map[int]*soltype.LifetimeVar // representative ID -> a member var, for rendering
+	static     set.Set[int]                 // representative IDs forced to 'static, the absorbing bottom
 }
 
 // buildLtBoundSet walks the occurring lifetime variables' bound lists directionally
@@ -127,7 +128,24 @@ func buildLtBoundSet(occ map[*soltype.LifetimeVar]occPolarity) *ltBoundSet {
 		}
 	}
 
-	return &ltBoundSet{edges: edges, rep: rep, vars: repVars, static: static}
+	// Record each multi-member component's members under its representative. A
+	// multi-member SCC is a set of mutually-outliving, hence equal, lifetimes whose
+	// intra-component edges the condensation dropped. components is where those
+	// equalities are kept so subsumes can recover them. A singleton SCC asserts no
+	// equality, so it is omitted.
+	grouped := map[int][]int{}
+	for id, r := range rep {
+		grouped[r] = append(grouped[r], id)
+	}
+	components := map[int][]int{}
+	for r, members := range grouped {
+		if len(members) > 1 {
+			slices.Sort(members)
+			components[r] = members
+		}
+	}
+
+	return &ltBoundSet{edges: edges, rep: rep, components: components, vars: repVars, static: static}
 }
 
 // condenseSCCs finds the strongly connected components of the directed graph given by
@@ -296,37 +314,51 @@ func (s *ltBoundSet) implies(a, b int) bool {
 	return s.reaches(ra, rb)
 }
 
-// subsumes reports whether this set proves every outlives relation the other set
-// asserts, so "the inferred bound set satisfies the declared one" is
-// inferred.subsumes(declared). Three kinds of relation must each hold here via implies:
+// outlivesRelation is a single "'from outlives 'to" assertion in raw lifetime-ID
+// space, the coordinate system implies and subsumes both speak. from and to are raw
+// IDs, not representatives; implies maps them into a set's own representative space.
+type outlivesRelation struct{ from, to int }
+
+// assertedOutlives returns every outlives relation this set asserts, as raw-ID pairs.
+// Two kinds contribute:
 //
-//   - every outlives edge other keeps;
-//   - every mutual-outlives equality other condensed into a component;
-//   - every 'static forcing other records.
+//   - each kept edge, keyed by representative;
+//   - both directions of every mutual-outlives equality a multi-member component
+//     condensed away, recovered from components.
 //
-// The equalities and 'static forcings are checked explicitly because neither survives
-// as an edge in other.edges.
-func (s *ltBoundSet) subsumes(other *ltBoundSet) bool {
-	for from, tos := range other.edges {
+// 'static forcings are not returned, since a forcing is not a pairwise outlives
+// relation; subsumes checks those against static directly.
+func (s *ltBoundSet) assertedOutlives() []outlivesRelation {
+	var rels []outlivesRelation
+	for from, tos := range s.edges {
 		for to := range tos {
-			if !s.implies(from, to) {
-				return false
-			}
+			rels = append(rels, outlivesRelation{from, to})
 		}
 	}
-	// A component with more than one member records the mutual outlives that collapsed
-	// it. other.edges dropped those, so recover them from other.rep and require both
-	// directions here.
-	for id, rep := range other.rep {
-		if id == rep {
-			continue
+	for rep, members := range s.components {
+		for _, m := range members {
+			if m == rep {
+				continue
+			}
+			rels = append(rels, outlivesRelation{m, rep}, outlivesRelation{rep, m})
 		}
-		if !s.implies(id, rep) || !s.implies(rep, id) {
+	}
+	return rels
+}
+
+// subsumes reports whether this set proves every relation the other set asserts, so
+// "the inferred bound set satisfies the declared one" is inferred.subsumes(declared).
+// other.assertedOutlives enumerates the outlives relations — kept edges plus the
+// mutual-outlives equalities its components condensed away — and each must hold here
+// via implies. A 'static forcing is the one kind that is not a pairwise outlives
+// relation, so it is checked separately: this set must force to 'static every lifetime
+// other does.
+func (s *ltBoundSet) subsumes(other *ltBoundSet) bool {
+	for _, r := range other.assertedOutlives() {
+		if !s.implies(r.from, r.to) {
 			return false
 		}
 	}
-	// A 'static forcing declares that the node outlives everything, so this set must
-	// force it to 'static too.
 	for id := range other.static {
 		if !s.static.Contains(s.repOf(id)) {
 			return false
