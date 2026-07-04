@@ -338,6 +338,11 @@ func (e *IdentExpr) Accept(v Visitor) {
 	v.ExitExpr(e)
 }
 
+// TypeParam is a type binder in a <…> quantifier list. Constraint is the bound
+// the type must satisfy. In <T: U>, T <: U, read "T is a subtype of U". The ':'
+// here means subtyping, not the outliving ':' of a LifetimeParam bound. A
+// binder is a type or a lifetime, never both, so the two never mix on one
+// binder and the checker picks the relation from the binder's sort.
 type TypeParam struct {
 	Name       string
 	Constraint TypeAnn
@@ -349,7 +354,7 @@ func NewTypeParam(name string, constraint, defaultType TypeAnn) TypeParam {
 }
 
 type FuncSig struct {
-	LifetimeParams []*LifetimeAnn // optional, e.g. ['a, 'b]
+	LifetimeParams []*LifetimeParam // optional, e.g. <'a, 'b: 'a>
 	TypeParams     []*TypeParam
 	Params         []*Param
 	Return         TypeAnn // optional
@@ -366,7 +371,7 @@ type FuncExpr struct {
 }
 
 func NewFuncExpr(
-	lifetimeParams []*LifetimeAnn,
+	lifetimeParams []*LifetimeParam,
 	typeParams []*TypeParam,
 	params []*Param,
 	ret TypeAnn, // optional

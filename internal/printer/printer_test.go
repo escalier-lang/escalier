@@ -813,6 +813,45 @@ func TestPrintBorrowTypeAnnotations(t *testing.T) {
 	}
 }
 
+// TestPrintLifetimeParams verifies that a lifetime quantifier list, including
+// outlives bounds written with ':' and multiple bounds joined with '&', round-
+// trips through the printer. A bare 'a, a single-bound 'b: 'a, a multi-bound
+// 'a: 'b & 'c, and the 'static bound RHS are all preserved. The clause sits
+// after the declaration keyword and name, lifetime binders before type binders.
+//
+// The assertions target the printed generic clause. They don't cover lifetime
+// prefixes in type positions like `'a Point`, which the printer drops
+// independently of the quantifier list.
+func TestPrintLifetimeParams(t *testing.T) {
+	tests := []struct {
+		name string
+		// input parses to one declaration.
+		input string
+		// clause is the exact substring the printed declaration must contain,
+		// i.e. the rendered quantifier list.
+		clause string
+	}{
+		{"fn single lifetime param", `declare fn ref<'a>(p: 'a Point) -> 'a Point`, `ref<'a>(`},
+		{"fn single bound", `declare fn pick<'a, 'b: 'a>(a: 'a Point) -> 'a Point`, `pick<'a, 'b: 'a>(`},
+		{"fn multiple bounds", `declare fn narrow<'a: 'b & 'c, 'b, 'c>(a: 'a Point) -> 'a Point`, `narrow<'a: 'b & 'c, 'b, 'c>(`},
+		{"fn static bound", `declare fn keep<'a: 'static>(p: 'a Point) -> 'a Point`, `keep<'a: 'static>(`},
+		{"fn lifetime before type param", `declare fn id<'a, T>(p: 'a T) -> 'a T`, `id<'a, T>(`},
+		{"interface lifetime param", `interface Holder<'a> { p: 'a Point }`, `Holder<'a> {`},
+		{"class lifetime param", `class Container<'a> { p: 'a Point }`, `Container<'a> {`},
+		{"fn type annotation bound", `declare val f: fn<'a, 'b: 'a>(a: 'a Point) -> 'a Point`, `fn<'a, 'b: 'a> (`},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decl := parseDecl(t, tt.input)
+			result, err := Print(decl, opts)
+			require.NoError(t, err)
+			require.Contains(t, result, tt.clause)
+		})
+	}
+}
+
 func TestPrintScript(t *testing.T) {
 	input := `val x = 5
 val y = 10

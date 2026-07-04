@@ -92,8 +92,8 @@ func (p *Parser) lifetimeAnn() *ast.LifetimeAnn {
 // include both lifetime parameters ('a) and type parameters (T). Lifetime
 // parameters must precede type parameters by convention, but this parser
 // accepts them in any order and sorts them out by token kind.
-func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeAnn, []*ast.TypeParam) {
-	var lifetimeParams []*ast.LifetimeAnn
+func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeParam, []*ast.TypeParam) {
+	var lifetimeParams []*ast.LifetimeParam
 	var typeParams []*ast.TypeParam
 	token := p.lexer.peek()
 	if token.Type != LessThan {
@@ -111,8 +111,7 @@ func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeAnn, []*ast.TypePa
 			break
 		}
 		if token.Type == Lifetime {
-			p.lexer.consume()
-			lifetimeParams = append(lifetimeParams, ast.NewLifetimeAnn(token.Value, token.Span))
+			lifetimeParams = append(lifetimeParams, p.lifetimeParam(token))
 		} else {
 			tp := p.typeParam()
 			if tp == nil {
@@ -129,6 +128,56 @@ func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeAnn, []*ast.TypePa
 	}
 	p.expect(GreaterThan, AlwaysConsume)
 	return lifetimeParams, typeParams
+}
+
+// lifetimeParam parses one lifetime binder in a <…> list. A binder is a bare
+// `'a`, a single-bound `'b: 'a`, or a multi-bound `'a: 'b & 'c`. The bound's
+// right-hand side holds only lifetimes, so each `&`-separated entry reads a
+// `'lifetime` and a non-lifetime there is an error. `nameTok` is the
+// already-peeked lifetime name token, still on the lexer. This consumes it.
+// Mirrors typeParam's `: Constraint` parse, but `:` here means outliving
+// rather than subtyping.
+func (p *Parser) lifetimeParam(nameTok *Token) *ast.LifetimeParam {
+	p.lexer.consume() // consume the lifetime name
+	// `'static` is the bottom of the outlives lattice, not a bindable
+	// parameter name, so it cannot be introduced on the left of a binder.
+	if nameTok.Value == "static" {
+		p.reportError(nameTok.Span,
+			"'static is not a bindable lifetime parameter name")
+	}
+	start := nameTok.Span.Start
+	end := nameTok.Span.End
+
+	var bounds []*ast.LifetimeAnn
+	if p.lexer.peek().Type == Colon {
+		p.lexer.consume() // consume ':'
+		for {
+			bt := p.lexer.peek()
+			if bt.Type != Lifetime {
+				p.reportError(bt.Span, "expected a lifetime in a lifetime bound")
+				// Consume a stray non-delimiter so the enclosing <…> parse
+				// still recovers to the next ',' or '>'. A delimiter is left
+				// in place so that loop can close the list cleanly.
+				// nolint: exhaustive
+				switch bt.Type {
+				case GreaterThan, Comma, CloseParen, EndOfFile:
+				default:
+					p.lexer.consume()
+				}
+				break
+			}
+			p.lexer.consume()
+			bounds = append(bounds, ast.NewLifetimeAnn(bt.Value, bt.Span))
+			end = bt.Span.End
+			if p.lexer.peek().Type != Ampersand {
+				break
+			}
+			p.lexer.consume() // consume '&' separating several bounds
+		}
+	}
+
+	span := ast.NewSpan(start, end, p.lexer.source.ID)
+	return ast.NewLifetimeParam(nameTok.Value, bounds, span)
 }
 
 // Decl = decorator* 'export'? 'override'? 'declare'? 'async'? (varDecl | fnDecl | ...)

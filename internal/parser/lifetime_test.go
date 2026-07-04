@@ -53,6 +53,18 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 		"FnReturnLifetimeUnion": {
 			input: `fn pick<'a, 'b>(a: 'a Point, b: 'b Point, cond: boolean) -> ('a | 'b) Point { return a }`,
 		},
+		"FnLifetimeParamSingleBound": {
+			input: `fn pick<'a, 'b: 'a>(a: mut 'a Point, b: mut 'b Point) -> mut 'b Point { return b }`,
+		},
+		"FnLifetimeParamMultiBound": {
+			input: `fn pick<'a: 'b & 'c, 'b, 'c>(a: mut 'a Point) -> mut 'a Point { return a }`,
+		},
+		"FnLifetimeParamStaticBound": {
+			input: `fn keep<'a: 'static>(p: mut 'a Point) -> mut 'a Point { return p }`,
+		},
+		"FnTypeAnnLifetimeParamBound": {
+			input: `val f: fn<'a, 'b: 'a>(a: 'a Point, b: 'b Point) -> 'b Point = pick`,
+		},
 		"FnImmutableLifetimeOnRef": {
 			input: `fn ref<'a>(p: 'a Point) -> 'a Point { return p }`,
 		},
@@ -155,6 +167,51 @@ func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 			if assert.Len(t, errors, 1,
 				"expected exactly one parse error for lifetime in unsupported context: %#v", errors) {
 				assert.Equal(t, expected, errors[0].Message)
+			}
+		})
+	}
+}
+
+// TestParseLifetimeBoundErrors verifies the disambiguations the bound syntax
+// settles: 'static cannot bind on the left of a binder, and a bound's right-
+// hand side accepts only lifetimes, so a non-lifetime after ':' or '&' is
+// rejected. Each input recovers to exactly one diagnostic.
+func TestParseLifetimeBoundErrors(t *testing.T) {
+	tests := map[string]struct {
+		input   string
+		message string
+	}{
+		"StaticOnLeftOfBinder": {
+			input:   `fn f<'static>(p: Point) -> Point { return p }`,
+			message: "'static is not a bindable lifetime parameter name",
+		},
+		"NonLifetimeAfterColon": {
+			input:   `fn f<'a: T>(p: 'a Point) -> 'a Point { return p }`,
+			message: "expected a lifetime in a lifetime bound",
+		},
+		"NonLifetimeAfterAmpersand": {
+			input:   `fn f<'a: 'b & T>(p: 'a Point) -> 'a Point { return p }`,
+			message: "expected a lifetime in a lifetime bound",
+		},
+		"MissingLifetimeAfterColon": {
+			input:   `fn f<'a:>(p: 'a Point) -> 'a Point { return p }`,
+			message: "expected a lifetime in a lifetime bound",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			_, errors := parser.ParseScript()
+
+			if assert.Len(t, errors, 1,
+				"expected exactly one parse error: %#v", errors) {
+				assert.Equal(t, test.message, errors[0].Message)
 			}
 		})
 	}

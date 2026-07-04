@@ -18,7 +18,7 @@ import (
 // how duplicate type parameters are handled.
 func (c *Checker) declareLifetimeParams(
 	scope *Scope,
-	astParams []*ast.LifetimeAnn,
+	astParams []*ast.LifetimeParam,
 ) []*type_system.LifetimeVar {
 	if len(astParams) == 0 {
 		return nil

@@ -127,8 +127,8 @@
             span: 1:5-1:6,
         },
         TypeAnn: &ast.FuncTypeAnn{
-            LifetimeParams: []*ast.LifetimeAnn{
-                &ast.LifetimeAnn{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
                     Name: "a",
                     span: 1:11-1:13,
                 },
@@ -183,8 +183,8 @@
             span: 1:4-1:12,
         },
         FuncSig: ast.FuncSig{
-            LifetimeParams: []*ast.LifetimeAnn{
-                &ast.LifetimeAnn{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
                     Name: "a",
                     span: 1:13-1:15,
                 },
@@ -257,8 +257,8 @@
             span: 1:4-1:7,
         },
         FuncSig: ast.FuncSig{
-            LifetimeParams: []*ast.LifetimeAnn{
-                &ast.LifetimeAnn{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
                     Name: "a",
                     span: 1:8-1:10,
                 },
@@ -320,12 +320,12 @@
             span: 1:4-1:9,
         },
         FuncSig: ast.FuncSig{
-            LifetimeParams: []*ast.LifetimeAnn{
-                &ast.LifetimeAnn{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
                     Name: "a",
                     span: 1:10-1:12,
                 },
-                &ast.LifetimeAnn{
+                &ast.LifetimeParam{
                     Name: "b",
                     span: 1:14-1:16,
                 },
@@ -413,8 +413,8 @@
             span: 1:4-1:12,
         },
         FuncSig: ast.FuncSig{
-            LifetimeParams: []*ast.LifetimeAnn{
-                &ast.LifetimeAnn{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
                     Name: "a",
                     span: 1:13-1:15,
                 },
@@ -482,12 +482,12 @@
             span: 1:4-1:8,
         },
         FuncSig: ast.FuncSig{
-            LifetimeParams: []*ast.LifetimeAnn{
-                &ast.LifetimeAnn{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
                     Name: "a",
                     span: 1:9-1:11,
                 },
-                &ast.LifetimeAnn{
+                &ast.LifetimeParam{
                     Name: "b",
                     span: 1:13-1:15,
                 },
@@ -591,8 +591,8 @@
                         span: 1:22-1:28,
                     },
                     Fn: &ast.FuncTypeAnn{
-                        LifetimeParams: []*ast.LifetimeAnn{
-                            &ast.LifetimeAnn{
+                        LifetimeParams: []*ast.LifetimeParam{
+                            &ast.LifetimeParam{
                                 Name: "a",
                                 span: 1:29-1:31,
                             },
@@ -657,8 +657,8 @@
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
-                        LifetimeParams: []*ast.LifetimeAnn{
-                            &ast.LifetimeAnn{
+                        LifetimeParams: []*ast.LifetimeParam{
+                            &ast.LifetimeParam{
                                 Name: "a",
                                 span: 1:20-1:22,
                             },
@@ -727,8 +727,8 @@
             Name: "Container",
             span: 1:7-1:16,
         },
-        LifetimeParams: []*ast.LifetimeAnn{
-            &ast.LifetimeAnn{
+        LifetimeParams: []*ast.LifetimeParam{
+            &ast.LifetimeParam{
                 Name: "a",
                 span: 1:17-1:19,
             },
@@ -766,8 +766,8 @@
             Name: "Holder",
             span: 1:11-1:17,
         },
-        LifetimeParams: []*ast.LifetimeAnn{
-            &ast.LifetimeAnn{
+        LifetimeParams: []*ast.LifetimeParam{
+            &ast.LifetimeParam{
                 Name: "a",
                 span: 1:18-1:20,
             },
@@ -837,8 +837,8 @@
             Name: "Forwarder",
             span: 1:7-1:16,
         },
-        LifetimeParams: []*ast.LifetimeAnn{
-            &ast.LifetimeAnn{
+        LifetimeParams: []*ast.LifetimeParam{
+            &ast.LifetimeParam{
                 Name: "a",
                 span: 1:17-1:19,
             },
@@ -961,8 +961,8 @@
             span: 1:4-1:10,
         },
         FuncSig: ast.FuncSig{
-            LifetimeParams: []*ast.LifetimeAnn{
-                &ast.LifetimeAnn{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
                     Name: "a",
                     span: 1:11-1:13,
                 },
@@ -1127,8 +1127,8 @@
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
-                        LifetimeParams: []*ast.LifetimeAnn{
-                            &ast.LifetimeAnn{
+                        LifetimeParams: []*ast.LifetimeParam{
+                            &ast.LifetimeParam{
                                 Name: "a",
                                 span: 1:19-1:21,
                             },
@@ -1197,8 +1197,8 @@
                         span: 1:20-1:24,
                     },
                     Fn: &ast.FuncTypeAnn{
-                        LifetimeParams: []*ast.LifetimeAnn{
-                            &ast.LifetimeAnn{
+                        LifetimeParams: []*ast.LifetimeParam{
+                            &ast.LifetimeParam{
                                 Name: "a",
                                 span: 1:25-1:27,
                             },
@@ -1248,8 +1248,8 @@
                         span: 1:21-1:28,
                     },
                     Fn: &ast.FuncTypeAnn{
-                        LifetimeParams: []*ast.LifetimeAnn{
-                            &ast.LifetimeAnn{
+                        LifetimeParams: []*ast.LifetimeParam{
+                            &ast.LifetimeParam{
                                 Name: "a",
                                 span: 1:29-1:31,
                             },
@@ -1314,8 +1314,8 @@
                 },
                 Fn: &ast.FuncExpr{
                     FuncSig: ast.FuncSig{
-                        LifetimeParams: []*ast.LifetimeAnn{
-                            &ast.LifetimeAnn{
+                        LifetimeParams: []*ast.LifetimeParam{
+                            &ast.LifetimeParam{
                                 Name: "a",
                                 span: 1:27-1:29,
                             },
@@ -1365,5 +1365,349 @@
         span: 1:1-1:74,
     },
     span: 1:1-1:74,
+}
+---
+
+[TestParseLifetimeAnnotations/FnLifetimeParamMultiBound - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "pick",
+            span: 1:4-1:8,
+        },
+        FuncSig: ast.FuncSig{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
+                    Name: "a",
+                    Bounds: []*ast.LifetimeAnn{
+                        &ast.LifetimeAnn{
+                            Name: "b",
+                            span: 1:13-1:15,
+                        },
+                        &ast.LifetimeAnn{
+                            Name: "c",
+                            span: 1:18-1:20,
+                        },
+                    },
+                    span: 1:9-1:20,
+                },
+                &ast.LifetimeParam{
+                    Name: "b",
+                    span: 1:22-1:24,
+                },
+                &ast.LifetimeParam{
+                    Name: "c",
+                    span: 1:26-1:28,
+                },
+            },
+            Params: []*ast.Param{
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name: "a",
+                        span: 1:30-1:31,
+                    },
+                    TypeAnn: &ast.MutableTypeAnn{
+                        Target: &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "Point",
+                                span: 1:40-1:45,
+                            },
+                            Lifetime: &ast.LifetimeAnn{
+                                Name: "a",
+                                span: 1:37-1:39,
+                            },
+                            span: 1:40-1:45,
+                        },
+                        span: 1:40-1:45,
+                    },
+                },
+            },
+            Return: &ast.MutableTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Point",
+                        span: 1:57-1:62,
+                    },
+                    Lifetime: &ast.LifetimeAnn{
+                        Name: "a",
+                        span: 1:54-1:56,
+                    },
+                    span: 1:57-1:62,
+                },
+                span: 1:57-1:62,
+            },
+        },
+        Body: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ReturnStmt{
+                    Expr: &ast.IdentExpr{
+                        Name: "a",
+                        span: 1:72-1:73,
+                    },
+                    span: 1:65-1:73,
+                },
+            },
+            Span: 1:63-1:75,
+        },
+        span: 1:1-1:75,
+    },
+    span: 1:1-1:75,
+}
+---
+
+[TestParseLifetimeAnnotations/FnLifetimeParamSingleBound - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "pick",
+            span: 1:4-1:8,
+        },
+        FuncSig: ast.FuncSig{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
+                    Name: "a",
+                    span: 1:9-1:11,
+                },
+                &ast.LifetimeParam{
+                    Name: "b",
+                    Bounds: []*ast.LifetimeAnn{
+                        &ast.LifetimeAnn{
+                            Name: "a",
+                            span: 1:17-1:19,
+                        },
+                    },
+                    span: 1:13-1:19,
+                },
+            },
+            Params: []*ast.Param{
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name: "a",
+                        span: 1:21-1:22,
+                    },
+                    TypeAnn: &ast.MutableTypeAnn{
+                        Target: &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "Point",
+                                span: 1:31-1:36,
+                            },
+                            Lifetime: &ast.LifetimeAnn{
+                                Name: "a",
+                                span: 1:28-1:30,
+                            },
+                            span: 1:31-1:36,
+                        },
+                        span: 1:31-1:36,
+                    },
+                },
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name: "b",
+                        span: 1:38-1:39,
+                    },
+                    TypeAnn: &ast.MutableTypeAnn{
+                        Target: &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "Point",
+                                span: 1:48-1:53,
+                            },
+                            Lifetime: &ast.LifetimeAnn{
+                                Name: "b",
+                                span: 1:45-1:47,
+                            },
+                            span: 1:48-1:53,
+                        },
+                        span: 1:48-1:53,
+                    },
+                },
+            },
+            Return: &ast.MutableTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Point",
+                        span: 1:65-1:70,
+                    },
+                    Lifetime: &ast.LifetimeAnn{
+                        Name: "b",
+                        span: 1:62-1:64,
+                    },
+                    span: 1:65-1:70,
+                },
+                span: 1:65-1:70,
+            },
+        },
+        Body: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ReturnStmt{
+                    Expr: &ast.IdentExpr{
+                        Name: "b",
+                        span: 1:80-1:81,
+                    },
+                    span: 1:73-1:81,
+                },
+            },
+            Span: 1:71-1:83,
+        },
+        span: 1:1-1:83,
+    },
+    span: 1:1-1:83,
+}
+---
+
+[TestParseLifetimeAnnotations/FnTypeAnnLifetimeParamBound - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.IdentPat{
+            Name: "f",
+            span: 1:5-1:6,
+        },
+        TypeAnn: &ast.FuncTypeAnn{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
+                    Name: "a",
+                    span: 1:11-1:13,
+                },
+                &ast.LifetimeParam{
+                    Name: "b",
+                    Bounds: []*ast.LifetimeAnn{
+                        &ast.LifetimeAnn{
+                            Name: "a",
+                            span: 1:19-1:21,
+                        },
+                    },
+                    span: 1:15-1:21,
+                },
+            },
+            Params: []*ast.Param{
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name: "a",
+                        span: 1:23-1:24,
+                    },
+                    TypeAnn: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "Point",
+                            span: 1:29-1:34,
+                        },
+                        Lifetime: &ast.LifetimeAnn{
+                            Name: "a",
+                            span: 1:26-1:28,
+                        },
+                        span: 1:29-1:34,
+                    },
+                },
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name: "b",
+                        span: 1:36-1:37,
+                    },
+                    TypeAnn: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "Point",
+                            span: 1:42-1:47,
+                        },
+                        Lifetime: &ast.LifetimeAnn{
+                            Name: "b",
+                            span: 1:39-1:41,
+                        },
+                        span: 1:42-1:47,
+                    },
+                },
+            },
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Point",
+                    span: 1:55-1:60,
+                },
+                Lifetime: &ast.LifetimeAnn{
+                    Name: "b",
+                    span: 1:52-1:54,
+                },
+                span: 1:55-1:60,
+            },
+            span: 1:8-1:60,
+        },
+        Init: &ast.IdentExpr{
+            Name: "pick",
+            span: 1:63-1:67,
+        },
+        span: 1:1-1:67,
+    },
+    span: 1:1-1:67,
+}
+---
+
+[TestParseLifetimeAnnotations/FnLifetimeParamStaticBound - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "keep",
+            span: 1:4-1:8,
+        },
+        FuncSig: ast.FuncSig{
+            LifetimeParams: []*ast.LifetimeParam{
+                &ast.LifetimeParam{
+                    Name: "a",
+                    Bounds: []*ast.LifetimeAnn{
+                        &ast.LifetimeAnn{
+                            Name: "static",
+                            span: 1:13-1:20,
+                        },
+                    },
+                    span: 1:9-1:20,
+                },
+            },
+            Params: []*ast.Param{
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name: "p",
+                        span: 1:22-1:23,
+                    },
+                    TypeAnn: &ast.MutableTypeAnn{
+                        Target: &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "Point",
+                                span: 1:32-1:37,
+                            },
+                            Lifetime: &ast.LifetimeAnn{
+                                Name: "a",
+                                span: 1:29-1:31,
+                            },
+                            span: 1:32-1:37,
+                        },
+                        span: 1:32-1:37,
+                    },
+                },
+            },
+            Return: &ast.MutableTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Point",
+                        span: 1:49-1:54,
+                    },
+                    Lifetime: &ast.LifetimeAnn{
+                        Name: "a",
+                        span: 1:46-1:48,
+                    },
+                    span: 1:49-1:54,
+                },
+                span: 1:49-1:54,
+            },
+        },
+        Body: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ReturnStmt{
+                    Expr: &ast.IdentExpr{
+                        Name: "p",
+                        span: 1:64-1:65,
+                    },
+                    span: 1:57-1:65,
+                },
+            },
+            Span: 1:55-1:67,
+        },
+        span: 1:1-1:67,
+    },
+    span: 1:1-1:67,
 }
 ---

@@ -231,9 +231,7 @@ func (p *Printer) printClassDecl(decl *ast.ClassDecl) {
 	p.writeString("class ")
 	p.writeString(decl.Name.Name)
 
-	if len(decl.TypeParams) > 0 {
-		p.printTypeParams(decl.TypeParams)
-	}
+	p.printGenericParams(decl.LifetimeParams, decl.TypeParams)
 
 	if decl.Extends != nil {
 		p.writeString(" extends ")
@@ -398,9 +396,7 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 // to printFuncSig but injects the receiver as the first parameter
 // inside the parentheses so the round-trip preserves it.
 func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
-	if len(sig.TypeParams) > 0 {
-		p.printTypeParams(sig.TypeParams)
-	}
+	p.printGenericParams(sig.LifetimeParams, sig.TypeParams)
 	p.writeString("(")
 	first := true
 	params := sig.Params
@@ -556,9 +552,7 @@ func (p *Printer) printInterfaceDecl(decl *ast.InterfaceDecl) {
 	p.writeString("interface ")
 	p.writeString(decl.Name.Name)
 
-	if len(decl.TypeParams) > 0 {
-		p.printTypeParams(decl.TypeParams)
-	}
+	p.printGenericParams(decl.LifetimeParams, decl.TypeParams)
 
 	p.space()
 	p.printTypeAnn(decl.TypeAnn)
@@ -1020,9 +1014,7 @@ func (p *Printer) printFuncExpr(expr *ast.FuncExpr) {
 }
 
 func (p *Printer) printFuncSig(sig *ast.FuncSig) {
-	if len(sig.TypeParams) > 0 {
-		p.printTypeParams(sig.TypeParams)
-	}
+	p.printGenericParams(sig.LifetimeParams, sig.TypeParams)
 
 	p.writeString("(")
 	for i, param := range sig.Params {
@@ -1319,9 +1311,7 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		p.printFuncTypeAnn(e.Fn)
 	case *ast.MethodTypeAnn:
 		p.printObjKey(e.Name)
-		if len(e.Fn.TypeParams) > 0 {
-			p.printTypeParams(e.Fn.TypeParams)
-		}
+		p.printGenericParams(e.Fn.LifetimeParams, e.Fn.TypeParams)
 		p.writeString("(")
 		for i, param := range e.Fn.Params {
 			p.printPattern(param.Pattern)
@@ -1541,11 +1531,9 @@ func (p *Printer) printLifetimeAnn(lt ast.LifetimeAnnNode) {
 }
 
 func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
-	if len(typ.TypeParams) > 0 {
-		p.printTypeParams(typ.TypeParams)
-	}
-
-	p.writeString("fn (")
+	p.writeString("fn")
+	p.printGenericParams(typ.LifetimeParams, typ.TypeParams)
+	p.writeString(" (")
 	for i, param := range typ.Params {
 		p.printPattern(param.Pattern)
 		if param.Optional {
@@ -1655,6 +1643,51 @@ func (p *Printer) printTypeParams(params []*ast.TypeParam) {
 			p.printTypeAnn(param.Default)
 		}
 		if i < len(params)-1 {
+			p.writeString(", ")
+		}
+	}
+	p.writeString(">")
+}
+
+// printGenericParams renders the combined lifetime and type quantifier list
+// `<'a, 'b: 'a, T>`, lifetime binders first then type binders. It writes
+// nothing when both lists are empty. A lifetime binder's outlives bounds are
+// joined with ` & `, so 'a bounded by 'b and 'c renders as `'a: 'b & 'c`.
+func (p *Printer) printGenericParams(lifetimeParams []*ast.LifetimeParam, typeParams []*ast.TypeParam) {
+	if len(lifetimeParams) == 0 {
+		if len(typeParams) > 0 {
+			p.printTypeParams(typeParams)
+		}
+		return
+	}
+	p.writeString("<")
+	for i, lp := range lifetimeParams {
+		p.writeString("'")
+		p.writeString(lp.Name)
+		for j, bound := range lp.Bounds {
+			if j == 0 {
+				p.writeString(": ")
+			} else {
+				p.writeString(" & ")
+			}
+			p.writeString("'")
+			p.writeString(bound.Name)
+		}
+		if i < len(lifetimeParams)-1 || len(typeParams) > 0 {
+			p.writeString(", ")
+		}
+	}
+	for i, tp := range typeParams {
+		p.writeString(tp.Name)
+		if tp.Constraint != nil {
+			p.writeString(": ")
+			p.printTypeAnn(tp.Constraint)
+		}
+		if tp.Default != nil {
+			p.writeString(" = ")
+			p.printTypeAnn(tp.Default)
+		}
+		if i < len(typeParams)-1 {
 			p.writeString(", ")
 		}
 	}
