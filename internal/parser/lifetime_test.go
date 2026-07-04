@@ -9,6 +9,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestLexLifetimeTokens snapshots the token stream for inputs that
@@ -209,10 +210,9 @@ func TestParseLifetimeBoundErrors(t *testing.T) {
 			parser := NewParser(ctx, source)
 			_, errors := parser.ParseScript()
 
-			if assert.Len(t, errors, 1,
-				"expected exactly one parse error: %#v", errors) {
-				assert.Equal(t, test.message, errors[0].Message)
-			}
+			require.Len(t, errors, 1,
+				"expected exactly one parse error: %#v", errors)
+			require.Equal(t, test.message, errors[0].Message)
 		})
 	}
 }
