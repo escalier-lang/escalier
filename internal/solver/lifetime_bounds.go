@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/escalier-lang/escalier/internal/graph"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -161,65 +162,20 @@ func buildLtBoundSet(occ map[*soltype.LifetimeVar]occPolarity) *ltBoundSet {
 // adjacency edges over the node IDs, and returns a map from every node ID to its
 // component representative, the smallest ID in the component. A cycle in the outlives
 // relation means mutually-outliving, hence equal, lifetimes, so folding each component
-// to one representative turns the raw graph into a DAG. Uses Tarjan's algorithm.
+// to one representative turns the raw graph into a DAG. The shared Tarjan pass finds the
+// components; the smallest-ID representative mirrors unionFind's smaller-id rule.
 func condenseSCCs(nodeIDs []int, edges map[int]set.Set[int]) map[int]int {
-	index := map[int]int{}
-	lowlink := map[int]int{}
-	onStack := set.NewSet[int]()
-	var stack []int
-	next := 0
-	rep := map[int]int{}
-
-	var strongconnect func(v int)
-	strongconnect = func(v int) {
-		index[v] = next
-		lowlink[v] = next
-		next++
-		stack = append(stack, v)
-		onStack.Add(v)
-
-		for w := range edges[v] {
-			if _, seen := index[w]; !seen {
-				strongconnect(w)
-				if lowlink[w] < lowlink[v] {
-					lowlink[v] = lowlink[w]
-				}
-			} else if onStack.Contains(w) {
-				if index[w] < lowlink[v] {
-					lowlink[v] = index[w]
-				}
-			}
-		}
-
-		if lowlink[v] != index[v] {
-			return // v is not a component root, so its members stay on the stack
-		}
-		// v roots a component. Pop the stack down to v and key every member to the
-		// smallest ID among them, mirroring unionFind's smaller-id representative rule.
-		r := v
-		start := len(stack)
-		for {
-			start--
-			if stack[start] < r {
-				r = stack[start]
-			}
-			if stack[start] == v {
-				break
-			}
-		}
-		for _, w := range stack[start:] {
-			onStack.Remove(w)
-			rep[w] = r
-		}
-		stack = stack[:start]
-	}
-
 	// Seed the traversal in ascending ID order so a run is reproducible.
 	sorted := append([]int(nil), nodeIDs...)
 	sort.Ints(sorted)
-	for _, id := range sorted {
-		if _, seen := index[id]; !seen {
-			strongconnect(id)
+
+	rep := map[int]int{}
+	for _, scc := range graph.StronglyConnectedComponents(sorted, func(v int) []int {
+		return edges[v].ToSlice()
+	}) {
+		r := slices.Min(scc)
+		for _, w := range scc {
+			rep[w] = r
 		}
 	}
 	return rep
