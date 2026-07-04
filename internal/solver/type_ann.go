@@ -232,8 +232,9 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 // `fn(p: A, ...) -> R` into a soltype.FuncType, mapping ta.Inexact to
 // FuncType.Inexact. An unsupported part recovers to a fresh var so the function
 // shape survives, cascade-safe like the Promise/object/tuple arms. Generic, throws,
-// lifetime-param'd, and rest-param annotations report an unsupported feature and
-// recover as a monomorphic function.
+// and rest-param annotations report an unsupported feature and recover as a
+// monomorphic function. A lifetime parameter is supported. Its declared outlives
+// bounds lower into constrainLt so the annotation's borrows solve against them.
 func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
 	if len(ta.TypeParams) > 0 {
 		c.reportUnsupportedFeature(ta, "generic function type annotation")
@@ -241,9 +242,15 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 	if ta.Throws != nil {
 		c.reportUnsupportedFeature(ta, "throws clause in function type annotation")
 	}
-	if len(ta.LifetimeParams) > 0 {
-		c.reportUnsupportedFeature(ta, "lifetime parameters in function type annotation")
-	}
+	// A function type annotation is its own quantifier scope, so give it its own
+	// named-lifetime map the way inferFunc does for a function body. Without this a
+	// nested `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing
+	// function's `'a` and its declared bound would force that outer lifetime, so an
+	// unrelated borrow parameter of the enclosing function would be pinned to 'static.
+	savedNamedLts := c.namedLifetimes
+	c.namedLifetimes = nil
+	defer func() { c.namedLifetimes = savedNamedLts }()
+	c.lowerLifetimeParamBounds(ta.LifetimeParams, lvl)
 
 	params := make([]*soltype.FuncParam, len(ta.Params))
 	for i, p := range ta.Params {
@@ -447,10 +454,38 @@ func (c *checker) resolveLifetimeAnn(node ast.LifetimeAnnNode, lvl int) soltype.
 	}
 }
 
+// lowerLifetimeParamBounds lowers each declared `'a: 'b` bound ("'a outlives 'b") to
+// constrainLt('a, 'b), so a signature's bound solves like one a body infers. Names
+// resolve through namedLifetime, so a bound and a borrow writing the same name share a
+// lifetime. A 'static right-hand side forces the lifetime to 'static; a 'static
+// left-hand side is skipped, since the parser already rejects it as a binder.
+func (c *checker) lowerLifetimeParamBounds(params []*ast.LifetimeParam, lvl int) {
+	for _, p := range params {
+		if len(p.Bounds) == 0 || p.Name == "static" {
+			continue
+		}
+		sub := c.namedLifetime(p.Name, lvl)
+		for _, b := range p.Bounds {
+			c.ctx.constrainLt(sub, c.boundLifetime(b.Name, lvl))
+		}
+	}
+}
+
+// boundLifetime resolves a lifetime name on the right of an outlives bound. A 'static
+// resolves to soltype.Static, the bottom of the outlives lattice. Any other name interns
+// through namedLifetime, sharing the variable a borrow writing that name uses.
+func (c *checker) boundLifetime(name string, lvl int) soltype.Lifetime {
+	if name == "static" {
+		return soltype.Static
+	}
+	return c.namedLifetime(name, lvl)
+}
+
 // namedLifetime resolves a written lifetime name to its variable, minting one on first
 // appearance so every `&'a` in one function shares a single lifetime. The map is reset
-// per function by inferFunc and per top-level binding by inferComponent, so the same
-// name in two such scopes denotes distinct lifetimes.
+// per function by inferFunc, per function type annotation by resolveFuncTypeAnn, and
+// per top-level binding by inferComponent, so the same name in two such scopes denotes
+// distinct lifetimes.
 func (c *checker) namedLifetime(name string, lvl int) *soltype.LifetimeVar {
 	if c.namedLifetimes == nil {
 		c.namedLifetimes = map[string]*soltype.LifetimeVar{}

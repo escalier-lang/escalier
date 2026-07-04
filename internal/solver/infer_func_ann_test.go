@@ -94,14 +94,78 @@ func TestInferThrowsFuncAnnotationReportsUnsupported(t *testing.T) {
 	require.Equal(t, "fn (x: number) -> number", values["f"])
 }
 
-// A lifetime-param'd function annotation reports the documented unsupported
-// feature and recovers function-shaped.
-func TestInferLifetimeFuncAnnotationReportsUnsupported(t *testing.T) {
-	values, _, errs := inferSource(t, `val f: fn<'a>(x: number) -> number = fn (x) { return x }`)
-	require.Len(t, errs, 1)
-	require.IsType(t, &UnsupportedFeatureError{}, errs[0])
-	require.Equal(t, "1:8-1:35: Unsupported: lifetime parameters in function type annotation", msgWithSpan(errs[0]))
-	require.Equal(t, "fn (x: number) -> number", values["f"])
+// A lifetime parameter in a function type annotation resolves against its declared
+// bounds, which lower into constrainLt so they solve like bounds a body infers. Each
+// case renders the binding named by `binding` and reports no error.
+func TestInferLifetimeFuncAnnotation(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		binding string
+		want    string
+	}{
+		// A lifetime that names no borrow is inert, so it renders elided.
+		{
+			name:    "unused lifetime",
+			src:     `val f: fn<'a>(x: number) -> number = fn (x) { return x }`,
+			binding: "f",
+			want:    "fn (x: number) -> number",
+		},
+		// A lifetime naming a borrow that reaches the output resolves to one shared
+		// lifetime across the parameter and return, so it quantifies as `'a` on both.
+		{
+			name:    "named borrow shares one lifetime",
+			src:     `val f: fn<'a>(p: &'a {x: number}) -> &'a {x: number} = fn (p) { return p }`,
+			binding: "f",
+			want:    "fn <'a>(p: &'a {x: number}) -> &'a {x: number}",
+		},
+		// A declared `'a: 'static` bound lowers to constrainLt('a, 'static). 'static is
+		// the bottom of the outlives lattice and absorbs the meet, so 'a resolves to
+		// 'static and both borrows render `&'static`. Without the lowering 'a would stay
+		// a plain param lifetime, so this is the direct evidence a declared bound solves.
+		{
+			name:    "static bound forces static",
+			src:     `val f: fn<'a: 'static>(p: &'a {x: number}) -> &'a {x: number} = fn (p) { return p }`,
+			binding: "f",
+			want:    "fn (p: &'static {x: number}) -> &'static {x: number}",
+		},
+		// A declared `'b: 'a` bound relates the two lifetimes. Only p is returned, so `'b`
+		// reaches no output on its own, yet the bound keeps it named. The un-bounded twin
+		// below elides `'b` to a bare `&`, isolating the bound's effect. The bound itself
+		// is not yet rendered in the prefix, which is the render track's job.
+		{
+			name:    "outlives bound keeps connected lifetime",
+			src:     `val f: fn<'a, 'b: 'a>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number} = fn (p, q) { return p }`,
+			binding: "f",
+			want:    "fn <'a, 'b>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number}",
+		},
+		{
+			name:    "no bound elides unconnected lifetime",
+			src:     `val f: fn<'a, 'b>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number} = fn (p, q) { return p }`,
+			binding: "f",
+			want:    "fn <'a>(p: &'a {x: number}, q: &{x: number}) -> &'a {x: number}",
+		},
+		// A function type annotation is its own lifetime scope, so a nested annotation's
+		// declared bound stays local. The inner `g` declares `'a: 'static`, which would
+		// force `'a` to 'static, but `outer` also names a borrow lifetime `'a`. The two
+		// must not share a variable, so `outer`'s parameter stays a plain borrow lifetime.
+		{
+			name: "nested annotation scope is local",
+			src: `fn outer(p: &'a {x: number}) {
+  val g: fn<'a: 'static>(q: &'a {y: number}) -> &'a {y: number} = fn (q) { return q }
+  return p
+}`,
+			binding: "outer",
+			want:    "fn <'a>(p: &'a {x: number}) -> &'a {x: number}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values[tt.binding])
+		})
+	}
 }
 
 // A destructuring parameter pattern is preserved in the resolved function type, so
