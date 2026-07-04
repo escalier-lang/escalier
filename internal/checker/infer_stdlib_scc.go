@@ -157,8 +157,8 @@ func extractPseudoPackageImports(ctx context.Context, path string) ([]string, er
 }
 
 // tarjanSCCs runs the shared strongly-connected-components pass over
-// the adjacency list `edges`. Nodes referenced only as targets (not
-// present as keys) are included as singletons. Returns one slice per
+// the adjacency list `edges`. A node referenced only as a target, never
+// present as a key, is included as a singleton. Returns one slice per
 // SCC.
 func tarjanSCCs(edges map[string][]string) [][]string {
 	// Gather all nodes (sources + targets) so isolated importees are
