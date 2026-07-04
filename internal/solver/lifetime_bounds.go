@@ -225,6 +225,47 @@ func condenseSCCs(nodeIDs []int, edges map[int]set.Set[int]) map[int]int {
 	return rep
 }
 
+// weakComponents labels each representative with its weakly-connected component,
+// treating every condensed outlives edge as undirected, and returns a map from
+// representative ID to the smallest representative ID in its component. That
+// smallest-ID leader mirrors the representative rule condenseSCCs uses. An
+// instantiation links a join to the argument lifetime it feeds through a shared
+// intermediary that outlives both, with no directed edge between the two, so
+// connectivity — not directed reachability — is what gathers a join's members.
+func (s *ltBoundSet) weakComponents() map[int]int {
+	adj := map[int][]int{}
+	for from, tos := range s.edges {
+		for to := range tos {
+			adj[from] = append(adj[from], to)
+			adj[to] = append(adj[to], from)
+		}
+	}
+
+	comp := map[int]int{}
+	visited := set.NewSet[int]()
+	for _, start := range slices.Sorted(maps.Keys(s.vars)) {
+		if visited.Contains(start) {
+			continue
+		}
+		// BFS the whole component from start, then key every member to the min ID.
+		members := []int{start}
+		visited.Add(start)
+		for i := 0; i < len(members); i++ {
+			for _, nbr := range adj[members[i]] {
+				if !visited.Contains(nbr) {
+					visited.Add(nbr)
+					members = append(members, nbr)
+				}
+			}
+		}
+		leader := slices.Min(members)
+		for _, m := range members {
+			comp[m] = leader
+		}
+	}
+	return comp
+}
+
 // repOf maps a raw lifetime ID to its component representative, or to itself when the
 // ID is not in this set.
 func (s *ltBoundSet) repOf(id int) int {
