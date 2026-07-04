@@ -819,35 +819,65 @@ func TestPrintBorrowTypeAnnotations(t *testing.T) {
 // 'a: 'b & 'c, and the 'static bound RHS are all preserved. The clause sits
 // after the declaration keyword and name, lifetime binders before type binders.
 //
-// The assertions target the printed generic clause. They don't cover lifetime
-// prefixes in type positions like `'a Point`, which the printer drops
-// independently of the quantifier list.
+// Each case asserts the full printed declaration equals `expected`, then re-
+// parses that output and prints it again to confirm the printer reaches a
+// stable fixed point. Parameter and field types stay plain, since the printer
+// drops lifetime prefixes in type positions like `'a Point` for reasons
+// unrelated to the quantifier list.
 func TestPrintLifetimeParams(t *testing.T) {
 	tests := []struct {
-		name string
-		// input parses to one declaration.
-		input string
-		// clause is the exact substring the printed declaration must contain,
-		// i.e. the rendered quantifier list.
-		clause string
+		name     string
+		input    string
+		expected string
 	}{
-		{"fn single lifetime param", `declare fn ref<'a>(p: 'a Point) -> 'a Point`, `ref<'a>(`},
-		{"fn single bound", `declare fn pick<'a, 'b: 'a>(a: 'a Point) -> 'a Point`, `pick<'a, 'b: 'a>(`},
-		{"fn multiple bounds", `declare fn narrow<'a: 'b & 'c, 'b, 'c>(a: 'a Point) -> 'a Point`, `narrow<'a: 'b & 'c, 'b, 'c>(`},
-		{"fn static bound", `declare fn keep<'a: 'static>(p: 'a Point) -> 'a Point`, `keep<'a: 'static>(`},
-		{"fn lifetime before type param", `declare fn id<'a, T>(p: 'a T) -> 'a T`, `id<'a, T>(`},
-		{"interface lifetime param", `interface Holder<'a> { p: 'a Point }`, `Holder<'a> {`},
-		{"class lifetime param", `class Container<'a> { p: 'a Point }`, `Container<'a> {`},
-		{"fn type annotation bound", `declare val f: fn<'a, 'b: 'a>(a: 'a Point) -> 'a Point`, `fn<'a, 'b: 'a> (`},
+		{
+			"fn single bound",
+			`fn pick<'a, 'b: 'a>(x: Point) -> Point { return x }`,
+			"fn pick<'a, 'b: 'a>(x: Point) -> Point {\n    return x\n}",
+		},
+		{
+			"fn multiple bounds",
+			`fn narrow<'a: 'b & 'c, 'b, 'c>(x: Point) -> Point { return x }`,
+			"fn narrow<'a: 'b & 'c, 'b, 'c>(x: Point) -> Point {\n    return x\n}",
+		},
+		{
+			"fn static bound",
+			`fn keep<'a: 'static>(x: Point) -> Point { return x }`,
+			"fn keep<'a: 'static>(x: Point) -> Point {\n    return x\n}",
+		},
+		{
+			"fn lifetime before type param",
+			`fn id<'a, T>(x: T) -> T { return x }`,
+			"fn id<'a, T>(x: T) -> T {\n    return x\n}",
+		},
+		{
+			"interface lifetime param",
+			`interface Holder<'a> { p: Point }`,
+			"interface Holder<'a> {\n    p: Point\n}",
+		},
+		{
+			"class lifetime param",
+			`class Container<'a> { p: Point }`,
+			"class Container<'a> {\n    p: Point\n}",
+		},
+		{
+			"fn type annotation bound",
+			`val f: fn<'a, 'b: 'a>(a: Point, b: Point) -> Point = pick`,
+			"val f: fn<'a, 'b: 'a> (a: Point, b: Point) -> Point = pick",
+		},
 	}
 
 	opts := DefaultOptions()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			decl := parseDecl(t, tt.input)
-			result, err := Print(decl, opts)
+			result, err := Print(parseDecl(t, tt.input), opts)
 			require.NoError(t, err)
-			require.Contains(t, result, tt.clause)
+			require.Equal(t, tt.expected, result)
+
+			// Re-parse and re-print; a faithful printer reproduces its output.
+			roundTripped, err := Print(parseDecl(t, result), opts)
+			require.NoError(t, err)
+			require.Equal(t, result, roundTripped)
 		})
 	}
 }
