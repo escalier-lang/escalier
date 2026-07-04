@@ -135,7 +135,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	switch {
-	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.constructsOwnedMut(d.Init):
+	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && freshLiteralShape(d.Init, c.acceptsBorrowLeaf):
 		// An unannotated `val mut q = {…}` / `var mut q = {…}` from a freshly
 		// constructed literal constructs an owned-mutable value. This mirrors the
 		// annotated `val q: mut {x} = {x: 1}` upgrade in
@@ -492,29 +492,6 @@ func containsOwnedMut(t soltype.Type) bool {
 func isMutableIdentPat(p ast.Pat) bool {
 	ip, ok := p.(*ast.IdentPat)
 	return ok && ip.Mutable
-}
-
-// isFreshlyConstructed reports whether e is a syntactically fresh, unaliased value: a
-// literal, or an object/tuple literal whose every element is itself freshly
-// constructed. Such a value captures no reference to an existing binding, so it is
-// uniquely owned. It is deliberately conservative and identifier-free: any IdentExpr,
-// call, member access, or spread disqualifies the whole expression, because a captured
-// variable could alias a value held immutably elsewhere. Being identifier-free also
-// makes it sound without VarIDs, so it holds at module top level where the liveness
-// pre-pass has not run. canUpgradeToOwnedMut is the richer judgment that also admits an
-// owned-place move; both run through freshLiteralShape and differ only at a non-literal
-// leaf, which this predicate always rejects.
-func isFreshlyConstructed(e ast.Expr) bool {
-	return freshLiteralShape(e, func(ast.Expr) bool { return false })
-}
-
-// constructsOwnedMut reports whether the unannotated initializer e builds an owned-mutable
-// value: a fresh literal, admitting a borrow leaf. It extends isFreshlyConstructed by accepting
-// a `&`/`&mut` leaf, so `val mut b = {peer: &mut d}` upgrades to owned-mutable `mut {peer: &mut
-// {…}}` the same way `val mut q = {x: 1}` does. The borrow leaf's soundness rests on the
-// escape tracking that runs inside a function body, so acceptsBorrowLeaf admits it only there.
-func (c *checker) constructsOwnedMut(e ast.Expr) bool {
-	return freshLiteralShape(e, c.acceptsBorrowLeaf)
 }
 
 // checkExcessLiteralMembers is the construction-site excess check (M4 A3): a

@@ -33,15 +33,15 @@ import (
 
 // stripReturnBorrowsIfTree rewrites the return type of the return whose value is e to own the
 // data when e's reachable borrow graph is a tree. It is a no-op when e is not a return value,
-// when the carrier is not a direct place or literal, or when the graph is not a tree. The
-// borrow-edge graph read is c.fn.eagerBorrowGraph, which resolveComponentEscapes has set to the
-// snapshot at this return's program point.
-func (c *checker) stripReturnBorrowsIfTree(e ast.Expr) {
+// when the carrier is not a direct place or literal, or when the graph is not a tree. snapshot is
+// the flow-sensitive borrow-edge graph at this return's program point, which resolveComponentEscapes
+// reads from the dataflow and passes in.
+func (c *checker) stripReturnBorrowsIfTree(e ast.Expr, snapshot map[liveness.VarID][]fieldBorrow) {
 	idx := c.returnIndexOf(e)
 	if idx < 0 {
 		return
 	}
-	graph, root, ok := c.carrierGraph(e)
+	graph, root, ok := c.carrierGraph(e, snapshot)
 	if !ok {
 		return
 	}
@@ -63,25 +63,25 @@ func (c *checker) returnIndexOf(e ast.Expr) int {
 	return -1
 }
 
-// carrierGraph returns the borrow-edge graph and the carrier root for e's borrow fields. A
-// whole-binding place is already a node in the graph, so it uses its own VarID as the root and
-// returns c.fn.eagerBorrowGraph directly. That graph is the snapshot resolveComponentEscapes
-// swapped in for this return's program point, so no cloning is needed. An object or tuple literal
-// has no binding node, so it is walked into a private copy under a synthetic root. Any other
-// carrier reports ok=false.
-func (c *checker) carrierGraph(e ast.Expr) (map[liveness.VarID][]fieldBorrow, liveness.VarID, bool) {
+// carrierGraph returns the borrow-edge graph and the carrier root for e's borrow fields, drawing
+// from snapshot, the per-program-point graph. A whole-binding place is already a node in snapshot,
+// so it returns snapshot and the binding's own VarID directly, no cloning needed. An object or
+// tuple literal has no binding node, so it is walked into a private clone of snapshot under a
+// synthetic root. Any other carrier reports ok=false.
+func (c *checker) carrierGraph(e ast.Expr, snapshot map[liveness.VarID][]fieldBorrow) (map[liveness.VarID][]fieldBorrow, liveness.VarID, bool) {
 	if p, ok := exprPlace(e); ok && p.root > 0 && len(p.path) == 0 {
-		return c.fn.eagerBorrowGraph, p.root, true
+		return snapshot, p.root, true
 	}
 	switch e.(type) {
 	case *ast.ObjectExpr, *ast.TupleExpr:
-		// Walk the literal into a private copy so the shared snapshot is not mutated, using a
-		// synthetic root drawn from the module-wide counter so it never collides with a binding.
+		// Walk the literal into a private clone of snapshot under a synthetic root drawn from the
+		// module-wide counter so it never collides with a binding. The clone goes through the
+		// eagerBorrowGraph field because recordBorrowSources and addBorrowEdge write there; the
+		// field is saved and restored so nothing outside sees the mutation. snapshot is non-nil
+		// (fieldBorrowGraphBefore returns a non-nil map), so the clone is non-nil and those writes
+		// cannot panic on a nil map.
 		saved := c.fn.eagerBorrowGraph
-		// saved is non-nil here. resolveComponentEscapes set eagerBorrowGraph to a non-nil
-		// snapshot before return-stripping runs, so this clone is non-nil and the
-		// recordBorrowSources writes below cannot panic on a nil map.
-		c.fn.eagerBorrowGraph = maps.Clone(saved)
+		c.fn.eagerBorrowGraph = maps.Clone(snapshot)
 		root := liveness.VarID(c.varIDCounter)
 		c.varIDCounter++
 		// The literal has no binding, so nothing in the graph describes its borrows. Record the

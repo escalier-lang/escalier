@@ -566,8 +566,8 @@ func (c *checker) checkUseAfterMoves() {
 	// graph, then fold any component-move consumes back into moveSites and recompute, so a
 	// use after a co-moved local is caught.
 	if len(c.fn.escapeSites) > 0 {
-		binfo := c.analyzeBorrows()
-		if c.resolveComponentEscapes(info, binfo) {
+		flowBorrowGraph := c.analyzeBorrows()
+		if c.resolveComponentEscapes(info, flowBorrowGraph) {
 			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
 		}
 	}

@@ -178,8 +178,8 @@ type funcCtx struct {
 	// clears only the [f] subtree. copyPlaceEdges reads it to project a source binding's
 	// edges into a destructuring leaf, so it must reflect the state at the copy point. The
 	// per-program-point graph the escape check reads is the flow-sensitive one analyzeBorrows
-	// computes from borrowGens, not this eager map. After the body walk, resolveComponentEscapes
-	// overwrites this field with the per-point snapshot at each escape site.
+	// computes from borrowGens, not this eager map; resolveComponentEscapes passes that snapshot
+	// to each escape helper rather than storing it here.
 	eagerBorrowGraph map[liveness.VarID][]fieldBorrow
 	// borrowGens records, per CFG statement position, the borrow-edge assignments that
 	// statement makes: for each binding it re-points, the full new edge set the eager

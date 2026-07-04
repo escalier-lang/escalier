@@ -44,14 +44,19 @@ import (
 //   - A disjoint field return `return a.data` follows the edges on the [data] path, finds
 //     none, and is sound with no false positive.
 //
-// Edges are recorded at four sites: a `val`/`var` initializer, a `var` reassignment, a field
-// store into a local receiver, and a destructuring leaf. The graph is flow-sensitive. Each
-// recording strong-updates the binding, clearing the replaced subtree before adding the new
-// edges, and analyzeBorrows folds the per-statement edge sets forward over the CFG, joining
-// them by union at branch merges. So a reassignment drops its prior referent, a repoint
-// replaces one field's edge, and a borrow set on one branch still reaches the merge. See
-// borrow_flow.go. resolveComponentEscapes reads the edge set at each flow-out site's program
-// point through this graph.
+// Edges are recorded at four sites:
+//
+//   - a `val`/`var` initializer,
+//   - a `var` reassignment,
+//   - a field store into a local receiver,
+//   - a destructuring leaf.
+//
+// The graph is flow-sensitive. Each recording strong-updates the binding, clearing the replaced
+// subtree before adding the new edges. analyzeBorrows folds the per-statement edge sets
+// forward over the CFG, joining them by union at branch merges. So a reassignment drops its prior
+// referent, a repoint replaces one field's edge, and a borrow set on one branch still reaches the
+// merge. See borrow_flow.go. resolveComponentEscapes reads the edge set at each flow-out site's
+// program point through this graph.
 
 // EscapingBorrowError fires when a value flowing out of the frame carries a borrow of a
 // function-local. It blames the outgoing expression and names the escaping local.
@@ -75,8 +80,8 @@ func (e *EscapingBorrowError) Message() string {
 // frame at. The expression doubles as the diagnostic blame and as the source whose carried
 // locals the post-pass computes.
 type escapeSite struct {
-	expr ast.Expr
-	ref  liveness.StmtRef
+	expr    ast.Expr
+	stmtRef liveness.StmtRef
 }
 
 // resolveComponentEscapes decides every recorded escape site once the body is fully walked,
@@ -85,19 +90,22 @@ type escapeSite struct {
 // connected-component move — allowed, co-moving and consuming the component's locals — or an
 // ordinary escape, reported. It returns true when it consumed any co-moved local, so the
 // caller knows to recompute the lattice before the use-after-move scan reads it.
-func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo, binfo *flowBorrowGraph) bool {
+func (c *checker) resolveComponentEscapes(
+	info *liveness.MoveInfo,
+	flowBorrowGraph *flowBorrowGraph,
+) bool {
 	consumed := false
 	for _, es := range c.fn.escapeSites {
-		// Read the borrow-edge graph at this site's program point. The escape helpers all
-		// consult c.fn.eagerBorrowGraph, so swap in the flow-sensitive snapshot before running
-		// them: a borrow cleared by an earlier reassignment is gone here, and one set on a
-		// reaching branch is joined in.
-		c.fn.eagerBorrowGraph = binfo.fieldBorrowGraphBefore(es.ref)
-		escaping := c.escapingLocalsOf(es.expr)
+		// The flow-sensitive borrow-edge graph at this site's program point. A borrow cleared by an
+		// earlier reassignment is gone here, and one set on a reaching branch is joined in. Passed
+		// explicitly to each escape helper so they read this per-point snapshot rather than the
+		// whole-body eager graph.
+		fieldBorrowGraph := flowBorrowGraph.fieldBorrowGraphBefore(es.stmtRef)
+		escaping := c.escapingLocalsOf(es.expr, fieldBorrowGraph)
 		if escaping.Len() == 0 {
 			continue
 		}
-		if c.componentMoveCovers(es.expr, escaping, es.ref, info) {
+		if c.componentMoveCovers(es.expr, escaping, es.stmtRef, info, fieldBorrowGraph) {
 			// Co-move the component: consume every borrowed local, so a later use of any of
 			// them is a use-after-move. The escaping value's own root is consumed at the flow
 			// site already, so it is skipped here — a borrow cycle can route an edge back to
@@ -112,12 +120,12 @@ func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo, binfo *flowBo
 				if id == rootID {
 					continue
 				}
-				c.recordMove(id, es.expr, es.ref)
+				c.recordMove(id, es.expr, es.stmtRef)
 			}
 			// When the moved graph is a tree — every borrowed local reached exactly once with
 			// no cycle — the return value is the sole owner of each node, so owning them in the
 			// type is honest. Strip the borrows from this return's type.
-			c.stripReturnBorrowsIfTree(es.expr)
+			c.stripReturnBorrowsIfTree(es.expr, fieldBorrowGraph)
 			consumed = true
 			continue
 		}
@@ -144,15 +152,20 @@ func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo, binfo *flowBo
 // shared limitation the graph's three recording sites impose. Recording a container-method
 // borrow needs `Array` and method-call support the solver lacks today; it is tracked as a
 // post-M7 item under "Deferred and out of scope" in planning/affine_semantics/implementation_plan.md.
-func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarID], ref liveness.StmtRef, info *liveness.MoveInfo) bool {
-	if !c.escapesAsOwnedCarrier(e) {
+func (c *checker) componentMoveCovers(
+	e ast.Expr, escaping set.Set[liveness.VarID],
+	stmtRef liveness.StmtRef,
+	info *liveness.MoveInfo,
+	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
+) bool {
+	if !c.escapesAsOwnedCarrier(e, fieldBorrowGraph) {
 		return false
 	}
 	component := escaping.Clone()
 	if p, ok := exprPlace(e); ok && p.root > 0 {
 		component.Add(p.root)
 	}
-	for root, edges := range c.fn.eagerBorrowGraph {
+	for root, edges := range fieldBorrowGraph {
 		if component.Contains(root) {
 			continue
 		}
@@ -161,10 +174,10 @@ func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarI
 		// moved before ref, or not live after it. At a return every local is dead — nothing
 		// runs after — so only a parameter or a longer-lived store can pin a returned
 		// component; a live external alias at a store or argument site still blocks the move.
-		if info.StateBefore(ref, root) == liveness.Moved {
+		if info.StateBefore(stmtRef, root) == liveness.Moved {
 			continue
 		}
-		if c.fn.liveness != nil && !c.fn.liveness.IsLiveAfter(ref, root) {
+		if c.fn.liveness != nil && !c.fn.liveness.IsLiveAfter(stmtRef, root) {
 			continue
 		}
 		for _, edge := range edges {
@@ -194,7 +207,10 @@ func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarI
 //     a → b at [] reads a borrow-typed binding.
 //   - Any other carrier — an if/match, a call result — is conservatively a bare borrow, so an
 //     ambiguous outgoing value stays an escape rather than a speculative component move.
-func (c *checker) escapesAsOwnedCarrier(e ast.Expr) bool {
+func (c *checker) escapesAsOwnedCarrier(
+	e ast.Expr,
+	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
+) bool {
 	switch e.(type) {
 	case *ast.BorrowExpr:
 		return false
@@ -205,7 +221,7 @@ func (c *checker) escapesAsOwnedCarrier(e ast.Expr) bool {
 	if !ok || p.root <= 0 {
 		return false
 	}
-	for _, edge := range c.fn.eagerBorrowGraph[p.root] {
+	for _, edge := range fieldBorrowGraph[p.root] {
 		if pathHasPrefix(p.path, edge.path) {
 			return false
 		}
@@ -292,9 +308,12 @@ func (c *checker) isLocalReferent(arg ast.Expr) (liveness.VarID, bool) {
 //   - The edges under a place e names, a whole binding `a` or a field `a.peer`. They
 //     contribute the locals they transitively reach, filtered to the place's field path so a
 //     field return follows only that field's edges.
-func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
+func (c *checker) escapingLocalsOf(
+	e ast.Expr,
+	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
+) set.Set[liveness.VarID] {
 	out := set.NewSet[liveness.VarID]()
-	if c.fn == nil || c.fn.eagerBorrowGraph == nil || e == nil {
+	if c.fn == nil || fieldBorrowGraph == nil || e == nil {
 		return out
 	}
 	for _, b := range borrowsIn(e) {
@@ -303,7 +322,7 @@ func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 		}
 	}
 	if p, ok := exprPlace(e); ok && p.root > 0 {
-		c.collectBorrowedFrom(p.root, p.path, out, set.NewSet[liveness.VarID]())
+		c.collectBorrowedFrom(p.root, p.path, out, set.NewSet[liveness.VarID](), fieldBorrowGraph)
 	}
 	return out
 }
@@ -313,11 +332,11 @@ func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 // the same path and referent is ignored, so repeated walks keep one copy rather than
 // accumulating identical edges.
 func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent liveness.VarID) {
-	e := fieldBorrow{path: path, referent: referent}
-	if containsFieldBorrow(c.fn.eagerBorrowGraph[root], e) {
+	fb := fieldBorrow{path: path, referent: referent}
+	if containsFieldBorrow(c.fn.eagerBorrowGraph[root], fb) {
 		return
 	}
-	c.fn.eagerBorrowGraph[root] = append(c.fn.eagerBorrowGraph[root], e)
+	c.fn.eagerBorrowGraph[root] = append(c.fn.eagerBorrowGraph[root], fb)
 	c.markBorrowDirty(root)
 }
 
@@ -483,24 +502,24 @@ func (c *checker) reportEscapingLocals(escaping set.Set[liveness.VarID], blame a
 // post-pass, capturing the outgoing expression and the program point it flows out at. The
 // post-pass needs the complete borrow-edge graph and the consumed lattice, neither of which
 // is final mid-walk, so it cannot decide a self-contained component move inline.
-func (c *checker) recordEscapeSite(e ast.Expr, ref liveness.StmtRef) {
+func (c *checker) recordEscapeSite(e ast.Expr, stmtRef liveness.StmtRef) {
 	if c.fn == nil || e == nil {
 		return
 	}
-	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: e, ref: ref})
+	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: e, stmtRef: stmtRef})
 }
 
 // checkReturnEscape records the return value as an escape site. `return a` where a borrows
 // b, `return &mut b`, and `return {peer: &mut b}` all carry a borrow of b out of the frame;
 // resolveComponentEscapes later decides each as a component move or an escape.
-func (c *checker) checkReturnEscape(retExpr ast.Expr, ref liveness.StmtRef) {
-	c.recordEscapeSite(retExpr, ref)
+func (c *checker) checkReturnEscape(retExpr ast.Expr, stmtRef liveness.StmtRef) {
+	c.recordEscapeSite(retExpr, stmtRef)
 }
 
 // checkParamFieldStoreEscape handles a field store `recv.f = source`. Storing a value that
 // borrows a local into a parameter's field escapes, since the parameter's object outlives
 // the frame. A store into a local receiver does not escape and is not tracked.
-func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, ref liveness.StmtRef) {
+func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, stmtRef liveness.StmtRef) {
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
@@ -508,7 +527,7 @@ func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, ref liveness
 	if !ok || rp.root <= 0 || !c.fn.paramVarIDs.Contains(rp.root) {
 		return
 	}
-	c.recordEscapeSite(source, ref)
+	c.recordEscapeSite(source, stmtRef)
 }
 
 // recordFieldStoreEdges records a borrow edge for a field store `recv.f = source` into a
@@ -518,8 +537,13 @@ func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, ref liveness
 // checkParamFieldStoreEscape reports at once. It is a strong update on the stored field's
 // subtree: it clears the [f] subtree before recording, so a repoint `b.peer = &mut e` after
 // `b.peer = &mut d` leaves only b → e at [peer] while a sibling edge b → x at [data] survives.
-// The caller flushes the dirtied root into borrowGens.
-func (c *checker) recordFieldStoreEdges(recv ast.Expr, field string, source ast.Expr, ref liveness.StmtRef) {
+// It then flushes the dirtied root into borrowGens at stmtRef.
+func (c *checker) recordFieldStoreEdges(
+	recv ast.Expr,
+	field string,
+	source ast.Expr,
+	stmtRef liveness.StmtRef,
+) {
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
@@ -530,7 +554,7 @@ func (c *checker) recordFieldStoreEdges(recv ast.Expr, field string, source ast.
 	base := appendSeg(rp.path, field)
 	c.clearEagerSubtree(rp.root, base)
 	c.recordBorrowSources(rp.root, base, source)
-	c.flushBorrowDirty(ref)
+	c.flushBorrowDirty(stmtRef)
 }
 
 // collectBorrowedFrom adds to out every function-local the read place rooted at root, with
@@ -549,13 +573,18 @@ func (c *checker) recordFieldStoreEdges(recv ast.Expr, field string, source ast.
 // root is the starting point, not itself collected, except when a borrow cycle reaches back
 // to it. Collecting it then is sound: a local that borrows root and itself escapes carries
 // root's data out too.
-func (c *checker) collectBorrowedFrom(root liveness.VarID, filter []placeSeg, out, seen set.Set[liveness.VarID]) {
-	for _, edge := range c.fn.eagerBorrowGraph[root] {
+func (c *checker) collectBorrowedFrom(
+	root liveness.VarID,
+	filter []placeSeg,
+	out, seen set.Set[liveness.VarID],
+	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
+) {
+	for _, edge := range fieldBorrowGraph[root] {
 		if !pathPrefixRelated(edge.path, filter) {
 			continue
 		}
 		out.Add(edge.referent)
-		c.collectAllFrom(edge.referent, out, seen)
+		c.collectAllFrom(edge.referent, out, seen, fieldBorrowGraph)
 	}
 }
 
@@ -564,14 +593,18 @@ func (c *checker) collectBorrowedFrom(root liveness.VarID, filter []placeSeg, ou
 // exposes all of it. For node a with edges a → b at [peer] and a → c at [data], it collects
 // both b and c, then walks each of their edges in turn. The seen set terminates borrow
 // cycles.
-func (c *checker) collectAllFrom(node liveness.VarID, out, seen set.Set[liveness.VarID]) {
+func (c *checker) collectAllFrom(
+	node liveness.VarID,
+	out, seen set.Set[liveness.VarID],
+	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
+) {
 	if seen.Contains(node) {
 		return
 	}
 	seen.Add(node)
-	for _, edge := range c.fn.eagerBorrowGraph[node] {
+	for _, edge := range fieldBorrowGraph[node] {
 		out.Add(edge.referent)
-		c.collectAllFrom(edge.referent, out, seen)
+		c.collectAllFrom(edge.referent, out, seen, fieldBorrowGraph)
 	}
 }
 

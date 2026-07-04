@@ -733,11 +733,10 @@ func TestComponentEscapeCyclicGraph(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c := newChecker()
 			c.fn = &funcCtx{
-				eagerBorrowGraph: tc.edges,
 				paramVarIDs: set.NewSet[liveness.VarID](),
 			}
 			e := &ast.IdentExpr{Name: "root", VarID: int(tc.root)}
-			got := c.escapingLocalsOf(e).ToSlice()
+			got := c.escapingLocalsOf(e, tc.edges).ToSlice()
 			require.ElementsMatch(t, tc.want, got)
 		})
 	}

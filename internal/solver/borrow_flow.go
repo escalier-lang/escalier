@@ -42,9 +42,9 @@ import (
 //   - After the walk, analyzeBorrows folds borrowGens forward over the CFG to a fixed point,
 //     producing the per-program-point graph. Each assignment replaces a root's whole edge set,
 //     so a reassignment clears the prior referent.
-//   - At each escape/flow-out site, resolveComponentEscapes overwrites eagerBorrowGraph with that
-//     point's snapshot from the flow-sensitive result, so downstream escape checks that read
-//     eagerBorrowGraph see the flow-sensitive graph rather than the whole-body eager one.
+//   - At each escape/flow-out site, resolveComponentEscapes reads that point's snapshot from the
+//     flow-sensitive result and passes it to each escape helper, so they see the flow-sensitive
+//     graph rather than the whole-body eager one.
 //
 // Branch handling. The eager walk is a source-order AST traversal, so it is not branch-scoped.
 // inferIfElse and inferMatch walk each arm in order, and both arms mutate the one eagerBorrowGraph
@@ -65,7 +65,7 @@ import (
 //     through a loop back edge.
 //   - Straight-line-only reads. The eager map's cross-branch value is read only by copyPlaceEdges
 //     within straight-line code. At an escape or flow-out site the escape check reads the
-//     flow-sensitive snapshot resolveComponentEscapes swaps in, so a merge never relies on the
+//     flow-sensitive snapshot resolveComponentEscapes passes it, so a merge never relies on the
 //     last-writer-wins eager state.
 
 // borrowAssign is one statement's replacement of a binding's borrow edges: the binding root
