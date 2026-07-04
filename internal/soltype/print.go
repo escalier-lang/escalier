@@ -2,6 +2,7 @@ package soltype
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -82,8 +83,14 @@ func Print(t Type) string {
 // that trusts its input is a fully-generalized type. The solver's renderScheme
 // uses PrintAsSchemeWith to restrict naming to the variables generalization
 // actually quantified, so a stray variable is not disguised as a parameter.
+//
+// PrintAsScheme passes no lifetime bounds, so a quantified lifetime renders as a bare
+// name with no outlives bound. A join lifetime then shows as `<'a, 'b, 'c>` with no
+// `'a: 'c` linkage. To render those bounds a caller must supply them through
+// PrintAsSchemeWith, which the solver's renderScheme does. Use renderScheme, not
+// PrintAsScheme, to display a solver scheme that may carry borrow lifetimes.
 func PrintAsScheme(t Type) string {
-	return PrintAsSchemeWith(t, func(*TypeVarType) bool { return true })
+	return PrintAsSchemeWith(t, func(*TypeVarType) bool { return true }, nil)
 }
 
 // PrintAsSchemeWith renders a generalized type, naming ONLY the free variables
@@ -92,7 +99,13 @@ func PrintAsScheme(t Type) string {
 // preserves the leak anchor: a variable coalescing failed to inline (a captured
 // var that escaped, a stray inference var) shows as `t{ID}` rather than a spurious
 // `<Tn>` that would make a malformed signature look valid.
-func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
+//
+// ltBounds carries the transitively-reduced outlives relation among the type's named
+// lifetime variables: ltBounds[lv] is the lifetimes lv outlives. A join lifetime
+// bounded below by two borrows renders as `<'a: 'c, 'b: 'c, 'c>`, where 'a and 'b
+// each carry the bound {'c}. A nil map draws no bounds, so a caller that does not
+// solve lifetime bounds renders bare names.
+func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool, ltBounds map[*LifetimeVar][]*LifetimeVar) string {
 	names := map[*TypeVarType]string{}
 	var labels []string
 	for _, v := range freeTypeVars(t) {
@@ -104,27 +117,58 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool) string {
 		labels = append(labels, name)
 	}
 	// Borrow lifetimes left in the coalesced type by D4's coalesceLifetimes are all
-	// nameable param lifetimes. A connect-nothing one was already elided, and a join
-	// expanded to a union of these. Name each 'a, 'b, … in first-appearance order and
-	// add it to the quantifier prefix after the type parameters.
+	// nameable. A connect-nothing one was already elided; a param lifetime and a kept
+	// join lifetime both survive here. Name each 'a, 'b, … in first-appearance order
+	// and add it to the quantifier prefix after the type parameters.
+	ltVars := freeLifetimeVars(t)
 	ltNames := map[*LifetimeVar]string{}
-	var ltLabels []string
-	for _, lv := range freeLifetimeVars(t) {
-		name := lifetimeParamName(len(ltLabels))
-		ltNames[lv] = name
-		ltLabels = append(ltLabels, name)
+	ltIndex := map[*LifetimeVar]int{}
+	for i, lv := range ltVars {
+		ltNames[lv] = lifetimeParamName(i)
+		ltIndex[lv] = i
 	}
-	if len(labels) == 0 && len(ltLabels) == 0 {
+	if len(labels) == 0 && len(ltVars) == 0 {
 		// No quantified parameters: render as a plain (possibly raw-var) type, which
 		// keeps a leaked variable visible as t{ID}.
 		return Print(t)
 	}
 	p := &namedPrinter{names: names, ltNames: ltNames}
+	ltLabels := make([]string, len(ltVars))
+	for i, lv := range ltVars {
+		ltLabels[i] = p.lifetimeBinder(lv, ltBounds[lv], ltIndex)
+	}
 	prefix := "<" + strings.Join(append(labels, ltLabels...), ", ") + ">"
 	if ft, ok := t.(*FuncType); ok {
 		return "fn " + prefix + p.printFuncTail(ft)
 	}
 	return prefix + " " + p.printType(t)
+}
+
+// lifetimeBinder renders one lifetime binder in the quantifier prefix: the bare name
+// `'a`, or `'a: 'b & 'c` when lv outlives 'b and 'c. The bound lifetimes are ordered
+// by first appearance via ltIndex, the same order the prefix names them, so the output
+// is stable. A bound lifetime absent from ltIndex is skipped rather than rendered as an
+// out-of-band name. The solver never produces such a bound, so this is only a guard.
+func (p *namedPrinter) lifetimeBinder(lv *LifetimeVar, bounds []*LifetimeVar, ltIndex map[*LifetimeVar]int) string {
+	name := p.ltNames[lv]
+	if len(bounds) == 0 {
+		return name
+	}
+	targets := make([]*LifetimeVar, 0, len(bounds))
+	for _, b := range bounds {
+		if _, ok := ltIndex[b]; ok {
+			targets = append(targets, b)
+		}
+	}
+	if len(targets) == 0 {
+		return name
+	}
+	sort.Slice(targets, func(i, j int) bool { return ltIndex[targets[i]] < ltIndex[targets[j]] })
+	parts := make([]string, len(targets))
+	for i, b := range targets {
+		parts[i] = p.ltNames[b]
+	}
+	return name + ": " + strings.Join(parts, " & ")
 }
 
 // typeParamName is the surface name for the i-th quantified type parameter: T0,
@@ -274,9 +318,9 @@ func (p *namedPrinter) printLifetime(lt Lifetime) string {
 		}
 		return "'l" + strconv.Itoa(lt.ID)
 	case *LifetimeUnion:
-		// The union form a join lifetime coalesces to. It is the union of the param
-		// lifetimes it reaches, parenthesized so the `mut`/borrow prefix binds the
-		// whole union, giving `mut ('a | 'b) {…}` rather than `mut 'a | 'b {…}`.
+		// A written `('a | 'b)` annotation, parenthesized so the `mut`/borrow prefix
+		// binds the whole union, giving `mut ('a | 'b) {…}` rather than
+		// `mut 'a | 'b {…}`.
 		parts := make([]string, len(lt.Lifetimes))
 		for i, m := range lt.Lifetimes {
 			parts[i] = p.printLifetime(m)

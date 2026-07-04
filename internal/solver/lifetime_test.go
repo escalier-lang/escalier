@@ -188,10 +188,10 @@ func borrowFn(ret soltype.Type, paramLts ...soltype.Lifetime) *soltype.FuncType 
 }
 
 // Escaping a JOINED borrow forces every param lifetime the join reaches to outlive
-// 'static, so the whole `('a | 'b)` union collapses to a single 'static. This is the
+// 'static, so the whole bounded join collapses to a single 'static. This is the
 // join↔escape interaction (M4 D3). constrainEscape constrains the join lifetime
 // `<: 'static`, which propagates through its lower bounds to each member, and
-// coalesceLifetimes then absorbs the union to 'static rather than expanding it.
+// coalesceLifetimes then absorbs every member to 'static rather than naming it.
 func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -203,9 +203,9 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	ret := mutPointRef(join)
 	fn := borrowFn(ret, a, b)
 
-	// Before escape the join expands to the union of its members.
+	// Before escape the join stays named as 'c, bounded below by each source lifetime.
 	require.Equal(t,
-		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &('a | 'b) mut {x: number}",
+		"fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
 
 	c.constrainEscape(ret)
@@ -215,6 +215,27 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 	require.Equal(t, []soltype.Lifetime{soltype.Static}, join.UpperBounds)
 	require.Equal(t,
 		"fn (p: &'static mut {x: number}, q: &'static mut {x: number}) -> &'static mut {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
+
+// When one of a join's two sources escapes to 'static, the join has a single remaining
+// NAMED source, so it collapses to that source's name rather than taking a fresh one.
+// 'a escapes, rendering `&'static`; the join is left with only 'b, so componentParams
+// counts one named member and the return renders `&'b` under the same name as q, not a
+// distinct bounded lifetime. Without excluding the 'static-forced source, the join
+// would keep its own name and render the weaker `<'b: 'c, 'c>`.
+func TestJoinWithOneStaticSourceCollapsesToRemaining(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	join := c.ctx.freshJoinLifetime(0)
+	c.ctx.constrainLt(a, soltype.Static) // 'a escapes to 'static
+	c.ctx.constrainLt(a, join)
+	c.ctx.constrainLt(b, join)
+	fn := borrowFn(mutPointRef(join), a, b)
+
+	require.Equal(t,
+		"fn <'a>(p: &'static mut {x: number}, q: &'a mut {x: number}) -> &'a mut {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
@@ -240,12 +261,11 @@ func TestImmutableConnectNothingBorrowKeepsRef(t *testing.T) {
 	require.Equal(t, "fn (p: &{x: number}) -> number", renderScheme(&MonoScheme{Ty: fn}))
 }
 
-// A nested join reaching one param lifetime through two distinct sub-joins lists
-// that lifetime once in the rendered union, not twice. The top join's lower bounds
-// are the two sub-joins, and both reach 'a. componentParams gathers the join's
-// component param lifetimes into an ID-keyed, sorted set, so a lifetime reached
-// through two sub-joins appears once. Without that dedup this rendered
-// `('a | 'b | 'a | 'c)`.
+// A nested join reaching one param lifetime through two distinct sub-joins draws that
+// lifetime's bound to the top join once, not twice. The top join's lower bounds are
+// the two sub-joins, and both reach 'a. displayLtBounds keys each survivor's targets
+// by SCC representative, so a lifetime reaching the top join through two sub-joins
+// yields one `'a: 'd` bound. Without that dedup 'a would carry the bound twice.
 func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -263,7 +283,32 @@ func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 	fn := borrowFn(mutPointRef(top), a, b, d)
 
 	require.Equal(t,
-		"fn <'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> &('a | 'b | 'c) mut {x: number}",
+		"fn <'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> &'d mut {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
+
+// A lifetime bounded above two distinct joins renders both bounds joined with `&`, the
+// meet. Two joins sharing a source param sit in one connected component, so the
+// grouping bounds every param in that component to both joins: 'a feeds j1 and j2
+// directly, while 'b and 'c reach the second join only through the shared component.
+// Each param therefore carries `: 'd & 'e`. This is the same connectivity grouping the
+// union rendering used, where both tuple slots read `('a | 'b | 'c)`.
+func TestParamFeedingTwoJoinsRendersMeetBound(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	d := c.ctx.freshLifetime(0)
+	j1 := c.ctx.freshJoinLifetime(0)
+	j2 := c.ctx.freshJoinLifetime(0)
+	c.ctx.constrainLt(a, j1) // 'a feeds both joins
+	c.ctx.constrainLt(b, j1)
+	c.ctx.constrainLt(a, j2)
+	c.ctx.constrainLt(d, j2)
+	ret := &soltype.TupleType{Elems: []soltype.Type{mutPointRef(j1), mutPointRef(j2)}}
+	fn := borrowFn(ret, a, b, d)
+
+	require.Equal(t,
+		"fn <'a: 'd & 'e, 'b: 'd & 'e, 'c: 'd & 'e, 'd, 'e>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> [&'d mut {x: number}, &'e mut {x: number}]",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 

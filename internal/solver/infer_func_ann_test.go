@@ -131,13 +131,13 @@ func TestInferLifetimeFuncAnnotation(t *testing.T) {
 		},
 		// A declared `'b: 'a` bound relates the two lifetimes. Only p is returned, so `'b`
 		// reaches no output on its own, yet the bound keeps it named. The un-bounded twin
-		// below elides `'b` to a bare `&`, isolating the bound's effect. The bound itself
-		// is not yet rendered in the prefix, which is the render track's job.
+		// below elides `'b` to a bare `&`, isolating the bound's effect. The bound renders
+		// back in the prefix as `'b: 'a`, since 'b outlives 'a.
 		{
 			name:    "outlives bound keeps connected lifetime",
 			src:     `val f: fn<'a, 'b: 'a>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number} = fn (p, q) { return p }`,
 			binding: "f",
-			want:    "fn <'a, 'b>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number}",
+			want:    "fn <'a, 'b: 'a>(p: &'a {x: number}, q: &'b {x: number}) -> &'a {x: number}",
 		},
 		{
 			name:    "no bound elides unconnected lifetime",

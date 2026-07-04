@@ -115,11 +115,11 @@ func TestInferFieldWriteToImmutableObjectRejected(t *testing.T) {
 }
 
 // Returning one of two borrows with DISTINCT lifetimes joins them into a single
-// borrow whose lifetime is the union of theirs. This is the ConditionalUnionReturn
-// acceptance (M4 D3). The return-point join mints a fresh join lifetime bounded
-// below by 'l0 and 'l1, which coalesces to `('l0 | 'l1)` in the positive return
-// position. The param lifetimes 'l0/'l1 stay named on the borrows they originate.
-// D4 renders them `'a`/`'b` and the union `('a | 'b)`.
+// borrow whose lifetime is bounded below by both. This is the ConditionalUnionReturn
+// acceptance (M4 D3). The return-point join mints a fresh join lifetime bounded below
+// by 'l0 and 'l1, which stays named as 'c in the positive return position. The param
+// lifetimes 'l0/'l1 stay named on the borrows they originate, and each outlives 'c, so
+// the quantifier prefix carries the bounds `'a: 'c, 'b: 'c`.
 func TestInferConditionalUnionReturn(t *testing.T) {
 	src := `fn f(p: &mut {x: number}, q: &mut {x: number}) {
   if true {
@@ -131,7 +131,7 @@ func TestInferConditionalUnionReturn(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &('a | 'b) mut {x: number}",
+		"fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
 		values["f"])
 }
 
@@ -155,9 +155,10 @@ func TestInferMismatchedBorrowsFallBackToUnion(t *testing.T) {
 		values["f"])
 }
 
-// A join over THREE borrows unites all their lifetimes. The fresh join lifetime is
-// bounded below by each, coalescing to `('l0 | 'l1 | 'l2)` in the return position.
-// This confirms the join generalizes past the two-branch case to an n-ary return set.
+// A join over THREE borrows relates all their lifetimes to one return lifetime. The
+// fresh join lifetime 'd is bounded below by each, so each param lifetime carries the
+// bound `: 'd` in the prefix. This confirms the join generalizes past the two-branch
+// case to an n-ary return set.
 func TestInferThreeWayBorrowJoin(t *testing.T) {
 	src := `fn f(p: &mut {x: number}, q: &mut {x: number}, r: &mut {x: number}) {
   if true {
@@ -173,20 +174,21 @@ func TestInferThreeWayBorrowJoin(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> &('a | 'b | 'c) mut {x: number}",
+		"fn <'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: number}) -> &'d mut {x: number}",
 		values["f"])
 }
 
-// A GENERALIZED joined-borrow function keeps its lifetime union after instantiation.
-// A caller that passes two of its own borrows still sees a two-lifetime union, not a
-// single name. This is the only end-to-end exercise of the Join flag riding through
-// freshenAbove/extrude (D2.5). If the flag were dropped on the freshened join
-// lifetime, the instantiated return would coalesce to one lifetime instead of a
-// union. `pick` renders `mut ('a | 'b) {…}` over its two param lifetimes.
-// Instantiating it inside `use` freshens the join and its two members to use-level
-// lifetimes. D4's component-based expansion resolves those intermediaries back to
-// `use`'s own param lifetimes, so `use` renders the same clean `mut ('a | 'b) {…}`
-// over `a` and `b` rather than the raw freshened ids.
+// A GENERALIZED joined-borrow function keeps its bounded return lifetime after
+// instantiation. A caller that passes two of its own borrows still sees both
+// lifetimes bounding the return, not a single name. This is the only end-to-end
+// exercise of the Join flag riding through freshenAbove/extrude (D2.5). If the flag
+// were dropped on the freshened join lifetime, the instantiated return would coalesce
+// to one lifetime instead of a bounded join. `pick` renders `<'a: 'c, 'b: 'c, 'c>`
+// over its two param lifetimes and the return lifetime they outlive. Instantiating it
+// inside `use` freshens the join and its two members to use-level lifetimes. The
+// component-based analysis resolves those intermediaries back to `use`'s own param
+// lifetimes, so `use` renders the same clean bounded form over `a` and `b` rather than
+// the raw freshened ids.
 func TestInferInstantiatedJoinReturnsUnion(t *testing.T) {
 	src := `fn pick(p: &mut {x: number}, q: &mut {x: number}) {
   if true { return p } else { return q }
@@ -197,10 +199,10 @@ fn use(a: &mut {x: number}, b: &mut {x: number}) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &('a | 'b) mut {x: number}",
+		"fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
 		values["pick"])
 	require.Equal(t,
-		"fn <'a, 'b>(a: &'a mut {x: number}, b: &'b mut {x: number}) -> &('a | 'b) mut {x: number}",
+		"fn <'a: 'c, 'b: 'c, 'c>(a: &'a mut {x: number}, b: &'b mut {x: number}) -> &'c mut {x: number}",
 		values["use"])
 }
 

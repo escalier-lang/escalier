@@ -87,12 +87,13 @@ func TestInferRefUnion(t *testing.T) {
 		},
 		{
 			// Two borrows that differ only in lifetime join into one borrow rather than a
-			// mixed union, so the uniform-ownership check leaves them alone.
+			// mixed union, so the uniform-ownership check leaves them alone. The join
+			// lifetime 'c stays named, with each source lifetime bounded above it.
 			name: "uniform borrow union",
 			src: `fn f(p: &mut {x: number}, q: &mut {x: number}) {
   if true { return p } else { return q }
 }`,
-			want: "fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &('a | 'b) mut {x: number}",
+			want: "fn <'a: 'c, 'b: 'c, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number}",
 		},
 
 		// --- nested-borrow normalization ---

@@ -37,19 +37,18 @@ import (
 //     bare inner, because RefType{Mut: false, Lt: nil} is the forbidden
 //     degenerate cell NewRef rejects.
 //
-//  3. Join expansion. A non-param lifetime is not itself nameable. It is either a
-//     join variable minted at a return or branch, or a lifetime freshened when a
-//     borrow-passing function was instantiated. It expands to the union of the param
-//     lifetimes sharing its connected component in the condensed graph, so a return
-//     uniting two borrows coalesces to ('a | 'b). The grouping is by connectivity
-//     because instantiation interposes an intermediary between a call's argument
-//     lifetime and the join it feeds. That intermediary outlives both the caller's
-//     param lifetime and the join, so the param and the join are joined only through
-//     it, with no direct outlives edge either way. A lifetime forced to 'static
-//     renders 'static and absorbs. The union is a conservative rendering of the
-//     directional bound set the condensed graph carries. A later change keeps the
-//     join lifetime named and renders each kept param's outlives edges as `'a: 'c`
-//     bounds instead of collapsing to the union ('a | 'b).
+//  3. Join naming. A non-param lifetime is a join variable minted at a return or
+//     branch, or a lifetime freshened when a borrow-passing function was instantiated.
+//     It resolves to the param lifetimes sharing its connected component in the
+//     condensed graph. A join reaching one param renders under that param's name. A
+//     join reaching two or more keeps its own name, and displayLtBounds renders each
+//     source param's outlives edge as an `'a: 'c` bound, so a return uniting two
+//     borrows renders `<'a: 'c, 'b: 'c, 'c>`. The grouping is by connectivity because
+//     instantiation interposes an intermediary between a call's argument lifetime and
+//     the join it feeds. That intermediary outlives both the caller's param lifetime
+//     and the join, so the param and the join are joined only through it, with no
+//     direct outlives edge either way. A lifetime forced to 'static renders 'static
+//     and absorbs.
 //
 // coalesceLifetimes resolves the borrow lifetimes left raw by the structural
 // coalescers. pol is the root polarity the type was coalesced at, threaded through
@@ -150,15 +149,22 @@ func (a *ltAnalysis) kept(v *soltype.LifetimeVar) bool {
 	return a.posComps.Contains(a.leaderOf(v))
 }
 
-// componentParams returns the kept param lifetimes in v's connected component, sorted
-// by variable ID for a canonical union member order. Members are keyed by SCC
-// representative so mutually-outliving params list once, but emit a param var, since
-// the representative itself can be a non-param bridge var named in no parameter slot.
-func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []soltype.Lifetime {
+// componentParams returns the kept param lifetimes in v's connected component, keyed
+// by SCC representative so mutually-outliving params list once. Each entry emits a
+// param var, since the representative itself can be a non-param bridge var named in no
+// parameter slot. The result is sorted by variable ID. resolveLt reads only the count:
+// one member means v reborrows a single source and renders under that source's name,
+// while two or more means v is a genuine multi-source join.
+//
+// A 'static-forced param renders as 'static rather than a name, so it is not a named
+// source and is excluded. This keeps the count of named sources consistent with what
+// survives in the resolved type, so a join whose only other source escaped to 'static
+// collapses to its single remaining name rather than taking a fresh one.
+func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []*soltype.LifetimeVar {
 	leader := a.leaderOf(v)
 	byRep := map[int]*soltype.LifetimeVar{}
 	for p := range a.occ {
-		if !a.isParam(p) || !a.kept(p) {
+		if !a.isParam(p) || !a.kept(p) || forcedToStatic(p) {
 			continue
 		}
 		pr := a.bs.repOf(p.ID)
@@ -169,13 +175,11 @@ func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []soltype.Lifetime 
 			byRep[pr] = p
 		}
 	}
-	members := make([]soltype.Lifetime, 0, len(byRep))
+	members := make([]*soltype.LifetimeVar, 0, len(byRep))
 	for _, p := range byRep {
 		members = append(members, p)
 	}
-	sort.Slice(members, func(i, j int) bool {
-		return members[i].(*soltype.LifetimeVar).ID < members[j].(*soltype.LifetimeVar).ID
-	})
+	sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
 	return members
 }
 
@@ -191,17 +195,144 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 		}
 		return nil, true // connect-nothing param: elide
 	}
-	// A non-param lifetime is a join variable or an instantiation intermediary. It is
-	// not nameable, so it expands to the union of the param lifetimes in its component.
+	// A non-param lifetime is a join variable minted at a return or branch, or an
+	// instantiation intermediary. It resolves to the param lifetimes it reaches.
 	members := a.componentParams(v)
 	switch len(members) {
 	case 0:
-		return nil, true
+		return nil, true // reaches no param: elide
 	case 1:
+		// A single reached param means v reborrows one source, so it renders under that
+		// source's name rather than a fresh one. Mutually-outliving params condense to
+		// one member here, so a join over equal borrows also lands in this arm.
 		return members[0], false
 	default:
-		return &soltype.LifetimeUnion{Lifetimes: members}, false
+		// A genuine multi-source join keeps its own name. The param lifetimes that
+		// outlive it render as `'a: 'c` bounds in the quantifier prefix, computed by
+		// displayLtBounds.
+		return v, false
 	}
+}
+
+// displayLtBounds computes the transitively-reduced outlives relation among the named
+// lifetime variables surviving in a coalesced display type, keyed by variable for the
+// printer's `'a: 'c` prefix. bounds[u] lists the survivors u directly outlives. t is
+// the type coalesceLifetimes produced, so its RefType lifetimes are exactly the named
+// survivors. An elided or 'static-forced lifetime is not a LifetimeVar and so does not
+// occur. pol is the polarity t was coalesced at, threaded so the occurrence walk starts
+// from the same root.
+//
+// The relation has two sources. A directed edge the solved graph records, read by
+// implies, covers a declared or inferred bound between two named lifetimes, such as
+// `'b: 'a`. A source lifetime feeding a multi-source join covers the join case. An
+// instantiation interposes an intermediary that outlives both the source and the join,
+// so no directed edge links them, yet each source outlives the join. componentParams
+// recovers those sources from the join's connected component.
+//
+// The reduction reads its own edge relation, the implies-or-feedsJoin union, rather
+// than ltBoundSet.reduce's raw edge graph, so it is computed here rather than reused.
+// The union relation is materialized once into edges before the reduction, so
+// feedsJoin's occ scan runs per survivor pair, not per reduction step.
+func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.LifetimeVar][]*soltype.LifetimeVar {
+	occ := map[*soltype.LifetimeVar]occPolarity{}
+	t.Accept(&ltOccVisitor{occ: occ}, pol)
+	if len(occ) == 0 {
+		return nil
+	}
+	a := newLtAnalysis(occ)
+	bs := a.bs
+
+	survivors := make([]*soltype.LifetimeVar, 0, len(occ))
+	for v := range occ {
+		survivors = append(survivors, v)
+	}
+	sort.Slice(survivors, func(i, j int) bool { return survivors[i].ID < survivors[j].ID })
+
+	// joinSources maps each multi-source join survivor to the SCC representatives of the
+	// params feeding it. An instantiation interposes an intermediary that outlives both a
+	// source param and the join, so implies does not link them; componentParams recovers
+	// the sources from the join's connected component. Precomputed once so the outlives
+	// relation below reads it instead of rescanning occ per pair.
+	joinSources := map[*soltype.LifetimeVar]set.Set[int]{}
+	for _, w := range survivors {
+		if a.isParam(w) {
+			continue
+		}
+		members := a.componentParams(w)
+		if len(members) < 2 {
+			continue
+		}
+		reps := set.NewSet[int]()
+		for _, m := range members {
+			reps.Add(bs.repOf(m.ID))
+		}
+		joinSources[w] = reps
+	}
+
+	// outlives holds when u and w condense to different representatives and either the
+	// bound set proves 'u: 'w or u feeds the join w. Two survivors sharing a
+	// representative are equal lifetimes, so no bound is drawn between them.
+	outlives := func(u, w *soltype.LifetimeVar) bool {
+		if bs.repOf(u.ID) == bs.repOf(w.ID) {
+			return false
+		}
+		if bs.implies(u.ID, w.ID) {
+			return true
+		}
+		reps, ok := joinSources[w]
+		return ok && reps.Contains(bs.repOf(u.ID))
+	}
+
+	// edges materializes the full outlives relation among survivors once, so the
+	// transitive reduction below reads it rather than recomputing outlives.
+	edges := map[*soltype.LifetimeVar]set.Set[*soltype.LifetimeVar]{}
+	for _, u := range survivors {
+		targets := set.NewSet[*soltype.LifetimeVar]()
+		for _, v := range survivors {
+			if outlives(u, v) {
+				targets.Add(v)
+			}
+		}
+		edges[u] = targets
+	}
+
+	bounds := map[*soltype.LifetimeVar][]*soltype.LifetimeVar{}
+	for _, u := range survivors {
+		var direct []*soltype.LifetimeVar
+		seenRep := set.NewSet[int]()
+		for _, v := range survivors {
+			if !edges[u].Contains(v) {
+				continue
+			}
+			// Drop u -> v when a survivor w sits between them, so 'a: 'b, 'b: 'c renders
+			// without the redundant 'a: 'c. w must condense away from both endpoints, or
+			// it is not a genuine intermediate.
+			redundant := false
+			for _, w := range survivors {
+				if bs.repOf(w.ID) == bs.repOf(u.ID) || bs.repOf(w.ID) == bs.repOf(v.ID) {
+					continue
+				}
+				if edges[u].Contains(w) && edges[w].Contains(v) {
+					redundant = true
+					break
+				}
+			}
+			if redundant {
+				continue
+			}
+			// Two survivors sharing a representative name one lifetime, so keep only the
+			// first to reach it.
+			if seenRep.Contains(bs.repOf(v.ID)) {
+				continue
+			}
+			seenRep.Add(bs.repOf(v.ID))
+			direct = append(direct, v)
+		}
+		if len(direct) > 0 {
+			bounds[u] = direct
+		}
+	}
+	return bounds
 }
 
 // ltRewriter applies the analysis to a coalesced type, resolving each RefType's
