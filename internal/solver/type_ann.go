@@ -454,19 +454,11 @@ func (c *checker) resolveLifetimeAnn(node ast.LifetimeAnnNode, lvl int) soltype.
 	}
 }
 
-// lowerLifetimeParamBounds asserts each declared outlives bound in a `<…>` quantifier
-// list as a constrainLt, so a bound written in a signature participates in solving like
-// one a body infers. A binder `'a: 'b` reads "'a outlives 'b", which is 'a <: 'b in the
-// outlives lattice, so it lowers to constrainLt('a, 'b). Each name resolves through
-// namedLifetime, which interns one LifetimeVar per written name in the current
-// signature, so a bound and a borrow that write the same name share a lifetime. A
-// 'static on the right resolves to soltype.Static, the bottom of the outlives lattice.
-// That forces the bound lifetime to 'static, the same escape-to-static constraint an
-// escaping borrow emits.
-//
-// A 'static on the left is not a bindable parameter, which the parser already rejects.
-// The binder is still built with that name, so skip it here rather than interning a
-// bogus "static" variable.
+// lowerLifetimeParamBounds lowers each declared `'a: 'b` bound ("'a outlives 'b") to
+// constrainLt('a, 'b), so a signature's bound solves like one a body infers. Names
+// resolve through namedLifetime, so a bound and a borrow writing the same name share a
+// lifetime. A 'static right-hand side forces the lifetime to 'static; a 'static
+// left-hand side is skipped, since the parser already rejects it as a binder.
 func (c *checker) lowerLifetimeParamBounds(params []*ast.LifetimeParam, lvl int) {
 	for _, p := range params {
 		if len(p.Bounds) == 0 || p.Name == "static" {
