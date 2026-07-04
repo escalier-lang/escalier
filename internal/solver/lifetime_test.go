@@ -291,8 +291,16 @@ func TestJoinOverMutualOutlivesCollapsesToOne(t *testing.T) {
 // component condenses to the non-param representative. The join must still render
 // under the parameter's name, so componentParams emits the param var `p` rather than
 // the representative `m`, and the return renders `&'a` rather than a fresh name bound
-// to no input. Minting the join `m` first gives it the smaller ID, as a freshener or
-// extruder can.
+// to no input.
+//
+// This guards an ID ordering ordinary source does not produce, so the graph is built
+// directly rather than through inference. Mutual-outlives cycles do arise from source:
+// `bag.item = it` stores a borrow into a mutable field, whose invariant lifetime forces
+// the field and `it` to be equal. But both members of a source-level cycle are param
+// lifetimes, and a param is always minted before any join or instantiation intermediary,
+// so the param carries the smaller ID and wins the representative slot. The reverse — a
+// non-param representative — needs the non-param minted first, which a freshener or
+// extruder can do but top-level inference cannot, so `m` is minted before `p` here.
 func TestJoinRepresentativeIsNonParamRendersParamName(t *testing.T) {
 	c := newChecker()
 	m := c.ctx.freshJoinLifetime(0) // non-param, minted first so it holds the smaller ID
