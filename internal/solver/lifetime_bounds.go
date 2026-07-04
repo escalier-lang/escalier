@@ -299,9 +299,13 @@ func (s *ltBoundSet) implies(a, b int) bool {
 // subsumes reports whether this set proves every outlives relation the other set
 // asserts, so "the inferred bound set satisfies the declared one" is
 // inferred.subsumes(declared). Three kinds of relation must each hold here via implies:
-// every outlives edge other keeps, every mutual-outlives equality other condensed into
-// a component, and every 'static forcing other records. The equalities and 'static
-// forcings are checked explicitly because neither survives as an edge in other.edges.
+//
+//   - every outlives edge other keeps;
+//   - every mutual-outlives equality other condensed into a component;
+//   - every 'static forcing other records.
+//
+// The equalities and 'static forcings are checked explicitly because neither survives
+// as an edge in other.edges.
 func (s *ltBoundSet) subsumes(other *ltBoundSet) bool {
 	for from, tos := range other.edges {
 		for to := range tos {
