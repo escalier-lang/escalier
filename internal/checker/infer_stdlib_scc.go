@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/graph"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -155,22 +156,11 @@ func extractPseudoPackageImports(ctx context.Context, path string) ([]string, er
 	return out, nil
 }
 
-// tarjanSCCs runs Tarjan's strongly-connected-components algorithm
-// over the adjacency list `edges`. Nodes referenced only as targets
-// (not present as keys) are included as singletons. Returns one slice
-// per SCC.
-//
-// The DFS is implemented recursively; Go grows goroutine stacks
-// dynamically (8KB → many MB), so depth is bounded only by available
-// memory and is far beyond any realistic stdlib graph size.
+// tarjanSCCs runs the shared strongly-connected-components pass over
+// the adjacency list `edges`. A node referenced only as a target, never
+// present as a key, is included as a singleton. Returns one slice per
+// SCC.
 func tarjanSCCs(edges map[string][]string) [][]string {
-	index := 0
-	indices := map[string]int{}
-	lowlink := map[string]int{}
-	onStack := set.NewSet[string]()
-	stack := []string{}
-	var sccs [][]string
-
 	// Gather all nodes (sources + targets) so isolated importees are
 	// represented even if they have no outgoing edges.
 	nodeSet := set.NewSet[string]()
@@ -183,48 +173,9 @@ func tarjanSCCs(edges map[string][]string) [][]string {
 	nodes := nodeSet.ToSlice()
 	sort.Strings(nodes) // deterministic traversal
 
-	var strongconnect func(v string)
-	strongconnect = func(v string) {
-		indices[v] = index
-		lowlink[v] = index
-		index++
-		stack = append(stack, v)
-		onStack.Add(v)
-
-		for _, w := range edges[v] {
-			if _, seen := indices[w]; !seen {
-				strongconnect(w)
-				if lowlink[w] < lowlink[v] {
-					lowlink[v] = lowlink[w]
-				}
-			} else if onStack.Contains(w) {
-				if indices[w] < lowlink[v] {
-					lowlink[v] = indices[w]
-				}
-			}
-		}
-
-		if lowlink[v] == indices[v] {
-			var scc []string
-			for {
-				w := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
-				onStack.Remove(w)
-				scc = append(scc, w)
-				if w == v {
-					break
-				}
-			}
-			sccs = append(sccs, scc)
-		}
-	}
-
-	for _, n := range nodes {
-		if _, seen := indices[n]; !seen {
-			strongconnect(n)
-		}
-	}
-	return sccs
+	return graph.StronglyConnectedComponents(nodes, func(v string) []string {
+		return edges[v]
+	})
 }
 
 // loadStdlibSCC parses and infers every URI in sccURIs as a single

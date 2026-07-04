@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	graphalg "github.com/escalier-lang/escalier/internal/graph"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
 )
@@ -843,65 +844,26 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 // component to be reported. If a component has size equal to threshold, it is
 // reported only if it contains a self-reference.
 func (g *DepGraph) FindStronglyConnectedComponents(threshold int) [][]BindingKey {
-	index := 0
-	stack := make([]BindingKey, 0)
-	indices := make(map[BindingKey]int)
-	lowlinks := make(map[BindingKey]int)
-	onStack := set.NewSet[BindingKey]()
-	sccs := make([][]BindingKey, 0)
-
-	var strongConnect func(BindingKey)
-	strongConnect = func(v BindingKey) {
-		indices[v] = index
-		lowlinks[v] = index
-		index++
-		stack = append(stack, v)
-		onStack.Add(v)
-
-		// Consider successors of v
+	// Read each binding's out-neighbours from its btree dep set, in the set's
+	// own sorted order, so the shared pass seeds and traverses deterministically.
+	successors := func(v BindingKey) []BindingKey {
 		deps := g.GetDeps(v)
+		out := make([]BindingKey, 0, deps.Len())
 		iter := deps.Iter()
 		for ok := iter.First(); ok; ok = iter.Next() {
-			w := iter.Key()
-			if _, exists := indices[w]; !exists {
-				// Successor w has not yet been visited; recurse on it
-				strongConnect(w)
-				if lowlinks[w] < lowlinks[v] {
-					lowlinks[v] = lowlinks[w]
-				}
-			} else if onStack.Contains(w) {
-				// Successor w is in stack and hence in the current SCC
-				if indices[w] < lowlinks[v] {
-					lowlinks[v] = indices[w]
-				}
-			}
+			out = append(out, iter.Key())
 		}
-
-		// If v is a root node, pop the stack and create an SCC
-		if lowlinks[v] == indices[v] {
-			var scc []BindingKey
-			for {
-				w := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
-				onStack.Remove(w)
-				scc = append(scc, w)
-				if w == v {
-					break
-				}
-			}
-			// Report cycles: either multiple bindings OR a self-reference
-			deps := g.GetDeps(scc[0])
-			if len(scc) > threshold || (len(scc) == threshold && deps.Contains(scc[0])) {
-				sccs = append(sccs, scc)
-			}
-		}
+		return out
 	}
 
-	// Run the algorithm for all unvisited binding keys
-	allKeys := g.AllBindings()
-	for _, key := range allKeys {
-		if _, exists := indices[key]; !exists {
-			strongConnect(key)
+	sccs := make([][]BindingKey, 0)
+	for _, scc := range graphalg.StronglyConnectedComponents(g.AllBindings(), successors) {
+		// Report cycles: either more members than the threshold, or exactly the
+		// threshold with a self-reference. scc[0] is the first member popped;
+		// for the size-1 self-loop case it is the sole member.
+		deps := g.GetDeps(scc[0])
+		if len(scc) > threshold || (len(scc) == threshold && deps.Contains(scc[0])) {
+			sccs = append(sccs, scc)
 		}
 	}
 
