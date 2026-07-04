@@ -9,6 +9,11 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
+// outlivesRelation is a single "'from outlives 'to" assertion in raw lifetime-ID
+// space, the coordinate system implies and subsumes both speak. from and to are raw
+// IDs, not representatives; implies maps them into a set's own representative space.
+type outlivesRelation struct{ from, to int }
+
 // ltBoundSet is a directed outlives graph over lifetime-variable IDs, condensed over
 // outlives-equivalent lifetimes and then transitively reduced. An edge a -> b reads
 // "'a outlives 'b", written 'a: 'b. That is the direction constrainLt records as a in
@@ -21,7 +26,7 @@ import (
 type ltBoundSet struct {
 	edges      map[int]set.Set[int]         // rep -> reps it outlives, condensed then reduced
 	rep        map[int]int                  // lifetime ID -> its SCC representative ID
-	components map[int][]int                // rep -> member IDs, only for multi-member SCCs
+	equalities []outlivesRelation           // both directions of each mutual-outlives equality a component condensed away
 	vars       map[int]*soltype.LifetimeVar // representative ID -> a member var, for rendering
 	static     set.Set[int]                 // representative IDs forced to 'static, the absorbing bottom
 }
@@ -128,24 +133,28 @@ func buildLtBoundSet(occ map[*soltype.LifetimeVar]occPolarity) *ltBoundSet {
 		}
 	}
 
-	// Record each multi-member component's members under its representative. A
-	// multi-member SCC is a set of mutually-outliving, hence equal, lifetimes whose
-	// intra-component edges the condensation dropped. components is where those
-	// equalities are kept so subsumes can recover them. A singleton SCC asserts no
-	// equality, so it is omitted.
+	// Recover the mutual-outlives equalities the condensation dropped. A multi-member
+	// SCC is a set of lifetimes that outlive each other, hence are equal; its
+	// intra-component edges were collapsed, so record both directions of each member
+	// against its representative. subsumes replays these. reduce never touches rep, so
+	// these pairs stay valid after it runs. A singleton SCC asserts no equality.
 	grouped := map[int][]int{}
 	for id, r := range rep {
 		grouped[r] = append(grouped[r], id)
 	}
-	components := map[int][]int{}
-	for r, members := range grouped {
-		if len(members) > 1 {
-			slices.Sort(members)
-			components[r] = members
+	var equalities []outlivesRelation
+	for _, r := range slices.Sorted(maps.Keys(grouped)) {
+		members := grouped[r]
+		slices.Sort(members)
+		for _, m := range members {
+			if m == r {
+				continue
+			}
+			equalities = append(equalities, outlivesRelation{m, r}, outlivesRelation{r, m})
 		}
 	}
 
-	return &ltBoundSet{edges: edges, rep: rep, components: components, vars: repVars, static: static}
+	return &ltBoundSet{edges: edges, rep: rep, equalities: equalities, vars: repVars, static: static}
 }
 
 // condenseSCCs finds the strongly connected components of the directed graph given by
@@ -314,36 +323,23 @@ func (s *ltBoundSet) implies(a, b int) bool {
 	return s.reaches(ra, rb)
 }
 
-// outlivesRelation is a single "'from outlives 'to" assertion in raw lifetime-ID
-// space, the coordinate system implies and subsumes both speak. from and to are raw
-// IDs, not representatives; implies maps them into a set's own representative space.
-type outlivesRelation struct{ from, to int }
-
 // assertedOutlives returns every outlives relation this set asserts, as raw-ID pairs.
 // Two kinds contribute:
 //
 //   - each kept edge, keyed by representative;
 //   - both directions of every mutual-outlives equality a multi-member component
-//     condensed away, recovered from components.
+//     condensed away, precomputed into equalities.
 //
 // 'static forcings are not returned, since a forcing is not a pairwise outlives
 // relation; subsumes checks those against static directly.
 func (s *ltBoundSet) assertedOutlives() []outlivesRelation {
-	var rels []outlivesRelation
+	rels := make([]outlivesRelation, 0, len(s.equalities))
 	for from, tos := range s.edges {
 		for to := range tos {
 			rels = append(rels, outlivesRelation{from, to})
 		}
 	}
-	for rep, members := range s.components {
-		for _, m := range members {
-			if m == rep {
-				continue
-			}
-			rels = append(rels, outlivesRelation{m, rep}, outlivesRelation{rep, m})
-		}
-	}
-	return rels
+	return append(rels, s.equalities...)
 }
 
 // subsumes reports whether this set proves every relation the other set asserts, so
