@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -29,9 +30,11 @@ import (
 //     the call boundary. This is sound. The component move already keeps the nodes alive.
 //   - A parameter borrow is never stripped, since it carries no local edge.
 
-// stripReturnBorrowsIfTree rewrites the return whose value is e to own its borrowed locals when
-// e's reachable borrow graph is a tree. It is a no-op unless e is a return value with a
-// strippable carrier and a tree-shaped graph.
+// stripReturnBorrowsIfTree rewrites the return type of the return whose value is e to own the
+// data when e's reachable borrow graph is a tree. It is a no-op when e is not a return value,
+// when the carrier is not a direct place or literal, or when the graph is not a tree. The
+// borrow-edge graph read is c.fn.eagerBorrowGraph, which resolveComponentEscapes has set to the
+// snapshot at this return's program point.
 func (c *checker) stripReturnBorrowsIfTree(e ast.Expr) {
 	idx := c.returnIndexOf(e)
 	if idx < 0 {
@@ -64,19 +67,22 @@ func (c *checker) returnIndexOf(e ast.Expr) int {
 // into a private copy under a synthetic root. Any other carrier reports ok=false.
 func (c *checker) carrierGraph(e ast.Expr) (map[liveness.VarID][]fieldBorrow, liveness.VarID, bool) {
 	if p, ok := exprPlace(e); ok && p.root > 0 && len(p.path) == 0 {
-		return c.fn.borrowEdges, p.root, true
+		return c.fn.eagerBorrowGraph, p.root, true
 	}
 	switch e.(type) {
 	case *ast.ObjectExpr, *ast.TupleExpr:
 		// Walk the literal into a private copy so the shared snapshot is not mutated, using a
 		// synthetic root drawn from the module-wide counter so it never collides with a binding.
-		saved := c.fn.borrowEdges
-		c.fn.borrowEdges = cloneBorrowState(saved)
+		saved := c.fn.eagerBorrowGraph
+		// saved is non-nil here. resolveComponentEscapes set eagerBorrowGraph to a non-nil
+		// snapshot before return-stripping runs, so this clone is non-nil and the
+		// walkBorrowSources writes below cannot panic on a nil map.
+		c.fn.eagerBorrowGraph = maps.Clone(saved)
 		root := liveness.VarID(c.varIDCounter)
 		c.varIDCounter++
 		c.recordBorrowSources(root, nil, e)
-		graph := c.fn.borrowEdges
-		c.fn.borrowEdges = saved
+		graph := c.fn.eagerBorrowGraph
+		c.fn.eagerBorrowGraph = saved
 		return graph, root, true
 	}
 	return nil, 0, false

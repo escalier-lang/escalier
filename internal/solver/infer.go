@@ -164,7 +164,7 @@ type funcCtx struct {
 	// once the whole body, loop back edges included, has been walked, so a use that
 	// some reaching path moved is caught even when the move is textually later.
 	useSites []moveUse
-	// borrowEdges records, per binding root VarID, the function-locals it borrows through
+	// eagerBorrowGraph records, per binding root VarID, the function-locals it borrows through
 	// an explicit `&`/`&mut`, each tagged with the field path holding the borrow. The
 	// initializer `val a = {peer: &mut b}` records the edge a → b at path [peer]. The
 	// escape check follows these edges from a value flowing out of the frame to find a
@@ -180,7 +180,7 @@ type funcCtx struct {
 	// per-program-point graph the escape check reads is the flow-sensitive one analyzeBorrows
 	// computes from borrowGens, not this eager map. After the body walk, resolveComponentEscapes
 	// overwrites this field with the per-point snapshot at each escape site.
-	borrowEdges map[liveness.VarID][]fieldBorrow
+	eagerBorrowGraph map[liveness.VarID][]fieldBorrow
 	// borrowGens records, per CFG statement position, the borrow-edge assignments that
 	// statement makes: for each binding it re-points, the full new edge set the eager
 	// walk computed. analyzeBorrows folds these forward over the CFG, joining edge sets at

@@ -1366,7 +1366,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		if !b.ModuleLevel {
 			c.recordBorrowEdges(target.VarID, e.Right)
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
-				c.flushBorrowGens(ref)
+				c.flushBorrowDirty(ref)
 			}
 		}
 	}

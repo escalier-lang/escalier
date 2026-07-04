@@ -117,7 +117,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// this statement's CFG point.
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					c.flushBorrowGens(ref)
+					c.flushBorrowDirty(ref)
 				}
 			}
 			return &soltype.Void{}
@@ -144,7 +144,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 				// at this statement's CFG point.
 				c.recordBorrowEdges(b.VarID, vd.Init)
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					c.flushBorrowGens(ref)
+					c.flushBorrowDirty(ref)
 				}
 			}
 		}

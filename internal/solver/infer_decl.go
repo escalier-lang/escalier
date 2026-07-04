@@ -682,7 +682,7 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
 	// return of a leaf that projects a borrow of a local is caught. `val {peer} = {peer:
 	// &mut b}` records peer → b. The correspondence is structural, so it tracks a leaf
 	// only when the initializer's shape mirrors the pattern's.
-	if c.fn != nil && c.fn.borrowEdges != nil && d.Init != nil {
+	if c.fn != nil && c.fn.eagerBorrowGraph != nil && d.Init != nil {
 		c.recordDestructureBorrowEdges(d.Pattern, d.Init)
 	}
 }

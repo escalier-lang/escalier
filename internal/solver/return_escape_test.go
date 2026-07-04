@@ -733,7 +733,7 @@ func TestComponentEscapeCyclicGraph(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c := newChecker()
 			c.fn = &funcCtx{
-				borrowEdges: tc.edges,
+				eagerBorrowGraph: tc.edges,
 				paramVarIDs: set.NewSet[liveness.VarID](),
 			}
 			e := &ast.IdentExpr{Name: "root", VarID: int(tc.root)}

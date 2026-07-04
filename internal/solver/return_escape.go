@@ -85,14 +85,14 @@ type escapeSite struct {
 // connected-component move — allowed, co-moving and consuming the component's locals — or an
 // ordinary escape, reported. It returns true when it consumed any co-moved local, so the
 // caller knows to recompute the lattice before the use-after-move scan reads it.
-func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo, binfo *borrowInfo) bool {
+func (c *checker) resolveComponentEscapes(info *liveness.MoveInfo, binfo *flowBorrowGraph) bool {
 	consumed := false
 	for _, es := range c.fn.escapeSites {
 		// Read the borrow-edge graph at this site's program point. The escape helpers all
-		// consult c.fn.borrowEdges, so swap in the flow-sensitive snapshot before running
+		// consult c.fn.eagerBorrowGraph, so swap in the flow-sensitive snapshot before running
 		// them: a borrow cleared by an earlier reassignment is gone here, and one set on a
 		// reaching branch is joined in.
-		c.fn.borrowEdges = binfo.edgesBefore(es.ref)
+		c.fn.eagerBorrowGraph = binfo.fieldBorrowGraphBefore(es.ref)
 		escaping := c.escapingLocalsOf(es.expr)
 		if escaping.Len() == 0 {
 			continue
@@ -152,7 +152,7 @@ func (c *checker) componentMoveCovers(e ast.Expr, escaping set.Set[liveness.VarI
 	if p, ok := exprPlace(e); ok && p.root > 0 {
 		component.Add(p.root)
 	}
-	for root, edges := range c.fn.borrowEdges {
+	for root, edges := range c.fn.eagerBorrowGraph {
 		if component.Contains(root) {
 			continue
 		}
@@ -205,7 +205,7 @@ func (c *checker) escapesAsOwnedCarrier(e ast.Expr) bool {
 	if !ok || p.root <= 0 {
 		return false
 	}
-	for _, edge := range c.fn.borrowEdges[p.root] {
+	for _, edge := range c.fn.eagerBorrowGraph[p.root] {
 		if pathHasPrefix(p.path, edge.path) {
 			return false
 		}
@@ -294,7 +294,7 @@ func (c *checker) isLocalReferent(arg ast.Expr) (liveness.VarID, bool) {
 //     field return follows only that field's edges.
 func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 	out := set.NewSet[liveness.VarID]()
-	if c.fn == nil || c.fn.borrowEdges == nil || e == nil {
+	if c.fn == nil || c.fn.eagerBorrowGraph == nil || e == nil {
 		return out
 	}
 	for _, b := range borrowsIn(e) {
@@ -314,10 +314,10 @@ func (c *checker) escapingLocalsOf(e ast.Expr) set.Set[liveness.VarID] {
 // accumulating identical edges.
 func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent liveness.VarID) {
 	e := fieldBorrow{path: path, referent: referent}
-	if containsEdge(c.fn.borrowEdges[root], e) {
+	if containsFieldBorrow(c.fn.eagerBorrowGraph[root], e) {
 		return
 	}
-	c.fn.borrowEdges[root] = append(c.fn.borrowEdges[root], e)
+	c.fn.eagerBorrowGraph[root] = append(c.fn.eagerBorrowGraph[root], e)
 	c.markBorrowDirty(root)
 }
 
@@ -328,7 +328,7 @@ func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent l
 // &mut d` leaves only a → e. The caller flushes the dirtied roots into borrowGens once the
 // statement's borrows are recorded.
 func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
-	if c.fn == nil || c.fn.borrowEdges == nil || destVarID <= 0 || init == nil {
+	if c.fn == nil || c.fn.eagerBorrowGraph == nil || destVarID <= 0 || init == nil {
 		return
 	}
 	root := liveness.VarID(destVarID)
@@ -415,7 +415,7 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 // whole binding, so the read projects entirely within it and the suffix is empty. It backs
 // both a place initializer `val c = a.peer` and a shorthand property `{peer}`.
 func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src movePlace) {
-	for _, edge := range c.fn.borrowEdges[src.root] {
+	for _, edge := range c.fn.eagerBorrowGraph[src.root] {
 		// Skip an edge off the read place's field path, and one pointing back at root. The
 		// self-edge guard matters because src's referent can be root: reassigning `b = a`
 		// where a holds a borrow of b would otherwise copy a → b into b as a b → b loop.
@@ -501,7 +501,7 @@ func (c *checker) checkReturnEscape(retExpr ast.Expr, ref liveness.StmtRef) {
 // borrows a local into a parameter's field escapes, since the parameter's object outlives
 // the frame. A store into a local receiver does not escape and is not tracked.
 func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.borrowEdges == nil {
+	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
 	rp, ok := exprPlace(recv)
@@ -520,7 +520,7 @@ func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, ref liveness
 // `b.peer = &mut d` leaves only b → e at [peer] while a sibling edge b → x at [data] survives.
 // The caller flushes the dirtied root into borrowGens.
 func (c *checker) recordFieldStoreEdges(recv ast.Expr, field string, source ast.Expr, ref liveness.StmtRef) {
-	if c.fn == nil || c.fn.borrowEdges == nil {
+	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
 	rp, ok := exprPlace(recv)
@@ -530,7 +530,7 @@ func (c *checker) recordFieldStoreEdges(recv ast.Expr, field string, source ast.
 	base := appendSeg(rp.path, field)
 	c.clearEagerSubtree(rp.root, base)
 	c.recordBorrowSources(rp.root, base, source)
-	c.flushBorrowGens(ref)
+	c.flushBorrowDirty(ref)
 }
 
 // collectBorrowedFrom adds to out every function-local the read place rooted at root, with
@@ -550,7 +550,7 @@ func (c *checker) recordFieldStoreEdges(recv ast.Expr, field string, source ast.
 // to it. Collecting it then is sound: a local that borrows root and itself escapes carries
 // root's data out too.
 func (c *checker) collectBorrowedFrom(root liveness.VarID, filter []placeSeg, out, seen set.Set[liveness.VarID]) {
-	for _, edge := range c.fn.borrowEdges[root] {
+	for _, edge := range c.fn.eagerBorrowGraph[root] {
 		if !pathPrefixRelated(edge.path, filter) {
 			continue
 		}
@@ -569,7 +569,7 @@ func (c *checker) collectAllFrom(node liveness.VarID, out, seen set.Set[liveness
 		return
 	}
 	seen.Add(node)
-	for _, edge := range c.fn.borrowEdges[node] {
+	for _, edge := range c.fn.eagerBorrowGraph[node] {
 		out.Add(edge.referent)
 		c.collectAllFrom(edge.referent, out, seen)
 	}
