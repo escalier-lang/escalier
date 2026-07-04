@@ -267,6 +267,60 @@ func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
+// Two param lifetimes that mutually outlive are EQUAL, so buildLtBoundSet condenses
+// them to one representative and a join over both renders `&'a` instead of the union
+// `&('a | 'b)`. The params keep their own names 'a and 'b from the borrows they
+// originate on; only the join lifetime resolves to the representative.
+func TestJoinOverMutualOutlivesCollapsesToOne(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	join := c.ctx.freshJoinLifetime(0)
+	c.ctx.constrainLt(a, b) // a outlives b
+	c.ctx.constrainLt(b, a) // b outlives a — the cycle makes a and b equal
+	c.ctx.constrainLt(a, join)
+	c.ctx.constrainLt(b, join)
+	fn := borrowFn(mutPointRef(join), a, b)
+
+	require.Equal(t,
+		"fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'a mut {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
+
+// When a param lifetime mutually outlives a NON-param lifetime with a smaller ID, the
+// component condenses to the non-param representative. The join must still render
+// under the parameter's name, so componentParams emits the param var `p` rather than
+// the representative `m`, and the return renders `&'a` rather than a fresh name bound
+// to no input.
+//
+// This guards an ID ordering ordinary source does not produce, so the graph is built
+// directly rather than through inference. Mutual-outlives cycles do arise from source —
+// storing a borrow into a mutable field makes the field and the stored borrow equal,
+// since a mutable field's lifetime is invariant:
+//
+//	fn f(bag: &mut {item: &mut {x: number}}, it: &mut {x: number}) {
+//	  bag.item = it
+//	  return it
+//	}
+//
+// But both members of a source-level cycle are param lifetimes, and a param is always
+// minted before any join or instantiation intermediary, so the param carries the smaller
+// ID and wins the representative slot. The reverse — a non-param representative — needs
+// the non-param minted first, which a freshener or extruder can do but top-level
+// inference cannot, so `m` is minted before `p` here.
+func TestJoinRepresentativeIsNonParamRendersParamName(t *testing.T) {
+	c := newChecker()
+	m := c.ctx.freshJoinLifetime(0) // non-param, minted first so it holds the smaller ID
+	p := c.ctx.freshLifetime(0)     // param lifetime, larger ID
+	c.ctx.constrainLt(p, m)         // p outlives m
+	c.ctx.constrainLt(m, p)         // m outlives p — the cycle makes p and m equal, rep = m
+	fn := borrowFn(mutPointRef(m), p)
+
+	require.Equal(t,
+		"fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
+
 // ltEqual compares a LifetimeUnion structurally. A LifetimeUnion is the union form a
 // join variable coalesces to. Two unions are equal iff their members are pairwise
 // equal in order, so two RefTypes with the same coalesced union dedup during

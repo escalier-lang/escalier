@@ -16,8 +16,11 @@ import (
 // their display form, the lifetime-sort analogue of how the var arms resolve a type
 // variable.
 //
-// It has three jobs, all keyed off a single occurrence analysis plus a
-// connected-component grouping of the lifetime bound graph:
+// It has three jobs, all keyed off a single occurrence analysis plus a grouping of
+// the lifetime bound graph built by buildLtBoundSet. That builder condenses each
+// mutual-outlives cycle to one strongly-connected-component representative, so the
+// grouping is over a DAG rather than the raw graph constrainLt records. The three
+// jobs group by connectivity in that condensed graph:
 //
 //  1. Naming. A borrow originates at a parameter, so a lifetime occurring in a
 //     NEGATIVE position is a "param lifetime". It is the only kind named in the
@@ -25,10 +28,10 @@ import (
 //     in the type.
 //
 //  2. Elision. A param lifetime whose borrow never reaches an output connects
-//     nothing. It occurs in no positive position, and its bound-graph component
-//     holds no output lifetime, so it is dropped. This is the lifetime-sort analogue
-//     of single-polarity type-variable elimination. The drop branches on the
-//     borrow's Mut flag:
+//     nothing. It occurs in no positive position, and its connected component in the
+//     condensed graph holds no output lifetime, so it is dropped. This is the
+//     lifetime-sort analogue of single-polarity type-variable elimination. The drop
+//     branches on the borrow's Mut flag:
 //     - A mutable borrow becomes owned-mutable, RefType{Mut: true, Lt: nil}.
 //     - An immutable borrow drops the RefType wrapper entirely and returns its
 //     bare inner, because RefType{Mut: false, Lt: nil} is the forbidden
@@ -37,17 +40,16 @@ import (
 //  3. Join expansion. A non-param lifetime is not itself nameable. It is either a
 //     join variable minted at a return or branch, or a lifetime freshened when a
 //     borrow-passing function was instantiated. It expands to the union of the param
-//     lifetimes it shares a bound-graph component with, so a return uniting two
-//     borrows coalesces to ('a | 'b). The expansion follows the UNDIRECTED bound
-//     graph. Instantiation interposes intermediary variables between a call's
-//     argument lifetime and the callee's freshened parameter lifetime, related only
-//     by a mix of upper and lower bounds, so reachability cannot be confined to one
-//     bound direction. A lifetime forced to 'static renders 'static and absorbs.
-//     FUTURE (M6.5, lifetime bounds): this undirected grouping is a D4
-//     approximation, sound only because independent param lifetimes never share a
-//     bound-graph component. M6.5 replaces it with directional reasoning over the
-//     LowerBounds/UpperBounds edges, rendering a join as precise where-clauses like
-//     `where 'a: 'c, 'b: 'c` rather than collapsing it to the union ('a | 'b).
+//     lifetimes sharing its connected component in the condensed graph, so a return
+//     uniting two borrows coalesces to ('a | 'b). The grouping is by connectivity
+//     because instantiation interposes an intermediary between a call's argument
+//     lifetime and the join it feeds. That intermediary outlives both the caller's
+//     param lifetime and the join, so the param and the join are joined only through
+//     it, with no direct outlives edge either way. A lifetime forced to 'static
+//     renders 'static and absorbs. The union is a conservative rendering of the
+//     directional bound set the condensed graph carries. A later change keeps the
+//     join lifetime named and renders each kept param's outlives edges as `'a: 'c`
+//     bounds instead of collapsing to the union ('a | 'b).
 //
 // coalesceLifetimes resolves the borrow lifetimes left raw by the structural
 // coalescers. pol is the root polarity the type was coalesced at, threaded through
@@ -87,76 +89,46 @@ func (v *ltOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.E
 func (v *ltOccVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // ltAnalysis is the precomputed input the rewriter reads: per-variable structural
-// occurrence, the connected-component grouping of the lifetime bound graph, and the
-// set of component roots that hold a positive output lifetime.
+// occurrence, the condensed outlives graph the grouping is built from, the
+// connected-component leader of each representative, and the set of component leaders
+// that hold a positive output lifetime.
 type ltAnalysis struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
-	uf       *unionFind                   // components over lifetime bound edges; find(ID) is the component's representative ID
-	vars     map[int]*soltype.LifetimeVar // every lifetime var reachable, by ID
-	posRoots set.Set[int]                 // representative IDs (uf.find results) of components reaching a positive occurrence
+	bs       *ltBoundSet  // condensed outlives graph; rep IDs collapse mutual-outlives cycles
+	comp     map[int]int  // representative ID -> connected-component leader ID in bs
+	posComps set.Set[int] // component leaders reaching a positive occurrence
 }
 
-// newLtAnalysis builds the bound-graph components from the structurally-occurring
-// lifetime variables. It walks each occurring variable's bounds transitively in
-// BOTH directions, unioning a variable with every lifetime variable it is bounded
-// by or bounds, so an instantiation intermediary ends up in the same component as
-// the argument and parameter lifetimes it bridges. A component root is marked
-// positive when any structurally-positive lifetime falls in it; that is what keeps
-// a connected param lifetime from being elided.
+// newLtAnalysis builds the grouping from the structurally-occurring lifetime
+// variables. buildLtBoundSet walks each occurring variable's bounds in both
+// directions and condenses every mutual-outlives cycle to one representative, so the
+// grouping runs over a DAG. bs.weakComponents then labels each representative with its
+// connected component. A component leader is marked positive when any
+// structurally-positive lifetime falls in it; that is what keeps a connected param
+// lifetime from being elided.
 //
-// INVARIANT: this grouping is UNDIRECTED, so it conflates outlives direction. It is
-// correct only while two distinct param lifetimes share a component ONLY when they
-// genuinely co-flow, meaning a join unites them or one is borrowed from the other.
-// Every lifetime origin today obeys this. Each borrow site mints an independent
-// var. resolveLifetimeAnn mints one for an `&` annotation, and inferBorrow mints
-// one for an `&p` expression. The only cross-links are joins from joinBorrows and
-// instantiation copies from the freshener and extruder, both of which connect
-// lifetimes that really do flow together. A future origin that bound-links two
-// independent param borrows through a shared intermediary would break it. The two
-// would be unioned and both kept, rendering a spurious `('a | 'b)`. Distinguishing
-// that case needs directional reasoning, or first-class lifetime bounds, which the
-// union rendering deliberately does not yet model. M6.5 (lifetime bounds) is the
-// milestone that retires this undirected grouping, replacing it with directional
-// reasoning over the LowerBounds/UpperBounds edges. See the join-expansion note above.
+// The grouping is by connectivity rather than directed reachability because a
+// borrow-passing function's instantiation interposes an intermediary between a call's
+// argument lifetime and the join it feeds. The intermediary outlives both the
+// argument lifetime and the join, so the two sit in one component yet neither reaches
+// the other along outlives edges. Condensing mutual-outlives cycles to one
+// representative first is what leaves a DAG for reduce and for the directional bound
+// rendering that layers on top.
 func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity) *ltAnalysis {
-	uf := newUnionFind()
-	vars := map[int]*soltype.LifetimeVar{}
-	var visit func(v *soltype.LifetimeVar)
-	visitBound := func(v *soltype.LifetimeVar, b soltype.Lifetime) {
-		bv, ok := b.(*soltype.LifetimeVar)
-		if !ok {
-			return
-		}
-		uf.union(v.ID, bv.ID)
-		visit(bv)
-	}
-	visit = func(v *soltype.LifetimeVar) {
-		if _, seen := vars[v.ID]; seen {
-			return
-		}
-		vars[v.ID] = v
-		for _, b := range v.LowerBounds {
-			visitBound(v, b)
-		}
-		for _, b := range v.UpperBounds {
-			visitBound(v, b)
-		}
-	}
-	for v := range occ {
-		visit(v)
-	}
+	bs := buildLtBoundSet(occ)
+	comp := bs.weakComponents()
 
-	posRoots := set.NewSet[int]()
+	posComps := set.NewSet[int]()
 	for v, pols := range occ {
 		// pols is a bitset of the polarities v occurred in. `&occPos != 0` tests
 		// whether the positive flag is set, tolerating a co-set occNeg bit, so a
 		// both-polarity v still counts. A v that occurs positively reaches an output,
-		// so mark its component root positive — kept reads this to gate elision.
+		// so mark its component leader positive — kept reads this to gate elision.
 		if pols&occPos != 0 {
-			posRoots.Add(uf.find(v.ID))
+			posComps.Add(comp[bs.repOf(v.ID)])
 		}
 	}
-	return &ltAnalysis{occ: occ, uf: uf, vars: vars, posRoots: posRoots}
+	return &ltAnalysis{occ: occ, bs: bs, comp: comp, posComps: posComps}
 }
 
 // isParam reports whether v is a param lifetime: one that originates at a borrow
@@ -165,31 +137,45 @@ func (a *ltAnalysis) isParam(v *soltype.LifetimeVar) bool {
 	return a.occ[v]&occNeg != 0
 }
 
-// kept reports whether a param lifetime survives elision: its bound-graph component
+// leaderOf maps a lifetime variable to its connected-component leader in the condensed
+// graph, mapping through the variable's representative first.
+func (a *ltAnalysis) leaderOf(v *soltype.LifetimeVar) int {
+	return a.comp[a.bs.repOf(v.ID)]
+}
+
+// kept reports whether a param lifetime survives elision: its connected component
 // reaches an output, so the borrow flows somewhere observable. A param occurring
 // only on its parameter, connected to no output, is elided.
 func (a *ltAnalysis) kept(v *soltype.LifetimeVar) bool {
-	return a.posRoots.Contains(a.uf.find(v.ID))
+	return a.posComps.Contains(a.leaderOf(v))
 }
 
-// componentParams returns the kept param lifetimes sharing v's component, sorted by
-// ID. Sorting yields a canonical union member order, so a join expanded here renders
-// the same ('a | 'b) regardless of bound-list order, and ltEqual's positional member
-// compare stays order-insensitive. This closes the order gap noted in coalesce.go.
+// componentParams returns the kept param lifetimes in v's connected component, sorted
+// by variable ID for a canonical union member order. Members are keyed by SCC
+// representative so mutually-outliving params list once, but emit a param var, since
+// the representative itself can be a non-param bridge var named in no parameter slot.
 func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []soltype.Lifetime {
-	root := a.uf.find(v.ID)
-	var ids []int
-	for id, lv := range a.vars {
-		if a.uf.find(id) != root || !a.isParam(lv) || !a.kept(lv) {
+	leader := a.leaderOf(v)
+	byRep := map[int]*soltype.LifetimeVar{}
+	for p := range a.occ {
+		if !a.isParam(p) || !a.kept(p) {
 			continue
 		}
-		ids = append(ids, id)
+		pr := a.bs.repOf(p.ID)
+		if a.comp[pr] != leader {
+			continue
+		}
+		if cur, ok := byRep[pr]; !ok || p.ID < cur.ID {
+			byRep[pr] = p
+		}
 	}
-	sort.Ints(ids)
-	members := make([]soltype.Lifetime, len(ids))
-	for i, id := range ids {
-		members[i] = a.vars[id]
+	members := make([]soltype.Lifetime, 0, len(byRep))
+	for _, p := range byRep {
+		members = append(members, p)
 	}
+	sort.Slice(members, func(i, j int) bool {
+		return members[i].(*soltype.LifetimeVar).ID < members[j].(*soltype.LifetimeVar).ID
+	})
 	return members
 }
 
