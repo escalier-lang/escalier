@@ -6,6 +6,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -63,8 +64,11 @@ func (c *checker) returnIndexOf(e ast.Expr) int {
 }
 
 // carrierGraph returns the borrow-edge graph and the carrier root for e's borrow fields. A
-// whole-binding place uses its VarID and the snapshot graph; an object or tuple literal is walked
-// into a private copy under a synthetic root. Any other carrier reports ok=false.
+// whole-binding place is already a node in the graph, so it uses its own VarID as the root and
+// returns c.fn.eagerBorrowGraph directly. That graph is the snapshot resolveComponentEscapes
+// swapped in for this return's program point, so no cloning is needed. An object or tuple literal
+// has no binding node, so it is walked into a private copy under a synthetic root. Any other
+// carrier reports ok=false.
 func (c *checker) carrierGraph(e ast.Expr) (map[liveness.VarID][]fieldBorrow, liveness.VarID, bool) {
 	if p, ok := exprPlace(e); ok && p.root > 0 && len(p.path) == 0 {
 		return c.fn.eagerBorrowGraph, p.root, true
@@ -76,10 +80,13 @@ func (c *checker) carrierGraph(e ast.Expr) (map[liveness.VarID][]fieldBorrow, li
 		saved := c.fn.eagerBorrowGraph
 		// saved is non-nil here. resolveComponentEscapes set eagerBorrowGraph to a non-nil
 		// snapshot before return-stripping runs, so this clone is non-nil and the
-		// walkBorrowSources writes below cannot panic on a nil map.
+		// recordBorrowSources writes below cannot panic on a nil map.
 		c.fn.eagerBorrowGraph = maps.Clone(saved)
 		root := liveness.VarID(c.varIDCounter)
 		c.varIDCounter++
+		// The literal has no binding, so nothing in the graph describes its borrows. Record the
+		// edges it carries under the synthetic root, so stripReturnBorrowsIfTree can treat it like
+		// a binding whose edges the eager walk had recorded.
 		c.recordBorrowSources(root, nil, e)
 		graph := c.fn.eagerBorrowGraph
 		c.fn.eagerBorrowGraph = saved
@@ -89,27 +96,28 @@ func (c *checker) carrierGraph(e ast.Expr) (map[liveness.VarID][]fieldBorrow, li
 }
 
 // isTreeReachable reports whether the borrow graph reachable from root is a tree: every reached
-// node is reached exactly once and no cycle routes back onto a reached node. It counts each
-// node's incoming reaches, recursing into a node the first time it is reached; a second reach —
-// a shared node or a cycle's back edge — sets the result false. The recursion terminates because
-// a node is descended only on its first reach.
+// node is reached exactly once and no cycle routes back onto a reached node. It records each node
+// it reaches in a seen set and recurses into it the first time. Reaching a node already seen — a
+// shared node or a cycle's back edge — means the graph is not a tree, so it returns false at once
+// without walking the rest. The recursion terminates because a node is descended only on its first
+// reach.
 func isTreeReachable(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID) bool {
-	counts := map[liveness.VarID]int{}
-	tree := true
-	var visit func(node liveness.VarID)
-	visit = func(node liveness.VarID) {
+	seen := set.NewSet[liveness.VarID]()
+	var visit func(node liveness.VarID) bool
+	visit = func(node liveness.VarID) bool {
 		for _, e := range graph[node] {
-			counts[e.referent]++
-			if counts[e.referent] == 1 {
-				visit(e.referent)
-			} else {
+			if seen.Contains(e.referent) {
 				// A second reach — a shared node or a cycle's back edge — breaks the tree.
-				tree = false
+				return false
+			}
+			seen.Add(e.referent)
+			if !visit(e.referent) {
+				return false
 			}
 		}
+		return true
 	}
-	visit(root)
-	return tree
+	return visit(root)
 }
 
 // stripBorrowTree returns t with every borrow of a tracked local replaced by the borrow's
@@ -124,7 +132,12 @@ func isTreeReachable(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID
 //   - An owned-mutable cell is rebuilt around its walked inner at the same root and path.
 //   - An object descends each property at the path extended by the property name; a tuple
 //     descends each element at the same path, since a tuple index contributes no field segment.
-func stripBorrowTree(t soltype.Type, root liveness.VarID, path []placeSeg, graph map[liveness.VarID][]fieldBorrow) soltype.Type {
+func stripBorrowTree(
+	t soltype.Type,
+	root liveness.VarID,
+	path []placeSeg,
+	graph map[liveness.VarID][]fieldBorrow,
+) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.RefType:
 		if t.Lt != nil {
@@ -152,7 +165,12 @@ func stripBorrowTree(t soltype.Type, root liveness.VarID, path []placeSeg, graph
 			} else {
 				propPath = path
 			}
-			elems[i] = &soltype.PropertyElem{Name: p.Name, Type: stripBorrowTree(p.Type, root, propPath, graph), Optional: p.Optional, Readonly: p.Readonly}
+			elems[i] = &soltype.PropertyElem{
+				Name:     p.Name,
+				Type:     stripBorrowTree(p.Type, root, propPath, graph),
+				Optional: p.Optional,
+				Readonly: p.Readonly,
+			}
 		}
 		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
 	case *soltype.TupleType:
@@ -172,6 +190,11 @@ func stripBorrowTree(t soltype.Type, root liveness.VarID, path []placeSeg, graph
 // findReferentAt returns the local root's edge exactly at path, the borrow that field holds.
 // A borrow field at path P records its edge at P, so the lookup is an exact path match. A path
 // with no edge names no tracked borrow, so it reports ok=false and the borrow is kept.
+//
+// A parameter borrow is the common ok=false case. For a parameter p, `return {peer: &mut p}`
+// leaves a RefType at [peer] in the return type, but recordBorrowSources added no edge there,
+// since isLocalReferent skips a borrow of a parameter. So findReferentAt reports ok=false and the
+// `&mut p` stays borrowed.
 func findReferentAt(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID, path []placeSeg) (liveness.VarID, bool) {
 	for _, e := range graph[root] {
 		if slices.Equal(e.path, path) {
