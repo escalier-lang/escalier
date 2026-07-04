@@ -18,16 +18,16 @@ import (
 // how duplicate type parameters are handled.
 func (c *Checker) declareLifetimeParams(
 	scope *Scope,
-	astParams []*ast.LifetimeAnn,
+	astParams []*ast.LifetimeParam,
 ) []*type_system.LifetimeVar {
 	if len(astParams) == 0 {
 		return nil
 	}
 	out := make([]*type_system.LifetimeVar, len(astParams))
-	for i, ann := range astParams {
-		lv := c.FreshLifetimeVar(ann.Name)
+	for i, lp := range astParams {
+		lv := c.FreshLifetimeVar(lp.Name)
 		out[i] = lv
-		scope.SetLifetimeVar(ann.Name, lv)
+		scope.SetLifetimeVar(lp.Name, lv)
 	}
 	return out
 }

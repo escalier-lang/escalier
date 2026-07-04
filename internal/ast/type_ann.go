@@ -438,8 +438,8 @@ func (t *TypeRefTypeAnn) Accept(v Visitor) {
 }
 
 type FuncTypeAnn struct {
-	LifetimeParams []*LifetimeAnn // optional, e.g. ['a, 'b]
-	TypeParams     []*TypeParam   // optional
+	LifetimeParams []*LifetimeParam // optional, e.g. <'a, 'b: 'a>
+	TypeParams     []*TypeParam     // optional
 	Params         []*Param
 	Return         TypeAnn
 	Throws         TypeAnn // optionanl
@@ -449,7 +449,7 @@ type FuncTypeAnn struct {
 }
 
 func NewFuncTypeAnn(
-	lifetimeParams []*LifetimeAnn,
+	lifetimeParams []*LifetimeParam,
 	typeParams []*TypeParam,
 	params []*Param,
 	ret TypeAnn,

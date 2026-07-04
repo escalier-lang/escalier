@@ -813,6 +813,75 @@ func TestPrintBorrowTypeAnnotations(t *testing.T) {
 	}
 }
 
+// TestPrintLifetimeParams verifies that a lifetime quantifier list, including
+// outlives bounds written with ':' and multiple bounds joined with '&', round-
+// trips through the printer. A bare 'a, a single-bound 'b: 'a, a multi-bound
+// 'a: 'b & 'c, and the 'static bound RHS are all preserved. The clause sits
+// after the declaration keyword and name, lifetime binders before type binders.
+//
+// Each case asserts the full printed declaration equals `expected`, then re-
+// parses that output and prints it again to confirm the printer reaches a
+// stable fixed point. Parameter and field types stay plain, since the printer
+// drops lifetime prefixes in type positions like `'a Point` for reasons
+// unrelated to the quantifier list.
+func TestPrintLifetimeParams(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			"fn single bound",
+			`fn pick<'a, 'b: 'a>(x: Point) -> Point { return x }`,
+			"fn pick<'a, 'b: 'a>(x: Point) -> Point {\n    return x\n}",
+		},
+		{
+			"fn multiple bounds",
+			`fn narrow<'a: 'b & 'c, 'b, 'c>(x: Point) -> Point { return x }`,
+			"fn narrow<'a: 'b & 'c, 'b, 'c>(x: Point) -> Point {\n    return x\n}",
+		},
+		{
+			"fn static bound",
+			`fn keep<'a: 'static>(x: Point) -> Point { return x }`,
+			"fn keep<'a: 'static>(x: Point) -> Point {\n    return x\n}",
+		},
+		{
+			"fn lifetime before type param",
+			`fn id<'a, T>(x: T) -> T { return x }`,
+			"fn id<'a, T>(x: T) -> T {\n    return x\n}",
+		},
+		{
+			"interface lifetime param",
+			`interface Holder<'a> { p: Point }`,
+			"interface Holder<'a> {\n    p: Point\n}",
+		},
+		{
+			"class lifetime param",
+			`class Container<'a> { p: Point }`,
+			"class Container<'a> {\n    p: Point\n}",
+		},
+		{
+			"fn type annotation bound",
+			`val f: fn<'a, 'b: 'a>(a: Point, b: Point) -> Point = pick`,
+			"val f: fn<'a, 'b: 'a> (a: Point, b: Point) -> Point = pick",
+		},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Print(parseDecl(t, tt.input), opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+
+			// Re-parse and re-print; a faithful printer reproduces its output.
+			roundTripped, err := Print(parseDecl(t, result), opts)
+			require.NoError(t, err)
+			require.Equal(t, result, roundTripped)
+		})
+	}
+}
+
 func TestPrintScript(t *testing.T) {
 	input := `val x = 5
 val y = 10

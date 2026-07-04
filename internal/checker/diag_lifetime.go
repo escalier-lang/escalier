@@ -126,7 +126,7 @@ func (e LifetimeArgCountMismatchError) Message() string {
 // receiver is not present in `Params` at signature-inference time.
 func reportUnusedLifetimeParams(
 	fnType *type_system.FuncType,
-	astParams []*ast.LifetimeAnn,
+	astParams []*ast.LifetimeParam,
 	fallbackSpan ast.Span,
 ) []Error {
 	if len(fnType.LifetimeParams) == 0 {

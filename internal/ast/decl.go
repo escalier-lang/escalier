@@ -134,7 +134,7 @@ type FuncDecl struct {
 
 func NewFuncDecl(
 	name *Ident,
-	lifetimeParams []*LifetimeAnn,
+	lifetimeParams []*LifetimeParam,
 	typeParams []*TypeParam,
 	params []*Param,
 	returnType TypeAnn, // optional
@@ -237,7 +237,7 @@ func (d *TypeDecl) SetProvenance(p provenance.Provenance) {
 
 type InterfaceDecl struct {
 	Name           *Ident
-	LifetimeParams []*LifetimeAnn
+	LifetimeParams []*LifetimeParam
 	TypeParams     []*TypeParam
 	Extends        []*TypeRefTypeAnn
 	TypeAnn        *ObjectTypeAnn
@@ -248,7 +248,7 @@ type InterfaceDecl struct {
 	provenance     provenance.Provenance
 }
 
-func NewInterfaceDecl(name *Ident, lifetimeParams []*LifetimeAnn, typeParams []*TypeParam, extends []*TypeRefTypeAnn, typeAnn *ObjectTypeAnn, export, declare bool, span Span) *InterfaceDecl {
+func NewInterfaceDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*TypeParam, extends []*TypeRefTypeAnn, typeAnn *ObjectTypeAnn, export, declare bool, span Span) *InterfaceDecl {
 	return &InterfaceDecl{
 		Name:           name,
 		LifetimeParams: lifetimeParams,

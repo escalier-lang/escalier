@@ -4,7 +4,7 @@ import "github.com/escalier-lang/escalier/internal/provenance"
 
 type ClassDecl struct {
 	Name           *Ident
-	LifetimeParams []*LifetimeAnn    // generic lifetime parameters (e.g. <'a>)
+	LifetimeParams []*LifetimeParam  // generic lifetime parameters (e.g. <'a>)
 	TypeParams     []*TypeParam      // generic type parameters
 	Extends        *TypeRefTypeAnn   // optional superclass (can be a simple identifier or a generic type reference)
 	Implements     []*TypeRefTypeAnn // interfaces this class implements (may be nil/empty)
@@ -47,7 +47,7 @@ type MethodReceiver struct {
 func (r *MethodReceiver) Span() Span { return r.Span_ }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, lifetimeParams []*LifetimeAnn, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
 	return &ClassDecl{
 		Name:           name,
 		LifetimeParams: lifetimeParams,
