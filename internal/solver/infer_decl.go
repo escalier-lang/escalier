@@ -135,7 +135,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	switch {
-	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && isFreshlyConstructed(d.Init):
+	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && freshLiteralShape(d.Init, c.acceptsBorrowLeaf):
 		// An unannotated `val mut q = {…}` / `var mut q = {…}` from a freshly
 		// constructed literal constructs an owned-mutable value. This mirrors the
 		// annotated `val q: mut {x} = {x: 1}` upgrade in
@@ -144,9 +144,11 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// type aliases nothing. The literal's fields widen, since a mutable cell
 		// admits any value of the field's primitive type. So `val mut q = {x: 1}`
 		// is `mut {x: number}`. A `mut {x: 1}` would reject the ordinary write
-		// `q.x = 2`. A primitive initializer is not borrowable and has no interior
-		// mutability to make mutable, so it falls back to the var-widening and
-		// val-keep behaviour below.
+		// `q.x = 2`. A borrow leaf is admitted too: `val mut b = {peer: &mut d}`
+		// builds the owned-mutable `mut {peer: &mut {…}}`, whose field is repointable
+		// and which is `&mut`-borrowable. A primitive initializer is not borrowable and
+		// has no interior mutability to make mutable, so it falls back to the
+		// var-widening and val-keep behaviour below.
 		widened := widen(initT)
 		if inner, ok := widened.(soltype.RefInner); ok {
 			ref := soltype.NewRef(true, nil, inner)
@@ -323,9 +325,29 @@ func (c *checker) tryUpgradeToOwnedMut(site ast.Node, src ast.Expr, srcT, target
 // no backing move.
 func (c *checker) canUpgradeToOwnedMut(src ast.Expr) bool {
 	return freshLiteralShape(src, func(leaf ast.Expr) bool {
+		if c.acceptsBorrowLeaf(leaf) {
+			return true
+		}
 		t := c.info.TypeOf(leaf)
 		return !containsOwnedMut(t) && movesOwnedPlace(leaf, t)
 	})
+}
+
+// acceptsBorrowLeaf reports whether leaf is a borrow expression `&e`/`&mut e` that may sit in
+// an owned-mutable literal — `val mut b = {peer: &mut d}` builds the owned-mutable `mut {peer:
+// &mut d}`, so `b` is `&mut`-borrowable and its field repointable. The container's mutability
+// lets the field be repointed but grants no write to the referent beyond what the borrow
+// already carries, and the borrow's pointee stays invariant through the C2 RefType arm, so the
+// covariant read-view constrain the upgrade runs does not widen the pointee. A borrow of a
+// function-local that this makes constructible is tracked by the borrow-edge graph, so a later
+// flow-out of the container is caught by the escape check. It is confined to a function body,
+// where that escape tracking runs.
+func (c *checker) acceptsBorrowLeaf(leaf ast.Expr) bool {
+	if c.fn == nil {
+		return false
+	}
+	_, ok := leaf.(*ast.BorrowExpr)
+	return ok
 }
 
 // freshLiteralShape reports whether e is a primitive literal, or an object/tuple literal
@@ -470,20 +492,6 @@ func containsOwnedMut(t soltype.Type) bool {
 func isMutableIdentPat(p ast.Pat) bool {
 	ip, ok := p.(*ast.IdentPat)
 	return ok && ip.Mutable
-}
-
-// isFreshlyConstructed reports whether e is a syntactically fresh, unaliased value: a
-// literal, or an object/tuple literal whose every element is itself freshly
-// constructed. Such a value captures no reference to an existing binding, so it is
-// uniquely owned. It is deliberately conservative and identifier-free: any IdentExpr,
-// call, member access, or spread disqualifies the whole expression, because a captured
-// variable could alias a value held immutably elsewhere. Being identifier-free also
-// makes it sound without VarIDs, so it holds at module top level where the liveness
-// pre-pass has not run. canUpgradeToOwnedMut is the richer judgment that also admits an
-// owned-place move; both run through freshLiteralShape and differ only at a non-literal
-// leaf, which this predicate always rejects.
-func isFreshlyConstructed(e ast.Expr) bool {
-	return freshLiteralShape(e, func(ast.Expr) bool { return false })
 }
 
 // checkExcessLiteralMembers is the construction-site excess check (M4 A3): a
@@ -651,7 +659,7 @@ func (c *checker) inferDestructureDecl(scope *Scope, lvl int, d *ast.VarDecl) {
 	// return of a leaf that projects a borrow of a local is caught. `val {peer} = {peer:
 	// &mut b}` records peer → b. The correspondence is structural, so it tracks a leaf
 	// only when the initializer's shape mirrors the pattern's.
-	if c.fn != nil && c.fn.borrowEdges != nil && d.Init != nil {
+	if c.fn != nil && c.fn.eagerBorrowGraph != nil && d.Init != nil {
 		c.recordDestructureBorrowEdges(d.Pattern, d.Init)
 	}
 }

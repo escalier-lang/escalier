@@ -562,10 +562,14 @@ func (c *checker) checkUseAfterMoves() {
 		return
 	}
 	info := liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
-	// Decide deferred escapes against the lattice, then fold any component-move consumes
-	// back into moveSites and recompute, so a use after a co-moved local is caught.
-	if len(c.fn.escapeSites) > 0 && c.resolveComponentEscapes(info) {
-		info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
+	// Decide deferred escapes against the move lattice and the flow-sensitive borrow-edge
+	// graph, then fold any component-move consumes back into moveSites and recompute, so a
+	// use after a co-moved local is caught.
+	if len(c.fn.escapeSites) > 0 {
+		flowBorrowGraph := c.analyzeBorrows()
+		if c.resolveComponentEscapes(info, flowBorrowGraph) {
+			info = liveness.AnalyzeMoves(c.fn.cfg, c.fn.moveSites)
+		}
 	}
 	for _, u := range c.fn.useSites {
 		state, movedID := c.movedConflict(info, u)

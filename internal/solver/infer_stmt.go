@@ -113,6 +113,11 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// Type the initializer, then bind the pattern's leaves against it as
 			// monomorphic projections.
 			c.inferDestructureDecl(scope, lvl, vd)
+			if c.fn != nil {
+				if ref, ok := c.fn.stmtToRef[s]; ok {
+					c.flushBorrowDirty(ref)
+				}
+			}
 			return &soltype.Void{}
 		}
 		// Unlike the module driver (inferComponent), a body-level redeclaration is
@@ -135,6 +140,9 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 				// later flow-out of the binding can find a borrow of a local that would
 				// escape the frame.
 				c.recordBorrowEdges(b.VarID, vd.Init)
+				if ref, ok := c.fn.stmtToRef[s]; ok {
+					c.flushBorrowDirty(ref)
+				}
 			}
 		}
 		return &soltype.Void{}
