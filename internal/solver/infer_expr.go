@@ -345,7 +345,101 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// re-minted by coalescing at binding time, so the entry is exact for inline
 	// callees; M3's FromInstantiation makes named-callee blame precise.)
 	c.recordProv(ft, node, FuncInference)
+	// A body-carrying function must prove every lifetime bound its signature declares.
+	// A no-body site has nothing to prove against and instead lowers its bounds, so the
+	// check is gated on hasBody.
+	if hasBody {
+		c.checkDeclaredLifetimeBounds(sig.LifetimeParams, ft)
+	}
 	return ft
+}
+
+// checkDeclaredLifetimeBounds verifies that the function body establishes every outlives
+// relation the signature declares. A declared `<'a: 'b>` asserts 'a outlives 'b, and the
+// body must prove it. The inferred outlives relation is read through ltOutlivesRelation,
+// the same relation the printer renders, so a bound the signature declares and the
+// printer would render are accepted together. A declared bound the inference does not
+// prove is reported as a LifetimeBoundNotSatisfiedError blaming its binder.
+//
+// Declared bounds are NOT lowered into the graph for a body-carrying function. The body
+// must prove each relation on its own, so lowering would make every declared bound
+// trivially self-satisfying. The names resolve through the function's namedLifetimes
+// map, which inferFunc has already populated from the signature's borrows, so a declared
+// `'a` and the `&'a` borrow writing it share one variable.
+func (c *checker) checkDeclaredLifetimeBounds(params []*ast.LifetimeParam, ft *soltype.FuncType) {
+	hasBound := false
+	for _, p := range params {
+		if len(p.Bounds) > 0 {
+			hasBound = true
+			break
+		}
+	}
+	if !hasBound {
+		return
+	}
+
+	a, _, outlives := ltOutlivesRelation(ft, soltype.Positive)
+
+	lookup := func(name string) (*soltype.LifetimeVar, bool) {
+		if c.namedLifetimes == nil {
+			return nil, false
+		}
+		v, ok := c.namedLifetimes[name]
+		return v, ok
+	}
+	// sameLt reports whether two named lifetimes are one lifetime. They are one when they
+	// are the same variable, or when the solved graph proved them mutually outliving so
+	// they share an SCC representative.
+	sameLt := func(x, y *soltype.LifetimeVar) bool {
+		return a != nil && a.bs.repOf(x.ID) == a.bs.repOf(y.ID)
+	}
+	// staticForced reports whether the solved graph forces v to 'static, the escape
+	// constraint v <: 'static that records 'static as an upper bound. A lower-bound
+	// 'static is trivially true and forces nothing, so forcedToStatic reads the wrong
+	// direction for this test. The bound set's static set reads upper bounds only, the
+	// same set implies consults.
+	staticForced := func(v *soltype.LifetimeVar) bool {
+		return a != nil && a.bs.static.Contains(a.bs.repOf(v.ID))
+	}
+	// proves reports whether the inferred relation proves 'sub outlives 'super. outlives is
+	// already transitive, so no further walk is needed here. implies reads reachability over
+	// the whole condensed graph, and componentParams gathers every param in a join's
+	// connected component, so a param outlives a join it feeds through any number of hops.
+	proves := func(sub, super *soltype.LifetimeVar) bool {
+		return sameLt(sub, super) || (outlives != nil && outlives(sub, super))
+	}
+
+	for _, p := range params {
+		// A 'static left-hand side is not a bindable parameter. The parser rejects it, so
+		// no binder named "static" reaches here. This guard is defensive against a
+		// hand-built AST.
+		if p.Name == "static" {
+			continue
+		}
+		sub, subOk := lookup(p.Name)
+		for _, b := range p.Bounds {
+			satisfied := false
+			switch {
+			case !subOk:
+				// The bound's left lifetime borrows nothing, so the body proves nothing
+				// about it and the bound cannot hold.
+				satisfied = false
+			case staticForced(sub):
+				// A 'static-forced lifetime outlives everything, so every bound on it holds.
+				satisfied = true
+			case b.Name == "static":
+				// Only a 'static-forced left lifetime outlives 'static, and that case is
+				// already satisfied above, so any other left lifetime fails the bound.
+				satisfied = false
+			default:
+				super, superOk := lookup(b.Name)
+				satisfied = superOk && proves(sub, super)
+			}
+			if !satisfied {
+				c.report(&LifetimeBoundNotSatisfiedError{Sub: p.Name, Super: b.Name, Param: p})
+			}
+		}
+	}
 }
 
 // joinReturnPoints builds a function's return type from the ReturnStmt types
