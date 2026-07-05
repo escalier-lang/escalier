@@ -209,7 +209,7 @@ at class-decl time and read by `constrain`.
 // (exact-types §2.6); the zero value (false) is inexact, matching a
 // non-final class whose subclasses may add members.
 type ClassType struct {
-    Name  string
+    Name  string   // dep_graph-QUALIFIED name (e.g. "Geometry.Point"), NOT the local ident
     Args  []Type
     Lt    Lifetime // nilable; classes are borrowed via RefType exactly like records
     Final bool     // final ⇒ exact instance and exact keyof
@@ -233,9 +233,11 @@ func (t *ClassType) Accept(v TypeVisitor, pol Polarity) Type
 ### Method / getter / setter elements (`soltype/type.go`)
 
 ```go
-// New ObjTypeElem arms. A method's type is a FuncType carrying a SelfParam;
-// overloaded methods hold their arms as an ordered slice (most-specific-first),
-// mirroring the old checker's MethodElem.Signatures.
+// New ObjTypeElem arms. A method's type is a FuncType carrying a SelfParam and,
+// when the method is generic, its OWN quantified type parameters (see
+// "Per-method type parameters" below); overloaded methods hold their arms as an
+// ordered slice (most-specific-first), mirroring the old checker's
+// MethodElem.Signatures.
 type MethodElem struct {
     Name       string
     Signatures []*FuncType // len 1 = ordinary; >1 = overload set (declaration order)
@@ -246,6 +248,34 @@ type SetterElem struct{ Name string; Param Type }        // contravariant (write
 func (*MethodElem) isObjTypeElem() {}
 func (*GetterElem) isObjTypeElem() {}
 func (*SetterElem) isObjTypeElem() {}
+
+// TypeParam is one quantified type parameter, shared by FuncType.TypeParams
+// (function/method generics) and ClassDef.TypeParams (class generics), so classes
+// and functions describe their generics the same way. Var is the quantified
+// inference var minted one level DEEPER than the enclosing binding and freshened
+// per use by freshenAbove — NOT a named parameter requiring substitution. The
+// declared CONSTRAINT is Var's upper bound (`<U extends T>` ⇒ Var's UpperBounds is
+// [T]), so constrain and freshenAbove enforce and copy it with no new machinery.
+// Default is the fallback filled in when a type argument is omitted, nil when the
+// parameter is required; it is consulted at type-argument resolution and ignored
+// by constraint solving. Name is the source name for display, since TypeVarType
+// carries none.
+type TypeParam struct {
+    Name    string
+    Var     *TypeVarType
+    Default Type // nil ⇒ required
+}
+
+// FuncType gains TypeParams: the function's own quantified type parameters, the
+// same soltype.TypeParam that ClassDef.TypeParams uses. nil is monomorphic, the
+// common case and the zero value. A generic method such as Array<T>.map<U> lists U
+// here; the class-level T is captured from the enclosing ClassType, not listed.
+type FuncType struct {
+    Params     []*FuncParam
+    Ret        Type
+    Inexact    bool
+    TypeParams []*TypeParam // declaration order; nil ⇒ monomorphic
+}
 ```
 
 Adding these arms is a standing-rule sweep of every "visit every element" site:
@@ -257,14 +287,90 @@ depth loop ([constrain.go:378](../../internal/solver/constrain.go)). A helper
 `Member(name) (ObjTypeElem, bool)` generalizes `Prop` across all four kinds for
 member lookup and subtyping.
 
+#### Per-method type parameters (quantified bounded vars)
+
+A method must be able to carry its own type parameters, distinct from the class's.
+Without this, the M7 ingestion of `.d.ts` class types — including built-ins like
+`Array<T>.map<U>` and `Promise<T>.then<U>` — has no representation to target. M5
+adds the representation now so those signatures round-trip; the ingestion that
+produces them lands in M7.
+
+The choice here is about the *instantiation mechanism*, not about whether the type
+former has a `TypeParams` field — it does, named to match `ClassDef.TypeParams`.
+The mechanism is the bounded-type-variable polymorphism the solver already uses for
+let-generalization, freshened per use by the level-based `freshenAbove`, NOT a
+System-F substitution pass keyed by parameter name. That distinction lives on
+`soltype.TypeParam` itself, so the field name carries no implication either way.
+Each entry is a `TypeParam{Name, Var, Default}`:
+
+- A declared method type parameter becomes a fresh `TypeVarType` (`Var`) minted one
+  level deeper than the class binding. That var IS the type parameter;
+  `TypeParams` records the `TypeParam`s in declaration order so names and arity
+  survive for `.d.ts`-faithful printing (`map<U>`).
+- A **constraint** `<U extends T>` is `Var`'s upper bound. `freshenAbove` already
+  copies a freshened var "bounds and all" ([poly.go:75-86](../../internal/solver/poly.go)),
+  so F-bounded and class-parameter-referencing constraints fall out of the existing
+  machinery. No new bound representation.
+- A **default** `<U = Foo>` is `TypeParam.Default`, filled in at type-argument
+  resolution when the argument is omitted and `nil` when the parameter is required.
+  It is metadata for resolution, not for constraint solving, though a default that
+  references an earlier parameter (`<T, U = T>`) is rewritten by `Accept` so
+  instantiation reaches it.
+- **Instantiation is the existing level-based `instantiate`/`freshenAbove`, not a
+  substitution pass.** Member access wraps the projected method `FuncType` in a
+  `PolyScheme` whose generalize-level is the class's level, then instantiates at
+  the call level: every var deeper than that level — exactly the method's own
+  `TypeParams` vars — is freshened per call, while the class-level `T` stays
+  shared per instance. This is what makes `c.map(f)` polymorphic per call and
+  closes the per-method generalization gap.
+
+The **same `TypeParam` carries class generics** — `ClassDef.TypeParams` is
+`[]*TypeParam`, not `[]string`, so a class parameter records its constraint and
+default exactly as a method parameter does. `ast.ClassDecl.TypeParams` already
+parses `Constraint`/`Default` ([ast.TypeParam](../../internal/ast/class.go): the
+same `{Name, Constraint, Default}` a function type parameter carries), so the only
+gap this closes is on the resolved side.
+
+**Why not store a `PolyScheme` inline.** `TypeScheme`/`PolyScheme` live in
+`solver`, but `FuncType`/`MethodElem` live in `soltype`, and since `solver`
+imports `soltype` ([doc.go:15-18](../../internal/solver/doc.go)) soltype cannot
+import solver back. So the quantification is recorded soltype-natively as the
+deeper-level vars in `FuncType.TypeParams`, and the solver wraps them into a scheme
+at member-access time.
+
+**Why `TypeParam.Var` is a bounded inference var, not a named parameter.** The old
+checker's `FuncType.TypeParams` also held `[]*TypeParam`, but its `TypeParam` was a
+*named* parameter instantiated by a substitution pass keyed on the name — a second
+polymorphism mechanism running next to inference vars. `soltype.TypeParam.Var` is
+instead an ordinary bounded var that the existing level-based
+`instantiate`/`freshenAbove` already freshens, so no `instantiate`/generalize/
+`constrain`/print site grows a second code path and no alpha-renaming machinery is
+needed. This is also what keeps the design forward-compatible with the planned
+MLstruct extension, which retains generalization over bounded variables rather than
+adopting named parameters. Same field name and same `[]*TypeParam` shape as the old
+checker; different — and cheaper — instantiation mechanism.
+
+**Scope expansion this implies.** `FuncType.TypeParams` is not class-specific — it
+gives every function type a home for its own generics, so it partially lifts the
+current "generic functions are unsupported" gate
+([infer_expr.go:197-203](../../internal/solver/infer_expr.go)). M5 populates and
+consumes it for methods and leaves general `fn f<U>` *inference* to the
+generic-function work; the *representation* is shared.
+
+**Known limitation.** These parameters are rank-1: a parameter whose own type is
+polymorphic (higher-rank, e.g. a callback typed `<V>(V) -> V`) is not expressible
+and is rejected rather than silently approximated, matching SimpleSub's and
+MLstruct's rank-1 boundary.
+
 ### The class registry (`solver/context.go` or a new `solver/classes.go`)
 
 ```go
 // ClassDef is the heavy per-class data the nominal token points at. Built once
 // at class-decl time, read by constrain (the subtype graph + variance) and by
-// member lookup (the projected body). Keyed by class name on the Context.
+// member lookup (the projected body). Keyed by the class's QUALIFIED name on the
+// Context — the same string in ClassType.Name (see "Qualified keys" below).
 type ClassDef struct {
-    TypeParams []string
+    TypeParams []*soltype.TypeParam // name + constraint (Var's upper bound) + default
     Variance   []Variance   // one per TypeParam, frozen at decl time (Phase C)
     Supers     []*ClassType // resolved Extends ++ Implements (the declared graph edges)
     Body       *ObjectType  // instance members (the "structural view it projects")
@@ -280,9 +386,86 @@ const (
 )
 
 // Context gains a class registry (populated by inferClassDecl, read by constrain).
+// Keyed by qualified name; classDef(name) takes the same qualified string.
 //   classes map[string]*ClassDef
 func (c *Context) classDef(name string) (*ClassDef, bool)
 ```
+
+The registry is a single `classes map[string]*ClassDef` field on the **`Context`**
+struct ([context.go:22](../../internal/solver/context.go)) — the carrier that
+already owns the engine's mutable core state (the var/lifetime counters and the
+speculation journal). It lives there, not on `checker`, because the readers —
+`constrain` and its new `constrainNominal` helper — are `*Context` methods
+([constrain.go:103,129](../../internal/solver/constrain.go)) that need the subtype
+graph (`Supers`) and per-position `Variance` to decide a nominal edge. The two
+sides split by struct:
+
+- **Write:** `inferClassDecl` is a `*checker` method; it reaches the map through
+  the checker's `ctx *Context` field ([infer.go:23](../../internal/solver/infer.go)),
+  writing `c.ctx.classes[qname]` at class-decl time.
+- **Read:** `constrain`/`constrainNominal` and member lookup read `c.classes[name]`
+  directly off `Context`.
+
+The `ClassDef` struct itself and its helpers (`classDef`, `constrainNominal`,
+`projectClassBody`) land in a new `solver/classes.go` (C1's Files); only the
+`classes` map field is added to the existing `Context` in `context.go`.
+
+**Qualified keys.** Both `ClassType.Name` and the `classes` registry key are the
+`dep_graph`-qualified name — `Geometry.Point`, not the bare `Point`. The registry
+is one flat `map[string]*ClassDef` on the `Context`, so a bare local key would
+make two sibling `class Point` declarations under different namespaces collide on
+`classes["Point"]`, even though scope resolution keeps them distinct: each
+`Namespace` has its own `Types map[string]TypeBinding` and a qualified
+`Namespace.Name` ([scope.go:76-81](../../internal/solver/scope.go)), and
+`dep_graph` already forms every binding name as `CurrentNamespace + "." + name`
+([dep_graph.go:331](../../internal/dep_graph/dep_graph.go)). `inferClassDecl`
+therefore keys both the registry and the minted `ClassType` off that qualified
+name — the analogue of the old checker's `TypeRefType.Name` being a `QualIdent`
+([type_system/types.go:270](../../internal/type_system/types.go)) rather than a
+plain string. The printer strips the namespace prefix for display, which is why
+the `printType` arm still renders the bare `Point` / `Box<number>`.
+
+**Assumption — classes are top-level only, so the registry is insert/overwrite,
+never remove.** Every `ClassDef` comes from a module- or namespace-level decl and
+lives for the whole inference run, so an entry is never removed because its class
+went out of lexical scope. A body-level `class` is rejected up front: the parser
+wraps it in a `DeclStmt`, but `inferStmt` permits only a `VarDecl` there and
+reports `BodyDeclNotAllowedError` for any other decl kind
+([infer_stmt.go:90-94](../../internal/solver/infer_stmt.go)). The only writes to
+`classes` are a plain overwrite on redeclaration (a second top-level `class Foo`
+in one namespace) and the B2 retraction of a pre-bound `ClassDef` shell whose
+recursive-group decl then fails to produce a definition — the analogue of the SCC
+driver's `removeValue` ([scope.go:136](../../internal/solver/scope.go)), which
+unwinds a tentative insert rather than closing a scope. If a later milestone adds
+lexically-scoped local classes, this flat `map[string]*ClassDef` needs
+scope-qualified keys or removal-on-scope-exit — a design change, not a tweak.
+
+**The prelude holds no classes, so the per-run registry needs no shared tier.**
+The `classes` map lives on `Context`, and `newChecker` mints a fresh `Context`
+per `InferModule` run ([infer.go:264](../../internal/solver/infer.go)), while the
+prelude `Scope` is a process-wide singleton reused across runs
+([prelude.go:14-24](../../internal/solver/prelude.go), `module.go:38-39`). That
+split would force a shared prelude `ClassDef` tier — a prelude `ClassType` token
+resolving `classDef` against an empty per-run map — ONLY if the prelude declared
+classes. It does not: `NewPrelude` seeds operator value bindings and opaque
+`unknown` stdlib type stubs, no `ClassType`/`ClassDef`
+([prelude.go:40-117](../../internal/solver/prelude.go)). Built-ins like
+`Promise`/`Iterable` are reached by importing them from pseudo-packages, not by
+ambient prelude names, so async/iterator desugaring must resolve them through the
+imported binding. A name that is not imported never enters the source file's
+scope and so never reaches the registry.
+
+**Imported classes are just more inserts, keyed by their package-qualified
+name.** When the import system lands (beyond M5 — the solver has no `ImportStmt`
+handling yet), a foreign class's `ClassDef` is inserted into the importing
+package's per-run `classes` under its package-qualified name, then lives for that
+run like a local class. This preserves "insert/overwrite, never remove" and
+sidesteps cross-package name collisions. The one downstream design point M5 does
+not settle: whether that foreign `ClassDef` is re-derived from the dependency's
+serialized type info or copied by pointer from its inference result. Either way it
+must stay inference-variable-free so one package's `constrain` cannot mutate a
+bound another package sees — the same invariant that makes the prelude `Scope`
+safe to share ([prelude.go:16-19](../../internal/solver/prelude.go)).
 
 The **declared-subtype graph** is the adjacency implied by `ClassDef.Supers`.
 `constrain` walks it transitively with a seen-set; no separate graph object is
@@ -351,11 +534,26 @@ declared variance. That is exactly the four-line acceptance matrix (`mut Box`,
 func (c *Context) inferVariance(def *ClassDef, decl *ast.ClassDecl) []Variance
 ```
 
-Generic **type aliases** carry no variance (a non-recursive alias is transparent
-— `Box<A> <: Box<B>` reduces to its expansion's structural subtyping), so
-`in`/`out` are allowed only on classes/interfaces, matching TS. This is a
-`resolveTypeAnn`/alias concern that mostly lands with M7; M5 only forbids the
-modifiers on `type` decls at parse/resolve time.
+A **non-recursive** generic type alias carries no variance of its own. It is
+transparent, so `Box<A> <: Box<B>` reduces to the structural subtyping of the
+alias's expansion and the variance falls out per use. A modifier there would
+annotate something already fully determined by the expansion, so M5 forbids
+`in`/`out`/`in out` on `type` decls at parse/resolve time.
+
+**This restriction is temporary and lifts in M7.** M7 brings generic type alias
+/ `TypeRef` resolution, and with it **recursive** generic aliases, where the
+transparency argument no longer holds. A recursive alias cannot be fully
+expanded, so measuring its variance structurally becomes a self-referential
+fixpoint: in `type List<A> = { head: A, tail: List<A> }` the polarity `A` picks
+up inside `tail` depends on the variance of `List` itself, which is what the walk
+is trying to compute. There the modifier stops being redundant and becomes
+load-bearing — it supplies the variance as a declared contract, which turns
+fixpoint inference into a single consistency check and gives `constrain` a frozen
+variance to consult nominally rather than expanding the alias, the same role
+`ClassDef.Variance` plays for a class. So M7 allows the modifiers on recursive
+aliases and checks them against the definition the way `inferVariance` checks a
+class. This also means the "allowed only on classes/interfaces" rule is an M5
+simplification, not a permanent design choice.
 
 ### Class declaration inference (`solver/infer_class.go`, Phase B)
 
@@ -366,7 +564,9 @@ over `soltype`, two phases:
 // inferClassDecl (NEW). Mirrors the old checker's two-phase shape:
 //   Phase 1 (signatures): register a TypeBinding for the class name bound to a
 //     fresh instance var BEFORE walking the body (so the body refers to the
-//     class recursively); declare TypeParams into a child scope; build the
+//     class recursively); resolve each ast.TypeParam to a soltype.TypeParam —
+//     mint its Var, set the resolved Constraint as the Var's upper bound, resolve
+//     the Default — and declare them into a child scope; build the
 //     Self reference (a ClassType{Name, Args: typeParamVars}) reused as every
 //     method/getter/setter receiver, the constructor return, and the `self`
 //     binding; partition Static vs instance elems; infer method/ctor SIGNATURES
@@ -379,7 +579,8 @@ over `soltype`, two phases:
 //     field-init completeness; run checkImplements (ported structural check).
 // Registers the DUAL binding: a TypeBinding{Type: ClassType} (instance) and a
 // ValueBinding{Schemes: [ctor+static ObjectType]} (constructor). Populates
-// c.classes[name] with the ClassDef (Body, Static, Supers, Variance).
+// c.classes[qname] with the ClassDef (Body, Static, Supers, Variance), where
+// qname is the dep_graph-qualified name also stored in ClassType.Name.
 func (c *checker) inferClassDecl(scope *Scope, decl *ast.ClassDecl) *ClassType
 ```
 
@@ -387,6 +588,35 @@ Wired into `inferDeclDef` ([infer_decl.go:30](../../internal/solver/infer_decl.g
 as a new `case *ast.ClassDecl`, and into the SCC path
 ([module.go:325](../../internal/solver/module.go)) for the dual-key registration
 and recursive groups.
+
+**Field and parameter types are inferred from in-class usage.** An unannotated
+field or method/constructor parameter is not an error and does not default to a
+fixed type. It follows the solver's ordinary "fresh var per binding + constrain +
+generalize" path, the same one that types an unannotated parameter in a plain
+function ([infer_expr.go:169](../../internal/solver/infer_expr.go): "an
+un-annotated param simply gets a fresh var"). Because `inferClassDecl` generalizes
+only after every method and constructor body is walked in Phase 2, usage flows
+into these fresh vars before they freeze:
+
+- **Parameters.** An unannotated parameter mints a fresh var bound as a MonoScheme
+  for the body, then refined by how the body uses it and by sibling call sites
+  within the class, since the methods form one recursive group. `class C { fn
+  f(self, x) { self.n = x + 1 } }` infers `x: number`.
+- **Instance fields.** Each field mints a fresh var in Phase 1
+  ([infer_class_decl.go:147,153](../../internal/checker/infer_class_decl.go)),
+  refined in Phase 2 by either its annotation or an assignment such as `self.x =
+  value` in the constructor or a method, where `self` is `mut Self`. An
+  unannotated instance field therefore takes its type from its constructor
+  assignment.
+
+**Instance fields take no field-level initializer; only static fields do.** M5
+ports the old checker's rule: a `= value` written directly on an *instance* field
+is a `FieldInitializerNotAllowedError`, while a *static* field's initializer is
+inferred ([infer_class_decl.go:390-401](../../internal/checker/infer_class_decl.go)).
+So an instance field's type comes from its annotation or a constructor/method
+assignment, never a field-level initializer. Phase 2's "infer field initializers"
+step is therefore the static-field initializers plus the constructor-assignment
+inference above, not a direct `x = 5` on an instance field.
 
 ### Nominal patterns (`solver/pattern.go`, Phase D)
 
@@ -423,7 +653,7 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 
 ## PR breakdown
 
-15 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
+10 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
 green, each with table-driven tests asserting rendered types (Escalier
 type-annotation syntax) and **full** error messages. Every PR names the files
 touched, the structures added/modified, the algorithm changes, and its
@@ -451,13 +681,47 @@ corruption of `freshenAbove`.
       method (each signature is a `FuncType`, params contravariant) arms.
     - `printType` arms: `ClassType` renders `Point` / `Box<number>` /
       `mut 'a Point` (the `Lt`/`mut` forms via the existing `RefType` wrapper,
-      not on `ClassType` itself); object arm renders method/getter/setter members.
+      not on `ClassType` itself), stripping the namespace prefix off the qualified
+      `Name` for display; object arm renders method/getter/setter members.
     - `equalType` arm: `a.Name == b.Name && a.Final == b.Final && equalArgs`.
     - `freeTypeVars` descends `Args` and the new element kinds.
   - **Accept:** no constrain rule or decl handling yet, so trivially green —
     `ClassType` and the three element kinds round-trip `Accept`; the printer
-    renders a class instance, a generic instance, and an object with a method,
-    getter, and setter.
+    renders a class instance, a generic instance `Box<number>`, and an object with
+    a monomorphic method, getter, and setter.
+
+- **A2 — `TypeParam` + per-method `FuncType.TypeParams` (constraint + default)**
+  (~120). **← the soundness-sensitive representation, isolated for its own tests.**
+  - **Files:** `soltype/type.go` (the `TypeParam` type + the `FuncType.TypeParams`
+    field), `soltype/visitor.go` (`FuncType.Accept`), `soltype/print.go`
+    (generic-signature rendering + `freeTypeVars`), `solver/coalesce.go`
+    (`equalType`).
+  - **Structures:**
+    - add `soltype.TypeParam{Name, Var, Default}` (constraint = `Var`'s upper
+      bound, `Default` nil ⇒ required) and `FuncType.TypeParams []*TypeParam`
+      (declaration order, nil ⇒ monomorphic). `LevelOf` still maxes over
+      `Params`/`Ret`; the `TypeParams` vars are deeper by construction so they do
+      not lower the func's level.
+    - `FuncType.Accept` rewrites each `TypeParam`'s `Var`, its constraint (the
+      var's upper bound), and its `Default` so all three survive a `freshenAbove`
+      copy.
+    - `printType`: a generic function or method renders its `TypeParams` — `<U>`,
+      `<U: T>` for a constraint, `<U = Foo>` for a default, `<U: T = Foo>` for both.
+      Extends A1's method-elem arm from monomorphic to generic.
+    - `equalType`: two generic `FuncType`s compare **up to alpha-renaming** of
+      their positional `TypeParams`, constraints and defaults included — a
+      parameter's identity is its position, not its var id.
+    - `freeTypeVars` **excludes** a `FuncType`'s own `TypeParams` vars (they are
+      bound, not free) — the one non-mechanical arm, since every other site treats
+      vars as free.
+  - **Depends on:** only `FuncType` (on main), so it runs in parallel with A1; the
+    lone shared edit is the method-elem `printType` arm A1 lands monomorphic and A2
+    extends to render `<U>`. Both feed B1.
+  - **Accept:** the three soundness arms get direct tests before any class decl
+    consumes the field — a generic function `map<U>(f: fn (T) -> U) -> Array<U>`
+    round-trips `Accept` and prints; a constrained-plus-defaulted param renders
+    `<U: Ord = number>`; `freeTypeVars` omits a generic function's own `U`; two
+    signatures differing only in var id compare equal under `equalType`.
 
 ### Phase B — Class declaration inference (the semantics port)
 
@@ -469,19 +733,28 @@ corruption of `freshenAbove`.
     registry), `solver/infer_expr.go` (`valueProp` — method/getter access),
     `solver/errors.go`.
   - **Structures:** the `ClassDef` registry on `Context`
-    (`classes map[string]*ClassDef`); `ClassDef{TypeParams, Variance (invariant
-    placeholder until C2), Supers, Body, Static}`.
+    (`classes map[string]*ClassDef`); `ClassDef{TypeParams []*soltype.TypeParam,
+    Variance (invariant placeholder until C2), Supers, Body, Static}`.
   - **Algorithm — port `inferClassDecl`** (see sketch): the two-phase
-    signature-then-body walk, static/instance partition, `Self` =
-    `ClassType{Name, Args: typeParamVars}` substitution, constructor synthesis +
-    `mut self` validation (port `infer_class_ctor.go`), `mergeMethodOverloads`
-    (port `merge_overloads.go`), dual `TypeBinding` + `ValueBinding`
-    registration. `Extends`/`Implements` resolved to `*ClassType` and stored on
-    `ClassDef.Supers` (the subtype-graph edges; the *rule* that walks them is
-    C1). **Member access:** extend `valueProp`
+    signature-then-body walk, `ast.TypeParam` → `soltype.TypeParam` resolution
+    (constraint into the var's upper bound, default resolved), static/instance
+    partition, `Self` = `ClassType{Name, Args: typeParamVars}` substitution,
+    constructor synthesis + `mut self` validation (port `infer_class_ctor.go`),
+    `mergeMethodOverloads` (port `merge_overloads.go`), dual `TypeBinding` +
+    `ValueBinding` registration. A `ClassType` type reference with fewer `Args`
+    than `TypeParams` fills the missing trailing positions from each
+    `TypeParam.Default`, which may reference an earlier parameter; too few args
+    and no default is `MissingTypeArgError`. `Extends`/`Implements` resolved to
+    `*ClassType` and stored on `ClassDef.Supers` (the subtype-graph edges; the
+    *rule* that walks them is C1). **Member access:** extend `valueProp`
     ([infer_expr.go:1831](../../internal/solver/infer_expr.go)) to resolve
     a method/getter through the projected `ClassDef.Body` — single-signature
-    methods and getters here; overloaded-method resolution is E1.
+    methods and getters here; overloaded-method resolution is E1. A resolved
+    method carrying its own `FuncType.TypeParams` is wrapped in a `PolyScheme` at
+    the class's generalize-level and `instantiate`d at the access level, so each
+    call freshens the method's own params while class-level args stay shared.
+    A non-generic method (`TypeParams` nil) skips the wrap and returns the
+    projected `FuncType` directly.
   - **Errors (ported names):** `MultipleConstructorsError`,
     `SubclassConstructorRequiredError`, `MissingSelfReceiverError`,
     plus constructor-return / field-init errors.
@@ -489,6 +762,12 @@ corruption of `freshenAbove`.
     number {...} }` infers; `Point(5, 10)` constructs an instance; `p.x` and
     `p.dist()` resolve through the body; a class with an explicit constructor and
     a synthesized one both check; `mut self` vs `self` receivers bind correctly.
+    A generic method `fn first<U>(self, xs: Array<U>) -> U` instantiated at two
+    call sites with different `U` type-checks at each, confirming the per-method
+    params freshen per call. A `class Box<T: Ord = number>` records the constraint
+    and default: `Box<string>` requires `string <: Ord`, a bare `Box` resolves to
+    `Box<number>`, and `Box<T>` where `T` fails the constraint reports the bound
+    error.
 
 - **B2 — Mutually-recursive classes in the SCC path** (~180).
   - **Files:** `solver/module.go` (the `inferComponent` dual-key path), tests.
@@ -643,7 +922,9 @@ corruption of `freshenAbove`.
 ## Dependency graph
 
 ```
-A1 (ClassType + method/getter/setter elems)
+A1 (ClassType + method/getter/setter elems) ──┐
+A2 (TypeParam + FuncType.TypeParams)         ──┤   ── A2 parallel with A1 (needs only FuncType)
+                                               ▼
  └─► B1 (non-recursive ClassDecl + dual binding + member access)
       ├─► B2 (mutually-recursive classes, SCC path)          ── parallel with C/D/E after B1
       ├─► C1 (declared-subtype graph + nominal rule + final)
@@ -655,9 +936,50 @@ A1 (ClassType + method/getter/setter elems)
       └─► E1 (method overload resolution + #723 specificity)
 ```
 
+The same graph in mermaid, with the critical path (A1 → B1 → C1 → C2) highlighted
+and the landed `M6` prerequisite dashed:
+
+```mermaid
+graph TD
+    A1["A1 (ClassType + method/getter/setter elems)"]
+    A2["A2 (TypeParam + FuncType.TypeParams)"]
+    B1["B1 (non-recursive ClassDecl + dual binding + member access)"]
+    B2["B2 (mutually-recursive classes, SCC path)"]
+    C1["C1 (declared-subtype graph + nominal rule + final)"]
+    C2["C2 (variance inference + in/out modifiers)"]
+    F1["F1 (iteration protocol + back-edge validation)"]
+    D1["D1 (ExtractorPat / InstancePat binding)"]
+    DEnum["D-Enum (enum decls as unions of final variants)"]
+    D2["D2 (enum + structural-object union exhaustiveness)"]
+    E1["E1 (method overload resolution + #723 specificity)"]
+    M6["M6 (unions / intersections, landed)"]
+
+    A1 --> B1
+    A2 --> B1
+    B1 --> B2
+    B1 --> C1
+    B1 --> D1
+    B1 --> DEnum
+    B1 --> E1
+    C1 --> C2
+    C1 --> F1
+    D1 --> D2
+    DEnum --> D2
+    M6 -.-> DEnum
+    M6 -.-> D2
+
+    classDef crit fill:#ffe0b2,stroke:#e65100,stroke-width:2px,color:#000;
+    classDef landed fill:#eceff1,stroke:#90a4ae,stroke-dasharray:4 3,color:#000;
+    class A1,B1,C1,C2 crit;
+    class M6 landed;
+    linkStyle 0,3,7 stroke:#e65100,stroke-width:2px;
+```
+
 **Critical path:** A1 → B1 → C1 → C2 (variance is the milestone's headline
 acceptance, and it depends on the nominal rule it refines). F1 also hangs off
-C1. Everything else is off the critical path.
+C1. A2 depends only on `FuncType` (on main), so it runs in parallel with A1 and
+stays off the critical path as long as it lands before B1. Everything else is off
+the critical path.
 
 **Parallelizable once B1 lands** (all depend only on B1, mutually independent):
 
@@ -669,21 +991,31 @@ C1. Everything else is off the critical path.
 - **E1** (method overloads) — member-lookup path + `overload.go`, independent of
   subtyping and patterns.
 
-So after the A1 → B1 spine, **B2, C1, D1, D-Enum, and E1 can proceed in
-parallel** (five tracks). The second-tier dependents each wait on one first-tier
-PR: **C2** on C1, **F1** on C1, **D2** on both D1 and D-Enum. The only PR that
-joins two tracks is D2 (patterns × enums × M6's union exhaustiveness).
+So after the A1+A2 → B1 spine (A1 and A2 run in parallel, both landing before B1),
+**B2, C1, D1, D-Enum, and E1 can proceed in parallel** (five tracks). The
+second-tier dependents each wait on one first-tier PR: **C2** on C1, **F1** on C1,
+**D2** on both D1 and D-Enum. The only PR that joins two tracks is D2 (patterns ×
+enums × M6's union exhaustiveness).
 
 ## Algorithms and data structures added or modified — summary
 
 **Added data structures:**
 
-- `soltype.ClassType{Name, Args, Lt, Final}` — the nominal lattice token.
+- `soltype.ClassType{Name, Args, Lt, Final}` — the nominal lattice token
+  (`Name` is the dep_graph-qualified name, the shared key into `classes`).
 - `soltype.MethodElem`/`GetterElem`/`SetterElem` — new `ObjTypeElem` arms
   (methods hold overload arms as an ordered `[]*FuncType`).
+- `soltype.TypeParam{Name, Var, Default}` — one quantified type parameter, shared
+  by functions and classes. Constraint is `Var`'s upper bound; `Default` is the
+  omitted-argument fallback (nil ⇒ required); `Name` is for display.
+- `soltype.FuncType.TypeParams []*TypeParam` — a method's or function's own
+  quantified type params, bounded vars one level deeper than the class,
+  instantiated per call by the existing `freshenAbove`. `nil` ⇒ monomorphic. Gives
+  `.d.ts` generic methods like `Array<T>.map<U>` a representation for M7 ingestion.
 - `solver.ClassDef` registry (`Context.classes map[string]*ClassDef`) — the
-  projected body, resolved supers (the declared-subtype-graph edges), and frozen
-  per-parameter variance.
+  projected body, resolved supers (the declared-subtype-graph edges), frozen
+  per-parameter variance, and `TypeParams []*soltype.TypeParam` carrying each class
+  parameter's constraint and default.
 - `solver.Variance` enum (`Invariant`/`Covariant`/`Contravariant`/`Bivariant`).
 - Produced (not new — already declared) `soltype.InstancePat`/`ExtractorPat`.
 
@@ -697,6 +1029,10 @@ joins two tracks is D2 (patterns × enums × M6's union exhaustiveness).
   collapsing occurrence polarities to a `Variance`, with `in`/`out` checking.
 - `inferClassDecl` — the two-phase signature/body port (constructor synthesis,
   static/instance partition, `Self` substitution, dual binding, overload merge).
+- Per-method scheme instantiation at member access — wrap a projected method
+  carrying `FuncType.TypeParams` in a `PolyScheme` at the class's level and
+  `instantiate` it per call, so the method's own params freshen per call while
+  class args stay shared.
 - Recursive-class inference via the existing SCC fresh-var-per-binding path (no
   `typeRefsToUpdate` patching).
 - Nominal pattern binding through member lookup; nominal + structural-object
@@ -737,3 +1073,19 @@ member access.
   prune-gated kill is a known open imprecision the milestone calls out; F1 adds
   the loop test that exercises it but may surface a real fix — treat a failing
   field-store back-edge test as in-scope for F1, not a deferral.
+- **Per-method type params touch a core former (A2).**
+  `FuncType.TypeParams` and the shared `TypeParam` modify `FuncType`, which the
+  whole engine switches over, so the two non-mechanical sweep arms carry soundness
+  weight. `freeTypeVars` must **exclude** a func's own `TypeParams` vars —
+  treating a bound method param as free would let the class-level generalize
+  capture it, collapsing per-call polymorphism into a phantom class parameter.
+  `equalType` must compare generic `FuncType`s **up to positional alpha-renaming**,
+  constraints and defaults included, or two ingested signatures that differ only in
+  var id compare unequal and defeat dedup/caching. `Accept` must reach each
+  `TypeParam`'s constraint (the var's upper bound) and `Default` so a `freshenAbove`
+  copy substitutes a default that references an earlier parameter (`<T, U = T>`).
+  Land A2 with direct tests for all three before B1 consumes the field.
+  Keep the M5 use rank-1 and reject higher-rank rather than approximating; general
+  `fn f<U>` *inference* stays out of scope — M5 only populates the representation
+  for
+  methods and the M7 ingestion path.
