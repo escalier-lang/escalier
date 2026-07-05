@@ -279,18 +279,10 @@ func ltOutlivesRelation(t soltype.Type, pol soltype.Polarity) (*ltAnalysis, []*s
 	return a, survivors, outlives
 }
 
-// displayLtBounds computes the transitively-reduced outlives relation among the named
-// lifetime variables surviving in a coalesced display type, keyed by variable for the
-// printer's `'a: 'c` prefix. bounds[u] lists the survivors u directly outlives. t is
-// the type coalesceLifetimes produced, so its RefType lifetimes are exactly the named
-// survivors. An elided or 'static-forced lifetime is not a LifetimeVar and so does not
-// occur. pol is the polarity t was coalesced at, threaded so the occurrence walk starts
-// from the same root.
-//
-// The reduction reads the implies-or-feedsJoin relation ltOutlivesRelation returns,
-// rather than ltBoundSet.reduce's raw edge graph, so it is computed over that relation
-// here. The relation is materialized once into edges before the reduction, so the
-// per-pair predicate runs once per survivor pair, not per reduction step.
+// displayLtBounds returns the transitively-reduced outlives relation among the named
+// lifetime survivors of a coalesced display type, keyed by variable for the printer's
+// `'a: 'c` prefix. bounds[u] lists the survivors u directly outlives. The relation comes
+// from ltOutlivesRelation, materialized into edges once before the reduction reads it.
 func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.LifetimeVar][]*soltype.LifetimeVar {
 	a, survivors, outlives := ltOutlivesRelation(t, pol)
 	if outlives == nil {
