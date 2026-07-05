@@ -23,7 +23,7 @@ import (
 // PR6 pass their checker's Context.
 //
 // Canonical member order keeps equalType positional and cheap. Two unions
-// over the same members hold them in the same order, so equalTypeSlice
+// over the same members hold them in the same order, so equalTypeSliceWith
 // already returns true. Canonical order also makes rendering deterministic,
 // so `number | string` and `string | number` print identically, and it lets
 // the canonical type serve as a stable key for caching.

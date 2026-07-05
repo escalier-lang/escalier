@@ -636,7 +636,57 @@ func dedup(parts []soltype.Type) []soltype.Type {
 // parameters as named references, so a generalized scheme's display type can carry
 // variables — compared here by pointer identity (the same var is one type
 // parameter), which is what lets dedup collapse `T0 & T0` to `T0`.
+//
+// Lifetimes compare by pointer identity too, which two borrows minted in one coalesce
+// share whenever they denote the same borrow. That identity keying is what dedup and the
+// lattice's canonical member order rely on, and it keeps two independent param lifetimes
+// with no bound between them distinct. alphaEqualTypes is the cross-scheme variant that
+// compares lifetimes up to renaming instead.
 func equalType(a, b soltype.Type) bool {
+	return equalTypeWith(a, b, nil)
+}
+
+// ltPairing is the bijection alphaEqualTypes discovers between the lifetime variables of
+// two types compared up to renaming. equalTypeWith fills it in as it walks: the first
+// time it matches a borrow on each side it binds their lifetime variables together, and
+// every later occurrence must respect that binding. aToB and bToA are the two directions
+// of the bijection, keyed by lifetime-variable ID. aVars and bVars list the bound
+// variables in binding order, so index i on each side names one paired lifetime.
+// sameOutlivesUnderPairing compares the outlives relation over those pairs. A nil
+// *ltPairing selects pointer-identity lifetime equality, the within-coalesce default
+// equalType uses.
+type ltPairing struct {
+	aToB  map[int]int
+	bToA  map[int]int
+	aVars []*soltype.LifetimeVar
+	bVars []*soltype.LifetimeVar
+}
+
+// pair records or rechecks that a and b are the same lifetime under the bijection. A
+// variable already bound to a different partner fails, which is what keeps a borrow that
+// shares one lifetime across two positions from matching a side that uses two distinct
+// lifetimes there. Because the walk matches structure in the same order on both sides,
+// binding a and b together the first time they are matched pairs corresponding lifetimes
+// regardless of the order the two types happen to list their object properties.
+func (p *ltPairing) pair(a, b *soltype.LifetimeVar) bool {
+	if j, ok := p.aToB[a.ID]; ok {
+		return j == b.ID
+	}
+	if _, ok := p.bToA[b.ID]; ok {
+		return false // b is already bound to a different left-side lifetime
+	}
+	p.aToB[a.ID] = b.ID
+	p.bToA[b.ID] = a.ID
+	p.aVars = append(p.aVars, a)
+	p.bVars = append(p.bVars, b)
+	return true
+}
+
+// equalTypeWith is equalType parameterized by an optional lifetime pairing. With a nil
+// pairing it is exactly equalType, keying lifetimes by pointer identity. With a pairing
+// it keys a borrow's lifetime by first-appearance index, so alphaEqualTypes can compare
+// borrows across schemes whose lifetime variables have independent identities.
+func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 	switch a := a.(type) {
 	case *soltype.TypeVarType:
 		b, ok := b.(*soltype.TypeVarType)
@@ -668,11 +718,11 @@ func equalType(a, b soltype.Type) bool {
 			return false
 		}
 		for i := range a.Params {
-			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || !equalType(a.Params[i].Type, b.Params[i].Type) {
+			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || !equalTypeWith(a.Params[i].Type, b.Params[i].Type, p) {
 				return false
 			}
 		}
-		return equalType(a.Ret, b.Ret)
+		return equalTypeWith(a.Ret, b.Ret, p)
 	case *soltype.TupleType:
 		b, ok := b.(*soltype.TupleType)
 		// Inexact flags must be equal — an open tuple never equals a closed one,
@@ -681,7 +731,7 @@ func equalType(a, b soltype.Type) bool {
 			return false
 		}
 		for i := range a.Elems {
-			if !equalType(a.Elems[i], b.Elems[i]) {
+			if !equalTypeWith(a.Elems[i], b.Elems[i], p) {
 				return false
 			}
 		}
@@ -702,35 +752,57 @@ func equalType(a, b soltype.Type) bool {
 		for _, ae := range a.Elems {
 			ap := soltype.AsProperty(ae)
 			bp, ok := b.Prop(ap.Name)
-			if !ok || ap.Optional != bp.Optional || ap.Readonly != bp.Readonly || !equalType(ap.Type, bp.Type) {
+			if !ok || ap.Optional != bp.Optional || ap.Readonly != bp.Readonly || !equalTypeWith(ap.Type, bp.Type, p) {
 				return false
 			}
 		}
 		return true
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
-		return ok && equalType(a.Inner, b.Inner)
+		return ok && equalTypeWith(a.Inner, b.Inner, p)
 	case *soltype.RefType:
 		b, ok := b.(*soltype.RefType)
 		// Mut must match — a mutable borrow never equals an immutable one — and the
 		// lifetimes must match: D2 mints borrow lifetimes, so two borrows differing only
 		// in lifetime are NOT equal. Without the Lt check, dedup would collapse them and
-		// silently drop a lifetime the solver computed. ltEqual compares a LifetimeVar by
-		// pointer and 'static by value.
-		return ok && a.Mut == b.Mut && ltEqual(a.Lt, b.Lt) && equalType(a.Inner, b.Inner)
+		// silently drop a lifetime the solver computed. ltEqualWith compares a LifetimeVar
+		// by pointer under a nil pairing and by first-appearance index under one.
+		return ok && a.Mut == b.Mut && ltEqualWith(a.Lt, b.Lt, p) && equalTypeWith(a.Inner, b.Inner, p)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
 		// Inexact flags must match, since an open union never equals a closed
 		// one. The M6 PR1 newUnion imposes canonical member order at
-		// construction, so the positional equalTypeSlice is order-stable and
+		// construction, so the positional equalTypeSliceWith is order-stable and
 		// two unions over the same member set are now equal whatever order
 		// their members were minted in.
-		return ok && a.Inexact == b.Inexact && equalTypeSlice(a.Types, b.Types)
+		return ok && a.Inexact == b.Inexact && equalTypeSliceWith(a.Types, b.Types, p)
 	case *soltype.IntersectionType:
 		b, ok := b.(*soltype.IntersectionType)
-		return ok && equalTypeSlice(a.Types, b.Types)
+		return ok && equalTypeSliceWith(a.Types, b.Types, p)
 	}
 	return false
+}
+
+// ltEqualWith reports lifetime equality for equalTypeWith's RefType arm. Under a nil
+// pairing it is ltEqual, keying a LifetimeVar by pointer. Under a pairing it binds the
+// two variables together through the bijection, so two borrows minted in independent
+// schemes match when they occupy corresponding positions and a variable reused on one
+// side must be reused the same way on the other. A borrow whose lifetime is not a
+// variable — 'static, an owned-mutable nil, an anonymous marker, or a union — falls back
+// to ltEqual's by-value rule in both modes.
+func ltEqualWith(a, b soltype.Lifetime, p *ltPairing) bool {
+	if p == nil {
+		return ltEqual(a, b)
+	}
+	av, aok := a.(*soltype.LifetimeVar)
+	bv, bok := b.(*soltype.LifetimeVar)
+	if !aok && !bok {
+		return ltEqual(a, b)
+	}
+	if !aok || !bok {
+		return false // a variable never pairs with a non-variable lifetime
+	}
+	return p.pair(av, bv)
 }
 
 // ltEqual reports lifetime equality for equalType's RefType arm (D2). Each lifetime
@@ -772,12 +844,12 @@ func ltEqual(a, b soltype.Lifetime) bool {
 	return a == b
 }
 
-func equalTypeSlice(a, b []soltype.Type) bool {
+func equalTypeSliceWith(a, b []soltype.Type, p *ltPairing) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if !equalType(a[i], b[i]) {
+		if !equalTypeWith(a[i], b[i], p) {
 			return false
 		}
 	}
