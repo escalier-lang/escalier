@@ -38,10 +38,14 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 		if p.Name == "static" {
 			continue
 		}
-		if _, seen := declared[p.Name]; !seen {
-			declaredOrder = append(declaredOrder, p.Name)
-			declared[p.Name] = p
+		// A name bound twice binds nothing new. Report each repeat against the kept first
+		// binder and dedup so the undeclared and unused scans see the name once.
+		if first, seen := declared[p.Name]; seen {
+			c.report(&DuplicateLifetimeParamError{Name: p.Name, Param: p, First: first})
+			continue
 		}
+		declaredOrder = append(declaredOrder, p.Name)
+		declared[p.Name] = p
 	}
 
 	// Collect every named-lifetime use in the signature's borrows and bound right-hand
@@ -61,26 +65,25 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 	for _, p := range lifetimeParams {
 		for _, b := range p.Bounds {
 			if b.Name != "static" {
-				col.uses = append(col.uses, lifetimeUse{name: b.Name, span: b.Span()})
+				col.uses = append(col.uses, b)
 			}
 		}
 	}
 
-	// The signature's severity for an undeclared use follows whether it carries any
-	// binder at all: with no clause a use is a hard error, with a clause it is a typo
-	// warning.
+	// A use with no `<…>` clause at all prompts adding one; a use under a clause suggests
+	// the nearest declared name. Both are hard errors — hasClause shapes only the hint.
 	hasClause := len(lifetimeParams) > 0
 	used := set.NewSet[string]()
 	for _, u := range col.uses {
-		used.Add(u.name)
-		if _, ok := declared[u.name]; ok {
+		used.Add(u.Name)
+		if _, ok := declared[u.Name]; ok {
 			continue
 		}
 		c.report(&UndeclaredLifetimeError{
-			Name:        u.name,
-			Suggestions: nearestLifetimes(u.name, declaredOrder),
+			Name:        u.Name,
+			Suggestions: nearestLifetimes(u.Name, declaredOrder),
 			hasClause:   hasClause,
-			span:        u.span,
+			span:        u.Span(),
 		})
 	}
 
@@ -94,17 +97,11 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 	}
 }
 
-// lifetimeUse is a named-lifetime occurrence in a signature, carrying the name written
-// without the leading `'` and the span of the occurrence for blame.
-type lifetimeUse struct {
-	name string
-	span ast.Span
-}
-
 // lifetimeUseCollector walks a signature's type annotations and records each `&'x`
-// borrow's lifetime as a use. It descends through nested borrows and object, tuple, and
-// union annotations, but stops at a nested function annotation, which owns its own
-// lifetime scope.
+// borrow's lifetime as a use, keeping the LifetimeAnn node so the check reads its name
+// and blames its span. It descends through nested borrows and object, tuple, and union
+// annotations, but stops at a nested function annotation, which owns its own lifetime
+// scope.
 //
 // The set of forms this records must match the forms resolveLifetimeAnn interns through
 // namedLifetime, since a use the scan misses is one namedLifetime still mints a fresh
@@ -113,7 +110,7 @@ type lifetimeUse struct {
 // that form gains support, add it here and to addLifetime.
 type lifetimeUseCollector struct {
 	ast.DefaultVisitor
-	uses []lifetimeUse
+	uses []*ast.LifetimeAnn
 }
 
 func (v *lifetimeUseCollector) EnterTypeAnn(t ast.TypeAnn) bool {
@@ -137,12 +134,12 @@ func (v *lifetimeUseCollector) addLifetime(node ast.LifetimeAnnNode) {
 	switch n := node.(type) {
 	case *ast.LifetimeAnn:
 		if n.Name != "static" {
-			v.uses = append(v.uses, lifetimeUse{name: n.Name, span: n.Span()})
+			v.uses = append(v.uses, n)
 		}
 	case *ast.LifetimeUnionAnn:
 		for _, m := range n.Lifetimes {
 			if m.Name != "static" {
-				v.uses = append(v.uses, lifetimeUse{name: m.Name, span: m.Span()})
+				v.uses = append(v.uses, m)
 			}
 		}
 	}

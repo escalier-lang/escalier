@@ -3,7 +3,6 @@ package solver
 import (
 	"testing"
 
-	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,23 +25,19 @@ func TestInferUndeclaredLifetimeNoClauseHardError(t *testing.T) {
 			"1:30-1:32: lifetime 'b is used but not declared; add `<'b>` to the enclosing function signature",
 		},
 		messagesWithSpan(errs))
-	require.False(t, errs[0].(*UndeclaredLifetimeError).IsWarning(),
-		"a use with no clause is a hard error")
 }
 
-// A used lifetime the clause does not bind is a typo warning, with the nearest declared
-// sibling suggested. 'a is declared and borrowed by p, so it is not unused; only the
-// stray 'b on q is undeclared, and 'a is one edit away.
-func TestInferUndeclaredLifetimeWithClauseWarns(t *testing.T) {
+// A used lifetime the clause does not bind is a hard error, with the nearest declared
+// sibling suggested since the miss is likely a typo. 'a is declared and borrowed by p, so
+// it is not unused; only the stray 'b on q is undeclared, and 'a is one edit away.
+func TestInferUndeclaredLifetimeWithClause(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<'a>(p: &'a {x: number}, q: &'b {x: number}) { return p }`)
 	require.Equal(t,
 		[]string{"1:34-1:36: lifetime 'b is used but not declared; did you mean 'a?"},
 		messagesWithSpan(errs))
-	require.True(t, errs[0].(*UndeclaredLifetimeError).IsWarning(),
-		"a use under an existing clause is a typo warning")
 }
 
-// A clause exists but no declared name is close enough to suggest, so the warning falls
+// A clause exists but no declared name is close enough to suggest, so the message falls
 // back to prompting the author to declare the name rather than offering a correction.
 // `'xyz` is three edits from the stray 'a, beyond the suggestion threshold.
 func TestInferUndeclaredLifetimeWithClauseNoCloseSuggestion(t *testing.T) {
@@ -51,20 +46,18 @@ func TestInferUndeclaredLifetimeWithClauseNoCloseSuggestion(t *testing.T) {
 	require.Equal(t,
 		[]string{"1:38-1:40: lifetime 'a is used but not declared; add `<'a>` to the signature's lifetime list"},
 		messagesWithSpan(errs))
-	require.True(t, errs[0].(*UndeclaredLifetimeError).IsWarning())
 }
 
 // The right-hand side of a declared bound is a use, so an undeclared name there is
 // reported the same way. A function type annotation is a no-body site whose bounds lower
-// rather than being checked, so only the undeclared-lifetime warning fires. 'a is one
-// edit from the stray 'b.
+// rather than being checked, so only the undeclared-lifetime error fires. 'a is one edit
+// from the stray 'b.
 func TestInferUndeclaredLifetimeInBoundRHS(t *testing.T) {
 	_, _, errs := inferSource(t,
 		`val f: fn<'a: 'b>(p: &'a {x: number}) -> &'a {x: number} = fn (p) { return p }`)
 	require.Equal(t,
 		[]string{"1:15-1:17: lifetime 'b is used but not declared; did you mean 'a?"},
 		messagesWithSpan(errs))
-	require.True(t, errs[0].(*UndeclaredLifetimeError).IsWarning())
 }
 
 // 'static is the built-in bottom of the outlives lattice, so it is never undeclared. A
@@ -90,8 +83,6 @@ func TestInferUndeclaredLifetimeNestedJudgedByOwnClause(t *testing.T) {
 			"2:43-2:45: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
 		},
 		messagesWithSpan(errs))
-	require.False(t, errs[0].(*UndeclaredLifetimeError).IsWarning(),
-		"the inner function has no clause, so its use is a hard error")
 }
 
 // A declared binder that no borrow and no bound references is dead weight. `<'a>` is
@@ -104,22 +95,32 @@ func TestInferUnusedLifetimeParamWarns(t *testing.T) {
 	require.True(t, errs[0].(*UnusedLifetimeParamError).IsWarning())
 }
 
-// A name bound more than once warns unused only once, blaming its first binder. The
-// undeclared and unused directions agree on deduplication. The check runs directly on a
-// hand-built signature, since the parser does not produce a repeated binder.
-func TestCheckLifetimeDeclarationsDuplicateBinderWarnsOnce(t *testing.T) {
-	c := newChecker()
-	first := ast.NewLifetimeParam("a", nil, ast.Span{Start: ast.Location{Line: 1, Column: 6}, End: ast.Location{Line: 1, Column: 8}})
-	second := ast.NewLifetimeParam("a", nil, ast.Span{Start: ast.Location{Line: 1, Column: 10}, End: ast.Location{Line: 1, Column: 12}})
-	params := []*ast.LifetimeParam{first, second}
-
-	c.checkLifetimeDeclarations(params, nil, nil, nil)
-
-	require.Len(t, c.errs, 1, "a name bound twice warns unused once")
-	ue, ok := c.errs[0].(*UnusedLifetimeParamError)
+// A `<…>` list that binds the same name twice is a hard error. The repeat binds nothing
+// new, so it blames the second binder and relates the kept first binder. 'a is borrowed,
+// so it is used and no unused warning joins the duplicate error.
+func TestInferDuplicateLifetimeParam(t *testing.T) {
+	_, _, errs := inferSource(t,
+		`fn f<'a, 'a>(p: &'a {x: number}) -> &'a {x: number} { return p }`)
+	require.Equal(t,
+		[]string{"1:10-1:12: lifetime parameter 'a is declared more than once"},
+		messagesWithSpan(errs))
+	de, ok := errs[0].(*DuplicateLifetimeParamError)
 	require.True(t, ok)
-	require.Equal(t, "a", ue.Name)
-	require.Same(t, first, ue.Param, "the first binder is blamed")
+	require.Equal(t, "a", de.Name)
+	require.Equal(t, "1:6-1:8", de.Related()[0].String(), "the first binder is related")
+}
+
+// The duplicate and unused scans agree on deduplication. A repeated binder that nothing
+// uses reports the duplicate once and the unused warning once, both blaming the first
+// binder, rather than a warning per repeat.
+func TestInferDuplicateLifetimeParamUnusedReportedOnce(t *testing.T) {
+	_, _, errs := inferSource(t, `fn g<'a, 'a>(p: &{x: number}) { return p }`)
+	require.Equal(t,
+		[]string{
+			"1:10-1:12: lifetime parameter 'a is declared more than once",
+			"1:6-1:8: lifetime parameter 'a is declared but never used",
+		},
+		messagesWithSpan(errs))
 }
 
 // A binder used only as a bound right-hand side counts as used, so it does not warn as
