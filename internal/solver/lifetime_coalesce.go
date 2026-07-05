@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"maps"
+	"slices"
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -244,10 +246,7 @@ func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.Lifetime
 	a := newLtAnalysis(occ)
 	bs := a.bs
 
-	survivors := make([]*soltype.LifetimeVar, 0, len(occ))
-	for v := range occ {
-		survivors = append(survivors, v)
-	}
+	survivors := slices.Collect(maps.Keys(occ))
 	sort.Slice(survivors, func(i, j int) bool { return survivors[i].ID < survivors[j].ID })
 
 	// joinSources maps each multi-source join survivor to the SCC representatives of the
