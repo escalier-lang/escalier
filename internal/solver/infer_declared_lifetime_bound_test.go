@@ -133,7 +133,7 @@ func TestInferNoDeclaredBoundStillRendersInferred(t *testing.T) {
 // under the single 'a.
 func TestInferDeclaredTransitiveBoundSatisfied(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f<'c: 'a>(p: &'a &'b &'c {x: number}) -> &'a {x: number} { return p }`)
+		fn f<'a, 'b, 'c: 'a>(p: &'a &'b &'c {x: number}) -> &'a {x: number} { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a {x: number}) -> &'a {x: number}", values["f"])
 }
