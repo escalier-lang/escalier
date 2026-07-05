@@ -121,8 +121,9 @@ func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 // A bodyless function with an UNSUPPORTED return annotation recovers to `unknown`
 // (the honest "couldn't resolve the declared return"), not the synthetic `void`
 // (which would falsely signal "returns nothing" to callers). The annotation error
-// is still reported once. Reachable only via a nil-body AST — from source the
-// parser gives a declare fn a non-nil empty block (so hasBody is true).
+// is still reported once. A `declare fn` is a no-body site, so inferFuncDecl types it
+// body-free and this recovery path runs; the decl here is built with a nil body to
+// exercise it directly.
 func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
 	c := newChecker()
 	// declare fn now() -> bigint   (bigint is unsupported in M2)

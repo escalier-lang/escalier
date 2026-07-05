@@ -747,6 +747,20 @@ func varName(d *ast.VarDecl) (string, bool) {
 // top-level FuncDecls under one name are constrained into the same var as
 // monomorphic overload arms; the overload-intersection representation is M3.
 func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) (soltype.Type, provenance.Provenance) {
-	t := c.inferFunc(scope, lvl, d.FuncSig, d.Body, d)
+	t := c.inferFunc(scope, lvl, d.FuncSig, funcDeclBody(d), d)
 	return t, &ast.NodeProvenance{Node: d}
+}
+
+// funcDeclBody returns the body inferFunc should type for a function declaration, nil
+// for a `declare fn`. A declare fn is a no-body site — its signature is the whole
+// contract, with nothing to infer a return or a lifetime relation from. The parser
+// gives it a non-nil empty block, so it must be nilled explicitly for inferFunc to
+// treat it as bodyless. Otherwise the empty block constrains a synthetic `void` against
+// the declared return and checks the declared lifetime bounds against a body that
+// proves nothing.
+func funcDeclBody(d *ast.FuncDecl) *ast.Block {
+	if d.Declare() {
+		return nil
+	}
+	return d.Body
 }

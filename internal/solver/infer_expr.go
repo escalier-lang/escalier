@@ -345,11 +345,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// re-minted by coalescing at binding time, so the entry is exact for inline
 	// callees; M3's FromInstantiation makes named-callee blame precise.)
 	c.recordProv(ft, node, FuncInference)
-	// A body-carrying function must prove every lifetime bound its signature declares.
-	// A no-body site has nothing to prove against and instead lowers its bounds, so the
-	// check is gated on hasBody.
+	// A body-carrying function must prove every lifetime bound its signature declares,
+	// so its bounds are checked against the inferred relation. A no-body `declare fn` has
+	// no body to prove them, so it lowers each declared bound into constrainLt instead.
+	// The bound then solves like one a body would infer.
 	if hasBody {
 		c.checkDeclaredLifetimeBounds(sig.LifetimeParams, ft)
+	} else {
+		c.lowerLifetimeParamBounds(sig.LifetimeParams, lvl)
 	}
 	return ft
 }

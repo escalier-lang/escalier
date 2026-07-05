@@ -225,7 +225,7 @@ func (c *checker) inferComponent(
 			for _, arm := range b.arms {
 				handled.Add(arm.decl)
 				b.sources = append(b.sources, &ast.NodeProvenance{Node: arm.decl})
-				c.inferFunc(scope, inner, arm.decl.FuncSig, arm.decl.Body, arm.decl)
+				c.inferFunc(scope, inner, arm.decl.FuncSig, funcDeclBody(arm.decl), arm.decl)
 			}
 			continue
 		}
