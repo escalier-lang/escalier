@@ -99,17 +99,20 @@ func TestInferThrowsFuncAnnotationReportsUnsupported(t *testing.T) {
 // case renders the binding named by `binding` and reports no error.
 func TestInferLifetimeFuncAnnotation(t *testing.T) {
 	tests := []struct {
-		name    string
-		src     string
-		binding string
-		want    string
+		name     string
+		src      string
+		binding  string
+		want     string
+		wantErrs []string
 	}{
-		// A lifetime that names no borrow is inert, so it renders elided.
+		// A lifetime that names no borrow is inert, so it renders elided. Declaring it and
+		// then naming nothing is dead weight, so the unused-binder companion warns.
 		{
-			name:    "unused lifetime",
-			src:     `val f: fn<'a>(x: number) -> number = fn (x) { return x }`,
-			binding: "f",
-			want:    "fn (x: number) -> number",
+			name:     "unused lifetime",
+			src:      `val f: fn<'a>(x: number) -> number = fn (x) { return x }`,
+			binding:  "f",
+			want:     "fn (x: number) -> number",
+			wantErrs: []string{"lifetime parameter 'a is declared but never used"},
 		},
 		// A lifetime naming a borrow that reaches the output resolves to one shared
 		// lifetime across the parameter and return, so it quantifies as `'a` on both.
@@ -151,7 +154,7 @@ func TestInferLifetimeFuncAnnotation(t *testing.T) {
 		// must not share a variable, so `outer`'s parameter stays a plain borrow lifetime.
 		{
 			name: "nested annotation scope is local",
-			src: `fn outer(p: &'a {x: number}) {
+			src: `fn outer<'a>(p: &'a {x: number}) {
   val g: fn<'a: 'static>(q: &'a {y: number}) -> &'a {y: number} = fn (q) { return q }
   return p
 }`,
@@ -162,7 +165,7 @@ func TestInferLifetimeFuncAnnotation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
-			require.Empty(t, errs)
+			require.Equal(t, tt.wantErrs, Messages(errs))
 			require.Equal(t, tt.want, values[tt.binding])
 		})
 	}

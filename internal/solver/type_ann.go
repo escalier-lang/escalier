@@ -250,6 +250,9 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 	savedNamedLts := c.namedLifetimes
 	c.namedLifetimes = nil
 	defer func() { c.namedLifetimes = savedNamedLts }()
+	// Report any named lifetime this annotation uses without binding it in its own `<…>`
+	// list, and the symmetric unused binder, before lowering its bounds interns the names.
+	c.checkLifetimeDeclarations(ta.LifetimeParams, ta.Params, ta.Return, ta.Throws)
 	c.lowerLifetimeParamBounds(ta.LifetimeParams, lvl)
 
 	params := make([]*soltype.FuncParam, len(ta.Params))

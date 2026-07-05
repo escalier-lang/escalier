@@ -776,6 +776,66 @@ func (e *LifetimeBoundNotSatisfiedError) Message() string {
 		e.Sub, e.Super, e.Sub, e.Super)
 }
 
+// UndeclaredLifetimeError fires when a signature uses a named lifetime that its own
+// `<…>` quantifier list does not bind. A `&'x` borrow or a bound's right-hand side
+// names `'x`, but no `<'x>` binder introduces it, so the name is a forgotten
+// declaration or a typo. Name is the used name without the leading `'`.
+//
+// Severity follows the signature's quantifier clause. With no `<…>` clause the author
+// almost certainly meant to declare the binder, so it is a hard error. With a clause
+// that binds other names the miss is most likely a typo, so it is a warning carrying
+// nearest-match Suggestions drawn from the declared siblings. Recovery mints a fresh
+// lifetime through namedLifetime either way, so the signature stays well-formed and
+// later checks proceed.
+//
+// SolverError carries no severity slot, so IsWarning lives on this concrete type and a
+// caller that needs the severity reads it through a type assertion.
+type UndeclaredLifetimeError struct {
+	Name        string
+	Suggestions []string // nearest declared siblings by edit distance; empty when none is close
+	hasClause   bool     // whether the signature carries any `<…>` binder at all
+	span        ast.Span
+}
+
+func (*UndeclaredLifetimeError) isSolverError()        {}
+func (e *UndeclaredLifetimeError) Span() ast.Span      { return e.span }
+func (e *UndeclaredLifetimeError) Related() []ast.Span { return nil }
+
+// IsWarning reports the typo case, where a `<…>` clause exists but does not bind the
+// name. With no clause at all the use is unambiguously a forgotten declaration and a
+// hard error.
+func (e *UndeclaredLifetimeError) IsWarning() bool { return e.hasClause }
+
+func (e *UndeclaredLifetimeError) Message() string {
+	msg := "lifetime '" + e.Name + " is used but not declared"
+	switch {
+	case !e.hasClause:
+		msg += "; add `<'" + e.Name + ">` to the enclosing function signature"
+	case len(e.Suggestions) > 0:
+		msg += "; did you mean '" + strings.Join(e.Suggestions, " or '") + "?"
+	}
+	return msg
+}
+
+// UnusedLifetimeParamError fires when a signature declares a `<'a>` binder that no
+// `&'a` borrow and no bound right-hand side references. The program is well-typed; the
+// binder is dead weight. Name is the declared name without the leading `'`. It is the
+// symmetric companion of UndeclaredLifetimeError — the same signature scan read the
+// other way, binders with no use rather than uses with no binder — and is always a
+// warning.
+type UnusedLifetimeParamError struct {
+	Name  string
+	Param *ast.LifetimeParam
+}
+
+func (*UnusedLifetimeParamError) isSolverError()        {}
+func (e *UnusedLifetimeParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *UnusedLifetimeParamError) Related() []ast.Span { return nil }
+func (e *UnusedLifetimeParamError) IsWarning() bool     { return true }
+func (e *UnusedLifetimeParamError) Message() string {
+	return "lifetime parameter '" + e.Name + " is declared but never used"
+}
+
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
 func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
 func (e *UnknownIdentifierError) Message() string {
