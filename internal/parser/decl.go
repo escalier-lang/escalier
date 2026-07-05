@@ -1175,14 +1175,17 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		}
 	}
 
-	var body ast.Block
+	// A `declare fn` has no body, so leave it nil. Only a non-declare function parses a
+	// block, and every FuncDecl.Body consumer already guards nil for the declare case.
+	var body *ast.Block
 	if !declare {
-		body = p.block()
-		end = body.Span.End
+		b := p.block()
+		body = &b
+		end = b.Span.End
 	}
 
 	fd := ast.NewFuncDecl(
-		ident, lifetimeParams, typeParams, params, returnType, throwsType, &body, export, declare, async,
+		ident, lifetimeParams, typeParams, params, returnType, throwsType, body, export, declare, async,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
 	fd.Inexact = inexact

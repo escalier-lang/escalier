@@ -15,9 +15,9 @@ import (
 // no-body twin of the body-carrying check in infer_declared_lifetime_bound_test.go: a
 // body-carrying function proves its bounds, a declare fn declares them.
 
-// A declare fn's signature renders as written and reports no error. The parser gives a
-// declare fn a non-nil empty block, so without treating it as bodyless the empty body
-// would constrain `void` against the declared return and check bounds it cannot prove.
+// A declare fn's signature renders as written and reports no error. It carries a nil
+// body, so inferFunc types it as a no-body site: it adopts the declared return and
+// lowers its declared bounds rather than checking them against a body that has none.
 func TestInferDeclareFnLifetimeBounds(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -25,8 +25,8 @@ func TestInferDeclareFnLifetimeBounds(t *testing.T) {
 		binding string
 		want    string
 	}{
-		// A declare fn with no lifetimes adopts its return annotation. The empty synthetic
-		// block must not constrain `void <: number`, which a body-carrying path would.
+		// A declare fn with no lifetimes adopts its return annotation. A no-body site must
+		// not constrain `void <: number`, which a body-carrying path would.
 		{
 			name:    "no lifetimes adopts return",
 			src:     `declare fn now() -> number`,
@@ -85,10 +85,9 @@ func TestInferDeclareFnLifetimeBounds(t *testing.T) {
 	}
 }
 
-// A `declare fn` inside a fully-annotated overload set is a no-body site too, so it is
-// typed body-free rather than against the parser's empty block. This is what keeps a
-// declare arm from constraining a synthetic `void` against its declared return, the same
-// spurious `void <: T` an overloaded regular function already avoids.
+// A `declare fn` inside a fully-annotated overload set is a no-body site too. Its nil
+// body keeps a declare arm from constraining a synthetic `void` against its declared
+// return, the same spurious `void <: T` an overloaded regular function already avoids.
 //
 // The rendered arm strips its borrow lifetimes to bare `&`, e.g. `p: &{x: number}` rather
 // than `p: &'a {x: number}`. That elision is a general property of the signature-bound
