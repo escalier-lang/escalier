@@ -519,9 +519,10 @@ func TestInferBorrowAnnMutableParam(t *testing.T) {
 
 // A named `&'a` lifetime resolves to one lifetime variable shared by every occurrence in
 // the function, so two parameters annotated `&'a` borrow at the same lifetime. Returning
-// one makes that lifetime load-bearing, and the display names it `'a` on both params.
+// one makes that lifetime load-bearing, and the display names it `'a` on both params. The
+// `<'a>` binder is required: a `&'a` borrow whose name no clause declares is rejected.
 func TestInferNamedBorrowLifetimeShared(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: &'a {x: number}, q: &'a {x: number}) { return p }`)
+	values, _, errs := inferSource(t, `fn f<'a>(p: &'a {x: number}, q: &'a {x: number}) { return p }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a {x: number}, q: &'a {x: number}) -> &'a {x: number}", values["f"])
 }

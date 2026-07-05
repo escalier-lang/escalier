@@ -194,6 +194,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	savedNamedLts := c.namedLifetimes
 	c.namedLifetimes = nil
 	defer func() { c.namedLifetimes = savedNamedLts }()
+	// Report any named lifetime the signature uses without binding it in its own `<…>`
+	// list, and the symmetric unused binder. Run before resolving the params so the scan
+	// reads the written names, not what namedLifetime has since interned.
+	c.checkLifetimeDeclarations(sig.LifetimeParams, sig.Params, sig.Return, sig.Throws)
 	if len(sig.TypeParams) > 0 {
 		// Generic functions (fn <T>(...)) need type schemes / generalization,
 		// which are M3. The FuncExpr/FuncDecl kind itself is supported — it is the

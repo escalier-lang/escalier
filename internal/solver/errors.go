@@ -262,23 +262,23 @@ type ReadonlyFieldSubtypeError struct {
 	site  ast.Node
 }
 
-func (*CannotConstrainError) isSolverError()      {}
-func (*MutFieldError) isSolverError()             {}
-func (*ReadonlyFieldError) isSolverError()        {}
-func (*ReadonlyFieldSubtypeError) isSolverError() {}
-func (*FuncArityMismatchError) isSolverError()    {}
-func (*TupleLengthMismatchError) isSolverError() {}
-func (*SpreadNotTupleError) isSolverError()      {}
-func (*InexactTupleSpreadError) isSolverError()  {}
-func (*MissingPropertyError) isSolverError()     {}
-func (*InexactIntoExactError) isSolverError()    {}
+func (*CannotConstrainError) isSolverError()       {}
+func (*MutFieldError) isSolverError()              {}
+func (*ReadonlyFieldError) isSolverError()         {}
+func (*ReadonlyFieldSubtypeError) isSolverError()  {}
+func (*FuncArityMismatchError) isSolverError()     {}
+func (*TupleLengthMismatchError) isSolverError()   {}
+func (*SpreadNotTupleError) isSolverError()        {}
+func (*InexactTupleSpreadError) isSolverError()    {}
+func (*MissingPropertyError) isSolverError()       {}
+func (*InexactIntoExactError) isSolverError()      {}
 func (*InexactTupleIntoExactError) isSolverError() {}
 func (*InexactUnionIntoExactError) isSolverError() {}
-func (*ExtraPropertyError) isSolverError()       {}
-func (*ExtraElementError) isSolverError()        {}
-func (*OptionalPropertyError) isSolverError()    {}
-func (*MutabilityMismatchError) isSolverError()  {}
-func (*BorrowEscapeError) isSolverError()        {}
+func (*ExtraPropertyError) isSolverError()         {}
+func (*ExtraElementError) isSolverError()          {}
+func (*OptionalPropertyError) isSolverError()      {}
+func (*MutabilityMismatchError) isSolverError()    {}
+func (*BorrowEscapeError) isSolverError()          {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -774,6 +774,80 @@ func (e *LifetimeBoundNotSatisfiedError) Message() string {
 	return fmt.Sprintf(
 		"declared lifetime bound '%s: '%s is not satisfied; the body does not make '%s outlive '%s",
 		e.Sub, e.Super, e.Sub, e.Super)
+}
+
+// UndeclaredLifetimeError fires when a signature uses a named lifetime that its own
+// `<…>` quantifier list does not bind. A `&'x` borrow or a bound's right-hand side
+// names `'x`, but no `<'x>` binder introduces it, so the name is a forgotten
+// declaration or a typo. Either way it is a hard error the author must resolve. Name is
+// the used name without the leading `'`.
+//
+// The clause shapes only the hint, not the severity. With no `<…>` clause the message
+// prompts adding one. With a clause that binds other names the message suggests the
+// nearest declared siblings by edit distance when one is close, since the miss is likely
+// a typo, and otherwise prompts declaring the name. Recovery mints a fresh lifetime
+// through namedLifetime so the signature stays well-formed and later checks proceed.
+type UndeclaredLifetimeError struct {
+	Name        string
+	Suggestions []string // nearest declared siblings by edit distance; empty when none is close
+	hasClause   bool     // whether the signature carries any `<…>` binder at all
+	span        ast.Span
+}
+
+func (*UndeclaredLifetimeError) isSolverError()        {}
+func (e *UndeclaredLifetimeError) Span() ast.Span      { return e.span }
+func (e *UndeclaredLifetimeError) Related() []ast.Span { return nil }
+
+func (e *UndeclaredLifetimeError) Message() string {
+	msg := "lifetime '" + e.Name + " is used but not declared"
+	switch {
+	case !e.hasClause:
+		msg += "; add `<'" + e.Name + ">` to the enclosing function signature"
+	case len(e.Suggestions) > 0:
+		msg += "; did you mean '" + strings.Join(e.Suggestions, " or '") + "?"
+	default:
+		// A clause exists but no declared name is close enough to be a likely typo, so
+		// point at declaring the name rather than guessing a correction.
+		msg += "; add `<'" + e.Name + ">` to the signature's lifetime list"
+	}
+	return msg
+}
+
+// DuplicateLifetimeParamError fires when a signature's `<…>` list binds the same
+// lifetime name more than once, as in `<'a, 'a>`. The repeat binds nothing new and is
+// almost certainly a typo, so it is a hard error. Name is the repeated name without the
+// leading `'`. Param is the redundant binder, the blame span; First is the kept binder,
+// surfaced through Related.
+type DuplicateLifetimeParamError struct {
+	Name  string
+	Param *ast.LifetimeParam
+	First *ast.LifetimeParam
+}
+
+func (*DuplicateLifetimeParamError) isSolverError()        {}
+func (e *DuplicateLifetimeParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *DuplicateLifetimeParamError) Related() []ast.Span { return []ast.Span{e.First.Span()} }
+func (e *DuplicateLifetimeParamError) Message() string {
+	return "lifetime parameter '" + e.Name + " is declared more than once"
+}
+
+// UnusedLifetimeParamError fires when a signature declares a `<'a>` binder that no
+// `&'a` borrow and no bound right-hand side references. The program is well-typed; the
+// binder is dead weight. Name is the declared name without the leading `'`. It is the
+// symmetric companion of UndeclaredLifetimeError — the same signature scan read the
+// other way, binders with no use rather than uses with no binder — and is always a
+// warning.
+type UnusedLifetimeParamError struct {
+	Name  string
+	Param *ast.LifetimeParam
+}
+
+func (*UnusedLifetimeParamError) isSolverError()        {}
+func (e *UnusedLifetimeParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *UnusedLifetimeParamError) Related() []ast.Span { return nil }
+func (e *UnusedLifetimeParamError) IsWarning() bool     { return true }
+func (e *UnusedLifetimeParamError) Message() string {
+	return "lifetime parameter '" + e.Name + " is declared but never used"
 }
 
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
