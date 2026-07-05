@@ -35,12 +35,17 @@ Facts from the code on main that shape every PR below:
    `ObjectType` is designated as the carrier for "(M5) class instance bodies"
    ([type.go:221-224](../../internal/soltype/type.go)).
 
-2. **`ObjectType` already carries an element list — but only `PropertyElem`.**
+2. **`soltype.ObjectType` already carries an element list — but only
+   `PropertyElem`.** This point is about the `soltype` type representation
+   (`internal/soltype/type.go`) only, not the repo as a whole; the old checker's
+   `internal/type_system` has its own separate `ObjTypeElem` set. In `soltype`,
    `ObjectType{Elems []ObjTypeElem, Inexact bool}`; `ObjTypeElem` is a sealed
    `interface{ isObjTypeElem() }` with the single concrete `PropertyElem{Name,
    Type, Optional, Readonly}` ([type.go:221-239](../../internal/soltype/type.go)).
-   **`MethodElem`/`GetterElem`/`SetterElem` do not exist** — the doc comment
-   explicitly slates them for M5. Lookup is `ObjectType.Prop(name)`
+   **`MethodElem`/`GetterElem`/`SetterElem` are absent from `soltype`'s
+   `ObjectType` baseline** — the doc comment explicitly slates them for M5 (they
+   already exist in `internal/type_system/types.go`, but that is the old
+   checker's parallel model, not this one). Lookup is `ObjectType.Prop(name)`
    ([type.go:248](../../internal/soltype/type.go)); `AsProperty(e)` **panics** on
    a non-`PropertyElem` ([type.go:266-272](../../internal/soltype/type.go)), the
    loud-fail convention that M5's new element kinds must extend at every
