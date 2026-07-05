@@ -222,12 +222,14 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 // occur. pol is the polarity t was coalesced at, threaded so the occurrence walk starts
 // from the same root.
 //
-// The relation has two sources. A directed edge the solved graph records, read by
-// implies, covers a declared or inferred bound between two named lifetimes, such as
-// `'b: 'a`. A source lifetime feeding a multi-source join covers the join case. An
-// instantiation interposes an intermediary that outlives both the source and the join,
-// so no directed edge links them, yet each source outlives the join. componentParams
-// recovers those sources from the join's connected component.
+// The relation draws on two sources of outlives facts:
+//
+//   - A directed edge the solved graph records, read by implies. This covers a
+//     declared or inferred bound between two named lifetimes, such as `'b: 'a`.
+//   - A source lifetime feeding a multi-source join, recovered by componentParams from
+//     the join's connected component. An instantiation interposes an intermediary that
+//     outlives both the source and the join, so no directed edge links them, yet each
+//     source outlives the join.
 //
 // The reduction reads its own edge relation, the implies-or-feedsJoin union, rather
 // than ltBoundSet.reduce's raw edge graph, so it is computed here rather than reused.
