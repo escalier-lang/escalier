@@ -813,6 +813,10 @@ func (e *UndeclaredLifetimeError) Message() string {
 		msg += "; add `<'" + e.Name + ">` to the enclosing function signature"
 	case len(e.Suggestions) > 0:
 		msg += "; did you mean '" + strings.Join(e.Suggestions, " or '") + "?"
+	default:
+		// A clause exists but no declared name is close enough to be a likely typo, so
+		// point at declaring the name rather than guessing a correction.
+		msg += "; add `<'" + e.Name + ">` to the signature's lifetime list"
 	}
 	return msg
 }

@@ -42,6 +42,18 @@ func TestInferUndeclaredLifetimeWithClauseWarns(t *testing.T) {
 		"a use under an existing clause is a typo warning")
 }
 
+// A clause exists but no declared name is close enough to suggest, so the warning falls
+// back to prompting the author to declare the name rather than offering a correction.
+// `'xyz` is three edits from the stray 'a, beyond the suggestion threshold.
+func TestInferUndeclaredLifetimeWithClauseNoCloseSuggestion(t *testing.T) {
+	_, _, errs := inferSource(t,
+		`fn f<'xyz>(p: &'xyz {x: number}, q: &'a {x: number}) { return p }`)
+	require.Equal(t,
+		[]string{"1:38-1:40: lifetime 'a is used but not declared; add `<'a>` to the signature's lifetime list"},
+		messagesWithSpan(errs))
+	require.True(t, errs[0].(*UndeclaredLifetimeError).IsWarning())
+}
+
 // The right-hand side of a declared bound is a use, so an undeclared name there is
 // reported the same way. A function type annotation is a no-body site whose bounds lower
 // rather than being checked, so only the undeclared-lifetime warning fires. 'a is one
