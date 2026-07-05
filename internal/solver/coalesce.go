@@ -771,10 +771,9 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
 		// Inexact flags must match, since an open union never equals a closed
-		// one. The M6 PR1 newUnion imposes canonical member order at
-		// construction, so the positional equalTypeSliceWith is order-stable and
-		// two unions over the same member set are now equal whatever order
-		// their members were minted in.
+		// one. newUnion imposes canonical member order at construction, so the
+		// positional equalTypeSliceWith is order-stable and two unions over the
+		// same member set compare equal whatever order their members were minted in.
 		return ok && a.Inexact == b.Inexact && equalTypeSliceWith(a.Types, b.Types, p)
 	case *soltype.IntersectionType:
 		b, ok := b.(*soltype.IntersectionType)
