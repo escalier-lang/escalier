@@ -299,11 +299,6 @@ func TestHasLifetimeVar(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "lifetime var in a union member",
-			in:   &RefType{Mut: true, Lt: &LifetimeUnion{Lifetimes: []Lifetime{&StaticLifetime{}, &LifetimeVar{ID: 1}}}, Inner: obj},
-			want: true,
-		},
-		{
 			name: "nested inside a tuple",
 			in:   &TupleType{Elems: []Type{&RefType{Mut: true, Lt: &LifetimeVar{ID: 2}, Inner: obj}}},
 			want: true,

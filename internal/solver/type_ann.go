@@ -438,19 +438,12 @@ func (c *checker) normalizeNestedBorrow(ta *ast.RefTypeAnn, outerLt soltype.Life
 }
 
 // resolveLifetimeAnn resolves the lifetime of a borrow annotation. A nil node is
-// an inferred borrow and mints a fresh lifetime. A named `'a` resolves to the variable
-// that name denotes. A `('a | 'b)` union resolves each member and joins them in a
-// LifetimeUnion.
+// an inferred borrow and mints a fresh lifetime. A named `'a` resolves to the
+// variable that name denotes.
 func (c *checker) resolveLifetimeAnn(node ast.LifetimeAnnNode, lvl int) soltype.Lifetime {
 	switch n := node.(type) {
 	case *ast.LifetimeAnn:
 		return c.namedLifetime(n.Name, lvl)
-	case *ast.LifetimeUnionAnn:
-		members := make([]soltype.Lifetime, len(n.Lifetimes))
-		for i, m := range n.Lifetimes {
-			members[i] = c.namedLifetime(m.Name, lvl)
-		}
-		return &soltype.LifetimeUnion{Lifetimes: members}
 	default:
 		// A nil node, or any unexpected form, is an inferred borrow with a fresh lifetime.
 		return c.ctx.freshLifetime(lvl)

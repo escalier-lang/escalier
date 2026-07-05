@@ -568,8 +568,7 @@ func litKindOrder(l soltype.Lit) int {
 
 // compareLifetime orders the lifetime forms a RefType.Lt can take. A nil
 // lifetime, which marks an owned value, sorts first. Then 'static. Then
-// LifetimeVar, ordered by ID. Then LifetimeUnion, ordered by length first
-// and members second.
+// LifetimeVar, ordered by ID.
 func compareLifetime(a, b soltype.Lifetime) int {
 	ka, kb := lifetimeKindOrder(a), lifetimeKindOrder(b)
 	if ka != kb {
@@ -583,17 +582,6 @@ func compareLifetime(a, b soltype.Lifetime) int {
 	case *soltype.LifetimeVar:
 		b := b.(*soltype.LifetimeVar)
 		return a.ID - b.ID
-	case *soltype.LifetimeUnion:
-		b := b.(*soltype.LifetimeUnion)
-		if c := len(a.Lifetimes) - len(b.Lifetimes); c != 0 {
-			return c
-		}
-		for i := range a.Lifetimes {
-			if c := compareLifetime(a.Lifetimes[i], b.Lifetimes[i]); c != 0 {
-				return c
-			}
-		}
-		return 0
 	}
 	return 0
 }
@@ -606,10 +594,8 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 		return 1
 	case *soltype.LifetimeVar:
 		return 2
-	case *soltype.LifetimeUnion:
-		return 3
 	}
-	return 4
+	return 3
 }
 
 // typeKindOrder ranks a soltype concrete kind for compareType. The lattice

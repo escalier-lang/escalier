@@ -222,22 +222,12 @@ func (c *ltVarCollector) EnterType(t Type, _ Polarity) EnterResult {
 
 func (c *ltVarCollector) ExitType(t Type, _ Polarity) Type { return t }
 
-// add records a borrow's lifetime: a LifetimeVar directly, or each LifetimeVar
-// member of a LifetimeUnion, deduped by identity.
+// add records a borrow's lifetime when it is a LifetimeVar, deduped by identity.
+// 'static and an anonymous display lifetime carry no variable and are skipped.
 func (c *ltVarCollector) add(lt Lifetime) {
-	switch lt := lt.(type) {
-	case *LifetimeVar:
-		if !c.seen.Contains(lt) {
-			c.seen.Add(lt)
-			c.out = append(c.out, lt)
-		}
-	case *LifetimeUnion:
-		for _, m := range lt.Lifetimes {
-			if mv, ok := m.(*LifetimeVar); ok && !c.seen.Contains(mv) {
-				c.seen.Add(mv)
-				c.out = append(c.out, mv)
-			}
-		}
+	if lv, ok := lt.(*LifetimeVar); ok && !c.seen.Contains(lv) {
+		c.seen.Add(lv)
+		c.out = append(c.out, lv)
 	}
 }
 
@@ -317,15 +307,6 @@ func (p *namedPrinter) printLifetime(lt Lifetime) string {
 			}
 		}
 		return "'l" + strconv.Itoa(lt.ID)
-	case *LifetimeUnion:
-		// A written `('a | 'b)` annotation, parenthesized so the `mut`/borrow prefix
-		// binds the whole union, giving `mut ('a | 'b) {…}` rather than
-		// `mut 'a | 'b {…}`.
-		parts := make([]string, len(lt.Lifetimes))
-		for i, m := range lt.Lifetimes {
-			parts[i] = p.printLifetime(m)
-		}
-		return "(" + strings.Join(parts, " | ") + ")"
 	}
 	panic(fmt.Sprintf("printLifetime: unhandled %T", lt))
 }
@@ -334,9 +315,9 @@ func (p *namedPrinter) printLifetime(lt Lifetime) string {
 // "" when the lifetime is inferred and carries no load-bearing name. A LifetimeVar
 // renders its assigned quantifier name `'a` when ltNames carries one. An un-named var
 // is an inferred borrow and prints as a bare `&` with no lifetime, matching the display
-// rule that names a lifetime only when it is load-bearing. 'static and a coalesced
-// lifetime union are always shown. The `&` itself is emitted by the caller whenever Lt
-// is set, so a borrow is always distinguishable from an owned value.
+// rule that names a lifetime only when it is load-bearing. 'static is always shown. The
+// `&` itself is emitted by the caller whenever Lt is set, so a borrow is always
+// distinguishable from an owned value.
 func (p *namedPrinter) borrowLifetimeName(lt Lifetime) string {
 	switch lt := lt.(type) {
 	case *LifetimeVar:
@@ -348,8 +329,6 @@ func (p *namedPrinter) borrowLifetimeName(lt Lifetime) string {
 		return ""
 	case *StaticLifetime:
 		return "'static"
-	case *LifetimeUnion:
-		return p.printLifetime(lt)
 	}
 	return ""
 }

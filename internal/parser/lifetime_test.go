@@ -51,9 +51,6 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 		"FnLifetimeAndTypeParams": {
 			input: `fn identity<'a, T>(p: mut 'a T) -> mut 'a T { return p }`,
 		},
-		"FnReturnLifetimeUnion": {
-			input: `fn pick<'a, 'b>(a: 'a Point, b: 'b Point, cond: boolean) -> ('a | 'b) Point { return a }`,
-		},
 		"FnLifetimeParamSingleBound": {
 			input: `fn pick<'a, 'b: 'a>(a: mut 'a Point, b: mut 'b Point) -> mut 'b Point { return b }`,
 		},
@@ -111,11 +108,14 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 		"FnReturnsTypeRefWithLifetimeArg": {
 			input: `fn borrow<'a>(c: Container<'a>) -> 'a Point { return c.p }`,
 		},
-		"TypeRefLifetimeUnionArg": {
-			input: `val v: View<('a | 'b)> = ref`,
+		// A `(` that opens a parenthesized type whose first token is a lifetime
+		// is grouping, not the retired `('a | 'b)` union. The lifetime prefix
+		// binds the inner type inside the parens, so these parse cleanly.
+		"ParenLifetimePrefixType": {
+			input: `val v: ('a Point) = ref`,
 		},
-		"TypeRefLifetimeUnionArgMixed": {
-			input: `val v: Pair<('a | 'b), T> = ref`,
+		"ParenLifetimePrefixTypeArg": {
+			input: `val v: View<('a Point)> = ref`,
 		},
 	}
 

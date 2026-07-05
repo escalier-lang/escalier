@@ -810,9 +810,6 @@ func ltEqualWith(a, b soltype.Lifetime, p *ltPairing) bool {
 //     pointer.
 //   - 'static is a value, so any two StaticLifetimes are equal.
 //   - A nil lifetime is an owned-mutable borrow. It equals only another nil.
-//   - A LifetimeUnion is the union form a join variable coalesces to in D3, such as
-//     'a | 'b. Two are equal when they hold the same members, pairwise equal in
-//     order. This lets two RefTypes carrying the same coalesced union dedup.
 //
 // This mirrors how the rest of equalType keys variables by pointer and primitives by
 // value.
@@ -827,18 +824,6 @@ func ltEqual(a, b soltype.Lifetime) bool {
 	// the same "no name" marker, so they compare equal by value, mirroring 'static.
 	if soltype.IsAnonLifetime(a) || soltype.IsAnonLifetime(b) {
 		return soltype.IsAnonLifetime(a) && soltype.IsAnonLifetime(b)
-	}
-	if ua, ok := a.(*soltype.LifetimeUnion); ok {
-		ub, ok := b.(*soltype.LifetimeUnion)
-		if !ok || len(ua.Lifetimes) != len(ub.Lifetimes) {
-			return false
-		}
-		for i := range ua.Lifetimes {
-			if !ltEqual(ua.Lifetimes[i], ub.Lifetimes[i]) {
-				return false
-			}
-		}
-		return true
 	}
 	return a == b
 }

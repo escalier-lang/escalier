@@ -474,108 +474,6 @@
 }
 ---
 
-[TestParseLifetimeAnnotations/FnReturnLifetimeUnion - 1]
-&ast.DeclStmt{
-    Decl: &ast.FuncDecl{
-        Name: &ast.Ident{
-            Name: "pick",
-            span: 1:4-1:8,
-        },
-        FuncSig: ast.FuncSig{
-            LifetimeParams: []*ast.LifetimeParam{
-                &ast.LifetimeParam{
-                    Name: "a",
-                    span: 1:9-1:11,
-                },
-                &ast.LifetimeParam{
-                    Name: "b",
-                    span: 1:13-1:15,
-                },
-            },
-            Params: []*ast.Param{
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name: "a",
-                        span: 1:17-1:18,
-                    },
-                    TypeAnn: &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "Point",
-                            span: 1:23-1:28,
-                        },
-                        Lifetime: &ast.LifetimeAnn{
-                            Name: "a",
-                            span: 1:20-1:22,
-                        },
-                        span: 1:23-1:28,
-                    },
-                },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name: "b",
-                        span: 1:30-1:31,
-                    },
-                    TypeAnn: &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "Point",
-                            span: 1:36-1:41,
-                        },
-                        Lifetime: &ast.LifetimeAnn{
-                            Name: "b",
-                            span: 1:33-1:35,
-                        },
-                        span: 1:36-1:41,
-                    },
-                },
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name: "cond",
-                        span: 1:43-1:47,
-                    },
-                    TypeAnn: &ast.BooleanTypeAnn{
-                        span: 1:49-1:56,
-                    },
-                },
-            },
-            Return: &ast.TypeRefTypeAnn{
-                Name: &ast.Ident{
-                    Name: "Point",
-                    span: 1:71-1:76,
-                },
-                Lifetime: &ast.LifetimeUnionAnn{
-                    Lifetimes: []*ast.LifetimeAnn{
-                        &ast.LifetimeAnn{
-                            Name: "a",
-                            span: 1:62-1:64,
-                        },
-                        &ast.LifetimeAnn{
-                            Name: "b",
-                            span: 1:67-1:69,
-                        },
-                    },
-                    span: 1:61-1:70,
-                },
-                span: 1:71-1:76,
-            },
-        },
-        Body: &ast.Block{
-            Stmts: []ast.Stmt{
-                &ast.ReturnStmt{
-                    Expr: &ast.IdentExpr{
-                        Name: "a",
-                        span: 1:86-1:87,
-                    },
-                    span: 1:79-1:87,
-                },
-            },
-            Span: 1:77-1:89,
-        },
-        span: 1:1-1:89,
-    },
-    span: 1:1-1:89,
-}
----
-
 [TestParseLifetimeAnnotations/InterfaceMethodLifetimeParam - 1]
 &ast.DeclStmt{
     Decl: &ast.InterfaceDecl{
@@ -1022,93 +920,6 @@
         span: 1:1-1:59,
     },
     span: 1:1-1:59,
-}
----
-
-[TestParseLifetimeAnnotations/TypeRefLifetimeUnionArgMixed - 1]
-&ast.DeclStmt{
-    Decl: &ast.VarDecl{
-        Pattern: &ast.IdentPat{
-            Name: "v",
-            span: 1:5-1:6,
-        },
-        TypeAnn: &ast.TypeRefTypeAnn{
-            Name: &ast.Ident{
-                Name: "Pair",
-                span: 1:8-1:12,
-            },
-            TypeArgs: []ast.TypeAnn{
-                &ast.TypeRefTypeAnn{
-                    Name: &ast.Ident{
-                        Name: "T",
-                        span: 1:24-1:25,
-                    },
-                    span: 1:24-1:25,
-                },
-            },
-            LifetimeArgs: []ast.LifetimeAnnNode{
-                &ast.LifetimeUnionAnn{
-                    Lifetimes: []*ast.LifetimeAnn{
-                        &ast.LifetimeAnn{
-                            Name: "a",
-                            span: 1:14-1:16,
-                        },
-                        &ast.LifetimeAnn{
-                            Name: "b",
-                            span: 1:19-1:21,
-                        },
-                    },
-                    span: 1:13-1:22,
-                },
-            },
-            span: 1:8-1:26,
-        },
-        Init: &ast.IdentExpr{
-            Name: "ref",
-            span: 1:29-1:32,
-        },
-        span: 1:1-1:32,
-    },
-    span: 1:1-1:32,
-}
----
-
-[TestParseLifetimeAnnotations/TypeRefLifetimeUnionArg - 1]
-&ast.DeclStmt{
-    Decl: &ast.VarDecl{
-        Pattern: &ast.IdentPat{
-            Name: "v",
-            span: 1:5-1:6,
-        },
-        TypeAnn: &ast.TypeRefTypeAnn{
-            Name: &ast.Ident{
-                Name: "View",
-                span: 1:8-1:12,
-            },
-            LifetimeArgs: []ast.LifetimeAnnNode{
-                &ast.LifetimeUnionAnn{
-                    Lifetimes: []*ast.LifetimeAnn{
-                        &ast.LifetimeAnn{
-                            Name: "a",
-                            span: 1:14-1:16,
-                        },
-                        &ast.LifetimeAnn{
-                            Name: "b",
-                            span: 1:19-1:21,
-                        },
-                    },
-                    span: 1:13-1:22,
-                },
-            },
-            span: 1:8-1:23,
-        },
-        Init: &ast.IdentExpr{
-            Name: "ref",
-            span: 1:26-1:29,
-        },
-        span: 1:1-1:29,
-    },
-    span: 1:1-1:29,
 }
 ---
 
@@ -1709,5 +1520,70 @@
         span: 1:1-1:67,
     },
     span: 1:1-1:67,
+}
+---
+
+[TestParseLifetimeAnnotations/ParenLifetimePrefixTypeArg - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.IdentPat{
+            Name: "v",
+            span: 1:5-1:6,
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "View",
+                span: 1:8-1:12,
+            },
+            TypeArgs: []ast.TypeAnn{
+                &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Point",
+                        span: 1:17-1:22,
+                    },
+                    Lifetime: &ast.LifetimeAnn{
+                        Name: "a",
+                        span: 1:14-1:16,
+                    },
+                    span: 1:17-1:22,
+                },
+            },
+            span: 1:8-1:24,
+        },
+        Init: &ast.IdentExpr{
+            Name: "ref",
+            span: 1:27-1:30,
+        },
+        span: 1:1-1:30,
+    },
+    span: 1:1-1:30,
+}
+---
+
+[TestParseLifetimeAnnotations/ParenLifetimePrefixType - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.IdentPat{
+            Name: "v",
+            span: 1:5-1:6,
+        },
+        TypeAnn: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Point",
+                span: 1:12-1:17,
+            },
+            Lifetime: &ast.LifetimeAnn{
+                Name: "a",
+                span: 1:9-1:11,
+            },
+            span: 1:12-1:17,
+        },
+        Init: &ast.IdentExpr{
+            Name: "ref",
+            span: 1:21-1:24,
+        },
+        span: 1:1-1:24,
+    },
+    span: 1:1-1:24,
 }
 ---
