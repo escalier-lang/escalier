@@ -40,13 +40,12 @@ type LifetimeVar struct {
 
 	// Join marks an internal lifetime minted at a multi-source join site (M4 D3).
 	// A join site is a return or branch that unites several borrows with distinct
-	// lifetimes. A join variable is NOT a borrow origin, so it is never named in
-	// the output. It renders as the union of the param lifetimes it reaches through
-	// its bounds, e.g. returning one of two borrows coalesces to `('a | 'b)`. The
-	// default is a param lifetime, Join false, which originates at a borrow
-	// parameter and renders under its own name. The distinction governs
-	// coalesceLifetime. A param variable is kept whole, a join variable is expanded
-	// to its reachable members.
+	// lifetimes. A join variable is not a borrow origin. When it reaches one param
+	// lifetime it renders under that param's name; when it reaches two or more it
+	// takes its own name and the source params carry outlives bounds to it, so
+	// returning one of two borrows renders `<'a: 'c, 'b: 'c, 'c>`. The default is a
+	// param lifetime, Join false, which originates at a borrow parameter and renders
+	// under its own name. The distinction governs coalesceLifetime.
 	Join bool
 }
 
@@ -76,12 +75,11 @@ type StaticLifetime struct{}
 // determined unobservable.
 type AnonLifetime struct{}
 
-// LifetimeUnion is a coalescing-output-only lifetime. It is the union of the param
-// lifetimes a join variable reaches, e.g. returning one of two borrows renders as
-// `('a | 'b)`. It never appears as a constraint input, since constrainLt relates
-// LifetimeVars and 'static only. It is minted solely by coalesceLifetime when a
-// join variable expands to more than one member. A single-member expansion yields
-// the member directly, so a LifetimeUnion always carries at least two lifetimes.
+// LifetimeUnion is the union of several named lifetimes, e.g. `('a | 'b)`. It never
+// appears as a constraint input, since constrainLt relates LifetimeVars and 'static
+// only. Its sole mint is the `('a | 'b) T` annotation lowering in type_ann.go, which
+// interns each named member and unions them. A union always carries at least two
+// lifetimes, since a single member lowers to that member directly.
 type LifetimeUnion struct {
 	Lifetimes []Lifetime
 }

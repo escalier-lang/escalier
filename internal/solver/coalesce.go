@@ -32,7 +32,7 @@ import (
 // recursive rendering; this guard only keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType]()}, pol)
-	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
+	c = bubbleOwnedMut(c)            // #779: lift an owned-mut cell out of an immutable container
 	return coalesceLifetimes(c, pol) // D4: resolve borrow lifetimes to their display form
 }
 
@@ -339,11 +339,14 @@ func schemeType(s TypeScheme) soltype.Type {
 func renderScheme(s TypeScheme) string {
 	switch sc := s.(type) {
 	case *MonoScheme:
-		return soltype.PrintAsScheme(coalesce(sc.Ty, soltype.Positive))
+		t := coalesce(sc.Ty, soltype.Positive)
+		return soltype.PrintAsSchemeWith(t, func(*soltype.TypeVarType) bool { return true },
+			displayLtBounds(t, soltype.Positive))
 	case *PolyScheme:
-		return soltype.PrintAsSchemeWith(sc.display(), func(v *soltype.TypeVarType) bool {
+		t := sc.display()
+		return soltype.PrintAsSchemeWith(t, func(v *soltype.TypeVarType) bool {
 			return v.Level > sc.Level
-		})
+		}, displayLtBounds(t, soltype.Positive))
 	}
 	panic(fmt.Sprintf("renderScheme: unknown TypeScheme %T", s))
 }

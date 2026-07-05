@@ -441,8 +441,10 @@ func (c *checker) inferComponent(
 		//
 		// NOTE: for a GENERALIZED binding this display type RETAINS its quantified
 		// type-parameter variables (it is not var-free), so consumers must render it
-		// with soltype.PrintAsScheme — plain soltype.Print renders those vars as the
-		// raw `t{ID}` debug form. (renderScheme is the canonical renderer.)
+		// with renderScheme, the canonical renderer. renderScheme threads the lifetime
+		// outlives bounds through soltype.PrintAsSchemeWith. Plain soltype.Print renders
+		// the retained vars as the raw `t{ID}` debug form, and plain soltype.PrintAsScheme
+		// omits the lifetime bounds, so a join lifetime would lose its `'a: 'c` linkage.
 		display := schemeType(scheme)
 		if b.infoNode != nil {
 			c.recordType(b.infoNode, display)

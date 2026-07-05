@@ -530,6 +530,6 @@ func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
 		Params: []*FuncParam{identP("x", param)},
 		Ret:    &TupleType{Elems: []Type{param, leaked}},
 	}
-	got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 })
+	got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 }, nil)
 	require.Equal(t, "fn <T0>(x: T0) -> [T0, t99]", got)
 }

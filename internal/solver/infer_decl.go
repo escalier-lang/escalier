@@ -619,8 +619,9 @@ func (c *checker) inferVarDecl(scope *Scope, lvl int, d *ast.VarDecl) (ValueBind
 	}
 	scheme := c.generalize(bound, lvl)
 	// The recorded display type retains any quantified type-parameter vars (it is
-	// not var-free), so Info consumers must render it with soltype.PrintAsScheme, not
-	// plain soltype.Print — same contract as the top-level path (see module.go).
+	// not var-free), so Info consumers must render it with renderScheme, which threads
+	// lifetime bounds. Plain soltype.Print drops the var names and plain PrintAsScheme
+	// drops the lifetime bounds. Same contract as the top-level path (see module.go).
 	c.recordType(d.Pattern, schemeType(scheme))
 	// PR8: carry the introducing decl's kind so inferAssign can gate reassignment —
 	// only a `var` is reassignable, a `val` is not.
