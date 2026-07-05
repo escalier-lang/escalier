@@ -239,10 +239,10 @@ func TestAlphaEqualTypesBorrowsAcrossSchemes(t *testing.T) {
 	require.False(t, equalType(fnA, fnB),
 		"pointer-identity equality distinguishes the two independent lifetimes")
 	require.True(t, alphaEqualTypes(fnA, fnB),
-		"the two signatures are equal up to renaming 'a to 'b")
+		"the two signatures are equal up to lifetime renaming")
 }
 
-// The lifetime pairing is a bijection over first-appearance index, so which parameter a
+// The walk binds each matched borrow's lifetime into a bijection, so which parameter a
 // return borrows from is part of the comparison. Two signatures that both take two
 // borrows but return the FIRST versus the SECOND are not alpha-equivalent, even though
 // both carry exactly two lifetimes.
@@ -265,14 +265,15 @@ func TestAlphaEqualTypesPairingIsBijection(t *testing.T) {
 	}
 
 	require.True(t, alphaEqualTypes(fnRetFirst, fnRetFirst2),
-		"both return the borrow at first-appearance index 0")
+		"both return their first parameter's borrow")
 	require.False(t, alphaEqualTypes(fnRetFirst, fnRetSecond),
-		"returning index 0 versus index 1 is a different borrow relation")
+		"returning the first versus the second parameter's borrow is a different relation")
 }
 
 // Two independent param lifetimes with no bound between them stay distinct, so a
 // signature over two DISTINCT borrows is not alpha-equivalent to one that reuses a
-// single borrow for both parameters. The differing lifetime counts alone settle it.
+// single borrow for both parameters. The bijection refuses to bind the reused lifetime
+// to two different partners.
 func TestAlphaEqualTypesIndependenceWithinScheme(t *testing.T) {
 	c := newChecker()
 	a, b := c.ctx.freshLifetime(0), c.ctx.freshLifetime(0)
@@ -352,6 +353,60 @@ func TestAlphaEqualTypesMutualOutlivesSharesLifetime(t *testing.T) {
 
 	require.True(t, alphaEqualTypes(mutual, mutual2),
 		"two signatures whose paired borrows are each mutually-outliving are alpha-equal")
+}
+
+// inferredValueType returns the coalesced display type of a top-level value binding, the
+// inferred type a hover would show. alphaEqualTypes compares two of these.
+func inferredValueType(t *testing.T, scope *Scope, name string) soltype.Type {
+	t.Helper()
+	b, ok := scope.GetValue(name)
+	require.True(t, ok, "no value binding for %q", name)
+	require.Len(t, b.Schemes, 1, "%q should be a single-scheme binding", name)
+	return schemeType(b.Schemes[0])
+}
+
+// Two source functions that declare their borrow lifetime with different names infer to
+// the same signature. Inference mints an independent lifetime variable per function, so
+// pointer-identity equalType reports them unequal, but alphaEqualTypes equates them up to
+// the renaming. A third function borrowing a differently-shaped object stays distinct.
+func TestAlphaEqualTypesInferredRenamedLifetimes(t *testing.T) {
+	scope, _, errs := InferModule(parseModule(t, `
+		fn f<'a>(p: &'a mut {x: number}) -> &'a mut {x: number} { return p }
+		fn g<'b>(q: &'b mut {x: number}) -> &'b mut {x: number} { return q }
+		fn h<'c>(r: &'c mut {y: number}) -> &'c mut {y: number} { return r }
+	`))
+	require.Empty(t, errs)
+	f := inferredValueType(t, scope, "f")
+	g := inferredValueType(t, scope, "g")
+	h := inferredValueType(t, scope, "h")
+
+	require.False(t, equalType(f, g),
+		"inference minted independent lifetime variables, so pointer identity differs")
+	require.True(t, alphaEqualTypes(f, g),
+		"'a and 'b name the same borrow signature")
+	require.False(t, alphaEqualTypes(f, h),
+		"the borrowed object shapes differ, {x: number} versus {y: number}")
+}
+
+// Two source functions that each return the first of their two borrows are
+// alpha-equivalent under a lifetime renaming, even with differently-named lifetime
+// parameters. A third that returns its second borrow carries a different lifetime
+// relation and is not equivalent to them.
+func TestAlphaEqualTypesInferredReturnChoice(t *testing.T) {
+	scope, _, errs := InferModule(parseModule(t, `
+		fn pair1<'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'a mut {x: number} { return p }
+		fn pair2<'c, 'd>(r: &'c mut {x: number}, s: &'d mut {x: number}) -> &'c mut {x: number} { return r }
+		fn pair3<'e, 'f>(u: &'e mut {x: number}, v: &'f mut {x: number}) -> &'f mut {x: number} { return v }
+	`))
+	require.Empty(t, errs)
+	pair1 := inferredValueType(t, scope, "pair1")
+	pair2 := inferredValueType(t, scope, "pair2")
+	pair3 := inferredValueType(t, scope, "pair3")
+
+	require.True(t, alphaEqualTypes(pair1, pair2),
+		"both return the first of their two borrows")
+	require.False(t, alphaEqualTypes(pair1, pair3),
+		"returning the first versus the second borrow is a different lifetime relation")
 }
 
 // On a type with no lifetime variable, alphaEqualTypes reduces to equalType, so a caller
