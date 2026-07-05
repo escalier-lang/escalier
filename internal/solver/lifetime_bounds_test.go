@@ -226,8 +226,9 @@ func TestLtBoundSetSubsumesChecksStaticForcing(t *testing.T) {
 
 // alphaEqualTypes equates two borrows minted in independent schemes when they denote
 // the same borrow up to lifetime renaming, where the pointer-identity equalType reports
-// them unequal. `fn(p: &'a mut {x}) -> &'a mut {x}` and the same signature over 'b are
-// alpha-equivalent. Each has one lifetime shared between its parameter and return.
+// them unequal. Both signatures render `fn <'a>(p: &'a mut {x}) -> &'a mut {x}`, each
+// sharing one lifetime between its parameter and return, but their lifetime variables are
+// distinct identities, so only alphaEqualTypes sees them as equal.
 func TestAlphaEqualTypesBorrowsAcrossSchemes(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
