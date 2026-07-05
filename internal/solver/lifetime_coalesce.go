@@ -216,13 +216,10 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 	}
 }
 
-// displayLtBounds computes the transitively-reduced outlives relation among the named
-// lifetime variables surviving in a coalesced display type, keyed by variable for the
-// printer's `'a: 'c` prefix. bounds[u] lists the survivors u directly outlives. t is
-// the type coalesceLifetimes produced, so its RefType lifetimes are exactly the named
-// survivors. An elided or 'static-forced lifetime is not a LifetimeVar and so does not
-// occur. pol is the polarity t was coalesced at, threaded so the occurrence walk starts
-// from the same root.
+// ltOutlivesRelation builds the outlives relation among the named lifetime variables
+// occurring in a display type, as both the printer and the declared-bound check read
+// it. It returns the analysis, the survivors sorted by ID, and a predicate outlives(u,
+// w) that holds when u outlives w. A nil predicate means t carries no lifetime variable.
 //
 // The relation draws on two sources of outlives facts:
 //
@@ -233,15 +230,14 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 //     outlives both the source and the join, so no directed edge links them, yet each
 //     source outlives the join.
 //
-// The reduction reads its own edge relation, the implies-or-feedsJoin union, rather
-// than ltBoundSet.reduce's raw edge graph, so it is computed here rather than reused.
-// The union relation is materialized once into edges before the reduction, so
-// feedsJoin's occ scan runs per survivor pair, not per reduction step.
-func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.LifetimeVar][]*soltype.LifetimeVar {
+// Two survivors sharing a representative are equal lifetimes, so outlives reports no
+// relation between them. pol is the polarity t was built at, threaded so the occurrence
+// walk starts from the same root.
+func ltOutlivesRelation(t soltype.Type, pol soltype.Polarity) (*ltAnalysis, []*soltype.LifetimeVar, func(u, w *soltype.LifetimeVar) bool) {
 	occ := map[*soltype.LifetimeVar]occPolarity{}
 	t.Accept(&ltOccVisitor{occ: occ}, pol)
 	if len(occ) == 0 {
-		return nil
+		return nil, nil, nil
 	}
 	a := newLtAnalysis(occ)
 	bs := a.bs
@@ -270,9 +266,6 @@ func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.Lifetime
 		joinSources[w] = reps
 	}
 
-	// outlives holds when u and w condense to different representatives and either the
-	// bound set proves 'u: 'w or u feeds the join w. Two survivors sharing a
-	// representative are equal lifetimes, so no bound is drawn between them.
 	outlives := func(u, w *soltype.LifetimeVar) bool {
 		if bs.repOf(u.ID) == bs.repOf(w.ID) {
 			return false
@@ -283,6 +276,27 @@ func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.Lifetime
 		reps, ok := joinSources[w]
 		return ok && reps.Contains(bs.repOf(u.ID))
 	}
+	return a, survivors, outlives
+}
+
+// displayLtBounds computes the transitively-reduced outlives relation among the named
+// lifetime variables surviving in a coalesced display type, keyed by variable for the
+// printer's `'a: 'c` prefix. bounds[u] lists the survivors u directly outlives. t is
+// the type coalesceLifetimes produced, so its RefType lifetimes are exactly the named
+// survivors. An elided or 'static-forced lifetime is not a LifetimeVar and so does not
+// occur. pol is the polarity t was coalesced at, threaded so the occurrence walk starts
+// from the same root.
+//
+// The reduction reads the implies-or-feedsJoin relation ltOutlivesRelation returns,
+// rather than ltBoundSet.reduce's raw edge graph, so it is computed over that relation
+// here. The relation is materialized once into edges before the reduction, so the
+// per-pair predicate runs once per survivor pair, not per reduction step.
+func displayLtBounds(t soltype.Type, pol soltype.Polarity) map[*soltype.LifetimeVar][]*soltype.LifetimeVar {
+	a, survivors, outlives := ltOutlivesRelation(t, pol)
+	if outlives == nil {
+		return nil
+	}
+	bs := a.bs
 
 	// edges materializes the full outlives relation among survivors once, so the
 	// transitive reduction below reads it rather than recomputing outlives.

@@ -752,6 +752,30 @@ func (e *MutLeafThroughSharedBorrowError) Message() string {
 	return "cannot bind a `mut` leaf through an immutable borrow; the scrutinee must be owned or a `&mut` borrow"
 }
 
+// LifetimeBoundNotSatisfiedError fires when a function body does not establish an
+// outlives relation its signature declares. A declared `<'a: 'b>` asserts 'a outlives
+// 'b, and the body must prove that from its borrows, joins, and stores. When the
+// inferred lifetime graph does not prove it, the declared bound is unfounded and
+// rejected here. Sub and Super are the two lifetime names written without the leading
+// `'`, so `<'a: 'b>` gives Sub "a" and Super "b".
+//
+// It is a BRIDGE error: born in inferFunc with the LifetimeParam binder in hand, so it
+// self-blames the `'a: 'b` binder through Span and carries no related node.
+type LifetimeBoundNotSatisfiedError struct {
+	Sub   string
+	Super string
+	Param *ast.LifetimeParam
+}
+
+func (*LifetimeBoundNotSatisfiedError) isSolverError()        {}
+func (e *LifetimeBoundNotSatisfiedError) Span() ast.Span      { return e.Param.Span() }
+func (e *LifetimeBoundNotSatisfiedError) Related() []ast.Span { return nil }
+func (e *LifetimeBoundNotSatisfiedError) Message() string {
+	return fmt.Sprintf(
+		"declared lifetime bound '%s: '%s is not satisfied; the body does not make '%s outlive '%s",
+		e.Sub, e.Super, e.Sub, e.Super)
+}
+
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
 func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
 func (e *UnknownIdentifierError) Message() string {
