@@ -57,12 +57,12 @@ func TestInferDeclaredBoundUnusedParamUnsatisfied(t *testing.T) {
 		be.Message())
 }
 
-// A join relates each source to the join, not the reverse. Declaring the reversed bounds
-// `<'c: 'a, 'c: 'b>` claims the join outlives its sources, which the body does not prove,
-// so one error fires per reversed bound.
+// A join relates each source to the join, not the reverse. The meet bound `<'c: 'a & 'b>`
+// claims the join outlives both its sources, which the body does not prove, so one error
+// fires per source the reversed bound names.
 func TestInferDeclaredJoinBoundReversedUnsatisfied(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn pick<'c: 'a, 'c: 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number} {
+		fn pick<'a, 'b, 'c: 'a & 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'c mut {x: number} {
 			if true { return p } else { return q }
 		}`)
 	var messages []string
