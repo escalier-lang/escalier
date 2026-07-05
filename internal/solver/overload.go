@@ -324,6 +324,12 @@ func equallySpecific(a, b *soltype.FuncType) bool {
 // equality plus a literal under its primitive. Anything richer ranks as incomparable and
 // returns false, deferring to declaration order.
 //
+// Two overload arms come from independent schemes, so a borrow parameter of one carries
+// a LifetimeVar distinct from the matching borrow of the other. Structural equality here
+// is therefore alpha-equivalence over lifetimes, not pointer identity, so two arms whose
+// borrow parameters differ only in lifetime identity rank as equally specific rather than
+// as two incomparable arms.
+//
 // It is deliberately NOT the full subtype relation. Resolution correctness comes from
 // the constrain trial in tryOverloadArm, not from this comparator.
 func structuralSubtype(a, b soltype.Type) bool {
@@ -333,7 +339,7 @@ func structuralSubtype(a, b soltype.Type) bool {
 	if _, ok := a.(*soltype.TypeVarType); ok {
 		return false
 	}
-	if equalType(a, b) {
+	if alphaEqualTypes(a, b) {
 		return true
 	}
 	if l, ok := a.(*soltype.LitType); ok {

@@ -360,6 +360,78 @@ func (s *ltBoundSet) subsumes(other *ltBoundSet) bool {
 	return true
 }
 
+// alphaEqualTypes reports whether a and b are equal up to a consistent renaming of their
+// lifetime variables — alpha-equivalence over the lifetime quantifier. Two borrows minted
+// in independent schemes carry distinct LifetimeVar identities, so the pointer-identity
+// equalType always reports them unequal even when they denote the same borrow. This is
+// the cross-scheme lifetime equality overload-arm comparison needs.
+//
+// It refines equalType only for borrows. A type with no lifetime variable compares
+// exactly as equalType does, so callers on the coalesce and lattice hot path keep pointer
+// identity and two independent param lifetimes stay distinct there. The comparison runs
+// in two steps:
+//
+//  1. Compare structure while equalTypeWith discovers the lifetime bijection, binding
+//     each matched borrow's lifetime on one side to the other's. Matching object
+//     properties by name means the bijection follows structure, not the order the two
+//     types happen to list their properties. A variable reused on one side must be reused
+//     the same way on the other, so two structurally-identical borrows whose
+//     lifetime-sharing patterns differ do not match.
+//  2. Compare the outlives relation among the paired lifetimes, so two signatures that
+//     agree structurally but differ in which lifetime outlives which are still unequal.
+//
+// overload-arm comparison calls this once per parameter through structuralSubtype, so a
+// lifetime shared across two parameters is not distinguished there. That is intended. A
+// borrow's lifetime is erased at codegen, which dispatches on parameter shape, so two arms
+// whose parameters are alpha-equal are indistinguishable however their lifetimes relate.
+func alphaEqualTypes(a, b soltype.Type) bool {
+	p := &ltPairing{aToB: map[int]int{}, bToA: map[int]int{}}
+	if !equalTypeWith(a, b, p) {
+		return false
+	}
+	if len(p.aVars) == 0 {
+		return true // no borrows: equalTypeWith settled it structurally
+	}
+	return sameOutlivesUnderPairing(p)
+}
+
+// sameOutlivesUnderPairing reports whether the two sides' paired lifetimes carry the same
+// outlives relation and the same 'static forcings. It builds each side's condensed
+// outlives graph over its paired variables, then for every ordered pair of paired
+// lifetimes checks that one side proves the outlives relation exactly when the other
+// does. implies folds in reachability, the mutual-outlives equality a condensed cycle
+// leaves behind, and 'static absorption, so a relation routed through an unpositioned
+// intermediary or realized as a cycle is compared correctly without a separate edge set.
+func sameOutlivesUnderPairing(p *ltPairing) bool {
+	absA := buildLtBoundSet(occOf(p.aVars))
+	absB := buildLtBoundSet(occOf(p.bVars))
+
+	for i := range p.aVars {
+		ai, bi := p.aVars[i].ID, p.bVars[i].ID
+		if absA.static.Contains(absA.repOf(ai)) != absB.static.Contains(absB.repOf(bi)) {
+			return false
+		}
+		for j := range p.aVars {
+			aj, bj := p.aVars[j].ID, p.bVars[j].ID
+			if absA.implies(ai, aj) != absB.implies(bi, bj) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// occOf seeds a bound-set walk from the given variables. The polarity is irrelevant to
+// the outlives graph, which lives in the variables' bound lists, so every variable is
+// recorded as occNeg.
+func occOf(vars []*soltype.LifetimeVar) map[*soltype.LifetimeVar]occPolarity {
+	occ := map[*soltype.LifetimeVar]occPolarity{}
+	for _, v := range vars {
+		occ[v] = occNeg
+	}
+	return occ
+}
+
 // canonicalEdges returns the condensed edges as (from, to) representative-ID pairs
 // sorted ascending, giving stable rendering and order-insensitive equality. This is the
 // lifetime-sort analogue of a canonical union member order.

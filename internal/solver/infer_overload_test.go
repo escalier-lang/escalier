@@ -62,6 +62,39 @@ func TestInferOverloadDuplicateParamTypesRejected(t *testing.T) {
 		msgWithSpan(errs[0]))
 }
 
+// Two borrow-parameter arms are inferred in independent schemes, so each `&mut {x}`
+// param carries its own lifetime variable. Their parameter types are indistinguishable
+// up to that renaming, so the duplicate-overload gate must reject them. The gate ranks
+// arms through equallySpecific, which compares lifetimes by alpha-equivalence, so the
+// two borrow params read as equal despite their distinct lifetime identities.
+func TestInferOverloadDuplicateBorrowParamsRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: &mut {x: number}) -> number { return 5 }
+		fn f(p: &mut {x: number}) -> string { return "a" }
+		val r = f
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		"3:3-3:53: Overload arms must have distinguishable parameter types: f",
+		msgWithSpan(errs[0]))
+}
+
+// Alpha-equivalence over lifetimes must not over-merge borrows with different inner
+// shapes. Two arms taking `&mut {x: number}` and `&mut {y: number}` have distinguishable
+// parameter types — the borrowed objects differ — so the duplicate-overload gate accepts
+// the set and a call resolves against the matching arm.
+func TestInferOverloadDistinctBorrowParamsAllowed(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: &mut {x: number}) -> number { return 5 }
+		fn f(p: &mut {y: number}) -> string { return "a" }
+		val r = f
+	`)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"(fn (p: &mut {x: number}) -> number) & (fn (p: &mut {y: number}) -> string)",
+		values["f"])
+}
+
 // Cross-file declaration order is pinned to SOURCE POSITION (file path alphabetically,
 // then line/column), NOT to the order the parser received the files. Two arms of f
 // live in separate files with DISTINCT parameter types (a.esc takes number, b.esc
