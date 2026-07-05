@@ -75,17 +75,6 @@ type StaticLifetime struct{}
 // determined unobservable.
 type AnonLifetime struct{}
 
-// LifetimeUnion is the union of several named lifetimes, e.g. `('a | 'b)`. It never
-// appears as a constraint input, since constrainLt relates LifetimeVars and 'static
-// only. Its sole mint is the `('a | 'b) T` annotation lowering in type_ann.go, which
-// interns each named member and unions them. A union always carries at least two
-// lifetimes, since a single member lowers to that member directly.
-type LifetimeUnion struct {
-	Lifetimes []Lifetime
-}
-
-func (*LifetimeUnion) isLifetime() {}
-
 // Static is the canonical 'static value. Prefer it over a fresh
 // &StaticLifetime{} at every origination site (escape-to-static, annotations) so
 // all 'static share one pointer identity. ContainsLifetime dedups 'static by

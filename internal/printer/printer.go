@@ -1510,23 +1510,12 @@ func needsTypeAnnParens(typ ast.TypeAnn) bool {
 	}
 }
 
-// printLifetimeAnn renders a lifetime annotation node: a single lifetime
-// `'a` or a union `('a | 'b)`.
+// printLifetimeAnn renders a lifetime annotation node, the `'a` in `'a Point`.
 func (p *Printer) printLifetimeAnn(lt ast.LifetimeAnnNode) {
 	switch lt := lt.(type) {
 	case *ast.LifetimeAnn:
 		p.writeString("'")
 		p.writeString(lt.Name)
-	case *ast.LifetimeUnionAnn:
-		p.writeString("(")
-		for i, l := range lt.Lifetimes {
-			p.writeString("'")
-			p.writeString(l.Name)
-			if i < len(lt.Lifetimes)-1 {
-				p.writeString(" | ")
-			}
-		}
-		p.writeString(")")
 	}
 }
 

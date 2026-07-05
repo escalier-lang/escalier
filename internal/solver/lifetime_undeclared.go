@@ -129,18 +129,12 @@ func (v *lifetimeUseCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 
 // addLifetime records a borrow's lifetime as a use. A nil node is a bare `&` inferred
 // borrow that carries no name, so it is skipped. `'static` is the outlives bottom and is
-// never undeclared, so it is skipped too. A `('a | 'b)` union records each member.
+// never undeclared, so it is skipped too.
 func (v *lifetimeUseCollector) addLifetime(node ast.LifetimeAnnNode) {
 	switch n := node.(type) {
 	case *ast.LifetimeAnn:
 		if n.Name != "static" {
 			v.uses = append(v.uses, n)
-		}
-	case *ast.LifetimeUnionAnn:
-		for _, m := range n.Lifetimes {
-			if m.Name != "static" {
-				v.uses = append(v.uses, m)
-			}
 		}
 	}
 }

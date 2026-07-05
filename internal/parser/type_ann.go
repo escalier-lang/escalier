@@ -235,11 +235,9 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		isMut = true
 	}
 
-	// Optional lifetime annotation before the inner type:
-	//   'a Point         → LifetimeAnn{Name: "a"}
-	//   ('a | 'b) Point  → LifetimeUnionAnn{...}
-	// We attach the lifetime to the resulting TypeRefTypeAnn after parsing
-	// the inner type.
+	// Optional lifetime annotation before the inner type, the `'a` in
+	// `'a Point`, attached to the resulting TypeRefTypeAnn after the inner
+	// type is parsed.
 	lifetime := p.parseOptLifetimeAnn()
 	token = p.lexer.peek()
 
@@ -1029,97 +1027,38 @@ func (p *Parser) parseTypeRef(firstToken *Token) *ast.TypeRefTypeAnn {
 }
 
 // parseOptLifetimeAnn parses an optional leading lifetime annotation that
-// precedes an inner type. The annotation is a single `'a` or a union
-// `('a | 'b)`. It returns nil and consumes nothing when the next tokens are
-// not a lifetime, so an
-// `(` that opens a parenthesized type rather than a lifetime union falls
-// through to the regular type-annotation path. Used both for the `'a Point`
-// prefix on a type reference and for the lifetime slot of a prefix borrow.
+// precedes an inner type, the `'a` in `'a Point`. It returns nil and consumes
+// nothing when the next token is not a lifetime, so a `(` that opens a
+// parenthesized type falls through to the regular type-annotation path. Used
+// both for the `'a Point` prefix on a type reference and for the lifetime slot
+// of a prefix borrow.
 func (p *Parser) parseOptLifetimeAnn() ast.LifetimeAnnNode {
-	token := p.lexer.peek()
-	// nolint: exhaustive
-	switch token.Type {
-	case Lifetime:
+	if token := p.lexer.peek(); token.Type == Lifetime {
 		p.lexer.consume()
 		return ast.NewLifetimeAnn(token.Value, token.Span)
-	case OpenParen:
-		saved := p.saveState()
-		open := p.lexer.next() // consume '('
-		if p.lexer.peek().Type != Lifetime {
-			p.restoreState(saved)
-			return nil
-		}
-		lifetimes := parseDelimSeq(p, CloseParen, Pipe, func() *ast.LifetimeAnn {
-			lt := p.lexer.peek()
-			if lt.Type != Lifetime {
-				return nil
-			}
-			p.lexer.consume()
-			return ast.NewLifetimeAnn(lt.Value, lt.Span)
-		})
-		closeTok := p.lexer.peek()
-		if closeTok.Type != CloseParen {
-			p.restoreState(saved)
-			return nil
-		}
-		p.lexer.consume()
-		return ast.NewLifetimeUnionAnn(lifetimes,
-			ast.MergeSpans(open.Span, closeTok.Span))
-	default:
-		return nil
 	}
+	return nil
 }
 
-// tryParseLifetimeArg attempts to parse a bare lifetime argument (`'a` or
-// `('a | 'b)`) appearing inside an angle-bracket list. Returns nil if the
-// next tokens don't look like a bare lifetime arg — callers should fall
-// back to parsing a type annotation. A lifetime followed by anything
-// other than `,` or `>` is treated as the start of a type annotation
-// (e.g. `'a Point`), so this only succeeds when the lifetime stands alone.
+// tryParseLifetimeArg attempts to parse a bare lifetime argument, the `'a` in
+// `View<'a>`, appearing inside an angle-bracket list. Returns nil if the next
+// tokens don't look like a bare lifetime arg — callers should fall back to
+// parsing a type annotation. A lifetime followed by anything other than `,` or
+// `>` is treated as the start of a type annotation like `'a Point`, so this
+// only succeeds when the lifetime stands alone.
 func (p *Parser) tryParseLifetimeArg() ast.LifetimeAnnNode {
 	tok := p.lexer.peek()
-	switch tok.Type {
-	case Lifetime:
-		saved := p.saveState()
-		p.lexer.consume()
-		next := p.lexer.peek()
-		if next.Type == Comma || next.Type == GreaterThan {
-			return ast.NewLifetimeAnn(tok.Value, tok.Span)
-		}
-		p.restoreState(saved)
-		return nil
-	case OpenParen:
-		// Possible lifetime union: ( 'a | 'b ) followed by `,` or `>`.
-		saved := p.saveState()
-		open := p.lexer.next()
-		if p.lexer.peek().Type != Lifetime {
-			p.restoreState(saved)
-			return nil
-		}
-		lifetimes := parseDelimSeq(p, CloseParen, Pipe, func() *ast.LifetimeAnn {
-			lt := p.lexer.peek()
-			if lt.Type != Lifetime {
-				return nil
-			}
-			p.lexer.consume()
-			return ast.NewLifetimeAnn(lt.Value, lt.Span)
-		})
-		closeTok := p.lexer.peek()
-		if closeTok.Type != CloseParen {
-			p.restoreState(saved)
-			return nil
-		}
-		p.lexer.consume()
-		afterClose := p.lexer.peek()
-		if afterClose.Type != Comma && afterClose.Type != GreaterThan {
-			p.restoreState(saved)
-			return nil
-		}
-		return ast.NewLifetimeUnionAnn(lifetimes,
-			ast.MergeSpans(open.Span, closeTok.Span))
-	default:
+	if tok.Type != Lifetime {
 		return nil
 	}
+	saved := p.saveState()
+	p.lexer.consume()
+	next := p.lexer.peek()
+	if next.Type == Comma || next.Type == GreaterThan {
+		return ast.NewLifetimeAnn(tok.Value, tok.Span)
+	}
+	p.restoreState(saved)
+	return nil
 }
 
 // parseQualifiedIdent parses a qualified identifier like Foo.Bar.Baz

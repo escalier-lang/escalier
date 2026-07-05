@@ -32,12 +32,11 @@ func (c *Checker) declareLifetimeParams(
 	return out
 }
 
-// resolveLifetimeAnn turns an AST LifetimeAnnNode (a single `'a` or a
-// union `('a | 'b)`) into the corresponding type_system.Lifetime,
-// looking up each named lifetime in the current scope. The literal
-// name "static" resolves to a `LifetimeValue{IsStatic: true}` rather
-// than a LifetimeVar — matching how Phase 8.4's escape detection
-// constructs its `'static` markers.
+// resolveLifetimeAnn turns an AST lifetime annotation, the `'a` in `'a Point`,
+// into the corresponding type_system.Lifetime, looking up the named lifetime in
+// the current scope. The literal name "static" resolves to a
+// `LifetimeValue{IsStatic: true}` rather than a LifetimeVar, matching how Phase
+// 8.4's escape detection constructs its `'static` markers.
 //
 // Returns nil if the input is nil. An unknown lifetime name produces
 // a fresh LifetimeVar AND an UndeclaredLifetimeError (§9.7 class 2);
@@ -53,15 +52,6 @@ func (c *Checker) resolveLifetimeAnn(
 	switch n := node.(type) {
 	case *ast.LifetimeAnn:
 		return c.resolveSingleLifetime(scope, n)
-	case *ast.LifetimeUnionAnn:
-		var errors []Error
-		members := make([]type_system.Lifetime, len(n.Lifetimes))
-		for i, m := range n.Lifetimes {
-			lt, lerrs := c.resolveSingleLifetime(scope, m)
-			members[i] = lt
-			errors = append(errors, lerrs...)
-		}
-		return &type_system.LifetimeUnion{Lifetimes: members}, errors
 	default:
 		return nil, nil
 	}

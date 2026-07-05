@@ -291,8 +291,7 @@ func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 // meet. Two joins sharing a source param sit in one connected component, so the
 // grouping bounds every param in that component to both joins: 'a feeds j1 and j2
 // directly, while 'b and 'c reach the second join only through the shared component.
-// Each param therefore carries `: 'd & 'e`. This is the same connectivity grouping the
-// union rendering used, where both tuple slots read `('a | 'b | 'c)`.
+// Each param therefore carries `: 'd & 'e`.
 func TestParamFeedingTwoJoinsRendersMeetBound(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -313,9 +312,9 @@ func TestParamFeedingTwoJoinsRendersMeetBound(t *testing.T) {
 }
 
 // Two param lifetimes that mutually outlive are EQUAL, so buildLtBoundSet condenses
-// them to one representative and a join over both renders `&'a` instead of the union
-// `&('a | 'b)`. The params keep their own names 'a and 'b from the borrows they
-// originate on; only the join lifetime resolves to the representative.
+// them to one representative and a join over both renders `&'a` under a single name.
+// The params keep their own names 'a and 'b from the borrows they originate on; only
+// the join lifetime resolves to the representative.
 func TestJoinOverMutualOutlivesCollapsesToOne(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -364,29 +363,6 @@ func TestJoinRepresentativeIsNonParamRendersParamName(t *testing.T) {
 	require.Equal(t,
 		"fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
 		renderScheme(&MonoScheme{Ty: fn}))
-}
-
-// ltEqual compares a LifetimeUnion structurally. A LifetimeUnion is the union form a
-// join variable coalesces to. Two unions are equal iff their members are pairwise
-// equal in order, so two RefTypes with the same coalesced union dedup during
-// coalescing. A LifetimeVar member keys by identity and 'static by value, inherited
-// from the recursive call.
-// This branch has no source-reachable trigger yet, which would be two identical
-// joined borrows in one union, so it is checked directly.
-func TestLtEqualLifetimeUnion(t *testing.T) {
-	c := newChecker()
-	a := c.ctx.freshLifetime(0)
-	b := c.ctx.freshLifetime(0)
-
-	ab1 := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{a, b}}
-	ab2 := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{a, b}}
-	ba := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{b, a}}
-	a1 := &soltype.LifetimeUnion{Lifetimes: []soltype.Lifetime{a}}
-
-	require.True(t, ltEqual(ab1, ab2), "same members in the same order are equal")
-	require.False(t, ltEqual(ab1, ba), "order matters: member i must match member i")
-	require.False(t, ltEqual(ab1, a1), "differing member counts are unequal")
-	require.False(t, ltEqual(ab1, a), "a union and a bare variable are unequal")
 }
 
 // A discarded probe truncates every lifetime bound the trial appended back to the

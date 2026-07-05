@@ -1,9 +1,9 @@
 package ast
 
-// LifetimeAnnNode is the interface satisfied by both LifetimeAnn and
-// LifetimeUnionAnn — anywhere a lifetime annotation can appear (a single
-// lifetime like 'a or a multi-lifetime union like ('a | 'b)) the field
-// stores a LifetimeAnnNode so callers can handle either form.
+// LifetimeAnnNode is the node type for a lifetime annotation appearing on a
+// type, such as the 'a in `mut 'a Point`. LifetimeAnn is its only implementer;
+// the interface marks the lifetime-annotation position on a type and exposes the
+// node's Span.
 type LifetimeAnnNode interface {
 	isLifetimeAnnNode()
 	Span() Span
@@ -43,18 +43,3 @@ func NewLifetimeParam(name string, bounds []*LifetimeAnn, span Span) *LifetimePa
 	return &LifetimeParam{Name: name, Bounds: bounds, span: span}
 }
 func (l *LifetimeParam) Span() Span { return l.span }
-
-// LifetimeUnionAnn represents multiple lifetimes on a single type
-// (e.g. ('a | 'b) in `('a | 'b) Point`). Used when a value may carry one
-// of several lifetimes — typically the return type of a function whose
-// body conditionally returns one of multiple parameters.
-type LifetimeUnionAnn struct {
-	Lifetimes []*LifetimeAnn
-	span      Span
-}
-
-func NewLifetimeUnionAnn(lifetimes []*LifetimeAnn, span Span) *LifetimeUnionAnn {
-	return &LifetimeUnionAnn{Lifetimes: lifetimes, span: span}
-}
-func (l *LifetimeUnionAnn) Span() Span         { return l.span }
-func (*LifetimeUnionAnn) isLifetimeAnnNode() {}
