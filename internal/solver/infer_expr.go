@@ -8,7 +8,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/provenance"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -347,8 +346,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// callees; M3's FromInstantiation makes named-callee blame precise.)
 	c.recordProv(ft, node, FuncInference)
 	// A body-carrying function must prove every lifetime bound its signature declares.
-	// A no-body site has nothing to prove against and instead lowers its bounds (PR8),
-	// so the check is gated on hasBody.
+	// A no-body site has nothing to prove against and instead lowers its bounds, so the
+	// check is gated on hasBody.
 	if hasBody {
 		c.checkDeclaredLifetimeBounds(sig.LifetimeParams, ft)
 	}
@@ -379,7 +378,7 @@ func (c *checker) checkDeclaredLifetimeBounds(params []*ast.LifetimeParam, ft *s
 		return
 	}
 
-	a, survivors, outlives := ltOutlivesRelation(ft, soltype.Positive)
+	a, _, outlives := ltOutlivesRelation(ft, soltype.Positive)
 
 	lookup := func(name string) (*soltype.LifetimeVar, bool) {
 		if c.namedLifetimes == nil {
@@ -402,34 +401,12 @@ func (c *checker) checkDeclaredLifetimeBounds(params []*ast.LifetimeParam, ft *s
 	staticForced := func(v *soltype.LifetimeVar) bool {
 		return a != nil && a.bs.static.Contains(a.bs.repOf(v.ID))
 	}
-	// reachable reports whether 'from outlives 'to through the survivor relation, directly
-	// or across intermediate survivors. outlives already folds in the graph's transitive
-	// reachability. The walk adds transitivity across the join-feeding edges it does not
-	// close over.
-	reachable := func(from, to *soltype.LifetimeVar) bool {
-		if outlives == nil {
-			return false
-		}
-		visited := set.NewSet[int]()
-		stack := []*soltype.LifetimeVar{from}
-		for len(stack) > 0 {
-			n := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			if visited.Contains(n.ID) {
-				continue
-			}
-			visited.Add(n.ID)
-			for _, s := range survivors {
-				if !outlives(n, s) {
-					continue
-				}
-				if sameLt(s, to) {
-					return true
-				}
-				stack = append(stack, s)
-			}
-		}
-		return false
+	// proves reports whether the inferred relation proves 'sub outlives 'super. outlives is
+	// already transitive, so no further walk is needed here. implies reads reachability over
+	// the whole condensed graph, and componentParams gathers every param in a join's
+	// connected component, so a param outlives a join it feeds through any number of hops.
+	proves := func(sub, super *soltype.LifetimeVar) bool {
+		return sameLt(sub, super) || (outlives != nil && outlives(sub, super))
 	}
 
 	for _, p := range params {
@@ -456,7 +433,7 @@ func (c *checker) checkDeclaredLifetimeBounds(params []*ast.LifetimeParam, ft *s
 				satisfied = false
 			default:
 				super, superOk := lookup(b.Name)
-				satisfied = superOk && (sameLt(sub, super) || reachable(sub, super))
+				satisfied = superOk && proves(sub, super)
 			}
 			if !satisfied {
 				c.report(&LifetimeBoundNotSatisfiedError{Sub: p.Name, Super: b.Name, Param: p})
