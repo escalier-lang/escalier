@@ -2,6 +2,7 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -243,16 +244,20 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 		c.reportUnsupportedFeature(ta, "throws clause in function type annotation")
 	}
 	// A function type annotation is its own quantifier scope, so give it its own
-	// named-lifetime map the way inferFunc does for a function body. Without this a
-	// nested `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing
-	// function's `'a` and its declared bound would force that outer lifetime, so an
-	// unrelated borrow parameter of the enclosing function would be pinned to 'static.
-	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = nil
-	defer func() { c.namedLifetimes = savedNamedLts }()
+	// named-lifetime map the way inferFunc does for a function body. A name it binds in
+	// its own `<…>` list shadows an enclosing lifetime. Without the fresh scope a nested
+	// `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing function's `'a`
+	// and its declared bound would force that outer lifetime, pinning an unrelated borrow
+	// parameter of the enclosing function to 'static. A name the annotation only uses
+	// still resolves up the chain, so a nested `fn(q: &'a …)` inherits the enclosing `'a`.
+	defer c.pushLifetimeScope(lifetimeParamNames(ta.LifetimeParams))()
 	// Report any named lifetime this annotation uses without binding it in its own `<…>`
-	// list, and the symmetric unused binder, before lowering its bounds interns the names.
-	c.checkLifetimeDeclarations(ta.LifetimeParams, ta.Params, ta.Return, ta.Throws)
+	// list or inheriting it from an enclosing one, and the symmetric unused binder, before
+	// lowering its bounds interns the names.
+	c.checkLifetimeDeclarations(ta.LifetimeParams, ta.Params, ta.Return, ta.Throws, c.enclosingBinders)
+	// Intern this annotation's own binders so each is visible to a nested function that
+	// names it, before resolving the params where a nested `fn(…)` may first mention one.
+	c.internLifetimeBinders(ta.LifetimeParams, lvl)
 	c.lowerLifetimeParamBounds(ta.LifetimeParams, lvl)
 
 	params := make([]*soltype.FuncParam, len(ta.Params))
@@ -489,6 +494,11 @@ func (c *checker) boundLifetime(name string, lvl int) soltype.Lifetime {
 // per function by inferFunc, per function type annotation by resolveFuncTypeAnn, and
 // per top-level binding by inferComponent, so the same name in two such scopes denotes
 // distinct lifetimes.
+//
+// A name the current function does not bind in its own `<…>` list resolves up the
+// enclosing-function chain, so a closure that writes an outer `'a` borrows the same
+// region as the enclosing function. A name the function binds shadows, minting a fresh
+// lifetime unrelated to any enclosing one.
 func (c *checker) namedLifetime(name string, lvl int) *soltype.LifetimeVar {
 	if c.namedLifetimes == nil {
 		c.namedLifetimes = map[string]*soltype.LifetimeVar{}
@@ -496,9 +506,73 @@ func (c *checker) namedLifetime(name string, lvl int) *soltype.LifetimeVar {
 	if lt, ok := c.namedLifetimes[name]; ok {
 		return lt
 	}
+	if !c.lifetimeBinders.Contains(name) {
+		for s := c.enclosingLifetimes; s != nil; s = s.parent {
+			if lt, ok := s.names[name]; ok {
+				c.namedLifetimes[name] = lt
+				return lt
+			}
+		}
+	}
 	lt := c.ctx.freshLifetime(lvl)
 	c.namedLifetimes[name] = lt
 	return lt
+}
+
+// pushLifetimeScope opens a fresh named-lifetime scope for a function body or a function
+// type annotation and links the scope it nests in as the enclosing chain, so namedLifetime
+// can resolve a name the entered scope does not bind up to an enclosing function. binders
+// are the names the entered scope declares in its own `<…>` list. A name it binds shadows
+// an enclosing lifetime. A name it only uses inherits. The returned closure restores the
+// enclosing scope and must be deferred by the caller.
+func (c *checker) pushLifetimeScope(binders set.Set[string]) func() {
+	savedNames := c.namedLifetimes
+	savedParent := c.enclosingLifetimes
+	savedBinders := c.lifetimeBinders
+	savedEnclosingBinders := c.enclosingBinders
+	// A scope that interned no names contributes nothing to the chain, so keep its own
+	// parent as the enclosing chain rather than linking an empty map.
+	if savedNames != nil {
+		c.enclosingLifetimes = &lifetimeScope{names: savedNames, parent: savedParent}
+	}
+	c.enclosingBinders = savedEnclosingBinders.Union(savedBinders)
+	c.namedLifetimes = nil
+	c.lifetimeBinders = binders
+	return func() {
+		c.namedLifetimes = savedNames
+		c.enclosingLifetimes = savedParent
+		c.lifetimeBinders = savedBinders
+		c.enclosingBinders = savedEnclosingBinders
+	}
+}
+
+// lifetimeParamNames collects the names a `<…>` list binds. A 'static left-hand side is
+// skipped. The parser rejects it as a binder, so the skip is only defensive against a
+// hand-built AST.
+func lifetimeParamNames(params []*ast.LifetimeParam) set.Set[string] {
+	names := set.NewSet[string]()
+	for _, p := range params {
+		if p.Name != "static" {
+			names.Add(p.Name)
+		}
+	}
+	return names
+}
+
+// internLifetimeBinders mints a lifetime variable for each name a `<…>` list binds and
+// records it in the current scope's map. A binder name is in lifetimeBinders, so
+// namedLifetime mints a fresh variable rather than inheriting one, which is the shadow a
+// binder introduces. Interning every binder up front makes it visible to a nested function
+// that names it, whatever order the enclosing signature first writes the name in. Without
+// this a name a nested scope mentions before the enclosing signature writes it would
+// resolve to a fresh, decoupled lifetime, since namedLifetime interns lazily in written
+// order and the chain walk would find the enclosing map still empty.
+func (c *checker) internLifetimeBinders(params []*ast.LifetimeParam, lvl int) {
+	for _, p := range params {
+		if p.Name != "static" {
+			c.namedLifetime(p.Name, lvl)
+		}
+	}
 }
 
 // annPrim mints a FRESH PrimType for an annotation and records it against the

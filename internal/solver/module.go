@@ -152,6 +152,16 @@ func (c *checker) inferComponent(
 ) {
 	inner := lvl + 1
 
+	// Clear the lifetime-name scope at the component boundary so phase-1 signature
+	// inference starts clean. A previous component that ended in a top-level `val x: &'a T`
+	// leaves namedLifetimes populated, and pushLifetimeScope would otherwise link that
+	// stale map as a fake enclosing chain for this component's functions. Phase 2 clears it
+	// again per binding for independence between siblings.
+	c.namedLifetimes = nil
+	c.enclosingLifetimes = nil
+	c.lifetimeBinders = nil
+	c.enclosingBinders = nil
+
 	// Recursion gate (PR6): an overloaded function in a mutually-recursive component
 	// (more than one binding) must have fully-annotated arms, since the overload set
 	// has to be ground before bodies are inferred — fixed-point iteration over
@@ -210,7 +220,12 @@ func (c *checker) inferComponent(
 		// Each top-level binding is its own named-lifetime scope, mirroring inferFunc.
 		// Two declarations that both write `&'a` get independent lifetimes rather than
 		// sharing one through a stale map. A function decl re-clears this inside inferFunc.
+		// A top-level binding has no enclosing function, so clear the chain and binder sets
+		// too, leaving no stale link from a previous component.
 		c.namedLifetimes = nil
+		c.enclosingLifetimes = nil
+		c.lifetimeBinders = nil
+		c.enclosingBinders = nil
 		b, isValue := bindings[key]
 		if !isValue {
 			continue // non-value keys handled below

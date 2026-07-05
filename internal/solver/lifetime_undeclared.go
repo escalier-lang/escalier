@@ -20,12 +20,16 @@ import (
 // A nested `fn(…)` type is its own lifetime-quantifier scope. Its borrows are checked by
 // its own resolveFuncTypeAnn pass, so the scan treats a nested function annotation as an
 // opaque boundary and neither collects its inner borrows here nor counts them toward this
-// signature's binders. An enclosing function's lifetimes are not visible to a nested one,
-// so a nested function is judged only by its own clause.
+// signature's binders.
+//
+// enclosing holds the `<…>` binder names of every enclosing function. A used name in it is
+// declared on the chain and resolves to the enclosing lifetime, so it is not undeclared
+// even when this signature does not bind it. A name bound nowhere on the chain is the hard
+// error.
 //
 // Recovery is left to namedLifetime, which mints a fresh lifetime for an undeclared name
 // so the signature stays well-formed. This scan only reports; it changes no resolution.
-func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam, params []*ast.Param, ret, throws ast.TypeAnn) {
+func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam, params []*ast.Param, ret, throws ast.TypeAnn, enclosing set.Set[string]) {
 	// declared maps each binder name to its first binder node, the node the unused-binder
 	// scan blames. declaredOrder is the deduplicated first-appearance order, which drives
 	// deterministic suggestions and a single unused report per name even when a name is
@@ -77,6 +81,11 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 	for _, u := range col.uses {
 		used.Add(u.Name)
 		if _, ok := declared[u.Name]; ok {
+			continue
+		}
+		// A name an enclosing function binds is inherited, not undeclared. namedLifetime
+		// resolves it to the enclosing lifetime, so the borrow ties to that region.
+		if enclosing.Contains(u.Name) {
 			continue
 		}
 		c.report(&UndeclaredLifetimeError{

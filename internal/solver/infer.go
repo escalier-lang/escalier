@@ -61,10 +61,34 @@ type checker struct {
 
 	// namedLifetimes resolves a written lifetime name `'a` to its lifetime variable so
 	// every `&'a` in one scope shares one variable. inferFunc saves and clears it on
-	// entry and restores it on exit, so each function has its own named-lifetime scope,
-	// nested functions included. inferComponent clears it per top-level binding for the
-	// same reason. The map is allocated lazily by namedLifetime on first use.
+	// entry and restores it on exit, so each function has its own named-lifetime scope.
+	// inferComponent clears it per top-level binding for the same reason. The map is
+	// allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
+
+	// enclosingLifetimes chains the named-lifetime scopes of the functions this one nests
+	// in, outermost last. namedLifetime resolves a name the current function does not bind
+	// up this chain, so a closure that writes an outer `'a` shares the enclosing lifetime.
+	// It is nil at a top-level binding, which has no enclosing function.
+	enclosingLifetimes *lifetimeScope
+
+	// lifetimeBinders holds the names the current function declares in its own `<…>` list.
+	// A name in this set shadows an enclosing lifetime of the same name, so namedLifetime
+	// mints a fresh variable for it rather than inheriting.
+	lifetimeBinders set.Set[string]
+
+	// enclosingBinders is the union of the `<…>` binder names of every enclosing function.
+	// A used lifetime in this set is declared on the chain, so checkLifetimeDeclarations
+	// does not report it as undeclared even when the current function does not bind it.
+	enclosingBinders set.Set[string]
+}
+
+// lifetimeScope is one enclosing function's named-lifetime environment, linked outward
+// through parent. names holds the variable each written lifetime name resolved to in that
+// function. A nested function walks the chain to inherit an enclosing lifetime by name.
+type lifetimeScope struct {
+	names  map[string]*soltype.LifetimeVar
+	parent *lifetimeScope
 }
 
 // fieldKey identifies a written field by the receiver variable's ID and the

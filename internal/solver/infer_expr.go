@@ -187,17 +187,22 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 // return-annotation constraint failure.
 func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node) *soltype.FuncType {
 	// Give this function its own named-lifetime scope so a `&'a` in its signature
-	// resolves consistently across its params and return, without sharing the name
-	// with an enclosing or sibling function. Restored on exit so a nested function
-	// does not clobber the outer scope's names. namedLifetime allocates the map on
-	// first use, so a body with no `&'a` annotation pays no allocation.
-	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = nil
-	defer func() { c.namedLifetimes = savedNamedLts }()
+	// resolves consistently across its params and return, without sharing the name with
+	// a sibling function. The enclosing function's scope is chained, so a name this
+	// function does not bind resolves to an enclosing lifetime, while a name it binds in
+	// its own `<…>` list shadows. A function with no lifetime binders and no `&'a`
+	// annotation never allocates the map.
+	defer c.pushLifetimeScope(lifetimeParamNames(sig.LifetimeParams))()
 	// Report any named lifetime the signature uses without binding it in its own `<…>`
-	// list, and the symmetric unused binder. Run before resolving the params so the scan
-	// reads the written names, not what namedLifetime has since interned.
-	c.checkLifetimeDeclarations(sig.LifetimeParams, sig.Params, sig.Return, sig.Throws)
+	// list or inheriting it from an enclosing one, and the symmetric unused binder. Run
+	// before resolving the params so the scan reads the written names, not what
+	// namedLifetime has since interned.
+	c.checkLifetimeDeclarations(sig.LifetimeParams, sig.Params, sig.Return, sig.Throws, c.enclosingBinders)
+	// Intern this function's own binders so each is visible to a nested closure that names
+	// it, before the body or a return annotation first mentions the name. A closure whose
+	// borrow writes `'a` then resolves to this function's lifetime regardless of whether a
+	// parameter, the return, or only the closure writes `'a` first.
+	c.internLifetimeBinders(sig.LifetimeParams, lvl)
 	if len(sig.TypeParams) > 0 {
 		// Generic functions (fn <T>(...)) need type schemes / generalization,
 		// which are M3. The FuncExpr/FuncDecl kind itself is supported — it is the

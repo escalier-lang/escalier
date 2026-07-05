@@ -68,19 +68,19 @@ func TestInferStaticLifetimeNeverUndeclared(t *testing.T) {
 	require.Empty(t, errs)
 }
 
-// A nested function is judged by its own clause, not an enclosing one. The inner `relay`
-// declares no `<'a>`, so its `&'a` borrows are undeclared with no clause and are hard
-// errors, even though the outer function declares `<'a>`. An enclosing function's
-// lifetimes are not visible to a nested one.
-func TestInferUndeclaredLifetimeNestedJudgedByOwnClause(t *testing.T) {
+// A nested function is judged by its own clause or an enclosing one. The inner `relay`
+// declares no `<'b>`, and no enclosing function binds 'b, so its `&'b` borrows are
+// undeclared with no clause and are hard errors. The outer `<'a>` binds a different name,
+// which does not cover 'b.
+func TestInferUndeclaredLifetimeNestedBoundNowhere(t *testing.T) {
 	_, _, errs := inferSource(t, `fn outer<'a>(p: &'a {x: number}) -> &'a {x: number} {
-  val relay = fn (q: &'a {x: number}) -> &'a {x: number} { return q }
+  val relay = fn (q: &'b {x: number}) -> &'b {x: number} { return q }
   return p
 }`)
 	require.Equal(t,
 		[]string{
-			"2:23-2:25: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
-			"2:43-2:45: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
+			"2:23-2:25: lifetime 'b is used but not declared; add `<'b>` to the enclosing function signature",
+			"2:43-2:45: lifetime 'b is used but not declared; add `<'b>` to the enclosing function signature",
 		},
 		messagesWithSpan(errs))
 }
