@@ -463,28 +463,26 @@ type IntersectionType struct{ Types []Type }
 type ErrorType struct{} // ⊤⊥ absorbing sentinel; see PR8
 
 // ClassType is a nominal lattice element — the identity token for a class. Two
-// ClassTypes are the same nominal type when their Name matches. The Args are the
-// type arguments, checked per position by the variance the class registry records
-// for that parameter. Name is the dep_graph-qualified name such as
-// "Geometry.Point", not the bare local identifier, so two classes named Point in
-// different namespaces stay distinct. The heavy per-class data — the projected
-// member body, the resolved supers, and the inferred variance — lives in a side
-// registry keyed by Name, so this token stays small and cheap to compare and
-// rewrite.
-//
-// A final class's subclasses cannot add members, so Final marks its instance type
-// as closed the way an exact object is (exact-types §2.6). The zero value false is
-// inexact, matching a non-final class whose subclasses may widen it.
-//
-// Lt is the instance's own borrow lifetime, nil for an owned value. A `mut 'b Point`
-// wraps a ClassType in a RefType rather than setting Lt directly, so no site sets Lt
-// today and it is always nil. Lifetime arguments filling the class's declared
-// lifetime params have no field yet.
+// ClassTypes are the same nominal type when their Name matches. The heavy per-class
+// data — the projected member body, the resolved supers, and the inferred variance —
+// lives in a side registry keyed by Name, so this token stays small and cheap to
+// compare and rewrite.
 type ClassType struct {
-	Name  string // dep_graph-qualified name, e.g. "Geometry.Point"
-	Args  []Type // type arguments, one per class type parameter
-	Lt    Lifetime
-	Final bool // final ⇒ exact instance
+	// Name is the dep_graph-qualified name such as "Geometry.Point", not the bare
+	// local identifier, so two classes named Point in different namespaces stay
+	// distinct. It also keys the registry holding the heavy per-class data.
+	Name string
+	// Args are the type arguments, one per class type parameter, checked per position
+	// by the variance the class registry records for that parameter.
+	Args []Type
+	// Lt is the instance's own borrow lifetime, nil for an owned value. A `mut 'b
+	// Point` wraps a ClassType in a RefType rather than setting Lt directly, so no
+	// site sets Lt today and it is always nil.
+	Lt Lifetime
+	// Final marks a class whose subclasses cannot add members, so its instance type is
+	// closed the way an exact object is (exact-types §2.6). The zero value false is
+	// inexact, matching a non-final class whose subclasses may widen it.
+	Final bool
 }
 
 func (*TypeVarType) isType()      {}
