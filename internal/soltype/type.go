@@ -339,8 +339,8 @@ func (o *ObjectType) Member(name string) (ObjTypeElem, bool) {
 // missed element kind fails loudly instead of vanishing from subtyping, equality,
 // or rendering. This matches type_system's convention, where print_type.go panics
 // on an unhandled ObjTypeElem. Use it only at property-only sites. A site that must
-// visit every element kind switches on the kind or reads ObjElemTypes; name lookups
-// like Prop legitimately skip non-matching kinds instead.
+// visit every element kind switches on the kind instead. Name lookups like Prop
+// legitimately skip non-matching kinds.
 func AsProperty(e ObjTypeElem) *PropertyElem {
 	p, ok := e.(*PropertyElem)
 	if !ok {
@@ -572,48 +572,36 @@ func LevelOf(t Type) int {
 	}
 }
 
-// ObjElemTypes returns the child types an object member carries in print order: a
-// property's value type; each of a method's overload signatures, whose FuncType
-// already carries the receiver; a getter's receiver then its return type; a setter's
-// receiver then its parameter type. A static getter or setter has no receiver. It is
-// the single place that enumerates a member's child types, so a walk over the element
-// set reads its children here rather than re-switching on the kind. It panics on an
-// unknown element kind, matching AsProperty.
-func ObjElemTypes(e ObjTypeElem) []Type {
+// levelOfElem returns the max TypeVarType level across an object member's types, the
+// per-element generalization of LevelOf's property case. A method's receiver rides
+// inside each signature FuncType; a getter or setter carries its receiver directly,
+// present only for an instance member. It panics on an unknown element kind, matching
+// AsProperty.
+func levelOfElem(e ObjTypeElem) int {
 	switch e := e.(type) {
 	case *PropertyElem:
-		return []Type{e.Type}
+		return LevelOf(e.Type)
 	case *MethodElem:
-		out := make([]Type, len(e.Signatures))
-		for i, sig := range e.Signatures {
-			out[i] = sig
+		m := 0
+		for _, sig := range e.Signatures {
+			m = max(m, LevelOf(sig))
 		}
-		return out
+		return m
 	case *GetterElem:
-		return selfThen(e.SelfParam, e.Type)
+		return max(selfLevel(e.SelfParam), LevelOf(e.Type))
 	case *SetterElem:
-		return selfThen(e.SelfParam, e.Param)
+		return max(selfLevel(e.SelfParam), LevelOf(e.Param))
 	}
-	panic(fmt.Sprintf("ObjElemTypes: unhandled ObjTypeElem %T", e))
+	panic(fmt.Sprintf("levelOfElem: unhandled ObjTypeElem %T", e))
 }
 
-// selfThen prepends a receiver type to rest when the receiver is present, so a walk
-// visits an instance getter's or setter's receiver before its value in print order.
-func selfThen(self *FuncParam, rest Type) []Type {
+// selfLevel returns the level of a getter's or setter's receiver type, 0 for a static
+// member whose receiver is nil.
+func selfLevel(self *FuncParam) int {
 	if self == nil {
-		return []Type{rest}
+		return 0
 	}
-	return []Type{self.Type, rest}
-}
-
-// levelOfElem returns the max TypeVarType level across an object member's child
-// types, the per-element generalization of LevelOf's property case.
-func levelOfElem(e ObjTypeElem) int {
-	m := 0
-	for _, ct := range ObjElemTypes(e) {
-		m = max(m, LevelOf(ct))
-	}
-	return m
+	return LevelOf(self.Type)
 }
 
 // maxMemberLevel returns the highest LevelOf across a Union/Intersection's members,

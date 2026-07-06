@@ -271,8 +271,23 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *ObjectType:
 			for _, e := range t.Elems {
-				for _, ct := range ObjElemTypes(e) {
-					walk(ct)
+				switch e := e.(type) {
+				case *PropertyElem:
+					walk(e.Type)
+				case *MethodElem:
+					for _, sig := range e.Signatures {
+						walk(sig)
+					}
+				case *GetterElem:
+					if e.SelfParam != nil {
+						walk(e.SelfParam.Type)
+					}
+					walk(e.Type)
+				case *SetterElem:
+					if e.SelfParam != nil {
+						walk(e.SelfParam.Type)
+					}
+					walk(e.Param)
 				}
 			}
 		case *ClassType:
