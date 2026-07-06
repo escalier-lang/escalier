@@ -492,20 +492,26 @@ name — the analogue of the old checker's `TypeRefType.Name` being a `QualIdent
 plain string. The printer strips the namespace prefix for display, which is why
 the `printType` arm still renders the bare `Point` / `Box<number>`.
 
-**Assumption — classes are top-level only, so the registry is insert/overwrite,
-never remove.** Every `ClassDef` comes from a module- or namespace-level decl and
-lives for the whole inference run, so an entry is never removed because its class
-went out of lexical scope. A body-level `class` is rejected up front: the parser
-wraps it in a `DeclStmt`, but `inferStmt` permits only a `VarDecl` there and
-reports `BodyDeclNotAllowedError` for any other decl kind
-([infer_stmt.go:90-94](../../internal/solver/infer_stmt.go)). The only writes to
-`classes` are a plain overwrite on redeclaration (a second top-level `class Foo`
-in one namespace) and the B2 retraction of a pre-bound `ClassDef` shell whose
-recursive-group decl then fails to produce a definition — the analogue of the SCC
-driver's `removeValue` ([scope.go:136](../../internal/solver/scope.go)), which
-unwinds a tentative insert rather than closing a scope. If a later milestone adds
-lexically-scoped local classes, this flat `map[string]*ClassDef` needs
-scope-qualified keys or removal-on-scope-exit — a design change, not a tweak.
+**Assumption (M5 solver path only) — classes are top-level, so the registry is
+insert/overwrite, never remove.** This is a property of the M5 `internal/solver`
+path, not a repo-wide invariant. In that path every `ClassDef` comes from a module-
+or namespace-level decl and lives for the whole inference run, so an entry is never
+removed because its class went out of lexical scope. The M5 solver rejects a
+body-level `class` up front: the parser wraps it in a `DeclStmt`, but `inferStmt`
+permits only a `VarDecl` there and reports `BodyDeclNotAllowedError` for any other
+decl kind ([infer_stmt.go:90-94](../../internal/solver/infer_stmt.go)). This is a
+**deliberate divergence** from the old checker, whose `inferClassDecl` intentionally
+handles a `class` inside a function body
+([internal/checker/infer_class_decl.go:12-30](../../internal/checker/infer_class_decl.go));
+M5 leaves lexically-scoped local classes **out of scope** rather than porting that
+path, so the flat-map behavior below holds only while that exclusion stands. The
+only writes to `classes` are a plain overwrite on redeclaration (a second top-level
+`class Foo` in one namespace) and the B2 retraction of a pre-bound `ClassDef` shell
+whose recursive-group decl then fails to produce a definition — the analogue of the
+SCC driver's `removeValue` ([scope.go:136](../../internal/solver/scope.go)), which
+unwinds a tentative insert rather than closing a scope. If M5 later takes local
+classes back in scope, this flat `map[string]*ClassDef` needs scope-qualified keys
+or removal-on-scope-exit — a design change, not a tweak.
 
 **The prelude holds no classes, so the per-run registry needs no shared tier.**
 The `classes` map lives on `Context`, and `newChecker` mints a fresh `Context`
