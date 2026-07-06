@@ -89,12 +89,13 @@ func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
+	tparams, tpChanged := acceptTypeParams(cur.TypeParams, v, pol)
 	self, selfChanged := acceptSelfParam(cur.SelfParam, v, pol) // receiver contravariant
 	params, changed := acceptParams(cur.Params, v, pol)         // params contravariant
-	ret := cur.Ret.Accept(v, pol)                              // return covariant
+	ret := cur.Ret.Accept(v, pol)                               // return covariant
 	out := cur
-	if selfChanged || changed || ret != cur.Ret {
-		out = &FuncType{SelfParam: self, Params: params, Ret: ret, Inexact: cur.Inexact}
+	if tpChanged || selfChanged || changed || ret != cur.Ret {
+		out = &FuncType{SelfParam: self, Params: params, Ret: ret, Inexact: cur.Inexact, TypeParams: tparams}
 	}
 	return v.ExitType(out, pol)
 }
@@ -280,6 +281,51 @@ func acceptParams(ps []*FuncParam, v TypeVisitor, pol Polarity) ([]*FuncParam, b
 		}
 	}
 	return out, changed
+}
+
+// acceptTypeParams rewrites each type parameter's binding variable and its default so a
+// rewriting visitor copies both. The main such visitor is freshenAbove. The binding
+// variable is visited as a Type and must stay a *TypeVarType. freshenAbove replaces it
+// with a fresh variable whose bounds it has already freshened, so the constraint carried
+// as the variable's upper bound rides along on the copy. The default is visited
+// covariantly and may reference the variable or an earlier parameter, which Accept
+// rewrites through the visitor's cache. Copy-on-write mirrors acceptParams. A changed
+// parameter gets a fresh *TypeParam and unchanged ones keep their pointer.
+func acceptTypeParams(tps []*TypeParam, v TypeVisitor, pol Polarity) ([]*TypeParam, bool) {
+	out := tps
+	changed := false
+	for i, tp := range tps {
+		nv := acceptTypeParamVar(tp.Var, v, pol)
+		def := tp.Default
+		if def != nil {
+			def = def.Accept(v, pol)
+		}
+		if nv != tp.Var || def != tp.Default {
+			if !changed {
+				out = append([]*TypeParam(nil), tps...)
+				changed = true
+			}
+			out[i] = &TypeParam{Name: tp.Name, Var: nv, Default: def}
+		}
+	}
+	return out, changed
+}
+
+// acceptTypeParamVar visits a type parameter's binding variable and requires the result
+// to stay a *TypeVarType, since the TypeParams slot can hold only a variable. freshenAbove
+// meets this contract: it rewrites a variable to a fresh variable. A visitor that instead
+// inlines a variable to a non-variable form, such as the display coalescer, must skip a
+// type parameter's binder before rewriting a generic function. Otherwise it trips this
+// guard, which fails loudly rather than desyncing the binder from its uses in the params
+// and return.
+func acceptTypeParamVar(tv *TypeVarType, v TypeVisitor, pol Polarity) *TypeVarType {
+	nt := tv.Accept(v, pol)
+	nv, ok := nt.(*TypeVarType)
+	if !ok {
+		panic(fmt.Sprintf("soltype.Accept: a FuncType type parameter rewrote to %T, "+
+			"not *TypeVarType; a bound parameter must stay a variable", nt))
+	}
+	return nv
 }
 
 // acceptObjElems walks each member, copy-on-write like acceptParams: a member

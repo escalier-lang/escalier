@@ -284,6 +284,56 @@ func TestAcceptRefCopyOnWrite(t *testing.T) {
 	require.Same(t, str, gotInner.Elems[0].(*PropertyElem).Type, "the variable took the replacement")
 }
 
+// A no-op rewrite over a generic FuncType keeps its pointer, type parameters and all
+// (copy-on-write): the TypeParams slot allocates nothing when nothing under it changed.
+func TestAcceptGenericFuncIdentityPreservation(t *testing.T) {
+	u := &TypeVarType{ID: 10, Level: 1, UpperBounds: []Type{&PrimType{Prim: NumPrim}}}
+	fn := &FuncType{
+		TypeParams: []*TypeParam{{Name: "U", Var: u, Default: &PrimType{Prim: StrPrim}}},
+		Params:     []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: u}},
+		Ret:        u,
+	}
+	require.Same(t, fn, fn.Accept(identityVisitor{}, Positive), "an unchanged generic FuncType keeps its pointer")
+}
+
+// Rewriting a type parameter's binding variable rebuilds the FuncType, swaps the
+// variable in the TypeParams slot and its default, and keeps every use in the params
+// and return pointing at the replacement.
+func TestAcceptGenericFuncRewritesTypeParamVar(t *testing.T) {
+	u := &TypeVarType{ID: 10, Level: 1}
+	v := &TypeVarType{ID: 11, Level: 1}
+	fn := &FuncType{
+		TypeParams: []*TypeParam{{Name: "U", Var: u, Default: u}},
+		Params:     []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: u}},
+		Ret:        u,
+	}
+	got := fn.Accept(&replaceVar{target: u, repl: v}, Positive).(*FuncType)
+
+	require.NotSame(t, fn, got, "a changed type parameter forces a new FuncType")
+	require.Same(t, v, got.TypeParams[0].Var, "the type parameter's binding var took the replacement")
+	require.Same(t, v, got.TypeParams[0].Default, "the type parameter's default took the replacement")
+	require.Same(t, v, got.Params[0].Type, "the parameter use took the replacement")
+	require.Same(t, v, got.Ret, "the return use took the replacement")
+	require.Equal(t, "U", got.TypeParams[0].Name, "the source name is carried through")
+}
+
+// A type parameter that rewrites to a non-variable is a visitor contract violation:
+// acceptTypeParamVar panics with a clear message rather than a bare type-assertion
+// fault. A bound parameter must stay a variable through any rewrite.
+func TestAcceptTypeParamVarNonVarPanics(t *testing.T) {
+	u := &TypeVarType{ID: 10, Level: 1}
+	fn := &FuncType{
+		TypeParams: []*TypeParam{{Name: "U", Var: u}},
+		Params:     []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: u}},
+		Ret:        u,
+	}
+	v := &replaceVar{target: u, repl: &PrimType{Prim: NumPrim}}
+	require.PanicsWithValue(t,
+		"soltype.Accept: a FuncType type parameter rewrote to *soltype.PrimType, "+
+			"not *TypeVarType; a bound parameter must stay a variable",
+		func() { fn.Accept(v, Positive) })
+}
+
 // HasLifetimeVar finds a LifetimeVar in a borrow's lifetime slot, nested at any
 // depth, and reports false for a borrow whose lifetime is a non-variable form.
 func TestHasLifetimeVar(t *testing.T) {

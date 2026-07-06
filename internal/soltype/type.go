@@ -203,6 +203,31 @@ type FuncType struct {
 	Params    []*FuncParam
 	Ret       Type
 	Inexact   bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
+	// TypeParams are the function's own quantified type parameters in declaration
+	// order. nil is monomorphic, the common case and the zero value. A generic
+	// method such as Array<T>.map<U> lists U here; a class-level parameter is captured
+	// from the enclosing class type rather than listed. LevelOf maxes over Params and
+	// Ret only. A TypeParam's Var is minted deeper than the function by
+	// construction, so folding it into the level would raise the function's level
+	// above its capture level.
+	TypeParams []*TypeParam
+}
+
+// TypeParam is one quantified type parameter, shared by FuncType.TypeParams for
+// function and method generics and by a class's own generics, so classes and functions
+// describe their generics the same way. Var is the quantified inference variable that
+// stands for the parameter. It is minted one level deeper than the enclosing binding
+// and freshened per use by freshenAbove, rather than a named parameter resolved by a
+// substitution pass. The declared constraint is Var's upper bound. `<U extends T>` sets
+// Var.UpperBounds to [T], so constrain and freshenAbove enforce and copy it with no new
+// machinery. Default is the type filled in when a type argument is omitted. It is nil
+// when the parameter is required. Type-argument resolution reads it, and constraint
+// solving ignores it. Name is the source name kept for display, since TypeVarType
+// carries none.
+type TypeParam struct {
+	Name    string
+	Var     *TypeVarType
+	Default Type // nil ⇒ required
 }
 
 // TupleType is a tuple type. Inexact follows the ObjectType/FuncType convention:

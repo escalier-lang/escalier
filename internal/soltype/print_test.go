@@ -177,6 +177,125 @@ func TestPrintRoundTrips(t *testing.T) {
 	}
 }
 
+// A generic function renders its own quantified type parameters as a `<...>` prefix:
+// `<U>` bare, `<U: T>` for a constraint carried as the parameter variable's upper
+// bound, `<U = D>` for a default, and `<U: T = D>` for both. A use of the parameter in
+// the params or return renders under its source name rather than the raw t{ID} form.
+func TestPrintGenericFunc(t *testing.T) {
+	// tparam builds a type parameter and a fresh variable to stand for it, so each case
+	// constructs its own U without sharing state across the table.
+	tparam := func(name string, constraint, def Type) (*TypeParam, *TypeVarType) {
+		u := &TypeVarType{ID: 10, Level: 1}
+		if constraint != nil {
+			u.UpperBounds = []Type{constraint}
+		}
+		return &TypeParam{Name: name, Var: u, Default: def}, u
+	}
+	tests := []struct {
+		name string
+		in   func() Type
+		want string
+	}{
+		{
+			name: "bare type parameter",
+			in: func() Type {
+				tp, u := tparam("U", nil, nil)
+				return &FuncType{TypeParams: []*TypeParam{tp}, Params: []*FuncParam{identP("x", u)}, Ret: u}
+			},
+			want: "fn <U>(x: U) -> U",
+		},
+		{
+			name: "constrained type parameter",
+			in: func() Type {
+				tp, u := tparam("U", numP(), nil)
+				return &FuncType{TypeParams: []*TypeParam{tp}, Params: []*FuncParam{identP("x", u)}, Ret: u}
+			},
+			want: "fn <U: number>(x: U) -> U",
+		},
+		{
+			name: "defaulted type parameter",
+			in: func() Type {
+				tp, u := tparam("U", nil, strP())
+				return &FuncType{TypeParams: []*TypeParam{tp}, Params: []*FuncParam{identP("x", u)}, Ret: u}
+			},
+			want: "fn <U = string>(x: U) -> U",
+		},
+		{
+			name: "constrained and defaulted type parameter",
+			in: func() Type {
+				tp, u := tparam("U", numP(), strP())
+				return &FuncType{TypeParams: []*TypeParam{tp}, Params: []*FuncParam{identP("x", u)}, Ret: u}
+			},
+			want: "fn <U: number = string>(x: U) -> U",
+		},
+		{
+			// A generic higher-order signature: the parameter appears inside a nested
+			// function and the return, so its name must render at every use. A tuple
+			// stands in for Array<U>, which lands with ClassType in A1.
+			name: "map-shaped generic",
+			in: func() Type {
+				u := &TypeVarType{ID: 10, Level: 1}
+				return &FuncType{
+					TypeParams: []*TypeParam{{Name: "U", Var: u}},
+					Params:     []*FuncParam{identP("f", &FuncType{Params: []*FuncParam{identP("n", numP())}, Ret: u})},
+					Ret:        &TupleType{Elems: []Type{u}},
+				}
+			},
+			want: "fn <U>(f: fn (n: number) -> U) -> [U]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, Print(tt.in()))
+		})
+	}
+}
+
+// A generic method renders its own type-parameter prefix through the shared method
+// element arm, so a `map<U>` member prints its `<U>` before the receiver and params.
+func TestPrintGenericMethod(t *testing.T) {
+	u := &TypeVarType{ID: 10, Level: 1}
+	obj := &ObjectType{Elems: []ObjTypeElem{
+		&MethodElem{
+			Name: "map",
+			Signatures: []*FuncType{{
+				TypeParams: []*TypeParam{{Name: "U", Var: u}},
+				SelfParam:  &FuncParam{Pattern: &IdentPat{Name: "self"}, Type: &ClassType{Name: "Box"}},
+				Params:     []*FuncParam{identP("x", u)},
+				Ret:        u,
+			}},
+		},
+	}}
+	require.Equal(t, "{map<U>(self, x: U) -> U}", Print(obj))
+}
+
+// freeTypeVars excludes a function's own type parameters — they are bound, not free —
+// while still collecting an outer free variable, including one that appears only in a
+// parameter's constraint.
+func TestFreeTypeVarsBoundTypeParam(t *testing.T) {
+	t.Run("bound U is omitted, outer var kept", func(t *testing.T) {
+		u := &TypeVarType{ID: 10, Level: 1}
+		outer := &TypeVarType{ID: 20, Level: 1}
+		ft := &FuncType{
+			TypeParams: []*TypeParam{{Name: "U", Var: u}},
+			Params:     []*FuncParam{identP("x", u), identP("y", outer)},
+			Ret:        u,
+		}
+		require.Equal(t, []*TypeVarType{outer}, freeTypeVars(ft))
+	})
+
+	t.Run("an outer var reached only through a constraint is collected", func(t *testing.T) {
+		outer := &TypeVarType{ID: 20, Level: 1}
+		u := &TypeVarType{ID: 10, Level: 1, UpperBounds: []Type{outer}}
+		ft := &FuncType{
+			TypeParams: []*TypeParam{{Name: "U", Var: u}},
+			Params:     []*FuncParam{identP("x", u)},
+			Ret:        u,
+		}
+		require.Equal(t, []*TypeVarType{outer}, freeTypeVars(ft))
+	})
+}
+
 func TestIsIdent(t *testing.T) {
 	tests := []struct {
 		name string
@@ -456,6 +575,20 @@ func TestPrintScheme(t *testing.T) {
 		a := &TypeVarType{ID: 7, Level: 1}
 		ty := &FuncType{Params: []*FuncParam{identP("x", a)}, Ret: a}
 		require.Equal(t, "fn <T0>(x: T0) -> T0", PrintAsScheme(ty))
+	})
+
+	t.Run("captured free var and own type param merge into one prefix", func(t *testing.T) {
+		u := &TypeVarType{ID: 10, Level: 2}    // the function's own type parameter
+		free := &TypeVarType{ID: 20, Level: 1} // a captured scheme variable
+		// fn <U>(x: U, y: free) -> [U, free]: the scheme names free as T0, the function
+		// contributes U, and the two merge into a single ordered `<T0, U>` prefix rather
+		// than the malformed `<T0><U>` two adjacent groups would produce.
+		ty := &FuncType{
+			TypeParams: []*TypeParam{{Name: "U", Var: u}},
+			Params:     []*FuncParam{identP("x", u), identP("y", free)},
+			Ret:        &TupleType{Elems: []Type{u, free}},
+		}
+		require.Equal(t, "fn <T0, U>(x: U, y: T0) -> [U, T0]", PrintAsScheme(ty))
 	})
 
 	t.Run("distinct vars are named by first appearance", func(t *testing.T) {

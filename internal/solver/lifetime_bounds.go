@@ -385,14 +385,14 @@ func (s *ltBoundSet) subsumes(other *ltBoundSet) bool {
 // borrow's lifetime is erased at codegen, which dispatches on parameter shape, so two arms
 // whose parameters are alpha-equal are indistinguishable however their lifetimes relate.
 func alphaEqualTypes(a, b soltype.Type) bool {
-	p := &ltPairing{aToB: map[int]int{}, bToA: map[int]int{}}
-	if !equalTypeWith(a, b, p) {
+	lt := &ltPairing{aToB: map[int]int{}, bToA: map[int]int{}}
+	if !equalTypeWith(a, b, &alphaCtx{lt: lt}) {
 		return false
 	}
-	if len(p.aVars) == 0 {
+	if len(lt.aVars) == 0 {
 		return true // no borrows: equalTypeWith settled it structurally
 	}
-	return sameOutlivesUnderPairing(p)
+	return sameOutlivesUnderPairing(lt)
 }
 
 // sameOutlivesUnderPairing reports whether the two sides' paired lifetimes carry the same
