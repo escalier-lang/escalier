@@ -135,6 +135,14 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool, ltBounds map[*Li
 		return Print(t)
 	}
 	p := &namedPrinter{names: names, ltNames: ltNames}
+	if _, ok := t.(*ClassType); ok {
+		// A class instance already displays its type parameters inline in its `<...>`
+		// argument list, so it needs no separate quantifier prefix. A generalized
+		// Map<K, V> renders as Map<T0, T1>, not <T0, T1> Map<T0, T1>. A ClassType's only
+		// free-variable children are its arguments, so every quantified variable is
+		// shown inline and none is lost by dropping the prefix.
+		return p.printType(t)
+	}
 	ltLabels := make([]string, len(ltVars))
 	for i, lv := range ltVars {
 		ltLabels[i] = p.lifetimeBinder(lv, ltBounds[lv], ltIndex)

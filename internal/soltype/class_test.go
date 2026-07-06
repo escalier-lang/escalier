@@ -229,12 +229,15 @@ func TestLevelOfObjectMembers(t *testing.T) {
 }
 
 // freeTypeVars descends a ClassType's arguments, so a generic instance's arguments
-// are named as quantified parameters by the scheme printer.
+// are named as quantified parameters by the scheme printer. The instance shows those
+// parameters inline in its `<...>` argument list, so the scheme printer adds no
+// separate quantifier prefix: Map<K, V> renders as Map<T0, T1>, not
+// <T0, T1> Map<T0, T1>.
 func TestFreeTypeVarsClassType(t *testing.T) {
 	a := &TypeVarType{ID: 1, Level: 1}
 	b := &TypeVarType{ID: 2, Level: 1}
 	cls := &ClassType{Name: "Map", Args: []Type{a, b}}
-	require.Equal(t, "<T0, T1> Map<T0, T1>", PrintAsScheme(cls))
+	require.Equal(t, "Map<T0, T1>", PrintAsScheme(cls))
 }
 
 // freeTypeVars descends every object member kind, so a method parameter, a getter
@@ -277,6 +280,24 @@ func TestObjectMember(t *testing.T) {
 
 	_, ok = obj.Member("missing")
 	require.False(t, ok, "an absent name reports not present")
+}
+
+// A getter and a setter may legitimately share a name. Member returns the first in
+// declaration order and cannot reach the second, so it is insufficient on its own to
+// resolve read-versus-write member access, where obj.x reads the getter and obj.x = v
+// writes the setter. A caller that needs both sides scans Elems by name AND kind
+// rather than relying on Member. This pins the first-declared-wins behavior.
+func TestObjectMemberGetterSetterSameName(t *testing.T) {
+	getter := &GetterElem{Name: "x", Type: numP()}
+	setter := &SetterElem{Name: "x", Param: strP()}
+
+	got, ok := (&ObjectType{Elems: []ObjTypeElem{getter, setter}}).Member("x")
+	require.True(t, ok)
+	require.Same(t, getter, got, "the getter is declared first, so Member returns it")
+
+	got, ok = (&ObjectType{Elems: []ObjTypeElem{setter, getter}}).Member("x")
+	require.True(t, ok)
+	require.Same(t, setter, got, "declaration order decides which of the two Member returns")
 }
 
 // ObjElemName reads the name off any element kind.
