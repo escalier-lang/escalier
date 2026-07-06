@@ -213,6 +213,23 @@ func (t *IntersectionType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *ClassType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	args, changed := acceptTypes(cur.Args, v, pol) // type arguments covariant
+	out := cur
+	if changed {
+		// Name, Final, and Lt are the nominal identity, carried through unchanged. Lt
+		// is a Lifetime, not a Type, so Accept never walks it. Only lifetime-aware
+		// passes touch a lifetime.
+		out = &ClassType{Name: cur.Name, Args: args, Lt: cur.Lt, Final: cur.Final}
+	}
+	return v.ExitType(out, pol)
+}
+
 // acceptTypes walks each element covariantly, returning (originalSlice, false)
 // when nothing changed and (copy-on-write slice, true) otherwise.
 func acceptTypes(ts []Type, v TypeVisitor, pol Polarity) ([]Type, bool) {
@@ -250,22 +267,80 @@ func acceptParams(ps []*FuncParam, v TypeVisitor, pol Polarity) ([]*FuncParam, b
 	return out, changed
 }
 
-// acceptObjElems walks each property's type covariantly, copy-on-write like
-// acceptParams. M4's elements are all PropertyElem; later member kinds add their
-// own variance treatment here.
+// acceptObjElems walks each member, copy-on-write like acceptParams: a member
+// whose type changed gets a fresh element, unchanged members keep their pointer.
+// Each kind threads polarity by its variance — a property or getter reads
+// covariantly, a setter writes contravariantly, and a method delegates to
+// FuncType.Accept, which flips polarity on its own parameters.
 func acceptObjElems(es []ObjTypeElem, v TypeVisitor, pol Polarity) ([]ObjTypeElem, bool) {
 	out := es
 	changed := false
 	for i, e := range es {
-		p := AsProperty(e)
-		pt := p.Type.Accept(v, pol)
-		if pt != p.Type {
+		ne := acceptObjElem(e, v, pol)
+		if ne != e {
 			if !changed {
 				out = append([]ObjTypeElem(nil), es...)
 				changed = true
 			}
-			out[i] = &PropertyElem{Name: p.Name, Type: pt, Optional: p.Optional, Readonly: p.Readonly}
+			out[i] = ne
 		}
+	}
+	return out, changed
+}
+
+// acceptObjElem rewrites one object member, returning the original pointer when no
+// child changed. It panics on an unknown element kind, matching AsProperty.
+func acceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
+	switch e := e.(type) {
+	case *PropertyElem:
+		pt := e.Type.Accept(v, pol) // covariant read
+		if pt == e.Type {
+			return e
+		}
+		return &PropertyElem{Name: e.Name, Type: pt, Optional: e.Optional, Readonly: e.Readonly}
+	case *GetterElem:
+		rt := e.Type.Accept(v, pol) // covariant read
+		if rt == e.Type {
+			return e
+		}
+		return &GetterElem{Name: e.Name, Type: rt}
+	case *SetterElem:
+		pt := e.Param.Accept(v, pol.Flip()) // contravariant write
+		if pt == e.Param {
+			return e
+		}
+		return &SetterElem{Name: e.Name, Param: pt}
+	case *MethodElem:
+		sigs, changed := acceptSignatures(e.Signatures, v, pol)
+		if !changed {
+			return e
+		}
+		return &MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
+	}
+	panic(fmt.Sprintf("acceptObjElem: unhandled ObjTypeElem %T", e))
+}
+
+// acceptSignatures walks each signature of a method's overload set through
+// FuncType.Accept, copy-on-write like acceptObjElems. A signature is always a
+// FuncType and FuncType.Accept rewrites it to a FuncType, so a non-FuncType result
+// is a visitor-contract violation and panics with a clear message.
+func acceptSignatures(sigs []*FuncType, v TypeVisitor, pol Polarity) ([]*FuncType, bool) {
+	out := sigs
+	changed := false
+	for i, sig := range sigs {
+		ns := sig.Accept(v, pol)
+		if ns == sig {
+			continue
+		}
+		nf, ok := ns.(*FuncType)
+		if !ok {
+			panic(fmt.Sprintf("acceptSignatures: method signature rewrote to non-FuncType %T", ns))
+		}
+		if !changed {
+			out = append([]*FuncType(nil), sigs...)
+			changed = true
+		}
+		out[i] = nf
 	}
 	return out, changed
 }

@@ -238,6 +238,54 @@ type PropertyElem struct {
 
 func (*PropertyElem) isObjTypeElem() {}
 
+// MethodElem is one named method of an ObjectType. Its signature is a FuncType
+// whose first parameter is the `self` receiver, so member lookup and subtyping
+// reuse the FuncType machinery with no method-specific path. An overloaded method
+// holds its arms in Signatures, ordered most-specific-first the way the solver
+// resolves an overload set. A plain method has exactly one signature. Static marks
+// a static method, which lives on the constructor value rather than the instance.
+type MethodElem struct {
+	Name       string
+	Signatures []*FuncType // len 1 = ordinary; >1 = overload set (most-specific-first)
+	Static     bool
+}
+
+// GetterElem is a computed read property `get x() -> T`. Type is the value the
+// getter returns, read covariantly like a PropertyElem's Type.
+type GetterElem struct {
+	Name string
+	Type Type
+}
+
+// SetterElem is a computed write property `set x(v: T)`. Param is the value the
+// setter accepts, in write position, so it is read contravariantly.
+type SetterElem struct {
+	Name  string
+	Param Type
+}
+
+func (*MethodElem) isObjTypeElem() {}
+func (*GetterElem) isObjTypeElem() {}
+func (*SetterElem) isObjTypeElem() {}
+
+// ObjElemName returns the member name of any ObjTypeElem kind. It is the shared
+// name accessor for member lookup and structural equality, so those sites need no
+// per-kind type switch of their own. It panics on an unknown element kind,
+// matching the loud-fail discipline of AsProperty.
+func ObjElemName(e ObjTypeElem) string {
+	switch e := e.(type) {
+	case *PropertyElem:
+		return e.Name
+	case *MethodElem:
+		return e.Name
+	case *GetterElem:
+		return e.Name
+	case *SetterElem:
+		return e.Name
+	}
+	panic(fmt.Sprintf("ObjElemName: unhandled ObjTypeElem %T", e))
+}
+
 // Prop returns the named property and whether it is present. Property names are
 // unique in a well-formed ObjectType — the constraint solver dedups duplicate
 // keys (last value wins) when it builds an object from a literal — so the first
@@ -254,15 +302,30 @@ func (o *ObjectType) Prop(name string) (*PropertyElem, bool) {
 	return nil, false
 }
 
-// AsProperty narrows an ObjTypeElem to its *PropertyElem. M4 ships PropertyElem
-// as the only ObjTypeElem kind, so any other element is a bug: a later member
-// kind (method/getter/setter in M5, index signature or object rest/spread in M9)
-// wired up without extending the call site that processes every element. It
-// panics rather than silently skipping, matching type_system's unknown-element
-// convention (print_type.go panics on an unhandled ObjTypeElem) and the M4 plan's
-// standing rule that a missed element kind must fail loudly, not vanish from
-// subtyping, equality, or rendering. Use it at sites that must visit EVERY
-// element; name lookups like Prop legitimately skip non-matching kinds instead.
+// Member returns the named member of any kind and whether it is present. It
+// generalizes Prop across property, method, getter, and setter elements, so member
+// access and nominal subtyping look a name up through one call regardless of its
+// kind. When a name is carried by both a getter and a setter it returns the first
+// in declaration order. A caller that must distinguish the two inspects the returned
+// element's concrete kind.
+func (o *ObjectType) Member(name string) (ObjTypeElem, bool) {
+	for _, e := range o.Elems {
+		if ObjElemName(e) == name {
+			return e, true
+		}
+	}
+	return nil, false
+}
+
+// AsProperty narrows an ObjTypeElem to its *PropertyElem. It is used at sites that
+// handle only properties and do not yet process the method, getter, and setter
+// kinds, so any other element reaching one is a wiring bug: a member kind added
+// without extending that call site. It panics rather than silently skipping, so a
+// missed element kind fails loudly instead of vanishing from subtyping, equality,
+// or rendering. This matches type_system's convention, where print_type.go panics
+// on an unhandled ObjTypeElem. Use it only at property-only sites. A site that must
+// visit every element kind switches on the kind or reads ObjElemTypes; name lookups
+// like Prop legitimately skip non-matching kinds instead.
 func AsProperty(e ObjTypeElem) *PropertyElem {
 	p, ok := e.(*PropertyElem)
 	if !ok {
@@ -306,8 +369,9 @@ type RefType struct {
 // pointee, with a single lifetime and mutability for the whole value rather than
 // `&A | &B` with independent lifetimes. A union or intersection must have uniform
 // ownership. A borrowed member beside an owned one has no single owned-or-borrowed
-// verdict and is rejected at the inference join where it forms. AliasType and
-// ClassType add their isRefInner arms when those types are introduced.
+// verdict and is rejected at the inference join where it forms. ClassType is a
+// RefInner too, so a `mut 'a Point` borrows a class instance. AliasType adds its
+// isRefInner arm when that type is introduced.
 type RefInner interface {
 	Type
 	isRefInner()
@@ -318,6 +382,7 @@ func (*TupleType) isRefInner()        {}
 func (*TypeVarType) isRefInner()      {}
 func (*UnionType) isRefInner()        {}
 func (*IntersectionType) isRefInner() {}
+func (*ClassType) isRefInner()        {}
 
 // PromiseType is the result of an `async fn` and the requirement of an `await`.
 // M3 carries it as a dedicated concrete (not a generic TypeRefType), keeping the
@@ -382,6 +447,31 @@ type IntersectionType struct{ Types []Type }
 // diagnostics/debug only.
 type ErrorType struct{} // ⊤⊥ absorbing sentinel; see PR8
 
+// ClassType is a nominal lattice element — the identity token for a class. Two
+// ClassTypes are the same nominal type when their Name matches. The Args are the
+// type arguments, checked per position by the variance the class registry records
+// for that parameter. Name is the dep_graph-qualified name such as
+// "Geometry.Point", not the bare local identifier, so two classes named Point in
+// different namespaces stay distinct. The heavy per-class data — the projected
+// member body, the resolved supers, and the inferred variance — lives in a side
+// registry keyed by Name, so this token stays small and cheap to compare and
+// rewrite.
+//
+// A final class's subclasses cannot add members, so Final marks its instance type
+// as closed the way an exact object is (exact-types §2.6). The zero value false is
+// inexact, matching a non-final class whose subclasses may widen it.
+//
+// Lt is the instance's own borrow lifetime, nil for an owned value. A `mut 'b Point`
+// wraps a ClassType in a RefType rather than setting Lt directly, so no site sets Lt
+// today and it is always nil. Lifetime arguments filling the class's declared
+// lifetime params have no field yet.
+type ClassType struct {
+	Name  string // dep_graph-qualified name, e.g. "Geometry.Point"
+	Args  []Type // type arguments, one per class type parameter
+	Lt    Lifetime
+	Final bool // final ⇒ exact instance
+}
+
 func (*TypeVarType) isType()      {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
@@ -397,6 +487,7 @@ func (*UnknownType) isType()      {}
 func (*UnionType) isType()        {}
 func (*IntersectionType) isType() {}
 func (*ErrorType) isType()        {}
+func (*ClassType) isType()        {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).
@@ -419,7 +510,16 @@ func LevelOf(t Type) int {
 	case *ObjectType:
 		m := 0
 		for _, e := range t.Elems {
-			m = max(m, LevelOf(AsProperty(e).Type))
+			m = max(m, levelOfElem(e))
+		}
+		return m
+	case *ClassType:
+		// A nominal instance's level is the max level over its type arguments. The Name
+		// and Final identity carry no variables. Lt is always nil today, so it
+		// contributes nothing here.
+		m := 0
+		for _, a := range t.Args {
+			m = max(m, LevelOf(a))
 		}
 		return m
 	case *PromiseType:
@@ -454,6 +554,40 @@ func LevelOf(t Type) int {
 		// childless leaves. ErrorType is a sentinel at level 0.
 		return 0
 	}
+}
+
+// ObjElemTypes returns the child types an object member carries: a property's
+// value type, each of a method's overload signatures, a getter's return type, or a
+// setter's parameter type. It is the single place that enumerates a member's child
+// types, so a walk over the element set reads its children here rather than
+// re-switching on the kind. It panics on an unknown element kind, matching
+// AsProperty.
+func ObjElemTypes(e ObjTypeElem) []Type {
+	switch e := e.(type) {
+	case *PropertyElem:
+		return []Type{e.Type}
+	case *MethodElem:
+		out := make([]Type, len(e.Signatures))
+		for i, sig := range e.Signatures {
+			out[i] = sig
+		}
+		return out
+	case *GetterElem:
+		return []Type{e.Type}
+	case *SetterElem:
+		return []Type{e.Param}
+	}
+	panic(fmt.Sprintf("ObjElemTypes: unhandled ObjTypeElem %T", e))
+}
+
+// levelOfElem returns the max TypeVarType level across an object member's child
+// types, the per-element generalization of LevelOf's property case.
+func levelOfElem(e ObjTypeElem) int {
+	m := 0
+	for _, ct := range ObjElemTypes(e) {
+		m = max(m, LevelOf(ct))
+	}
+	return m
 }
 
 // maxMemberLevel returns the highest LevelOf across a Union/Intersection's members,

@@ -34,10 +34,12 @@ func typePrec(t Type) int {
 	case *RefType:
 		return precPrefix
 	default:
-		// PrimType, LitType, TupleType, ObjectType, Void, NeverType, UnknownType —
-		// atoms (ObjectType is brace-delimited, so it never needs parens). A
-		// raw TypeVarType (which appears only when printing an un-coalesced type,
-		// see printType) is also an atom (rendered as `t{ID}`), so it lands here.
+		// PrimType, LitType, TupleType, ObjectType, ClassType, Void, NeverType,
+		// UnknownType — atoms. ObjectType is brace-delimited and ClassType renders as
+		// a bare name or `Name<args>`, so neither needs parens. A raw TypeVarType
+		// appears only when printing an un-coalesced type, see printType; it is also an
+		// atom rendered as `t{ID}`, so it lands here. A `mut 'a Point` borrow wraps the
+		// ClassType in a RefType, which carries the looser precPrefix precedence.
 		return precAtom
 	}
 }
@@ -258,7 +260,13 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *ObjectType:
 			for _, e := range t.Elems {
-				walk(AsProperty(e).Type)
+				for _, ct := range ObjElemTypes(e) {
+					walk(ct)
+				}
+			}
+		case *ClassType:
+			for _, a := range t.Args {
+				walk(a)
 			}
 		case *PromiseType:
 			walk(t.Inner)
@@ -391,21 +399,26 @@ func (p *namedPrinter) printType(t Type) string {
 	case *ObjectType:
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {
-			prop := AsProperty(e)
-			opt := ""
-			if prop.Optional {
-				opt = "?"
-			}
-			ro := ""
-			if prop.Readonly {
-				ro = "readonly "
-			}
-			elems = append(elems, ro+printObjectKeyName(prop.Name)+opt+": "+p.printType(prop.Type))
+			elems = append(elems, p.printObjElem(e))
 		}
 		if t.Inexact {
 			elems = append(elems, "...")
 		}
 		return "{" + strings.Join(elems, ", ") + "}"
+	case *ClassType:
+		// A ClassType renders under its bare display name, with a `<...>` type-argument
+		// list when it has arguments: `Point`, `Box<number>`. The qualified Name carries
+		// a namespace prefix for registry keying, stripped here for display. Lt and the
+		// `mut` borrow forms come from a RefType wrapper, not this arm.
+		name := classDisplayName(t.Name)
+		if len(t.Args) == 0 {
+			return name
+		}
+		args := make([]string, len(t.Args))
+		for i, a := range t.Args {
+			args[i] = p.printType(a)
+		}
+		return name + "<" + strings.Join(args, ", ") + ">"
 	case *FuncType:
 		return "fn " + p.printFuncTail(t)
 	case *PromiseType:
@@ -453,6 +466,52 @@ func (p *namedPrinter) printType(t Type) string {
 		return strings.Join(parts, " & ")
 	}
 	panic(fmt.Sprintf("printType: unhandled %T", t))
+}
+
+// printObjElem renders one object member in Escalier surface syntax. Each kind has
+// its own form:
+//
+//   - a property renders `name: T` with the `readonly` and `?` markers;
+//   - a method renders `name(params) -> ret` per overload arm, arms joined by "; "
+//     so the arm boundary stays distinct from the outer ", " between members;
+//   - a getter renders `get name() -> T`;
+//   - a setter renders `set name(value: T)`.
+//
+// It panics on an unknown element kind, matching AsProperty.
+func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
+	switch e := e.(type) {
+	case *PropertyElem:
+		opt := ""
+		if e.Optional {
+			opt = "?"
+		}
+		ro := ""
+		if e.Readonly {
+			ro = "readonly "
+		}
+		return ro + printObjectKeyName(e.Name) + opt + ": " + p.printType(e.Type)
+	case *MethodElem:
+		arms := make([]string, len(e.Signatures))
+		for i, sig := range e.Signatures {
+			arms[i] = printObjectKeyName(e.Name) + p.printFuncTail(sig)
+		}
+		return strings.Join(arms, "; ")
+	case *GetterElem:
+		return "get " + printObjectKeyName(e.Name) + "() -> " + p.printType(e.Type)
+	case *SetterElem:
+		return "set " + printObjectKeyName(e.Name) + "(value: " + p.printType(e.Param) + ")"
+	}
+	panic(fmt.Sprintf("printObjElem: unhandled ObjTypeElem %T", e))
+}
+
+// classDisplayName strips the dep_graph namespace prefix off a qualified class
+// name for display, so "Geometry.Point" renders as "Point". A bare name with no
+// dot is returned unchanged.
+func classDisplayName(qname string) string {
+	if i := strings.LastIndex(qname, "."); i >= 0 {
+		return qname[i+1:]
+	}
+	return qname
 }
 
 // printFuncTail renders the "(params) -> ret" portion of a function, without the
