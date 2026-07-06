@@ -209,18 +209,26 @@ at class-decl time and read by `constrain`.
 // (exact-types §2.6); the zero value (false) is inexact, matching a
 // non-final class whose subclasses may add members.
 type ClassType struct {
-    Name  string   // dep_graph-QUALIFIED name (e.g. "Geometry.Point"), NOT the local ident
-    Args  []Type
-    Lt    Lifetime // nilable; classes are borrowed via RefType exactly like records
-    Final bool     // final ⇒ exact instance and exact keyof
+    Name         string     // dep_graph-QUALIFIED name (e.g. "Geometry.Point"), NOT the local ident
+    Args         []Type     // type arguments, fill ClassDef.TypeParams
+    LifetimeArgs []Lifetime // lifetime arguments, fill ClassDef.LifetimeParams (added by A3)
+    Lt           Lifetime   // nilable; the instance's OWN borrow lifetime, orthogonal to LifetimeArgs
+    Final        bool       // final ⇒ exact instance and exact keyof
 }
 func (*ClassType) isType()     {}
 func (*ClassType) isRefInner() {} // reserved arm (type.go:309-310) is now filled
 
 // Args are covariant children for the rewriting visitor; the nominal identity
-// (Name/Final) and the Lt (not a Type) are carried through unchanged.
+// (Name/Final) is carried through unchanged. Lt and each LifetimeArgs entry are
+// lifetimes (not Types), freshened by the ltFreshener the way FuncType lifetimes are.
 func (t *ClassType) Accept(v TypeVisitor, pol Polarity) Type
 ```
+
+`ClassType.Lt` and `ClassType.LifetimeArgs` are distinct. `Lt` is how long the
+caller holds *this instance* — a `mut 'b Ref<...>` borrows the instance for `'b`.
+`LifetimeArgs` are the arguments filling the class's *declared* lifetime params —
+the `'a` in `Ref<'a, T>` names the lifetime of borrowed data the instance holds.
+A `mut 'b Ref<'a, T>` carries both independently.
 
 `ClassType` touches **every standing site** (the M4 checklist): `isType()` +
 `LevelOf` arm ([type.go](../../internal/soltype/type.go)), `Accept`
@@ -266,15 +274,32 @@ type TypeParam struct {
     Default Type // nil ⇒ required
 }
 
-// FuncType gains TypeParams: the function's own quantified type parameters, the
-// same soltype.TypeParam that ClassDef.TypeParams uses. nil is monomorphic, the
-// common case and the zero value. A generic method such as Array<T>.map<U> lists U
-// here; the class-level T is captured from the enclosing ClassType, not listed.
+// LifetimeParam is the lifetime-sort analogue of TypeParam (A3), shared by
+// FuncType.LifetimeParams (method/function lifetime params) and
+// ClassDef.LifetimeParams (class lifetime params). Var is the quantified
+// LifetimeVar minted one level deeper than the enclosing binding and freshened per
+// use by the ltFreshener (M4 D2.5), the lifetime counterpart of freshenAbove.
+// Bounds are the declared outlives constraints (`<'b: 'a>` ⇒ 'b's Bounds is ['a]),
+// carried as lifetime bounds on Var. Lifetimes have no default. Name is the source
+// name (`'a`) for display.
+type LifetimeParam struct {
+    Name   string
+    Var    *LifetimeVar
+    Bounds []Lifetime // outlives constraints; nil ⇒ unconstrained
+}
+
+// FuncType gains TypeParams and LifetimeParams: the function's own quantified type
+// and lifetime parameters, the same soltype.TypeParam / soltype.LifetimeParam that
+// ClassDef uses. Both nil is monomorphic, the common case and the zero value. A
+// generic method such as Array<T>.map<U> lists U in TypeParams; a borrowing method
+// `fn get<'a>(&'a self) -> &'a T` lists 'a in LifetimeParams; class-level params
+// are captured from the enclosing ClassType, not listed.
 type FuncType struct {
-    Params     []*FuncParam
-    Ret        Type
-    Inexact    bool
-    TypeParams []*TypeParam // declaration order; nil ⇒ monomorphic
+    Params         []*FuncParam
+    Ret            Type
+    Inexact        bool
+    TypeParams     []*TypeParam     // declaration order; nil ⇒ monomorphic
+    LifetimeParams []*LifetimeParam // declaration order; nil ⇒ no lifetime params
 }
 ```
 
@@ -362,6 +387,47 @@ polymorphic (higher-rank, e.g. a callback typed `<V>(V) -> V`) is not expressibl
 and is rejected rather than silently approximated, matching SimpleSub's and
 MLstruct's rank-1 boundary.
 
+#### Lifetime parameters (class and method level)
+
+Escalier's lifetimes make the type-parameter story incomplete on its own: a class
+that holds borrowed data (`class Ref<'a, T> { value: &'a T }`) and a method that
+relates receiver, argument, and return lifetimes (`fn get<'a>(&'a self) -> &'a T`)
+both need to *name and quantify a lifetime*, and `<'b: 'a>` bounds (parsed by
+#822) need a home. The `ast` already carries these at both levels —
+`ClassDecl.LifetimeParams` and `FuncSig.LifetimeParams`
+([ast.LifetimeParam](../../internal/ast/lifetime.go)) — and the old checker
+resolved the class case (`declareLifetimeParams` +
+`InferConstructorLifetimes`, [infer_class_decl.go:43,674](../../internal/checker/infer_class_decl.go)),
+so leaving them out of `soltype` would be a port regression. They land in **A3**,
+mirroring the type-parameter design:
+
+- Lifetimes are the solver's **second bounded sort** (M4 D1: `LifetimeVar` with
+  bounds, `constrainLt`, `addLower/UpperLtBound`). A declared lifetime parameter is
+  therefore a quantified `LifetimeVar` exactly as a type parameter is a quantified
+  `TypeVarType`. `soltype.LifetimeParam{Name, Var, Bounds}` is the shared record,
+  used by `FuncType.LifetimeParams` and `ClassDef.LifetimeParams`.
+- A `<'b: 'a>` **outlives bound** is a lifetime bound on `Var`, enforced by the
+  existing `constrainLt`. No default — lifetimes are inferred/elided when omitted,
+  not defaulted, so `Ref<T>` mints a fresh lifetime rather than filling a default.
+- **Instantiation reuses the `ltFreshener` (M4 D2.5)**, which already freshens
+  quantified lifetime vars by level per use — the lifetime counterpart of
+  `freshenAbove`. So per-call / per-construction freshening of lifetime params is
+  existing machinery; A3 adds no new instantiation path.
+- `ClassType` gains `LifetimeArgs` alongside `Args` so a reference `Ref<'x, T>`
+  supplies both sorts of arguments. This is distinct from `ClassType.Lt`, the
+  instance's own borrow lifetime.
+
+**Reconciliation with M4 named lifetimes is the one open decision.** M4 already
+resolves an *implicit* `&'a` through the per-function `namedLifetimes` scope
+([infer_expr.go:194-196](../../internal/solver/infer_expr.go)), while an *explicit*
+`<'a>` declaration is currently rejected
+([type_ann.go:244-246](../../internal/solver/type_ann.go): "lifetime parameters in
+function type annotation"). A3 lifts that gate and must land the explicit param and
+the implicit `&'a` use on the **same** quantified `LifetimeVar` — a method declares
+into the `namedLifetimes` scope, and a class declares its lifetime params into the
+class scope so every method and field body resolves the class's `'a` to one shared
+var, quantified at the class boundary.
+
 ### The class registry (`solver/context.go` or a new `solver/classes.go`)
 
 ```go
@@ -370,11 +436,12 @@ MLstruct's rank-1 boundary.
 // member lookup (the projected body). Keyed by the class's QUALIFIED name on the
 // Context — the same string in ClassType.Name (see "Qualified keys" below).
 type ClassDef struct {
-    TypeParams []*soltype.TypeParam // name + constraint (Var's upper bound) + default
-    Variance   []Variance   // one per TypeParam, frozen at decl time (Phase C)
-    Supers     []*ClassType // resolved Extends ++ Implements (the declared graph edges)
-    Body       *ObjectType  // instance members (the "structural view it projects")
-    Static     *ObjectType  // constructor + static members (the value-side binding's type)
+    TypeParams     []*soltype.TypeParam     // name + constraint (Var's upper bound) + default
+    LifetimeParams []*soltype.LifetimeParam // name + outlives bounds (A3), quantified per construction
+    Variance       []Variance   // one per TypeParam, frozen at decl time (Phase C)
+    Supers         []*ClassType // resolved Extends ++ Implements (the declared graph edges)
+    Body           *ObjectType  // instance members (the "structural view it projects")
+    Static         *ObjectType  // constructor + static members (the value-side binding's type)
 }
 
 type Variance int
@@ -566,8 +633,11 @@ over `soltype`, two phases:
 //     fresh instance var BEFORE walking the body (so the body refers to the
 //     class recursively); resolve each ast.TypeParam to a soltype.TypeParam —
 //     mint its Var, set the resolved Constraint as the Var's upper bound, resolve
-//     the Default — and declare them into a child scope; build the
-//     Self reference (a ClassType{Name, Args: typeParamVars}) reused as every
+//     the Default — and each ast.LifetimeParam to a soltype.LifetimeParam — mint
+//     its LifetimeVar, set outlives Bounds — declaring both sorts into a child
+//     scope so the body resolves the class's T and 'a to one shared var each; build
+//     the Self reference (ClassType{Name, Args: typeParamVars, LifetimeArgs:
+//     lifetimeParamVars}) reused as every
 //     method/getter/setter receiver, the constructor return, and the `self`
 //     binding; partition Static vs instance elems; infer method/ctor SIGNATURES
 //     (not bodies); synthesize a constructor from instance fields if none is
@@ -653,7 +723,7 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 
 ## PR breakdown
 
-10 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
+11 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
 green, each with table-driven tests asserting rendered types (Escalier
 type-annotation syntax) and **full** error messages. Every PR names the files
 touched, the structures added/modified, the algorithm changes, and its
@@ -723,6 +793,39 @@ corruption of `freshenAbove`.
     `<U: Ord = number>`; `freeTypeVars` omits a generic function's own `U`; two
     signatures differing only in var id compare equal under `equalType`.
 
+- **A3 — `LifetimeParam` + `FuncType.LifetimeParams` + `ClassType.LifetimeArgs`**
+  (~140). **← the lifetime-sort analogue of A2; reuses the M4 D2.5 `ltFreshener`.**
+  - **Files:** `soltype/type.go` (the `LifetimeParam` type, the
+    `FuncType.LifetimeParams` field, `ClassType.LifetimeArgs`), `soltype/visitor.go`
+    (`FuncType`/`ClassType` `Accept` over lifetimes), `soltype/print.go`
+    (lifetime-param + lifetime-arg rendering, `freeLifetimeVars`),
+    `solver/coalesce.go` (`equalType`), `solver/type_ann.go` (lift the unsupported
+    gate).
+  - **Structures:**
+    - add `soltype.LifetimeParam{Name, Var, Bounds}` (outlives bounds on `Var`, no
+      default) and `FuncType.LifetimeParams []*LifetimeParam`; add
+      `ClassType.LifetimeArgs []Lifetime` alongside `Args`.
+    - `Accept` freshens each `LifetimeParams`/`LifetimeArgs`/`Lt` lifetime and each
+      param's outlives `Bounds` through the existing `ltFreshener` (M4 D2.5), so a
+      quantified lifetime survives an instantiation copy — the exact lifetime
+      counterpart of A2's `freshenAbove` handling.
+    - `printType`: render `Ref<'x, T>` (lifetime + type args), a lifetime-param list
+      `fn get<'a>(&'a self) -> &'a T`, and an outlives bound `<'b: 'a>`.
+    - `equalType`: compare `LifetimeArgs` positionally and generic `FuncType`s **up
+      to alpha-renaming** of their `LifetimeParams`, bounds included — parallel to
+      A2's type-param alpha-equivalence.
+    - `freeLifetimeVars` **excludes** a `FuncType`'s own `LifetimeParams` vars (they
+      are bound, not free) — the lifetime mirror of A2's `freeTypeVars` exclusion.
+    - lift the `reportUnsupportedFeature(ta, "lifetime parameters in function type
+      annotation")` gate ([type_ann.go:244-246](../../internal/solver/type_ann.go)).
+  - **Depends on:** A1 (needs `ClassType` to add `LifetimeArgs`); otherwise parallel
+    with A2. Feeds B1.
+  - **Accept:** a borrowing method `fn get<'a>(&'a self) -> &'a T` round-trips
+    `Accept`, prints, and instantiates with a fresh `'a` per call; an outlives bound
+    `<'b: 'a>` renders and is enforced by `constrainLt`; a `Ref<'x, number>`
+    reference round-trips both argument sorts; `freeLifetimeVars` omits a method's
+    own `'a`.
+
 ### Phase B — Class declaration inference (the semantics port)
 
 - **B1 — Non-recursive `ClassDecl` inference + dual binding + member access**
@@ -734,17 +837,24 @@ corruption of `freshenAbove`.
     `solver/errors.go`.
   - **Structures:** the `ClassDef` registry on `Context`
     (`classes map[string]*ClassDef`); `ClassDef{TypeParams []*soltype.TypeParam,
-    Variance (invariant placeholder until C2), Supers, Body, Static}`.
+    LifetimeParams []*soltype.LifetimeParam, Variance (invariant placeholder until
+    C2), Supers, Body, Static}`.
   - **Algorithm — port `inferClassDecl`** (see sketch): the two-phase
     signature-then-body walk, `ast.TypeParam` → `soltype.TypeParam` resolution
-    (constraint into the var's upper bound, default resolved), static/instance
-    partition, `Self` = `ClassType{Name, Args: typeParamVars}` substitution,
-    constructor synthesis + `mut self` validation (port `infer_class_ctor.go`),
-    `mergeMethodOverloads` (port `merge_overloads.go`), dual `TypeBinding` +
-    `ValueBinding` registration. A `ClassType` type reference with fewer `Args`
-    than `TypeParams` fills the missing trailing positions from each
-    `TypeParam.Default`, which may reference an earlier parameter; too few args
-    and no default is `MissingTypeArgError`. `Extends`/`Implements` resolved to
+    (constraint into the var's upper bound, default resolved) and `ast.LifetimeParam`
+    → `soltype.LifetimeParam` resolution (outlives bounds), both declared into the
+    class scope so the body resolves the class's `T` and `'a` to one shared var each
+    — a class lifetime param is quantified at the class boundary, freshened per
+    construction, while a method's own `<'a>` freshens per call. static/instance
+    partition, `Self` = `ClassType{Name, Args: typeParamVars, LifetimeArgs:
+    lifetimeParamVars}` substitution, constructor synthesis + `mut self` validation
+    (port `infer_class_ctor.go`), `mergeMethodOverloads` (port
+    `merge_overloads.go`), dual `TypeBinding` + `ValueBinding` registration. A
+    `ClassType` type reference with fewer `Args` than `TypeParams` fills the missing
+    trailing positions from each `TypeParam.Default`, which may reference an earlier
+    parameter; too few args and no default is `MissingTypeArgError`. An omitted
+    lifetime argument mints a fresh lifetime rather than defaulting (M4 elision).
+    `Extends`/`Implements` resolved to
     `*ClassType` and stored on `ClassDef.Supers` (the subtype-graph edges; the
     *rule* that walks them is C1). **Member access:** extend `valueProp`
     ([infer_expr.go:1831](../../internal/solver/infer_expr.go)) to resolve
@@ -767,7 +877,9 @@ corruption of `freshenAbove`.
     params freshen per call. A `class Box<T: Ord = number>` records the constraint
     and default: `Box<string>` requires `string <: Ord`, a bare `Box` resolves to
     `Box<number>`, and `Box<T>` where `T` fails the constraint reports the bound
-    error.
+    error. A `class Ref<'a, T> { value: &'a T }` records the class lifetime param:
+    the field borrows for `'a`, a method `fn get<'b>(&'b self) -> &'b T` freshens
+    `'b` per call, and the class's `'a` stays shared across the instance.
 
 - **B2 — Mutually-recursive classes in the SCC path** (~180).
   - **Files:** `solver/module.go` (the `inferComponent` dual-key path), tests.
@@ -922,9 +1034,10 @@ corruption of `freshenAbove`.
 ## Dependency graph
 
 ```
-A1 (ClassType + method/getter/setter elems) ──┐
-A2 (TypeParam + FuncType.TypeParams)         ──┤   ── A2 parallel with A1 (needs only FuncType)
-                                               ▼
+A1 (ClassType + method/getter/setter elems)  ──┐
+A2 (TypeParam + FuncType.TypeParams)          ──┤   ── A2 ∥ A1 (needs only FuncType)
+A3 (LifetimeParam + FuncType.LifetimeParams)  ──┤   ── A3 needs A1's ClassType, else ∥ A2
+                                                ▼
  └─► B1 (non-recursive ClassDecl + dual binding + member access)
       ├─► B2 (mutually-recursive classes, SCC path)          ── parallel with C/D/E after B1
       ├─► C1 (declared-subtype graph + nominal rule + final)
@@ -943,6 +1056,7 @@ and the landed `M6` prerequisite dashed:
 graph TD
     A1["A1 (ClassType + method/getter/setter elems)"]
     A2["A2 (TypeParam + FuncType.TypeParams)"]
+    A3["A3 (LifetimeParam + FuncType.LifetimeParams)"]
     B1["B1 (non-recursive ClassDecl + dual binding + member access)"]
     B2["B2 (mutually-recursive classes, SCC path)"]
     C1["C1 (declared-subtype graph + nominal rule + final)"]
@@ -955,7 +1069,9 @@ graph TD
     M6["M6 (unions / intersections, landed)"]
 
     A1 --> B1
+    A1 --> A3
     A2 --> B1
+    A3 --> B1
     B1 --> B2
     B1 --> C1
     B1 --> D1
@@ -972,14 +1088,14 @@ graph TD
     classDef landed fill:#eceff1,stroke:#90a4ae,stroke-dasharray:4 3,color:#000;
     class A1,B1,C1,C2 crit;
     class M6 landed;
-    linkStyle 0,3,7 stroke:#e65100,stroke-width:2px;
+    linkStyle 0,5,9 stroke:#e65100,stroke-width:2px;
 ```
 
 **Critical path:** A1 → B1 → C1 → C2 (variance is the milestone's headline
 acceptance, and it depends on the nominal rule it refines). F1 also hangs off
-C1. A2 depends only on `FuncType` (on main), so it runs in parallel with A1 and
-stays off the critical path as long as it lands before B1. Everything else is off
-the critical path.
+C1. A2 depends only on `FuncType` (on main) and A3 depends only on A1's
+`ClassType`, so both run alongside A1 and stay off the critical path as long as
+they land before B1. Everything else is off the critical path.
 
 **Parallelizable once B1 lands** (all depend only on B1, mutually independent):
 
@@ -991,31 +1107,39 @@ the critical path.
 - **E1** (method overloads) — member-lookup path + `overload.go`, independent of
   subtyping and patterns.
 
-So after the A1+A2 → B1 spine (A1 and A2 run in parallel, both landing before B1),
-**B2, C1, D1, D-Enum, and E1 can proceed in parallel** (five tracks). The
-second-tier dependents each wait on one first-tier PR: **C2** on C1, **F1** on C1,
-**D2** on both D1 and D-Enum. The only PR that joins two tracks is D2 (patterns ×
-enums × M6's union exhaustiveness).
+So after the A1+A2+A3 → B1 spine (A1, A2, and A3 run in parallel — A3 waits only on
+A1's `ClassType` — all landing before B1), **B2, C1, D1, D-Enum, and E1 can proceed
+in parallel** (five tracks). The second-tier dependents each wait on one first-tier
+PR: **C2** on C1, **F1** on C1, **D2** on both D1 and D-Enum. The only PR that joins
+two tracks is D2 (patterns × enums × M6's union exhaustiveness).
 
 ## Algorithms and data structures added or modified — summary
 
 **Added data structures:**
 
-- `soltype.ClassType{Name, Args, Lt, Final}` — the nominal lattice token
-  (`Name` is the dep_graph-qualified name, the shared key into `classes`).
+- `soltype.ClassType{Name, Args, LifetimeArgs, Lt, Final}` — the nominal lattice
+  token (`Name` is the dep_graph-qualified name, the shared key into `classes`;
+  `LifetimeArgs` fill the class's lifetime params, distinct from `Lt`, the
+  instance's own borrow lifetime).
 - `soltype.MethodElem`/`GetterElem`/`SetterElem` — new `ObjTypeElem` arms
   (methods hold overload arms as an ordered `[]*FuncType`).
 - `soltype.TypeParam{Name, Var, Default}` — one quantified type parameter, shared
   by functions and classes. Constraint is `Var`'s upper bound; `Default` is the
   omitted-argument fallback (nil ⇒ required); `Name` is for display.
-- `soltype.FuncType.TypeParams []*TypeParam` — a method's or function's own
-  quantified type params, bounded vars one level deeper than the class,
-  instantiated per call by the existing `freshenAbove`. `nil` ⇒ monomorphic. Gives
-  `.d.ts` generic methods like `Array<T>.map<U>` a representation for M7 ingestion.
+- `soltype.LifetimeParam{Name, Var, Bounds}` — the lifetime-sort analogue, shared
+  by functions and classes. `Var` is a quantified `LifetimeVar` freshened per use by
+  the M4 D2.5 `ltFreshener`; `Bounds` are outlives constraints (`<'b: 'a>`); no
+  default.
+- `soltype.FuncType.TypeParams []*TypeParam` / `LifetimeParams []*LifetimeParam` —
+  a method's or function's own quantified type and lifetime params, one level deeper
+  than the class, instantiated per call by `freshenAbove` / `ltFreshener`. `nil` ⇒
+  none. Gives `.d.ts` generic methods (`Array<T>.map<U>`) and borrowing methods
+  (`fn get<'a>(&'a self) -> &'a T`) a representation.
 - `solver.ClassDef` registry (`Context.classes map[string]*ClassDef`) — the
   projected body, resolved supers (the declared-subtype-graph edges), frozen
-  per-parameter variance, and `TypeParams []*soltype.TypeParam` carrying each class
-  parameter's constraint and default.
+  per-parameter variance, `TypeParams []*soltype.TypeParam` (constraint + default),
+  and `LifetimeParams []*soltype.LifetimeParam` (outlives bounds) quantified at the
+  class boundary.
 - `solver.Variance` enum (`Invariant`/`Covariant`/`Contravariant`/`Bivariant`).
 - Produced (not new — already declared) `soltype.InstancePat`/`ExtractorPat`.
 
@@ -1028,11 +1152,14 @@ enums × M6's union exhaustiveness).
 - `inferVariance` — polarity walk of the class body per type parameter,
   collapsing occurrence polarities to a `Variance`, with `in`/`out` checking.
 - `inferClassDecl` — the two-phase signature/body port (constructor synthesis,
-  static/instance partition, `Self` substitution, dual binding, overload merge).
+  static/instance partition, `Self` substitution, dual binding, overload merge),
+  resolving both `ast.TypeParam` → `soltype.TypeParam` and `ast.LifetimeParam` →
+  `soltype.LifetimeParam` and declaring both sorts into the class scope.
 - Per-method scheme instantiation at member access — wrap a projected method
-  carrying `FuncType.TypeParams` in a `PolyScheme` at the class's level and
-  `instantiate` it per call, so the method's own params freshen per call while
-  class args stay shared.
+  carrying `FuncType.TypeParams`/`LifetimeParams` in a `PolyScheme` at the class's
+  level and `instantiate` it per call, so the method's own type and lifetime params
+  freshen per call (via `freshenAbove` / `ltFreshener`) while class args stay
+  shared.
 - Recursive-class inference via the existing SCC fresh-var-per-binding path (no
   `typeRefsToUpdate` patching).
 - Nominal pattern binding through member lookup; nominal + structural-object
@@ -1045,10 +1172,10 @@ enums × M6's union exhaustiveness).
 
 **Modified sites (the standing checklist, per new former/element):**
 `type.go` (`isType`/`LevelOf`/`isRefInner`), `visitor.go`
-(`Accept`/`acceptObjElems`), `print.go` (`typePrec`/`printType`/`freeTypeVars`),
-`coalesce.go` (`equalType`), every `AsProperty` caller, the `constrain` object
-arm's depth loop, `inferDeclDef`/`inferComponent` dispatch, and `valueProp`
-member access.
+(`Accept`/`acceptObjElems`), `print.go` (`typePrec`/`printType`/`freeTypeVars`/
+`freeLifetimeVars`), `coalesce.go` (`equalType`), every `AsProperty` caller, the
+`constrain` object arm's depth loop, `inferDeclDef`/`inferComponent` dispatch, and
+`valueProp` member access.
 
 ## Risks
 
@@ -1089,3 +1216,14 @@ member access.
   `fn f<U>` *inference* stays out of scope — M5 only populates the representation
   for
   methods and the M7 ingestion path.
+- **Lifetime params add a second bounded sort to the same former (A3).** The type
+  and lifetime sorts must each get the full sweep independently: `freeLifetimeVars`
+  **excludes** a func's own `LifetimeParams` vars just as `freeTypeVars` excludes
+  its `TypeParams`, `equalType` alpha-renames both param lists, and `Accept` must
+  route the lifetime children through the `ltFreshener`, not `freshenAbove` — a
+  quantified lifetime frozen or captured is the same soundness bug as a quantified
+  type. The genuinely new risk is **reconciling explicit `<'a>` with M4's implicit
+  `&'a`**: both must resolve to one `LifetimeVar`, or a method sees two distinct
+  lifetimes where it declared one. Land A3 with a test that a `<'a>`-declared method
+  and its `&'a` uses share a var, and that lifting the `type_ann.go:244` gate does
+  not regress the M4 named-lifetime path.
