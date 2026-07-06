@@ -117,7 +117,7 @@ func TestPrintObjectMembers(t *testing.T) {
 	}
 }
 
-// A no-op rewrite over a ClassType keeps its pointer (copy-on-write).
+// A no-op rewrite over a ClassType allocates nothing and keeps its pointer.
 func TestAcceptClassIdentityPreservation(t *testing.T) {
 	cls := &ClassType{Name: "Box", Args: []Type{numP()}, Final: true}
 	require.Same(t, cls, cls.Accept(identityVisitor{}, Positive), "an unchanged ClassType keeps its pointer")
@@ -153,9 +153,9 @@ func TestAcceptClassArgsCovariant(t *testing.T) {
 	require.Equal(t, Negative, r.seen[a], "a type argument is covariant")
 }
 
-// A no-op rewrite over an object carrying a method, getter, and setter keeps every
-// pointer (copy-on-write): a method's signature, the getter's type, and the
-// setter's param are all walked, yet nothing changes.
+// A no-op rewrite over an object carrying a method, getter, and setter walks the
+// method's signature, the getter's type, and the setter's param, yet nothing
+// changes, so it keeps every pointer.
 func TestAcceptObjectMembersIdentityPreservation(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{
 		method("f", &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}),
@@ -188,8 +188,8 @@ func TestAcceptObjectMemberVariance(t *testing.T) {
 	require.Equal(t, Positive, r.seen[methodRetT], "a method return is covariant")
 }
 
-// Rewriting a variable inside a setter rebuilds only that element, leaving the
-// object's other members untouched (copy-on-write).
+// Rewriting a variable inside a setter rebuilds only that element and reuses the
+// pointers of the object's other members.
 func TestAcceptObjectSetterCopyOnWrite(t *testing.T) {
 	str := &PrimType{Prim: StrPrim}
 	a := &TypeVarType{ID: 1}
