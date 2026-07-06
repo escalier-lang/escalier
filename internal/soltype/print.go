@@ -258,6 +258,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 				out = append(out, t)
 			}
 		case *FuncType:
+			if t.SelfParam != nil {
+				walk(t.SelfParam.Type)
+			}
 			for _, p := range t.Params {
 				walk(p.Type)
 			}
@@ -443,17 +446,7 @@ func (p *namedPrinter) printType(t Type) string {
 		// The inner prints at precPrefix so a looser inner such as a union or function
 		// gets parenthesized. Under the lazy deep-mut form (PR 14) the inner is the
 		// bare shape the user wrote, so it prints verbatim with no elision pass.
-		prefix := ""
-		if t.Lt != nil {
-			prefix = "&"
-			if name := p.borrowLifetimeName(t.Lt); name != "" {
-				prefix += name + " "
-			}
-		}
-		if t.Mut {
-			prefix += "mut "
-		}
-		return prefix + p.printTypeMinPrec(t.Inner, precPrefix)
+		return p.refBorrowPrefix(t) + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *UnionType:
 		// An inexact union renders a trailing `...` entry, so a union typed
 		// `A | B | ...` round-trips to surface syntax. The inexact tuple,
@@ -522,16 +515,50 @@ func classDisplayName(qname string) string {
 	return qname
 }
 
+// refBorrowPrefix renders the ownership and borrow prefix of a RefType: "" for an
+// owned-immutable cell, "mut " for owned-mutable, "&" or "&'a " for an immutable
+// borrow, and "&mut " or "&'a mut " for a mutable borrow. The RefType arm and the
+// method self-receiver share it so a borrow renders the same in both places.
+func (p *namedPrinter) refBorrowPrefix(t *RefType) string {
+	prefix := ""
+	if t.Lt != nil {
+		prefix = "&"
+		if name := p.borrowLifetimeName(t.Lt); name != "" {
+			prefix += name + " "
+		}
+	}
+	if t.Mut {
+		prefix += "mut "
+	}
+	return prefix
+}
+
+// printSelfReceiver renders a method's receiver as the Rust-style shorthand, reading
+// it back from the desugared receiver type. An owned receiver `Self` renders `self`.
+// The `mut Self`, `&Self`, and `&mut Self` receivers render `mut self`, `&self`, and
+// `&mut self` through the shared borrow prefix, so a named borrow lifetime renders
+// `&'a self`.
+func (p *namedPrinter) printSelfReceiver(sp *FuncParam) string {
+	if ref, ok := sp.Type.(*RefType); ok {
+		return p.refBorrowPrefix(ref) + "self"
+	}
+	return "self"
+}
+
 // printFuncTail renders the "(params) -> ret" portion of a function, without the
 // leading "fn" keyword. Kept as a separate helper so PrintAsScheme can compose it
 // with a <...> quantifier prefix without byte-slicing the "fn " back off.
 //
-// PR4 markers: an optional parameter renders as `x?: T`, and an INEXACT function
-// renders a trailing `...` entry (`fn (x: T, ...) -> R`) so the exactness it
-// carries round-trips to surface syntax. An exact function (the common case)
-// renders with no marker.
+// A method's self receiver renders first as its shorthand, so an instance method
+// reads `(self, x: T) -> R` or `(mut self) -> R`. PR4 markers follow: an optional
+// parameter renders as `x?: T`, and an INEXACT function renders a trailing `...`
+// entry (`fn (x: T, ...) -> R`) so the exactness it carries round-trips to surface
+// syntax. An exact function with no receiver renders with no marker.
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
-	ps := make([]string, 0, len(t.Params)+1)
+	ps := make([]string, 0, len(t.Params)+2)
+	if t.SelfParam != nil {
+		ps = append(ps, p.printSelfReceiver(t.SelfParam))
+	}
 	for i, param := range t.Params {
 		rest := ""
 		if param.Rest {

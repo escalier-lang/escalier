@@ -89,13 +89,28 @@ func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	params, changed := acceptParams(cur.Params, v, pol) // params contravariant
-	ret := cur.Ret.Accept(v, pol)                       // return covariant
+	self, selfChanged := acceptSelfParam(cur.SelfParam, v, pol) // receiver contravariant
+	params, changed := acceptParams(cur.Params, v, pol)         // params contravariant
+	ret := cur.Ret.Accept(v, pol)                              // return covariant
 	out := cur
-	if changed || ret != cur.Ret {
-		out = &FuncType{Params: params, Ret: ret, Inexact: cur.Inexact}
+	if selfChanged || changed || ret != cur.Ret {
+		out = &FuncType{SelfParam: self, Params: params, Ret: ret, Inexact: cur.Inexact}
 	}
 	return v.ExitType(out, pol)
+}
+
+// acceptSelfParam walks a method's receiver type contravariantly, like an ordinary
+// parameter, and returns the original *FuncParam when its type did not change. A nil
+// receiver passes through unchanged, since a static method or plain function has none.
+func acceptSelfParam(sp *FuncParam, v TypeVisitor, pol Polarity) (*FuncParam, bool) {
+	if sp == nil {
+		return nil, false
+	}
+	pt := sp.Type.Accept(v, pol.Flip())
+	if pt == sp.Type {
+		return sp, false
+	}
+	return &FuncParam{Pattern: sp.Pattern, Type: pt, Optional: sp.Optional, Rest: sp.Rest}, true
 }
 
 func (t *TupleType) Accept(v TypeVisitor, pol Polarity) Type {

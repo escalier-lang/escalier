@@ -717,6 +717,15 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact {
 			return false
 		}
+		// Receiver presence distinguishes an instance method from a static one, and the
+		// receiver type carries its mutability and borrow, so `(self) -> T`, `(mut self)
+		// -> T`, and `() -> T` are all distinct.
+		if (a.SelfParam == nil) != (b.SelfParam == nil) {
+			return false
+		}
+		if a.SelfParam != nil && !equalTypeWith(a.SelfParam.Type, b.SelfParam.Type, p) {
+			return false
+		}
 		for i := range a.Params {
 			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || !equalTypeWith(a.Params[i].Type, b.Params[i].Type, p) {
 				return false

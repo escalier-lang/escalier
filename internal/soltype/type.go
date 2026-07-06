@@ -190,10 +190,19 @@ type FuncParam struct {
 // exact-by-default semantics: a function minted without thinking about exactness is
 // correctly exact, and the structural rewriters (coalesce, extrude, freshenAbove)
 // carry the flag through unchanged. Only the parser's `...` marker sets it.
+// SelfParam carries the implicit `self` receiver of a method, so a method's
+// FuncType records its receiver distinctly from its ordinary parameters. Its
+// presence marks an instance method and its absence a static method or a plain
+// function. Type is the receiver type after desugaring the Rust-style shorthand:
+// `self` is `Self`, `mut self` is `mut Self`, `&self` is `&Self`, and `&mut self`
+// is `&mut Self`. The printer reads that shape back to the shorthand, and the
+// receiver's borrow and lifetime flow through the visitor the same way a
+// parameter's do. Pattern names the receiver, always the `self` identifier.
 type FuncType struct {
-	Params  []*FuncParam
-	Ret     Type
-	Inexact bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
+	SelfParam *FuncParam // nil ⇒ static method or plain function; non-nil ⇒ instance method
+	Params    []*FuncParam
+	Ret       Type
+	Inexact   bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
 }
 
 // TupleType is a tuple type. Inexact follows the ObjectType/FuncType convention:
@@ -497,6 +506,9 @@ func LevelOf(t Type) int {
 		return t.Level
 	case *FuncType:
 		m := 0
+		if t.SelfParam != nil {
+			m = LevelOf(t.SelfParam.Type)
+		}
 		for _, p := range t.Params {
 			m = max(m, LevelOf(p.Type))
 		}

@@ -429,6 +429,54 @@ func TestEqualTypeClass(t *testing.T) {
 	}
 }
 
+// equalType distinguishes methods by their receiver: presence marks an instance
+// versus a static method, and the receiver type carries mutability, so (self),
+// (mut self), and () are all distinct.
+func TestEqualTypeFuncSelfParam(t *testing.T) {
+	selfRecv := func(recv soltype.Type) *soltype.FuncParam {
+		return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: recv}
+	}
+	owned := func() soltype.Type { return &soltype.ClassType{Name: "Counter"} }
+	mutSelf := func() soltype.Type {
+		return &soltype.RefType{Mut: true, Inner: &soltype.ClassType{Name: "Counter"}}
+	}
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "same receiver",
+			a:    &soltype.FuncType{SelfParam: selfRecv(owned()), Ret: num()},
+			b:    &soltype.FuncType{SelfParam: selfRecv(owned()), Ret: num()},
+			want: true,
+		},
+		{
+			name: "receiver mutability differs",
+			a:    &soltype.FuncType{SelfParam: selfRecv(owned()), Ret: num()},
+			b:    &soltype.FuncType{SelfParam: selfRecv(mutSelf()), Ret: num()},
+			want: false,
+		},
+		{
+			name: "instance versus static",
+			a:    &soltype.FuncType{SelfParam: selfRecv(owned()), Ret: num()},
+			b:    &soltype.FuncType{Ret: num()},
+			want: false,
+		},
+		{
+			name: "both static",
+			a:    &soltype.FuncType{Ret: num()},
+			b:    &soltype.FuncType{Ret: num()},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}
+
 // equalType over an object carrying method, getter, and setter members compares
 // each member kind-for-kind and stays order-independent. A getter and a setter that
 // share a name are disambiguated by kind, so a getter never matches a setter.

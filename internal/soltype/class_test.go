@@ -11,6 +11,120 @@ func method(name string, sig *FuncType) *MethodElem {
 	return &MethodElem{Name: name, Signatures: []*FuncType{sig}}
 }
 
+// selfRecv builds a self receiver whose desugared type is recv.
+func selfRecv(recv Type) *FuncParam {
+	return &FuncParam{Pattern: &IdentPat{Name: "self"}, Type: recv}
+}
+
+// TestPrintMethodSelfReceiver renders a method's self receiver as the Rust-style
+// shorthand, read back from the desugared receiver type. Self renders `self`, mut
+// Self renders `mut self`, &Self renders `&self`, and &mut Self renders `&mut self`.
+// A method with no receiver is a static method and renders with no receiver.
+func TestPrintMethodSelfReceiver(t *testing.T) {
+	counter := func() Type { return &ClassType{Name: "Counter"} }
+	tests := []struct {
+		name string
+		in   Type
+		want string
+	}{
+		{
+			"owned immutable self",
+			&ObjectType{Elems: []ObjTypeElem{method("peek", &FuncType{SelfParam: selfRecv(counter()), Ret: numP()})}},
+			"{peek(self) -> number}",
+		},
+		{
+			"owned mutable mut self",
+			&ObjectType{Elems: []ObjTypeElem{method("inc", &FuncType{SelfParam: selfRecv(&RefType{Mut: true, Inner: &ClassType{Name: "Counter"}}), Ret: &Void{}})}},
+			"{inc(mut self) -> void}",
+		},
+		{
+			"immutable borrow &self",
+			&ObjectType{Elems: []ObjTypeElem{method("look", &FuncType{SelfParam: selfRecv(&RefType{Lt: Anon, Inner: &ClassType{Name: "Counter"}}), Ret: numP()})}},
+			"{look(&self) -> number}",
+		},
+		{
+			"mutable borrow &mut self",
+			&ObjectType{Elems: []ObjTypeElem{method("edit", &FuncType{SelfParam: selfRecv(&RefType{Mut: true, Lt: Anon, Inner: &ClassType{Name: "Counter"}}), Ret: &Void{}})}},
+			"{edit(&mut self) -> void}",
+		},
+		{
+			"self followed by ordinary params",
+			&ObjectType{Elems: []ObjTypeElem{method("add", &FuncType{SelfParam: selfRecv(counter()), Params: []*FuncParam{identP("x", numP())}, Ret: numP()})}},
+			"{add(self, x: number) -> number}",
+		},
+		{
+			"static method has no receiver",
+			&ObjectType{Elems: []ObjTypeElem{method("make", &FuncType{Ret: &ClassType{Name: "Counter"}})}},
+			"{make() -> Counter}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, Print(tt.in))
+		})
+	}
+}
+
+// A borrowing method's receiver lifetime flows through Accept, so the scheme printer
+// names it and renders the receiver as `&'a self`.
+func TestPrintMethodSelfReceiverNamedLifetime(t *testing.T) {
+	lv := &LifetimeVar{ID: 0, Level: 1}
+	fn := &FuncType{SelfParam: selfRecv(&RefType{Lt: lv, Inner: &ClassType{Name: "Counter"}}), Ret: numP()}
+	require.Equal(t, "fn <'a>(&'a self) -> number", PrintAsScheme(fn))
+}
+
+// A no-op rewrite over a method keeps its pointer, walking the self receiver yet
+// leaving it unchanged.
+func TestAcceptFuncSelfParamIdentity(t *testing.T) {
+	fn := &FuncType{SelfParam: selfRecv(&ClassType{Name: "Counter"}), Ret: numP()}
+	require.Same(t, fn, fn.Accept(identityVisitor{}, Positive), "an unchanged method keeps its pointer")
+}
+
+// Rewriting a variable inside the receiver type rebuilds the FuncType and its self
+// receiver while carrying the other fields through.
+func TestAcceptFuncSelfParamCopyOnWrite(t *testing.T) {
+	str := &PrimType{Prim: StrPrim}
+	a := &TypeVarType{ID: 1}
+	fn := &FuncType{
+		SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{a}}),
+		Params:    []*FuncParam{identP("x", numP())},
+		Ret:       numP(),
+	}
+
+	got := fn.Accept(&replaceVar{target: a, repl: str}, Positive).(*FuncType)
+
+	require.NotSame(t, fn, got, "a changed receiver forces a new FuncType")
+	require.Same(t, str, got.SelfParam.Type.(*ClassType).Args[0], "the receiver argument took the replacement")
+	require.Same(t, fn.Params[0], got.Params[0], "an unchanged param keeps its pointer")
+}
+
+// A method's self receiver is contravariant, like a parameter, so it is visited in
+// the flipped polarity.
+func TestAcceptFuncSelfParamContravariant(t *testing.T) {
+	recv := &TypeVarType{ID: 7}
+	fn := &FuncType{SelfParam: selfRecv(recv), Ret: numP()}
+
+	r := &recorder{seen: map[Type]Polarity{}}
+	fn.Accept(r, Positive)
+
+	require.Equal(t, Negative, r.seen[recv], "the receiver is contravariant")
+}
+
+// LevelOf includes a method's self receiver, so a receiver-only variable lifts the
+// method's level.
+func TestLevelOfSelfParam(t *testing.T) {
+	fn := &FuncType{SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{&TypeVarType{ID: 1, Level: 6}}}), Ret: numP()}
+	require.Equal(t, 6, LevelOf(fn))
+}
+
+// freeTypeVars descends a method's self receiver, so a variable appearing only in the
+// receiver type is named as a quantified parameter.
+func TestFreeTypeVarsSelfParam(t *testing.T) {
+	a := &TypeVarType{ID: 1, Level: 1}
+	fn := &FuncType{SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{a}}), Ret: a}
+	require.Equal(t, "fn <T0>(self) -> T0", PrintAsScheme(fn))
+}
+
 // TestPrintClassType renders a nominal instance under its display name, with a
 // `<...>` type-argument list when it has arguments. The qualified Name carries a
 // namespace prefix for registry keying, which the printer strips for display. The
