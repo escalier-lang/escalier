@@ -34,10 +34,12 @@ func typePrec(t Type) int {
 	case *RefType:
 		return precPrefix
 	default:
-		// PrimType, LitType, TupleType, ObjectType, Void, NeverType, UnknownType —
-		// atoms (ObjectType is brace-delimited, so it never needs parens). A
-		// raw TypeVarType (which appears only when printing an un-coalesced type,
-		// see printType) is also an atom (rendered as `t{ID}`), so it lands here.
+		// PrimType, LitType, TupleType, ObjectType, ClassType, Void, NeverType,
+		// UnknownType — atoms. ObjectType is brace-delimited and ClassType renders as
+		// a bare name or `Name<args>`, so neither needs parens. A raw TypeVarType
+		// appears only when printing an un-coalesced type, see printType; it is also an
+		// atom rendered as `t{ID}`, so it lands here. A `mut 'a Point` borrow wraps the
+		// ClassType in a RefType, which carries the looser precPrefix precedence.
 		return precAtom
 	}
 }
@@ -133,6 +135,14 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool, ltBounds map[*Li
 		return Print(t)
 	}
 	p := &namedPrinter{names: names, ltNames: ltNames}
+	if _, ok := t.(*ClassType); ok {
+		// A class instance already displays its type parameters inline in its `<...>`
+		// argument list, so it needs no separate quantifier prefix. A generalized
+		// Map<K, V> renders as Map<T0, T1>, not <T0, T1> Map<T0, T1>. A ClassType's only
+		// free-variable children are its arguments, so every quantified variable is
+		// shown inline and none is lost by dropping the prefix.
+		return p.printType(t)
+	}
 	ltLabels := make([]string, len(ltVars))
 	for i, lv := range ltVars {
 		ltLabels[i] = p.lifetimeBinder(lv, ltBounds[lv], ltIndex)
@@ -248,6 +258,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 				out = append(out, t)
 			}
 		case *FuncType:
+			if t.SelfParam != nil {
+				walk(t.SelfParam.Type)
+			}
 			for _, p := range t.Params {
 				walk(p.Type)
 			}
@@ -258,7 +271,28 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *ObjectType:
 			for _, e := range t.Elems {
-				walk(AsProperty(e).Type)
+				switch e := e.(type) {
+				case *PropertyElem:
+					walk(e.Type)
+				case *MethodElem:
+					for _, sig := range e.Signatures {
+						walk(sig)
+					}
+				case *GetterElem:
+					if e.SelfParam != nil {
+						walk(e.SelfParam.Type)
+					}
+					walk(e.Type)
+				case *SetterElem:
+					if e.SelfParam != nil {
+						walk(e.SelfParam.Type)
+					}
+					walk(e.Param)
+				}
+			}
+		case *ClassType:
+			for _, a := range t.Args {
+				walk(a)
 			}
 		case *PromiseType:
 			walk(t.Inner)
@@ -391,21 +425,26 @@ func (p *namedPrinter) printType(t Type) string {
 	case *ObjectType:
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {
-			prop := AsProperty(e)
-			opt := ""
-			if prop.Optional {
-				opt = "?"
-			}
-			ro := ""
-			if prop.Readonly {
-				ro = "readonly "
-			}
-			elems = append(elems, ro+printObjectKeyName(prop.Name)+opt+": "+p.printType(prop.Type))
+			elems = append(elems, p.printObjElem(e))
 		}
 		if t.Inexact {
 			elems = append(elems, "...")
 		}
 		return "{" + strings.Join(elems, ", ") + "}"
+	case *ClassType:
+		// A ClassType renders under its bare display name, with a `<...>` type-argument
+		// list when it has arguments: `Point`, `Box<number>`. The qualified Name carries
+		// a namespace prefix for registry keying, stripped here for display. Lt and the
+		// `mut` borrow forms come from a RefType wrapper, not this arm.
+		name := classDisplayName(t.Name)
+		if len(t.Args) == 0 {
+			return name
+		}
+		args := make([]string, len(t.Args))
+		for i, a := range t.Args {
+			args[i] = p.printType(a)
+		}
+		return name + "<" + strings.Join(args, ", ") + ">"
 	case *FuncType:
 		return "fn " + p.printFuncTail(t)
 	case *PromiseType:
@@ -422,17 +461,7 @@ func (p *namedPrinter) printType(t Type) string {
 		// The inner prints at precPrefix so a looser inner such as a union or function
 		// gets parenthesized. Under the lazy deep-mut form (PR 14) the inner is the
 		// bare shape the user wrote, so it prints verbatim with no elision pass.
-		prefix := ""
-		if t.Lt != nil {
-			prefix = "&"
-			if name := p.borrowLifetimeName(t.Lt); name != "" {
-				prefix += name + " "
-			}
-		}
-		if t.Mut {
-			prefix += "mut "
-		}
-		return prefix + p.printTypeMinPrec(t.Inner, precPrefix)
+		return p.refBorrowPrefix(t) + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *UnionType:
 		// An inexact union renders a trailing `...` entry, so a union typed
 		// `A | B | ...` round-trips to surface syntax. The inexact tuple,
@@ -455,16 +484,105 @@ func (p *namedPrinter) printType(t Type) string {
 	panic(fmt.Sprintf("printType: unhandled %T", t))
 }
 
+// printObjElem renders one object member in Escalier surface syntax. Each kind has
+// its own form:
+//
+//   - a property renders `name: T` with the `readonly` and `?` markers;
+//   - a method renders `name(params) -> ret` per overload arm, arms joined by "; "
+//     so the arm boundary stays distinct from the outer ", " between members;
+//   - a getter renders `get name(self) -> T`, or `get name() -> T` when static;
+//   - a setter renders `set name(self, value: T)`, or `set name(value: T)` when static.
+//
+// A getter's or setter's self receiver renders through the same shorthand as a
+// method's. It panics on an unknown element kind, matching AsProperty.
+func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
+	switch e := e.(type) {
+	case *PropertyElem:
+		opt := ""
+		if e.Optional {
+			opt = "?"
+		}
+		ro := ""
+		if e.Readonly {
+			ro = "readonly "
+		}
+		return ro + printObjectKeyName(e.Name) + opt + ": " + p.printType(e.Type)
+	case *MethodElem:
+		arms := make([]string, len(e.Signatures))
+		for i, sig := range e.Signatures {
+			arms[i] = printObjectKeyName(e.Name) + p.printFuncTail(sig)
+		}
+		return strings.Join(arms, "; ")
+	case *GetterElem:
+		recv := ""
+		if e.SelfParam != nil {
+			recv = p.printSelfReceiver(e.SelfParam)
+		}
+		return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " + p.printType(e.Type)
+	case *SetterElem:
+		recv := ""
+		if e.SelfParam != nil {
+			recv = p.printSelfReceiver(e.SelfParam) + ", "
+		}
+		return "set " + printObjectKeyName(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")"
+	}
+	panic(fmt.Sprintf("printObjElem: unhandled ObjTypeElem %T", e))
+}
+
+// classDisplayName strips the dep_graph namespace prefix off a qualified class
+// name for display, so "Geometry.Point" renders as "Point". A bare name with no
+// dot is returned unchanged.
+func classDisplayName(qname string) string {
+	if i := strings.LastIndex(qname, "."); i >= 0 {
+		return qname[i+1:]
+	}
+	return qname
+}
+
+// refBorrowPrefix renders the ownership and borrow prefix of a RefType: "" for an
+// owned-immutable cell, "mut " for owned-mutable, "&" or "&'a " for an immutable
+// borrow, and "&mut " or "&'a mut " for a mutable borrow. The RefType arm and the
+// method self-receiver share it so a borrow renders the same in both places.
+func (p *namedPrinter) refBorrowPrefix(t *RefType) string {
+	prefix := ""
+	if t.Lt != nil {
+		prefix = "&"
+		if name := p.borrowLifetimeName(t.Lt); name != "" {
+			prefix += name + " "
+		}
+	}
+	if t.Mut {
+		prefix += "mut "
+	}
+	return prefix
+}
+
+// printSelfReceiver renders a method's receiver as the Rust-style shorthand, reading
+// it back from the desugared receiver type. An owned receiver `Self` renders `self`.
+// The `mut Self`, `&Self`, and `&mut Self` receivers render `mut self`, `&self`, and
+// `&mut self` through the shared borrow prefix, so a named borrow lifetime renders
+// `&'a self`.
+func (p *namedPrinter) printSelfReceiver(sp *FuncParam) string {
+	if ref, ok := sp.Type.(*RefType); ok {
+		return p.refBorrowPrefix(ref) + "self"
+	}
+	return "self"
+}
+
 // printFuncTail renders the "(params) -> ret" portion of a function, without the
 // leading "fn" keyword. Kept as a separate helper so PrintAsScheme can compose it
 // with a <...> quantifier prefix without byte-slicing the "fn " back off.
 //
-// PR4 markers: an optional parameter renders as `x?: T`, and an INEXACT function
-// renders a trailing `...` entry (`fn (x: T, ...) -> R`) so the exactness it
-// carries round-trips to surface syntax. An exact function (the common case)
-// renders with no marker.
+// A method's self receiver renders first as its shorthand, so an instance method
+// reads `(self, x: T) -> R` or `(mut self) -> R`. PR4 markers follow: an optional
+// parameter renders as `x?: T`, and an INEXACT function renders a trailing `...`
+// entry (`fn (x: T, ...) -> R`) so the exactness it carries round-trips to surface
+// syntax. An exact function with no receiver renders with no marker.
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
-	ps := make([]string, 0, len(t.Params)+1)
+	ps := make([]string, 0, len(t.Params)+2)
+	if t.SelfParam != nil {
+		ps = append(ps, p.printSelfReceiver(t.SelfParam))
+	}
 	for i, param := range t.Params {
 		rest := ""
 		if param.Rest {

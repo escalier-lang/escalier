@@ -717,6 +717,12 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact {
 			return false
 		}
+		// Receiver presence distinguishes an instance method from a static one, and the
+		// receiver type carries its mutability and borrow, so `(self) -> T`, `(mut self)
+		// -> T`, and `() -> T` are all distinct.
+		if !equalSelfParam(a.SelfParam, b.SelfParam, p) {
+			return false
+		}
 		for i := range a.Params {
 			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || !equalTypeWith(a.Params[i].Type, b.Params[i].Type, p) {
 				return false
@@ -743,20 +749,34 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 		if !ok || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 			return false
 		}
-		// Objects are equal up to property order, so match each property by name
-		// via ObjectType.Prop rather than by position. The solver dedups property
-		// names on construction, so names are unique. Equal lengths plus every
-		// a-property matching a b-property by name, type, and optionality is then a
-		// full structural match. Optional mirrors the FuncType arm's param-Optional
-		// discriminator.
+		// Objects are equal up to member order, so each a-member must find a b-member
+		// that shares its name and equals it kind-for-kind. Equal lengths plus that
+		// match on every a-member is a full structural match. Comparing against every
+		// same-named b-member, rather than the first, disambiguates a getter and setter
+		// that share a name.
 		for _, ae := range a.Elems {
-			ap := soltype.AsProperty(ae)
-			bp, ok := b.Prop(ap.Name)
-			if !ok || ap.Optional != bp.Optional || ap.Readonly != bp.Readonly || !equalTypeWith(ap.Type, bp.Type, p) {
+			name := soltype.ObjElemName(ae)
+			found := false
+			for _, be := range b.Elems {
+				if soltype.ObjElemName(be) == name && equalObjElem(ae, be, p) {
+					found = true
+					break
+				}
+			}
+			if !found {
 				return false
 			}
 		}
 		return true
+	case *soltype.ClassType:
+		b, ok := b.(*soltype.ClassType)
+		// Nominal identity is the qualified name plus the Final exactness flag. The type
+		// arguments then compare positionally. A ClassType's Lt is always nil today, so
+		// it is not compared.
+		if !ok || a.Name != b.Name || a.Final != b.Final {
+			return false
+		}
+		return equalTypeSliceWith(a.Args, b.Args, p)
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
 		return ok && equalTypeWith(a.Inner, b.Inner, p)
@@ -780,6 +800,56 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 		return ok && equalTypeSliceWith(a.Types, b.Types, p)
 	}
 	return false
+}
+
+// equalObjElem reports structural equality of two object members. It returns false
+// on a kind mismatch, so the caller matches a-members to b-members by name and kind
+// together. Each kind compares its own payload:
+//
+//   - a property compares its type, optionality, and readonly flag;
+//   - a method compares its static flag and each overload signature positionally,
+//     since arm order is significant;
+//   - a getter compares its return type;
+//   - a setter compares its parameter type.
+//
+// It panics on an unknown element kind, matching AsProperty.
+func equalObjElem(a, b soltype.ObjTypeElem, p *ltPairing) bool {
+	switch a := a.(type) {
+	case *soltype.PropertyElem:
+		b, ok := b.(*soltype.PropertyElem)
+		return ok && a.Optional == b.Optional && a.Readonly == b.Readonly && equalTypeWith(a.Type, b.Type, p)
+	case *soltype.MethodElem:
+		b, ok := b.(*soltype.MethodElem)
+		if !ok || a.Static != b.Static || len(a.Signatures) != len(b.Signatures) {
+			return false
+		}
+		for i := range a.Signatures {
+			if !equalTypeWith(a.Signatures[i], b.Signatures[i], p) {
+				return false
+			}
+		}
+		return true
+	case *soltype.GetterElem:
+		b, ok := b.(*soltype.GetterElem)
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, p) && equalTypeWith(a.Type, b.Type, p)
+	case *soltype.SetterElem:
+		b, ok := b.(*soltype.SetterElem)
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, p) && equalTypeWith(a.Param, b.Param, p)
+	}
+	panic(fmt.Sprintf("equalObjElem: unhandled ObjTypeElem %T", a))
+}
+
+// equalSelfParam reports whether two receivers match. Presence must agree, so an
+// instance member never equals a static one, and when both are present their receiver
+// types must be equal. It is shared by the method, getter, and setter comparisons.
+func equalSelfParam(a, b *soltype.FuncParam, p *ltPairing) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	if a == nil {
+		return true
+	}
+	return equalTypeWith(a.Type, b.Type, p)
 }
 
 // ltEqualWith reports lifetime equality for equalTypeWith's RefType arm. Under a nil

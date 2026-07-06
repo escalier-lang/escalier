@@ -376,6 +376,213 @@ func TestEqualTypeRef(t *testing.T) {
 	}
 }
 
+// equalType on a ClassType is nominal: it compares the qualified Name and the Final
+// exactness flag, then the type arguments positionally. Two instances of different
+// classes, or of the same class with different arguments or exactness, are not equal.
+func TestEqualTypeClass(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "same name and arguments",
+			a:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
+			b:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
+			want: true,
+		},
+		{
+			name: "name differs",
+			a:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
+			b:    &soltype.ClassType{Name: "Bag", Args: []soltype.Type{num()}},
+			want: false,
+		},
+		{
+			name: "type argument differs",
+			a:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
+			b:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{str()}},
+			want: false,
+		},
+		{
+			name: "Final differs",
+			a:    &soltype.ClassType{Name: "Box", Final: true},
+			b:    &soltype.ClassType{Name: "Box", Final: false},
+			want: false,
+		},
+		{
+			name: "argument count differs",
+			a:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
+			b:    &soltype.ClassType{Name: "Box"},
+			want: false,
+		},
+		{
+			name: "a class is not its bare projected object",
+			a:    &soltype.ClassType{Name: "Box"},
+			b:    exactObj(),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}
+
+// equalType distinguishes methods by their receiver: presence marks an instance
+// versus a static method, and the receiver type carries mutability, so (self),
+// (mut self), and () are all distinct.
+func TestEqualTypeFuncSelfParam(t *testing.T) {
+	selfRecv := func(recv soltype.Type) *soltype.FuncParam {
+		return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: recv}
+	}
+	owned := func() soltype.Type { return &soltype.ClassType{Name: "Counter"} }
+	mutSelf := func() soltype.Type {
+		return &soltype.RefType{Mut: true, Inner: &soltype.ClassType{Name: "Counter"}}
+	}
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "same receiver",
+			a:    &soltype.FuncType{SelfParam: selfRecv(owned()), Ret: num()},
+			b:    &soltype.FuncType{SelfParam: selfRecv(owned()), Ret: num()},
+			want: true,
+		},
+		{
+			name: "receiver mutability differs",
+			a:    &soltype.FuncType{SelfParam: selfRecv(owned()), Ret: num()},
+			b:    &soltype.FuncType{SelfParam: selfRecv(mutSelf()), Ret: num()},
+			want: false,
+		},
+		{
+			name: "instance versus static",
+			a:    &soltype.FuncType{SelfParam: selfRecv(owned()), Ret: num()},
+			b:    &soltype.FuncType{Ret: num()},
+			want: false,
+		},
+		{
+			name: "both static",
+			a:    &soltype.FuncType{Ret: num()},
+			b:    &soltype.FuncType{Ret: num()},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}
+
+// equalType distinguishes an instance getter or setter from a static one by receiver
+// presence, and by receiver type.
+func TestEqualTypeGetterSetterSelfParam(t *testing.T) {
+	selfRecv := func(recv soltype.Type) *soltype.FuncParam {
+		return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: recv}
+	}
+	owned := func() soltype.Type { return &soltype.ClassType{Name: "List"} }
+	mutSelf := func() soltype.Type {
+		return &soltype.RefType{Mut: true, Inner: &soltype.ClassType{Name: "List"}}
+	}
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "instance getter versus static getter",
+			a:    exactObj(&soltype.GetterElem{Name: "g", SelfParam: selfRecv(owned()), Type: num()}),
+			b:    exactObj(&soltype.GetterElem{Name: "g", Type: num()}),
+			want: false,
+		},
+		{
+			name: "same instance getter",
+			a:    exactObj(&soltype.GetterElem{Name: "g", SelfParam: selfRecv(owned()), Type: num()}),
+			b:    exactObj(&soltype.GetterElem{Name: "g", SelfParam: selfRecv(owned()), Type: num()}),
+			want: true,
+		},
+		{
+			name: "setter receiver mutability differs",
+			a:    exactObj(&soltype.SetterElem{Name: "s", SelfParam: selfRecv(owned()), Param: num()}),
+			b:    exactObj(&soltype.SetterElem{Name: "s", SelfParam: selfRecv(mutSelf()), Param: num()}),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}
+
+// equalType over an object carrying method, getter, and setter members compares
+// each member kind-for-kind and stays order-independent. A getter and a setter that
+// share a name are disambiguated by kind, so a getter never matches a setter.
+func TestEqualTypeObjectMembers(t *testing.T) {
+	method := func(name string, sig *soltype.FuncType) *soltype.MethodElem {
+		return &soltype.MethodElem{Name: name, Signatures: []*soltype.FuncType{sig}}
+	}
+	fn := func(param, ret soltype.Type) *soltype.FuncType {
+		return &soltype.FuncType{Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: param}}, Ret: ret}
+	}
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "equal up to member order",
+			a: exactObj(
+				method("m", fn(num(), str())),
+				&soltype.GetterElem{Name: "g", Type: num()},
+			),
+			b: exactObj(
+				&soltype.GetterElem{Name: "g", Type: num()},
+				method("m", fn(num(), str())),
+			),
+			want: true,
+		},
+		{
+			name: "method signature differs",
+			a:    exactObj(method("m", fn(num(), str()))),
+			b:    exactObj(method("m", fn(num(), num()))),
+			want: false,
+		},
+		{
+			name: "getter and setter with the same name stay distinct",
+			a:    exactObj(&soltype.GetterElem{Name: "x", Type: num()}),
+			b:    exactObj(&soltype.SetterElem{Name: "x", Param: num()}),
+			want: false,
+		},
+		{
+			name: "setter param differs",
+			a:    exactObj(&soltype.SetterElem{Name: "s", Param: num()}),
+			b:    exactObj(&soltype.SetterElem{Name: "s", Param: str()}),
+			want: false,
+		},
+		{
+			name: "matching getter and setter sharing a name",
+			a: exactObj(
+				&soltype.GetterElem{Name: "x", Type: num()},
+				&soltype.SetterElem{Name: "x", Param: num()},
+			),
+			b: exactObj(
+				&soltype.SetterElem{Name: "x", Param: num()},
+				&soltype.GetterElem{Name: "x", Type: num()},
+			),
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}
+
 // equalType on ObjectType must discriminate on the Inexact flag and on each
 // property's Optional marker (mirroring the FuncType arm's Inexact / param-Optional
 // checks), and must be order-independent. Without the Optional check (M4 A1 review
