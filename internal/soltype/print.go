@@ -147,10 +147,18 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool, ltBounds map[*Li
 	for i, lv := range ltVars {
 		ltLabels[i] = p.lifetimeBinder(lv, ltBounds[lv], ltIndex)
 	}
-	prefix := "<" + strings.Join(append(labels, ltLabels...), ", ") + ">"
 	if ft, ok := t.(*FuncType); ok {
-		return "fn " + prefix + p.printFuncTail(ft)
+		// Merge the scheme's free variables, the function's OWN type parameters, and the
+		// lifetimes into one ordered prefix, so a generic method that also captures a
+		// scheme variable renders `fn <T0, U, 'a>(...)` rather than two adjacent groups.
+		// printFuncBody omits the type-param prefix so the own parameters are not repeated.
+		p.nameTypeParams(ft.TypeParams)
+		binders := append([]string{}, labels...)
+		binders = append(binders, p.typeParamBinders(ft.TypeParams)...)
+		binders = append(binders, ltLabels...)
+		return "fn <" + strings.Join(binders, ", ") + ">" + p.printFuncBody(ft)
 	}
+	prefix := "<" + strings.Join(append(labels, ltLabels...), ", ") + ">"
 	return prefix + " " + p.printType(t)
 }
 
@@ -596,7 +604,15 @@ func (p *namedPrinter) printSelfReceiver(sp *FuncParam) string {
 // syntax. An exact function with no receiver renders with no marker.
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	p.nameTypeParams(t.TypeParams)
-	tps := p.printTypeParams(t.TypeParams)
+	return p.printTypeParams(t.TypeParams) + p.printFuncBody(t)
+}
+
+// printFuncBody renders the "(receiver, params) -> ret" portion with NO quantifier
+// prefix, so a caller that emits its own combined prefix — PrintAsSchemeWith merging
+// scheme-bound variables with the function's own type parameters — does not render the
+// type parameters twice. The body may reference the type parameters, so a caller must
+// register their names with nameTypeParams first.
+func (p *namedPrinter) printFuncBody(t *FuncType) string {
 	ps := make([]string, 0, len(t.Params)+2)
 	if t.SelfParam != nil {
 		ps = append(ps, p.printSelfReceiver(t.SelfParam))
@@ -615,7 +631,7 @@ func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	if t.Inexact {
 		ps = append(ps, "...")
 	}
-	return tps + "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
+	return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
 }
 
 // nameTypeParams registers each type parameter's binding variable under its source name
@@ -637,17 +653,15 @@ func (p *namedPrinter) nameTypeParams(tps []*TypeParam) {
 	}
 }
 
-// printTypeParams renders a function's own quantified type parameters as the prefix
-// `<U>`, `<U: T>` for a constraint, `<U = D>` for a default, or `<U: T = D>` for both,
-// joined by commas. An empty slice renders "", so a monomorphic function shows no
-// prefix. The constraint is the parameter variable's upper bound. A variable with
-// several upper bounds renders them joined by ` & `. nameTypeParams must run first so a
-// constraint or default that references another parameter renders under its name.
-func (p *namedPrinter) printTypeParams(tps []*TypeParam) string {
-	if len(tps) == 0 {
-		return ""
-	}
-	parts := make([]string, len(tps))
+// typeParamBinders renders each type parameter as a binder string — `U`, `U: T` for a
+// constraint, `U = D` for a default, or `U: T = D` for both — without the surrounding
+// `<>`. The constraint is the parameter variable's upper bound. A variable with several
+// upper bounds renders them joined by ` & `. nameTypeParams must run first so a binder
+// that references another parameter renders under its name. Callers that build a
+// combined quantifier prefix, such as PrintAsSchemeWith, join these with the scheme's
+// free variables and lifetimes into one list.
+func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
+	binders := make([]string, len(tps))
 	for i, tp := range tps {
 		s := p.printType(tp.Var) // the registered source name, else t{ID}
 		if bounds := tp.Var.UpperBounds; len(bounds) > 0 {
@@ -660,9 +674,20 @@ func (p *namedPrinter) printTypeParams(tps []*TypeParam) string {
 		if tp.Default != nil {
 			s += " = " + p.printType(tp.Default)
 		}
-		parts[i] = s
+		binders[i] = s
 	}
-	return "<" + strings.Join(parts, ", ") + ">"
+	return binders
+}
+
+// printTypeParams wraps a function's own type-parameter binders in a `<...>` prefix,
+// so a generic function renders `<U>`, `<U: T>`, `<U = D>`, or `<U: T = D>`. An empty
+// slice renders "", so a monomorphic function shows no prefix. nameTypeParams must run
+// first. See typeParamBinders for the per-parameter form.
+func (p *namedPrinter) printTypeParams(tps []*TypeParam) string {
+	if len(tps) == 0 {
+		return ""
+	}
+	return "<" + strings.Join(p.typeParamBinders(tps), ", ") + ">"
 }
 
 // paramName renders p.Pattern. M1's only Pat concrete is IdentPat; a nil or

@@ -577,6 +577,20 @@ func TestPrintScheme(t *testing.T) {
 		require.Equal(t, "fn <T0>(x: T0) -> T0", PrintAsScheme(ty))
 	})
 
+	t.Run("captured free var and own type param merge into one prefix", func(t *testing.T) {
+		u := &TypeVarType{ID: 10, Level: 2}    // the function's own type parameter
+		free := &TypeVarType{ID: 20, Level: 1} // a captured scheme variable
+		// fn <U>(x: U, y: free) -> [U, free]: the scheme names free as T0, the function
+		// contributes U, and the two merge into a single ordered `<T0, U>` prefix rather
+		// than the malformed `<T0><U>` two adjacent groups would produce.
+		ty := &FuncType{
+			TypeParams: []*TypeParam{{Name: "U", Var: u}},
+			Params:     []*FuncParam{identP("x", u), identP("y", free)},
+			Ret:        &TupleType{Elems: []Type{u, free}},
+		}
+		require.Equal(t, "fn <T0, U>(x: U, y: T0) -> [U, T0]", PrintAsScheme(ty))
+	})
+
 	t.Run("distinct vars are named by first appearance", func(t *testing.T) {
 		a := &TypeVarType{ID: 1, Level: 1}
 		b := &TypeVarType{ID: 2, Level: 1}

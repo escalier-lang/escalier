@@ -508,9 +508,11 @@ func TestEqualTypeGenericFunc(t *testing.T) {
 			want: false,
 		},
 		{
+			// Params match, so this reaches the TypeParams-length check rather than
+			// short-circuiting on the earlier Params-length comparison.
 			name: "type parameter arity differs",
 			a:    identityFn(10, nil, nil),
-			b:    &soltype.FuncType{Ret: num()}, // no type parameters
+			b:    &soltype.FuncType{Params: []*soltype.FuncParam{ident("x", num())}, Ret: num()},
 			want: false,
 		},
 		{
