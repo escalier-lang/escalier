@@ -429,6 +429,113 @@ func TestEqualTypeClass(t *testing.T) {
 	}
 }
 
+// equalType compares two generic FuncTypes up to alpha-renaming of their positional
+// type parameters: a parameter's identity is its position, not its variable id, so two
+// signatures differing only in variable id compare equal, while a constraint, default,
+// arity, or positional-use difference makes them unequal. A free variable is still keyed
+// by pointer, so a bound parameter does not leak into the free-variable comparison.
+func TestEqualTypeGenericFunc(t *testing.T) {
+	// tv builds a fresh type variable at a quantifiable level.
+	tv := func(id int) *soltype.TypeVarType { return &soltype.TypeVarType{ID: id, Level: 1} }
+	// ident wraps a type as a named parameter.
+	ident := func(name string, ty soltype.Type) *soltype.FuncParam {
+		return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: ty}
+	}
+	// identityFn is `fn <U>(x: U) -> U` with U carrying the given id, constraint, and
+	// default, so the table can vary one facet at a time.
+	identityFn := func(id int, constraint, def soltype.Type) *soltype.FuncType {
+		u := tv(id)
+		if constraint != nil {
+			u.UpperBounds = []soltype.Type{constraint}
+		}
+		return &soltype.FuncType{
+			TypeParams: []*soltype.TypeParam{{Name: "U", Var: u, Default: def}},
+			Params:     []*soltype.FuncParam{ident("x", u)},
+			Ret:        u,
+		}
+	}
+	// freeFn builds `fn <U>(x: U, y: free) -> U`, threading one U pointer through so
+	// each side reuses its parameter variable the way real solver output does. The free
+	// variable is passed in, so two sides can share it or differ.
+	freeFn := func(u, free *soltype.TypeVarType) *soltype.FuncType {
+		return &soltype.FuncType{
+			TypeParams: []*soltype.TypeParam{{Name: "U", Var: u}},
+			Params:     []*soltype.FuncParam{ident("x", u), ident("y", free)},
+			Ret:        u,
+		}
+	}
+	sharedFree := tv(99)
+
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "differ only in parameter var id",
+			a:    identityFn(10, nil, nil),
+			b:    identityFn(20, nil, nil),
+			want: true,
+		},
+		{
+			name: "same constraint, different var id",
+			a:    identityFn(10, num(), nil),
+			b:    identityFn(20, num(), nil),
+			want: true,
+		},
+		{
+			name: "constraint differs",
+			a:    identityFn(10, num(), nil),
+			b:    identityFn(20, str(), nil),
+			want: false,
+		},
+		{
+			name: "one constrained, one not",
+			a:    identityFn(10, num(), nil),
+			b:    identityFn(20, nil, nil),
+			want: false,
+		},
+		{
+			name: "default differs",
+			a:    identityFn(10, nil, num()),
+			b:    identityFn(20, nil, str()),
+			want: false,
+		},
+		{
+			name: "one defaulted, one not",
+			a:    identityFn(10, nil, num()),
+			b:    identityFn(20, nil, nil),
+			want: false,
+		},
+		{
+			name: "type parameter arity differs",
+			a:    identityFn(10, nil, nil),
+			b:    &soltype.FuncType{Ret: num()}, // no type parameters
+			want: false,
+		},
+		{
+			// The same free-var pointer beside an alpha-renamed parameter still matches.
+			name: "same free var pointer matches",
+			a:    freeFn(tv(10), sharedFree),
+			b:    freeFn(tv(20), sharedFree),
+			want: true,
+		},
+		{
+			// A bound parameter does not leak into the free-var comparison: two distinct
+			// free-var pointers stay unequal even though the parameters alpha-match.
+			name: "different free var pointers do not match",
+			a:    freeFn(tv(10), tv(98)),
+			b:    freeFn(tv(20), tv(97)),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}
+
 // equalType distinguishes methods by their receiver: presence marks an instance
 // versus a static method, and the receiver type carries mutability, so (self),
 // (mut self), and () are all distinct.
@@ -581,6 +688,35 @@ func TestEqualTypeObjectMembers(t *testing.T) {
 			require.Equal(t, tt.want, equalType(tt.a, tt.b))
 		})
 	}
+}
+
+// A parameter's identity is its position: two two-parameter signatures that use their
+// parameters in swapped positions are unequal even though each is well-formed.
+func TestEqualTypeGenericFuncPositional(t *testing.T) {
+	// mk builds `fn <U, V>(x: U, y: V) -> [retFirst, retSecond]`, choosing which
+	// parameter each return element uses, so a swap changes only the body's positions.
+	mk := func(idU, idV int, retFirst, retSecond int) *soltype.FuncType {
+		u := &soltype.TypeVarType{ID: idU, Level: 1}
+		v := &soltype.TypeVarType{ID: idV, Level: 1}
+		pick := func(id int) *soltype.TypeVarType {
+			if id == idU {
+				return u
+			}
+			return v
+		}
+		return &soltype.FuncType{
+			TypeParams: []*soltype.TypeParam{{Name: "U", Var: u}, {Name: "V", Var: v}},
+			Params: []*soltype.FuncParam{
+				{Pattern: &soltype.IdentPat{Name: "x"}, Type: u},
+				{Pattern: &soltype.IdentPat{Name: "y"}, Type: v},
+			},
+			Ret: &soltype.TupleType{Elems: []soltype.Type{pick(retFirst), pick(retSecond)}},
+		}
+	}
+	// Both return [first param, second param]: alpha-equal despite distinct var ids.
+	require.True(t, equalType(mk(10, 11, 10, 11), mk(20, 21, 20, 21)))
+	// The second swaps the return to [second param, first param]: positions differ.
+	require.False(t, equalType(mk(10, 11, 10, 11), mk(20, 21, 21, 20)))
 }
 
 // equalType on ObjectType must discriminate on the Inexact flag and on each

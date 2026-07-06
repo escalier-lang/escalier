@@ -76,6 +76,31 @@ func TestFreshenAboveFreshensBoundsAndHandlesCycles(t *testing.T) {
 	})
 }
 
+// freshenAbove copies a generic FuncType's own type parameter: the parameter's binding
+// variable is replaced by a fresh variable, its constraint is copied onto that fresh
+// variable, and every use across the params and return shares the one fresh variable, so
+// each instantiation of the generic gets its own U. This is the per-method
+// generalization the FuncType.TypeParams field exists to carry.
+func TestFreshenAboveGenericFunc(t *testing.T) {
+	c := newChecker()
+	u := c.freshAt(2) // deeper than the limit 1, so it is a quantified parameter
+	u.UpperBounds = []soltype.Type{&soltype.PrimType{Prim: soltype.NumPrim}}
+	fn := &soltype.FuncType{
+		TypeParams: []*soltype.TypeParam{{Name: "U", Var: u}},
+		Params:     []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: u}},
+		Ret:        u,
+	}
+
+	got := c.freshenAbove(1, fn, 1, map[*soltype.TypeVarType]*soltype.TypeVarType{}).(*soltype.FuncType)
+
+	fresh := got.TypeParams[0].Var
+	require.NotSame(t, u, fresh, "the type parameter var is freshened")
+	require.Same(t, fresh, got.Params[0].Type, "the param use shares the fresh var")
+	require.Same(t, fresh, got.Ret, "the return use shares the fresh var")
+	require.Len(t, fresh.UpperBounds, 1)
+	require.Equal(t, &soltype.PrimType{Prim: soltype.NumPrim}, fresh.UpperBounds[0], "the constraint is copied onto the fresh var")
+}
+
 // instantiate records a FromInstantiation provenance edge for each freshened
 // variable, pointing back at the variable it was copied from — the first interior
 // Origin (M3, PR1). A MonoScheme instantiation records nothing (it freshens no

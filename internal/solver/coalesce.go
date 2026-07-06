@@ -643,7 +643,50 @@ func dedup(parts []soltype.Type) []soltype.Type {
 // with no bound between them distinct. alphaEqualTypes is the cross-scheme variant that
 // compares lifetimes up to renaming instead.
 func equalType(a, b soltype.Type) bool {
-	return equalTypeWith(a, b, nil)
+	return equalTypeWith(a, b, &alphaCtx{})
+}
+
+// alphaCtx carries the bijections equalTypeWith uses to compare two types up to a
+// consistent renaming of their bound variables. tvAToB and tvBToA pair the positional
+// type parameters of two generic FuncTypes, bound at each function boundary so a
+// parameter's identity is its position rather than its variable id. lt pairs borrow
+// lifetimes for alphaEqualTypes. A nil lt selects pointer-identity lifetime equality,
+// the within-coalesce default equalType uses. The type-parameter maps start nil and are
+// allocated on the first binding, so the monomorphic common case allocates nothing.
+type alphaCtx struct {
+	lt     *ltPairing
+	tvAToB map[int]int
+	tvBToA map[int]int
+}
+
+// bindTypeParams pairs two generic FuncTypes' type parameters positionally, so every
+// later occurrence of one side's parameter must match the other's bound partner. The
+// bindings persist for the rest of the walk. Type-variable ids are unique across the
+// comparison, so a parameter bound here is never confused with one from another
+// function.
+func (ctx *alphaCtx) bindTypeParams(as, bs []*soltype.TypeParam) {
+	if ctx.tvAToB == nil {
+		ctx.tvAToB = map[int]int{}
+		ctx.tvBToA = map[int]int{}
+	}
+	for i := range as {
+		ctx.tvAToB[as[i].Var.ID] = bs[i].Var.ID
+		ctx.tvBToA[bs[i].Var.ID] = as[i].Var.ID
+	}
+}
+
+// sameTypeVar reports whether two type variables are equal under the type-parameter
+// bijection. A variable bound as one side's parameter must map to the other's partner. A
+// variable bound on neither side is a shared or free variable and compares by pointer
+// identity, the rule the rest of equalType keys variables by.
+func (ctx *alphaCtx) sameTypeVar(a, b *soltype.TypeVarType) bool {
+	if j, ok := ctx.tvAToB[a.ID]; ok {
+		return j == b.ID
+	}
+	if _, ok := ctx.tvBToA[b.ID]; ok {
+		return false // b is a bound parameter, a is not — mismatch
+	}
+	return a == b
 }
 
 // ltPairing is the bijection alphaEqualTypes discovers between the lifetime variables of
@@ -652,9 +695,9 @@ func equalType(a, b soltype.Type) bool {
 // every later occurrence must respect that binding. aToB and bToA are the two directions
 // of the bijection, keyed by lifetime-variable ID. aVars and bVars list the bound
 // variables in binding order, so index i on each side names one paired lifetime.
-// sameOutlivesUnderPairing compares the outlives relation over those pairs. A nil
-// *ltPairing selects pointer-identity lifetime equality, the within-coalesce default
-// equalType uses.
+// sameOutlivesUnderPairing compares the outlives relation over those pairs. The pairing
+// sits on alphaCtx.lt. A nil lt selects pointer-identity lifetime equality, the
+// within-coalesce default equalType uses.
 type ltPairing struct {
 	aToB  map[int]int
 	bToA  map[int]int
@@ -682,15 +725,17 @@ func (p *ltPairing) pair(a, b *soltype.LifetimeVar) bool {
 	return true
 }
 
-// equalTypeWith is equalType parameterized by an optional lifetime pairing. With a nil
-// pairing it is exactly equalType, keying lifetimes by pointer identity. With a pairing
-// it keys a borrow's lifetime by first-appearance index, so alphaEqualTypes can compare
-// borrows across schemes whose lifetime variables have independent identities.
-func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
+// equalTypeWith is equalType threading an alphaCtx. Its lt pairing keys a borrow's
+// lifetime by first-appearance index when set, so alphaEqualTypes can compare borrows
+// across schemes whose lifetime variables have independent identities. With a nil lt it
+// keys lifetimes by pointer. Its type-parameter bijection compares two generic
+// FuncTypes up to alpha-renaming of their positional TypeParams, so a parameter's
+// identity is its position rather than its variable id.
+func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	switch a := a.(type) {
 	case *soltype.TypeVarType:
 		b, ok := b.(*soltype.TypeVarType)
-		return ok && a == b
+		return ok && ctx.sameTypeVar(a, b)
 	case *soltype.PrimType:
 		b, ok := b.(*soltype.PrimType)
 		return ok && a.Prim == b.Prim
@@ -714,21 +759,40 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 		return ok
 	case *soltype.FuncType:
 		b, ok := b.(*soltype.FuncType)
-		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact {
+		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact || len(a.TypeParams) != len(b.TypeParams) {
 			return false
+		}
+		if len(a.TypeParams) > 0 {
+			// Bind the two functions' type parameters positionally, then compare each
+			// one's constraint (its variable's upper bounds) and default under that
+			// binding. Binding all of them first lets a later parameter's constraint or
+			// default reference an earlier one.
+			ctx.bindTypeParams(a.TypeParams, b.TypeParams)
+			for i := range a.TypeParams {
+				at, bt := a.TypeParams[i], b.TypeParams[i]
+				if !equalTypeSliceWith(at.Var.UpperBounds, bt.Var.UpperBounds, ctx) {
+					return false
+				}
+				if (at.Default == nil) != (bt.Default == nil) {
+					return false
+				}
+				if at.Default != nil && !equalTypeWith(at.Default, bt.Default, ctx) {
+					return false
+				}
+			}
 		}
 		// Receiver presence distinguishes an instance method from a static one, and the
 		// receiver type carries its mutability and borrow, so `(self) -> T`, `(mut self)
 		// -> T`, and `() -> T` are all distinct.
-		if !equalSelfParam(a.SelfParam, b.SelfParam, p) {
+		if !equalSelfParam(a.SelfParam, b.SelfParam, ctx) {
 			return false
 		}
 		for i := range a.Params {
-			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || !equalTypeWith(a.Params[i].Type, b.Params[i].Type, p) {
+			if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest || !equalTypeWith(a.Params[i].Type, b.Params[i].Type, ctx) {
 				return false
 			}
 		}
-		return equalTypeWith(a.Ret, b.Ret, p)
+		return equalTypeWith(a.Ret, b.Ret, ctx)
 	case *soltype.TupleType:
 		b, ok := b.(*soltype.TupleType)
 		// Inexact flags must be equal — an open tuple never equals a closed one,
@@ -737,7 +801,7 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 			return false
 		}
 		for i := range a.Elems {
-			if !equalTypeWith(a.Elems[i], b.Elems[i], p) {
+			if !equalTypeWith(a.Elems[i], b.Elems[i], ctx) {
 				return false
 			}
 		}
@@ -758,7 +822,7 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 			name := soltype.ObjElemName(ae)
 			found := false
 			for _, be := range b.Elems {
-				if soltype.ObjElemName(be) == name && equalObjElem(ae, be, p) {
+				if soltype.ObjElemName(be) == name && equalObjElem(ae, be, ctx) {
 					found = true
 					break
 				}
@@ -776,10 +840,10 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 		if !ok || a.Name != b.Name || a.Final != b.Final {
 			return false
 		}
-		return equalTypeSliceWith(a.Args, b.Args, p)
+		return equalTypeSliceWith(a.Args, b.Args, ctx)
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
-		return ok && equalTypeWith(a.Inner, b.Inner, p)
+		return ok && equalTypeWith(a.Inner, b.Inner, ctx)
 	case *soltype.RefType:
 		b, ok := b.(*soltype.RefType)
 		// Mut must match — a mutable borrow never equals an immutable one — and the
@@ -787,17 +851,17 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 		// in lifetime are NOT equal. Without the Lt check, dedup would collapse them and
 		// silently drop a lifetime the solver computed. ltEqualWith compares a LifetimeVar
 		// by pointer under a nil pairing and by first-appearance index under one.
-		return ok && a.Mut == b.Mut && ltEqualWith(a.Lt, b.Lt, p) && equalTypeWith(a.Inner, b.Inner, p)
+		return ok && a.Mut == b.Mut && ltEqualWith(a.Lt, b.Lt, ctx.lt) && equalTypeWith(a.Inner, b.Inner, ctx)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
 		// Inexact flags must match, since an open union never equals a closed
 		// one. newUnion imposes canonical member order at construction, so the
 		// positional equalTypeSliceWith is order-stable and two unions over the
 		// same member set compare equal whatever order their members were minted in.
-		return ok && a.Inexact == b.Inexact && equalTypeSliceWith(a.Types, b.Types, p)
+		return ok && a.Inexact == b.Inexact && equalTypeSliceWith(a.Types, b.Types, ctx)
 	case *soltype.IntersectionType:
 		b, ok := b.(*soltype.IntersectionType)
-		return ok && equalTypeSliceWith(a.Types, b.Types, p)
+		return ok && equalTypeSliceWith(a.Types, b.Types, ctx)
 	}
 	return false
 }
@@ -813,28 +877,28 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 //   - a setter compares its parameter type.
 //
 // It panics on an unknown element kind, matching AsProperty.
-func equalObjElem(a, b soltype.ObjTypeElem, p *ltPairing) bool {
+func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 	switch a := a.(type) {
 	case *soltype.PropertyElem:
 		b, ok := b.(*soltype.PropertyElem)
-		return ok && a.Optional == b.Optional && a.Readonly == b.Readonly && equalTypeWith(a.Type, b.Type, p)
+		return ok && a.Optional == b.Optional && a.Readonly == b.Readonly && equalTypeWith(a.Type, b.Type, ctx)
 	case *soltype.MethodElem:
 		b, ok := b.(*soltype.MethodElem)
 		if !ok || a.Static != b.Static || len(a.Signatures) != len(b.Signatures) {
 			return false
 		}
 		for i := range a.Signatures {
-			if !equalTypeWith(a.Signatures[i], b.Signatures[i], p) {
+			if !equalTypeWith(a.Signatures[i], b.Signatures[i], ctx) {
 				return false
 			}
 		}
 		return true
 	case *soltype.GetterElem:
 		b, ok := b.(*soltype.GetterElem)
-		return ok && equalSelfParam(a.SelfParam, b.SelfParam, p) && equalTypeWith(a.Type, b.Type, p)
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Type, b.Type, ctx)
 	case *soltype.SetterElem:
 		b, ok := b.(*soltype.SetterElem)
-		return ok && equalSelfParam(a.SelfParam, b.SelfParam, p) && equalTypeWith(a.Param, b.Param, p)
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Param, b.Param, ctx)
 	}
 	panic(fmt.Sprintf("equalObjElem: unhandled ObjTypeElem %T", a))
 }
@@ -842,14 +906,14 @@ func equalObjElem(a, b soltype.ObjTypeElem, p *ltPairing) bool {
 // equalSelfParam reports whether two receivers match. Presence must agree, so an
 // instance member never equals a static one, and when both are present their receiver
 // types must be equal. It is shared by the method, getter, and setter comparisons.
-func equalSelfParam(a, b *soltype.FuncParam, p *ltPairing) bool {
+func equalSelfParam(a, b *soltype.FuncParam, ctx *alphaCtx) bool {
 	if (a == nil) != (b == nil) {
 		return false
 	}
 	if a == nil {
 		return true
 	}
-	return equalTypeWith(a.Type, b.Type, p)
+	return equalTypeWith(a.Type, b.Type, ctx)
 }
 
 // ltEqualWith reports lifetime equality for equalTypeWith's RefType arm. Under a nil
@@ -898,12 +962,12 @@ func ltEqual(a, b soltype.Lifetime) bool {
 	return a == b
 }
 
-func equalTypeSliceWith(a, b []soltype.Type, p *ltPairing) bool {
+func equalTypeSliceWith(a, b []soltype.Type, ctx *alphaCtx) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if !equalTypeWith(a[i], b[i], p) {
+		if !equalTypeWith(a[i], b[i], ctx) {
 			return false
 		}
 	}
