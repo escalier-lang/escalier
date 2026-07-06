@@ -95,7 +95,11 @@ func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 	ret := cur.Ret.Accept(v, pol)                               // return covariant
 	out := cur
 	if tpChanged || selfChanged || changed || ret != cur.Ret {
-		out = &FuncType{SelfParam: self, Params: params, Ret: ret, Inexact: cur.Inexact, TypeParams: tparams}
+		// LifetimeParams carry through unchanged here, because Accept never walks a
+		// lifetime. A lifetime-aware visitor freshens them in its EnterType, replacing
+		// the whole FuncType before this rebuild, so cur already holds the freshened
+		// params.
+		out = &FuncType{SelfParam: self, Params: params, Ret: ret, Inexact: cur.Inexact, TypeParams: tparams, LifetimeParams: cur.LifetimeParams}
 	}
 	return v.ExitType(out, pol)
 }
@@ -238,10 +242,11 @@ func (t *ClassType) Accept(v TypeVisitor, pol Polarity) Type {
 	args, changed := acceptTypes(cur.Args, v, pol) // type arguments covariant
 	out := cur
 	if changed {
-		// Name, Final, and Lt are the nominal identity, carried through unchanged. Lt
-		// is a Lifetime, not a Type, so Accept never walks it. Only lifetime-aware
-		// passes touch a lifetime.
-		out = &ClassType{Name: cur.Name, Args: args, Lt: cur.Lt, Final: cur.Final}
+		// Name and Final are the nominal identity, carried through unchanged.
+		// LifetimeArgs and Lt are lifetimes, not Types, so Accept never walks them; a
+		// lifetime-aware visitor freshens them in its EnterType, replacing the whole
+		// ClassType before this rebuild, so cur already holds the freshened lifetimes.
+		out = &ClassType{Name: cur.Name, Args: args, LifetimeArgs: cur.LifetimeArgs, Lt: cur.Lt, Final: cur.Final}
 	}
 	return v.ExitType(out, pol)
 }

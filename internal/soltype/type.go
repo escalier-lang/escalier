@@ -211,6 +211,14 @@ type FuncType struct {
 	// construction, so folding it into the level would raise the function's level
 	// above its capture level.
 	TypeParams []*TypeParam
+	// LifetimeParams are the function's own quantified lifetime parameters in
+	// declaration order, the lifetime-sort twin of TypeParams. nil means the function
+	// declares no lifetime params, the common case and the zero value. A borrowing
+	// method such as `fn get<'a>(&'a self) -> &'a T` lists 'a here. A class-level
+	// lifetime param is captured from the enclosing class type rather than listed. Like
+	// TypeParams these are minted deeper than the function, so LevelOf does not fold
+	// them in. A lifetime used in the body still counts through its RefType.
+	LifetimeParams []*LifetimeParam
 }
 
 // TypeParam is one quantified type parameter, shared by FuncType.TypeParams for
@@ -228,6 +236,24 @@ type TypeParam struct {
 	Name    string
 	Var     *TypeVarType
 	Default Type // nil ⇒ required
+}
+
+// LifetimeParam is one quantified lifetime parameter, the lifetime-sort analogue of
+// TypeParam. It is shared by FuncType.LifetimeParams for a method's or function's own
+// lifetime params, such as `fn get<'a>(&'a self) -> &'a T`, and by a class's own
+// lifetime params, such as `class Ref<'a, T>`, so both describe their lifetime generics
+// the same way. Var is the quantified lifetime variable that stands for the parameter.
+// It is minted one level deeper than the enclosing binding and freshened per use by the
+// ltFreshener, the lifetime counterpart of freshenAbove. Bounds are the declared
+// outlives constraints. A `<'b: 'a>` declaration gives 'b's Bounds the single entry 'a,
+// meaning 'b outlives 'a. The class-decl walk also records these as bounds on Var so
+// constrainLt enforces them. Lifetimes carry no default, since an omitted lifetime argument is
+// elided to a fresh lifetime rather than filled from a fallback. Name is the source name
+// (`'a`) kept for display, since LifetimeVar carries none.
+type LifetimeParam struct {
+	Name   string
+	Var    *LifetimeVar
+	Bounds []Lifetime // outlives constraints; nil ⇒ unconstrained
 }
 
 // TupleType is a tuple type. Inexact follows the ObjectType/FuncType convention:
@@ -500,6 +526,11 @@ type ClassType struct {
 	// Args are the type arguments, one per class type parameter, checked per position
 	// by the variance the class registry records for that parameter.
 	Args []Type
+	// LifetimeArgs are the lifetime arguments, one per class lifetime parameter, so a
+	// reference `Ref<'x, T>` supplies both the lifetime arg 'x and the type arg T. They
+	// name the lifetime of borrowed data the instance holds. This is distinct from Lt,
+	// which is how long the caller holds the instance itself.
+	LifetimeArgs []Lifetime
 	// Lt is the instance's own borrow lifetime, nil for an owned value. A `mut 'b
 	// Point` wraps a ClassType in a RefType rather than setting Lt directly, so no
 	// site sets Lt today and it is always nil.
@@ -555,14 +586,19 @@ func LevelOf(t Type) int {
 		}
 		return m
 	case *ClassType:
-		// A nominal instance's level is the max level over its type arguments. The Name
-		// and Final identity carry no variables. Lt is always nil today, so it
-		// contributes nothing here.
+		// A nominal instance's level is the max level over its type and lifetime
+		// arguments and its own borrow lifetime. The Name and Final identity carry no
+		// variables. A free lifetime arg such as the 'x in Ref<'x, T> must lift the
+		// level so the freshener/extruder prune descends to freshen it, the same reason
+		// the RefType arm folds in its lifetime.
 		m := 0
 		for _, a := range t.Args {
 			m = max(m, LevelOf(a))
 		}
-		return m
+		for _, la := range t.LifetimeArgs {
+			m = max(m, LevelOfLifetime(la))
+		}
+		return max(m, LevelOfLifetime(t.Lt))
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:

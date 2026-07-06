@@ -772,3 +772,143 @@ func TestEqualTypeObject(t *testing.T) {
 		})
 	}
 }
+
+// equalType compares two generic FuncTypes up to alpha-renaming of their own lifetime
+// parameters, so two borrowing methods that differ only in lifetime-variable id are
+// equal, while a difference in the outlives bound or the arity is not. This is the
+// lifetime-sort twin of TestEqualTypeGenericFunc's type-parameter alpha-equivalence.
+func TestEqualTypeLifetimeParams(t *testing.T) {
+	// lv builds a fresh lifetime variable at a quantifiable level.
+	lv := func(id int) *soltype.LifetimeVar { return &soltype.LifetimeVar{ID: id, Level: 1} }
+	// borrowCounter wraps Counter in an immutable borrow with the given lifetime.
+	borrowCounter := func(lt soltype.Lifetime) *soltype.RefType {
+		return &soltype.RefType{Lt: lt, Inner: &soltype.ClassType{Name: "Counter"}}
+	}
+	// getFn is `fn <'a>(x: &'a Counter) -> &'a Counter`, threading one lifetime through
+	// so each side reuses its parameter lifetime the way real solver output does.
+	getFn := func(id int) *soltype.FuncType {
+		la := lv(id)
+		return &soltype.FuncType{
+			LifetimeParams: []*soltype.LifetimeParam{{Name: "'a", Var: la}},
+			Params:         []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: borrowCounter(la)}},
+			Ret:            borrowCounter(la),
+		}
+	}
+	// boundedFn is `fn <'a, 'b: 'a>(x: &'a Counter, y: &'b Counter) -> void`.
+	boundedFn := func(idA, idB int) *soltype.FuncType {
+		la, lb := lv(idA), lv(idB)
+		return &soltype.FuncType{
+			LifetimeParams: []*soltype.LifetimeParam{
+				{Name: "'a", Var: la},
+				{Name: "'b", Var: lb, Bounds: []soltype.Lifetime{la}},
+			},
+			Params: []*soltype.FuncParam{
+				{Pattern: &soltype.IdentPat{Name: "x"}, Type: borrowCounter(la)},
+				{Pattern: &soltype.IdentPat{Name: "y"}, Type: borrowCounter(lb)},
+			},
+			Ret: &soltype.Void{},
+		}
+	}
+
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "differ only in lifetime-parameter var id",
+			a:    getFn(10),
+			b:    getFn(20),
+			want: true,
+		},
+		{
+			name: "same outlives bound, different var ids",
+			a:    boundedFn(10, 11),
+			b:    boundedFn(20, 21),
+			want: true,
+		},
+		{
+			// The bijection follows structure: a's y uses 'b but b's y uses 'a, so the
+			// paired lifetimes disagree and the two are not equal.
+			name: "body lifetime-sharing pattern differs",
+			a:    boundedFn(10, 11),
+			b: func() *soltype.FuncType {
+				la, lb := lv(20), lv(21)
+				return &soltype.FuncType{
+					LifetimeParams: []*soltype.LifetimeParam{
+						{Name: "'a", Var: la},
+						{Name: "'b", Var: lb, Bounds: []soltype.Lifetime{la}},
+					},
+					Params: []*soltype.FuncParam{
+						{Pattern: &soltype.IdentPat{Name: "x"}, Type: borrowCounter(la)},
+						{Pattern: &soltype.IdentPat{Name: "y"}, Type: borrowCounter(la)},
+					},
+					Ret: &soltype.Void{},
+				}
+			}(),
+			want: false,
+		},
+		{
+			name: "lifetime-parameter arity differs",
+			a:    getFn(10),
+			b: &soltype.FuncType{
+				Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: borrowCounter(&soltype.StaticLifetime{})}},
+				Ret:    &soltype.RefType{Lt: &soltype.StaticLifetime{}, Inner: &soltype.ClassType{Name: "Counter"}},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}
+
+// equalType compares a class reference's lifetime arguments positionally, keying a
+// LifetimeVar by pointer within a single coalesce the way it keys a borrow's lifetime, so
+// two references sharing a lifetime argument are equal and two with distinct lifetime
+// variables or differing arity are not.
+func TestEqualTypeClassLifetimeArgs(t *testing.T) {
+	lx := &soltype.LifetimeVar{ID: 0, Level: 1}
+	ly := &soltype.LifetimeVar{ID: 1, Level: 1}
+	ref := func(lts []soltype.Lifetime, args []soltype.Type) *soltype.ClassType {
+		return &soltype.ClassType{Name: "Ref", LifetimeArgs: lts, Args: args}
+	}
+
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "same lifetime argument pointer",
+			a:    ref([]soltype.Lifetime{lx}, []soltype.Type{num()}),
+			b:    ref([]soltype.Lifetime{lx}, []soltype.Type{num()}),
+			want: true,
+		},
+		{
+			name: "distinct lifetime argument variables",
+			a:    ref([]soltype.Lifetime{lx}, []soltype.Type{num()}),
+			b:    ref([]soltype.Lifetime{ly}, []soltype.Type{num()}),
+			want: false,
+		},
+		{
+			name: "lifetime argument arity differs",
+			a:    ref([]soltype.Lifetime{lx}, []soltype.Type{num()}),
+			b:    ref(nil, []soltype.Type{num()}),
+			want: false,
+		},
+		{
+			name: "type argument differs under equal lifetime arguments",
+			a:    ref([]soltype.Lifetime{lx}, []soltype.Type{num()}),
+			b:    ref([]soltype.Lifetime{lx}, []soltype.Type{str()}),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}

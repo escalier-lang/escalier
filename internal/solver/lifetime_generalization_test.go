@@ -169,6 +169,87 @@ fn f(a: mut {x: number}, b: mut {x: number}) {
 	require.Empty(t, errs)
 }
 
+// --- M5 A3: a function's own quantified lifetime parameters ---
+//
+// A borrowing method such as `fn get<'a>(&'a self) -> &'a T` records 'a in
+// FuncType.LifetimeParams. Accept never walks a lifetime, so the freshener freshens the
+// parameter's binder through the same ltFreshener cache the body's uses reach. The binder
+// and every `&'a` use then land on one fresh lifetime per instantiation.
+
+// getRefScheme is `fn <'a>(&'a self) -> &'a mut {x}` — a borrowing method whose own
+// lifetime parameter 'a appears in FuncType.LifetimeParams, the receiver, and the return,
+// all on one lifetime pointer.
+func getRefScheme(lt *soltype.LifetimeVar) *soltype.FuncType {
+	return &soltype.FuncType{
+		LifetimeParams: []*soltype.LifetimeParam{{Name: "'a", Var: lt}},
+		SelfParam:      &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: mutObjAt(lt)},
+		Ret:            mutObjAt(lt),
+	}
+}
+
+// freshenAbove freshens a function's own lifetime parameter: the binder in
+// LifetimeParams, the receiver's `&'a`, and the return's `&'a` all land on one fresh
+// lifetime, so the binder never desyncs from its uses. This is the per-instantiation
+// freshening the LifetimeParams field exists to carry, the lifetime-sort twin of
+// TestFreshenAboveGenericFunc.
+func TestFreshenAboveFuncLifetimeParam(t *testing.T) {
+	c := newChecker()
+	la := c.ctx.freshLifetime(1) // above the generalize-level (lim = 0)
+
+	out := c.freshenAbove(0, getRefScheme(la), 1, map[*soltype.TypeVarType]*soltype.TypeVarType{})
+
+	fn := out.(*soltype.FuncType)
+	binder := fn.LifetimeParams[0].Var
+	recvLt := fn.SelfParam.Type.(*soltype.RefType).Lt.(*soltype.LifetimeVar)
+	retLt := fn.Ret.(*soltype.RefType).Lt.(*soltype.LifetimeVar)
+
+	require.NotSame(t, la, binder, "the lifetime parameter's binder is freshened")
+	require.Same(t, binder, recvLt, "the receiver use shares the fresh binder lifetime")
+	require.Same(t, binder, retLt, "the return use shares the fresh binder lifetime")
+}
+
+// Two instantiations of a scheme carrying a lifetime parameter get DISTINCT binder
+// lifetimes, so a method's `<'a>` is fresh per call — the same non-contamination the
+// ordinary borrow-passing case relies on, here for an explicit lifetime parameter.
+func TestFreshenFuncLifetimeParamDistinctPerInstantiation(t *testing.T) {
+	c := newChecker()
+	la := c.ctx.freshLifetime(1)
+	body := getRefScheme(la)
+
+	out1 := c.freshenAbove(0, body, 1, map[*soltype.TypeVarType]*soltype.TypeVarType{})
+	out2 := c.freshenAbove(0, body, 1, map[*soltype.TypeVarType]*soltype.TypeVarType{})
+
+	b1 := out1.(*soltype.FuncType).LifetimeParams[0].Var
+	b2 := out2.(*soltype.FuncType).LifetimeParams[0].Var
+	require.NotSame(t, b1, b2, "two call sites instantiate two distinct binder lifetimes")
+}
+
+// A freshened lifetime parameter carries its declared outlives bound onto the fresh
+// binder, and a `<'b: 'a>` bound resolves to the fresh 'a of the same instantiation, so
+// the outlives relation survives the copy intact.
+func TestFreshenFuncLifetimeParamBound(t *testing.T) {
+	c := newChecker()
+	la := c.ctx.freshLifetime(1)
+	lb := c.ctx.freshLifetime(1)
+	body := &soltype.FuncType{
+		LifetimeParams: []*soltype.LifetimeParam{
+			{Name: "'a", Var: la},
+			{Name: "'b", Var: lb, Bounds: []soltype.Lifetime{la}},
+		},
+		Params: []*soltype.FuncParam{{Type: mutObjAt(la)}, {Type: mutObjAt(lb)}},
+		Ret:    &soltype.Void{},
+	}
+
+	out := c.freshenAbove(0, body, 1, map[*soltype.TypeVarType]*soltype.TypeVarType{}).(*soltype.FuncType)
+
+	freshA := out.LifetimeParams[0].Var
+	freshB := out.LifetimeParams[1]
+	require.NotSame(t, la, freshA, "'a is freshened")
+	require.NotSame(t, lb, freshB.Var, "'b is freshened")
+	require.Equal(t, []soltype.Lifetime{soltype.Lifetime(freshA)}, freshB.Bounds,
+		"'b's outlives bound resolves to the fresh 'a of the same instantiation")
+}
+
 // --- extruder lifetime arm ---
 //
 // extrude copies a type so a variable above the target level is replaced by a
