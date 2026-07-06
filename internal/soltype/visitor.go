@@ -314,17 +314,19 @@ func acceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 		}
 		return &PropertyElem{Name: e.Name, Type: pt, Optional: e.Optional, Readonly: e.Readonly}
 	case *GetterElem:
-		rt := e.Type.Accept(v, pol) // covariant read
-		if rt == e.Type {
+		self, selfChanged := acceptSelfParam(e.SelfParam, v, pol) // receiver contravariant
+		rt := e.Type.Accept(v, pol)                               // covariant read
+		if !selfChanged && rt == e.Type {
 			return e
 		}
-		return &GetterElem{Name: e.Name, Type: rt}
+		return &GetterElem{Name: e.Name, SelfParam: self, Type: rt}
 	case *SetterElem:
-		pt := e.Param.Accept(v, pol.Flip()) // contravariant write
-		if pt == e.Param {
+		self, selfChanged := acceptSelfParam(e.SelfParam, v, pol) // receiver contravariant
+		pt := e.Param.Accept(v, pol.Flip())                       // contravariant write
+		if !selfChanged && pt == e.Param {
 			return e
 		}
-		return &SetterElem{Name: e.Name, Param: pt}
+		return &SetterElem{Name: e.Name, SelfParam: self, Param: pt}
 	case *MethodElem:
 		sigs, changed := acceptSignatures(e.Signatures, v, pol)
 		if !changed {

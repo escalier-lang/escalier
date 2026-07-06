@@ -125,6 +125,92 @@ func TestFreeTypeVarsSelfParam(t *testing.T) {
 	require.Equal(t, "fn <T0>(self) -> T0", PrintAsScheme(fn))
 }
 
+// An instance getter or setter renders its self receiver first, through the same
+// shorthand as a method. A static getter or setter renders no receiver.
+func TestPrintGetterSetterSelfReceiver(t *testing.T) {
+	tests := []struct {
+		name string
+		in   Type
+		want string
+	}{
+		{
+			"instance getter",
+			&ObjectType{Elems: []ObjTypeElem{&GetterElem{Name: "size", SelfParam: selfRecv(&ClassType{Name: "List"}), Type: numP()}}},
+			"{get size(self) -> number}",
+		},
+		{
+			"instance setter with mut self",
+			&ObjectType{Elems: []ObjTypeElem{&SetterElem{Name: "size", SelfParam: selfRecv(&RefType{Mut: true, Inner: &ClassType{Name: "List"}}), Param: numP()}}},
+			"{set size(mut self, value: number)}",
+		},
+		{
+			"static getter has no receiver",
+			&ObjectType{Elems: []ObjTypeElem{&GetterElem{Name: "size", Type: numP()}}},
+			"{get size() -> number}",
+		},
+		{
+			"static setter has no receiver",
+			&ObjectType{Elems: []ObjTypeElem{&SetterElem{Name: "size", Param: numP()}}},
+			"{set size(value: number)}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, Print(tt.in))
+		})
+	}
+}
+
+// A getter's and setter's self receiver is contravariant, visited in the flipped
+// polarity like a method receiver.
+func TestAcceptGetterSetterReceiverContravariant(t *testing.T) {
+	getterRecv := &TypeVarType{ID: 1}
+	setterRecv := &TypeVarType{ID: 2}
+	obj := &ObjectType{Elems: []ObjTypeElem{
+		&GetterElem{Name: "g", SelfParam: selfRecv(getterRecv), Type: numP()},
+		&SetterElem{Name: "s", SelfParam: selfRecv(setterRecv), Param: numP()},
+	}}
+
+	r := &recorder{seen: map[Type]Polarity{}}
+	obj.Accept(r, Positive)
+
+	require.Equal(t, Negative, r.seen[getterRecv], "a getter's receiver is contravariant")
+	require.Equal(t, Negative, r.seen[setterRecv], "a setter's receiver is contravariant")
+}
+
+// Rewriting a variable inside an instance setter's receiver rebuilds the setter and
+// carries the receiver through.
+func TestAcceptSetterSelfParamCopyOnWrite(t *testing.T) {
+	str := &PrimType{Prim: StrPrim}
+	a := &TypeVarType{ID: 1}
+	setter := &SetterElem{Name: "s", SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{a}}), Param: numP()}
+	obj := &ObjectType{Elems: []ObjTypeElem{setter}}
+
+	got := obj.Accept(&replaceVar{target: a, repl: str}, Positive).(*ObjectType)
+
+	gotSetter := got.Elems[0].(*SetterElem)
+	require.NotSame(t, setter, gotSetter, "a changed receiver forces a new setter")
+	require.Same(t, str, gotSetter.SelfParam.Type.(*ClassType).Args[0], "the receiver argument took the replacement")
+}
+
+// LevelOf descends an instance getter's receiver.
+func TestLevelOfGetterReceiver(t *testing.T) {
+	obj := &ObjectType{Elems: []ObjTypeElem{
+		&GetterElem{Name: "g", SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{&TypeVarType{ID: 1, Level: 8}}}), Type: numP()},
+	}}
+	require.Equal(t, 8, LevelOf(obj))
+}
+
+// freeTypeVars descends an instance getter's receiver, so a variable appearing only
+// there is named as a quantified parameter even though the receiver prints as `self`.
+func TestFreeTypeVarsGetterReceiver(t *testing.T) {
+	a := &TypeVarType{ID: 1, Level: 1}
+	obj := &ObjectType{Elems: []ObjTypeElem{
+		&GetterElem{Name: "g", SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{a}}), Type: numP()},
+	}}
+	require.Equal(t, "<T0> {get g(self) -> number}", PrintAsScheme(obj))
+}
+
 // TestPrintClassType renders a nominal instance under its display name, with a
 // `<...>` type-argument list when it has arguments. The qualified Name carries a
 // namespace prefix for registry keying, which the printer strips for display. The

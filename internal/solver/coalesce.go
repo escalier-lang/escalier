@@ -720,10 +720,7 @@ func equalTypeWith(a, b soltype.Type, p *ltPairing) bool {
 		// Receiver presence distinguishes an instance method from a static one, and the
 		// receiver type carries its mutability and borrow, so `(self) -> T`, `(mut self)
 		// -> T`, and `() -> T` are all distinct.
-		if (a.SelfParam == nil) != (b.SelfParam == nil) {
-			return false
-		}
-		if a.SelfParam != nil && !equalTypeWith(a.SelfParam.Type, b.SelfParam.Type, p) {
+		if !equalSelfParam(a.SelfParam, b.SelfParam, p) {
 			return false
 		}
 		for i := range a.Params {
@@ -834,12 +831,25 @@ func equalObjElem(a, b soltype.ObjTypeElem, p *ltPairing) bool {
 		return true
 	case *soltype.GetterElem:
 		b, ok := b.(*soltype.GetterElem)
-		return ok && equalTypeWith(a.Type, b.Type, p)
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, p) && equalTypeWith(a.Type, b.Type, p)
 	case *soltype.SetterElem:
 		b, ok := b.(*soltype.SetterElem)
-		return ok && equalTypeWith(a.Param, b.Param, p)
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, p) && equalTypeWith(a.Param, b.Param, p)
 	}
 	panic(fmt.Sprintf("equalObjElem: unhandled ObjTypeElem %T", a))
+}
+
+// equalSelfParam reports whether two receivers match. Presence must agree, so an
+// instance member never equals a static one, and when both are present their receiver
+// types must be equal. It is shared by the method, getter, and setter comparisons.
+func equalSelfParam(a, b *soltype.FuncParam, p *ltPairing) bool {
+	if (a == nil) != (b == nil) {
+		return false
+	}
+	if a == nil {
+		return true
+	}
+	return equalTypeWith(a.Type, b.Type, p)
 }
 
 // ltEqualWith reports lifetime equality for equalTypeWith's RefType arm. Under a nil

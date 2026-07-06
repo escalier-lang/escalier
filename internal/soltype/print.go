@@ -475,10 +475,11 @@ func (p *namedPrinter) printType(t Type) string {
 //   - a property renders `name: T` with the `readonly` and `?` markers;
 //   - a method renders `name(params) -> ret` per overload arm, arms joined by "; "
 //     so the arm boundary stays distinct from the outer ", " between members;
-//   - a getter renders `get name() -> T`;
-//   - a setter renders `set name(value: T)`.
+//   - a getter renders `get name(self) -> T`, or `get name() -> T` when static;
+//   - a setter renders `set name(self, value: T)`, or `set name(value: T)` when static.
 //
-// It panics on an unknown element kind, matching AsProperty.
+// A getter's or setter's self receiver renders through the same shorthand as a
+// method's. It panics on an unknown element kind, matching AsProperty.
 func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 	switch e := e.(type) {
 	case *PropertyElem:
@@ -498,9 +499,17 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		}
 		return strings.Join(arms, "; ")
 	case *GetterElem:
-		return "get " + printObjectKeyName(e.Name) + "() -> " + p.printType(e.Type)
+		recv := ""
+		if e.SelfParam != nil {
+			recv = p.printSelfReceiver(e.SelfParam)
+		}
+		return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " + p.printType(e.Type)
 	case *SetterElem:
-		return "set " + printObjectKeyName(e.Name) + "(value: " + p.printType(e.Param) + ")"
+		recv := ""
+		if e.SelfParam != nil {
+			recv = p.printSelfReceiver(e.SelfParam) + ", "
+		}
+		return "set " + printObjectKeyName(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")"
 	}
 	panic(fmt.Sprintf("printObjElem: unhandled ObjTypeElem %T", e))
 }

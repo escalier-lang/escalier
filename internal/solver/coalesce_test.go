@@ -477,6 +477,47 @@ func TestEqualTypeFuncSelfParam(t *testing.T) {
 	}
 }
 
+// equalType distinguishes an instance getter or setter from a static one by receiver
+// presence, and by receiver type.
+func TestEqualTypeGetterSetterSelfParam(t *testing.T) {
+	selfRecv := func(recv soltype.Type) *soltype.FuncParam {
+		return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: recv}
+	}
+	owned := func() soltype.Type { return &soltype.ClassType{Name: "List"} }
+	mutSelf := func() soltype.Type {
+		return &soltype.RefType{Mut: true, Inner: &soltype.ClassType{Name: "List"}}
+	}
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "instance getter versus static getter",
+			a:    exactObj(&soltype.GetterElem{Name: "g", SelfParam: selfRecv(owned()), Type: num()}),
+			b:    exactObj(&soltype.GetterElem{Name: "g", Type: num()}),
+			want: false,
+		},
+		{
+			name: "same instance getter",
+			a:    exactObj(&soltype.GetterElem{Name: "g", SelfParam: selfRecv(owned()), Type: num()}),
+			b:    exactObj(&soltype.GetterElem{Name: "g", SelfParam: selfRecv(owned()), Type: num()}),
+			want: true,
+		},
+		{
+			name: "setter receiver mutability differs",
+			a:    exactObj(&soltype.SetterElem{Name: "s", SelfParam: selfRecv(owned()), Param: num()}),
+			b:    exactObj(&soltype.SetterElem{Name: "s", SelfParam: selfRecv(mutSelf()), Param: num()}),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}
+
 // equalType over an object carrying method, getter, and setter members compares
 // each member kind-for-kind and stays order-independent. A getter and a setter that
 // share a name are disambiguated by kind, so a getter never matches a setter.

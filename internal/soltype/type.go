@@ -259,18 +259,24 @@ type MethodElem struct {
 	Static     bool
 }
 
-// GetterElem is a computed read property `get x() -> T`. Type is the value the
-// getter returns, read covariantly like a PropertyElem's Type.
+// GetterElem is a computed read property `get x(self) -> T`. Type is the value the
+// getter returns, read covariantly like a PropertyElem's Type. SelfParam is the
+// receiver of an instance getter and nil for a static getter, mirroring
+// FuncType.SelfParam.
 type GetterElem struct {
-	Name string
-	Type Type
+	Name      string
+	SelfParam *FuncParam // nil ⇒ static getter; non-nil ⇒ instance getter
+	Type      Type
 }
 
-// SetterElem is a computed write property `set x(v: T)`. Param is the value the
-// setter accepts, in write position, so it is read contravariantly.
+// SetterElem is a computed write property `set x(self, v: T)`. Param is the value the
+// setter accepts, in write position, so it is read contravariantly. SelfParam is the
+// receiver of an instance setter and nil for a static setter, mirroring
+// FuncType.SelfParam.
 type SetterElem struct {
-	Name  string
-	Param Type
+	Name      string
+	SelfParam *FuncParam // nil ⇒ static setter; non-nil ⇒ instance setter
+	Param     Type
 }
 
 func (*MethodElem) isObjTypeElem() {}
@@ -568,12 +574,13 @@ func LevelOf(t Type) int {
 	}
 }
 
-// ObjElemTypes returns the child types an object member carries: a property's
-// value type, each of a method's overload signatures, a getter's return type, or a
-// setter's parameter type. It is the single place that enumerates a member's child
-// types, so a walk over the element set reads its children here rather than
-// re-switching on the kind. It panics on an unknown element kind, matching
-// AsProperty.
+// ObjElemTypes returns the child types an object member carries in print order: a
+// property's value type; each of a method's overload signatures, whose FuncType
+// already carries the receiver; a getter's receiver then its return type; a setter's
+// receiver then its parameter type. A static getter or setter has no receiver. It is
+// the single place that enumerates a member's child types, so a walk over the element
+// set reads its children here rather than re-switching on the kind. It panics on an
+// unknown element kind, matching AsProperty.
 func ObjElemTypes(e ObjTypeElem) []Type {
 	switch e := e.(type) {
 	case *PropertyElem:
@@ -585,11 +592,20 @@ func ObjElemTypes(e ObjTypeElem) []Type {
 		}
 		return out
 	case *GetterElem:
-		return []Type{e.Type}
+		return selfThen(e.SelfParam, e.Type)
 	case *SetterElem:
-		return []Type{e.Param}
+		return selfThen(e.SelfParam, e.Param)
 	}
 	panic(fmt.Sprintf("ObjElemTypes: unhandled ObjTypeElem %T", e))
+}
+
+// selfThen prepends a receiver type to rest when the receiver is present, so a walk
+// visits an instance getter's or setter's receiver before its value in print order.
+func selfThen(self *FuncParam, rest Type) []Type {
+	if self == nil {
+		return []Type{rest}
+	}
+	return []Type{self.Type, rest}
 }
 
 // levelOfElem returns the max TypeVarType level across an object member's child
