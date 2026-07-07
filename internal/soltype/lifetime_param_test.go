@@ -63,7 +63,7 @@ func TestPrintFuncLifetimeParam(t *testing.T) {
 // names the free lifetime argument 'a.
 func TestPrintClassLifetimeArgs(t *testing.T) {
 	lx := &LifetimeVar{ID: 0, Level: 1}
-	ref := &ClassType{Name: "Ref", LifetimeArgs: []Lifetime{lx}, Args: []Type{numP()}}
+	ref := &ClassType{Name: "Ref", LifetimeArgs: []Lifetime{lx}, TypeArgs: []Type{numP()}}
 	require.Equal(t, "Ref<'a, number>", PrintAsScheme(ref))
 }
 
@@ -79,7 +79,7 @@ func TestPrintFuncLifetimeParamNoNameCollision(t *testing.T) {
 	fn := &FuncType{
 		LifetimeParams: []*LifetimeParam{{Name: "'a", Var: own}},
 		SelfParam:      selfRecv(&RefType{Lt: own, Inner: counterCls()}),
-		Ret:            &ClassType{Name: "Box", LifetimeArgs: []Lifetime{free}, Args: []Type{numP()}},
+		Ret:            &ClassType{Name: "Box", LifetimeArgs: []Lifetime{free}, TypeArgs: []Type{numP()}},
 	}
 	require.Equal(t, "fn <'a, 'b>(&'a self) -> Box<'b, number>", PrintAsScheme(fn))
 }
@@ -102,13 +102,13 @@ func TestAcceptClassLifetimeArgsCopyOnWrite(t *testing.T) {
 	str := &PrimType{Prim: StrPrim}
 	a := &TypeVarType{ID: 1}
 	lx := &LifetimeVar{ID: 0, Level: 1}
-	ref := &ClassType{Name: "Ref", LifetimeArgs: []Lifetime{lx}, Args: []Type{a}}
+	ref := &ClassType{Name: "Ref", LifetimeArgs: []Lifetime{lx}, TypeArgs: []Type{a}}
 
 	got := ref.Accept(&replaceVar{target: a, repl: str}, Positive).(*ClassType)
 
 	require.NotSame(t, ref, got, "a changed type argument forces a new ClassType")
 	require.Same(t, lx, got.LifetimeArgs[0], "the lifetime argument carries through unchanged")
-	require.Same(t, str, got.Args[0], "the type argument took the replacement")
+	require.Same(t, str, got.TypeArgs[0], "the type argument took the replacement")
 }
 
 // freeLifetimeVars excludes a function's own lifetime parameter — it is bound, not free —
@@ -126,7 +126,7 @@ func TestFreeLifetimeVarsBoundLifetimeParam(t *testing.T) {
 
 	t.Run("a class reference's lifetime argument is collected", func(t *testing.T) {
 		lx := &LifetimeVar{ID: 0, Level: 1}
-		ref := &ClassType{Name: "Ref", LifetimeArgs: []Lifetime{lx}, Args: []Type{numP()}}
+		ref := &ClassType{Name: "Ref", LifetimeArgs: []Lifetime{lx}, TypeArgs: []Type{numP()}}
 		require.Equal(t, []*LifetimeVar{lx}, freeLifetimeVars(ref))
 	})
 
@@ -148,7 +148,7 @@ func TestLevelOfClassLifetimeArgs(t *testing.T) {
 	ref := &ClassType{
 		Name:         "Ref",
 		LifetimeArgs: []Lifetime{&LifetimeVar{ID: 0, Level: 7}},
-		Args:         []Type{&TypeVarType{ID: 1, Level: 3}},
+		TypeArgs:     []Type{&TypeVarType{ID: 1, Level: 3}},
 	}
 	require.Equal(t, 7, LevelOf(ref), "the level is the max over the lifetime and type arguments")
 }

@@ -265,7 +265,7 @@ func (f *allFreshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 
 // ltFreshener freshens lifetime variables for the rewriting visitors (M4 D2.5).
 // Accept never walks a RefType's lifetime, because a Lifetime is not a Type, so each
-// lifetime-aware visitor delegates here through refLifetimeResult. A LifetimeVar
+// lifetime-aware visitor delegates here through rewriteRefLifetime. A LifetimeVar
 // inside lim is a quantified lifetime: fresh replaces it with a fresh lifetime at
 // lvl and freshens its bounds, so each use gets its own lifetime and constraining
 // one site does not perturb another. A LifetimeVar at lim or outside it, 'static,
@@ -317,59 +317,48 @@ func (lf *ltFreshener) freshBounds(bounds []soltype.Lifetime) []soltype.Lifetime
 	return out
 }
 
-// refLifetimeResult builds the EnterType result for a RefType whose lifetime a
-// visitor has transformed to lt. It is the single place every lifetime-aware
-// rewriting visitor handles a borrow's non-Type lifetime: when lt changed it hands
-// back a RefType carrying it so the descend path rebuilds Inner around the new
-// lifetime; otherwise it signals an ordinary descent so Accept rebuilds Inner with
-// the lifetime shared. Sharing this keeps freshener, allFreshener, and the extruder
-// from each re-deriving the rebuild-or-descend boilerplate.
-func refLifetimeResult(r *soltype.RefType, lt soltype.Lifetime) soltype.EnterResult {
+// rewriteRefLifetime builds the EnterType result for a RefType whose lifetime a visitor
+// transformed to lt: a changed lt yields a RefType carrying it, otherwise an ordinary descent.
+func rewriteRefLifetime(r *soltype.RefType, lt soltype.Lifetime) soltype.EnterResult {
 	if lt != r.Lt {
 		return soltype.EnterResult{Type: &soltype.RefType{Mut: r.Mut, Lt: lt, Inner: r.Inner}}
 	}
 	return soltype.EnterResult{}
 }
 
-// freshenLifetimeFormer freshens the lifetimes a former carries that Accept never walks:
-// a borrow's Lt, a function's own lifetime parameters, and a class's lifetime arguments
-// and borrow lifetime. All go through the shared ltFreshener lf, so a lifetime reached
-// from more than one former lands on one fresh copy per instantiation. It returns the
-// EnterType result and whether t was a lifetime-bearing former; a non-former returns
-// (_, false) so the caller falls through to its own variable arm. The freshener and
-// allFreshener share it because both hold an ltFreshener and both must freshen these
-// lifetimes; the extruder does not, since its per-polarity cache needs a different call
-// shape and B1 owns the extrude semantics for a bound lifetime parameter.
+// freshenLifetimeFormer freshens the lifetimes Accept never walks: a borrow's Lt, a
+// function's lifetime parameters, and a class's lifetime arguments and borrow lifetime.
+// All share ltFreshener lf, so a lifetime reached from two formers lands on one fresh copy.
+// The bool reports whether t was a lifetime-bearing former; false falls through to the var arm.
 func freshenLifetimeFormer(t soltype.Type, lf *ltFreshener) (soltype.EnterResult, bool) {
 	switch t := t.(type) {
 	case *soltype.RefType:
 		// A borrow's lifetime is not a Type, so ltFreshener.fresh replaces a quantified
 		// param lifetime (Level > lim) and shares a captured, 'static, or nil one, then
-		// refLifetimeResult hands back a RefType carrying it or signals an ordinary descent.
-		return refLifetimeResult(t, lf.fresh(t.Lt)), true
+		// rewriteRefLifetime hands back a RefType carrying it or signals an ordinary descent.
+		return rewriteRefLifetime(t, lf.fresh(t.Lt)), true
 	case *soltype.FuncType:
 		// A function's own lifetime parameters are freshened through the same cache the
 		// body's uses reach through the RefType arm, so a method's `'a` is freshened once
 		// and the binder and every `&'a` use land on one fresh lifetime per instantiation.
-		return funcLifetimeResult(t, lf.fresh), true
+		return rewriteFuncLifetimes(t, lf.fresh), true
 	case *soltype.ClassType:
-		return classLifetimeResult(t, lf.fresh), true
+		return rewriteClassLifetimes(t, lf.fresh), true
 	}
 	return soltype.EnterResult{}, false
 }
 
-// funcLifetimeResult builds the EnterType result for a FuncType whose own lifetime
-// parameters a visitor rewrites through xform, applied to each parameter's Var and
-// outlives Bounds. Accept never walks a lifetime, so a lifetime-aware visitor rewrites
-// the parameters here and then descends: the body's uses of a parameter reach xform
-// through the RefType arm, which shares xform's cache, so the rebuilt binder and its uses
-// stay one lifetime. When no parameter changed it signals an ordinary descent. A
-// parameter's Var stays a variable, since xform maps a variable to a variable.
-func funcLifetimeResult(t *soltype.FuncType, xform func(soltype.Lifetime) soltype.Lifetime) soltype.EnterResult {
+// rewriteFuncLifetimes rewrites a FuncType's own lifetime parameters through tf,
+// which Accept never walks. It shares tf's cache with the body's uses, so a
+// rebuilt binder and its `&'a` uses stay one lifetime. No change signals an ordinary descent.
+func rewriteFuncLifetimes(
+	t *soltype.FuncType,
+	tf func(soltype.Lifetime) soltype.Lifetime,
+) soltype.EnterResult {
 	if len(t.LifetimeParams) == 0 {
 		return soltype.EnterResult{}
 	}
-	nlps, changed := rewriteLtParams(t.LifetimeParams, xform)
+	nlps, changed := rewriteLtParams(t.LifetimeParams, tf)
 	if !changed {
 		return soltype.EnterResult{}
 	}
@@ -378,17 +367,18 @@ func funcLifetimeResult(t *soltype.FuncType, xform func(soltype.Lifetime) soltyp
 	return soltype.EnterResult{Type: &repl}
 }
 
-// classLifetimeResult builds the EnterType result for a ClassType whose lifetime
-// arguments and own borrow lifetime a visitor rewrites through xform. Like
-// funcLifetimeResult it rewrites the non-Type lifetimes here and then descends so the
-// type arguments still walk, sharing xform's cache with any borrow the arguments carry.
-// When no lifetime changed it signals an ordinary descent.
-func classLifetimeResult(t *soltype.ClassType, xform func(soltype.Lifetime) soltype.Lifetime) soltype.EnterResult {
+// rewriteClassLifetimes rewrites a ClassType's lifetime arguments and own borrow lifetime
+// through tf, the non-Type lifetimes Accept never walks. The type arguments still
+// descend, sharing tf's cache. No change signals an ordinary descent.
+func rewriteClassLifetimes(
+	t *soltype.ClassType,
+	tf func(soltype.Lifetime) soltype.Lifetime,
+) soltype.EnterResult {
 	if len(t.LifetimeArgs) == 0 && t.Lt == nil {
 		return soltype.EnterResult{}
 	}
-	nargs, argsChanged := rewriteLtSlice(t.LifetimeArgs, xform)
-	nlt := xform(t.Lt)
+	nargs, argsChanged := rewriteLtSlice(t.LifetimeArgs, tf)
+	nlt := tf(t.Lt)
 	if !argsChanged && nlt == t.Lt {
 		return soltype.EnterResult{}
 	}
@@ -398,16 +388,18 @@ func classLifetimeResult(t *soltype.ClassType, xform func(soltype.Lifetime) solt
 	return soltype.EnterResult{Type: &repl}
 }
 
-// rewriteLtParams applies xform to each lifetime parameter's Var and outlives Bounds,
-// returning the rewritten slice and whether anything changed, so a caller shares the
-// original slice when nothing moved. xform maps a LifetimeVar to a LifetimeVar, so a
-// bound parameter stays a variable. It is copy-on-write, mirroring acceptTypeParams.
-func rewriteLtParams(lps []*soltype.LifetimeParam, xform func(soltype.Lifetime) soltype.Lifetime) ([]*soltype.LifetimeParam, bool) {
+// rewriteLtParams applies tf to each lifetime parameter's Var and outlives Bounds,
+// returning the rewritten slice and whether anything changed. It is copy-on-write, mirroring
+// acceptTypeParams, and tf maps a LifetimeVar to a LifetimeVar so a bound param stays a variable.
+func rewriteLtParams(
+	lps []*soltype.LifetimeParam,
+	tf func(soltype.Lifetime) soltype.Lifetime,
+) ([]*soltype.LifetimeParam, bool) {
 	out := lps
 	changed := false
 	for i, lp := range lps {
-		nv := xform(lp.Var).(*soltype.LifetimeVar)
-		nb, boundsChanged := rewriteLtSlice(lp.Bounds, xform)
+		nv := tf(lp.Var).(*soltype.LifetimeVar)
+		nb, boundsChanged := rewriteLtSlice(lp.Bounds, tf)
 		if nv != lp.Var || boundsChanged {
 			if !changed {
 				out = append([]*soltype.LifetimeParam(nil), lps...)
@@ -419,16 +411,19 @@ func rewriteLtParams(lps []*soltype.LifetimeParam, xform func(soltype.Lifetime) 
 	return out, changed
 }
 
-// rewriteLtSlice applies xform to each lifetime in a slice, copy-on-write like
+// rewriteLtSlice applies tf to each lifetime in a slice, copy-on-write like
 // rewriteLtParams, preserving the nil-for-empty shape.
-func rewriteLtSlice(lts []soltype.Lifetime, xform func(soltype.Lifetime) soltype.Lifetime) ([]soltype.Lifetime, bool) {
+func rewriteLtSlice(
+	lts []soltype.Lifetime,
+	tf func(soltype.Lifetime) soltype.Lifetime,
+) ([]soltype.Lifetime, bool) {
 	if len(lts) == 0 {
 		return nil, false
 	}
 	out := lts
 	changed := false
 	for i, lt := range lts {
-		nl := xform(lt)
+		nl := tf(lt)
 		if nl != lt {
 			if !changed {
 				out = append([]soltype.Lifetime(nil), lts...)

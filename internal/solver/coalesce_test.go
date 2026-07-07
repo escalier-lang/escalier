@@ -387,20 +387,20 @@ func TestEqualTypeClass(t *testing.T) {
 	}{
 		{
 			name: "same name and arguments",
-			a:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
-			b:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
+			a:    &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{num()}},
+			b:    &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{num()}},
 			want: true,
 		},
 		{
 			name: "name differs",
-			a:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
-			b:    &soltype.ClassType{Name: "Bag", Args: []soltype.Type{num()}},
+			a:    &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{num()}},
+			b:    &soltype.ClassType{Name: "Bag", TypeArgs: []soltype.Type{num()}},
 			want: false,
 		},
 		{
 			name: "type argument differs",
-			a:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
-			b:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{str()}},
+			a:    &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{num()}},
+			b:    &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{str()}},
 			want: false,
 		},
 		{
@@ -411,7 +411,7 @@ func TestEqualTypeClass(t *testing.T) {
 		},
 		{
 			name: "argument count differs",
-			a:    &soltype.ClassType{Name: "Box", Args: []soltype.Type{num()}},
+			a:    &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{num()}},
 			b:    &soltype.ClassType{Name: "Box"},
 			want: false,
 		},
@@ -873,7 +873,7 @@ func TestEqualTypeClassLifetimeArgs(t *testing.T) {
 	lx := &soltype.LifetimeVar{ID: 0, Level: 1}
 	ly := &soltype.LifetimeVar{ID: 1, Level: 1}
 	ref := func(lts []soltype.Lifetime, args []soltype.Type) *soltype.ClassType {
-		return &soltype.ClassType{Name: "Ref", LifetimeArgs: lts, Args: args}
+		return &soltype.ClassType{Name: "Ref", LifetimeArgs: lts, TypeArgs: args}
 	}
 
 	tests := []struct {

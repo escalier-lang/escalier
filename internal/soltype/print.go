@@ -282,6 +282,7 @@ func (c *ltVarCollector) EnterType(t Type, _ Polarity) EnterResult {
 		// return. An outlives bound may reference an outer free lifetime, collected
 		// after the binders are marked so the bound's own parameter lifetimes stay
 		// excluded, mirroring freeTypeVars' treatment of a type parameter's constraint.
+		// c.add skips lifetime if it's already in c.seen.
 		for _, lp := range t.LifetimeParams {
 			c.seen.Add(lp.Var)
 		}
@@ -372,7 +373,7 @@ func freeTypeVars(t Type) []*TypeVarType {
 				}
 			}
 		case *ClassType:
-			for _, a := range t.Args {
+			for _, a := range t.TypeArgs {
 				walk(a)
 			}
 		case *PromiseType:
@@ -520,14 +521,14 @@ func (p *namedPrinter) printType(t Type) string {
 		// namespace prefix for registry keying, stripped here for display. Lt and the
 		// `mut` borrow forms come from a RefType wrapper, not this arm.
 		name := classDisplayName(t.Name)
-		if len(t.Args) == 0 && len(t.LifetimeArgs) == 0 {
+		if len(t.TypeArgs) == 0 && len(t.LifetimeArgs) == 0 {
 			return name
 		}
-		parts := make([]string, 0, len(t.LifetimeArgs)+len(t.Args))
+		parts := make([]string, 0, len(t.LifetimeArgs)+len(t.TypeArgs))
 		for _, la := range t.LifetimeArgs {
 			parts = append(parts, p.printLifetime(la))
 		}
-		for _, a := range t.Args {
+		for _, a := range t.TypeArgs {
 			parts = append(parts, p.printType(a))
 		}
 		return name + "<" + strings.Join(parts, ", ") + ">"

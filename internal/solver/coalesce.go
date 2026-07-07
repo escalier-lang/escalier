@@ -902,7 +902,7 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		if !sameLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs, ctx) {
 			return false
 		}
-		return equalTypeSliceWith(a.Args, b.Args, ctx)
+		return equalTypeSliceWith(a.TypeArgs, b.TypeArgs, ctx)
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
 		return ok && equalTypeWith(a.Inner, b.Inner, ctx)

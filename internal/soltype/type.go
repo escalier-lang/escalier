@@ -203,21 +203,11 @@ type FuncType struct {
 	Params    []*FuncParam
 	Ret       Type
 	Inexact   bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
-	// TypeParams are the function's own quantified type parameters in declaration
-	// order. nil is monomorphic, the common case and the zero value. A generic
-	// method such as Array<T>.map<U> lists U here; a class-level parameter is captured
-	// from the enclosing class type rather than listed. LevelOf maxes over Params and
-	// Ret only. A TypeParam's Var is minted deeper than the function by
-	// construction, so folding it into the level would raise the function's level
-	// above its capture level.
+	// TypeParams are the function's own quantified type parameters; nil is monomorphic and
+	// a class-level parameter is captured, not listed. LevelOf skips them, being minted deeper.
 	TypeParams []*TypeParam
-	// LifetimeParams are the function's own quantified lifetime parameters in
-	// declaration order, the lifetime-sort twin of TypeParams. nil means the function
-	// declares no lifetime params, the common case and the zero value. A borrowing
-	// method such as `fn get<'a>(&'a self) -> &'a T` lists 'a here. A class-level
-	// lifetime param is captured from the enclosing class type rather than listed. Like
-	// TypeParams these are minted deeper than the function, so LevelOf does not fold
-	// them in. A lifetime used in the body still counts through its RefType.
+	// LifetimeParams are the function's quantified lifetime parameters, the twin of TypeParams;
+	// LevelOf skips them too, though a body lifetime still counts through its RefType.
 	LifetimeParams []*LifetimeParam
 }
 
@@ -238,18 +228,10 @@ type TypeParam struct {
 	Default Type // nil ⇒ required
 }
 
-// LifetimeParam is one quantified lifetime parameter, the lifetime-sort analogue of
-// TypeParam. It is shared by FuncType.LifetimeParams for a method's or function's own
-// lifetime params, such as `fn get<'a>(&'a self) -> &'a T`, and by a class's own
-// lifetime params, such as `class Ref<'a, T>`, so both describe their lifetime generics
-// the same way. Var is the quantified lifetime variable that stands for the parameter.
-// It is minted one level deeper than the enclosing binding and freshened per use by the
-// ltFreshener, the lifetime counterpart of freshenAbove. Bounds are the declared
-// outlives constraints. A `<'b: 'a>` declaration gives 'b's Bounds the single entry 'a,
-// meaning 'b outlives 'a. The class-decl walk also records these as bounds on Var so
-// constrainLt enforces them. Lifetimes carry no default, since an omitted lifetime argument is
-// elided to a fresh lifetime rather than filled from a fallback. Name is the source name
-// (`'a`) kept for display, since LifetimeVar carries none.
+// LifetimeParam is one quantified lifetime parameter, the lifetime-sort analogue of TypeParam,
+// shared by a function's or class's own lifetime params such as `fn get<'a>` and `class Ref<'a, T>`.
+// Var is minted one level deeper and freshened per use; Bounds are the outlives constraints, where
+// `<'b: 'a>` gives 'b the single bound 'a. Name keeps the source name for display.
 type LifetimeParam struct {
 	Name   string
 	Var    *LifetimeVar
@@ -523,13 +505,11 @@ type ClassType struct {
 	// local identifier, so two classes named Point in different namespaces stay
 	// distinct. It also keys the registry holding the heavy per-class data.
 	Name string
-	// Args are the type arguments, one per class type parameter, checked per position
+	// TypeArgs are the type arguments, one per class type parameter, checked per position
 	// by the variance the class registry records for that parameter.
-	Args []Type
-	// LifetimeArgs are the lifetime arguments, one per class lifetime parameter, so a
-	// reference `Ref<'x, T>` supplies both the lifetime arg 'x and the type arg T. They
-	// name the lifetime of borrowed data the instance holds. This is distinct from Lt,
-	// which is how long the caller holds the instance itself.
+	TypeArgs []Type
+	// LifetimeArgs are the lifetime arguments, one per class lifetime parameter, so `Ref<'x, T>`
+	// supplies arg 'x. They name the lifetime of borrowed data the instance holds, distinct from Lt.
 	LifetimeArgs []Lifetime
 	// Lt is the instance's own borrow lifetime, nil for an owned value. A `mut 'b
 	// Point` wraps a ClassType in a RefType rather than setting Lt directly, so no
@@ -588,13 +568,14 @@ func LevelOf(t Type) int {
 	case *ClassType:
 		// A nominal instance's level is the max level over its type and lifetime
 		// arguments and its own borrow lifetime. The Name and Final identity carry no
-		// variables. A free lifetime arg such as the 'x in Ref<'x, T> must lift the
-		// level so the freshener/extruder prune descends to freshen it, the same reason
-		// the RefType arm folds in its lifetime.
+		// variables.
 		m := 0
-		for _, a := range t.Args {
+		for _, a := range t.TypeArgs {
 			m = max(m, LevelOf(a))
 		}
+		// A free lifetime arg such as the 'x in Ref<'x, T> must lift the level so the
+		// freshener/extruder prune descends to freshen it, the same reason the RefType
+		// arm folds in its lifetime.
 		for _, la := range t.LifetimeArgs {
 			m = max(m, LevelOfLifetime(la))
 		}

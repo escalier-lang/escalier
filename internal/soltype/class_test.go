@@ -86,7 +86,7 @@ func TestAcceptFuncSelfParamCopyOnWrite(t *testing.T) {
 	str := &PrimType{Prim: StrPrim}
 	a := &TypeVarType{ID: 1}
 	fn := &FuncType{
-		SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{a}}),
+		SelfParam: selfRecv(&ClassType{Name: "Box", TypeArgs: []Type{a}}),
 		Params:    []*FuncParam{identP("x", numP())},
 		Ret:       numP(),
 	}
@@ -94,7 +94,7 @@ func TestAcceptFuncSelfParamCopyOnWrite(t *testing.T) {
 	got := fn.Accept(&replaceVar{target: a, repl: str}, Positive).(*FuncType)
 
 	require.NotSame(t, fn, got, "a changed receiver forces a new FuncType")
-	require.Same(t, str, got.SelfParam.Type.(*ClassType).Args[0], "the receiver argument took the replacement")
+	require.Same(t, str, got.SelfParam.Type.(*ClassType).TypeArgs[0], "the receiver argument took the replacement")
 	require.Same(t, fn.Params[0], got.Params[0], "an unchanged param keeps its pointer")
 }
 
@@ -113,7 +113,7 @@ func TestAcceptFuncSelfParamContravariant(t *testing.T) {
 // LevelOf includes a method's self receiver, so a receiver-only variable lifts the
 // method's level.
 func TestLevelOfSelfParam(t *testing.T) {
-	fn := &FuncType{SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{&TypeVarType{ID: 1, Level: 6}}}), Ret: numP()}
+	fn := &FuncType{SelfParam: selfRecv(&ClassType{Name: "Box", TypeArgs: []Type{&TypeVarType{ID: 1, Level: 6}}}), Ret: numP()}
 	require.Equal(t, 6, LevelOf(fn))
 }
 
@@ -121,7 +121,7 @@ func TestLevelOfSelfParam(t *testing.T) {
 // receiver type is named as a quantified parameter.
 func TestFreeTypeVarsSelfParam(t *testing.T) {
 	a := &TypeVarType{ID: 1, Level: 1}
-	fn := &FuncType{SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{a}}), Ret: a}
+	fn := &FuncType{SelfParam: selfRecv(&ClassType{Name: "Box", TypeArgs: []Type{a}}), Ret: a}
 	require.Equal(t, "fn <T0>(self) -> T0", PrintAsScheme(fn))
 }
 
@@ -183,20 +183,20 @@ func TestAcceptGetterSetterReceiverContravariant(t *testing.T) {
 func TestAcceptSetterSelfParamCopyOnWrite(t *testing.T) {
 	str := &PrimType{Prim: StrPrim}
 	a := &TypeVarType{ID: 1}
-	setter := &SetterElem{Name: "s", SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{a}}), Param: numP()}
+	setter := &SetterElem{Name: "s", SelfParam: selfRecv(&ClassType{Name: "Box", TypeArgs: []Type{a}}), Param: numP()}
 	obj := &ObjectType{Elems: []ObjTypeElem{setter}}
 
 	got := obj.Accept(&replaceVar{target: a, repl: str}, Positive).(*ObjectType)
 
 	gotSetter := got.Elems[0].(*SetterElem)
 	require.NotSame(t, setter, gotSetter, "a changed receiver forces a new setter")
-	require.Same(t, str, gotSetter.SelfParam.Type.(*ClassType).Args[0], "the receiver argument took the replacement")
+	require.Same(t, str, gotSetter.SelfParam.Type.(*ClassType).TypeArgs[0], "the receiver argument took the replacement")
 }
 
 // LevelOf descends an instance getter's receiver.
 func TestLevelOfGetterReceiver(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{
-		&GetterElem{Name: "g", SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{&TypeVarType{ID: 1, Level: 8}}}), Type: numP()},
+		&GetterElem{Name: "g", SelfParam: selfRecv(&ClassType{Name: "Box", TypeArgs: []Type{&TypeVarType{ID: 1, Level: 8}}}), Type: numP()},
 	}}
 	require.Equal(t, 8, LevelOf(obj))
 }
@@ -206,7 +206,7 @@ func TestLevelOfGetterReceiver(t *testing.T) {
 func TestFreeTypeVarsGetterReceiver(t *testing.T) {
 	a := &TypeVarType{ID: 1, Level: 1}
 	obj := &ObjectType{Elems: []ObjTypeElem{
-		&GetterElem{Name: "g", SelfParam: selfRecv(&ClassType{Name: "Box", Args: []Type{a}}), Type: numP()},
+		&GetterElem{Name: "g", SelfParam: selfRecv(&ClassType{Name: "Box", TypeArgs: []Type{a}}), Type: numP()},
 	}}
 	require.Equal(t, "<T0> {get g(self) -> number}", PrintAsScheme(obj))
 }
@@ -222,10 +222,10 @@ func TestPrintClassType(t *testing.T) {
 		want string
 	}{
 		{"monomorphic instance", &ClassType{Name: "Point"}, "Point"},
-		{"generic instance", &ClassType{Name: "Box", Args: []Type{numP()}}, "Box<number>"},
+		{"generic instance", &ClassType{Name: "Box", TypeArgs: []Type{numP()}}, "Box<number>"},
 		{
 			"two type arguments",
-			&ClassType{Name: "Map", Args: []Type{strP(), numP()}},
+			&ClassType{Name: "Map", TypeArgs: []Type{strP(), numP()}},
 			"Map<string, number>",
 		},
 		{
@@ -253,7 +253,7 @@ func TestPrintClassType(t *testing.T) {
 		},
 		{
 			"owned-mutable instance renders bare mut",
-			&RefType{Mut: true, Inner: &ClassType{Name: "Box", Args: []Type{numP()}}},
+			&RefType{Mut: true, Inner: &ClassType{Name: "Box", TypeArgs: []Type{numP()}}},
 			"mut Box<number>",
 		},
 	}
@@ -319,7 +319,7 @@ func TestPrintObjectMembers(t *testing.T) {
 
 // A no-op rewrite over a ClassType allocates nothing and keeps its pointer.
 func TestAcceptClassIdentityPreservation(t *testing.T) {
-	cls := &ClassType{Name: "Box", Args: []Type{numP()}, Final: true}
+	cls := &ClassType{Name: "Box", TypeArgs: []Type{numP()}, Final: true}
 	require.Same(t, cls, cls.Accept(identityVisitor{}, Positive), "an unchanged ClassType keeps its pointer")
 }
 
@@ -329,7 +329,7 @@ func TestAcceptClassCopyOnWrite(t *testing.T) {
 	str := &PrimType{Prim: StrPrim}
 	a := &TypeVarType{ID: 1}
 	lt := &StaticLifetime{}
-	cls := &ClassType{Name: "Box", Args: []Type{a}, Lt: lt, Final: true}
+	cls := &ClassType{Name: "Box", TypeArgs: []Type{a}, Lt: lt, Final: true}
 
 	got := cls.Accept(&replaceVar{target: a, repl: str}, Positive).(*ClassType)
 
@@ -337,14 +337,14 @@ func TestAcceptClassCopyOnWrite(t *testing.T) {
 	require.Equal(t, "Box", got.Name, "the name carries through")
 	require.True(t, got.Final, "the Final flag carries through")
 	require.Same(t, lt, got.Lt, "the lifetime carries through unchanged")
-	require.Same(t, str, got.Args[0], "the changed argument took the replacement")
+	require.Same(t, str, got.TypeArgs[0], "the changed argument took the replacement")
 }
 
 // Type arguments are covariant: a ClassType's argument is visited in the same
 // polarity the ClassType is.
 func TestAcceptClassArgsCovariant(t *testing.T) {
 	a := &TypeVarType{ID: 1}
-	cls := &ClassType{Name: "Box", Args: []Type{a}}
+	cls := &ClassType{Name: "Box", TypeArgs: []Type{a}}
 
 	r := &recorder{seen: map[Type]Polarity{}}
 	cls.Accept(r, Negative)
@@ -410,7 +410,7 @@ func TestAcceptObjectSetterCopyOnWrite(t *testing.T) {
 // Final identity carry no variables.
 func TestLevelOfClassType(t *testing.T) {
 	require.Equal(t, 0, LevelOf(&ClassType{Name: "Point"}), "no arguments ⇒ level 0")
-	cls := &ClassType{Name: "Box", Args: []Type{
+	cls := &ClassType{Name: "Box", TypeArgs: []Type{
 		&TypeVarType{ID: 1, Level: 2},
 		&TypeVarType{ID: 2, Level: 5},
 	}}
@@ -436,7 +436,7 @@ func TestLevelOfObjectMembers(t *testing.T) {
 func TestFreeTypeVarsClassType(t *testing.T) {
 	a := &TypeVarType{ID: 1, Level: 1}
 	b := &TypeVarType{ID: 2, Level: 1}
-	cls := &ClassType{Name: "Map", Args: []Type{a, b}}
+	cls := &ClassType{Name: "Map", TypeArgs: []Type{a, b}}
 	require.Equal(t, "Map<T0, T1>", PrintAsScheme(cls))
 }
 
