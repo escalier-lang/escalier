@@ -125,8 +125,21 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool, ltBounds map[*Li
 	ltVars := freeLifetimeVars(t)
 	ltNames := map[*LifetimeVar]string{}
 	ltIndex := map[*LifetimeVar]int{}
+	// A function's own lifetime parameters keep their source names in the prefix, and a
+	// free lifetime gets a generated name from the same 'a, 'b, … alphabet, so a generated
+	// name must skip any source name a parameter already claims. Without this a captured
+	// 'a and a declared 'a would both render as 'a. The type-parameter path never collides
+	// because generated T0, T1 and source names like U are disjoint alphabets.
+	reserved := ownLifetimeParamNames(t)
+	next := 0
 	for i, lv := range ltVars {
-		ltNames[lv] = lifetimeParamName(i)
+		name := lifetimeParamName(next)
+		for reserved.Contains(name) {
+			next++
+			name = lifetimeParamName(next)
+		}
+		next++
+		ltNames[lv] = name
 		ltIndex[lv] = i
 	}
 	if len(labels) == 0 && len(ltVars) == 0 {
@@ -148,13 +161,17 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool, ltBounds map[*Li
 		ltLabels[i] = p.lifetimeBinder(lv, ltBounds[lv], ltIndex)
 	}
 	if ft, ok := t.(*FuncType); ok {
-		// Merge the scheme's free variables, the function's OWN type parameters, and the
-		// lifetimes into one ordered prefix, so a generic method that also captures a
-		// scheme variable renders `fn <T0, U, 'a>(...)` rather than two adjacent groups.
-		// printFuncBody omits the type-param prefix so the own parameters are not repeated.
+		// Merge the scheme's free variables, the function's OWN type and lifetime
+		// parameters, and the free scheme lifetimes into one ordered prefix, so a generic
+		// method that also captures a scheme variable renders `fn <T0, U, 'a>(...)` rather
+		// than adjacent groups. A function's own lifetime params are excluded from ltLabels
+		// by freeLifetimeVars, so they are named and rendered here from their declared
+		// bounds. printFuncBody omits the prefix so the own parameters are not repeated.
 		p.nameTypeParams(ft.TypeParams)
+		p.nameLifetimeParams(ft.LifetimeParams)
 		binders := append([]string{}, labels...)
 		binders = append(binders, p.typeParamBinders(ft.TypeParams)...)
+		binders = append(binders, p.lifetimeParamBinders(ft.LifetimeParams)...)
 		binders = append(binders, ltLabels...)
 		return "fn <" + strings.Join(binders, ", ") + ">" + p.printFuncBody(ft)
 	}
@@ -195,6 +212,22 @@ func typeParamName(i int) string {
 	return "T" + strconv.Itoa(i)
 }
 
+// ownLifetimeParamNames returns the source names a function's own lifetime parameters
+// claim in the quantifier prefix, so the free-lifetime naming can avoid colliding with
+// them. It is non-empty only for a FuncType that declares lifetime parameters; every
+// other type reserves nothing.
+func ownLifetimeParamNames(t Type) set.Set[string] {
+	names := set.NewSet[string]()
+	if ft, ok := t.(*FuncType); ok {
+		for _, lp := range ft.LifetimeParams {
+			if lp.Name != "" {
+				names.Add(lp.Name)
+			}
+		}
+	}
+	return names
+}
+
 // lifetimeParamName is the surface name for the i-th quantified lifetime parameter:
 // 'a, 'b, …, 'z, 'aa, 'ab, … in Excel-style base-26, so a borrow renders as
 // `fn <'a>(p: &'a mut {x}) -> &'a mut {x}`.
@@ -232,16 +265,41 @@ type ltVarCollector struct {
 }
 
 func (c *ltVarCollector) EnterType(t Type, _ Polarity) EnterResult {
-	if r, ok := t.(*RefType); ok {
-		c.add(r.Lt)
+	switch t := t.(type) {
+	case *RefType:
+		c.add(t.Lt)
+	case *ClassType:
+		// A nominal instance's lifetime arguments and its own borrow lifetime are free
+		// lifetimes reached here, so `Ref<'x, T>` collects 'x. They precede any lifetime
+		// nested inside the type arguments, matching print order.
+		for _, la := range t.LifetimeArgs {
+			c.add(la)
+		}
+		c.add(t.Lt)
+	case *FuncType:
+		// A function's own lifetime parameters are bound, not free, so mark their
+		// variables seen up front to exclude every use in the receiver, params, and
+		// return. An outlives bound may reference an outer free lifetime, collected
+		// after the binders are marked so the bound's own parameter lifetimes stay
+		// excluded, mirroring freeTypeVars' treatment of a type parameter's constraint.
+		// c.add skips lifetime if it's already in c.seen.
+		for _, lp := range t.LifetimeParams {
+			c.seen.Add(lp.Var)
+		}
+		for _, lp := range t.LifetimeParams {
+			for _, b := range lp.Bounds {
+				c.add(b)
+			}
+		}
 	}
 	return EnterResult{}
 }
 
 func (c *ltVarCollector) ExitType(t Type, _ Polarity) Type { return t }
 
-// add records a borrow's lifetime when it is a LifetimeVar, deduped by identity.
-// 'static and an anonymous display lifetime carry no variable and are skipped.
+// add records a lifetime when it is a LifetimeVar, deduped by identity. 'static and an
+// anonymous display lifetime carry no variable and are skipped. A variable already
+// marked seen, such as a function's own bound lifetime parameter, is skipped too.
 func (c *ltVarCollector) add(lt Lifetime) {
 	if lv, ok := lt.(*LifetimeVar); ok && !c.seen.Contains(lv) {
 		c.seen.Add(lv)
@@ -315,7 +373,7 @@ func freeTypeVars(t Type) []*TypeVarType {
 				}
 			}
 		case *ClassType:
-			for _, a := range t.Args {
+			for _, a := range t.TypeArgs {
 				walk(a)
 			}
 		case *PromiseType:
@@ -456,19 +514,24 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		return "{" + strings.Join(elems, ", ") + "}"
 	case *ClassType:
-		// A ClassType renders under its bare display name, with a `<...>` type-argument
-		// list when it has arguments: `Point`, `Box<number>`. The qualified Name carries
-		// a namespace prefix for registry keying, stripped here for display. Lt and the
+		// A ClassType renders under its bare display name, with a `<...>` argument list
+		// when it has arguments: `Point`, `Box<number>`, `Ref<'x, number>`. Lifetime
+		// arguments render first, then type arguments, so a class holding borrowed data
+		// shows its lifetime before its element type. The qualified Name carries a
+		// namespace prefix for registry keying, stripped here for display. Lt and the
 		// `mut` borrow forms come from a RefType wrapper, not this arm.
 		name := classDisplayName(t.Name)
-		if len(t.Args) == 0 {
+		if len(t.TypeArgs) == 0 && len(t.LifetimeArgs) == 0 {
 			return name
 		}
-		args := make([]string, len(t.Args))
-		for i, a := range t.Args {
-			args[i] = p.printType(a)
+		parts := make([]string, 0, len(t.LifetimeArgs)+len(t.TypeArgs))
+		for _, la := range t.LifetimeArgs {
+			parts = append(parts, p.printLifetime(la))
 		}
-		return name + "<" + strings.Join(args, ", ") + ">"
+		for _, a := range t.TypeArgs {
+			parts = append(parts, p.printType(a))
+		}
+		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *FuncType:
 		return "fn " + p.printFuncTail(t)
 	case *PromiseType:
@@ -604,7 +667,13 @@ func (p *namedPrinter) printSelfReceiver(sp *FuncParam) string {
 // syntax. An exact function with no receiver renders with no marker.
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	p.nameTypeParams(t.TypeParams)
-	return p.printTypeParams(t.TypeParams) + p.printFuncBody(t)
+	p.nameLifetimeParams(t.LifetimeParams)
+	binders := append(p.typeParamBinders(t.TypeParams), p.lifetimeParamBinders(t.LifetimeParams)...)
+	prefix := ""
+	if len(binders) > 0 {
+		prefix = "<" + strings.Join(binders, ", ") + ">"
+	}
+	return prefix + p.printFuncBody(t)
 }
 
 // printFuncBody renders the "(receiver, params) -> ret" portion with NO quantifier
@@ -679,15 +748,45 @@ func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	return binders
 }
 
-// printTypeParams wraps a function's own type-parameter binders in a `<...>` prefix,
-// so a generic function renders `<U>`, `<U: T>`, `<U = D>`, or `<U: T = D>`. An empty
-// slice renders "", so a monomorphic function shows no prefix. nameTypeParams must run
-// first. See typeParamBinders for the per-parameter form.
-func (p *namedPrinter) printTypeParams(tps []*TypeParam) string {
-	if len(tps) == 0 {
-		return ""
+// nameLifetimeParams registers each lifetime parameter's variable under its source name
+// in the printer's ltNames map, so a use of the parameter inside the receiver, params,
+// return, or another parameter's bound renders as that name rather than the raw `'l{ID}`
+// debug form. It allocates the map lazily, since plain Print starts with none. It is the
+// lifetime-sort twin of nameTypeParams.
+func (p *namedPrinter) nameLifetimeParams(lps []*LifetimeParam) {
+	if len(lps) == 0 {
+		return
 	}
-	return "<" + strings.Join(p.typeParamBinders(tps), ", ") + ">"
+	if p.ltNames == nil {
+		p.ltNames = map[*LifetimeVar]string{}
+	}
+	for _, lp := range lps {
+		if lp.Name != "" {
+			p.ltNames[lp.Var] = lp.Name
+		}
+	}
+}
+
+// lifetimeParamBinders renders each lifetime parameter as a binder string — `'a`, or
+// `'b: 'a` for an outlives bound and `'b: 'a & 'c` for several — without the surrounding
+// `<>`. The bound is the parameter's declared outlives list. nameLifetimeParams must run
+// first so a binder that references another parameter renders under its name. It is the
+// lifetime-sort twin of typeParamBinders, joined into the same combined quantifier
+// prefix so a method renders `fn <U, 'a>(...)`.
+func (p *namedPrinter) lifetimeParamBinders(lps []*LifetimeParam) []string {
+	binders := make([]string, len(lps))
+	for i, lp := range lps {
+		s := p.printLifetime(lp.Var) // the registered source name, else 'l{ID}
+		if len(lp.Bounds) > 0 {
+			rendered := make([]string, len(lp.Bounds))
+			for j, b := range lp.Bounds {
+				rendered[j] = p.printLifetime(b)
+			}
+			s += ": " + strings.Join(rendered, " & ")
+		}
+		binders[i] = s
+	}
+	return binders
 }
 
 // paramName renders p.Pattern. M1's only Pat concrete is IdentPat; a nil or

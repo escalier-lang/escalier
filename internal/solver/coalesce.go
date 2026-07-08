@@ -657,6 +657,15 @@ type alphaCtx struct {
 	lt     *ltPairing
 	tvAToB map[int]int
 	tvBToA map[int]int
+	// ltpAToB and ltpBToA pair the positional lifetime parameters of two generic
+	// FuncTypes, the lifetime-sort twin of tvAToB/tvBToA. They are bound at each
+	// function boundary so a lifetime parameter's identity is its position rather than
+	// its variable id. They are separate from lt. lt discovers a bijection over borrow
+	// lifetimes for alphaEqualTypes, while these are declared bindings over a function's
+	// own quantified lifetime params. They start nil and allocate on first binding, so
+	// the common lifetime-param-free case allocates nothing.
+	ltpAToB map[int]int
+	ltpBToA map[int]int
 }
 
 // bindTypeParams pairs two generic FuncTypes' type parameters positionally, so every
@@ -687,6 +696,44 @@ func (ctx *alphaCtx) sameTypeVar(a, b *soltype.TypeVarType) bool {
 		return false // b is a bound parameter, a is not — mismatch
 	}
 	return a == b
+}
+
+// bindLifetimeParams pairs two generic FuncTypes' lifetime parameters positionally, the
+// lifetime-sort twin of bindTypeParams, so every later occurrence of one side's lifetime
+// parameter must match the other's bound partner. The bindings persist for the rest of
+// the walk. Lifetime-variable ids are unique across the comparison, so a parameter bound
+// here is never confused with one from another function.
+func (ctx *alphaCtx) bindLifetimeParams(as, bs []*soltype.LifetimeParam) {
+	if ctx.ltpAToB == nil {
+		ctx.ltpAToB = map[int]int{}
+		ctx.ltpBToA = map[int]int{}
+	}
+	for i := range as {
+		ctx.ltpAToB[as[i].Var.ID] = bs[i].Var.ID
+		ctx.ltpBToA[bs[i].Var.ID] = as[i].Var.ID
+	}
+}
+
+// sameLifetime reports lifetime equality under the alpha context. A lifetime bound as
+// one side's parameter must map to the other's partner through the lifetime-parameter
+// bijection, so two borrowing methods differing only in lifetime-variable id compare
+// equal. A lifetime bound on neither side falls back to ltEqualWith, which keys a
+// LifetimeVar by pointer under a nil borrow pairing and by first-appearance index under
+// one.
+func (ctx *alphaCtx) sameLifetime(a, b soltype.Lifetime) bool {
+	av, aok := a.(*soltype.LifetimeVar)
+	bv, bok := b.(*soltype.LifetimeVar)
+	if aok {
+		if j, ok := ctx.ltpAToB[av.ID]; ok {
+			return bok && j == bv.ID
+		}
+	}
+	if bok {
+		if _, ok := ctx.ltpBToA[bv.ID]; ok {
+			return false // b is a bound lifetime parameter, a is not — mismatch
+		}
+	}
+	return ltEqualWith(a, b, ctx.lt)
 }
 
 // ltPairing is the bijection alphaEqualTypes discovers between the lifetime variables of
@@ -759,7 +806,7 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		return ok
 	case *soltype.FuncType:
 		b, ok := b.(*soltype.FuncType)
-		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact || len(a.TypeParams) != len(b.TypeParams) {
+		if !ok || len(a.Params) != len(b.Params) || a.Inexact != b.Inexact || len(a.TypeParams) != len(b.TypeParams) || len(a.LifetimeParams) != len(b.LifetimeParams) {
 			return false
 		}
 		if len(a.TypeParams) > 0 {
@@ -777,6 +824,18 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 					return false
 				}
 				if at.Default != nil && !equalTypeWith(at.Default, bt.Default, ctx) {
+					return false
+				}
+			}
+		}
+		if len(a.LifetimeParams) > 0 {
+			// Bind the two functions' lifetime parameters positionally, then compare each
+			// one's outlives bounds under that binding, so two borrowing methods differing
+			// only in lifetime-variable id compare equal. Binding all of them first lets a
+			// later parameter's `'b: 'a` bound reference an earlier one.
+			ctx.bindLifetimeParams(a.LifetimeParams, b.LifetimeParams)
+			for i := range a.LifetimeParams {
+				if !sameLifetimeSlice(a.LifetimeParams[i].Bounds, b.LifetimeParams[i].Bounds, ctx) {
 					return false
 				}
 			}
@@ -834,13 +893,16 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		return true
 	case *soltype.ClassType:
 		b, ok := b.(*soltype.ClassType)
-		// Nominal identity is the qualified name plus the Final exactness flag. The type
-		// arguments then compare positionally. A ClassType's Lt is always nil today, so
-		// it is not compared.
+		// Nominal identity is the qualified name plus the Final exactness flag. The
+		// lifetime arguments then compare positionally, then the type arguments. A
+		// ClassType's Lt is always nil today, so it is not compared.
 		if !ok || a.Name != b.Name || a.Final != b.Final {
 			return false
 		}
-		return equalTypeSliceWith(a.Args, b.Args, ctx)
+		if !sameLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs, ctx) {
+			return false
+		}
+		return equalTypeSliceWith(a.TypeArgs, b.TypeArgs, ctx)
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
 		return ok && equalTypeWith(a.Inner, b.Inner, ctx)
@@ -851,7 +913,7 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// in lifetime are NOT equal. Without the Lt check, dedup would collapse them and
 		// silently drop a lifetime the solver computed. ltEqualWith compares a LifetimeVar
 		// by pointer under a nil pairing and by first-appearance index under one.
-		return ok && a.Mut == b.Mut && ltEqualWith(a.Lt, b.Lt, ctx.lt) && equalTypeWith(a.Inner, b.Inner, ctx)
+		return ok && a.Mut == b.Mut && ctx.sameLifetime(a.Lt, b.Lt) && equalTypeWith(a.Inner, b.Inner, ctx)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
 		// Inexact flags must match, since an open union never equals a closed
@@ -968,6 +1030,22 @@ func equalTypeSliceWith(a, b []soltype.Type, ctx *alphaCtx) bool {
 	}
 	for i := range a {
 		if !equalTypeWith(a[i], b[i], ctx) {
+			return false
+		}
+	}
+	return true
+}
+
+// sameLifetimeSlice compares two lifetime slices positionally under the alpha context,
+// so a class's lifetime arguments and a lifetime parameter's outlives bounds compare up
+// to the lifetime-parameter bijection. It is the lifetime-sort twin of
+// equalTypeSliceWith.
+func sameLifetimeSlice(a, b []soltype.Lifetime, ctx *alphaCtx) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !ctx.sameLifetime(a[i], b[i]) {
 			return false
 		}
 	}
