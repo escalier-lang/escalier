@@ -190,7 +190,19 @@ func TestInferClassErrors(t *testing.T) {
 		{
 			name: "MissingSelfReceiver",
 			src:  `class C { foo() -> number { return 1 } }`,
-			want: "Instance methods, getters, and setters must declare a `self` receiver as their first parameter.",
+			want: "Instance member 'foo' must declare a `self` receiver as its first parameter.",
+		},
+		{
+			name: "WriteOnlySetterRead",
+			src: `
+				class C {
+					v: number,
+					set value(mut self, x: number) { self.v = x },
+				}
+				val c = C(0)
+				val r = c.value
+			`,
+			want: "Property 'value' is write-only; it has a setter but no getter or field to read.",
 		},
 		{
 			name: "MultipleConstructors",

@@ -729,6 +729,7 @@ func (*MissingSelfReceiverError) isSolverError()          {}
 func (*MultipleConstructorsError) isSolverError()         {}
 func (*FieldInitializerNotAllowedError) isSolverError()   {}
 func (*SubclassConstructorRequiredError) isSolverError()  {}
+func (*WriteOnlyPropertyError) isSolverError()            {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -741,7 +742,21 @@ type MissingSelfReceiverError struct {
 func (e *MissingSelfReceiverError) Span() ast.Span      { return e.Elem.Span() }
 func (e *MissingSelfReceiverError) Related() []ast.Span { return nil }
 func (e *MissingSelfReceiverError) Message() string {
-	return "Instance methods, getters, and setters must declare a `self` receiver as their first parameter."
+	return "Instance member '" + e.Name + "' must declare a `self` receiver as its first parameter."
+}
+
+// WriteOnlyPropertyError fires when a setter-only member is read, as in `val v =
+// c.value` where `value` is declared only with `set value(...)`. A setter defines a
+// write, not a readable value.
+type WriteOnlyPropertyError struct {
+	Name string
+	Site ast.Node
+}
+
+func (e *WriteOnlyPropertyError) Span() ast.Span      { return e.Site.Span() }
+func (e *WriteOnlyPropertyError) Related() []ast.Span { return nil }
+func (e *WriteOnlyPropertyError) Message() string {
+	return "Property '" + e.Name + "' is write-only; it has a setter but no getter or field to read."
 }
 
 // MultipleConstructorsError fires on the second and any later `constructor` block in

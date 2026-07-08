@@ -322,9 +322,10 @@ func (c *checker) inferComponent(
 		}
 	}
 
-	// Non-value keys (type aliases, …) are outside the M2 subset. Report each
-	// contributing decl once, skipping any already handled by a value key (a
-	// class/enum contributes both a value and a type key for the same decl).
+	// Non-value keys such as type aliases are outside the M2 subset. Report each
+	// contributing decl once, skipping any already handled by a value key. A class or
+	// enum contributes both a value and a type key for the same decl, so its type key
+	// is skipped here.
 	//
 	// A class's type key is left to its value key, which infers the class and
 	// registers both the instance type and the constructor together (M5 B1). The two

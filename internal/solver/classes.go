@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"fmt"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -76,10 +78,15 @@ func (c *checker) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, 
 	}
 	subst := newClassSubst(def, ct)
 	projected := def.Body.Accept(subst, soltype.Positive)
-	if obj, ok := projected.(*soltype.ObjectType); ok {
-		return obj, true
+	obj, ok := projected.(*soltype.ObjectType)
+	if !ok {
+		// Substitution replaces only vars and lifetimes, so an ObjectType body always
+		// projects to an ObjectType; a different kind means the substitution corrupted
+		// the body. Fail loudly rather than return the unsubstituted body, matching the
+		// AsProperty discipline.
+		panic(fmt.Sprintf("projectClassBody: %s projected to non-ObjectType %T", ct.Name, projected))
 	}
-	return def.Body, true
+	return obj, true
 }
 
 // projectedMember resolves a member access against a class instance or against a
@@ -117,11 +124,12 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 // instance flows through the bound graph as a variable with a ClassType lower bound
 // rather than a bare ClassType.
 //
-// It resolves only an unambiguous class: a variable whose lower bounds name two
-// different classes, as a join of `Foo(…)` and `Bar(…)` does, is not resolved, so
-// member access falls to the structural path rather than silently projecting whichever
-// class appears first. Member access on such a union rides the nominal-vs-structural
-// rule in C1.
+// It resolves only an unambiguous class: a variable whose lower bounds carry two
+// different instantiations is not resolved, so member access falls to the structural
+// path rather than silently projecting whichever appears first. This covers a join of
+// distinct classes such as `Foo(…)` and `Bar(…)`, and a join of the same class at
+// different arguments such as `Box(1)` and `Box("s")`, whose members differ by
+// argument. Member access on such a union rides the nominal-vs-structural rule in C1.
 func classCarrier(t soltype.Type) (*soltype.ClassType, bool) {
 	switch t := t.(type) {
 	case *soltype.ClassType:
@@ -133,7 +141,7 @@ func classCarrier(t soltype.Type) (*soltype.ClassType, bool) {
 			if !ok {
 				continue
 			}
-			if found != nil && found.Name != ct.Name {
+			if found != nil && !equalType(found, ct) {
 				return nil, false
 			}
 			found = ct
@@ -148,8 +156,9 @@ func classCarrier(t soltype.Type) (*soltype.ClassType, bool) {
 // memberValue produces the value a member access yields: a property's or getter's
 // type directly, or a method's callable signature with the receiver applied — the
 // signature with its SelfParam stripped, since `p.m` binds the receiver and returns a
-// function of the remaining parameters. An overloaded method resolves its arm at the
-// call site (E1); B1 hands back the first signature.
+// function of the remaining parameters. Reading a setter-only member is a write-only
+// access and is reported. An overloaded method resolves its arm at the call site (E1);
+// B1 hands back the first signature.
 func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeElem) pathResult {
 	var out soltype.Type
 	switch m := member.(type) {
@@ -170,6 +179,8 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 			TypeParams:     sig.TypeParams,
 			LifetimeParams: sig.LifetimeParams,
 		}
+	case *soltype.SetterElem:
+		out = c.report(&WriteOnlyPropertyError{Name: m.Name, Site: blame})
 	default:
 		out = &soltype.ErrorType{}
 	}
