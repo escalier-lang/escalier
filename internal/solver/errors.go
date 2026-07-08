@@ -725,6 +725,63 @@ func (*AsyncReturnNotPromiseError) isSolverError()        {}
 func (*NonExhaustiveMatchError) isSolverError()           {}
 func (*MixedOwnershipError) isSolverError()               {}
 func (*MutLeafThroughSharedBorrowError) isSolverError()   {}
+func (*MissingSelfReceiverError) isSolverError()          {}
+func (*MultipleConstructorsError) isSolverError()         {}
+func (*FieldInitializerNotAllowedError) isSolverError()   {}
+func (*SubclassConstructorRequiredError) isSolverError()  {}
+
+// MissingSelfReceiverError fires when a non-static instance method, getter, or
+// setter omits its `self` receiver. Such a member cannot read the instance, so the
+// receiver is required.
+type MissingSelfReceiverError struct {
+	Name string
+	Elem ast.ClassElem
+}
+
+func (e *MissingSelfReceiverError) Span() ast.Span      { return e.Elem.Span() }
+func (e *MissingSelfReceiverError) Related() []ast.Span { return nil }
+func (e *MissingSelfReceiverError) Message() string {
+	return "Instance methods, getters, and setters must declare a `self` receiver as their first parameter."
+}
+
+// MultipleConstructorsError fires on the second and any later `constructor` block in
+// one class; a class declares at most one.
+type MultipleConstructorsError struct {
+	Ctor *ast.ConstructorElem
+}
+
+func (e *MultipleConstructorsError) Span() ast.Span      { return e.Ctor.Span() }
+func (e *MultipleConstructorsError) Related() []ast.Span { return nil }
+func (e *MultipleConstructorsError) Message() string {
+	return "Multiple constructors per class are not yet supported."
+}
+
+// FieldInitializerNotAllowedError fires when an instance field declares a `= expr`
+// initializer. Instance fields are assigned in the constructor body; only static
+// fields may use the initializer form.
+type FieldInitializerNotAllowedError struct {
+	Field *ast.FieldElem
+}
+
+func (e *FieldInitializerNotAllowedError) Span() ast.Span      { return e.Field.Span() }
+func (e *FieldInitializerNotAllowedError) Related() []ast.Span { return nil }
+func (e *FieldInitializerNotAllowedError) Message() string {
+	name, _ := objKeyName(e.Field.Name)
+	return "Field '" + name + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
+}
+
+// SubclassConstructorRequiredError fires when a class with an `extends` clause
+// declares no `constructor` block. Synthesizing one would silently skip the required
+// `super(...)` call, so the constructor must be written explicitly.
+type SubclassConstructorRequiredError struct {
+	Decl *ast.ClassDecl
+}
+
+func (e *SubclassConstructorRequiredError) Span() ast.Span      { return e.Decl.Name.Span() }
+func (e *SubclassConstructorRequiredError) Related() []ast.Span { return nil }
+func (e *SubclassConstructorRequiredError) Message() string {
+	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
+}
 
 func (e *MixedOwnershipError) Span() ast.Span      { return spanOfNode(e.Node) }
 func (e *MixedOwnershipError) Related() []ast.Span { return nil }

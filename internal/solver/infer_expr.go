@@ -1960,6 +1960,13 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	//   - A union receiver peels each member's borrow, so a read off a union of
 	//     borrows reads each member through the union for-all rule.
 	recvCarrier := readCarrier(recv)
+	// A class instance, and any member that is a method or getter rather than a plain
+	// field, resolves through the projected class body by direct member lookup rather
+	// than the structural field-requirement below — the constraint path reads only
+	// PropertyElems and cannot see a method or getter (M5 B1).
+	if res, ok := c.projectedMember(lvl, blame, name, recvCarrier); ok {
+		return res
+	}
 	fieldVar := c.freshAt(lvl)
 	// The member-requirement record {prop: fieldVar} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner fieldVar, so the record would be a dead

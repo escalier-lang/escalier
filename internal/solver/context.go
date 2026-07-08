@@ -38,6 +38,31 @@ type Context struct {
 	// removed from its bound list is simply never matched, since findLtProxy scans
 	// only bounds currently present.
 	ltProxyOrigin map[*soltype.LifetimeVar]soltype.Lifetime
+
+	// classes is the nominal registry (M5): each class's heavy data — the projected
+	// instance body, the resolved supers, and the per-parameter variance — keyed by
+	// the class's dep_graph-qualified name, the same string stored in
+	// soltype.ClassType.Name. inferClassDecl writes an entry per class decl; member
+	// lookup and the nominal constrain rule read it. Every ClassDef comes from a
+	// top-level decl and lives for the whole inference run, so an entry is inserted or
+	// overwritten but never removed for scope exit.
+	classes map[string]*ClassDef
+}
+
+// classDef returns the registered ClassDef for a qualified class name, or ok=false
+// when no class of that name has been registered on this Context.
+func (c *Context) classDef(name string) (*ClassDef, bool) {
+	def, ok := c.classes[name]
+	return def, ok
+}
+
+// registerClass inserts def under a qualified class name, allocating the registry
+// map on first use.
+func (c *Context) registerClass(name string, def *ClassDef) {
+	if c.classes == nil {
+		c.classes = map[string]*ClassDef{}
+	}
+	c.classes[name] = def
 }
 
 // freshVar allocates a new inference variable at the given level, assigning it
