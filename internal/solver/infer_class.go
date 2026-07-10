@@ -538,42 +538,61 @@ func (c *checker) bindSelf(scope *Scope, recv *ast.MethodReceiver, body *soltype
 // `never` rather than a useful type. An annotation on any member of the cycle breaks it.
 // This mirrors the recursion gate top-level overloaded functions use.
 //
-// The check builds the call graph over methods with bodies — an edge from a method to
-// each sibling method its body reads through `self` — and inspects each strongly
-// connected component. A component of two or more methods is a mutual-recursion cycle; a
-// self-recursive method forms a single-method cycle that infers `never` the way a
-// self-recursive top-level function does, so it is not gated. A gated cycle reports every
-// member, since annotating any one of them resolves it.
+// The check builds the call graph over instance methods with bodies — an edge from a
+// method arm to each sibling method its body reads through `self` — and inspects each
+// strongly connected component. Only instance methods are nodes: a static method has no
+// `self` receiver to reach a sibling through, so it cannot join a self-recursion cycle.
+// Each overload arm is its own node keyed by its position, so two same-named arms are not
+// collapsed and every arm keeps its own annotation state and blame span. A `self.m`
+// reference edges to every arm named `m`, since overload resolution may reach any of them.
+// A component of two or more arms is a mutual-recursion cycle; a self-recursive method
+// forms a single-arm component that infers `never` the way a self-recursive top-level
+// function does, so it is not gated. A gated cycle reports every arm, since annotating any
+// one of them resolves it.
 func (c *checker) checkMethodRecursionAnnotations(decl *ast.ClassDecl) {
-	methods := map[string]*ast.MethodElem{}
-	var names []string
+	type methodArm struct {
+		name string
+		elem *ast.MethodElem
+	}
+	var arms []methodArm
+	byName := map[string][]int{} // method name → indices into arms sharing it
 	for _, elem := range decl.Body {
 		m, ok := elem.(*ast.MethodElem)
-		if !ok || m.Fn.Body == nil {
+		if !ok || m.Static || m.Fn.Body == nil {
 			continue
 		}
 		name, ok := objKeyName(m.Name)
 		if !ok {
 			continue
 		}
-		if _, seen := methods[name]; !seen {
-			names = append(names, name)
-		}
-		methods[name] = m
+		byName[name] = append(byName[name], len(arms))
+		arms = append(arms, methodArm{name: name, elem: m})
 	}
-	if len(names) < 2 {
+	if len(arms) < 2 {
 		return
 	}
-	successors := func(name string) []string {
-		return selfMethodRefs(methods[name].Fn.Body, methods)
+	names := set.NewSet[string]()
+	for name := range byName {
+		names.Add(name)
 	}
-	for _, component := range graph.StronglyConnectedComponents(names, successors) {
+	nodes := make([]int, len(arms))
+	for i := range arms {
+		nodes[i] = i
+	}
+	successors := func(i int) []int {
+		var out []int
+		for _, name := range selfMethodRefs(arms[i].elem.Fn.Body, names) {
+			out = append(out, byName[name]...)
+		}
+		return out
+	}
+	for _, component := range graph.StronglyConnectedComponents(nodes, successors) {
 		if len(component) < 2 {
 			continue
 		}
 		annotated := false
-		for _, name := range component {
-			if methods[name].Fn.FuncSig.Return != nil {
+		for _, i := range component {
+			if arms[i].elem.Fn.FuncSig.Return != nil {
 				annotated = true
 				break
 			}
@@ -581,22 +600,27 @@ func (c *checker) checkMethodRecursionAnnotations(decl *ast.ClassDecl) {
 		if annotated {
 			continue
 		}
-		// Sort the group so the diagnostic reads the same regardless of the order the SCC
-		// walk yields the component's members.
-		group := append([]string(nil), component...)
+		// Sort the deduped names so the diagnostic reads the same regardless of the order
+		// the SCC walk yields the component's arms, and so two arms of one name read once.
+		groupSet := set.NewSet[string]()
+		for _, i := range component {
+			groupSet.Add(arms[i].name)
+		}
+		group := groupSet.ToSlice()
 		sort.Strings(group)
-		for _, name := range component {
-			c.report(&RecursiveMethodAnnotationError{Name: name, Elem: methods[name], Group: group})
+		for _, i := range component {
+			c.report(&RecursiveMethodAnnotationError{Name: arms[i].name, Elem: arms[i].elem, Group: group})
 		}
 	}
 }
 
 // selfMethodRefs returns the names of the sibling methods a method body reads through
-// `self`, keyed against the class's method set so a `self.field` read or a call to a
-// non-method member does not count as a call-graph edge. Both a call `self.m()` and a bare
-// reference `self.m` count, since either makes the body depend on the sibling's signature.
-func selfMethodRefs(body *ast.Block, methods map[string]*ast.MethodElem) []string {
-	v := &selfMethodVisitor{methods: methods, found: set.NewSet[string]()}
+// `self`, keyed against the class's instance-method names so a `self.field` read or a call
+// to a non-method member does not count as a call-graph edge. Both a call `self.m()` and a
+// bare reference `self.m` count, since either makes the body depend on the sibling's
+// signature.
+func selfMethodRefs(body *ast.Block, names set.Set[string]) []string {
+	v := &selfMethodVisitor{names: names, found: set.NewSet[string]()}
 	body.Accept(v)
 	return v.found.ToSlice()
 }
@@ -604,8 +628,8 @@ func selfMethodRefs(body *ast.Block, methods map[string]*ast.MethodElem) []strin
 // selfMethodVisitor collects `self.<method>` references while walking a method body.
 type selfMethodVisitor struct {
 	ast.DefaultVisitor
-	methods map[string]*ast.MethodElem
-	found   set.Set[string]
+	names set.Set[string]
+	found set.Set[string]
 }
 
 func (v *selfMethodVisitor) EnterExpr(e ast.Expr) bool {
@@ -617,7 +641,7 @@ func (v *selfMethodVisitor) EnterExpr(e ast.Expr) bool {
 	if !ok || ident.Name != "self" {
 		return true
 	}
-	if _, isMethod := v.methods[member.Prop.Name]; isMethod {
+	if v.names.Contains(member.Prop.Name) {
 		v.found.Add(member.Prop.Name)
 	}
 	return true

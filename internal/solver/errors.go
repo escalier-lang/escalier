@@ -825,7 +825,7 @@ func (e *SetterArityError) Message() string {
 type RecursiveMethodAnnotationError struct {
 	Name  string
 	Elem  *ast.MethodElem
-	Group []string // the mutually recursive method names, in declaration order
+	Group []string // the mutually recursive method names, sorted lexicographically for a stable message
 }
 
 func (e *RecursiveMethodAnnotationError) Span() ast.Span      { return e.Elem.Span() }
