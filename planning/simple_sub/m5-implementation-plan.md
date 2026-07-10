@@ -733,7 +733,7 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 
 ## PR breakdown
 
-14 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
+15 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
 green, each with table-driven tests asserting rendered types (Escalier
 type-annotation syntax) and **full** error messages. Every PR names the files
 touched, the structures added/modified, the algorithm changes, and its
@@ -1010,6 +1010,76 @@ corruption of `freshenAbove`.
     every required field checks clean; a `self.f` read before its assignment reports
     `ReadBeforeInitError`; an optional field left unassigned is accepted.
 
+- **B6 — Callable class value: constructor `ObjTypeElem` + ctor-plus-static object
+  binding** (~230). **← the static-member side of the dual binding B1 descoped.**
+  - **Problem:** B1 registers a class's VALUE binding as a bare constructor
+    `FuncType` and parks the static members on `ClassDef.Static`, which nothing reads
+    ([classes.go:49-51](../../internal/solver/classes.go)). So `Point(1, 2)` resolves
+    but `Point.origin` — a static field or method access on the class value — has no
+    binding to read, and the class value renders as a plain `fn (…) -> Point` rather
+    than the callable object carrying its statics. The old checker, the port source,
+    builds the value as one `ObjectType` holding a `ConstructorElem` call signature
+    plus the merged static elems
+    ([infer_class_decl.go:334-338](../../internal/checker/infer_class_decl.go)); the
+    solver has no such representation because `soltype.ObjectType`'s element set is
+    Property/Method/Getter/Setter with **no call-signature arm**.
+  - **Files:** `soltype/type.go` (the new `ConstructorElem` arm + `Member`/`AsProperty`
+    discipline), `soltype/visitor.go` (`acceptObjElems`), `soltype/print.go`
+    (`typePrec`/`printType`/`freeTypeVars`), `solver/coalesce.go` (`equalType` +
+    `freezeClassBody`'s static-side coalesce), `solver/infer_class.go` (assemble the
+    ctor-plus-static value `ObjectType` in place of the bare ctor `FuncType`),
+    `solver/infer_expr.go` (`resolveFunc` look-through, [infer_expr.go:1260](../../internal/solver/infer_expr.go)),
+    `solver/constrain.go` (the object arm's `ConstructorElem` case),
+    `solver/infer_class_test.go`.
+  - **Structures:**
+    - add `soltype.ConstructorElem{Sig *FuncType}`, a new `ObjTypeElem` arm carrying
+      the class's constructor call signature — the standing-rule sweep every former
+      addition runs (`isObjTypeElem`, `acceptObjElems` with `Sig` covariant like a
+      method signature, `printType`, `equalType`, `freeTypeVars`, and every
+      `Member`/`AsProperty` switch site).
+    - the class VALUE binding becomes `ValueBinding{Schemes: [ctor-plus-static
+      ObjectType]}` — one `ConstructorElem` for the callable side plus the
+      `ClassDef.Static` elems (fields, methods, getters, setters) — replacing B1's raw
+      ctor `FuncType`. `ClassDef.Static` is already partitioned and populated in B1, so
+      B6 only wraps it, it does not re-walk the body.
+  - **Algorithm:** `inferClassDecl` currently returns the raw ctor `FuncType` for the
+    SCC driver to constrain into the value var; B6 wraps that signature in a
+    `ConstructorElem`, appends the frozen `ClassDef.Static` elems, and returns the
+    resulting `ObjectType` as the raw value type instead. `resolveFunc` gains a case
+    that, given such an object, hands back the `ConstructorElem.Sig`, so a direct call
+    `Point(1, 2)` resolves through the call signature exactly as a bare `FuncType` did.
+    Static member access `Point.origin` then rides the existing `valueProp` object-property
+    path — reading a static off the same object needs no new access path. The object
+    arm in `constrain` gains a `ConstructorElem` case so a class value flows
+    structurally where an object with a matching call signature is expected.
+  - **Design note — the bounded lattice exception.** doc.go §"M3 (PR6)" deliberately
+    keeps "callable in several ways" OUT of the structural subtype lattice: FREE-function
+    overloads resolve through the separate `resolveOverload`/`Schemes` phase, never a
+    call-signature embedded in an object
+    ([doc.go:53-62](../../internal/solver/doc.go)). B6 reintroduces a callable element,
+    so scope it tightly — ONE `ConstructorElem` per class value, NOT a general
+    call-signature-in-any-object feature and NOT the overload disjunction. A class with
+    overloaded constructors or static methods still resolves its arms through E1's
+    `resolveOverload`; the `ConstructorElem` carries a single (post-merge) signature.
+    This keeps the lattice exception bounded to the class-value carrier.
+  - **Note:** the B1 sketch registers the dual binding as `ValueBinding{Schemes:
+    [ctor+static ObjectType]}` (§"Class declaration inference"); shipped B1 descoped it
+    to a bare ctor `FuncType`. B6 lands the sketched binding — the static-side analogue
+    of B3 pulling recursive methods out of B1 and B5 pulling definite-assignment out of B1.
+  - **Depends on:** B1. Overlaps `infer_class.go` with **B3** (member/static partition
+    rework) and `infer_class_ctor.go`'s signature assembly with **B5**, and its
+    `ClassType`/element sweep touches the same `soltype` sites as A1. Since B2–B5 are
+    already in flight, **sequence B6 after B3 and B5 land** and rebase its value-side
+    assembly onto their final `infer_class.go`, rather than running it parallel to them —
+    landing it concurrently would re-churn the same value-binding assembly twice.
+  - **Accept:** a `class Point { x: number, y: number, static origin(self) -> Point {…} }`
+    binds a callable object value — `Point(1, 2)` still constructs a `Point`, `Point.origin`
+    resolves the static method, and the value renders as the ctor-plus-static object; a
+    `static count: number = 0` field is read through the value binding as `number`; two
+    signatures for the class value differing only in var id compare equal under
+    `equalType`; a free-function overload set still resolves through `resolveOverload`
+    with no callable-in-lattice regression.
+
 ### Phase C — Nominal subtyping + variance
 
 - **C1 — The declared-subtype graph + the nominal constrain rule + `final`
@@ -1170,6 +1240,7 @@ A3 (LifetimeParam + FuncType.LifetimeParams)  ──┤   ── A3 needs A1's C
       ├─► B3 (intra-class method recursion, two-phase walk)  ── parallel with B2
       ├─► B4 (cross-param type-param bounds, shared resolver) ── parallel with B2
       ├─► B5 (constructor definite-assignment)               ── parallel with B2
+      ├─► B6 (callable class value: ctor+static object binding) ── after B3 & B5 (shared infer_class.go)
       ├─► C1 (declared-subtype graph + nominal rule + final)
       │    ├─► C2 (variance inference + in/out modifiers)
       │    └─► F1 (iteration protocol + back-edge validation)
@@ -1192,6 +1263,7 @@ graph TD
     B3["B3 (intra-class method recursion, two-phase walk)"]
     B4["B4 (cross-param type-param bounds, shared resolver)"]
     B5["B5 (constructor definite-assignment)"]
+    B6["B6 (callable class value: ctor+static object binding)"]
     C1["C1 (declared-subtype graph + nominal rule + final)"]
     C2["C2 (variance inference + in/out modifiers)"]
     F1["F1 (iteration protocol + back-edge validation)"]
@@ -1219,6 +1291,9 @@ graph TD
     DEnum --> D2
     M6 -.-> DEnum
     M6 -.-> D2
+    B1 --> B6
+    B3 -.-> B6
+    B5 -.-> B6
 
     classDef crit fill:#ffe0b2,stroke:#e65100,stroke-width:2px,color:#000;
     classDef landed fill:#eceff1,stroke:#90a4ae,stroke-dasharray:4 3,color:#000;
@@ -1242,6 +1317,10 @@ they land before B1. Everything else is off the critical path.
   helper, independent of the recursion and subtyping work.
 - **B5** (constructor definite-assignment) — a CFG dataflow over the constructor
   body, reusing the move machinery, independent of the other Phase-B work.
+- **B6** (callable class value) — the ctor-plus-static object binding + a
+  `ConstructorElem` soltype arm. Depends on B1 but **is NOT parallel with B3/B5**: it
+  rebuilds the same value-side assembly in `infer_class.go` those PRs restructure, so
+  it lands AFTER B3 and B5 and rebases onto their final code.
 - **C1** (nominal subtyping) — `constrain`/`classes.go`.
 - **D1** (nominal patterns) — `pattern.go`, uses member lookup, **not** the C1
   subtyping rule, so it does not wait on C1.
@@ -1265,6 +1344,11 @@ two tracks is D2 (patterns × enums × M6's union exhaustiveness).
   instance's own borrow lifetime).
 - `soltype.MethodElem`/`GetterElem`/`SetterElem` — new `ObjTypeElem` arms
   (methods hold overload arms as an ordered `[]*FuncType`).
+- `soltype.ConstructorElem{Sig *FuncType}` (B6) — the call-signature `ObjTypeElem`
+  arm that makes a class VALUE binding a callable object: one `ConstructorElem` plus
+  the static members, so `Point(1, 2)` and `Point.origin` both resolve off one type.
+  Bounded to the class-value carrier so the "callable in the lattice" exception stays
+  narrow (free-function overloads still ride `resolveOverload`).
 - `soltype.TypeParam{Name, Var, Default}` — one quantified type parameter, shared
   by functions and classes. Constraint is `Var`'s upper bound; `Default` is the
   omitted-argument fallback (nil ⇒ required); `Name` is for display.
