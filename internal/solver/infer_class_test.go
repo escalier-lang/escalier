@@ -180,6 +180,42 @@ func TestInferClassGeneric(t *testing.T) {
 	}
 }
 
+// A join of the same class at two different type arguments — the value of
+// `if c { Box(5) } else { Box("hello") }` — leaves the binding a union of both
+// instantiations, Box<5> | Box<"hello">. That union is the shape classCarrier sees as two
+// distinct class instances on one variable's lower bounds, so a member access on it cannot
+// take the fast projected-member path and rides the nominal-vs-structural rule instead.
+func TestInferClassJoinDistinctArgs(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Box<T> { value: T }
+		val c = true
+		val b = if c { Box(5) } else { Box("hello") }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `Box<5> | Box<"hello">`, values["b"])
+}
+
+// Reading a member off that union — `b.value` for b : Box<5> | Box<"hello"> — distributes
+// over the union and joins each arm's `value` field into 5 | "hello".
+//
+// DISABLED until C1 lands. classCarrier resolves only an unambiguous class, so a variable
+// whose lower bounds carry two different instantiations falls to the structural
+// field-requirement path. That path has no class-vs-object rule yet, so each Box<…> arm
+// fails `cannot constrain ? <: object` and v coalesces to never. C1 adds the
+// nominal-vs-structural rule; re-enable then and assert v : 5 | "hello" with no errors.
+/*
+func TestInferClassJoinMemberAccess(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Box<T> { value: T }
+		val c = true
+		val b = if c { Box(5) } else { Box("hello") }
+		val v = b.value
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `5 | "hello"`, values["v"])
+}
+*/
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {
@@ -203,6 +239,26 @@ func TestInferClassErrors(t *testing.T) {
 				val r = c.value
 			`,
 			want: "Property 'value' is write-only; it has a setter but no getter or field to read.",
+		},
+		{
+			name: "SetterNoParams",
+			src: `
+				class C {
+					v: number,
+					set value(mut self) { },
+				}
+			`,
+			want: "Setter 'value' must declare exactly one value parameter; found 0.",
+		},
+		{
+			name: "SetterTooManyParams",
+			src: `
+				class C {
+					v: number,
+					set value(mut self, a: number, b: number) { },
+				}
+			`,
+			want: "Setter 'value' must declare exactly one value parameter; found 2.",
 		},
 		{
 			name: "MultipleConstructors",

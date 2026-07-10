@@ -10,7 +10,8 @@ import (
 // ClassDef is the heavy per-class data the nominal token soltype.ClassType points
 // at. inferClassDecl builds one per class declaration and registers it on the
 // Context under the class's dep_graph-qualified name; member lookup reads the
-// projected Body, and the nominal constrain rule (C1) reads Supers and Variance.
+// projected Body, and the nominal constrain rule (C1) reads Supers, Implements, and
+// Variance.
 // Keeping this data out of soltype.ClassType lets the token stay a small, cheap-to-
 // compare identity.
 type ClassDef struct {
@@ -18,25 +19,37 @@ type ClassDef struct {
 	// each carrying its constraint as its Var's upper bound and its resolved default.
 	// nil for a non-generic class.
 	TypeParams []*soltype.TypeParam
+
 	// LifetimeParams are the class's quantified lifetime parameters (A3), the lifetime
 	// twin of TypeParams. nil for a class that holds no borrowed data.
 	LifetimeParams []*soltype.LifetimeParam
+
 	// Variance records one entry per TypeParam, dispatched per position by the nominal
 	// constrain rule. B1 leaves every entry Invariant, the conservative default;
 	// variance inference (C2) overwrites it.
 	Variance []Variance
-	// Supers holds the resolved `extends` superclass followed by each resolved
-	// `implements` interface — the declared subtype-graph edges. The rule that walks
-	// them transitively is C1; B1 only records them.
+
+	// Supers holds the resolved `extends` superclass — the declared nominal
+	// subtype-graph edge. A class has at most one, so this holds zero or one element.
+	// The rule that walks it transitively is C1; B1 only records it.
 	Supers []*soltype.ClassType
+
+	// Implements holds each resolved `implements` interface. `implements` is a
+	// conformance-only assertion, so these are kept out of Supers: the nominal subtype
+	// walk skips them and the structural conformance check reads them. Both the check
+	// and the walk land in C1; B1 only records the targets.
+	Implements []*soltype.ClassType
+
 	// Body is the instance member view a class projects: one element per field,
 	// method, getter, and setter. Member access and the class-vs-object constrain
 	// rule read it.
 	Body *soltype.ObjectType
+
 	// Static is the constructor-plus-static-member view — the value side of the dual
 	// binding. B1 stores static members here for later phases; the callable
 	// constructor itself is the value binding's FuncType.
 	Static *soltype.ObjectType
+
 	// Level is the class binding's generalize level. A generic method's own type
 	// parameters live deeper than this, so member access wraps a resolved method in a
 	// scheme quantified at this level and instantiates it per access.
@@ -52,11 +65,14 @@ const (
 	// until inference runs, the conservative choice a sound constrain rule can always
 	// fall back to.
 	Invariant Variance = iota
+
 	// Covariant lets a subtype argument make a subtype instance, as a read-only field
 	// of that type would.
 	Covariant
+
 	// Contravariant flips the direction, as a write-only or parameter position would.
 	Contravariant
+
 	// Bivariant imposes no constraint — a phantom parameter that appears nowhere in
 	// the body.
 	Bivariant
@@ -66,8 +82,9 @@ const (
 // registered Body with each class type parameter replaced by the instance's
 // corresponding type argument and each lifetime parameter by its lifetime argument.
 // A non-generic instance, or one whose class is unregistered, projects the stored
-// Body unchanged. It is the single path member lookup and the class-vs-object
-// constrain rule use to read a class instance structurally.
+// Body unchanged. The class-vs-object constrain rule reads the whole projected body;
+// a single member access projects just that member through projectClassMember, so it
+// pays only for the member it reads rather than rebuilding every member.
 func (c *checker) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, bool) {
 	def, ok := c.ctx.classDef(ct.Name)
 	if !ok || def.Body == nil {
@@ -89,11 +106,12 @@ func (c *checker) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, 
 	return obj, true
 }
 
-// projectedMember resolves a member access against a class instance or against a
-// class body's method/getter member by direct lookup through the projected body,
-// returning ok=false when the receiver is neither — a plain object property, or a type
-// variable — so the caller falls back to the structural field-requirement path. A
-// class instance whose class has no such member reports the miss here.
+// projectedMember resolves a member access against a class instance by looking the
+// member up on the registered class body and projecting just that member to the
+// instance's arguments, returning ok=false when the receiver is not a class instance —
+// a plain object property, or a type variable — so the caller falls back to the
+// structural field-requirement path. A class instance whose class has no such member
+// reports the miss here.
 //
 // Only a class receiver is intercepted. A plain object keeps the structural
 // field-requirement path, which threads the read-through-borrow and read-after-write
@@ -104,18 +122,37 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 	if !ok {
 		return pathResult{}, false
 	}
-	obj, ok := c.projectClassBody(ct)
-	if !ok {
+	def, ok := c.ctx.classDef(ct.Name)
+	if !ok || def.Body == nil {
 		return pathResult{}, false
 	}
-	member, found := obj.Member(name)
+	// Member names are invariant under substitution, so look the member up on the
+	// unprojected body and project only the one accessed, rather than rebuilding the
+	// whole body per access.
+	member, found := def.Body.Member(name)
 	if !found {
+		// The miss is rare, so project the whole body here to render the diagnostic at
+		// the instance's arguments rather than the declared type parameters.
+		obj, _ := c.projectClassBody(ct)
 		err := &MissingPropertyError{Sub: obj, Super: propReq(name, &soltype.UnknownType{}, false), Name: name}
 		err.prov, err.site = c.prov, blame
 		c.errs = append(c.errs, err)
 		return pathResult{value: &soltype.ErrorType{}}, true
 	}
-	return c.memberValue(lvl, blame, member), true
+	return c.memberValue(lvl, blame, c.projectClassMember(def, ct, member)), true
+}
+
+// projectClassMember rewrites one class-body member's type-parameter and
+// lifetime-parameter vars to the arguments of one instance, the single-member analogue
+// of projectClassBody. A non-generic class, whose body holds no such vars, returns the
+// member unchanged. It runs the same classSubst walk projectClassBody runs over the
+// whole body, through the shared per-member entry point, so a member reads exactly as it
+// would there.
+func (c *checker) projectClassMember(def *ClassDef, ct *soltype.ClassType, member soltype.ObjTypeElem) soltype.ObjTypeElem {
+	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
+		return member
+	}
+	return soltype.AcceptObjElem(member, newClassSubst(def, ct), soltype.Positive)
 }
 
 // classCarrier resolves a receiver to the class instance it reads as: a ClassType
@@ -198,6 +235,9 @@ type classSubst struct {
 	lifetimes map[*soltype.LifetimeVar]soltype.Lifetime
 }
 
+// newClassSubst builds the substitution for one class instance. ct is that instance's
+// type, such as Box<5>, so its TypeArgs and LifetimeArgs are the concrete arguments each
+// of def's parameter vars maps to.
 func newClassSubst(def *ClassDef, ct *soltype.ClassType) *classSubst {
 	s := &classSubst{
 		types:     map[*soltype.TypeVarType]soltype.Type{},

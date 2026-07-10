@@ -45,6 +45,10 @@ func (c *checker) synthesizeConstructor(self *soltype.ClassType, body *soltype.O
 // owned-mutable instance body, so `self.x = value` refines field x through the record
 // write machinery, and returns a callable signature: the constructor's value
 // parameters — the params after the leading `mut self` — returning the instance.
+//
+// It does not check definite assignment. A required field left unassigned on some path,
+// or a field read before it is assigned, is not yet reported. PR B5 adds that check
+// (planning/simple_sub/m5-implementation-plan.md).
 func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.ClassType, body *soltype.ObjectType, ctor *ast.ConstructorElem) soltype.Type {
 	// The parser materializes `mut self` as Fn.Params[0]; the callable signature is
 	// the params after it.

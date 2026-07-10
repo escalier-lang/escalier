@@ -730,6 +730,7 @@ func (*MultipleConstructorsError) isSolverError()         {}
 func (*FieldInitializerNotAllowedError) isSolverError()   {}
 func (*SubclassConstructorRequiredError) isSolverError()  {}
 func (*WriteOnlyPropertyError) isSolverError()            {}
+func (*SetterArityError) isSolverError()                  {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -796,6 +797,21 @@ func (e *SubclassConstructorRequiredError) Span() ast.Span      { return e.Decl.
 func (e *SubclassConstructorRequiredError) Related() []ast.Span { return nil }
 func (e *SubclassConstructorRequiredError) Message() string {
 	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
+}
+
+// SetterArityError fires when a setter declares other than exactly one value parameter
+// beyond its `self` receiver. A setter's single parameter is the value being assigned,
+// so `set x(self)` and `set x(self, a, b)` are both malformed.
+type SetterArityError struct {
+	Name  string
+	Elem  *ast.SetterElem
+	Count int // value parameters declared, excluding `self`
+}
+
+func (e *SetterArityError) Span() ast.Span      { return e.Elem.Span() }
+func (e *SetterArityError) Related() []ast.Span { return nil }
+func (e *SetterArityError) Message() string {
+	return "Setter '" + e.Name + "' must declare exactly one value parameter; found " + strconv.Itoa(e.Count) + "."
 }
 
 func (e *MixedOwnershipError) Span() ast.Span      { return spanOfNode(e.Node) }
