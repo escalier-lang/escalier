@@ -181,11 +181,10 @@ func TestInferClassGeneric(t *testing.T) {
 }
 
 // TestInferClassCrossParamBounds covers B4: a type-parameter bound or default may
-// reference any sibling parameter — forward, mutual, or through a generic class — because
-// the shared resolveTypeParams declares every parameter in scope before resolving any
-// bound. A single declare-and-resolve pass leaves a later-declared sibling undeclared when
-// its bound is read, so the reference falls through to general type-ref resolution and
-// reports `Unsupported: TypeRefTypeAnn`. None of these should report that error now.
+// reference any sibling parameter — forward, mutual, or through a generic class. Each case
+// resolves its cross-parameter references without reporting `Unsupported: TypeRefTypeAnn`,
+// because the shared resolveTypeParams declares every parameter in scope before resolving
+// any bound, so a bound reading a later-declared sibling finds it already in scope.
 func TestInferClassCrossParamBounds(t *testing.T) {
 	srcs := map[string]string{
 		"ForwardConstraint": `class C<T: U, U> { value: T }`,
