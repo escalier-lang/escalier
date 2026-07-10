@@ -180,6 +180,59 @@ func TestInferClassGeneric(t *testing.T) {
 	}
 }
 
+// TestInferClassCrossParamBounds covers B4: a type-parameter bound or default may
+// reference any sibling parameter — forward, mutual, or through a generic class — because
+// the shared resolveTypeParams declares every parameter in scope before resolving any
+// bound. A single declare-and-resolve pass leaves a later-declared sibling undeclared when
+// its bound is read, so the reference falls through to general type-ref resolution and
+// reports `Unsupported: TypeRefTypeAnn`. None of these should report that error now.
+func TestInferClassCrossParamBounds(t *testing.T) {
+	srcs := map[string]string{
+		"ForwardConstraint": `class C<T: U, U> { value: T }`,
+		"MutualConstraint":  `class C<T: U, U: T> { value: T }`,
+		"ForwardDefault":    `class C<T = U, U> { value: T }`,
+		"MutualDefault":     `class C<T = U, U = T> { value: T }`,
+		// The referenced class Cmp is declared before Foo so its instance type is in scope
+		// when Foo's bounds resolve. Resolving `Cmp<U>` / `Cmp<T>` combines the two-pass
+		// sibling visibility with generic-class-reference resolution. Robust ordering
+		// regardless of declaration order rides the B2 recursive-class SCC path
+		// (planning/simple_sub/m5-implementation-plan.md).
+		"MutualFBound": `
+			class Cmp<X> { value: X }
+			class Foo<T: Cmp<U>, U: Cmp<T>> { value: T }
+		`,
+	}
+	for name, src := range srcs {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Empty(t, errs)
+		})
+	}
+}
+
+// TestInferClassForwardBoundEnforced shows a forward reference resolves to a real bound,
+// not just a parsed placeholder. `<T: U, U: number>` chains T's bound through the
+// later-declared U to number, so a construction whose argument violates it is rejected and
+// one that satisfies it checks clean and infers the argument at both positions.
+func TestInferClassForwardBoundEnforced(t *testing.T) {
+	t.Run("Violated", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T: U, U: number> { value: T }
+			val b = Box("hi")
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, `cannot constrain "hi" <: number`, errs[0].Message())
+	})
+	t.Run("Satisfied", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box<T: U, U: number> { value: T }
+			val b = Box(5)
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Box<5, 5>", values["b"])
+	})
+}
+
 // A join of the same class at two different type arguments — the value of
 // `if c { Box(5) } else { Box("hello") }` — leaves the binding a union of both
 // instantiations, Box<5> | Box<"hello">. That union is the shape classCarrier sees as two
