@@ -342,7 +342,7 @@ func acceptObjElems(es []ObjTypeElem, v TypeVisitor, pol Polarity) ([]ObjTypeEle
 	out := es
 	changed := false
 	for i, e := range es {
-		ne := acceptObjElem(e, v, pol)
+		ne := AcceptObjElem(e, v, pol)
 		if ne != e {
 			if !changed {
 				out = append([]ObjTypeElem(nil), es...)
@@ -354,9 +354,12 @@ func acceptObjElems(es []ObjTypeElem, v TypeVisitor, pol Polarity) ([]ObjTypeEle
 	return out, changed
 }
 
-// acceptObjElem rewrites one object member, returning the original pointer when no
-// child changed. It panics on an unknown element kind, matching AsProperty.
-func acceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
+// AcceptObjElem rewrites one object member through the visitor, returning the original
+// pointer when no child changed and threading polarity by the member's variance, as
+// acceptObjElems does for a whole member list. It is exported so a caller projecting a
+// single member can reuse this logic without wrapping the member in an ObjectType. It
+// panics on an unknown element kind, matching AsProperty.
+func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 	switch e := e.(type) {
 	case *PropertyElem:
 		pt := e.Type.Accept(v, pol) // covariant read
@@ -385,7 +388,7 @@ func acceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 		}
 		return &MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
 	}
-	panic(fmt.Sprintf("acceptObjElem: unhandled ObjTypeElem %T", e))
+	panic(fmt.Sprintf("AcceptObjElem: unhandled ObjTypeElem %T", e))
 }
 
 // acceptSignatures walks each signature of a method's overload set through

@@ -163,8 +163,12 @@ In (per the milestone):
    `GetterElem`/`SetterElem` object elements; all standing sites.
 2. `ClassDecl` inference: instance body + constructor/static type, dual
    type/value binding, `Self` substitution, constructor synthesis/validation,
-   static/instance partition. Non-recursive first, then mutually-recursive via
-   the SCC path.
+   static/instance partition. Non-recursive first, then intra-class method
+   recursion via a two-phase member walk, then mutually-recursive classes via the
+   SCC path. Type parameters resolve through a shared resolver whose bounds may
+   reference any sibling parameter — forward, mutual, or F-bounded. A constructor's
+   body is checked for definite assignment: every required field initialized on
+   every path, and no field read before it is assigned.
 3. The declared-subtype graph + the nominal `constrain` rule (name identity +
    transitive `extends`/`implements`), target-dispatched against structural
    object targets by exactness; `final` ⇒ exact instance.
@@ -729,7 +733,7 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 
 ## PR breakdown
 
-11 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
+14 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
 green, each with table-driven tests asserting rendered types (Escalier
 type-annotation syntax) and **full** error messages. Every PR names the files
 touched, the structures added/modified, the algorithm changes, and its
@@ -873,7 +877,10 @@ corruption of `freshenAbove`.
     projected `FuncType` directly.
   - **Errors (ported names):** `MultipleConstructorsError`,
     `SubclassConstructorRequiredError`, `MissingSelfReceiverError`,
-    plus constructor-return / field-init errors.
+    `SetterArityError`, plus constructor-return / field-init errors.
+    `SetterArityError` fires when a setter declares other than one value parameter
+    beyond `self`; the member walk still builds the elem from the first value
+    parameter, or `unknown` when there is none, so member access recovers.
   - **Accept:** a single `class Point { x: number; y: number; fn dist(self) ->
     number {...} }` infers; `Point(5, 10)` constructs an instance; `p.x` and
     `p.dist()` resolve through the body; a class with an explicit constructor and
@@ -902,6 +909,107 @@ corruption of `freshenAbove`.
     a method on `A` returning `B` and vice versa type-check; no placeholder leak
     in the rendered types.
 
+- **B3 — Intra-class method recursion (two-phase member signature/body walk)**
+  (~260).
+  - **Files:** `solver/infer_class.go` (split member inference into a signature
+    pass and a body pass; widen `bindSelf`), `solver/infer_expr.go` /
+    `solver/classes.go` (route a `self.method` read through projected-member
+    lookup), `solver/infer_class_test.go`.
+  - **Algorithm:** widen B1's field-first ordering from fields to every member.
+    Phase 1 appends a signature element for each method, getter, and setter to the
+    instance or static Body **before** any body is inferred — fresh vars for
+    un-annotated params and returns, the method analogue of `buildFieldSigs`. Bind
+    `self` to the full Body (fields + methods), not the field-only object B1 builds,
+    so a body reaches its siblings through `self`; a `self.method` read routes
+    through the projected-member path, since the structural object arm reads only
+    properties and panics on a method member. Phase 2 infers each body against its
+    pre-declared signature, so a `self.m()` call resolves to that signature's var.
+    Every signature exists before any body runs, so a self-recursive call, a
+    mutually recursive method pair, and a forward sibling call all resolve. Coalesce
+    / generalize once every body is inferred, unchanged from B1.
+  - **Annotation gate:** an unannotated mutually recursive method pair hits the same
+    mutual-recursion-needs-annotation rule top-level functions use
+    ([poly.go](../../internal/solver/poly.go)): a member cannot generalize
+    mid-cycle, so a cycle with no annotated return reports the annotation-required
+    error rather than inferring through it.
+  - **Depends on:** B1. Parallel with B2 — B2 pre-binds whole classes at the module
+    SCC level while B3 pre-binds members within one class, so the two are
+    orthogonal.
+  - **Accept:** a self-recursive method — `fn countdown(self, n: number) -> number`
+    whose body calls `self.countdown(n - 1)` — type-checks; a mutually recursive
+    `isEven` / `isOdd` pair with annotated returns type-checks, and the same pair
+    unannotated reports the annotation-required error; a method that calls a sibling
+    declared later in the class body resolves; `self.field` reads keep working
+    alongside the new `self.method()` calls.
+
+- **B4 — Cross-parameter references in type-param bounds (shared resolver)**
+  (~170).
+  - **Files:** `solver/type_params.go` (new — the shared `resolveTypeParams`
+    helper), `solver/infer_class.go` (`resolveClassTypeParams` → thin caller),
+    `solver/infer_class_test.go`.
+  - **Problem:** `resolveClassTypeParams` resolves each parameter's constraint and
+    default in the same pass that declares it, so a bound sees only the parameter
+    itself (an F-bound `<T: Foo<T>>`) or an earlier one (`<U, T: U>`). A forward or
+    mutual reference — `<T: U, U>` or `<T: U, U: T>` — leaves the sibling undeclared,
+    so it falls through to general type-ref resolution and reports
+    `Unsupported: TypeRefTypeAnn`. Functions and methods resolve no bounds at all:
+    `inferFunc` reports the whole `<…>` list unsupported
+    ([infer_expr.go:207](../../internal/solver/infer_expr.go)).
+  - **Algorithm:** one shared `resolveTypeParams(scope, lvl, params)` with a
+    two-pass body. Pass 1 mints a fresh var per parameter and declares each name in
+    the scope. Pass 2 resolves every constraint into the var's upper bound and every
+    default. Every sibling name is in scope before any bound is read, so a bound may
+    reference any other parameter — earlier, later, itself, or mutually. This
+    supersedes the old checker's approach — `ast.SortTypeParamsTopologically` plus a
+    split `inferTypeParams` (module-level) and `inferFuncTypeParams`
+    (function-level) — with no sort and a single resolver, and it admits a true
+    mutual cycle such as `<T: Cmp<U>, U: Cmp<T>>` that a topological sort cannot
+    order. `resolveClassTypeParams` becomes a thin caller.
+  - **Boundary:** this PR resolves the parameter *bounds* and declares the
+    parameters in scope. It does NOT build a generic function/method scheme or
+    generalize — that is the M3 generic-function work and the generic-method
+    `PolyScheme` wrap B1 sketches. Because function/method generic inference is not
+    implemented in the solver yet, those bounds are not independently testable here;
+    the deliverable is the shared helper plus the class fix. The mandate is that the
+    generic-function (M3) and generic-method paths resolve their `<…>` lists through
+    `resolveTypeParams` rather than re-deriving bound resolution, so the logic never
+    forks the way the old checker's two helpers did.
+  - **Depends on:** B1 (class type-param resolution to fold in) + A2
+    (`FuncType.TypeParams`). Parallel with B2 / B3.
+  - **Accept:** a class `<T: U, U>`, `<T: U, U: T>`, `<T = U, U>`, and
+    `<T = U, U = T>` resolve their bounds instead of reporting
+    `Unsupported: TypeRefTypeAnn`; a mutual F-bound `<T: Cmp<U>, U: Cmp<T>>`
+    resolves; the resulting `[]*TypeParam` stays in declaration order so
+    instantiation substitutes positionally.
+
+- **B5 — Constructor definite-assignment (`FieldNotInitializedError` +
+  `ReadBeforeInitError`)** (~200).
+  - **Files:** `solver/infer_class_ctor.go` (the definite-assignment pass in
+    `walkConstructorBody`), `solver/errors.go` (the two errors),
+    `solver/borrow_flow.go` (reuse the CFG), `solver/infer_class_test.go`.
+  - **Problem:** `walkConstructorBody` walks the body so `self.x = v` refines field
+    `x`, but never checks that every required field is assigned on all reachable
+    exits, nor that a field is not read before assignment. A `class Point { x, y }`
+    whose constructor assigns only `x` compiles clean, and `self.x = self.x` reads
+    `x` before it is initialized with no error.
+  - **Algorithm:** a definite-assignment dataflow over the constructor body's CFG,
+    ported from the old checker's `init_check.go`. Track the set of assigned instance
+    fields per program point. At each reachable exit, a required (non-optional) field
+    not in the assigned set is a `FieldNotInitializedError` naming the missing
+    fields. A `self.f` read before `f` joins the assigned set is a
+    `ReadBeforeInitError`. Reuse the solver's CFG / move machinery
+    ([borrow_flow.go](../../internal/solver/borrow_flow.go), `AnalyzeMoves`) rather
+    than a fresh traversal, since a `for` loop back edge already exercises that CFG.
+    Optional fields are exempt, mirroring `synthesizeConstructor`'s optional skip.
+  - **Note:** the B1 plan lists "check constructor field-init completeness" in
+    Phase 2; this initial B1 slice descoped it and B5 implements it, the constructor
+    analogue of B3 pulling recursive methods out of B1.
+  - **Depends on:** B1. Parallel with B2 / B3 / B4.
+  - **Accept:** a constructor that leaves a required field unassigned on some path
+    reports `FieldNotInitializedError` naming the field; a constructor that assigns
+    every required field checks clean; a `self.f` read before its assignment reports
+    `ReadBeforeInitError`; an optional field left unassigned is accepted.
+
 ### Phase C — Nominal subtyping + variance
 
 - **C1 — The declared-subtype graph + the nominal constrain rule + `final`
@@ -919,14 +1027,27 @@ corruption of `freshenAbove`.
       `final class Point` rejects extra members against an exact target and
       `keyof` is an exact union, while a non-`final` instance behaves like an
       open object. This is one line at `projectClassBody`, reading `sub.Final`.
-  - **Errors:** `ClassIntoExactObjectError`, `StructuralIntoClassError`, and the
-    nominal-mismatch `CannotConstrainError` path.
+  - **`extends`/`implements` must name a class:** B1's `resolveClassRef` returns
+    nil when a super reference resolves to a non-class or an unbound name, and
+    `resolveClassSupers`/`resolveClassImplements` drop it silently — the one
+    type-reference position in the pipeline that reports nothing, where every other
+    position at least surfaces `Unsupported: TypeRefTypeAnn`. C1 stops the silent
+    drop, so those resolvers report at the drop site or retain the unresolved ref for
+    C1 to flag. A reference that resolves to a non-class — a type parameter, say —
+    reports `NonClassSuperError`. The unbound-name half rides M7's general TypeRef
+    resolution, which reports an undefined name centrally; until M7 lands an unbound
+    super stays silent.
+  - **Errors:** `ClassIntoExactObjectError`, `StructuralIntoClassError`, the
+    nominal-mismatch `CannotConstrainError` path, and `NonClassSuperError` (an
+    `extends` or `implements` reference that resolves to a non-class).
   - **Accept:** `class B extends A` yields `B <: A` via the graph and A's methods
     dispatch on a `B` when not overridden; a bare `{x: number}` is rejected
     against `Point` and vice versa; `var foo: {x, y, ...} = Point(5,10)` is
     accepted (inexact target) while `var foo: {x, y} = Point(5,10)` and
     `var bar: Point = {x, y}` reject; a `final` instance is exact (extra members
-    reject), a non-`final` instance is inexact.
+    reject), a non-`final` instance is inexact; a `class B extends P` / `class C
+    implements P` where `P` resolves to a non-class reports `NonClassSuperError`
+    rather than dropping the edge.
 
 - **C2 — Per-type-parameter variance inference + `in`/`out` modifiers** (~220).
   - **Files:** `solver/classes.go` (`inferVariance`), `solver/constrain.go`
@@ -1040,12 +1161,15 @@ corruption of `freshenAbove`.
 ## Dependency graph
 
 ```
-A1 (ClassType + method/getter/setter elems)  ──┐
+A1 (ClassType + method/getter/setter elems)  ───┐
 A2 (TypeParam + FuncType.TypeParams)          ──┤   ── A2 ∥ A1 (needs only FuncType)
 A3 (LifetimeParam + FuncType.LifetimeParams)  ──┤   ── A3 needs A1's ClassType, else ∥ A2
                                                 ▼
  └─► B1 (non-recursive ClassDecl + dual binding + member access)
       ├─► B2 (mutually-recursive classes, SCC path)          ── parallel with C/D/E after B1
+      ├─► B3 (intra-class method recursion, two-phase walk)  ── parallel with B2
+      ├─► B4 (cross-param type-param bounds, shared resolver) ── parallel with B2
+      ├─► B5 (constructor definite-assignment)               ── parallel with B2
       ├─► C1 (declared-subtype graph + nominal rule + final)
       │    ├─► C2 (variance inference + in/out modifiers)
       │    └─► F1 (iteration protocol + back-edge validation)
@@ -1065,6 +1189,9 @@ graph TD
     A3["A3 (LifetimeParam + FuncType.LifetimeParams)"]
     B1["B1 (non-recursive ClassDecl + dual binding + member access)"]
     B2["B2 (mutually-recursive classes, SCC path)"]
+    B3["B3 (intra-class method recursion, two-phase walk)"]
+    B4["B4 (cross-param type-param bounds, shared resolver)"]
+    B5["B5 (constructor definite-assignment)"]
     C1["C1 (declared-subtype graph + nominal rule + final)"]
     C2["C2 (variance inference + in/out modifiers)"]
     F1["F1 (iteration protocol + back-edge validation)"]
@@ -1079,6 +1206,9 @@ graph TD
     A2 --> B1
     A3 --> B1
     B1 --> B2
+    B1 --> B3
+    B1 --> B4
+    B1 --> B5
     B1 --> C1
     B1 --> D1
     B1 --> DEnum
@@ -1094,7 +1224,7 @@ graph TD
     classDef landed fill:#eceff1,stroke:#90a4ae,stroke-dasharray:4 3,color:#000;
     class A1,B1,C1,C2 crit;
     class M6 landed;
-    linkStyle 0,5,9 stroke:#e65100,stroke-width:2px;
+    linkStyle 0,8,12 stroke:#e65100,stroke-width:2px;
 ```
 
 **Critical path:** A1 → B1 → C1 → C2 (variance is the milestone's headline
@@ -1106,6 +1236,12 @@ they land before B1. Everything else is off the critical path.
 **Parallelizable once B1 lands** (all depend only on B1, mutually independent):
 
 - **B2** (recursive classes) — pure SCC-path work, no overlap with subtyping.
+- **B3** (intra-class method recursion) — a two-phase member walk in
+  `infer_class.go`, orthogonal to B2's SCC-path work.
+- **B4** (cross-param type-param bounds) — a shared two-pass `resolveTypeParams`
+  helper, independent of the recursion and subtyping work.
+- **B5** (constructor definite-assignment) — a CFG dataflow over the constructor
+  body, reusing the move machinery, independent of the other Phase-B work.
 - **C1** (nominal subtyping) — `constrain`/`classes.go`.
 - **D1** (nominal patterns) — `pattern.go`, uses member lookup, **not** the C1
   subtyping rule, so it does not wait on C1.

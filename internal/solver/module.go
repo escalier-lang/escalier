@@ -322,15 +322,27 @@ func (c *checker) inferComponent(
 		}
 	}
 
-	// Non-value keys (type aliases, classes, …) are outside the M2 subset. Report
-	// each contributing decl once, skipping any already handled by a value key (a
-	// class/enum contributes both a value and a type key for the same decl).
+	// Non-value keys such as type aliases are outside the M2 subset. Report each
+	// contributing decl once, skipping any already handled by a value key. A class or
+	// enum contributes both a value and a type key for the same decl, so its type key
+	// is skipped here.
+	//
+	// A class's type key is left to its value key, which infers the class and
+	// registers both the instance type and the constructor together (M5 B1). The two
+	// keys land in separate components, and the type key's component is ordered first,
+	// so reporting it here would both mis-report the class as unsupported and mark the
+	// decl handled — blocking the value key. Skip such a decl without marking it
+	// handled; its value key infers it and the reconciliation pass then finds it
+	// handled.
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
 		}
 		for _, d := range g.GetDecls(key) {
 			if handled.Contains(d) {
+				continue
+			}
+			if _, ok := d.(*ast.ClassDecl); ok {
 				continue
 			}
 			handled.Add(d)

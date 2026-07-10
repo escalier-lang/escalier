@@ -59,6 +59,11 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 		// binding's Sources slice.
 		t, src := c.inferFuncDecl(scope, lvl, d)
 		return t, src, true
+	case *ast.ClassDecl:
+		// inferClassDecl returns the RAW constructor func type for the SCC driver to
+		// constrain into the value binding var and generalize, and registers the
+		// instance type binding plus the nominal ClassDef as side effects.
+		return c.inferClassDecl(scope, lvl, d)
 	default:
 		c.reportUnsupported(d)
 		return nil, nil, false
