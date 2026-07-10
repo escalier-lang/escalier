@@ -732,6 +732,8 @@ func (*SubclassConstructorRequiredError) isSolverError()  {}
 func (*WriteOnlyPropertyError) isSolverError()            {}
 func (*SetterArityError) isSolverError()                  {}
 func (*RecursiveMethodAnnotationError) isSolverError()    {}
+func (*FieldNotInitializedError) isSolverError()          {}
+func (*ReadBeforeInitError) isSolverError()               {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -832,6 +834,46 @@ func (e *RecursiveMethodAnnotationError) Span() ast.Span      { return e.Elem.Sp
 func (e *RecursiveMethodAnnotationError) Related() []ast.Span { return nil }
 func (e *RecursiveMethodAnnotationError) Message() string {
 	return "Mutually recursive method '" + e.Name + "' must declare a return type; the cycle " + strings.Join(e.Group, ", ") + " has no annotated return to ground it."
+}
+
+// FieldNotInitializedError fires when a constructor body has a reachable exit on
+// which one or more required instance fields are still uninitialized. FieldNames
+// lists the missing fields in sorted order, so the message is deterministic.
+type FieldNotInitializedError struct {
+	FieldNames []string
+	Ctor       *ast.ConstructorElem
+}
+
+func (e *FieldNotInitializedError) Span() ast.Span      { return e.Ctor.Fn.Body.Span }
+func (e *FieldNotInitializedError) Related() []ast.Span { return nil }
+func (e *FieldNotInitializedError) Message() string {
+	if len(e.FieldNames) == 1 {
+		return "Field '" + e.FieldNames[0] + "' is not initialized on every path through the constructor."
+	}
+	return "Fields " + quoteJoin(e.FieldNames) + " are not initialized on every path through the constructor."
+}
+
+// ReadBeforeInitError fires when a constructor reads `self.f` on a path where field
+// `f` has not yet been assigned. It blames the read.
+type ReadBeforeInitError struct {
+	FieldName string
+	Read      ast.Node
+}
+
+func (e *ReadBeforeInitError) Span() ast.Span      { return e.Read.Span() }
+func (e *ReadBeforeInitError) Related() []ast.Span { return nil }
+func (e *ReadBeforeInitError) Message() string {
+	return "Field 'self." + e.FieldName + "' is read before it has been initialized."
+}
+
+// quoteJoin renders names as a comma-separated list, each single-quoted, for a
+// multi-field diagnostic.
+func quoteJoin(names []string) string {
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = "'" + n + "'"
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func (e *MixedOwnershipError) Span() ast.Span      { return spanOfNode(e.Node) }
