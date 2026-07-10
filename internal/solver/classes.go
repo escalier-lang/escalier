@@ -142,6 +142,29 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 	return c.memberValue(lvl, blame, c.projectClassMember(def, ct, member)), true
 }
 
+// classBodyMember resolves a method, getter, or setter read off a class-body ObjectType —
+// the object `self` binds to inside a method or constructor body (M5 B3). It returns
+// ok=false for a property read, so a field keeps the structural field-requirement path
+// that threads the borrow and read-after-write rules a direct lookup would drop, and for a
+// non-object receiver or a missing member, so an unknown member reports through that
+// path's MissingPropertyError. Only a method, getter, or setter member — which only a
+// class body carries — is intercepted, since the structural object arm reads only
+// properties and panics on those kinds.
+func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
+	obj, ok := carrier.(*soltype.ObjectType)
+	if !ok {
+		return pathResult{}, false
+	}
+	member, found := obj.Member(name)
+	if !found {
+		return pathResult{}, false
+	}
+	if _, isProp := member.(*soltype.PropertyElem); isProp {
+		return pathResult{}, false
+	}
+	return c.memberValue(lvl, blame, member), true
+}
+
 // projectClassMember rewrites one class-body member's type-parameter and
 // lifetime-parameter vars to the arguments of one instance, the single-member analogue
 // of projectClassBody. A non-generic class, whose body holds no such vars, returns the

@@ -346,6 +346,147 @@ func TestInferClassMutualRecursion(t *testing.T) {
 	}
 }
 
+// TestInferClassMethodRecursion covers the two-phase member walk (B3): a method body
+// resolves a call to another method of the same class through the pre-declared sibling
+// signature, whether self-recursive, mutually recursive, a forward call to a member
+// declared later, or a call from a constructor. It also confirms a getter read and a
+// `mut self` receiver work alongside the new `self.method()` path.
+func TestInferClassMethodRecursion(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantValues map[string]string
+	}{
+		{
+			// double() calls getN() twice through self; both resolve to the sibling's
+			// number-returning signature.
+			name: "SelfMethodCall",
+			src: `
+				class Counter {
+					n: number,
+					getN(self) -> number { return self.n },
+					double(self) -> number { return self.getN() },
+				}
+				val c = Counter(5)
+				val d = c.double()
+			`,
+			wantValues: map[string]string{"d": "number"},
+		},
+		{
+			// a() calls b(), which is declared later in the class body; the forward call
+			// resolves because every signature exists before any body is walked.
+			name: "ForwardSiblingCall",
+			src: `
+				class C {
+					n: number,
+					a(self) -> number { return self.b() },
+					b(self) -> number { return self.n },
+				}
+				val c = C(1)
+				val r = c.a()
+			`,
+			wantValues: map[string]string{"r": "number"},
+		},
+		{
+			// A self-recursive method with an annotated return type-checks; the recursive
+			// call resolves against the method's own pre-declared signature.
+			name: "SelfRecursionAnnotated",
+			src: `
+				class C {
+					n: number,
+					loop(self, k: number) -> number { return self.loop(k) },
+				}
+			`,
+			wantValues: map[string]string{"C": "fn (n: number) -> C"},
+		},
+		{
+			// A mutually recursive pair with annotated returns type-checks; each call
+			// resolves against the sibling's annotated signature.
+			name: "MutualRecursionAnnotated",
+			src: `
+				class C {
+					n: number,
+					ping(self, k: number) -> number { return self.pong(k) },
+					pong(self, k: number) -> number { return self.ping(k) },
+				}
+			`,
+			wantValues: map[string]string{"C": "fn (n: number) -> C"},
+		},
+		{
+			// A method reads a getter of the same class through self; the getter's value
+			// resolves through member lookup, not the structural field path.
+			name: "MethodReadsGetter",
+			src: `
+				class Box {
+					v: number,
+					get value(self) -> number { return self.v },
+					twice(self) -> number { return self.value },
+				}
+				val b = Box(3)
+				val x = b.twice()
+			`,
+			wantValues: map[string]string{"x": "number"},
+		},
+		{
+			// A `mut self` method calls an immutable-self sibling; the call resolves and
+			// the field write path still type-checks alongside it.
+			name: "MutSelfCallsMethod",
+			src: `
+				class C {
+					n: number,
+					helper(self) -> number { return self.n },
+					update(mut self) -> number { return self.helper() },
+				}
+			`,
+			wantValues: map[string]string{"C": "fn (n: number) -> C"},
+		},
+		{
+			// A constructor body calls a method of the class; self binds to the full body
+			// in the constructor too, so the call resolves.
+			name: "ConstructorCallsMethod",
+			src: `
+				class C {
+					n: number,
+					constructor(mut self, x: number) {
+						self.n = x
+					},
+					getN(self) -> number { return self.n },
+				}
+				val c = C(4)
+				val g = c.getN()
+			`,
+			wantValues: map[string]string{"g": "number"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			classValues(t, test.src, test.wantValues, nil)
+		})
+	}
+}
+
+// TestInferClassMutualRecursionRequiresAnnotation pins the annotation gate: a pair of
+// mutually recursive methods with no annotated return anywhere in the cycle cannot ground
+// its own return types, so every member of the cycle is reported. Annotating either
+// member breaks the cycle, which the positive test above covers.
+func TestInferClassMutualRecursionRequiresAnnotation(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			ping(self, k: number) { return self.pong(k) },
+			pong(self, k: number) { return self.ping(k) },
+		}
+	`)
+	msgs := make([]string, len(errs))
+	for i, e := range errs {
+		msgs[i] = e.Message()
+	}
+	require.ElementsMatch(t, []string{
+		"Mutually recursive method 'ping' must declare a return type; the cycle ping, pong has no annotated return to ground it.",
+		"Mutually recursive method 'pong' must declare a return type; the cycle ping, pong has no annotated return to ground it.",
+	}, msgs)
+}
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {

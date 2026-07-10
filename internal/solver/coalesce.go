@@ -117,7 +117,14 @@ func (b *mutBubbler) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type
 		anyMut := false
 		elems := make([]soltype.ObjTypeElem, len(t.Elems))
 		for i, e := range t.Elems {
-			p := soltype.AsProperty(e)
+			// Only a property can hold an owned-mut cell to bubble. A method, getter, or
+			// setter — carried by the object a class-body `self` binds to — has no field
+			// cell, so it passes through unchanged (M5 B3).
+			p, ok := e.(*soltype.PropertyElem)
+			if !ok {
+				elems[i] = e
+				continue
+			}
 			ft := p.Type
 			if inner, isMut, lt := soltype.UnwrapRef(ft); isMut && lt == nil {
 				anyMut = true
