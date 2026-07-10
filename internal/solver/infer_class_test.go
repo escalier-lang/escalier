@@ -268,6 +268,84 @@ func TestInferClassJoinMemberAccess(t *testing.T) {
 }
 */
 
+// TestInferClassMutualRecursion covers classes that reference each other, or
+// themselves, through the SCC path (M5 B2). The dep graph condenses a mutually
+// recursive group into one type-key component ordered before every class's value key,
+// so pre-binding each class's nominal identity there lets a sibling defined later in the
+// group resolve a forward reference. Each constructor and type binding renders the peer's
+// class name with no placeholder leak.
+func TestInferClassMutualRecursion(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantValues map[string]string
+		wantTypes  map[string]string
+	}{
+		{
+			// A forward reference: A's field is typed by B, declared later.
+			name: "MutualFields",
+			src: `
+				class A { b: B }
+				class B { a: A }
+			`,
+			wantValues: map[string]string{
+				"A": "fn (b: B) -> A",
+				"B": "fn (a: A) -> B",
+			},
+			wantTypes: map[string]string{"A": "A", "B": "B"},
+		},
+		{
+			// A self-referential field resolves to the class being declared.
+			name:       "SelfReferentialField",
+			src:        `class Node { next: Node }`,
+			wantValues: map[string]string{"Node": "fn (next: Node) -> Node"},
+			wantTypes:  map[string]string{"Node": "Node"},
+		},
+		{
+			// A method on A returns B and a method on B returns A, each inferred from a
+			// field read, so the return type is the sibling class.
+			name: "MutualMethodReturns",
+			src: `
+				class A {
+					b: B,
+					getB(self) { return self.b },
+				}
+				class B {
+					a: A,
+					getA(self) { return self.a },
+				}
+			`,
+			wantValues: map[string]string{
+				"A": "fn (b: B) -> A",
+				"B": "fn (a: A) -> B",
+			},
+			wantTypes: map[string]string{"A": "A", "B": "B"},
+		},
+		{
+			// A three-class cycle A -> B -> C -> A lands in one type-key component; every
+			// forward reference still resolves.
+			name: "ThreeClassCycle",
+			src: `
+				class A { b: B }
+				class B { c: C }
+				class C { a: A }
+			`,
+			wantValues: map[string]string{
+				"A": "fn (b: B) -> A",
+				"B": "fn (c: C) -> B",
+				"C": "fn (a: A) -> C",
+			},
+			wantTypes: map[string]string{"A": "A", "B": "B", "C": "C"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			classValues(t, test.src, test.wantValues, test.wantTypes)
+		})
+	}
+}
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {
