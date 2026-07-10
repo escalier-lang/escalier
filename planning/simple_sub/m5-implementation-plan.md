@@ -1032,11 +1032,13 @@ corruption of `freshenAbove`.
     `solver/constrain.go` (the object arm's `ConstructorElem` case),
     `solver/infer_class_test.go`.
   - **Structures:**
-    - add `soltype.ConstructorElem{Sig *FuncType}`, a new `ObjTypeElem` arm carrying
-      the class's constructor call signature — the standing-rule sweep every former
-      addition runs (`isObjTypeElem`, `acceptObjElems` with `Sig` covariant like a
-      method signature, `printType`, `equalType`, `freeTypeVars`, and every
-      `Member`/`AsProperty` switch site).
+    - add `soltype.ConstructorElem{Fn *FuncType}`, a new `ObjTypeElem` arm carrying
+      the class's constructor call signature — the field name matches the old
+      checker's `type_system.ConstructorElem` ([types.go:1052](../../internal/type_system/types.go)),
+      the port source. Adding it is the standing-rule sweep every former addition runs
+      (`isObjTypeElem`, `acceptObjElems` with `Fn` covariant like a method signature,
+      `printType`, `equalType`, `freeTypeVars`, and every `Member`/`AsProperty` switch
+      site).
     - the class VALUE binding becomes `ValueBinding{Schemes: [ctor-plus-static
       ObjectType]}` — one `ConstructorElem` for the callable side plus the
       `ClassDef.Static` elems (fields, methods, getters, setters) — replacing B1's raw
@@ -1046,7 +1048,7 @@ corruption of `freshenAbove`.
     SCC driver to constrain into the value var; B6 wraps that signature in a
     `ConstructorElem`, appends the frozen `ClassDef.Static` elems, and returns the
     resulting `ObjectType` as the raw value type instead. `resolveFunc` gains a case
-    that, given such an object, hands back the `ConstructorElem.Sig`, so a direct call
+    that, given such an object, hands back the `ConstructorElem.Fn`, so a direct call
     `Point(1, 2)` resolves through the call signature exactly as a bare `FuncType` did.
     Static member access `Point.origin` then rides the existing `valueProp` object-property
     path — reading a static off the same object needs no new access path. The object
@@ -1072,7 +1074,7 @@ corruption of `freshenAbove`.
     already in flight, **sequence B6 after B3 and B5 land** and rebase its value-side
     assembly onto their final `infer_class.go`, rather than running it parallel to them —
     landing it concurrently would re-churn the same value-binding assembly twice.
-  - **Accept:** a `class Point { x: number, y: number, static origin(self) -> Point {…} }`
+  - **Accept:** a `class Point { x: number, y: number, static origin() -> Point {…} }`
     binds a callable object value — `Point(1, 2)` still constructs a `Point`, `Point.origin`
     resolves the static method, and the value renders as the ctor-plus-static object; a
     `static count: number = 0` field is read through the value binding as `number`; two
@@ -1344,7 +1346,7 @@ two tracks is D2 (patterns × enums × M6's union exhaustiveness).
   instance's own borrow lifetime).
 - `soltype.MethodElem`/`GetterElem`/`SetterElem` — new `ObjTypeElem` arms
   (methods hold overload arms as an ordered `[]*FuncType`).
-- `soltype.ConstructorElem{Sig *FuncType}` (B6) — the call-signature `ObjTypeElem`
+- `soltype.ConstructorElem{Fn *FuncType}` (B6) — the call-signature `ObjTypeElem`
   arm that makes a class VALUE binding a callable object: one `ConstructorElem` plus
   the static members, so `Point(1, 2)` and `Point.origin` both resolve off one type.
   Bounded to the class-value carrier so the "callable in the lattice" exception stays
