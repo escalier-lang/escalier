@@ -533,14 +533,15 @@ func TestInferClassMutMethodFromImmutMethod(t *testing.T) {
 // and external access. `read` returns the field typed `T`, so `b.read()` for `b : Box<5>`
 // should project `T` to `5`, and `alias` calling `self.read()` should reach the same value.
 //
-// DISABLED until B1's member-access projection is completed. B1's §"Member access" wires a
-// resolved method through the projected ClassDef.Body, wrapping a method's own TypeParams in
-// a PolyScheme and projecting the class arguments, so class-level args are substituted while
-// the method's own params freshen per call. The shipped B1 slice descoped the generic case:
-// member access returns the method's raw FuncType, and an unannotated field read mints an
-// intermediate var that class-argument projection cannot rewrite, so the return collapses to
-// `never`. Neither classBodyMember (self access) nor projectedMember (external access) needs
-// its own fix — the wrap belongs in the shared memberValue.
+// DISABLED — no PR in the M5 plan is scheduled to close this. B1's §"Member access" owned it
+// (wire a resolved method through the projected ClassDef.Body, wrapping the method's own
+// TypeParams in a PolyScheme and substituting the class arguments), but the shipped B1 slice
+// descoped the generic case and no later PR picks it up; the per-method-generic half is
+// deferred to the generic-function work outside this plan. Today member access returns the
+// method's raw FuncType, and an unannotated field read mints an intermediate var that
+// class-argument projection cannot rewrite, so the return collapses to `never`. Neither
+// classBodyMember (self access) nor projectedMember (external access) needs its own fix — the
+// wrap belongs in the shared memberValue. Re-enable when a follow-up lands it.
 /*
 func TestInferClassGenericMethodReturnsTypeParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
