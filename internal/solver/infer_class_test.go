@@ -528,6 +528,37 @@ func TestInferClassMutMethodFromImmutMethod(t *testing.T) {
 }
 */
 
+// TestInferClassGenericMethodReturnsTypeParam pins the gap where a method whose return is a
+// class type parameter round-trips as `never` through a call — both a `self.method()` call
+// and external access. `read` returns the field typed `T`, so `b.read()` for `b : Box<5>`
+// should project `T` to `5`, and `alias` calling `self.read()` should reach the same value.
+//
+// DISABLED until B1's member-access projection is completed. B1's §"Member access" wires a
+// resolved method through the projected ClassDef.Body, wrapping a method's own TypeParams in
+// a PolyScheme and projecting the class arguments, so class-level args are substituted while
+// the method's own params freshen per call. The shipped B1 slice descoped the generic case:
+// member access returns the method's raw FuncType, and an unannotated field read mints an
+// intermediate var that class-argument projection cannot rewrite, so the return collapses to
+// `never`. Neither classBodyMember (self access) nor projectedMember (external access) needs
+// its own fix — the wrap belongs in the shared memberValue.
+/*
+func TestInferClassGenericMethodReturnsTypeParam(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Box<T> {
+			v: T,
+			read(self) { return self.v },
+			alias(self) { return self.read() },
+		}
+		val b = Box(5)
+		val x = b.read()
+		val y = b.alias()
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "5", values["x"])
+	require.Equal(t, "5", values["y"])
+}
+*/
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {
