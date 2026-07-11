@@ -37,14 +37,19 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (so
 		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 	}
 
-	// The instance's nominal identity and its heavy ClassDef, reusing the pair the SCC
-	// driver pre-bound for this class's recursive group (B2) so a sibling that already
-	// captured this class as a forward reference sees the finished body through the same
-	// token. A class reached without a pre-bound pair mints and registers one here.
-	// The token carries the class's own type-parameter vars as its arguments. B1 uses the
+	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
+	// the pair the SCC pre-pass registered for this class — an empty shell it minted
+	// before any type params were resolved, so that a sibling in the same recursive group
+	// resolves a forward reference to this class through the shared token (B2). A class
+	// reached without a pre-registered shell mints and registers one here. B1 uses the
 	// bare local name as the qualified key, correct for the top-level default namespace;
 	// namespace-qualified keys ride the namespace work.
 	self, def := c.getOrCreateClass(scope, decl)
+	// Populate the type-param-derived fields the pre-pass left empty. This is the second
+	// phase: the pre-pass registers a bare identity so forward references resolve, and
+	// this call — running once every sibling is registered, so a bound like `<T: Sibling>`
+	// resolves — fills in the resolved type params. The token carries the class's own
+	// type-parameter vars as its arguments.
 	self.TypeArgs = typeParamVars(typeParams)
 	def.Level = lvl - 1
 	def.TypeParams = typeParams
