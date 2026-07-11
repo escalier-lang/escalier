@@ -710,6 +710,34 @@ func TestConstructorInitClean(t *testing.T) {
 				}
 			`,
 		},
+		{
+			// A method may be called once every required field is assigned.
+			name: "MethodCallAfterInit",
+			src: `
+				class C {
+					x: number,
+					log(self) -> number { return self.x },
+					constructor(mut self, x: number) {
+						self.x = x
+						val r = self.log()
+					},
+				}
+			`,
+		},
+		{
+			// Referencing a method member of self before init reads no field, so it is not
+			// a read-before-init.
+			name: "MethodReferenceBeforeInit",
+			src: `
+				class C {
+					x: number,
+					log(self) -> number { return self.x },
+					constructor(mut self, x: number) {
+						self.x = x
+					},
+				}
+			`,
+		},
 	}
 
 	for _, test := range tests {
@@ -721,8 +749,9 @@ func TestConstructorInitClean(t *testing.T) {
 }
 
 // TestConstructorInitErrors covers the definite-assignment diagnostics: a required
-// field left unassigned on some path is a FieldNotInitializedError, and a `self.f` read
-// before its assignment is a ReadBeforeInitError.
+// field left unassigned on some path is a FieldNotInitializedError, a `self.f` read
+// before its assignment is a ReadBeforeInitError, and a `self.method(...)` call before
+// every required field is assigned is a MethodCallBeforeInitError.
 func TestConstructorInitErrors(t *testing.T) {
 	tests := []struct {
 		name string
@@ -780,6 +809,36 @@ func TestConstructorInitErrors(t *testing.T) {
 				}
 			`,
 			want: "Field 'self.x' is read before it has been initialized.",
+		},
+		{
+			name: "MethodCallBeforeInit",
+			src: `
+				class C {
+					x: number,
+					log(self) -> number { return self.x },
+					constructor(mut self, x: number) {
+						val r = self.log()
+						self.x = x
+					},
+				}
+			`,
+			want: "Cannot call a method on `self` before all required fields are initialized; missing 'x'.",
+		},
+		{
+			name: "MethodCallMissingMultiple",
+			src: `
+				class C {
+					x: number,
+					y: number,
+					log(self) -> number { return self.x },
+					constructor(mut self) {
+						val r = self.log()
+						self.x = 1
+						self.y = 2
+					},
+				}
+			`,
+			want: "Cannot call a method on `self` before all required fields are initialized; missing 'x', 'y'.",
 		},
 	}
 

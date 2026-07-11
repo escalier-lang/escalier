@@ -734,6 +734,7 @@ func (*SetterArityError) isSolverError()                  {}
 func (*RecursiveMethodAnnotationError) isSolverError()    {}
 func (*FieldNotInitializedError) isSolverError()          {}
 func (*ReadBeforeInitError) isSolverError()               {}
+func (*MethodCallBeforeInitError) isSolverError()         {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -864,6 +865,21 @@ func (e *ReadBeforeInitError) Span() ast.Span      { return e.Read.Span() }
 func (e *ReadBeforeInitError) Related() []ast.Span { return nil }
 func (e *ReadBeforeInitError) Message() string {
 	return "Field 'self." + e.FieldName + "' is read before it has been initialized."
+}
+
+// MethodCallBeforeInitError fires when a constructor calls a method on `self` on a
+// path where one or more required fields are not yet assigned. The called method may
+// read any field, so every required field must be initialized first. MissingFields
+// lists the still-unassigned fields in sorted order.
+type MethodCallBeforeInitError struct {
+	MissingFields []string
+	Call          ast.Node
+}
+
+func (e *MethodCallBeforeInitError) Span() ast.Span      { return e.Call.Span() }
+func (e *MethodCallBeforeInitError) Related() []ast.Span { return nil }
+func (e *MethodCallBeforeInitError) Message() string {
+	return "Cannot call a method on `self` before all required fields are initialized; missing " + quoteJoin(e.MissingFields) + "."
 }
 
 // quoteJoin renders names as a comma-separated list, each single-quoted, for a

@@ -77,16 +77,19 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 
 // checkConstructorInit runs definite-assignment analysis over an explicit
 // constructor's body. It reports a FieldNotInitializedError for any required instance
-// field left unassigned on some path that reaches a normal exit, and a
-// ReadBeforeInitError for a `self.f` read on a path where f is not yet assigned.
+// field left unassigned on some path that reaches a normal exit, a ReadBeforeInitError
+// for a `self.f` read on a path where f is not yet assigned, and a
+// MethodCallBeforeInitError for a `self.method(...)` call on a path where some required
+// field is not yet assigned, since the callee may read any field.
 //
 // The analysis reuses the CFG and the forward move-state dataflow rather than a fresh
 // tree traversal, so a `for` loop back edge inside the constructor is handled by the
 // same machinery moves and borrows already rely on. Field assignment is modeled as a
 // "move" of a synthetic per-field id: a field whose move-state is Moved at a point is
 // assigned on every path reaching it, so a required field that is not Moved at the
-// exit is uninitialized on some path, and a `self.f` read where f is not Moved reads it
-// before initialization.
+// exit is uninitialized on some path, a `self.f` read where f is not Moved reads it
+// before initialization, and a `self.method(...)` call where some field is not Moved
+// happens before the instance is fully built.
 //
 // A `throw` is exempt: it assigns every required field synthetically, so a path that
 // throws before initializing the instance vacuously satisfies the requirement and does
@@ -150,6 +153,21 @@ func (c *checker) checkConstructorInit(body *soltype.ObjectType, ctor *ast.Const
 			c.report(&ReadBeforeInitError{FieldName: r.field, Read: r.node})
 		}
 	}
+
+	// A method call on `self` may read any field, so it requires every required field
+	// assigned at the call site. Report the ones still unassigned on some reaching path.
+	for _, call := range col.calls {
+		var callMissing []string
+		for name, id := range fieldIDs {
+			if info.StateBefore(call.ref, id) != liveness.Moved {
+				callMissing = append(callMissing, name)
+			}
+		}
+		if len(callMissing) > 0 {
+			slices.Sort(callMissing)
+			c.report(&MethodCallBeforeInitError{MissingFields: callMissing, Call: call.node})
+		}
+	}
 }
 
 // initRead is one `self.f` read the collector recorded: the field name, the CFG point
@@ -160,16 +178,25 @@ type initRead struct {
 	node  ast.Node
 }
 
+// initCall is one `self.method(...)` call the collector recorded: the CFG point of the
+// call and the node to blame.
+type initCall struct {
+	ref  liveness.StmtRef
+	node ast.Node
+}
+
 // initCollector walks a constructor body statement by statement, recording each
-// `self.f` assignment as a "gen" of field f at the current program point and each
-// `self.f` read as an initRead. currentRef is set by the driver before each statement,
-// so a write or read nested in that statement's expression is attributed to it.
+// `self.f` assignment as a "gen" of field f at the current program point, each `self.f`
+// read as an initRead, and each `self.method(...)` call as an initCall. currentRef is
+// set by the driver before each statement, so a write, read, or call nested in that
+// statement's expression is attributed to it.
 type initCollector struct {
 	ast.DefaultVisitor
 	currentRef liveness.StmtRef
 	fieldIDs   map[string]liveness.VarID
 	gens       map[liveness.StmtRef]set.Set[liveness.VarID]
 	reads      []initRead
+	calls      []initCall
 }
 
 // gen records that field is assigned at the current statement. A field absent from
@@ -215,9 +242,25 @@ func (col *initCollector) EnterExpr(e ast.Expr) bool {
 			e.Arg.Accept(col)
 		}
 		return false
+	case *ast.CallExpr:
+		// A call whose callee is `self.x(...)` needs every required field initialized,
+		// since the callee may read any of them. Record the call site and scan the
+		// arguments for reads, but not the `self.x` callee — it is a method reference,
+		// not a field read.
+		if _, ok := selfFieldName(e.Callee); ok {
+			col.calls = append(col.calls, initCall{ref: col.currentRef, node: e})
+			for _, arg := range e.Args {
+				arg.Accept(col)
+			}
+			return false
+		}
 	case *ast.MemberExpr:
 		if name, ok := selfFieldName(e); ok {
-			col.reads = append(col.reads, initRead{field: name, ref: col.currentRef, node: e})
+			// Only a required field is tracked. A read of a method, getter, or optional
+			// field names no required field, so it is not a read-before-init.
+			if _, tracked := col.fieldIDs[name]; tracked {
+				col.reads = append(col.reads, initRead{field: name, ref: col.currentRef, node: e})
+			}
 			return false
 		}
 	}
