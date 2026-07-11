@@ -267,10 +267,18 @@ func (col *initCollector) EnterExpr(e ast.Expr) bool {
 	return true
 }
 
-// selfFieldName returns the field name of a `self.f` member access — the property of a
-// non-optional-chain member whose object is the `self` identifier. ok is false for any
-// other expression, including `self[k]`, `other.f`, and a deeper path like `self.a.b`
-// whose object is `self.a` rather than `self`.
+// selfFieldName returns the field name of a `self.f` member access: the property of a
+// non-optional-chain member whose object is the `self` identifier. It matches only the
+// dot form of *ast.MemberExpr. ok is false for `other.f`, whose object is not `self`,
+// and for a deeper path like `self.a.b`, whose object is `self.a` rather than `self`.
+//
+// An index form such as `self[k]` or `self["x"]` is an *ast.IndexExpr, not a MemberExpr,
+// so it returns false and this pass tracks no field for it. That is sound today because
+// index assignment `self[...] = v` is unsupported until M7, so no valid program
+// initializes a field through a bracket. When M7 adds it, a constant-string index
+// `self["x"]` will name a field the way constStringKey already resolves it for the move
+// engine, and this pass must recognize that form to avoid a spurious
+// FieldNotInitializedError.
 func selfFieldName(e ast.Expr) (string, bool) {
 	m, ok := e.(*ast.MemberExpr)
 	if !ok || m.OptChain || m.Prop == nil {
