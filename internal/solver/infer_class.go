@@ -290,7 +290,7 @@ func (c *checker) buildFieldSigs(scope *Scope, lvl int, decl *ast.ClassDecl, bod
 }
 
 // pendingMember carries one method, getter, or setter from the signature phase to the
-// body phase. shell is the signature the phase-1 pass appended and every sibling call
+// body phase. stub is the signature the phase-1 pass appended and every sibling call
 // resolves against; body carries the receiver, staticness, and function node its walk
 // needs. apply installs the fully-inferred body signature onto the stored element once
 // the body pass produces it.
@@ -298,17 +298,17 @@ type pendingMember struct {
 	fn     *ast.FuncExpr
 	recv   *ast.MethodReceiver
 	static bool
-	shell  *soltype.FuncType
+	stub   *soltype.FuncType
 	apply  func(bodyFt *soltype.FuncType)
 }
 
 // buildMemberSigs is phase 1 of the member walk. It appends one signature element per
 // method, getter, and setter to the instance or static body before any body is inferred,
 // so a call between two members of the same class resolves against the sibling's
-// pre-declared signature. Each signature is a shell: fresh vars for every value parameter
+// pre-declared signature. Each signature is a stub: fresh vars for every value parameter
 // and the return, correct in arity but not yet refined by the body. The body pass links
 // the real inferred signature into these fresh vars and installs it onto the element, so
-// a sibling that read the shell before the body ran sees the refined type through the
+// a sibling that read the stub before the body ran sees the refined type through the
 // bound graph. An instance member missing its `self` receiver is reported here.
 func (c *checker) buildMemberSigs(
 	scope *Scope,
@@ -326,13 +326,13 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
-			shell := c.memberSigShell(lvl, elem.Fn)
-			shell.SelfParam = c.selfParam(elem.Receiver, elem.Static, self)
-			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, shell, elem.Static)
+			stub := c.memberSigStub(lvl, elem.Fn)
+			stub.SelfParam = c.selfParam(elem.Receiver, elem.Static, self)
+			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			pending = append(pending, pendingMember{
-				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, shell: shell,
+				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) {
-					bodyFt.SelfParam = shell.SelfParam
+					bodyFt.SelfParam = stub.SelfParam
 					method.Signatures[arm] = bodyFt
 				},
 			})
@@ -342,12 +342,12 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
-			shell := c.memberSigShell(lvl, elem.Fn)
-			getter := &soltype.GetterElem{Name: name, SelfParam: c.selfParam(elem.Receiver, elem.Static, self), Type: shell.Ret}
+			stub := c.memberSigStub(lvl, elem.Fn)
+			getter := &soltype.GetterElem{Name: name, SelfParam: c.selfParam(elem.Receiver, elem.Static, self), Type: stub.Ret}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, getter)
 			pending = append(pending, pendingMember{
-				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, shell: shell,
+				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) { getter.Type = bodyFt.Ret },
 			})
 		case *ast.SetterElem:
@@ -363,16 +363,16 @@ func (c *checker) buildMemberSigs(
 			if len(elem.Fn.Params) != 1 {
 				c.report(&SetterArityError{Name: name, Elem: elem, Count: len(elem.Fn.Params)})
 			}
-			shell := c.memberSigShell(lvl, elem.Fn)
+			stub := c.memberSigStub(lvl, elem.Fn)
 			var param soltype.Type = &soltype.UnknownType{}
-			if len(shell.Params) > 0 {
-				param = shell.Params[0].Type
+			if len(stub.Params) > 0 {
+				param = stub.Params[0].Type
 			}
 			setter := &soltype.SetterElem{Name: name, SelfParam: c.selfParam(elem.Receiver, elem.Static, self), Param: param}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, setter)
 			pending = append(pending, pendingMember{
-				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, shell: shell,
+				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) {
 					if len(bodyFt.Params) > 0 {
 						setter.Param = bodyFt.Params[0].Type
@@ -386,38 +386,38 @@ func (c *checker) buildMemberSigs(
 
 // inferMemberBodies is phase 2 of the member walk. It walks each method, getter, and
 // setter body against the signature phase 1 appended. It links the inferred body
-// signature into the shell's fresh vars — `bodyFt <: shell`, the same "inferred type <:
+// signature into the stub's fresh vars — `bodyFt <: stub`, the same "inferred type <:
 // pre-bound var" relation the module SCC driver uses for recursive functions — so a
-// sibling that already read the shell resolves through the bound graph, then installs the
+// sibling that already read the stub resolves through the bound graph, then installs the
 // fully-inferred signature onto the stored element so member access and class-vs-object
 // subtyping read the real member type.
 func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectType, pending []pendingMember) {
 	for _, m := range pending {
 		bodyFt := c.inferMemberFunc(scope, lvl, m.fn, m.recv, m.static, body)
-		c.linkMemberSig(m.fn, bodyFt, m.shell)
+		c.linkMemberSig(m.fn, bodyFt, m.stub)
 		m.apply(bodyFt)
 	}
 }
 
-// linkMemberSig constrains a member's inferred body signature into the shell the
+// linkMemberSig constrains a member's inferred body signature into the stub the
 // signature phase pre-declared. Only the callable parts — parameters and return — are
-// related, since the shell's SelfParam is stored on the element, not compared here. The
-// single `bodyFt <: shell` direction suffices: parameters are contravariant, so a
-// sibling call's argument flows shell parameter → body parameter, and the return is
-// covariant, so the body's inferred return flows body return → shell return, exactly the
+// related, since the stub's SelfParam is stored on the element, not compared here. The
+// single `bodyFt <: stub` direction suffices: parameters are contravariant, so a
+// sibling call's argument flows stub parameter → body parameter, and the return is
+// covariant, so the body's inferred return flows body return → stub return, exactly the
 // grounding the recursive reference needs.
-func (c *checker) linkMemberSig(node ast.Node, bodyFt, shell *soltype.FuncType) {
+func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Inexact: ft.Inexact}
 	}
-	c.constrain(node, callable(bodyFt), callable(shell))
+	c.constrain(node, callable(bodyFt), callable(stub))
 }
 
-// memberSigShell builds a member's signature shell: one fresh var per value parameter,
+// memberSigStub builds a member's signature stub: one fresh var per value parameter,
 // preserving arity, parameter names, and optionality, plus a fresh return var. The body
-// pass refines these vars, so the shell only needs to be callable at the right arity for
+// pass refines these vars, so the stub only needs to be callable at the right arity for
 // a sibling call to resolve before the body runs.
-func (c *checker) memberSigShell(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
+func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
 		name, ok := identPatName(p.Pattern)
@@ -453,7 +453,7 @@ func (c *checker) checkSelfReceiver(name string, elem ast.ClassElem, static bool
 // to the full instance body — owned-mutable for a `mut self` receiver — so field reads
 // and writes resolve through the record machinery and a sibling call resolves through the
 // pre-declared member signature. It returns the inferred FuncType, whose params and
-// return the caller links into the member's signature shell.
+// return the caller links into the member's signature stub.
 func (c *checker) inferMemberFunc(
 	scope *Scope,
 	lvl int,
