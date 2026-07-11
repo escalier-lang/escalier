@@ -150,6 +150,19 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 // path's MissingPropertyError. Only a method, getter, or setter member — which only a
 // class body carries — is intercepted, since the structural object arm reads only
 // properties and panics on those kinds.
+//
+// Unlike projectedMember, this deliberately does NOT project the class's type parameters.
+// `self` is an instance at the class's OWN arguments — the class-parameter vars themselves —
+// so a member referencing `T` keeps `T` symbolic, and it is the same shared var the calling
+// method resolves `T` to, since both members were walked in one class scope. Substituting,
+// the way external access does for a concrete receiver like `Box<5>`, would be wrong here.
+//
+// Per-method type parameters are a separate story that neither access path handles yet: a
+// method carrying its own `FuncType.TypeParams` must be wrapped in a scheme and instantiated
+// per call so each call freshens them, and that wrap belongs in memberValue, shared with
+// projectedMember, not here. Until it lands, a method whose return is a class or method type
+// parameter round-trips as `never` through a call — the same limitation external access has,
+// since an unannotated field read mints an intermediate var that projection cannot rewrite.
 func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
 	obj, ok := carrier.(*soltype.ObjectType)
 	if !ok {
