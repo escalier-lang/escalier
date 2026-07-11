@@ -502,6 +502,32 @@ func TestInferClassMutualRecursionRequiresAnnotation(t *testing.T) {
 	}, msgs)
 }
 
+// TestInferClassMutMethodFromImmutMethod asserts that an immutable-`self` method calling a
+// `mut self` method of the same class is rejected: the mutable method needs a mutable
+// receiver, but `self` is immutable in the caller.
+//
+// DISABLED until E1. B3 resolves the call — `self.bump()` finds bump's signature — but does
+// not yet constrain the receiver against the method's SelfParam, so today the call
+// type-checks with no error. That `receiver <: SelfParam` check lands with E1's method-call
+// path through valueProp (receiver-dependent dispatch), and the same gap holds for an
+// external `mut` call on an immutable binding. The asserted message is the expected form
+// from the mutability machinery, which today reports `cannot constrain immutable object <:
+// mutable object` for the analogous immutable-value-into-`mut`-parameter case; E1 finalizes
+// the exact rendering for a class receiver.
+/*
+func TestInferClassMutMethodFromImmutMethod(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			bump(mut self) -> number { return self.n },
+			peek(self) -> number { return self.bump() },
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain immutable C <: mutable C", errs[0].Message())
+}
+*/
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {
