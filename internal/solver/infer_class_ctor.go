@@ -274,11 +274,11 @@ func (col *initCollector) EnterExpr(e ast.Expr) bool {
 //
 // An index form such as `self[k]` or `self["x"]` is an *ast.IndexExpr, not a MemberExpr,
 // so it returns false and this pass tracks no field for it. That is sound today because
-// index assignment `self[...] = v` is unsupported until M7, so no valid program
-// initializes a field through a bracket. When M7 adds it, a constant-string index
-// `self["x"]` will name a field the way constStringKey already resolves it for the move
-// engine, and this pass must recognize that form to avoid a spurious
-// FieldNotInitializedError.
+// index assignment `self[...] = v` is unsupported: inferAssign rejects an index target
+// pending the Array and index types M7 brings, so no valid program initializes a field
+// through a bracket. If a constant-string index like `self["x"]` later becomes a
+// supported field write, this pass must recognize it — the way constStringKey resolves a
+// constant key for the move engine — to avoid a spurious FieldNotInitializedError.
 func selfFieldName(e ast.Expr) (string, bool) {
 	m, ok := e.(*ast.MemberExpr)
 	if !ok || m.OptChain || m.Prop == nil {
