@@ -31,7 +31,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (so
 	var typeParams []*soltype.TypeParam
 	if len(decl.TypeParams) > 0 {
 		declScope = scope.Child()
-		typeParams = c.resolveClassTypeParams(declScope, lvl, decl.TypeParams)
+		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 	}
 
 	// The instance's nominal identity, carrying the class's own type-parameter vars as
@@ -81,15 +81,6 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (so
 	}
 
 	return ctorType, &ast.NodeProvenance{Node: decl}, true
-}
-
-// resolveClassTypeParams resolves a class's AST type parameters to soltype TypeParams,
-// declaring each into the class scope so the body resolves the parameter name to its var.
-// It delegates to the shared resolveTypeParams, whose two-pass body declares every
-// parameter before resolving any bound, so a class bound may reference any sibling —
-// forward, mutual, or F-bounded.
-func (c *checker) resolveClassTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
-	return c.resolveTypeParams(scope, lvl, params)
 }
 
 // typeParamVars returns each type parameter's var, the arguments a class's own
