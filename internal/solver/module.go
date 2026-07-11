@@ -342,7 +342,16 @@ func (c *checker) inferComponent(
 			if handled.Contains(d) {
 				continue
 			}
-			if _, ok := d.(*ast.ClassDecl); ok {
+			if cd, ok := d.(*ast.ClassDecl); ok {
+				// Pre-bind the class's nominal identity before any body in its recursive
+				// group is walked (M5 B2). A type-key component is the SCC condensation of
+				// a group of mutually-recursive classes, so registering every class's type
+				// binding and empty ClassDef here lets a sibling defined later in the group
+				// resolve a forward reference — `class A { b: B }` / `class B { a: A }`.
+				// The value key infers the body and marks the decl handled; leave it
+				// unhandled here so the reconciliation pass finds it through that key. The
+				// returned token and def are discarded here; inferClassDecl reuses them.
+				c.getOrCreateClass(scope, cd)
 				continue
 			}
 			handled.Add(d)

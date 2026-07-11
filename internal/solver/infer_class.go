@@ -6,12 +6,17 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// inferClassDecl types a non-recursive class declaration (M5 B1). It returns the
-// class's constructor as a raw FuncType for the SCC driver to constrain into the
-// value binding var and generalize, along with the decl's provenance. It has two side
-// effects. It registers the instance TypeBinding in scope, so the class name resolves as
-// a type. It registers the ClassDef in the nominal registry, so member lookup and the
-// nominal constrain rule can read the projected body.
+// inferClassDecl types a class declaration (M5 B1). It returns the class's constructor
+// as a raw FuncType for the SCC driver to constrain into the value binding var and
+// generalize, along with the decl's provenance. It has two side effects. It registers
+// the instance TypeBinding in scope, so the class name resolves as a type. It registers
+// the ClassDef in the nominal registry, so member lookup and the nominal constrain rule
+// can read the projected body.
+//
+// A class in a mutually-recursive group reuses the nominal token and empty ClassDef the
+// SCC driver pre-bound for the group through getOrCreateClass (M5 B2), so a forward
+// reference to a sibling defined later in the group resolves before its body is inferred.
+// A class reached without a pre-bound pair mints and registers one here.
 //
 // Fields are built first, then each method, getter, and setter is inferred eagerly.
 // `self` carries the fields only, so a method that calls another method of the same
@@ -22,8 +27,6 @@ import (
 // lookup reads concrete member types. A generic body keeps its parameter vars symbolic
 // for per-instance projection.
 func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (soltype.Type, provenance.Provenance, bool) {
-	name := decl.Name.Name
-
 	// Resolve the class's type parameters into a child scope so the body resolves the
 	// class's T to one shared var, quantified at the class boundary and freshened per
 	// construction. A non-generic class reuses the enclosing scope.
@@ -34,27 +37,25 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (so
 		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 	}
 
-	// The instance's nominal identity, carrying the class's own type-parameter vars as
-	// its arguments. B1 uses the bare local name as the qualified key, correct for the
-	// top-level default namespace; namespace-qualified keys ride the namespace work.
-	self := &soltype.ClassType{Name: name, TypeArgs: typeParamVars(typeParams)}
-
-	body := &soltype.ObjectType{}
-	static := &soltype.ObjectType{}
-	def := &ClassDef{
-		Body:       body,
-		Static:     static,
-		Level:      lvl - 1,
-		TypeParams: typeParams,
-		Variance:   make([]Variance, len(typeParams)),
-	}
-	c.ctx.registerClass(name, def)
-	// Register the type binding early so a self-referential type in the body resolves
-	// to this class rather than falling through as unknown.
-	scope.defineType(name, TypeBinding{
-		Type:    self,
-		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
-	})
+	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
+	// the pair the SCC pre-pass registered for this class — an empty shell it minted
+	// before any type params were resolved, so that a sibling in the same recursive group
+	// resolves a forward reference to this class through the shared token (B2). A class
+	// reached without a pre-registered shell mints and registers one here. B1 uses the
+	// bare local name as the qualified key, correct for the top-level default namespace;
+	// namespace-qualified keys ride the namespace work.
+	self, def := c.getOrCreateClass(scope, decl)
+	// Populate the type-param-derived fields the pre-pass left empty. This is the second
+	// phase: the pre-pass registers a bare identity so forward references resolve, and
+	// this call — running once every sibling is registered, so a bound like `<T: Sibling>`
+	// resolves — fills in the resolved type params. The token carries the class's own
+	// type-parameter vars as its arguments.
+	self.TypeArgs = typeParamVars(typeParams)
+	def.Level = lvl - 1
+	def.TypeParams = typeParams
+	def.Variance = make([]Variance, len(typeParams))
+	body := def.Body
+	static := def.Static
 	c.recordType(decl.Name, self)
 
 	// Resolve the declared extends edge and implements interfaces so C1 can walk and
@@ -81,6 +82,40 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (so
 	}
 
 	return ctorType, &ast.NodeProvenance{Node: decl}, true
+}
+
+// getOrCreateClass returns the nominal ClassType token and ClassDef a class binds to,
+// reusing the pair already registered for the class or minting and registering a fresh
+// one when none exists. Either way the class name resolves to the returned token and def
+// before the body is walked, so a self- or sibling-reference in the body reaches them.
+// inferClassDecl then fills the def in place, so a sibling that captured the token as a
+// forward reference sees the finished body through the same object.
+//
+// The SCC driver calls it as a pre-pass over each class in a type-key component — the
+// group of mutually-recursive classes the dep graph condensed together — so every class
+// in the group has a resolved type binding and an empty ClassDef before the first value
+// key infers a body (M5 B2). That pre-pass discards the return; only inferClassDecl reads
+// it. No placeholder-patch phase is needed: the token a sibling captured is the one that
+// carries the finished body.
+func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl) (*soltype.ClassType, *ClassDef) {
+	name := decl.Name.Name
+	if def, ok := c.ctx.classDef(name); ok {
+		if b, found := scope.GetType(name); found {
+			if self, ok := b.Type.(*soltype.ClassType); ok && self.Name == name {
+				return self, def
+			}
+		}
+	}
+	self := &soltype.ClassType{Name: name}
+	def := &ClassDef{Body: &soltype.ObjectType{}, Static: &soltype.ObjectType{}}
+	c.ctx.registerClass(name, def)
+	// Register the type binding so a self-referential type in the body resolves to this
+	// class rather than falling through as unknown.
+	scope.defineType(name, TypeBinding{
+		Type:    self,
+		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
+	})
+	return self, def
 }
 
 // typeParamVars returns each type parameter's var, the arguments a class's own

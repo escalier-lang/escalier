@@ -496,6 +496,10 @@ name — the analogue of the old checker's `TypeRefType.Name` being a `QualIdent
 plain string. The printer strips the namespace prefix for display, which is why
 the `printType` arm still renders the bare `Point` / `Box<number>`.
 
+Shipped B1 descoped this: `classShell` keys `classes` and `ClassType.Name` off the
+bare local name, correct only for the root namespace. **B7** lands the qualified
+keying described here.
+
 **Assumption (M5 solver path only) — classes are top-level, so the registry is
 insert/overwrite, never remove.** This is a property of the M5 `internal/solver`
 path, not a repo-wide invariant. In that path every `ClassDef` comes from a module-
@@ -733,7 +737,7 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 
 ## PR breakdown
 
-14 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
+15 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
 green, each with table-driven tests asserting rendered types (Escalier
 type-annotation syntax) and **full** error messages. Every PR names the files
 touched, the structures added/modified, the algorithm changes, and its
@@ -1010,6 +1014,125 @@ corruption of `freshenAbove`.
     every required field checks clean; a `self.f` read before its assignment reports
     `ReadBeforeInitError`; an optional field left unassigned is accepted.
 
+- **B6 — Callable class value: constructor `ObjTypeElem` + ctor-plus-static object
+  binding** (~230). **← the static-member side of the dual binding B1 descoped.**
+  - **Problem:** B1 registers a class's VALUE binding as a bare constructor
+    `FuncType` and parks the static members on `ClassDef.Static`, which nothing reads
+    ([classes.go:49-51](../../internal/solver/classes.go)). So `Point(1, 2)` resolves
+    but `Point.origin` — a static field or method access on the class value — has no
+    binding to read, and the class value renders as a plain `fn (…) -> Point` rather
+    than the callable object carrying its statics. The old checker, the port source,
+    builds the value as one `ObjectType` holding a `ConstructorElem` call signature
+    plus the merged static elems
+    ([infer_class_decl.go:334-338](../../internal/checker/infer_class_decl.go)); the
+    solver has no such representation because `soltype.ObjectType`'s element set is
+    Property/Method/Getter/Setter with **no call-signature arm**.
+  - **Files:** `soltype/type.go` (the new `ConstructorElem` arm + `Member`/`AsProperty`
+    discipline), `soltype/visitor.go` (`acceptObjElems`), `soltype/print.go`
+    (`typePrec`/`printType`/`freeTypeVars`), `solver/coalesce.go` (`equalType` +
+    `freezeClassBody`'s static-side coalesce), `solver/infer_class.go` (assemble the
+    ctor-plus-static value `ObjectType` in place of the bare ctor `FuncType`),
+    `solver/infer_expr.go` (`resolveFunc` look-through, [infer_expr.go:1260](../../internal/solver/infer_expr.go)),
+    `solver/constrain.go` (the object arm's `ConstructorElem` case),
+    `solver/infer_class_test.go`.
+  - **Structures:**
+    - add `soltype.ConstructorElem{Fn *FuncType}`, a new `ObjTypeElem` arm carrying
+      the class's constructor call signature — the field name matches the old
+      checker's `type_system.ConstructorElem` ([types.go:1052](../../internal/type_system/types.go)),
+      the port source. Adding it is the standing-rule sweep every former addition runs
+      (`isObjTypeElem`, `acceptObjElems` with `Fn` covariant like a method signature,
+      `printType`, `equalType`, `freeTypeVars`, and every `Member`/`AsProperty` switch
+      site).
+    - the class VALUE binding becomes `ValueBinding{Schemes: [ctor-plus-static
+      ObjectType]}` — one `ConstructorElem` for the callable side plus the
+      `ClassDef.Static` elems (fields, methods, getters, setters) — replacing B1's raw
+      ctor `FuncType`. `ClassDef.Static` is already partitioned and populated in B1, so
+      B6 only wraps it, it does not re-walk the body.
+  - **Algorithm:** `inferClassDecl` currently returns the raw ctor `FuncType` for the
+    SCC driver to constrain into the value var; B6 wraps that signature in a
+    `ConstructorElem`, appends the frozen `ClassDef.Static` elems, and returns the
+    resulting `ObjectType` as the raw value type instead. `resolveFunc` gains a case
+    that, given such an object, hands back the `ConstructorElem.Fn`, so a direct call
+    `Point(1, 2)` resolves through the call signature exactly as a bare `FuncType` did.
+    Static member access `Point.origin` then rides the existing `valueProp` object-property
+    path — reading a static off the same object needs no new access path. The object
+    arm in `constrain` gains a `ConstructorElem` case so a class value flows
+    structurally where an object with a matching call signature is expected.
+  - **Design note — the bounded lattice exception.** doc.go §"M3 (PR6)" deliberately
+    keeps "callable in several ways" OUT of the structural subtype lattice: FREE-function
+    overloads resolve through the separate `resolveOverload`/`Schemes` phase, never a
+    call-signature embedded in an object
+    ([doc.go:53-62](../../internal/solver/doc.go)). B6 reintroduces a callable element,
+    so scope it tightly — ONE `ConstructorElem` per class value, NOT a general
+    call-signature-in-any-object feature and NOT the overload disjunction. A class with
+    overloaded constructors or static methods still resolves its arms through E1's
+    `resolveOverload`; the `ConstructorElem` carries a single (post-merge) signature.
+    This keeps the lattice exception bounded to the class-value carrier.
+  - **Note:** the B1 sketch registers the dual binding as `ValueBinding{Schemes:
+    [ctor+static ObjectType]}` (§"Class declaration inference"); shipped B1 descoped it
+    to a bare ctor `FuncType`. B6 lands the sketched binding — the static-side analogue
+    of B3 pulling recursive methods out of B1 and B5 pulling definite-assignment out of B1.
+  - **Depends on:** B1. Overlaps `infer_class.go` with **B3** (member/static partition
+    rework) and `infer_class_ctor.go`'s signature assembly with **B5**, and its
+    `ClassType`/element sweep touches the same `soltype` sites as A1. Since B2–B5 are
+    already in flight, **sequence B6 after B3 and B5 land** and rebase its value-side
+    assembly onto their final `infer_class.go`, rather than running it parallel to them —
+    landing it concurrently would re-churn the same value-binding assembly twice.
+  - **Accept:** a `class Point { x: number, y: number, static origin() -> Point {…} }`
+    binds a callable object value — `Point(1, 2)` still constructs a `Point`, `Point.origin`
+    resolves the static method, and the value renders as the ctor-plus-static object; a
+    `static count: number = 0` field is read through the value binding as `number`; two
+    signatures for the class value differing only in var id compare equal under
+    `equalType`; a free-function overload set still resolves through `resolveOverload`
+    with no callable-in-lattice regression.
+
+- **B7 — Namespace-qualified class registry + `ClassType` keys** (~140).
+  **← finishes the qualified-key design B1 descoped.**
+  - **Problem:** `classShell` keys the flat `classes` registry and the class's
+    scope type binding off the bare `decl.Name.Name` — `Point`, not
+    `Geometry.Point` ([infer_class.go:90-107](../../internal/solver/infer_class.go)) —
+    and `inferClassDecl` mints the `ClassType` with the same bare `Name`
+    ([infer_class.go:47-54](../../internal/solver/infer_class.go)). That is correct
+    only while every class sits in the root namespace. Two sibling `class Point`
+    declarations under different directory-derived namespaces collide on
+    `classes["Point"]`, even though `dep_graph` keeps their binding keys distinct
+    (`Geometry.Point` vs `Shape.Point`) and each `Namespace` holds its own `Types`
+    map ([scope.go:76-81](../../internal/solver/scope.go)). This is the gap the
+    §"Qualified keys" design specifies but shipped B1 left open, the surface flagged
+    at [infer_class.go:44-46](../../internal/solver/infer_class.go).
+  - **Files:** `solver/infer_class.go` (`classShell` / `inferClassDecl` qualified-name
+    derivation), `solver/infer_decl.go` (thread the component's namespace into the
+    class dispatch), `solver/module.go` (`inferComponent` reads the component key's
+    `g.GetNamespace(key)` and passes it down), `solver/infer_class_test.go`, plus a
+    directory-namespaced fixture under `fixtures/`.
+  - **Algorithm:** derive the qualified name once — `ns + "." + decl.Name.Name` when
+    `ns := g.GetNamespace(key)` is non-empty, else the bare name. This is the same
+    `CurrentNamespace + "." + name` rule `dep_graph` forms binding keys with
+    ([dep_graph.go:331](../../internal/dep_graph/dep_graph.go)) and the inverse of
+    `leafName`'s prefix strip ([module.go:599-605](../../internal/solver/module.go)).
+    Key `registerClass` / `classDef` and `ClassType.Name` off that qualified string,
+    and record the class's type binding into the owning `Namespace.Types` under its
+    bare name, so an intra-namespace reference resolves `Point` and a cross-namespace
+    one resolves `Geometry.Point`. The printer already strips the namespace prefix,
+    so a `Geometry.Point` token still renders as the bare `Point` with no printer
+    change (§"Qualified keys").
+  - **Note:** the §"Qualified keys" section describes both `ClassType.Name` and the
+    `classes` key as the `dep_graph`-qualified name; shipped B1 descoped that to the
+    bare local name for the root namespace. B7 lands the qualified keying — the
+    namespace-side analogue of B3, B5, and B6 each pulling a descoped B1 slice into
+    its own PR.
+  - **Depends on:** B1. Touches `classShell` / `inferClassDecl`, which B2 also
+    modified, so rebase onto B2 (landed) rather than run parallel to it. Independent
+    of C/D/E — pure keying work with no overlap with subtyping, patterns, or
+    overloads.
+  - **Accept:** a `Geometry.Point { x: number }` and a `Shape.Point { label: string }`
+    under different directory namespaces infer as distinct `classes` entries with
+    distinct `ClassType.Name`; member access on an instance of each resolves its own
+    body (`x: number` vs `label: string`) with no cross-namespace collision; a
+    cross-namespace reference to `Geometry.Point` resolves to the right class; both
+    still render as the bare `Point`; a single root-namespace `class Point` is
+    unchanged.
+
 ### Phase C — Nominal subtyping + variance
 
 - **C1 — The declared-subtype graph + the nominal constrain rule + `final`
@@ -1170,6 +1293,8 @@ A3 (LifetimeParam + FuncType.LifetimeParams)  ──┤   ── A3 needs A1's C
       ├─► B3 (intra-class method recursion, two-phase walk)  ── parallel with B2
       ├─► B4 (cross-param type-param bounds, shared resolver) ── parallel with B2
       ├─► B5 (constructor definite-assignment)               ── parallel with B2
+      ├─► B6 (callable class value: ctor+static object binding) ── after B3 & B5 (shared infer_class.go)
+      ├─► B7 (namespace-qualified class registry + ClassType keys) ── after B2 (shared classShell), ∥ C/D/E
       ├─► C1 (declared-subtype graph + nominal rule + final)
       │    ├─► C2 (variance inference + in/out modifiers)
       │    └─► F1 (iteration protocol + back-edge validation)
@@ -1192,6 +1317,8 @@ graph TD
     B3["B3 (intra-class method recursion, two-phase walk)"]
     B4["B4 (cross-param type-param bounds, shared resolver)"]
     B5["B5 (constructor definite-assignment)"]
+    B6["B6 (callable class value: ctor+static object binding)"]
+    B7["B7 (namespace-qualified class registry + ClassType keys)"]
     C1["C1 (declared-subtype graph + nominal rule + final)"]
     C2["C2 (variance inference + in/out modifiers)"]
     F1["F1 (iteration protocol + back-edge validation)"]
@@ -1219,6 +1346,11 @@ graph TD
     DEnum --> D2
     M6 -.-> DEnum
     M6 -.-> D2
+    B1 --> B6
+    B3 -.-> B6
+    B5 -.-> B6
+    B1 --> B7
+    B2 -.-> B7
 
     classDef crit fill:#ffe0b2,stroke:#e65100,stroke-width:2px,color:#000;
     classDef landed fill:#eceff1,stroke:#90a4ae,stroke-dasharray:4 3,color:#000;
@@ -1242,6 +1374,14 @@ they land before B1. Everything else is off the critical path.
   helper, independent of the recursion and subtyping work.
 - **B5** (constructor definite-assignment) — a CFG dataflow over the constructor
   body, reusing the move machinery, independent of the other Phase-B work.
+- **B6** (callable class value) — the ctor-plus-static object binding + a
+  `ConstructorElem` soltype arm. Depends on B1 but **is NOT parallel with B3/B5**: it
+  rebuilds the same value-side assembly in `infer_class.go` those PRs restructure, so
+  it lands AFTER B3 and B5 and rebases onto their final code.
+- **B7** (namespace-qualified class keys) — keys `classes` and `ClassType.Name` off
+  the `dep_graph`-qualified name so same-named classes in different namespaces stay
+  distinct. Depends on B1; touches the `classShell` B2 also modified, so it lands
+  after B2 and rebases onto it. Independent of subtyping, patterns, and overloads.
 - **C1** (nominal subtyping) — `constrain`/`classes.go`.
 - **D1** (nominal patterns) — `pattern.go`, uses member lookup, **not** the C1
   subtyping rule, so it does not wait on C1.
@@ -1265,6 +1405,11 @@ two tracks is D2 (patterns × enums × M6's union exhaustiveness).
   instance's own borrow lifetime).
 - `soltype.MethodElem`/`GetterElem`/`SetterElem` — new `ObjTypeElem` arms
   (methods hold overload arms as an ordered `[]*FuncType`).
+- `soltype.ConstructorElem{Fn *FuncType}` (B6) — the call-signature `ObjTypeElem`
+  arm that makes a class VALUE binding a callable object: one `ConstructorElem` plus
+  the static members, so `Point(1, 2)` and `Point.origin` both resolve off one type.
+  Bounded to the class-value carrier so the "callable in the lattice" exception stays
+  narrow (free-function overloads still ride `resolveOverload`).
 - `soltype.TypeParam{Name, Var, Default}` — one quantified type parameter, shared
   by functions and classes. Constraint is `Var`'s upper bound; `Default` is the
   omitted-argument fallback (nil ⇒ required); `Name` is for display.
