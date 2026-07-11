@@ -731,6 +731,7 @@ func (*FieldInitializerNotAllowedError) isSolverError()   {}
 func (*SubclassConstructorRequiredError) isSolverError()  {}
 func (*WriteOnlyPropertyError) isSolverError()            {}
 func (*SetterArityError) isSolverError()                  {}
+func (*RecursiveMethodAnnotationError) isSolverError()    {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -812,6 +813,25 @@ func (e *SetterArityError) Span() ast.Span      { return e.Elem.Span() }
 func (e *SetterArityError) Related() []ast.Span { return nil }
 func (e *SetterArityError) Message() string {
 	return "Setter '" + e.Name + "' must declare exactly one value parameter; found " + strconv.Itoa(e.Count) + "."
+}
+
+// RecursiveMethodAnnotationError fires when a group of mutually recursive methods
+// in one class has no return-type annotation anywhere in the cycle. A method's
+// signature is pre-declared before its body is walked so a sibling call resolves,
+// but an un-annotated return in a cycle stays an inference variable that the cycle
+// cannot ground on its own. An annotation on any member of the cycle breaks it, so
+// every member reports until one is annotated. This mirrors the recursion gate
+// top-level overloaded functions use (UnannotatedRecursiveOverloadError).
+type RecursiveMethodAnnotationError struct {
+	Name  string
+	Elem  *ast.MethodElem
+	Group []string // the mutually recursive method names, sorted lexicographically for a stable message
+}
+
+func (e *RecursiveMethodAnnotationError) Span() ast.Span      { return e.Elem.Span() }
+func (e *RecursiveMethodAnnotationError) Related() []ast.Span { return nil }
+func (e *RecursiveMethodAnnotationError) Message() string {
+	return "Mutually recursive method '" + e.Name + "' must declare a return type; the cycle " + strings.Join(e.Group, ", ") + " has no annotated return to ground it."
 }
 
 func (e *MixedOwnershipError) Span() ast.Span      { return spanOfNode(e.Node) }

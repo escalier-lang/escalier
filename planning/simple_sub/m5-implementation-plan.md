@@ -737,7 +737,7 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 
 ## PR breakdown
 
-15 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
+16 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
 green, each with table-driven tests asserting rendered types (Escalier
 type-annotation syntax) and **full** error messages. Every PR names the files
 touched, the structures added/modified, the algorithm changes, and its
@@ -1133,6 +1133,62 @@ corruption of `freshenAbove`.
     still render as the bare `Point`; a single root-namespace `class Point` is
     unchanged.
 
+- **B8 — Generic member-access projection: type parameters through a method's
+  return** (~200). **← finishes the member-access projection B1 descoped.**
+  - **Problem:** a member whose type is derived from a class type parameter through an
+    inferred intermediate var round-trips as `never` through member access — external
+    and through `self`. For `class Box<T> { v: T, read(self) { return self.v } }`,
+    `b.read()` on `b : Box<5>` yields `never`, not `5`, while the direct field `b.v`
+    yields `5`. `read`'s inferred return is an intermediate inference var whose only
+    lower bound is the class parameter `T` — an un-annotated field read mints a fresh
+    var and constrains the field into it rather than returning `T` directly. Two things
+    then compound: `projectClassMember`'s Accept-based `classSubst` rewrites `T` where it
+    appears directly but NOT inside a var's bounds
+    ([classes.go:228-287](../../internal/solver/classes.go)), and a generic class body is
+    never coalesced — B1 skips `freezeClassBody` for a generic class to keep `T` symbolic
+    ([infer_class.go:92-95](../../internal/solver/infer_class.go)) — so the intermediate
+    var reaches the access site un-substituted and coalesces to `never`. Per-method type
+    parameters have the parallel gap: `memberValue` returns the method's raw `FuncType`
+    with no `PolyScheme` wrap ([classes.go:206-218](../../internal/solver/classes.go)), so
+    a call does not freshen the method's own `<U>` per use.
+  - **Files:** `solver/infer_class.go` (a generic-body member coalesce that preserves the
+    class's and each method's own quantified vars), `solver/classes.go`
+    (`memberValue`/`projectClassMember` and the shared member-access path),
+    `solver/poly.go` (the `PolyScheme` wrap + `instantiate` at access), `solver/errors.go`
+    (`MissingTypeArgError` if not already landed), `solver/infer_class_test.go`.
+  - **Algorithm:**
+    - **Class parameters.** Coalesce each generic class member at decl time in a mode that
+      collapses inference vars to their bounds but keeps the class's own `TypeParam.Var`s
+      (and a method's own `TypeParams` vars) symbolic. `coalesce(β, Positive)` for the
+      intermediate `β` whose lower bound is `T` yields `T`, so the stored member return
+      reads as `T` directly and `projectClassMember` then substitutes `T` → the instance's
+      argument. This is the generic analogue of `freezeClassBody`, which B1 skips wholesale
+      to avoid coalescing the still-unconstrained `T` to `never`; the selective coalesce
+      stops at the quantified vars so `T` survives.
+    - **Method parameters.** In the shared member-access path (`memberValue`, reached by
+      both `classBodyMember` for `self` access and `projectedMember` for external access),
+      wrap a resolved method carrying its own `FuncType.TypeParams` in a `PolyScheme` at the
+      class's generalize-level and `instantiate` at the access level, so each call freshens
+      the method's own params while class-level args stay shared or are substituted. A
+      non-generic method (`TypeParams` nil) skips the wrap and returns the projected
+      `FuncType` directly, unchanged.
+  - **Note:** B1's §"Member access" specifies the `PolyScheme` wrap and class-argument
+    projection through a resolved method; shipped B1 descoped the generic case — member
+    access returns the raw `FuncType` and the generic body is left un-coalesced. B8 lands
+    it, the member-return analogue of B3, B5, B6, and B7 each pulling a descoped B1 slice
+    into its own PR. The per-method `<U>` half is bounded to methods, consuming the shared
+    representation A2 landed; general `fn f<U>` *inference* stays with the generic-function
+    work outside this plan (§"Scope expansion this implies").
+  - **Depends on:** B1. Overlaps `infer_class.go`'s member walk with **B3** and the
+    member-access path (`memberValue`) with **B6**, so sequence B8 after B3 and B6 land and
+    rebase its coalesce/wrap onto their final code rather than running it parallel to them.
+  - **Accept:** re-enable `TestInferClassGenericMethodReturnsTypeParam` — `b.read()` and
+    `b.alias()` (calling `self.read()`) for `b : Box<5>` both infer `5`; a class parameter
+    used only through a field still projects (`b.v` = `5`, unchanged); a generic method
+    `fn first<U>(self, xs: Array<U>) -> U` instantiated at two call sites with different `U`
+    type-checks at each, confirming the method's own params freshen per call; a non-generic
+    method's access is unchanged.
+
 ### Phase C — Nominal subtyping + variance
 
 - **C1 — The declared-subtype graph + the nominal constrain rule + `final`
@@ -1295,6 +1351,7 @@ A3 (LifetimeParam + FuncType.LifetimeParams)  ──┤   ── A3 needs A1's C
       ├─► B5 (constructor definite-assignment)               ── parallel with B2
       ├─► B6 (callable class value: ctor+static object binding) ── after B3 & B5 (shared infer_class.go)
       ├─► B7 (namespace-qualified class registry + ClassType keys) ── after B2 (shared classShell), ∥ C/D/E
+      ├─► B8 (generic member-access projection: type params through a method return) ── after B3 & B6
       ├─► C1 (declared-subtype graph + nominal rule + final)
       │    ├─► C2 (variance inference + in/out modifiers)
       │    └─► F1 (iteration protocol + back-edge validation)
@@ -1319,6 +1376,7 @@ graph TD
     B5["B5 (constructor definite-assignment)"]
     B6["B6 (callable class value: ctor+static object binding)"]
     B7["B7 (namespace-qualified class registry + ClassType keys)"]
+    B8["B8 (generic member-access projection: type params through a method return)"]
     C1["C1 (declared-subtype graph + nominal rule + final)"]
     C2["C2 (variance inference + in/out modifiers)"]
     F1["F1 (iteration protocol + back-edge validation)"]
@@ -1351,6 +1409,9 @@ graph TD
     B5 -.-> B6
     B1 --> B7
     B2 -.-> B7
+    B1 --> B8
+    B3 -.-> B8
+    B6 -.-> B8
 
     classDef crit fill:#ffe0b2,stroke:#e65100,stroke-width:2px,color:#000;
     classDef landed fill:#eceff1,stroke:#90a4ae,stroke-dasharray:4 3,color:#000;
@@ -1382,6 +1443,11 @@ they land before B1. Everything else is off the critical path.
   the `dep_graph`-qualified name so same-named classes in different namespaces stay
   distinct. Depends on B1; touches the `classShell` B2 also modified, so it lands
   after B2 and rebases onto it. Independent of subtyping, patterns, and overloads.
+- **B8** (generic member-access projection) — a selective generic-body coalesce plus
+  the `PolyScheme` wrap at member access, so a type parameter threads through a method's
+  return. Depends on B1 but **is NOT parallel with B3/B6**: it reworks the same member
+  walk in `infer_class.go` and the `memberValue` path B6 restructures, so it lands after
+  B3 and B6 and rebases onto their final code.
 - **C1** (nominal subtyping) — `constrain`/`classes.go`.
 - **D1** (nominal patterns) — `pattern.go`, uses member lookup, **not** the C1
   subtyping rule, so it does not wait on C1.

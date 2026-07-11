@@ -346,6 +346,220 @@ func TestInferClassMutualRecursion(t *testing.T) {
 	}
 }
 
+// TestInferClassMethodRecursion covers the two-phase member walk (B3): a method body
+// resolves a call to another method of the same class through the pre-declared sibling
+// signature, whether self-recursive, mutually recursive, a forward call to a member
+// declared later, or a call from a constructor. It also confirms a getter read and a
+// `mut self` receiver work alongside the new `self.method()` path.
+func TestInferClassMethodRecursion(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantValues map[string]string
+	}{
+		{
+			// double() calls getN() twice through self; both resolve to the sibling's
+			// number-returning signature.
+			name: "SelfMethodCall",
+			src: `
+				class Counter {
+					n: number,
+					getN(self) -> number { return self.n },
+					double(self) -> number { return self.getN() },
+				}
+				val c = Counter(5)
+				val d = c.double()
+			`,
+			wantValues: map[string]string{"d": "number"},
+		},
+		{
+			// a() calls b(), which is declared later in the class body; the forward call
+			// resolves because every signature exists before any body is walked.
+			name: "ForwardSiblingCall",
+			src: `
+				class C {
+					n: number,
+					a(self) -> number { return self.b() },
+					b(self) -> number { return self.n },
+				}
+				val c = C(1)
+				val r = c.a()
+			`,
+			wantValues: map[string]string{"r": "number"},
+		},
+		{
+			// A self-recursive method with an annotated return type-checks; the recursive
+			// call resolves against the method's own pre-declared signature.
+			name: "SelfRecursionAnnotated",
+			src: `
+				class C {
+					n: number,
+					loop(self, k: number) -> number { return self.loop(k) },
+				}
+			`,
+			wantValues: map[string]string{"C": "fn (n: number) -> C"},
+		},
+		{
+			// A mutually recursive pair with annotated returns type-checks; each call
+			// resolves against the sibling's annotated signature.
+			name: "MutualRecursionAnnotated",
+			src: `
+				class C {
+					n: number,
+					ping(self, k: number) -> number { return self.pong(k) },
+					pong(self, k: number) -> number { return self.ping(k) },
+				}
+			`,
+			wantValues: map[string]string{"C": "fn (n: number) -> C"},
+		},
+		{
+			// A method reads a getter of the same class through self; the getter's value
+			// resolves through member lookup, not the structural field path.
+			name: "MethodReadsGetter",
+			src: `
+				class Box {
+					v: number,
+					get value(self) -> number { return self.v },
+					twice(self) -> number { return self.value },
+				}
+				val b = Box(3)
+				val x = b.twice()
+			`,
+			wantValues: map[string]string{"x": "number"},
+		},
+		{
+			// A `mut self` method calls an immutable-self sibling; the call resolves and
+			// the field write path still type-checks alongside it.
+			name: "MutSelfCallsMethod",
+			src: `
+				class C {
+					n: number,
+					helper(self) -> number { return self.n },
+					update(mut self) -> number { return self.helper() },
+				}
+			`,
+			wantValues: map[string]string{"C": "fn (n: number) -> C"},
+		},
+		{
+			// A destructuring method parameter is handled: the stub carries arity only, so
+			// the body pass installs the real signature that binds the pattern.
+			name: "DestructuredParam",
+			src: `
+				class C {
+					n: number,
+					f(self, {a, b}: {a: number, b: number}) -> number { return self.g(a) },
+					g(self, x: number) -> number { return x },
+				}
+				val c = C(1)
+				val r = c.f({a: 1, b: 2})
+			`,
+			wantValues: map[string]string{"r": "number"},
+		},
+		{
+			// A constructor body calls a method of the class; self binds to the full body
+			// in the constructor too, so the call resolves.
+			name: "ConstructorCallsMethod",
+			src: `
+				class C {
+					n: number,
+					constructor(mut self, x: number) {
+						self.n = x
+					},
+					getN(self) -> number { return self.n },
+				}
+				val c = C(4)
+				val g = c.getN()
+			`,
+			wantValues: map[string]string{"g": "number"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			classValues(t, test.src, test.wantValues, nil)
+		})
+	}
+}
+
+// TestInferClassMutualRecursionRequiresAnnotation pins the annotation gate: a pair of
+// mutually recursive methods with no annotated return anywhere in the cycle cannot ground
+// its own return types, so every member of the cycle is reported. Annotating either
+// member breaks the cycle, which the positive test above covers.
+func TestInferClassMutualRecursionRequiresAnnotation(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			ping(self, k: number) { return self.pong(k) },
+			pong(self, k: number) { return self.ping(k) },
+		}
+	`)
+	msgs := make([]string, len(errs))
+	for i, e := range errs {
+		msgs[i] = e.Message()
+	}
+	require.ElementsMatch(t, []string{
+		"Mutually recursive method 'ping' must declare a return type; the cycle ping, pong has no annotated return to ground it.",
+		"Mutually recursive method 'pong' must declare a return type; the cycle ping, pong has no annotated return to ground it.",
+	}, msgs)
+}
+
+// TestInferClassMutMethodFromImmutMethod asserts that an immutable-`self` method calling a
+// `mut self` method of the same class is rejected: the mutable method needs a mutable
+// receiver, but `self` is immutable in the caller.
+//
+// DISABLED until E1. B3 resolves the call — `self.bump()` finds bump's signature — but does
+// not yet constrain the receiver against the method's SelfParam, so today the call
+// type-checks with no error. That `receiver <: SelfParam` check lands with E1's method-call
+// path through valueProp (receiver-dependent dispatch), and the same gap holds for an
+// external `mut` call on an immutable binding. The asserted message is the expected form
+// from the mutability machinery, which today reports `cannot constrain immutable object <:
+// mutable object` for the analogous immutable-value-into-`mut`-parameter case; E1 finalizes
+// the exact rendering for a class receiver.
+/*
+func TestInferClassMutMethodFromImmutMethod(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			bump(mut self) -> number { return self.n },
+			peek(self) -> number { return self.bump() },
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain immutable C <: mutable C", errs[0].Message())
+}
+*/
+
+// TestInferClassGenericMethodReturnsTypeParam pins the gap where a method whose return is a
+// class type parameter round-trips as `never` through a call — both a `self.method()` call
+// and external access. `read` returns the field typed `T`, so `b.read()` for `b : Box<5>`
+// should project `T` to `5`, and `alias` calling `self.read()` should reach the same value.
+//
+// DISABLED until B8 (planning/simple_sub/m5-implementation-plan.md §"Phase B"). B1's
+// §"Member access" owned this — wire a resolved method through the projected ClassDef.Body,
+// wrapping the method's own TypeParams in a PolyScheme and substituting the class arguments —
+// but the shipped B1 slice descoped the generic case. Today member access returns the
+// method's raw FuncType, and an unannotated field read mints an intermediate var that
+// class-argument projection cannot rewrite, so the return collapses to `never`. Neither
+// classBodyMember (self access) nor projectedMember (external access) needs its own fix — the
+// selective generic-body coalesce and the wrap belong in the shared member-access path. B8
+// lands it; re-enable then.
+/*
+func TestInferClassGenericMethodReturnsTypeParam(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Box<T> {
+			v: T,
+			read(self) { return self.v },
+			alias(self) { return self.read() },
+		}
+		val b = Box(5)
+		val x = b.read()
+		val y = b.alias()
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "5", values["x"])
+	require.Equal(t, "5", values["y"])
+}
+*/
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {

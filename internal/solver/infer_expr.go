@@ -1967,6 +1967,13 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	if res, ok := c.projectedMember(lvl, blame, name, recvCarrier); ok {
 		return res
 	}
+	// A `self` receiver inside a class body binds to the full instance object, which
+	// carries method, getter, and setter members alongside fields. A read of such a
+	// member resolves through member lookup here, since the structural field-requirement
+	// path below reads only properties and panics on a non-property member (M5 B3).
+	if res, ok := c.classBodyMember(lvl, blame, name, recvCarrier); ok {
+		return res
+	}
 	fieldVar := c.freshAt(lvl)
 	// The member-requirement record {prop: fieldVar} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner fieldVar, so the record would be a dead
