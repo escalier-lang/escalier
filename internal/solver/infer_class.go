@@ -31,7 +31,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (so
 	var typeParams []*soltype.TypeParam
 	if len(decl.TypeParams) > 0 {
 		declScope = scope.Child()
-		typeParams = c.resolveClassTypeParams(declScope, lvl, decl.TypeParams)
+		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 	}
 
 	// The instance's nominal identity, carrying the class's own type-parameter vars as
@@ -81,39 +81,6 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (so
 	}
 
 	return ctorType, &ast.NodeProvenance{Node: decl}, true
-}
-
-// resolveClassTypeParams resolves a class's AST type parameters to soltype
-// TypeParams, minting one shared var per parameter, recording its constraint as the
-// var's upper bound and its resolved default, and declaring each into scope so the
-// class body resolves the parameter name to that var.
-//
-// Resolution runs in declaration order, so a bound may reference the parameter itself
-// or an earlier one, but not a later one. A forward or mutual reference such as
-// `<T: U, U>` does not resolve. PR B4 replaces this with a shared two-pass resolver
-// that declares every parameter before resolving any bound
-// (planning/simple_sub/m5-implementation-plan.md).
-func (c *checker) resolveClassTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
-	out := make([]*soltype.TypeParam, len(params))
-	for i, p := range params {
-		v := c.freshAt(lvl)
-		// Declare the parameter before resolving its own constraint and default so an
-		// F-bounded `<T: Foo<T>>` or a defaulting `<T, U = T>` reference resolves to it.
-		scope.defineType(p.Name, TypeBinding{Type: v})
-		if p.Constraint != nil {
-			if ct, ok := c.resolveClassTypeAnn(scope, p.Constraint, lvl); ok {
-				c.ctx.addUpperBound(v, ct)
-			}
-		}
-		var def soltype.Type
-		if p.Default != nil {
-			if dt, ok := c.resolveClassTypeAnn(scope, p.Default, lvl); ok {
-				def = dt
-			}
-		}
-		out[i] = &soltype.TypeParam{Name: p.Name, Var: v, Default: def}
-	}
-	return out
 }
 
 // typeParamVars returns each type parameter's var, the arguments a class's own
@@ -175,15 +142,35 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn) *soltyp
 	return nil
 }
 
-// resolveClassTypeAnn resolves a type annotation appearing in a class body. It first
-// consults the type scope for a bare reference to a class or type parameter — the two
-// names resolveTypeAnn's general TypeRef resolution does not yet cover — and otherwise
+// resolveClassTypeAnn resolves a type annotation appearing in a class body or a
+// type-parameter bound. It first consults the type scope for a reference to a class or
+// type parameter — a bare `Point` or `T`, or a generic class instance `Box<number>` — the
+// names resolveTypeAnn's general TypeRef resolution does not yet cover, and otherwise
 // delegates to resolveTypeAnn for primitives and structural types.
 func (c *checker) resolveClassTypeAnn(scope *Scope, ann ast.TypeAnn, lvl int) (soltype.Type, bool) {
-	if ref, ok := ann.(*ast.TypeRefTypeAnn); ok && len(ref.TypeArgs) == 0 {
+	if ref, ok := ann.(*ast.TypeRefTypeAnn); ok {
 		name := ast.QualIdentToString(ref.Name)
 		if b, ok := scope.GetType(name); ok {
-			return b.Type, true
+			if len(ref.TypeArgs) == 0 {
+				return b.Type, true
+			}
+			// A generic class reference like `Cmp<U>` names a class and supplies its type
+			// arguments. Resolve each argument through the same class-scope path and mint a
+			// fresh instance token carrying them, so a type-parameter bound such as
+			// `<T: Cmp<U>>` resolves to `Cmp<U>` rather than falling through to general
+			// TypeRef resolution. An unresolved argument recovers to a fresh var so the
+			// reference keeps its arity, cascade-safe.
+			if ct, ok := b.Type.(*soltype.ClassType); ok {
+				args := make([]soltype.Type, len(ref.TypeArgs))
+				for i, arg := range ref.TypeArgs {
+					if at, ok := c.resolveClassTypeAnn(scope, arg, lvl); ok {
+						args[i] = at
+					} else {
+						args[i] = c.freshAt(lvl)
+					}
+				}
+				return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final}, true
+			}
 		}
 	}
 	return c.resolveTypeAnn(ann, lvl)
