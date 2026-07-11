@@ -289,11 +289,8 @@ func (c *checker) buildFieldSigs(scope *Scope, lvl int, decl *ast.ClassDecl, bod
 	}
 }
 
-// pendingMember carries one method, getter, or setter from the signature phase to the
-// body phase. stub is the signature the phase-1 pass appended and every sibling call
-// resolves against; body carries the receiver, staticness, and function node its walk
-// needs. apply installs the fully-inferred body signature onto the stored element once
-// the body pass produces it.
+// pendingMember carries one method, getter, or setter from the signature phase to the body
+// phase; apply installs the fully-inferred signature onto the stored element.
 type pendingMember struct {
 	fn     *ast.FuncExpr
 	recv   *ast.MethodReceiver
@@ -302,14 +299,10 @@ type pendingMember struct {
 	apply  func(bodyFt *soltype.FuncType)
 }
 
-// buildMemberSigs is phase 1 of the member walk. It appends one signature element per
-// method, getter, and setter to the instance or static body before any body is inferred,
-// so a call between two members of the same class resolves against the sibling's
-// pre-declared signature. Each signature is a stub: fresh vars for every value parameter
-// and the return, correct in arity but not yet refined by the body. The body pass links
-// the real inferred signature into these fresh vars and installs it onto the element, so
-// a sibling that read the stub before the body ran sees the refined type through the
-// bound graph. An instance member missing its `self` receiver is reported here.
+// buildMemberSigs is phase 1 of the member walk: it appends a signature stub — fresh vars
+// for each parameter and the return, correct in arity but not yet refined — for every
+// method, getter, and setter, so a sibling call resolves before any body is walked. A
+// non-static instance member missing its `self` receiver is reported here.
 func (c *checker) buildMemberSigs(
 	scope *Scope,
 	lvl int,
@@ -384,13 +377,9 @@ func (c *checker) buildMemberSigs(
 	return pending
 }
 
-// inferMemberBodies is phase 2 of the member walk. It walks each method, getter, and
-// setter body against the signature phase 1 appended. It links the inferred body
-// signature into the stub's fresh vars — `bodyFt <: stub`, the same "inferred type <:
-// pre-bound var" relation the module SCC driver uses for recursive functions — so a
-// sibling that already read the stub resolves through the bound graph, then installs the
-// fully-inferred signature onto the stored element so member access and class-vs-object
-// subtyping read the real member type.
+// inferMemberBodies is phase 2 of the member walk: it walks each member body, links the
+// inferred signature into its stub so a sibling that read the stub grounds through the
+// bound graph, then installs the real signature onto the stored element.
 func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectType, pending []pendingMember) {
 	for _, m := range pending {
 		bodyFt := c.inferMemberFunc(scope, lvl, m.fn, m.recv, m.static, body)
@@ -399,13 +388,10 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 	}
 }
 
-// linkMemberSig constrains a member's inferred body signature into the stub the
-// signature phase pre-declared. Only the callable parts — parameters and return — are
-// related, since the stub's SelfParam is stored on the element, not compared here. The
-// single `bodyFt <: stub` direction suffices: parameters are contravariant, so a
-// sibling call's argument flows stub parameter → body parameter, and the return is
-// covariant, so the body's inferred return flows body return → stub return, exactly the
-// grounding the recursive reference needs.
+// linkMemberSig constrains a member's inferred signature into its stub. The single
+// `bodyFt <: stub` direction grounds both parameters (contravariant, so a sibling call's
+// argument flows stub → body) and the return (covariant, so the body's return flows body →
+// stub); SelfParam lives on the element and is not compared here.
 func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Inexact: ft.Inexact}
@@ -414,12 +400,13 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 }
 
 // memberSigStub builds a member's signature stub: one fresh var per value parameter,
-// preserving arity, parameter names, and optionality, plus a fresh return var. The body
-// pass refines these vars, so the stub only needs to be callable at the right arity for
-// a sibling call to resolve before the body runs.
+// preserving arity, parameter names, and optionality, plus a fresh return var.
 func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
+		// A destructuring parameter has no single name, so the stub uses a positional
+		// placeholder. It never surfaces: the stub carries arity and fresh-var types only,
+		// and the body pass installs the real signature, whose inferFunc binds the pattern.
 		name, ok := identPatName(p.Pattern)
 		if !ok {
 			name = fmt.Sprintf("arg%d", i)
@@ -549,6 +536,10 @@ func (c *checker) bindSelf(scope *Scope, recv *ast.MethodReceiver, body *soltype
 // forms a single-arm component that infers `never` the way a self-recursive top-level
 // function does, so it is not gated. A gated cycle reports every arm, since annotating any
 // one of them resolves it.
+//
+// The check is syntactic: it follows only a direct `self.m` reference. A call through an
+// aliased receiver such as `val s = self` or a cycle that spans two classes is not gated;
+// it falls back to `never` inference, the same as an ungrounded top-level cycle.
 func (c *checker) checkMethodRecursionAnnotations(decl *ast.ClassDecl) {
 	type methodArm struct {
 		name string

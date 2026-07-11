@@ -441,6 +441,21 @@ func TestInferClassMethodRecursion(t *testing.T) {
 			wantValues: map[string]string{"C": "fn (n: number) -> C"},
 		},
 		{
+			// A destructuring method parameter is handled: the stub carries arity only, so
+			// the body pass installs the real signature that binds the pattern.
+			name: "DestructuredParam",
+			src: `
+				class C {
+					n: number,
+					f(self, {a, b}: {a: number, b: number}) -> number { return self.g(a) },
+					g(self, x: number) -> number { return x },
+				}
+				val c = C(1)
+				val r = c.f({a: 1, b: 2})
+			`,
+			wantValues: map[string]string{"r": "number"},
+		},
+		{
 			// A constructor body calls a method of the class; self binds to the full body
 			// in the constructor too, so the call resolves.
 			name: "ConstructorCallsMethod",
