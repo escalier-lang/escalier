@@ -170,3 +170,69 @@ func TestClassDeclDependencies(t *testing.T) {
 		})
 	}
 }
+
+// TestClassMemberNameNoSpuriousDependency checks that a class member whose name
+// matches a top-level value binding does not create a dependency edge on that
+// binding. A member name is a label, not a reference, so it must not contribute
+// to the dependency graph. Regression test for issue #855, where the spurious
+// edge scrambled SCC membership and inference order.
+func TestClassMemberNameNoSpuriousDependency(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		className    string
+		collidingVal string
+	}{
+		"FieldNameMatchesVal": {
+			input: `
+				class A {
+					x: number,
+				}
+				val a = A(1)
+				val x = a.x
+			`,
+			className:    "A",
+			collidingVal: "x",
+		},
+		"MethodNameMatchesVal": {
+			input: `
+				val process = 5
+				class Worker {
+					process(self) -> number {
+						return 1
+					}
+				}
+			`,
+			className:    "Worker",
+			collidingVal: "process",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			source := &ast.Source{
+				ID:       0,
+				Path:     "test.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
+			assert.Empty(t, errors, "Expected no parsing errors")
+
+			depGraph := BuildDepGraph(module)
+
+			// The class member named the same as a top-level `val` must not pull
+			// that val into the class's type or value dependencies.
+			collidingVal := ValueBindingKey(test.collidingVal)
+			typeDeps := depGraph.GetDeps(TypeBindingKey(test.className))
+			valueDeps := depGraph.GetDeps(ValueBindingKey(test.className))
+
+			assert.False(t, typeDeps.Contains(collidingVal),
+				"type:%s should not depend on the colliding value binding", test.className)
+			assert.False(t, valueDeps.Contains(collidingVal),
+				"value:%s should not depend on the colliding value binding", test.className)
+		})
+	}
+}

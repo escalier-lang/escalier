@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["class A {\n    x: number,\n}\nclass B extends A {\n    constructor(mut self) {}\n}\nclass C extends B {\n    constructor(mut self) {}\n}\nval c = C()\nval x = c.x\n"],"names":[],"mappings":"AAAA;;;;;;AAGA;;;;AAGA;;;;aAGI,AAAA,IAAI,IAAA;aACJ,AAAA,IAAI,AAAA,EAAE"}
