@@ -253,6 +253,9 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 // from the member-lookup requirement; a name that is not a class is an
 // InstancePatternNotClassError.
 func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scrutinee, concrete soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+	// Record the pattern node's type against the scrutinee it matches, the same as the
+	// sibling tuple/object cases, so hover and type-at-position resolve on the pattern.
+	c.recordType(p, scrutinee)
 	name := ast.QualIdentToString(p.ClassName)
 	ct, ok := c.instancePatClass(scope, name)
 	if !ok {
@@ -284,6 +287,9 @@ func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scr
 // constructor parameter's type. A name that is not a constructor is an
 // ExtractorPatternNotCtorError; a wrong argument count is an ExtractorPatternArityError.
 func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, scrutinee soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+	// Record the pattern node's type against the scrutinee it matches, the same as the
+	// sibling tuple/object cases, so hover and type-at-position resolve on the pattern.
+	c.recordType(p, scrutinee)
 	name := ast.QualIdentToString(p.Name)
 	ctor, ok := c.extractorCtor(scope, lvl, name)
 	if !ok {
