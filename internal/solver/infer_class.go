@@ -115,9 +115,11 @@ func (c *checker) classValue(ctorType soltype.Type, static *soltype.ObjectType) 
 	if len(static.Elems) == 0 {
 		return ctorType
 	}
+	// inferConstructor always returns a FuncType, so anything else is a wiring bug.
+	// Fail loudly rather than drop the statics by returning the bare ctorType.
 	ctorFn, ok := ctorType.(*soltype.FuncType)
 	if !ok {
-		return ctorType
+		panic(fmt.Sprintf("classValue: constructor is %T, not *soltype.FuncType", ctorType))
 	}
 	elems := make([]soltype.ObjTypeElem, 0, len(static.Elems)+1)
 	elems = append(elems, &soltype.ConstructorElem{Fn: ctorFn})
