@@ -355,6 +355,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			return errs
 		}
 	case *soltype.ObjectType:
+		if sup, ok := super.(*soltype.FuncType); ok {
+			// An object with a constructor signature is a subtype of the matching function
+			// type; codegen makes the constructor behave as a plain function where expected.
+			if ctor, ok := sub.Constructor(); ok {
+				return c.constrain(ctor.Fn, sup, seen, mutCtx)
+			}
+		}
 		if sup, ok := super.(*soltype.ObjectType); ok {
 			// One ObjectType <: ObjectType rule serves both uses the M2 arm
 			// conflated: member-access field SELECTION (the super is an inexact
@@ -376,7 +383,25 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			//     optional): covariant on the property type.
 			var errs []SolverError
 			for _, superElem := range sup.Elems {
-				superProp := soltype.AsProperty(superElem) // M4: every elem is a property
+				// A constructor requirement is satisfied by the source's own constructor,
+				// its call signature checked covariantly. This lets a class value flow into
+				// an object target that names a call signature. A source with no constructor
+				// cannot fill one.
+				if superCtor, ok := superElem.(*soltype.ConstructorElem); ok {
+					if subCtor, has := sub.Constructor(); has {
+						errs = append(errs, c.constrain(subCtor.Fn, superCtor.Fn, seen, mutCtx)...)
+					} else {
+						errs = append(errs, &CannotConstrainError{Sub: sub, Super: sup})
+					}
+					continue
+				}
+				// A method, getter, or setter requirement, carried only by a class value,
+				// checks against the sub's member by variance instead of panicking in AsProperty.
+				if _, isProp := superElem.(*soltype.PropertyElem); !isProp {
+					errs = append(errs, c.constrainObjMember(superElem, sub, sup, seen, mutCtx)...)
+					continue
+				}
+				superProp := soltype.AsProperty(superElem) // every remaining elem is a property
 				subProp, ok := sub.Prop(superProp.Name)
 				if !ok {
 					if !superProp.Optional {
@@ -413,7 +438,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					errs = append(errs, &InexactIntoExactError{Sub: sub, Super: sup})
 				}
 				for _, subElem := range sub.Elems {
-					subProp := soltype.AsProperty(subElem)
+					// A class value carries an unnamed ConstructorElem and may carry static
+					// method, getter, and setter members. None is a named property, so none
+					// counts as an extra property against an exact target. Unifying properties
+					// with methods and accessors here is escalier-lang/escalier#864.
+					subProp, ok := subElem.(*soltype.PropertyElem)
+					if !ok {
+						continue
+					}
 					if _, ok := sup.Prop(subProp.Name); !ok {
 						errs = append(errs, &ExtraPropertyError{Sub: sub, Super: sup, Name: subProp.Name})
 					}
@@ -613,6 +645,50 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// constrainObjMember checks a method, getter, or setter requirement on an object super
+// against the sub's same-named member by variance: a method by its receiver-stripped
+// callable signature (first arm; overload dispatch is E1), a getter covariantly, a setter
+// contravariantly. A missing or wrong-kind member fails.
+func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *soltype.ObjectType, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+	name := soltype.ObjElemName(superElem)
+	subElem, ok := sub.Member(name)
+	if !ok {
+		return []SolverError{&MissingPropertyError{Sub: sub, Super: sup, Name: name}}
+	}
+	switch se := superElem.(type) {
+	case *soltype.MethodElem:
+		sm, ok := subElem.(*soltype.MethodElem)
+		if !ok || len(sm.Signatures) == 0 || len(se.Signatures) == 0 {
+			break
+		}
+		// Compares only the first arm of each overload set; full overload-set
+		// reconciliation is escalier-lang/escalier#865.
+		return c.constrain(callableView(sm.Signatures[0]), callableView(se.Signatures[0]), seen, mutCtx)
+	case *soltype.GetterElem:
+		if sg, ok := subElem.(*soltype.GetterElem); ok {
+			return c.constrain(sg.Type, se.Type, seen, mutCtx) // covariant read
+		}
+	case *soltype.SetterElem:
+		if ss, ok := subElem.(*soltype.SetterElem); ok {
+			return c.constrain(se.Param, ss.Param, seen, mutCtx) // contravariant write
+		}
+	}
+	return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+}
+
+// callableView returns a method signature as the callable value a member read yields:
+// the signature with its receiver dropped, since a method value binds no `self`. It is
+// the subtyping counterpart of memberValue's method projection.
+func callableView(ft *soltype.FuncType) *soltype.FuncType {
+	return &soltype.FuncType{
+		Params:         ft.Params,
+		Ret:            ft.Ret,
+		Inexact:        ft.Inexact,
+		TypeParams:     ft.TypeParams,
+		LifetimeParams: ft.LifetimeParams,
+	}
 }
 
 // ltPair keys constrainLt's coinductive seen-set by (sub, super) lifetime

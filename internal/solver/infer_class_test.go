@@ -125,6 +125,81 @@ func TestInferClassBasic(t *testing.T) {
 	}
 }
 
+// TestInferClassStatic covers the callable class value with static members. The value
+// binds a ctor-plus-static object rather than a bare constructor function, so
+// construction still resolves through the constructor call signature, a static field
+// reads its declared type, and a static method reads and calls through the same value.
+func TestInferClassStatic(t *testing.T) {
+	src := `
+		class Vec {
+			x: number,
+			y: number,
+			static dim: number = 2,
+			static unit(f: number) -> number { return f },
+		}
+		val v = Vec(1, 2)
+		val d = Vec.dim
+		val u = Vec.unit
+		val r = Vec.unit(3)
+	`
+	classValues(t, src, map[string]string{
+		"Vec": "{new (x: number, y: number) -> Vec, dim: number, unit(f: number) -> number}",
+		"v":   "Vec",
+		"d":   "number",
+		"u":   "fn (f: number) -> number",
+		"r":   "number",
+	}, map[string]string{"Vec": "Vec"})
+}
+
+// A class with no static members keeps binding its bare constructor function, so the
+// single-callable-element object is minted only for the class values that need it.
+// Construction and field access are unaffected.
+func TestInferClassNoStaticStaysFunction(t *testing.T) {
+	src := `
+		class Point {
+			x: number,
+			y: number,
+		}
+		val p = Point(1, 2)
+	`
+	classValues(t, src, map[string]string{
+		"Point": "fn (x: number, y: number) -> Point",
+		"p":     "Point",
+	}, nil)
+}
+
+// Binding a class value with statics to an un-annotated `var` widens the binding, which
+// walks the value object's members. A constructor and static methods carry no literal to
+// widen, so the walk passes them through rather than treating every element as a property.
+func TestInferClassValueVarWiden(t *testing.T) {
+	src := `
+		class Vec {
+			x: number,
+			static dim: number = 2,
+		}
+		var X = Vec
+	`
+	classValues(t, src, map[string]string{
+		"X": "{new (x: number) -> Vec, dim: number}",
+	}, nil)
+}
+
+// A read of a static member the class does not declare reports a MissingPropertyError,
+// blaming the property, so the class-value member path defers a genuine miss to the same
+// diagnostic an ordinary object read produces.
+func TestInferClassStaticMissing(t *testing.T) {
+	src := `
+		class Vec {
+			x: number,
+			static dim: number = 2,
+		}
+		val bad = Vec.nope
+	`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, "object is missing property: nope", errs[0].Message())
+}
+
 // TestInferClassGeneric covers a generic class: the constructor is generalized over
 // its type parameters, construction infers the type arguments, member access
 // projects the instance's argument into a field typed by a parameter, and a

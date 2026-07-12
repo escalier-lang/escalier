@@ -382,6 +382,54 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 	return pathResult{value: out}
 }
 
+// classValueMember resolves a static member read off a class value, such as
+// `Point.origin`, by looking the member up on the value object and producing its type via
+// memberValue. It returns ok=false when the receiver is not a class value or carries no
+// such member, leaving both cases to the structural field-requirement path.
+func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
+	obj, ok := classValueCarrier(carrier)
+	if !ok {
+		return pathResult{}, false
+	}
+	member, found := obj.Member(name)
+	if !found {
+		return pathResult{}, false
+	}
+	return c.memberValue(lvl, blame, member), true
+}
+
+// classValueCarrier resolves a receiver to the class-value object it reads as: an object
+// carrying a ConstructorElem directly, or a binding var whose lower bounds carry one, the
+// same look-through classCarrier uses for an instance. A var with two different class-value
+// lower bounds is ambiguous and left to the structural path.
+func classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		if _, ok := t.Constructor(); ok {
+			return t, true
+		}
+	case *soltype.TypeVarType:
+		var found *soltype.ObjectType
+		for _, lb := range t.LowerBounds {
+			obj, ok := lb.(*soltype.ObjectType)
+			if !ok {
+				continue
+			}
+			if _, hasCtor := obj.Constructor(); !hasCtor {
+				continue
+			}
+			if found != nil && !equalType(found, obj) {
+				return nil, false
+			}
+			found = obj
+		}
+		if found != nil {
+			return found, true
+		}
+	}
+	return nil, false
+}
+
 // classSubst rewrites a class body's type-parameter and lifetime-parameter vars to
 // the arguments of one instance. It maps each TypeParam.Var to the instance's
 // positional TypeArg and each LifetimeParam.Var to its positional LifetimeArg, so a

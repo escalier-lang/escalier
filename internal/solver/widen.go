@@ -37,7 +37,14 @@ func widen(t soltype.Type) soltype.Type {
 	case *soltype.ObjectType:
 		elems := make([]soltype.ObjTypeElem, len(t.Elems))
 		for i, e := range t.Elems {
-			p := soltype.AsProperty(e)
+			// Only a property holds a literal to widen. A class value's constructor and
+			// its method, getter, and setter statics carry no literal field, so they pass
+			// through unchanged, the same way mutBubbler leaves a non-property member be.
+			p, ok := e.(*soltype.PropertyElem)
+			if !ok {
+				elems[i] = e
+				continue
+			}
 			elems[i] = &soltype.PropertyElem{Name: p.Name, Type: widen(p.Type), Optional: p.Optional, Readonly: p.Readonly}
 		}
 		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}

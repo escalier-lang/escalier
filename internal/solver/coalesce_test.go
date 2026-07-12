@@ -692,6 +692,56 @@ func TestEqualTypeObjectMembers(t *testing.T) {
 	}
 }
 
+// A class value's constructor is compared through its ConstructorElem, threading the
+// alpha context equalObjElem already uses for methods. Since that delegates to the full
+// FuncType comparison, two generic constructors are equal only up to alpha-renaming of a
+// bound type parameter whose constraint AND default also match; differing var ids are
+// equal, but a differing parameter type, constraint, or default is not. This is the
+// equality dedup relies on when it folds equal class-value bounds.
+func TestEqualTypeConstructorElem(t *testing.T) {
+	// value builds `{new <U: bound = def>(x: U) -> U, count: number}`, whose constructor
+	// parameter is the bound type parameter U, so two values differing only in U's var id
+	// are alpha-equal. A parameter's identity is its position, not its var id.
+	value := func(id int, bound, def soltype.Type) *soltype.ObjectType {
+		u := &soltype.TypeVarType{ID: id, Level: 1}
+		if bound != nil {
+			u.UpperBounds = []soltype.Type{bound}
+		}
+		ctor := &soltype.FuncType{
+			TypeParams: []*soltype.TypeParam{{Name: "U", Var: u, Default: def}},
+			Params:     []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: u}},
+			Ret:        u,
+		}
+		return exactObj(
+			&soltype.ConstructorElem{Fn: ctor},
+			&soltype.PropertyElem{Name: "count", Type: num()},
+		)
+	}
+	// Same structure, distinct var ids on the bound parameter: alpha-equal, with or
+	// without a matching constraint and default.
+	require.True(t, equalType(value(10, nil, nil), value(20, nil, nil)))
+	require.True(t, equalType(value(10, num(), str()), value(20, num(), str())))
+	// A differing type-parameter constraint is not equal, and neither is a constraint
+	// present on one side only.
+	require.False(t, equalType(value(10, num(), nil), value(20, str(), nil)))
+	require.False(t, equalType(value(10, num(), nil), value(20, nil, nil)))
+	// A differing default is not equal, and neither is a default on one side only.
+	require.False(t, equalType(value(10, nil, num()), value(20, nil, str())))
+	require.False(t, equalType(value(10, nil, num()), value(20, nil, nil)))
+	// A constructor whose parameter type differs structurally is not equal.
+	strCtor := exactObj(&soltype.ConstructorElem{Fn: &soltype.FuncType{
+		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: str()}},
+		Ret:    &soltype.ClassType{Name: "Point"},
+	}})
+	numCtor := exactObj(&soltype.ConstructorElem{Fn: &soltype.FuncType{
+		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: num()}},
+		Ret:    &soltype.ClassType{Name: "Point"},
+	}})
+	require.False(t, equalType(numCtor, strCtor))
+	// An object carrying a constructor never equals one without it.
+	require.False(t, equalType(numCtor, exactObj(&soltype.PropertyElem{Name: "count", Type: num()})))
+}
+
 // A parameter's identity is its position: two two-parameter signatures that use their
 // parameters in swapped positions are unequal even though each is well-formed.
 func TestEqualTypeGenericFuncPositional(t *testing.T) {
