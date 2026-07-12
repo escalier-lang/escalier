@@ -231,13 +231,170 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		c.recordType(p, scrutinee)
 		return &soltype.ObjectPat{Fields: fields}
 
+	case *ast.InstancePat:
+		return c.bindInstancePat(scope, lvl, p, scrutinee, concrete, scrutineeMode, leafTypes, emit)
+
+	case *ast.ExtractorPat:
+		return c.bindExtractorPat(scope, lvl, p, scrutinee, scrutineeMode, leafTypes, emit)
+
 	default:
-		// ExtractorPat and InstancePat are the constructor patterns; they are M5. A
-		// bare RestPat is only meaningful inside a tuple or object. Report and bind
+		// A bare RestPat is only meaningful inside a tuple or object. Report and bind
 		// nothing.
 		c.reportUnsupported(pat)
 		return &soltype.WildcardPat{}
 	}
+}
+
+// bindInstancePat types a class-instance pattern `Name { x, y }` against a scrutinee.
+// It resolves Name to its class, asserts the scrutinee is an instance of that class the
+// way a literal pattern asserts a literal value, then binds each inner field sub-pattern
+// against the class's projected member view — a member-lookup deconstruction, not a
+// structural subtype check. A field the class lacks surfaces as a MissingPropertyError
+// from the member-lookup requirement; a name that is not a class is an
+// InstancePatternNotClassError.
+func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scrutinee, concrete soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+	name := ast.QualIdentToString(p.ClassName)
+	ct, ok := c.instancePatClass(scope, name)
+	if !ok {
+		c.report(&InstancePatternNotClassError{Pat: p, Name: name})
+		// Bind the inner fields against a fresh var so a later reference to a bound leaf
+		// stays defined without a second cascade error against the real scrutinee.
+		obj, _ := c.bindPatMode(scope, lvl, p.Object, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit).(*soltype.ObjectPat)
+		return &soltype.InstancePat{ClassName: name, Object: obj}
+	}
+	inst := c.freshClassInstance(ct, lvl)
+	// The pattern narrows the scrutinee to the named class. The instance flows into the
+	// scrutinee, so a scrutinee that cannot be this class is rejected here.
+	c.constrain(p, inst, scrutinee)
+	// Deconstruct through the projected member view rather than by subtyping. Binding the
+	// inner object pattern against the projected body reads each field at its member type,
+	// and for a downcast pattern such as `Dog { … }` over an `Animal` scrutinee it reads
+	// the subclass's own members, which the scrutinee's declared type does not carry.
+	target, targetConcrete := scrutinee, concrete
+	if body, projected := c.ctx.projectClassBody(inst); projected {
+		target, targetConcrete = body, body
+	}
+	obj, _ := c.bindPatMode(scope, lvl, p.Object, target, targetConcrete, scrutineeMode, leafTypes, emit).(*soltype.ObjectPat)
+	return &soltype.InstancePat{ClassName: ct.Name, Object: obj}
+}
+
+// bindExtractorPat types an extractor pattern `Name(a, b)` against a scrutinee. It
+// resolves Name to a constructor, asserts the scrutinee is an instance of the
+// constructor's return type, then binds each argument sub-pattern against the matching
+// constructor parameter's type. A name that is not a constructor is an
+// ExtractorPatternNotCtorError; a wrong argument count is an ExtractorPatternArityError.
+func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, scrutinee soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+	name := ast.QualIdentToString(p.Name)
+	ctor, ok := c.extractorCtor(scope, lvl, name)
+	if !ok {
+		c.report(&ExtractorPatternNotCtorError{Pat: p, Name: name})
+		// Bind each argument against a fresh var so its leaves stay defined and a later
+		// reference does not cascade into an unknown-identifier error.
+		args := make([]soltype.Pat, len(p.Args))
+		for i, a := range p.Args {
+			args[i] = c.bindPatMode(scope, lvl, a, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
+		}
+		return &soltype.ExtractorPat{Name: name, Args: args}
+	}
+	// The extracted value is an instance of the constructor's return type. Narrow the
+	// scrutinee to it, the same assertion an instance pattern makes.
+	c.constrain(p, ctor.Ret, scrutinee)
+	if len(p.Args) != len(ctor.Params) {
+		c.report(&ExtractorPatternArityError{Pat: p, Name: name, Expected: len(ctor.Params), Got: len(p.Args)})
+	}
+	args := make([]soltype.Pat, len(p.Args))
+	for i, a := range p.Args {
+		var paramType soltype.Type = c.freshAt(lvl)
+		if i < len(ctor.Params) {
+			paramType = ctor.Params[i].Type
+		}
+		args[i] = c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit)
+	}
+	return &soltype.ExtractorPat{Name: name, Args: args}
+}
+
+// instancePatClass resolves an instance pattern's name to its class token, honoring the
+// same scope precedence a written class reference uses. It returns ok=false when the name
+// is unbound or names a value or type parameter rather than a class.
+func (c *checker) instancePatClass(scope *Scope, name string) (*soltype.ClassType, bool) {
+	b, ok := c.lookupClassBinding(scope, name)
+	if !ok {
+		return nil, false
+	}
+	ct, ok := b.Type.(*soltype.ClassType)
+	return ct, ok
+}
+
+// extractorCtor resolves an extractor pattern's name to the constructor it deconstructs
+// through: a class value's constructor signature. It instantiates the value binding, so
+// each match freshens a generic constructor's type parameters. It returns ok=false when
+// the name is unbound or its value is not callable as a constructor.
+func (c *checker) extractorCtor(scope *Scope, lvl int, name string) (*soltype.FuncType, bool) {
+	b, ok := scope.GetValue(name)
+	if !ok || len(b.Schemes) == 0 {
+		return nil, false
+	}
+	return ctorSignature(c.bindingValue(lvl, b))
+}
+
+// ctorSignature resolves a value to the constructor signature an extractor pattern
+// deconstructs through: a bare constructor FuncType, a class value object's
+// ConstructorElem, or one of those reached through a binding var's lower bounds. A class
+// name's value binding is a pre-bound var during the class's own inference component, with
+// the constructor recorded as a lower bound, so the var case is the common one. A var with
+// two different constructor lower bounds is ambiguous and left unresolved, mirroring
+// classValueCarrier's look-through.
+func ctorSignature(t soltype.Type) (*soltype.FuncType, bool) {
+	switch t := t.(type) {
+	case *soltype.FuncType:
+		return t, true
+	case *soltype.ObjectType:
+		if ctor, ok := t.Constructor(); ok {
+			return ctor.Fn, true
+		}
+	case *soltype.TypeVarType:
+		var found *soltype.FuncType
+		for _, lb := range t.LowerBounds {
+			fn, ok := ctorSignature(lb)
+			if !ok {
+				continue
+			}
+			if found != nil && !equalType(found, fn) {
+				return nil, false
+			}
+			found = fn
+		}
+		if found != nil {
+			return found, true
+		}
+	}
+	return nil, false
+}
+
+// freshClassInstance builds an instance of ct with a fresh inference var for each of the
+// class's type parameters and a fresh lifetime for each lifetime parameter, so a pattern
+// narrows a scrutinee to the class at unconstrained arguments the surrounding constraints
+// then pin. A non-generic class yields the bare token.
+func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.ClassType {
+	def, ok := c.ctx.classDef(ct.Name)
+	if !ok {
+		return &soltype.ClassType{Name: ct.Name, Final: ct.Final}
+	}
+	var typeArgs []soltype.Type
+	if len(def.TypeParams) > 0 {
+		typeArgs = make([]soltype.Type, len(def.TypeParams))
+		for i := range typeArgs {
+			typeArgs[i] = c.freshAt(lvl)
+		}
+	}
+	var ltArgs []soltype.Lifetime
+	if len(def.LifetimeParams) > 0 {
+		ltArgs = make([]soltype.Lifetime, len(def.LifetimeParams))
+		for i := range ltArgs {
+			ltArgs[i] = c.ctx.freshLifetime(lvl)
+		}
+	}
+	return &soltype.ClassType{Name: ct.Name, TypeArgs: typeArgs, LifetimeArgs: ltArgs, Final: ct.Final}
 }
 
 // applyLeafExtras resolves a destructured leaf's optional type annotation

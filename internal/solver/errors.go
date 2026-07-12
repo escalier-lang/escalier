@@ -801,6 +801,9 @@ func (*RecursiveMethodAnnotationError) isSolverError()    {}
 func (*FieldNotInitializedError) isSolverError()          {}
 func (*ReadBeforeInitError) isSolverError()               {}
 func (*MethodCallBeforeInitError) isSolverError()         {}
+func (*InstancePatternNotClassError) isSolverError()      {}
+func (*ExtractorPatternNotCtorError) isSolverError()      {}
+func (*ExtractorPatternArityError) isSolverError()        {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -828,6 +831,52 @@ func (e *WriteOnlyPropertyError) Span() ast.Span      { return e.Site.Span() }
 func (e *WriteOnlyPropertyError) Related() []ast.Span { return nil }
 func (e *WriteOnlyPropertyError) Message() string {
 	return "Property '" + e.Name + "' is write-only; it has a setter but no getter or field to read."
+}
+
+// InstancePatternNotClassError fires when the name in an instance pattern `Name { ... }`
+// resolves to no class — either the name is unbound or it names a value or type parameter
+// rather than a class. An instance pattern deconstructs a class instance through the named
+// class's member view, so the name must be a class.
+type InstancePatternNotClassError struct {
+	Pat  *ast.InstancePat
+	Name string
+}
+
+func (e *InstancePatternNotClassError) Span() ast.Span      { return e.Pat.Span() }
+func (e *InstancePatternNotClassError) Related() []ast.Span { return nil }
+func (e *InstancePatternNotClassError) Message() string {
+	return "`" + e.Name + "` does not name a class and cannot be used as an instance pattern."
+}
+
+// ExtractorPatternNotCtorError fires when the name in an extractor pattern `Name(...)`
+// resolves to no constructor — the name is unbound, or its value is not callable as a
+// constructor. An extractor pattern deconstructs a value through the named constructor's
+// parameters, so the name must resolve to a constructor.
+type ExtractorPatternNotCtorError struct {
+	Pat  *ast.ExtractorPat
+	Name string
+}
+
+func (e *ExtractorPatternNotCtorError) Span() ast.Span      { return e.Pat.Span() }
+func (e *ExtractorPatternNotCtorError) Related() []ast.Span { return nil }
+func (e *ExtractorPatternNotCtorError) Message() string {
+	return "`" + e.Name + "` is not a constructor and cannot be used as an extractor pattern."
+}
+
+// ExtractorPatternArityError fires when an extractor pattern `Name(a, b, ...)` supplies
+// a different number of sub-patterns than the constructor has parameters. Each sub-pattern
+// binds one constructor parameter, so the counts must match.
+type ExtractorPatternArityError struct {
+	Pat      *ast.ExtractorPat
+	Name     string
+	Expected int
+	Got      int
+}
+
+func (e *ExtractorPatternArityError) Span() ast.Span      { return e.Pat.Span() }
+func (e *ExtractorPatternArityError) Related() []ast.Span { return nil }
+func (e *ExtractorPatternArityError) Message() string {
+	return fmt.Sprintf("extractor pattern `%s` expects %d arguments but got %d", e.Name, e.Expected, e.Got)
 }
 
 // MultipleConstructorsError fires on the second and any later `constructor` block in
