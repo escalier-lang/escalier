@@ -205,37 +205,22 @@ func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassD
 	return ifaces
 }
 
-// resolveClassRef resolves a type reference that names a class to its ClassType, or
-// nil when the name is not a registered class. B1 consults the type scope directly
-// rather than routing through resolveTypeAnn, whose general TypeRef resolution lands
-// with the alias work.
-//
-// A generic superclass reference such as the `Animal<D>` in `class Dog<D> extends
-// Animal<D>` supplies its type arguments. Each is resolved through the class-scope path
-// so the subclass's own type parameter `D` threads into the edge, and a fresh instance
-// token carrying the arguments is returned. The nominal walk and member projection then
-// re-express the super at the subclass's arguments through substituteSuperArgs. A bare
-// reference with no arguments returns the class token unchanged.
-//
-// A name bound to a non-class binding — a type parameter, say — is reported as a
-// NonClassSuperError. An unbound name stays silent, so the undefined name is not
-// reported twice: the general TypeRef resolution planned for M7 reports it centrally.
-// See planning/simple_sub/m5-implementation-plan.md.
+// resolveClassRef resolves an `extends` or `implements` reference, which must name a
+// class, to its ClassType. It resolves the reference through resolveScopedTypeRef — so
+// `Animal<D>` threads the subclass's `D` into the edge for substituteSuperArgs to
+// re-express later — and then requires the result to be a class: a reference to a non-class
+// binding such as a type parameter is reported as a NonClassSuperError. An unbound name
+// stays silent, so M7's general TypeRef resolution reports the undefined name once.
 func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
-	name := ast.QualIdentToString(ref.Name)
-	b, ok := c.lookupClassBinding(scope, name)
+	t, ok := c.resolveScopedTypeRef(scope, ref, lvl)
 	if !ok {
 		return nil
 	}
-	if _, ok := b.Type.(*soltype.ClassType); !ok {
-		c.errs = append(c.errs, &NonClassSuperError{Ref: ref, Name: name})
+	ct, isClass := t.(*soltype.ClassType)
+	if !isClass {
+		c.errs = append(c.errs, &NonClassSuperError{Ref: ref, Name: ast.QualIdentToString(ref.Name)})
 		return nil
 	}
-	// The binding names a class, so resolveScopedTypeRef returns its token: the bare
-	// class for a reference with no arguments, or a fresh instance carrying the resolved
-	// arguments for a generic one like `Animal<D>`.
-	t, _ := c.resolveScopedTypeRef(scope, ref, lvl)
-	ct, _ := t.(*soltype.ClassType)
 	return ct
 }
 
