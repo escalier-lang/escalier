@@ -395,6 +395,14 @@ func TestInferClassNonClassSuper(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
 	})
+	t.Run("extends a type parameter applied to arguments", func(t *testing.T) {
+		// A type parameter carries no type arguments, so `T<X>` is doubly ill-formed. The
+		// extends clause still requires a class, so the non-class binding is reported here
+		// rather than dropped silently.
+		_, _, errs := inferSource(t, `class B<T, X> extends T<X> { constructor(mut self) {} }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
 }
 
 // TestInferClassExtendFinal covers the rule that a final class cannot be a superclass:

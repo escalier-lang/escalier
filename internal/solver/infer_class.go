@@ -206,28 +206,35 @@ func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassD
 }
 
 // resolveClassRef resolves an `extends` or `implements` reference, which must name a
-// class, to its ClassType. It resolves the reference through resolveScopedTypeRef — so
-// `Animal<D>` threads the subclass's `D` into the edge for substituteSuperArgs to
-// re-express later — and then requires the result to be a class: a reference to a non-class
-// binding such as a type parameter is reported as a NonClassSuperError. An unbound name
-// stays silent, so M7's general TypeRef resolution reports the undefined name once.
+// class, to its ClassType. It looks the name up and requires a class binding: a reference
+// to a non-class binding such as a type parameter is reported as a NonClassSuperError,
+// whether or not it carries type arguments. An unbound name stays silent, so M7's general
+// TypeRef resolution reports the undefined name once. A generic reference like `Animal<D>`
+// threads the subclass's `D` into the edge for substituteSuperArgs to re-express later.
 func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
-	t, ok := c.resolveScopedTypeRef(scope, ref, lvl)
+	name := ast.QualIdentToString(ref.Name)
+	b, ok := c.lookupClassBinding(scope, name)
 	if !ok {
 		return nil
 	}
-	ct, isClass := t.(*soltype.ClassType)
+	ct, isClass := b.Type.(*soltype.ClassType)
 	if !isClass {
-		c.errs = append(c.errs, &NonClassSuperError{Ref: ref, Name: ast.QualIdentToString(ref.Name)})
+		c.errs = append(c.errs, &NonClassSuperError{Ref: ref, Name: name})
 		return nil
 	}
-	return ct
+	return c.buildClassInstance(scope, ct, ref, lvl)
 }
 
-// resolveClassRefArgs resolves a generic class reference's type-argument list through
-// the class-scope path, recovering an unresolved argument to a fresh var so the
-// reference keeps its arity, cascade-safe.
-func (c *checker) resolveClassRefArgs(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) []soltype.Type {
+// buildClassInstance returns the token a class reference resolves to: the bare class for a
+// reference with no type arguments, or a fresh instance carrying the resolved arguments for
+// a generic one like `Animal<D>`. Each argument is resolved through the class-scope path,
+// recovering an unresolved one to a fresh var so the reference keeps its arity, cascade-safe.
+// The general scoped-ref resolution and the extends/implements resolution both mint
+// instances through here, so they agree on how a reference's arguments become a token.
+func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
+	if len(ref.TypeArgs) == 0 {
+		return ct
+	}
 	args := make([]soltype.Type, len(ref.TypeArgs))
 	for i, arg := range ref.TypeArgs {
 		if at, ok := c.resolveClassTypeAnn(scope, arg, lvl); ok {
@@ -236,7 +243,7 @@ func (c *checker) resolveClassRefArgs(scope *Scope, ref *ast.TypeRefTypeAnn, lvl
 			args[i] = c.freshAt(lvl)
 		}
 	}
-	return args
+	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final}
 }
 
 // lookupClassBinding resolves a written type name to its scope TypeBinding, honoring
@@ -295,8 +302,7 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 		return b.Type, true
 	}
 	if ct, ok := b.Type.(*soltype.ClassType); ok {
-		args := c.resolveClassRefArgs(scope, ref, lvl)
-		return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final}, true
+		return c.buildClassInstance(scope, ct, ref, lvl), true
 	}
 	return nil, false
 }
