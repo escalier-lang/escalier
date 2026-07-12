@@ -125,3 +125,24 @@ func TestConstrainNominalArgVariance(t *testing.T) {
 			Messages(c.Constrain(box(numLit(5)), box(num()))))
 	})
 }
+
+// TestProjectClassBodyDoesNotMutateRegistry pins that projecting a class instance never
+// writes back to the shared ClassDef.Body. A generic class whose body mentions none of
+// its type parameters projects through the substitution path, where ObjectType.Accept
+// returns the registry Body unchanged; setting the projected exactness must land on a
+// fresh copy, not on that shared object.
+func TestProjectClassBodyDoesNotMutateRegistry(t *testing.T) {
+	c := &Context{}
+	body := exactObj(propElem("n", num())) // the body does not mention the type parameter
+	c.registerClass("Phantom", &ClassDef{
+		TypeParams: []*soltype.TypeParam{{Name: "T", Var: &soltype.TypeVarType{ID: 200}}},
+		Variance:   []Variance{Invariant},
+		Body:       body,
+	})
+
+	proj, ok := c.projectClassBody(&soltype.ClassType{Name: "Phantom", TypeArgs: []soltype.Type{num()}})
+	require.True(t, ok)
+	require.NotSame(t, body, proj)  // a fresh wrapper, not the shared registry Body
+	require.True(t, proj.Inexact)   // the non-final instance projects an inexact view
+	require.False(t, body.Inexact)  // the registry Body stays exact — never mutated
+}

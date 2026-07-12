@@ -109,8 +109,11 @@ func (c *Context) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, 
 		// AsProperty discipline.
 		panic(fmt.Sprintf("projectClassBody: %s projected to non-ObjectType %T", ct.Name, projected))
 	}
-	obj.Inexact = !ct.Final
-	return obj, true
+	// Accept returns def.Body's own ObjectType when the body holds none of the
+	// substituted vars, so setting Inexact on obj directly would mutate the shared
+	// registry Body. Wrap the projected elements in a fresh ObjectType and set exactness
+	// on the copy, matching the non-generic path above.
+	return &soltype.ObjectType{Elems: obj.Elems, Inexact: !ct.Final}, true
 }
 
 // classPair keys the nominal subtype walk's seen-set by the (sub, super) class NAMES,
