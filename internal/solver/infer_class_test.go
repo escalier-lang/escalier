@@ -756,6 +756,48 @@ func TestInferClassInheritedMemberAccessMultiLevel(t *testing.T) {
 	require.Equal(t, "number", values["got"])
 }
 
+// TestInferClassFieldNameMatchingTopLevelVal checks that a class field whose name matches
+// a top-level `val` binding does not scramble the inference order. The dep graph must not
+// record a dependency from the class to the colliding `val x`, so `A` is inferred before
+// the vals that construct and read from it, and `a.x` projects to `number`.
+func TestInferClassFieldNameMatchingTopLevelVal(t *testing.T) {
+	values, types, errs := inferSource(t, `
+		class A {
+			x: number,
+		}
+		val a = A(1)
+		val x = a.x
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "A", values["a"])
+	require.Equal(t, "number", values["x"])
+	require.Equal(t, "A", types["A"])
+}
+
+// TestInferClassInheritedMemberAccessCollidingVal checks that inherited member access works
+// when the inherited field name matches a top-level `val`. Reading `c.x` through a two-level
+// `class C extends B extends A` hierarchy resolves to `number` even though `val x` shares the
+// field's name. Without the dep-graph fix, the collision pulled `type:A`, `type:B`, `value:C`,
+// `value:c`, and `value:x` into one strongly-connected component, so `C` was inferred before
+// `B`, its `extends` edge was dropped, and `c.x` reported a missing property.
+func TestInferClassInheritedMemberAccessCollidingVal(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class A {
+			x: number,
+		}
+		class B extends A {
+			constructor(mut self) {}
+		}
+		class C extends B {
+			constructor(mut self) {}
+		}
+		val c = C()
+		val x = c.x
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["x"])
+}
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {
