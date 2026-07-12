@@ -1159,6 +1159,35 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 			wantValues: map[string]string{"Point": "fn (x: number) -> Point"},
 			wantTypes:  map[string]string{"Point": "Point"},
 		},
+		{
+			name: "MutuallyRecursiveAcrossNamespaces",
+			srcs: map[string]string{
+				"foo/a.esc": `
+					class A {
+						peer: bar.B,
+					}
+				`,
+				"bar/b.esc": `
+					class B {
+						peer: foo.A,
+					}
+				`,
+			},
+			// A cycle whose two classes live in different namespaces. The dep graph
+			// condenses it into one type-key component, and the SCC pre-pass registers
+			// both shells under their qualified names before either body is walked, so
+			// each cross-namespace forward reference — `foo.A` naming `bar.B` and back —
+			// resolves through the shared token with no placeholder leak. Each field
+			// renders the peer under its bare name.
+			wantValues: map[string]string{
+				"foo.A": "fn (peer: B) -> A",
+				"bar.B": "fn (peer: A) -> B",
+			},
+			wantTypes: map[string]string{
+				"foo.A": "A",
+				"bar.B": "B",
+			},
+		},
 	}
 
 	for _, test := range tests {
