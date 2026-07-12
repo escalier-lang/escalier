@@ -663,6 +663,8 @@ func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *so
 		if !ok || len(sm.Signatures) == 0 || len(se.Signatures) == 0 {
 			break
 		}
+		// Compares only the first arm of each overload set; full overload-set
+		// reconciliation is escalier-lang/escalier#865.
 		return c.constrain(callableView(sm.Signatures[0]), callableView(se.Signatures[0]), seen, mutCtx)
 	case *soltype.GetterElem:
 		if sg, ok := subElem.(*soltype.GetterElem); ok {
