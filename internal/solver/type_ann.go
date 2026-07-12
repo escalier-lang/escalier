@@ -10,7 +10,7 @@ import (
 // so a caller can recover by keeping the type it already inferred. The level `lvl`
 // lets a supported wrapper with an unsupported inner recover that inner to a fresh
 // var at the right level.
-func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
+func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	switch ta := ta.(type) {
 	case *ast.NumberTypeAnn:
 		return c.annPrim(ta, soltype.NumPrim), true
@@ -40,7 +40,7 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
 				return c.reportUnsupportedFeature(ta, "lifetime annotation on Promise"), false
 			}
-			inner, ok := c.resolveTypeAnn(ta.TypeArgs[0], lvl)
+			inner, ok := c.resolveTypeAnn(scope, ta.TypeArgs[0], lvl)
 			if !ok {
 				// The inner annotation was unsupported and already reported its own
 				// error. The Promise itself IS supported, so keep the WRAPPER rather
@@ -64,21 +64,29 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
+		// Consult the type scope so a reference to a class or type parameter in scope —
+		// the `D` in a `class Dog<D>` constructor's `food: D`, or a bare class name —
+		// resolves rather than reporting unsupported. Outside a class body the scope holds
+		// no such binding and this falls through; the general scope-driven TypeRef
+		// resolution for aliases and stdlib names arrives in M7.
+		if t, ok := c.resolveScopedTypeRef(scope, ta, lvl); ok {
+			return t, true
+		}
 		return c.reportUnsupported(ta), false
 	case *ast.ObjectTypeAnn:
-		return c.resolveObjectTypeAnn(ta, lvl)
+		return c.resolveObjectTypeAnn(scope, ta, lvl)
 	case *ast.TupleTypeAnn:
-		return c.resolveTupleTypeAnn(ta, lvl)
+		return c.resolveTupleTypeAnn(scope, ta, lvl)
 	case *ast.MutableTypeAnn:
-		return c.resolveMutableTypeAnn(ta, lvl)
+		return c.resolveMutableTypeAnn(scope, ta, lvl)
 	case *ast.RefTypeAnn:
-		return c.resolveRefTypeAnn(ta, lvl)
+		return c.resolveRefTypeAnn(scope, ta, lvl)
 	case *ast.UnionTypeAnn:
-		return c.resolveUnionTypeAnn(ta, lvl)
+		return c.resolveUnionTypeAnn(scope, ta, lvl)
 	case *ast.IntersectionTypeAnn:
-		return c.resolveIntersectionTypeAnn(ta, lvl)
+		return c.resolveIntersectionTypeAnn(scope, ta, lvl)
 	case *ast.FuncTypeAnn:
-		return c.resolveFuncTypeAnn(ta, lvl)
+		return c.resolveFuncTypeAnn(scope, ta, lvl)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -106,7 +114,7 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 // fresh var and keeps the object shape — cascade-safe, mirroring the Promise<bad>
 // recovery — so the binding still checks structurally. The arm therefore always
 // returns ok=true: any unsupported sub-part has already reported its own error.
-func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
+func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
 	b := newObjElemBuilder(len(ta.Elems))
 	unsupported := false
 	for _, elem := range ta.Elems {
@@ -134,7 +142,7 @@ func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.
 				c.report(&MutFieldError{Ann: mta})
 				value = mta.Target
 			}
-			if t, ok := c.resolveTypeAnn(value, lvl); ok {
+			if t, ok := c.resolveTypeAnn(scope, value, lvl); ok {
 				ft = t
 			}
 		}
@@ -154,7 +162,7 @@ func (c *checker) resolveObjectTypeAnn(ta *ast.ObjectTypeAnn, lvl int) (soltype.
 // (M9 / M7) and reports unsupported; the bare trailing `...` inexact marker is
 // carried on ta.Inexact, not as an element. An element whose annotation is
 // unsupported recovers to a fresh var so the tuple keeps its arity.
-func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
+func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
 	elems := make([]soltype.Type, 0, len(ta.Elems))
 	unsupported := false
 	for _, el := range ta.Elems {
@@ -170,7 +178,7 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 			c.report(&MutFieldError{Ann: mta})
 			el = mta.Target
 		}
-		if t, ok := c.resolveTypeAnn(el, lvl); ok {
+		if t, ok := c.resolveTypeAnn(scope, el, lvl); ok {
 			elems = append(elems, t)
 		} else {
 			elems = append(elems, c.freshAt(lvl))
@@ -188,10 +196,10 @@ func (c *checker) resolveTupleTypeAnn(ta *ast.TupleTypeAnn, lvl int) (soltype.Ty
 // member recovers to a fresh var so the union shape survives, mirroring the
 // Promise<bad> and object/tuple cascade-safe recovery. A trailing `...` in the
 // source sets ta.Inexact, which carries onto the resolved union.
-func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
+func (c *checker) resolveUnionTypeAnn(scope *Scope, ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))
 	for i, m := range ta.Types {
-		if t, ok := c.resolveTypeAnn(m, lvl); ok {
+		if t, ok := c.resolveTypeAnn(scope, m, lvl); ok {
 			members[i] = t
 		} else {
 			// freshAt over ErrorType: preserves the source's union shape
@@ -212,10 +220,10 @@ func (c *checker) resolveUnionTypeAnn(ta *ast.UnionTypeAnn, lvl int) (soltype.Ty
 }
 
 // resolveIntersectionTypeAnn is the meet twin of resolveUnionTypeAnn.
-func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl int) (soltype.Type, bool) {
+func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))
 	for i, m := range ta.Types {
-		if t, ok := c.resolveTypeAnn(m, lvl); ok {
+		if t, ok := c.resolveTypeAnn(scope, m, lvl); ok {
 			members[i] = t
 		} else {
 			members[i] = c.freshAt(lvl) // see resolveUnionTypeAnn
@@ -235,7 +243,7 @@ func (c *checker) resolveIntersectionTypeAnn(ta *ast.IntersectionTypeAnn, lvl in
 // and rest-param annotations report an unsupported feature and recover as a
 // monomorphic function. A lifetime parameter is supported. Its declared outlives
 // bounds lower into constrainLt so the annotation's borrows solve against them.
-func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
+func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
 	if len(ta.TypeParams) > 0 {
 		c.reportUnsupportedFeature(ta, "generic function type annotation")
 	}
@@ -268,7 +276,7 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 		// the function keeps its arity and shape, cascade-safe like Promise<bad>.
 		var pt soltype.Type = c.freshAt(lvl)
 		if p.TypeAnn != nil {
-			if t, ok := c.resolveTypeAnn(p.TypeAnn, lvl); ok {
+			if t, ok := c.resolveTypeAnn(scope, p.TypeAnn, lvl); ok {
 				pt = t
 			}
 		}
@@ -282,7 +290,7 @@ func (c *checker) resolveFuncTypeAnn(ta *ast.FuncTypeAnn, lvl int) (soltype.Type
 	// keeping the function shape.
 	var ret soltype.Type = c.freshAt(lvl)
 	if ta.Return != nil {
-		if t, ok := c.resolveTypeAnn(ta.Return, lvl); ok {
+		if t, ok := c.resolveTypeAnn(scope, ta.Return, lvl); ok {
 			ret = t
 		}
 	}
@@ -358,8 +366,8 @@ func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {
 // every nested object/tuple field is invariant and reads back mutable — is applied
 // at access and constrain time, via fieldReadBorrow's recvMut propagation and
 // constrain's mut-context flag, so the stored type matches the surface annotation.
-func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltype.Type, bool) {
-	ri, ok := c.borrowInner(ta.Target, lvl)
+func (c *checker) resolveMutableTypeAnn(scope *Scope, ta *ast.MutableTypeAnn, lvl int) (soltype.Type, bool) {
+	ri, ok := c.borrowInner(scope, ta.Target, lvl)
 	if !ok {
 		return c.reportUnsupportedFeature(ta, "mut on a non-borrowable type"), false
 	}
@@ -375,8 +383,8 @@ func (c *checker) resolveMutableTypeAnn(ta *ast.MutableTypeAnn, lvl int) (soltyp
 // preserved and the binding stays cascade-safe. ok=false means the inner resolved to a
 // concrete non-borrowable type such as a primitive, function, or promise. The caller
 // reports that with a wrapper-specific message.
-func (c *checker) borrowInner(ta ast.TypeAnn, lvl int) (soltype.RefInner, bool) {
-	inner, ok := c.resolveTypeAnn(ta, lvl)
+func (c *checker) borrowInner(scope *Scope, ta ast.TypeAnn, lvl int) (soltype.RefInner, bool) {
+	inner, ok := c.resolveTypeAnn(scope, ta, lvl)
 	if !ok {
 		return c.freshAt(lvl), true
 	}
@@ -395,9 +403,9 @@ func (c *checker) borrowInner(ta ast.TypeAnn, lvl int) (soltype.RefInner, bool) 
 // reaches an output renders under a quantified name like `&'a {x}`, while one that
 // connects nothing elides. Unlike resolveMutableTypeAnn, this arm always sets Lt, so the
 // result is a genuine borrow rather than an owned value.
-func (c *checker) resolveRefTypeAnn(ta *ast.RefTypeAnn, lvl int) (soltype.Type, bool) {
+func (c *checker) resolveRefTypeAnn(scope *Scope, ta *ast.RefTypeAnn, lvl int) (soltype.Type, bool) {
 	lt := c.resolveLifetimeAnn(ta.Lifetime, lvl)
-	inner, ok := c.resolveTypeAnn(ta.Inner, lvl)
+	inner, ok := c.resolveTypeAnn(scope, ta.Inner, lvl)
 	if !ok {
 		// Recover an unsupported inner to a fresh var so the borrow wrapper survives, cascade-safe.
 		inner = c.freshAt(lvl)

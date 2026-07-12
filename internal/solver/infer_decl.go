@@ -102,7 +102,7 @@ func (c *checker) inferModuleLetElse(scope *Scope, lvl int, d *ast.VarDecl) (sol
 	switch {
 	case d.TypeAnn != nil:
 		// An annotated narrowing pins the binding; a non-diverging fallback must fit it.
-		narrowed, resolved := c.resolveTypeAnn(d.TypeAnn, lvl)
+		narrowed, resolved := c.resolveTypeAnn(scope, d.TypeAnn, lvl)
 		if !resolved {
 			narrowed = initType
 		} else {
@@ -207,7 +207,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// placeholder, so constraining `initT <: never` would cascade a spurious
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
-		if annT, ok := c.resolveTypeAnn(d.TypeAnn, lvl); ok {
+		if annT, ok := c.resolveTypeAnn(scope, d.TypeAnn, lvl); ok {
 			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT

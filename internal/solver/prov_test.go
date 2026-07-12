@@ -109,7 +109,7 @@ func TestProvAnnotatedParamUsesAnnotationOrigin(t *testing.T) {
 func TestProvAnnotationType(t *testing.T) {
 	c := newChecker()
 	ta := numAnn()
-	ty, ok := c.resolveTypeAnn(ta, 0)
+	ty, ok := c.resolveTypeAnn(NewScope(), ta, 0)
 	require.True(t, ok)
 	requireOrigin(t, c, ty, ta, AnnotationType)
 }

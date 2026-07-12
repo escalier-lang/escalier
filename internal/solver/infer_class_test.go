@@ -395,6 +395,14 @@ func TestInferClassNonClassSuper(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
 	})
+	t.Run("extends a type parameter applied to arguments", func(t *testing.T) {
+		// A type parameter carries no type arguments, so `T<X>` is doubly ill-formed. The
+		// extends clause still requires a class, so the non-class binding is reported here
+		// rather than dropped silently.
+		_, _, errs := inferSource(t, `class B<T, X> extends T<X> { constructor(mut self) {} }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
 }
 
 // TestInferClassExtendFinal covers the rule that a final class cannot be a superclass:
@@ -798,6 +806,105 @@ func TestInferClassInheritedMemberAccessCollidingVal(t *testing.T) {
 	require.Equal(t, "number", values["x"])
 }
 
+// TestInferClassGenericSubGenericSuper covers a generic subclass that extends a generic
+// superclass at its own type parameter. Two things must line up. The `extends
+// Animal<D>` edge threads Dog's `D` into the super arguments, so a Dog instance projects
+// the inherited field `food: A` at Dog's argument. And Dog's constructor parameter `tag: D`
+// resolves the class parameter `D` through the general resolveTypeAnn path, so Dog infers
+// generic in `D` and `Dog("bone")` recovers `Dog<"bone">` rather than a non-generic
+// `Dog<never>`. The inherited field read projects through the edge to the same argument.
+//
+// The constructor writes Dog's own field, not the inherited one: a subclass constructor
+// that initializes an inherited field needs `super(...)` forwarding, which is deferred.
+func TestInferClassGenericSubGenericSuper(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Animal<A> {
+			food: A,
+		}
+		class Dog<D> extends Animal<D> {
+			tag: D,
+			constructor(mut self, tag: D) { self.tag = tag }
+		}
+		val d = Dog("bone")
+		val f = d.food
+		val g = d.tag
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(tag: T0) -> Dog<T0>", values["Dog"])
+	require.Equal(t, `Dog<"bone">`, values["d"])
+	require.Equal(t, `"bone"`, values["f"])
+	require.Equal(t, `"bone"`, values["g"])
+}
+
+// TestInferClassNonGenericSubGenericSuper covers a non-generic subclass extending a generic
+// superclass at a concrete argument. `class Dog extends Animal<string>` threads the literal
+// `string` into the edge, so the inherited field `food: A` projects to `string` through a
+// Dog instance.
+func TestInferClassNonGenericSubGenericSuper(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Animal<A> {
+			food: A,
+		}
+		class Dog extends Animal<string> {
+			constructor(mut self) {}
+		}
+		val d = Dog()
+		val f = d.food
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "Dog", values["d"])
+	require.Equal(t, "string", values["f"])
+}
+
+// TestInferClassGenericMemberParam covers a generic class whose constructor and method both
+// take a parameter typed by the class type parameter. Resolving `v: T` and `next: T`
+// routes through the general resolveTypeAnn path, which now consults the class type scope,
+// so neither reports `Unsupported: TypeRefTypeAnn` and the class infers generic in `T`.
+func TestInferClassGenericMemberParam(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Box<T> {
+			v: T,
+			constructor(mut self, v: T) { self.v = v },
+			replace(mut self, next: T) { self.v = next },
+		}
+		val b = Box(5)
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0>(v: T0) -> Box<T0>", values["Box"])
+	require.Equal(t, "Box<5>", values["b"])
+}
+
+// TestInferClassNameInAnnotation checks that a class name resolves in a type annotation
+// outside a class body — a top-level `val` type and a function parameter. resolveTypeAnn
+// consults the enclosing scope wherever it runs, so a bare `Point` or a generic instance
+// `Box<number>` resolves through the same path a class body uses, rather than reporting
+// `Unsupported: TypeRefTypeAnn`.
+func TestInferClassNameInAnnotation(t *testing.T) {
+	t.Run("bare class name in a val annotation", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Point { x: number, y: number }
+			val p: Point = Point(1, 2)
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Point", values["p"])
+	})
+	t.Run("generic class instance in a val annotation", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val b: Box<number> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("class name in a function parameter annotation", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Point { x: number, y: number }
+			fn getX(p: Point) -> number { return p.x }
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (p: Point) -> number", values["getX"])
+	})
+}
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {
@@ -875,6 +982,20 @@ func TestInferClassErrors(t *testing.T) {
 			name: "StaticFieldInitializerMismatch",
 			src:  `class C { static x: number = "hi" }`,
 			want: `cannot constrain "hi" <: number`,
+		},
+		{
+			// An undefined type argument in the `extends` clause reports the general
+			// resolveTypeAnn recovery for an unresolved reference. The edge still recovers
+			// its arity to a fresh var, so no cascade follows. M7's scope-driven TypeRef
+			// resolution replaces this with a proper undefined-type diagnostic.
+			name: "SuperTypeArgUndefined",
+			src: `
+				class Animal<A> { food: A }
+				class Dog extends Animal<Bogus> {
+					constructor(mut self) {}
+				}
+			`,
+			want: "Unsupported: TypeRefTypeAnn",
 		},
 	}
 
