@@ -250,7 +250,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) soltype.Type {
 	bound := leafType
 	if typeAnn != nil {
-		if annT, ok := c.resolveTypeAnn(typeAnn, lvl); ok {
+		if annT, ok := c.resolveTypeAnn(scope, typeAnn, lvl); ok {
 			c.constrain(node, leafType, annT)
 			bound = annT
 		}

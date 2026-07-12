@@ -51,14 +51,6 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 	}
 
-	// Route the general resolveTypeAnn path — the one inferFunc uses for a constructor or
-	// method parameter and return annotation — through this class's type scope, so a
-	// reference to the class's own type parameter such as `food: D` resolves. Saved and
-	// restored so a nested class declaration keeps its own scope.
-	savedClassScope := c.classScope
-	c.classScope = declScope
-	defer func() { c.classScope = savedClassScope }()
-
 	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
 	// the pair the SCC pre-pass registered for this class — an empty shell it minted
 	// before any type params were resolved, so that a sibling in the same recursive group
@@ -292,17 +284,20 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 }
 
 // resolveClassTypeAnn resolves a type annotation appearing in a class body or a
-// type-parameter bound. It first consults the type scope for a reference to a class or
-// type parameter — a bare `Point` or `T`, or a generic class instance `Box<number>` — the
-// names resolveTypeAnn's general TypeRef resolution does not yet cover, and otherwise
-// delegates to resolveTypeAnn for primitives and structural types.
+// type-parameter bound. It consults the type scope for a reference to a class or type
+// parameter — a bare `Point` or `T`, or a generic class instance `Box<number>` — before
+// delegating to resolveTypeAnn, so a scope binding takes precedence over resolveTypeAnn's
+// hardcoded `Promise` stub. resolveTypeAnn now also consults the scope through the same
+// resolveScopedTypeRef, so the two agree on every name except one bound as a class under
+// the name `Promise`, which this path resolves to the class and the general path to the
+// stub. It delegates to resolveTypeAnn for primitives and structural types.
 func (c *checker) resolveClassTypeAnn(scope *Scope, ann ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	if ref, ok := ann.(*ast.TypeRefTypeAnn); ok {
 		if t, ok := c.resolveScopedTypeRef(scope, ref, lvl); ok {
 			return t, true
 		}
 	}
-	return c.resolveTypeAnn(ann, lvl)
+	return c.resolveTypeAnn(scope, ann, lvl)
 }
 
 // resolveScopedTypeRef resolves a type reference against a type scope, covering a bare

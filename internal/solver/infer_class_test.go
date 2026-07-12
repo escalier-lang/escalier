@@ -866,6 +866,37 @@ func TestInferClassGenericMemberParam(t *testing.T) {
 	require.Equal(t, "Box<5>", values["b"])
 }
 
+// TestInferClassNameInAnnotation checks that a class name resolves in a type annotation
+// outside a class body — a top-level `val` type and a function parameter. resolveTypeAnn
+// consults the enclosing scope wherever it runs, so a bare `Point` or a generic instance
+// `Box<number>` resolves through the same path a class body uses, rather than reporting
+// `Unsupported: TypeRefTypeAnn`.
+func TestInferClassNameInAnnotation(t *testing.T) {
+	t.Run("bare class name in a val annotation", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Point { x: number, y: number }
+			val p: Point = Point(1, 2)
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Point", values["p"])
+	})
+	t.Run("generic class instance in a val annotation", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val b: Box<number> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("class name in a function parameter annotation", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Point { x: number, y: number }
+			fn getX(p: Point) -> number { return p.x }
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (p: Point) -> number", values["getX"])
+	})
+}
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {

@@ -212,7 +212,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// G1 liveness pre-pass to seed parameter alias mutability.
 	paramTypes := make(map[string]soltype.Type, len(sig.Params))
 	for i, p := range sig.Params {
-		pt := c.paramType(p, lvl)
+		pt := c.paramType(scope, p, lvl)
 		// Rule 2 of PR 3. A bare annotation is owned and only an `&` annotation
 		// borrows. An `&` annotation already mints its lifetime in
 		// resolveLifetimeAnn, so a parameter has nothing to attach here. A bare
@@ -323,9 +323,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// there is no body, since a synthetic Void would falsely signal "returns
 	// nothing").
 	if sig.Async {
-		ret = c.asyncReturn(node, sig.Return, ret, hasBody, lvl)
+		ret = c.asyncReturn(scope, node, sig.Return, ret, hasBody, lvl)
 	} else if sig.Return != nil {
-		if annT, ok := c.resolveTypeAnn(sig.Return, lvl); ok {
+		if annT, ok := c.resolveTypeAnn(scope, sig.Return, lvl); ok {
 			// Only constrain the body when there IS one; a bodyless (declare/ambient)
 			// function simply adopts the annotation (constraining the synthetic Void
 			// would raise a spurious `void <: T`).
@@ -787,11 +787,11 @@ func sameObjectKeys(a, b *soltype.ObjectType) bool {
 // M3's "wrap an inferred return" model and its no-auto-flatten behavior (a body
 // that already returns a Promise still wraps: `async fn (p: Promise<T>) { return
 // await p }` is `Promise<Promise<T>>`; Awaited<T> is M9).
-func (c *checker) asyncReturn(node ast.Node, ann ast.TypeAnn, bodyType soltype.Type, hasBody bool, lvl int) soltype.Type {
+func (c *checker) asyncReturn(scope *Scope, node ast.Node, ann ast.TypeAnn, bodyType soltype.Type, hasBody bool, lvl int) soltype.Type {
 	if ann == nil {
 		return c.wrapPromise(node, bodyType)
 	}
-	annT, ok := c.resolveTypeAnn(ann, lvl)
+	annT, ok := c.resolveTypeAnn(scope, ann, lvl)
 	if !ok {
 		// Unsupported annotation — already reported by resolveTypeAnn. Recover as the
 		// no-annotation case would (wrap the inferred body return); a bodyless fn has
@@ -834,9 +834,9 @@ func (c *checker) wrapPromise(node ast.Node, inner soltype.Type) soltype.Type {
 // adopts a fresh var rather than the `never` placeholder so the body and any
 // call site recover against an unconstrained variable instead of cascading
 // `<: never` failures.
-func (c *checker) paramType(p *ast.Param, lvl int) soltype.Type {
+func (c *checker) paramType(scope *Scope, p *ast.Param, lvl int) soltype.Type {
 	if p.TypeAnn != nil {
-		if t, ok := c.resolveTypeAnn(p.TypeAnn, lvl); ok {
+		if t, ok := c.resolveTypeAnn(scope, p.TypeAnn, lvl); ok {
 			return t
 		}
 	}
@@ -2318,7 +2318,7 @@ func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, scrutinee so
 // let-else pass the annotation in directly, if-let from its pattern and let-else from
 // the decl, so the annotation never moves between AST nodes.
 func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
-	narrowed, resolved := c.resolveTypeAnn(ann, lvl)
+	narrowed, resolved := c.resolveTypeAnn(scope, ann, lvl)
 	if !resolved {
 		// The annotation was unsupported and already reported. Bind the name to the
 		// whole scrutinee so the body still type-checks against a real type rather
