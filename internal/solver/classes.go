@@ -383,13 +383,9 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 }
 
 // classValueMember resolves a static member read off a class value, such as
-// `Point.origin` or `Point.count` — a field, method, getter, or setter access on the
-// class name itself. The class value is an object carrying its constructor plus its
-// static members, so the member is looked up on that object and its type produced
-// through the shared memberValue helper. It returns ok=false in two cases. When the
-// receiver is not a class value, an ordinary object receiver keeps the structural
-// field-requirement path. When the class value carries no such member, a genuinely
-// missing static reports through that path's MissingPropertyError.
+// `Point.origin`, by looking the member up on the value object and producing its type via
+// memberValue. It returns ok=false when the receiver is not a class value or carries no
+// such member, leaving both cases to the structural field-requirement path.
 func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
 	obj, ok := classValueCarrier(carrier)
 	if !ok {
@@ -403,12 +399,9 @@ func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier
 }
 
 // classValueCarrier resolves a receiver to the class-value object it reads as: an object
-// carrying a ConstructorElem directly, or a binding var whose lower bounds carry one —
-// the same look-through classCarrier uses for a class instance, since a class value
-// flows through the bound graph as a variable with the object as a lower bound rather
-// than a bare object. It resolves only an unambiguous class value: a variable whose lower
-// bounds carry two different class-value objects is left to the structural path rather
-// than silently reading whichever appears first.
+// carrying a ConstructorElem directly, or a binding var whose lower bounds carry one, the
+// same look-through classCarrier uses for an instance. A var with two different class-value
+// lower bounds is ambiguous and left to the structural path.
 func classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
 	switch t := t.(type) {
 	case *soltype.ObjectType:

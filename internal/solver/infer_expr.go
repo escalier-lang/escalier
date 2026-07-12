@@ -1989,10 +1989,8 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	if res, ok := c.classBodyMember(lvl, blame, name, recvCarrier); ok {
 		return res
 	}
-	// A class value carries its static members on the same object as its constructor, so
-	// a static read `Point.origin` resolves through member lookup here. A static method,
-	// getter, or setter would otherwise be invisible to the structural path below, which
-	// reads only properties.
+	// A static read `Point.origin` resolves through member lookup here, since the
+	// structural path below reads only properties and misses a static method or accessor.
 	if res, ok := c.classValueMember(lvl, blame, name, recvCarrier); ok {
 		return res
 	}

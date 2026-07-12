@@ -357,12 +357,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	case *soltype.ObjectType:
 		if sup, ok := super.(*soltype.FuncType); ok {
 			// An object with a constructor signature is a subtype of the matching function
-			// type. Its constructor call signature is checked against the function target,
-			// which is the synthesized call shape of `Point(1, 2)` or a `fn (…) -> Point`
-			// annotation. A ConstructorElem is the one callable member the lattice admits, so
-			// an object with no constructor is not a function and falls through to
-			// CannotConstrainError. Codegen bridges the runtime gap, emitting whatever a
-			// constructor needs to behave as a plain function where one is expected.
+			// type; codegen makes the constructor behave as a plain function where expected.
 			if ctor, ok := sub.Constructor(); ok {
 				return c.constrain(ctor.Fn, sup, seen, mutCtx)
 			}
@@ -400,11 +395,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					}
 					continue
 				}
-				// A method, getter, or setter requirement is carried only by a class value,
-				// since object annotations cannot express those members, so it appears here
-				// only when both sides are class values, as in a reassignment or join. Check
-				// it against the sub's same-named member by variance rather than routing it
-				// to AsProperty, which handles properties alone and would panic.
+				// A method, getter, or setter requirement, carried only by a class value,
+				// checks against the sub's member by variance instead of panicking in AsProperty.
 				if _, isProp := superElem.(*soltype.PropertyElem); !isProp {
 					errs = append(errs, c.constrainObjMember(superElem, sub, sup, seen, mutCtx)...)
 					continue
@@ -654,14 +646,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 
-// constrainObjMember checks a method, getter, or setter requirement carried by an object
-// super against the sub's same-named member. Only a class value carries those members,
-// since object annotations cannot express them, so this fires only between two class
-// values, as in a reassignment or a join of class values. A method matches by its
-// callable signature with the receiver stripped, the shape a `p.m` read yields; a getter
-// matches covariantly on its read type; a setter matches contravariantly on its write
-// type. Overload-set dispatch across several method arms is E1, so a method compares its
-// first arm here. A missing or wrong-kind member fails.
+// constrainObjMember checks a method, getter, or setter requirement on an object super
+// against the sub's same-named member by variance: a method by its receiver-stripped
+// callable signature (first arm; overload dispatch is E1), a getter covariantly, a setter
+// contravariantly. A missing or wrong-kind member fails.
 func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *soltype.ObjectType, seen set.Set[constraintKey], mutCtx bool) []SolverError {
 	name := soltype.ObjElemName(superElem)
 	subElem, ok := sub.Member(name)
