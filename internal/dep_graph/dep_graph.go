@@ -628,6 +628,52 @@ func (v *DependencyVisitor) EnterObjExprElem(elem ast.ObjExprElem) bool {
 	return true
 }
 
+// EnterClassElem walks a class member's dependency-bearing children while
+// skipping a plain identifier member name. The name of a field, method,
+// getter, or setter is a label, not a reference to an outer binding, so
+// visiting it would record a spurious value dependency on any top-level
+// binding that happens to share the name. A computed key such as `[expr]`
+// is a real expression, so its dependencies still count. The manual walk
+// here returns false to stop the framework from re-walking the member and
+// re-visiting the name.
+func (v *DependencyVisitor) EnterClassElem(elem ast.ClassElem) bool {
+	walkComputedKey := func(name ast.ObjKey) {
+		if computed, ok := name.(*ast.ComputedKey); ok {
+			computed.Expr.Accept(v)
+		}
+	}
+	switch e := elem.(type) {
+	case *ast.FieldElem:
+		walkComputedKey(e.Name)
+		if e.Type != nil {
+			e.Type.Accept(v)
+		}
+		if e.Value != nil {
+			e.Value.Accept(v)
+		}
+	case *ast.MethodElem:
+		walkComputedKey(e.Name)
+		if e.Fn != nil {
+			e.Fn.Accept(v)
+		}
+	case *ast.GetterElem:
+		walkComputedKey(e.Name)
+		if e.Fn != nil {
+			e.Fn.Accept(v)
+		}
+	case *ast.SetterElem:
+		walkComputedKey(e.Name)
+		if e.Fn != nil {
+			e.Fn.Accept(v)
+		}
+	case *ast.ConstructorElem:
+		if e.Fn != nil {
+			e.Fn.Accept(v)
+		}
+	}
+	return false
+}
+
 // processTypeParams handles type parameters by adding them to scope and visiting constraints
 func (v *DependencyVisitor) processTypeParams(typeParams []*ast.TypeParam) {
 	sortedTypeParams := ast.SortTypeParamsTopologically(typeParams)

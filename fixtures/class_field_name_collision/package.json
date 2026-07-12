@@ -1,0 +1,6 @@
+{
+    "name": "class_field_name_collision",
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}

@@ -1,0 +1,11 @@
+class A {
+    x: number,
+}
+class B extends A {
+    constructor(mut self) {}
+}
+class C extends B {
+    constructor(mut self) {}
+}
+val c = C()
+val x = c.x
