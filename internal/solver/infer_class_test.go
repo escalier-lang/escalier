@@ -849,6 +849,25 @@ func TestInferClassNonGenericSubGenericSuper(t *testing.T) {
 	require.Equal(t, "string", values["f"])
 }
 
+// TestInferClassSuperTypeArgUndefined checks that an undefined type argument in the
+// `extends` clause is reported rather than silently accepted (#856). `extends Animal<Bogus>`
+// names no `Bogus` in scope, so the argument resolution reports `Unsupported: TypeRefTypeAnn`
+// — the general resolveTypeAnn recovery for an unresolved reference, pending the proper
+// undefined-type diagnostic M7's scope-driven TypeRef resolution brings. The edge still
+// recovers its arity to a fresh var, so no cascade follows.
+func TestInferClassSuperTypeArgUndefined(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class Animal<A> {
+			food: A,
+		}
+		class Dog extends Animal<Bogus> {
+			constructor(mut self) {}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
+}
+
 // TestInferClassGenericMemberParam covers a generic class whose constructor and method both
 // take a parameter typed by the class type parameter (#856). Resolving `v: T` and `next: T`
 // routes through the general resolveTypeAnn path, which now consults the class type scope,
