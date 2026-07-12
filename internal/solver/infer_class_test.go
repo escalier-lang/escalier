@@ -1014,6 +1014,68 @@ func TestInferClassVariance(t *testing.T) {
 	})
 }
 
+// TestInferClassCovariance demonstrates C2 covariance in the shapes that produce an
+// output-position occurrence — a field, a method return, a getter, and each parameter of a
+// multi-parameter class — so a narrower instance flows into a wider one with no error. It
+// also shows covariance reached through a function argument and that a field read off the
+// widened instance yields the wider type. Every case is expected clean: covariance never
+// rejects a widening.
+func TestInferClassCovariance(t *testing.T) {
+	t.Run("field occurrence widens", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val wide: Box<number | string> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("method return occurrence widens", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> {
+				value: T,
+				read(self) -> T { return self.value },
+			}
+			val wide: Box<number | string> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("getter occurrence widens", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> {
+				value: T,
+				get item(self) -> T { return self.value },
+			}
+			val wide: Box<number | string> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("each parameter of a multi-parameter class is covariant", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Pair<A, B> { first: A, second: B }
+			val p: Pair<number | string, number | boolean> = Pair(5, true)
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Pair<number | string, number | boolean>", values["p"])
+	})
+	t.Run("widening flows through a function argument", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			fn widen(b: Box<number | string>) -> Box<number | string> { return b }
+			val r = widen(Box(5))
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Box<number | string>", values["r"])
+	})
+	t.Run("a field read off the widened instance yields the wider type", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val wide: Box<number | string> = Box(5)
+			val v = wide.value
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "number | string", values["v"])
+	})
+}
+
 // TestInferClassVarianceModifiers covers the declaration-site `in`/`out`/`in out`
 // modifiers (C2): a modifier that matches the inferred variance checks silently, and one
 // that disagrees reports VarianceMismatchError. The measured variance still governs
