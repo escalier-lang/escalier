@@ -283,14 +283,10 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 	return bare, bareOK
 }
 
-// resolveClassTypeAnn resolves a type annotation appearing in a class body or a
-// type-parameter bound. It consults the type scope for a reference to a class or type
-// parameter — a bare `Point` or `T`, or a generic class instance `Box<number>` — before
-// delegating to resolveTypeAnn, so a scope binding takes precedence over resolveTypeAnn's
-// hardcoded `Promise` stub. resolveTypeAnn now also consults the scope through the same
-// resolveScopedTypeRef, so the two agree on every name except one bound as a class under
-// the name `Promise`, which this path resolves to the class and the general path to the
-// stub. It delegates to resolveTypeAnn for primitives and structural types.
+// resolveClassTypeAnn resolves a type annotation in a class body or type-parameter bound.
+// It tries the scope through resolveScopedTypeRef first, so a class or type parameter takes
+// precedence over resolveTypeAnn's hardcoded `Promise` stub, then delegates to resolveTypeAnn
+// for primitives and structural types.
 func (c *checker) resolveClassTypeAnn(scope *Scope, ann ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	if ref, ok := ann.(*ast.TypeRefTypeAnn); ok {
 		if t, ok := c.resolveScopedTypeRef(scope, ref, lvl); ok {
