@@ -1054,10 +1054,9 @@ func TestConstructorInitErrors(t *testing.T) {
 // `class Point` declarations under different directory-derived namespaces stay distinct:
 // a bare "Point" key would collide and merge their bodies, while the qualified keys keep
 // each class's body its own. A class-body type reference resolves against its own
-// namespace first, so a bare sibling
-// reference still resolves and a qualified cross-namespace reference resolves too. Every
-// class still renders under its bare name, since the printer strips the namespace
-// prefix.
+// namespace first, so a bare sibling reference still resolves and a qualified
+// cross-namespace reference resolves too. Every class still renders under its bare name,
+// since the printer strips the namespace prefix.
 //
 // The instance-construction and member-access forms — `val p = Point(1, 2); p.x` — are
 // exercised at the root namespace by TestInferClassBasic. A namespaced instance is not
@@ -1076,8 +1075,16 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 		{
 			name: "SiblingSameNameDistinctNamespaces",
 			srcs: map[string]string{
-				"geometry/point.esc": "class Point {\n\t\t\t\t\tx: number,\n\t\t\t\t}",
-				"shape/point.esc":    "class Point {\n\t\t\t\t\tlabel: string,\n\t\t\t\t}",
+				"geometry/point.esc": `
+					class Point {
+						x: number,
+					}
+				`,
+				"shape/point.esc": `
+					class Point {
+						label: string,
+					}
+				`,
 			},
 			// Each constructor is synthesized from its OWN class body, so the two bodies
 			// never merged on a shared "Point" registry entry. Both render bare.
@@ -1093,7 +1100,14 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 		{
 			name: "IntraNamespaceSiblingReference",
 			srcs: map[string]string{
-				"geometry/shapes.esc": "class Line {\n\t\t\t\t\tstart: Point,\n\t\t\t\t}\n\t\t\t\tclass Point {\n\t\t\t\t\tx: number,\n\t\t\t\t}",
+				"geometry/shapes.esc": `
+					class Line {
+						start: Point,
+					}
+					class Point {
+						x: number,
+					}
+				`,
 			},
 			// The bare `Point` in Line's field resolves to the sibling geometry.Point
 			// through the class's own namespace, not to any other namespace's Point.
@@ -1109,8 +1123,16 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 		{
 			name: "CrossNamespaceReference",
 			srcs: map[string]string{
-				"geometry/point.esc": "class Point {\n\t\t\t\t\tx: number,\n\t\t\t\t}",
-				"shape/line.esc":     "class Line {\n\t\t\t\t\tstart: geometry.Point,\n\t\t\t\t}",
+				"geometry/point.esc": `
+					class Point {
+						x: number,
+					}
+				`,
+				"shape/line.esc": `
+					class Line {
+						start: geometry.Point,
+					}
+				`,
 			},
 			// The qualified `geometry.Point` reference from the shape namespace resolves
 			// to the geometry class's registered type binding.
@@ -1126,7 +1148,11 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 		{
 			name: "RootNamespaceUnchanged",
 			srcs: map[string]string{
-				"input.esc": "class Point {\n\t\t\t\t\tx: number,\n\t\t\t\t}",
+				"input.esc": `
+					class Point {
+						x: number,
+					}
+				`,
 			},
 			// A root-namespace class keeps its bare name as the qualified key, so nothing
 			// changes for the common single-namespace case.
