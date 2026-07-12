@@ -1076,6 +1076,61 @@ func TestInferClassCovariance(t *testing.T) {
 	})
 }
 
+// TestInferClassContravariance demonstrates C2 contravariance in the shapes that produce
+// an input-position occurrence — a method value parameter and a setter — so a wider
+// instance flows into a narrower one with no error. This is the reverse of covariance: a
+// Consumer<number | string> is a Consumer<number>, because a consumer that accepts the
+// wider type accepts the narrower. It also shows the narrowing reached through a function
+// argument and across each parameter of a multi-parameter class. Every case is expected
+// clean: contravariance accepts a narrowing.
+func TestInferClassContravariance(t *testing.T) {
+	t.Run("method parameter occurrence narrows", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			val wide: Consumer<number | string> = Consumer()
+			val narrow: Consumer<number> = wide
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Consumer<number>", values["narrow"])
+	})
+	t.Run("setter occurrence narrows", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Sink<T> {
+				set item(mut self, x: T) { },
+			}
+			val wide: Sink<number | string> = Sink()
+			val narrow: Sink<number> = wide
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Sink<number>", values["narrow"])
+	})
+	t.Run("each parameter of a multi-parameter class is contravariant", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Sink2<A, B> {
+				a(self, x: A) { },
+				b(self, y: B) { },
+			}
+			val wide: Sink2<number | string, number | boolean> = Sink2()
+			val narrow: Sink2<number, boolean> = wide
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Sink2<number, boolean>", values["narrow"])
+	})
+	t.Run("narrowing flows through a function argument", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			fn feed(c: Consumer<number>) { }
+			val wide: Consumer<number | string> = Consumer()
+			val r = feed(wide)
+		`)
+		require.Empty(t, errs)
+	})
+}
+
 // TestInferClassVarianceModifiers covers the declaration-site `in`/`out`/`in out`
 // modifiers (C2): a modifier that matches the inferred variance checks silently, and one
 // that disagrees reports VarianceMismatchError. The measured variance still governs
