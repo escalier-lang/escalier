@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClassDeclDependencies(t *testing.T) {
@@ -173,14 +174,20 @@ func TestClassDeclDependencies(t *testing.T) {
 
 // TestClassMemberNameNoSpuriousDependency checks that a class member whose name
 // matches a top-level value binding does not create a dependency edge on that
-// binding. A member name is a label, not a reference, so it must not contribute
-// to the dependency graph. Regression test for issue #855, where the spurious
-// edge scrambled SCC membership and inference order.
+// binding. A field, method, getter, or setter name is a label, not a reference,
+// so it must not contribute to the dependency graph. A computed key such as
+// `[bar]` is a real expression, so a reference inside it still counts. The cases
+// cover each EnterClassElem branch. Regression test for issue #855, where the
+// spurious edge scrambled SCC membership and inference order.
 func TestClassMemberNameNoSpuriousDependency(t *testing.T) {
 	tests := map[string]struct {
 		input        string
 		className    string
 		collidingVal string
+		// wantDep is true when the class should depend on collidingVal, as with
+		// a computed key that references it. Otherwise the collision must not
+		// produce an edge.
+		wantDep bool
 	}{
 		"FieldNameMatchesVal": {
 			input: `
@@ -205,6 +212,39 @@ func TestClassMemberNameNoSpuriousDependency(t *testing.T) {
 			className:    "Worker",
 			collidingVal: "process",
 		},
+		"GetterNameMatchesVal": {
+			input: `
+				val fullName = "n"
+				class Person {
+					firstName: string,
+					get fullName(self) -> string { return self.firstName },
+				}
+			`,
+			className:    "Person",
+			collidingVal: "fullName",
+		},
+		"SetterNameMatchesVal": {
+			input: `
+				val fullName = "n"
+				class Person {
+					firstName: string,
+					set fullName(mut self, value: string) { self.firstName = value },
+				}
+			`,
+			className:    "Person",
+			collidingVal: "fullName",
+		},
+		"ComputedKeyRetainsDependency": {
+			input: `
+				val bar = "bar"
+				class Foo {
+					[bar]: number,
+				}
+			`,
+			className:    "Foo",
+			collidingVal: "bar",
+			wantDep:      true,
+		},
 	}
 
 	for name, test := range tests {
@@ -219,20 +259,36 @@ func TestClassMemberNameNoSpuriousDependency(t *testing.T) {
 			defer cancel()
 
 			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{source})
-			assert.Empty(t, errors, "Expected no parsing errors")
+			require.Empty(t, errors, "Expected no parsing errors")
 
 			depGraph := BuildDepGraph(module)
 
-			// The class member named the same as a top-level `val` must not pull
-			// that val into the class's type or value dependencies.
-			collidingVal := ValueBindingKey(test.collidingVal)
-			typeDeps := depGraph.GetDeps(TypeBindingKey(test.className))
-			valueDeps := depGraph.GetDeps(ValueBindingKey(test.className))
+			// The class must be present as both a type and a value binding, or the
+			// dependency assertions below would pass vacuously against an empty set.
+			typeKey := TypeBindingKey(test.className)
+			valueKey := ValueBindingKey(test.className)
+			require.True(t, depGraph.HasBinding(typeKey),
+				"type:%s should exist in the graph", test.className)
+			require.True(t, depGraph.HasBinding(valueKey),
+				"value:%s should exist in the graph", test.className)
 
-			assert.False(t, typeDeps.Contains(collidingVal),
-				"type:%s should not depend on the colliding value binding", test.className)
-			assert.False(t, valueDeps.Contains(collidingVal),
-				"value:%s should not depend on the colliding value binding", test.className)
+			collidingVal := ValueBindingKey(test.collidingVal)
+			typeDeps := depGraph.GetDeps(typeKey)
+			valueDeps := depGraph.GetDeps(valueKey)
+
+			if test.wantDep {
+				// A computed key is a real expression, so a reference inside it
+				// still records a dependency on the referenced binding.
+				require.True(t, typeDeps.Contains(collidingVal) || valueDeps.Contains(collidingVal),
+					"class %s should depend on %q referenced by a computed key", test.className, test.collidingVal)
+			} else {
+				// A plain member name is a label, so it must not pull the
+				// colliding value into the class's type or value dependencies.
+				require.False(t, typeDeps.Contains(collidingVal),
+					"type:%s should not depend on the colliding value binding", test.className)
+				require.False(t, valueDeps.Contains(collidingVal),
+					"value:%s should not depend on the colliding value binding", test.className)
+			}
 		})
 	}
 }
