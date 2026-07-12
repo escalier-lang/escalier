@@ -733,6 +733,7 @@ func TestConstructorInitClean(t *testing.T) {
 					x: number,
 					log(self) -> number { return self.x },
 					constructor(mut self, x: number) {
+						val f = self.log
 						self.x = x
 					},
 				}
