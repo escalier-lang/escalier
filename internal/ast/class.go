@@ -48,7 +48,7 @@ type MethodReceiver struct {
 func (r *MethodReceiver) Span() Span { return r.Span_ }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare, final bool, span Span) *ClassDecl {
 	return &ClassDecl{
 		Name:           name,
 		LifetimeParams: lifetimeParams,
@@ -58,6 +58,7 @@ func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*Ty
 		Body:           body,
 		export:         export,
 		declare:        declare,
+		final:          final,
 		span:           span,
 		provenance:     nil,
 	}
@@ -73,9 +74,8 @@ func (d *ClassDecl) SetOverride(o bool) { d.override = o }
 // Final reports whether the class was declared `final`. A final class has no
 // subclasses, so its instance type is exact (exact-types §2.6): the checker projects
 // an exact body for it.
-func (d *ClassDecl) Final() bool     { return d.final }
-func (d *ClassDecl) SetFinal(f bool) { d.final = f }
-func (d *ClassDecl) Span() Span      { return d.span }
+func (d *ClassDecl) Final() bool { return d.final }
+func (d *ClassDecl) Span() Span  { return d.span }
 func (d *ClassDecl) Accept(v Visitor) {
 	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	if v.EnterDecl(d) {

@@ -97,7 +97,7 @@ func convertFuncDecl(df *dts_parser.FuncDecl) (*ast.FuncDecl, error) {
 		typeParams,
 		params,
 		returnType,
-		nil, // nil throws is equivalent to throws never (PR #384)
+		nil,   // nil throws is equivalent to throws never (PR #384)
 		nil,   // body is nil for declarations
 		false, // export - will be set by export handling
 		true,  // declare is always true for .d.ts files
@@ -252,6 +252,7 @@ func convertClassDecl(cctx *convertCtx, dc *dts_parser.ClassDecl) (*ast.ClassDec
 		bodyElems,
 		false, // export - will be set by export handling
 		true,  // declare is always true for .d.ts files
+		false, // final
 		convertSpan(dc.Span()),
 	), nil
 }

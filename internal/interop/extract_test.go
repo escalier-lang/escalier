@@ -261,7 +261,7 @@ func TestExtractClassRecordsStaticMembers(t *testing.T) {
 		ast.NewIdentifier("Widget", emptySpan()),
 		nil, nil, nil, nil,
 		[]ast.ClassElem{instMethod, staticMethod},
-		false, true, emptySpan(),
+		false, true, false, emptySpan(),
 	)
 	declareGlobal := ast.NewDeclareGlobalDecl([]ast.Decl{classDecl}, true, emptySpan())
 
@@ -308,7 +308,7 @@ func TestExtractClassResolvesStaticViaTypeRef(t *testing.T) {
 		ast.NewIdentifier("Foo", emptySpan()),
 		nil, nil, nil, nil,
 		[]ast.ClassElem{staticMethod},
-		false, true, emptySpan(),
+		false, true, false, emptySpan(),
 	)
 	declareGlobal := ast.NewDeclareGlobalDecl([]ast.Decl{classDecl}, true, emptySpan())
 

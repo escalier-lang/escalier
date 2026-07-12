@@ -920,8 +920,9 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 		extends,
 		nil, // implements
 		body,
-		true, // export
-		true, // declare
+		true,  // export
+		true,  // declare
+		false, // final
 		convertSpan(info.instance.Span()),
 	), nil
 }

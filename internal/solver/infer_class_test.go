@@ -397,6 +397,27 @@ func TestInferClassNonClassSuper(t *testing.T) {
 	})
 }
 
+// TestInferClassExtendFinal covers the rule that a final class cannot be a superclass:
+// a final class has no subclasses (exact-types §2.6), so an `extends` clause naming one
+// reports CannotExtendFinalClassError. A non-final superclass is unaffected.
+func TestInferClassExtendFinal(t *testing.T) {
+	t.Run("extending a final class is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			final class A { x: number, constructor(mut self) { self.x = 0 } }
+			class B extends A { constructor(mut self) {} }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "Cannot extend `A`; it is a final class and has no subclasses.", errs[0].Message())
+	})
+	t.Run("extending a non-final class is allowed", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class A { x: number, constructor(mut self) { self.x = 0 } }
+			class B extends A { constructor(mut self) {} }
+		`)
+		require.Empty(t, errs)
+	})
+}
+
 // TestInferClassMutualRecursion covers classes that reference each other, or
 // themselves, through the SCC path (M5 B2). The dep graph condenses a mutually
 // recursive group into one type-key component ordered before every class's value key,

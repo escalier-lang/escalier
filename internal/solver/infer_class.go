@@ -152,10 +152,21 @@ func (c *checker) resolveClassSupers(scope *Scope, decl *ast.ClassDecl) []*solty
 	if decl.Extends == nil {
 		return nil
 	}
-	if ct := c.resolveClassRef(scope, decl.Extends); ct != nil {
-		return []*soltype.ClassType{ct}
+	ct := c.resolveClassRef(scope, decl.Extends)
+	if ct == nil {
+		return nil
 	}
-	return nil
+	if ct.Final {
+		// A final class has no subclasses, so it cannot be a superclass. Report the
+		// clause and drop the edge, so the erroneous subtype relationship is never
+		// recorded in the nominal graph.
+		c.errs = append(c.errs, &CannotExtendFinalClassError{
+			Ref:  decl.Extends,
+			Name: ast.QualIdentToString(decl.Extends.Name),
+		})
+		return nil
+	}
+	return []*soltype.ClassType{ct}
 }
 
 // resolveClassImplements resolves a class's `implements` interfaces to their

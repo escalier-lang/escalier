@@ -564,8 +564,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 		p.reportError(token.Span, "Expected '{' to start class body")
 		end := p.lexer.currentLocation
 		span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-		decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, nil, export, declare, span)
-		decl.SetFinal(final)
+		decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, nil, export, declare, final, span)
 		return decl
 	}
 	p.lexer.consume()
@@ -575,8 +574,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
-	decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, body, export, declare, span)
-	decl.SetFinal(final)
+	decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, body, export, declare, final, span)
 	return decl
 }
 

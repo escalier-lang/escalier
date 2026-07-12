@@ -296,26 +296,35 @@ type NonClassSuperError struct {
 	Name string
 }
 
-func (*CannotConstrainError) isSolverError()       {}
-func (*MutFieldError) isSolverError()              {}
-func (*ReadonlyFieldError) isSolverError()         {}
-func (*ReadonlyFieldSubtypeError) isSolverError()  {}
-func (*FuncArityMismatchError) isSolverError()     {}
-func (*TupleLengthMismatchError) isSolverError()   {}
-func (*SpreadNotTupleError) isSolverError()        {}
-func (*InexactTupleSpreadError) isSolverError()    {}
-func (*MissingPropertyError) isSolverError()       {}
-func (*InexactIntoExactError) isSolverError()      {}
-func (*InexactTupleIntoExactError) isSolverError() {}
-func (*InexactUnionIntoExactError) isSolverError() {}
-func (*ExtraPropertyError) isSolverError()         {}
-func (*ExtraElementError) isSolverError()          {}
-func (*OptionalPropertyError) isSolverError()      {}
-func (*MutabilityMismatchError) isSolverError()    {}
-func (*BorrowEscapeError) isSolverError()          {}
-func (*ClassIntoExactObjectError) isSolverError()  {}
-func (*StructuralIntoClassError) isSolverError()   {}
-func (*NonClassSuperError) isSolverError()         {}
+// CannotExtendFinalClassError fires when an `extends` clause names a final class. A
+// final class has no subclasses (exact-types §2.6), so it cannot be a superclass. Ref
+// carries the blame span and Name the rendered reference.
+type CannotExtendFinalClassError struct {
+	Ref  *ast.TypeRefTypeAnn
+	Name string
+}
+
+func (*CannotConstrainError) isSolverError()        {}
+func (*MutFieldError) isSolverError()               {}
+func (*ReadonlyFieldError) isSolverError()          {}
+func (*ReadonlyFieldSubtypeError) isSolverError()   {}
+func (*FuncArityMismatchError) isSolverError()      {}
+func (*TupleLengthMismatchError) isSolverError()    {}
+func (*SpreadNotTupleError) isSolverError()         {}
+func (*InexactTupleSpreadError) isSolverError()     {}
+func (*MissingPropertyError) isSolverError()        {}
+func (*InexactIntoExactError) isSolverError()       {}
+func (*InexactTupleIntoExactError) isSolverError()  {}
+func (*InexactUnionIntoExactError) isSolverError()  {}
+func (*ExtraPropertyError) isSolverError()          {}
+func (*ExtraElementError) isSolverError()           {}
+func (*OptionalPropertyError) isSolverError()       {}
+func (*MutabilityMismatchError) isSolverError()     {}
+func (*BorrowEscapeError) isSolverError()           {}
+func (*ClassIntoExactObjectError) isSolverError()   {}
+func (*StructuralIntoClassError) isSolverError()    {}
+func (*NonClassSuperError) isSolverError()          {}
+func (*CannotExtendFinalClassError) isSolverError() {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -429,6 +438,9 @@ func (e *StructuralIntoClassError) Related() []ast.Span { return relatedOf(e.pro
 
 func (e *NonClassSuperError) Span() ast.Span      { return e.Ref.Span() }
 func (e *NonClassSuperError) Related() []ast.Span { return nil }
+
+func (e *CannotExtendFinalClassError) Span() ast.Span      { return e.Ref.Span() }
+func (e *CannotExtendFinalClassError) Related() []ast.Span { return nil }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
 // site, and the site itself otherwise (or when op has no entry). The containment
@@ -1305,6 +1317,10 @@ func (e *StructuralIntoClassError) Message() string {
 
 func (e *NonClassSuperError) Message() string {
 	return fmt.Sprintf("`%s` does not name a class and cannot be extended or implemented.", e.Name)
+}
+
+func (e *CannotExtendFinalClassError) Message() string {
+	return fmt.Sprintf("Cannot extend `%s`; it is a final class and has no subclasses.", e.Name)
 }
 
 // describeBorrowInner renders the pointee of a borrow for a diagnostic. An immutable
