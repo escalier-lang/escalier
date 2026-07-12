@@ -177,16 +177,20 @@ func (c *checker) resolveClassImplements(scope *Scope, decl *ast.ClassDecl) []*s
 // rather than routing through resolveTypeAnn, whose general TypeRef resolution lands
 // with the alias work.
 //
-// A nil result is currently dropped by the callers with no diagnostic. C1 reports the
-// non-class case as NonClassSuperError, and M7's general TypeRef resolution reports an
-// unbound name (planning/simple_sub/m5-implementation-plan.md).
+// A name bound to a non-class binding — a type parameter, say — is reported as a
+// NonClassSuperError. An unbound name stays silent, so the undefined name is not
+// reported twice: the general TypeRef resolution planned for M7 reports it centrally.
+// See planning/simple_sub/m5-implementation-plan.md.
 func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn) *soltype.ClassType {
 	name := ast.QualIdentToString(ref.Name)
-	if b, ok := scope.GetType(name); ok {
-		if ct, ok := b.Type.(*soltype.ClassType); ok {
-			return ct
-		}
+	b, ok := scope.GetType(name)
+	if !ok {
+		return nil
 	}
+	if ct, ok := b.Type.(*soltype.ClassType); ok {
+		return ct
+	}
+	c.errs = append(c.errs, &NonClassSuperError{Ref: ref, Name: name})
 	return nil
 }
 

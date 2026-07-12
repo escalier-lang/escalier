@@ -421,6 +421,36 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			}
 			return errs
 		}
+		// A structural object never satisfies a nominal class target: nominal identity is
+		// declared, not structural, so `{x: 0}` is not a Point even when it carries every
+		// field. A ClassType super is concrete, so intercept it here rather than letting it
+		// fall through to the var arms.
+		if sup, ok := super.(*soltype.ClassType); ok {
+			return []SolverError{&StructuralIntoClassError{Sub: sub, Super: sup}}
+		}
+	case *soltype.ClassType:
+		switch sup := super.(type) {
+		case *soltype.ClassType:
+			// Nominal: identical name with a per-position argument check, or sub reaches
+			// sup transitively through the declared extends graph.
+			return c.constrainNominal(sub, sup, seen)
+		case *soltype.ObjectType:
+			// Target-dispatched (m4 plan forward note): a class instance satisfies a
+			// structural object target when the target is inexact, or when the class is
+			// final so its member set is closed. A non-final instance into an exact target
+			// rejects, since a subclass could add members the exact target cannot tolerate.
+			// Otherwise project the class body — exact when final, inexact otherwise — and
+			// reuse the object arm's width and exactness rules.
+			if !sup.Inexact && !sub.Final {
+				return []SolverError{&ClassIntoExactObjectError{Sub: sub, Super: sup}}
+			}
+			body, ok := c.projectClassBody(sub)
+			if !ok {
+				return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+			}
+			return c.constrain(body, sup, seen, mutCtx)
+		}
+		// A ClassType against any other concrete falls through to the var arms below.
 	case *soltype.PromiseType:
 		if sup, ok := super.(*soltype.PromiseType); ok {
 			// PromiseType is covariant in its Inner: Promise<L> <: Promise<R> iff

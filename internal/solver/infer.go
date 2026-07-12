@@ -313,6 +313,10 @@ func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
 			err.prov, err.site = c.prov, n
 		case *BorrowEscapeError:
 			err.prov, err.site = c.prov, n
+		case *ClassIntoExactObjectError:
+			err.prov, err.site = c.prov, n
+		case *StructuralIntoClassError:
+			err.prov, err.site = c.prov, n
 		case *ReadonlyFieldError:
 			err.site = n
 		case *ReadonlyFieldSubtypeError:

@@ -248,14 +248,10 @@ func TestInferClassJoinDistinctArgs(t *testing.T) {
 }
 
 // Reading a member off that union — `b.value` for b : Box<5> | Box<"hello"> — distributes
-// over the union and joins each arm's `value` field into 5 | "hello".
-//
-// DISABLED until C1 lands. classCarrier resolves only an unambiguous class, so a variable
-// whose lower bounds carry two different instantiations falls to the structural
-// field-requirement path. That path has no class-vs-object rule yet, so each Box<…> arm
-// fails `cannot constrain ? <: object` and v coalesces to never. C1 adds the
-// nominal-vs-structural rule; re-enable then and assert v : 5 | "hello" with no errors.
-/*
+// over the union and joins each arm's `value` field into 5 | "hello". Each Box<…> arm
+// rides C1's class-vs-object rule: the field read constrains the arm against an inexact
+// `{value: _, ...}` requirement, which projects the class body and binds the requirement's
+// var to that arm's field type.
 func TestInferClassJoinMemberAccess(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> { value: T }
@@ -266,7 +262,78 @@ func TestInferClassJoinMemberAccess(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, `5 | "hello"`, values["v"])
 }
-*/
+
+// TestInferClassNominalSubtype covers C1's nominal constrain rule reached from source
+// through a type-parameter bound, the one class-typed constraint target source can
+// produce before M7's general TypeRef resolution. `class Box<T: A>` makes a construction
+// `Box(arg)` constrain `arg <: A`, so the argument exercises each leg of the rule.
+func TestInferClassNominalSubtype(t *testing.T) {
+	// base declares A, a subclass B, an unrelated Other, and a bounded Box<T: A>.
+	const base = `
+		class A { x: number, constructor(mut self) { self.x = 0 } }
+		class B extends A { constructor(mut self) {} }
+		class Other { y: number, constructor(mut self) { self.y = 0 } }
+		class Box<T: A> { value: T }
+	`
+	t.Run("same class satisfies the bound", func(t *testing.T) {
+		values, _, errs := inferSource(t, base+`val b = Box(A())`)
+		require.Empty(t, errs)
+		require.Equal(t, "Box<A>", values["b"])
+	})
+	t.Run("subclass satisfies the bound through the graph", func(t *testing.T) {
+		values, _, errs := inferSource(t, base+`val b = Box(B())`)
+		require.Empty(t, errs)
+		require.Equal(t, "Box<B>", values["b"])
+	})
+	t.Run("unrelated class rejects", func(t *testing.T) {
+		_, _, errs := inferSource(t, base+`val b = Box(Other())`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain Other <: A", errs[0].Message())
+	})
+	t.Run("structural object rejects against a class bound", func(t *testing.T) {
+		_, _, errs := inferSource(t, base+`val b = Box({x: 0})`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain object <: class A", errs[0].Message())
+	})
+}
+
+// TestInferClassIntoObject covers C1's target-dispatched class-vs-object rule reached
+// from source through an object type annotation, which resolves today even though a
+// bare class name in annotation position does not. A class instance flows into an inexact
+// object target by projecting its body, and into an exact object target it is rejected,
+// since a non-final class may have subclasses that add members.
+func TestInferClassIntoObject(t *testing.T) {
+	const point = `
+		class Point { x: number, y: number }
+		val p = Point(1, 2)
+	`
+	t.Run("into inexact object succeeds", func(t *testing.T) {
+		_, _, errs := inferSource(t, point+`val foo: {x: number, y: number, ...} = p`)
+		require.Empty(t, errs)
+	})
+	t.Run("into exact object rejects", func(t *testing.T) {
+		_, _, errs := inferSource(t, point+`val foo: {x: number, y: number} = p`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain class Point <: exact object", errs[0].Message())
+	})
+}
+
+// TestInferClassNonClassSuper covers the C1 diagnostic for an `extends` or `implements`
+// clause naming something that is not a class. A class type parameter resolves to a
+// binding that is not a ClassType, so using it as a super reports NonClassSuperError
+// rather than silently dropping the edge.
+func TestInferClassNonClassSuper(t *testing.T) {
+	t.Run("extends a type parameter", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class B<T> extends T { constructor(mut self) {} }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
+	t.Run("implements a type parameter", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class C<T> implements T {}`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
+}
 
 // TestInferClassMutualRecursion covers classes that reference each other, or
 // themselves, through the SCC path (M5 B2). The dep graph condenses a mutually
