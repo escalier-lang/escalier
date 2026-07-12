@@ -61,11 +61,12 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl, ns string) (so
 		t, src := c.inferFuncDecl(scope, lvl, d)
 		return t, src, true
 	case *ast.ClassDecl:
-		// inferClassDecl returns the RAW constructor func type for the SCC driver to
-		// constrain into the value binding var and generalize, and registers the
-		// instance type binding plus the nominal ClassDef as side effects. ns is the
-		// class's dep_graph namespace, threaded through so the registry and the minted
-		// ClassType are keyed by the namespace-qualified name.
+		// inferClassDecl returns the RAW class value — a bare constructor func type, or a
+		// ctor-plus-static object when the class declares statics — for the SCC driver to
+		// constrain into the value binding var and generalize, and registers the instance
+		// type binding plus the nominal ClassDef as side effects. ns is the class's
+		// dep_graph namespace, threaded through so the registry and the minted ClassType
+		// are keyed by the namespace-qualified name.
 		return c.inferClassDecl(scope, lvl, d, ns)
 	default:
 		c.reportUnsupported(d)

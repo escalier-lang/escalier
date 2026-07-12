@@ -382,6 +382,61 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 	return pathResult{value: out}
 }
 
+// classValueMember resolves a static member read off a class value, such as
+// `Point.origin` or `Point.count` — a field, method, getter, or setter access on the
+// class name itself. The class value is an object carrying its constructor plus its
+// static members, so the member is looked up on that object and its type produced
+// through the shared memberValue helper. It returns ok=false in two cases. When the
+// receiver is not a class value, an ordinary object receiver keeps the structural
+// field-requirement path. When the class value carries no such member, a genuinely
+// missing static reports through that path's MissingPropertyError.
+func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
+	obj, ok := classValueCarrier(carrier)
+	if !ok {
+		return pathResult{}, false
+	}
+	member, found := obj.Member(name)
+	if !found {
+		return pathResult{}, false
+	}
+	return c.memberValue(lvl, blame, member), true
+}
+
+// classValueCarrier resolves a receiver to the class-value object it reads as: an object
+// carrying a ConstructorElem directly, or a binding var whose lower bounds carry one —
+// the same look-through classCarrier uses for a class instance, since a class value
+// flows through the bound graph as a variable with the object as a lower bound rather
+// than a bare object. It resolves only an unambiguous class value: a variable whose lower
+// bounds carry two different class-value objects is left to the structural path rather
+// than silently reading whichever appears first.
+func classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		if _, ok := t.Constructor(); ok {
+			return t, true
+		}
+	case *soltype.TypeVarType:
+		var found *soltype.ObjectType
+		for _, lb := range t.LowerBounds {
+			obj, ok := lb.(*soltype.ObjectType)
+			if !ok {
+				continue
+			}
+			if _, hasCtor := obj.Constructor(); !hasCtor {
+				continue
+			}
+			if found != nil && !equalType(found, obj) {
+				return nil, false
+			}
+			found = obj
+		}
+		if found != nil {
+			return found, true
+		}
+	}
+	return nil, false
+}
+
 // classSubst rewrites a class body's type-parameter and lifetime-parameter vars to
 // the arguments of one instance. It maps each TypeParam.Var to the instance's
 // positional TypeArg and each LifetimeParam.Var to its positional LifetimeArg, so a

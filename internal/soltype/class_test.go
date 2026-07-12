@@ -406,6 +406,36 @@ func TestAcceptObjectSetterCopyOnWrite(t *testing.T) {
 	require.Same(t, str, gotSetter.Param, "the setter param took the replacement")
 }
 
+// A constructor's parameter is in write position, so Accept visits it in the FLIPPED
+// polarity, mirroring an ordinary parameter, while its return is covariant. A changed
+// variable rebuilds the ConstructorElem and the enclosing object copy-on-write (M5 B6).
+func TestAcceptConstructorElem(t *testing.T) {
+	paramT := &TypeVarType{ID: 1}
+	retT := &TypeVarType{ID: 2}
+	obj := &ObjectType{Elems: []ObjTypeElem{
+		&ConstructorElem{Fn: &FuncType{Params: []*FuncParam{identP("x", paramT)}, Ret: retT}},
+	}}
+
+	r := &recorder{seen: map[Type]Polarity{}}
+	obj.Accept(r, Positive)
+	require.Equal(t, Negative, r.seen[paramT], "a constructor parameter is contravariant")
+	require.Equal(t, Positive, r.seen[retT], "a constructor return is covariant")
+
+	str := &PrimType{Prim: StrPrim}
+	got := obj.Accept(&replaceVar{target: paramT, repl: str}, Positive).(*ObjectType)
+	require.NotSame(t, obj, got, "a changed constructor forces a new object")
+	gotCtor := got.Elems[0].(*ConstructorElem)
+	require.Same(t, str, gotCtor.Fn.Params[0].Type, "the constructor param took the replacement")
+}
+
+// LevelOf on an object descends into a constructor's signature.
+func TestLevelOfConstructorElem(t *testing.T) {
+	obj := &ObjectType{Elems: []ObjTypeElem{
+		&ConstructorElem{Fn: &FuncType{Params: []*FuncParam{identP("x", &TypeVarType{ID: 1, Level: 6})}, Ret: numP()}},
+	}}
+	require.Equal(t, 6, LevelOf(obj), "the level is the max over the constructor signature")
+}
+
 // LevelOf on a ClassType is the max level over its type arguments; the Name and
 // Final identity carry no variables.
 func TestLevelOfClassType(t *testing.T) {

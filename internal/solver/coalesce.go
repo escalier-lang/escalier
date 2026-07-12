@@ -943,7 +943,8 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 //   - a method compares its static flag and each overload signature positionally,
 //     since arm order is significant;
 //   - a getter compares its return type;
-//   - a setter compares its parameter type.
+//   - a setter compares its parameter type;
+//   - a constructor compares its call signature.
 //
 // It panics on an unknown element kind, matching AsProperty.
 func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
@@ -968,6 +969,9 @@ func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 	case *soltype.SetterElem:
 		b, ok := b.(*soltype.SetterElem)
 		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Param, b.Param, ctx)
+	case *soltype.ConstructorElem:
+		b, ok := b.(*soltype.ConstructorElem)
+		return ok && equalTypeWith(a.Fn, b.Fn, ctx)
 	}
 	panic(fmt.Sprintf("equalObjElem: unhandled ObjTypeElem %T", a))
 }

@@ -11,9 +11,11 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// inferClassDecl types a class declaration (M5 B1). It returns the class's constructor
-// as a raw FuncType for the SCC driver to constrain into the value binding var and
-// generalize, along with the decl's provenance. It has two side effects. It registers
+// inferClassDecl types a class declaration (M5 B1). It returns the class's value type
+// for the SCC driver to constrain into the value binding var and generalize, along with
+// the decl's provenance. The value is the bare constructor FuncType for a class with no
+// statics, or a ctor-plus-static object for one with static members (see classValue). It
+// has two side effects. It registers
 // the instance TypeBinding in scope, so the class name resolves as a type. It registers
 // the ClassDef in the nominal registry, so member lookup and the nominal constrain rule
 // can read the projected body.
@@ -103,7 +105,30 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		c.freezeClassBody(static)
 	}
 
-	return ctorType, &ast.NodeProvenance{Node: decl}, true
+	return c.classValue(ctorType, static), &ast.NodeProvenance{Node: decl}, true
+}
+
+// classValue produces the RAW value type a class name binds to for the SCC driver to
+// constrain into the value var. A class with no static members binds its bare
+// constructor FuncType, so a plain `class Point { … }` value renders `fn (…) -> Point`
+// and constructs through the function directly. A class with static members binds an
+// exact object holding a ConstructorElem for the callable side plus the class's static
+// fields, methods, getters, and setters, so `Point(…)` still constructs while
+// `Point.origin` reads a static off the same value. The object is minted only when a
+// static is present, keeping the single-callable-element lattice exception confined to
+// the class values that need it.
+func (c *checker) classValue(ctorType soltype.Type, static *soltype.ObjectType) soltype.Type {
+	if len(static.Elems) == 0 {
+		return ctorType
+	}
+	ctorFn, ok := ctorType.(*soltype.FuncType)
+	if !ok {
+		return ctorType
+	}
+	elems := make([]soltype.ObjTypeElem, 0, len(static.Elems)+1)
+	elems = append(elems, &soltype.ConstructorElem{Fn: ctorFn})
+	elems = append(elems, static.Elems...)
+	return &soltype.ObjectType{Elems: elems}
 }
 
 // getOrCreateClass returns the nominal ClassType token and ClassDef a class binds to,

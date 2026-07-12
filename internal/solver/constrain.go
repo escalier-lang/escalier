@@ -355,6 +355,16 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			return errs
 		}
 	case *soltype.ObjectType:
+		if sup, ok := super.(*soltype.FuncType); ok {
+			// A class value flows into a function target through its constructor call
+			// signature. The target is the synthesized call shape of `Point(1, 2)` or a
+			// `fn (…) -> Point` annotation. The class value is the single callable object the
+			// lattice admits, so only a ConstructorElem satisfies a function target. A plain
+			// object with no constructor falls through to CannotConstrainError.
+			if ctor, ok := sub.Constructor(); ok {
+				return c.constrain(ctor.Fn, sup, seen, mutCtx)
+			}
+		}
 		if sup, ok := super.(*soltype.ObjectType); ok {
 			// One ObjectType <: ObjectType rule serves both uses the M2 arm
 			// conflated: member-access field SELECTION (the super is an inexact
@@ -376,7 +386,19 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			//     optional): covariant on the property type.
 			var errs []SolverError
 			for _, superElem := range sup.Elems {
-				superProp := soltype.AsProperty(superElem) // M4: every elem is a property
+				// A constructor requirement is satisfied by the source's own constructor,
+				// its call signature checked covariantly. This lets a class value flow into
+				// an object target that names a call signature. A source with no constructor
+				// cannot fill one.
+				if superCtor, ok := superElem.(*soltype.ConstructorElem); ok {
+					if subCtor, has := sub.Constructor(); has {
+						errs = append(errs, c.constrain(subCtor.Fn, superCtor.Fn, seen, mutCtx)...)
+					} else {
+						errs = append(errs, &CannotConstrainError{Sub: sub, Super: sup})
+					}
+					continue
+				}
+				superProp := soltype.AsProperty(superElem) // M4: every named elem is a property
 				subProp, ok := sub.Prop(superProp.Name)
 				if !ok {
 					if !superProp.Optional {
@@ -413,7 +435,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					errs = append(errs, &InexactIntoExactError{Sub: sub, Super: sup})
 				}
 				for _, subElem := range sub.Elems {
-					subProp := soltype.AsProperty(subElem)
+					// A class value carries an unnamed ConstructorElem and may carry static
+					// method, getter, and setter members. None is a named property, so none
+					// counts as an extra property against an exact target.
+					subProp, ok := subElem.(*soltype.PropertyElem)
+					if !ok {
+						continue
+					}
 					if _, ok := sup.Prop(subProp.Name); !ok {
 						errs = append(errs, &ExtraPropertyError{Sub: sub, Super: sup, Name: subProp.Name})
 					}

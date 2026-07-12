@@ -692,6 +692,43 @@ func TestEqualTypeObjectMembers(t *testing.T) {
 	}
 }
 
+// A class value's constructor is compared through its ConstructorElem, threading the
+// alpha context equalObjElem already uses for methods. Two class-value objects whose
+// generic constructors differ only in the var id of a bound type parameter are equal, and
+// two whose constructor signatures differ structurally are not. This is the equality
+// dedup relies on when it folds equal class-value bounds (M5 B6).
+func TestEqualTypeConstructorElem(t *testing.T) {
+	// value builds `{new <U>(x: U) -> U, count: number}`, whose constructor parameter is
+	// the bound type parameter U, so two values differing only in U's var id are
+	// alpha-equal. A parameter's identity is its position, not its var id.
+	value := func(id int) *soltype.ObjectType {
+		u := &soltype.TypeVarType{ID: id, Level: 1}
+		ctor := &soltype.FuncType{
+			TypeParams: []*soltype.TypeParam{{Name: "U", Var: u}},
+			Params:     []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: u}},
+			Ret:        u,
+		}
+		return exactObj(
+			&soltype.ConstructorElem{Fn: ctor},
+			&soltype.PropertyElem{Name: "count", Type: num()},
+		)
+	}
+	// Same structure, distinct var ids on the bound parameter: alpha-equal.
+	require.True(t, equalType(value(10), value(20)))
+	// A constructor whose parameter type differs structurally is not equal.
+	strCtor := exactObj(&soltype.ConstructorElem{Fn: &soltype.FuncType{
+		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: str()}},
+		Ret:    &soltype.ClassType{Name: "Point"},
+	}})
+	numCtor := exactObj(&soltype.ConstructorElem{Fn: &soltype.FuncType{
+		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: num()}},
+		Ret:    &soltype.ClassType{Name: "Point"},
+	}})
+	require.False(t, equalType(numCtor, strCtor))
+	// An object carrying a constructor never equals one without it.
+	require.False(t, equalType(numCtor, exactObj(&soltype.PropertyElem{Name: "count", Type: num()})))
+}
+
 // A parameter's identity is its position: two two-parameter signatures that use their
 // parameters in swapped positions are unequal even though each is well-formed.
 func TestEqualTypeGenericFuncPositional(t *testing.T) {

@@ -387,6 +387,15 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 			return e
 		}
 		return &MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
+	case *ConstructorElem:
+		nf, ok := e.Fn.Accept(v, pol).(*FuncType) // params contravariant, via FuncType.Accept
+		if !ok {
+			panic(fmt.Sprintf("AcceptObjElem: constructor signature rewrote to non-FuncType %T", e.Fn))
+		}
+		if nf == e.Fn {
+			return e
+		}
+		return &ConstructorElem{Fn: nf}
 	}
 	panic(fmt.Sprintf("AcceptObjElem: unhandled ObjTypeElem %T", e))
 }

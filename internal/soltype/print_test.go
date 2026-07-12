@@ -269,6 +269,33 @@ func TestPrintGenericMethod(t *testing.T) {
 	require.Equal(t, "{map<U>(self, x: U) -> U}", Print(obj))
 }
 
+// A class value renders as an object holding its constructor as `new (params) -> ret`
+// alongside its static members, and round-trips through Accept unchanged (M5 B6).
+func TestPrintConstructorElem(t *testing.T) {
+	obj := &ObjectType{Elems: []ObjTypeElem{
+		&ConstructorElem{Fn: &FuncType{
+			Params: []*FuncParam{identP("x", numP()), identP("y", numP())},
+			Ret:    &ClassType{Name: "Point"},
+		}},
+		&PropertyElem{Name: "count", Type: numP()},
+		&MethodElem{Name: "zero", Signatures: []*FuncType{{Ret: numP()}}, Static: true},
+	}}
+	require.Equal(t, "{new (x: number, y: number) -> Point, count: number, zero() -> number}", Print(obj))
+	// Accept with an identity visitor preserves the node, so a constructor member
+	// survives every rewriting pass built on Accept.
+	require.Same(t, obj, obj.Accept(identityVisitor{}, Positive))
+}
+
+// freeTypeVars descends a constructor's signature, so a variable reachable only through
+// a class value's constructor parameter is collected.
+func TestFreeTypeVarsConstructorElem(t *testing.T) {
+	v := &TypeVarType{ID: 7, Level: 1}
+	obj := &ObjectType{Elems: []ObjTypeElem{
+		&ConstructorElem{Fn: &FuncType{Params: []*FuncParam{identP("x", v)}, Ret: &ClassType{Name: "Box"}}},
+	}}
+	require.Equal(t, []*TypeVarType{v}, freeTypeVars(obj))
+}
+
 // freeTypeVars excludes a function's own type parameters — they are bound, not free —
 // while still collecting an outer free variable, including one that appears only in a
 // parameter's constraint.

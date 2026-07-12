@@ -370,6 +370,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 						walk(e.SelfParam.Type)
 					}
 					walk(e.Param)
+				case *ConstructorElem:
+					walk(e.Fn)
 				}
 			}
 		case *ClassType:
@@ -578,7 +580,9 @@ func (p *namedPrinter) printType(t Type) string {
 //   - a method renders `name(params) -> ret` per overload arm, arms joined by "; "
 //     so the arm boundary stays distinct from the outer ", " between members;
 //   - a getter renders `get name(self) -> T`, or `get name() -> T` when static;
-//   - a setter renders `set name(self, value: T)`, or `set name(value: T)` when static.
+//   - a setter renders `set name(self, value: T)`, or `set name(value: T)` when static;
+//   - a constructor renders `new (params) -> ret`, the unnamed call signature of a
+//     class value.
 //
 // A getter's or setter's self receiver renders through the same shorthand as a
 // method's. It panics on an unknown element kind, matching AsProperty.
@@ -612,6 +616,10 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 			recv = p.printSelfReceiver(e.SelfParam) + ", "
 		}
 		return "set " + printObjectKeyName(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")"
+	case *ConstructorElem:
+		// A class value's constructor renders `new (params) -> ret`, matching the
+		// old checker's ConstructorElem form.
+		return "new " + p.printFuncTail(e.Fn)
 	}
 	panic(fmt.Sprintf("printObjElem: unhandled ObjTypeElem %T", e))
 }

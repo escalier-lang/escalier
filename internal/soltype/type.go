@@ -312,14 +312,25 @@ type SetterElem struct {
 	Param     Type
 }
 
-func (*MethodElem) isObjTypeElem() {}
-func (*GetterElem) isObjTypeElem() {}
-func (*SetterElem) isObjTypeElem() {}
+// ConstructorElem is the call signature a class value carries. It is the constructor a
+// class name resolves to as a value, so `Point(1, 2)` calls Fn. A class value holds
+// exactly one, unnamed, alongside the class's static members. It is the single callable
+// element the structural lattice admits, scoped to the class-value carrier rather than a
+// general call-signature-in-any-object feature.
+type ConstructorElem struct{ Fn *FuncType }
+
+func (*MethodElem) isObjTypeElem()      {}
+func (*GetterElem) isObjTypeElem()      {}
+func (*SetterElem) isObjTypeElem()      {}
+func (*ConstructorElem) isObjTypeElem() {}
 
 // ObjElemName returns the member name of any ObjTypeElem kind. It is the shared
 // name accessor for member lookup and structural equality, so those sites need no
-// per-kind type switch of their own. It panics on an unknown element kind,
-// matching the loud-fail discipline of AsProperty.
+// per-kind type switch of their own. A ConstructorElem is unnamed, so it returns the
+// empty string. No source-derived member carries that name, so a name lookup never
+// matches a constructor. Two constructors still pair up under the shared empty key when
+// their objects are compared. It panics on an unknown element kind, matching the
+// loud-fail discipline of AsProperty.
 func ObjElemName(e ObjTypeElem) string {
 	switch e := e.(type) {
 	case *PropertyElem:
@@ -330,6 +341,8 @@ func ObjElemName(e ObjTypeElem) string {
 		return e.Name
 	case *SetterElem:
 		return e.Name
+	case *ConstructorElem:
+		return ""
 	}
 	panic(fmt.Sprintf("ObjElemName: unhandled ObjTypeElem %T", e))
 }
@@ -360,6 +373,19 @@ func (o *ObjectType) Member(name string) (ObjTypeElem, bool) {
 	for _, e := range o.Elems {
 		if ObjElemName(e) == name {
 			return e, true
+		}
+	}
+	return nil, false
+}
+
+// Constructor returns the object's constructor call signature and whether it carries
+// one. A class value carries exactly one ConstructorElem, so this is the lookup a call
+// site and the nominal-value constrain rule use to reach the constructor without a
+// type switch of their own.
+func (o *ObjectType) Constructor() (*ConstructorElem, bool) {
+	for _, e := range o.Elems {
+		if ctor, ok := e.(*ConstructorElem); ok {
+			return ctor, true
 		}
 	}
 	return nil, false
@@ -633,6 +659,8 @@ func levelOfElem(e ObjTypeElem) int {
 		return max(selfLevel(e.SelfParam), LevelOf(e.Type))
 	case *SetterElem:
 		return max(selfLevel(e.SelfParam), LevelOf(e.Param))
+	case *ConstructorElem:
+		return LevelOf(e.Fn)
 	}
 	panic(fmt.Sprintf("levelOfElem: unhandled ObjTypeElem %T", e))
 }

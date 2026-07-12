@@ -1257,14 +1257,29 @@ func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b 
 // ok=false means no concrete func was found (e.g. a deferred callee with no lower
 // bound yet) — the caller skips return recovery. PR1 bindings have at most one
 // func lower bound; overload sets (PR6) resolve through resolveOverload, not here.
+//
+// A class value with static members is an object carrying its constructor as a
+// ConstructorElem rather than a bare FuncType, so a call `Point(1, 2)` recovers the
+// constructor signature through that element. An inline object callee yields it directly.
+// A binding var yields it through an object lower bound, the same look-through the
+// FuncType arm runs for a named function.
 func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:
 		return t, true
+	case *soltype.ObjectType:
+		if ctor, ok := t.Constructor(); ok {
+			return ctor.Fn, true
+		}
 	case *soltype.TypeVarType:
 		for _, lb := range t.LowerBounds {
-			if fn, ok := lb.(*soltype.FuncType); ok {
-				return fn, true
+			switch lb := lb.(type) {
+			case *soltype.FuncType:
+				return lb, true
+			case *soltype.ObjectType:
+				if ctor, ok := lb.Constructor(); ok {
+					return ctor.Fn, true
+				}
 			}
 		}
 	}
@@ -1972,6 +1987,13 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// member resolves through member lookup here, since the structural field-requirement
 	// path below reads only properties and panics on a non-property member (M5 B3).
 	if res, ok := c.classBodyMember(lvl, blame, name, recvCarrier); ok {
+		return res
+	}
+	// A class value carries its static members on the same object as its constructor, so
+	// a static read `Point.origin` resolves through member lookup here. A static method,
+	// getter, or setter would otherwise be invisible to the structural path below, which
+	// reads only properties (M5 B6).
+	if res, ok := c.classValueMember(lvl, blame, name, recvCarrier); ok {
 		return res
 	}
 	fieldVar := c.freshAt(lvl)
