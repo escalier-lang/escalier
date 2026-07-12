@@ -108,15 +108,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	return c.classValue(ctorType, static), &ast.NodeProvenance{Node: decl}, true
 }
 
-// classValue produces the RAW value type a class name binds to for the SCC driver to
-// constrain into the value var. A class with no static members binds its bare
-// constructor FuncType, so a plain `class Point { … }` value renders `fn (…) -> Point`
-// and constructs through the function directly. A class with static members binds an
-// exact object holding a ConstructorElem for the callable side plus the class's static
-// fields, methods, getters, and setters, so `Point(…)` still constructs while
-// `Point.origin` reads a static off the same value. The object is minted only when a
-// static is present, keeping the single-callable-element lattice exception confined to
-// the class values that need it.
+// classValue produces the RAW value type a class name binds to. A class with no statics
+// binds its bare constructor FuncType; one with statics binds an exact object holding a
+// ConstructorElem plus the static members, so `Point(…)` constructs and `Point.origin` reads.
 func (c *checker) classValue(ctorType soltype.Type, static *soltype.ObjectType) soltype.Type {
 	if len(static.Elems) == 0 {
 		return ctorType
