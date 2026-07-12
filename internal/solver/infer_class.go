@@ -235,16 +235,16 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 	if !ok {
 		return nil
 	}
-	ct, ok := b.Type.(*soltype.ClassType)
-	if !ok {
+	if _, ok := b.Type.(*soltype.ClassType); !ok {
 		c.errs = append(c.errs, &NonClassSuperError{Ref: ref, Name: name})
 		return nil
 	}
-	if len(ref.TypeArgs) == 0 {
-		return ct
-	}
-	args := c.resolveClassRefArgs(scope, ref, lvl)
-	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final}
+	// The binding names a class, so resolveScopedTypeRef returns its token: the bare
+	// class for a reference with no arguments, or a fresh instance carrying the resolved
+	// arguments for a generic one like `Animal<D>`.
+	t, _ := c.resolveScopedTypeRef(scope, ref, lvl)
+	ct, _ := t.(*soltype.ClassType)
+	return ct
 }
 
 // resolveClassRefArgs resolves a generic class reference's type-argument list through
