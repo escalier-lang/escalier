@@ -777,6 +777,25 @@ func classKeepVars(typeParams []*soltype.TypeParam, bodies ...*soltype.ObjectTyp
 // map lets freezeClassBody recover T as the value flowing into such a var, adding it
 // back as a positive-position lower-bound contribution. Each var's kept sources are sorted by
 // id so the coalesced union orders deterministically.
+//
+// Worked example. For
+//
+//	class Box<T> {
+//	    v: T,
+//	    read(self) { return self.v },
+//	    alias(self) { return self.read() },
+//	}
+//
+// T is the kept var t1. Reading `self.v` inside `read` constrains t1 <: t4, where t4 is
+// `read`'s return var, and `alias` returning `self.read()` constrains t4 <: t5, where t5 is
+// `alias`'s return var. constrain records each edge on the smaller var's upper bounds, so the
+// stored graph is t1.upper=[t4], t4.upper=[t5]; t4 and t5 have no lower bounds. Given
+// keep={t1}, the forward walk over upper-bound edges reaches t4 then t5, so the result is
+//
+//	{ t4: [t1], t5: [t1] }
+//
+// The kept var t1 is not itself a key — only the vars it flows into are. freezeClassBody then
+// coalesces `read`'s return t4 to t1 and `alias`'s return t5 to t1 rather than to `never`.
 func keptFlowMap(keep set.Set[*soltype.TypeVarType]) map[*soltype.TypeVarType][]*soltype.TypeVarType {
 	reached := map[*soltype.TypeVarType]set.Set[*soltype.TypeVarType]{}
 	for kv := range keep {
