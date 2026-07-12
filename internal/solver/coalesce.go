@@ -31,9 +31,9 @@ import (
 // See coalesceRec for the guard's behavior. M3 still owns the *precise* μ-bound
 // recursive rendering; this guard only keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType]()}, pol)
-	c = bubbleOwnedMut(c)            // #779: lift an owned-mut cell out of an immutable container
-	return coalesceLifetimes(c, pol) // D4: resolve borrow lifetimes to their display form
+	// The uniform-inlining coalesce is coalesceKeeping with no retained vars and no
+	// kept-flow map, so both share one coalescer-invocation body.
+	return coalesceKeeping(t, pol, nil, nil)
 }
 
 // coalesceKeeping is coalesce with a set of variables held symbolic rather than inlined to
@@ -44,11 +44,12 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // is recovered. B8's freezeClassBody passes the class's own TypeParam vars — and each
 // method's own TypeParams vars — as keep, so `class Box<T> { read(self) { self.v } }` stores
 // `read`'s return as `T` rather than collapsing the intermediate var to `never`.
-// projectClassMember then substitutes `T` for the instance's argument.
+// projectClassMember then substitutes `T` for the instance's argument. A nil keep and nil
+// flow reduce it to the plain uniform-inlining coalesce.
 func coalesceKeeping(t soltype.Type, pol soltype.Polarity, keep set.Set[*soltype.TypeVarType], flow map[*soltype.TypeVarType][]*soltype.TypeVarType) soltype.Type {
 	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType](), keep: keep, flow: flow}, pol)
-	c = bubbleOwnedMut(c)
-	return coalesceLifetimes(c, pol)
+	c = bubbleOwnedMut(c)            // #779: lift an owned-mut cell out of an immutable container
+	return coalesceLifetimes(c, pol) // D4: resolve borrow lifetimes to their display form
 }
 
 // coalescer is the soltype-visitor form of coalesce. The structural arms and the
