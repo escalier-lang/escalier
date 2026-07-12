@@ -1622,9 +1622,23 @@ func (p *Printer) printLiteral(lit ast.Lit) {
 
 // Helper methods
 
+// printVarianceModifier writes a type parameter's `in`/`out`/`in out` modifier
+// followed by a space, or nothing when the parameter carries no modifier.
+func (p *Printer) printVarianceModifier(v ast.VarianceModifier) {
+	switch v {
+	case ast.VarianceOut:
+		p.writeString("out ")
+	case ast.VarianceIn:
+		p.writeString("in ")
+	case ast.VarianceInOut:
+		p.writeString("in out ")
+	}
+}
+
 func (p *Printer) printTypeParams(params []*ast.TypeParam) {
 	p.writeString("<")
 	for i, param := range params {
+		p.printVarianceModifier(param.Variance)
 		p.writeString(param.Name)
 		if param.Constraint != nil {
 			p.writeString(": ")
@@ -1670,6 +1684,7 @@ func (p *Printer) printGenericParams(lifetimeParams []*ast.LifetimeParam, typePa
 		}
 	}
 	for i, tp := range typeParams {
+		p.printVarianceModifier(tp.Variance)
 		p.writeString(tp.Name)
 		if tp.Constraint != nil {
 			p.writeString(": ")

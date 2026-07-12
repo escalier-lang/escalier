@@ -105,6 +105,12 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		c.freezeClassBody(static)
 	}
 
+	// Freeze the per-parameter variance once every member body has refined its
+	// signature, so the walk measures each type parameter at its final occurrences. The
+	// conservative Invariant seeded above governs any constraint raised during body
+	// inference; the nominal rule reads the measured variance from here on (C2).
+	def.Variance = c.inferVariance(def, decl)
+
 	return c.classValue(ctorType, static), &ast.NodeProvenance{Node: decl}, true
 }
 

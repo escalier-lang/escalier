@@ -980,6 +980,69 @@ func TestInferClassNameInAnnotation(t *testing.T) {
 	})
 }
 
+// TestInferClassVariance covers C2 end to end: a class parameter's variance is inferred
+// from its body and drives the nominal constrain rule. A covariant Box widens through an
+// annotation, so `Box<5> <: Box<number | string>` — a check C1's conservative invariant
+// rejected — now succeeds; a class using its parameter in a method value parameter is
+// contravariant, so the same widening is rejected.
+func TestInferClassVariance(t *testing.T) {
+	t.Run("covariant field parameter widens", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val b: Box<number | string> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("covariant instance widens into a wider instance", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val narrow: Box<number> = Box(5)
+			val wide: Box<number | string> = narrow
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("contravariant method parameter rejects a widening", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			val narrow: Consumer<number> = Consumer()
+			val wide: Consumer<number | string> = narrow
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+}
+
+// TestInferClassVarianceModifiers covers the declaration-site `in`/`out`/`in out`
+// modifiers (C2): a modifier that matches the inferred variance checks silently, and one
+// that disagrees reports VarianceMismatchError. The measured variance still governs
+// subtyping — the modifier is checked, not trusted.
+func TestInferClassVarianceModifiers(t *testing.T) {
+	t.Run("matching out modifier on a covariant parameter checks", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class Box<out T> { value: T }`)
+		require.Empty(t, errs)
+	})
+	t.Run("in modifier on a covariant parameter is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class Box<in T> { value: T }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "type parameter `T` is declared contravariant but is actually covariant", errs[0].Message())
+	})
+	t.Run("in out modifier on a covariant parameter is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class Box<in out T> { value: T }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "type parameter `T` is declared invariant but is actually covariant", errs[0].Message())
+	})
+	t.Run("matching in modifier on a contravariant parameter checks", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Consumer<in T> {
+				accept(self, x: T) { },
+			}
+		`)
+		require.Empty(t, errs)
+	})
+}
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {

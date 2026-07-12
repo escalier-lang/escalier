@@ -550,7 +550,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	p.lexer.consume() // consume the fn keyword
 
 	// Parse lifetime + type parameters if present
-	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
 
 	p.expect(OpenParen, ConsumeOnMatch)
 	params, inexact := p.parseFuncParams()
