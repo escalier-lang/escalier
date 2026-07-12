@@ -1089,3 +1089,158 @@ func TestConstructorInitErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestInferClassNamespaceQualified covers the namespace-qualified class registry.
+// A class is keyed in the nominal registry, in its ClassType token, and in its scope
+// type binding by its dep_graph-qualified name, e.g. "geometry.Point". So two sibling
+// `class Point` declarations under different directory-derived namespaces stay distinct:
+// a bare "Point" key would collide and merge their bodies, while the qualified keys keep
+// each class's body its own. A class-body type reference resolves against its own
+// namespace first, so a bare sibling reference still resolves and a qualified
+// cross-namespace reference resolves too. Every class still renders under its bare name,
+// since the printer strips the namespace prefix.
+//
+// The instance-construction and member-access forms — `val p = Point(1, 2); p.x` — are
+// exercised at the root namespace by TestInferClassBasic. A namespaced instance is not
+// constructed here because a bare value reference does not yet resolve across a
+// namespace boundary in the solver; that value-side resolution rides the broader
+// namespace-in-scope work. The per-class constructor signature, synthesized from the
+// class's own body, stands in as the observable proof that each class resolves its own
+// members with no cross-namespace collision.
+func TestInferClassNamespaceQualified(t *testing.T) {
+	tests := []struct {
+		name       string
+		srcs       map[string]string
+		wantValues map[string]string
+		wantTypes  map[string]string
+	}{
+		{
+			name: "SiblingSameNameDistinctNamespaces",
+			srcs: map[string]string{
+				"geometry/point.esc": `
+					class Point {
+						x: number,
+					}
+				`,
+				"shape/point.esc": `
+					class Point {
+						label: string,
+					}
+				`,
+			},
+			// Each constructor is synthesized from its OWN class body, so the two bodies
+			// never merged on a shared "Point" registry entry. Both render bare.
+			wantValues: map[string]string{
+				"geometry.Point": "fn (x: number) -> Point",
+				"shape.Point":    "fn (label: string) -> Point",
+			},
+			wantTypes: map[string]string{
+				"geometry.Point": "Point",
+				"shape.Point":    "Point",
+			},
+		},
+		{
+			name: "IntraNamespaceSiblingReference",
+			srcs: map[string]string{
+				"geometry/shapes.esc": `
+					class Line {
+						start: Point,
+					}
+					class Point {
+						x: number,
+					}
+				`,
+			},
+			// The bare `Point` in Line's field resolves to the sibling geometry.Point
+			// through the class's own namespace, not to any other namespace's Point.
+			wantValues: map[string]string{
+				"geometry.Line":  "fn (start: Point) -> Line",
+				"geometry.Point": "fn (x: number) -> Point",
+			},
+			wantTypes: map[string]string{
+				"geometry.Line":  "Line",
+				"geometry.Point": "Point",
+			},
+		},
+		{
+			name: "CrossNamespaceReference",
+			srcs: map[string]string{
+				"geometry/point.esc": `
+					class Point {
+						x: number,
+					}
+				`,
+				"shape/line.esc": `
+					class Line {
+						start: geometry.Point,
+					}
+				`,
+			},
+			// The qualified `geometry.Point` reference from the shape namespace resolves
+			// to the geometry class's registered type binding.
+			wantValues: map[string]string{
+				"shape.Line":     "fn (start: Point) -> Line",
+				"geometry.Point": "fn (x: number) -> Point",
+			},
+			wantTypes: map[string]string{
+				"shape.Line":     "Line",
+				"geometry.Point": "Point",
+			},
+		},
+		{
+			name: "RootNamespaceUnchanged",
+			srcs: map[string]string{
+				"input.esc": `
+					class Point {
+						x: number,
+					}
+				`,
+			},
+			// A root-namespace class keeps its bare name as the qualified key, so nothing
+			// changes for the common single-namespace case.
+			wantValues: map[string]string{"Point": "fn (x: number) -> Point"},
+			wantTypes:  map[string]string{"Point": "Point"},
+		},
+		{
+			name: "MutuallyRecursiveAcrossNamespaces",
+			srcs: map[string]string{
+				"foo/a.esc": `
+					class A {
+						peer: bar.B,
+					}
+				`,
+				"bar/b.esc": `
+					class B {
+						peer: foo.A,
+					}
+				`,
+			},
+			// A cycle whose two classes live in different namespaces. The dep graph
+			// condenses it into one type-key component, and the SCC pre-pass registers
+			// both shells under their qualified names before either body is walked, so
+			// each cross-namespace forward reference — `foo.A` naming `bar.B` and back —
+			// resolves through the shared token with no placeholder leak. Each field
+			// renders the peer under its bare name.
+			wantValues: map[string]string{
+				"foo.A": "fn (peer: B) -> A",
+				"bar.B": "fn (peer: A) -> B",
+			},
+			wantTypes: map[string]string{
+				"foo.A": "A",
+				"bar.B": "B",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, types, errs := inferSources(t, test.srcs)
+			require.Empty(t, errs)
+			// Compare the whole maps, not just the expected keys, so a stale bare `Point`
+			// binding left over from a namespace collision would surface as an unexpected
+			// extra entry rather than passing unnoticed.
+			require.Equal(t, test.wantValues, values)
+			require.Equal(t, test.wantTypes, types)
+		})
+	}
+}

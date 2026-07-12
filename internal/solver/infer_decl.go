@@ -10,7 +10,8 @@ import (
 // (inferComponent) and returns its RAW (un-coalesced, variable-carrying) type to
 // constrain against the binding's binding var, the decl's provenance, and ok=false
 // when it introduces no value. It does NOT bind the name — inferComponent owns
-// scope placement.
+// scope placement. ns is the decl's dep_graph namespace, used only by the ClassDecl
+// arm to reconstruct the class's qualified registry key; every other kind ignores it.
 //
 // The type MUST stay raw: inferComponent coalesces the binding var once, after every
 // group member has constrained it (phase 3). Coalescing a `val` initializer here
@@ -27,7 +28,7 @@ import (
 //   - VarDecl with a destructuring pattern → UnsupportedNodeError (initializer
 //     still walked first, so it surfaces its own errors)
 //   - any decl kind outside the M2 subset → UnsupportedNodeError
-func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type, provenance.Provenance, bool) {
+func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl, ns string) (soltype.Type, provenance.Provenance, bool) {
 	switch d := d.(type) {
 	case *ast.VarDecl:
 		if d.Else != nil {
@@ -62,8 +63,10 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl) (soltype.Type,
 	case *ast.ClassDecl:
 		// inferClassDecl returns the RAW constructor func type for the SCC driver to
 		// constrain into the value binding var and generalize, and registers the
-		// instance type binding plus the nominal ClassDef as side effects.
-		return c.inferClassDecl(scope, lvl, d)
+		// instance type binding plus the nominal ClassDef as side effects. ns is the
+		// class's dep_graph namespace, threaded through so the registry and the minted
+		// ClassType are keyed by the namespace-qualified name.
+		return c.inferClassDecl(scope, lvl, d, ns)
 	default:
 		c.reportUnsupported(d)
 		return nil, nil, false

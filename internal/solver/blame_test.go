@@ -347,7 +347,7 @@ func TestNilVarDeclPatternBlamesDeclWithoutPanic(t *testing.T) {
 	c := newChecker()
 	d := ast.NewVarDecl(ast.ValKind, nil, nil, numExpr(5), false, false, testSpan())
 	require.NotPanics(t, func() {
-		_, _, ok := c.inferDeclDef(NewScope(), 0, d)
+		_, _, ok := c.inferDeclDef(NewScope(), 0, d, "")
 		require.False(t, ok)
 	})
 	require.Len(t, c.errs, 1)
