@@ -648,3 +648,206 @@ func TestInferClassErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestConstructorInitClean covers constructors whose definite-assignment analysis is
+// satisfied: every required field is assigned on every path, an optional field may be
+// left unassigned, and both branches of an `if` that each assign a field count.
+func TestConstructorInitClean(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "AllFieldsAssigned",
+			src: `
+				class Point {
+					x: number,
+					y: number,
+					constructor(mut self, x: number, y: number) {
+						self.x = x
+						self.y = y
+					},
+				}
+			`,
+		},
+		{
+			name: "OptionalFieldUnassigned",
+			src: `
+				class C {
+					x: number,
+					y?: number,
+					constructor(mut self, x: number) {
+						self.x = x
+					},
+				}
+			`,
+		},
+		{
+			name: "BothBranchesAssign",
+			src: `
+				class C {
+					x: number,
+					constructor(mut self, cond: boolean) {
+						if cond {
+							self.x = 1
+						} else {
+							self.x = 2
+						}
+					},
+				}
+			`,
+		},
+		{
+			name: "AssignThenRead",
+			src: `
+				class C {
+					x: number,
+					y: number,
+					constructor(mut self, x: number) {
+						self.x = x
+						self.y = self.x
+					},
+				}
+			`,
+		},
+		{
+			// A method may be called once every required field is assigned.
+			name: "MethodCallAfterInit",
+			src: `
+				class C {
+					x: number,
+					log(self) -> number { return self.x },
+					constructor(mut self, x: number) {
+						self.x = x
+						val r = self.log()
+					},
+				}
+			`,
+		},
+		{
+			// Referencing a method member of self before init reads no field, so it is not
+			// a read-before-init.
+			name: "MethodReferenceBeforeInit",
+			src: `
+				class C {
+					x: number,
+					log(self) -> number { return self.x },
+					constructor(mut self, x: number) {
+						val f = self.log
+						self.x = x
+					},
+				}
+			`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Empty(t, errs)
+		})
+	}
+}
+
+// TestConstructorInitErrors covers the definite-assignment diagnostics: a required
+// field left unassigned on some path is a FieldNotInitializedError, a `self.f` read
+// before its assignment is a ReadBeforeInitError, and a `self.method(...)` call before
+// every required field is assigned is a MethodCallBeforeInitError.
+func TestConstructorInitErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "FieldNeverAssigned",
+			src: `
+				class Point {
+					x: number,
+					y: number,
+					constructor(mut self, x: number) {
+						self.x = x
+					},
+				}
+			`,
+			want: "Field 'y' is not initialized on every path through the constructor.",
+		},
+		{
+			name: "MultipleFieldsUnassigned",
+			src: `
+				class Point {
+					x: number,
+					y: number,
+					constructor(mut self) { },
+				}
+			`,
+			want: "Fields 'x', 'y' are not initialized on every path through the constructor.",
+		},
+		{
+			name: "AssignedOnOnlyOnePath",
+			src: `
+				class C {
+					x: number,
+					constructor(mut self, cond: boolean) {
+						if cond {
+							self.x = 1
+						}
+					},
+				}
+			`,
+			want: "Field 'x' is not initialized on every path through the constructor.",
+		},
+		{
+			name: "ReadBeforeInit",
+			src: `
+				class C {
+					x: number,
+					y: number,
+					constructor(mut self, x: number) {
+						self.y = self.x
+						self.x = x
+					},
+				}
+			`,
+			want: "Field 'self.x' is read before it has been initialized.",
+		},
+		{
+			name: "MethodCallBeforeInit",
+			src: `
+				class C {
+					x: number,
+					log(self) -> number { return self.x },
+					constructor(mut self, x: number) {
+						val r = self.log()
+						self.x = x
+					},
+				}
+			`,
+			want: "Cannot call a method on `self` before all required fields are initialized; missing 'x'.",
+		},
+		{
+			name: "MethodCallMissingMultiple",
+			src: `
+				class C {
+					x: number,
+					y: number,
+					log(self) -> number { return self.x },
+					constructor(mut self) {
+						val r = self.log()
+						self.x = 1
+						self.y = 2
+					},
+				}
+			`,
+			want: "Cannot call a method on `self` before all required fields are initialized; missing 'x', 'y'.",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, test.want, errs[0].Message())
+		})
+	}
+}
