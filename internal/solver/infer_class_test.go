@@ -1047,3 +1047,104 @@ func TestConstructorInitErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestInferClassNamespaceQualified covers the namespace-qualified class registry (B7).
+// A class is keyed in the nominal registry, in its ClassType token, and in its scope
+// type binding by its dep_graph-qualified name, e.g. "geometry.Point". So two sibling
+// `class Point` declarations under different directory-derived namespaces stay distinct:
+// a bare "Point" key would collide and merge their bodies, while the qualified keys keep
+// each class's body its own. A class-body type reference resolves against its own
+// namespace first, so a bare sibling
+// reference still resolves and a qualified cross-namespace reference resolves too. Every
+// class still renders under its bare name, since the printer strips the namespace
+// prefix.
+//
+// The instance-construction and member-access forms — `val p = Point(1, 2); p.x` — are
+// exercised at the root namespace by TestInferClassBasic. A namespaced instance is not
+// constructed here because a bare value reference does not yet resolve across a
+// namespace boundary in the solver; that value-side resolution rides the broader
+// namespace-in-scope work. The per-class constructor signature, synthesized from the
+// class's own body, stands in as the observable proof that each class resolves its own
+// members with no cross-namespace collision.
+func TestInferClassNamespaceQualified(t *testing.T) {
+	tests := []struct {
+		name       string
+		srcs       map[string]string
+		wantValues map[string]string
+		wantTypes  map[string]string
+	}{
+		{
+			name: "SiblingSameNameDistinctNamespaces",
+			srcs: map[string]string{
+				"geometry/point.esc": "class Point {\n\t\t\t\t\tx: number,\n\t\t\t\t}",
+				"shape/point.esc":    "class Point {\n\t\t\t\t\tlabel: string,\n\t\t\t\t}",
+			},
+			// Each constructor is synthesized from its OWN class body, so the two bodies
+			// never merged on a shared "Point" registry entry. Both render bare.
+			wantValues: map[string]string{
+				"geometry.Point": "fn (x: number) -> Point",
+				"shape.Point":    "fn (label: string) -> Point",
+			},
+			wantTypes: map[string]string{
+				"geometry.Point": "Point",
+				"shape.Point":    "Point",
+			},
+		},
+		{
+			name: "IntraNamespaceSiblingReference",
+			srcs: map[string]string{
+				"geometry/shapes.esc": "class Line {\n\t\t\t\t\tstart: Point,\n\t\t\t\t}\n\t\t\t\tclass Point {\n\t\t\t\t\tx: number,\n\t\t\t\t}",
+			},
+			// The bare `Point` in Line's field resolves to the sibling geometry.Point
+			// through the class's own namespace, not to any other namespace's Point.
+			wantValues: map[string]string{
+				"geometry.Line":  "fn (start: Point) -> Line",
+				"geometry.Point": "fn (x: number) -> Point",
+			},
+			wantTypes: map[string]string{
+				"geometry.Line":  "Line",
+				"geometry.Point": "Point",
+			},
+		},
+		{
+			name: "CrossNamespaceReference",
+			srcs: map[string]string{
+				"geometry/point.esc": "class Point {\n\t\t\t\t\tx: number,\n\t\t\t\t}",
+				"shape/line.esc":     "class Line {\n\t\t\t\t\tstart: geometry.Point,\n\t\t\t\t}",
+			},
+			// The qualified `geometry.Point` reference from the shape namespace resolves
+			// to the geometry class's registered type binding.
+			wantValues: map[string]string{
+				"shape.Line":     "fn (start: Point) -> Line",
+				"geometry.Point": "fn (x: number) -> Point",
+			},
+			wantTypes: map[string]string{
+				"shape.Line":     "Line",
+				"geometry.Point": "Point",
+			},
+		},
+		{
+			name: "RootNamespaceUnchanged",
+			srcs: map[string]string{
+				"input.esc": "class Point {\n\t\t\t\t\tx: number,\n\t\t\t\t}",
+			},
+			// A root-namespace class keeps its bare name as the qualified key, so nothing
+			// changes for the common single-namespace case.
+			wantValues: map[string]string{"Point": "fn (x: number) -> Point"},
+			wantTypes:  map[string]string{"Point": "Point"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, types, errs := inferSources(t, test.srcs)
+			require.Empty(t, errs)
+			for name, want := range test.wantValues {
+				require.Equal(t, want, values[name], "value binding %q", name)
+			}
+			for name, want := range test.wantTypes {
+				require.Equal(t, want, types[name], "type binding %q", name)
+			}
+		})
+	}
+}

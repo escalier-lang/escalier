@@ -247,7 +247,10 @@ func (c *checker) inferComponent(
 				continue
 			}
 			handled.Add(d)
-			t, src, ok := c.inferDeclDef(scope, inner, d)
+			// A class decl is keyed by its dep_graph-qualified name, so pass the key's
+			// namespace down for inferClassDecl to reconstruct it (B7). Every other decl
+			// kind ignores it.
+			t, src, ok := c.inferDeclDef(scope, inner, d, g.GetNamespace(key))
 			if !ok {
 				continue
 			}
@@ -351,7 +354,9 @@ func (c *checker) inferComponent(
 				// The value key infers the body and marks the decl handled; leave it
 				// unhandled here so the reconciliation pass finds it through that key. The
 				// returned token and def are discarded here; inferClassDecl reuses them.
-				c.getOrCreateClass(scope, cd)
+				// The type key carries the same namespace as the value key, so the shell is
+				// keyed by the same qualified name inferClassDecl reconstructs (B7).
+				c.getOrCreateClass(scope, cd, g.GetNamespace(key))
 				continue
 			}
 			handled.Add(d)

@@ -32,7 +32,15 @@ import (
 // Once every body has refined the field vars, a non-generic body is coalesced so member
 // lookup reads concrete member types. A generic body keeps its parameter vars symbolic
 // for per-instance projection.
-func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (soltype.Type, provenance.Provenance, bool) {
+func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns string) (soltype.Type, provenance.Provenance, bool) {
+	// A class-body type reference resolves against the class's own namespace first, so a
+	// bare sibling reference such as `start: Point` inside a class in namespace
+	// `Geometry` finds `Geometry.Point`. Save and restore around the walk, since a class
+	// is only ever inferred at top level.
+	prevNS := c.classNamespace
+	c.classNamespace = ns
+	defer func() { c.classNamespace = prevNS }()
+
 	// Resolve the class's type parameters into a child scope so the body resolves the
 	// class's T to one shared var, quantified at the class boundary and freshened per
 	// construction. A non-generic class reuses the enclosing scope.
@@ -47,10 +55,11 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (so
 	// the pair the SCC pre-pass registered for this class — an empty shell it minted
 	// before any type params were resolved, so that a sibling in the same recursive group
 	// resolves a forward reference to this class through the shared token (B2). A class
-	// reached without a pre-registered shell mints and registers one here. B1 uses the
-	// bare local name as the qualified key, correct for the top-level default namespace;
-	// namespace-qualified keys ride the namespace work.
-	self, def := c.getOrCreateClass(scope, decl)
+	// reached without a pre-registered shell mints and registers one here. The registry,
+	// the minted token, and the scope type binding are all keyed by the namespace-
+	// qualified name, so two sibling `class Point` declarations in different namespaces
+	// stay distinct (B7).
+	self, def := c.getOrCreateClass(scope, decl, ns)
 	// Populate the type-param-derived fields the pre-pass left empty. This is the second
 	// phase: the pre-pass registers a bare identity so forward references resolve, and
 	// this call — running once every sibling is registered, so a bound like `<T: Sibling>`
@@ -110,25 +119,38 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl) (so
 // key infers a body (M5 B2). That pre-pass discards the return; only inferClassDecl reads
 // it. No placeholder-patch phase is needed: the token a sibling captured is the one that
 // carries the finished body.
-func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl) (*soltype.ClassType, *ClassDef) {
-	name := decl.Name.Name
-	if def, ok := c.ctx.classDef(name); ok {
-		if b, found := scope.GetType(name); found {
-			if self, ok := b.Type.(*soltype.ClassType); ok && self.Name == name {
+func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string) (*soltype.ClassType, *ClassDef) {
+	qname := qualifyClassName(ns, decl)
+	if def, ok := c.ctx.classDef(qname); ok {
+		if b, found := scope.GetType(qname); found {
+			if self, ok := b.Type.(*soltype.ClassType); ok && self.Name == qname {
 				return self, def
 			}
 		}
 	}
-	self := &soltype.ClassType{Name: name, Final: decl.Final()}
+	self := &soltype.ClassType{Name: qname, Final: decl.Final()}
 	def := &ClassDef{Body: &soltype.ObjectType{}, Static: &soltype.ObjectType{}}
-	c.ctx.registerClass(name, def)
-	// Register the type binding so a self-referential type in the body resolves to this
-	// class rather than falling through as unknown.
-	scope.defineType(name, TypeBinding{
+	c.ctx.registerClass(qname, def)
+	// Register the type binding under the qualified name so a cross-namespace reference
+	// resolves it and a self-referential type in the body resolves to this class rather
+	// than falling through as unknown. A bare sibling reference resolves through the
+	// checker's classNamespace, which reconstructs this qualified key.
+	scope.defineType(qname, TypeBinding{
 		Type:    self,
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
 	})
 	return self, def
+}
+
+// qualifyClassName returns a class's dep_graph-qualified name — the namespace joined
+// to the local name with a dot, or the bare local name at the root namespace. This is
+// the same `CurrentNamespace + "." + name` rule dep_graph forms binding keys with, so
+// the registry key and the ClassType token match the value binding's qualified key.
+func qualifyClassName(ns string, decl *ast.ClassDecl) string {
+	if ns == "" {
+		return decl.Name.Name
+	}
+	return ns + "." + decl.Name.Name
 }
 
 // typeParamVars returns each type parameter's var, the arguments a class's own
@@ -194,7 +216,7 @@ func (c *checker) resolveClassImplements(scope *Scope, decl *ast.ClassDecl) []*s
 // See planning/simple_sub/m5-implementation-plan.md.
 func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn) *soltype.ClassType {
 	name := ast.QualIdentToString(ref.Name)
-	b, ok := scope.GetType(name)
+	b, ok := c.lookupClassBinding(scope, name)
 	if !ok {
 		return nil
 	}
@@ -205,6 +227,35 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn) *soltyp
 	return nil
 }
 
+// lookupClassBinding resolves a written type name to its scope TypeBinding, honoring
+// three precedence levels in order:
+//
+//  1. A lexically-scoped type parameter shadows everything. A type parameter is bound
+//     under its bare name in the class's own child scope, so a bare lookup that lands on
+//     a non-class binding — a `T` in `class Box<T>` — wins outright, even against a
+//     sibling class of the same name.
+//  2. A same-namespace class comes next. Classes are keyed by their qualified name, so a
+//     bare `Point` written inside a class in namespace `Geometry` resolves the sibling
+//     `Geometry.Point` here, ahead of a root-namespace `Point`. This mirrors dep_graph's
+//     qualified-first dependency resolution.
+//  3. A bare class binding is the fallback — a root-namespace class referenced bare, or
+//     an already-qualified `Geometry.Point` reference written from another namespace,
+//     whose doubly-qualified probe in step 2 missed.
+func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bool) {
+	bare, bareOK := scope.GetType(name)
+	if bareOK {
+		if _, isClass := bare.Type.(*soltype.ClassType); !isClass {
+			return bare, true
+		}
+	}
+	if c.classNamespace != "" {
+		if b, ok := scope.GetType(c.classNamespace + "." + name); ok {
+			return b, true
+		}
+	}
+	return bare, bareOK
+}
+
 // resolveClassTypeAnn resolves a type annotation appearing in a class body or a
 // type-parameter bound. It first consults the type scope for a reference to a class or
 // type parameter — a bare `Point` or `T`, or a generic class instance `Box<number>` — the
@@ -213,7 +264,7 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn) *soltyp
 func (c *checker) resolveClassTypeAnn(scope *Scope, ann ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	if ref, ok := ann.(*ast.TypeRefTypeAnn); ok {
 		name := ast.QualIdentToString(ref.Name)
-		if b, ok := scope.GetType(name); ok {
+		if b, ok := c.lookupClassBinding(scope, name); ok {
 			if len(ref.TypeArgs) == 0 {
 				return b.Type, true
 			}
