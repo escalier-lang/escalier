@@ -502,6 +502,17 @@ func (lexer *Lexer) peek() *Token {
 	return token
 }
 
+// peek2 returns the token two positions ahead without consuming input, the
+// two-token lookahead a couple of contextual parses need — for example telling a
+// variance modifier `out T` from a parameter named `out`.
+func (lexer *Lexer) peek2() *Token {
+	savedState := lexer.saveState()
+	lexer.next()
+	token := lexer.next()
+	lexer.restoreState(savedState)
+	return token
+}
+
 func (lexer *Lexer) consume() {
 	lexer.next()
 }

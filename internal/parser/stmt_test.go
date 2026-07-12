@@ -135,6 +135,18 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"GenericClassWithDefaultType": {
 			input: "class Response<T: any = string> { data: T }",
 		},
+		"GenericClassWithCovariantParam": {
+			input: "class Box<out T> { value: T }",
+		},
+		"GenericClassWithContravariantParam": {
+			input: "class Consumer<in T> { accept(self, x: T) { } }",
+		},
+		"GenericClassWithInvariantParam": {
+			input: "class Cell<in out T> { value: T }",
+		},
+		"GenericClassWithVarianceAndConstraint": {
+			input: "class Box<out T: number> { value: T }",
+		},
 		"ClassWithGenericMethod": {
 			input: `class Mapper<T> {
 				value: T,
@@ -409,6 +421,17 @@ func TestParseStmtErrorHandling(t *testing.T) {
 		},
 		"ParamsMissingClosingParen": {
 			input: "fn foo (a, b { a + b }",
+		},
+		// A variance modifier is meaningful only on a class or interface type parameter, so
+		// it is rejected on a function, a type alias, and an enum.
+		"VarianceModifierOnFunction": {
+			input: "fn f<out T>(x: T) -> T { return x }",
+		},
+		"VarianceModifierOnTypeAlias": {
+			input: "type Box<out T> = { value: T }",
+		},
+		"VarianceModifierOnEnum": {
+			input: "enum E<in T> { A }",
 		},
 	}
 

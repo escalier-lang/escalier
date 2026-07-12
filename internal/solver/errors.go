@@ -304,6 +304,20 @@ type CannotExtendFinalClassError struct {
 	Name string
 }
 
+// VarianceMismatchError fires when a type parameter's declared `in`/`out`/`in out`
+// modifier disagrees with the variance inferred from the class body — a parameter
+// written `out` (covariant) that the body actually uses contravariantly. A written
+// modifier is checked against the inferred variance rather than trusted, so a mismatch
+// is rejected rather than silently overriding it. Name is the parameter, Declared the
+// modifier's variance, Inferred the variance measured from the body, and Class the blame
+// node.
+type VarianceMismatchError struct {
+	Name     string
+	Declared Variance
+	Inferred Variance
+	Class    ast.Node
+}
+
 func (*CannotConstrainError) isSolverError()        {}
 func (*MutFieldError) isSolverError()               {}
 func (*ReadonlyFieldError) isSolverError()          {}
@@ -325,6 +339,7 @@ func (*ClassIntoExactObjectError) isSolverError()   {}
 func (*StructuralIntoClassError) isSolverError()    {}
 func (*NonClassSuperError) isSolverError()          {}
 func (*CannotExtendFinalClassError) isSolverError() {}
+func (*VarianceMismatchError) isSolverError()       {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -441,6 +456,9 @@ func (e *NonClassSuperError) Related() []ast.Span { return nil }
 
 func (e *CannotExtendFinalClassError) Span() ast.Span      { return e.Ref.Span() }
 func (e *CannotExtendFinalClassError) Related() []ast.Span { return nil }
+
+func (e *VarianceMismatchError) Span() ast.Span      { return e.Class.Span() }
+func (e *VarianceMismatchError) Related() []ast.Span { return nil }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
 // site, and the site itself otherwise (or when op has no entry). The containment
@@ -1321,6 +1339,11 @@ func (e *NonClassSuperError) Message() string {
 
 func (e *CannotExtendFinalClassError) Message() string {
 	return fmt.Sprintf("Cannot extend `%s`; it is a final class and has no subclasses.", e.Name)
+}
+
+func (e *VarianceMismatchError) Message() string {
+	return fmt.Sprintf("type parameter `%s` is declared %s but is actually %s",
+		e.Name, e.Declared, e.Inferred)
 }
 
 // describeBorrowInner renders the pointee of a borrow for a diagnostic. An immutable

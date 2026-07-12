@@ -104,6 +104,154 @@ func TestConstrainNominalArgVariance(t *testing.T) {
 	})
 }
 
+// TestInferBodyVariance covers C2's per-parameter variance measurement over a
+// hand-built class body, so each occurrence shape is isolated: a field is an output
+// position (covariant), a method value parameter is an input position (contravariant),
+// both together are invariant, and a parameter used nowhere is bivariant. The method
+// receiver `self` is excluded, so a method reading `self` does not drag its parameter to
+// invariant.
+func TestInferBodyVariance(t *testing.T) {
+	// selfMethod builds a method whose receiver is the class instance at its own type
+	// parameter, plus one value parameter and a return, so the walk sees a genuine `self`
+	// it must exclude.
+	selfMethod := func(name, cls string, tv *soltype.TypeVarType, param, ret soltype.Type) *soltype.MethodElem {
+		self := &soltype.ClassType{Name: cls, TypeArgs: []soltype.Type{tv}}
+		sig := &soltype.FuncType{
+			SelfParam: &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: self},
+			Params:    []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: param}},
+			Ret:       ret,
+		}
+		return &soltype.MethodElem{Name: name, Signatures: []*soltype.FuncType{sig}}
+	}
+	// oneParam builds a single-type-parameter ClassDef so each case shares one var
+	// pointer between the TypeParams entry and the body, matching how inferClassDecl
+	// threads the same *TypeVarType through both.
+	oneParam := func(build func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType)) *ClassDef {
+		tv := &soltype.TypeVarType{ID: 1}
+		body, supers := build(tv)
+		return &ClassDef{
+			TypeParams: []*soltype.TypeParam{{Name: "T", Var: tv}},
+			Body:       body,
+			Supers:     supers,
+		}
+	}
+	tests := []struct {
+		name string
+		def  *ClassDef
+		want []Variance
+	}{
+		{
+			name: "field only is covariant",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(propElem("value", tv)), nil
+			}),
+			want: []Variance{Covariant},
+		},
+		{
+			name: "method value parameter only is contravariant",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(selfMethod("accept", "Consumer", tv, tv, &soltype.Void{})), nil
+			}),
+			want: []Variance{Contravariant},
+		},
+		{
+			name: "field and parameter together are invariant",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(
+					propElem("value", tv),
+					selfMethod("accept", "Cell", tv, tv, &soltype.Void{}),
+				), nil
+			}),
+			want: []Variance{Invariant},
+		},
+		{
+			name: "method returning the parameter is covariant despite the self receiver",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(selfMethod("get", "Box", tv, num(), tv)), nil
+			}),
+			want: []Variance{Covariant},
+		},
+		{
+			name: "parameter used nowhere is bivariant",
+			def: oneParam(func(_ *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(propElem("n", num())), nil
+			}),
+			want: []Variance{Bivariant},
+		},
+		{
+			name: "parameter reaching a super is invariant",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(propElem("value", tv)),
+					[]*soltype.ClassType{{Name: "Base", TypeArgs: []soltype.Type{tv}}}
+			}),
+			want: []Variance{Invariant},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, inferBodyVariance(tt.def))
+		})
+	}
+}
+
+// TestConstrainNominalVarianceDispatch drives the four variance lines the milestone
+// pins Option 2 against `mut` with (§M5 Accept): a covariant Box widens, a contravariant
+// Consumer does not, and either under a `mut` borrow is invariant because the RefType
+// arm's bidirectional sweep forces both argument directions. The ClassDefs carry the
+// variance directly, isolating constrain's per-position dispatch from the inference that
+// TestInferBodyVariance covers.
+func TestConstrainNominalVarianceDispatch(t *testing.T) {
+	numOrStr := &soltype.UnionType{Types: []soltype.Type{num(), str()}}
+	newCtx := func() *Context {
+		c := &Context{}
+		boxVar := &soltype.TypeVarType{ID: 100}
+		c.registerClass("Box", &ClassDef{
+			TypeParams: []*soltype.TypeParam{{Name: "T", Var: boxVar}},
+			Variance:   []Variance{Covariant},
+			Body:       exactObj(propElem("value", boxVar)),
+		})
+		consumerVar := &soltype.TypeVarType{ID: 101}
+		c.registerClass("Consumer", &ClassDef{
+			TypeParams: []*soltype.TypeParam{{Name: "T", Var: consumerVar}},
+			Variance:   []Variance{Contravariant},
+		})
+		return c
+	}
+	box := func(arg soltype.Type) *soltype.ClassType {
+		return &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{arg}}
+	}
+	consumer := func(arg soltype.Type) *soltype.ClassType {
+		return &soltype.ClassType{Name: "Consumer", TypeArgs: []soltype.Type{arg}}
+	}
+
+	t.Run("covariant Box widens", func(t *testing.T) {
+		c := newCtx()
+		require.Empty(t, Messages(c.Constrain(box(num()), box(numOrStr))))
+	})
+	t.Run("mut Box is invariant", func(t *testing.T) {
+		c := newCtx()
+		require.Equal(t,
+			[]string{"cannot constrain string <: number"},
+			Messages(c.Constrain(mutRef(box(num())), mutRef(box(numOrStr)))))
+	})
+	t.Run("contravariant Consumer rejects a widening", func(t *testing.T) {
+		c := newCtx()
+		require.Equal(t,
+			[]string{"cannot constrain string <: number"},
+			Messages(c.Constrain(consumer(num()), consumer(numOrStr))))
+	})
+	t.Run("contravariant Consumer accepts a narrowing", func(t *testing.T) {
+		c := newCtx()
+		require.Empty(t, Messages(c.Constrain(consumer(numOrStr), consumer(num()))))
+	})
+	t.Run("mut Consumer is invariant", func(t *testing.T) {
+		c := newCtx()
+		require.Equal(t,
+			[]string{"cannot constrain string <: number"},
+			Messages(c.Constrain(mutRef(consumer(numOrStr)), mutRef(consumer(num())))))
+	})
+}
+
 // TestProjectClassBodyDoesNotMutateRegistry pins that projecting a class instance never
 // writes back to the shared ClassDef.Body. A generic class whose body mentions none of
 // its type parameters projects through the substitution path, where ObjectType.Accept

@@ -329,7 +329,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			)
 		case Fn:
 			p.lexer.consume()
-			lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+			lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
 
 			p.expect(OpenParen, AlwaysConsume)
 
@@ -815,7 +815,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	}
 
 	// Parse optional lifetime + type parameters for the method.
-	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
 
 	token = p.lexer.peek()
 
@@ -953,7 +953,18 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	}
 }
 
-func (p *Parser) typeParam() *ast.TypeParam {
+func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
+	variance, varianceSpan := p.parseVarianceModifier()
+	if variance != ast.VarianceNone && !allowVariance {
+		// A variance modifier is meaningful only on a class or interface type parameter,
+		// where it is checked against the inferred variance. Anywhere else — a function,
+		// method, type alias, or enum — it has nothing to annotate, so reject it and drop
+		// the modifier to recover.
+		p.reportError(varianceSpan,
+			"variance modifiers are only allowed on class and interface type parameters")
+		variance = ast.VarianceNone
+	}
+
 	token := p.lexer.peek()
 
 	if token.Type != Identifier {
@@ -979,7 +990,43 @@ func (p *Parser) typeParam() *ast.TypeParam {
 	}
 
 	typeParam := ast.NewTypeParam(name, constraint, default_)
+	typeParam.Variance = variance
 	return &typeParam
+}
+
+// parseVarianceModifier reads an optional `in`, `out`, or `in out` declaration-site
+// variance modifier preceding a type parameter's name and returns which was written —
+// VarianceNone when none was — along with the source span it covered. `in` is the keyword
+// token In; `out` is a contextual identifier, so a bare `out` used as a parameter name —
+// `<out>` with no following name — is still lexed as an identifier and read as the name by
+// the caller. The modifier is disambiguated from a name by requiring a type-parameter name
+// to follow it.
+func (p *Parser) parseVarianceModifier() (ast.VarianceModifier, ast.Span) {
+	token := p.lexer.peek()
+	// `out` is not a keyword, so treat it as a modifier only when another identifier
+	// follows it — `<out T>` is a modifier, `<out>` is a parameter named `out`.
+	if token.Type == Identifier && token.Value == "out" && p.peekSecondIsTypeParamName() {
+		p.lexer.consume()
+		return ast.VarianceOut, token.Span
+	}
+	if token.Type != In {
+		return ast.VarianceNone, token.Span
+	}
+	p.lexer.consume() // consume `in`
+	// `in out T` is invariant; a bare `in T` is contravariant.
+	next := p.lexer.peek()
+	if next.Type == Identifier && next.Value == "out" && p.peekSecondIsTypeParamName() {
+		p.lexer.consume() // consume `out`
+		return ast.VarianceInOut, ast.MergeSpans(token.Span, next.Span)
+	}
+	return ast.VarianceIn, token.Span
+}
+
+// peekSecondIsTypeParamName reports whether the token after the current one begins a
+// type-parameter name, so a variance modifier is distinguished from a parameter named
+// `in`/`out`. A type-parameter name is an identifier.
+func (p *Parser) peekSecondIsTypeParamName() bool {
+	return p.lexer.peek2().Type == Identifier
 }
 
 // parseTypeRef parses a type reference (qualified identifier with optional

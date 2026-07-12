@@ -980,6 +980,186 @@ func TestInferClassNameInAnnotation(t *testing.T) {
 	})
 }
 
+// TestInferClassVariance covers C2 end to end: a class parameter's variance is inferred
+// from its body and drives the nominal constrain rule. A covariant Box widens through an
+// annotation, so `Box<5> <: Box<number | string>` — a check C1's conservative invariant
+// rejected — now succeeds; a class using its parameter in a method value parameter is
+// contravariant, so the same widening is rejected.
+func TestInferClassVariance(t *testing.T) {
+	t.Run("covariant field parameter widens", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val b: Box<number | string> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("covariant instance widens into a wider instance", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val narrow: Box<number> = Box(5)
+			val wide: Box<number | string> = narrow
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("contravariant method parameter rejects a widening", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			val narrow: Consumer<number> = Consumer()
+			val wide: Consumer<number | string> = narrow
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+}
+
+// TestInferClassCovariance demonstrates C2 covariance in the shapes that produce an
+// output-position occurrence — a field, a method return, a getter, and each parameter of a
+// multi-parameter class — so a narrower instance flows into a wider one with no error. It
+// also shows covariance reached through a function argument and that a field read off the
+// widened instance yields the wider type. Every case is expected clean: covariance never
+// rejects a widening.
+func TestInferClassCovariance(t *testing.T) {
+	t.Run("field occurrence widens", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val wide: Box<number | string> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("method return occurrence widens", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> {
+				value: T,
+				read(self) -> T { return self.value },
+			}
+			val wide: Box<number | string> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("getter occurrence widens", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T> {
+				value: T,
+				get item(self) -> T { return self.value },
+			}
+			val wide: Box<number | string> = Box(5)
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("each parameter of a multi-parameter class is covariant", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Pair<A, B> { first: A, second: B }
+			val p: Pair<number | string, number | boolean> = Pair(5, true)
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Pair<number | string, number | boolean>", values["p"])
+	})
+	t.Run("widening flows through a function argument", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			fn widen(b: Box<number | string>) -> Box<number | string> { return b }
+			val r = widen(Box(5))
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Box<number | string>", values["r"])
+	})
+	t.Run("a field read off the widened instance yields the wider type", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val wide: Box<number | string> = Box(5)
+			val v = wide.value
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "number | string", values["v"])
+	})
+}
+
+// TestInferClassContravariance demonstrates C2 contravariance in the shapes that produce
+// an input-position occurrence — a method value parameter and a setter — so a wider
+// instance flows into a narrower one with no error. This is the reverse of covariance: a
+// Consumer<number | string> is a Consumer<number>, because a consumer that accepts the
+// wider type accepts the narrower. It also shows the narrowing reached through a function
+// argument and across each parameter of a multi-parameter class. Every case is expected
+// clean: contravariance accepts a narrowing.
+func TestInferClassContravariance(t *testing.T) {
+	t.Run("method parameter occurrence narrows", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			val wide: Consumer<number | string> = Consumer()
+			val narrow: Consumer<number> = wide
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Consumer<number>", values["narrow"])
+	})
+	t.Run("setter occurrence narrows", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Sink<T> {
+				set item(mut self, x: T) { },
+			}
+			val wide: Sink<number | string> = Sink()
+			val narrow: Sink<number> = wide
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Sink<number>", values["narrow"])
+	})
+	t.Run("each parameter of a multi-parameter class is contravariant", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Sink2<A, B> {
+				a(self, x: A) { },
+				b(self, y: B) { },
+			}
+			val wide: Sink2<number | string, number | boolean> = Sink2()
+			val narrow: Sink2<number, boolean> = wide
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Sink2<number, boolean>", values["narrow"])
+	})
+	t.Run("narrowing flows through a function argument", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			fn feed(c: Consumer<number>) { }
+			val wide: Consumer<number | string> = Consumer()
+			val r = feed(wide)
+		`)
+		require.Empty(t, errs)
+	})
+}
+
+// TestInferClassVarianceModifiers covers the declaration-site `in`/`out`/`in out`
+// modifiers (C2): a modifier that matches the inferred variance checks silently, and one
+// that disagrees reports VarianceMismatchError. The measured variance still governs
+// subtyping — the modifier is checked, not trusted.
+func TestInferClassVarianceModifiers(t *testing.T) {
+	t.Run("matching out modifier on a covariant parameter checks", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class Box<out T> { value: T }`)
+		require.Empty(t, errs)
+	})
+	t.Run("in modifier on a covariant parameter is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class Box<in T> { value: T }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "type parameter `T` is declared contravariant but is actually covariant", errs[0].Message())
+	})
+	t.Run("in out modifier on a covariant parameter is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class Box<in out T> { value: T }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "type parameter `T` is declared invariant but is actually covariant", errs[0].Message())
+	})
+	t.Run("matching in modifier on a contravariant parameter checks", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Consumer<in T> {
+				accept(self, x: T) { },
+			}
+		`)
+		require.Empty(t, errs)
+	})
+}
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {

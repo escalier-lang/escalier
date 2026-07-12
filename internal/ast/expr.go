@@ -338,15 +338,31 @@ func (e *IdentExpr) Accept(v Visitor) {
 	v.ExitExpr(e)
 }
 
+// VarianceModifier is a declaration-site variance annotation on a type parameter:
+// `out` (covariant), `in` (contravariant), or `in out` (invariant). VarianceNone
+// means no modifier was written, so the checker infers the parameter's variance
+// from how it occurs in the class body. A written modifier is checked against the
+// inferred variance rather than trusted, mirroring TypeScript 4.7+.
+type VarianceModifier int
+
+const (
+	VarianceNone  VarianceModifier = iota // no modifier: infer the variance
+	VarianceOut                           // `out`: covariant
+	VarianceIn                            // `in`: contravariant
+	VarianceInOut                         // `in out`: invariant
+)
+
 // TypeParam is a type binder in a <…> quantifier list. Constraint is the bound
 // the type must satisfy. In <T: U>, T <: U, read "T is a subtype of U". The ':'
 // here means subtyping, not the outliving ':' of a LifetimeParam bound. A
 // binder is a type or a lifetime, never both, so the two never mix on one
-// binder and the checker picks the relation from the binder's sort.
+// binder and the checker picks the relation from the binder's sort. Variance is
+// the optional `in`/`out`/`in out` declaration-site modifier.
 type TypeParam struct {
 	Name       string
 	Constraint TypeAnn
 	Default    TypeAnn
+	Variance   VarianceModifier
 }
 
 func NewTypeParam(name string, constraint, defaultType TypeAnn) TypeParam {

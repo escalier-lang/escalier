@@ -79,6 +79,172 @@ const (
 	Bivariant
 )
 
+func (v Variance) String() string {
+	switch v {
+	case Covariant:
+		return "covariant"
+	case Contravariant:
+		return "contravariant"
+	case Bivariant:
+		return "bivariant"
+	default:
+		return "invariant"
+	}
+}
+
+// inferVariance measures each class type parameter's variance from how it occurs in the
+// class body, then checks any declared `in`/`out`/`in out` modifier against the measured
+// variance. It returns the measured variance to store on ClassDef.Variance, which the
+// nominal constrain rule dispatches each argument position by. A declared modifier is
+// checked, not trusted: a mismatch reports VarianceMismatchError and the measured
+// variance is still stored, since soundness follows the body, not the annotation.
+func (c *checker) inferVariance(def *ClassDef, decl *ast.ClassDecl) []Variance {
+	variance := inferBodyVariance(def)
+	for i, tp := range decl.TypeParams {
+		if i >= len(variance) {
+			break
+		}
+		declared, ok := modifierVariance(tp.Variance)
+		if !ok {
+			continue
+		}
+		// A phantom parameter imposes no constraint either way, so any modifier is sound
+		// on it — accept the annotation and keep the measured Bivariant.
+		if variance[i] == Bivariant {
+			continue
+		}
+		if declared != variance[i] {
+			c.report(&VarianceMismatchError{
+				Name:     tp.Name,
+				Declared: declared,
+				Inferred: variance[i],
+				Class:    decl.Name,
+			})
+		}
+	}
+	return variance
+}
+
+// modifierVariance maps a declared variance modifier to the Variance it asserts, or
+// ok=false when no modifier was written. `out` is covariant, `in` contravariant, and
+// `in out` invariant; there is no keyword for bivariant, so a phantom parameter is only
+// ever left unannotated.
+func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
+	switch m {
+	case ast.VarianceOut:
+		return Covariant, true
+	case ast.VarianceIn:
+		return Contravariant, true
+	case ast.VarianceInOut:
+		return Invariant, true
+	default:
+		return Invariant, false
+	}
+}
+
+// inferBodyVariance computes each class type parameter's variance from the polarities its
+// var occurs at in the class body, following algebraic subtyping's polarity threading:
+// a parameter seen only in output positions is covariant, only in input positions
+// contravariant, in both invariant, and in neither bivariant — a phantom parameter. The
+// receiver `self` is excluded, since every method names the class in its receiver and
+// counting that would force every parameter invariant. A parameter that reaches a `super`
+// type argument is conservatively marked invariant, matching C1's pre-inference default:
+// the polarity visitor treats a nested class's arguments covariantly regardless of that
+// class's own variance, so precise variance through inheritance is deferred rather than
+// measured unsoundly.
+func inferBodyVariance(def *ClassDef) []Variance {
+	variance := make([]Variance, len(def.TypeParams))
+	if len(def.TypeParams) == 0 {
+		return variance
+	}
+	v := &varianceVisitor{
+		targets: make(map[*soltype.TypeVarType]int, len(def.TypeParams)),
+		pos:     make([]bool, len(def.TypeParams)),
+		neg:     make([]bool, len(def.TypeParams)),
+	}
+	for i, tp := range def.TypeParams {
+		v.targets[tp.Var] = i
+	}
+	if def.Body != nil {
+		for _, elem := range def.Body.Elems {
+			soltype.AcceptObjElem(stripSelfReceiver(elem), v, soltype.Positive)
+		}
+	}
+	// A parameter appearing in a `super` type argument is marked in both directions, so it
+	// collapses to invariant — the sound conservative choice while inheritance variance is
+	// not composed precisely. Walking each super once per polarity records both.
+	for _, super := range def.Supers {
+		super.Accept(v, soltype.Positive)
+		super.Accept(v, soltype.Negative)
+	}
+	for i := range def.TypeParams {
+		variance[i] = collapseVariance(v.pos[i], v.neg[i])
+	}
+	return variance
+}
+
+// collapseVariance turns a parameter's observed occurrence polarities into its variance:
+// output-only is covariant, input-only contravariant, both invariant, neither bivariant.
+func collapseVariance(pos, neg bool) Variance {
+	switch {
+	case pos && neg:
+		return Invariant
+	case pos:
+		return Covariant
+	case neg:
+		return Contravariant
+	default:
+		return Bivariant
+	}
+}
+
+// stripSelfReceiver returns a copy of a class-body member with its `self` receiver
+// removed, so the variance walk does not count the receiver — a method's receiver names
+// the class at its own type parameters, which would force every parameter invariant. A
+// property carries no receiver and is returned unchanged.
+func stripSelfReceiver(elem soltype.ObjTypeElem) soltype.ObjTypeElem {
+	switch e := elem.(type) {
+	case *soltype.MethodElem:
+		sigs := make([]*soltype.FuncType, len(e.Signatures))
+		for i, sig := range e.Signatures {
+			bare := *sig
+			bare.SelfParam = nil
+			sigs[i] = &bare
+		}
+		return &soltype.MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
+	case *soltype.GetterElem:
+		return &soltype.GetterElem{Name: e.Name, Type: e.Type}
+	case *soltype.SetterElem:
+		return &soltype.SetterElem{Name: e.Name, Param: e.Param}
+	default:
+		return elem
+	}
+}
+
+// varianceVisitor is a read-only polarity-threading visitor that records, for a set of
+// target type-parameter vars, the polarities each occurs at. It rewrites nothing — the
+// polarity Accept threads is exactly the variance a parameter's occurrence contributes.
+type varianceVisitor struct {
+	targets map[*soltype.TypeVarType]int
+	pos     []bool
+	neg     []bool
+}
+
+func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if tv, ok := t.(*soltype.TypeVarType); ok {
+		if i, found := v.targets[tv]; found {
+			if pol == soltype.Positive {
+				v.pos[i] = true
+			} else {
+				v.neg[i] = true
+			}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (v *varianceVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
 // projectClassBody returns the instance member view of a class instance: the
 // registered Body with each class type parameter replaced by the instance's
 // corresponding type argument and each lifetime parameter by its lifetime argument.

@@ -58,17 +58,16 @@ func attachDoc(node ast.Documented, doc string) {
 	node.SetDoc(doc)
 }
 
-// maybeTypeParams parses optional type parameters if present.
-// Returns the parsed type parameters and updates the current token position.
+// maybeTypeParams parses optional type parameters where no variance modifier is allowed —
+// a type alias, enum, or method. A class or interface, which does allow variance, calls
+// maybeLifetimeAndTypeParams directly with allowVariance=true.
 //
-// Lifetime parameters (e.g. 'a) are syntactically accepted in the same
-// angle-bracket list but are not yet supported on the declaration kinds
-// that call this helper (class, interface, type alias, enum, methods),
-// so we surface a parse error instead of silently dropping them. Callers
-// that do support lifetimes (function decl/expr, `fn` type annotations)
-// use maybeLifetimeAndTypeParams directly.
+// Lifetime parameters (e.g. 'a) are syntactically accepted in the same angle-bracket list
+// but are not yet supported on the declaration kinds that call this helper, so we surface
+// a parse error instead of silently dropping them. Callers that do support lifetimes use
+// maybeLifetimeAndTypeParams directly.
 func (p *Parser) maybeTypeParams() []*ast.TypeParam {
-	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
 	for _, lp := range lifetimeParams {
 		p.reportError(lp.Span(),
 			"lifetime parameters are not supported in this context")
@@ -88,11 +87,13 @@ func (p *Parser) lifetimeAnn() *ast.LifetimeAnn {
 	return ast.NewLifetimeAnn(tok.Value, tok.Span)
 }
 
-// maybeLifetimeAndTypeParams parses optional generic parameters that may
-// include both lifetime parameters ('a) and type parameters (T). Lifetime
-// parameters must precede type parameters by convention, but this parser
-// accepts them in any order and sorts them out by token kind.
-func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeParam, []*ast.TypeParam) {
+// maybeLifetimeAndTypeParams parses an optional `<…>` list of lifetime parameters ('a)
+// and type parameters (T). Lifetime parameters must precede type parameters by convention,
+// but this parser accepts them in any order and sorts them out by token kind. allowVariance
+// controls whether an `in`/`out`/`in out` variance modifier is permitted on a type
+// parameter — true only for a class or interface, where the checker measures and checks it,
+// and false everywhere else, where the modifier has nothing to annotate.
+func (p *Parser) maybeLifetimeAndTypeParams(allowVariance bool) ([]*ast.LifetimeParam, []*ast.TypeParam) {
 	var lifetimeParams []*ast.LifetimeParam
 	var typeParams []*ast.TypeParam
 	token := p.lexer.peek()
@@ -113,7 +114,7 @@ func (p *Parser) maybeLifetimeAndTypeParams() ([]*ast.LifetimeParam, []*ast.Type
 		if token.Type == Lifetime {
 			lifetimeParams = append(lifetimeParams, p.lifetimeParam(token))
 		} else {
-			tp := p.typeParam()
+			tp := p.typeParam(allowVariance)
 			if tp == nil {
 				break
 			}
@@ -496,7 +497,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 	}
 
 	// Parse optional lifetime + type parameters for the class
-	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(true)
 	token = p.lexer.peek()
 
 	// Parse optional extends clause
@@ -807,7 +808,7 @@ modifiers_done:
 	}
 
 	// Parse optional lifetime + type parameters for the method.
-	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
 	next := p.lexer.peek()
 
 	// Handle getter
@@ -1125,7 +1126,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 	}
 
 	// Parse optional lifetime + type parameters for the function
-	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
 	token = p.lexer.peek()
 
 	if token.Type != OpenParen {
@@ -1254,7 +1255,7 @@ func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) as
 	}
 
 	// Parse optional lifetime + type parameters
-	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams()
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(true)
 
 	// Parse optional extends clause
 	var extends []*ast.TypeRefTypeAnn
