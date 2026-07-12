@@ -286,6 +286,13 @@ func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scr
 // constructor's return type, then binds each argument sub-pattern against the matching
 // constructor parameter's type. A name that is not a constructor is an
 // ExtractorPatternNotCtorError; a wrong argument count is an ExtractorPatternArityError.
+//
+// Binding against constructor parameters is an interim gate. The extractor protocol
+// deconstructs through the instance's `[Symbol.customMatcher]` method, whose return-tuple
+// element types the arguments bind against, and a class without one is an error. That
+// needs symbol-keyed members, which soltype does not carry yet, so the matcher lookup is
+// deferred to M7 (m5-implementation-plan.md §"Nominal patterns"). Until then an extractor
+// pattern accepts any class with a matching constructor arity.
 func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, scrutinee soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
 	// Record the pattern node's type against the scrutinee it matches, the same as the
 	// sibling tuple/object cases, so hover and type-at-position resolve on the pattern.
