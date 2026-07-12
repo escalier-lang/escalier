@@ -440,7 +440,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 				for _, subElem := range sub.Elems {
 					// A class value carries an unnamed ConstructorElem and may carry static
 					// method, getter, and setter members. None is a named property, so none
-					// counts as an extra property against an exact target.
+					// counts as an extra property against an exact target. Unifying properties
+					// with methods and accessors here is escalier-lang/escalier#864.
 					subProp, ok := subElem.(*soltype.PropertyElem)
 					if !ok {
 						continue
