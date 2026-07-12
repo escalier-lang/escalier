@@ -300,22 +300,10 @@ func (c *checker) resolveClassTypeAnn(scope *Scope, ann ast.TypeAnn, lvl int) (s
 	return c.resolveTypeAnn(scope, ann, lvl)
 }
 
-// resolveScopedTypeRef resolves a type reference against a type scope, covering a bare
-// name bound in scope — a class or a type parameter, `Point` or `T` — and a generic class
-// instance `Box<number>`. It returns ok=false when the name is not in scope, or when it
-// carries type arguments but does not name a class, so the caller falls back to the
-// general resolveTypeAnn path. It never routes back through resolveTypeAnn itself, so it
-// is safe to call from resolveTypeAnn's TypeRef arm without recursing.
-//
-// The name resolves through lookupClassBinding, so a type parameter shadows a class and a
-// bare reference inside a namespaced class finds the same-namespace sibling before a
-// root-namespace class of the same name.
-//
-// A generic class reference like `Cmp<U>` supplies its type arguments. Each is resolved
-// through the class-scope path and a fresh instance token carrying them is minted, so a
-// type-parameter bound such as `<T: Cmp<U>>` resolves to `Cmp<U>` rather than falling
-// through to general TypeRef resolution. An unresolved argument recovers to a fresh var so
-// the reference keeps its arity, cascade-safe.
+// resolveScopedTypeRef resolves a type reference through lookupClassBinding, covering a
+// bare `Point` or `T` and a generic instance `Box<number>`. It returns ok=false when the
+// name is unbound or has arguments but is not a class, and never routes back through
+// resolveTypeAnn, so resolveTypeAnn's TypeRef arm can fall back to it without recursing.
 func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) (soltype.Type, bool) {
 	name := ast.QualIdentToString(ref.Name)
 	b, ok := c.lookupClassBinding(scope, name)
