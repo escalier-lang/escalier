@@ -710,6 +710,52 @@ func TestInferClassGenericMethodReturnsTypeParam(t *testing.T) {
 }
 */
 
+// TestInferClassInheritedMemberAccess checks that a member declared on a superclass is
+// reachable through a subclass instance: reading an inherited field and calling an
+// inherited method both resolve to the member's declared type. projectedMember walks the
+// `extends` chain, so `class Dog extends Animal` lets `d.name` project to `string` and
+// `d.speak()` return `string`.
+func TestInferClassInheritedMemberAccess(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Animal {
+			name: string,
+			speak(self) -> string { return "..." },
+		}
+		class Dog extends Animal {
+			constructor(mut self) {}
+		}
+		val d = Dog()
+		val n = d.name
+		val s = d.speak()
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "string", values["n"])
+	require.Equal(t, "string", values["s"])
+}
+
+// TestInferClassInheritedMemberAccessMultiLevel checks that the extends walk reaches a
+// member declared two levels up. `class Leaf extends Mid extends Base` reads `base`,
+// declared on Base, through a Leaf instance. The binding names avoid the member names so a
+// separate dep-graph bug — a class field whose name matches a top-level `val` gets a
+// spurious dependency on it — does not scramble the inference order.
+func TestInferClassInheritedMemberAccessMultiLevel(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Base {
+			base: number,
+		}
+		class Mid extends Base {
+			constructor(mut self) {}
+		}
+		class Leaf extends Mid {
+			constructor(mut self) {}
+		}
+		val leaf = Leaf()
+		val got = leaf.base
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["got"])
+}
+
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {
 	tests := []struct {
