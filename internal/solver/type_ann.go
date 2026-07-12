@@ -64,6 +64,16 @@ func (c *checker) resolveTypeAnn(ta ast.TypeAnn, lvl int) (soltype.Type, bool) {
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
+		// Inside a class body classScope holds the declaration's type scope, so a
+		// reference to a class type parameter — the `D` in a `class Dog<D>` constructor's
+		// `food: D` — or a generic class instance resolves here rather than reporting
+		// unsupported. Outside a class body classScope is nil and this is skipped; the
+		// general scope-driven TypeRef resolution arrives in M7.
+		if c.classScope != nil {
+			if t, ok := c.resolveScopedTypeRef(c.classScope, ta, lvl); ok {
+				return t, true
+			}
+		}
 		return c.reportUnsupported(ta), false
 	case *ast.ObjectTypeAnn:
 		return c.resolveObjectTypeAnn(ta, lvl)

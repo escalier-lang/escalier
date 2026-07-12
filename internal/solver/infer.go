@@ -76,6 +76,16 @@ type checker struct {
 	// namespace-qualified name, so this reconstructs the qualified key a bare reference
 	// omits.
 	classNamespace string
+
+	// classScope is the type scope of the class declaration whose body is being walked,
+	// or nil outside a class body. inferClassDecl sets it to the class's declaration
+	// scope — the child scope that holds the class's own type parameters — so a type
+	// reference resolved by the general resolveTypeAnn path, such as a constructor or
+	// method parameter annotation `food: D`, resolves the class's `D` rather than
+	// reporting `Unsupported: TypeRefTypeAnn`. It is saved and restored around each class
+	// declaration, so a nested class or a function body inside a method keeps the right
+	// scope. The general scope-driven TypeRef resolution planned for M7 subsumes this.
+	classScope *Scope
 }
 
 // fieldKey identifies a written field by the receiver variable's ID and the

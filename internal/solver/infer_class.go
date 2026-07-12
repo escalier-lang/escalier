@@ -51,6 +51,14 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 	}
 
+	// Route the general resolveTypeAnn path — the one inferFunc uses for a constructor or
+	// method parameter and return annotation — through this class's type scope, so a
+	// reference to the class's own type parameter such as `food: D` resolves. Saved and
+	// restored so a nested class declaration keeps its own scope.
+	savedClassScope := c.classScope
+	c.classScope = declScope
+	defer func() { c.classScope = savedClassScope }()
+
 	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
 	// the pair the SCC pre-pass registered for this class — an empty shell it minted
 	// before any type params were resolved, so that a sibling in the same recursive group
@@ -75,8 +83,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 
 	// Resolve the declared extends edge and implements interfaces so C1 can walk and
 	// check them; B1 records them only.
-	def.Supers = c.resolveClassSupers(declScope, decl)
-	def.Implements = c.resolveClassImplements(declScope, decl)
+	def.Supers = c.resolveClassSupers(declScope, lvl, decl)
+	def.Implements = c.resolveClassImplements(declScope, lvl, decl)
 
 	// Two-phase member walk (B3). Phase 1 appends a signature element for every field,
 	// method, getter, and setter to the instance or static body before any body is
@@ -170,11 +178,11 @@ func typeParamVars(params []*soltype.TypeParam) []soltype.Type {
 // returning a single-element slice or nil when the class has no superclass or it does
 // not resolve to a class. B1 records this edge on ClassDef.Supers; the transitive
 // nominal subtype walk lands in C1.
-func (c *checker) resolveClassSupers(scope *Scope, decl *ast.ClassDecl) []*soltype.ClassType {
+func (c *checker) resolveClassSupers(scope *Scope, lvl int, decl *ast.ClassDecl) []*soltype.ClassType {
 	if decl.Extends == nil {
 		return nil
 	}
-	ct := c.resolveClassRef(scope, decl.Extends)
+	ct := c.resolveClassRef(scope, decl.Extends, lvl)
 	if ct == nil {
 		return nil
 	}
@@ -195,10 +203,10 @@ func (c *checker) resolveClassSupers(scope *Scope, decl *ast.ClassDecl) []*solty
 // ClassTypes, dropping any that do not resolve to a class. `implements` is a
 // conformance-only assertion the nominal subtype walk skips, so B1 records these on
 // ClassDef.Implements apart from Supers; the structural conformance check lands in C1.
-func (c *checker) resolveClassImplements(scope *Scope, decl *ast.ClassDecl) []*soltype.ClassType {
+func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassDecl) []*soltype.ClassType {
 	var ifaces []*soltype.ClassType
 	for _, impl := range decl.Implements {
-		if ct := c.resolveClassRef(scope, impl); ct != nil {
+		if ct := c.resolveClassRef(scope, impl, lvl); ct != nil {
 			ifaces = append(ifaces, ct)
 		}
 	}
@@ -210,21 +218,48 @@ func (c *checker) resolveClassImplements(scope *Scope, decl *ast.ClassDecl) []*s
 // rather than routing through resolveTypeAnn, whose general TypeRef resolution lands
 // with the alias work.
 //
+// A generic superclass reference such as the `Animal<D>` in `class Dog<D> extends
+// Animal<D>` supplies its type arguments. Each is resolved through the class-scope path
+// so the subclass's own type parameter `D` threads into the edge, and a fresh instance
+// token carrying the arguments is returned. The nominal walk and member projection then
+// re-express the super at the subclass's arguments through substituteSuperArgs. A bare
+// reference with no arguments returns the class token unchanged.
+//
 // A name bound to a non-class binding — a type parameter, say — is reported as a
 // NonClassSuperError. An unbound name stays silent, so the undefined name is not
 // reported twice: the general TypeRef resolution planned for M7 reports it centrally.
 // See planning/simple_sub/m5-implementation-plan.md.
-func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn) *soltype.ClassType {
+func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
 	name := ast.QualIdentToString(ref.Name)
 	b, ok := c.lookupClassBinding(scope, name)
 	if !ok {
 		return nil
 	}
-	if ct, ok := b.Type.(*soltype.ClassType); ok {
+	ct, ok := b.Type.(*soltype.ClassType)
+	if !ok {
+		c.errs = append(c.errs, &NonClassSuperError{Ref: ref, Name: name})
+		return nil
+	}
+	if len(ref.TypeArgs) == 0 {
 		return ct
 	}
-	c.errs = append(c.errs, &NonClassSuperError{Ref: ref, Name: name})
-	return nil
+	args := c.resolveClassRefArgs(scope, ref, lvl)
+	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final}
+}
+
+// resolveClassRefArgs resolves a generic class reference's type-argument list through
+// the class-scope path, recovering an unresolved argument to a fresh var so the
+// reference keeps its arity, cascade-safe.
+func (c *checker) resolveClassRefArgs(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) []soltype.Type {
+	args := make([]soltype.Type, len(ref.TypeArgs))
+	for i, arg := range ref.TypeArgs {
+		if at, ok := c.resolveClassTypeAnn(scope, arg, lvl); ok {
+			args[i] = at
+		} else {
+			args[i] = c.freshAt(lvl)
+		}
+	}
+	return args
 }
 
 // lookupClassBinding resolves a written type name to its scope TypeBinding, honoring
@@ -263,31 +298,43 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 // delegates to resolveTypeAnn for primitives and structural types.
 func (c *checker) resolveClassTypeAnn(scope *Scope, ann ast.TypeAnn, lvl int) (soltype.Type, bool) {
 	if ref, ok := ann.(*ast.TypeRefTypeAnn); ok {
-		name := ast.QualIdentToString(ref.Name)
-		if b, ok := c.lookupClassBinding(scope, name); ok {
-			if len(ref.TypeArgs) == 0 {
-				return b.Type, true
-			}
-			// A generic class reference like `Cmp<U>` names a class and supplies its type
-			// arguments. Resolve each argument through the same class-scope path and mint a
-			// fresh instance token carrying them, so a type-parameter bound such as
-			// `<T: Cmp<U>>` resolves to `Cmp<U>` rather than falling through to general
-			// TypeRef resolution. An unresolved argument recovers to a fresh var so the
-			// reference keeps its arity, cascade-safe.
-			if ct, ok := b.Type.(*soltype.ClassType); ok {
-				args := make([]soltype.Type, len(ref.TypeArgs))
-				for i, arg := range ref.TypeArgs {
-					if at, ok := c.resolveClassTypeAnn(scope, arg, lvl); ok {
-						args[i] = at
-					} else {
-						args[i] = c.freshAt(lvl)
-					}
-				}
-				return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final}, true
-			}
+		if t, ok := c.resolveScopedTypeRef(scope, ref, lvl); ok {
+			return t, true
 		}
 	}
 	return c.resolveTypeAnn(ann, lvl)
+}
+
+// resolveScopedTypeRef resolves a type reference against a type scope, covering a bare
+// name bound in scope — a class or a type parameter, `Point` or `T` — and a generic class
+// instance `Box<number>`. It returns ok=false when the name is not in scope, or when it
+// carries type arguments but does not name a class, so the caller falls back to the
+// general resolveTypeAnn path. It never routes back through resolveTypeAnn itself, so it
+// is safe to call from resolveTypeAnn's TypeRef arm without recursing.
+//
+// The name resolves through lookupClassBinding, so a type parameter shadows a class and a
+// bare reference inside a namespaced class finds the same-namespace sibling before a
+// root-namespace class of the same name.
+//
+// A generic class reference like `Cmp<U>` supplies its type arguments. Each is resolved
+// through the class-scope path and a fresh instance token carrying them is minted, so a
+// type-parameter bound such as `<T: Cmp<U>>` resolves to `Cmp<U>` rather than falling
+// through to general TypeRef resolution. An unresolved argument recovers to a fresh var so
+// the reference keeps its arity, cascade-safe.
+func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) (soltype.Type, bool) {
+	name := ast.QualIdentToString(ref.Name)
+	b, ok := c.lookupClassBinding(scope, name)
+	if !ok {
+		return nil, false
+	}
+	if len(ref.TypeArgs) == 0 {
+		return b.Type, true
+	}
+	if ct, ok := b.Type.(*soltype.ClassType); ok {
+		args := c.resolveClassRefArgs(scope, ref, lvl)
+		return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final}, true
+	}
+	return nil, false
 }
 
 // collectConstructors returns the explicit constructor elements of a class, reporting
