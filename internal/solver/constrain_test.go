@@ -792,6 +792,64 @@ func TestConstrainObjectMethodMembers(t *testing.T) {
 	}
 }
 
+// TestConstrainConstructorObjectAsFunction pins that an object carrying a constructor
+// signature is a subtype of the matching function type, so a class value is usable where
+// a plain function is expected. The constructor's call signature is checked against the
+// function target with the ordinary function variance, extra static members are ignored,
+// and an object with no constructor is not a function.
+func TestConstrainConstructorObjectAsFunction(t *testing.T) {
+	fn := func(param, ret soltype.Type) *soltype.FuncType {
+		return &soltype.FuncType{Params: []*soltype.FuncParam{identParam("a", param)}, Ret: ret}
+	}
+	ctorObj := func(param, ret soltype.Type, extra ...soltype.ObjTypeElem) *soltype.ObjectType {
+		return exactObj(append([]soltype.ObjTypeElem{&soltype.ConstructorElem{Fn: fn(param, ret)}}, extra...)...)
+	}
+	x := &soltype.ClassType{Name: "X"}
+	tests := []struct {
+		name       string
+		sub, super soltype.Type
+		want       []string
+	}{
+		{
+			name:  "constructor-only object fills a function",
+			sub:   ctorObj(num(), x),
+			super: fn(num(), x),
+		},
+		{
+			// A class value carries static members alongside its constructor; they are
+			// ignored against a function target.
+			name:  "constructor-plus-static object fills a function",
+			sub:   ctorObj(num(), x, propElem("dim", num())),
+			super: fn(num(), x),
+		},
+		{
+			// The constructor parameter is contravariant, as in any function.
+			name:  "constructor parameter is contravariant",
+			sub:   ctorObj(num(), x),
+			super: fn(numLit(5), x),
+		},
+		{
+			name:  "constructor return mismatch",
+			sub:   ctorObj(num(), num()),
+			super: fn(num(), str()),
+			want:  []string{"cannot constrain number <: string"},
+		},
+		{
+			// An object with no constructor is not callable.
+			name:  "plain object is not a function",
+			sub:   exactObj(propElem("dim", num())),
+			super: fn(num(), x),
+			want:  []string{"cannot constrain object <: function"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			require.Equal(t, tt.want, Messages(c.Constrain(tt.sub, tt.super)))
+		})
+	}
+}
+
 // TestConstrainRef exercises the single RefType <: RefType rule — THE GATE (C2).
 // The headline property is mut-driven inner invariance: a mutable target takes both
 // a covariant read view and a contravariant write view, so the inner is invariant.

@@ -356,11 +356,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	case *soltype.ObjectType:
 		if sup, ok := super.(*soltype.FuncType); ok {
-			// A class value flows into a function target through its constructor call
-			// signature. The target is the synthesized call shape of `Point(1, 2)` or a
-			// `fn (…) -> Point` annotation. The class value is the single callable object the
-			// lattice admits, so only a ConstructorElem satisfies a function target. A plain
-			// object with no constructor falls through to CannotConstrainError.
+			// An object with a constructor signature is a subtype of the matching function
+			// type. Its constructor call signature is checked against the function target,
+			// which is the synthesized call shape of `Point(1, 2)` or a `fn (…) -> Point`
+			// annotation. A ConstructorElem is the one callable member the lattice admits, so
+			// an object with no constructor is not a function and falls through to
+			// CannotConstrainError. Codegen bridges the runtime gap, emitting whatever a
+			// constructor needs to behave as a plain function where one is expected.
 			if ctor, ok := sub.Constructor(); ok {
 				return c.constrain(ctor.Fn, sup, seen, mutCtx)
 			}
