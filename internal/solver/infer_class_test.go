@@ -318,6 +318,44 @@ func TestInferClassIntoObject(t *testing.T) {
 	})
 }
 
+// TestInferClassObjectDestructure covers destructuring a class instance with an object
+// pattern — `val {x, y} = p`. This is NOT the nominal InstancePat constructor pattern
+// `Point({x, y})`, which D1 adds; it is a plain object pattern, which lowers to the
+// constraint `p <: {x: _, y: _, ...}` — an inexact object requirement — and so rides
+// C1's class-vs-object projection rule. Each named field binds at the projected member
+// type, and a field the class lacks reports the object-requirement miss. Before C1 the
+// requirement had no class-vs-object rule and failed with `cannot constrain ? <: object`.
+func TestInferClassObjectDestructure(t *testing.T) {
+	t.Run("binds fields at their member types", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Point { x: number, y: number }
+			val p = Point(1, 2)
+			val {x, y} = p
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "number", values["x"])
+		require.Equal(t, "number", values["y"])
+	})
+	t.Run("projects a generic instance's argument into the bound field", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val b = Box(5)
+			val {value} = b
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "5", values["value"])
+	})
+	t.Run("a field the class lacks is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Point { x: number, y: number }
+			val p = Point(1, 2)
+			val {z} = p
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "object is missing property: z", errs[0].Message())
+	})
+}
+
 // TestInferClassNonClassSuper covers the C1 diagnostic for an `extends` or `implements`
 // clause naming something that is not a class. A class type parameter resolves to a
 // binding that is not a ClassType, so using it as a super reports NonClassSuperError
