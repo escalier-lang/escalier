@@ -227,6 +227,9 @@ func (p *Printer) printClassDecl(decl *ast.ClassDecl) {
 	if decl.Declare() {
 		p.writeString("declare ")
 	}
+	if decl.Final() {
+		p.writeString("final ")
+	}
 
 	p.writeString("class ")
 	p.writeString(decl.Name.Name)

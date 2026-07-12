@@ -262,23 +262,69 @@ type ReadonlyFieldSubtypeError struct {
 	site  ast.Node
 }
 
-func (*CannotConstrainError) isSolverError()       {}
-func (*MutFieldError) isSolverError()              {}
-func (*ReadonlyFieldError) isSolverError()         {}
-func (*ReadonlyFieldSubtypeError) isSolverError()  {}
-func (*FuncArityMismatchError) isSolverError()     {}
-func (*TupleLengthMismatchError) isSolverError()   {}
-func (*SpreadNotTupleError) isSolverError()        {}
-func (*InexactTupleSpreadError) isSolverError()    {}
-func (*MissingPropertyError) isSolverError()       {}
-func (*InexactIntoExactError) isSolverError()      {}
-func (*InexactTupleIntoExactError) isSolverError() {}
-func (*InexactUnionIntoExactError) isSolverError() {}
-func (*ExtraPropertyError) isSolverError()         {}
-func (*ExtraElementError) isSolverError()          {}
-func (*OptionalPropertyError) isSolverError()      {}
-func (*MutabilityMismatchError) isSolverError()    {}
-func (*BorrowEscapeError) isSolverError()          {}
+// ClassIntoExactObjectError fires when a class instance flows into an exact
+// structural object target — `val foo: {x: number, y: number} = Point(1, 2)`. A
+// non-final class may have subclasses that add members, so an instance carries an
+// open tail of unknown properties an exact target cannot tolerate. A final class is
+// exact instead, so it projects an exact body and is checked structurally rather than
+// rejected here (exact-types §2.6). Holds the class instance and the object target.
+type ClassIntoExactObjectError struct {
+	Sub   *soltype.ClassType
+	Super *soltype.ObjectType
+	prov  NodeResolver
+	site  ast.Node
+}
+
+// StructuralIntoClassError fires when a structural object flows into a class-typed
+// target — `self.item = {x: 0}` where `item` is typed by a class. Nominal identity is
+// declared, not structural, so an object literal that happens to carry a class's
+// fields is still not that class. Holds the object source and the class target.
+type StructuralIntoClassError struct {
+	Sub   *soltype.ObjectType
+	Super *soltype.ClassType
+	prov  NodeResolver
+	site  ast.Node
+}
+
+// NonClassSuperError fires when a name in an `extends` or `implements` clause resolves
+// to a binding that is not a class — a type parameter, say. Only a class can be
+// extended or implemented, so the edge is rejected rather than silently dropped. An
+// unbound super name stays silent until M7's general TypeRef resolution reports the
+// undefined name centrally. Ref carries the blame span and Name the rendered reference.
+type NonClassSuperError struct {
+	Ref  *ast.TypeRefTypeAnn
+	Name string
+}
+
+// CannotExtendFinalClassError fires when an `extends` clause names a final class. A
+// final class has no subclasses (exact-types §2.6), so it cannot be a superclass. Ref
+// carries the blame span and Name the rendered reference.
+type CannotExtendFinalClassError struct {
+	Ref  *ast.TypeRefTypeAnn
+	Name string
+}
+
+func (*CannotConstrainError) isSolverError()        {}
+func (*MutFieldError) isSolverError()               {}
+func (*ReadonlyFieldError) isSolverError()          {}
+func (*ReadonlyFieldSubtypeError) isSolverError()   {}
+func (*FuncArityMismatchError) isSolverError()      {}
+func (*TupleLengthMismatchError) isSolverError()    {}
+func (*SpreadNotTupleError) isSolverError()         {}
+func (*InexactTupleSpreadError) isSolverError()     {}
+func (*MissingPropertyError) isSolverError()        {}
+func (*InexactIntoExactError) isSolverError()       {}
+func (*InexactTupleIntoExactError) isSolverError()  {}
+func (*InexactUnionIntoExactError) isSolverError()  {}
+func (*ExtraPropertyError) isSolverError()          {}
+func (*ExtraElementError) isSolverError()           {}
+func (*OptionalPropertyError) isSolverError()       {}
+func (*MutabilityMismatchError) isSolverError()     {}
+func (*BorrowEscapeError) isSolverError()           {}
+func (*ClassIntoExactObjectError) isSolverError()   {}
+func (*StructuralIntoClassError) isSolverError()    {}
+func (*NonClassSuperError) isSolverError()          {}
+func (*CannotExtendFinalClassError) isSolverError() {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -375,6 +421,26 @@ func (e *BorrowEscapeError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
 }
 func (e *BorrowEscapeError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+
+func (e *ClassIntoExactObjectError) Span() ast.Span {
+	// The class instance is the source value; blame it, degrade to the object target,
+	// else the site.
+	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
+}
+func (e *ClassIntoExactObjectError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+
+func (e *StructuralIntoClassError) Span() ast.Span {
+	// The object literal is the source value; blame it, degrade to the class target,
+	// else the site.
+	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
+}
+func (e *StructuralIntoClassError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+
+func (e *NonClassSuperError) Span() ast.Span      { return e.Ref.Span() }
+func (e *NonClassSuperError) Related() []ast.Span { return nil }
+
+func (e *CannotExtendFinalClassError) Span() ast.Span      { return e.Ref.Span() }
+func (e *CannotExtendFinalClassError) Related() []ast.Span { return nil }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
 // site, and the site itself otherwise (or when op has no entry). The containment
@@ -1241,6 +1307,22 @@ func (e *MutabilityMismatchError) Message() string {
 		describeBorrowInner(e.Sub.Inner), describeBorrowInner(e.Super.Inner))
 }
 
+func (e *ClassIntoExactObjectError) Message() string {
+	return fmt.Sprintf("cannot constrain class %s <: exact object", describe(e.Sub))
+}
+
+func (e *StructuralIntoClassError) Message() string {
+	return fmt.Sprintf("cannot constrain object <: class %s", describe(e.Super))
+}
+
+func (e *NonClassSuperError) Message() string {
+	return fmt.Sprintf("`%s` does not name a class and cannot be extended or implemented.", e.Name)
+}
+
+func (e *CannotExtendFinalClassError) Message() string {
+	return fmt.Sprintf("Cannot extend `%s`; it is a final class and has no subclasses.", e.Name)
+}
+
 // describeBorrowInner renders the pointee of a borrow for a diagnostic. An immutable
 // field read routes its result through a fresh field-read variable (fieldReadBorrow),
 // so the borrow's inner can be an inference variable whose raw `t{N}` name means
@@ -1327,6 +1409,10 @@ func describe(t soltype.Type) string {
 		return "tuple"
 	case *soltype.ObjectType:
 		return "object"
+	case *soltype.ClassType:
+		// A class instance renders nominally under its display name, `Point` or
+		// `Box<number>`, so a diagnostic naming it matches the printer's surface form.
+		return soltype.Print(t)
 	case *soltype.PromiseType:
 		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
 		// object above. That is deliberate and consistent with the Union/Intersection

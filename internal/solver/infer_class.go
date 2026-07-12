@@ -119,7 +119,7 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl) (*soltype.
 			}
 		}
 	}
-	self := &soltype.ClassType{Name: name}
+	self := &soltype.ClassType{Name: name, Final: decl.Final()}
 	def := &ClassDef{Body: &soltype.ObjectType{}, Static: &soltype.ObjectType{}}
 	c.ctx.registerClass(name, def)
 	// Register the type binding so a self-referential type in the body resolves to this
@@ -152,10 +152,21 @@ func (c *checker) resolveClassSupers(scope *Scope, decl *ast.ClassDecl) []*solty
 	if decl.Extends == nil {
 		return nil
 	}
-	if ct := c.resolveClassRef(scope, decl.Extends); ct != nil {
-		return []*soltype.ClassType{ct}
+	ct := c.resolveClassRef(scope, decl.Extends)
+	if ct == nil {
+		return nil
 	}
-	return nil
+	if ct.Final {
+		// A final class has no subclasses, so it cannot be a superclass. Report the
+		// clause and drop the edge, so the erroneous subtype relationship is never
+		// recorded in the nominal graph.
+		c.errs = append(c.errs, &CannotExtendFinalClassError{
+			Ref:  decl.Extends,
+			Name: ast.QualIdentToString(decl.Extends.Name),
+		})
+		return nil
+	}
+	return []*soltype.ClassType{ct}
 }
 
 // resolveClassImplements resolves a class's `implements` interfaces to their
@@ -177,16 +188,20 @@ func (c *checker) resolveClassImplements(scope *Scope, decl *ast.ClassDecl) []*s
 // rather than routing through resolveTypeAnn, whose general TypeRef resolution lands
 // with the alias work.
 //
-// A nil result is currently dropped by the callers with no diagnostic. C1 reports the
-// non-class case as NonClassSuperError, and M7's general TypeRef resolution reports an
-// unbound name (planning/simple_sub/m5-implementation-plan.md).
+// A name bound to a non-class binding — a type parameter, say — is reported as a
+// NonClassSuperError. An unbound name stays silent, so the undefined name is not
+// reported twice: the general TypeRef resolution planned for M7 reports it centrally.
+// See planning/simple_sub/m5-implementation-plan.md.
 func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn) *soltype.ClassType {
 	name := ast.QualIdentToString(ref.Name)
-	if b, ok := scope.GetType(name); ok {
-		if ct, ok := b.Type.(*soltype.ClassType); ok {
-			return ct
-		}
+	b, ok := scope.GetType(name)
+	if !ok {
+		return nil
 	}
+	if ct, ok := b.Type.(*soltype.ClassType); ok {
+		return ct
+	}
+	c.errs = append(c.errs, &NonClassSuperError{Ref: ref, Name: name})
 	return nil
 }
 

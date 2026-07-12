@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -81,17 +82,22 @@ const (
 // projectClassBody returns the instance member view of a class instance: the
 // registered Body with each class type parameter replaced by the instance's
 // corresponding type argument and each lifetime parameter by its lifetime argument.
-// A non-generic instance, or one whose class is unregistered, projects the stored
-// Body unchanged. The class-vs-object constrain rule reads the whole projected body;
-// a single member access projects just that member through projectClassMember, so it
-// pays only for the member it reads rather than rebuilding every member.
-func (c *checker) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, bool) {
-	def, ok := c.ctx.classDef(ct.Name)
+// It returns ok=false when the class is unregistered so the caller can recover. The
+// class-vs-object constrain rule reads the whole projected body; a single member access
+// projects just that member through projectClassMember, so it pays only for the member
+// it reads rather than rebuilding every member.
+//
+// The projected body's Inexact flag follows the instance's Final: a final class is
+// exact, its member set closed, while a non-final class is inexact, since a subclass may
+// widen it (exact-types §2.6). The returned ObjectType is always a fresh wrapper so the
+// shared registry Body keeps its own flag.
+func (c *Context) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, bool) {
+	def, ok := c.classDef(ct.Name)
 	if !ok || def.Body == nil {
 		return nil, false
 	}
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
-		return def.Body, true
+		return &soltype.ObjectType{Elems: def.Body.Elems, Inexact: !ct.Final}, true
 	}
 	subst := newClassSubst(def, ct)
 	projected := def.Body.Accept(subst, soltype.Positive)
@@ -103,15 +109,98 @@ func (c *checker) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, 
 		// AsProperty discipline.
 		panic(fmt.Sprintf("projectClassBody: %s projected to non-ObjectType %T", ct.Name, projected))
 	}
-	return obj, true
+	// Accept returns def.Body's own ObjectType when the body holds none of the
+	// substituted vars, so setting Inexact on obj directly would mutate the shared
+	// registry Body. Wrap the projected elements in a fresh ObjectType and set exactness
+	// on the copy, matching the non-generic path above.
+	return &soltype.ObjectType{Elems: obj.Elems, Inexact: !ct.Final}, true
+}
+
+// classPair keys the nominal subtype walk's seen-set by the (sub, super) class NAMES,
+// so a cyclic extends hierarchy terminates: the same name pair is never re-walked.
+// This is coarser than constrain's type-keyed seen-set on purpose — the walk decides a
+// relationship between nominal identities, and two instances of one class at different
+// arguments share the identity the walk cares about.
+type classPair struct{ sub, super string }
+
+// constrainNominal decides sub <: super between two class instances. It succeeds when
+// they name the same class, checking each type argument by the class's per-position
+// variance, or when sub reaches super transitively through the declared extends graph.
+// A (subName, supName) seen-set bounds the walk on a cyclic hierarchy. Until C2 infers
+// real variance, every ClassDef.Variance entry is Invariant, so every argument is
+// constrained in both directions — the conservative choice a sound rule falls back to.
+func (c *Context) constrainNominal(sub, super *soltype.ClassType, seen set.Set[constraintKey]) []SolverError {
+	return c.constrainNominalWalk(sub, super, seen, set.NewSet[classPair]())
+}
+
+func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen set.Set[constraintKey], walked set.Set[classPair]) []SolverError {
+	key := classPair{sub.Name, super.Name}
+	if walked.Contains(key) {
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+	}
+	walked.Add(key)
+
+	if sub.Name == super.Name {
+		def, _ := c.classDef(sub.Name)
+		var errs []SolverError
+		n := min(len(sub.TypeArgs), len(super.TypeArgs))
+		for i := range n {
+			variance := Invariant
+			if def != nil && i < len(def.Variance) {
+				variance = def.Variance[i]
+			}
+			argSub, argSup := sub.TypeArgs[i], super.TypeArgs[i]
+			switch variance {
+			case Covariant:
+				errs = append(errs, c.constrain(argSub, argSup, seen, false)...)
+			case Contravariant:
+				errs = append(errs, c.constrain(argSup, argSub, seen, false)...)
+			case Bivariant:
+				// A phantom parameter appears nowhere in the body, so its argument imposes
+				// no constraint.
+			default: // Invariant
+				errs = append(errs, c.constrain(argSub, argSup, seen, false)...)
+				errs = append(errs, c.constrain(argSup, argSub, seen, false)...)
+			}
+		}
+		return errs
+	}
+
+	// Different names: sub <: super holds when any direct super of sub reaches super.
+	// Substitute sub's arguments into each superclass type so a generic base is checked
+	// at the instance's arguments, e.g. B<5> declared `extends A<T>` walks A<5>.
+	if def, ok := c.classDef(sub.Name); ok {
+		for _, superType := range def.Supers {
+			s := substituteSuperArgs(def, sub, superType)
+			if len(c.constrainNominalWalk(s, super, seen, walked)) == 0 {
+				return nil
+			}
+		}
+	}
+	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// substituteSuperArgs rewrites a superclass type's references to sub's class type
+// parameters to sub's actual arguments, so `class B<T> extends A<T>` checked at B<5>
+// yields A<5>. A non-generic sub, whose superclass type holds no parameter vars, returns
+// the superclass type unchanged.
+func substituteSuperArgs(def *ClassDef, sub, superType *soltype.ClassType) *soltype.ClassType {
+	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
+		return superType
+	}
+	if ct, ok := superType.Accept(newClassSubst(def, sub), soltype.Positive).(*soltype.ClassType); ok {
+		return ct
+	}
+	return superType
 }
 
 // projectedMember resolves a member access against a class instance by looking the
-// member up on the registered class body and projecting just that member to the
-// instance's arguments, returning ok=false when the receiver is not a class instance —
-// a plain object property, or a type variable — so the caller falls back to the
-// structural field-requirement path. A class instance whose class has no such member
-// reports the miss here.
+// member up on the class body — walking the declared `extends` chain for a member the
+// class inherits rather than declares — and projecting just that member to the instance's
+// arguments. It returns ok=false when the receiver is not a class instance — a plain
+// object property, or a type variable — so the caller falls back to the structural
+// field-requirement path. A class instance whose class and none of its ancestors declare
+// the member reports the miss here.
 //
 // Only a class receiver is intercepted. A plain object keeps the structural
 // field-requirement path, which threads the read-through-borrow and read-after-write
@@ -126,20 +215,52 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 	if !ok || def.Body == nil {
 		return pathResult{}, false
 	}
-	// Member names are invariant under substitution, so look the member up on the
-	// unprojected body and project only the one accessed, rather than rebuilding the
-	// whole body per access.
-	member, found := def.Body.Member(name)
+	member, found := c.projectedClassMember(ct, name, set.NewSet[string]())
 	if !found {
 		// The miss is rare, so project the whole body here to render the diagnostic at
 		// the instance's arguments rather than the declared type parameters.
-		obj, _ := c.projectClassBody(ct)
+		obj, _ := c.ctx.projectClassBody(ct)
 		err := &MissingPropertyError{Sub: obj, Super: propReq(name, &soltype.UnknownType{}, false), Name: name}
 		err.prov, err.site = c.prov, blame
 		c.errs = append(c.errs, err)
 		return pathResult{value: &soltype.ErrorType{}}, true
 	}
-	return c.memberValue(lvl, blame, c.projectClassMember(def, ct, member)), true
+	return c.memberValue(lvl, blame, member), true
+}
+
+// projectedClassMember looks name up on ct's class body, then walks the declared
+// `extends` chain when the class does not declare the member itself, so a member
+// inherited from a superclass reads through a subclass instance. It returns the member
+// projected to ct's arguments, or found=false when neither the class nor any ancestor
+// declares it.
+//
+// Each superclass edge is first re-expressed at ct's arguments through
+// substituteSuperArgs before the walk recurses into it, so `class Dog<T> extends
+// Animal<T>` accessed at Dog<string> walks Animal<string>, and an inherited member typed
+// `T` projects to `string`. visited holds the class names already on the current chain,
+// bounding the walk on a cyclic hierarchy the same way constrainNominalWalk does.
+func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, visited set.Set[string]) (soltype.ObjTypeElem, bool) {
+	def, ok := c.ctx.classDef(ct.Name)
+	if !ok || def.Body == nil {
+		return nil, false
+	}
+	// Member names are invariant under substitution, so look the member up on the
+	// unprojected body and project only the one accessed, rather than rebuilding the
+	// whole body per access.
+	if member, found := def.Body.Member(name); found {
+		return c.projectClassMember(def, ct, member), true
+	}
+	if visited.Contains(ct.Name) {
+		return nil, false
+	}
+	visited.Add(ct.Name)
+	for _, superType := range def.Supers {
+		superInstance := substituteSuperArgs(def, ct, superType)
+		if member, found := c.projectedClassMember(superInstance, name, visited); found {
+			return member, true
+		}
+	}
+	return nil, false
 }
 
 // classBodyMember resolves a method, getter, or setter read off a class-body ObjectType —

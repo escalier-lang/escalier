@@ -13,6 +13,7 @@ type ClassDecl struct {
 	export         bool
 	declare        bool
 	override       bool
+	final          bool
 	span           Span
 	provenance     provenance.Provenance
 }
@@ -47,7 +48,7 @@ type MethodReceiver struct {
 func (r *MethodReceiver) Span() Span { return r.Span_ }
 
 // Exported constructor for use in parser
-func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare bool, span Span) *ClassDecl {
+func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare, final bool, span Span) *ClassDecl {
 	return &ClassDecl{
 		Name:           name,
 		LifetimeParams: lifetimeParams,
@@ -57,18 +58,24 @@ func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*Ty
 		Body:           body,
 		export:         export,
 		declare:        declare,
+		final:          final,
 		span:           span,
 		provenance:     nil,
 	}
 }
 
-func (*ClassDecl) isDecl()             {}
-func (d *ClassDecl) Export() bool      { return d.export }
-func (d *ClassDecl) SetExport(e bool)  { d.export = e }
-func (d *ClassDecl) Declare() bool     { return d.declare }
-func (d *ClassDecl) Override() bool    { return d.override }
+func (*ClassDecl) isDecl()              {}
+func (d *ClassDecl) Export() bool       { return d.export }
+func (d *ClassDecl) SetExport(e bool)   { d.export = e }
+func (d *ClassDecl) Declare() bool      { return d.declare }
+func (d *ClassDecl) Override() bool     { return d.override }
 func (d *ClassDecl) SetOverride(o bool) { d.override = o }
-func (d *ClassDecl) Span() Span        { return d.span }
+
+// Final reports whether the class was declared `final`. A final class has no
+// subclasses, so its instance type is exact (exact-types §2.6): the checker projects
+// an exact body for it.
+func (d *ClassDecl) Final() bool { return d.final }
+func (d *ClassDecl) Span() Span  { return d.span }
 func (d *ClassDecl) Accept(v Visitor) {
 	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	if v.EnterDecl(d) {
@@ -120,9 +127,9 @@ func (f *FieldElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(f)
 }
-func (f *FieldElem) Span() Span { return f.Span_ }
-func (f *FieldElem) Doc() string         { return f.doc }
-func (f *FieldElem) SetDoc(doc string)   { f.doc = doc }
+func (f *FieldElem) Span() Span        { return f.Span_ }
+func (f *FieldElem) Doc() string       { return f.doc }
+func (f *FieldElem) SetDoc(doc string) { f.doc = doc }
 
 type MethodElem struct {
 	Name     ObjKey
@@ -144,9 +151,9 @@ func (m *MethodElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(m)
 }
-func (m *MethodElem) Span() Span { return m.Span_ }
-func (m *MethodElem) Doc() string         { return m.doc }
-func (m *MethodElem) SetDoc(doc string)   { m.doc = doc }
+func (m *MethodElem) Span() Span        { return m.Span_ }
+func (m *MethodElem) Doc() string       { return m.doc }
+func (m *MethodElem) SetDoc(doc string) { m.doc = doc }
 
 // GetterElem represents a getter in a class.
 type GetterElem struct {
@@ -169,9 +176,9 @@ func (g *GetterElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(g)
 }
-func (g *GetterElem) Span() Span { return g.Span_ }
-func (g *GetterElem) Doc() string         { return g.doc }
-func (g *GetterElem) SetDoc(doc string)   { g.doc = doc }
+func (g *GetterElem) Span() Span        { return g.Span_ }
+func (g *GetterElem) Doc() string       { return g.doc }
+func (g *GetterElem) SetDoc(doc string) { g.doc = doc }
 
 // ConstructorElem represents an explicit `constructor(...) { ... }` block
 // inside a class body. The constructor's receiver is represented by
@@ -199,9 +206,9 @@ func (c *ConstructorElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(c)
 }
-func (c *ConstructorElem) Span() Span { return c.Span_ }
-func (c *ConstructorElem) Doc() string         { return c.doc }
-func (c *ConstructorElem) SetDoc(doc string)   { c.doc = doc }
+func (c *ConstructorElem) Span() Span        { return c.Span_ }
+func (c *ConstructorElem) Doc() string       { return c.doc }
+func (c *ConstructorElem) SetDoc(doc string) { c.doc = doc }
 
 // SetterElem represents a setter in a class.
 type SetterElem struct {
@@ -224,6 +231,6 @@ func (s *SetterElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(s)
 }
-func (s *SetterElem) Span() Span { return s.Span_ }
-func (s *SetterElem) Doc() string         { return s.doc }
-func (s *SetterElem) SetDoc(doc string)   { s.doc = doc }
+func (s *SetterElem) Span() Span        { return s.Span_ }
+func (s *SetterElem) Doc() string       { return s.doc }
+func (s *SetterElem) SetDoc(doc string) { s.doc = doc }

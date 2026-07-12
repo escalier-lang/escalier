@@ -111,6 +111,7 @@ const (
 	Bigint
 	Void
 	Override
+	Final // 'final' class modifier
 )
 
 type Token struct {

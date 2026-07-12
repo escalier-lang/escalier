@@ -68,6 +68,60 @@ func TestClassImplements(t *testing.T) {
 	}
 }
 
+// TestClassInheritedMemberAccess verifies that a member declared on a superclass is
+// accessible through a subclass instance. `getObjectAccess` walks the instance object's
+// `Extends` chain when the member is not found directly, so an inherited field read and an
+// inherited method call both resolve to the member's declared type on the subclass value.
+func TestClassInheritedMemberAccess(t *testing.T) {
+	tests := map[string]struct {
+		input        string
+		bindingName  string
+		expectedType string
+	}{
+		"InheritedProperty": {
+			input: `
+				class Animal {
+					name: string,
+				}
+				class Dog extends Animal {
+					constructor(mut self) {}
+				}
+				val d = Dog()
+				val n = d.name
+			`,
+			bindingName:  "n",
+			expectedType: "string",
+		},
+		"InheritedMethod": {
+			input: `
+				class Animal {
+					name: string,
+					speak(self) -> string { return "..." },
+				}
+				class Dog extends Animal {
+					constructor(mut self) {}
+				}
+				val d = Dog()
+				val s = d.speak()
+			`,
+			bindingName:  "s",
+			expectedType: "string",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ns := mustInferAsModule(t, test.input)
+			actual := collectBindingTypes(ns)
+			got, ok := actual[test.bindingName]
+			require.Truef(t, ok, "binding %q not found", test.bindingName)
+			assert.Equalf(t, test.expectedType, got,
+				"unexpected type for %q", test.bindingName)
+		})
+	}
+}
+
 // TestClassImplementsConformance verifies that a class declaring
 // `implements I` is checked structurally against `I` (#558). Each
 // sub-case feeds source through InferModule and asserts on the resulting

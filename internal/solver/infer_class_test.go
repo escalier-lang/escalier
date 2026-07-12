@@ -248,14 +248,10 @@ func TestInferClassJoinDistinctArgs(t *testing.T) {
 }
 
 // Reading a member off that union — `b.value` for b : Box<5> | Box<"hello"> — distributes
-// over the union and joins each arm's `value` field into 5 | "hello".
-//
-// DISABLED until C1 lands. classCarrier resolves only an unambiguous class, so a variable
-// whose lower bounds carry two different instantiations falls to the structural
-// field-requirement path. That path has no class-vs-object rule yet, so each Box<…> arm
-// fails `cannot constrain ? <: object` and v coalesces to never. C1 adds the
-// nominal-vs-structural rule; re-enable then and assert v : 5 | "hello" with no errors.
-/*
+// over the union and joins each arm's `value` field into 5 | "hello". Each Box<…> arm
+// rides C1's class-vs-object rule: the field read constrains the arm against an inexact
+// `{value: _, ...}` requirement, which projects the class body and binds the requirement's
+// var to that arm's field type.
 func TestInferClassJoinMemberAccess(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> { value: T }
@@ -266,7 +262,161 @@ func TestInferClassJoinMemberAccess(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, `5 | "hello"`, values["v"])
 }
-*/
+
+// TestInferClassNominalSubtype covers C1's nominal constrain rule reached from source
+// through a type-parameter bound, the one class-typed constraint target source can
+// produce before M7's general TypeRef resolution. `class Box<T: A>` makes a construction
+// `Box(arg)` constrain `arg <: A`, so the argument exercises each leg of the rule.
+func TestInferClassNominalSubtype(t *testing.T) {
+	// base declares A, a subclass B, an unrelated Other, and a bounded Box<T: A>.
+	const base = `
+		class A { x: number, constructor(mut self) { self.x = 0 } }
+		class B extends A { constructor(mut self) {} }
+		class Other { y: number, constructor(mut self) { self.y = 0 } }
+		class Box<T: A> { value: T }
+	`
+	t.Run("same class satisfies the bound", func(t *testing.T) {
+		values, _, errs := inferSource(t, base+`val b = Box(A())`)
+		require.Empty(t, errs)
+		require.Equal(t, "Box<A>", values["b"])
+	})
+	t.Run("subclass satisfies the bound through the graph", func(t *testing.T) {
+		values, _, errs := inferSource(t, base+`val b = Box(B())`)
+		require.Empty(t, errs)
+		require.Equal(t, "Box<B>", values["b"])
+	})
+	t.Run("unrelated class rejects", func(t *testing.T) {
+		_, _, errs := inferSource(t, base+`val b = Box(Other())`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain Other <: A", errs[0].Message())
+	})
+	t.Run("structural object rejects against a class bound", func(t *testing.T) {
+		_, _, errs := inferSource(t, base+`val b = Box({x: 0})`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain object <: class A", errs[0].Message())
+	})
+}
+
+// TestInferClassIntoObject covers C1's target-dispatched class-vs-object rule reached
+// from source through an object type annotation, which resolves today even though a
+// bare class name in annotation position does not. A class instance flows into an inexact
+// object target by projecting its body, and into an exact object target it is rejected,
+// since a non-final class may have subclasses that add members.
+func TestInferClassIntoObject(t *testing.T) {
+	const point = `
+		class Point { x: number, y: number }
+		val p = Point(1, 2)
+	`
+	t.Run("into inexact object succeeds", func(t *testing.T) {
+		_, _, errs := inferSource(t, point+`val foo: {x: number, y: number, ...} = p`)
+		require.Empty(t, errs)
+	})
+	t.Run("into exact object rejects", func(t *testing.T) {
+		_, _, errs := inferSource(t, point+`val foo: {x: number, y: number} = p`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain class Point <: exact object", errs[0].Message())
+	})
+}
+
+// TestInferClassFinal covers `final ⇒ exact instance` (exact-types §2.6): a final class
+// has no subclasses, so its instance projects an exact body and is checked structurally
+// against an exact object target rather than rejected outright the way a non-final
+// instance is. The `final` modifier is parsed by the class-declaration grammar.
+func TestInferClassFinal(t *testing.T) {
+	const finalPoint = `
+		final class Point { x: number, y: number }
+		val p = Point(1, 2)
+	`
+	t.Run("into a matching exact object succeeds", func(t *testing.T) {
+		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number, y: number} = p`)
+		require.Empty(t, errs)
+	})
+	t.Run("into an exact object missing one of its members rejects", func(t *testing.T) {
+		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number} = p`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "object has extra property: y", errs[0].Message())
+	})
+	t.Run("into an inexact object still succeeds", func(t *testing.T) {
+		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number, y: number, ...} = p`)
+		require.Empty(t, errs)
+	})
+}
+
+// TestInferClassObjectDestructure covers destructuring a class instance with an object
+// pattern — `val {x, y} = p`. This is NOT the nominal InstancePat constructor pattern
+// `Point({x, y})`, which D1 adds; it is a plain object pattern, which lowers to the
+// constraint `p <: {x: _, y: _, ...}` — an inexact object requirement — and so rides
+// C1's class-vs-object projection rule. Each named field binds at the projected member
+// type, and a field the class lacks reports the object-requirement miss. Before C1 the
+// requirement had no class-vs-object rule and failed with `cannot constrain ? <: object`.
+func TestInferClassObjectDestructure(t *testing.T) {
+	t.Run("binds fields at their member types", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Point { x: number, y: number }
+			val p = Point(1, 2)
+			val {x, y} = p
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "number", values["x"])
+		require.Equal(t, "number", values["y"])
+	})
+	t.Run("projects a generic instance's argument into the bound field", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			val b = Box(5)
+			val {value} = b
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "5", values["value"])
+	})
+	t.Run("a field the class lacks is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Point { x: number, y: number }
+			val p = Point(1, 2)
+			val {z} = p
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "object is missing property: z", errs[0].Message())
+	})
+}
+
+// TestInferClassNonClassSuper covers the C1 diagnostic for an `extends` or `implements`
+// clause naming something that is not a class. A class type parameter resolves to a
+// binding that is not a ClassType, so using it as a super reports NonClassSuperError
+// rather than silently dropping the edge.
+func TestInferClassNonClassSuper(t *testing.T) {
+	t.Run("extends a type parameter", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class B<T> extends T { constructor(mut self) {} }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
+	t.Run("implements a type parameter", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class C<T> implements T {}`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "`T` does not name a class and cannot be extended or implemented.", errs[0].Message())
+	})
+}
+
+// TestInferClassExtendFinal covers the rule that a final class cannot be a superclass:
+// a final class has no subclasses (exact-types §2.6), so an `extends` clause naming one
+// reports CannotExtendFinalClassError. A non-final superclass is unaffected.
+func TestInferClassExtendFinal(t *testing.T) {
+	t.Run("extending a final class is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			final class A { x: number, constructor(mut self) { self.x = 0 } }
+			class B extends A { constructor(mut self) {} }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "Cannot extend `A`; it is a final class and has no subclasses.", errs[0].Message())
+	})
+	t.Run("extending a non-final class is allowed", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class A { x: number, constructor(mut self) { self.x = 0 } }
+			class B extends A { constructor(mut self) {} }
+		`)
+		require.Empty(t, errs)
+	})
+}
 
 // TestInferClassMutualRecursion covers classes that reference each other, or
 // themselves, through the SCC path (M5 B2). The dep graph condenses a mutually
@@ -559,6 +709,52 @@ func TestInferClassGenericMethodReturnsTypeParam(t *testing.T) {
 	require.Equal(t, "5", values["y"])
 }
 */
+
+// TestInferClassInheritedMemberAccess checks that a member declared on a superclass is
+// reachable through a subclass instance: reading an inherited field and calling an
+// inherited method both resolve to the member's declared type. projectedMember walks the
+// `extends` chain, so `class Dog extends Animal` lets `d.name` project to `string` and
+// `d.speak()` return `string`.
+func TestInferClassInheritedMemberAccess(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Animal {
+			name: string,
+			speak(self) -> string { return "..." },
+		}
+		class Dog extends Animal {
+			constructor(mut self) {}
+		}
+		val d = Dog()
+		val n = d.name
+		val s = d.speak()
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "string", values["n"])
+	require.Equal(t, "string", values["s"])
+}
+
+// TestInferClassInheritedMemberAccessMultiLevel checks that the extends walk reaches a
+// member declared two levels up. `class Leaf extends Mid extends Base` reads `base`,
+// declared on Base, through a Leaf instance. The binding names avoid the member names so a
+// separate dep-graph bug — a class field whose name matches a top-level `val` gets a
+// spurious dependency on it — does not scramble the inference order.
+func TestInferClassInheritedMemberAccessMultiLevel(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Base {
+			base: number,
+		}
+		class Mid extends Base {
+			constructor(mut self) {}
+		}
+		class Leaf extends Mid {
+			constructor(mut self) {}
+		}
+		val leaf = Leaf()
+		val got = leaf.base
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["got"])
+}
 
 // TestInferClassErrors asserts the full diagnostic for each rejected class shape.
 func TestInferClassErrors(t *testing.T) {

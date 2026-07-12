@@ -90,6 +90,8 @@ func TestPrintDeclAudit_RoundTrip(t *testing.T) {
 		{"declare class extends", `declare class C extends Base {}`},
 		{"declare class constrained generic", `declare class C<T: string> {}`},
 		{"export declare class", `export declare class C {}`},
+		{"final class", `final class C {}`},
+		{"export final class", `export final class C {}`},
 
 		// --- decorator syntax @js("...") (§3.3) ---
 		// @js attaches only to value-introducing decls (val/var, fn,
