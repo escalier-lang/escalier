@@ -119,7 +119,7 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl) (*soltype.
 			}
 		}
 	}
-	self := &soltype.ClassType{Name: name}
+	self := &soltype.ClassType{Name: name, Final: decl.Final()}
 	def := &ClassDef{Body: &soltype.ObjectType{}, Static: &soltype.ObjectType{}}
 	c.ctx.registerClass(name, def)
 	// Register the type binding so a self-referential type in the body resolves to this

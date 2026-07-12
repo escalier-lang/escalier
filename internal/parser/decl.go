@@ -193,6 +193,7 @@ func (p *Parser) Decl() ast.Decl {
 	override := false
 	declare := false
 	async := false
+	final := false
 
 	decorators := p.parseDecorators()
 
@@ -253,6 +254,17 @@ func (p *Parser) Decl() ast.Decl {
 		p.reportError(token.Span, "async can only be used with functions")
 	}
 
+	var finalSpan ast.Span
+	if token.Type == Final {
+		final = true
+		finalSpan = token.Span
+		token = p.lexer.next()
+	}
+
+	if final && token.Type != Class {
+		p.reportError(finalSpan, "'final' can only be used with classes")
+	}
+
 	var decl ast.Decl
 	// nolint: exhaustive
 	switch token.Type {
@@ -267,7 +279,7 @@ func (p *Parser) Decl() ast.Decl {
 	case Enum:
 		decl = p.enumDecl(start, export, declare)
 	case Class:
-		decl = p.classDecl(start, export, declare)
+		decl = p.classDecl(start, export, declare, final)
 	case Identifier:
 		// `namespace` is contextual — only meaningful inside declare blocks,
 		// but we parse it wherever a decl is valid and let the checker enforce
@@ -469,7 +481,7 @@ func (p *Parser) declareBlockBody(override bool) []ast.Decl {
 //	('extends' typeAnn ('(' expr* ')')?)?
 //	('implements' typeAnn (',' typeAnn)*)?
 //	'{' classElem* '}'
-func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
+func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.Decl {
 	token := p.lexer.peek()
 	var name *ast.Ident
 	if token.Type != Identifier {
@@ -553,6 +565,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 		end := p.lexer.currentLocation
 		span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
 		decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, nil, export, declare, span)
+		decl.SetFinal(final)
 		return decl
 	}
 	p.lexer.consume()
@@ -563,6 +576,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare bool) ast.Decl {
 	end := p.lexer.currentLocation
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
 	decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, body, export, declare, span)
+	decl.SetFinal(final)
 	return decl
 }
 

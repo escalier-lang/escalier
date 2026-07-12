@@ -318,6 +318,30 @@ func TestInferClassIntoObject(t *testing.T) {
 	})
 }
 
+// TestInferClassFinal covers `final ⇒ exact instance` (exact-types §2.6): a final class
+// has no subclasses, so its instance projects an exact body and is checked structurally
+// against an exact object target rather than rejected outright the way a non-final
+// instance is. The `final` modifier is parsed by the class-declaration grammar.
+func TestInferClassFinal(t *testing.T) {
+	const finalPoint = `
+		final class Point { x: number, y: number }
+		val p = Point(1, 2)
+	`
+	t.Run("into a matching exact object succeeds", func(t *testing.T) {
+		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number, y: number} = p`)
+		require.Empty(t, errs)
+	})
+	t.Run("into an exact object missing one of its members rejects", func(t *testing.T) {
+		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number} = p`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "object has extra property: y", errs[0].Message())
+	})
+	t.Run("into an inexact object still succeeds", func(t *testing.T) {
+		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number, y: number, ...} = p`)
+		require.Empty(t, errs)
+	})
+}
+
 // TestInferClassObjectDestructure covers destructuring a class instance with an object
 // pattern — `val {x, y} = p`. This is NOT the nominal InstancePat constructor pattern
 // `Point({x, y})`, which D1 adds; it is a plain object pattern, which lowers to the

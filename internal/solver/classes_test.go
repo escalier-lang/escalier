@@ -64,28 +64,6 @@ func TestConstrainNominal(t *testing.T) {
 		require.Empty(t, Messages(c.Constrain(cls("Point", false), inexactObj(propElem("x", num())))))
 	})
 
-	t.Run("non-final class into exact object rejects", func(t *testing.T) {
-		c := &Context{}
-		registerPoint(c, "Point")
-		require.Equal(t,
-			[]string{"cannot constrain class Point <: exact object"},
-			Messages(c.Constrain(cls("Point", false), exactObj(propElem("x", num()), propElem("y", num())))))
-	})
-
-	t.Run("final class into matching exact object succeeds", func(t *testing.T) {
-		c := &Context{}
-		registerPoint(c, "Point")
-		require.Empty(t, Messages(c.Constrain(cls("Point", true), exactObj(propElem("x", num()), propElem("y", num())))))
-	})
-
-	t.Run("final class into exact object with an extra member rejects", func(t *testing.T) {
-		c := &Context{}
-		registerPoint(c, "Point")
-		require.Equal(t,
-			[]string{"object has extra property: y"},
-			Messages(c.Constrain(cls("Point", true), exactObj(propElem("x", num())))))
-	})
-
 	t.Run("object into class rejects", func(t *testing.T) {
 		c := &Context{}
 		registerPoint(c, "Point")

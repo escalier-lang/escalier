@@ -885,6 +885,40 @@ func TestClassDeclarations(t *testing.T) {
 	}
 }
 
+func TestParseFinalClass(t *testing.T) {
+	parseClass := func(t *testing.T, src string) *ast.ClassDecl {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		decls, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: src})
+		require.Empty(t, errors)
+		require.Len(t, decls, 1)
+		cls, ok := decls[0].(*ast.ClassDecl)
+		require.True(t, ok, "first decl is a class")
+		return cls
+	}
+
+	t.Run("final sets the flag", func(t *testing.T) {
+		require.True(t, parseClass(t, `final class Point { x: number }`).Final())
+	})
+	t.Run("a plain class is not final", func(t *testing.T) {
+		require.False(t, parseClass(t, `class Point { x: number }`).Final())
+	})
+	t.Run("export final composes", func(t *testing.T) {
+		cls := parseClass(t, `export final class Point { x: number }`)
+		require.True(t, cls.Final())
+		require.True(t, cls.Export())
+	})
+
+	t.Run("final on a non-class is rejected", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		_, errors := ParseDecls(ctx, &ast.Source{ID: 0, Path: "input.esc", Contents: `final fn foo() {}`})
+		require.Len(t, errors, 1)
+		require.Equal(t, "'final' can only be used with classes", errors[0].Message)
+	})
+}
+
 func TestClassElemDocs(t *testing.T) {
 	parseClass := func(t *testing.T, src string) *ast.ClassDecl {
 		t.Helper()
