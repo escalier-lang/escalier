@@ -125,8 +125,8 @@ func TestInferClassBasic(t *testing.T) {
 	}
 }
 
-// TestInferClassStatic covers the callable class value with static members (M5 B6):
-// the value binds a ctor-plus-static object rather than a bare constructor function, so
+// TestInferClassStatic covers the callable class value with static members. The value
+// binds a ctor-plus-static object rather than a bare constructor function, so
 // construction still resolves through the constructor call signature, a static field
 // reads its declared type, and a static method reads and calls through the same value.
 func TestInferClassStatic(t *testing.T) {
@@ -152,8 +152,8 @@ func TestInferClassStatic(t *testing.T) {
 }
 
 // A class with no static members keeps binding its bare constructor function, so the
-// single-callable-element object is minted only for the class values that need it (M5
-// B6). Construction and field access are unaffected.
+// single-callable-element object is minted only for the class values that need it.
+// Construction and field access are unaffected.
 func TestInferClassNoStaticStaysFunction(t *testing.T) {
 	src := `
 		class Point {
@@ -170,8 +170,7 @@ func TestInferClassNoStaticStaysFunction(t *testing.T) {
 
 // Binding a class value with statics to an un-annotated `var` widens the binding, which
 // walks the value object's members. A constructor and static methods carry no literal to
-// widen, so the walk passes them through rather than treating every element as a property
-// (M5 B6).
+// widen, so the walk passes them through rather than treating every element as a property.
 func TestInferClassValueVarWiden(t *testing.T) {
 	src := `
 		class Vec {
@@ -187,7 +186,7 @@ func TestInferClassValueVarWiden(t *testing.T) {
 
 // A read of a static member the class does not declare reports a MissingPropertyError,
 // blaming the property, so the class-value member path defers a genuine miss to the same
-// diagnostic an ordinary object read produces (M5 B6).
+// diagnostic an ordinary object read produces.
 func TestInferClassStaticMissing(t *testing.T) {
 	src := `
 		class Vec {

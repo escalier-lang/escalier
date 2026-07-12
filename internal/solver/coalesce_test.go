@@ -696,7 +696,7 @@ func TestEqualTypeObjectMembers(t *testing.T) {
 // alpha context equalObjElem already uses for methods. Two class-value objects whose
 // generic constructors differ only in the var id of a bound type parameter are equal, and
 // two whose constructor signatures differ structurally are not. This is the equality
-// dedup relies on when it folds equal class-value bounds (M5 B6).
+// dedup relies on when it folds equal class-value bounds.
 func TestEqualTypeConstructorElem(t *testing.T) {
 	// value builds `{new <U>(x: U) -> U, count: number}`, whose constructor parameter is
 	// the bound type parameter U, so two values differing only in U's var id are

@@ -617,8 +617,8 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		}
 		return "set " + printObjectKeyName(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")"
 	case *ConstructorElem:
-		// A class value's constructor renders `new (params) -> ret`, matching the
-		// old checker's ConstructorElem form.
+		// A class value's constructor renders as the unnamed call signature
+		// `new (params) -> ret`.
 		return "new " + p.printFuncTail(e.Fn)
 	}
 	panic(fmt.Sprintf("printObjElem: unhandled ObjTypeElem %T", e))

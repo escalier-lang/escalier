@@ -398,7 +398,16 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					}
 					continue
 				}
-				superProp := soltype.AsProperty(superElem) // M4: every named elem is a property
+				// A method, getter, or setter requirement is carried only by a class value,
+				// since object annotations cannot express those members, so it appears here
+				// only when both sides are class values, as in a reassignment or join. Check
+				// it against the sub's same-named member by variance rather than routing it
+				// to AsProperty, which handles properties alone and would panic.
+				if _, isProp := superElem.(*soltype.PropertyElem); !isProp {
+					errs = append(errs, c.constrainObjMember(superElem, sub, sup, seen, mutCtx)...)
+					continue
+				}
+				superProp := soltype.AsProperty(superElem) // every remaining elem is a property
 				subProp, ok := sub.Prop(superProp.Name)
 				if !ok {
 					if !superProp.Optional {
@@ -641,6 +650,52 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// constrainObjMember checks a method, getter, or setter requirement carried by an object
+// super against the sub's same-named member. Only a class value carries those members,
+// since object annotations cannot express them, so this fires only between two class
+// values, as in a reassignment or a join of class values. A method matches by its
+// callable signature with the receiver stripped, the shape a `p.m` read yields; a getter
+// matches covariantly on its read type; a setter matches contravariantly on its write
+// type. Overload-set dispatch across several method arms is E1, so a method compares its
+// first arm here. A missing or wrong-kind member fails.
+func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *soltype.ObjectType, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+	name := soltype.ObjElemName(superElem)
+	subElem, ok := sub.Member(name)
+	if !ok {
+		return []SolverError{&MissingPropertyError{Sub: sub, Super: sup, Name: name}}
+	}
+	switch se := superElem.(type) {
+	case *soltype.MethodElem:
+		sm, ok := subElem.(*soltype.MethodElem)
+		if !ok || len(sm.Signatures) == 0 || len(se.Signatures) == 0 {
+			break
+		}
+		return c.constrain(callableView(sm.Signatures[0]), callableView(se.Signatures[0]), seen, mutCtx)
+	case *soltype.GetterElem:
+		if sg, ok := subElem.(*soltype.GetterElem); ok {
+			return c.constrain(sg.Type, se.Type, seen, mutCtx) // covariant read
+		}
+	case *soltype.SetterElem:
+		if ss, ok := subElem.(*soltype.SetterElem); ok {
+			return c.constrain(se.Param, ss.Param, seen, mutCtx) // contravariant write
+		}
+	}
+	return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+}
+
+// callableView returns a method signature as the callable value a member read yields:
+// the signature with its receiver dropped, since a method value binds no `self`. It is
+// the subtyping counterpart of memberValue's method projection.
+func callableView(ft *soltype.FuncType) *soltype.FuncType {
+	return &soltype.FuncType{
+		Params:         ft.Params,
+		Ret:            ft.Ret,
+		Inexact:        ft.Inexact,
+		TypeParams:     ft.TypeParams,
+		LifetimeParams: ft.LifetimeParams,
+	}
 }
 
 // ltPair keys constrainLt's coinductive seen-set by (sub, super) lifetime

@@ -408,7 +408,7 @@ func TestAcceptObjectSetterCopyOnWrite(t *testing.T) {
 
 // A constructor's parameter is in write position, so Accept visits it in the FLIPPED
 // polarity, mirroring an ordinary parameter, while its return is covariant. A changed
-// variable rebuilds the ConstructorElem and the enclosing object copy-on-write (M5 B6).
+// variable rebuilds the ConstructorElem and the enclosing object copy-on-write.
 func TestAcceptConstructorElem(t *testing.T) {
 	paramT := &TypeVarType{ID: 1}
 	retT := &TypeVarType{ID: 2}

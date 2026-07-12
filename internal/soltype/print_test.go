@@ -270,7 +270,7 @@ func TestPrintGenericMethod(t *testing.T) {
 }
 
 // A class value renders as an object holding its constructor as `new (params) -> ret`
-// alongside its static members, and round-trips through Accept unchanged (M5 B6).
+// alongside its static members, and round-trips through Accept unchanged.
 func TestPrintConstructorElem(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{
 		&ConstructorElem{Fn: &FuncType{
