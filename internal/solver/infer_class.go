@@ -205,12 +205,9 @@ func (c *checker) resolveClassImplements(scope *Scope, lvl int, decl *ast.ClassD
 	return ifaces
 }
 
-// resolveClassRef resolves an `extends` or `implements` reference, which must name a
-// class, to its ClassType. It looks the name up and requires a class binding: a reference
-// to a non-class binding such as a type parameter is reported as a NonClassSuperError,
-// whether or not it carries type arguments. An unbound name stays silent, so M7's general
-// TypeRef resolution reports the undefined name once. A generic reference like `Animal<D>`
-// threads the subclass's `D` into the edge for substituteSuperArgs to re-express later.
+// resolveClassRef resolves an `extends` or `implements` reference to its ClassType. The
+// clause requires a class, so a non-class binding such as a type parameter is reported as a
+// NonClassSuperError; an unbound name stays silent for M7's TypeRef resolution to report.
 func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
 	name := ast.QualIdentToString(ref.Name)
 	b, ok := c.lookupClassBinding(scope, name)
@@ -225,12 +222,9 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 	return c.buildClassInstance(scope, ct, ref, lvl)
 }
 
-// buildClassInstance returns the token a class reference resolves to: the bare class for a
-// reference with no type arguments, or a fresh instance carrying the resolved arguments for
-// a generic one like `Animal<D>`. Each argument is resolved through the class-scope path,
-// recovering an unresolved one to a fresh var so the reference keeps its arity, cascade-safe.
-// The general scoped-ref resolution and the extends/implements resolution both mint
-// instances through here, so they agree on how a reference's arguments become a token.
+// buildClassInstance returns the token a class reference resolves to: the bare class with
+// no type arguments, or a fresh instance carrying the resolved arguments for a generic one
+// like `Animal<D>`. An unresolved argument recovers to a fresh var, keeping arity cascade-safe.
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
 	if len(ref.TypeArgs) == 0 {
 		return ct
