@@ -65,7 +65,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl, ns string) (so
 		// constrain into the value binding var and generalize, and registers the
 		// instance type binding plus the nominal ClassDef as side effects. ns is the
 		// class's dep_graph namespace, threaded through so the registry and the minted
-		// ClassType are keyed by the namespace-qualified name (B7).
+		// ClassType are keyed by the namespace-qualified name.
 		return c.inferClassDecl(scope, lvl, d, ns)
 	default:
 		c.reportUnsupported(d)

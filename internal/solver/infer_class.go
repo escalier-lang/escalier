@@ -58,7 +58,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// reached without a pre-registered shell mints and registers one here. The registry,
 	// the minted token, and the scope type binding are all keyed by the namespace-
 	// qualified name, so two sibling `class Point` declarations in different namespaces
-	// stay distinct (B7).
+	// stay distinct.
 	self, def := c.getOrCreateClass(scope, decl, ns)
 	// Populate the type-param-derived fields the pre-pass left empty. This is the second
 	// phase: the pre-pass registers a bare identity so forward references resolve, and

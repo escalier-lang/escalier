@@ -1048,7 +1048,7 @@ func TestConstructorInitErrors(t *testing.T) {
 	}
 }
 
-// TestInferClassNamespaceQualified covers the namespace-qualified class registry (B7).
+// TestInferClassNamespaceQualified covers the namespace-qualified class registry.
 // A class is keyed in the nominal registry, in its ClassType token, and in its scope
 // type binding by its dep_graph-qualified name, e.g. "geometry.Point". So two sibling
 // `class Point` declarations under different directory-derived namespaces stay distinct:
@@ -1165,12 +1165,11 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			values, types, errs := inferSources(t, test.srcs)
 			require.Empty(t, errs)
-			for name, want := range test.wantValues {
-				require.Equal(t, want, values[name], "value binding %q", name)
-			}
-			for name, want := range test.wantTypes {
-				require.Equal(t, want, types[name], "type binding %q", name)
-			}
+			// Compare the whole maps, not just the expected keys, so a stale bare `Point`
+			// binding left over from a namespace collision would surface as an unexpected
+			// extra entry rather than passing unnoticed.
+			require.Equal(t, test.wantValues, values)
+			require.Equal(t, test.wantTypes, types)
 		})
 	}
 }
