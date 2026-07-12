@@ -96,13 +96,21 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.inferMemberBodies(declScope, lvl, body, pending)
 	ctorType := c.inferConstructor(declScope, lvl, decl, self, body, ctors)
 
-	// A generic class keeps its member types symbolic — a field typed `T` stays the
-	// class type-parameter var so member lookup can substitute an instance's argument
-	// for it. Freezing would coalesce that unconstrained var to `never`. A non-generic
-	// class has no such vars, so its body is coalesced to concrete member types.
+	// Coalesce each member so lookup reads concrete member types rather than the fresh
+	// vars a field held before a constructor assignment refined it. A non-generic class
+	// has no type-parameter vars, so its body coalesces fully. A generic class keeps its
+	// own type-parameter vars — and each method's own type parameters — symbolic so member
+	// lookup can substitute an instance's argument for them (B8): a plain freeze would
+	// collapse a member typed through `T`, such as `read(self) { self.v }`, to `never`
+	// because the intermediate inference var's only bound is the still-unconstrained `T`.
 	if len(typeParams) == 0 {
-		c.freezeClassBody(body)
-		c.freezeClassBody(static)
+		c.freezeClassBody(body, nil, nil)
+		c.freezeClassBody(static, nil, nil)
+	} else {
+		keep := classKeepVars(typeParams, body, static)
+		flow := keptFlowMap(keep)
+		c.freezeClassBody(body, keep, flow)
+		c.freezeClassBody(static, keep, flow)
 	}
 
 	// Freeze the per-parameter variance once every member body has refined its
@@ -742,24 +750,115 @@ func (v *selfMethodVisitor) EnterExpr(e ast.Expr) bool {
 	return true
 }
 
+// classKeepVars collects the type-parameter vars a generic class body coalesces around:
+// the class's own TypeParam vars plus every method signature's own TypeParam vars. These
+// stay symbolic through the coalesce so member lookup can substitute an instance's
+// argument for a class parameter and instantiate a method's own parameters per call (B8).
+func classKeepVars(typeParams []*soltype.TypeParam, bodies ...*soltype.ObjectType) set.Set[*soltype.TypeVarType] {
+	keep := set.NewSet[*soltype.TypeVarType]()
+	for _, tp := range typeParams {
+		keep.Add(tp.Var)
+	}
+	for _, obj := range bodies {
+		for _, elem := range obj.Elems {
+			m, ok := elem.(*soltype.MethodElem)
+			if !ok {
+				continue
+			}
+			for _, sig := range m.Signatures {
+				for _, tp := range sig.TypeParams {
+					keep.Add(tp.Var)
+				}
+			}
+		}
+	}
+	return keep
+}
+
+// keptFlowMap maps each inference var to the kept type-parameter vars that flow into it —
+// the kept vars T for which T <: v is recorded transitively through the upper-bound graph.
+// It exists because constrain stores a var-var edge on ONE side: an unannotated field read
+// `self.v` on `class Box<T>` records the read's result var on T's upper bounds rather than T
+// on the result's lower bounds, so the result coalesces to `never` when read positively. The
+// map lets freezeClassBody recover T as the value flowing into such a var, adding it
+// back as a positive-position lower-bound contribution. Each var's kept sources are sorted by
+// id so the coalesced union orders deterministically.
+//
+// Worked example. For
+//
+//	class Box<T> {
+//	    v: T,
+//	    read(self) { return self.v },
+//	    alias(self) { return self.read() },
+//	}
+//
+// T is the kept var t1. Reading `self.v` inside `read` constrains t1 <: t4, where t4 is
+// `read`'s return var, and `alias` returning `self.read()` constrains t4 <: t5, where t5 is
+// `alias`'s return var. constrain records each edge on the smaller var's upper bounds, so the
+// stored graph is t1.upper=[t4], t4.upper=[t5]; t4 and t5 have no lower bounds. Given
+// keep={t1}, the forward walk over upper-bound edges reaches t4 then t5, so the result is
+//
+//	{ t4: [t1], t5: [t1] }
+//
+// The kept var t1 is not itself a key — only the vars it flows into are. freezeClassBody then
+// coalesces `read`'s return t4 to t1 and `alias`'s return t5 to t1 rather than to `never`.
+func keptFlowMap(keep set.Set[*soltype.TypeVarType]) map[*soltype.TypeVarType][]*soltype.TypeVarType {
+	reached := map[*soltype.TypeVarType]set.Set[*soltype.TypeVarType]{}
+	for kv := range keep {
+		// Forward DFS over upper-bound var edges from kv: every var reached has kv <: it,
+		// so kv is one of the values flowing into it. seen bounds the walk on a cycle.
+		seen := set.NewSet[*soltype.TypeVarType]()
+		stack := []*soltype.TypeVarType{kv}
+		for len(stack) > 0 {
+			v := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			for _, ub := range v.UpperBounds {
+				uv, ok := ub.(*soltype.TypeVarType)
+				if !ok || seen.Contains(uv) {
+					continue
+				}
+				seen.Add(uv)
+				if reached[uv] == nil {
+					reached[uv] = set.NewSet[*soltype.TypeVarType]()
+				}
+				reached[uv].Add(kv)
+				stack = append(stack, uv)
+			}
+		}
+	}
+	flow := make(map[*soltype.TypeVarType][]*soltype.TypeVarType, len(reached))
+	for v, sources := range reached {
+		vars := sources.ToSlice()
+		sort.Slice(vars, func(i, j int) bool { return vars[i].ID < vars[j].ID })
+		flow[v] = vars
+	}
+	return flow
+}
+
 // freezeClassBody coalesces each member's type in place so member lookup and the
-// class-vs-object rule read concrete member types rather than the fresh vars a field
-// held before a constructor assignment refined it. Each member is coalesced
-// individually rather than the whole object at once, since coalesce's object-merge pass
-// reads every element as a property and panics on a method, getter, or setter member.
-func (c *checker) freezeClassBody(obj *soltype.ObjectType) {
+// class-vs-object rule read concrete member types rather than the fresh vars a field held
+// before a constructor assignment refined it. Each member is coalesced individually rather
+// than the whole object at once, since coalesce's object-merge pass reads every element as a
+// property and panics on a method, getter, or setter member.
+//
+// keep and flow are nil for a non-generic class, where coalesceKeeping reduces to a plain
+// coalesce. A generic class passes its type-parameter vars as keep — held symbolic instead of
+// inlined to their bounds — and the kept-flow map so a member typed through a class parameter,
+// such as `read(self) { self.v }` on `class Box<T>`, reads `T` rather than collapsing to
+// `never`, leaving `T` in place for projectClassMember to substitute at an instance's argument.
+func (c *checker) freezeClassBody(obj *soltype.ObjectType, keep set.Set[*soltype.TypeVarType], flow map[*soltype.TypeVarType][]*soltype.TypeVarType) {
 	for i, e := range obj.Elems {
 		switch e := e.(type) {
 		case *soltype.PropertyElem:
-			obj.Elems[i] = &soltype.PropertyElem{Name: e.Name, Type: coalesce(e.Type, soltype.Positive), Optional: e.Optional, Readonly: e.Readonly}
+			obj.Elems[i] = &soltype.PropertyElem{Name: e.Name, Type: coalesceKeeping(e.Type, soltype.Positive, keep, flow), Optional: e.Optional, Readonly: e.Readonly}
 		case *soltype.GetterElem:
-			obj.Elems[i] = &soltype.GetterElem{Name: e.Name, SelfParam: e.SelfParam, Type: coalesce(e.Type, soltype.Positive)}
+			obj.Elems[i] = &soltype.GetterElem{Name: e.Name, SelfParam: e.SelfParam, Type: coalesceKeeping(e.Type, soltype.Positive, keep, flow)}
 		case *soltype.SetterElem:
-			obj.Elems[i] = &soltype.SetterElem{Name: e.Name, SelfParam: e.SelfParam, Param: coalesce(e.Param, soltype.Negative)}
+			obj.Elems[i] = &soltype.SetterElem{Name: e.Name, SelfParam: e.SelfParam, Param: coalesceKeeping(e.Param, soltype.Negative, keep, flow)}
 		case *soltype.MethodElem:
 			sigs := make([]*soltype.FuncType, len(e.Signatures))
 			for j, sig := range e.Signatures {
-				if cs, ok := coalesce(sig, soltype.Positive).(*soltype.FuncType); ok {
+				if cs, ok := coalesceKeeping(sig, soltype.Positive, keep, flow).(*soltype.FuncType); ok {
 					sigs[j] = cs
 				} else {
 					sigs[j] = sig

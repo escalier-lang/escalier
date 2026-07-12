@@ -761,21 +761,17 @@ func TestInferClassMutMethodFromImmutMethod(t *testing.T) {
 }
 */
 
-// TestInferClassGenericMethodReturnsTypeParam pins the gap where a method whose return is a
-// class type parameter round-trips as `never` through a call — both a `self.method()` call
-// and external access. `read` returns the field typed `T`, so `b.read()` for `b : Box<5>`
-// should project `T` to `5`, and `alias` calling `self.read()` should reach the same value.
+// TestInferClassGenericMethodReturnsTypeParam checks that a method whose return flows from a
+// class type parameter projects to the instance's argument — both through a `self.method()`
+// call and external access. `read` returns the field typed `T`, so `b.read()` for `b : Box<5>`
+// projects `T` to `5`, and `alias` calling `self.read()` reaches the same value.
 //
-// DISABLED until B8 (planning/simple_sub/m5-implementation-plan.md §"Phase B"). B1's
-// §"Member access" owned this — wire a resolved method through the projected ClassDef.Body,
-// wrapping the method's own TypeParams in a PolyScheme and substituting the class arguments —
-// but the shipped B1 slice descoped the generic case. Today member access returns the
-// method's raw FuncType, and an unannotated field read mints an intermediate var that
-// class-argument projection cannot rewrite, so the return collapses to `never`. Neither
-// classBodyMember (self access) nor projectedMember (external access) needs its own fix — the
-// selective generic-body coalesce and the wrap belong in the shared member-access path. B8
-// lands it; re-enable then.
-/*
+// B8 (planning/simple_sub/m5-implementation-plan.md §"Phase B") lands this. A generic class
+// body is coalesced at decl time in a mode that keeps the class's own type-parameter vars
+// symbolic, so a method whose return is an unannotated field read reads as `T` — recovered
+// through the kept-flow map, since the read's var-var edge is stored on `T`'s upper bounds —
+// and class-argument projection then rewrites `T`. The fix lives in the shared member-access
+// path, so both classBodyMember (self access) and projectedMember (external access) benefit.
 func TestInferClassGenericMethodReturnsTypeParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> {
@@ -791,7 +787,46 @@ func TestInferClassGenericMethodReturnsTypeParam(t *testing.T) {
 	require.Equal(t, "5", values["x"])
 	require.Equal(t, "5", values["y"])
 }
-*/
+
+// TestInferClassGenericGetterReturnsTypeParam checks the getter analogue of the method case:
+// a getter whose return flows from a class type parameter projects to the instance's argument.
+// `get first(self) { return self.v }` on `class Box<T>` reads `T`, so `b.first` for `b : Box<5>`
+// projects to `5`. The kept-flow coalesce keeps `T` symbolic through the getter's return var
+// the same way it does for a method return.
+func TestInferClassGenericGetterReturnsTypeParam(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Box<T> {
+			v: T,
+			get first(self) { return self.v },
+		}
+		val b = Box("hi")
+		val x = b.first
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `"hi"`, values["x"])
+}
+
+// TestInferClassGenericMixedMembers checks that keeping the class's type-parameter var symbolic
+// does not disturb a concrete member. `label` returns a plain `string` regardless of the type
+// argument, while `read` returns the parameter `T`, so `b.label()` is `string` and `b.read()`
+// is the argument. This confirms the generic-body coalesce still collapses a member with a
+// concrete value the way a non-generic class's freeze does, coalescing only the type-parameter
+// flow symbolically.
+func TestInferClassGenericMixedMembers(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Box<T> {
+			v: T,
+			read(self) { return self.v },
+			label(self) -> string { return "box" },
+		}
+		val b = Box(5)
+		val r = b.read()
+		val l = b.label()
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "5", values["r"])
+	require.Equal(t, "string", values["l"])
+}
 
 // TestInferClassInheritedMemberAccess checks that a member declared on a superclass is
 // reachable through a subclass instance: reading an inherited field and calling an

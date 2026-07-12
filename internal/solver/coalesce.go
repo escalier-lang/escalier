@@ -31,7 +31,23 @@ import (
 // See coalesceRec for the guard's behavior. M3 still owns the *precise* μ-bound
 // recursive rendering; this guard only keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType]()}, pol)
+	// The uniform-inlining coalesce is coalesceKeeping with no retained vars and no
+	// kept-flow map, so both share one coalescer-invocation body.
+	return coalesceKeeping(t, pol, nil, nil)
+}
+
+// coalesceKeeping is coalesce with a set of variables held symbolic rather than inlined to
+// their bounds, plus a kept-flow map naming the kept vars that flow into each other var
+// through the upper-bound graph. It is the generic-class analogue of coalesce: a class
+// member whose type flows from a class type parameter reads as that parameter once the
+// intermediate vars are inlined, but only if the parameter var survives and its inbound flow
+// is recovered. B8's freezeClassBody passes the class's own TypeParam vars — and each
+// method's own TypeParams vars — as keep, so `class Box<T> { read(self) { self.v } }` stores
+// `read`'s return as `T` rather than collapsing the intermediate var to `never`.
+// projectClassMember then substitutes `T` for the instance's argument. A nil keep and nil
+// flow reduce it to the plain uniform-inlining coalesce.
+func coalesceKeeping(t soltype.Type, pol soltype.Polarity, keep set.Set[*soltype.TypeVarType], flow map[*soltype.TypeVarType][]*soltype.TypeVarType) soltype.Type {
+	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType](), keep: keep, flow: flow}, pol)
 	c = bubbleOwnedMut(c)            // #779: lift an owned-mut cell out of an immutable container
 	return coalesceLifetimes(c, pol) // D4: resolve borrow lifetimes to their display form
 }
@@ -47,6 +63,15 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // the path is a genuine cycle.
 type coalescer struct {
 	seen set.Set[*soltype.TypeVarType]
+	// keep holds variables retained symbolically rather than inlined to their bounds —
+	// a generic class's own type-parameter vars, set only by coalesceKeeping. It is nil
+	// for a plain coalesce, and a nil Set reads as empty, so the check below is inert on
+	// that path.
+	keep set.Set[*soltype.TypeVarType]
+	// flow maps a var to the kept vars flowing into it through the upper-bound graph,
+	// recovered as positive-position lower-bound contributions (see keptFlowMap). nil on
+	// the plain coalesce path, where ranging over the nil map yields nothing.
+	flow map[*soltype.TypeVarType][]*soltype.TypeVarType
 }
 
 func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -55,6 +80,11 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 		// Atom or structural node — let Accept rebuild it from coalesced children
 		// (including an overload-arm Union/Intersection input — the scoped lattice exception; see overloadIntersection).
 		return soltype.EnterResult{}
+	}
+	// A retained type-parameter var stays symbolic: return it unchanged so a member typed
+	// through it survives coalescing for per-instance projection (B8).
+	if c.keep.Contains(v) {
+		return soltype.EnterResult{Type: v, SkipChildren: true}
 	}
 	// Re-entering a variable already on the current path is an ungrounded recursive
 	// position (no concrete type breaks the cycle). It collapses to the polarity
@@ -72,6 +102,15 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	bounds := make([]soltype.Type, 0, len(bs))
 	for _, b := range bs {
 		bounds = append(bounds, b.Accept(c, pol))
+	}
+	// A kept type-parameter var flowing into v is a lower-bound contribution the var-var
+	// edge stored on the parameter's side rather than on v (see keptFlowMap). It is a
+	// positive-position value, so add it only in Positive position and recurse so a kept
+	// var stays symbolic through the keep check above.
+	if pol == soltype.Positive {
+		for _, kv := range c.flow[v] {
+			bounds = append(bounds, kv.Accept(c, pol))
+		}
 	}
 	if len(bounds) == 0 {
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
