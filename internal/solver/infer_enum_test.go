@@ -8,8 +8,9 @@ import (
 )
 
 // TestInferEnumBasic covers a non-generic enum end to end (M5 D-Enum): the enum name
-// binds as a nominal type, each variant constructor resolves under the enum namespace,
-// and a constructor call yields the enum type — `Color.Hex(...)` is `Color`.
+// binds as a namespace and its type binds to the union of its variants, each variant
+// constructor resolves under the namespace, and a constructor call yields the enum
+// union — `Color.Hex(...)` is `Color.RGB | Color.Hex`.
 func TestInferEnumBasic(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -29,11 +30,11 @@ func TestInferEnumBasic(t *testing.T) {
 				val blue = Color.Hex("#0000FF")
 			`,
 			wantValues: map[string]string{
-				"rgb":  "fn (r: number, g: number, b: number) -> Color",
-				"red":  "Color",
-				"blue": "Color",
+				"rgb":  "fn (r: number, g: number, b: number) -> Color.RGB | Color.Hex",
+				"red":  "Color.RGB | Color.Hex",
+				"blue": "Color.RGB | Color.Hex",
 			},
-			wantTypes: map[string]string{"Color": "Color"},
+			wantTypes: map[string]string{"Color": "Color.RGB | Color.Hex"},
 		},
 		{
 			name: "NullaryVariant",
@@ -45,8 +46,11 @@ func TestInferEnumBasic(t *testing.T) {
 				val stop = Signal.Stop()
 				val s: Signal = Signal.Go()
 			`,
-			wantValues: map[string]string{"stop": "Signal", "s": "Signal"},
-			wantTypes:  map[string]string{"Signal": "Signal"},
+			wantValues: map[string]string{
+				"stop": "Signal.Stop | Signal.Go",
+				"s":    "Signal.Stop | Signal.Go",
+			},
+			wantTypes: map[string]string{"Signal": "Signal.Stop | Signal.Go"},
 		},
 		{
 			name: "OutOfOrderReference",
@@ -57,8 +61,8 @@ func TestInferEnumBasic(t *testing.T) {
 					Hex(code: string),
 				}
 			`,
-			wantValues: map[string]string{"red": "Color"},
-			wantTypes:  map[string]string{"Color": "Color"},
+			wantValues: map[string]string{"red": "Color.RGB | Color.Hex"},
+			wantTypes:  map[string]string{"Color": "Color.RGB | Color.Hex"},
 		},
 		{
 			name: "RecursiveEnum",
@@ -70,8 +74,11 @@ func TestInferEnumBasic(t *testing.T) {
 				val leaf: Tree = Tree.Leaf()
 				val node = Tree.Node(Tree.Leaf(), Tree.Leaf())
 			`,
-			wantValues: map[string]string{"leaf": "Tree", "node": "Tree"},
-			wantTypes:  map[string]string{"Tree": "Tree"},
+			wantValues: map[string]string{
+				"leaf": "Tree.Leaf | Tree.Node",
+				"node": "Tree.Leaf | Tree.Node",
+			},
+			wantTypes: map[string]string{"Tree": "Tree.Leaf | Tree.Node"},
 		},
 	}
 	for _, tt := range tests {
@@ -81,23 +88,10 @@ func TestInferEnumBasic(t *testing.T) {
 	}
 }
 
-// TestInferEnumNominalDistinctness checks that two enums are distinct nominal types
-// even when they declare a variant of the same name: a value of one enum never
-// satisfies the other's annotation.
-func TestInferEnumNominalDistinctness(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		enum Color { RGB(r: number) }
-		enum Palette { RGB(r: number) }
-		val bad: Color = Palette.RGB(1)
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain Palette <: Color", errs[0].Message())
-}
-
 // TestInferEnumSharedVariantName checks that two enums declaring a variant of the same
 // name do not collide: each `RGB` constructor resolves under its own enum namespace with
-// its own signature and produces its own enum type. The two constructors differ in arity
-// (three params vs two), which they could not if they shared one registry entry.
+// its own signature and produces its own enum union. The two constructors differ in
+// arity (three params vs two), which they could not if they shared one registry entry.
 func TestInferEnumSharedVariantName(t *testing.T) {
 	classValues(t, `
 		enum Color {
@@ -113,20 +107,34 @@ func TestInferEnumSharedVariantName(t *testing.T) {
 		val c = Color.RGB(1, 2, 3)
 		val p = Pixel.RGB(4, 5)
 	`, map[string]string{
-		"colorRGB": "fn (r: number, g: number, b: number) -> Color",
-		"pixelRGB": "fn (x: number, y: number) -> Pixel",
-		"c":        "Color",
-		"p":        "Pixel",
+		"colorRGB": "fn (r: number, g: number, b: number) -> Color.RGB | Color.Hex",
+		"pixelRGB": "fn (x: number, y: number) -> Pixel.RGB | Pixel.Empty",
+		"c":        "Color.RGB | Color.Hex",
+		"p":        "Pixel.RGB | Pixel.Empty",
 	}, map[string]string{
-		"Color": "Color",
-		"Pixel": "Pixel",
+		"Color": "Color.RGB | Color.Hex",
+		"Pixel": "Pixel.RGB | Pixel.Empty",
 	})
+}
+
+// TestInferEnumNominalDistinctness checks that two enums are distinct types even when
+// they declare a variant of the same name: a value of one enum never satisfies the
+// other's annotation, and the qualified variant name in the error keeps the two `RGB`s
+// apart.
+func TestInferEnumNominalDistinctness(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		enum Color { RGB(r: number), Hex(code: string) }
+		enum Palette { RGB(r: number) }
+		val bad: Color = Palette.RGB(1)
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain Palette.RGB <: Color.RGB | Color.Hex", errs[0].Message())
 }
 
 // TestEnumVariantDisplay locks in the qualified rendering of an enum variant token: a
 // variant prints as `Enum.Variant` — its enum plus its own name — so two enums sharing
-// a variant name stay distinct wherever a variant surfaces, such as a narrowed `match`
-// arm (D2). A plain class token still prints under its bare name.
+// a variant name stay distinct wherever a variant surfaces, such as a union member or a
+// narrowed `match` arm. A plain class token still prints under its bare name.
 func TestEnumVariantDisplay(t *testing.T) {
 	variant := &soltype.ClassType{Name: "Geometry.Color.RGB", Final: true, Variant: true}
 	require.Equal(t, "Color.RGB", soltype.Print(variant))
@@ -137,7 +145,9 @@ func TestEnumVariantDisplay(t *testing.T) {
 
 // TestInferEnumGeneric checks that a generic enum's constructor is generalized like a
 // plain generic value, so each construction freshens the enum's type parameter and the
-// argument's type flows into the enum instance.
+// argument's type flows into the enum union. Without type aliases the enum name expands
+// to its union at each use, so the parameter also reaches the sibling variant — `None`
+// prints parameterized here; naming the union to hide that waits on M7's aliases.
 func TestInferEnumGeneric(t *testing.T) {
 	classValues(t, `
 		enum MyOption<T> {
@@ -147,7 +157,7 @@ func TestInferEnumGeneric(t *testing.T) {
 		val some = MyOption.Some(5)
 		val str = MyOption.Some("hi")
 	`, map[string]string{
-		"some": "MyOption<5>",
-		"str":  `MyOption<"hi">`,
+		"some": "MyOption.Some<5> | MyOption.None<5>",
+		"str":  `MyOption.Some<"hi"> | MyOption.None<"hi">`,
 	}, nil)
 }

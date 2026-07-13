@@ -51,12 +51,6 @@ type ClassDef struct {
 	// constructor itself is the value binding's FuncType.
 	Static *soltype.ObjectType
 
-	// Variants holds an enum's variant types in declaration order, each a `final`
-	// ClassType whose Supers name this enum (M5 D-Enum). It is nil for an ordinary
-	// class; the enum-exhaustive `match` leg (D2) reads it to enumerate the cases a
-	// scrutinee of the enum type must cover.
-	Variants []*soltype.ClassType
-
 	// Level is the class binding's generalize level. A generic method's own type
 	// parameters live deeper than this, so member access wraps a resolved method in a
 	// scheme quantified at this level and instantiates it per access.
