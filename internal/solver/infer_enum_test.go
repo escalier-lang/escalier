@@ -116,6 +116,37 @@ func TestInferEnumMutuallyRecursive(t *testing.T) {
 	})
 }
 
+// TestInferEnumClassMutuallyRecursive checks that an enum and a class that reference each
+// other are inferred correctly: the enum variant `Branch(node: Node)` names the class and
+// the class field `left: Tree` names the enum, forming one recursive group. Every nominal
+// identity — the enum union and the class token — is pre-bound before any body resolves a
+// reference, so both directions type-check.
+func TestInferEnumClassMutuallyRecursive(t *testing.T) {
+	classValues(t, `
+		enum Tree {
+			Leaf(value: number),
+			Branch(node: Node),
+		}
+		class Node {
+			left: Tree,
+			right: Tree,
+		}
+		val node = Node(Tree.Leaf(1), Tree.Leaf(2))
+		val branch: Tree = Tree.Branch(node)
+		val treeCtor = Tree.Branch
+		val kids = node.left
+	`, map[string]string{
+		"Node":     "fn (left: Tree.Leaf | Tree.Branch, right: Tree.Leaf | Tree.Branch) -> Node",
+		"node":     "Node",
+		"branch":   "Tree.Leaf | Tree.Branch",
+		"treeCtor": "fn (node: Node) -> Tree.Leaf | Tree.Branch",
+		"kids":     "Tree.Leaf | Tree.Branch",
+	}, map[string]string{
+		"Tree": "Tree.Leaf | Tree.Branch",
+		"Node": "Node",
+	})
+}
+
 // TestInferEnumSharedVariantName checks that two enums declaring a variant of the same
 // name do not collide: each `RGB` constructor resolves under its own enum namespace with
 // its own signature and produces its own enum union. The two constructors differ in
