@@ -8,10 +8,11 @@ import (
 
 // inferEnumDecl types an enum declaration (M5 D-Enum), porting the old checker's
 // nominal enum model to soltype. An enum name binds as a TYPE to a nominal ClassType,
-// so a value annotated `: Color` renders `Color`. Each variant is a `final` ClassType
-// named `Color.RGB` whose Supers name the enum, so a variant value is a subtype of the
-// enum, and each variant's constructor binds as a VALUE under a namespace named for the
-// enum: `Color.RGB(255, 0, 0)` constructs a `Color.RGB`, which flows into `Color`.
+// so a value of the enum renders `Color`. Each variant is a `final` ClassType named
+// `Color.RGB` whose Supers name the enum, and each variant's constructor binds as a
+// VALUE under a namespace named for the enum. A constructor returns the enum type, so
+// `Color.Hex("#fff")` infers `Color`; the variant type surfaces when a match narrows
+// the enum back to one case (D2).
 //
 // Qualifying every variant with its enum keeps two enums that share a variant name
 // distinct — `Color.RGB` and `Pixel.RGB` are separate nominal tokens.
@@ -100,7 +101,7 @@ func (c *checker) inferEnumDecl(scope *Scope, lvl int, decl *ast.EnumDecl, ns st
 	nsTypes := map[string]TypeBinding{}
 	for i, variant := range variants {
 		vt := variantTypes[i]
-		ctor := c.variantConstructor(declScope, lvl, variant, vt)
+		ctor := c.variantConstructor(declScope, lvl, variant, enumType)
 		nsValues[variant.Name.Name] = ValueBinding{
 			Schemes: []TypeScheme{c.generalize(ctor, lvl-1)},
 			Sources: []provenance.Provenance{&ast.NodeProvenance{Node: variant}},
@@ -119,11 +120,13 @@ func (c *checker) inferEnumDecl(scope *Scope, lvl int, decl *ast.EnumDecl, ns st
 }
 
 // variantConstructor builds one enum variant's constructor: a function taking the
-// variant's declared parameters and returning the variant's nominal type, such as
-// `Some(value: T) -> Some<T>`. For a generic enum the return and the parameters share
-// the enum's type-parameter vars; the caller generalizes the result so each
-// construction freshens them, the same let-polymorphism a plain generic value uses.
-func (c *checker) variantConstructor(scope *Scope, lvl int, variant *ast.EnumVariant, vt soltype.Type) *soltype.FuncType {
+// variant's declared parameters and returning the ENUM type, so `Color.Hex("#fff")`
+// infers `Color`, not the narrower `Color.Hex` — matching the old checker, where a
+// constructor call yields the enum and a match narrows it back to a variant. For a
+// generic enum the return `MyOption<T>` and the parameters share the enum's
+// type-parameter vars; the caller generalizes the result so each construction freshens
+// them, the same let-polymorphism a plain generic value uses.
+func (c *checker) variantConstructor(scope *Scope, lvl int, variant *ast.EnumVariant, ret soltype.Type) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(variant.Params))
 	for i, p := range variant.Params {
 		name, ok := identPatName(p.Pattern)
@@ -136,7 +139,7 @@ func (c *checker) variantConstructor(scope *Scope, lvl int, variant *ast.EnumVar
 			Optional: p.Optional,
 		}
 	}
-	return &soltype.FuncType{Params: params, Ret: vt}
+	return &soltype.FuncType{Params: params, Ret: ret}
 }
 
 // qualifyEnumName returns an enum's dep_graph-qualified name — the namespace joined to
