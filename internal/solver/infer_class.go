@@ -272,7 +272,7 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 			args[i] = c.freshAt(lvl)
 		}
 	}
-	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final}
+	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final, Variant: ct.Variant}
 }
 
 // lookupClassBinding resolves a written type name to its scope TypeBinding, honoring

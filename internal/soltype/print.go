@@ -523,6 +523,11 @@ func (p *namedPrinter) printType(t Type) string {
 		// namespace prefix for registry keying, stripped here for display. Lt and the
 		// `mut` borrow forms come from a RefType wrapper, not this arm.
 		name := classDisplayName(t.Name)
+		if t.Variant {
+			// An enum variant renders qualified by its enum, `Color.RGB`, so variants of
+			// two enums sharing a name stay distinct; a plain class strips to its bare name.
+			name = enumVariantDisplayName(t.Name)
+		}
 		if len(t.TypeArgs) == 0 && len(t.LifetimeArgs) == 0 {
 			return name
 		}
@@ -630,6 +635,21 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 func classDisplayName(qname string) string {
 	if i := strings.LastIndex(qname, "."); i >= 0 {
 		return qname[i+1:]
+	}
+	return qname
+}
+
+// enumVariantDisplayName renders an enum variant's qualified name as `Enum.Variant` —
+// the last two dot-components — stripping any dep_graph namespace prefix while keeping
+// the enum qualifier. A root-namespace `Color.RGB` and a namespaced `Geo.Color.RGB`
+// both render `Color.RGB`. A name with fewer than two components is returned unchanged.
+func enumVariantDisplayName(qname string) string {
+	last := strings.LastIndex(qname, ".")
+	if last < 0 {
+		return qname
+	}
+	if prev := strings.LastIndex(qname[:last], "."); prev >= 0 {
+		return qname[prev+1:]
 	}
 	return qname
 }

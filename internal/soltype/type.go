@@ -545,6 +545,11 @@ type ClassType struct {
 	// closed the way an exact object is (exact-types §2.6). The zero value false is
 	// inexact, matching a non-final class whose subclasses may widen it.
 	Final bool
+	// Variant marks an enum variant such as `Color.RGB`, so it renders qualified by its
+	// enum — the last two components of Name — rather than stripped to the bare `RGB` a
+	// class renders under. This keeps two enums that share a variant name distinct at
+	// display time. The zero value false is an ordinary class or the enum type itself.
+	Variant bool
 }
 
 func (*TypeVarType) isType()      {}
