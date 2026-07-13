@@ -131,6 +131,20 @@ func TestInferEnumNominalDistinctness(t *testing.T) {
 	require.Equal(t, "cannot constrain Palette.RGB <: Color.RGB | Color.Hex", errs[0].Message())
 }
 
+// TestInferEnumUnnamedParams checks that a variant with several parameters that carry no
+// single name — here two wildcards — gives each constructor parameter a distinct
+// positional name rather than colliding on one shared name.
+func TestInferEnumUnnamedParams(t *testing.T) {
+	classValues(t, `
+		enum E {
+			Pair(_: number, _: string),
+		}
+		val ctor = E.Pair
+	`, map[string]string{
+		"ctor": "fn (arg0: number, arg1: string) -> E.Pair",
+	}, nil)
+}
+
 // TestEnumVariantDisplay locks in the qualified rendering of an enum variant token: a
 // variant prints as `Enum.Variant` — its enum plus its own name — so two enums sharing
 // a variant name stay distinct wherever a variant surfaces, such as a union member or a

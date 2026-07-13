@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"fmt"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -121,9 +123,12 @@ func (c *checker) inferEnumDecl(scope *Scope, lvl int, decl *ast.EnumDecl, ns st
 func (c *checker) variantConstructor(scope *Scope, lvl int, variant *ast.EnumVariant, ret soltype.Type) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(variant.Params))
 	for i, p := range variant.Params {
+		// A destructuring or wildcard parameter has no single name, so fall back to a
+		// positional placeholder — distinct per position, mirroring memberSigStub — so
+		// two unnamed params do not collide on one name.
 		name, ok := identPatName(p.Pattern)
 		if !ok {
-			name = "arg"
+			name = fmt.Sprintf("arg%d", i)
 		}
 		params[i] = &soltype.FuncParam{
 			Pattern:  &soltype.IdentPat{Name: name},
