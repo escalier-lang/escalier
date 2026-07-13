@@ -327,16 +327,19 @@ func (c *checker) inferComponent(
 
 	// Non-value keys such as type aliases are outside the M2 subset. Report each
 	// contributing decl once, skipping any already handled by a value key. A class or
-	// enum contributes both a value and a type key for the same decl, so its type key
-	// is skipped here.
+	// enum contributes both a value and a type key for the same decl, so one of the two
+	// keys is handled here and the other elsewhere.
 	//
-	// A class's type key is left to its value key, which infers the class and
-	// registers both the instance type and the constructor together (M5 B1). The two
-	// keys land in separate components, and the type key's component is ordered first,
-	// so reporting it here would both mis-report the class as unsupported and mark the
-	// decl handled — blocking the value key. Skip such a decl without marking it
-	// handled; its value key infers it and the reconciliation pass then finds it
-	// handled.
+	// A class's type key is left to its value key, which infers the class and registers
+	// both the instance type and the constructor together (M5 B1). Its type key here only
+	// pre-binds the nominal identity for recursion; reporting it as unsupported would
+	// mis-report the class and mark the decl handled, blocking the value key. So a class
+	// type key skips without marking handled and the value key does the work.
+	//
+	// An enum inverts the split (M5 D-Enum): its type key here infers the whole enum —
+	// the union type binding and the variant-constructor namespace — and marks the decl
+	// handled, so its value key becomes a no-op. The type key's component is ordered
+	// before the value key's, so the enum's bindings exist for every later reference.
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
@@ -357,6 +360,17 @@ func (c *checker) inferComponent(
 				// The type key carries the same namespace as the value key, so the shell is
 				// keyed by the same qualified name inferClassDecl reconstructs.
 				c.getOrCreateClass(scope, cd, g.GetNamespace(key))
+				continue
+			}
+			if ed, ok := d.(*ast.EnumDecl); ok {
+				// Infer the whole enum at its type key (M5 D-Enum). The type-key component
+				// is ordered before the enum's value-key component, so the union type
+				// binding and the variant-constructor namespace both exist for every later
+				// declaration that references the enum. Mark the decl handled so the value
+				// key skips it (its pre-bound value var is retracted in phase 3) and the
+				// reconciliation pass does not report it as unmodeled.
+				c.inferEnumDecl(scope, inner, ed, g.GetNamespace(key))
+				handled.Add(d)
 				continue
 			}
 			handled.Add(d)
