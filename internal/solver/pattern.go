@@ -269,12 +269,20 @@ func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scr
 	// The pattern narrows the scrutinee to the named class. The instance flows into the
 	// scrutinee, so a scrutinee that cannot be this class is rejected here.
 	c.constrain(p, inst, scrutinee)
-	// Deconstruct through the projected member view rather than by subtyping. Binding the
-	// inner object pattern against the projected body reads each field at its member type,
-	// and for a downcast pattern such as `Dog { … }` over an `Animal` scrutinee it reads
-	// the subclass's own members, which the scrutinee's declared type does not carry.
+	// Deconstruct through the projected member view rather than by subtyping. Project the
+	// scrutinee's own class instance when it names the same class, so a generic scrutinee's
+	// concrete type arguments give the field types directly — the same path member access
+	// takes. Relying on the nominal constraint above to back-propagate the arguments into
+	// inst's fresh vars is not sound under a non-invariant parameter, which would leave a
+	// field bound to an untied var. A downcast pattern such as `Dog { … }` over an `Animal`
+	// scrutinee names a different class, so it falls back to the freshly asserted instance
+	// and reads the subclass's own members.
+	projected := inst
+	if sc, ok := classCarrier(scrutinee); ok && sc.Name == ct.Name {
+		projected = sc
+	}
 	target, targetConcrete := scrutinee, concrete
-	if body, projected := c.ctx.projectClassBody(inst); projected {
+	if body, ok := c.ctx.projectClassBody(projected); ok {
 		target, targetConcrete = body, body
 	}
 	obj, _ := c.bindPatMode(scope, lvl, p.Object, target, targetConcrete, scrutineeMode, leafTypes, emit).(*soltype.ObjectPat)
@@ -312,18 +320,63 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 	// The extracted value is an instance of the constructor's return type. Narrow the
 	// scrutinee to it, the same assertion an instance pattern makes.
 	c.constrain(p, ctor.Ret, scrutinee)
-	if len(p.Args) != len(ctor.Params) {
-		c.report(&ExtractorPatternArityError{Pat: p, Name: name, Expected: len(ctor.Params), Got: len(p.Args)})
+	// Read the parameters at the scrutinee's concrete type arguments. Substituting them
+	// directly from the scrutinee's own instance is sound where relying on the narrowing
+	// constraint above to back-propagate them into the constructor's fresh return vars is
+	// not, since a non-invariant parameter constrains only one direction and leaves the
+	// argument bound to an untied var.
+	params := ctor.Params
+	if sc, ok := classCarrier(scrutinee); ok {
+		if ret, ok := ctor.Ret.(*soltype.ClassType); ok && ret.Name == sc.Name {
+			params = ctorParamsAt(ctor.Params, ret, sc)
+		}
+	}
+	if len(p.Args) != len(params) {
+		c.report(&ExtractorPatternArityError{Pat: p, Name: name, Expected: len(params), Got: len(p.Args)})
 	}
 	args := make([]soltype.Pat, len(p.Args))
 	for i, a := range p.Args {
 		var paramType soltype.Type = c.freshAt(lvl)
-		if i < len(ctor.Params) {
-			paramType = ctor.Params[i].Type
+		if i < len(params) {
+			paramType = params[i].Type
 		}
 		args[i] = c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit)
 	}
 	return &soltype.ExtractorPat{Name: name, Args: args}
+}
+
+// ctorParamsAt rewrites a constructor's parameter types from the constructor's own
+// return-type-argument vars to the scrutinee instance's concrete arguments, so an
+// extractor over a generic scrutinee reads its parameters at the scrutinee's arguments.
+// ret is the constructor's return instance, whose positional arguments are the fresh vars
+// a generic constructor was instantiated with; sc is the scrutinee's instance of the same
+// class, whose positional arguments are concrete. A non-generic constructor, whose return
+// carries no arguments, leaves the parameters unchanged.
+func ctorParamsAt(params []*soltype.FuncParam, ret, sc *soltype.ClassType) []*soltype.FuncParam {
+	subst := &classSubst{
+		types:     map[*soltype.TypeVarType]soltype.Type{},
+		lifetimes: map[*soltype.LifetimeVar]soltype.Lifetime{},
+	}
+	for i := 0; i < min(len(ret.TypeArgs), len(sc.TypeArgs)); i++ {
+		if v, ok := ret.TypeArgs[i].(*soltype.TypeVarType); ok {
+			subst.types[v] = sc.TypeArgs[i]
+		}
+	}
+	for i := 0; i < min(len(ret.LifetimeArgs), len(sc.LifetimeArgs)); i++ {
+		if lv, ok := ret.LifetimeArgs[i].(*soltype.LifetimeVar); ok {
+			subst.lifetimes[lv] = sc.LifetimeArgs[i]
+		}
+	}
+	if len(subst.types) == 0 && len(subst.lifetimes) == 0 {
+		return params
+	}
+	out := make([]*soltype.FuncParam, len(params))
+	for i, param := range params {
+		cp := *param
+		cp.Type = param.Type.Accept(subst, soltype.Positive)
+		out[i] = &cp
+	}
+	return out
 }
 
 // instancePatClass resolves an instance pattern's name to its class token, honoring the
