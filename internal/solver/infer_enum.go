@@ -8,35 +8,66 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// inferEnumDecl types an enum declaration (M5 D-Enum), porting the old checker's enum
-// model to soltype. The old checker binds the enum name to BOTH a namespace and a type
-// alias whose body is a union of the variant types. soltype has no type aliases yet
-// (M7), so this binds the enum name as a namespace and binds the type directly to that
-// union: `Color` resolves to `Color.RGB | Color.Hex`.
+// Enum inference (M5 D-Enum) ports the old checker's enum model to soltype. The old
+// checker binds the enum name to BOTH a namespace and a type alias whose body is a union
+// of the variant types. soltype has no type aliases yet (M7), so the enum name binds as a
+// namespace and its type binds directly to that union: `Color` resolves to
+// `Color.RGB | Color.Hex`.
 //
 // TODO(M7): once type aliases land, bind the enum name to a proper alias whose body is
-// this union, so a reference to the enum renders under its own name — `Color` rather
-// than the expanded `Color.RGB | Color.Hex` — the way the old checker's TypeRefType
-// does. The union built here becomes that alias's body.
+// this union, so a reference to the enum renders under its own name — `Color` rather than
+// the expanded `Color.RGB | Color.Hex` — the way the old checker's TypeRefType does. The
+// union built here becomes that alias's body.
 //
 // Each variant is a `final` ClassType named `Color.RGB` — a nominal token qualified by
 // its enum, so two enums that share a variant name stay distinct. Each variant's
 // constructor binds as a value under the enum namespace and returns the enum type, so
 // `Color.Hex("#fff")` infers `Color.RGB | Color.Hex`, the union the enum names.
 //
-// It is driven from the SCC type-key path (module.go), which is ordered before the
-// enum's value-key component, so the enum type binding and the constructor namespace
-// exist for every later declaration that references the enum. The value key is a no-op
-// skipped as handled.
+// Inference is two-phase, so a group of mutually-recursive enums resolves each other:
 //
-// The enum type binding is defined BEFORE variant constructor parameters are resolved,
-// so a self-recursive enum such as `enum Tree { Leaf, Node(left: Tree, right: Tree) }`
-// resolves each variant's `Tree` parameter to the enum union under construction.
+//   - preBindEnum mints every variant token and binds the enum's union TYPE, but does
+//     NOT resolve variant parameters. Running it over every enum in a dep_graph type-key
+//     component before any body means `enum A { X(b: B) }` / `enum B { Y(a: A) }` each
+//     find the sibling's union already bound. A self-recursive enum resolves through its
+//     own union the same way.
+//   - inferEnumBody then resolves each variant's parameters, builds its constructor, and
+//     binds the constructor namespace.
+//
+// Both run from the SCC type-key path (module.go), which is ordered before the enum's
+// value-key component, so the enum type binding and the constructor namespace exist for
+// every later declaration that references the enum. The value key is a no-op skipped as
+// handled.
 //
 // Scope: the enum is the union of its variant tokens — the exhaustiveness substrate D2
 // needs, which reads the union's members. A generic enum's variant arguments follow the
 // shared class variance and are not specialized here.
-func (c *checker) inferEnumDecl(scope *Scope, lvl int, decl *ast.EnumDecl, ns string) {
+
+// enumShell carries an enum's pre-bound state from preBindEnum to inferEnumBody: the
+// resolved type parameters, the minted variant tokens, and the union those form. The
+// body pass reuses this state so a variant constructor shares the exact type-parameter
+// vars the union holds rather than minting a second, unrelated set.
+type enumShell struct {
+	decl  *ast.EnumDecl
+	ns    string
+	qname string
+	lvl   int
+	// scope is the scope the enum is declared in — where its type binding and namespace
+	// live. declScope is scope, or a child holding a generic enum's type parameters, and
+	// is where variant parameters resolve.
+	scope        *Scope
+	declScope    *Scope
+	variants     []*ast.EnumVariant
+	variantTypes []soltype.Type
+	enumType     soltype.Type
+}
+
+// preBindEnum mints an enum's variant tokens, registers their ClassDefs, and binds the
+// enum name's TYPE to the union of those tokens — without resolving any variant
+// parameter. It returns the shell inferEnumBody completes. Binding the union up front is
+// what lets a sibling enum, or the enum itself, resolve this name while its own body is
+// still being walked.
+func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns string) *enumShell {
 	// An enum-body type reference resolves against the enum's own namespace first, the
 	// same qualified-first resolution a class body uses. Save and restore around the walk.
 	prevNS := c.classNamespace
@@ -62,8 +93,8 @@ func (c *checker) inferEnumDecl(scope *Scope, lvl int, decl *ast.EnumDecl, ns st
 	}
 	typeArgs := typeParamVars(typeParams)
 
-	// Phase 1: mint each variant's nominal token and register its ClassDef, so a variant
-	// parameter referencing a sibling variant resolves before any constructor is built.
+	// Mint each variant's nominal token and register its ClassDef, so a variant parameter
+	// referencing a sibling variant resolves before any constructor is built.
 	variants := make([]*ast.EnumVariant, 0, len(decl.Elems))
 	variantTypes := make([]soltype.Type, 0, len(decl.Elems))
 	for _, elem := range decl.Elems {
@@ -88,8 +119,6 @@ func (c *checker) inferEnumDecl(scope *Scope, lvl int, decl *ast.EnumDecl, ns st
 		variantTypes = append(variantTypes, vt)
 	}
 
-	// The enum type is the union of its variants. Define it before resolving variant
-	// parameters so a recursive variant resolves the enum name to this union.
 	enumType := soltype.Type(&soltype.UnionType{Types: variantTypes})
 	scope.defineType(qname, TypeBinding{
 		Type:    enumType,
@@ -97,22 +126,43 @@ func (c *checker) inferEnumDecl(scope *Scope, lvl int, decl *ast.EnumDecl, ns st
 	})
 	c.recordType(decl.Name, enumType)
 
-	// Phase 2: build each variant's constructor and bind it in the enum's namespace.
+	return &enumShell{
+		decl:         decl,
+		ns:           ns,
+		qname:        qname,
+		lvl:          lvl,
+		scope:        scope,
+		declScope:    declScope,
+		variants:     variants,
+		variantTypes: variantTypes,
+		enumType:     enumType,
+	}
+}
+
+// inferEnumBody completes a pre-bound enum: it resolves each variant's parameters — which
+// may name a sibling enum bound by preBindEnum — builds each variant's constructor, and
+// binds the constructor namespace. It runs after every enum in the recursive group is
+// pre-bound, so a cross-enum parameter reference resolves.
+func (c *checker) inferEnumBody(sh *enumShell) {
+	prevNS := c.classNamespace
+	c.classNamespace = sh.ns
+	defer func() { c.classNamespace = prevNS }()
+
 	nsValues := map[string]ValueBinding{}
 	nsTypes := map[string]TypeBinding{}
-	for i, variant := range variants {
-		ctor := c.variantConstructor(declScope, lvl, variant, enumType)
+	for i, variant := range sh.variants {
+		ctor := c.variantConstructor(sh.declScope, sh.lvl, variant, sh.enumType)
 		nsValues[variant.Name.Name] = ValueBinding{
-			Schemes: []TypeScheme{c.generalize(ctor, lvl-1)},
+			Schemes: []TypeScheme{c.generalize(ctor, sh.lvl-1)},
 			Sources: []provenance.Provenance{&ast.NodeProvenance{Node: variant}},
 		}
 		nsTypes[variant.Name.Name] = TypeBinding{
-			Type:    variantTypes[i],
+			Type:    sh.variantTypes[i],
 			Sources: []provenance.Provenance{&ast.NodeProvenance{Node: variant}},
 		}
 	}
-	scope.defineNamespace(decl.Name.Name, &Namespace{
-		Name:   qname,
+	sh.scope.defineNamespace(sh.decl.Name.Name, &Namespace{
+		Name:   sh.qname,
 		Values: nsValues,
 		Types:  nsTypes,
 		Nested: map[string]*Namespace{},

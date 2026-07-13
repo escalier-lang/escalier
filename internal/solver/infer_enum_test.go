@@ -88,6 +88,34 @@ func TestInferEnumBasic(t *testing.T) {
 	}
 }
 
+// TestInferEnumMutuallyRecursive checks that two enums whose variants reference each
+// other are inferred correctly: each enum's union type is bound before either enum's
+// variant parameters are resolved, so `A`'s `ANode(next: B)` and `B`'s `BNode(next: A)`
+// both resolve the sibling enum. A single-pass walk would report the later enum's name
+// as an unknown type.
+func TestInferEnumMutuallyRecursive(t *testing.T) {
+	classValues(t, `
+		enum A {
+			AEnd,
+			ANode(next: B),
+		}
+		enum B {
+			BEnd,
+			BNode(next: A),
+		}
+		val a: A = A.AEnd()
+		val b = B.BNode(A.AEnd())
+		val ctorA = A.ANode
+	`, map[string]string{
+		"a":     "A.AEnd | A.ANode",
+		"b":     "B.BEnd | B.BNode",
+		"ctorA": "fn (next: B.BEnd | B.BNode) -> A.AEnd | A.ANode",
+	}, map[string]string{
+		"A": "A.AEnd | A.ANode",
+		"B": "B.BEnd | B.BNode",
+	})
+}
+
 // TestInferEnumSharedVariantName checks that two enums declaring a variant of the same
 // name do not collide: each `RGB` constructor resolves under its own enum namespace with
 // its own signature and produces its own enum union. The two constructors differ in
