@@ -412,6 +412,10 @@ func (v *DependencyVisitor) EnterStmt(stmt ast.Stmt) bool {
 				for binding := range bindings {
 					currentScope.ValueBindings.Add(binding)
 				}
+				// A nominal InstancePat/ExtractorPat in the pattern deconstructs a class,
+				// so record a dependency on it. The framework does not re-walk the pattern
+				// here, so collect the class references directly.
+				v.collectNominalPatternDeps(decl.Pattern)
 				return false // Don't traverse again
 			case *ast.FuncDecl:
 				// Function declarations are hoisted, so add to scope first
@@ -508,6 +512,10 @@ func (v *DependencyVisitor) EnterExpr(expr ast.Expr) bool {
 					currentScope.ValueBindings.Add(binding)
 				}
 				arm.Pattern.Accept(v)
+				// A nominal InstancePat/ExtractorPat arm deconstructs a class, so record a
+				// dependency on it. arm.Pattern.Accept above collects references inside
+				// pattern defaults; this adds the class the pattern names.
+				v.collectNominalPatternDeps(arm.Pattern)
 			}
 			if arm.Guard != nil {
 				arm.Guard.Accept(v)
@@ -531,6 +539,49 @@ func (v *DependencyVisitor) ExitExpr(expr ast.Expr) {
 	switch expr.(type) {
 	case *ast.FuncExpr:
 		v.popScope()
+	}
+}
+
+// collectNominalPatternDeps records a dependency on every class named by an InstancePat
+// `Point { x, y }` or ExtractorPat `Point(x, y)` within pat, recursing through the
+// structural sub-patterns. Binding through a nominal pattern reads the class's projected
+// member body, which the checker fills in only when the class's VALUE key is inferred (M5
+// B1 registers the type binding early but leaves the ClassDef body empty until then).
+// Recording both the value and type dependency orders that inference before the enclosing
+// binding, so a pattern never binds against the empty shell. Leaf identifiers are
+// bindings, not references, so they are left to FindBindings; pattern defaults are visited
+// by the caller's own expression walk, so they are not touched here.
+func (v *DependencyVisitor) collectNominalPatternDeps(pat ast.Pat) {
+	switch p := pat.(type) {
+	case *ast.InstancePat:
+		name := ast.QualIdentToString(p.ClassName)
+		v.addValueDependency(name, nil)
+		v.addTypeDependency(name)
+		if p.Object != nil {
+			v.collectNominalPatternDeps(p.Object)
+		}
+	case *ast.ExtractorPat:
+		name := ast.QualIdentToString(p.Name)
+		v.addValueDependency(name, nil)
+		v.addTypeDependency(name)
+		for _, arg := range p.Args {
+			v.collectNominalPatternDeps(arg)
+		}
+	case *ast.TuplePat:
+		for _, elem := range p.Elems {
+			v.collectNominalPatternDeps(elem)
+		}
+	case *ast.ObjectPat:
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				v.collectNominalPatternDeps(e.Value)
+			case *ast.ObjRestPat:
+				v.collectNominalPatternDeps(e.Pattern)
+			}
+		}
+	case *ast.RestPat:
+		v.collectNominalPatternDeps(p.Pattern)
 	}
 }
 
@@ -766,6 +817,11 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 			// Visit the initializer if present
 			if d.Init != nil {
 				d.Init.Accept(visitor)
+			}
+			// A nominal InstancePat/ExtractorPat in the pattern records a dependency on
+			// the class it deconstructs, matching the local-scope VarDecl path.
+			if d.Pattern != nil {
+				visitor.collectNominalPatternDeps(d.Pattern)
 			}
 		case *ast.FuncDecl:
 			visitor.processTypeParams(d.TypeParams)
