@@ -379,3 +379,33 @@ func TestInferOverloadMixedWithValCrossFileIsDuplicate(t *testing.T) {
 	require.Equal(t, "fn (x: number) -> number", values["f"],
 		"the cross-file val is rejected; the fn binding survives")
 }
+
+// #723 object-argument specificity: an overload set whose arms take objects ranks a
+// wider-field argument to the arm with the wider field set, even when the narrower arm is
+// declared first. f({x, y}) picks the {x, y} arm over the earlier {x} arm because a
+// superset-of-fields parameter is more specific — the object analogue of a concrete param
+// outranking a generic one.
+func TestInferOverloadObjectArgFieldSubsumption(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) -> number { return p.x }
+		fn f(p: {x: number, y: number}) -> string { return "wide" }
+		val r = f({x: 1, y: 2})
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "string", values["r"],
+		"the wider-field arm outranks the earlier narrow arm for a superset argument")
+}
+
+// The narrow argument still selects the narrow arm: f({x}) cannot match the {x, y} arm
+// (missing y), so only the {x} arm accepts it. This confirms subsumption ranking does not
+// force every object call onto the widest arm.
+func TestInferOverloadObjectArgNarrowSelectsNarrow(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) -> number { return p.x }
+		fn f(p: {x: number, y: number}) -> string { return "wide" }
+		val r = f({x: 1})
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["r"],
+		"a narrow argument only matches the narrow arm")
+}

@@ -347,7 +347,53 @@ func structuralSubtype(a, b soltype.Type) bool {
 			return primOf(l.Lit) == p.Prim
 		}
 	}
+	if ao, ok := a.(*soltype.ObjectType); ok {
+		if bo, ok := b.(*soltype.ObjectType); ok {
+			return objectSubsumes(ao, bo)
+		}
+	}
 	return false
+}
+
+// objectSubsumes reports whether object a ranks strictly more specific than object b for
+// overload specificity — the #723 object-argument case. a subsumes b when a carries every
+// property b declares with an alpha-equal type, and a is narrower in the width sense: it
+// has a strictly larger field set, or the same field set while a is exact and b is not.
+//
+// A wider field set is more specific because a parameter typed `{x, y}` accepts fewer
+// arguments than one typed `{x}`, the object analogue of a concrete param outranking a
+// generic one. An exact object is likewise more specific than an inexact one over the same
+// fields, since it accepts no extra properties. Two objects with the same fields and same
+// exactness are alpha-equal and never reach here — structuralSubtype's alphaEqualTypes arm
+// resolves them to a tie first. Any non-property member makes the pair incomparable and
+// ranks as false, deferring to declaration order.
+func objectSubsumes(a, b *soltype.ObjectType) bool {
+	bCount := 0
+	for _, be := range b.Elems {
+		bp, ok := be.(*soltype.PropertyElem)
+		if !ok {
+			return false
+		}
+		bCount++
+		ap, ok := a.Prop(bp.Name)
+		if !ok {
+			return false
+		}
+		if !alphaEqualTypes(ap.Type, bp.Type) {
+			return false
+		}
+	}
+	aCount := 0
+	for _, ae := range a.Elems {
+		if _, ok := ae.(*soltype.PropertyElem); !ok {
+			return false
+		}
+		aCount++
+	}
+	if aCount > bCount {
+		return true
+	}
+	return !a.Inexact && b.Inexact
 }
 
 // overloadIntersection synthesizes the value-position type of an overloaded name, the

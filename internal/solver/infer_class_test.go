@@ -737,17 +737,9 @@ func TestInferClassMutualRecursionRequiresAnnotation(t *testing.T) {
 
 // TestInferClassMutMethodFromImmutMethod asserts that an immutable-`self` method calling a
 // `mut self` method of the same class is rejected: the mutable method needs a mutable
-// receiver, but `self` is immutable in the caller.
-//
-// DISABLED until E1. B3 resolves the call — `self.bump()` finds bump's signature — but does
-// not yet constrain the receiver against the method's SelfParam, so today the call
-// type-checks with no error. That `receiver <: SelfParam` check lands with E1's method-call
-// path through valueProp (receiver-dependent dispatch), and the same gap holds for an
-// external `mut` call on an immutable binding. The asserted message is the expected form
-// from the mutability machinery, which today reports `cannot constrain immutable object <:
-// mutable object` for the analogous immutable-value-into-`mut`-parameter case; E1 finalizes
-// the exact rendering for a class receiver.
-/*
+// receiver, but `self` is immutable in the caller. A plain-`self` body holds only a shared
+// borrow of its receiver, so it has no mutable access to lend `bump`, and the receiver
+// check renders the mismatch against the class name on both sides.
 func TestInferClassMutMethodFromImmutMethod(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class C {
@@ -759,7 +751,40 @@ func TestInferClassMutMethodFromImmutMethod(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "cannot constrain immutable C <: mutable C", errs[0].Message())
 }
-*/
+
+// TestInferClassMutMethodFromMutMethod is the passing companion: a `mut self` method may
+// call another `mut self` method, since its own mutable borrow of the receiver satisfies
+// the callee's `mut self`. A plain-`self` method called from a `mut self` body also
+// type-checks, downgrading the mutable receiver to a shared read.
+func TestInferClassMutMethodFromMutMethod(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			bump(mut self) -> number { return self.n },
+			read(self) -> number { return self.n },
+			run(mut self) -> number { return self.bump() },
+			also(mut self) -> number { return self.read() },
+		}
+	`)
+	require.Empty(t, errs)
+}
+
+// TestInferClassMutGetterFromImmutMethod pins the receiver check for a getter member: a
+// `mut self` getter read from a plain-`self` method is rejected for the same reason a
+// `mut self` method call is — the caller holds only a shared borrow. The getter carries its
+// receiver on GetterElem.SelfParam rather than a FuncType, so this exercises a distinct
+// member kind from the method case.
+func TestInferClassMutGetterFromImmutMethod(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class C {
+			v: number,
+			get doubled(mut self) -> number { return self.v },
+			peek(self) -> number { return self.doubled },
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain immutable C <: mutable C", errs[0].Message())
+}
 
 // TestInferClassGenericMethodReturnsTypeParam checks that a method whose return flows from a
 // class type parameter projects to the instance's argument — both through a `self.method()`
@@ -1654,4 +1679,83 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 			require.Equal(t, test.wantTypes, types)
 		})
 	}
+}
+
+// TestInferMethodOverloadResolvesByArg pins method overload resolution (E1): a method
+// declared with two signatures resolves the arm whose parameter matches the argument, the
+// method analogue of a direct overloaded-function call. c.f(1) picks the number arm and
+// c.f("hi") the string arm, so the two reads take the two arms' distinct return types.
+func TestInferMethodOverloadResolvesByArg(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			f(self, x: number) -> number { return x },
+			f(self, x: string) -> string { return x },
+		}
+		val c = C(0)
+		val a = c.f(1)
+		val b = c.f("hi")
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["a"])
+	require.Equal(t, "string", values["b"])
+}
+
+// TestInferMethodOverloadObjectArgFieldSubsumption is the #723 case through a method: an
+// overloaded method with object parameters ranks a wider-field argument to the wider arm.
+// c.g({x, y}) picks the {x, y} arm over the earlier {x} arm, so method resolution ranks
+// most-specific-first rather than by declaration order.
+func TestInferMethodOverloadObjectArgFieldSubsumption(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			g(self, p: {x: number}) -> number { return p.x },
+			g(self, p: {x: number, y: number}) -> string { return "wide" },
+		}
+		val c = C(0)
+		val r = c.g({x: 1, y: 2})
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "string", values["r"],
+		"the wider-field arm outranks the earlier narrow arm for a superset argument")
+}
+
+// TestInferMethodOverloadNoMatch reports a NoMatchingOverloadError when no arm accepts the
+// argument, listing the arms tried. The candidate signatures render with their `self`
+// receiver stripped, since a call site supplies only the value arguments.
+func TestInferMethodOverloadNoMatch(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			f(self, x: number) -> number { return x },
+			f(self, x: string) -> string { return x },
+		}
+		val c = C(0)
+		val r = c.f(true)
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		"No matching overload for this call\n  fn (x: number) -> number\n  fn (x: string) -> string",
+		errs[0].Message())
+}
+
+// TestInferMethodOverloadDeferredFallsBackToFirstMatch confirms the declaration-order
+// fallback for an unconstrained argument reaches method overloads too: inside a method
+// whose parameter x is unannotated, a self-call self.f(x) resolves to the first arm and
+// pins x, since an unconstrained argument cannot rank the arms. run's parameter x is
+// therefore number, the first arm's type.
+func TestInferMethodOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			f(self, x: number) -> number { return x },
+			f(self, x: string) -> string { return x },
+			run(self, x) -> number { return self.f(x) },
+		}
+		val c = C(0)
+		val r = c.run(1)
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["r"],
+		"an unconstrained argument defers to declaration-order first-match, pinning x to the first arm")
 }
