@@ -43,7 +43,13 @@ func (c *checker) inferEnumDecl(scope *Scope, lvl int, decl *ast.EnumDecl, ns st
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
-	qname := qualifyEnumName(ns, decl)
+	// The enum's dep_graph-qualified name — the namespace joined to the local name, or the
+	// bare local name at the root namespace — mirroring the key dep_graph forms and the
+	// qualified names class registration uses.
+	qname := decl.Name.Name
+	if ns != "" {
+		qname = ns + "." + decl.Name.Name
+	}
 
 	// Resolve the enum's type parameters into a child scope so a variant parameter and a
 	// variant's own type arguments resolve the enum's T to one shared var, quantified at
@@ -137,15 +143,4 @@ func (c *checker) variantConstructor(scope *Scope, lvl int, variant *ast.EnumVar
 		}
 	}
 	return &soltype.FuncType{Params: params, Ret: ret}
-}
-
-// qualifyEnumName returns an enum's dep_graph-qualified name — the namespace joined to
-// the local name with a dot, or the bare local name at the root namespace. It mirrors
-// qualifyClassName so an enum's registry keys and type binding match the qualified key
-// dep_graph forms.
-func qualifyEnumName(ns string, decl *ast.EnumDecl) string {
-	if ns == "" {
-		return decl.Name.Name
-	}
-	return ns + "." + decl.Name.Name
 }
