@@ -94,6 +94,35 @@ func TestInferEnumNominalDistinctness(t *testing.T) {
 	require.Equal(t, "cannot constrain Palette <: Color", errs[0].Message())
 }
 
+// TestInferEnumSharedVariantName checks that two enums declaring a variant of the same
+// name do not collide: each `RGB` constructor resolves under its own enum namespace with
+// its own signature and produces its own enum type. The two constructors differ in arity
+// (three params vs two), which they could not if they shared one registry entry.
+func TestInferEnumSharedVariantName(t *testing.T) {
+	classValues(t, `
+		enum Color {
+			RGB(r: number, g: number, b: number),
+			Hex(code: string),
+		}
+		enum Pixel {
+			RGB(x: number, y: number),
+			Empty,
+		}
+		val colorRGB = Color.RGB
+		val pixelRGB = Pixel.RGB
+		val c = Color.RGB(1, 2, 3)
+		val p = Pixel.RGB(4, 5)
+	`, map[string]string{
+		"colorRGB": "fn (r: number, g: number, b: number) -> Color",
+		"pixelRGB": "fn (x: number, y: number) -> Pixel",
+		"c":        "Color",
+		"p":        "Pixel",
+	}, map[string]string{
+		"Color": "Color",
+		"Pixel": "Pixel",
+	})
+}
+
 // TestEnumVariantDisplay locks in the qualified rendering of an enum variant token: a
 // variant prints as `Enum.Variant` — its enum plus its own name — so two enums sharing
 // a variant name stay distinct wherever a variant surfaces, such as a narrowed `match`
