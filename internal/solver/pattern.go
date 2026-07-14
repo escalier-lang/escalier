@@ -411,6 +411,10 @@ func ctorSignature(t soltype.Type) (*soltype.FuncType, bool) {
 			return ctor.Fn, true
 		}
 	case *soltype.TypeVarType:
+		// Scan the var's lower bounds for a constructor, requiring all that resolve to agree.
+		// A var can carry more than one lower bound, so keep the first constructor found and
+		// compare each later one against it: if two name different constructors the var is an
+		// ambiguous join of unrelated class values, so bail rather than pick one arbitrarily.
 		var found *soltype.FuncType
 		for _, lb := range t.LowerBounds {
 			fn, ok := ctorSignature(lb)
