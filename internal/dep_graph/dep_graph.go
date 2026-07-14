@@ -540,23 +540,20 @@ func (v *DependencyVisitor) ExitExpr(expr ast.Expr) {
 	}
 }
 
-// collectNominalPatternDeps records value and type dependencies on every class named by an
-// InstancePat/ExtractorPat within pat, recursing through the structural sub-patterns. This
-// orders the class's inference, which fills its ClassDef body, before the enclosing binding
-// reads it. Leaf identifiers and defaults are handled elsewhere and left untouched here.
+// collectNominalPatternDeps records a value dependency on every class named by an
+// InstancePat/ExtractorPat within pat, recursing through the structural sub-patterns. The
+// class's value key is what fills its ClassDef body, so this orders that inference before
+// the enclosing binding reads it. Leaf identifiers and defaults are handled elsewhere and
+// left untouched here.
 func (v *DependencyVisitor) collectNominalPatternDeps(pat ast.Pat) {
 	switch p := pat.(type) {
 	case *ast.InstancePat:
-		name := ast.QualIdentToString(p.ClassName)
-		v.addValueDependency(name, nil)
-		v.addTypeDependency(name)
+		v.addValueDependency(ast.QualIdentToString(p.ClassName), nil)
 		if p.Object != nil {
 			v.collectNominalPatternDeps(p.Object)
 		}
 	case *ast.ExtractorPat:
-		name := ast.QualIdentToString(p.Name)
-		v.addValueDependency(name, nil)
-		v.addTypeDependency(name)
+		v.addValueDependency(ast.QualIdentToString(p.Name), nil)
 		for _, arg := range p.Args {
 			v.collectNominalPatternDeps(arg)
 		}
