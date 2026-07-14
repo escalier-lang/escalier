@@ -344,15 +344,14 @@ func TestInferMatchUnionUncoveredWithStructuralMember(t *testing.T) {
 	*/
 }
 
-// DISABLED until M5 structural-object union narrowing. A match over a structural-object
-// union such as `{x: number} | {y: string}` with an object pattern per member should be
-// exhaustive and bind each arm against its matching member. Binding an object pattern
-// against a union scrutinee currently constrains every member to carry the named field, so
-// `{x}` against the `{y: string}` member reports a missing property, and the union
-// exhaustiveness path reports each structural arm unsupported. Both resolve when match-arm
-// union narrowing lands, which binds an object pattern against only the members carrying
-// its fields. Re-enable then and assert the empty-error, exhaustive result the commented
-// body records.
+// DISABLED until M5 D3. A match over a structural-object union such as
+// `{x: number} | {y: string}` with an object pattern per member should be exhaustive and
+// bind each arm against its matching member. Binding an object pattern against a union
+// scrutinee currently constrains every member to carry the named field, so `{x}` against
+// the `{y: string}` member reports a missing property, and the union exhaustiveness path
+// reports each structural arm unsupported. Both resolve when D3's match-arm narrowing
+// lands, which binds an object pattern against only the members carrying its fields.
+// Re-enable then and assert the empty-error, exhaustive result the commented body records.
 func TestInferMatchStructuralObjectUnion(t *testing.T) {
 	/*
 		values, _, errs := inferSource(t, `

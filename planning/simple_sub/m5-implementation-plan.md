@@ -1317,70 +1317,79 @@ corruption of `freshenAbove`.
     namespace value map for the constructor and `resolveQualClassType` the type
     map for the variant token, both routed through `resolveQualNamespace`;
     `extractorCtor` and the nominal coverage check consult them.
-  - **Structural-object union exhaustiveness is D3.** An object pattern over a
-    structural-object union needs match-arm narrowing to bind, which is a binding
+  - **Structural union exhaustiveness is D3.** An object or tuple pattern over a
+    structural union needs match-arm narrowing to bind, which is a binding
     capability M5 does not yet have, so D2 leaves such an arm reported as the
     unsupported-feature `reportStructuralUnionArms` emits and D3 lands the rule.
   - **Accept:** a `match` over an enum with an arm per variant needs no
     catch-all; a missing variant is reported non-exhaustive; a variant arm with a
     refutable argument such as `Color.RGB(0, g, b)` does not cover its variant.
 
-- **D3 — Structural-object union narrowing + exhaustiveness** (~200).
-  - **Files:** `solver/pattern.go` (refutable object-pattern narrowing),
-    `solver/infer_expr.go` (`inferMatch` per-arm narrowing +
+- **D3 — Structural union narrowing + exhaustiveness** (~240).
+  - **Files:** `solver/pattern.go` (refutable object- and tuple-pattern
+    narrowing), `solver/infer_expr.go` (`inferMatch` per-arm narrowing +
     `unionMatchExhaustive` structural coverage), tests.
-  - **The blocker D2 left.** Binding an object pattern against a union scrutinee
-    constrains EVERY member. The `ObjectPat` arm of `bindPatMode` emits
-    `scrutinee <: {x: β, ...}`, and the union-sub rule requires every member to
-    carry `x`, so `{x}` against `{x: number} | {y: string}` reports `object is
-    missing property: x` on the `{y: string}` member, and `{x}` against a union
-    with a non-object member such as `"a" | {x: number}` reports `cannot
-    constrain "a" <: object`. D3 adds match-arm union NARROWING so an object
-    pattern binds against only the members carrying its fields.
+  - **The blocker D2 left.** Binding a structural pattern against a union
+    scrutinee constrains EVERY member. The `ObjectPat` arm of `bindPatMode` emits
+    `scrutinee <: {x: β, ...}` and the `TuplePat` arm emits
+    `scrutinee <: [α0, α1]`, and the union-sub rule requires every member to
+    satisfy that shape. So `{x}` against `{x: number} | {y: string}` reports
+    `object is missing property: x` on the `{y: string}` member, `{x}` against a
+    non-object member such as `"a" | {x: number}` reports `cannot constrain "a" <:
+    object`, and `[a, c]` against `[1, 2] | [3, 4]` reports the unsupported
+    structural arm. D3 adds match-arm union NARROWING so a structural pattern
+    binds against only the members whose shape it matches.
   - **Algorithm:**
     - **Narrowing, refutable-only.** For a union scrutinee, compute the sub-union
-      of members that structurally carry the pattern's named fields and bind the
-      pattern against that narrowed type, so `β` reads the field at those members'
-      types rather than failing on a member that lacks it. A member that is not an
-      object, or an object lacking a named field, is simply excluded from the
-      narrowed target rather than reported — `{x}` against `"a" | {x: number}`
-      binds against `{x: number}` alone and leaves `"a"` for another arm. This is
-      sound only in a REFUTABLE context — a `match` arm or `if let` — since an
-      irrefutable `val {x} = u` over a union must still require `x` on every
-      member. So the narrowing threads a refutable flag through the bind path, or
-      pre-narrows the scrutinee per arm in `inferMatch` before `bindPattern`. It
-      does NOT live in the shared `bindPatMode` `ObjectPat` arm that `val` and
-      parameter destructuring also reach.
+      of members whose shape the pattern matches — an object member carrying every
+      field an object pattern names, a tuple member of the arity a tuple pattern
+      fixes — and bind the pattern against that narrowed type, so each leaf reads
+      its field or element at those members' types rather than failing on a member
+      of another shape. A member the pattern cannot match is excluded from the
+      narrowed target rather than reported: `{x}` against `"a" | {x: number}`
+      binds against `{x: number}` alone, and `[a, c]` against
+      `[number, number] | [string]` binds against `[number, number]` alone,
+      leaving the other member for another arm. This is sound only in a REFUTABLE
+      context — a `match` arm or `if let` — since an irrefutable `val {x} = u` over
+      a union must still require `x` on every member. So the narrowing threads a
+      refutable flag through the bind path, or pre-narrows the scrutinee per arm in
+      `inferMatch` before `bindPattern`. It does NOT live in the shared
+      `bindPatMode` `ObjectPat`/`TuplePat` arms that `val` and parameter
+      destructuring also reach.
     - **Structural coverage.** Replace the deferral D2 leaves for a non-nominal
       member — the `hasUnevaluable` branch that calls `reportStructuralUnionArms`
       — with a real rule: an object pattern covers a `{...}` union member when the
-      member carries every field the pattern names and the sub-patterns are
+      member carries every field the pattern names, a tuple pattern covers a
+      `[...]` member when the arities match, and in both cases the sub-patterns are
       irrefutable; the arms are exhaustive when they collectively cover each
-      member. A union member no object arm covers — a member of a non-object kind,
-      or an object whose fields no arm names — is still uncovered, so it stays
-      non-exhaustive unless a catch-all or its own arm covers it. D2's existing
-      `covered` check already reports such a member, so D3 keeps that verdict and
-      only drops the spurious binding error the narrowing removes. This retires
-      the unsupported-feature report D2 keeps for a structural arm.
+      member. A union member no arm covers — a member whose shape no arm matches,
+      or one whose fields or elements no arm names — is still uncovered, so it
+      stays non-exhaustive unless a catch-all or its own arm covers it. D2's
+      existing `covered` check already reports such a member, so D3 keeps that
+      verdict and only drops the spurious binding error the narrowing removes. This
+      retires the unsupported-feature report D2 keeps for a structural arm.
   - **Composition risk.** `bindPatMode`'s borrow-mode and concrete-type threading
     reads the actual scrutinee type to decide how a leaf borrows and to render an
     owned `mut` cell. The narrowed type must preserve the borrow peel and the
-    `concrete` projection so a `&mut` leaf of a narrowed object arm still binds
-    `&mut`, the source of most of the regression surface this PR carries.
-  - **Out (deferred).** Tuple-union narrowing stays out — a tuple-shaped union
-    member keeps the unsupported report
-    (`TestInferMatchStructuralUnionArmUnsupported` pins it) until a follow-up
-    extends the same narrowing to `TuplePat`.
+    `concrete` projection so a `&mut` leaf of a narrowed object or tuple arm still
+    binds `&mut`, the source of most of the regression surface this PR carries.
+  - **Out (deferred to M9).** The rest element — `[a, ...rest]` and `{...rest}` —
+    stays out, since a typed rest tuple / object-rest is an M9 item. A tuple
+    pattern with a fixed prefix and no rest still narrows on its fixed arity; only
+    the `...rest` binding itself is deferred, the same boundary object patterns
+    already have.
   - **Depends on:** D2 (the nominal coverage cases and the union-member loop D3
     extends).
   - **Accept:** a `match` over `{x: number} | {y: string}` with an object pattern
     per member is exhaustive and binds each arm at its member's field types; a
-    `match` over `"a" | {x: number}` with only the `{x}` arm binds `x: number`
-    without a constraint error and stays non-exhaustive for the uncovered `"a"`
-    member — re-enabling `TestInferMatchUnionUncoveredWithStructuralMember`; a
-    union with a member no arm covers is non-exhaustive; an irrefutable
-    `val {x} = u` over that union still reports the missing property on the
-    `{y: string}` member.
+    `match` over `[1, 2] | [3, 4]` with the arm `[a, c]` is exhaustive and binds
+    `a`/`c` at the joined element types — re-enabling
+    `TestInferMatchTupleUnionExhaustive`; a `match` over `"a" | {x: number}` with
+    only the `{x}` arm binds `x: number` without a constraint error and stays
+    non-exhaustive for the uncovered `"a"` member — re-enabling
+    `TestInferMatchUnionUncoveredWithStructuralMember`; a union with a member no
+    arm covers is non-exhaustive; an irrefutable `val {x} = u` over that union
+    still reports the missing property on the `{y: string}` member.
 
 ### Phase E — Method overloading
 
@@ -1450,7 +1459,7 @@ A3 (LifetimeParam + FuncType.LifetimeParams)  ──┤   ── A3 needs A1's C
       │    └─► F1 (iteration protocol + back-edge validation)
       ├─► D1 (ExtractorPat / InstancePat binding)
       │    └─► D2 (enum-exhaustive / nominal union exhaustiveness)   ── also needs D-Enum + M6
-      │         └─► D3 (structural-object union narrowing + exhaustiveness)
+      │         └─► D3 (structural union narrowing + exhaustiveness)
       ├─► D-Enum (enum decls as unions of final variants)     ── needs M6 (landed)
       └─► E1 (method overload resolution + #723 specificity)
 ```
@@ -1477,7 +1486,7 @@ graph TD
     D1["D1 (ExtractorPat / InstancePat binding)"]
     DEnum["D-Enum (enum decls as unions of final variants)"]
     D2["D2 (enum-exhaustive / nominal union exhaustiveness)"]
-    D3["D3 (structural-object union narrowing + exhaustiveness)"]
+    D3["D3 (structural union narrowing + exhaustiveness)"]
     E1["E1 (method overload resolution + #723 specificity)"]
     M6["M6 (unions / intersections, landed)"]
 
