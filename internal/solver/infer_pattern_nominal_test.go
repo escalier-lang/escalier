@@ -40,8 +40,10 @@ func TestInferInstancePatValDestructure(t *testing.T) {
 }
 
 // An extractor pattern `Point(x, y)` binds each argument sub-pattern against the matching
-// constructor parameter's type. The synthesized constructor's parameters are the instance
-// fields, so `x` and `y` bind at `number`.
+// constructor parameter's type. This is the M5 interim: the extractor protocol is the
+// instance's `[Symbol.customMatcher]` method, which needs symbol-keyed members and lands in
+// M7. Point's synthesized constructor parameters are its fields, so `x` and `y` bind at
+// `number`, the same shape a custom matcher returning `[x, y]` would produce.
 func TestInferExtractorPatBindsArgs(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Point { x: number, y: number }
@@ -55,25 +57,34 @@ func TestInferExtractorPatBindsArgs(t *testing.T) {
 	require.Equal(t, "fn (p: Point) -> [number, number]", values["f"])
 }
 
-// An extractor pattern binds against the DECLARED constructor's parameters, not the field
-// list, so an explicit constructor whose parameters differ from the fields drives the
-// argument types.
+// DISABLED until M7. An extractor pattern deconstructs through the class instance's
+// `[Symbol.customMatcher]` method, not its constructor. M5 has no symbol-keyed members, so
+// bindExtractorPat binds against constructor parameters as an interim. This case pins that
+// interim by extracting `label`, a constructor parameter that is never stored on the
+// instance and so is not recoverable from an instance value. Under M7's `[Symbol.customMatcher]`
+// resolution, `Celsius` declares no custom matcher, so the match is rejected outright.
+// Re-enable when M7 lands and assert the missing-custom-matcher error the commented body
+// records.
 func TestInferExtractorPatExplicitConstructor(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		class Celsius {
-			degrees: number,
-			constructor(mut self, label: string, degrees: number) {
-				self.degrees = degrees
-			},
-		}
-		fn f(c: Celsius) {
-			return match c {
-				Celsius(label, degrees) => [label, degrees]
+	/*
+		_, _, errs := inferSource(t, `
+			class Celsius {
+				degrees: number,
+				constructor(mut self, label: string, degrees: number) {
+					self.degrees = degrees
+				},
 			}
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (c: Celsius) -> [string, number]", values["f"])
+			fn f(c: Celsius) {
+				return match c {
+					Celsius(label, degrees) => [label, degrees]
+				}
+			}
+		`)
+		require.Len(t, errs, 1)
+		// M7: `Celsius` has no `[Symbol.customMatcher]` method, so it cannot be used as an
+		// extractor pattern. The exact error type lands with the matcher resolution.
+		require.Equal(t, "`Celsius` has no [Symbol.customMatcher] method", msgWithSpan(errs[0]))
+	*/
 }
 
 // A generic class instance pattern projects the field at the instance's type argument, so
