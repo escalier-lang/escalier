@@ -88,6 +88,31 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		}
 		return t
 	case *ast.DeclStmt:
+		// A script (bin/) walks its top-level statements in source order, so a class or
+		// enum binds where it appears — used before its declaration it is an unknown
+		// identifier, unlike the module dep-graph path's out-of-order resolution. A real
+		// function body still rejects a local class or enum, so both are gated on the
+		// script context (a funcCtx with a nil node; see InferScript). A script's top-level
+		// declarations live for the whole run, so the class registry's insert/overwrite
+		// invariant holds exactly as it does for a module's top-level decls.
+		switch decl := s.Decl.(type) {
+		case *ast.EnumDecl:
+			if c.inScript() {
+				// preBindEnum binds the enum's union type first so a self-recursive variant
+				// resolves, then inferEnumBody builds the constructors.
+				c.inferEnumBody(c.preBindEnum(scope, lvl+1, decl, ""))
+				return &soltype.Void{}
+			}
+			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
+			return &soltype.Void{}
+		case *ast.ClassDecl:
+			if c.inScript() {
+				c.bindScriptClass(scope, lvl, decl)
+				return &soltype.Void{}
+			}
+			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
+			return &soltype.Void{}
+		}
 		vd, ok := s.Decl.(*ast.VarDecl)
 		if !ok {
 			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})

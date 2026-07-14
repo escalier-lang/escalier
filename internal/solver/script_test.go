@@ -54,6 +54,74 @@ func TestInferScriptSourceOrder(t *testing.T) {
 	require.Equal(t, "5", values["y"])
 }
 
+// TestInferScriptEnum checks that an enum can be declared and used in a script (bin/).
+// A script's top-level statements run in source order, so an enum declared before its
+// use binds its type and variant constructors just as in a module: a constructor call
+// yields the enum union.
+func TestInferScriptEnum(t *testing.T) {
+	values, types, errs := inferScriptSource(t, `
+		enum Color {
+			RGB(r: number, g: number, b: number),
+			Hex(code: string),
+		}
+		val c = Color.Hex("#fff")
+		val mk = Color.RGB
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "Color.RGB | Color.Hex", types["Color"])
+	require.Equal(t, "Color.RGB | Color.Hex", values["c"])
+	require.Equal(t, "fn (r: number, g: number, b: number) -> Color.RGB | Color.Hex", values["mk"])
+}
+
+// TestInferScriptEnumOutOfOrder checks that a script does NOT resolve an enum used before
+// its declaration. Unlike a module, whose top-level declarations are dependency-ordered,
+// a script's statements are linear, so a forward reference is an unknown identifier.
+func TestInferScriptEnumOutOfOrder(t *testing.T) {
+	_, _, errs := inferScriptSource(t, `
+		val c = Color.Hex("#fff")
+		enum Color {
+			RGB(r: number),
+			Hex(code: string),
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unknown identifier: Color", errs[0].Message())
+}
+
+// TestInferScriptClass checks that a class can be declared and used in a script (bin/):
+// the constructor value and instance type bind, and field and method access resolve
+// through the projected class body, just as in a module.
+func TestInferScriptClass(t *testing.T) {
+	values, types, errs := inferScriptSource(t, `
+		class Point {
+			x: number,
+			y: number,
+			getX(self) -> number { return self.x },
+		}
+		val p = Point(1, 2)
+		val px = p.x
+		val d = p.getX()
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "Point", types["Point"])
+	require.Equal(t, "fn (x: number, y: number) -> Point", values["Point"])
+	require.Equal(t, "Point", values["p"])
+	require.Equal(t, "number", values["px"])
+	require.Equal(t, "number", values["d"])
+}
+
+// TestInferScriptClassOutOfOrder checks that a script does NOT resolve a class used
+// before its declaration — its statements are linear, so a forward reference is an
+// unknown identifier, unlike a module's dependency-ordered declarations.
+func TestInferScriptClassOutOfOrder(t *testing.T) {
+	_, _, errs := inferScriptSource(t, `
+		val p = Point(1, 2)
+		class Point { x: number, y: number }
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unknown identifier: Point", errs[0].Message())
+}
+
 // TestScriptTransitionParity is the milestone's central claim: a `mut`→immutable
 // transition at script top level is checked identically to the same statements
 // wrapped in a function body. Each case runs through InferScript directly, then again

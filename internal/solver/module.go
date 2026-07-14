@@ -327,16 +327,33 @@ func (c *checker) inferComponent(
 
 	// Non-value keys such as type aliases are outside the M2 subset. Report each
 	// contributing decl once, skipping any already handled by a value key. A class or
-	// enum contributes both a value and a type key for the same decl, so its type key
-	// is skipped here.
+	// enum contributes both a value and a type key for the same decl, so one of the two
+	// keys is handled here and the other elsewhere.
 	//
-	// A class's type key is left to its value key, which infers the class and
-	// registers both the instance type and the constructor together (M5 B1). The two
-	// keys land in separate components, and the type key's component is ordered first,
-	// so reporting it here would both mis-report the class as unsupported and mark the
-	// decl handled — blocking the value key. Skip such a decl without marking it
-	// handled; its value key infers it and the reconciliation pass then finds it
-	// handled.
+	// A class's type key is left to its value key, which infers the class and registers
+	// both the instance type and the constructor together (M5 B1). Its type key here only
+	// pre-binds the nominal identity for recursion; reporting it as unsupported would
+	// mis-report the class and mark the decl handled, blocking the value key. So a class
+	// type key skips without marking handled and the value key does the work.
+	//
+	// An enum inverts the split (M5 D-Enum): its type key here infers the whole enum — the
+	// union type binding and the variant-constructor namespace — and marks the decl
+	// handled, so its value key becomes a no-op. The enum two-pass below runs first for
+	// exactly that reason.
+	// Pre-bind every nominal identity in this component — each class token and each enum
+	// union type — before any enum body resolves a variant parameter, so a group of
+	// mutually-recursive classes AND enums resolves each other. A class's variant-holding
+	// enum and an enum's field-holding class land in one type-key SCC component; binding
+	// all their identities first lets `enum Json { Arr(items: JsonArray) }` /
+	// `class JsonArray { head: Json }` each resolve the sibling.
+	//
+	//   - A class is pre-bound to its nominal identity (M5 B2) and left for its value key,
+	//     which infers the body and marks the decl handled. Leaving it unhandled here lets
+	//     the reconciliation pass find it through that key.
+	//   - An enum is pre-bound to its union type (preBindEnum) and marked handled, then
+	//     completed by inferEnumBody once every sibling is bound; its value key is then a
+	//     no-op whose pre-bound value var is retracted in phase 3.
+	var enumShells []*enumShell
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
@@ -345,18 +362,37 @@ func (c *checker) inferComponent(
 			if handled.Contains(d) {
 				continue
 			}
-			if cd, ok := d.(*ast.ClassDecl); ok {
-				// Pre-bind the class's nominal identity before any body in its recursive
-				// group is walked (M5 B2). A type-key component is the SCC condensation of
-				// a group of mutually-recursive classes, so registering every class's type
-				// binding and empty ClassDef here lets a sibling defined later in the group
-				// resolve a forward reference — `class A { b: B }` / `class B { a: A }`.
-				// The value key infers the body and marks the decl handled; leave it
-				// unhandled here so the reconciliation pass finds it through that key. The
-				// returned token and def are discarded here; inferClassDecl reuses them.
-				// The type key carries the same namespace as the value key, so the shell is
-				// keyed by the same qualified name inferClassDecl reconstructs.
-				c.getOrCreateClass(scope, cd, g.GetNamespace(key))
+			switch decl := d.(type) {
+			case *ast.EnumDecl:
+				enumShells = append(enumShells, c.preBindEnum(scope, inner, decl, g.GetNamespace(key)))
+				handled.Add(d)
+			case *ast.ClassDecl:
+				// A type-key component is the SCC condensation of mutually-recursive classes,
+				// so registering every class's type binding and empty ClassDef here lets a
+				// sibling resolve a forward reference — `class A { b: B }` / `class B { a: A }`.
+				// The returned token and def are discarded here; inferClassDecl reuses them,
+				// keyed by the same qualified name the shared namespace reconstructs.
+				c.getOrCreateClass(scope, decl, g.GetNamespace(key))
+			}
+		}
+	}
+	// Every enum body resolves its variant parameters against the fully pre-bound
+	// identities above, so a parameter naming a sibling enum or class resolves.
+	for _, sh := range enumShells {
+		c.inferEnumBody(sh)
+	}
+
+	// Report any remaining non-value decl as unsupported. A class was pre-bound above and
+	// is completed at its value key, so skip it rather than mis-reporting it.
+	for _, key := range component {
+		if _, isValue := bindings[key]; isValue {
+			continue
+		}
+		for _, d := range g.GetDecls(key) {
+			if handled.Contains(d) {
+				continue
+			}
+			if _, ok := d.(*ast.ClassDecl); ok {
 				continue
 			}
 			handled.Add(d)
