@@ -1759,3 +1759,41 @@ func TestInferMethodOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 	require.Equal(t, "number", values["r"],
 		"an unconstrained argument defers to declaration-order first-match, pinning x to the first arm")
 }
+
+// TestInferMethodOverloadMixedReceiverRejected pins the receiver-mutability uniformity rule
+// for overloaded methods: arms that disagree on their `self` receiver are rejected at
+// declaration. Overload resolution dispatches on the value arguments, and the
+// receiver-mutability check reads only the first arm, so a `mut self` arm reached from a
+// plain-`self` body would otherwise dispatch to a mutable receiver unchecked.
+func TestInferMethodOverloadMixedReceiverRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			f(self, x: number) -> number { return self.n },
+			f(mut self, x: string) -> string { return x },
+			peek(self) -> string { return self.f("hi") },
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		"Overloaded method 'f' must use the same `self` receiver mutability in every arm.",
+		errs[0].Message())
+}
+
+// TestInferMethodOverloadUniformMutReceiverAccepted is the passing companion: an overload
+// set whose arms all declare `mut self` is well-formed, resolves by argument, and calls
+// through a mutable receiver.
+func TestInferMethodOverloadUniformMutReceiverAccepted(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class C {
+			n: number,
+			f(mut self, x: number) -> number { return x },
+			f(mut self, x: string) -> string { return x },
+			run(mut self) -> string { return self.f("hi") },
+		}
+		val mut c = C(0)
+		val r = c.f(1)
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["r"])
+}

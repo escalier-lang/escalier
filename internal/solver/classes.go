@@ -611,9 +611,11 @@ func (c *checker) checkMethodReceiver(blame ast.Node, recv soltype.Type, member 
 
 // memberSelfParam returns the `self` receiver of a READABLE member — a method or getter —
 // or nil for a static member, a property, or a member with no receiver. An overloaded
-// method reads its first arm's receiver, since a class's overload arms share one receiver
-// mutability. A setter is excluded because reading one is already a write-only error, and
-// its write-side receiver mutability is checked on assignment rather than on this read path.
+// method reads its first arm's receiver, which is representative because buildMemberSigs
+// rejects an overload set whose arms disagree on receiver mutability
+// (MethodOverloadReceiverMismatchError). A setter is excluded because reading one is already
+// a write-only error, and its write-side receiver mutability is checked on assignment rather
+// than on this read path.
 func memberSelfParam(member soltype.ObjTypeElem) *soltype.FuncParam {
 	switch m := member.(type) {
 	case *soltype.MethodElem:
