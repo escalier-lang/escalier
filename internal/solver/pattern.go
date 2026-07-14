@@ -329,8 +329,13 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 
 // ctorParamsAt rewrites a constructor's parameter types from its return instance's argument
 // vars (ret) to the scrutinee instance's concrete arguments (sc), so an extractor over a
-// generic scrutinee reads its parameters at the scrutinee's arguments. A non-generic
-// constructor, whose return carries no arguments, leaves the parameters unchanged.
+// generic scrutinee reads its parameters at the scrutinee's arguments.
+//
+// For `class Box<T> { value: T }` the instantiated constructor is `fn (value: t0) -> Box<t0>`,
+// so ret is `Box<t0>`. Matching `Box(v)` against a `Box<string>` scrutinee makes sc `Box<string>`,
+// so ctorParamsAt maps t0 to string and rewrites the parameter `value: t0` to `value: string`;
+// v then binds at string. A non-generic constructor, whose return carries no arguments, builds
+// an empty substitution and returns the parameters unchanged.
 func ctorParamsAt(params []*soltype.FuncParam, ret, sc *soltype.ClassType) []*soltype.FuncParam {
 	subst := &classSubst{
 		types:     map[*soltype.TypeVarType]soltype.Type{},
@@ -371,8 +376,13 @@ func (c *checker) instancePatClass(scope *Scope, name string) (*soltype.ClassTyp
 }
 
 // extractorCtor resolves an extractor pattern's name to a class value's constructor
-// signature, instantiated so each match freshens its type parameters. ok=false when the
-// name is unbound or its value is not callable as a constructor.
+// signature. It looks the name up in the value sort, since a class binds its constructor on
+// the value side of its dual type/value binding, then instantiates that value at lvl through
+// bindingValue and pulls the constructor out with ctorSignature. Instantiating per call
+// freshens a generic constructor's type parameters, so two match arms each written `Box(v)`
+// get independent argument vars rather than sharing one. It returns ok=false when the name
+// is unbound, carries no scheme, or resolves to a value that is not callable as a
+// constructor.
 func (c *checker) extractorCtor(scope *Scope, lvl int, name string) (*soltype.FuncType, bool) {
 	b, ok := scope.GetValue(name)
 	if !ok || len(b.Schemes) == 0 {
@@ -381,10 +391,17 @@ func (c *checker) extractorCtor(scope *Scope, lvl int, name string) (*soltype.Fu
 	return ctorSignature(c.bindingValue(lvl, b))
 }
 
-// ctorSignature resolves a value to its constructor signature: a bare FuncType, a class
-// value object's ConstructorElem, or either reached through a binding var's lower bounds —
-// the common case, since a class value is a pre-bound var during its own inference. A var
-// with two conflicting constructor lower bounds is ambiguous and left unresolved.
+// ctorSignature resolves a value to its constructor signature in one of three shapes: a bare
+// FuncType, a class value object's ConstructorElem, or either of those reached through a
+// binding var's lower bounds. The var case is the common one, since a class value is a
+// pre-bound var during its own inference component with the constructor recorded as a lower
+// bound.
+//
+// For `class Point { x: number, y: number }` the value `Point` resolves mid-inference to a
+// var whose lower bound is `fn (x: number, y: number) -> Point`, and ctorSignature looks
+// through the var to that FuncType. A class that also declares static members instead binds
+// an ObjectType carrying a ConstructorElem, so the ObjectType arm returns its Constructor().Fn.
+// A var with two conflicting constructor lower bounds is ambiguous and left unresolved.
 func ctorSignature(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:
