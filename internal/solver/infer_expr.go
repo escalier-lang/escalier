@@ -2449,17 +2449,17 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 		}
 	}
 	c.checkUniformOwnership(e, armBodies)
-	c.checkMatchExhaustive(e, matchShape)
+	c.checkMatchExhaustive(scope, e, matchShape)
 	c.recordType(e, res)
 	return res
 }
 
 // checkMatchExhaustive reports a NonExhaustiveMatchError when no arm covers every
 // value the coalesced scrutinee can take, dispatching on its union or object/tuple shape.
-func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type) {
+func (c *checker) checkMatchExhaustive(scope *Scope, e *ast.MatchExpr, scrutinee soltype.Type) {
 	carrier := soltype.CarrierOf(scrutinee)
 	if u, ok := carrier.(*soltype.UnionType); ok {
-		if !c.unionMatchExhaustive(e, u) {
+		if !c.unionMatchExhaustive(scope, e, u) {
 			c.report(&NonExhaustiveMatchError{Match: e})
 		}
 		return
@@ -2478,12 +2478,14 @@ func (c *checker) checkMatchExhaustive(e *ast.MatchExpr, scrutinee soltype.Type)
 	c.report(&NonExhaustiveMatchError{Match: e})
 }
 
-// unionMatchExhaustive reports whether the unguarded arms cover a union scrutinee.
-// An inexact union needs a catch-all. An exact one is flagged non-exhaustive only
-// when a literal member is provably uncovered. A non-literal member needs the
-// structural or nominal coverage M5 adds, so its arms are reported unsupported
-// rather than silently accepted or falsely flagged non-exhaustive.
-func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) bool {
+// unionMatchExhaustive reports whether the unguarded arms cover a union scrutinee. An
+// inexact union needs a catch-all. An exact one is exhaustive when every member is
+// covered. A literal member is covered by an equal literal pattern. A nominal member, an
+// enum variant or class token, is covered by an instance or extractor pattern naming that
+// class. A structural-object member needs match-arm union narrowing, which M5 does not
+// build, so its arms are reported unsupported rather than silently accepted or falsely
+// flagged non-exhaustive.
+func (c *checker) unionMatchExhaustive(scope *Scope, e *ast.MatchExpr, u *soltype.UnionType) bool {
 	for _, arm := range e.Cases {
 		if arm.Guard == nil && isCatchAll(arm.Pattern) {
 			return true
@@ -2492,26 +2494,82 @@ func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) b
 	if u.Inexact {
 		return false
 	}
-	hasNonLiteralMember := false
+	covered := true
+	hasUnevaluable := false
 	for _, member := range u.Types {
-		lit, ok := member.(*soltype.LitType)
-		if !ok {
-			hasNonLiteralMember = true
+		switch m := member.(type) {
+		case *soltype.LitType:
+			if !c.litMemberCovered(m, e.Cases) {
+				covered = false
+			}
+		case *soltype.ClassType:
+			if !c.nominalMemberCovered(scope, m, e.Cases) {
+				covered = false
+			}
+		default:
+			// A structural-object or other non-nominal member needs match-arm union
+			// narrowing to bind and cover, which M5 does not build.
+			hasUnevaluable = true
+		}
+	}
+	// An uncovered literal or nominal member is a real gap, so report it before
+	// deferring on a member the coverage rules cannot evaluate.
+	if !covered {
+		return false
+	}
+	if hasUnevaluable {
+		// Flag each unguarded non-literal, non-nominal arm as unsupported rather than
+		// decide the match's exhaustiveness from members the rules cannot evaluate.
+		c.reportStructuralUnionArms(scope, e)
+	}
+	return true
+}
+
+// nominalMemberCovered reports whether some unguarded arm covers a nominal union member.
+// An instance or extractor pattern covers the member when it names the member's class and
+// every sub-pattern is irrefutable, so `Color.RGB(r, g, b)` covers `Color.RGB` but
+// `Color.RGB(1, g, b)`, which matches only when the first field is 1, does not.
+func (c *checker) nominalMemberCovered(scope *Scope, member *soltype.ClassType, arms []*ast.MatchCase) bool {
+	for _, arm := range arms {
+		if arm.Guard != nil {
 			continue
 		}
-		if !c.litMemberCovered(lit, e.Cases) {
-			return false
+		if c.nominalArmCovers(scope, arm.Pattern, member) {
+			return true
 		}
 	}
+	return false
+}
 
-	if !hasNonLiteralMember {
+// nominalArmCovers reports whether an arm's pattern irrefutably matches every value of a
+// nominal member. The pattern must name the member's class through the type sort and carry
+// only irrefutable sub-patterns.
+func (c *checker) nominalArmCovers(scope *Scope, p ast.Pat, member *soltype.ClassType) bool {
+	switch pat := p.(type) {
+	case *ast.InstancePat:
+		ct, ok := c.instancePatClass(scope, ast.QualIdentToString(pat.ClassName))
+		return ok && ct.Name == member.Name && irrefutablePat(pat.Object)
+	case *ast.ExtractorPat:
+		ct, ok := c.resolveQualClassType(scope, pat.Name)
+		if !ok || ct.Name != member.Name {
+			return false
+		}
+		for _, arg := range pat.Args {
+			if !irrefutablePat(arg) {
+				return false
+			}
+		}
 		return true
+	default:
+		return false
 	}
+}
 
-	// A non-literal member needs the structural or nominal coverage M5 adds. Only a
-	// literal pattern or a catch-all covers a union member today, so flag each
-	// unguarded structural arm as unsupported rather than pass the match silently.
-	// The catch-all case has already returned above.
+// reportStructuralUnionArms flags each unguarded arm that the union coverage rules cannot
+// evaluate — a structural pattern over a union carrying a non-nominal member — as
+// unsupported. A literal or nominal arm is covered by its own rule, and the catch-all case
+// has already returned, so neither is reported here.
+func (c *checker) reportStructuralUnionArms(scope *Scope, e *ast.MatchExpr) {
 	for _, arm := range e.Cases {
 		if arm.Guard != nil {
 			continue
@@ -2519,10 +2577,27 @@ func (c *checker) unionMatchExhaustive(e *ast.MatchExpr, u *soltype.UnionType) b
 		if _, isLit := arm.Pattern.(*ast.LitPat); isLit {
 			continue
 		}
+		if c.isNominalArm(scope, arm.Pattern) {
+			continue
+		}
 		c.reportUnsupportedFeature(arm.Pattern, "non-literal match arm pattern over a union scrutinee")
 	}
+}
 
-	return true
+// isNominalArm reports whether a pattern names a class in the type sort, so it is an
+// instance or extractor pattern the nominal coverage rule evaluates rather than a
+// structural pattern.
+func (c *checker) isNominalArm(scope *Scope, p ast.Pat) bool {
+	switch pat := p.(type) {
+	case *ast.InstancePat:
+		_, ok := c.instancePatClass(scope, ast.QualIdentToString(pat.ClassName))
+		return ok
+	case *ast.ExtractorPat:
+		_, ok := c.resolveQualClassType(scope, pat.Name)
+		return ok
+	default:
+		return false
+	}
 }
 
 // litMemberCovered reports whether some unguarded arm is a literal pattern equal to
