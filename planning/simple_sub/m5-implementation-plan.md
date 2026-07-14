@@ -187,7 +187,10 @@ placeholders for `Iterable`/`Iterator`/`AsyncIterable`/`IteratorResult`); the
 second fixture harness (M8); type-level operators incl. `keyof`/mapped/`Awaited`
 and path-based lifetimes (M9); codegen (M10). Enum *declarations* are handled
 only as far as the enum-exhaustive `match` leg needs — an enum is a union of
-implicitly-`final` variant types reusing the class machinery (see D-Enum).
+implicitly-`final` variant types reusing the class machinery (see D-Enum). The
+`[Symbol.customMatcher]` gate on extractor patterns is also out (M7 — it needs
+symbol-keyed members); D1 binds an extractor's arguments against constructor
+parameters as an interim (see D1's Files/Accept).
 
 ---
 
@@ -717,6 +720,23 @@ inference above, not a direct `x = 5` on an instance field.
 func (c *checker) bindInstancePat(scope *Scope, p *soltype.InstancePat, scrut soltype.Type)
 func (c *checker) bindExtractorPat(scope *Scope, p *soltype.ExtractorPat, scrut soltype.Type)
 ```
+
+**ExtractorPat's constructor-parameter binding is an M5 placeholder; the real
+gate is `[Symbol.customMatcher]` and lands in M7.** In the old checker an
+extractor pattern deconstructs a value through the class instance's
+`[Symbol.customMatcher]` method — a single-argument method returning a tuple,
+whose element types the sub-patterns bind against — and a class lacking one is a
+`MissingCustomMatcherError`. Enums synthesize that method from their variants
+(`internal/checker/infer_stmt.go`, `infer_module.go`). The `soltype` model has no
+symbol-keyed members yet: `MethodElem`/`GetterElem`/`SetterElem` are all
+string-named, `objKeyName` rejects a `ComputedKey`, and there is no
+`Symbol.customMatcher` global. Representing a custom matcher needs the
+unique-symbol `soltype` kind and symbol-keyed member access whose prerequisite
+[01-milestones.md](01-milestones.md) §M7 assigns to M7. So D1 binds an extractor
+pattern's arguments against the resolved **constructor** parameters as an interim,
+which accepts `Point(x, y)` against a plain class rather than requiring a matcher.
+M7 replaces that with the `[Symbol.customMatcher]` lookup and reinstates the
+"class without a matcher is an error" rule.
 
 ### Iteration protocol (`solver/infer_stmt.go`, Phase F)
 
@@ -1259,6 +1279,13 @@ corruption of `freshenAbove`.
   - **Accept:** a `match` over class/enum constructor patterns binds and
     type-checks each arm; a record pattern against a `Point` binds `x`/`y` at
     their member types; a wrong field/constructor is a typed error.
+  - **Deferred to M7 — `[Symbol.customMatcher]` gating.** An extractor pattern
+    properly deconstructs through the class instance's `[Symbol.customMatcher]`
+    method, not its constructor, and a class without one is an error (the old
+    checker's `MissingCustomMatcherError`). That needs symbol-keyed members, whose
+    `soltype` prerequisite is an M7 item (see §"Nominal patterns" above and
+    [01-milestones.md](01-milestones.md) §M7). D1 binds against constructor
+    parameters as an interim; M7 replaces it with the matcher lookup.
 
 - **D-Enum — Enum declarations as unions of `final` variants** (~180).
   - **Files:** `solver/infer_enum.go` (new), `solver/infer_decl.go` (dispatch),
