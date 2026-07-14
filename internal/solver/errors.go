@@ -1330,8 +1330,8 @@ func (e *ReturnOutsideFunctionError) Message() string {
 
 func (e *ForAwaitOutsideAsyncError) Span() ast.Span { return e.Loop.Span() }
 func (e *ForAwaitOutsideAsyncError) Related() []ast.Span {
-	// Point at the enclosing function (the one to make `async`) when there is one;
-	// empty at module top-level, mirroring AwaitOutsideAsyncError.
+	// Point at the enclosing function to mark `async` when there is one; empty at
+	// module top-level, mirroring AwaitOutsideAsyncError.
 	if e.EnclosingFn != nil {
 		return []ast.Span{e.EnclosingFn.Span()}
 	}
