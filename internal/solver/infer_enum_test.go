@@ -204,6 +204,20 @@ func TestInferEnumUnnamedParams(t *testing.T) {
 	}, nil)
 }
 
+// TestInferEnumInFunctionBodyRejected checks that a local enum inside a function body is
+// rejected, the same as a local class: enum declarations are supported at module top
+// level and script top level, not inside a function body.
+func TestInferEnumInFunctionBodyRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f() {
+			enum Local { A, B }
+			return 0
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Declaration not allowed in function body: EnumDecl", errs[0].Message())
+}
+
 // TestEnumVariantDisplay locks in the qualified rendering of an enum variant token: a
 // variant prints as `Enum.Variant` — its enum plus its own name — so two enums sharing
 // a variant name stay distinct wherever a variant surfaces, such as a union member or a

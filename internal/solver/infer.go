@@ -260,6 +260,15 @@ func (c *checker) pushFuncCtx(async bool, node ast.Node) *funcCtx {
 	return saved
 }
 
+// inScript reports whether the current statement runs at a script's top level (bin/).
+// InferScript pushes a funcCtx with a nil node; a real function body pushes its
+// FuncExpr/FuncDecl node, and module top-level has no funcCtx at all (c.fn == nil). It
+// gates the handful of top-level constructs a script admits but a function body does not,
+// such as a local enum declaration.
+func (c *checker) inScript() bool {
+	return c.fn != nil && c.fn.node == nil
+}
+
 // popFuncCtx restores the previous function context (the pointer pushFuncCtx
 // returned) and hands back the return-point types collected from the body just
 // walked, so the caller can join them into the function's return type.

@@ -88,6 +88,21 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		}
 		return t
 	case *ast.DeclStmt:
+		if ed, ok := s.Decl.(*ast.EnumDecl); ok {
+			// A script (bin/) walks its top-level statements in source order, so an enum
+			// binds where it appears — used before its declaration it is an unknown
+			// identifier, unlike the module dep-graph path's out-of-order resolution.
+			// preBindEnum binds the enum's union type first so a self-recursive variant
+			// resolves, then inferEnumBody builds the constructors. A real function body
+			// still rejects a local enum, as it rejects a local class, so this is gated on
+			// the script context (a funcCtx with a nil node; see InferScript).
+			if c.inScript() {
+				c.inferEnumBody(c.preBindEnum(scope, lvl+1, ed, ""))
+				return &soltype.Void{}
+			}
+			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
+			return &soltype.Void{}
+		}
 		vd, ok := s.Decl.(*ast.VarDecl)
 		if !ok {
 			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
