@@ -122,6 +122,24 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	return c.classValue(ctorType, static), &ast.NodeProvenance{Node: decl}, true
 }
 
+// bindScriptClass infers a class declared at a script's top level (bin/) and binds its
+// constructor value in scope. inferClassDecl already registers the instance type binding
+// and the nominal ClassDef; this generalizes the returned constructor value and defines
+// it, the linear-body analogue of what the module SCC driver does after constraining the
+// class value into its binding var. A script is source-order, so a self-recursive class
+// resolves through the shell inferClassDecl pre-binds, while a forward reference to a
+// class declared later is an unknown identifier.
+func (c *checker) bindScriptClass(scope *Scope, lvl int, decl *ast.ClassDecl) {
+	t, src, ok := c.inferClassDecl(scope, lvl+1, decl, "")
+	if !ok {
+		return
+	}
+	scope.defineValue(decl.Name.Name, ValueBinding{
+		Schemes: []TypeScheme{c.generalize(t, lvl)},
+		Sources: []provenance.Provenance{src},
+	})
+}
+
 // classValue produces the RAW value type a class name binds to. A class with no statics
 // binds its bare constructor FuncType; one with statics binds an exact object holding a
 // ConstructorElem plus the static members, so `Point(…)` constructs and `Point.origin` reads.
