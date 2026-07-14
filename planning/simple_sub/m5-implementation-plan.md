@@ -1333,27 +1333,35 @@ corruption of `freshenAbove`.
     constrains EVERY member. The `ObjectPat` arm of `bindPatMode` emits
     `scrutinee <: {x: β, ...}`, and the union-sub rule requires every member to
     carry `x`, so `{x}` against `{x: number} | {y: string}` reports `object is
-    missing property: x` on the `{y: string}` member. D3 adds match-arm union
-    NARROWING so an object pattern binds against only the members carrying its
-    fields.
+    missing property: x` on the `{y: string}` member, and `{x}` against a union
+    with a non-object member such as `"a" | {x: number}` reports `cannot
+    constrain "a" <: object`. D3 adds match-arm union NARROWING so an object
+    pattern binds against only the members carrying its fields.
   - **Algorithm:**
     - **Narrowing, refutable-only.** For a union scrutinee, compute the sub-union
       of members that structurally carry the pattern's named fields and bind the
       pattern against that narrowed type, so `β` reads the field at those members'
-      types rather than failing on a member that lacks it. This is sound only in a
-      REFUTABLE context — a `match` arm or `if let` — since an irrefutable
-      `val {x} = u` over a union must still require `x` on every member. So the
-      narrowing threads a refutable flag through the bind path, or pre-narrows the
-      scrutinee per arm in `inferMatch` before `bindPattern`. It does NOT live in
-      the shared `bindPatMode` `ObjectPat` arm that `val` and parameter
-      destructuring also reach.
+      types rather than failing on a member that lacks it. A member that is not an
+      object, or an object lacking a named field, is simply excluded from the
+      narrowed target rather than reported — `{x}` against `"a" | {x: number}`
+      binds against `{x: number}` alone and leaves `"a"` for another arm. This is
+      sound only in a REFUTABLE context — a `match` arm or `if let` — since an
+      irrefutable `val {x} = u` over a union must still require `x` on every
+      member. So the narrowing threads a refutable flag through the bind path, or
+      pre-narrows the scrutinee per arm in `inferMatch` before `bindPattern`. It
+      does NOT live in the shared `bindPatMode` `ObjectPat` arm that `val` and
+      parameter destructuring also reach.
     - **Structural coverage.** Replace the deferral D2 leaves for a non-nominal
       member — the `hasUnevaluable` branch that calls `reportStructuralUnionArms`
       — with a real rule: an object pattern covers a `{...}` union member when the
       member carries every field the pattern names and the sub-patterns are
       irrefutable; the arms are exhaustive when they collectively cover each
-      member. This retires the unsupported-feature report D2 keeps for a
-      structural arm.
+      member. A union member no object arm covers — a member of a non-object kind,
+      or an object whose fields no arm names — is still uncovered, so it stays
+      non-exhaustive unless a catch-all or its own arm covers it. D2's existing
+      `covered` check already reports such a member, so D3 keeps that verdict and
+      only drops the spurious binding error the narrowing removes. This retires
+      the unsupported-feature report D2 keeps for a structural arm.
   - **Composition risk.** `bindPatMode`'s borrow-mode and concrete-type threading
     reads the actual scrutinee type to decide how a leaf borrows and to render an
     owned `mut` cell. The narrowed type must preserve the borrow peel and the
@@ -1367,6 +1375,9 @@ corruption of `freshenAbove`.
     extends).
   - **Accept:** a `match` over `{x: number} | {y: string}` with an object pattern
     per member is exhaustive and binds each arm at its member's field types; a
+    `match` over `"a" | {x: number}` with only the `{x}` arm binds `x: number`
+    without a constraint error and stays non-exhaustive for the uncovered `"a"`
+    member — re-enabling `TestInferMatchUnionUncoveredWithStructuralMember`; a
     union with a member no arm covers is non-exhaustive; an irrefutable
     `val {x} = u` over that union still reports the missing property on the
     `{y: string}` member.

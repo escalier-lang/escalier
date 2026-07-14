@@ -321,24 +321,27 @@ func TestInferMatchEnumRefutableArgNotExhaustive(t *testing.T) {
 	require.Equal(t, "7:11-10:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
 
-// A union carrying both an uncovered member and a structural member the coverage rules
-// cannot evaluate is still non-exhaustive. The union is `"a" | {x: number}` and the only
-// arm is the object pattern `{x}`, which leaves `"a"` uncovered. The structural member is
-// deferred, but the uncovered literal member is a real gap, so the match is flagged
-// non-exhaustive rather than passed. The object arm also fails to bind against the `"a"`
-// member, which reports the separate constraint error.
+// DISABLED until M5 D3. A union mixing a structural-object member with a non-object member,
+// `"a" | {x: number}`, matched only by the object pattern `{x}`. The `"a"` member is
+// uncovered, so the match is non-exhaustive. Binding `{x}` against the whole union today
+// also constrains every member to carry `x`, reporting a spurious `cannot constrain "a" <:
+// object` on the `"a"` member. D3's match-arm narrowing binds `{x}` against only the
+// `{x: number}` member, dropping that binding error while the non-exhaustive report stays.
+// Re-enable when D3 lands and assert the single non-exhaustive error the commented body
+// records.
 func TestInferMatchUnionUncoveredWithStructuralMember(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(b: boolean) {
-			val p = if b { "a" } else { {x: 1} }
-			return match p {
-				{x} => x
+	/*
+		_, _, errs := inferSource(t, `
+			fn f(b: boolean) {
+				val p = if b { "a" } else { {x: 1} }
+				return match p {
+					{x} => x
+				}
 			}
-		}
-	`)
-	require.Len(t, errs, 2)
-	require.Equal(t, `5:6-5:7: cannot constrain "a" <: object`, msgWithSpan(errs[0]))
-	require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[1]))
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	*/
 }
 
 // DISABLED until M5 structural-object union narrowing. A match over a structural-object
