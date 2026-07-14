@@ -131,6 +131,34 @@ func TestInferInstancePatNested(t *testing.T) {
 	require.Equal(t, "fn (l: Line) -> [number, number]", values["f"])
 }
 
+// An instance pattern may bind a SUBSET of the class's fields: each field requirement is
+// inexact, the same as a bare object pattern, so an unmentioned field is tolerated.
+func TestInferInstancePatOmitFields(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Point { x: number, y: number }
+		fn f(p: Point) {
+			val Point { x } = p
+			return x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: Point) -> number", values["f"])
+}
+
+// An instance pattern may rename each field to a fresh binding via `field: name`, binding
+// the new name at the field's member type.
+func TestInferInstancePatRenameFields(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Point { x: number, y: string }
+		fn f(p: Point) {
+			val Point { x: a, y: b } = p
+			return [a, b]
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: Point) -> [number, string]", values["f"])
+}
+
 // An instance pattern naming a field the class lacks is a member-lookup miss, reported as
 // a MissingPropertyError against the projected body.
 func TestInferInstancePatWrongField(t *testing.T) {
