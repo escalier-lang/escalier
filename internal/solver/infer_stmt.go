@@ -54,6 +54,8 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 	switch s := s.(type) {
 	case *ast.ExprStmt:
 		return c.inferExpr(scope, lvl, s.Expr)
+	case *ast.ForInStmt:
+		return c.inferForIn(scope, lvl, s)
 	case *ast.ReturnStmt:
 		// A return contributes both as the block's tail value (consumed only by
 		// value-position blocks; inferFunc discards the tail) AND as one of the
