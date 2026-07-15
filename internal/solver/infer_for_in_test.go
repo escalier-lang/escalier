@@ -224,6 +224,81 @@ func TestForInBackEdgeMoves(t *testing.T) {
 	require.Equal(t, []string{`5:13-5:14: use of moved value 'p'`}, messagesWithSpan(errs))
 }
 
+// TestForInBorrowAvoidsMove pairs each move that a loop makes into a use-after-move
+// with its `&`-borrow counterpart, which reads the source without consuming it and
+// so type-checks cleanly. Borrowing is how a loop reads a value it must keep usable
+// across iterations or after the loop.
+func TestForInBorrowAvoidsMove(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// Moving p into q inside the body consumes p; the back edge re-enters the body
+		// with p already moved, so the next iteration's `val q = p` reads a moved value.
+		"MoveReusedAcrossBackEdge": {
+			src: `
+				fn f(xs: [number]) {
+					val mut p = {x: 0}
+					for x in xs {
+						val q = p
+					}
+				}
+			`,
+			want: []string{`5:15-5:16: use of moved value 'p'`},
+		},
+		// Borrowing p leaves it live, so re-entering the body across the back edge finds
+		// p usable — no use-after-move.
+		"BorrowReusedAcrossBackEdge": {
+			src: `
+				fn f(xs: [number]) {
+					val mut p = {x: 0}
+					for x in xs {
+						val q = &p
+					}
+				}
+			`,
+			want: nil,
+		},
+		// Moving p inside the loop leaves it moved after the loop, so reading `p.x` once
+		// the loop exits is a use-after-move — and the next-iteration re-read is one too.
+		"MoveThenUsedAfterLoop": {
+			src: `
+				fn f(xs: [number]) {
+					val mut p = {x: 0}
+					for x in xs {
+						val q = p
+					}
+					p.x
+				}
+			`,
+			want: []string{
+				`5:15-5:16: use of moved value 'p'`,
+				`7:6-7:9: use of moved value 'p'`,
+			},
+		},
+		// Borrowing p inside the loop keeps it owned, so reading `p.x` after the loop is
+		// valid.
+		"BorrowThenUsedAfterLoop": {
+			src: `
+				fn f(xs: [number]) {
+					val mut p = {x: 0}
+					for x in xs {
+						val q = &p
+					}
+					p.x
+				}
+			`,
+			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(errs))
+		})
+	}
+}
+
 // TestForInBackEdgeBorrows confirms the flow-sensitive borrow-edge dataflow
 // (analyzeBorrows) joins across the loop back edge and clears referents correctly.
 // These are the loop analogues of the branch-merge borrow tests, exercising the
