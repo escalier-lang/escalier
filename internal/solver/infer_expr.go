@@ -1292,6 +1292,11 @@ func funcIntersectionArms(t soltype.Type) ([]*soltype.FuncType, bool) {
 	}
 	arms := make([]*soltype.FuncType, len(inter.Types))
 	for i, m := range inter.Types {
+		// A direct assertion, not resolveFunc: memberValue builds each arm with
+		// strippedMethodSig, so an arm is always a concrete FuncType with nothing to look
+		// through. resolveFunc's var and constructor-object look-through would only broaden
+		// this into a looser "is any intersection callable" test, pulling annotation- or
+		// class-value-derived intersections off the ordinary callee <: callShape path.
 		ft, ok := m.(*soltype.FuncType)
 		if !ok {
 			return nil, false
