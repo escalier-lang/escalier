@@ -356,28 +356,30 @@ func structuralSubtype(a, b soltype.Type) bool {
 }
 
 // objectSubsumes reports whether object a ranks strictly more specific than object b for
-// overload specificity — the #723 object-argument case. a subsumes b when a carries every
-// required property b requires with an alpha-equal type, and a is narrower in the width
-// sense: it has strictly more required properties, or the same required properties while a
-// is exact and b is not.
+// overload specificity (the #723 object-argument case). "More specific" means a narrower
+// parameter, one accepting fewer arguments, so it wins dispatch when both arms match an
+// argument. It ranks two axes and deliberately ignores a third:
 //
-// Only required properties count toward specificity. An optional property widens an object
-// rather than narrowing it — `{x, y?}` accepts both `{x}` and `{x, y}`, so it is not more
-// specific than `{x}`. Counting it would rank the wider arm as narrower and pick it over the
-// genuinely more specific one. A required property that a carries but b lacks does narrow a,
-// so a must also carry each of b's required properties as required, not optional.
+//   - Required-field count. When a's required properties are a strict superset of b's, a is
+//     stricter and ranks more specific, the object analogue of a concrete param outranking a
+//     generic one. a must carry every required property of b, as required and with an
+//     alpha-equal type. A missing, optional, or differently-typed match makes the pair
+//     incomparable, so this returns false.
+//   - Exactness, only when the required-field sets are equal. An exact a is more specific
+//     than an inexact b over the same fields, since it accepts no extra properties.
+//   - Field types, which are NOT ranked. Arms whose shared fields differ in type tie here.
+//     Disjoint types make the arms accept disjoint arguments, so the trial picks the match.
+//     Overlapping types fall back to declaration order.
 //
-// A larger required-field set is the stricter requirement, since an argument must carry more
-// properties to match, so it ranks more specific. This is the object analogue of a concrete
-// param outranking a generic one. The wider parameter literally accepts fewer arguments only
-// when the narrower parameter is width-tolerant, and that is also the only case where the
-// order changes the result. Two exact objects with different required-field sets instead
-// accept disjoint arguments, so at most one arm matches and the constrain trial in
-// tryOverloadArm settles the call. An exact object is likewise more specific than an inexact
-// one over the same fields, since it accepts no extra properties. Two objects with the same
-// fields and same exactness are alpha-equal and never reach here — structuralSubtype's
-// alphaEqualTypes arm resolves them to a tie first. Any non-property member makes the pair
-// incomparable and ranks as false, deferring to declaration order.
+// Only required properties count. An optional property widens an object rather than
+// narrowing it. `{x, y?}` accepts both `{x}` and `{x, y}`, so it is not more specific than
+// `{x}`. Counting it would rank the wider arm as narrower.
+//
+// This is a heuristic, not the full subtype relation. Resolution correctness comes from the
+// constrain trial in tryOverloadArm. objectSubsumes only orders the arms that could match.
+// Two objects with identical fields and exactness are alpha-equal and never reach here, since
+// structuralSubtype resolves them to a tie first. A non-property member on either side makes
+// the pair incomparable and ranks as false.
 func objectSubsumes(a, b *soltype.ObjectType) bool {
 	bReq := 0
 	for _, be := range b.Elems {
