@@ -721,6 +721,31 @@ type ReturnOutsideFunctionError struct {
 	Return *ast.ReturnStmt
 }
 
+// ForAwaitOutsideAsyncError fires when a `for await (x in xs)` loop appears
+// outside the body of an `async fn`. Like AwaitOutsideAsyncError it is a WALK
+// rejection, not a type-rule failure: the iterable and body are still walked so
+// their own errors surface. EnclosingFn is the non-async function the loop sits
+// in, surfaced via Related() as the function to mark `async`; it is nil at module
+// top-level where there is no enclosing function.
+type ForAwaitOutsideAsyncError struct {
+	Loop        *ast.ForInStmt
+	EnclosingFn ast.Node
+}
+
+// NotIterableError fires when the operand of `for (x in xs)` is not iterable, or
+// the operand of `for await (x in xs)` is not async-iterable. M5 resolves the
+// iteration protocol structurally over the types the solver can represent: a
+// tuple yields the union of its elements, and a union of tuples yields the union
+// of their element types. Array<T> and the `[Symbol.iterator]` protocol land in
+// M7, so every other operand is reported here, as is every operand of a
+// `for await` since no async iterable is representable yet. Await selects the
+// message.
+type NotIterableError struct {
+	Iterable ast.Expr
+	Type     soltype.Type
+	Await    bool
+}
+
 // AsyncReturnNotPromiseError fires when an `async fn` declares a return annotation
 // that is not a `Promise<…>`. An async function's external type is always
 // `Promise<T>`, so the annotation NAMES that Promise; a bare type
@@ -804,6 +829,8 @@ func (*NoMatchingOverloadError) isSolverError()           {}
 func (*UnannotatedRecursiveOverloadError) isSolverError() {}
 func (*DuplicateOverloadError) isSolverError()            {}
 func (*AwaitOutsideAsyncError) isSolverError()            {}
+func (*ForAwaitOutsideAsyncError) isSolverError()         {}
+func (*NotIterableError) isSolverError()                  {}
 func (*ReturnOutsideFunctionError) isSolverError()        {}
 func (*AsyncReturnNotPromiseError) isSolverError()        {}
 func (*NonExhaustiveMatchError) isSolverError()           {}
@@ -1299,6 +1326,28 @@ func (e *ReturnOutsideFunctionError) Span() ast.Span      { return e.Return.Span
 func (e *ReturnOutsideFunctionError) Related() []ast.Span { return nil }
 func (e *ReturnOutsideFunctionError) Message() string {
 	return "return can only be used inside a function"
+}
+
+func (e *ForAwaitOutsideAsyncError) Span() ast.Span { return e.Loop.Span() }
+func (e *ForAwaitOutsideAsyncError) Related() []ast.Span {
+	// Point at the enclosing function to mark `async` when there is one; empty at
+	// module top-level, mirroring AwaitOutsideAsyncError.
+	if e.EnclosingFn != nil {
+		return []ast.Span{e.EnclosingFn.Span()}
+	}
+	return nil
+}
+func (e *ForAwaitOutsideAsyncError) Message() string {
+	return "for await can only be used inside an async function"
+}
+
+func (e *NotIterableError) Span() ast.Span      { return e.Iterable.Span() }
+func (e *NotIterableError) Related() []ast.Span { return nil }
+func (e *NotIterableError) Message() string {
+	if e.Await {
+		return describe(e.Type) + " is not an async iterable"
+	}
+	return describe(e.Type) + " is not iterable"
 }
 
 func (e *AsyncReturnNotPromiseError) Span() ast.Span { return e.Return.Span() }
