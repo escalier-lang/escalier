@@ -757,7 +757,7 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 
 ## PR breakdown
 
-16 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
+17 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
 green, each with table-driven tests asserting rendered types (Escalier
 type-annotation syntax) and **full** error messages. Every PR names the files
 touched, the structures added/modified, the algorithm changes, and its
@@ -1299,22 +1299,97 @@ corruption of `freshenAbove`.
   - **Accept:** an enum decl binds its variants; a value of a variant type is
     `<:` the enum union; the enum name resolves as a type.
 
-- **D2 — Enum-exhaustive + structural-object union exhaustiveness** (~170).
-  - **Files:** `solver/infer_expr.go` (`unionMatchExhaustive` extension), tests.
-  - **Algorithm:** extend the union-member loop
-    ([infer_expr.go:2351-2391](../../internal/solver/infer_expr.go)) with two
-    coverage cases beyond M6's literal-member check:
-    - **nominal:** an `InstancePat`/`ExtractorPat` covers a union member iff the
-      member's class name matches (enum variants are `final`, so a `match`
-      covering every variant needs no default arm).
-    - **structural object:** an object pattern covers a union member iff that
-      member carries every field the pattern names; the arms are exhaustive when
-      they collectively cover each member — this replaces the
-      unsupported-feature report the loop emits today for a structural arm
-      ([infer_expr.go:2376-2388](../../internal/solver/infer_expr.go)).
+- **D2 — Enum-exhaustive (nominal) union exhaustiveness** (~120).
+  - **Files:** `solver/infer_expr.go` (`unionMatchExhaustive` extension +
+    `nominalMemberCovered`/`nominalArmCovers`), `solver/pattern.go`
+    (namespace-qualified pattern-name resolution), tests.
+  - **Algorithm:** extend the union-member loop in `unionMatchExhaustive` with a
+    nominal coverage case beyond M6's literal-member check. An `InstancePat`/
+    `ExtractorPat` covers a `ClassType` union member when it names that member's
+    class AND carries only irrefutable sub-patterns, so `Color.RGB(r, g, b)`
+    covers the `Color.RGB` variant while `Color.RGB(0, g, b)`, which matches only
+    when the first field is 0, does not. Enum variants are `final`, so a `match`
+    with an arm per variant needs no default arm and a missing variant is
+    non-exhaustive.
+  - **Namespace-qualified pattern resolution.** Binding an enum variant pattern
+    like `Color.RGB(...)` first needs its name resolved through the enum's
+    namespace, not the flat scope lookup D1 shipped. `resolveQualValue` walks the
+    namespace value map for the constructor and `resolveQualClassType` the type
+    map for the variant token, both routed through `resolveQualNamespace`;
+    `extractorCtor` and the nominal coverage check consult them.
+  - **Structural union exhaustiveness is D3.** An object or tuple pattern over a
+    structural union needs match-arm narrowing to bind, which is a binding
+    capability M5 does not yet have, so D2 leaves such an arm reported as the
+    unsupported-feature `reportStructuralUnionArms` emits and D3 lands the rule.
   - **Accept:** a `match` over an enum with an arm per variant needs no
-    catch-all, and a missing variant is reported non-exhaustive; a `match` over
-    `{x: number} | {y: string}` with an object pattern per member is exhaustive.
+    catch-all; a missing variant is reported non-exhaustive; a variant arm with a
+    refutable argument such as `Color.RGB(0, g, b)` does not cover its variant.
+
+- **D3 — Structural union narrowing + exhaustiveness** (~240).
+  - **Files:** `solver/pattern.go` (refutable object- and tuple-pattern
+    narrowing), `solver/infer_expr.go` (`inferMatch` per-arm narrowing +
+    `unionMatchExhaustive` structural coverage), tests.
+  - **The blocker D2 left.** Binding a structural pattern against a union
+    scrutinee constrains EVERY member. The `ObjectPat` arm of `bindPatMode` emits
+    `scrutinee <: {x: β, ...}` and the `TuplePat` arm emits
+    `scrutinee <: [α0, α1]`, and the union-sub rule requires every member to
+    satisfy that shape. So `{x}` against `{x: number} | {y: string}` reports
+    `object is missing property: x` on the `{y: string}` member, `{x}` against a
+    non-object member such as `"a" | {x: number}` reports `cannot constrain "a" <:
+    object`, and `[a, c]` against `[1, 2] | [3, 4]` reports the unsupported
+    structural arm. D3 adds match-arm union NARROWING so a structural pattern
+    binds against only the members whose shape it matches.
+  - **Algorithm:**
+    - **Narrowing, refutable-only.** For a union scrutinee, compute the sub-union
+      of members whose shape the pattern matches — an object member carrying every
+      field an object pattern names, a tuple member of the arity a tuple pattern
+      fixes — and bind the pattern against that narrowed type, so each leaf reads
+      its field or element at those members' types rather than failing on a member
+      of another shape. A member the pattern cannot match is excluded from the
+      narrowed target rather than reported: `{x}` against `"a" | {x: number}`
+      binds against `{x: number}` alone, and `[a, c]` against
+      `[number, number] | [string]` binds against `[number, number]` alone,
+      leaving the other member for another arm. This is sound only in a REFUTABLE
+      context — a `match` arm or `if let` — since an irrefutable `val {x} = u` over
+      a union must still require `x` on every member. So the narrowing threads a
+      refutable flag through the bind path, or pre-narrows the scrutinee per arm in
+      `inferMatch` before `bindPattern`. It does NOT live in the shared
+      `bindPatMode` `ObjectPat`/`TuplePat` arms that `val` and parameter
+      destructuring also reach.
+    - **Structural coverage.** Replace the deferral D2 leaves for a non-nominal
+      member — the `hasUnevaluable` branch that calls `reportStructuralUnionArms`
+      — with a real rule: an object pattern covers a `{...}` union member when the
+      member carries every field the pattern names, a tuple pattern covers a
+      `[...]` member when the arities match, and in both cases the sub-patterns are
+      irrefutable; the arms are exhaustive when they collectively cover each
+      member. A union member no arm covers — a member whose shape no arm matches,
+      or one whose fields or elements no arm names — is still uncovered, so it
+      stays non-exhaustive unless a catch-all or its own arm covers it. D2's
+      existing `covered` check already reports such a member, so D3 keeps that
+      verdict and only drops the spurious binding error the narrowing removes. This
+      retires the unsupported-feature report D2 keeps for a structural arm.
+  - **Composition risk.** `bindPatMode`'s borrow-mode and concrete-type threading
+    reads the actual scrutinee type to decide how a leaf borrows and to render an
+    owned `mut` cell. The narrowed type must preserve the borrow peel and the
+    `concrete` projection so a `&mut` leaf of a narrowed object or tuple arm still
+    binds `&mut`, the source of most of the regression surface this PR carries.
+  - **Out (deferred to M9).** The rest element — `[a, ...rest]` and `{...rest}` —
+    stays out, since a typed rest tuple / object-rest is an M9 item. A tuple
+    pattern with a fixed prefix and no rest still narrows on its fixed arity; only
+    the `...rest` binding itself is deferred, the same boundary object patterns
+    already have.
+  - **Depends on:** D2 (the nominal coverage cases and the union-member loop D3
+    extends).
+  - **Accept:** a `match` over `{x: number} | {y: string}` with an object pattern
+    per member is exhaustive and binds each arm at its member's field types; a
+    `match` over `[1, 2] | [3, 4]` with the arm `[a, c]` is exhaustive and binds
+    `a`/`c` at the joined element types — re-enabling
+    `TestInferMatchTupleUnionExhaustive`; a `match` over `"a" | {x: number}` with
+    only the `{x}` arm binds `x: number` without a constraint error and stays
+    non-exhaustive for the uncovered `"a"` member — re-enabling
+    `TestInferMatchUnionUncoveredWithStructuralMember`; a union with a member no
+    arm covers is non-exhaustive; an irrefutable `val {x} = u` over that union
+    still reports the missing property on the `{y: string}` member.
 
 ### Phase E — Method overloading
 
@@ -1383,7 +1458,8 @@ A3 (LifetimeParam + FuncType.LifetimeParams)  ──┤   ── A3 needs A1's C
       │    ├─► C2 (variance inference + in/out modifiers)
       │    └─► F1 (iteration protocol + back-edge validation)
       ├─► D1 (ExtractorPat / InstancePat binding)
-      │    └─► D2 (enum + structural-object union exhaustiveness)   ── also needs D-Enum + M6
+      │    └─► D2 (enum-exhaustive / nominal union exhaustiveness)   ── also needs D-Enum + M6
+      │         └─► D3 (structural union narrowing + exhaustiveness)
       ├─► D-Enum (enum decls as unions of final variants)     ── needs M6 (landed)
       └─► E1 (method overload resolution + #723 specificity)
 ```
@@ -1409,7 +1485,8 @@ graph TD
     F1["F1 (iteration protocol + back-edge validation)"]
     D1["D1 (ExtractorPat / InstancePat binding)"]
     DEnum["D-Enum (enum decls as unions of final variants)"]
-    D2["D2 (enum + structural-object union exhaustiveness)"]
+    D2["D2 (enum-exhaustive / nominal union exhaustiveness)"]
+    D3["D3 (structural union narrowing + exhaustiveness)"]
     E1["E1 (method overload resolution + #723 specificity)"]
     M6["M6 (unions / intersections, landed)"]
 
@@ -1429,6 +1506,7 @@ graph TD
     C1 --> F1
     D1 --> D2
     DEnum --> D2
+    D2 --> D3
     M6 -.-> DEnum
     M6 -.-> D2
     B1 --> B6
@@ -1486,7 +1564,8 @@ So after the A1+A2+A3 → B1 spine (A1, A2, and A3 run in parallel — A3 waits 
 A1's `ClassType` — all landing before B1), **B2, C1, D1, D-Enum, and E1 can proceed
 in parallel** (five tracks). The second-tier dependents each wait on one first-tier
 PR: **C2** on C1, **F1** on C1, **D2** on both D1 and D-Enum. The only PR that joins
-two tracks is D2 (patterns × enums × M6's union exhaustiveness).
+two tracks is D2 (patterns × enums × M6's union exhaustiveness). **D3** is third-tier,
+waiting on D2 for the union-member loop it extends with structural-object coverage.
 
 ## Algorithms and data structures added or modified — summary
 

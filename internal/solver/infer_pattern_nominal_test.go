@@ -234,3 +234,137 @@ func TestInferInstancePatNominalMismatch(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "6:5-6:19: cannot constrain Point <: Circle", msgWithSpan(errs[0]))
 }
+
+// --- M5 D2: nominal union exhaustiveness ---
+//
+// An enum type is the union of its variant tokens, so a match over an enum reaches the
+// union exhaustiveness path. An extractor pattern covers a variant member when it names
+// that variant and binds its arguments, so an arm per variant makes the match exhaustive
+// with no catch-all. The variant name resolves through the enum's namespace, so
+// `Color.RGB` finds the `Color.RGB` variant token.
+
+// Exhaustiveness of a match over an enum. Each row shares the same two-variant `Color`
+// enum and varies only the arms. A row with wantVal expects a clean inference; a row with
+// wantErr expects that single error. The cases: an arm per variant is exhaustive with no
+// catch-all and binds each variant's fields; leaving a variant uncovered is non-exhaustive;
+// a catch-all covers the remaining variants; and an extractor arm with a refutable literal
+// argument such as `Color.RGB(0, g, b)`, which matches only when the first field is 0, does
+// not cover its variant, so the match is non-exhaustive.
+func TestInferMatchEnumExhaustiveness(t *testing.T) {
+	tests := []struct {
+		name    string
+		arms    string
+		wantVal string // inferred type of f on success; empty when an error is expected
+		wantErr string // full error message with span on failure; empty on success
+	}{
+		{
+			name:    "ArmPerVariantNeedsNoCatchAll",
+			arms:    "Color.RGB(r, g, b) => r,\n\t\t\t\tColor.Hex(code) => 0",
+			wantVal: "fn (c: Color.RGB | Color.Hex) -> number",
+		},
+		{
+			name:    "MissingVariant",
+			arms:    "Color.RGB(r, g, b) => r",
+			wantErr: "7:11-9:5: match is not exhaustive; add a catch-all branch",
+		},
+		{
+			name:    "CatchAllCoversRemainingVariants",
+			arms:    "Color.RGB(r, g, b) => r,\n\t\t\t\t_ => 0",
+			wantVal: "fn (c: Color.RGB | Color.Hex) -> number",
+		},
+		{
+			name:    "RefutableArgDoesNotCover",
+			arms:    "Color.RGB(0, g, b) => g,\n\t\t\t\tColor.Hex(code) => 0",
+			wantErr: "7:11-10:5: match is not exhaustive; add a catch-all branch",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, `
+		enum Color {
+			RGB(r: number, g: number, b: number),
+			Hex(code: string),
+		}
+		fn f(c: Color) {
+			return match c {
+				`+tt.arms+`
+			}
+		}
+	`)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				require.Equal(t, tt.wantVal, values["f"])
+			} else {
+				require.Len(t, errs, 1)
+				require.Equal(t, tt.wantErr, msgWithSpan(errs[0]))
+			}
+		})
+	}
+}
+
+// A union member the coverage rules cannot evaluate — an object member here — is
+// non-exhaustive when no arm covers it, not silently accepted. The scrutinee is
+// `Point | {y: number}`: the `Point(x)` arm covers the nominal member, but the `{y: number}`
+// member has no arm, and no structural arm exists to defer on, so the match is
+// non-exhaustive. This is the nominal-plus-structural analogue of the enum-variant case the
+// plan's D2 accept set writes as `Color.RGB | {x: number}`, which is not directly
+// constructible since a variant constructor returns the whole enum union.
+func TestInferMatchNominalMemberUncoveredStructural(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class Point { x: number }
+		fn f(b: boolean) {
+			val p = if b { Point(1) } else { {y: 2} }
+			return match p {
+				Point(x) => x
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "5:11-7:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+}
+
+// DISABLED until M5 D3. A union mixing a structural-object member with a non-object member,
+// `"a" | {x: number}`, matched only by the object pattern `{x}`. The `"a"` member is
+// uncovered, so the match is non-exhaustive. Binding `{x}` against the whole union today
+// also constrains every member to carry `x`, reporting a spurious `cannot constrain "a" <:
+// object` on the `"a"` member. D3's match-arm narrowing binds `{x}` against only the
+// `{x: number}` member, dropping that binding error while the non-exhaustive report stays.
+// Re-enable when D3 lands and assert the single non-exhaustive error the commented body
+// records.
+func TestInferMatchUnionUncoveredWithStructuralMember(t *testing.T) {
+	/*
+		_, _, errs := inferSource(t, `
+			fn f(b: boolean) {
+				val p = if b { "a" } else { {x: 1} }
+				return match p {
+					{x} => x
+				}
+			}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	*/
+}
+
+// DISABLED until M5 D3. A match over a structural-object union such as
+// `{x: number} | {y: string}` with an object pattern per member should be exhaustive and
+// bind each arm against its matching member. Binding an object pattern against a union
+// scrutinee currently constrains every member to carry the named field, so `{x}` against
+// the `{y: string}` member reports a missing property, and the union exhaustiveness path
+// reports each structural arm unsupported. Both resolve when D3's match-arm narrowing
+// lands, which binds an object pattern against only the members carrying its fields.
+// Re-enable then and assert the empty-error, exhaustive result the commented body records.
+func TestInferMatchStructuralObjectUnion(t *testing.T) {
+	/*
+		values, _, errs := inferSource(t, `
+			fn f(p: {x: number} | {y: string}) {
+				return match p {
+					{x} => 1,
+					{y} => 2
+				}
+			}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (p: {x: number} | {y: string}) -> 1 | 2", values["f"])
+	*/
+}

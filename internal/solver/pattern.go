@@ -291,7 +291,7 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 	// sibling tuple/object cases, so hover and type-at-position resolve on the pattern.
 	c.recordType(p, scrutinee)
 	name := ast.QualIdentToString(p.Name)
-	ctor, ok := c.extractorCtor(scope, lvl, name)
+	ctor, ok := c.extractorCtor(scope, lvl, p.Name)
 	if !ok {
 		c.report(&ExtractorPatternNotCtorError{Pat: p, Name: name})
 		// Bind each argument against a fresh var so its leaves stay defined and a later
@@ -383,12 +383,73 @@ func (c *checker) instancePatClass(scope *Scope, name string) (*soltype.ClassTyp
 // get independent argument vars rather than sharing one. It returns ok=false when the name
 // is unbound, carries no scheme, or resolves to a value that is not callable as a
 // constructor.
-func (c *checker) extractorCtor(scope *Scope, lvl int, name string) (*soltype.FuncType, bool) {
-	b, ok := scope.GetValue(name)
+func (c *checker) extractorCtor(scope *Scope, lvl int, qi ast.QualIdent) (*soltype.FuncType, bool) {
+	b, ok := c.resolveQualValue(scope, qi)
 	if !ok || len(b.Schemes) == 0 {
 		return nil, false
 	}
 	return ctorSignature(c.bindingValue(lvl, b))
+}
+
+// resolveQualValue resolves a qualified identifier to its value binding. A bare name
+// resolves by lexical lookup. A member name `Foo.bar` resolves its left through the
+// namespace sort, then reads the member from that namespace's own value map, the same
+// non-lexical member resolution resolvePath uses for a member-access expression.
+func (c *checker) resolveQualValue(scope *Scope, qi ast.QualIdent) (ValueBinding, bool) {
+	switch q := qi.(type) {
+	case *ast.Ident:
+		return scope.GetValue(q.Name)
+	case *ast.Member:
+		ns, ok := c.resolveQualNamespace(scope, q.Left)
+		if !ok {
+			return ValueBinding{}, false
+		}
+		b, ok := ns.Values[q.Right.Name]
+		return b, ok
+	}
+	return ValueBinding{}, false
+}
+
+// resolveQualNamespace resolves a qualified identifier to a namespace. A bare name
+// resolves through the namespace sort; a member name walks the nested namespace map.
+func (c *checker) resolveQualNamespace(scope *Scope, qi ast.QualIdent) (*Namespace, bool) {
+	switch q := qi.(type) {
+	case *ast.Ident:
+		return scope.GetNamespace(q.Name)
+	case *ast.Member:
+		parent, ok := c.resolveQualNamespace(scope, q.Left)
+		if !ok {
+			return nil, false
+		}
+		ns, ok := parent.Nested[q.Right.Name]
+		return ns, ok
+	}
+	return nil, false
+}
+
+// resolveQualClassType resolves a qualified identifier to the class token it names in the
+// type sort. A bare name resolves through lookupClassBinding, honoring the class-namespace
+// precedence a written class reference uses. A member name `Color.RGB` reads the token from
+// its namespace's own type map, so an enum variant resolves to its final variant class. It
+// returns ok=false when the name is unbound or names a non-class binding.
+func (c *checker) resolveQualClassType(scope *Scope, qi ast.QualIdent) (*soltype.ClassType, bool) {
+	var b TypeBinding
+	var ok bool
+	switch q := qi.(type) {
+	case *ast.Ident:
+		b, ok = c.lookupClassBinding(scope, q.Name)
+	case *ast.Member:
+		ns, nsOK := c.resolveQualNamespace(scope, q.Left)
+		if !nsOK {
+			return nil, false
+		}
+		b, ok = ns.Types[q.Right.Name]
+	}
+	if !ok {
+		return nil, false
+	}
+	ct, isClass := b.Type.(*soltype.ClassType)
+	return ct, isClass
 }
 
 // ctorSignature resolves a value to its constructor signature in one of three shapes: a bare
