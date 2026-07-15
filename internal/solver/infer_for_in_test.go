@@ -55,6 +55,19 @@ func TestInferForInElementType(t *testing.T) {
 			`,
 			want: map[string]string{"f": "fn (xs: [number, string]) -> number | string"},
 		},
+		// An inexact tuple `[number, ...]` has an open tail of unknown extra elements, so
+		// its element union stays inexact — `number | ...`, not a bare `number` — since
+		// the loop variable may also be some unlisted tail element.
+		"InexactTupleElementUnionInexact": {
+			src: `
+				fn f(xs: [number, ...]) {
+					for x in xs {
+						return x
+					}
+				}
+			`,
+			want: map[string]string{"f": "fn (xs: [number, ...]) -> number | ..."},
+		},
 		// The empty tuple has no elements, so nothing can be bound to the loop variable
 		// and the body is statically unreachable. The `return x` never runs, so the
 		// function falls through to void — not `never`, which would unsoundly claim the

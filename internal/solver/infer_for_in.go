@@ -110,9 +110,12 @@ func (c *checker) iterableElemType(await bool, t soltype.Type) (soltype.Type, bo
 // type — a primitive, an object, a class instance without the M7 iterator
 // protocol — is not iterable.
 //
-// An inexact tuple's trailing `...` tail is not resolved: the element union
-// covers only the listed elements. The precise element type of the open tail
-// needs the Array<T> the tuple approximates, which lands in M7.
+// Inexactness carries through. An inexact tuple `[number, ...]` has an open tail
+// of unknown additional elements, and an inexact union `[number] | ...` an open
+// tail of unknown additional branches, so either yields an inexact element union:
+// the loop variable may also be some unlisted element, so `[number, ...]` yields
+// `number | ...` rather than a bare `number`. The precise type of the tail needs
+// the Array<T> the tuple approximates, which lands in M7.
 func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 	t = soltype.CarrierOf(t)
 	if _, isVar := t.(*soltype.TypeVarType); isVar {
@@ -120,7 +123,7 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 	}
 	switch t := t.(type) {
 	case *soltype.TupleType:
-		return newUnion(c.ctx, t.Elems, false), true
+		return newUnion(c.ctx, t.Elems, t.Inexact), true
 	case *soltype.UnionType:
 		elems := make([]soltype.Type, 0, len(t.Types))
 		for _, branch := range t.Types {
@@ -130,7 +133,7 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 			}
 			elems = append(elems, e)
 		}
-		return newUnion(c.ctx, elems, false), true
+		return newUnion(c.ctx, elems, t.Inexact), true
 	}
 	return nil, false
 }
