@@ -380,11 +380,12 @@ func TestInferOverloadMixedWithValCrossFileIsDuplicate(t *testing.T) {
 		"the cross-file val is rejected; the fn binding survives")
 }
 
-// #723 object-argument specificity: an overload set whose arms take objects ranks a
-// wider-field argument to the arm with the wider field set, even when the narrower arm is
-// declared first. f({x, y}) picks the {x, y} arm over the earlier {x} arm because a
-// superset-of-fields parameter is more specific — the object analogue of a concrete param
-// outranking a generic one.
+// #723 object-argument dispatch with EXACT parameters: a call selects the arm whose field
+// set matches the argument. Object parameters are exact by default, so the two arms accept
+// disjoint arguments — an exact `{x}` rejects `{x, y}` for the extra field, and an exact
+// `{x, y}` rejects `{x}` for the missing field. The constrain trial therefore selects the
+// only matching arm regardless of declaration order; the subsumption RANKING is inert here.
+// The inexact companion below exercises the ranking itself, where both arms can match.
 func TestInferOverloadObjectArgFieldSubsumption(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(p: {x: number}) -> number { return p.x }
@@ -393,12 +394,11 @@ func TestInferOverloadObjectArgFieldSubsumption(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "string", values["r"],
-		"the wider-field arm outranks the earlier narrow arm for a superset argument")
+		"the {x, y} argument only matches the {x, y} arm; the exact {x} arm rejects the extra field")
 }
 
-// The narrow argument still selects the narrow arm: f({x}) cannot match the {x, y} arm
-// (missing y), so only the {x} arm accepts it. This confirms subsumption ranking does not
-// force every object call onto the widest arm.
+// The narrow argument selects the narrow arm: f({x}) cannot match the {x, y} arm (missing
+// y), so only the {x} arm accepts it.
 func TestInferOverloadObjectArgNarrowSelectsNarrow(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(p: {x: number}) -> number { return p.x }
@@ -408,4 +408,21 @@ func TestInferOverloadObjectArgNarrowSelectsNarrow(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "number", values["r"],
 		"a narrow argument only matches the narrow arm")
+}
+
+// The subsumption RANKING (objectSubsumes) changes a call only when both arms can accept the
+// same argument, which requires width-tolerant (inexact) parameters. With inexact arms
+// `{x, ...}` and `{x, y, ...}`, the argument `{x, y}` satisfies both, so declaration order no
+// longer decides — the ranking picks the wider `{x, y, ...}` arm as more specific. Stubbing
+// objectSubsumes to false flips this result to "number", so this is the case that isolates
+// the ranking from the constrain trial.
+func TestInferOverloadInexactObjectArgSubsumptionRanking(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number, ...}) -> number { return p.x }
+		fn f(p: {x: number, y: number, ...}) -> string { return "wide" }
+		val r = f({x: 1, y: 2})
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "string", values["r"],
+		"with overlapping inexact params, the wider-field arm outranks the earlier narrow arm")
 }
