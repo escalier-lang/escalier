@@ -426,3 +426,20 @@ func TestInferOverloadInexactObjectArgSubsumptionRanking(t *testing.T) {
 	require.Equal(t, "string", values["r"],
 		"with overlapping inexact params, the wider-field arm outranks the earlier narrow arm")
 }
+
+// An optional field must not count toward specificity: `{x, y?}` accepts both `{x}` and
+// `{x, y}`, so it is wider than `{x}`, not more specific. For the argument `{x}`, both arms
+// match — the `{x, y?}` arm accepts it with y absent — so the ranking decides, and it must
+// pick the narrower `{x}` arm even though the `{x, y?}` arm carries more property entries and
+// is declared second. Counting the optional field would rank the wider arm first and return
+// "opt".
+func TestInferOverloadOptionalFieldNotMoreSpecific(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) -> number { return p.x }
+		fn f(p: {x: number, y?: number}) -> string { return "opt" }
+		val r = f({x: 1})
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["r"],
+		"an optional field widens rather than narrows, so {x} outranks {x, y?} for a {x} argument")
+}
