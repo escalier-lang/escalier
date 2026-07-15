@@ -2483,8 +2483,9 @@ func (c *checker) checkMatchExhaustive(scope *Scope, e *ast.MatchExpr, scrutinee
 // covered. A literal member is covered by an equal literal pattern. A nominal member, an
 // enum variant or class token, is covered by an instance or extractor pattern naming that
 // class. A structural-object member needs match-arm union narrowing, which M5 does not
-// build, so its arms are reported unsupported rather than silently accepted or falsely
-// flagged non-exhaustive.
+// build. A structural arm over such a member is reported unsupported and the match
+// deferred, but when no arm covers the member the match is non-exhaustive rather than
+// silently accepted.
 func (c *checker) unionMatchExhaustive(scope *Scope, e *ast.MatchExpr, u *soltype.UnionType) bool {
 	for _, arm := range e.Cases {
 		if arm.Guard == nil && isCatchAll(arm.Pattern) {
@@ -2518,9 +2519,12 @@ func (c *checker) unionMatchExhaustive(scope *Scope, e *ast.MatchExpr, u *soltyp
 		return false
 	}
 	if hasUnevaluable {
-		// Flag each unguarded non-literal, non-nominal arm as unsupported rather than
-		// decide the match's exhaustiveness from members the rules cannot evaluate.
-		c.reportStructuralUnionArms(scope, e)
+		// A member the coverage rules cannot evaluate is deferred only when a structural
+		// arm exists to explain it: reportStructuralUnionArms flags each such arm as
+		// unsupported and reports whether it found any. When it finds none — every arm is
+		// literal or nominal — the unevaluable member has no arm covering it, so the match
+		// is non-exhaustive rather than silently accepted.
+		return c.reportStructuralUnionArms(scope, e)
 	}
 	return true
 }
@@ -2567,9 +2571,12 @@ func (c *checker) nominalArmCovers(scope *Scope, p ast.Pat, member *soltype.Clas
 
 // reportStructuralUnionArms flags each unguarded arm that the union coverage rules cannot
 // evaluate — a structural pattern over a union carrying a non-nominal member — as
-// unsupported. A literal or nominal arm is covered by its own rule, and the catch-all case
-// has already returned, so neither is reported here.
-func (c *checker) reportStructuralUnionArms(scope *Scope, e *ast.MatchExpr) {
+// unsupported, and reports whether it flagged any. A literal or nominal arm is covered by
+// its own rule, and the catch-all case has already returned, so neither is reported here.
+// A false result means no arm explains an unevaluable member, so the caller treats the
+// match as non-exhaustive.
+func (c *checker) reportStructuralUnionArms(scope *Scope, e *ast.MatchExpr) bool {
+	reported := false
 	for _, arm := range e.Cases {
 		if arm.Guard != nil {
 			continue
@@ -2581,7 +2588,9 @@ func (c *checker) reportStructuralUnionArms(scope *Scope, e *ast.MatchExpr) {
 			continue
 		}
 		c.reportUnsupportedFeature(arm.Pattern, "non-literal match arm pattern over a union scrutinee")
+		reported = true
 	}
+	return reported
 }
 
 // isNominalArm reports whether a pattern names a class in the type sort, so it is an

@@ -243,82 +243,84 @@ func TestInferInstancePatNominalMismatch(t *testing.T) {
 // with no catch-all. The variant name resolves through the enum's namespace, so
 // `Color.RGB` finds the `Color.RGB` variant token.
 
-// An arm per enum variant covers every union member, so the match needs no catch-all. The
-// arms bind each variant's fields and return them, so the inferred type shows the binding
-// worked.
-func TestInferMatchEnumExhaustive(t *testing.T) {
-	values, _, errs := inferSource(t, `
+// Exhaustiveness of a match over an enum. Each row shares the same two-variant `Color`
+// enum and varies only the arms. A row with wantVal expects a clean inference; a row with
+// wantErr expects that single error. The cases: an arm per variant is exhaustive with no
+// catch-all and binds each variant's fields; leaving a variant uncovered is non-exhaustive;
+// a catch-all covers the remaining variants; and an extractor arm with a refutable literal
+// argument such as `Color.RGB(0, g, b)`, which matches only when the first field is 0, does
+// not cover its variant, so the match is non-exhaustive.
+func TestInferMatchEnumExhaustiveness(t *testing.T) {
+	tests := []struct {
+		name    string
+		arms    string
+		wantVal string // inferred type of f on success; empty when an error is expected
+		wantErr string // full error message with span on failure; empty on success
+	}{
+		{
+			name:    "ArmPerVariantNeedsNoCatchAll",
+			arms:    "Color.RGB(r, g, b) => r,\n\t\t\t\tColor.Hex(code) => 0",
+			wantVal: "fn (c: Color.RGB | Color.Hex) -> number",
+		},
+		{
+			name:    "MissingVariant",
+			arms:    "Color.RGB(r, g, b) => r",
+			wantErr: "7:11-9:5: match is not exhaustive; add a catch-all branch",
+		},
+		{
+			name:    "CatchAllCoversRemainingVariants",
+			arms:    "Color.RGB(r, g, b) => r,\n\t\t\t\t_ => 0",
+			wantVal: "fn (c: Color.RGB | Color.Hex) -> number",
+		},
+		{
+			name:    "RefutableArgDoesNotCover",
+			arms:    "Color.RGB(0, g, b) => g,\n\t\t\t\tColor.Hex(code) => 0",
+			wantErr: "7:11-10:5: match is not exhaustive; add a catch-all branch",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, `
 		enum Color {
 			RGB(r: number, g: number, b: number),
 			Hex(code: string),
 		}
 		fn f(c: Color) {
 			return match c {
-				Color.RGB(r, g, b) => r,
-				Color.Hex(code) => 0
+				`+tt.arms+`
 			}
 		}
 	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (c: Color.RGB | Color.Hex) -> number", values["f"])
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				require.Equal(t, tt.wantVal, values["f"])
+			} else {
+				require.Len(t, errs, 1)
+				require.Equal(t, tt.wantErr, msgWithSpan(errs[0]))
+			}
+		})
+	}
 }
 
-// A match leaving an enum variant uncovered is non-exhaustive. Covering only `Color.RGB`
-// leaves `Color.Hex` unmatched, and enum variants are final so no width tail is implied,
-// so a catch-all is required.
-func TestInferMatchEnumMissingVariant(t *testing.T) {
+// A union member the coverage rules cannot evaluate — an object member here — is
+// non-exhaustive when no arm covers it, not silently accepted. The scrutinee is
+// `Point | {y: number}`: the `Point(x)` arm covers the nominal member, but the `{y: number}`
+// member has no arm, and no structural arm exists to defer on, so the match is
+// non-exhaustive. This is the nominal-plus-structural analogue of the enum-variant case the
+// plan's D2 accept set writes as `Color.RGB | {x: number}`, which is not directly
+// constructible since a variant constructor returns the whole enum union.
+func TestInferMatchNominalMemberUncoveredStructural(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		enum Color {
-			RGB(r: number, g: number, b: number),
-			Hex(code: string),
-		}
-		fn f(c: Color) {
-			return match c {
-				Color.RGB(r, g, b) => r
+		class Point { x: number }
+		fn f(b: boolean) {
+			val p = if b { Point(1) } else { {y: 2} }
+			return match p {
+				Point(x) => x
 			}
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "7:11-9:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
-}
-
-// An unguarded catch-all covers every enum variant, so a single covered variant plus a
-// catch-all is exhaustive.
-func TestInferMatchEnumCatchAll(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		enum Color {
-			RGB(r: number, g: number, b: number),
-			Hex(code: string),
-		}
-		fn f(c: Color) {
-			return match c {
-				Color.RGB(r, g, b) => r,
-				_ => 0
-			}
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (c: Color.RGB | Color.Hex) -> number", values["f"])
-}
-
-// An extractor arm covers a variant only when its argument sub-patterns are irrefutable. A
-// literal argument such as `Color.RGB(0, g, b)` matches only when the first field is 0, so
-// it does not cover the whole `Color.RGB` member, and the match is non-exhaustive.
-func TestInferMatchEnumRefutableArgNotExhaustive(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		enum Color {
-			RGB(r: number, g: number, b: number),
-			Hex(code: string),
-		}
-		fn f(c: Color) {
-			return match c {
-				Color.RGB(0, g, b) => g,
-				Color.Hex(code) => 0
-			}
-		}
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "7:11-10:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "5:11-7:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
 
 // DISABLED until M5 D3. A union mixing a structural-object member with a non-object member,
