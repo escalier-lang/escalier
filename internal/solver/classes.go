@@ -573,11 +573,17 @@ func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
 }
 
 // checkMethodReceiver rejects a `mut self` member reached from a plain-`self` body, which
-// holds only a shared borrow to lend. It fires only for inside-the-body access, where recv
-// (the un-stripped `self` binding) carries the caller's mutability; an external call's
-// mutability is a place property this check does not see. The receiver is rebuilt as the
-// member's own `Self` carried in that mutability so the diagnostic names the class on both
-// sides. A no-op for a static member, a property, or a non-class receiver.
+// holds only a shared borrow to lend. It constrains the enclosing `self` against the accessed
+// member's declared `self`. The four pairings:
+//
+//   - plain `self` body → `mut self` member: rejected, a shared borrow has no mut to lend
+//   - `mut self` body   → `mut self` member: ok
+//   - `mut self` body   → plain `self` member: ok, mutable downgrades to shared
+//   - plain `self` body → plain `self` member: ok
+//
+// It fires only inside a body, where the un-stripped `self` binding recv carries the caller's
+// mutability. The receiver is rebuilt as `Self` in that mutability, so the diagnostic reads
+// `immutable C <: mutable C`. A no-op for a static member, a property, or a non-class receiver.
 func (c *checker) checkMethodReceiver(blame ast.Node, recv soltype.Type, member soltype.ObjTypeElem) {
 	self := memberSelfParam(member)
 	if self == nil {
