@@ -323,48 +323,105 @@ func TestInferMatchNominalMemberUncoveredStructural(t *testing.T) {
 	require.Equal(t, "5:11-7:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
 
-// DISABLED until M5 D3. A union mixing a structural-object member with a non-object member,
-// `"a" | {x: number}`, matched only by the object pattern `{x}`. The `"a"` member is
-// uncovered, so the match is non-exhaustive. Binding `{x}` against the whole union today
-// also constrains every member to carry `x`, reporting a spurious `cannot constrain "a" <:
-// object` on the `"a"` member. D3's match-arm narrowing binds `{x}` against only the
-// `{x: number}` member, dropping that binding error while the non-exhaustive report stays.
-// Re-enable when D3 lands and assert the single non-exhaustive error the commented body
-// records.
+// A union mixing a structural-object member with a non-object member, `"a" | {x: number}`,
+// matched only by the object pattern `{x}`. Match-arm narrowing binds `{x}` against only
+// the `{x: number}` member, so no spurious `cannot constrain "a" <: object` is reported.
+// The `"a"` member is uncovered, so the match stays non-exhaustive.
 func TestInferMatchUnionUncoveredWithStructuralMember(t *testing.T) {
-	/*
-		_, _, errs := inferSource(t, `
-			fn f(b: boolean) {
-				val p = if b { "a" } else { {x: 1} }
-				return match p {
-					{x} => x
-				}
+	_, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val p = if b { "a" } else { {x: 1} }
+			return match p {
+				{x} => x
 			}
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
-	*/
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
 
-// DISABLED until M5 D3. A match over a structural-object union such as
-// `{x: number} | {y: string}` with an object pattern per member should be exhaustive and
-// bind each arm against its matching member. Binding an object pattern against a union
-// scrutinee currently constrains every member to carry the named field, so `{x}` against
-// the `{y: string}` member reports a missing property, and the union exhaustiveness path
-// reports each structural arm unsupported. Both resolve when D3's match-arm narrowing
-// lands, which binds an object pattern against only the members carrying its fields.
-// Re-enable then and assert the empty-error, exhaustive result the commented body records.
+// A match over a structural-object union such as `{x: number} | {y: string}` with an object
+// pattern per member is exhaustive and binds each arm against its matching member. Match-arm
+// narrowing binds `{x}` against only the `{x: number}` member and `{y}` against only the
+// `{y: string}` member, so neither reports a missing property and both members are covered.
 func TestInferMatchStructuralObjectUnion(t *testing.T) {
-	/*
-		values, _, errs := inferSource(t, `
-			fn f(p: {x: number} | {y: string}) {
-				return match p {
-					{x} => 1,
-					{y} => 2
-				}
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string}) {
+			return match p {
+				{x} => 1,
+				{y} => 2
 			}
-		`)
-		require.Empty(t, errs)
-		require.Equal(t, "fn (p: {x: number} | {y: string}) -> 1 | 2", values["f"])
-	*/
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number} | {y: string}) -> 1 | 2", values["f"])
+}
+
+// A structural-object union with a member no arm's shape covers stays non-exhaustive. The
+// `{x}` and `{y}` arms cover the first two members of `{x: number} | {y: string} |
+// {z: boolean}`, but no arm names the `z` field, so the third member is uncovered.
+func TestInferMatchStructuralObjectUnionUncovered(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string} | {z: boolean}) {
+			return match p {
+				{x} => 1,
+				{y} => 2
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "3:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+}
+
+// Match-arm narrowing routes each tuple pattern to the union members of its fixed arity, so
+// a union of differently-sized tuples covers with one arm per arity. `[a, c]` binds against
+// the arity-2 member `[1, 2]` and `[s]` against the arity-1 member `["a"]`, so the match is
+// exhaustive and each arm reads its own member's element types.
+func TestInferMatchTupleUnionDifferentArity(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x = if b { [1, 2] } else { ["a"] }
+			return match x {
+				[a, c] => a,
+				[s] => s
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (b: boolean) -> 1 | "a"`, values["f"])
+}
+
+// Narrowing an inexact union to a multi-member subset drops the open `...` tail, so the
+// narrowed target does not require the tail's unknown members to fit the pattern. Matching
+// `{x}` against `{x: number} | {x: string} | {y: boolean} | ...` narrows to the exact
+// `{x: number} | {x: string}`, so `x` binds at `number | string` with no spurious
+// `object | object | ... <: object` constraint error. The inexact scrutinee still needs a
+// catch-all, which the `_` arm supplies.
+func TestInferMatchInexactUnionMultiMemberNarrow(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {x: string} | {y: boolean} | ...) {
+			return match p {
+				{x} => x,
+				{y} => 2,
+				_ => 0
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number} | {x: string} | {y: boolean} | ...) -> number | string", values["f"])
+}
+
+// Match-arm narrowing is refutable-only. An irrefutable `val {x} = p` over a union must
+// still require `x` on every member, so binding it against `{x: number} | {y: string}`
+// reports the missing property on the `{y: string}` member rather than narrowing to the
+// `{x: number}` member the way a match arm does.
+func TestValDestructureUnionRequiresFieldOnAllMembers(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string}) {
+			val {x} = p
+			return x
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "2:25-2:36: object is missing property: x", msgWithSpan(errs[0]))
 }

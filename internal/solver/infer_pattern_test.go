@@ -439,27 +439,21 @@ func TestInferMatchInexactUnionWithCatchAll(t *testing.T) {
 	require.Empty(t, errs)
 }
 
-// DISABLED until M5 D3. A tuple pattern `[a, c]` over the union `[1, 2] | [3, 4]`. Both
-// members are arity-2 tuples, so the arm covers every member and the match is exhaustive.
-// Binding the pattern against the whole union today constrains every member to the tuple
-// shape, which the union leg cannot yet evaluate and reports as the unsupported structural
-// arm. D3's match-arm narrowing binds `[a, c]` against the tuple members and computes
-// coverage, so the arm binds `a`/`c` at the joined element types and the match type-checks.
-// Re-enable when D3 lands and assert the empty-error, exhaustive result the commented body
-// records.
+// A tuple pattern `[a, c]` over the union `[1, 2] | [3, 4]`. Both members are arity-2
+// tuples, so the arm covers every member and the match is exhaustive. Binding `[a, c]`
+// against the whole union constrains each member to the tuple shape, so `a`/`c` bind at the
+// joined element types `1 | 3` / `2 | 4` and the match type-checks.
 func TestInferMatchTupleUnionExhaustive(t *testing.T) {
-	/*
-		values, _, errs := inferSource(t, `
-			fn f(b: boolean) {
-				val x = if b { [1, 2] } else { [3, 4] }
-				return match x {
-					[a, c] => a
-				}
+	values, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x = if b { [1, 2] } else { [3, 4] }
+			return match x {
+				[a, c] => a
 			}
-		`)
-		require.Empty(t, errs)
-		require.Equal(t, "fn (b: boolean) -> 1 | 3", values["f"])
-	*/
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (b: boolean) -> 1 | 3", values["f"])
 }
 
 // A guarded arm can always fail its guard, so it never makes a match exhaustive. An
