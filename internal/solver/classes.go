@@ -572,27 +572,12 @@ func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
 	}
 }
 
-// checkMethodReceiver constrains the `self` receiver of a member accessed inside a class
-// body against that member's declared `self` type, so a `mut self` sibling reached from a
-// plain-`self` method is rejected. This is the receiver-dependent half of method dispatch.
-// A method body holds a borrow of its receiver whose mutability its own declaration fixes.
-// A `mut self` receiver grants a mutable borrow and a plain `self` only a shared one, so a
-// `self.bump()` call to a `mut self` `bump` from inside `peek(self)` has no mutable access
-// to lend. This fires only for an inside-the-body access, where the receiver's mutability is
-// carried in `self`'s type. An external call reads its receiver off a binding, whose
-// mutability is a place property rather than a type property. Distinguishing `val c` from
-// `val mut c` there needs place-mutability tracking through member access that this check
-// does not perform.
-//
-// recv is the original `self` binding before its borrow was stripped for member lookup, so
-// its mutability is intact. The check is a no-op for a static member, a property, or a
-// member whose receiver is not a class instance.
-//
-// The receiver is rebuilt as the member's own `Self` type carried in the caller's
-// mutability rather than constraining recv directly, so the diagnostic names the class on
-// both sides. A `self.bump()` call from a plain-`self` method renders `immutable C <:
-// mutable C`, not `immutable object <: mutable C`, since `self` inside the body binds to
-// the class-body object view rather than the nominal instance.
+// checkMethodReceiver rejects a `mut self` member reached from a plain-`self` body, which
+// holds only a shared borrow to lend. It fires only for inside-the-body access, where recv
+// (the un-stripped `self` binding) carries the caller's mutability; an external call's
+// mutability is a place property this check does not see. The receiver is rebuilt as the
+// member's own `Self` carried in that mutability so the diagnostic names the class on both
+// sides. A no-op for a static member, a property, or a non-class receiver.
 func (c *checker) checkMethodReceiver(blame ast.Node, recv soltype.Type, member soltype.ObjTypeElem) {
 	self := memberSelfParam(member)
 	if self == nil {
@@ -609,13 +594,10 @@ func (c *checker) checkMethodReceiver(blame ast.Node, recv soltype.Type, member 
 	c.constrain(blame, recvT, self.Type)
 }
 
-// memberSelfParam returns the `self` receiver of a READABLE member — a method or getter —
-// or nil for a static member, a property, or a member with no receiver. An overloaded
-// method reads its first arm's receiver, which is representative because buildMemberSigs
-// rejects an overload set whose arms disagree on receiver mutability
-// (MethodOverloadReceiverMismatchError). A setter is excluded because reading one is already
-// a write-only error, and its write-side receiver mutability is checked on assignment rather
-// than on this read path.
+// memberSelfParam returns the `self` receiver of a readable member, a method or getter, or
+// nil otherwise. A method reads its first arm's receiver, representative because
+// buildMemberSigs rejects arms that disagree on receiver mutability. A setter is excluded,
+// since reading one is already a write-only error.
 func memberSelfParam(member soltype.ObjTypeElem) *soltype.FuncParam {
 	switch m := member.(type) {
 	case *soltype.MethodElem:
