@@ -360,10 +360,14 @@ func structuralSubtype(a, b soltype.Type) bool {
 // property b declares with an alpha-equal type, and a is narrower in the width sense: it
 // has a strictly larger field set, or the same field set while a is exact and b is not.
 //
-// A wider field set is more specific because a parameter typed `{x, y}` accepts fewer
-// arguments than one typed `{x}`, the object analogue of a concrete param outranking a
-// generic one. An exact object is likewise more specific than an inexact one over the same
-// fields, since it accepts no extra properties. Two objects with the same fields and same
+// A larger field set is the stricter requirement, since an argument must carry more
+// properties to match, so it ranks more specific. This is the object analogue of a concrete
+// param outranking a generic one. The wider parameter literally accepts fewer arguments only
+// when the narrower parameter is width-tolerant, and that is also the only case where the
+// order changes the result. Two exact objects with different field sets instead accept
+// disjoint arguments, so at most one arm matches and the constrain trial in tryOverloadArm
+// settles the call. An exact object is likewise more specific than an inexact one over the
+// same fields, since it accepts no extra properties. Two objects with the same fields and same
 // exactness are alpha-equal and never reach here — structuralSubtype's alphaEqualTypes arm
 // resolves them to a tie first. Any non-property member makes the pair incomparable and
 // ranks as false, deferring to declaration order.
