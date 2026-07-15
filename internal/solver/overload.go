@@ -347,7 +347,72 @@ func structuralSubtype(a, b soltype.Type) bool {
 			return primOf(l.Lit) == p.Prim
 		}
 	}
+	if ao, ok := a.(*soltype.ObjectType); ok {
+		if bo, ok := b.(*soltype.ObjectType); ok {
+			return objectSubsumes(ao, bo)
+		}
+	}
 	return false
+}
+
+// objectSubsumes reports whether object a ranks strictly more specific than object b for
+// overload specificity (the #723 object-argument case). "More specific" means a narrower
+// parameter, one accepting fewer arguments, so it wins dispatch when both arms match an
+// argument. It ranks two axes and deliberately ignores a third:
+//
+//   - Required-field count. When a's required properties are a strict superset of b's, a is
+//     stricter and ranks more specific, the object analogue of a concrete param outranking a
+//     generic one. a must carry every required property of b, as required and with an
+//     alpha-equal type. A missing, optional, or differently-typed match makes the pair
+//     incomparable, so this returns false.
+//   - Exactness, only when the required-field sets are equal. An exact a is more specific
+//     than an inexact b over the same fields, since it accepts no extra properties.
+//   - Field types, which are NOT ranked. Arms whose shared fields differ in type tie here.
+//     Disjoint types make the arms accept disjoint arguments, so the trial picks the match.
+//     Overlapping types fall back to declaration order.
+//
+// Only required properties count. An optional property widens an object rather than
+// narrowing it. `{x, y?}` accepts both `{x}` and `{x, y}`, so it is not more specific than
+// `{x}`. Counting it would rank the wider arm as narrower.
+//
+// This is a heuristic, not the full subtype relation. Resolution correctness comes from the
+// constrain trial in tryOverloadArm. objectSubsumes only orders the arms that could match.
+// Two objects with identical fields and exactness are alpha-equal and never reach here, since
+// structuralSubtype resolves them to a tie first. A non-property member on either side makes
+// the pair incomparable and ranks as false.
+func objectSubsumes(a, b *soltype.ObjectType) bool {
+	bReq := 0
+	for _, be := range b.Elems {
+		bp, ok := be.(*soltype.PropertyElem)
+		if !ok {
+			return false
+		}
+		if bp.Optional {
+			continue
+		}
+		bReq++
+		ap, ok := a.Prop(bp.Name)
+		if !ok || ap.Optional {
+			return false
+		}
+		if !alphaEqualTypes(ap.Type, bp.Type) {
+			return false
+		}
+	}
+	aReq := 0
+	for _, ae := range a.Elems {
+		ap, ok := ae.(*soltype.PropertyElem)
+		if !ok {
+			return false
+		}
+		if !ap.Optional {
+			aReq++
+		}
+	}
+	if aReq > bReq {
+		return true
+	}
+	return !a.Inexact && b.Inexact
 }
 
 // overloadIntersection synthesizes the value-position type of an overloaded name, the

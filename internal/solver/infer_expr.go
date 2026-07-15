@@ -1114,6 +1114,19 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// argument move against an inner branch instead of this call's statement.
 	consumeRef, hasConsumeRef := c.currentStmtRef()
 	callee := c.inferExpr(scope, lvl, e.Callee)
+	// A member callee whose type is an intersection of function arms is an overloaded
+	// method, since memberValue gathers a multi-signature method's arms into an
+	// IntersectionType. Resolving one arm here through resolveOverload, the method analogue
+	// of the direct overloaded-name call above, keeps the disjunction out of the callee <:
+	// callShape constraint and reuses the declaration-order deferral for an unconstrained
+	// argument (E1). A `g = f; g(x)` call through an intermediate binding has an ident
+	// callee, not a member one, so it stays on the value-position intersection path in
+	// constrain.
+	if _, isMember := e.Callee.(*ast.MemberExpr); isMember {
+		if arms, ok := funcIntersectionArms(callee); ok {
+			return c.inferMethodOverloadCall(scope, lvl, e, arms)
+		}
+	}
 	args := make([]*soltype.FuncParam, len(e.Args))
 	for i, a := range e.Args {
 		args[i] = &soltype.FuncParam{Type: c.inferExpr(scope, lvl, a)}
@@ -1245,6 +1258,52 @@ func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b 
 	ret := c.resolveOverload(lvl, b, args, e)
 	c.recordType(e, ret)
 	return ret
+}
+
+// inferMethodOverloadCall types a call to an overloaded method reached through a member
+// callee, such as `p.m(args)` where `m` carries several signatures. It infers the
+// arguments, then resolves one arm through resolveOverload — the same machinery a direct
+// overloaded-name call uses, driven by the method's arms wrapped as monomorphic schemes.
+// Like inferOverloadedCall it emits no callee <: callShape constraint. Overload resolution
+// owns arity and argument checking, and a no-match becomes a NoMatchingOverloadError.
+func (c *checker) inferMethodOverloadCall(scope *Scope, lvl int, e *ast.CallExpr, arms []*soltype.FuncType) soltype.Type {
+	args := make([]soltype.Type, len(e.Args))
+	for i, a := range e.Args {
+		args[i] = c.inferExpr(scope, lvl, a)
+	}
+	schemes := make([]TypeScheme, len(arms))
+	for i, arm := range arms {
+		schemes[i] = &MonoScheme{Ty: arm}
+	}
+	ret := c.resolveOverload(lvl, ValueBinding{Schemes: schemes}, args, e)
+	c.recordType(e, ret)
+	return ret
+}
+
+// funcIntersectionArms reports whether t is an IntersectionType whose members are all
+// FuncTypes, returning those arms. memberValue builds exactly this shape for an overloaded
+// method, so it identifies a method-overload callee. A non-intersection, an empty
+// intersection, or an intersection carrying a non-function member is not a method overload
+// set, so it stays on the ordinary callee <: callShape path.
+func funcIntersectionArms(t soltype.Type) ([]*soltype.FuncType, bool) {
+	inter, ok := t.(*soltype.IntersectionType)
+	if !ok || len(inter.Types) == 0 {
+		return nil, false
+	}
+	arms := make([]*soltype.FuncType, len(inter.Types))
+	for i, m := range inter.Types {
+		// A direct assertion, not resolveFunc: memberValue builds each arm with
+		// strippedMethodSig, so an arm is always a concrete FuncType with nothing to look
+		// through. resolveFunc's var and constructor-object look-through would only broaden
+		// this into a looser "is any intersection callable" test, pulling annotation- or
+		// class-value-derived intersections off the ordinary callee <: callShape path.
+		ft, ok := m.(*soltype.FuncType)
+		if !ok {
+			return nil, false
+		}
+		arms[i] = ft
+	}
+	return arms, true
 }
 
 // resolveFunc resolves a callee to its concrete FuncType, used to recover a
@@ -1986,7 +2045,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// carries method, getter, and setter members alongside fields. A read of such a
 	// member resolves through member lookup here, since the structural field-requirement
 	// path below reads only properties and panics on a non-property member (M5 B3).
-	if res, ok := c.classBodyMember(lvl, blame, name, recvCarrier); ok {
+	if res, ok := c.classBodyMember(lvl, blame, name, recv, recvCarrier); ok {
 		return res
 	}
 	// A static read `Point.origin` resolves through member lookup here, since the

@@ -812,43 +812,44 @@ type MixedOwnershipError struct {
 	Node ast.Node
 }
 
-func (*UnknownIdentifierError) isSolverError()            {}
-func (*NamespaceUsedAsValueError) isSolverError()         {}
-func (*UnknownNamespaceMemberError) isSolverError()       {}
-func (*DynamicNamespaceIndexError) isSolverError()        {}
-func (*InvalidAssignmentTargetError) isSolverError()      {}
-func (*CannotAssignToImmutableError) isSolverError()      {}
-func (*TooManyArgsError) isSolverError()                  {}
-func (*NotEnoughArgsError) isSolverError()                {}
-func (*UnsupportedNodeError) isSolverError()              {}
-func (*UnsupportedFeatureError) isSolverError()           {}
-func (*BodyDeclNotAllowedError) isSolverError()           {}
-func (*MissingInitializerError) isSolverError()           {}
-func (*DuplicateDeclarationError) isSolverError()         {}
-func (*NoMatchingOverloadError) isSolverError()           {}
-func (*UnannotatedRecursiveOverloadError) isSolverError() {}
-func (*DuplicateOverloadError) isSolverError()            {}
-func (*AwaitOutsideAsyncError) isSolverError()            {}
-func (*ForAwaitOutsideAsyncError) isSolverError()         {}
-func (*NotIterableError) isSolverError()                  {}
-func (*ReturnOutsideFunctionError) isSolverError()        {}
-func (*AsyncReturnNotPromiseError) isSolverError()        {}
-func (*NonExhaustiveMatchError) isSolverError()           {}
-func (*MixedOwnershipError) isSolverError()               {}
-func (*MutLeafThroughSharedBorrowError) isSolverError()   {}
-func (*MissingSelfReceiverError) isSolverError()          {}
-func (*MultipleConstructorsError) isSolverError()         {}
-func (*FieldInitializerNotAllowedError) isSolverError()   {}
-func (*SubclassConstructorRequiredError) isSolverError()  {}
-func (*WriteOnlyPropertyError) isSolverError()            {}
-func (*SetterArityError) isSolverError()                  {}
-func (*RecursiveMethodAnnotationError) isSolverError()    {}
-func (*FieldNotInitializedError) isSolverError()          {}
-func (*ReadBeforeInitError) isSolverError()               {}
-func (*MethodCallBeforeInitError) isSolverError()         {}
-func (*InstancePatternNotClassError) isSolverError()      {}
-func (*ExtractorPatternNotCtorError) isSolverError()      {}
-func (*ExtractorPatternArityError) isSolverError()        {}
+func (*UnknownIdentifierError) isSolverError()              {}
+func (*NamespaceUsedAsValueError) isSolverError()           {}
+func (*UnknownNamespaceMemberError) isSolverError()         {}
+func (*DynamicNamespaceIndexError) isSolverError()          {}
+func (*InvalidAssignmentTargetError) isSolverError()        {}
+func (*CannotAssignToImmutableError) isSolverError()        {}
+func (*TooManyArgsError) isSolverError()                    {}
+func (*NotEnoughArgsError) isSolverError()                  {}
+func (*UnsupportedNodeError) isSolverError()                {}
+func (*UnsupportedFeatureError) isSolverError()             {}
+func (*BodyDeclNotAllowedError) isSolverError()             {}
+func (*MissingInitializerError) isSolverError()             {}
+func (*DuplicateDeclarationError) isSolverError()           {}
+func (*NoMatchingOverloadError) isSolverError()             {}
+func (*UnannotatedRecursiveOverloadError) isSolverError()   {}
+func (*DuplicateOverloadError) isSolverError()              {}
+func (*AwaitOutsideAsyncError) isSolverError()              {}
+func (*ForAwaitOutsideAsyncError) isSolverError()           {}
+func (*NotIterableError) isSolverError()                    {}
+func (*ReturnOutsideFunctionError) isSolverError()          {}
+func (*AsyncReturnNotPromiseError) isSolverError()          {}
+func (*NonExhaustiveMatchError) isSolverError()             {}
+func (*MixedOwnershipError) isSolverError()                 {}
+func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
+func (*MissingSelfReceiverError) isSolverError()            {}
+func (*MethodOverloadReceiverMismatchError) isSolverError() {}
+func (*MultipleConstructorsError) isSolverError()           {}
+func (*FieldInitializerNotAllowedError) isSolverError()     {}
+func (*SubclassConstructorRequiredError) isSolverError()    {}
+func (*WriteOnlyPropertyError) isSolverError()              {}
+func (*SetterArityError) isSolverError()                    {}
+func (*RecursiveMethodAnnotationError) isSolverError()      {}
+func (*FieldNotInitializedError) isSolverError()            {}
+func (*ReadBeforeInitError) isSolverError()                 {}
+func (*MethodCallBeforeInitError) isSolverError()           {}
+func (*InstancePatternNotClassError) isSolverError()        {}
+func (*ExtractorPatternNotCtorError) isSolverError()        {}
+func (*ExtractorPatternArityError) isSolverError()          {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -862,6 +863,22 @@ func (e *MissingSelfReceiverError) Span() ast.Span      { return e.Elem.Span() }
 func (e *MissingSelfReceiverError) Related() []ast.Span { return nil }
 func (e *MissingSelfReceiverError) Message() string {
 	return "Instance member '" + e.Name + "' must declare a `self` receiver as its first parameter."
+}
+
+// MethodOverloadReceiverMismatchError fires when the arms of an overloaded method disagree
+// on their `self` receiver mutability, as when one arm declares `self` and another `mut
+// self`. Overload resolution dispatches on the value arguments rather than the receiver, and
+// the receiver-mutability check reads one representative arm, so every arm must agree on
+// whether it needs a mutable receiver. Elem is the offending arm.
+type MethodOverloadReceiverMismatchError struct {
+	Name string
+	Elem ast.ClassElem
+}
+
+func (e *MethodOverloadReceiverMismatchError) Span() ast.Span      { return e.Elem.Span() }
+func (e *MethodOverloadReceiverMismatchError) Related() []ast.Span { return nil }
+func (e *MethodOverloadReceiverMismatchError) Message() string {
+	return "Overloaded method '" + e.Name + "' must use the same `self` receiver mutability in every arm."
 }
 
 // WriteOnlyPropertyError fires when a setter-only member is read, as in `val v =

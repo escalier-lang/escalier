@@ -454,7 +454,7 @@ func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, visit
 // call by wrapping the resolved method in a scheme — remain future work: their inference
 // depends on the generic-function machinery outside this milestone, so no method carries them
 // yet and memberValue passes the field through unchanged.
-func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
+func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type) (pathResult, bool) {
 	obj, ok := carrier.(*soltype.ObjectType)
 	if !ok {
 		return pathResult{}, false
@@ -466,6 +466,7 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, carrier 
 	if _, isProp := member.(*soltype.PropertyElem); isProp {
 		return pathResult{}, false
 	}
+	c.checkMethodReceiver(blame, recv, member)
 	return c.memberValue(lvl, blame, member), true
 }
 
@@ -521,8 +522,13 @@ func classCarrier(t soltype.Type) (*soltype.ClassType, bool) {
 // type directly, or a method's callable signature with the receiver applied — the
 // signature with its SelfParam stripped, since `p.m` binds the receiver and returns a
 // function of the remaining parameters. Reading a setter-only member is a write-only
-// access and is reported. An overloaded method resolves its arm at the call site (E1);
-// B1 hands back the first signature.
+// access and is reported.
+//
+// An overloaded method carries more than one signature in its MethodElem. Its member value
+// is the IntersectionType of those arms, each with its SelfParam stripped. A direct call
+// `p.m(args)` resolves one arm through resolveOverload at the call site in inferCall, and a
+// read of an overloaded method as a value carries the intersection the way a let-bound
+// overloaded function does.
 func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeElem) pathResult {
 	var out soltype.Type
 	switch m := member.(type) {
@@ -531,17 +537,17 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 	case *soltype.GetterElem:
 		out = m.Type
 	case *soltype.MethodElem:
-		if len(m.Signatures) == 0 {
+		switch len(m.Signatures) {
+		case 0:
 			out = &soltype.ErrorType{}
-			break
-		}
-		sig := m.Signatures[0]
-		out = &soltype.FuncType{
-			Params:         sig.Params,
-			Ret:            sig.Ret,
-			Inexact:        sig.Inexact,
-			TypeParams:     sig.TypeParams,
-			LifetimeParams: sig.LifetimeParams,
+		case 1:
+			out = strippedMethodSig(m.Signatures[0])
+		default:
+			arms := make([]soltype.Type, len(m.Signatures))
+			for i, sig := range m.Signatures {
+				arms[i] = strippedMethodSig(sig)
+			}
+			out = &soltype.IntersectionType{Types: arms}
 		}
 	case *soltype.SetterElem:
 		out = c.report(&WriteOnlyPropertyError{Name: m.Name, Site: blame})
@@ -550,6 +556,79 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 	}
 	c.recordType(blame, out)
 	return pathResult{value: out}
+}
+
+// strippedMethodSig returns a method signature as a plain callable, its SelfParam
+// dropped, since `p.m` binds the receiver and returns a function of the remaining
+// parameters. The receiver's own ownership is checked separately at member access as a
+// `receiver <: SelfParam` constraint.
+func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
+	return &soltype.FuncType{
+		Params:         sig.Params,
+		Ret:            sig.Ret,
+		Inexact:        sig.Inexact,
+		TypeParams:     sig.TypeParams,
+		LifetimeParams: sig.LifetimeParams,
+	}
+}
+
+// checkMethodReceiver rejects a `mut self` member reached from a plain-`self` body, which
+// holds only a shared borrow to lend. It constrains the enclosing `self` against the accessed
+// member's declared `self`. The four pairings:
+//
+//   - plain `self` body → `mut self` member: rejected, a shared borrow has no mut to lend
+//   - `mut self` body   → `mut self` member: ok
+//   - `mut self` body   → plain `self` member: ok, mutable downgrades to shared
+//   - plain `self` body → plain `self` member: ok
+//
+// It fires only inside a body, where the un-stripped `self` binding recv carries the caller's
+// mutability. The receiver is rebuilt as `Self` in that mutability, so the diagnostic reads
+// `immutable C <: mutable C`. A no-op for a static member, a property, or a non-class receiver.
+func (c *checker) checkMethodReceiver(blame ast.Node, recv soltype.Type, member soltype.ObjTypeElem) {
+	self := memberSelfParam(member)
+	if self == nil {
+		return
+	}
+	inner := receiverClass(self.Type)
+	if inner == nil {
+		return
+	}
+	recvT := soltype.Type(inner)
+	if r, ok := recv.(*soltype.RefType); ok && r.Mut {
+		recvT = soltype.NewRef(true, nil, inner)
+	}
+	c.constrain(blame, recvT, self.Type)
+}
+
+// memberSelfParam returns the `self` receiver of a readable member, a method or getter, or
+// nil otherwise. A method reads its first arm's receiver, representative because
+// buildMemberSigs rejects arms that disagree on receiver mutability. A setter is excluded,
+// since reading one is already a write-only error.
+func memberSelfParam(member soltype.ObjTypeElem) *soltype.FuncParam {
+	switch m := member.(type) {
+	case *soltype.MethodElem:
+		if len(m.Signatures) > 0 {
+			return m.Signatures[0].SelfParam
+		}
+	case *soltype.GetterElem:
+		return m.SelfParam
+	}
+	return nil
+}
+
+// receiverClass returns the class instance a `self` receiver type names — the ClassType
+// directly for a plain `self`, or the ClassType inside the borrow for a `mut self` / `&self`
+// receiver. It returns nil when the receiver is not a class instance.
+func receiverClass(t soltype.Type) soltype.RefInner {
+	switch t := t.(type) {
+	case *soltype.ClassType:
+		return t
+	case *soltype.RefType:
+		if ct, ok := t.Inner.(*soltype.ClassType); ok {
+			return ct
+		}
+	}
+	return nil
 }
 
 // classValueMember resolves a static member read off a class value, such as

@@ -379,3 +379,86 @@ func TestInferOverloadMixedWithValCrossFileIsDuplicate(t *testing.T) {
 	require.Equal(t, "fn (x: number) -> number", values["f"],
 		"the cross-file val is rejected; the fn binding survives")
 }
+
+// #723 object-argument dispatch with EXACT parameters: a call selects the arm whose field
+// set matches the argument. Object parameters are exact by default, so the two arms accept
+// disjoint arguments — an exact `{x}` rejects `{x, y}` for the extra field, and an exact
+// `{x, y}` rejects `{x}` for the missing field. The constrain trial therefore selects the
+// only matching arm regardless of declaration order; the subsumption RANKING is inert here.
+// The inexact companion below exercises the ranking itself, where both arms can match.
+func TestInferOverloadObjectArgFieldSubsumption(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) -> number { return p.x }
+		fn f(p: {x: number, y: number}) -> string { return "wide" }
+		val r = f({x: 1, y: 2})
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "string", values["r"],
+		"the {x, y} argument only matches the {x, y} arm; the exact {x} arm rejects the extra field")
+}
+
+// The narrow argument selects the narrow arm: f({x}) cannot match the {x, y} arm (missing
+// y), so only the {x} arm accepts it.
+func TestInferOverloadObjectArgNarrowSelectsNarrow(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) -> number { return p.x }
+		fn f(p: {x: number, y: number}) -> string { return "wide" }
+		val r = f({x: 1})
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["r"],
+		"a narrow argument only matches the narrow arm")
+}
+
+// The subsumption RANKING (objectSubsumes) changes a call only when both arms can accept the
+// same argument, which requires width-tolerant (inexact) parameters. With inexact arms
+// `{x, ...}` and `{x, y, ...}`, the argument `{x, y}` satisfies both, so declaration order no
+// longer decides — the ranking picks the wider `{x, y, ...}` arm as more specific. Stubbing
+// objectSubsumes to false flips this result to "number", so this is the case that isolates
+// the ranking from the constrain trial.
+func TestInferOverloadInexactObjectArgSubsumptionRanking(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number, ...}) -> number { return p.x }
+		fn f(p: {x: number, y: number, ...}) -> string { return "wide" }
+		val r = f({x: 1, y: 2})
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "string", values["r"],
+		"with overlapping inexact params, the wider-field arm outranks the earlier narrow arm")
+}
+
+// An optional field must not count toward specificity: `{x, y?}` accepts both `{x}` and
+// `{x, y}`, so it is wider than `{x}`, not more specific. For the argument `{x}`, both arms
+// match — the `{x, y?}` arm accepts it with y absent — so the ranking decides, and it must
+// pick the narrower `{x}` arm even though the `{x, y?}` arm carries more property entries and
+// is declared second. Counting the optional field would rank the wider arm first and return
+// "opt".
+func TestInferOverloadOptionalFieldNotMoreSpecific(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number}) -> number { return p.x }
+		fn f(p: {x: number, y?: number}) -> string { return "opt" }
+		val r = f({x: 1})
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["r"],
+		"an optional field widens rather than narrows, so {x} outranks {x, y?} for a {x} argument")
+}
+
+// Overloading on object field TYPES rather than field counts: two arms share their field
+// names but give the fields disjoint types, so they accept disjoint arguments. objectSubsumes
+// ties them — it ranks by required-field count and exactness, not by field type — but the tie
+// is moot, since no argument satisfies both arms and the constrain trial selects the matching
+// one regardless of declaration order.
+func TestInferOverloadObjectArgDisjointFieldTypes(t *testing.T) {
+	base := `
+		fn f(p: {x: string, y: string}) -> number { return 1 }
+		fn f(p: {x: number, y: number}) -> boolean { return true }
+	`
+	sv, _, se := inferSource(t, base+`val r = f({x: "a", y: "b"})`)
+	require.Empty(t, se)
+	require.Equal(t, "number", sv["r"], "a string-valued argument matches only the string arm")
+
+	nv, _, ne := inferSource(t, base+`val r = f({x: 1, y: 2})`)
+	require.Empty(t, ne)
+	require.Equal(t, "boolean", nv["r"], "a number-valued argument matches only the number arm")
+}

@@ -452,6 +452,13 @@ func (c *checker) buildMemberSigs(
 			stub := c.memberSigStub(lvl, elem.Fn)
 			stub.SelfParam = c.selfParam(elem.Receiver, elem.Static, self)
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
+			// An overloaded method dispatches on its value arguments, so its arms must agree
+			// on receiver mutability. The receiver-mutability check reads only the first arm,
+			// so a later `mut self` arm reached from a plain-`self` body would otherwise slip
+			// past it. Reject the mixture here, where the offending arm has a span to blame.
+			if arm > 0 && selfParamMut(stub.SelfParam) != selfParamMut(method.Signatures[0].SelfParam) {
+				c.report(&MethodOverloadReceiverMismatchError{Name: name, Elem: elem})
+			}
 			pending = append(pending, pendingMember{
 				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) {
@@ -619,6 +626,17 @@ func (c *checker) selfType(recv *ast.MethodReceiver, self soltype.Type) soltype.
 		return soltype.NewRef(true, nil, self.(soltype.RefInner))
 	}
 	return self
+}
+
+// selfParamMut reports whether a receiver grants mutable access to the instance. A `mut
+// self` receiver wraps the instance in an owned-mutable borrow, so its type is a mutable
+// RefType; a plain `self`, a shared `&self`, and a static member's absent receiver do not.
+func selfParamMut(sp *soltype.FuncParam) bool {
+	if sp == nil {
+		return false
+	}
+	r, ok := sp.Type.(*soltype.RefType)
+	return ok && r.Mut
 }
 
 // bindSelf binds the `self` identifier in a member or constructor body scope to the full
