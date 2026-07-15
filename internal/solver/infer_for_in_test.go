@@ -55,8 +55,11 @@ func TestInferForInElementType(t *testing.T) {
 			`,
 			want: map[string]string{"f": "fn (xs: [number, string]) -> number | string"},
 		},
-		// The empty tuple has no elements, so its element union is `never`.
-		"EmptyTupleElementNever": {
+		// The empty tuple has no elements, so nothing can be bound to the loop variable
+		// and the body is statically unreachable. The `return x` never runs, so the
+		// function falls through to void — not `never`, which would unsoundly claim the
+		// function never returns.
+		"EmptyTupleBodyUnreachable": {
 			src: `
 				fn f(xs: []) {
 					for x in xs {
@@ -64,7 +67,7 @@ func TestInferForInElementType(t *testing.T) {
 					}
 				}
 			`,
-			want: map[string]string{"f": "fn (xs: []) -> never"},
+			want: map[string]string{"f": "fn (xs: []) -> void"},
 		},
 		// A union of tuples yields the union of the branches' element types, since a
 		// union is iterable when every branch is.

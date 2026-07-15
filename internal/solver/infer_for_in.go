@@ -59,6 +59,17 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 		elem = &soltype.ErrorType{}
 	}
 
+	// A `never` element type means no value can ever be bound to the loop variable,
+	// so the body is statically unreachable — iterating an empty tuple runs it zero
+	// times. Skip it: the loop contributes nothing and control falls through, so
+	// `for x in []` leaves the enclosing function returning void rather than folding
+	// an unreachable `return x` into its return type. Collecting that return would
+	// type the function as `never`, which is unsound: `fn f(xs: []) { for x in xs {
+	// return x } }` returns void at runtime.
+	if _, unreachable := elem.(*soltype.NeverType); unreachable {
+		return &soltype.Void{}
+	}
+
 	// The loop body runs in its own scope so the loop variable is invisible after
 	// the loop. bindPattern binds each leaf as a monomorphic, non-reassignable
 	// binding — a loop variable is rebound by iteration, never by assignment — since
