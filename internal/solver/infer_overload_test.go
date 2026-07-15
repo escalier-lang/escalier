@@ -443,3 +443,22 @@ func TestInferOverloadOptionalFieldNotMoreSpecific(t *testing.T) {
 	require.Equal(t, "number", values["r"],
 		"an optional field widens rather than narrows, so {x} outranks {x, y?} for a {x} argument")
 }
+
+// Overloading on object field TYPES rather than field counts: two arms share their field
+// names but give the fields disjoint types, so they accept disjoint arguments. objectSubsumes
+// ties them — it ranks by required-field count and exactness, not by field type — but the tie
+// is moot, since no argument satisfies both arms and the constrain trial selects the matching
+// one regardless of declaration order.
+func TestInferOverloadObjectArgDisjointFieldTypes(t *testing.T) {
+	base := `
+		fn f(p: {x: string, y: string}) -> number { return 1 }
+		fn f(p: {x: number, y: number}) -> boolean { return true }
+	`
+	sv, _, se := inferSource(t, base+`val r = f({x: "a", y: "b"})`)
+	require.Empty(t, se)
+	require.Equal(t, "number", sv["r"], "a string-valued argument matches only the string arm")
+
+	nv, _, ne := inferSource(t, base+`val r = f({x: 1, y: 2})`)
+	require.Empty(t, ne)
+	require.Equal(t, "boolean", nv["r"], "a number-valued argument matches only the number arm")
+}
