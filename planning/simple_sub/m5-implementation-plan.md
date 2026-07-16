@@ -1391,49 +1391,55 @@ corruption of `freshenAbove`.
     arm covers is non-exhaustive; an irrefutable `val {x} = u` over that union
     still reports the missing property on the `{y: string}` member.
 
-- **D4 — Inexact-union member access + refutable narrowing over an open tail**
-  (~170).
-  - **Files:** `solver/constrain.go` (the object-requirement arm against an inexact
-    union, the `UnionType`-sub site that today rejects an open `...` tail),
+- **D4 — Partial-union member access yields `T | undefined`** (~190).
+  - **Files:** `solver/constrain.go` (the object-requirement arm against a
+    `UnionType` sub, the site that today rejects a member lacking the property),
     `solver/infer_expr.go` (`narrowMatchArm` — narrow an inexact union to its
     matching members and keep the tail), tests.
-  - **The gap D3 leaves.** D3 does not narrow an inexact union such as
-    `{x: number} | {y: string} | ...`, because narrowing `{x}` to the listed
-    `{x: number}` member would under-type the leaf: the open `...` tail may hold an
-    `{x: boolean}` value that also matches `{x}`, and that value is assignable to the
-    union through the tail. So `match p { {x} => x, _ => 0 }` binds `{x}` against the
-    whole union and is rejected with `cannot constrain object | ... <: object` plus a
-    missing-`x` report on the `{y: string}` member — the same errors a direct `p.x`
-    read produces, since binding `{x}` is a field read. The rejection is sound but
-    unhelpful; a refutable match with a catch-all should type-check.
-  - **The fix is one mechanism, not a match special-case.** The root capability is
-    field access through an inexact union's open tail. Reading a field off
-    `A | B | ...` projects that field from each listed member and treats the tail as
-    contributing `unknown`, so the read yields `A.f | B.f | unknown` rather than being
-    rejected. This is the constrain arm both the direct `p.x` read and the pattern
-    read reach, so fixing it there fixes both uniformly rather than layering a match
-    special-case on top.
-  - **Match narrowing re-enables for inexact unions.** `narrowMatchArm` narrows an
-    inexact union to the members whose shape the pattern matches and keeps the open
-    tail, so `{x}` over `{x: number} | {y: string} | ...` binds against
-    `{x: number} | ...`. Each leaf reads through the inexact-union field access above,
-    so `x` binds at `number | unknown`, which collapses to the top `unknown`. That is
-    sound: a tail `{x: boolean}` value contributes its `x` through the `unknown` tail
-    rather than being dropped, so the leaf is never under-typed.
-  - **Exhaustiveness and irrefutability are unchanged.** An inexact union still needs
-    a catch-all — `unionMatchExhaustive` returns false on an `Inexact` union unless a
-    catch-all arm is present — so D4 changes only what a covered arm binds, never
-    whether the match is exhaustive. The narrowing stays refutable-only, so an
-    irrefutable `val {x} = p` over the inexact union still requires `x` on every value
-    and reports the missing property.
+  - **The regression this closes.** The old checker resolves a property read against
+    a union member by member: a member carrying the property contributes its type, a
+    member lacking it contributes `undefined`, and a property on no member is
+    `undefined`, erroring only for a write-only setter
+    ([internal/checker/unify.go:1458-1469](../../internal/checker/unify.go), the
+    destructure-against-union arm). So `p.x` and `val {x} = p` over
+    `{x: number} | {y: string}` bind `x: number | undefined`. The solver instead
+    rejects with `object is missing property: x`, since a field read emits
+    `p <: {x: β}` and the `UnionType`-sub rule requires *every* member to satisfy it.
+    D4 ports the old checker's semantics, so partial-union access resolves to
+    `T | undefined` rather than failing.
+  - **The rule.** Reading a property `f` off a union joins one contribution per
+    member: a member with `f` contributes `member.f`, a member without `f`
+    contributes `undefined`, and an inexact union's open `...` tail contributes
+    `unknown` — a tail member may carry `f` at any type, so the sound contribution is
+    the top. So `{x: number} | {y: string}` reads `x` as `number | undefined`, a
+    property on no listed member reads as `undefined`, and
+    `{x: number} | {y: string} | ...` reads `x` as `number | undefined | unknown`,
+    which collapses to `unknown`. This lands at the `UnionType`-sub object-requirement
+    arm both a direct `p.x` read and a `val`/parameter destructure reach, so field
+    read and destructure fix uniformly rather than as a pattern special-case.
+  - **Interaction with D3's refutable narrowing.** A refutable `match`/`if let` arm
+    still narrows to the matching members first (D3), so `{x}` over the exact
+    `{x: number} | {y: string}` binds the precise `x: number`, not `number | undefined`
+    — the arm fires only when `x` is present, so the `undefined` contribution of the
+    `{y: string}` member is not reachable. D4 changes the IRREFUTABLE path — `p.x`,
+    `val {x} = p` — and the inexact match case: `narrowMatchArm` narrows an inexact
+    union to its matching members plus the kept `...` tail, so `{x}` over
+    `{x: number} | {y: string} | ...` binds against `{x: number} | ...` and reads `x`
+    through the rule above as `number | unknown`, i.e. `unknown`.
+  - **Exhaustiveness is unchanged.** An inexact union still needs a catch-all —
+    `unionMatchExhaustive` returns false on an `Inexact` union unless a catch-all arm
+    is present — so D4 changes only the TYPE a covered arm binds, never whether the
+    match is exhaustive.
   - **Depends on:** D3 (the `narrowMatchArm` path and the exact-union narrowing it
     reuses).
-  - **Accept:** `match p { {x} => x, _ => 0 }` over `{x: number} | {y: string} | ...`
-    type-checks and binds `x: unknown` — flipping
+  - **Accept:** `p.x` and `val {x} = p` over `{x: number} | {y: string}` bind
+    `x: number | undefined` — flipping `TestValDestructureUnionRequiresFieldOnAllMembers`
+    from its missing-property error to the `number | undefined` result; a property on
+    no listed member reads as `undefined`; `match p { {x} => x, _ => 0 }` over
+    `{x: number} | {y: string} | ...` binds `x: unknown` — flipping
     `TestInferMatchInexactUnionNotNarrowed` from its two rejection errors to the
-    empty-error, `x: unknown` result; a direct `p.x` read over an inexact union yields
-    `unknown` instead of the constraint error; an irrefutable `val {x} = p` over the
-    inexact union still reports the missing property.
+    empty-error, `x: unknown` result; a refutable `{x}` arm over the exact
+    `{x: number} | {y: string}` still binds the precise `x: number`, preserving D3.
 
 ### Phase E — Method overloading
 
@@ -1504,7 +1510,7 @@ A3 (LifetimeParam + FuncType.LifetimeParams)  ──┤   ── A3 needs A1's C
       ├─► D1 (ExtractorPat / InstancePat binding)
       │    └─► D2 (enum-exhaustive / nominal union exhaustiveness)   ── also needs D-Enum + M6
       │         └─► D3 (structural union narrowing + exhaustiveness)
-      │              └─► D4 (inexact-union member access + refutable narrowing)
+      │              └─► D4 (partial-union member access → T | undefined)
       ├─► D-Enum (enum decls as unions of final variants)     ── needs M6 (landed)
       └─► E1 (method overload resolution + #723 specificity)
 ```
@@ -1532,7 +1538,7 @@ graph TD
     DEnum["D-Enum (enum decls as unions of final variants)"]
     D2["D2 (enum-exhaustive / nominal union exhaustiveness)"]
     D3["D3 (structural union narrowing + exhaustiveness)"]
-    D4["D4 (inexact-union member access + refutable narrowing)"]
+    D4["D4 (partial-union member access → T | undefined)"]
     E1["E1 (method overload resolution + #723 specificity)"]
     M6["M6 (unions / intersections, landed)"]
 
@@ -1613,8 +1619,9 @@ in parallel** (five tracks). The second-tier dependents each wait on one first-t
 PR: **C2** on C1, **F1** on C1, **D2** on both D1 and D-Enum. The only PR that joins
 two tracks is D2 (patterns × enums × M6's union exhaustiveness). **D3** is third-tier,
 waiting on D2 for the union-member loop it extends with structural-object coverage.
-**D4** is fourth-tier, waiting on D3 for the `narrowMatchArm` path it extends to inexact
-unions once field access through an open `...` tail yields `unknown`.
+**D4** is fourth-tier, waiting on D3 for the `narrowMatchArm` path it extends, porting the
+old checker's partial-union member access so a property on some but not all members reads as
+`T | undefined` rather than erroring.
 
 ## Algorithms and data structures added or modified — summary
 

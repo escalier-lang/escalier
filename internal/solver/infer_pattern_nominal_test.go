@@ -452,10 +452,16 @@ func TestInferMatchExactUnionNarrowsCleanly(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number", values["g"])
 }
 
-// Match-arm narrowing is refutable-only. An irrefutable `val {x} = p` over a union must
-// still require `x` on every member, so binding it against `{x: number} | {y: string}`
-// reports the missing property on the `{y: string}` member rather than narrowing to the
-// `{x: number}` member the way a match arm does.
+// An irrefutable `val {x} = p` cannot narrow the way a refutable match arm does, so it reads
+// `x` off the whole `{x: number} | {y: string}` union. The solver currently rejects because
+// the `{y: string}` member lacks `x`.
+//
+// M5 D4 changes this. Porting the old checker's partial-union member access in
+// internal/checker/unify.go, a property on some but not all members reads as
+// `T | undefined`, so `val {x} = p` will bind `x: number | undefined` with no error. The
+// refutable/irrefutable split survives: a refutable `{x}` arm narrows to `x: number`, while
+// this irrefutable read keeps the `undefined`. When D4 lands, the assertion below flips from
+// the missing-property error to the `number | undefined` result.
 func TestValDestructureUnionRequiresFieldOnAllMembers(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(p: {x: number} | {y: string}) {
