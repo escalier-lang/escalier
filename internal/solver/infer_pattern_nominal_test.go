@@ -391,6 +391,27 @@ func TestInferMatchTupleUnionDifferentArity(t *testing.T) {
 	require.Equal(t, `fn (b: boolean) -> 1 | "a"`, values["f"])
 }
 
+// DISABLED until M9. A tuple rest pattern `[head, ...tail]` binds the first element and
+// captures the remaining elements as a tuple. It matches any tuple at least as long as its
+// fixed prefix, so a single such arm covers a union of tuples of differing arity and the
+// match is exhaustive. M5 defers the typed rest-tuple binding. bindPatMode reports the
+// `...tail` element unsupported, and irrefutablePat treats a RestPat as refutable, so the
+// arm neither binds nor covers today. Re-enable when M9's typed rest tuples land and assert
+// the exhaustive, empty-error result the commented body records.
+func TestInferMatchTupleRestPattern(t *testing.T) {
+	/*
+		values, _, errs := inferSource(t, `
+			fn f(p: [number, number] | [string]) {
+				return match p {
+					[head, ...tail] => head
+				}
+			}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (p: [number, number] | [string]) -> number | string", values["f"])
+	*/
+}
+
 // Narrowing does not apply to an inexact union's open `...` tail. A tail member could carry
 // `x` at a type the listed members do not cover, so narrowing `{x}` to the listed
 // `{x: number}` member would under-type `x`. narrowMatchArm leaves an inexact union
