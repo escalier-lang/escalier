@@ -391,24 +391,38 @@ func TestInferMatchTupleUnionDifferentArity(t *testing.T) {
 	require.Equal(t, `fn (b: boolean) -> 1 | "a"`, values["f"])
 }
 
-// Narrowing an inexact union to a multi-member subset drops the open `...` tail, so the
-// narrowed target does not require the tail's unknown members to fit the pattern. Matching
-// `{x}` against `{x: number} | {x: string} | {y: boolean} | ...` narrows to the exact
-// `{x: number} | {x: string}`, so `x` binds at `number | string` with no spurious
-// `object | object | ... <: object` constraint error. The inexact scrutinee still needs a
-// catch-all, which the `_` arm supplies.
-func TestInferMatchInexactUnionMultiMemberNarrow(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {x: string} | {y: boolean} | ...) {
+// Narrowing does not apply to an inexact union's open `...` tail. A tail member could carry
+// `x` at a type the listed members do not cover, so narrowing `{x}` to the listed
+// `{x: number}` member would under-type `x`. narrowMatchArm leaves an inexact union
+// unnarrowed, so `{x}` binds against the whole union and is soundly rejected because the
+// `{y}` member lacks `x`, and the `...` tail may too.
+func TestInferMatchInexactUnionNotNarrowed(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string} | ...) {
 			return match p {
 				{x} => x,
-				{y} => 2,
+				_ => 0
+			}
+		}
+	`)
+	require.Len(t, errs, 2)
+	require.Equal(t, "2:11-2:36: cannot constrain object | object | ... <: object", msgWithSpan(errs[0]))
+	require.Equal(t, "2:25-2:36: object is missing property: x", msgWithSpan(errs[1]))
+}
+
+// The exact counterpart of the inexact case above still narrows soundly. With no open tail,
+// `{x}` binds against only the `{x: number}` member and reads `x` at `number` without error.
+func TestInferMatchExactUnionNarrowsCleanly(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn g(p: {x: number} | {y: string}) {
+			return match p {
+				{x} => x,
 				_ => 0
 			}
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number} | {x: string} | {y: boolean} | ...) -> number | string", values["f"])
+	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number", values["g"])
 }
 
 // Match-arm narrowing is refutable-only. An irrefutable `val {x} = p` over a union must

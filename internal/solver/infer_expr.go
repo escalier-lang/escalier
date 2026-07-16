@@ -2722,6 +2722,14 @@ func narrowMatchArm(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 	if !ok {
 		return scrutinee
 	}
+	// An inexact union carries an open `...` tail of unknown members. A structural pattern
+	// may match a tail member whose field or element types the listed members do not cover,
+	// so narrowing to the listed members would under-type the arm's leaves. Leave an inexact
+	// union unnarrowed. Binding against the whole union then soundly rejects a pattern the
+	// tail may not satisfy, and an inexact union already requires a catch-all arm.
+	if u.Inexact {
+		return scrutinee
+	}
 	kept := make([]soltype.Type, 0, len(u.Types))
 	for _, m := range u.Types {
 		if patternMatchesMemberShape(pat, m) {
@@ -2737,10 +2745,8 @@ func narrowMatchArm(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 	if len(kept) == 1 {
 		narrowed = kept[0]
 	} else {
-		// The narrowed union is the exact set of members the pattern matches. A member the
-		// pattern cannot destructure is excluded, and the original union's open tail holds
-		// only such unknown members, so the narrowed target carries no `...` — binding
-		// against it must not require an unknown tail member to also fit the pattern.
+		// The narrowed union is the exact set of members the pattern matches, drawn from an
+		// exact source union, so it is exact too.
 		narrowed = &soltype.UnionType{Types: kept}
 	}
 	// A kept object or tuple member is a RefInner, as is a rebuilt union, so a borrowed
