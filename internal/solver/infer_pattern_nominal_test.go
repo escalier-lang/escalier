@@ -417,6 +417,12 @@ func TestInferMatchTupleRestPattern(t *testing.T) {
 // `{x: number}` member would under-type `x`. narrowMatchArm leaves an inexact union
 // unnarrowed, so `{x}` binds against the whole union and is soundly rejected because the
 // `{y}` member lacks `x`, and the `...` tail may too.
+//
+// M5 D4 changes this. Once field access through an inexact union's open tail yields
+// `unknown`, narrowMatchArm narrows the union to `{x: number} | ...` and `{x}` binds `x` at
+// `number | unknown`, which collapses to `unknown`, so the match type-checks. When D4 lands,
+// the assertions below flip from these two rejection errors to an empty-error result binding
+// `x: unknown`.
 func TestInferMatchInexactUnionNotNarrowed(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(p: {x: number} | {y: string} | ...) {
