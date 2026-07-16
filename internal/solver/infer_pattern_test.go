@@ -324,6 +324,22 @@ func TestInferMatchExactNeedsNoCatchAll(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number, y: number}) -> number", values["f"])
 }
 
+// An object pattern may name a subset of the scrutinee's fields. `{x}` over the exact
+// two-field `{x: number, y: string}` binds `x` and ignores `y`. The pattern is irrefutable,
+// so it covers the scrutinee and the match needs no catch-all. Coverage requires only that
+// the scrutinee carry every field the pattern names, not that the pattern name every field.
+func TestInferMatchPartialObjectPatternCovers(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number, y: string}) {
+			return match p {
+				{x} => x
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number, y: string}) -> number", values["f"])
+}
+
 // An inexact-object scrutinee carries an open tail of unknown values, so a
 // structural arm does not cover it. A missing catch-all is a NonExhaustiveMatchError.
 func TestInferMatchInexactNeedsCatchAll(t *testing.T) {
