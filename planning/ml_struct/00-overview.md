@@ -76,6 +76,13 @@ stops being hypothetical:
    restrictions M3 imposes. The `simple_sub` plan keeps overloads out of the
    lattice as side-channel metadata and requires annotations for mutually
    recursive overload sets. MLstruct infers arrow intersections natively.
+   **Caveat: this is an inference-and-display win that does not reach codegen.**
+   The set-theoretic intersection does not round-trip to a TypeScript overload
+   table, and the runtime dispatcher still needs per-arm parameter annotations —
+   so *implemented* overloads keep the annotation obligation even after adoption.
+   See [05-feature-interactions.md](05-feature-interactions.md) §"Function
+   overloading" for the full analysis; it is the one feature MLstruct
+   *complicates* rather than upgrades.
 
 Absent one of these, the Simple-sub polarity discipline is simpler, and adopting
 MLstruct means paying its costs (see
