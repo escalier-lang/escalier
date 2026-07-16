@@ -2675,7 +2675,14 @@ func patternMatchesMemberShape(pat ast.Pat, member soltype.Type) bool {
 }
 
 // objectPatFieldNames returns the field names an object pattern binds. A shorthand or
-// key-value element names one field. An `...rest` element names none.
+// key-value element names one field. An `...rest` element names none. The parser flattens an
+// identifier, string-literal, or number-literal key into Key.Name, so `{x}`, `{"foo": a}`,
+// and `{42: a}` all surface their field name here directly.
+//
+// TODO: once object patterns gain computed keys (`{ [expr]: pat }`), resolve a key whose type
+// is a string- or number-literal type to its field name here. A symbol key such as
+// `[Symbol.iterator]` needs symbol-keyed member access, which M7 adds, and has no string field
+// name.
 func objectPatFieldNames(p *ast.ObjectPat) []string {
 	names := make([]string, 0, len(p.Elems))
 	for _, elem := range p.Elems {
