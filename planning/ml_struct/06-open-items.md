@@ -1,11 +1,12 @@
 # 06 — Open verification items & next steps
 
-Two items must be discharged **before** committing to MLstruct adoption. Both are
+Three items must be discharged **before** committing to MLstruct adoption. All are
 flagged inline where they arise ([02-caveats-and-mitigations.md](02-caveats-and-mitigations.md)
 §4, [04-type-level-operators.md](04-type-level-operators.md) coupling point 2,
-[05-feature-interactions.md](05-feature-interactions.md) §Lifetimes); this doc
-collects them with a concrete plan of attack so they aren't lost. The actual
-investigation is deferred — this records *how* to action each when the time comes.
+[05-feature-interactions.md](05-feature-interactions.md) §Lifetimes and
+§"Function overloading"); this doc collects them with a concrete plan of attack so
+they aren't lost. The actual investigation is deferred — this records *how* to
+action each when the time comes.
 
 Most of each can be done **before any post-M12 code exists**: the output is an
 artifact the future implementation PR tests against (a conformance oracle, a stated
@@ -92,12 +93,49 @@ binding-based narrowing means nothing legitimate wants `¬Ref` anyway.
 
 ---
 
+## Item 3 — Reconcile overload codegen with first-class arrow intersections
+
+**The question.** Adoption trigger 3 makes inferred intersection-of-arrows
+first-class, which lets an un-annotated overloaded `fn` in a recursive group become
+inferable ([05-feature-interactions.md](05-feature-interactions.md) §"Function
+overloading"). But the inference win does not reach codegen: `buildOverloadedFunc`
+(`internal/codegen/builder.go`) emits a runtime dispatcher from **each arm's
+written parameter annotations**, and MLstruct removes exactly the artifact the
+dispatcher consumes. Two sub-problems must be settled before adoption relaxes the
+overload annotation rule.
+
+**Plan of attack.**
+
+1. **Confirm the static/runtime dispatch agreement (soundness-adjacent).** Static
+   overload resolution must select the same arm the generated dispatcher routes to
+   at runtime. MLstruct resolves via the lossy Boolean-algebra `<:` (caveat #4)
+   while the dispatcher runs concrete `typeof` / `in` / `instanceof` tests — and
+   [04-type-level-operators.md](04-type-level-operators.md) worked example A is a
+   case where they disagree. Extend the Item 1 conformance table with
+   overload-resolution rows that pin which arm each side picks, and treat any
+   divergence as a codegen-soundness bug, not a display quirk.
+2. **Decide the annotation-obligation scope (design).** The safe scope is:
+   relax trigger 3 for *inference and display* only, and keep the per-arm parameter
+   annotation obligation wherever a dispatcher is generated — i.e. for *implemented*
+   overloads (declare-only / `.d.ts` arms emit no dispatcher and take the freedom
+   harmlessly). The alternative is to restrict inferred arm domains to a
+   mutually-distinguishable, runtime-checkable sublanguage. Write the chosen rule
+   into the plan so M3's overload-annotation requirement is relaxed deliberately,
+   not by accident.
+
+**Deliverable.** Overload-resolution rows in the conformance table (feeding solver
+tests) plus a stated annotation-obligation rule scoped to codegen. Depends on Item
+1's table and caveat #4's MLscript verification.
+
+---
+
 ## Status
 
 | Item | Can do now | Waits for implementation |
 |---|---|---|
 | 1 — arrow-intersection verification | Sound conformance table (step 1); MLscript source read (step 2) | Empirical `.mls` run (step 3, needs Scala); wiring the table into solver tests |
 | 2 — `¬Ref` exclusion invariant | Decide exclude-vs-handle; write the invariant + test list into the plan | Construction-site panic + tests in `normal.go` |
+| 3 — overload codegen reconciliation | Overload-resolution conformance rows; decide the annotation-obligation scope | Relaxing M3's overload-annotation rule; dispatcher-vs-static agreement tests |
 
-Neither is started — investigation is deferred. This doc is the record so the
-next planning session can pick them up.
+None is started — investigation is deferred. This doc is the record so the next
+planning session can pick them up.

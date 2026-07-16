@@ -129,6 +129,11 @@ synthesize (example A). The moment the overloads' codomains conflict on inputs i
 the queried domain (example B), even the set-theoretic reading refuses, and the
 two reconverge.
 
+Example A is also where MLstruct's static overload resolution can disagree with
+Escalier's *runtime* dispatcher, which routes on concrete `typeof` / `in` tests —
+see [05-feature-interactions.md](05-feature-interactions.md) §"Function overloading"
+and [06-open-items.md](06-open-items.md) Item 3 for that codegen reconciliation.
+
 ### Open verification item
 
 Both worked examples assume MLstruct's *sound* answer, which is derivable. What is
