@@ -3,9 +3,9 @@
 Ordered milestones for the new checker. Each is independently testable and
 leaves the old checker fully working. "Structural core first"; lifetimes are
 introduced **with the first lifetime-carrying type** (records, M4). The MVP is
-M1–M9 (structural core + nominal classes + unions/intersections + library type
-resolution + fixture differential + type-level operators); codegen/LSP and the
-cutover come after.
+M1–M9 (structural core + nominal classes + unions/intersections + type aliases +
+library type resolution + fixture differential + type-level operators); codegen/LSP
+and the cutover come after.
 
 Spike provenance is cited where a milestone promotes proven spike work
 (`internal/simplesub/`).
@@ -41,7 +41,8 @@ are recorded in
 - [M5 — Nominal types (classes)](#m5--nominal-types-classes)
 - [M6 — Unions / intersections](#m6--unions--intersections)
 - [M6.5 — Lifetime bounds](#m65--lifetime-bounds)
-- [M7 — Library type resolution (`std:*` / `web:*` / `node:*`)](#m7--library-type-resolution-std--web--node)
+- [M7 — Type aliases](#m7--type-aliases)
+- [M7.5 — Library type resolution (`std:*` / `web:*` / `node:*`)](#m75--library-type-resolution-std--web--node)
 - [M8 — Second fixture harness + differential triage](#m8--second-fixture-harness--differential-triage)
 - [M9 — Type-level operators](#m9--type-level-operators)
 - [Later (post-MVP)](#later-post-mvp)
@@ -144,21 +145,21 @@ Replace the spike's hand-built IR with a real constraint-generating walk over
   built-ins need a `{value, done}` `IteratorResult<T>`. None of these
   type-checking *rules* land in M2 (they sit in the milestones that own the
   language features below), and the **real** stdlib type definitions are ingested
-  in **M7** (library type resolution), once the representational machinery they
+  in **M7.5** (library type resolution), once the representational machinery they
   need (generics, objects, classes, unions) exists. M2's narrower job is just to
   **seed placeholder bindings** for these names — hand-built opaque `soltype`
   stubs in the new checker's prelude — so a *reference* resolves without an
   unbound-name error and downstream rules can be authored against a stand-in. M2
   does **not** read the real stdlib decls (that path is old-checker- and
   `type_system`-coupled, and `soltype` has no generic-type node until M3/M4);
-  M7 swaps the placeholders for real structures. See the M2 implementation
+  M7.5 swaps the placeholders for real structures. See the M2 implementation
   plan §3.8.
 
 **Accept:** top-level `val`/`fn` declarations from real source infer correct
 rendered types end-to-end; multi-file module via the dep graph resolves;
 references to the stdlib type names listed above resolve to placeholder
 `soltype.Type` stubs without an unbound-name error (real structures and the
-rules that *use* them land in M7 and the feature milestones).
+rules that *use* them land in M7.5 and the feature milestones).
 
 **Gate:** if driving from the real AST/dep-graph requires reaching back into the
 old checker's internals, the parallel-package boundary is wrong — stop and
@@ -270,7 +271,7 @@ scheme instantiation introduces the first interior origin (`FromInstantiation`).
   flattening) is a type-level operator that lands in M9; user code that
   cares about flattening writes `Awaited<T>` explicitly until then.
   Depends on `Promise<T>` being available from the stdlib (M2 placeholder;
-  real resolution lands in M7).
+  real resolution lands in M7.5).
 - **Function exactness flag.** `Function` carries an `exact` flag; a bare
   `fn(...)` is exact, `fn(..., ...)` is inexact. **Direct calls reject extra
   args regardless of exactness** (an inexact function ignores them, but passing
@@ -548,8 +549,8 @@ further.
   callback need the `_ <: unknown` (⊤) rule, which lands in **M6**. M4 excludes
   function annotations and fails the branch loud, keeping the path closed.
 - **Rest-param element checking (#677)** — `...xs: T[]` element checking needs
-  `Array<T>`, so it lands in **M7**. M4 stays arity-only and marks the
-  `FuncParam.Rest` note "M7."
+  `Array<T>`, so it lands in **M7.5**. M4 stays arity-only and marks the
+  `FuncParam.Rest` note "M7.5."
 
 **Open design question — per-property lifetimes on alias-typed params (needs type
 annotations first).** Per-property and tuple-per-slot lifetimes have a syntactic
@@ -736,7 +737,7 @@ M4 substrate without retrofitting.
   No new constraint machinery needed; this is purely "wire the loop syntax to
   the existing dispatch path." Depends on `Iterable<T>` / `Iterator<T>` /
   `AsyncIterable<T>` / `IteratorResult<T>` being available from the stdlib
-  (M2 placeholder; real resolution lands in M7).
+  (M2 placeholder; real resolution lands in M7.5).
   - **Back-edge validation for the borrow-edge dataflow.** A `for` loop is the
     first inferable source that gives the CFG a back edge, so it is where the
     affine flow-sensitive analyses first meet one from real code. The move
@@ -996,8 +997,8 @@ declaring, and checking relations the solver already computes, not new inference
 
 **Why it lands here.** It sits after M6 because M6 changes the join machinery
 directly — the permissive mut-borrow join and the canonical union member order — and
-the bound set is built on that settled representation. It sits with or just before M7
-because M7 library imports are the first site where declared bounds become
+the bound set is built on that settled representation. It sits with or just before M7.5
+because M7.5 library imports are the first site where declared bounds become
 mandatory, which is the first configuration where the unified model beats a
 display-only one. Earlier would be premature: nothing in M4 or M5 is blocked, since
 the D4 union rendering is sound and only less precise.
@@ -1010,161 +1011,74 @@ implied by transitivity is dropped from the rendered set.
 
 ---
 
-## M7 — Library type resolution (`std:*` / `web:*` / `node:*`)
+## M7 — Type aliases
 
-Port the standard-library type ingestion onto `soltype`. Today this is a
-self-contained subsystem living entirely in `internal/checker/`
-(`infer_import.go`, `infer_stdlib_import.go`, `infer_stdlib_scc.go`) plus
-`internal/interop/`, and it produces `type_system.Type`. This milestone
-retargets it to produce `soltype.Type` in the new checker's `Scope`/`Namespace`,
-covering both ingestion channels:
+Add the `soltype` type-alias representation and user-written alias declarations —
+the foundation both library ingestion (M7.5) and type-level operators (M9) build
+on. Today `soltype` has no alias node: [infer_enum.go:12-17](../../internal/solver/infer_enum.go)
+records "soltype has no type aliases yet (M7)", and
+[type_ann.go:21](../../internal/solver/type_ann.go) resolves only the single
+hardcoded `Promise<T>` reference — every other `TypeRefTypeAnn` falls through to
+`reportUnsupported`. This milestone closes that gap, so a written type name
+resolves through the scope to its declaration and a generic alias instantiates
+with its arguments.
 
-- **Ambient global lib** — `Array`, `Promise`, `Map`, `Set`, `console`, `Math`,
-  `JSON`, the iteration protocols, etc., loaded from `lib.*.d.ts` without an
-  import (the `globalThis` surface).
-- **Scheme imports** — `std:*` / `web:*` / `node:*` (the DOM lives under
-  `web:dom`), routed through the `interop` partition table to the stdlib `.esc`
-  modules.
+- **`AliasType` in `soltype`.** A `{Name, Params []*TypeParam, Body Type}` node,
+  reusing the `TypeParam` sort M5 introduced for class parameters. An alias is
+  **structurally its body** for subtyping (transparent), so `Box<A> <: Box<B>`
+  reduces to the structural subtyping of the two expansions — which is why a
+  non-recursive alias carries no separate variance, per M5's "Generic type aliases
+  do not carry variance separately." Lifetimes ride on an alias-typed borrow
+  exactly as on a record: `mut 'a Point` where `Point` is an alias wraps the alias
+  in `Ref{mut, lt, inner}`, no new machinery.
+- **Scope-driven `TypeRef` resolution.** Replace the hardcoded `Promise` check in
+  `resolveTypeAnn` — the "FOOTGUN (removed in M7)" note at
+  [type_ann.go:21](../../internal/solver/type_ann.go) — with real resolution: look
+  a written name up in the **type scope**, and when it binds an alias, instantiate
+  the alias body with the type arguments. Route the alias's `<…>` parameter list
+  through the existing two-pass `resolveTypeParams`
+  ([type_params.go](../../internal/solver/type_params.go), M5) so a bound, a
+  default, and a forward or mutual reference between sibling parameters all resolve
+  the way they do for a class. A real `type Promise<T> = …` alias now wins over the
+  stub instead of being silently shadowed by it.
+- **Instantiation / expansion.** Instantiating a generic alias substitutes the
+  arguments into the body; structural subtyping expands on demand. A non-recursive
+  alias expands eagerly. A **recursive** alias — `type List<T> = {head: T, tail:
+  List<T> | Null}` — is structurally its body, with `constrain`'s existing
+  coinductive seen-cache closing the cycle, the same Amadio–Cardelli discipline the
+  spike's [lazy.go](../../internal/simplesub/lazy.go) uses. **Operator reduction
+  *over* a recursive alias** — the cycle cache, depth budget, and `CheckRegular` —
+  is **M9**, not here; M7 supports a recursive alias only as a subtyping subject,
+  not as an operand the evaluator unfolds.
+- **Mutually-recursive alias groups** resolve via the same "fresh var per binding +
+  constrain + generalize" pattern already proven for recursive functions (M3) and
+  classes (M5) — no placeholder / `typeRefsToUpdate` patching.
+- **Enum name binds to a real alias.** M5 bound an enum name to a namespace plus a
+  union type built directly, leaving [infer_enum.go:12-17](../../internal/solver/infer_enum.go)
+  a TODO to bind it to a proper alias once aliases exist. Do that here: the enum
+  name's *type* binding becomes an alias whose body is the union of the variant
+  types, so `keyof` / indexed access (M9) and structural subtyping reach the enum
+  through the same alias path as any other named type.
 
-This **replaces M2's placeholder "prerequisite tracking"**: the names M2 stubbed
-(`Promise`/`Iterable`/`Generator`/`IteratorResult`) and the broader lib surface
-now resolve to real `soltype` structures rather than opaque placeholders.
+**Accept:** `type Point = {x: number, y: number}` and a reference `Point` in a
+value annotation type-check; a generic `type Box<T> = {value: T}` instantiates so
+`Box<number> <: Box<number | string>` holds by structural expansion; a recursive
+`type List<T> = {head: T, tail: List<T> | Null}` type-checks as a subtyping subject
+with the cycle closed by the seen-cache and no budget needed; a mutually-recursive
+alias group resolves; an enum name resolves as an alias whose body is the variant
+union. Plus the generic-union call `fn f<T>(x: T | number)` behaves per the design
+chosen in the open question below.
 
-- **Interop reuse, gate intact.** The front half of the existing pipeline
-  (`dts_parser` parse → `interop.ConvertModule` → `*ast.Module`) is reusable as
-  AST. The back half (the old checker's `InferModule` → `type_system`) is what
-  this milestone replaces with the new checker's `soltype` walk over that AST.
-  `interop` itself imports `type_system`, so this milestone must consume only its
-  AST-producing surface and keep the `soltype` output path free of `type_system`
-  — confirm the M2 parallel-package gate still holds.
-- **Scope = the operator-free lib subset.** Everything expressible with the
-  M3–M6 representational features (generics, object/record types, nominal
-  classes + `final`, unions): `Array`, `Promise`, `Map`/`Set`, the
-  `Iterable`/`Iterator`/`IteratorResult` protocols, `console`, `Math`, `JSON`,
-  the `string`/`number`/`boolean`/`symbol`/`regexp` method surfaces, and the
-  common `web:dom` types.
-- **Deferred to a phase-2 backfill (after M9).** Lib types whose definitions
-  need conditional/mapped/utility **type operators** (`Awaited<T>`, `Partial`,
-  `Pick`, `Record`, and the operator-heavy parts of `web:dom`) cannot be
-  represented until M9 (type-level operators) lands. Until then they resolve as
-  placeholders/inexact stubs — the same posture M2 takes — and are backfilled
-  once the operator machinery exists. Record which lib names are stubbed so the
-  gap stays visible rather than reading as full coverage.
-- **Exactness.** TS-imported lib types are **inexact by default**
-  ([exact-types/requirements.md](../exact-types/requirements.md) §8); this
-  milestone stamps the inexact flag on ingested lib formers as they land.
-- **Not in scope: operators.** The built-in operator schemes (`+`, `==`, `&&`,
-  `++`, …) are **not** library types and are **not** owned here. They are
-  hand-coded, monomorphic-over-primitive value bindings the expression walk needs
-  from day one, so they live in the M2 prelude (a port of the old checker's
-  `addOperatorBindings`). M7 ports *type* ingestion (`.d.ts`/interop → `soltype`),
-  not the value-level operator env.
-- **Rest-param element checking (#677; deferred from M4).** Typed rest params
-  `...xs: T[]` check each trailing argument against `T`, which needs `Array<T>` to
-  resolve — so the element type only exists once this milestone lands. M4 kept
-  rest params arity-only (trailing args unchecked, a documented hole) and marked
-  `FuncParam.Rest`'s note "M7." Wire the element check here against the real
-  `Array<T>`, dropping the arity-only restriction.
-- **Variadic tuple types `[number, ...Array<number>]`.** A tuple with a fixed
-  prefix and a *typed*, unbounded, homogeneous tail — distinct from M4's `Inexact`
-  tuple flag `[A, B, ...]`, which means "at least these, then *unknown*." The typed
-  tail needs `Array<T>`, so it lands here with the rest of library type resolution.
-  Add a typed rest/variadic element to `TupleType` — a tail carrying its element
-  type, not just a boolean flag — plus the variadic-tuple subtyping rules, e.g.
-  `[number, number] <: [number, ...Array<number>]` and
-  `[number, ...Array<number>] <: Array<number>`. The `infer`-matching form
-  `T extends [any, ...infer R] ? R : never` is M9 (conditional + `infer`), not here.
-- **Index-read usage inference + tuple/array closing (the M4 object-close analogue,
-  deferred from M4).** M4 shipped `.prop` usage inference plus the close-to-exact
-  seal for objects: `inferMember` lowers `recv.prop` to an inexact one-property
-  requirement, and `sealUsageObjects` (M4 B2, `solver/poly.go`) folds those
-  requirements into one exact object at generalization unless the var escapes to an
-  output position or is marked `open`. F1 (#730) extended that to a constant STRING
-  index: `recv["bar"]` routes through `valueProp` to the same inexact object
-  requirement, so it already gets the object seal. **What index reads still lack is
-  the TUPLE path** — `resolveIndexPath` (`solver/infer_expr.go`) sends a constant
-  NUMERIC index `recv[0]` and any dynamic key to `reportUnsupported`, because the
-  read shape there depends on whether the receiver is a tuple or an `Array`, and
-  `Array` only exists at this milestone. Wire it here:
-    - **`inferIndex` tuple arm (NEW), constant numeric key.** `recv[0]` lowers to an
-      inexact *tuple* requirement "has at least a slot at this index" — the
-      positional twin of the `{prop: β, ...}` object requirement `valueProp` already
-      builds. So `recv[0]; recv[1]` lands two inexact tuple upper bounds on the
-      receiver var, mirroring the object path. The result type is the element var β.
-      This is the new-checker port of the reference checker's "single literal index
-      infers a tuple" behavior (`checker/tests/row_types_test.go` `NumericIndex` /
-      `ArrayElementReadAccess`). It slots into `resolveIndexPath`'s value-index
-      branch beside the existing constant-string-key `valueProp` call.
-    - **Tuple merge-by-position.** Where the object fold (`mergeObjectGroup`) unions
-      properties by NAME, the tuple fold unions slots by INDEX: `recv[0]; recv[2]`
-      requires length ≥ 3, with index 1 a hole filled by a fresh var, and a slot
-      required at several indices intersects its element types (`recv[0] <: β` and
-      `recv[0] <: γ` ⇒ slot 0 is `β & γ`), exactly as the object fold intersects a
-      shared property. Add this as a `mergeTupleGroup` beside `mergeObjectGroup`.
-    - **Seal arm.** `sealUsageObjects` grows a `TupleType` arm beside its
-      `ObjectType` arm, reusing the SAME gating verbatim: a var that is not `open`,
-      occurs only negatively, and has no lower bounds gets its inexact tuple upper
-      bounds folded into one exact tuple, so `fn f(t) { t[0]; t[1] }` seals to
-      `[T0, T1]` and a caller passing a longer tuple is rejected. An escaping
-      receiver (`fn f(t) { t[0]; return t }`) is NOT sealed and keeps its open row
-      so the returned tuple retains the caller's extra elements, and `open` leaves
-      the A2 inexact `[T0, ...]` form — both fall straight out of the existing
-      escape/`open` checks, no new gating. The exact rendered form of an escaping
-      tuple row follows whatever the object case renders (today `{x} & T0`); the
-      tuple row's display is settled when this lands, not specified here.
-    - **Dynamic key → `Array`, not tuple.** A non-constant key (`recv[i]`) cannot
-      address a positional slot, so it infers an `Array`/index-signature read
-      against the now-resolvable `Array<T>` rather than a tuple requirement. **The
-      index-signature inference itself is M9** (index types); until then a dynamic
-      key against a non-array receiver is a typed error, consistent with M4's
-      object computed-key handling and the M9 index-signature deferral. So M7 owns
-      constant-index tuple inference and array reads; M9 owns index signatures.
-    - **Index WRITES** (`recv[0] = v`) extend C3's `inferMemberAssign` the same way
-      — M4 kept the `*ast.IndexExpr` write sub-case as `reportUnsupported` with a
-      "needs Array types — M7" note (m4-implementation-plan §C3). The write path
-      reuses the tuple/array read classification above plus C3's `mut` receiver
-      requirement and `widen`.
-- **Field-level move tracking of computed keys (PR 7 follow-up).** The move engine
-  tracks moves and uses at field granularity over a `movePlace` — a root binding plus
-  a path of `placeSeg` segments (`solver/moves.go`). Today the segment representation is
-  already a tagged struct, `placeSeg{kind, name}`, but only the `namedSeg` kind exists,
-  built from a static member (`pair.a`) or a *string-literal* index key (`obj["a"]`) via
-  `constStringKey`. A computed key — `obj[k]`, `obj[Symbol.iterator]` — currently isn't a
-  supported access form, so `exprPlace`/`resolveIndexPath` reach `reportUnsupported` and
-  the move engine never sees it. When this milestone makes computed-key and symbol-keyed
-  member access infer a type, extend the move engine to derive a segment from the index
-  expression's *resolved type*, not its syntax, so a key behind a variable tracks the
-  same place as the literal. Concretely:
-    - **Generalize `constStringKey` to a type-aware `constKey`** for the move engine,
-      keeping the existing syntactic `constStringKey` for the name-resolution call sites
-      that need the literal. Priority: an index whose inferred type is a *singleton*
-      string or number `LitType` → a `namedSeg` carrying that literal, so `obj[k]` with
-      `k: "foo"` keys the same as `obj.foo`; a key whose type is `unique symbol` → a new
-      `symbolSeg` kind keyed on the symbol's stable id. A non-singleton or otherwise
-      non-constant key falls back to the container place, exactly as a dynamic index does
-      now — sound, at worst over-conservative, never a missed use-after-move.
-      - **Number keys — decide `namedSeg` vs a distinct `indexSeg`.** Mapping a
-        singleton-number key to a `namedSeg` carrying the literal conflates `a[0]` with the
-        string key `a["0"]`, since a `namedSeg` is keyed by string text. The
-        "Tuple-index place segments" item in
-        [affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md)
-        instead calls for a distinct index-segment kind keyed by the integer, so `a[0]` and
-        `a["0"]` stay separate. Both are sound; the distinct kind is more precise and is what
-        tuple-element tracking needs. Pick one here and apply it uniformly to `constKey`,
-        `renderPlace`, and the tuple-literal walk.
-    - **`soltype` prerequisite for the symbol case.** `soltype` has only the `symbol`
-      primitive (`SymbolPrim`), no unique-symbol type carrying a stable id; the
-      `UniqueSymbolType{Value int}` with that id lives in `internal/type_system`, the old
-      checker. So a unique-symbol `soltype` kind must land first, plumbed through the
-      visitor/printer/constrain/coalesce, before a `symbolSeg` can key on it. Keying on
-      that type id rather than the binding makes `val it = Symbol.iterator` and the
-      original `Symbol.iterator` resolve to one place.
-    - **Wiring.** Add the `symbolSeg` kind to `placeSeg` and render it as
-      `[Symbol.iterator]` in `renderPlace`; thread the index expression's type into
-      `exprPlace` (today a free, purely syntactic function), `recordMemberUse`, and
-      `consumeOwned`; and give `objKeyName` a `ComputedKey` arm so a symbol-keyed object
-      field is tracked. `placeKey` already encodes each segment's kind and length-prefixed
-      name, so it admits a new kind without change.
+**Depends on:** M3 (generics / let-generalization), M4 (objects/records), M5
+(classes, enums, and the `resolveTypeParams` resolver this reuses), M6 (unions —
+the enum body and the generic-union surface). **Feeds:** M7.5 (library ingestion
+produces aliases and generic types), M9 (type-level operators are written as
+generic aliases and reduce over them).
+
+The two design notes below concern the **generic-union annotation surface** this
+milestone first makes reachable from source: a user-written `T | number` in an
+annotation cannot resolve until a written type parameter resolves, which lands
+here.
 
 **Open design question — free type-var members in a union-super exists trial.**
 M6 PR2's union-super exists rule trials each member of `sub <: (A | B | …)`
@@ -1268,6 +1182,178 @@ user. Land them once that happens:
   Roughly doubles the work for ambiguous unions, which matches the cost
   of the original failure mode. Worth landing once user reports of
   confusion start coming in.
+
+---
+
+## M7.5 — Library type resolution (`std:*` / `web:*` / `node:*`)
+
+Port the standard-library type ingestion onto `soltype`, on top of the M7 alias
+representation. Today this is a self-contained subsystem living entirely in
+`internal/checker/` (`infer_import.go`, `infer_stdlib_import.go`,
+`infer_stdlib_scc.go`) plus `internal/interop/`, and it produces
+`type_system.Type`. This milestone retargets it to produce `soltype.Type` in the
+new checker's `Scope`/`Namespace`.
+
+- **No ambient global lib — imports only.** There is **no `globalThis` surface and
+  no `lib.*.d.ts` auto-loading.** Every standard-library type is reached through a
+  scheme import: to use `Array`, `Promise`, `Map`, `Set`, `console`, `Math`,
+  `JSON`, the iteration protocols, and so on in a file, import it from a `std:*` /
+  `web:*` / `node:*` pseudo-module — the DOM lives under `web:dom` — routed through
+  the `interop` partition table to the stdlib `.esc` modules. This is the single
+  ingestion channel; the old checker's dual ambient-plus-import model collapses to
+  imports alone. A file that names `Array` without importing it is an unbound-name
+  error, not an ambient reference.
+- **Well-known protocol types are resolved by the checker, not by lexical import.**
+  The desugaring rules reference stdlib types the user need not have imported:
+  `await e` needs `Promise`, `for (x in xs)` needs `Iterable`, `yield e` needs
+  `Generator`. The rule holds a handle to each well-known type obtained from its
+  stdlib module directly, independent of lexical scope, so `await` / `for-in` /
+  `yield` type-check in a file that never writes the name. Importing the name is
+  required only to **write it** in an annotation, not for the rule to fire. This is
+  the one seam where a stdlib type is reachable without an import, and it is
+  confined to the fixed, checker-known protocol set — not a general ambient surface.
+
+This **replaces M2's placeholder "prerequisite tracking"**: the names M2 stubbed
+(`Promise`/`Iterable`/`Generator`/`IteratorResult`) resolve to real `soltype`
+structures — via import for a written reference, via the well-known-type handle for
+a desugaring rule — rather than opaque placeholders.
+
+- **Interop reuse, gate intact.** The front half of the existing pipeline
+  (`dts_parser` parse → `interop.ConvertModule` → `*ast.Module`) is reusable as
+  AST. The back half (the old checker's `InferModule` → `type_system`) is what
+  this milestone replaces with the new checker's `soltype` walk over that AST.
+  `interop` itself imports `type_system`, so this milestone must consume only its
+  AST-producing surface and keep the `soltype` output path free of `type_system`
+  — confirm the M2 parallel-package gate still holds.
+- **Scope = the operator-free lib subset.** Everything expressible with the
+  M3–M6 representational features (generics, object/record types, nominal
+  classes + `final`, unions): `Array`, `Promise`, `Map`/`Set`, the
+  `Iterable`/`Iterator`/`IteratorResult` protocols, `console`, `Math`, `JSON`,
+  the `string`/`number`/`boolean`/`symbol`/`regexp` method surfaces, and the
+  common `web:dom` types.
+- **Deferred to a phase-2 backfill (after M9).** Lib types whose definitions
+  need conditional/mapped/utility **type operators** (`Awaited<T>`, `Partial`,
+  `Pick`, `Record`, and the operator-heavy parts of `web:dom`) cannot be
+  represented until M9 (type-level operators) lands. Until then they resolve as
+  placeholders/inexact stubs — the same posture M2 takes — and are backfilled
+  once the operator machinery exists. Record which lib names are stubbed so the
+  gap stays visible rather than reading as full coverage.
+- **Exactness.** TS-imported lib types are **inexact by default**
+  ([exact-types/requirements.md](../exact-types/requirements.md) §8); this
+  milestone stamps the inexact flag on ingested lib formers as they land.
+- **Not in scope: operators.** The built-in operator schemes (`+`, `==`, `&&`,
+  `++`, …) are **not** library types and are **not** owned here. They are
+  hand-coded, monomorphic-over-primitive value bindings the expression walk needs
+  from day one, so they live in the M2 prelude (a port of the old checker's
+  `addOperatorBindings`). M7.5 ports *type* ingestion (`.d.ts`/interop → `soltype`),
+  not the value-level operator env.
+- **Rest-param element checking (#677; deferred from M4).** Typed rest params
+  `...xs: T[]` check each trailing argument against `T`, which needs `Array<T>` to
+  resolve — so the element type only exists once this milestone lands. M4 kept
+  rest params arity-only (trailing args unchecked, a documented hole) and marked
+  `FuncParam.Rest`'s note "M7.5." Wire the element check here against the real
+  `Array<T>`, dropping the arity-only restriction.
+- **Variadic tuple types `[number, ...Array<number>]`.** A tuple with a fixed
+  prefix and a *typed*, unbounded, homogeneous tail — distinct from M4's `Inexact`
+  tuple flag `[A, B, ...]`, which means "at least these, then *unknown*." The typed
+  tail needs `Array<T>`, so it lands here with the rest of library type resolution.
+  Add a typed rest/variadic element to `TupleType` — a tail carrying its element
+  type, not just a boolean flag — plus the variadic-tuple subtyping rules, e.g.
+  `[number, number] <: [number, ...Array<number>]` and
+  `[number, ...Array<number>] <: Array<number>`. The `infer`-matching form
+  `T extends [any, ...infer R] ? R : never` is M9 (conditional + `infer`), not here.
+- **Index-read usage inference + tuple/array closing (the M4 object-close analogue,
+  deferred from M4).** M4 shipped `.prop` usage inference plus the close-to-exact
+  seal for objects: `inferMember` lowers `recv.prop` to an inexact one-property
+  requirement, and `sealUsageObjects` (M4 B2, `solver/poly.go`) folds those
+  requirements into one exact object at generalization unless the var escapes to an
+  output position or is marked `open`. F1 (#730) extended that to a constant STRING
+  index: `recv["bar"]` routes through `valueProp` to the same inexact object
+  requirement, so it already gets the object seal. **What index reads still lack is
+  the TUPLE path** — `resolveIndexPath` (`solver/infer_expr.go`) sends a constant
+  NUMERIC index `recv[0]` and any dynamic key to `reportUnsupported`, because the
+  read shape there depends on whether the receiver is a tuple or an `Array`, and
+  `Array` only exists at this milestone. Wire it here:
+    - **`inferIndex` tuple arm (NEW), constant numeric key.** `recv[0]` lowers to an
+      inexact *tuple* requirement "has at least a slot at this index" — the
+      positional twin of the `{prop: β, ...}` object requirement `valueProp` already
+      builds. So `recv[0]; recv[1]` lands two inexact tuple upper bounds on the
+      receiver var, mirroring the object path. The result type is the element var β.
+      This is the new-checker port of the reference checker's "single literal index
+      infers a tuple" behavior (`checker/tests/row_types_test.go` `NumericIndex` /
+      `ArrayElementReadAccess`). It slots into `resolveIndexPath`'s value-index
+      branch beside the existing constant-string-key `valueProp` call.
+    - **Tuple merge-by-position.** Where the object fold (`mergeObjectGroup`) unions
+      properties by NAME, the tuple fold unions slots by INDEX: `recv[0]; recv[2]`
+      requires length ≥ 3, with index 1 a hole filled by a fresh var, and a slot
+      required at several indices intersects its element types (`recv[0] <: β` and
+      `recv[0] <: γ` ⇒ slot 0 is `β & γ`), exactly as the object fold intersects a
+      shared property. Add this as a `mergeTupleGroup` beside `mergeObjectGroup`.
+    - **Seal arm.** `sealUsageObjects` grows a `TupleType` arm beside its
+      `ObjectType` arm, reusing the SAME gating verbatim: a var that is not `open`,
+      occurs only negatively, and has no lower bounds gets its inexact tuple upper
+      bounds folded into one exact tuple, so `fn f(t) { t[0]; t[1] }` seals to
+      `[T0, T1]` and a caller passing a longer tuple is rejected. An escaping
+      receiver (`fn f(t) { t[0]; return t }`) is NOT sealed and keeps its open row
+      so the returned tuple retains the caller's extra elements, and `open` leaves
+      the A2 inexact `[T0, ...]` form — both fall straight out of the existing
+      escape/`open` checks, no new gating. The exact rendered form of an escaping
+      tuple row follows whatever the object case renders (today `{x} & T0`); the
+      tuple row's display is settled when this lands, not specified here.
+    - **Dynamic key → `Array`, not tuple.** A non-constant key (`recv[i]`) cannot
+      address a positional slot, so it infers an `Array`/index-signature read
+      against the now-resolvable `Array<T>` rather than a tuple requirement. **The
+      index-signature inference itself is M9** (index types); until then a dynamic
+      key against a non-array receiver is a typed error, consistent with M4's
+      object computed-key handling and the M9 index-signature deferral. So M7.5 owns
+      constant-index tuple inference and array reads; M9 owns index signatures.
+    - **Index WRITES** (`recv[0] = v`) extend C3's `inferMemberAssign` the same way
+      — M4 kept the `*ast.IndexExpr` write sub-case as `reportUnsupported` with a
+      "needs Array types — M7.5" note (m4-implementation-plan §C3). The write path
+      reuses the tuple/array read classification above plus C3's `mut` receiver
+      requirement and `widen`.
+- **Field-level move tracking of computed keys (PR 7 follow-up).** The move engine
+  tracks moves and uses at field granularity over a `movePlace` — a root binding plus
+  a path of `placeSeg` segments (`solver/moves.go`). Today the segment representation is
+  already a tagged struct, `placeSeg{kind, name}`, but only the `namedSeg` kind exists,
+  built from a static member (`pair.a`) or a *string-literal* index key (`obj["a"]`) via
+  `constStringKey`. A computed key — `obj[k]`, `obj[Symbol.iterator]` — currently isn't a
+  supported access form, so `exprPlace`/`resolveIndexPath` reach `reportUnsupported` and
+  the move engine never sees it. When this milestone makes computed-key and symbol-keyed
+  member access infer a type, extend the move engine to derive a segment from the index
+  expression's *resolved type*, not its syntax, so a key behind a variable tracks the
+  same place as the literal. Concretely:
+    - **Generalize `constStringKey` to a type-aware `constKey`** for the move engine,
+      keeping the existing syntactic `constStringKey` for the name-resolution call sites
+      that need the literal. Priority: an index whose inferred type is a *singleton*
+      string or number `LitType` → a `namedSeg` carrying that literal, so `obj[k]` with
+      `k: "foo"` keys the same as `obj.foo`; a key whose type is `unique symbol` → a new
+      `symbolSeg` kind keyed on the symbol's stable id. A non-singleton or otherwise
+      non-constant key falls back to the container place, exactly as a dynamic index does
+      now — sound, at worst over-conservative, never a missed use-after-move.
+      - **Number keys — decide `namedSeg` vs a distinct `indexSeg`.** Mapping a
+        singleton-number key to a `namedSeg` carrying the literal conflates `a[0]` with the
+        string key `a["0"]`, since a `namedSeg` is keyed by string text. The
+        "Tuple-index place segments" item in
+        [affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md)
+        instead calls for a distinct index-segment kind keyed by the integer, so `a[0]` and
+        `a["0"]` stay separate. Both are sound; the distinct kind is more precise and is what
+        tuple-element tracking needs. Pick one here and apply it uniformly to `constKey`,
+        `renderPlace`, and the tuple-literal walk.
+    - **`soltype` prerequisite for the symbol case.** `soltype` has only the `symbol`
+      primitive (`SymbolPrim`), no unique-symbol type carrying a stable id; the
+      `UniqueSymbolType{Value int}` with that id lives in `internal/type_system`, the old
+      checker. So a unique-symbol `soltype` kind must land first, plumbed through the
+      visitor/printer/constrain/coalesce, before a `symbolSeg` can key on it. Keying on
+      that type id rather than the binding makes `val it = Symbol.iterator` and the
+      original `Symbol.iterator` resolve to one place.
+    - **Wiring.** Add the `symbolSeg` kind to `placeSeg` and render it as
+      `[Symbol.iterator]` in `renderPlace`; thread the index expression's type into
+      `exprPlace` (today a free, purely syntactic function), `recordMemberUse`, and
+      `consumeOwned`; and give `objKeyName` a `ComputedKey` arm so a symbol-keyed object
+      field is tracked. `placeKey` already encodes each segment's kind and length-prefixed
+      name, so it admits a new kind without change.
+
 - **Unblocks (not owned here): affine borrow tracking through container methods.** The affine
   connected-component move records a borrow alias only at a binding initializer, a `var`
   reassignment, and a destructuring leaf, so a borrow stored into a container by a method
@@ -1283,12 +1369,15 @@ user. Land them once that happens:
   [affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md).
   Recorded here so the dependency is visible from the milestone that unblocks it.
 
-**Accept:** real source referencing core lib types (`Array<T>`, `Promise<T>`,
-`Map<K, V>`, `Iterable<T>`/`Iterator<T>`/`IteratorResult<T>`, `console`) resolves
-to real `soltype` structures and type-checks (not placeholders); `import { … }
-from "std:array"` / `"web:dom"` resolves member types; the M3 `await` and M5
-`for (x in xs)` rules now exercise against the **real** `Promise`/`Iterable`
-(replacing the M2 placeholders); operator-dependent utility types remain stubbed
+**Accept:** real source that **imports** core lib types (`import { Array } from
+"std:array"`, `Promise`, `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/
+`IteratorResult<T>`, `console`) resolves them to real `soltype` structures and
+type-checks, not placeholders, and `import { … } from "std:array"` / `"web:dom"`
+resolves member types. A file that names `Array` **without importing it** is an
+unbound-name error, proving there is no ambient surface. The M3 `await` and M5
+`for (x in xs)` rules exercise against the **real** `Promise`/`Iterable` (replacing
+the M2 placeholders) even in a file that never imports those names, through the
+checker's well-known-type handle. Operator-dependent utility types remain stubbed
 pending M9, and which names are stubbed is reported, not silently dropped.
 `fn f(t) { t[0]; t[1] }` infers and SEALS the param to exact `[T0, T1]`, rejecting a
 longer-tuple argument, while `fn f(open t) { … }` stays inexact `[T0, ...]` and
@@ -1296,11 +1385,12 @@ longer-tuple argument, while `fn f(open t) { … }` stays inexact `[T0, ...]` an
 analogue of M4's object close; a dynamic-key read resolves against the real
 `Array<T>`.
 
-**Depends on:** M3 (generics), M4 (objects/records — `sealUsageObjects`, the close
-machinery this extends), M5 (classes / methods / `final`), M6 (unions). **Feeds:**
-M8 — the real-package differential cannot run
-the existing `fixtures/` tree (which uses `console`/`Array`/`Promise`/…) without
-real lib types.
+**Depends on:** M7 (the alias representation and scope-driven `TypeRef` resolution
+that ingested generic types produce), M3 (generics), M4 (objects/records —
+`sealUsageObjects`, the close machinery this extends), M5 (classes / methods /
+`final`), M6 (unions). **Feeds:** M8 — the real-package differential cannot run the
+existing `fixtures/` tree (which uses `console`/`Array`/`Promise`/…) without real
+lib types.
 
 ---
 
@@ -1416,7 +1506,7 @@ the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.)
   is an abstract type parameter, reduced post-coalescing. M4 already handles the
   concrete case for tuple *literals* — `[...pair, 3]` where `pair` is a known
   tuple — but not the abstract-operand type. This is distinct from a typed variadic
-  tail like `[number, ...Array<number>]`, which is M7: that needs `Array` and is an
+  tail like `[number, ...Array<number>]`, which is M7.5: that needs `Array` and is an
   unbounded homogeneous tail, not a splice.
 - **Template literal types** — string-literal types built from interpolated
   type unions (e.g. `` `on${Capitalize<K>}` ``), including the intrinsic
@@ -1445,7 +1535,7 @@ the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.)
   The constraint engine extends just like `throws` did: parallel arms in
   `constrain`/`extrude`/`LevelOf`/printer, no new lattice machinery.
   Depends on `Generator<Y, R, TNext>` / `AsyncGenerator<…>` being
-  available from the stdlib (M2 placeholder; real resolution in M7 — M9 follows,
+  available from the stdlib (M2 placeholder; real resolution in M7.5 — M9 follows,
   so generators can rely on the real types).
 - **`throws T` clause on functions.** `FuncType` gains a `Throws Type` field
   (parallel to `Ret`), covariant in subtyping, defaulting to `never` (⊥) when
@@ -1641,7 +1731,7 @@ reduce through the M9 operator machinery.
 - M6.5 (lifetime bounds) is numbered `.5` for the same reason M2.5 is — to slot
   between M6 and M7 without renumbering. It rides *after* M6 because M6 settles the
   join machinery its canonical bound set is built on (the permissive mut-borrow join
-  and canonical union order), and *before/with* M7 because library imports are the
+  and canonical union order), and *before/with* M7.5 because library imports are the
   first no-body site where declared bounds become mandatory. It is deferred past M4,
   even though M4 D4 already renders the union approximation, because that rendering is
   sound and nothing in M4–M5 needs the precise bounded form.

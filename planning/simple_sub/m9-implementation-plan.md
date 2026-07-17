@@ -29,26 +29,30 @@ over already-formed types, with no inference variables in their results. The
 milestone's job is to represent them, reduce them, and thread exactness through
 the reduction.
 
-## Prerequisite: M7 must land first
+## Prerequisites: M7 and M7.5 must land first
 
-M9 builds directly on **M7 — Library type resolution**. Three M7 deliverables are
-hard prerequisites:
+M9 builds directly on **M7 — Type aliases** and **M7.5 — Library type
+resolution**. Three deliverables across those two milestones are hard
+prerequisites:
 
-1. **A generic type-alias representation in `soltype`.** Today `soltype` has no
-   alias node at all — [infer_enum.go:13](../../internal/solver/infer_enum.go)
+1. **A generic type-alias representation in `soltype` (M7).** Today `soltype` has
+   no alias node at all — [infer_enum.go:12-17](../../internal/solver/infer_enum.go)
    records "soltype has no type aliases yet (M7)", and
    [type_ann.go:21](../../internal/solver/type_ann.go) resolves only the single
    hardcoded `Promise<T>` reference, reporting every other `TypeRefTypeAnn` as
    unsupported. M9's operators are almost always written *as* generic aliases
    (`type Pick<T, K> = ...`), so the alias node, its type parameters, and
-   scope-driven `TypeRef` resolution must exist first.
-2. **Alias instantiation and expansion.** The evaluator reduces `Pick<Person,
+   scope-driven `TypeRef` resolution must exist first. M7 adds them.
+2. **Alias instantiation and expansion (M7).** The evaluator reduces `Pick<Person,
    "name">` by instantiating `Pick`'s body with the arguments and reducing the
    result. That instantiate/expand step is M7 infrastructure.
-3. **Real stdlib types.** `Awaited<T>` needs the real `Promise<T>`; generators
-   need `Generator<Y, R, TNext>` / `AsyncGenerator<…>`; the utility-type suite is
-   checked against the real `.d.ts` shapes. M2 seeded opaque placeholders; M7
-   swaps in the real structures, and M9 follows so it can rely on them.
+3. **Real stdlib types (M7.5).** `Awaited<T>` needs the real `Promise<T>`;
+   generators need `Generator<Y, R, TNext>` / `AsyncGenerator<…>`; the
+   utility-type suite is checked against the real `.d.ts` shapes. Since M7.5 is
+   import-only — there is no ambient global lib — the utility definitions and
+   tests import these names from `std:*` / `web:*` / `node:*`. M2 seeded opaque
+   placeholders; M7.5 swaps in the real structures, and M9 follows so it can rely
+   on them.
 
 The AST nodes M9 consumes already exist:
 [`KeyOfTypeAnn`](../../internal/ast/type_ann.go),
@@ -277,7 +281,7 @@ is a spread or a positional type.
   stays residual when the operand is an abstract type parameter, reduced
   post-coalescing.
 - Distinct from a typed variadic tail like `[number, ...Array<number>]` — that
-  needs `Array` and is an M7 concern. M4 already handles the concrete *literal*
+  needs `Array` and is an M7.5 concern. M4 already handles the concrete *literal*
   case (`[...pair, 3]` where `pair` is a known tuple); this PR adds only the
   abstract-operand **type**.
 
@@ -391,7 +395,7 @@ subtyping, defaulting to `never`.
   `constrain` / `extrude` / `LevelOf` / the printer, no new lattice machinery.
 - `yield` outside a `gen` context is rejected by the AST walk, not the type rule.
 
-**Depends on** PR10 (the parallel-arm template), M7 (the real `Generator<…>` /
+**Depends on** PR10 (the parallel-arm template), M7.5 (the real `Generator<…>` /
 `AsyncGenerator<…>` stdlib types). The async-gen + `Awaited<ReturnType<F>>` accept
 case additionally rides on PR3 and PR13.
 
@@ -406,9 +410,9 @@ operator.
 Promise<infer U> ? Awaited<U> : T`, reduced through the PR3 machinery with the PR1
 cycle-cache/budget termination protecting the recursion.
 
-**Depends on** PR3 (conditional + `infer`), PR1 (recursion termination), M7 (real
-`Promise<T>`). Separated from PR13 because it is a real feature the async story in
-PR11 depends on, not just a test.
+**Depends on** PR3 (conditional + `infer`), PR1 (recursion termination), M7.5
+(real `Promise<T>`). Separated from PR13 because it is a real feature the async
+story in PR11 depends on, not just a test.
 
 ### PR13 — TS utility-type suite (end-to-end verification)
 
@@ -444,32 +448,35 @@ they carry no operator-track review burden.
 ## Dependency graph
 
 ```
-M7 (aliases + generics + real stdlib, prerequisite)
- │
- ├─► PR1 (evaluator backbone + residual nodes + keyof)
- │    ├─► PR2 (indexed access T[K] + union-key distribution)
- │    │    └─► PR4 (mapped types)              ── also needs PR1, PR3
- │    ├─► PR3 (conditional types + infer + distribution)
- │    │    ├─► PR4 (mapped types)
- │    │    ├─► PR9 (CheckRegular)              ── also needs PR1
- │    │    └─► PR12 (Awaited<T>)               ── also needs PR1, M7
- │    ├─► PR5 (object spread types)
- │    ├─► PR6 (tuple spread types)
- │    ├─► PR7 (template literal types + intrinsics)
- │    └─► PR8 (exactness propagation + Exact/Inexact)  ── needs PR1–PR7
- │
- ├─► PR10 (throws clause)                      ── needs M3 only; parallel to A–C
- │    └─► PR11 (generators)                    ── also needs M7 (+PR3/PR12 for the async-gen accept case)
- │
- └─► PR13 (TS utility-type suite)              ── needs PR2, PR3, PR4, PR7, PR12
+M7   (type aliases: alias node + generics + scope-driven TypeRef)  ──► PR1
+M7.5 (library type resolution: real stdlib types, import-only)     ──► PR11, PR12
+
+PR1 (evaluator backbone + residual nodes + keyof)
+ ├─► PR2 (indexed access T[K] + union-key distribution)
+ │    └─► PR4 (mapped types)              ── also needs PR1, PR3
+ ├─► PR3 (conditional types + infer + distribution)
+ │    ├─► PR4 (mapped types)
+ │    ├─► PR9 (CheckRegular)              ── also needs PR1
+ │    └─► PR12 (Awaited<T>)               ── also needs PR1, M7.5
+ ├─► PR5 (object spread types)
+ ├─► PR6 (tuple spread types)
+ ├─► PR7 (template literal types + intrinsics)
+ └─► PR8 (exactness propagation + Exact/Inexact)  ── needs PR1–PR7
+
+PR10 (throws clause)                      ── needs M3 only; parallel to everything
+ └─► PR11 (generators)                    ── also needs M7.5 (+PR3/PR12 for the async-gen accept case)
+
+PR13 (TS utility-type suite)              ── needs PR2, PR3, PR4, PR7, PR12
 ```
 
 The same graph in mermaid, with the operator-track critical path
-(PR1 → PR3 → PR4 → PR8) highlighted and the landed `M7` prerequisite dashed:
+(PR1 → PR3 → PR4 → PR8) highlighted and the landed `M7` / `M7.5` prerequisites
+dashed:
 
 ```mermaid
 graph TD
-    M7["M7 (aliases + generics + real stdlib)"]
+    M7["M7 (type aliases)"]
+    M75["M7.5 (library type resolution: real stdlib, import-only)"]
     PR1["PR1 (evaluator backbone + residual nodes + keyof)"]
     PR2["PR2 (indexed access T[K] + distribution)"]
     PR3["PR3 (conditional types + infer + distribution)"]
@@ -485,8 +492,8 @@ graph TD
     PR13["PR13 (TS utility-type suite)"]
 
     M7 -.-> PR1
-    M7 -.-> PR11
-    M7 -.-> PR12
+    M75 -.-> PR11
+    M75 -.-> PR12
 
     PR1 --> PR2
     PR1 --> PR3
