@@ -189,8 +189,12 @@ coverage semantics PR7 carries over.
 ### A guard
 
 The guard lowers to a test inside the bound branch, after the leaves bind, so it
-can read `x` and `y`. On failure it falls to the split's tail, never to a sibling
-arm. This is why a guarded arm covers nothing for exhaustiveness.
+can read `x` and `y`. On failure, control continues into the remaining arms in
+source order, preserving first-match semantics: a later arm of the same shape,
+such as an unguarded `{x, y} => …` after the guarded one, stays reachable.
+Normalization threads that continuation as the branch's fallthrough, which for
+this two-arm example happens to be the split's tail. This is why a guarded arm
+covers nothing for exhaustiveness — its continuation can always reach a later arm.
 
 ```
 match p {
@@ -332,7 +336,12 @@ into nothing.
 
 - Define the desugared-core ADT: a `Split` over a scrutinee with an ordered list
   of branches, a `Bind` node for an intermediate binding, a guard-test node, and a
-  leaf node carrying the arm's body expression and its source span.
+  leaf. A leaf has two shapes, since `val … else` is not fully expression-shaped. A
+  `match` or `if val` arm carries a body expression and its span. A `val … else`
+  success path carries no body: it hands its bindings to the enclosing
+  continuation, the rest of the block, so the leaf models a binding escape. Its
+  `else` path is a divergence or a fallback value, kept distinct from a covering
+  arm so PR6 and PR7 do not treat it as one.
 - Enumerate the branch-test kinds as a sum: a structural object or tuple shape, a
   literal, a nominal class tag for an instance pattern, an extractor tag, and an
   inexact-prefix marker a rest pattern sets. A projection path segment must be able
@@ -417,10 +426,14 @@ behavior-affecting PR.
 - Add the walk over the normalized form: each split projects its scrutinee's type,
   each leaf infers its body, and non-diverging bodies constrain into one fresh
   branch-join var, as `inferMatch` already does.
-- Bind leaves through the existing `bindPattern` / `bindPatternWith`. The IR
-  supplies the projected sub-scrutinee type for each leaf; `bindPattern` keeps
-  emitting the member-lookup constraints and the borrow-mode projection it does
-  today.
+- Add a solver-side project-and-bind operation that resolves an IR projection
+  *path*, not a precomputed `soltype.Type`, into a bound leaf. It derives the
+  sub-scrutinee type through the existing machinery — `CarrierOf` to peel a borrow,
+  the member-lookup constraints, union narrowing, and borrow-mode propagation —
+  then binds through `bindPattern` / `bindPatternWith`. The `ucs` package supplies
+  only the ast-level path; every type is computed here in `internal/solver`. Cover
+  this contract with tests: a field, a tuple index, a union-narrowed arm, and a
+  borrowed scrutinee that must bind its leaves as borrows.
 - Type each guard-test node as a boolean over its branch's bindings, matching the
   current inline guard constraint.
 - Preserve the `MatchBranch` provenance edge from
@@ -436,18 +449,22 @@ behavior-affecting PR.
 in `infer_expr_test.go`. Run `go test ./...`; `UPDATE_SNAPS=true` only for intended
 IR-print snapshots.
 
-### PR6 — Type-check `if val`, `val … else`, and refutable bindings off the IR
+### PR6 — Type-check `if val` and `val … else` off the IR
 
-Migrate the three remaining ad-hoc paths onto the PR5 walk, retiring their
-hand-written bodies.
+Migrate `inferIfVal` and `inferValElse` onto the PR5 walk, retiring their
+hand-written arm-walking bodies.
 
-- Replace the bodies of `inferIfVal`, `inferValElse`, and `bindRefutable` with a
-  desugar → normalize → walk over the same normalized form, reusing the PR5 walk.
+- Route `inferIfVal` and `inferValElse` through desugar → normalize → walk, reusing
+  the PR5 walk. Do not rewrite `bindRefutable` as an IR walk. It stays a
+  solver-side binding adapter the walk calls for a refutable leaf, preserving the
+  `IdentPat.TypeAnn` narrowing path through `bindNarrowedIdent`, the leaf `VarID`,
+  and its caller-owned scope, none of which the IR models.
 - Preserve the `IfValBranch` and `ValElseBranch` provenance edges so their
   branch-join vars still render with their source.
 - Keep the scope discipline: an `if val` and a `val … else` run their `else` in a
   scope that does not see the pattern's bindings, matching the current child-scope
-  handling in `inferIfVal` / `inferValElse`.
+  handling in `inferIfVal` / `inferValElse`. The `val … else` success bindings still
+  escape into the enclosing block, as the core's binding-escape leaf models.
 
 **Tests.** `infer_if_val_test.go` and the `val … else` cases stay green with
 unchanged inferred types and messages.
@@ -459,7 +476,10 @@ on any current input.
 
 - Reimplement `checkMatchExhaustive` to read the normalized form's top-level
   split and its default tail instead of the `matchShape` scrutinee snapshot taken
-  in `inferMatch`.
+  in `inferMatch`. It reads the IR's split structure but keeps its type-dependent
+  predicates in `internal/solver`: deciding exact-union membership, inexactness, and
+  guarded-arm coverage needs `soltype`, so this is a typed coverage adapter, not
+  ast-only logic. It is the replacement PR8 deletes the old helpers in favor of.
 - Keep the interim semantics identical: an inexact scrutinee needs a catch-all, an
   exact union is covered when every member has an unguarded covering branch, and a
   guarded branch covers nothing. This is the seam Phase 2 (#883) later replaces
@@ -473,11 +493,14 @@ in `inferMatch` is removed once coverage reads the IR.
 
 Cleanup only, no behavior change.
 
-- Delete the now-dead helpers `unionMatchExhaustive`, `armCoversShape`,
-  `structuralInexact`, `narrowMatchArm`, and the pattern-shape branches of
-  `isCatchAll` that the IR walk and the PR7 coverage check subsume.
-- Fold any still-needed predicate into the `ucs` package if the coverage walk
-  reuses it, keeping the solver side free of pattern-shape casing.
+- Delete only the helpers PR7's coverage walk has made truly dead:
+  `unionMatchExhaustive`, `armCoversShape`, `structuralInexact`, `narrowMatchArm`,
+  and the pattern-shape branches of `isCatchAll`.
+- Do not move these into the `ucs` package. They inspect `soltype` — exact-union
+  membership, inexact-scrutinee shape, guarded-arm coverage — and `ucs` is ast-only,
+  so it cannot host type-dependent logic. Their replacement is the typed coverage
+  adapter PR7 already puts in `internal/solver`. If any predicate is still reachable
+  after PR7, it stays solver-side; nothing type-dependent folds into `ucs`.
 
 **Tests.** `go test ./...` unchanged; this PR removes code with no reachable
 callers after PR6 and PR7.
