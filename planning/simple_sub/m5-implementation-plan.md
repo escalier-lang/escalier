@@ -757,7 +757,7 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 
 ## PR breakdown
 
-18 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
+19 PRs across 6 phases (A–F) plus one enum PR, each independently mergeable and
 green, each with table-driven tests asserting rendered types (Escalier
 type-annotation syntax) and **full** error messages. Every PR names the files
 touched, the structures added/modified, the algorithm changes, and its
@@ -1441,6 +1441,77 @@ corruption of `freshenAbove`.
     empty-error, `x: unknown` result; a refutable `{x}` arm over the exact
     `{x: number} | {y: string}` still binds the precise `x: number`, preserving D3.
 
+- **D5 — Comprehensive (nested) match exhaustiveness via a usefulness algorithm**
+  (~500).
+  - **Files:** `solver/exhaustiveness.go` (new — the usefulness engine),
+    `solver/infer_expr.go` (retire the top-level checks `checkMatchExhaustive`
+    dispatches to — `unionMatchExhaustive`, `structuralMemberCovered`,
+    `nominalMemberCovered`, `armCoversShape`, `litMemberCovered` — and call the engine
+    instead), tests.
+  - **What D2/D3 shipped, and the gap.** D2/D3's exhaustiveness reads only the
+    OUTERMOST shape: a union member is covered when some irrefutable arm names its
+    top-level field-set or tuple arity (`structuralMemberCovered` +
+    `patternMatchesMemberShape`). It cannot tell union members apart by nested
+    structure, and it cannot verify that a nested finite domain — a boolean field, an
+    enum variant inside a record or tuple — is fully covered. `match p { {pt: {x:
+    true}} => .., {pt: {x: false}} => .. }` over `{pt: {x: boolean}}` is exhaustive,
+    but D3 cannot prove it. D5 makes the verdict comprehensive: a match is exhaustive
+    iff the arms' matched value-space leaves the scrutinee's value-space empty,
+    decided structurally at every depth.
+  - **Why a usefulness algorithm, not the `internal/checker` port.** The old checker
+    ENUMERATES the value space by cartesian product — `expandObjectCoverageSet`,
+    `cartesianProductObjects`, `cartesianProductTuples`
+    ([internal/checker/exhaustiveness.go](../../internal/checker/exhaustiveness.go)) —
+    which blows up combinatorially, since a record of k booleans is 2^k cases and
+    nesting multiplies, and it special-cases infinite domains. D5 ports the SEMANTICS,
+    not the mechanism: it implements Maranget's usefulness algorithm, the standard
+    Rust/OCaml approach. A lazy matrix `specialize`/`default` recursion explores only
+    the constructors the patterns mention, folds an open domain into one
+    "missing constructor" case, and yields a witness — a concrete uncovered pattern —
+    for the diagnostic. Same verdicts the old checker computes, without the
+    enumeration blowup and with better witnesses.
+  - **Why now, and not gated on MLstruct.** Exhaustiveness is a GROUND decision
+    procedure. It runs after inference on the coalesced scrutinee and answers whether
+    `scrutinee − ⋁ patterns` is empty, with a witness if not. It needs no negation
+    type to be inferable or first-class. MLstruct's Boolean algebra (`¬T`) is what
+    NARROWING wants — an arm binds `scrutinee ∧ pattern` and the next sees
+    `scrutinee ∧ ¬earlier`, inferred types that flow — and narrowing owns no M-series
+    milestone ([03-references.md](03-references.md) §"Beyond a plain lattice"). Gating
+    exhaustiveness on that unscheduled work would defer a safety feature indefinitely
+    for a benefit that accrues mostly to narrowing. So the two stay decoupled: D5 lands
+    the ground exhaustiveness engine now, and nested-narrowing PRECISION stays
+    MLstruct-future, with D3's top-level `narrowMatchArm` as the interim.
+  - **Forward-compatible with MLstruct, not throwaway.** MLstruct changes how the
+    residual is REPRESENTED — a real `∧`/`¬` type rather than a matrix witness — not
+    the need to decide emptiness and render a witness on ground types. A well-factored
+    usefulness engine survives as that decision procedure; at most its emptiness leaf
+    is reframed to consult the algebra. The piece MLstruct eventually subsumes is D3's
+    `narrowMatchArm`, not D5's engine.
+  - **Algorithm.** `useful(matrix, row)` over a constructor set derived from the
+    coalesced scrutinee type. Constructors are tuple arity, object field-set, literal
+    value, `boolean` = {true, false}, class or enum variant, and `undefined` from D4's
+    `T | undefined`. An inexact object/tuple/union, or a primitive with an infinite
+    domain such as `number`/`string`, is an OPEN constructor set — the
+    missing-constructor case is always live, so it requires a catch-all, exactly D3's
+    inexact rule generalized. `specialize` peels one constructor and recurses into its
+    sub-patterns, so nesting and union members decompose uniformly. Redundancy falls
+    out — an arm is unreachable iff it is not useful against the arms above it — and is
+    reported as a warning. A guarded arm contributes nothing to coverage, as today.
+  - **M5 boundary.** Extractor patterns through `[Symbol.customMatcher]` and
+    type-alias / `TypeRef` resolution are M7, so D5 decomposes an extractor by D1's
+    interim constructor parameters and treats an unresolved alias conservatively. A
+    scrutinee position that is still an inference variable is an open domain, never
+    silently exhaustive.
+  - **Depends on:** D3 (the exhaustiveness surface it replaces) + D-Enum (enum
+    variants as the nominal constructor set). Independent of D4.
+  - **Accept:** a `match` over `{pt: {x: boolean}}` with a `{pt: {x: true}}` and a
+    `{pt: {x: false}}` arm is exhaustive with no catch-all, and dropping either is
+    non-exhaustive with a witness naming the missing nested case; a `match` over
+    `[boolean, boolean]` needs all four corners or a wildcard; a nested enum inside a
+    tuple is exhaustive iff every variant is covered at that position; a `number` field
+    always needs a catch-all; an arm shadowed by an earlier one is reported redundant;
+    D2/D3's existing top-level accept cases stay green against the engine.
+
 ### Phase E — Method overloading
 
 - **E1 — Method overload resolution + #723 object-argument specificity** (~200).
@@ -1510,7 +1581,8 @@ A3 (LifetimeParam + FuncType.LifetimeParams)  ──┤   ── A3 needs A1's C
       ├─► D1 (ExtractorPat / InstancePat binding)
       │    └─► D2 (enum-exhaustive / nominal union exhaustiveness)   ── also needs D-Enum + M6
       │         └─► D3 (structural union narrowing + exhaustiveness)
-      │              └─► D4 (partial-union member access → T | undefined)
+      │              ├─► D4 (partial-union member access → T | undefined)
+      │              └─► D5 (comprehensive nested exhaustiveness — usefulness algorithm)
       ├─► D-Enum (enum decls as unions of final variants)     ── needs M6 (landed)
       └─► E1 (method overload resolution + #723 specificity)
 ```
@@ -1539,6 +1611,7 @@ graph TD
     D2["D2 (enum-exhaustive / nominal union exhaustiveness)"]
     D3["D3 (structural union narrowing + exhaustiveness)"]
     D4["D4 (partial-union member access → T | undefined)"]
+    D5["D5 (comprehensive nested exhaustiveness — usefulness algorithm)"]
     E1["E1 (method overload resolution + #723 specificity)"]
     M6["M6 (unions / intersections, landed)"]
 
@@ -1560,6 +1633,8 @@ graph TD
     DEnum --> D2
     D2 --> D3
     D3 --> D4
+    D3 --> D5
+    DEnum --> D5
     M6 -.-> DEnum
     M6 -.-> D2
     B1 --> B6
@@ -1621,7 +1696,10 @@ two tracks is D2 (patterns × enums × M6's union exhaustiveness). **D3** is thi
 waiting on D2 for the union-member loop it extends with structural-object coverage.
 **D4** is fourth-tier, waiting on D3 for the `narrowMatchArm` path it extends, porting the
 old checker's partial-union member access so a property on some but not all members reads as
-`T | undefined` rather than erroring.
+`T | undefined` rather than erroring. **D5** is also fourth-tier on D3 and independent of D4:
+it replaces D2/D3's top-level exhaustiveness with a full usefulness algorithm on ground types,
+deciding nested coverage structurally while leaving nested-narrowing precision to the
+unscheduled MLstruct work.
 
 ## Algorithms and data structures added or modified — summary
 
