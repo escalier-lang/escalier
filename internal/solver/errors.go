@@ -1573,6 +1573,8 @@ func describe(t soltype.Type) string {
 		return "void"
 	case *soltype.NullType:
 		return "null"
+	case *soltype.UndefinedType:
+		return "undefined"
 	case *soltype.NeverType:
 		return "never"
 	case *soltype.UnknownType:

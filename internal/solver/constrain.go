@@ -177,6 +177,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	// lower bound on the var.
 	if subU, ok := sub.(*soltype.UnionType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			// M5 D4: a field-read or destructure requirement against a union reads the
+			// property per member rather than demanding it on every member. When it
+			// applies, this yields `T | undefined` instead of failing on the first
+			// member that lacks the field.
+			if errs, ok := c.constrainUnionFieldRead(subU, super, seen, mutCtx); ok {
+				return errs
+			}
 			var errs []SolverError
 			if subU.Inexact {
 				closed := true
@@ -565,6 +572,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		if _, ok := super.(*soltype.Void); ok {
 			return nil
 		}
+	case *soltype.UndefinedType:
+		if _, ok := super.(*soltype.UndefinedType); ok {
+			return nil
+		}
 	case *soltype.IntersectionType:
 		// (A & B) <: super ⟹ A <: super OR B <: super. Trial each member in
 		// specificity order under a probe; the first success commits. Stays in
@@ -645,6 +656,71 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// constrainUnionFieldRead implements the partial-union member read (M5 D4). A field read
+// `p.x` or a destructure `val {x} = p` lowers to a requirement `p <: {x: β}`, an inexact
+// object whose property types are the fresh vars the read binds. Against a union sub, the
+// default every-member rule rejects a member that lacks the property, so `p.x` over
+// `{x: number} | {y: string}` fails on the `{y: string}` member. This joins one contribution
+// per member into each requirement var instead: a member carrying the property contributes
+// its type, a member lacking it contributes undefined, and the union's own open `...` tail
+// contributes unknown, since a tail member may carry the property at any type. So the read
+// resolves to `number | undefined`, and reading through an inexact union's tail resolves to
+// `unknown`.
+//
+// It applies only to a field-read / destructure requirement: an inexact object super carrying
+// only property elements whose types are all fresh vars, read off a union every member of
+// which is an object. A genuine object subtyping demand — an exact object annotation, or an
+// inexact one with concrete property types — keeps the strict every-member rule. ok is false
+// when the shapes do not fit, telling the caller to fall back to that rule.
+func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (errs []SolverError, ok bool) {
+	req, isObj := super.(*soltype.ObjectType)
+	if !isObj || !req.Inexact {
+		return nil, false
+	}
+	for _, elem := range req.Elems {
+		prop, isProp := elem.(*soltype.PropertyElem)
+		if !isProp {
+			return nil, false
+		}
+		if _, isVar := prop.Type.(*soltype.TypeVarType); !isVar {
+			return nil, false
+		}
+	}
+	members := make([]*soltype.ObjectType, 0, len(sub.Types))
+	for _, m := range sub.Types {
+		obj, isObj := soltype.CarrierOf(m).(*soltype.ObjectType)
+		if !isObj {
+			return nil, false
+		}
+		members = append(members, obj)
+	}
+	for _, elem := range req.Elems {
+		prop := soltype.AsProperty(elem)
+		// missing tracks whether some listed member lacks the property as a required field, in
+		// which case the joined read includes undefined. An optional member field counts too,
+		// since it may be absent at runtime.
+		missing := false
+		for _, obj := range members {
+			mp, found := obj.Prop(prop.Name)
+			if !found {
+				missing = true
+				continue
+			}
+			errs = append(errs, c.constrain(mp.Type, prop.Type, seen, mutCtx)...)
+			if mp.Optional {
+				missing = true
+			}
+		}
+		if missing {
+			errs = append(errs, c.constrain(&soltype.UndefinedType{}, prop.Type, seen, mutCtx)...)
+		}
+		if sub.Inexact {
+			errs = append(errs, c.constrain(&soltype.UnknownType{}, prop.Type, seen, mutCtx)...)
+		}
+	}
+	return errs, true
 }
 
 // constrainObjMember checks a method, getter, or setter requirement on an object super

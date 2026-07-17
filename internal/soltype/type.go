@@ -480,6 +480,13 @@ type Void struct{}
 // first.
 type NullType struct{}
 
+// UndefinedType is the type whose only inhabitant is `undefined`, the atomic
+// twin of NullType. Reading a property off a union where only some members
+// carry it joins `undefined` for the members that lack it, so the read
+// resolves to `T | undefined` (M5 D4). No source syntax produces it yet; it is
+// minted internally by that join and renders as `undefined`.
+type UndefinedType struct{}
+
 // NeverType (⊥) and UnknownType (⊤) are the bottom/top of the subtype lattice —
 // the coalesced output of an empty-bounds single-polarity variable (positive ⇒
 // never, negative ⇒ unknown). The spike emits these via type_system; M1 carries
@@ -562,6 +569,7 @@ func (*RefType) isType()          {}
 func (*PromiseType) isType()      {}
 func (*Void) isType()             {}
 func (*NullType) isType()         {}
+func (*UndefinedType) isType()    {}
 func (*NeverType) isType()        {}
 func (*UnknownType) isType()      {}
 func (*UnionType) isType()        {}
@@ -639,8 +647,8 @@ func LevelOf(t Type) int {
 	case *IntersectionType:
 		return maxMemberLevel(t.Types)
 	default:
-		// PrimType, LitType, Void, NullType, NeverType, UnknownType, ErrorType:
-		// childless leaves. ErrorType is a sentinel at level 0.
+		// PrimType, LitType, Void, NullType, UndefinedType, NeverType, UnknownType,
+		// ErrorType: childless leaves. ErrorType is a sentinel at level 0.
 		return 0
 	}
 }

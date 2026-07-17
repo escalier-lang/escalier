@@ -2730,32 +2730,28 @@ func narrowMatchArm(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 	if !ok {
 		return scrutinee
 	}
-	// An inexact union carries an open `...` tail of unknown members. A structural pattern
-	// may match a tail member whose field or element types the listed members do not cover,
-	// so narrowing to the listed members would under-type the arm's leaves. Leave an inexact
-	// union unnarrowed. Binding against the whole union then soundly rejects a pattern the
-	// tail may not satisfy, and an inexact union already requires a catch-all arm.
-	if u.Inexact {
-		return scrutinee
-	}
 	kept := make([]soltype.Type, 0, len(u.Types))
 	for _, m := range u.Types {
 		if patternMatchesMemberShape(pat, m) {
 			kept = append(kept, m)
 		}
 	}
-	// When the pattern matches no member, or every member, there is nothing to narrow.
-	// Binding against the original scrutinee then keeps the existing whole-union behavior.
+	// When the pattern matches no listed member, there is nothing to narrow to. When it
+	// matches every listed member, narrowing would reproduce the whole union, including an
+	// inexact union's open tail. Either way, bind against the original scrutinee and keep the
+	// whole-union behavior.
 	if len(kept) == 0 || len(kept) == len(u.Types) {
 		return scrutinee
 	}
+	// An inexact union keeps its open `...` tail through narrowing. A tail member may carry
+	// the pattern's fields at any type, so the tail is retained and the field-read rule (D4)
+	// reads a narrowed inexact member's fields as `... | unknown`, i.e. unknown. An exact
+	// union narrows to precisely the members the pattern matches.
 	var narrowed soltype.Type
-	if len(kept) == 1 {
+	if len(kept) == 1 && !u.Inexact {
 		narrowed = kept[0]
 	} else {
-		// The narrowed union is the exact set of members the pattern matches, drawn from an
-		// exact source union, so it is exact too.
-		narrowed = &soltype.UnionType{Types: kept}
+		narrowed = &soltype.UnionType{Types: kept, Inexact: u.Inexact}
 	}
 	// A kept object or tuple member is a RefInner, as is a rebuilt union, so a borrowed
 	// scrutinee re-wraps its narrowed carrier under the same borrow. NewRef drops the

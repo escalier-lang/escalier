@@ -841,6 +841,9 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.NullType:
 		_, ok := b.(*soltype.NullType)
 		return ok
+	case *soltype.UndefinedType:
+		_, ok := b.(*soltype.UndefinedType)
+		return ok
 	case *soltype.NeverType:
 		_, ok := b.(*soltype.NeverType)
 		return ok
