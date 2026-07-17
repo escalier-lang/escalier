@@ -1473,7 +1473,9 @@ gaps; burn down before proceeding.
 The last MVP milestone. The full type-level operator surface, reduced via
 Baseline-D (reduce when operands ground) + Design-A residual nodes reduced
 post-coalescing, + recursive-type handling (cycle cache + depth budget, and
-the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.)
+the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.) See
+[m9-implementation-plan.md](m9-implementation-plan.md) for the full PR breakdown
+and the M7 interlock.
 
 - **`keyof T`** — keys of an object/class type as a union.
 - **Indexed access `T[K]`** — including distributive behavior when `K` is a

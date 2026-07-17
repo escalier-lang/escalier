@@ -334,10 +334,9 @@ PR1 (AliasType node + AliasDef registry + non-generic decl + resolution + expand
  ├─► PR2 (generic aliases: params, instantiation, arity)
  │    ├─► PR3 (recursive + mutually-recursive aliases, SCC two-pass)
  │    │    └─► PR5 (enum name binds to a real alias)     ── also needs PR1
- │    ├─► PR4 (lifetimes on alias-typed borrows)         ── also needs M4
  │    └─► PR6 (generic-union surface + exists-trial)     ── also needs M6
  │         └─► PR7 (trial-and-commit diagnostic follow-ups)
- └─► (PR4, PR5 also depend directly on PR1)
+ └─► PR4 (lifetimes on alias-typed borrows)              ── also needs M4
 
 feeds ─► M7.5 (library ingestion produces aliases + generic types)
 feeds ─► M9  (operators are generic aliases; expandAlias, AliasType identity, recursion split)
