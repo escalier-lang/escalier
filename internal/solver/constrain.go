@@ -658,28 +658,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 
-// constrainUnionFieldRead implements the partial-union member read (M5 D4). A field read
-// `p.x` or a destructure `val {x} = p` lowers to a requirement `p <: {x: β}`, an inexact
-// object whose property types are the fresh vars the read binds. Against a union sub, the
-// default every-member rule rejects a member that lacks the property, so `p.x` over
-// `{x: number} | {y: string}` fails on the `{y: string}` member. This joins one contribution
-// per member into each requirement var instead: a member carrying the property contributes
-// its type, a member lacking it contributes undefined, and the union's own open `...` tail
-// contributes unknown, since a tail member may carry the property at any type. So the read
-// resolves to `number | undefined`, and reading through an inexact union's tail resolves to
-// `unknown`.
+// constrainUnionFieldRead reads a property `f` off a union sub for a field-read/destructure
+// requirement `union <: {f: β}` (M5 D4), joining one contribution per member into β:
+//   - a member carrying `f` contributes its type;
+//   - a member lacking `f` contributes undefined, so `f` on some but not all members reads
+//     as `T | undefined`;
+//   - an inexact union's open `...` tail contributes unknown, since it may carry `f` at any type;
+//   - `f` on no member of an exact union is a MissingPropertyError, since the read is a
+//     constant undefined, like reading an absent field off a single object.
 //
-// A property no listed member carries is rejected with a MissingPropertyError, since the read
-// would always evaluate to undefined and so is never useful, the same reason reading an absent
-// field off a single object is an error. An inexact union's open tail may still carry it, so a
-// property absent from every listed member of an inexact union is not an error; it reads as
-// unknown through the tail.
-//
-// It applies only to a field-read / destructure requirement: an inexact object super carrying
-// only property elements whose types are all fresh vars, read off a union every member of
-// which is an object. A genuine object subtyping demand — an exact object annotation, or an
-// inexact one with concrete property types — keeps the strict every-member rule. ok is false
-// when the shapes do not fit, telling the caller to fall back to that rule.
+// ok is false unless the shapes fit — an inexact object super of fresh-var properties over a
+// union of objects — so a genuine subtyping demand keeps the strict every-member rule.
 func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (errs []SolverError, ok bool) {
 	req, isObj := super.(*soltype.ObjectType)
 	if !isObj || !req.Inexact {
