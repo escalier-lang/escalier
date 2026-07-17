@@ -236,8 +236,8 @@ split p {                       split p {
   `internal/solver`. This plan unifies them under one desugar → normalize →
   check pipeline. The paths and their current homes:
   - `inferMatch` — [internal/solver/infer_expr.go:2476](../../internal/solver/infer_expr.go)
-  - `inferIfLet` — [internal/solver/infer_expr.go:2356](../../internal/solver/infer_expr.go)
-  - `inferLetElse` — [internal/solver/infer_expr.go:2423](../../internal/solver/infer_expr.go)
+  - `inferIfVal` — [internal/solver/infer_expr.go:2356](../../internal/solver/infer_expr.go)
+  - `inferValElse` — [internal/solver/infer_expr.go:2423](../../internal/solver/infer_expr.go)
   - `bindRefutable` — [internal/solver/infer_expr.go:2386](../../internal/solver/infer_expr.go)
   - dispatch at [internal/solver/infer.go:423](../../internal/solver/infer.go) and
     [internal/solver/infer_stmt.go:128](../../internal/solver/infer_stmt.go).
@@ -361,7 +361,7 @@ surface to the desugared core.
 - Lower `MatchExpr` arms into a `Split` whose branches carry each arm's pattern,
   optional guard, and body. Guards become guard-test nodes on their branch, not
   inline boolean handling.
-- Lower `IfLetExpr` into a `Split` with the pattern branch and the `else`
+- Lower `IfValExpr` into a `Split` with the pattern branch and the `else`
   fallthrough.
 - Lower a `val pat = init else { … }` `VarDecl` into a `Split` with the pattern
   branch and the diverging-or-fallback `else`.
@@ -441,15 +441,15 @@ IR-print snapshots.
 Migrate the three remaining ad-hoc paths onto the PR5 walk, retiring their
 hand-written bodies.
 
-- Replace the bodies of `inferIfLet`, `inferLetElse`, and `bindRefutable` with a
+- Replace the bodies of `inferIfVal`, `inferValElse`, and `bindRefutable` with a
   desugar → normalize → walk over the same normalized form, reusing the PR5 walk.
-- Preserve the `IfLetBranch` and `LetElseBranch` provenance edges so their
+- Preserve the `IfValBranch` and `ValElseBranch` provenance edges so their
   branch-join vars still render with their source.
 - Keep the scope discipline: an `if val` and a `val … else` run their `else` in a
   scope that does not see the pattern's bindings, matching the current child-scope
-  handling in `inferIfLet` / `inferLetElse`.
+  handling in `inferIfVal` / `inferValElse`.
 
-**Tests.** `infer_if_let_test.go` and the `val … else` cases stay green with
+**Tests.** `infer_if_val_test.go` and the `val … else` cases stay green with
 unchanged inferred types and messages.
 
 ### PR7 — Run the interim coverage check off the normalized form
