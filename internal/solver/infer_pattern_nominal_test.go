@@ -502,6 +502,20 @@ func TestInferMemberUnionReadsPartialFieldAsUndefined(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number | undefined", values["f"])
 }
 
+// A direct field read `p.x` over an inexact union reads through the open tail (M5 D4), the
+// member-access counterpart of the destructure case. The `{x: number}` member contributes
+// `number`, `{y: string}` contributes undefined, and the tail contributes unknown, so the
+// read collapses to `unknown`.
+func TestInferMemberInexactUnionReadsThroughTail(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string} | ...) {
+			return p.x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number} | {y: string} | ...) -> unknown", values["f"])
+}
+
 // A property every member carries at a different type reads as the join of those types (M5
 // D4), with no undefined since no member lacks it. So `p.x` over `{x: number} | {x: string}`
 // yields `number | string`.
