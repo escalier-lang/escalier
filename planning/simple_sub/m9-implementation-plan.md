@@ -115,25 +115,52 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Thirteen PRs across five tracks. Track A builds the evaluator and the core
+Fifteen PRs across five tracks. Track A builds the evaluator and the core
 operators in dependency order. Track B adds spread and template-literal
 operators, which hang off the backbone but are independent of each other. Track C
 adds exactness propagation and the recursion static-check. Track D is the two
 function-signature effects, which touch `FuncType` and not the evaluator at all,
 so it runs fully in parallel with A–C. Track E is the capstone verification.
 
-### PR1 — Evaluator backbone + residual nodes + `keyof T`
+The two heaviest concerns — the evaluator backbone and the conditional/`infer`
+matcher — are each split in two so no single PR carries both a new representation
+and a new algorithm: PR1a/PR1b and PR3a/PR3b below.
 
-The load-bearing PR. Everything else hangs off it.
+### PR1a — Residual-node representation + inert plumbing
+
+The representation half of the backbone: a residual operator node that flows
+through the solver untouched, before any evaluator exists to reduce it.
 
 **Data structures.**
-- `soltype`: add a residual operator node kind. The minimal set for this PR is
+- `soltype`: add a residual operator node kind, starting with
   `KeyofType{Operand Type, exact bool}`, plus the shared inert-node contract:
   `isType()`, a visitor arm ([soltype/visitor.go](../../internal/soltype/visitor.go)),
   a printer arm rendering `keyof T` ([soltype/print.go](../../internal/soltype/print.go)),
   and `LevelOf` returning the operand's level. Model the node on the spike's
   `ResidualOp` ([residual.go](../../internal/simplesub/residual.go)) — it holds no
   bounds and is never a `constrain` participant.
+
+**Algorithms.**
+- **Inert arms in `constrain` / `extrude` / `coalesce`.** A residual node is passed
+  through untouched, never decomposed — the "adds no new mutable solver state"
+  invariant. This is the plumbing every later operator relies on; landing it alone,
+  with one node kind, keeps the diff to the hot paths small and reviewable.
+
+**Wiring.** `resolveTypeAnn` arm for `*ast.KeyOfTypeAnn`
+([type_ann.go](../../internal/solver/type_ann.go)) that builds the **unreduced**
+residual node; prov recording; printer.
+
+**Accept.** `keyof T` for a type parameter `T` round-trips as a residual — renders
+`keyof T` and flows through `constrain` / `coalesce` without being decomposed or
+crashing. No reduction yet; that is PR1b.
+
+**Depends on** M7 (the alias representation the residual's operand may name).
+
+### PR1b — Evaluator backbone + `keyof` reduction
+
+The algorithm half: the evaluator that reduces the PR1a node.
+
+**Data structures.**
 - `solver`: a `TypeEvaluator` (new `internal/solver/typeops.go`) holding the alias
   environment, the cycle cache (`map[instantiationKey]soltype.Type`), and the
   depth budget. Promote the structure from
@@ -148,60 +175,73 @@ The load-bearing PR. Everything else hangs off it.
 - The **two-part termination strategy** (promoted verbatim from the spike): the
   cycle cache emits a symbolic back-reference when an `(alias, args)` state
   recurs, giving the finite knot for a regular recursive type; the depth budget is
-  the catch-all for unbounded growth.
+  the catch-all for unbounded growth. This is where `reduce` becomes safe over a
+  recursive alias; `CheckRegular` (PR9) later rejects the expanding cases up front.
 - **Two reduction sites.** Eager: `resolveTypeAnn` calls `reduce` on the operator
   it builds, so a ground `keyof {…}` reduces immediately (Baseline-D). Post-solve:
   a coalescing-time sweep reduces any residual whose operand has become concrete
   (Design-A). Wire the sweep into [coalesce.go](../../internal/solver/coalesce.go)
   at the point the spike marks — [coalesce.go:213](../../internal/simplesub/coalesce.go)
   ("a type operator left inert during the value solve reduces here").
-- `constrain` / `extrude` inert arms: a residual node is passed through untouched,
-  never decomposed. This is the "adds no new mutable solver state" invariant.
-
-**Wiring.** `resolveTypeAnn` arm for `*ast.KeyOfTypeAnn`
-([type_ann.go](../../internal/solver/type_ann.go)); prov recording; printer.
 
 **Accept.** `keyof {x: number, y: string}` ⇒ `"x" | "y"`; `keyof` over a
 usage-inferred operand (`fn f(x) { x.a; x.b; keyof typeof x }`) reduces to `"a" |
 "b"` post-solve; `keyof` of an operand that never gains structure stays symbolic.
 
+**Depends on** PR1a (the node and its inert plumbing).
+
 ### PR2 — Indexed access `T[K]` + distribution over union keys
 
 **Data structures.** `soltype.IndexType{Target, Index Type, exact bool}` with the
-same inert-node contract as PR1.
+same inert-node contract as PR1a.
 
 **Algorithms.**
 - Indexed-access reduction: `{…}[k]` looks up field `k`; a tuple `[…][n]` selects
   element `n`; `T[keyof T]` yields the union of all value types.
 - **Distribution:** when `Index` reduces to a union, the access distributes —
   `T["a" | "b"]` ⇒ `T["a"] | T["b"]`. This is the same distribute-over-union
-  mechanism conditionals reuse in PR3.
+  mechanism conditionals reuse in PR3b.
 - Errors carry typed `soltype.Type` references and assert full messages: an
   out-of-range tuple index and an unknown object key each get their own
   `SolverError` struct, modeled on [errors.go](../../internal/solver/errors.go).
 
 **Wiring.** `resolveTypeAnn` arm for `*ast.IndexTypeAnn`.
 
-**Depends on** PR1 (evaluator + `keyof`, since `T[keyof T]` is the canonical
+**Depends on** PR1b (evaluator + `keyof`, since `T[keyof T]` is the canonical
 combination).
 
-### PR3 — Conditional types `T extends U ? X : Y` + `infer` + distribution
+### PR3a — Conditional types: branch selection
 
-The other large operator. Kept as one PR because branch selection, `infer`
-binding, and distribution share the evaluator's structural matcher.
+The subtyping-decision half of conditionals, without `infer` or distribution.
 
-**Data structures.**
-- `soltype.CondType{Check, Extends, Then, Else Type}`.
-- An `infer`-binding form: the evaluator's structural matcher records
-  `infer`-named positions into an environment, so `Then`/`Else` resolve against
-  the captured types. Promote `TyInfer` and the match machinery from
-  [typeops.go](../../internal/simplesub/typeops.go).
+**Data structures.** `soltype.CondType{Check, Extends, Then, Else Type}`, an inert
+residual node with the PR1a contract.
 
 **Algorithms.**
 - **Branch selection.** Decide `Check <: Extends` via an assignability probe —
   reuse the M6 `probe` journal ([probe.go](../../internal/solver/probe.go)) so a
-  speculative match rolls back cleanly. Ground operands decide eagerly; a
-  non-ground `Check` stays a residual `CondType` reduced post-coalescing.
+  speculative match rolls back cleanly. Ground operands decide eagerly and reduce
+  to `Then` or `Else`; a non-ground `Check` stays a residual `CondType` reduced
+  post-coalescing.
+
+**Wiring.** `resolveTypeAnn` arm for `*ast.CondTypeAnn` whose `extends` operand
+holds no `infer`; an `*ast.InferTypeAnn` reports unsupported until PR3b.
+
+**Accept.** `T extends string ? A : B` with a ground `T` reduces to the matching
+branch; a non-ground `T` stays a residual `CondType` that reduces post-coalescing.
+
+**Depends on** PR1b.
+
+### PR3b — `infer` clauses + distribution
+
+The structural-matcher half: the part that makes conditionals extract types.
+
+**Data structures.** An `infer`-binding form: the evaluator's structural matcher
+records `infer`-named positions into an environment, so `Then`/`Else` resolve
+against the captured types. Promote `TyInfer` and the match machinery from
+[typeops.go](../../internal/simplesub/typeops.go).
+
+**Algorithms.**
 - **`infer` binding by structural match.** Match `Check` against `Extends`
   structurally, binding each `infer U` to the matched position — function
   arg/return, tuple element, constructor return, promise payload. This is the
@@ -211,11 +251,13 @@ binding, and distribution share the evaluator's structural matcher.
   parameter bound to a union, the conditional distributes member-wise, matching TS
   semantics. Share the distribute helper introduced in PR2.
 
-**Wiring.** `resolveTypeAnn` arms for `*ast.CondTypeAnn` and `*ast.InferTypeAnn`
-(the latter valid only inside a conditional's `extends` operand — reject
-elsewhere with a full-message error).
+**Wiring.** `resolveTypeAnn` arm for `*ast.InferTypeAnn` (valid only inside a
+conditional's `extends` operand — reject elsewhere with a full-message error).
 
-**Depends on** PR1. Reuses PR2's distribute helper.
+**Accept.** `T extends (infer U)[] ? U : never` binds `U` to the element type; a
+naked type-parameter union distributes member-wise.
+
+**Depends on** PR3a. Reuses PR2's distribute helper.
 
 ### PR4 — Mapped types `{[K in Keys]: F<K>}`
 
@@ -231,7 +273,8 @@ ReadonlyMod, OptionalMod Modifier, As Type}` where `Modifier` is
   each emitted field's mutability and optionality.
 - **Key remapping via `as`:** the `as` clause reduces per key; a key remapping to
   `never` drops the field. `as`-filtering commonly uses a conditional (`as K
-  extends … ? K : never`), which is why this depends on PR3.
+  extends … ? K : never`) — branch selection, not `infer` — which is why this
+  depends on PR3a.
 - This is the machinery underlying `Pick` / `Omit` / `Partial` / `Required` /
   `Readonly`, verified end-to-end in PR13.
 
@@ -239,8 +282,8 @@ ReadonlyMod, OptionalMod Modifier, As Type}` where `Modifier` is
 ([type_ann.go](../../internal/solver/type_ann.go)); the printer renders the mapped
 form.
 
-**Depends on** PR1 (`keyof` for `Keys`), PR2 (indexed access in the value
-position), PR3 (`as`-clause conditional key filtering).
+**Depends on** PR1b (`keyof` for `Keys`), PR2 (indexed access in the value
+position), PR3a (`as`-clause conditional key filtering).
 
 ### PR5 — Object spread types `{...A, x: T}`
 
@@ -267,7 +310,7 @@ is either a spread (`...A`) or an explicit field.
 **Wiring.** `resolveTypeAnn` arm for the object-spread annotation; literal-level
 object spread in `inferObj`.
 
-**Depends on** PR1. Independent of PR2–PR4.
+**Depends on** PR1b. Independent of PR2–PR4.
 
 ### PR6 — Tuple spread types `[...P, x]`
 
@@ -287,7 +330,7 @@ is a spread or a positional type.
 
 **Wiring.** `resolveTypeAnn` arm for the tuple-spread annotation.
 
-**Depends on** PR1. Independent of PR2–PR5.
+**Depends on** PR1b. Independent of PR2–PR5.
 
 ### PR7 — Template literal types + string intrinsics
 
@@ -303,7 +346,7 @@ is a spread or a positional type.
 **Wiring.** `resolveTypeAnn` arm for `*ast.TemplateLitTypeAnn`; the four
 intrinsics registered as built-in operators.
 
-**Depends on** PR1. Independent of PR2–PR6.
+**Depends on** PR1b. Independent of PR2–PR6.
 
 ### PR8 — Exactness propagation through operators + `Exact<T>` / `Inexact<T>`
 
@@ -319,10 +362,10 @@ be checked. Builds on the exactness flag laid down in M3–M6
   `Inexact<{x}>` ⇒ `{x, ...}`. They are themselves type operators, so they slot
   into the evaluator.
 
-**Wiring.** Touches each operator's reduce arm from PR1–PR7 and the residual
+**Wiring.** Touches each operator's reduce arm from PR1b–PR7 and the residual
 nodes' `exact` fields.
 
-**Depends on** PR1–PR7 (it threads exactness through every operator, so it lands
+**Depends on** PR1b–PR7 (it threads exactness through every operator, so it lands
 once the operators exist).
 
 ### PR9 — `CheckRegular` static regularity check
@@ -338,14 +381,14 @@ with a precise definition-time diagnostic.
 
 The check is sound but incomplete — an expanding alias gated on a base-case
 conditional terminates yet is still rejected, since deciding otherwise is the
-halting problem — so the PR1 depth budget remains the runtime backstop. The two
+halting problem — so the PR1b depth budget remains the runtime backstop. The two
 are complementary: a precise early error where decidable, safe termination always.
 
 **Data structures.** Operates over the alias dependency graph / SCCs
 ([internal/dep_graph/](../../internal/dep_graph/)); no new `soltype` node.
 
-**Depends on** PR1 (evaluator + cycle cache) and PR3 (conditionals recursing on an
-`infer` binding are an accept case). Independent of PR4–PR8.
+**Depends on** PR1b (evaluator + cycle cache) and PR3b (conditionals recursing on
+an `infer` binding are an accept case). Independent of PR4–PR8.
 
 ### PR10 — `throws T` clause on functions
 
@@ -397,7 +440,7 @@ subtyping, defaulting to `never`.
 
 **Depends on** PR10 (the parallel-arm template), M7.5 (the real `Generator<…>` /
 `AsyncGenerator<…>` stdlib types). The async-gen + `Awaited<ReturnType<F>>` accept
-case additionally rides on PR3 and PR13.
+case additionally rides on PR3b and PR13.
 
 ### PR12 — `Awaited<T>`
 
@@ -407,10 +450,10 @@ promises. The milestone explicitly lands it here — M3 deliberately left
 operator.
 
 **Algorithms.** Define `Awaited<T>` as the recursive conditional `T extends
-Promise<infer U> ? Awaited<U> : T`, reduced through the PR3 machinery with the PR1
-cycle-cache/budget termination protecting the recursion.
+Promise<infer U> ? Awaited<U> : T`, reduced through the PR3b machinery with the
+PR1b cycle-cache/budget termination protecting the recursion.
 
-**Depends on** PR3 (conditional + `infer`), PR1 (recursion termination), M7.5
+**Depends on** PR3b (conditional + `infer`), PR1b (recursion termination), M7.5
 (real `Promise<T>`). Separated from PR13 because it is a real feature the async
 story in PR11 depends on, not just a test.
 
@@ -429,57 +472,66 @@ reduction matches TS:
 - `Capitalize` / `Uncapitalize` / `Uppercase` / `Lowercase` and a small
   template-literal case (`EventName<K>` ⇒ `` `on${Capitalize<K>}` ``).
 
-**Depends on** PR2, PR3, PR4, PR7, PR12. Verifies the whole operator suite
+**Depends on** PR2, PR3b, PR4, PR7, PR12. Verifies the whole operator suite
 composes.
 
 ---
 
 ## Sizing note
 
-Each PR is scoped to a single reviewable concern. PR1 and PR3 are the two largest
-— the evaluator backbone and the conditional/`infer` matcher — and are the natural
-places to split further if review demands it (PR1 into "residual nodes +
-constrain/coalesce inert arms" then "evaluator + `keyof`"; PR3 into "branch
-selection" then "`infer` binding + distribution"). The remaining PRs are each a
-single operator or a single function-signature effect, sized comparably to a
-typical M4/M6 PR. PR10 and PR11 touch only `FuncType` and never the evaluator, so
-they carry no operator-track review burden.
+Each PR is scoped to a single reviewable concern. The two heaviest — the evaluator
+backbone and the conditional/`infer` matcher — are split so neither PR pairs a new
+representation with a new algorithm: **PR1a** is the residual node plus its inert
+`constrain`/`coalesce`/`extrude` plumbing, **PR1b** is the evaluator and `keyof`
+reduction; **PR3a** is conditional branch selection, **PR3b** is the `infer`
+structural matcher and distribution. The remaining PRs are each a single operator
+or a single function-signature effect, sized comparably to a typical M4/M6 PR.
+Mapped types (PR4) and object spread (PR5) are the next-largest — the fiddly
+modifier/`as`-remapping semantics and the Flow optional-field union rule
+respectively — but each is one self-contained operator and stays within the M4/M6
+band. PR10 and PR11 touch only `FuncType` and never the evaluator, so they carry
+no operator-track review burden. PR13 is verification-heavy but low-risk; if the
+utility corpus balloons it splits cleanly by category (mapped-based,
+conditional-based, template-based).
 
 ## Dependency graph
 
 ```
-M7   (type aliases: alias node + generics + scope-driven TypeRef)  ──► PR1
+M7   (type aliases: alias node + generics + scope-driven TypeRef)  ──► PR1a
 M7.5 (library type resolution: real stdlib types, import-only)     ──► PR11, PR12
 
-PR1 (evaluator backbone + residual nodes + keyof)
- ├─► PR2 (indexed access T[K] + union-key distribution)
- │    └─► PR4 (mapped types)              ── also needs PR1, PR3
- ├─► PR3 (conditional types + infer + distribution)
- │    ├─► PR4 (mapped types)
- │    ├─► PR9 (CheckRegular)              ── also needs PR1
- │    └─► PR12 (Awaited<T>)               ── also needs PR1, M7.5
- ├─► PR5 (object spread types)
- ├─► PR6 (tuple spread types)
- ├─► PR7 (template literal types + intrinsics)
- └─► PR8 (exactness propagation + Exact/Inexact)  ── needs PR1–PR7
+PR1a (residual-node representation + inert plumbing)
+ └─► PR1b (evaluator backbone + keyof reduction)
+      ├─► PR2 (indexed access T[K] + union-key distribution)
+      │    └─► PR4 (mapped types)              ── also needs PR1b, PR3a
+      ├─► PR3a (conditional types: branch selection)
+      │    └─► PR3b (infer clauses + distribution)   ── also needs PR2
+      │         ├─► PR9 (CheckRegular)          ── also needs PR1b
+      │         └─► PR12 (Awaited<T>)           ── also needs PR1b, M7.5
+      ├─► PR5 (object spread types)
+      ├─► PR6 (tuple spread types)
+      ├─► PR7 (template literal types + intrinsics)
+      └─► PR8 (exactness propagation + Exact/Inexact)  ── needs PR1b–PR7
 
 PR10 (throws clause)                      ── needs M3 only; parallel to everything
- └─► PR11 (generators)                    ── also needs M7.5 (+PR3/PR12 for the async-gen accept case)
+ └─► PR11 (generators)                    ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
 
-PR13 (TS utility-type suite)              ── needs PR2, PR3, PR4, PR7, PR12
+PR13 (TS utility-type suite)              ── needs PR2, PR3b, PR4, PR7, PR12
 ```
 
 The same graph in mermaid, with the operator-track critical path
-(PR1 → PR3 → PR4 → PR8) highlighted and the landed `M7` / `M7.5` prerequisites
-dashed:
+(PR1a → PR1b → PR3a → PR3b → PR4 → PR8) highlighted and the landed `M7` / `M7.5`
+prerequisites dashed:
 
 ```mermaid
 graph TD
     M7["M7 (type aliases)"]
     M75["M7.5 (library type resolution: real stdlib, import-only)"]
-    PR1["PR1 (evaluator backbone + residual nodes + keyof)"]
+    PR1a["PR1a (residual node + inert plumbing)"]
+    PR1b["PR1b (evaluator backbone + keyof)"]
     PR2["PR2 (indexed access T[K] + distribution)"]
-    PR3["PR3 (conditional types + infer + distribution)"]
+    PR3a["PR3a (conditional types: branch selection)"]
+    PR3b["PR3b (infer clauses + distribution)"]
     PR4["PR4 (mapped types)"]
     PR5["PR5 (object spread types)"]
     PR6["PR6 (tuple spread types)"]
@@ -491,24 +543,26 @@ graph TD
     PR12["PR12 (Awaited<T>)"]
     PR13["PR13 (TS utility-type suite)"]
 
-    M7 -.-> PR1
+    M7 -.-> PR1a
     M75 -.-> PR11
     M75 -.-> PR12
 
-    PR1 --> PR2
-    PR1 --> PR3
-    PR1 --> PR5
-    PR1 --> PR6
-    PR1 --> PR7
-    PR1 --> PR8
-    PR1 --> PR9
-    PR1 --> PR12
+    PR1a --> PR1b
+    PR1b --> PR2
+    PR1b --> PR3a
+    PR1b --> PR5
+    PR1b --> PR6
+    PR1b --> PR7
+    PR1b --> PR8
+    PR3a --> PR3b
+    PR2 --> PR3b
     PR2 --> PR4
     PR2 --> PR13
-    PR3 --> PR4
-    PR3 --> PR9
-    PR3 --> PR12
-    PR3 --> PR13
+    PR3a --> PR4
+    PR3b --> PR9
+    PR1b --> PR9
+    PR3b --> PR12
+    PR3b --> PR13
     PR4 --> PR8
     PR4 --> PR13
     PR5 --> PR8
@@ -520,22 +574,24 @@ graph TD
     PR12 --> PR13
 
     linkStyle default stroke:#888
-    style PR1 fill:#e06666,stroke:#333,color:#fff
-    style PR3 fill:#e06666,stroke:#333,color:#fff
+    style PR1a fill:#e06666,stroke:#333,color:#fff
+    style PR1b fill:#e06666,stroke:#333,color:#fff
+    style PR3a fill:#e06666,stroke:#333,color:#fff
+    style PR3b fill:#e06666,stroke:#333,color:#fff
     style PR4 fill:#e06666,stroke:#333,color:#fff
     style PR8 fill:#e06666,stroke:#333,color:#fff
 ```
 
 ### Parallelism
 
-- **Track A** (PR1 → PR2/PR3 → PR4, plus PR5/PR6/PR7 hanging directly off PR1) is
-  the operator core. PR5, PR6, and PR7 are mutually independent and can be built
-  concurrently once PR1 lands.
+- **Track A** (PR1a → PR1b → PR2/PR3a → PR3b/PR4, plus PR5/PR6/PR7 hanging directly
+  off PR1b) is the operator core. PR5, PR6, and PR7 are mutually independent and can
+  be built concurrently once PR1b lands.
 - **Track C** — PR8 (exactness) is a barrier that waits for all operators; PR9
-  (CheckRegular) needs only PR1 + PR3 and runs alongside PR4–PR8.
+  (CheckRegular) needs only PR1b + PR3b and runs alongside PR4–PR8.
 - **Track D** — PR10 (throws) has no operator dependency and can start on day one
-  alongside PR1; PR11 (generators) follows PR10.
-- **Track E** — PR13 is the final join, waiting on PR2, PR3, PR4, PR7, PR12.
+  alongside PR1a; PR11 (generators) follows PR10.
+- **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12.
 
-The critical path is `M7 → PR1 → PR3 → PR4 → PR8`, and — for the async-generator
-accept case — `M7 → PR1 → PR3 → PR12 → PR13`.
+The critical path is `M7 → PR1a → PR1b → PR3a → PR3b → PR4 → PR8`, and — for the
+async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13`.

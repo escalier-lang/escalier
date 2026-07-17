@@ -297,15 +297,15 @@ The reason M7 and M9 are planned together. Each item is a seam where a decision 
 one plan constrains the other; getting them consistent here is the point.
 
 1. **`AliasType` + `AliasDef` are M9's input.** M9's `TypeEvaluator`
-   ([m9-implementation-plan.md](m9-implementation-plan.md) PR1) reduces `Pick<T,
+   ([m9-implementation-plan.md](m9-implementation-plan.md) PR1b) reduces `Pick<T,
    K>` by instantiating and expanding the alias. It calls M7's `expandAlias` and
-   reads M7's `AliasDef`. **Action:** PR1 exposes `expandAlias` as a standalone
+   reads M7's `AliasDef`. **Action:** M7 PR1 exposes `expandAlias` as a standalone
    helper, not inlined into `constrain`, so the evaluator reuses it verbatim.
 2. **The recursion boundary is split, and the split must be exact.** M7 handles a
    recursive alias **as a subtyping subject** via `constrain`'s seen-set (PR3), with
    **no cycle cache and no depth budget**. M9 handles **operator reduction over** a
    recursive alias with the cycle cache keyed on the `(alias, evaluated-args)` state
-   plus a depth budget (M9 PR1) and `CheckRegular` (M9 PR9). **Action:** the
+   plus a depth budget (M9 PR1b) and `CheckRegular` (M9 PR9). **Action:** the
    instantiation-state identity M9's cycle cache keys on is exactly the
    `AliasType{Name, TypeArgs}` M7 PR2 defines — M7 fixes that node's identity so M9
    keys on it without a second representation.
