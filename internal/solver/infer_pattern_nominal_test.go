@@ -323,48 +323,152 @@ func TestInferMatchNominalMemberUncoveredStructural(t *testing.T) {
 	require.Equal(t, "5:11-7:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
 
-// DISABLED until M5 D3. A union mixing a structural-object member with a non-object member,
-// `"a" | {x: number}`, matched only by the object pattern `{x}`. The `"a"` member is
-// uncovered, so the match is non-exhaustive. Binding `{x}` against the whole union today
-// also constrains every member to carry `x`, reporting a spurious `cannot constrain "a" <:
-// object` on the `"a"` member. D3's match-arm narrowing binds `{x}` against only the
-// `{x: number}` member, dropping that binding error while the non-exhaustive report stays.
-// Re-enable when D3 lands and assert the single non-exhaustive error the commented body
-// records.
+// A union mixing a structural-object member with a non-object member, `"a" | {x: number}`,
+// matched only by the object pattern `{x}`. Match-arm narrowing binds `{x}` against only
+// the `{x: number}` member, so no spurious `cannot constrain "a" <: object` is reported.
+// The `"a"` member is uncovered, so the match stays non-exhaustive.
 func TestInferMatchUnionUncoveredWithStructuralMember(t *testing.T) {
-	/*
-		_, _, errs := inferSource(t, `
-			fn f(b: boolean) {
-				val p = if b { "a" } else { {x: 1} }
-				return match p {
-					{x} => x
-				}
+	_, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val p = if b { "a" } else { {x: 1} }
+			return match p {
+				{x} => x
 			}
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
-	*/
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
 
-// DISABLED until M5 D3. A match over a structural-object union such as
-// `{x: number} | {y: string}` with an object pattern per member should be exhaustive and
-// bind each arm against its matching member. Binding an object pattern against a union
-// scrutinee currently constrains every member to carry the named field, so `{x}` against
-// the `{y: string}` member reports a missing property, and the union exhaustiveness path
-// reports each structural arm unsupported. Both resolve when D3's match-arm narrowing
-// lands, which binds an object pattern against only the members carrying its fields.
-// Re-enable then and assert the empty-error, exhaustive result the commented body records.
+// A match over a structural-object union such as `{x: number} | {y: string}` with an object
+// pattern per member is exhaustive and binds each arm against its matching member. Match-arm
+// narrowing binds `{x}` against only the `{x: number}` member and `{y}` against only the
+// `{y: string}` member, so neither reports a missing property and both members are covered.
 func TestInferMatchStructuralObjectUnion(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string}) {
+			return match p {
+				{x} => 1,
+				{y} => 2
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number} | {y: string}) -> 1 | 2", values["f"])
+}
+
+// A structural-object union with a member no arm's shape covers stays non-exhaustive. The
+// `{x}` and `{y}` arms cover the first two members of `{x: number} | {y: string} |
+// {z: boolean}`, but no arm names the `z` field, so the third member is uncovered.
+func TestInferMatchStructuralObjectUnionUncovered(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string} | {z: boolean}) {
+			return match p {
+				{x} => 1,
+				{y} => 2
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "3:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+}
+
+// Match-arm narrowing routes each tuple pattern to the union members of its fixed arity, so
+// a union of differently-sized tuples covers with one arm per arity. `[a, c]` binds against
+// the arity-2 member `[1, 2]` and `[s]` against the arity-1 member `["a"]`, so the match is
+// exhaustive and each arm reads its own member's element types.
+func TestInferMatchTupleUnionDifferentArity(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			val x = if b { [1, 2] } else { ["a"] }
+			return match x {
+				[a, c] => a,
+				[s] => s
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (b: boolean) -> 1 | "a"`, values["f"])
+}
+
+// DISABLED until M9. A tuple rest pattern `[head, ...tail]` binds the first element and
+// captures the remaining elements as a tuple. It matches any tuple at least as long as its
+// fixed prefix, so a single such arm covers a union of tuples of differing arity and the
+// match is exhaustive. M5 defers the typed rest-tuple binding. bindPatMode reports the
+// `...tail` element unsupported, and irrefutablePat treats a RestPat as refutable, so the
+// arm neither binds nor covers today. Re-enable when M9's typed rest tuples land and assert
+// the exhaustive, empty-error result the commented body records.
+func TestInferMatchTupleRestPattern(t *testing.T) {
 	/*
 		values, _, errs := inferSource(t, `
-			fn f(p: {x: number} | {y: string}) {
+			fn f(p: [number, number] | [string]) {
 				return match p {
-					{x} => 1,
-					{y} => 2
+					[head, ...tail] => head
 				}
 			}
 		`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn (p: {x: number} | {y: string}) -> 1 | 2", values["f"])
+		require.Equal(t, "fn (p: [number, number] | [string]) -> number | string", values["f"])
 	*/
+}
+
+// Narrowing does not apply to an inexact union's open `...` tail. A tail member could carry
+// `x` at a type the listed members do not cover, so narrowing `{x}` to the listed
+// `{x: number}` member would under-type `x`. narrowMatchArm leaves an inexact union
+// unnarrowed, so `{x}` binds against the whole union and is soundly rejected because the
+// `{y}` member lacks `x`, and the `...` tail may too.
+//
+// M5 D4 changes this. Once field access through an inexact union's open tail yields
+// `unknown`, narrowMatchArm narrows the union to `{x: number} | ...` and `{x}` binds `x` at
+// `number | unknown`, which collapses to `unknown`, so the match type-checks. When D4 lands,
+// the assertions below flip from these two rejection errors to an empty-error result binding
+// `x: unknown`.
+func TestInferMatchInexactUnionNotNarrowed(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string} | ...) {
+			return match p {
+				{x} => x,
+				_ => 0
+			}
+		}
+	`)
+	require.Len(t, errs, 2)
+	require.Equal(t, "2:11-2:36: cannot constrain object | object | ... <: object", msgWithSpan(errs[0]))
+	require.Equal(t, "2:25-2:36: object is missing property: x", msgWithSpan(errs[1]))
+}
+
+// The exact counterpart of the inexact case above still narrows soundly. With no open tail,
+// `{x}` binds against only the `{x: number}` member and reads `x` at `number` without error.
+func TestInferMatchExactUnionNarrowsCleanly(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn g(p: {x: number} | {y: string}) {
+			return match p {
+				{x} => x,
+				_ => 0
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number", values["g"])
+}
+
+// An irrefutable `val {x} = p` cannot narrow the way a refutable match arm does, so it reads
+// `x` off the whole `{x: number} | {y: string}` union. The solver currently rejects because
+// the `{y: string}` member lacks `x`.
+//
+// M5 D4 changes this. Porting the old checker's partial-union member access in
+// internal/checker/unify.go, a property on some but not all members reads as
+// `T | undefined`, so `val {x} = p` will bind `x: number | undefined` with no error. The
+// refutable/irrefutable split survives: a refutable `{x}` arm narrows to `x: number`, while
+// this irrefutable read keeps the `undefined`. When D4 lands, the assertion below flips from
+// the missing-property error to the `number | undefined` result.
+func TestValDestructureUnionRequiresFieldOnAllMembers(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string}) {
+			val {x} = p
+			return x
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "2:25-2:36: object is missing property: x", msgWithSpan(errs[0]))
 }

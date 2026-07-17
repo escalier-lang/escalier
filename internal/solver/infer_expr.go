@@ -2492,7 +2492,12 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 		// leaf, so a leaf of a `&mut` scrutinee binds as a `&mut` borrow, just as `val`
 		// destructuring does. A missing field or wrong tuple arity surfaces here too.
 		armScope := scope.Child()
-		c.bindPattern(armScope, lvl, arm.Pattern, scrutinee, nil)
+		// A structural pattern over a union scrutinee binds against only the members
+		// whose shape it matches, so a match arm may destructure one variant while
+		// leaving the rest for later arms. narrowMatchArm drops the members `arm.Pattern`
+		// cannot destructure. Every other pattern binds against the whole scrutinee.
+		armScrut := narrowMatchArm(matchShape, scrutinee, arm.Pattern)
+		c.bindPattern(armScope, lvl, arm.Pattern, armScrut, nil)
 		if arm.Guard != nil {
 			// A guard is an ordinary boolean condition over the arm's bindings. As in
 			// inferIfElse, the synthesized boolean requirement is left out of Prov. It
@@ -2541,10 +2546,8 @@ func (c *checker) checkMatchExhaustive(scope *Scope, e *ast.MatchExpr, scrutinee
 // inexact union needs a catch-all. An exact one is exhaustive when every member is
 // covered. A literal member is covered by an equal literal pattern. A nominal member, an
 // enum variant or class token, is covered by an instance or extractor pattern naming that
-// class. A structural-object member needs match-arm union narrowing, which M5 does not
-// build. A structural arm over such a member is reported unsupported and the match
-// deferred, but when no arm covers the member the match is non-exhaustive rather than
-// silently accepted.
+// class. A structural object or tuple member is covered by an irrefutable object or tuple
+// pattern of the member's shape. A member no arm covers leaves the match non-exhaustive.
 func (c *checker) unionMatchExhaustive(scope *Scope, e *ast.MatchExpr, u *soltype.UnionType) bool {
 	for _, arm := range e.Cases {
 		if arm.Guard == nil && isCatchAll(arm.Pattern) {
@@ -2554,38 +2557,30 @@ func (c *checker) unionMatchExhaustive(scope *Scope, e *ast.MatchExpr, u *soltyp
 	if u.Inexact {
 		return false
 	}
-	covered := true
-	hasUnevaluable := false
 	for _, member := range u.Types {
-		switch m := member.(type) {
-		case *soltype.LitType:
-			if !c.litMemberCovered(m, e.Cases) {
-				covered = false
-			}
-		case *soltype.ClassType:
-			if !c.nominalMemberCovered(scope, m, e.Cases) {
-				covered = false
-			}
-		default:
-			// A structural-object or other non-nominal member needs match-arm union
-			// narrowing to bind and cover, which M5 does not build.
-			hasUnevaluable = true
+		if !c.unionMemberCovered(scope, member, e.Cases) {
+			return false
 		}
 	}
-	// An uncovered literal or nominal member is a real gap, so report it before
-	// deferring on a member the coverage rules cannot evaluate.
-	if !covered {
+	return true
+}
+
+// unionMemberCovered reports whether some unguarded arm covers a single union member,
+// dispatching on the member's kind. A literal member needs an equal literal pattern, a
+// nominal member an instance or extractor pattern naming its class, and a structural
+// object or tuple member an irrefutable pattern of its shape. Any other member kind has
+// no covering pattern short of a catch-all, which the caller has already checked.
+func (c *checker) unionMemberCovered(scope *Scope, member soltype.Type, arms []*ast.MatchCase) bool {
+	switch m := member.(type) {
+	case *soltype.LitType:
+		return c.litMemberCovered(m, arms)
+	case *soltype.ClassType:
+		return c.nominalMemberCovered(scope, m, arms)
+	case *soltype.ObjectType, *soltype.TupleType:
+		return structuralMemberCovered(member, arms)
+	default:
 		return false
 	}
-	if hasUnevaluable {
-		// A member the coverage rules cannot evaluate is deferred only when a structural
-		// arm exists to explain it: reportStructuralUnionArms flags each such arm as
-		// unsupported and reports whether it found any. When it finds none — every arm is
-		// literal or nominal — the unevaluable member has no arm covering it, so the match
-		// is non-exhaustive rather than silently accepted.
-		return c.reportStructuralUnionArms(scope, e)
-	}
-	return true
 }
 
 // nominalMemberCovered reports whether some unguarded arm covers a nominal union member.
@@ -2628,44 +2623,147 @@ func (c *checker) nominalArmCovers(scope *Scope, p ast.Pat, member *soltype.Clas
 	}
 }
 
-// reportStructuralUnionArms flags each unguarded arm that the union coverage rules cannot
-// evaluate — a structural pattern over a union carrying a non-nominal member — as
-// unsupported, and reports whether it flagged any. A literal or nominal arm is covered by
-// its own rule, and the catch-all case has already returned, so neither is reported here.
-// A false result means no arm explains an unevaluable member, so the caller treats the
-// match as non-exhaustive.
-func (c *checker) reportStructuralUnionArms(scope *Scope, e *ast.MatchExpr) bool {
-	reported := false
-	for _, arm := range e.Cases {
+// structuralMemberCovered reports whether some unguarded arm's object or tuple pattern
+// irrefutably matches every value of a structural union member. An object pattern covers
+// an object member when the member carries every field the pattern names. A tuple pattern
+// covers a tuple member when their arities match. In both cases every sub-pattern must be
+// irrefutable, so a nested literal such as `{x: 1}` or `[a, 2]` does not cover.
+func structuralMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
+	for _, arm := range arms {
 		if arm.Guard != nil {
 			continue
 		}
-		if _, isLit := arm.Pattern.(*ast.LitPat); isLit {
-			continue
+		if patternMatchesMemberShape(arm.Pattern, member) && irrefutablePat(arm.Pattern) {
+			return true
 		}
-		if c.isNominalArm(scope, arm.Pattern) {
-			continue
-		}
-		c.reportUnsupportedFeature(arm.Pattern, "non-literal match arm pattern over a union scrutinee")
-		reported = true
 	}
-	return reported
+	return false
 }
 
-// isNominalArm reports whether a pattern names a class in the type sort, so it is an
-// instance or extractor pattern the nominal coverage rule evaluates rather than a
-// structural pattern.
-func (c *checker) isNominalArm(scope *Scope, p ast.Pat) bool {
-	switch pat := p.(type) {
-	case *ast.InstancePat:
-		_, ok := c.instancePatClass(scope, ast.QualIdentToString(pat.ClassName))
-		return ok
-	case *ast.ExtractorPat:
-		_, ok := c.resolveQualClassType(scope, pat.Name)
-		return ok
+// patternMatchesMemberShape reports whether a structural pattern's shape fits a union
+// member, so the pattern can destructure that member. An object pattern fits an object
+// member carrying every field the pattern names. A tuple pattern fits a tuple member of
+// its fixed arity, or of at least that arity when the pattern ends in `...rest`. This is a
+// shape test only. Refutability of the sub-patterns is checked separately by the caller
+// that needs it. Every non-structural pattern returns false.
+func patternMatchesMemberShape(pat ast.Pat, member soltype.Type) bool {
+	switch p := pat.(type) {
+	case *ast.ObjectPat:
+		obj, ok := soltype.CarrierOf(member).(*soltype.ObjectType)
+		if !ok {
+			return false
+		}
+		for _, name := range objectPatFieldNames(p) {
+			if _, found := obj.Prop(name); !found {
+				return false
+			}
+		}
+		return true
+	case *ast.TuplePat:
+		tup, ok := soltype.CarrierOf(member).(*soltype.TupleType)
+		if !ok {
+			return false
+		}
+		arity, hasRest := tuplePatArity(p)
+		if hasRest {
+			return len(tup.Elems) >= arity
+		}
+		return len(tup.Elems) == arity
 	default:
 		return false
 	}
+}
+
+// objectPatFieldNames returns the field names an object pattern binds. A shorthand or
+// key-value element names one field. An `...rest` element names none. Every object-pattern key
+// is an identifier, so it arrives as Key.Name; the parser also accepts the reserved type-name
+// words `number`, `string`, `boolean`, and `bigint` as plain field names.
+//
+// The parser rejects a string-literal key `{ "foo": pat }`, a number-literal key `{ 42: pat }`,
+// and a computed key `{ [expr]: pat }` alike, each with "Expected identifier or '...'".
+// TODO: when those land, resolve a string- or number-literal key, and a computed key whose type
+// is a string- or number-literal type, to its field name here. A symbol key such as
+// `[Symbol.iterator]` needs the symbol-keyed member access M7 adds and has no string field name.
+func objectPatFieldNames(p *ast.ObjectPat) []string {
+	names := make([]string, 0, len(p.Elems))
+	for _, elem := range p.Elems {
+		switch e := elem.(type) {
+		case *ast.ObjShorthandPat:
+			names = append(names, e.Key.Name)
+		case *ast.ObjKeyValuePat:
+			names = append(names, e.Key.Name)
+		}
+	}
+	return names
+}
+
+// tuplePatArity returns a tuple pattern's fixed-element count and whether it ends in a
+// `...rest`. A rest element makes the pattern match any tuple at least as long as the
+// fixed prefix.
+func tuplePatArity(p *ast.TuplePat) (fixed int, hasRest bool) {
+	for _, e := range p.Elems {
+		if _, ok := e.(*ast.RestPat); ok {
+			hasRest = true
+			continue
+		}
+		fixed++
+	}
+	return fixed, hasRest
+}
+
+// narrowMatchArm returns the type a match arm's pattern binds against. For a structural
+// object or tuple pattern over a union scrutinee, it keeps only the members whose shape the
+// pattern matches, so the pattern destructures those members and leaves the rest for other
+// arms. Narrowing is sound only in a refutable context such as a match arm. An irrefutable
+// binding must still require the pattern's fields on every member. Every other pattern, and
+// every non-union scrutinee, binds against the scrutinee unchanged. shape is the coalesced
+// scrutinee the union structure is read from. scrutinee is what a non-narrowing arm binds
+// against, so its var identity and borrow survive when no narrowing applies.
+func narrowMatchArm(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
+	switch pat.(type) {
+	case *ast.ObjectPat, *ast.TuplePat:
+	default:
+		return scrutinee
+	}
+	inner, mut, lt := soltype.UnwrapRef(shape)
+	u, ok := inner.(*soltype.UnionType)
+	if !ok {
+		return scrutinee
+	}
+	// An inexact union carries an open `...` tail of unknown members. A structural pattern
+	// may match a tail member whose field or element types the listed members do not cover,
+	// so narrowing to the listed members would under-type the arm's leaves. Leave an inexact
+	// union unnarrowed. Binding against the whole union then soundly rejects a pattern the
+	// tail may not satisfy, and an inexact union already requires a catch-all arm.
+	if u.Inexact {
+		return scrutinee
+	}
+	kept := make([]soltype.Type, 0, len(u.Types))
+	for _, m := range u.Types {
+		if patternMatchesMemberShape(pat, m) {
+			kept = append(kept, m)
+		}
+	}
+	// When the pattern matches no member, or every member, there is nothing to narrow.
+	// Binding against the original scrutinee then keeps the existing whole-union behavior.
+	if len(kept) == 0 || len(kept) == len(u.Types) {
+		return scrutinee
+	}
+	var narrowed soltype.Type
+	if len(kept) == 1 {
+		narrowed = kept[0]
+	} else {
+		// The narrowed union is the exact set of members the pattern matches, drawn from an
+		// exact source union, so it is exact too.
+		narrowed = &soltype.UnionType{Types: kept}
+	}
+	// A kept object or tuple member is a RefInner, as is a rebuilt union, so a borrowed
+	// scrutinee re-wraps its narrowed carrier under the same borrow. NewRef drops the
+	// wrapper when the scrutinee was owned.
+	if ri, ok := narrowed.(soltype.RefInner); ok {
+		return soltype.NewRef(mut, lt, ri)
+	}
+	return narrowed
 }
 
 // litMemberCovered reports whether some unguarded arm is a literal pattern equal to
