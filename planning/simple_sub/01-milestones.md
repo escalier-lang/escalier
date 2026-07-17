@@ -1477,9 +1477,30 @@ the level-2 regularity check). (Spike M5/M7/M9 + recursion + CheckRegular.) See
 [m9-implementation-plan.md](m9-implementation-plan.md) for the full PR breakdown
 and the M7 interlock.
 
-- **`keyof T`** — keys of an object/class type as a union.
+- **`keyof T`** — keys of an object/class type as a union, matching the old
+  checker's coverage
+  ([internal/checker/expand_type.go](../../internal/checker/expand_type.go)
+  `KeyOfType` case): an object projects its property/getter/setter keys and folds
+  in an index signature's key type; a tuple yields its numeric indices plus
+  `"length"`; `keyof` distributes over a union/intersection target; and `keyof`
+  of a primitive or `never`/`unknown` is `never`.
+- **`typeof v` type queries** (`*ast.TypeOfTypeAnn`) — the type-level query that
+  reads a *value* binding's inferred type into type position, including a member
+  chain (`typeof p.x`), the old checker's `TypeOfType`
+  ([internal/checker/expand_type.go](../../internal/checker/expand_type.go)
+  `resolveTypeOfQualIdent`). It is the value→type bridge `keyof typeof x` relies
+  on. Resolved at annotation time by looking the name up in the *value* scope and
+  taking its type, not a residual reduction.
 - **Indexed access `T[K]`** — including distributive behavior when `K` is a
   union.
+- **Index signatures** — the `IndexSignatureElem` representation the old checker
+  carries on object types
+  ([internal/type_system/types.go](../../internal/type_system/types.go)). Escalier
+  has **no** hand-written `{[k: string]: T}` syntax; an index signature arises from
+  a **mapped type over a primitive key** (`{[k in string]: T}`, which reduces to
+  one) and from **library ingestion** — `web:dom`/`std:*` `.d.ts` types carry them,
+  so M7.5 needs the representation to exist. `keyof` and indexed access read it, and
+  it backs the dynamic-key read (`recv[i]`) M7.5 deferred here.
 - **Conditional types `T extends U ? X : Y`**, including:
   - **`infer T` clauses** in the `extends` operand, binding fresh variables to
     matched positions (function arg/return, tuple element, constructor return,
@@ -1566,6 +1587,10 @@ types incl. `infer` and distribution; recursive aliases terminate (finite knot
 or budget). Errors (e.g. arity, non-regular recursion) assert full messages.
 Plus: `keyof` of an exact object is an exact union and of an inexact object an
 inexact union; `Exact<{x, ...}>` ⇒ `{x}` and `Inexact<{x}>` ⇒ `{x, ...}`.
+Plus, matching the old checker's coverage: `keyof [a, b]` ⇒ `0 | 1 | "length"`
+and `keyof` distributes over a union target; `typeof v` for `val v = {a: 1}`
+resolves to `{a: number}` and `keyof typeof v` ⇒ `"a"`; a `{[k in string]: T}`
+mapped type reduces to an index signature that `obj[k]` reads through.
 Plus, the TS utility-type suite as end-to-end verification — defining them in
 Escalier and asserting their reductions match TS:
 

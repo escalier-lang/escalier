@@ -56,13 +56,19 @@ prerequisites:
 
 The AST nodes M9 consumes already exist:
 [`KeyOfTypeAnn`](../../internal/ast/type_ann.go),
+[`TypeOfTypeAnn`](../../internal/ast/type_ann.go),
 [`IndexTypeAnn`](../../internal/ast/type_ann.go),
 [`CondTypeAnn`](../../internal/ast/type_ann.go),
 [`InferTypeAnn`](../../internal/ast/type_ann.go),
-[`MappedTypeAnn`](../../internal/ast/type_ann.go), and
-[`TemplateLitTypeAnn`](../../internal/ast/type_ann.go) are all defined and
+[`MappedTypeAnn`](../../internal/ast/type_ann.go),
+[`TemplateLitTypeAnn`](../../internal/ast/type_ann.go), and
+[`IntrinsicTypeAnn`](../../internal/ast/type_ann.go) are all defined and
 visitable. What is missing is the `soltype` representation, the reduction, and
-the `resolveTypeAnn` arms that today fall through to `reportUnsupported`.
+the `resolveTypeAnn` arms that today fall through to `reportUnsupported`. Two
+sibling annotation nodes are **out of scope** and stay unsupported: `MatchTypeAnn`
+(the `match`-type surface the old checker never lowered — an alternative to
+`CondTypeAnn`, not a parity gap) and `ImportTypeAnn` (`import("mod").T`, also
+unsupported in the old checker; real imports cover the need).
 
 ## Spike provenance
 
@@ -99,15 +105,19 @@ spike work rather than inventing it:
    and **post-coalesce** for operands that only ground after the value solve.
 3. **Per-operator reduction rules** for each node above, including distribution
    over unions, `infer`-variable binding by structural match, mapped-type modifier
-   and `as`-remapping semantics, and the Flow-faithful object-spread union rule.
-4. **Exactness propagation through reduction** — the first milestone where
+   and `as`-remapping semantics, the Flow-faithful object-spread union rule, and
+   the `IndexSignatureElem` a primitive-key mapped type reduces to.
+4. **`typeof v` type queries**, resolved at annotation time against the value scope
+   (not a residual), porting the old checker's `resolveTypeOfQualIdent` — the
+   value→type bridge `keyof typeof x` needs.
+5. **Exactness propagation through reduction** — the first milestone where
    exactness is *computed by* an operator, not merely checked — plus the
    `Exact<T>` / `Inexact<T>` intrinsics.
-5. **`CheckRegular`** as a definition-time diagnostic for expanding recursion.
-6. **`FuncType.Throws` and `FuncType.Yields` fields** with parallel arms in
+6. **`CheckRegular`** as a definition-time diagnostic for expanding recursion.
+7. **`FuncType.Throws` and `FuncType.Yields` fields** with parallel arms in
    `constrain` / `extrude` / `LevelOf` / the printer, plus per-body inference
    variables that accumulate lowers from `throw e` / `yield e`.
-7. **The TS utility-type suite** (`Pick`, `Omit`, `Partial`, …, `Awaited`,
+8. **The TS utility-type suite** (`Pick`, `Omit`, `Partial`, …, `Awaited`,
    `Record`, `Capitalize`) as end-to-end verification, defined in Escalier and
    asserted to match TS reductions.
 
@@ -150,9 +160,18 @@ through the solver untouched, before any evaluator exists to reduce it.
 ([type_ann.go](../../internal/solver/type_ann.go)) that builds the **unreduced**
 residual node; prov recording; printer.
 
+**`typeof v` type queries land here too.** `typeof v` is the value→type bridge the
+canonical `keyof typeof x` relies on, so it lands alongside the `keyof` wiring. It
+is **not** a residual — a `resolveTypeAnn` arm for the `typeof` annotation looks the
+name up in the **value** scope, walks any member chain (`typeof p.x`), and returns
+that value's type directly, porting the old checker's `resolveTypeOfQualIdent`
+([expand_type.go](../../internal/checker/expand_type.go)). No reduction, no residual
+node — a resolution-time lookup.
+
 **Accept.** `keyof T` for a type parameter `T` round-trips as a residual — renders
 `keyof T` and flows through `constrain` / `coalesce` without being decomposed or
-crashing. No reduction yet; that is PR1b.
+crashing (no reduction yet; that is PR1b). `typeof v` for a `val v = {a: 1}`
+resolves to `{a: number}` at annotation time.
 
 **Depends on** M7 (the alias representation the residual's operand may name).
 
@@ -169,9 +188,14 @@ The algorithm half: the evaluator that reduces the PR1a node.
 **Algorithms.**
 - `reduce(t soltype.Type) soltype.Type` — the evaluator's core. Walks the operator
   tree; an operator reduces only when every operand is **ground** (no unresolved
-  `TypeVarType`, no unreduced residual sub-operand). `keyof` reduction: project an
-  `ObjectType` / `ClassType` to the union of its key literal types; `keyof` of a
-  type variable or a not-yet-ground operand stays the residual `KeyofType`.
+  `TypeVarType`, no unreduced residual sub-operand). `keyof` reduction matches the
+  old checker's `KeyOfType` case
+  ([expand_type.go](../../internal/checker/expand_type.go)): an `ObjectType` /
+  `ClassType` projects its property/getter/setter keys and folds in an index
+  signature's key type; a `TupleType` yields its numeric indices plus `"length"`;
+  `keyof` distributes over a union or intersection target; `keyof` of a primitive
+  or `never` / `unknown` is `never`; and `keyof` of a type variable or a
+  not-yet-ground operand stays the residual `KeyofType`.
 - The **two-part termination strategy** (promoted verbatim from the spike): the
   cycle cache emits a symbolic back-reference when an `(alias, args)` state
   recurs, giving the finite knot for a regular recursive type; the depth budget is
@@ -197,7 +221,9 @@ same inert-node contract as PR1a.
 
 **Algorithms.**
 - Indexed-access reduction: `{…}[k]` looks up field `k`; a tuple `[…][n]` selects
-  element `n`; `T[keyof T]` yields the union of all value types.
+  element `n`; `T[keyof T]` yields the union of all value types; an object carrying
+  an index signature (PR4) resolves a primitive-typed `K` to the signature's value
+  type.
 - **Distribution:** when `Index` reduces to a union, the access distributes —
   `T["a" | "b"]` ⇒ `T["a"] | T["b"]`. This is the same distribute-over-union
   mechanism conditionals reuse in PR3b.
@@ -275,12 +301,23 @@ ReadonlyMod, OptionalMod Modifier, As Type}` where `Modifier` is
   `never` drops the field. `as`-filtering commonly uses a conditional (`as K
   extends … ? K : never`) — branch selection, not `infer` — which is why this
   depends on PR3a.
+- **Index signatures.** A mapped type over a **primitive** key constraint
+  (`{[k in string]: T}`) reduces to an `IndexSignatureElem`, the old checker's
+  representation ([type_system/types.go](../../internal/type_system/types.go)) that
+  a literal-key map cannot express. This PR adds that element to
+  `soltype.ObjectType`. Escalier has no hand-written `{[k: string]: T}` syntax, so
+  mapped-type reduction is the *only* source of one in user code; `keyof` and
+  indexed access (PR1b, PR2) already read it. It also lands the dynamic-key read
+  inference (`recv[i]` against a non-tuple receiver) that M7.5 deferred here: a
+  primitive key resolves through the index signature rather than a positional slot.
+  Library types under `web:dom` / `std:*` carry index signatures, so M7.5 ingestion
+  relies on this representation existing.
 - This is the machinery underlying `Pick` / `Omit` / `Partial` / `Required` /
-  `Readonly`, verified end-to-end in PR13.
+  `Readonly` / `Record`, verified end-to-end in PR13.
 
 **Wiring.** `resolveTypeAnn` arm for `*ast.MappedTypeAnn`
 ([type_ann.go](../../internal/solver/type_ann.go)); the printer renders the mapped
-form.
+and index-signature forms.
 
 **Depends on** PR1b (`keyof` for `Keys`), PR2 (indexed access in the value
 position), PR3a (`as`-clause conditional key filtering).
@@ -471,6 +508,15 @@ reduction matches TS:
 - `Record<K, V>` — mapped over a key union.
 - `Capitalize` / `Uncapitalize` / `Uppercase` / `Lowercase` and a small
   template-literal case (`EventName<K>` ⇒ `` `on${Capitalize<K>}` ``).
+
+**Provisioning under the no-ambient model.** The old checker inherits these
+utilities from the bundled TypeScript `lib.es*.d.ts`, resolved as ambient globals.
+M7.5 has no ambient lib, so the same definitions — ordinary generic aliases built
+from the M9 operators — ship as **importable** stdlib declarations a user pulls
+from a `std:*` module. This PR's Escalier definitions are both the verification
+corpus *and* the source of those shipped declarations; the operators PR1b–PR12
+land are what make them reduce. So M9 does not just verify the utilities, it makes
+them expressible at all under import-only resolution.
 
 **Depends on** PR2, PR3b, PR4, PR7, PR12. Verifies the whole operator suite
 composes.
