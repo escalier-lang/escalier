@@ -656,6 +656,27 @@ func TestInferMemberClassUnionReadsMethod(t *testing.T) {
 	require.Equal(t, "fn (p: A | B) -> (fn () -> number) | (fn (scale: number) -> string)", values["f"])
 }
 
+// An overloaded method contributes the intersection of its receiver-stripped arms in the
+// partial-union read (#886), matching the value a direct read of an overloaded method yields.
+// Both members expose the same two-arm `area`, so the reads join to one intersection.
+func TestInferMemberClassUnionReadsOverloadedMethod(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class A {
+			area(self, x: number) -> number { return x },
+			area(self, x: string) -> string { return x },
+		}
+		class B {
+			area(self, x: number) -> number { return x },
+			area(self, x: string) -> string { return x },
+		}
+		fn f(p: A | B) {
+			return p.area
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: A | B) -> (fn (x: number) -> number) & (fn (x: string) -> string)", values["f"])
+}
+
 // A property readable on no member of an exact class-instance union is an error (#886), the
 // class analogue of TestInferMemberUnionAbsentFieldErrors.
 func TestInferMemberClassUnionAbsentFieldErrors(t *testing.T) {
@@ -685,10 +706,9 @@ func TestInferMemberClassUnionSetterOnlyReadsUndefined(t *testing.T) {
 	require.Equal(t, "fn (p: A | B) -> string | undefined", values["f"])
 }
 
-// A member exposed only as a setter across every union member is readable nowhere, so the read
-// is rejected rather than bound as bare undefined (#886). This reinstates the old checker's
-// write-only nuance: a setter-only member reported a property error rather than reading as
-// undefined.
+// A setter-only member is not readable, so a member exposed only as a setter across every
+// union member yields no readable value. With no member to read, the access is a
+// missing-property error rather than binding as bare undefined (#886).
 func TestInferMemberClassUnionSetterOnlyEverywhereErrors(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class A { _v: number, set v(mut self, x: number) { self._v = x } }
