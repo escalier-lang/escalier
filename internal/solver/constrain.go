@@ -385,9 +385,19 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			//   - present on both, optional on the sub but required on the super: the
 			//     source may omit it, so it cannot fill a required property —
 			//     OptionalPropertyError, and skip the covariant type check (the
-			//     presence mismatch already rejects the constraint).
+			//     presence mismatch already rejects the constraint). The exception is
+			//     a field-read requirement, which reads the optional property as
+			//     `T | undefined` instead of erroring. See fieldRead below.
 			//   - otherwise (required<:required, required<:optional, optional<:
 			//     optional): covariant on the property type.
+			//
+			// A field-read or destructure requirement is not a subtyping demand but a read
+			// of `sub`'s property into a fresh result variable. Reading an optional property
+			// `x?: T` off a single object yields `T | undefined`, matching the union
+			// field-read path in constrainUnionFieldRead rather than rejecting the optional
+			// source. A read always constrains outside a mutable context, so the mutCtx
+			// guard keeps this off the write-back path a `mut` field selection takes.
+			fieldRead := !mutCtx && isFieldReadReq(sup)
 			var errs []SolverError
 			for _, superElem := range sup.Elems {
 				// A constructor requirement is satisfied by the source's own constructor,
@@ -417,6 +427,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					continue
 				}
 				if subProp.Optional && !superProp.Optional {
+					if fieldRead {
+						// Read the optional property as `T | undefined`. The property's type
+						// flows into the result var, and undefined joins it because the source
+						// may omit the property at runtime.
+						errs = append(errs, c.constrain(subProp.Type, superProp.Type, seen, mutCtx)...)
+						errs = append(errs, c.constrain(&soltype.UndefinedType{}, superProp.Type, seen, mutCtx)...)
+						continue
+					}
 					errs = append(errs, &OptionalPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
 					continue
 				}
@@ -658,6 +676,29 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 
+// isFieldReadReq reports whether an object super is a field-read or destructure
+// requirement rather than a concrete subtyping target. valueProp and propReq mint
+// such a requirement as an inexact object whose every property type is a fresh
+// inference variable the read result flows into, for example `{x: β}` for `p.x`.
+// A concrete annotation target is either exact or carries a concrete property type,
+// so it fails this test and keeps the strict subtyping rules. Both the single-object
+// optional-read widening and the union field-read join key off this shape.
+func isFieldReadReq(o *soltype.ObjectType) bool {
+	if !o.Inexact {
+		return false
+	}
+	for _, elem := range o.Elems {
+		prop, isProp := elem.(*soltype.PropertyElem)
+		if !isProp {
+			return false
+		}
+		if _, isVar := prop.Type.(*soltype.TypeVarType); !isVar {
+			return false
+		}
+	}
+	return true
+}
+
 // constrainUnionFieldRead reads a property `f` off a union sub for a field-read/destructure
 // requirement `union <: {f: β}` (M5 D4), joining one contribution per member into β:
 //   - a member carrying `f` contributes its type;
@@ -676,17 +717,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 // https://github.com/escalier-lang/escalier/issues/886.
 func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (errs []SolverError, ok bool) {
 	req, isObj := super.(*soltype.ObjectType)
-	if !isObj || !req.Inexact {
+	if !isObj || !isFieldReadReq(req) {
 		return nil, false
-	}
-	for _, elem := range req.Elems {
-		prop, isProp := elem.(*soltype.PropertyElem)
-		if !isProp {
-			return nil, false
-		}
-		if _, isVar := prop.Type.(*soltype.TypeVarType); !isVar {
-			return nil, false
-		}
 	}
 	members := make([]*soltype.ObjectType, 0, len(sub.Types))
 	for _, m := range sub.Types {
