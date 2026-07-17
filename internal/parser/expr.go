@@ -907,22 +907,22 @@ func (p *Parser) ifElse() ast.Expr {
 
 	token := p.lexer.peek()
 
-	// Check for 'if let' syntax
-	if token.Type == Let {
-		p.lexer.consume() // consume 'let'
+	// Check for 'if val' syntax
+	if token.Type == Val {
+		p.lexer.consume() // consume 'val'
 
 		// Parse the pattern. A top-level colon type annotation is allowed so a
-		// union scrutinee can narrow to one member, as in `if let x: number = u`.
+		// union scrutinee can narrow to one member, as in `if val x: number = u`.
 		pattern := p.pattern(false, true)
 		if pattern == nil {
-			p.reportError(token.Span, "Expected a pattern after 'let'")
+			p.reportError(token.Span, "Expected a pattern after 'val'")
 			return nil
 		}
 
 		// Expect '='
 		eqToken := p.lexer.peek()
 		if eqToken.Type != Equal {
-			p.reportError(eqToken.Span, "Expected '=' after pattern in if-let")
+			p.reportError(eqToken.Span, "Expected '=' after pattern in if-val")
 			return nil
 		}
 		p.lexer.consume() // consume '='
@@ -930,7 +930,7 @@ func (p *Parser) ifElse() ast.Expr {
 		// Parse the target expression
 		target := p.expr()
 		if target == nil {
-			p.reportError(eqToken.Span, "Expected an expression after '=' in if-let")
+			p.reportError(eqToken.Span, "Expected an expression after '=' in if-val")
 			return nil
 		}
 
@@ -969,10 +969,10 @@ func (p *Parser) ifElse() ast.Expr {
 			}
 		}
 
-		return ast.NewIfLet(pattern, target, body, alt, ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID})
+		return ast.NewIfVal(pattern, target, body, alt, ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID})
 	}
 
-	// Regular if-else (not if-let)
+	// Regular if-else (not if-val)
 	var cond ast.Expr
 	if token.Type == OpenBrace {
 		p.reportError(token.Span, "Expected a condition")

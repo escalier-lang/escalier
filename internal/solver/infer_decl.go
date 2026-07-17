@@ -32,7 +32,7 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl, ns string) (so
 	switch d := d.(type) {
 	case *ast.VarDecl:
 		if d.Else != nil {
-			return c.inferModuleLetElse(scope, lvl, d)
+			return c.inferModuleValElse(scope, lvl, d)
 		}
 		initType, ok := c.inferVarDeclInit(scope, lvl, d)
 		if !ok {
@@ -70,14 +70,14 @@ func (c *checker) inferDeclDef(scope *Scope, lvl int, d ast.Decl, ns string) (so
 	}
 }
 
-// inferModuleLetElse types a module-level `val pat = init else { … }` binding,
+// inferModuleValElse types a module-level `val pat = init else { … }` binding,
 // returning the bound type for the SCC driver to place and generalize. A
 // non-diverging else supplies the binding's fallback value, exactly as at body level,
 // so `val num: number = u else { 0 }` is a valid top-level binding. A diverging else's
 // `return` reports ReturnOutsideFunctionError on its own, since module scope has no
 // enclosing function. Only a single identifier is bound at module scope; module-level
 // destructuring is deferred, mirroring the plain `val`/`var` path.
-func (c *checker) inferModuleLetElse(scope *Scope, lvl int, d *ast.VarDecl) (soltype.Type, provenance.Provenance, bool) {
+func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl) (soltype.Type, provenance.Provenance, bool) {
 	if d.Init == nil {
 		c.report(&MissingInitializerError{Decl: d})
 		return nil, nil, false
@@ -114,7 +114,7 @@ func (c *checker) inferModuleLetElse(scope *Scope, lvl int, d *ast.VarDecl) (sol
 	default:
 		// The binding is the matched initializer OR the non-diverging fallback.
 		res := c.freshAt(lvl)
-		c.recordProv(res, d, LetElseBranch)
+		c.recordProv(res, d, ValElseBranch)
 		c.constrain(d, initType, res)
 		c.constrain(d, elseT, res)
 		bound = res

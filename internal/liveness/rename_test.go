@@ -387,12 +387,12 @@ func TestFuncDeclBindsName(t *testing.T) {
 	require.Equal(t, funcDecl.VarID, addRef.VarID) // use resolves to FuncDecl binding
 }
 
-func TestIfLetPattern(t *testing.T) {
-	// if let Some(v) = x { print(v) }
+func TestIfValPattern(t *testing.T) {
+	// if val Some(v) = x { print(v) }
 	v := identPat("v")
 	vRef := ident("v")
 
-	ifLetExpr := ast.NewIfLet(
+	ifLetExpr := ast.NewIfVal(
 		ast.NewExtractorPat(ast.NewIdentifier("Some", span()), []ast.Pat{v}, span()),
 		ident("x"),
 		block(exprStmt(call(ident("print"), vRef))),

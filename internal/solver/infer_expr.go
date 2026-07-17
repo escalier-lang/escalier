@@ -577,7 +577,7 @@ func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
 // write to a conflicting field is rejected, which keeps the union sound: it is
 // read-only at its conflicting fields, and a rejected write never changes its type.
 // To write, narrow to one branch with
-// `if let r2: mut {x: number} = r` and write through the fresh mutable view.
+// `if val r2: mut {x: number} = r` and write through the fresh mutable view.
 func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
 	refs := make([]*soltype.RefType, len(types))
 	objs := make([]*soltype.ObjectType, len(types))
@@ -2349,11 +2349,11 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	return res
 }
 
-// inferIfLet types `if let pat = target { cons }` with an optional `else { alt }`.
+// inferIfVal types `if val pat = target { cons }` with an optional `else { alt }`.
 // The pattern's names are bound ONLY in the consequent, at the narrowed member type;
 // the alternate runs in the enclosing scope and never sees them. The result joins the
 // consequent and alternate like inferIfElse, each non-diverging branch a lower bound.
-func (c *checker) inferIfLet(scope *Scope, lvl int, e *ast.IfLetExpr) soltype.Type {
+func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	consScope := scope.Child()
 	c.bindRefutable(consScope, lvl, e.Pattern, scrutinee)
@@ -2366,7 +2366,7 @@ func (c *checker) inferIfLet(scope *Scope, lvl int, e *ast.IfLetExpr) soltype.Ty
 		altT, altDiverges = c.inferBlockOrExpr(scope, lvl, e.Alt)
 	}
 	res := c.freshAt(lvl)
-	c.recordProv(res, e, IfLetBranch)
+	c.recordProv(res, e, IfValBranch)
 	if !consDiverges {
 		c.constrain(e, consT, res)
 	}
@@ -2379,10 +2379,10 @@ func (c *checker) inferIfLet(scope *Scope, lvl int, e *ast.IfLetExpr) soltype.Ty
 
 // bindRefutable binds a refutable pattern's names against a scrutinee, returning the
 // bound type. A bare identifier pattern carrying a narrowing annotation, as in
-// `if let x: number = u`, binds the name at the narrowed member through
+// `if val x: number = u`, binds the name at the narrowed member through
 // bindNarrowedIdent. Every other pattern destructures the scrutinee through the shared
 // structural path. The annotation is read from the pattern's own IdentPat.TypeAnn, which
-// the if-let parser fills in.
+// the if-val parser fills in.
 func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type) soltype.Type {
 	if ip, ok := pat.(*ast.IdentPat); ok && ip.TypeAnn != nil {
 		return c.bindNarrowedIdent(scope, lvl, ip, ip.TypeAnn, scrutinee)
@@ -2393,8 +2393,8 @@ func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, scrutinee so
 
 // bindNarrowedIdent binds a single identifier at the type the narrowing annotation `ann`
 // resolves to, picked from the scrutinee by the union-super exists rule, and returns it.
-// It is the shared core of the refutable identifier-narrowing path. Both if-let and
-// let-else pass the annotation in directly, if-let from its pattern and let-else from
+// It is the shared core of the refutable identifier-narrowing path. Both if-val and
+// val-else pass the annotation in directly, if-val from its pattern and val-else from
 // the decl, so the annotation never moves between AST nodes.
 func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	narrowed, resolved := c.resolveTypeAnn(scope, ann, lvl)
@@ -2417,10 +2417,10 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 	return narrowed
 }
 
-// inferLetElse types a `val pat = init else { … }` binding. The pattern narrows the
+// inferValElse types a `val pat = init else { … }` binding. The pattern narrows the
 // initializer and binds for the rest of the block; the `else` runs on a failed match
 // and either diverges or supplies the binding's fallback value, which must fit it.
-func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
+func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	if d.Init == nil {
 		c.reportUnsupported(d)
 		return
@@ -2431,7 +2431,7 @@ func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	elseT, elseDiverges := c.inferBlock(scope.Child(), lvl, d.Else)
 
 	if d.TypeAnn != nil {
-		// A let-else annotation lives on the decl. A bare identifier narrows to it through
+		// A val-else annotation lives on the decl. A bare identifier narrows to it through
 		// bindNarrowedIdent, pinning the binding so a non-diverging else's fallback value
 		// must fit the pinned type. A destructuring pattern cannot distribute the
 		// annotation across its leaves, as in `val [a, b]: [number, string] = u else { … }`,
@@ -2456,7 +2456,7 @@ func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	source := initType
 	if !elseDiverges {
 		res := c.freshAt(lvl)
-		c.recordProv(res, d, LetElseBranch)
+		c.recordProv(res, d, ValElseBranch)
 		c.constrain(d, initType, res)
 		c.constrain(d, elseT, res)
 		source = res

@@ -195,7 +195,7 @@ func (c *collector) collectExpr(expr ast.Expr) {
 		c.collectExpr(e.Cond)
 		c.collectBlock(e.Cons)
 		c.collectBlockOrExpr(e.Alt)
-	case *ast.IfLetExpr:
+	case *ast.IfValExpr:
 		// Same as IfElseExpr — only reached when nested.
 		// TODO: #485 — decompose nested branching in the CFG for per-branch precision.
 		c.collectExpr(e.Target)

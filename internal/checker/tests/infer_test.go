@@ -1798,15 +1798,15 @@ func TestCheckModuleNoErrors(t *testing.T) {
 	}
 }
 
-func TestIfLetExprInference(t *testing.T) {
+func TestIfValExprInference(t *testing.T) {
 	tests := map[string]struct {
 		input         string
 		expectedTypes map[string]string
 	}{
-		"BasicIfLetWithTuple": {
+		"BasicIfValWithTuple": {
 			input: `
 				declare val target: [number, number] | null
-				val result = if let [a, b] = target {
+				val result = if val [a, b] = target {
 					a + b
 				} else {
 					0
@@ -1816,10 +1816,10 @@ func TestIfLetExprInference(t *testing.T) {
 				"result": "number",
 			},
 		},
-		"IfLetWithAlternativeOnly": {
+		"IfValWithAlternativeOnly": {
 			input: `
 				declare val target: [number, string] | null
-				val result = if let [num, str] = target {
+				val result = if val [num, str] = target {
 					str
 				}
 			`,
@@ -1827,10 +1827,10 @@ func TestIfLetExprInference(t *testing.T) {
 				"result": "string | undefined",
 			},
 		},
-		"IfLetWithNestedPatterns": {
+		"IfValWithNestedPatterns": {
 			input: `
 				declare val target: [[number, number], [number, number]] | null
-				val result = if let [[a, b], [c, d]] = target {
+				val result = if val [[a, b], [c, d]] = target {
 					a + b + c + d
 				} else {
 					-1
@@ -1840,10 +1840,10 @@ func TestIfLetExprInference(t *testing.T) {
 				"result": "number",
 			},
 		},
-		"IfLetWithTypeAnnotations": {
+		"IfValWithTypeAnnotations": {
 			input: `
 				declare val target: [number, boolean] | null
-				val result = if let [num, flag] = target {
+				val result = if val [num, flag] = target {
 					if (flag) {
 						num * 2
 					} else {
@@ -1857,10 +1857,10 @@ func TestIfLetExprInference(t *testing.T) {
 				"result": "number",
 			},
 		},
-		"IfLetWithObjectPattern": {
+		"IfValWithObjectPattern": {
 			input: `
 				declare val target: {x: number, y: number} | null
-				val result = if let {x, y} = target {
+				val result = if val {x, y} = target {
 					x * y
 				} else {
 					-1
@@ -1870,10 +1870,10 @@ func TestIfLetExprInference(t *testing.T) {
 				"result": "number",
 			},
 		},
-		"IfLetWithShorthandObjectPattern": {
+		"IfValWithShorthandObjectPattern": {
 			input: `
 				declare val target: {value: number, active: boolean} | null
-				val result = if let {value, active} = target {
+				val result = if val {value, active} = target {
 					if (active) { value } else { 0 }
 				} else {
 					-1
@@ -1883,10 +1883,10 @@ func TestIfLetExprInference(t *testing.T) {
 				"result": "number",
 			},
 		},
-		"IfLetNullable": {
+		"IfValNullable": {
 			input: `
 				val option: number | null = 42
-				export val ifLetWithExprAltNum = if let valueNum = option {
+				export val ifLetWithExprAltNum = if val valueNum = option {
 				    valueNum * 2
 				} else {
 				    0

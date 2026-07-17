@@ -122,10 +122,10 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		}
 		// A `let`-`else` binding is refutable: its pattern narrows the initializer and
 		// its `else` runs on a failed match, either diverging or supplying a fallback.
-		// inferLetElse binds the pattern's names into this scope for the rest of the
+		// inferValElse binds the pattern's names into this scope for the rest of the
 		// block, so it takes over from the ordinary irrefutable `val`/`var` paths below.
 		if vd.Else != nil {
-			c.inferLetElse(scope, lvl, vd)
+			c.inferValElse(scope, lvl, vd)
 			return &soltype.Void{}
 		}
 		name, named := varName(vd)

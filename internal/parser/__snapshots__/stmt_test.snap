@@ -4196,7 +4196,7 @@
 }
 ---
 
-[TestParseStmtNoErrors/LetElseDestructure - 1]
+[TestParseStmtNoErrors/ValElseDestructure - 1]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
         Pattern: &ast.TuplePat{
@@ -4240,7 +4240,7 @@
 }
 ---
 
-[TestParseStmtNoErrors/LetElseBareIdent - 1]
+[TestParseStmtNoErrors/ValElseBareIdent - 1]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
         Pattern: &ast.IdentPat{
@@ -4265,7 +4265,7 @@
 }
 ---
 
-[TestParseStmtNoErrors/LetElseNarrowing - 1]
+[TestParseStmtNoErrors/ValElseNarrowing - 1]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
         Pattern: &ast.IdentPat{
@@ -4299,7 +4299,7 @@
 }
 ---
 
-[TestParseStmtNoErrors/LetElseNonDivergingFallback - 1]
+[TestParseStmtNoErrors/ValElseNonDivergingFallback - 1]
 &ast.DeclStmt{
     Decl: &ast.VarDecl{
         Pattern: &ast.IdentPat{

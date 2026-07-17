@@ -667,9 +667,9 @@ try {
 	assert.False(t, seen2["a"], "try-block var a should NOT be visible in catch block")
 }
 
-func TestScopeCompletionInsideIfLet(t *testing.T) {
+func TestScopeCompletionInsideIfVal(t *testing.T) {
 	source := `val target: [number, string] | undefined = [1, "hi"]
-if let [a, b] = target {
+if val [a, b] = target {
 	a
 } else {
 	val c = 0
@@ -686,8 +686,8 @@ if let [a, b] = target {
 		seen[item.Label] = true
 	}
 	assert.True(t, seen["target"], "outer var target should be visible")
-	assert.True(t, seen["a"], "if-let binding a should be visible")
-	assert.True(t, seen["b"], "if-let binding b should be visible")
+	assert.True(t, seen["a"], "if-val binding a should be visible")
+	assert.True(t, seen["b"], "if-val binding b should be visible")
 	assert.False(t, seen["c"], "else-block var c should NOT be visible in consequent")
 
 	// Cursor inside else at "c" on line 6
@@ -700,8 +700,8 @@ if let [a, b] = target {
 	}
 	assert.True(t, seen2["target"], "outer var target should be visible in else")
 	assert.True(t, seen2["c"], "else-block var c should be visible")
-	assert.False(t, seen2["a"], "if-let binding a should NOT be visible in else")
-	assert.False(t, seen2["b"], "if-let binding b should NOT be visible in else")
+	assert.False(t, seen2["a"], "if-val binding a should NOT be visible in else")
+	assert.False(t, seen2["b"], "if-val binding b should NOT be visible in else")
 }
 
 func TestScopeCompletionInsideDoExpr(t *testing.T) {

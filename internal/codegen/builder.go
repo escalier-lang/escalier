@@ -739,7 +739,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 
 		if d.Else != nil {
-			return slices.Concat(initStmts, b.buildLetElse(d, initExpr))
+			return slices.Concat(initStmts, b.buildValElse(d, initExpr))
 		}
 
 		// Ignore checks returned by buildPattern
@@ -1711,8 +1711,8 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		stmts := slices.Concat(tagStmts, exprStmts)
 
 		return NewTaggedTemplateLitExpr(tag, quasis, exprs, expr), stmts
-	case *ast.IfLetExpr:
-		// Generate a temporary variable for the if-let result
+	case *ast.IfValExpr:
+		// Generate a temporary variable for the if-val result
 		tempVar, tempDeclStmt := b.createTempVar(expr)
 
 		stmts := []Stmt{tempDeclStmt}
@@ -1724,7 +1724,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		// Generate the condition and binding statements for the pattern
 		condition, bindingStmts := b.buildPatternCondition(expr.Pattern, targetExpr)
 
-		// For if-let expressions, check if the target type is nullable and add null/undefined check
+		// For if-val expressions, check if the target type is nullable and add null/undefined check
 		if expr.Target.InferredType() != nil {
 			targetType := type_system.Prune(expr.Target.InferredType())
 			if unionType, ok := targetType.(*type_system.UnionType); ok {
@@ -2541,14 +2541,14 @@ func simplifyTrueLiterals(stmt Stmt) Stmt {
 }
 
 // buildPatternCondition builds the condition expression and binding statements for a pattern
-// buildLetElse lowers `val pat = init else { … }` into a temp-hoisted match check.
+// buildValElse lowers `val pat = init else { … }` into a temp-hoisted match check.
 // The temp starts as the initializer; on a failed match the else block runs, and its
 // tail value is assigned back to the temp so the binding takes it as a fallback. An
 // else that diverges with a `return`/`throw` leaves the temp untouched and skips past
 // the bindings. The `if`/empty-then/else-runs-the-block shape keeps the condition
 // un-negated, which the precedence-naive printer needs. The pattern's bindings read
 // the temp after the guard, binding the matched value or the fallback.
-func (b *Builder) buildLetElse(d *ast.VarDecl, initExpr Expr) []Stmt {
+func (b *Builder) buildValElse(d *ast.VarDecl, initExpr Expr) []Stmt {
 	tempVar, tempDeclStmt := b.createTempVar(d.Init)
 	initAssign := &ExprStmt{
 		Expr:   NewBinaryExpr(tempVar, Assign, initExpr, d.Init),

@@ -644,8 +644,8 @@ func (p *Printer) printExpr(expr ast.Expr) {
 		p.printObjectExpr(e)
 	case *ast.IfElseExpr:
 		p.printIfElseExpr(e)
-	case *ast.IfLetExpr:
-		p.printIfLetExpr(e)
+	case *ast.IfValExpr:
+		p.printIfValExpr(e)
 	case *ast.MatchExpr:
 		p.printMatchExpr(e)
 	case *ast.TryCatchExpr:
@@ -742,7 +742,7 @@ func (p *Printer) printBorrowExpr(expr *ast.BorrowExpr) {
 func borrowExprArgNeedsParens(e ast.Expr) bool {
 	switch e.(type) {
 	case *ast.BorrowExpr, *ast.BinaryExpr, *ast.UnaryExpr,
-		*ast.IfElseExpr, *ast.IfLetExpr, *ast.MatchExpr, *ast.DoExpr:
+		*ast.IfElseExpr, *ast.IfValExpr, *ast.MatchExpr, *ast.DoExpr:
 		return true
 	default:
 		return false
@@ -862,8 +862,8 @@ func (p *Printer) printIfElseExpr(expr *ast.IfElseExpr) {
 	}
 }
 
-func (p *Printer) printIfLetExpr(expr *ast.IfLetExpr) {
-	p.writeString("if let ")
+func (p *Printer) printIfValExpr(expr *ast.IfValExpr) {
+	p.writeString("if val ")
 	p.printPattern(expr.Pattern)
 	p.writeString(" = ")
 	p.printExpr(expr.Target)

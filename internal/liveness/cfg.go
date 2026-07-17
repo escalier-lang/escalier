@@ -13,7 +13,7 @@ type BasicBlock struct {
 	Predecessors []*BasicBlock
 	// ExtraDefs lists variables defined in this block that aren't captured
 	// by Stmts — for example, loop variable bindings from ForInStmt
-	// patterns, IfLetExpr pattern bindings, or MatchExpr arm patterns.
+	// patterns, IfValExpr pattern bindings, or MatchExpr arm patterns.
 	ExtraDefs []VarID
 }
 
@@ -172,7 +172,7 @@ func (b *cfgBuilder) processAssignBranch(be *ast.BinaryExpr, current *BasicBlock
 	// Early return if RHS is not a branching expression, before any side
 	// effects on current.Stmts.
 	switch be.Right.(type) {
-	case *ast.IfElseExpr, *ast.IfLetExpr, *ast.MatchExpr, *ast.DoExpr, *ast.TryCatchExpr:
+	case *ast.IfElseExpr, *ast.IfValExpr, *ast.MatchExpr, *ast.DoExpr, *ast.TryCatchExpr:
 		// RHS is branching, continue processing below.
 	default:
 		return nil
@@ -212,7 +212,7 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 	// bindings in scope. Decompose it so the else's statements get their own block
 	// rather than being lumped into the current one.
 	if vd.Else != nil {
-		return b.processLetElse(vd, current)
+		return b.processValElse(vd, current)
 	}
 
 	joinDefs := collectPatVarDefs(vd.Pattern)
@@ -225,9 +225,9 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 	return current
 }
 
-// processLetElse decomposes a `val pat = init else { … }` binding into an else
+// processValElse decomposes a `val pat = init else { … }` binding into an else
 // branch and a join block that carries the pattern's bindings on the matched path.
-func (b *cfgBuilder) processLetElse(vd *ast.VarDecl, current *BasicBlock) *BasicBlock {
+func (b *cfgBuilder) processValElse(vd *ast.VarDecl, current *BasicBlock) *BasicBlock {
 	// A branchy initializer such as `if c { a } else { b }` contributes its own CFG
 	// edges; decomposeBranch returns the block reached after it converges. A plain
 	// initializer is recorded as an eval in the current block so its uses are
@@ -274,9 +274,9 @@ func (b *cfgBuilder) decomposeBranch(expr ast.Expr, joinDefs []VarID, current *B
 	case *ast.IfElseExpr:
 		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Cond, e.Cond.Span()))
 		return b.processIfElse(e, joinDefs, current)
-	case *ast.IfLetExpr:
+	case *ast.IfValExpr:
 		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Target, e.Target.Span()))
-		return b.processIfLet(e, joinDefs, current)
+		return b.processIfVal(e, joinDefs, current)
 	case *ast.MatchExpr:
 		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Target, e.Target.Span()))
 		return b.processMatch(e, joinDefs, current)
@@ -320,9 +320,9 @@ func (b *cfgBuilder) processIfElse(e *ast.IfElseExpr, joinDefs []VarID, current 
 	return join
 }
 
-// processIfLet decomposes an if-let expression. The pattern bindings are
+// processIfVal decomposes an if-val expression. The pattern bindings are
 // scoped to the consequent branch (added as ExtraDefs on the cons block).
-func (b *cfgBuilder) processIfLet(e *ast.IfLetExpr, joinDefs []VarID, current *BasicBlock) *BasicBlock {
+func (b *cfgBuilder) processIfVal(e *ast.IfValExpr, joinDefs []VarID, current *BasicBlock) *BasicBlock {
 	join := b.newBlock()
 	join.ExtraDefs = joinDefs
 

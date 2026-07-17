@@ -795,10 +795,10 @@ func TestBuildBorrowExpr_LowersToOperand(t *testing.T) {
 	}
 }
 
-// TestBuildLetElse pins the lowering of a `val pat = init else { … }` binding: a
+// TestBuildValElse pins the lowering of a `val pat = init else { … }` binding: a
 // temp-hoisted match guard whose else branch either diverges or assigns its tail
 // value back to the temp as a fallback, then the pattern's bindings read the temp.
-func TestBuildLetElse(t *testing.T) {
+func TestBuildValElse(t *testing.T) {
 	tests := map[string]struct {
 		src      string
 		expected string

@@ -34,7 +34,7 @@ func (*MemberExpr) isExpr()            {}
 func (*TupleExpr) isExpr()             {}
 func (*ObjectExpr) isExpr()            {}
 func (*IfElseExpr) isExpr()            {}
-func (*IfLetExpr) isExpr()             {}
+func (*IfValExpr) isExpr()             {}
 func (*MatchExpr) isExpr()             {}
 func (*TryCatchExpr) isExpr()          {}
 func (*DoExpr) isExpr()                {}
@@ -686,7 +686,7 @@ func (e *IfElseExpr) Accept(v Visitor) {
 	v.ExitExpr(e)
 }
 
-type IfLetExpr struct {
+type IfValExpr struct {
 	Pattern      Pat
 	Target       Expr
 	Cons         Block
@@ -695,10 +695,10 @@ type IfLetExpr struct {
 	inferredType Type
 }
 
-func NewIfLet(pattern Pat, target Expr, cons Block, alt *BlockOrExpr, span Span) *IfLetExpr {
-	return &IfLetExpr{Pattern: pattern, Target: target, Cons: cons, Alt: alt, span: span, inferredType: nil}
+func NewIfVal(pattern Pat, target Expr, cons Block, alt *BlockOrExpr, span Span) *IfValExpr {
+	return &IfValExpr{Pattern: pattern, Target: target, Cons: cons, Alt: alt, span: span, inferredType: nil}
 }
-func (e *IfLetExpr) Accept(v Visitor) {
+func (e *IfValExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		e.Pattern.Accept(v)
 		e.Target.Accept(v)
