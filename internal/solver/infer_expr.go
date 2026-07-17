@@ -2751,6 +2751,11 @@ func narrowMatchArm(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 	if len(kept) == 1 && !u.Inexact {
 		narrowed = kept[0]
 	} else {
+		// The Inexact flag is the open `...` tail, not an `unknown` member, so this does not
+		// collapse the way `T | unknown` does. Keep the structured inexact union rather than
+		// returning unknown: it is the bind target for the arm's pattern, and constrainUnionFieldRead
+		// needs the listed members to read each field before the tail widens it to unknown.
+		// Binding the pattern against bare unknown would leave nothing to destructure.
 		narrowed = &soltype.UnionType{Types: kept, Inexact: u.Inexact}
 	}
 	// A kept object or tuple member is a RefInner, as is a rebuilt union, so a borrowed
