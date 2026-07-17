@@ -46,13 +46,16 @@ prerequisites:
 2. **Alias instantiation and expansion (M7).** The evaluator reduces `Pick<Person,
    "name">` by instantiating `Pick`'s body with the arguments and reducing the
    result. That instantiate/expand step is M7 infrastructure.
-3. **Real stdlib types (M7.5).** `Awaited<T>` needs the real `Promise<T>`;
-   generators need `Generator<Y, R, TNext>` / `AsyncGenerator<…>`; the
-   utility-type suite is checked against the real `.d.ts` shapes. Since M7.5 is
-   import-only — there is no ambient global lib — the utility definitions and
-   tests import these names from `std:*` / `web:*` / `node:*`. M2 seeded opaque
-   placeholders; M7.5 swaps in the real structures, and M9 follows so it can rely
-   on them.
+3. **Real stdlib types and the index-signature representation (M7.5).** `Awaited<T>`
+   needs the real `Promise<T>`; generators need `Generator<Y, R, TNext>` /
+   `AsyncGenerator<…>`; the utility-type suite is checked against the real `.d.ts`
+   shapes. Since M7.5 is import-only — there is no ambient global lib — the utility
+   definitions and tests import these names from `std:*` / `web:*` / `node:*`. M7.5
+   also **introduces the `IndexSignatureElem` representation**, because its ingested
+   library types carry index signatures; M9 PR4 only *produces* and *reads* them, so
+   the dependency runs one way (M7.5 → M9) — M9 introduces no artifact M7.5 needs.
+   M2 seeded opaque placeholders; M7.5 swaps in the real structures, and M9 follows
+   so it can rely on them.
 
 The AST nodes M9 consumes already exist:
 [`KeyOfTypeAnn`](../../internal/ast/type_ann.go),
@@ -304,14 +307,15 @@ ReadonlyMod, OptionalMod Modifier, As Type}` where `Modifier` is
 - **Index signatures.** A mapped type over a **primitive** key constraint
   (`{[k in string]: T}`) reduces to an `IndexSignatureElem`, the old checker's
   representation ([type_system/types.go](../../internal/type_system/types.go)) that
-  a literal-key map cannot express. This PR adds that element to
-  `soltype.ObjectType`. Escalier has no hand-written `{[k: string]: T}` syntax, so
-  mapped-type reduction is the *only* source of one in user code; `keyof` and
-  indexed access (PR1b, PR2) already read it. It also lands the dynamic-key read
-  inference (`recv[i]` against a non-tuple receiver) that M7.5 deferred here: a
-  primitive key resolves through the index signature rather than a positional slot.
-  Library types under `web:dom` / `std:*` carry index signatures, so M7.5 ingestion
-  relies on this representation existing.
+  a literal-key map cannot express. The `IndexSignatureElem` on `soltype.ObjectType`
+  is **introduced in M7.5, not here** — its ingested `web:dom` / `std:*` library
+  types carry index signatures and M7.5 lands first, so the dependency runs one way
+  (M7.5 → M9) with no cycle. This PR is the first *producer* in user code:
+  mapped-type reduction emits one, and Escalier has no hand-written
+  `{[k: string]: T}` syntax so that is the only source. `keyof` and indexed access
+  (PR1b, PR2) read it, and this PR adds the dynamic-key read inference (`recv[i]`
+  against a non-tuple receiver) M7.5 deferred here — a primitive key resolves
+  through the index signature rather than a positional slot.
 - This is the machinery underlying `Pick` / `Omit` / `Partial` / `Required` /
   `Readonly` / `Record`, verified end-to-end in PR13.
 

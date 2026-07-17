@@ -1016,12 +1016,14 @@ implied by transitivity is dropped from the rendered set.
 Add the `soltype` type-alias representation and user-written alias declarations —
 the foundation both library ingestion (M7.5) and type-level operators (M9) build
 on. Today `soltype` has no alias node: [infer_enum.go:12-17](../../internal/solver/infer_enum.go)
-records "soltype has no type aliases yet (M7)", and
-[type_ann.go:21](../../internal/solver/type_ann.go) resolves only the single
-hardcoded `Promise<T>` reference — every other `TypeRefTypeAnn` falls through to
-`reportUnsupported`. This milestone closes that gap, so a written type name
-resolves through the scope to its declaration and a generic alias instantiates
-with its arguments. See [m7-implementation-plan.md](m7-implementation-plan.md) for
+records "soltype has no type aliases yet (M7)". A `TypeRefTypeAnn` already resolves
+a class or an in-scope type parameter through `resolveScopedTypeRef`
+([infer_class.go:342](../../internal/solver/infer_class.go)), and
+[type_ann.go:21](../../internal/solver/type_ann.go) also matches the single
+hardcoded `Promise<T>` reference — but an **alias** reference has no path and falls
+through to `reportUnsupported`. This milestone adds that path, so a written alias
+name resolves through the scope to its declaration and a generic alias
+instantiates with its arguments. See [m7-implementation-plan.md](m7-implementation-plan.md) for
 the full PR breakdown and the M9 interlock.
 
 - **`AliasType` in `soltype`.** A `{Name, Params []*TypeParam, Body Type}` node,
@@ -1306,8 +1308,10 @@ a desugaring rule — rather than opaque placeholders.
       against the now-resolvable `Array<T>` rather than a tuple requirement. **The
       index-signature inference itself is M9** (index types); until then a dynamic
       key against a non-array receiver is a typed error, consistent with M4's
-      object computed-key handling and the M9 index-signature deferral. So M7.5 owns
-      constant-index tuple inference and array reads; M9 owns index signatures.
+      object computed-key handling and the M9 index-signature deferral. So M7.5
+      introduces the `IndexSignatureElem` representation and owns constant-index
+      tuple inference and array reads, while M9 owns the index-signature *inference*
+      (mapped-type production and the dynamic-key read).
     - **Index WRITES** (`recv[0] = v`) extend C3's `inferMemberAssign` the same way
       — M4 kept the `*ast.IndexExpr` write sub-case as `reportUnsupported` with a
       "needs Array types — M7.5" note (m4-implementation-plan §C3). The write path
@@ -1389,9 +1393,10 @@ analogue of M4's object close; a dynamic-key read resolves against the real
 **Depends on:** M7 (the alias representation and scope-driven `TypeRef` resolution
 that ingested generic types produce), M3 (generics), M4 (objects/records —
 `sealUsageObjects`, the close machinery this extends), M5 (classes / methods /
-`final`), M6 (unions). **Feeds:** M8 — the real-package differential cannot run the
-existing `fixtures/` tree (which uses `console`/`Array`/`Promise`/…) without real
-lib types.
+`final`), M6 (unions), M6.5 (declared lifetime bounds — a library signature is the
+first no-body site where declared bounds become mandatory, per M6.5's rationale).
+**Feeds:** M8 — the real-package differential cannot run the existing `fixtures/`
+tree (which uses `console`/`Array`/`Promise`/…) without real lib types.
 
 ---
 
@@ -1495,12 +1500,13 @@ and the M7 interlock.
   union.
 - **Index signatures** — the `IndexSignatureElem` representation the old checker
   carries on object types
-  ([internal/type_system/types.go](../../internal/type_system/types.go)). Escalier
-  has **no** hand-written `{[k: string]: T}` syntax; an index signature arises from
-  a **mapped type over a primitive key** (`{[k in string]: T}`, which reduces to
-  one) and from **library ingestion** — `web:dom`/`std:*` `.d.ts` types carry them,
-  so M7.5 needs the representation to exist. `keyof` and indexed access read it, and
-  it backs the dynamic-key read (`recv[i]`) M7.5 deferred here.
+  ([internal/type_system/types.go](../../internal/type_system/types.go)). The
+  representation is **introduced in M7.5**, whose ingested `web:dom`/`std:*` `.d.ts`
+  types carry index signatures; M9 produces and reads them, so the dependency runs
+  one way. Escalier has **no** hand-written `{[k: string]: T}` syntax; in user code
+  an index signature arises only from a **mapped type over a primitive key**
+  (`{[k in string]: T}`, which reduces to one). `keyof` and indexed access read it,
+  and M9 adds the dynamic-key read (`recv[i]`) M7.5 deferred here.
 - **Conditional types `T extends U ? X : Y`**, including:
   - **`infer T` clauses** in the `extends` operand, binding fresh variables to
     matched positions (function arg/return, tuple element, constructor return,

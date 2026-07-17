@@ -58,12 +58,17 @@ already exist for classes and enums; M7 adds the alias sort alongside them.
   body, so a group of mutually-recursive enums and classes resolves each other.
   M7's `preBindAlias` / `inferAliasBody` is the same shape, simpler because an
   alias has no variant-constructor namespace.
-- **`constrain` already carries a coinductive seen-set for recursive types.**
-  `constrain` keys a seen-set by pointer identity
-  ([constrain.go:58-134](../../internal/solver/constrain.go)); the comment names
-  "M4's recursive types (**aliases**, …)" as the reason. So the cycle-closing
-  discipline a recursive alias needs at subtyping time is already in place — M7
-  wires alias expansion through it, it does not build a new cache.
+- **`constrain` carries a coinductive seen-set, but it keys by *pointer* identity.**
+  `constrain`'s `constraintKey` is `{sub, super, mutCtx}` compared by pointer
+  ([constrain.go:58-77](../../internal/solver/constrain.go)); its own comment warns
+  "M4's recursive types (**aliases**, letrec) must preserve this property." A
+  **non-generic** recursive alias whose reference node is reused preserves it, so
+  the existing seen-set closes the cycle directly. A **generic** recursive alias
+  does **not**: `expandAlias` substitutes the type arguments and mints a *fresh*
+  node each lap, so pointer identity never matches and it would expand forever.
+  PR3 therefore keys the alias recursion guard on the canonical
+  `(AliasDef, args)` identity for the generic case — it does not rely on pointer
+  identity alone.
 - **The enum name binds to a bare union, with an explicit M7 TODO.**
   `preBindEnum` binds `Color`'s type directly to `UnionType{RGB, Hex}`
   ([infer_enum.go:122-127](../../internal/solver/infer_enum.go)), and
@@ -118,7 +123,9 @@ The foundational PR: the representation, the registry, and the simplest decl.
   `isRefInner()` arm ([type.go:447](../../internal/soltype/type.go)), a visitor arm
   ([soltype/visitor.go](../../internal/soltype/visitor.go)), a printer arm
   ([soltype/print.go](../../internal/soltype/print.go)) rendering `Name` when
-  `TypeArgs` is empty, and `LevelOf` as the max over `TypeArgs` (0 when empty).
+  `TypeArgs` is empty, and `LevelOf` as the max over `TypeArgs` (0 when empty). PR4
+  extends the node with a `LifetimeArgs` field for lifetime-generic aliases; until
+  then it carries type arguments only.
 - `AliasDef{TypeParams []*soltype.TypeParam, LifetimeParams []*soltype.LifetimeParam,
   Body soltype.Type, Level int}` plus `Context.aliases map[string]*AliasDef` with
   `registerAlias` / `aliasDef`, mirroring
@@ -168,13 +175,21 @@ message; `p` renders as `Point`, not `{x: number, y: number}`.
   M5 note "Generic type aliases do not carry variance separately"). Variance for the
   non-expanding cycle-cache-hit dispatch is M9's concern, computed internally there
   — flagged in [§Interlocks with M9](#interlocks-with-m9).
-- **Arity checking.** A reference whose arg count differs from the alias's parameter
-  count reports a full-message `AliasArityMismatchError` carrying the typed
-  references, modeled on [errors.go](../../internal/solver/errors.go).
+- **Arity checking honors defaults.** `soltype.TypeParam.Default` (`nil ⇒
+  required`, already resolved by `resolveTypeParams`) makes a trailing parameter
+  optional, so arity is a range, not an equality. A reference may omit trailing
+  arguments that have defaults — those slots are filled from the `AliasDef`
+  defaults during instantiation — and only **fewer than the required count** or
+  **more than the total parameter count** reports a full-message
+  `AliasArityMismatchError` carrying the typed references, modeled on
+  [errors.go](../../internal/solver/errors.go). This applies the defaults the old
+  checker's `TODO(#475)` left unapplied.
 
 **Accept.** `type Box<T> = {value: T}`; `Box<number> <: Box<number | string>` holds
-by structural expansion; `Box<number, string>` rejects on arity;
-`Box<number>` renders as `Box<number>`.
+by structural expansion; `Box<number>` renders as `Box<number>`. With
+`type Pair<T, U = T> = [T, U]`, `Pair<number>` fills `U` from its default (`[number,
+number]`) while `Pair<number, string, bool>` rejects on arity and a zero-arg `Pair`
+rejects for too few required.
 
 **Depends on** PR1.
 
@@ -189,19 +204,30 @@ by structural expansion; `Box<number, string>` rejects on arity;
   type-key SCC path ([module.go:356-383](../../internal/solver/module.go)) beside
   the enum shells, so a component mixing aliases, enums, and classes resolves each
   other.
-- **Recursion closes at subtyping time, not expansion time.** A recursive
-  `type List<T> = {head: T, tail: List<T> | Null}` body holds an `AliasType{List,
-  [T]}` reference. `expandAlias` unfolds one level; the `constrain` seen-set
-  ([constrain.go:129](../../internal/solver/constrain.go)) closes the cycle on the
-  second encounter. **No depth budget and no cycle cache here** — those are M9's,
-  for operator *reduction over* a recursive alias. M7 supports a recursive alias
-  **only as a subtyping subject**. This boundary is the single most important
-  M7/M9 seam; see [§Interlocks with M9](#interlocks-with-m9).
+- **Recursion closes at subtyping time — via canonical identity, not pointer
+  identity.** A recursive `type List<T> = {head: T, tail: List<T> | Null}` body
+  holds an `AliasType{List, [T]}` reference; `expandAlias` unfolds one level. The
+  `constrain` seen-set keys by pointer identity
+  ([constrain.go:58-77](../../internal/solver/constrain.go)), but `expandAlias`
+  **substitutes** the arguments, minting a fresh `AliasType{List, [number]}` each
+  lap, so `List<number>` would never hit that cache and would diverge. The guard
+  must key on the **canonical instance identity** — the `(AliasDef, evaluated type
+  args, lifetime args)` triple, the same key M9's cycle cache and the old checker's
+  `expandSeen` (`{aliasPtr, typeArgKey}`) both use. Two implementations satisfy it:
+  **intern** expanded `AliasType` instances so the same `List<number>` is
+  pointer-stable and the existing seen-set closes it, or add a **dedicated
+  alias-expansion seen-set** keyed on that triple. Pick one in this PR. **No depth
+  budget and no cycle cache here** — those are M9's, for operator *reduction over* a
+  recursive alias. M7 supports a recursive alias **only as a subtyping subject**.
+  This boundary is the single most important M7/M9 seam; see
+  [§Interlocks with M9](#interlocks-with-m9).
 
 **Accept.** `type List<T> = {head: T, tail: List<T> | Null}` type-checks as a
-subtyping subject with the cycle closed by the seen-set; a mutual group
-`type A = {b: B}` / `type B = {a: A}` resolves; a recursive alias renders under its
-own name at the knot rather than expanding forever.
+subtyping subject with the cycle closed by canonical `(alias, args)` identity —
+**including a generic instance** `List<number>` used as a subtyping subject, which
+a pointer-identity guard would diverge on; a mutual group `type A = {b: B}` /
+`type B = {a: A}` resolves; a recursive alias renders under its own name at the
+knot rather than expanding forever.
 
 **Depends on** PR2 (recursion tests use generic `List<T>`), and the module SCC
 type-key path.
@@ -216,10 +242,18 @@ type-key path.
   inner.
 - A lifetime-generic alias carries `AliasDef.LifetimeParams`; expansion substitutes
   lifetime arguments the same way it substitutes type arguments.
+- **`AliasType` grows a `LifetimeArgs` field.** So `Foo<'a>` and `Foo<'b>` are
+  distinct nodes rather than colliding, the lifetime arguments join `Name` and
+  `TypeArgs` in the node, the visitor/printer/`LevelOf` traverse them, and — the
+  load-bearing part — they are part of the **instance identity** the PR3 recursion
+  guard and M9's cycle cache key on (see [§Interlocks with M9](#interlocks-with-m9)
+  item 2). Keying without them would let two borrows of the same alias at different
+  lifetimes share a cache entry.
 
 **Accept.** With `type Point = {x: number}`, `fn f(p: mut 'a Point) -> mut 'a
 Point` round-trips the lifetime through the alias; a fresh-object return over an
-alias carries no lifetime, matching the record case.
+alias carries no lifetime, matching the record case; `mut 'a Foo` and `mut 'b Foo`
+over a lifetime-generic `Foo` stay distinct rather than collapsing.
 
 **Depends on** PR1 (the node), M4 (the `Ref` machinery). Independent of PR3.
 
@@ -301,14 +335,18 @@ one plan constrains the other; getting them consistent here is the point.
    K>` by instantiating and expanding the alias. It calls M7's `expandAlias` and
    reads M7's `AliasDef`. **Action:** M7 PR1 exposes `expandAlias` as a standalone
    helper, not inlined into `constrain`, so the evaluator reuses it verbatim.
-2. **The recursion boundary is split, and the split must be exact.** M7 handles a
-   recursive alias **as a subtyping subject** via `constrain`'s seen-set (PR3), with
+2. **The recursion boundary is split, and both halves key on the same canonical
+   identity.** M7 handles a recursive alias **as a subtyping subject** (PR3), with
    **no cycle cache and no depth budget**. M9 handles **operator reduction over** a
-   recursive alias with the cycle cache keyed on the `(alias, evaluated-args)` state
-   plus a depth budget (M9 PR1b) and `CheckRegular` (M9 PR9). **Action:** the
-   instantiation-state identity M9's cycle cache keys on is exactly the
-   `AliasType{Name, TypeArgs}` M7 PR2 defines — M7 fixes that node's identity so M9
-   keys on it without a second representation.
+   recursive alias with the cycle cache plus a depth budget (M9 PR1b) and
+   `CheckRegular` (M9 PR9). **Action:** both key on the **canonical** instance
+   identity — the `(AliasDef, evaluated type args, lifetime args)` triple, **not**
+   `constrain`'s pointer identity, since `expandAlias` mints a fresh substituted
+   node each expansion. M7 PR3 fixes that canonical key (interning instances or a
+   dedicated expansion seen-set) and M7 PR4 folds lifetime args into it, so M9's
+   cycle cache reuses one representation instead of inventing a second. Getting this
+   wrong makes a generic recursive alias diverge in one plan and terminate in the
+   other.
 3. **Alias variance is M9's, not M7's.** M7 stores no alias variance (PR2), because
    a transparent alias expands. M9's non-expanding cycle-cache-hit dispatch does
    need it (the M5 note: "variance is inferred internally for use there, but is
