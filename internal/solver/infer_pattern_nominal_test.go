@@ -474,6 +474,19 @@ func TestInferMemberUnionReadsPartialFieldAsUndefined(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number | undefined", values["f"])
 }
 
+// A property every member carries at a different type reads as the join of those types (M5
+// D4), with no undefined since no member lacks it. So `p.x` over `{x: number} | {x: string}`
+// yields `number | string`.
+func TestInferMemberUnionReadsCommonFieldAsJoin(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {x: string}) {
+			return p.x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number} | {x: string}) -> number | string", values["f"])
+}
+
 // A property no member of an exact union carries is an error (M5 D4). Reading `p.z` off
 // `{x: number} | {y: string}` would always evaluate to undefined, which is never useful, so
 // it is rejected like an absent field on a single object rather than binding `undefined`.
