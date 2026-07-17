@@ -1021,7 +1021,8 @@ records "soltype has no type aliases yet (M7)", and
 hardcoded `Promise<T>` reference — every other `TypeRefTypeAnn` falls through to
 `reportUnsupported`. This milestone closes that gap, so a written type name
 resolves through the scope to its declaration and a generic alias instantiates
-with its arguments.
+with its arguments. See [m7-implementation-plan.md](m7-implementation-plan.md) for
+the full PR breakdown and the M9 interlock.
 
 - **`AliasType` in `soltype`.** A `{Name, Params []*TypeParam, Body Type}` node,
   reusing the `TypeParam` sort M5 introduced for class parameters. An alias is
