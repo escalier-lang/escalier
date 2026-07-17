@@ -698,31 +698,32 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 	}
 	for _, elem := range req.Elems {
 		prop := soltype.AsProperty(elem)
-		// present tracks whether some listed member carries the property, missing whether some
-		// lacks it as a required field, in which case the joined read includes undefined. An
-		// optional member field counts as missing too, since it may be absent at runtime.
-		present := false
-		missing := false
+		// The read joins what each member can yield for this property. anyValue records that
+		// some member yields a value; anyUndefined that the read can also yield undefined,
+		// because some member lacks the property or carries it optionally, so it may be absent
+		// at runtime. A member carrying an optional field sets both.
+		anyValue := false
+		anyUndefined := false
 		for _, obj := range members {
 			mp, found := obj.Prop(prop.Name)
 			if !found {
-				missing = true
+				anyUndefined = true
 				continue
 			}
-			present = true
+			anyValue = true
 			errs = append(errs, c.constrain(mp.Type, prop.Type, seen, mutCtx)...)
 			if mp.Optional {
-				missing = true
+				anyUndefined = true
 			}
 		}
-		if !present && !sub.Inexact {
-			// No listed member carries the property and there is no open tail to carry it, so
-			// the read is a constant undefined. Report it like an absent field on a single
+		if !anyValue && !sub.Inexact {
+			// No listed member yields a value and there is no open tail to carry the property,
+			// so the read is a constant undefined. Report it like an absent field on a single
 			// object. members is non-empty here, so members[0] is a valid receiver to blame.
 			errs = append(errs, &MissingPropertyError{Sub: members[0], Super: req, Name: prop.Name})
 			continue
 		}
-		if missing {
+		if anyUndefined {
 			errs = append(errs, c.constrain(&soltype.UndefinedType{}, prop.Type, seen, mutCtx)...)
 		}
 		if sub.Inexact {
