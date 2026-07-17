@@ -24,6 +24,13 @@ Conditional Syntax" (Cheng & Parreaux, OOPSLA 2024). Three terms recur below:
 - **Scrutinee.** The value a split tests. The top-level scrutinee is the match
   target. A nested split's scrutinee is a projection of an outer one, for example
   the field `x` of an object the outer split already matched.
+- **Split test.** The tag a branch tests. It ranges over every pattern kind: a
+  structural object or tuple shape, a literal, a nominal class tag from an instance
+  pattern `Point { x, y }`, or an extractor tag from `Ok(v)`. A rest pattern adds
+  no tag. It relaxes the split to an inexact prefix and binds the remainder as a
+  leaf. Because a split is agnostic to which kind its test is, the pipeline handles
+  all pattern kinds with one mechanism, and a nested sub-pattern becomes a
+  projected sub-scrutinee regardless of the outer test's kind.
 
 The normalized form is the shared IR for type checking, coverage checking, and
 later codegen. Phase 1 builds it and drives type checking and the interim
@@ -85,6 +92,69 @@ split l {                                 split l {
                                               } default ✗
                                           } default ✗
 ```
+
+### Instance, extractor, and rest patterns
+
+An **instance pattern** tests a nominal class tag, then binds its fields as
+projections, the same flattening as a structural object but with a class tag at
+the outer split.
+
+```
+match p {
+    Point { x, y } => [x, y]
+}
+```
+
+```
+# normalized form
+split p {
+    Point => bind x = p.x, y = p.y; leaf [x, y]
+} default ✗
+```
+
+An **extractor pattern** tests an extractor tag. The values it yields become
+positional sub-scrutinees, written `.0`, `.1`, …, so a nested argument pattern
+splits on them just like a tuple element. The current solver narrows to the
+constructor's return type as an interim gate; the real `[Symbol.customMatcher]`
+protocol arrives with M7, and the IR shape is unchanged either way.
+
+```
+match r {
+    Ok(v)  => v,
+    Err(_) => 0
+}
+```
+
+```
+# normalized form
+split r {
+    Ok  => bind v = r.0; leaf v,
+    Err => leaf 0
+} default ✗
+```
+
+A **rest pattern** adds no tag. It relaxes its split to an inexact prefix and
+binds the remainder. A tuple rest binds the tail, written `xs[1..]`. An object
+rest `{x, ...rest}` needs object-rest types that arrive with M9, so its remainder
+binding rides that milestone; the prefix split itself is unchanged.
+
+```
+match xs {
+    [first, ...rest] => first
+}
+```
+
+```
+# normalized form
+split xs {
+    [_, ...] => bind first = xs.0, rest = xs[1..]; leaf first
+} default ✗
+```
+
+For coverage, the instance and extractor tags cover nominal union members the same
+way `unionMatchExhaustive` already does, and a rest-relaxed inexact split needs a
+catch-all, matching today's `structuralInexact` rule. Neither changes the interim
+coverage semantics PR7 carries over.
 
 ### A guard
 
@@ -149,9 +219,14 @@ split p {                       split p {
   [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go).
 - **Reuse the shared pattern path.** Leaf binding keeps going through
   `bindPattern` / `bindPatternWith` in
-  [internal/solver/pattern.go](../../internal/solver/pattern.go). The IR decides
-  *which* scrutinee a leaf binds against; `bindPattern` still does the
-  member-lookup constraints and the borrow-mode projection.
+  [internal/solver/pattern.go](../../internal/solver/pattern.go). It already
+  dispatches every pattern kind, including `InstancePat`, `ExtractorPat`, and
+  `RestPat` through `bindInstancePat` / `bindExtractorPat`. The IR decides *which*
+  scrutinee a leaf binds against; `bindPattern` still does the member-lookup
+  constraints and the borrow-mode projection. Its two interim gates come along
+  unchanged: the extractor path narrows to the constructor return type until the
+  `[Symbol.customMatcher]` protocol lands in M7, and object-rest typing waits on
+  M9. Neither is introduced or worsened by this work.
 
 ### Out of scope
 
@@ -223,6 +298,11 @@ into nothing.
 - Define the desugared-core ADT: a `Split` over a scrutinee with an ordered list
   of branches, a `Bind` node for an intermediate binding, a guard-test node, and a
   leaf node carrying the arm's body expression and its source span.
+- Enumerate the branch-test kinds as a sum: a structural object or tuple shape, a
+  literal, a nominal class tag for an instance pattern, an extractor tag, and an
+  inexact-prefix marker a rest pattern sets. A projection path segment must be able
+  to name a field, a tuple index, and an extractor's positional result, so nested
+  sub-patterns under any kind become sub-scrutinees.
 - Define the normalized-form ADT: a split whose branches each test one tag-level
   and whose sub-scrutinees are projection paths into the matched value, plus a
   default / fallthrough tail.
