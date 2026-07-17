@@ -66,7 +66,7 @@ func parseTypeAnn(t *testing.T, input string) ast.TypeAnn {
 // object and tuple type annotations (M4 A3) round-tripping through the printer.
 // A `let`-`else` binding round-trips through the printer: the `else` block is
 // rendered after the initializer, including the narrowing type annotation.
-func TestPrintLetElse(t *testing.T) {
+func TestPrintValElse(t *testing.T) {
 	opts := DefaultOptions()
 	tests := []struct {
 		name     string

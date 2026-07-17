@@ -2394,7 +2394,7 @@ func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, scrutinee so
 // bindNarrowedIdent binds a single identifier at the type the narrowing annotation `ann`
 // resolves to, picked from the scrutinee by the union-super exists rule, and returns it.
 // It is the shared core of the refutable identifier-narrowing path. Both if-val and
-// let-else pass the annotation in directly, if-val from its pattern and let-else from
+// val-else pass the annotation in directly, if-val from its pattern and val-else from
 // the decl, so the annotation never moves between AST nodes.
 func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	narrowed, resolved := c.resolveTypeAnn(scope, ann, lvl)
@@ -2417,10 +2417,10 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 	return narrowed
 }
 
-// inferLetElse types a `val pat = init else { … }` binding. The pattern narrows the
+// inferValElse types a `val pat = init else { … }` binding. The pattern narrows the
 // initializer and binds for the rest of the block; the `else` runs on a failed match
 // and either diverges or supplies the binding's fallback value, which must fit it.
-func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
+func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	if d.Init == nil {
 		c.reportUnsupported(d)
 		return
@@ -2431,7 +2431,7 @@ func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	elseT, elseDiverges := c.inferBlock(scope.Child(), lvl, d.Else)
 
 	if d.TypeAnn != nil {
-		// A let-else annotation lives on the decl. A bare identifier narrows to it through
+		// A val-else annotation lives on the decl. A bare identifier narrows to it through
 		// bindNarrowedIdent, pinning the binding so a non-diverging else's fallback value
 		// must fit the pinned type. A destructuring pattern cannot distribute the
 		// annotation across its leaves, as in `val [a, b]: [number, string] = u else { … }`,
@@ -2456,7 +2456,7 @@ func (c *checker) inferLetElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	source := initType
 	if !elseDiverges {
 		res := c.freshAt(lvl)
-		c.recordProv(res, d, LetElseBranch)
+		c.recordProv(res, d, ValElseBranch)
 		c.constrain(d, initType, res)
 		c.constrain(d, elseT, res)
 		source = res

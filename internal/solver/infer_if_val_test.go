@@ -6,14 +6,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M6 PR7: if-val / let-else refutable narrowing ---
+// --- M6 PR7: if-val / val-else refutable narrowing ---
 
-// TestInferIfValAndLetElse drives the refutable-binding forms through inferSource.
+// TestInferIfValAndValElse drives the refutable-binding forms through inferSource.
 // Each case either infers a binding type, asserted against want, or reports errors,
 // asserted in full against wantErrs. A type-annotated identifier pattern narrows a
 // union to one member via the union-super exists rule; subsumption at finalization
 // then drops a literal alternate such as 0 into a primitive sibling like number.
-func TestInferIfValAndLetElse(t *testing.T) {
+func TestInferIfValAndValElse(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
@@ -106,7 +106,7 @@ func TestInferIfValAndLetElse(t *testing.T) {
 		},
 		{
 			// The else diverges, so the body past it reads x at the narrowed type.
-			name: "let-else narrows and binds for the rest of the block",
+			name: "val-else narrows and binds for the rest of the block",
 			src: `fn f(u: number | string) {
 				val x: number = u else { return "no" }
 				return x
@@ -115,7 +115,7 @@ func TestInferIfValAndLetElse(t *testing.T) {
 		},
 		{
 			// The else runs in the enclosing scope, so it reads the outer `fallback`.
-			name: "let-else else reads outer binding",
+			name: "val-else else reads outer binding",
 			src: `fn f(u: number | string, fallback: number) {
 				val x: number = u else { return fallback }
 				return x
@@ -124,7 +124,7 @@ func TestInferIfValAndLetElse(t *testing.T) {
 		},
 		{
 			// The else binds nothing of the pattern, so referencing x there fails.
-			name: "let-else else cannot see the pattern binding",
+			name: "val-else else cannot see the pattern binding",
 			src: `fn f(u: number | string) {
 				val x: number = u else { return x }
 				return x
@@ -133,7 +133,7 @@ func TestInferIfValAndLetElse(t *testing.T) {
 		},
 		{
 			// A structural pattern binds its leaves for the rest of the block.
-			name: "let-else structural pattern binds leaves",
+			name: "val-else structural pattern binds leaves",
 			src: `fn f(u: {x: number, y: string}) {
 				val {x, y} = u else { return [0, ""] }
 				return [x, y]
@@ -143,7 +143,7 @@ func TestInferIfValAndLetElse(t *testing.T) {
 		{
 			// A decl-level annotation on a destructuring pattern would need the
 			// annotation distributed across the leaves, which is unsupported.
-			name: "let-else narrowing annotation on a destructuring pattern is unsupported",
+			name: "val-else narrowing annotation on a destructuring pattern is unsupported",
 			src: `fn f(u: [number, string]) {
 				val [a, b]: [number, string] = u else { return }
 				return a
@@ -153,7 +153,7 @@ func TestInferIfValAndLetElse(t *testing.T) {
 		{
 			// A non-diverging else supplies a fallback. The annotation pins x to number,
 			// and the fallback 0 fits, so x is number on both the match and no-match path.
-			name: "let-else non-diverging else supplies a fallback",
+			name: "val-else non-diverging else supplies a fallback",
 			src: `fn f(u: number | string) {
 				val x: number = u else { 0 }
 				return x
@@ -162,7 +162,7 @@ func TestInferIfValAndLetElse(t *testing.T) {
 		},
 		{
 			// A non-diverging else's fallback must fit the annotated binding type.
-			name: "let-else fallback must fit the annotation",
+			name: "val-else fallback must fit the annotation",
 			src: `fn f(u: number | string) {
 				val x: number = u else { "no" }
 				return x
@@ -172,7 +172,7 @@ func TestInferIfValAndLetElse(t *testing.T) {
 		{
 			// With no annotation the binding's type joins the initializer with the
 			// fallback. Subsumption then drops the literal 0 into number.
-			name: "let-else unannotated joins init and fallback",
+			name: "val-else unannotated joins init and fallback",
 			src: `fn f(u: number | string) {
 				val n = u else { 0 }
 				return n
@@ -180,9 +180,9 @@ func TestInferIfValAndLetElse(t *testing.T) {
 			want: "fn (u: number | string) -> number | string",
 		},
 		{
-			// A module-level let-else with a non-diverging else is a valid top-level
+			// A module-level val-else with a non-diverging else is a valid top-level
 			// binding: the fallback gives num a value on the no-match path.
-			name:    "let-else at module top level with a fallback binds",
+			name:    "val-else at module top level with a fallback binds",
 			src:     "val u: number | string = 5\nval num: number = u else { 0 }",
 			binding: "num",
 			want:    "number",
@@ -190,7 +190,7 @@ func TestInferIfValAndLetElse(t *testing.T) {
 		{
 			// A diverging else at module top level has no enclosing function to return
 			// from, so its `return` is rejected.
-			name:     "let-else at module top level with a diverging else is rejected",
+			name:     "val-else at module top level with a diverging else is rejected",
 			src:      "val u: number | string = 5\nval num: number = u else { return }",
 			wantErrs: []string{"2:28-2:34: return can only be used inside a function"},
 		},

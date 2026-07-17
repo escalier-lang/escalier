@@ -212,7 +212,7 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 	// bindings in scope. Decompose it so the else's statements get their own block
 	// rather than being lumped into the current one.
 	if vd.Else != nil {
-		return b.processLetElse(vd, current)
+		return b.processValElse(vd, current)
 	}
 
 	joinDefs := collectPatVarDefs(vd.Pattern)
@@ -225,9 +225,9 @@ func (b *cfgBuilder) processDeclStmt(s *ast.DeclStmt, current *BasicBlock) *Basi
 	return current
 }
 
-// processLetElse decomposes a `val pat = init else { … }` binding into an else
+// processValElse decomposes a `val pat = init else { … }` binding into an else
 // branch and a join block that carries the pattern's bindings on the matched path.
-func (b *cfgBuilder) processLetElse(vd *ast.VarDecl, current *BasicBlock) *BasicBlock {
+func (b *cfgBuilder) processValElse(vd *ast.VarDecl, current *BasicBlock) *BasicBlock {
 	// A branchy initializer such as `if c { a } else { b }` contributes its own CFG
 	// edges; decomposeBranch returns the block reached after it converges. A plain
 	// initializer is recorded as an eval in the current block so its uses are

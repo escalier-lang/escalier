@@ -1204,7 +1204,7 @@ when M7 lands generic-union surface:
   a one-line tweak.
 - **Two-pass exists trial.** Try concrete members first. If none commit,
   try var members in a second pass. Preserves completeness without
-  first-pin behavior. PR7's `if-val` / `let-else` narrowing reuses the same
+  first-pin behavior. PR7's `if-val` / `val-else` narrowing reuses the same
   exists path. See [m6-implementation-plan.md](m6-implementation-plan.md)
   §PR7. So this choice also decides whether `if val x: T = u` over
   `u: T | number` can bind `T` to the matched branch.

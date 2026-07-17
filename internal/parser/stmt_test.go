@@ -353,16 +353,16 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"AsyncGeneratorFuncDecl": {
 			input: `async fn fetch() { yield await x }`,
 		},
-		"LetElseBareIdent": {
+		"ValElseBareIdent": {
 			input: `val x = u else { return }`,
 		},
-		"LetElseNarrowing": {
+		"ValElseNarrowing": {
 			input: `val x: number = u else { return 0 }`,
 		},
-		"LetElseDestructure": {
+		"ValElseDestructure": {
 			input: `val [a, b] = u else { throw "no" }`,
 		},
-		"LetElseNonDivergingFallback": {
+		"ValElseNonDivergingFallback": {
 			input: `val x: number = u else { 0 }`,
 		},
 	}

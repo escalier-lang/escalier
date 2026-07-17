@@ -739,7 +739,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 
 		if d.Else != nil {
-			return slices.Concat(initStmts, b.buildLetElse(d, initExpr))
+			return slices.Concat(initStmts, b.buildValElse(d, initExpr))
 		}
 
 		// Ignore checks returned by buildPattern
@@ -2541,14 +2541,14 @@ func simplifyTrueLiterals(stmt Stmt) Stmt {
 }
 
 // buildPatternCondition builds the condition expression and binding statements for a pattern
-// buildLetElse lowers `val pat = init else { … }` into a temp-hoisted match check.
+// buildValElse lowers `val pat = init else { … }` into a temp-hoisted match check.
 // The temp starts as the initializer; on a failed match the else block runs, and its
 // tail value is assigned back to the temp so the binding takes it as a fallback. An
 // else that diverges with a `return`/`throw` leaves the temp untouched and skips past
 // the bindings. The `if`/empty-then/else-runs-the-block shape keeps the condition
 // un-negated, which the precedence-naive printer needs. The pattern's bindings read
 // the temp after the guard, binding the matched value or the fallback.
-func (b *Builder) buildLetElse(d *ast.VarDecl, initExpr Expr) []Stmt {
+func (b *Builder) buildValElse(d *ast.VarDecl, initExpr Expr) []Stmt {
 	tempVar, tempDeclStmt := b.createTempVar(d.Init)
 	initAssign := &ExprStmt{
 		Expr:   NewBinaryExpr(tempVar, Assign, initExpr, d.Init),

@@ -115,8 +115,8 @@ and the *rules*.
    read-until-narrowed union instead of an error. Joining `mut {x: number}` with
    `mut {x: string}` now infers `(mut 'a {x: number}) | (mut 'b {x: string})` instead
    of erroring on `number <: string`.
-7. **`if-val` / `let-else`**: one-arm refutable-match forms that bind a fresh name at
-   the narrowed member type, leaving the scrutinee's union type untouched. `let-else`'s
+7. **`if-val` / `val-else`**: one-arm refutable-match forms that bind a fresh name at
+   the narrowed member type, leaving the scrutinee's union type untouched. `val-else`'s
    `else` must diverge, checked via the `never` (⊥) rule.
 8. **Subsumption of inferred types**: a concrete-gated pass at the type-finalization
    boundaries collapses an inferred `1 | number` to `number`, so the rendered type and
@@ -154,7 +154,7 @@ PR1 ✅ #774 (representation + normalization)
  ├─► PR3 ✅ #802 (monomorphic function-type annotations)
  │     └─► PR5 ✅ #804 (⊤/⊥ rules + Variation-B close — now testable end-to-end)
  ├─► PR6 ✅ #805 (permissive mut-borrow join)
- ├─► PR7 ⬜ (if-val / let-else — needs PR4 + PR5)
+ ├─► PR7 ⬜ (if-val / val-else — needs PR4 + PR5)
  └─► PR8 ✅ #808 (subsume inferred types at finalization — needs PR1 + PR2)
 ```
 
@@ -181,8 +181,8 @@ PR1 ✅ #774 (representation + normalization)
   PR3. So PR3 lands first and PR5 carries the end-to-end test.
 - **PR3 and PR6 depend only on PR1** (PR6 also reads PR2's union rule for the
   covariant-read story but does not require it to land first).
-- **PR7 needs PR4 and PR5.** `if-val`/`let-else` reuse PR4's union member matching to
-  bind the narrowed name, and `let-else`'s divergent-`else` check uses PR5's `never`
+- **PR7 needs PR4 and PR5.** `if-val`/`val-else` reuse PR4's union member matching to
+  bind the narrowed name, and `val-else`'s divergent-`else` check uses PR5's `never`
   (⊥) rule, so it lands after both.
 - **PR8 needs only PR1 and PR2** and lands last. It reuses PR1's `newUnion` /
   `newIntersection` and PR2's subtype probe, runs once per finalized type rather than in
@@ -822,7 +822,7 @@ at `joinBorrows`.
 union lifetime; a write to `.x` on the un-narrowed union is rejected with a clear
 message.
 
-### PR7 — `if-val` / `let-else` (one-arm refutable-match narrowing)
+### PR7 — `if-val` / `val-else` (one-arm refutable-match narrowing)
 
 Add the two single-arm refutable-binding forms over a union scrutinee. Both desugar to
 a one-arm `match`: the pattern introduces fresh bindings at the narrowed member type and
@@ -838,7 +838,7 @@ flow-sensitive re-typing is involved.
   type; the alternate sees the scrutinee unchanged. The pattern may be a type annotation,
   `if val x: number = v`, which is how a union narrows to one member. Reuses M4's
   structural-pattern binding and PR4's union member matching.
-- **`let-else`.** New construct, so it needs parser and AST in addition to inference. The
+- **`val-else`.** New construct, so it needs parser and AST in addition to inference. The
   pattern binds its names for the rest of the enclosing block at the narrowed type, and
   the `else` block must diverge. The divergence check types the `else` block as `never`
   via PR5's `never <: _` (⊥) rule, rejecting an `else` that can fall through.
@@ -852,8 +852,8 @@ flow-sensitive re-typing is involved.
   through the fresh binding; the original `r` keeps its union type.
 
 **Tests.** An `if val` over `A | B` binds the matched arm's names at `A` in the
-consequent and leaves the scrutinee `A | B` in the alternate; a `let-else` with a
-diverging `else` binds for the rest of the block; a `let-else` whose `else` can fall
+consequent and leaves the scrutinee `A | B` in the alternate; a `val-else` with a
+diverging `else` binds for the rest of the block; a `val-else` whose `else` can fall
 through is rejected; an `if val r2: mut {x: number} = r` over a PR6 read-only union
 allows `r2.x = 5` while `r` keeps its union type; the scrutinee's own type is unchanged
 after both forms.
@@ -993,8 +993,8 @@ before and after the pass.
 - An incompatible mut-borrow join renders
   `(mut 'a {x: number}) | (mut 'b {x: string})` and reads `.x` as
   `number | string`. (PR6)
-- An `if val` / `let-else` over a union binds the matched member type into a fresh
-  name; a `let-else` whose `else` does not diverge is rejected. (PR7)
+- An `if val` / `val-else` over a union binds the matched member type into a fresh
+  name; a `val-else` whose `else` does not diverge is rejected. (PR7)
 - An inferred `1 | number` renders `number` and is `equalType`-equal to the annotation
   `number`; a union with a free var is left unchanged. (PR8)
 
