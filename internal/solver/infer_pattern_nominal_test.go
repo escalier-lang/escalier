@@ -581,3 +581,122 @@ func TestOptionalSourceIntoRequiredTargetStillErrors(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "object property is optional but required: x", errs[0].Message())
 }
+
+// The partial-union field read joins through a class instance's projected body, not only a
+// plain object (#886). A property every member of a class-instance union carries at a
+// different type reads as the join, so `p.x` over `A | B` where both declare `x` yields
+// `number | string`, with no undefined since no member lacks it.
+func TestInferMemberClassUnionReadsCommonFieldAsJoin(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class A { x: number, y: number }
+		class B { x: string, z: boolean }
+		fn f(p: A | B) {
+			return p.x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: A | B) -> number | string", values["f"])
+}
+
+// A property on some but not all members of a class-instance union reads as `T | undefined`
+// (#886), mirroring the plain-object rule: the member lacking the field contributes undefined.
+func TestInferMemberClassUnionReadsPartialFieldAsUndefined(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class A { x: number }
+		class B { y: string }
+		fn f(p: A | B) {
+			return p.x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: A | B) -> number | undefined", values["f"])
+}
+
+// A union mixing a plain object and a class instance joins through the same per-member read
+// (#886): `p.x` over `{x: string} | Point` reads the object's `x` and the instance's projected
+// `x`, yielding their join.
+func TestInferMemberMixedObjectClassUnionReadsField(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Point { x: number, y: number }
+		fn f(p: {x: string} | Point) {
+			return p.x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: string} | Point) -> number | string", values["f"])
+}
+
+// A getter resolves through member lookup in the partial-union read (#886), contributing its
+// declared return type like a property. So `p.v` over a union of classes each exposing `v` as
+// a getter reads as the join of the getter return types.
+func TestInferMemberClassUnionReadsGetter(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class A { _v: number, get v(self) -> number { return self._v } }
+		class B { _v: string, get v(self) -> string { return self._v } }
+		fn f(p: A | B) {
+			return p.v
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: A | B) -> number | string", values["f"])
+}
+
+// A method resolves through member lookup in the partial-union read (#886), contributing its
+// receiver-stripped callable signature — the same value a direct `p.area` read yields. Methods
+// with distinct signatures join into a union of function types.
+func TestInferMemberClassUnionReadsMethod(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class A { area(self) -> number { return 1 } }
+		class B { area(self, scale: number) -> string { return "x" } }
+		fn f(p: A | B) {
+			return p.area
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: A | B) -> (fn () -> number) | (fn (scale: number) -> string)", values["f"])
+}
+
+// A property readable on no member of an exact class-instance union is an error (#886), the
+// class analogue of TestInferMemberUnionAbsentFieldErrors.
+func TestInferMemberClassUnionAbsentFieldErrors(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class A { x: number }
+		class B { y: string }
+		fn f(p: A | B) {
+			return p.z
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "5:13-5:14: object is missing property: z", msgWithSpan(errs[0]))
+}
+
+// A setter-only member reads as undefined at runtime, so when another member exposes the name
+// readably the join includes undefined (#886). Here `A` exposes `v` only as a setter and `B`
+// carries it as a property, so `p.v` reads `string | undefined`.
+func TestInferMemberClassUnionSetterOnlyReadsUndefined(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class A { _v: number, set v(mut self, x: number) { self._v = x } }
+		class B { v: string }
+		fn f(p: A | B) {
+			return p.v
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: A | B) -> string | undefined", values["f"])
+}
+
+// A member exposed only as a setter across every union member is readable nowhere, so the read
+// is rejected rather than bound as bare undefined (#886). This reinstates the old checker's
+// write-only nuance: a setter-only member reported a property error rather than reading as
+// undefined.
+func TestInferMemberClassUnionSetterOnlyEverywhereErrors(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class A { _v: number, set v(mut self, x: number) { self._v = x } }
+		class B { _w: string, set v(mut self, x: string) { self._w = x } }
+		fn f(p: A | B) {
+			return p.v
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "5:13-5:14: object is missing property: v", msgWithSpan(errs[0]))
+}
