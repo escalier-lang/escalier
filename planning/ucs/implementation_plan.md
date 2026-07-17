@@ -157,9 +157,29 @@ split p {                       split p {
 
 - **Codegen (M10).** The IR package is placed so `internal/codegen` can import it
   later, but no codegen consumer is written here.
-- **Pattern alternatives / or-patterns.** The surface form the issue lists as
-  "pattern alternatives" has no AST node today —
-  [internal/ast/pattern.go](../../internal/ast/pattern.go) has no `OrPat`. The
+- **Pattern alternatives / or-patterns.** An or-pattern lets one arm match several
+  shapes and share a body, for example a `|`-separated alternative:
+
+  ```
+  match c {
+      Circle(r) | Square(r) => r,
+      _                     => 0
+  }
+  ```
+
+  It would desugar to several core branches that share the arm's body, the shape
+  the desugarer is already built to emit:
+
+  ```
+  # desugared core
+  split c {
+      pat Circle(r) => leaf r
+      pat Square(r) => leaf r
+  } default leaf 0
+  ```
+
+  The surface form the issue lists as "pattern alternatives" has no AST node today
+  — [internal/ast/pattern.go](../../internal/ast/pattern.go) has no `OrPat`. The
   desugarer is shaped to accept one branch producing several core branches, but
   wiring real alternatives needs parser and AST work first. Flagged, not built.
 - **`try` / `catch` arms.** `TryCatchExpr` carries `[]*MatchCase` for its catch
