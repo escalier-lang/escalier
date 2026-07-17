@@ -669,6 +669,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 //
 // ok is false unless the shapes fit — an inexact object super of fresh-var properties over a
 // union of objects — so a genuine subtyping demand keeps the strict every-member rule.
+//
+// Limitation: only plain object members reading plain properties are handled. A class-instance
+// member, or a getter/method/setter requirement, does not fit and falls back to the
+// every-member rule. Extending the join to those through member lookup is
+// https://github.com/escalier-lang/escalier/issues/886.
 func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (errs []SolverError, ok bool) {
 	req, isObj := super.(*soltype.ObjectType)
 	if !isObj || !req.Inexact {
