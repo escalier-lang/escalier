@@ -88,9 +88,16 @@ in [internal/solver/doc.go](../../internal/solver/doc.go) already relies on.
 
 ## Pull requests
 
-The PRs are ordered so each merges without the next. PR1 through PR3 are pure IR
-with no behavior change. PR4 flips type checking onto the IR. PR5 moves coverage.
-PR6 deletes the superseded code.
+Eight PRs, each ordered to merge without the next and sized so the diff and its
+regression surface stay reviewable in one sitting. Two concerns were split out of
+their first draft to keep the size down. Normalization became PR3 and PR4, since
+same-scrutinee merging and nested flattening are separable and the second is the
+algorithmically hard half. Retyping became PR5 and PR6, since rewriting all four
+ad-hoc paths at once put four entry points and their whole test surface in one
+review. PR1 through PR4 are pure IR with no behavior change. PR5 and PR6 flip type
+checking onto the IR. PR7 moves coverage. PR8 deletes the superseded code. The
+[dependency graph](#dependency-graph-and-parallelism) below marks the two points
+where PRs can proceed in parallel.
 
 ### PR1 — Core and normalized IR ADTs plus a printer
 
@@ -131,57 +138,88 @@ surface to the desugared core.
 **Tests.** Snapshot the core IR for a representative source of each surface form.
 No typing yet; the desugarer is not called from `inferMatch` in this PR.
 
-### PR3 — Normalize the core into the backtracking-free form
+### PR3 — Normalize: same-scrutinee merging and the default tail
 
-Add `normalize` in `internal/solver/ucs`: desugared core to normalized form.
+Add `normalize` in `internal/solver/ucs` for the shallow half of the rewrite:
+merge and tail, no nested flattening yet. Patterns stay one level deep in this PR.
 
-- Flatten nested patterns into successive scrutinee splits. An object or tuple
-  pattern becomes an outer split on the container tag whose branches split again
-  on the projected sub-scrutinees, one tag-level per split.
 - Merge branches that test the same scrutinee against different tags into one
   split, so the checker visits each scrutinee once.
 - Thread a default / fallthrough tail through every split so the form is
   backtracking-free: a failed test falls to the tail, never re-tries an earlier
   branch.
-- Before finalizing the split and tail shape, confirm the details against the
-  UCS paper's normalization section and the `hkust-taco/ucs` reference, per the
-  issue's fourth task.
+- Leave a nested pattern intact inside its branch for now; PR4 flattens it. The
+  form is already correct for flat matches such as `1 => …, _ => …`.
 
-**Tests.** Snapshot the normalized IR for nested patterns, overlapping arms, and
-guarded arms, asserting the one-tag-level-at-a-time shape.
+**Tests.** Snapshot the normalized IR for flat matches, overlapping arms, and
+guarded arms. `normalize` runs on hand-built core IR, so this PR does not need the
+desugarer from PR2.
 
-### PR4 — Type-check the conditional surface off the normalized form
+### PR4 — Normalize: flatten nested patterns into projection splits
 
-Rewrite the four ad-hoc paths to desugar, normalize, then walk the normalized
-form. This is the first behavior-affecting PR.
+Extend `normalize` to the hard half: turn a nested pattern into successive
+scrutinee splits, one tag-level each.
 
-- Replace the bodies of `inferMatch`, `inferIfLet`, `inferLetElse`, and
-  `bindRefutable` with a single walk over the normalized form. Each split projects
-  its scrutinee's type, each leaf infers its body, and non-diverging bodies
-  constrain into one fresh branch-join var, as the current code already does.
+- An object or tuple pattern becomes an outer split on the container tag whose
+  branches split again on the projected sub-scrutinees, for example `Line { start:
+  {x, y} }` splitting first on `l` then on `l.start`.
+- Emit a projection scrutinee for each sub-split so the inner split names its value
+  without re-inferring it.
+- Recurse to arbitrary depth, keeping every split at one tag-level so the checker
+  and Phase 2's coverage never see a deep shape at once.
+- Before finalizing the split and tail shape, confirm the details against the UCS
+  paper's normalization section and the `hkust-taco/ucs` reference, per the issue's
+  fourth task.
+
+**Tests.** Snapshot the normalized IR for nested object and tuple patterns,
+asserting the one-tag-level-at-a-time shape and the projection scrutinee paths.
+
+### PR5 — Type-check `match` off the normalized form
+
+Rewrite `inferMatch` to desugar, normalize, then walk the normalized form,
+introducing the shared walk the other paths reuse. `if let`, `val … else`, and
+`bindRefutable` keep their current bodies until PR6. This is the first
+behavior-affecting PR.
+
+- Add the walk over the normalized form: each split projects its scrutinee's type,
+  each leaf infers its body, and non-diverging bodies constrain into one fresh
+  branch-join var, as `inferMatch` already does.
 - Bind leaves through the existing `bindPattern` / `bindPatternWith`. The IR
   supplies the projected sub-scrutinee type for each leaf; `bindPattern` keeps
   emitting the member-lookup constraints and the borrow-mode projection it does
   today.
 - Type each guard-test node as a boolean over its branch's bindings, matching the
   current inline guard constraint.
-- Preserve the provenance edges `MatchBranch`, `IfLetBranch`, and `LetElseBranch`
-  from [internal/solver/prov.go](../../internal/solver/prov.go) so branch-join
-  vars still render with their source.
-- Preserve `checkUniformOwnership`
-  ([internal/solver/infer_expr.go:514](../../internal/solver/infer_expr.go)) and
-  the divergence-join behavior where an all-diverging match coalesces to `never`.
+- Preserve the `MatchBranch` provenance edge from
+  [internal/solver/prov.go](../../internal/solver/prov.go), `checkUniformOwnership`
+  ([internal/solver/infer_expr.go:514](../../internal/solver/infer_expr.go)), and
+  the divergence-join where an all-diverging match coalesces to `never`.
 - Reproduce `narrowMatchArm`'s union narrowing through the split projection: an
   arm that destructures one union variant must still bind against only that
   variant's members, so no regression in variant-narrowing.
 
-**Tests.** The full existing solver pattern and if-let suites must stay green:
-`infer_pattern_test.go`, `infer_pattern_nominal_test.go`,
-`infer_pattern_mut_test.go`, `infer_if_let_test.go`, and the match cases in
-`infer_expr_test.go`. Run `go test ./...`, and `UPDATE_SNAPS=true` only for
-intended IR-print snapshots.
+**Tests.** The match suites stay green: `infer_pattern_test.go`,
+`infer_pattern_nominal_test.go`, `infer_pattern_mut_test.go`, and the match cases
+in `infer_expr_test.go`. Run `go test ./...`; `UPDATE_SNAPS=true` only for intended
+IR-print snapshots.
 
-### PR5 — Run the interim coverage check off the normalized form
+### PR6 — Type-check `if let`, `val … else`, and refutable bindings off the IR
+
+Migrate the three remaining ad-hoc paths onto the PR5 walk, retiring their
+hand-written bodies.
+
+- Replace the bodies of `inferIfLet`, `inferLetElse`, and `bindRefutable` with a
+  desugar → normalize → walk over the same normalized form, reusing the PR5 walk.
+- Preserve the `IfLetBranch` and `LetElseBranch` provenance edges so their
+  branch-join vars still render with their source.
+- Keep the scope discipline: an `if let` and a `val … else` run their `else` in a
+  scope that does not see the pattern's bindings, matching the current child-scope
+  handling in `inferIfLet` / `inferLetElse`.
+
+**Tests.** `infer_if_let_test.go` and the let-else cases stay green with unchanged
+inferred types and messages.
+
+### PR7 — Run the interim coverage check off the normalized form
 
 Move the top-level exhaustiveness check onto the IR without changing its verdict
 on any current input.
@@ -198,18 +236,79 @@ on any current input.
 asserted in full per [CLAUDE.md](../../CLAUDE.md). The `matchShape` snapshot logic
 in `inferMatch` is removed once coverage reads the IR.
 
-### PR6 — Remove the superseded ad-hoc helpers
+### PR8 — Remove the superseded ad-hoc helpers
 
 Cleanup only, no behavior change.
 
 - Delete the now-dead helpers `unionMatchExhaustive`, `armCoversShape`,
   `structuralInexact`, `narrowMatchArm`, and the pattern-shape branches of
-  `isCatchAll` that the IR walk subsumes.
+  `isCatchAll` that the IR walk and the PR7 coverage check subsume.
 - Fold any still-needed predicate into the `ucs` package if the coverage walk
   reuses it, keeping the solver side free of pattern-shape casing.
 
 **Tests.** `go test ./...` unchanged; this PR removes code with no reachable
-callers after PR5.
+callers after PR6 and PR7.
+
+## Dependency graph and parallelism
+
+The order below respects two rules: a pure-IR PR must land before the PR that
+consumes it, and a behavior-affecting PR must land before the one that deletes the
+code it supersedes.
+
+| PR | Depends on | Can run in parallel with |
+|----|------------|--------------------------|
+| PR1 — IR ADTs + printer | — | — |
+| PR2 — Desugar | PR1 | PR3 |
+| PR3 — Normalize: merge + tail | PR1 | PR2 |
+| PR4 — Normalize: nested flatten | PR3 | PR2 |
+| PR5 — Type-check `match` | PR2, PR4 | — |
+| PR6 — Type-check `if let` / `else` | PR5 | PR7 |
+| PR7 — Coverage off the IR | PR5 | PR6 |
+| PR8 — Remove superseded helpers | PR6, PR7 | — |
+
+Two parallel windows open up:
+
+- **After PR1**, the desugarer (PR2) and the shallow normalizer (PR3) are
+  independent. PR3 works against hand-built core IR, so it does not wait on PR2.
+  PR4 extends PR3 and can start as soon as PR3 lands, still in parallel with PR2.
+  PR5 is the join point that first needs both the desugarer and the full
+  normalizer.
+- **After PR5**, migrating the remaining surface paths (PR6) and moving coverage
+  onto the IR (PR7) touch different code and are independent. PR8 is the join
+  point that waits on both.
+
+```mermaid
+graph TD
+    PR1["PR1 · IR ADTs + printer"]
+    PR2["PR2 · Desugar"]
+    PR3["PR3 · Normalize: merge + tail"]
+    PR4["PR4 · Normalize: nested flatten"]
+    PR5["PR5 · Type-check match"]
+    PR6["PR6 · Type-check if let / else"]
+    PR7["PR7 · Coverage off the IR"]
+    PR8["PR8 · Remove superseded helpers"]
+
+    PR1 --> PR2
+    PR1 --> PR3
+    PR3 --> PR4
+    PR2 --> PR5
+    PR4 --> PR5
+    PR5 --> PR6
+    PR5 --> PR7
+    PR6 --> PR8
+    PR7 --> PR8
+
+    classDef pure fill:#e6f0ff,stroke:#4a78c2,color:#12325c;
+    classDef behavior fill:#fff2e0,stroke:#c2894a,color:#5c3a12;
+    classDef cleanup fill:#eae6ff,stroke:#7a5cc2,color:#2f1c5c;
+    class PR1,PR2,PR3,PR4 pure;
+    class PR5,PR6,PR7 behavior;
+    class PR8 cleanup;
+```
+
+Blue is pure-IR work with no behavior change, orange flips type checking or
+coverage onto the IR, purple is deletion. The two diamonds in the graph, PR5 and
+PR8, are the join points where a parallel window closes.
 
 ## Handoff to Phase 2 (#883)
 
@@ -239,6 +338,7 @@ with an ast-only dependency lets codegen import it later without a solver cycle.
   `if let` and a `val … else` does not. The IR must keep guard tests inside the
   bound branch and fallthroughs outside it, matching the current child-scope
   discipline.
-- **Snapshot churn.** PR4 and PR5 should not move any inferred type or error
-  message. Land IR-print snapshots in PR1 through PR3 so PR4's diff is limited to
-  the walk, making an accidental behavior change visible in review.
+- **Snapshot churn.** PR5, PR6, and PR7 should not move any inferred type or error
+  message. Land IR-print snapshots in PR1 through PR4 so each behavior-affecting
+  PR's diff is limited to the walk, making an accidental behavior change visible in
+  review.
