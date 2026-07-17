@@ -462,7 +462,9 @@ func (*ClassType) isRefInner()        {}
 // M3 carries it as a dedicated concrete (not a generic TypeRefType), keeping the
 // scope narrow: it is the one stdlib generic the milestone needs typed (Iterable/
 // Generator wait until M5+). The real, alias-driven `Promise<T>` lookup arrives
-// with TypeRef ingestion in M7; until then, an `async fn () -> T` mints a
+// with library type ingestion in M7.5 — the alias/`TypeRef` resolution machinery
+// it uses lands in M7, the real stdlib structure in M7.5; until then, an
+// `async fn () -> T` mints a
 // PromiseType{T} externally and `await e` constrains `e <: PromiseType{U}` for a
 // fresh U. Inner is covariant under subtyping (Promise<L> <: Promise<R> iff
 // L <: R) and the `await` rule does NOT recursively flatten (so awaiting
