@@ -541,3 +541,43 @@ func TestInferMemberUnionAbsentFieldErrors(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "3:13-3:14: object is missing property: z", msgWithSpan(errs[0]))
 }
+
+// Reading an optional property off a single object is the single-object counterpart of the
+// union field-read rule (#887): `p.x` off `{x?: number}` yields `number | undefined` rather
+// than erroring, because the source may omit the property at runtime.
+func TestInferMemberOptionalFieldReadsAsUndefined(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x?: number}) {
+			return p.x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x?: number}) -> number | undefined", values["f"])
+}
+
+// Destructuring an optional property takes the same single-object read path (#887), so
+// `val {x} = p` over `{x?: number}` binds `x: number | undefined`.
+func TestValDestructureOptionalFieldReadsAsUndefined(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x?: number}) {
+			val {x} = p
+			return x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x?: number}) -> number | undefined", values["f"])
+}
+
+// The optional-read widening is specific to the field-read requirement. Filling a required
+// annotated property from an optional source is a genuine subtyping demand and still fails
+// with OptionalPropertyError (#887), since the source may omit the property.
+func TestOptionalSourceIntoRequiredTargetStillErrors(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x?: number}) {
+			val q: {x: number} = p
+			return q
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "object property is optional but required: x", errs[0].Message())
+}
