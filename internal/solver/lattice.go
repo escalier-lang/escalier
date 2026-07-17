@@ -602,9 +602,10 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 // bounds and the error sentinel come first, then TypeVarType so quantified
 // parameters lead in a rendered union, then primitives and literals, then
 // the remaining structural kinds, then the lattice forms, and finally
-// NullType and Void. A union renders its parameters and data members
-// before its absence markers. NullType precedes Void by convention, so
-// `T0 | number | null | void` is the canonical render.
+// NullType, Void, and UndefinedType. A union renders its parameters and data
+// members before its absence markers. NullType precedes Void, which precedes
+// UndefinedType, so `T0 | number | null | void | undefined` is the canonical
+// render.
 func typeKindOrder(t soltype.Type) int {
 	switch t.(type) {
 	case *soltype.NeverType:
@@ -637,6 +638,8 @@ func typeKindOrder(t soltype.Type) int {
 		return 13
 	case *soltype.Void:
 		return 14
+	case *soltype.UndefinedType:
+		return 15
 	}
-	return 15
+	return 16
 }

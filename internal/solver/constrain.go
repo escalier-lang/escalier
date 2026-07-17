@@ -177,6 +177,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	// lower bound on the var.
 	if subU, ok := sub.(*soltype.UnionType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			// M5 D4: a field-read or destructure requirement against a union reads the
+			// property per member rather than demanding it on every member. When it
+			// applies, this yields `T | undefined` instead of failing on the first
+			// member that lacks the field.
+			if errs, ok := c.constrainUnionFieldRead(subU, super, seen, mutCtx); ok {
+				return errs
+			}
 			var errs []SolverError
 			if subU.Inexact {
 				closed := true
@@ -565,6 +572,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		if _, ok := super.(*soltype.Void); ok {
 			return nil
 		}
+	case *soltype.UndefinedType:
+		if _, ok := super.(*soltype.UndefinedType); ok {
+			return nil
+		}
 	case *soltype.IntersectionType:
 		// (A & B) <: super ⟹ A <: super OR B <: super. Trial each member in
 		// specificity order under a probe; the first success commits. Stays in
@@ -645,6 +656,81 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// constrainUnionFieldRead reads a property `f` off a union sub for a field-read/destructure
+// requirement `union <: {f: β}` (M5 D4), joining one contribution per member into β:
+//   - a member carrying `f` contributes its type;
+//   - a member lacking `f` contributes undefined, so `f` on some but not all members reads
+//     as `T | undefined`;
+//   - an inexact union's open `...` tail contributes unknown, since it may carry `f` at any type;
+//   - `f` on no member of an exact union is a MissingPropertyError, since the read is a
+//     constant undefined, like reading an absent field off a single object.
+//
+// ok is false unless the shapes fit — an inexact object super of fresh-var properties over a
+// union of objects — so a genuine subtyping demand keeps the strict every-member rule.
+//
+// Limitation: only plain object members reading plain properties are handled. A class-instance
+// member, or a getter/method/setter requirement, does not fit and falls back to the
+// every-member rule. Extending the join to those through member lookup is
+// https://github.com/escalier-lang/escalier/issues/886.
+func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (errs []SolverError, ok bool) {
+	req, isObj := super.(*soltype.ObjectType)
+	if !isObj || !req.Inexact {
+		return nil, false
+	}
+	for _, elem := range req.Elems {
+		prop, isProp := elem.(*soltype.PropertyElem)
+		if !isProp {
+			return nil, false
+		}
+		if _, isVar := prop.Type.(*soltype.TypeVarType); !isVar {
+			return nil, false
+		}
+	}
+	members := make([]*soltype.ObjectType, 0, len(sub.Types))
+	for _, m := range sub.Types {
+		obj, isObj := soltype.CarrierOf(m).(*soltype.ObjectType)
+		if !isObj {
+			return nil, false
+		}
+		members = append(members, obj)
+	}
+	for _, elem := range req.Elems {
+		prop := soltype.AsProperty(elem)
+		// The read joins what each member can yield for this property. anyValue records that
+		// some member yields a value; anyUndefined that the read can also yield undefined,
+		// because some member lacks the property or carries it optionally, so it may be absent
+		// at runtime. A member carrying an optional field sets both.
+		anyValue := false
+		anyUndefined := false
+		for _, obj := range members {
+			mp, found := obj.Prop(prop.Name)
+			if !found {
+				anyUndefined = true
+				continue
+			}
+			anyValue = true
+			errs = append(errs, c.constrain(mp.Type, prop.Type, seen, mutCtx)...)
+			if mp.Optional {
+				anyUndefined = true
+			}
+		}
+		if !anyValue && !sub.Inexact {
+			// No listed member yields a value and there is no open tail to carry the property,
+			// so the read is a constant undefined. Report it like an absent field on a single
+			// object. members is non-empty here, so members[0] is a valid receiver to blame.
+			errs = append(errs, &MissingPropertyError{Sub: members[0], Super: req, Name: prop.Name})
+			continue
+		}
+		if anyUndefined {
+			errs = append(errs, c.constrain(&soltype.UndefinedType{}, prop.Type, seen, mutCtx)...)
+		}
+		if sub.Inexact {
+			errs = append(errs, c.constrain(&soltype.UnknownType{}, prop.Type, seen, mutCtx)...)
+		}
+	}
+	return errs, true
 }
 
 // constrainObjMember checks a method, getter, or setter requirement on an object super

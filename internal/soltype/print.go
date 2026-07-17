@@ -34,8 +34,8 @@ func typePrec(t Type) int {
 	case *RefType:
 		return precPrefix
 	default:
-		// PrimType, LitType, TupleType, ObjectType, ClassType, Void, NeverType,
-		// UnknownType — atoms. ObjectType is brace-delimited and ClassType renders as
+		// PrimType, LitType, TupleType, ObjectType, ClassType, Void, NullType,
+		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited and ClassType renders as
 		// a bare name or `Name<args>`, so neither needs parens. A raw TypeVarType
 		// appears only when printing an un-coalesced type, see printType; it is also an
 		// atom rendered as `t{ID}`, so it lands here. A `mut 'a Point` borrow wraps the
@@ -497,6 +497,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return "void"
 	case *NullType:
 		return "null"
+	case *UndefinedType:
+		return "undefined"
 	case *TupleType:
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {
