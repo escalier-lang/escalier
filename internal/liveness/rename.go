@@ -207,7 +207,7 @@ func (r *renamer) renameDecl(decl ast.Decl) {
 		// Alpha-rename the `let`-`else` else block, assigning VarIDs as every block
 		// gets. The else runs only on a failed match, so it cannot see the pattern's
 		// bindings; rename it in its own scope before the pattern defines them,
-		// mirroring the if-let alternate.
+		// mirroring the if-val alternate.
 		if d.Else != nil {
 			r.pushScope()
 			r.renameBlock(*d.Else)
@@ -322,7 +322,7 @@ func (r *renamer) renameExpr(expr ast.Expr) {
 			r.renameBlockOrExpr(e.Alt)
 			r.popScope()
 		}
-	case *ast.IfLetExpr:
+	case *ast.IfValExpr:
 		r.renameExpr(e.Target)
 		// The pattern bindings are only visible in the consequent.
 		r.pushScope()

@@ -262,7 +262,7 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	// Conditionals: aliases all branches (Phase 7.4).
 	case *ast.IfElseExpr:
 		return determineConditionalAliasSource(e)
-	case *ast.IfLetExpr:
+	case *ast.IfValExpr:
 		return unknownSource()
 	case *ast.MatchExpr:
 		return determineMatchAliasSource(e)

@@ -1711,8 +1711,8 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		stmts := slices.Concat(tagStmts, exprStmts)
 
 		return NewTaggedTemplateLitExpr(tag, quasis, exprs, expr), stmts
-	case *ast.IfLetExpr:
-		// Generate a temporary variable for the if-let result
+	case *ast.IfValExpr:
+		// Generate a temporary variable for the if-val result
 		tempVar, tempDeclStmt := b.createTempVar(expr)
 
 		stmts := []Stmt{tempDeclStmt}
@@ -1724,7 +1724,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 		// Generate the condition and binding statements for the pattern
 		condition, bindingStmts := b.buildPatternCondition(expr.Pattern, targetExpr)
 
-		// For if-let expressions, check if the target type is nullable and add null/undefined check
+		// For if-val expressions, check if the target type is nullable and add null/undefined check
 		if expr.Target.InferredType() != nil {
 			targetType := type_system.Prune(expr.Target.InferredType())
 			if unionType, ok := targetType.(*type_system.UnionType); ok {

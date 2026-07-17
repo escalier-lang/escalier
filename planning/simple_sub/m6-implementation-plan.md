@@ -115,7 +115,7 @@ and the *rules*.
    read-until-narrowed union instead of an error. Joining `mut {x: number}` with
    `mut {x: string}` now infers `(mut 'a {x: number}) | (mut 'b {x: string})` instead
    of erroring on `number <: string`.
-7. **`if-let` / `let-else`**: one-arm refutable-match forms that bind a fresh name at
+7. **`if-val` / `let-else`**: one-arm refutable-match forms that bind a fresh name at
    the narrowed member type, leaving the scrutinee's union type untouched. `let-else`'s
    `else` must diverge, checked via the `never` (⊥) rule.
 8. **Subsumption of inferred types**: a concrete-gated pass at the type-finalization
@@ -154,7 +154,7 @@ PR1 ✅ #774 (representation + normalization)
  ├─► PR3 ✅ #802 (monomorphic function-type annotations)
  │     └─► PR5 ✅ #804 (⊤/⊥ rules + Variation-B close — now testable end-to-end)
  ├─► PR6 ✅ #805 (permissive mut-borrow join)
- ├─► PR7 ⬜ (if-let / let-else — needs PR4 + PR5)
+ ├─► PR7 ⬜ (if-val / let-else — needs PR4 + PR5)
  └─► PR8 ✅ #808 (subsume inferred types at finalization — needs PR1 + PR2)
 ```
 
@@ -181,7 +181,7 @@ PR1 ✅ #774 (representation + normalization)
   PR3. So PR3 lands first and PR5 carries the end-to-end test.
 - **PR3 and PR6 depend only on PR1** (PR6 also reads PR2's union rule for the
   covariant-read story but does not require it to land first).
-- **PR7 needs PR4 and PR5.** `if-let`/`let-else` reuse PR4's union member matching to
+- **PR7 needs PR4 and PR5.** `if-val`/`let-else` reuse PR4's union member matching to
   bind the narrowed name, and `let-else`'s divergent-`else` check uses PR5's `never`
   (⊥) rule, so it lands after both.
 - **PR8 needs only PR1 and PR2** and lands last. It reuses PR1's `newUnion` /
@@ -810,8 +810,8 @@ yields `number | string` via PR2's "for all" union rule on member access — the
 covariant read view. A **write** to a conflicting field through the un-narrowed
 union is **rejected**, which is sound: an un-narrowed union of mutable objects is
 read-only at its conflicting fields, and a rejected write never changes the union's
-type. To write, narrow to one branch with a PR7 `if let` and write through the fresh
-mutable view, as in `if let r2: mut {x: number} = r { r2.x = 5 }`. The un-narrowed
+type. To write, narrow to one branch with a PR7 `if val` and write through the fresh
+mutable view, as in `if val r2: mut {x: number} = r { r2.x = 5 }`. The un-narrowed
 binding stays read-only for its whole scope by design, not as a deferral. Document this
 at `joinBorrows`.
 
@@ -822,7 +822,7 @@ at `joinBorrows`.
 union lifetime; a write to `.x` on the un-narrowed union is rejected with a clear
 message.
 
-### PR7 — `if-let` / `let-else` (one-arm refutable-match narrowing)
+### PR7 — `if-val` / `let-else` (one-arm refutable-match narrowing)
 
 Add the two single-arm refutable-binding forms over a union scrutinee. Both desugar to
 a one-arm `match`: the pattern introduces fresh bindings at the narrowed member type and
@@ -830,13 +830,13 @@ leaves the scrutinee's own union type untouched, which is the binding-based narr
 design settles on ([02-design-notes.md](02-design-notes.md) §"Settled decisions"). No
 flow-sensitive re-typing is involved.
 
-- **`if-let`.** `IfLetExpr` already exists in the AST and the *legacy* checker infers it
+- **`if-val`.** `IfLetExpr` already exists in the AST and the *legacy* checker infers it
   ([internal/ast/expr.go](../../internal/ast/expr.go),
   [internal/checker/infer_expr.go](../../internal/checker/infer_expr.go)), so this is a
   port of that inference into the solver, not new surface syntax. The pattern matches one
   branch of the scrutinee and binds its names in the consequent at the matched member
   type; the alternate sees the scrutinee unchanged. The pattern may be a type annotation,
-  `if let x: number = v`, which is how a union narrows to one member. Reuses M4's
+  `if val x: number = v`, which is how a union narrows to one member. Reuses M4's
   structural-pattern binding and PR4's union member matching.
 - **`let-else`.** New construct, so it needs parser and AST in addition to inference. The
   pattern binds its names for the rest of the enclosing block at the narrowed type, and
@@ -847,21 +847,21 @@ flow-sensitive re-typing is involved.
   pattern's fresh names. This keeps both forms inside Escalier's one-type-per-binding
   model.
 - **Re-enables write-after-narrow.** A `mut` type pattern binds a fresh mutable view of
-  the matched branch, so `if let r2: mut {x: number} = r { r2.x = 5 }` is how a write
+  the matched branch, so `if val r2: mut {x: number} = r { r2.x = 5 }` is how a write
   reaches a field that PR6's read-until-narrowed union keeps read-only. The write goes
   through the fresh binding; the original `r` keeps its union type.
 
-**Tests.** An `if let` over `A | B` binds the matched arm's names at `A` in the
+**Tests.** An `if val` over `A | B` binds the matched arm's names at `A` in the
 consequent and leaves the scrutinee `A | B` in the alternate; a `let-else` with a
 diverging `else` binds for the rest of the block; a `let-else` whose `else` can fall
-through is rejected; an `if let r2: mut {x: number} = r` over a PR6 read-only union
+through is rejected; an `if val r2: mut {x: number} = r` over a PR6 read-only union
 allows `r2.x = 5` while `r` keeps its union type; the scrutinee's own type is unchanged
 after both forms.
 
 **Decision pending: free type-var members in the union-super exists trial.**
-PR7's `if-let` pattern reuses the union-super exists rule PR2 shipped, which
+PR7's `if-val` pattern reuses the union-super exists rule PR2 shipped, which
 today SKIPS direct TypeVar members of the super union to avoid speculative
-pinning. The skip is sound but rejects `if let x: T = u` over `u: T | number`
+pinning. The skip is sound but rejects `if val x: T = u` over `u: T | number`
 when no concrete branch matches, even when `T := matched-type` would
 type-check. Two designs were on the table at PR2 time and the choice was
 explicitly deferred to PR7. See [01-milestones.md](01-milestones.md) §M7
@@ -877,7 +877,7 @@ for the full enumeration. Short version:
   lines in `constrain.go`, one existing test rewrite, two new test cases,
   one comment update, and resolve the M7 open question.
 
-The deferred decision is what `if let x: T = u` should do for the generic
+The deferred decision is what `if val x: T = u` should do for the generic
 case, so PR7 is the natural place to make the call. Land the chosen rule
 as part of PR7 (or as a tail commit on PR2 if the implementer decides
 before PR7 starts) and update both the M7 open question and the comment
@@ -993,7 +993,7 @@ before and after the pass.
 - An incompatible mut-borrow join renders
   `(mut 'a {x: number}) | (mut 'b {x: string})` and reads `.x` as
   `number | string`. (PR6)
-- An `if let` / `let-else` over a union binds the matched member type into a fresh
+- An `if val` / `let-else` over a union binds the matched member type into a fresh
   name; a `let-else` whose `else` does not diverge is rejected. (PR7)
 - An inferred `1 | number` renders `number` and is `equalType`-equal to the annotation
   `number`; a union with a free var is left unchanged. (PR8)

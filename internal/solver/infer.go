@@ -419,8 +419,8 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferAwait(scope, lvl, e)
 	case *ast.IfElseExpr:
 		return c.inferIfElse(scope, lvl, e)
-	case *ast.IfLetExpr:
-		return c.inferIfLet(scope, lvl, e)
+	case *ast.IfValExpr:
+		return c.inferIfVal(scope, lvl, e)
 	case *ast.MatchExpr:
 		return c.inferMatch(scope, lvl, e)
 	case *ast.BorrowExpr:

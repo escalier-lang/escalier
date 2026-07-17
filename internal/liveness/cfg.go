@@ -13,7 +13,7 @@ type BasicBlock struct {
 	Predecessors []*BasicBlock
 	// ExtraDefs lists variables defined in this block that aren't captured
 	// by Stmts — for example, loop variable bindings from ForInStmt
-	// patterns, IfLetExpr pattern bindings, or MatchExpr arm patterns.
+	// patterns, IfValExpr pattern bindings, or MatchExpr arm patterns.
 	ExtraDefs []VarID
 }
 
@@ -172,7 +172,7 @@ func (b *cfgBuilder) processAssignBranch(be *ast.BinaryExpr, current *BasicBlock
 	// Early return if RHS is not a branching expression, before any side
 	// effects on current.Stmts.
 	switch be.Right.(type) {
-	case *ast.IfElseExpr, *ast.IfLetExpr, *ast.MatchExpr, *ast.DoExpr, *ast.TryCatchExpr:
+	case *ast.IfElseExpr, *ast.IfValExpr, *ast.MatchExpr, *ast.DoExpr, *ast.TryCatchExpr:
 		// RHS is branching, continue processing below.
 	default:
 		return nil
@@ -274,9 +274,9 @@ func (b *cfgBuilder) decomposeBranch(expr ast.Expr, joinDefs []VarID, current *B
 	case *ast.IfElseExpr:
 		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Cond, e.Cond.Span()))
 		return b.processIfElse(e, joinDefs, current)
-	case *ast.IfLetExpr:
+	case *ast.IfValExpr:
 		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Target, e.Target.Span()))
-		return b.processIfLet(e, joinDefs, current)
+		return b.processIfVal(e, joinDefs, current)
 	case *ast.MatchExpr:
 		current.Stmts = append(current.Stmts, ast.NewExprStmt(e.Target, e.Target.Span()))
 		return b.processMatch(e, joinDefs, current)
@@ -320,9 +320,9 @@ func (b *cfgBuilder) processIfElse(e *ast.IfElseExpr, joinDefs []VarID, current 
 	return join
 }
 
-// processIfLet decomposes an if-let expression. The pattern bindings are
+// processIfVal decomposes an if-val expression. The pattern bindings are
 // scoped to the consequent branch (added as ExtraDefs on the cons block).
-func (b *cfgBuilder) processIfLet(e *ast.IfLetExpr, joinDefs []VarID, current *BasicBlock) *BasicBlock {
+func (b *cfgBuilder) processIfVal(e *ast.IfValExpr, joinDefs []VarID, current *BasicBlock) *BasicBlock {
 	join := b.newBlock()
 	join.ExtraDefs = joinDefs
 

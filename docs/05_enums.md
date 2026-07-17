@@ -12,7 +12,7 @@ enum Maybe<T> {
 }
 
 val msg = Maybe.Some("hello") // inferred as Maybe<"hello">
-if let Maybe.Some(greeting) = msg {
+if val Maybe.Some(greeting) = msg {
     // `greeting` has type `"hello"`
 }
 

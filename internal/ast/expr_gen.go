@@ -62,9 +62,9 @@ func (node *IfElseExpr) Span() Span             { return node.span }
 func (node *IfElseExpr) InferredType() Type     { return node.inferredType }
 func (node *IfElseExpr) SetInferredType(t Type) { node.inferredType = t }
 
-func (node *IfLetExpr) Span() Span             { return node.span }
-func (node *IfLetExpr) InferredType() Type     { return node.inferredType }
-func (node *IfLetExpr) SetInferredType(t Type) { node.inferredType = t }
+func (node *IfValExpr) Span() Span             { return node.span }
+func (node *IfValExpr) InferredType() Type     { return node.inferredType }
+func (node *IfValExpr) SetInferredType(t Type) { node.inferredType = t }
 
 func (node *MatchExpr) Span() Span             { return node.span }
 func (node *MatchExpr) InferredType() Type     { return node.inferredType }

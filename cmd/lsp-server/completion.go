@@ -708,7 +708,7 @@ func completionsFromIntersectionType(inter *type_system.IntersectionType, scope 
 // completionsFromScope collects in-scope bindings for standalone identifier completion.
 // It walks the AST ancestor chain from the cursor position, collecting bindings from
 // each enclosing scope: function params, match/catch pattern bindings, for-in loop
-// variables, if-let patterns, and block-local variable declarations.
+// variables, if-val patterns, and block-local variable declarations.
 func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, cursor ast.Location, uri string) []protocol.CompletionItem {
 	seen := map[string]bool{}
 	var items []protocol.CompletionItem
@@ -757,7 +757,7 @@ func (s *Server) completionsFromScope(script *ast.Script, scope *checker.Scope, 
 					}
 				}
 			}
-		case *ast.IfLetExpr:
+		case *ast.IfValExpr:
 			if a.Cons.Span.Contains(cursor) {
 				collectPatternBindings(a.Pattern, seen, &items)
 				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)
@@ -877,7 +877,7 @@ func (s *Server) completionsFromModuleScope(
 					}
 				}
 			}
-		case *ast.IfLetExpr:
+		case *ast.IfValExpr:
 			if a.Cons.Span.Contains(cursor) {
 				collectPatternBindings(a.Pattern, seen, &items)
 				collectBlockBindings(a.Cons.Stmts, cursor, false, seen, &items)

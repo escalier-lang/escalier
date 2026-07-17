@@ -120,7 +120,7 @@ func AnalyzeFunction(cfg *CFG) *LivenessInfo {
 		defined := set.NewSet[VarID]()
 
 		// ExtraDefs at the start of the block (e.g., loop variables,
-		// if-let/match pattern bindings).
+		// if-val/match pattern bindings).
 		for _, d := range block.ExtraDefs {
 			defined.Add(d)
 			defs.Add(d)

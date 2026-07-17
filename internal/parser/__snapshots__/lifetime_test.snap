@@ -33,7 +33,7 @@
 []*parser.Token{
     &parser.Token{
         Span: 1:1-1:2,
-        Type: 53,
+        Type: 52,
         Value: "<",
     },
     &parser.Token{
@@ -73,7 +73,7 @@
 []*parser.Token{
     &parser.Token{
         Span: 1:1-1:4,
-        Type: 59,
+        Type: 58,
         Value: "mut",
     },
     &parser.Token{
@@ -93,7 +93,7 @@
 []*parser.Token{
     &parser.Token{
         Span: 1:1-1:2,
-        Type: 68,
+        Type: 67,
         Value: "(",
     },
     &parser.Token{
@@ -103,7 +103,7 @@
     },
     &parser.Token{
         Span: 1:5-1:6,
-        Type: 69,
+        Type: 68,
         Value: "|",
     },
     &parser.Token{

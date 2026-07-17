@@ -6,14 +6,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- M6 PR7: if-let / let-else refutable narrowing ---
+// --- M6 PR7: if-val / let-else refutable narrowing ---
 
-// TestInferIfLetAndLetElse drives the refutable-binding forms through inferSource.
+// TestInferIfValAndLetElse drives the refutable-binding forms through inferSource.
 // Each case either infers a binding type, asserted against want, or reports errors,
 // asserted in full against wantErrs. A type-annotated identifier pattern narrows a
 // union to one member via the union-super exists rule; subsumption at finalization
 // then drops a literal alternate such as 0 into a primitive sibling like number.
-func TestInferIfLetAndLetElse(t *testing.T) {
+func TestInferIfValAndLetElse(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
@@ -27,63 +27,63 @@ func TestInferIfLetAndLetElse(t *testing.T) {
 	}{
 		{
 			// The consequent binds x at number; the alternate's 0 is subsumed into it.
-			name: "if-let narrows union to member",
+			name: "if-val narrows union to member",
 			src: `fn f(u: number | string) {
-				return if let x: number = u { x } else { 0 }
+				return if val x: number = u { x } else { 0 }
 			}`,
 			want: "fn (u: number | string) -> number",
 		},
 		{
 			// A bare identifier pattern carries no annotation, so it binds the union.
-			name: "if-let bare ident binds whole scrutinee",
+			name: "if-val bare ident binds whole scrutinee",
 			src: `fn f(u: number | string) {
-				return if let x = u { x } else { 0 }
+				return if val x = u { x } else { 0 }
 			}`,
 			want: "fn (u: number | string) -> number | string",
 		},
 		{
 			// A union annotation picks the matching sub-union.
-			name: "if-let narrows to sub-union",
+			name: "if-val narrows to sub-union",
 			src: `fn f(u: number | string | boolean) {
-				return if let x: number | string = u { x } else { 0 }
+				return if val x: number | string = u { x } else { 0 }
 			}`,
 			want: "fn (u: number | string | boolean) -> number | string",
 		},
 		{
 			// No else contributes Void on the non-matching path.
-			name: "if-let without else joins with void",
+			name: "if-val without else joins with void",
 			src: `fn f(u: number | string) {
-				return if let x: number = u { x }
+				return if val x: number = u { x }
 			}`,
 			want: "fn (u: number | string) -> number | void",
 		},
 		{
 			// Narrowing binds a fresh x and never re-types the scrutinee, so both the
-			// alternate and the code after the if-let read u at its full union type.
+			// alternate and the code after the if-val read u at its full union type.
 			// The `else { u }` flows u into r, exercising the alternate's view, and
 			// `return u` exercises the continuation.
-			name: "if-let leaves scrutinee type unchanged",
+			name: "if-val leaves scrutinee type unchanged",
 			src: `fn f(u: number | string) {
-				val r = if let x: number = u { x } else { u }
+				val r = if val x: number = u { x } else { u }
 				return u
 			}`,
 			want: "fn (u: number | string) -> number | string",
 		},
 		{
 			// An annotation that is no member of the union has no branch to pick.
-			name: "if-let narrow rejects non-member",
+			name: "if-val narrow rejects non-member",
 			src: `fn f(u: number | string) {
-				return if let x: boolean = u { x } else { 0 }
+				return if val x: boolean = u { x } else { 0 }
 			}`,
 			wantErrs: []string{"2:22-2:29: cannot constrain boolean <: number | string"},
 		},
 		{
 			// `mut {x: number}` picks the matching borrow branch; the write checks
 			// against it and the scrutinee keeps its full borrow-union type.
-			name: "if-let narrows borrow union for write",
+			name: "if-val narrows borrow union for write",
 			src: `fn f(p: &mut {x: number}, q: &mut {x: string}) {
 				val r = if true { p } else { q }
-				if let r2: mut {x: number} = r {
+				if val r2: mut {x: number} = r {
 					r2.x = 5
 				}
 				return r
@@ -92,10 +92,10 @@ func TestInferIfLetAndLetElse(t *testing.T) {
 		},
 		{
 			// r2 binds at mut {x: number}, so a string write to r2.x is rejected.
-			name: "if-let narrowed write is type-checked",
+			name: "if-val narrowed write is type-checked",
 			src: `fn f(p: &mut {x: number}, q: &mut {x: string}) {
 				val r = if true { p } else { q }
-				if let r2: mut {x: number} = r {
+				if val r2: mut {x: number} = r {
 					r2.x = "hi"
 				}
 			}`,

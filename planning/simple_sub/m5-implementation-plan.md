@@ -1350,7 +1350,7 @@ corruption of `freshenAbove`.
       binds against `{x: number}` alone, and `[a, c]` against
       `[number, number] | [string]` binds against `[number, number]` alone,
       leaving the other member for another arm. This is sound only in a REFUTABLE
-      context — a `match` arm or `if let` — since an irrefutable `val {x} = u` over
+      context — a `match` arm or `if val` — since an irrefutable `val {x} = u` over
       a union must still require `x` on every member. So the narrowing threads a
       refutable flag through the bind path, or pre-narrows the scrutinee per arm in
       `inferMatch` before `bindPattern`. It does NOT live in the shared
@@ -1417,7 +1417,7 @@ corruption of `freshenAbove`.
     which collapses to `unknown`. This lands at the `UnionType`-sub object-requirement
     arm both a direct `p.x` read and a `val`/parameter destructure reach, so field
     read and destructure fix uniformly rather than as a pattern special-case.
-  - **Interaction with D3's refutable narrowing.** A refutable `match`/`if let` arm
+  - **Interaction with D3's refutable narrowing.** A refutable `match`/`if val` arm
     still narrows to the matching members first (D3), so `{x}` over the exact
     `{x: number} | {y: string}` binds the precise `x: number`, not `number | undefined`
     — the arm fires only when `x` is present, so the `undefined` contribution of the

@@ -923,7 +923,7 @@ recursive references (cf. `infer_module.go:431-872` and the discussion in
   type-level union `(mut 'a {x: number}) | (mut 'b {x: string})` instead. That union
   is readable — `.x` yields `number | string` through the covariant read view — and
   a write to a conflicting field through the un-narrowed binding is rejected and leaves
-  its type unchanged. To write, narrow to one branch with an `if let` and write through
+  its type unchanged. To write, narrow to one branch with an `if val` and write through
   the fresh mutable binding. This is TypeScript's read-until-narrowed rule, adapted to
   Escalier's binding-based narrowing. The un-narrowed union is read-only at its
   conflicting fields, and the write goes through the narrowed binding, never by
@@ -931,12 +931,12 @@ recursive references (cf. `infer_module.go:431-872` and the discussion in
   - **Why it lands here, not in M4.** It needs two M6 pieces. First, union types as
     first-class OUTPUTS that can carry `mut` `RefType` members — M4's join only
     builds a single-carrier lifetime-union `mut ('a | 'b) {x}`, never a union of two
-    distinct borrows. Second, the `if let` narrowing form that binds a fresh mutable
+    distinct borrows. Second, the `if val` narrowing form that binds a fresh mutable
     view of one branch to write through. Until the first exists the union is
     unrepresentable; until the second, it stays read-only.
-  - **The write path is an `if let` binding.** These branches carry no discriminant
+  - **The write path is an `if val` binding.** These branches carry no discriminant
     tag, but the narrowed type is named in the pattern, so
-    `if let r2: mut {x: number} = r` binds a fresh mutable view and `r2.x = 5` writes
+    `if val r2: mut {x: number} = r` binds a fresh mutable view and `r2.x = 5` writes
     through it. This is ordinary binding-based narrowing. Escalier has no runtime-type
     flow narrowing, and the un-narrowed `r` keeps its union type.
   - **Scope.** This relaxes D3's all-mut-borrows reconcile-or-error contract to
@@ -1204,9 +1204,9 @@ when M7 lands generic-union surface:
   a one-line tweak.
 - **Two-pass exists trial.** Try concrete members first. If none commit,
   try var members in a second pass. Preserves completeness without
-  first-pin behavior. PR7's `if-let` / `let-else` narrowing reuses the same
+  first-pin behavior. PR7's `if-val` / `let-else` narrowing reuses the same
   exists path. See [m6-implementation-plan.md](m6-implementation-plan.md)
-  §PR7. So this choice also decides whether `if let x: T = u` over
+  §PR7. So this choice also decides whether `if val x: T = u` over
   `u: T | number` can bind `T` to the matched branch.
 
 The IntersectionType-sub overload arm in `constrain.go` already trials

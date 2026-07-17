@@ -57,7 +57,6 @@ const (
 	Invalid
 	JSXText
 	Keyof
-	Let
 	LessThan
 	LessThanEqual
 	LessThanSlash // Used for JSX

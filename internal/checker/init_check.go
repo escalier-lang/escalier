@@ -352,7 +352,7 @@ func (ic *initChecker) walkExpr(expr ast.Expr, st initState) initFlow {
 		}
 		return joinFlows(consFlow, altFlow)
 
-	case *ast.IfLetExpr:
+	case *ast.IfValExpr:
 		tgtFlow := ic.walkExpr(e.Target, st)
 		if tgtFlow.terminated {
 			return tgtFlow

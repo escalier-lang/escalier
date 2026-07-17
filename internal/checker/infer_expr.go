@@ -747,7 +747,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		}
 		// Template literals always result in a string type
 		exprType = type_system.NewStrPrimType(provenance)
-	case *ast.IfLetExpr:
+	case *ast.IfValExpr:
 		// Infer the type of the target expression
 		targetType, targetErrors := c.inferExpr(ctx, expr.Target)
 		errors = slices.Concat(errors, targetErrors)
@@ -756,7 +756,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		patternType, bindings, patternErrors := c.inferPattern(ctx, expr.Pattern)
 		errors = slices.Concat(errors, patternErrors)
 
-		// For if-let expressions, we need to narrow the target type by removing null/undefined
+		// For if-val expressions, we need to narrow the target type by removing null/undefined
 		// The pattern should match the non-nullable part of the target type
 		narrowedTargetType := targetType
 		if unionType, ok := type_system.Prune(targetType).(*type_system.UnionType); ok {
@@ -788,7 +788,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		errors = slices.Concat(errors, consErrors)
 
 		// Infer the type of the alternative (if present)
-		// If there's no else clause, the if-let expression returns undefined when the pattern doesn't match
+		// If there's no else clause, the if-val expression returns undefined when the pattern doesn't match
 		var altType type_system.Type = type_system.NewUndefinedType(nil)
 		if expr.Alt != nil {
 			alt := expr.Alt
@@ -805,7 +805,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 			}
 		}
 
-		// The overall type of the if let is the union of the consequent and alternative types
+		// The overall type of the if val is the union of the consequent and alternative types
 		exprType = type_system.NewUnionType(provenance, consType, altType)
 	case *ast.TryCatchExpr:
 		errors = []Error{}
