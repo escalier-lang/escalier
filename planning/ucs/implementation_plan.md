@@ -14,7 +14,7 @@ Conditional Syntax" (Cheng & Parreaux, OOPSLA 2024). Three terms recur below:
 
 - **Desugared core.** A small term language the rich conditional surface lowers
   into. It has one `Split` node that tests a scrutinee against a sequence of
-  branches, `Let` nodes for intermediate bindings, guard tests, and leaf nodes
+  branches, `Bind` nodes for intermediate bindings, guard tests, and leaf nodes
   that hold an arm body. The core still carries nested patterns.
 - **Normalized form.** A backtracking-free rewrite of the core. Nested patterns
   are flattened into successive scrutinee splits, so each split tests exactly one
@@ -108,14 +108,14 @@ split p {                           split p {
 }                                   } default leaf 0
 ```
 
-### `if let` and `val … else` share the shape
+### `if val` and `val … else` share the shape
 
 Neither is special-cased. Both lower to the same two-branch split a two-arm match
 produces, which is what lets PR5 and PR6 collapse the four ad-hoc paths into one
 walk.
 
 ```
-if let {x, y} = p { cons } else { alt }
+if val {x, y} = p { cons } else { alt }
 ```
 
 ```
@@ -131,7 +131,7 @@ split p {                       split p {
 - **Solver only.** All work lands in `internal/solver` and a new pure-IR
   subpackage. Nothing here depends on negation types, DNF/CNF, or the MLstruct
   graft. It is `internal/solver`, not the legacy `internal/checker`.
-- **Subsumes four ad-hoc paths.** Today `match`, `if let`, `val … else`, and
+- **Subsumes four ad-hoc paths.** Today `match`, `if val`, `val … else`, and
   refutable-pattern guard handling are four separate hand-written paths in
   `internal/solver`. This plan unifies them under one desugar → normalize →
   check pipeline. The paths and their current homes:
@@ -201,7 +201,7 @@ Add the `internal/solver/ucs` package with the term types and a printer, wired
 into nothing.
 
 - Define the desugared-core ADT: a `Split` over a scrutinee with an ordered list
-  of branches, a `Let` node for an intermediate binding, a guard-test node, and a
+  of branches, a `Bind` node for an intermediate binding, a guard-test node, and a
   leaf node carrying the arm's body expression and its source span.
 - Define the normalized-form ADT: a split whose branches each test one tag-level
   and whose sub-scrutinees are projection paths into the matched value, plus a
@@ -228,7 +228,7 @@ surface to the desugared core.
   fallthrough.
 - Lower a `val pat = init else { … }` `VarDecl` into a `Split` with the pattern
   branch and the diverging-or-fallback `else`.
-- Represent intermediate bindings introduced by desugaring as `Let` nodes so
+- Represent intermediate bindings introduced by desugaring as `Bind` nodes so
   later stages see them uniformly.
 
 **Tests.** Snapshot the core IR for a representative source of each surface form.
@@ -273,7 +273,7 @@ asserting the one-tag-level-at-a-time shape and the projection scrutinee paths.
 ### PR5 — Type-check `match` off the normalized form
 
 Rewrite `inferMatch` to desugar, normalize, then walk the normalized form,
-introducing the shared walk the other paths reuse. `if let`, `val … else`, and
+introducing the shared walk the other paths reuse. `if val`, `val … else`, and
 `bindRefutable` keep their current bodies until PR6. This is the first
 behavior-affecting PR.
 
@@ -299,7 +299,7 @@ behavior-affecting PR.
 in `infer_expr_test.go`. Run `go test ./...`; `UPDATE_SNAPS=true` only for intended
 IR-print snapshots.
 
-### PR6 — Type-check `if let`, `val … else`, and refutable bindings off the IR
+### PR6 — Type-check `if val`, `val … else`, and refutable bindings off the IR
 
 Migrate the three remaining ad-hoc paths onto the PR5 walk, retiring their
 hand-written bodies.
@@ -308,12 +308,12 @@ hand-written bodies.
   desugar → normalize → walk over the same normalized form, reusing the PR5 walk.
 - Preserve the `IfLetBranch` and `LetElseBranch` provenance edges so their
   branch-join vars still render with their source.
-- Keep the scope discipline: an `if let` and a `val … else` run their `else` in a
+- Keep the scope discipline: an `if val` and a `val … else` run their `else` in a
   scope that does not see the pattern's bindings, matching the current child-scope
   handling in `inferIfLet` / `inferLetElse`.
 
-**Tests.** `infer_if_let_test.go` and the let-else cases stay green with unchanged
-inferred types and messages.
+**Tests.** `infer_if_let_test.go` and the `val … else` cases stay green with
+unchanged inferred types and messages.
 
 ### PR7 — Run the interim coverage check off the normalized form
 
@@ -358,7 +358,7 @@ code it supersedes.
 | PR3 — Normalize: merge + tail | PR1 | PR2 |
 | PR4 — Normalize: nested flatten | PR3 | PR2 |
 | PR5 — Type-check `match` | PR2, PR4 | — |
-| PR6 — Type-check `if let` / `else` | PR5 | PR7 |
+| PR6 — Type-check `if val` / `else` | PR5 | PR7 |
 | PR7 — Coverage off the IR | PR5 | PR6 |
 | PR8 — Remove superseded helpers | PR6, PR7 | — |
 
@@ -380,7 +380,7 @@ graph TD
     PR3["PR3 · Normalize: merge + tail"]
     PR4["PR4 · Normalize: nested flatten"]
     PR5["PR5 · Type-check match"]
-    PR6["PR6 · Type-check if let / else"]
+    PR6["PR6 · Type-check if val / else"]
     PR7["PR7 · Coverage off the IR"]
     PR8["PR8 · Remove superseded helpers"]
 
@@ -431,7 +431,7 @@ with an ast-only dependency lets codegen import it later without a solver cycle.
   one-variant arm does not bind against the whole union. Snapshot the normalized
   IR for a union scrutinee to lock the split boundaries.
 - **Guard and binding scope.** A guard sees its arm's bindings; the `else` of an
-  `if let` and a `val … else` does not. The IR must keep guard tests inside the
+  `if val` and a `val … else` does not. The IR must keep guard tests inside the
   bound branch and fallthroughs outside it, matching the current child-scope
   discipline.
 - **Snapshot churn.** PR5, PR6, and PR7 should not move any inferred type or error
