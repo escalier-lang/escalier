@@ -133,10 +133,13 @@ split r {
 } default ✗
 ```
 
-A **rest pattern** adds no tag. It relaxes its split to an inexact prefix and
-binds the remainder. A tuple rest binds the tail, written `xs[1..]`. An object
-rest `{x, ...rest}` needs object-rest types that arrive with M9, so its remainder
-binding rides that milestone; the prefix split itself is unchanged.
+A **rest pattern** adds no tag. It relaxes its split to an inexact prefix, and the
+prefix relaxation — a tuple "at least this long" or an object "has at least these
+fields" — is the part that works today. The remainder *binding* is the M9 piece,
+and it differs by container, so `bind` needs two projection kinds, not one.
+
+A **tuple rest** binds a positional suffix. `xs[1..]` is the tuple of elements past
+the fixed prefix.
 
 ```
 match xs {
@@ -145,11 +148,38 @@ match xs {
 ```
 
 ```
-# normalized form
+# normalized form (the rest binding rides M9)
 split xs {
     [_, ...] => bind first = xs.0, rest = xs[1..]; leaf first
 } default ✗
 ```
+
+An **object rest** has no positional slice. `rest` must bind an object of exactly
+the fields the pattern did not name, which is "the scrutinee minus a key set," not
+a suffix. Represent it with a fresh row variable `ρ`: the split already needs
+`p <: {x: βx, ...ρ}` to read `x` inexactly, and `rest` then binds `{...ρ}`, the
+object over that residual row. This is the inverse of object spread `{...rest, x}`
+and reuses the `RestSpreadElem` row variable the row-types work introduces, so M9
+supplies the type without new machinery. The notation below writes it `p \ {x}`,
+the scrutinee with the named keys removed.
+
+```
+match p {
+    {x, ...rest} => rest
+}
+```
+
+```
+# normalized form (the rest binding rides M9)
+split p {
+    {x, ...} => bind x = p.x, rest = p \ {x}; leaf rest
+} default ✗
+```
+
+Here `p \ {x}` resolves to an object over the residual row variable `ρ` from
+`p <: {x: βx, ...ρ}`. The excluded key set is exactly the keys named at this
+object pattern, so a key matched by a deeper nested split does not remove it from a
+shallower `rest`.
 
 For coverage, the instance and extractor tags cover nominal union members the same
 way `unionMatchExhaustive` already does, and a rest-relaxed inexact split needs a
@@ -225,8 +255,13 @@ split p {                       split p {
   scrutinee a leaf binds against; `bindPattern` still does the member-lookup
   constraints and the borrow-mode projection. Its two interim gates come along
   unchanged: the extractor path narrows to the constructor return type until the
-  `[Symbol.customMatcher]` protocol lands in M7, and object-rest typing waits on
-  M9. Neither is introduced or worsened by this work.
+  `[Symbol.customMatcher]` protocol lands in M7, and rest bindings stay untyped
+  until M9. Today a rest element only relaxes the split to inexact and binds no
+  name. M9 gives it a type: a suffix tuple for a tuple rest, and an object over a
+  fresh residual row variable for an object rest, as
+  [the worked example](#instance-extractor-and-rest-patterns) spells out. The IR
+  names both projections now so the normalized form is ready when those types
+  arrive. Neither gate is introduced or worsened by this work.
 
 ### Out of scope
 
@@ -301,8 +336,10 @@ into nothing.
 - Enumerate the branch-test kinds as a sum: a structural object or tuple shape, a
   literal, a nominal class tag for an instance pattern, an extractor tag, and an
   inexact-prefix marker a rest pattern sets. A projection path segment must be able
-  to name a field, a tuple index, and an extractor's positional result, so nested
-  sub-patterns under any kind become sub-scrutinees.
+  to name a field, a tuple index, an extractor's positional result, a tuple suffix
+  for a tuple rest, and an object remainder excluding a key set for an object rest.
+  The last two carry no bound type until M9, but the IR must name them now so the
+  normalized form is shaped correctly before the M9 types land.
 - Define the normalized-form ADT: a split whose branches each test one tag-level
   and whose sub-scrutinees are projection paths into the matched value, plus a
   default / fallthrough tail.
