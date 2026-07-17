@@ -699,22 +699,29 @@ func isFieldReadReq(o *soltype.ObjectType) bool {
 	return true
 }
 
-// constrainUnionFieldRead reads a property `f` off a union sub for a field-read/destructure
+// constrainUnionFieldRead reads a member `f` off a union sub for a field-read/destructure
 // requirement `union <: {f: β}` (M5 D4), joining one contribution per member into β:
-//   - a member carrying `f` contributes its type;
-//   - a member lacking `f` contributes undefined, so `f` on some but not all members reads
-//     as `T | undefined`;
+//   - a member exposing `f` as a property or getter contributes its read type;
+//   - a member exposing `f` as a method contributes the method's callable type, the same
+//     receiver-stripped signature a direct `p.f` read yields, or their intersection for an
+//     overload set;
+//   - a member lacking `f`, or exposing it only as a setter, contributes undefined — a
+//     setter-only member reads as undefined at runtime — so `f` readable on some but not all
+//     members reads as `T | undefined`;
 //   - an inexact union's open `...` tail contributes unknown, since it may carry `f` at any type;
-//   - `f` on no member of an exact union is a MissingPropertyError, since the read is a
-//     constant undefined, like reading an absent field off a single object.
+//   - `f` readable on no member of an exact union is a MissingPropertyError, since the read is
+//     a constant undefined, like reading an absent field off a single object. This case also
+//     covers a member exposing `f` only as a setter with no readable member anywhere, so a
+//     write-only member is rejected rather than read as bare undefined.
+//
+// Each union member is normalized to the ObjectType its members read through: a structural
+// object directly, or a class instance's projected body (#886), so a union of class instances,
+// or a mix of objects and instances such as `{x: number} | Point`, joins through the same
+// per-member read.
 //
 // ok is false unless the shapes fit — an inexact object super of fresh-var properties over a
-// union of objects — so a genuine subtyping demand keeps the strict every-member rule.
-//
-// Limitation: only plain object members reading plain properties are handled. A class-instance
-// member, or a getter/method/setter requirement, does not fit and falls back to the
-// every-member rule. Extending the join to those through member lookup is
-// https://github.com/escalier-lang/escalier/issues/886.
+// union whose every member is an object or a class instance — so a genuine subtyping demand
+// keeps the strict every-member rule.
 func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (errs []SolverError, ok bool) {
 	req, isObj := super.(*soltype.ObjectType)
 	if !isObj || !isFieldReadReq(req) {
@@ -722,8 +729,8 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 	}
 	members := make([]*soltype.ObjectType, 0, len(sub.Types))
 	for _, m := range sub.Types {
-		obj, isObj := soltype.CarrierOf(m).(*soltype.ObjectType)
-		if !isObj {
+		obj, ok := c.readCarrierObject(soltype.CarrierOf(m))
+		if !ok {
 			return nil, false
 		}
 		members = append(members, obj)
@@ -731,27 +738,26 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 	for _, elem := range req.Elems {
 		prop := soltype.AsProperty(elem)
 		// The read joins what each member can yield for this property. anyValue records that
-		// some member yields a value; anyUndefined that the read can also yield undefined,
-		// because some member lacks the property or carries it optionally, so it may be absent
-		// at runtime. A member carrying an optional field sets both.
+		// some member yields a readable value; anyUndefined that the read can also yield
+		// undefined, because some member lacks the property, carries it optionally, or exposes
+		// it as a write-only setter, so it may be absent at runtime. A member carrying an
+		// optional field sets both.
 		anyValue := false
 		anyUndefined := false
 		for _, obj := range members {
-			mp, found := obj.Prop(prop.Name)
-			if !found {
-				anyUndefined = true
-				continue
+			read, hasValue, mayUndef := memberReadContribution(obj, prop.Name)
+			if hasValue {
+				anyValue = true
+				errs = append(errs, c.constrain(read, prop.Type, seen, mutCtx)...)
 			}
-			anyValue = true
-			errs = append(errs, c.constrain(mp.Type, prop.Type, seen, mutCtx)...)
-			if mp.Optional {
+			if mayUndef {
 				anyUndefined = true
 			}
 		}
 		if !anyValue && !sub.Inexact {
-			// No listed member yields a value and there is no open tail to carry the property,
-			// so the read is a constant undefined. Report it like an absent field on a single
-			// object. members is non-empty here, so members[0] is a valid receiver to blame.
+			// No listed member yields a readable value and there is no open tail to carry the
+			// property, so the read is a constant undefined. Report it like an absent field on a
+			// single object. members is non-empty here, so members[0] is a valid receiver to blame.
 			errs = append(errs, &MissingPropertyError{Sub: members[0], Super: req, Name: prop.Name})
 			continue
 		}
@@ -763,6 +769,57 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 		}
 	}
 	return errs, true
+}
+
+// readCarrierObject returns the ObjectType a union member's fields are read through: a
+// structural object directly, or a class instance's projected body. It returns ok=false for
+// any other carrier — a primitive, a bare type variable — so the field-read join falls back to
+// the strict every-member rule rather than reading a member off a value that carries none.
+func (c *Context) readCarrierObject(carrier soltype.Type) (*soltype.ObjectType, bool) {
+	switch t := carrier.(type) {
+	case *soltype.ObjectType:
+		return t, true
+	case *soltype.ClassType:
+		return c.projectClassBody(t)
+	}
+	return nil, false
+}
+
+// memberReadContribution reports what reading `name` off one union member yields for the
+// field-read join. hasValue is true when the member exposes a readable value — a property,
+// getter, or method — and read is that value's type: a property's or getter's declared type,
+// or a method's receiver-stripped callable signature, joined into an intersection for an
+// overload set, matching memberValue. mayUndef is true when the read can also yield undefined,
+// because the member is absent, is an optional property, or is a write-only setter, which reads
+// as undefined at runtime. An absent or setter-only member has hasValue false, so a property
+// readable on no member surfaces as a missing-property error rather than bare undefined.
+func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.Type, hasValue, mayUndef bool) {
+	member, found := obj.Member(name)
+	if !found {
+		return nil, false, true
+	}
+	switch m := member.(type) {
+	case *soltype.PropertyElem:
+		return m.Type, true, m.Optional
+	case *soltype.GetterElem:
+		return m.Type, true, false
+	case *soltype.MethodElem:
+		switch len(m.Signatures) {
+		case 0:
+			return &soltype.ErrorType{}, true, false
+		case 1:
+			return callableView(m.Signatures[0]), true, false
+		default:
+			arms := make([]soltype.Type, len(m.Signatures))
+			for i, sig := range m.Signatures {
+				arms[i] = callableView(sig)
+			}
+			return &soltype.IntersectionType{Types: arms}, true, false
+		}
+	case *soltype.SetterElem:
+		return nil, false, true
+	}
+	return nil, false, true
 }
 
 // constrainObjMember checks a method, getter, or setter requirement on an object super
