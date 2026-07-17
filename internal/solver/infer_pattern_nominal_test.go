@@ -461,6 +461,34 @@ func TestValDestructureUnionReadsPartialFieldAsUndefined(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number | undefined", values["f"])
 }
 
+// An irrefutable `val {x} = p` over an inexact union reads `x` off the whole union, tail
+// included (M5 D4). The `{x: number}` member contributes `number`, `{y: string}` contributes
+// undefined, and the open tail contributes unknown, so the join collapses to `unknown`.
+func TestValDestructureInexactUnionPartialFieldIsUnknown(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string} | ...) {
+			val {x} = p
+			return x
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number} | {y: string} | ...) -> unknown", values["f"])
+}
+
+// A field absent from every listed member of an inexact union is not an error, unlike the
+// exact case (M5 D4). The open tail may carry the field at any type, so `val {z} = p` reads
+// `z` as unknown through the tail rather than reporting a missing property.
+func TestValDestructureInexactUnionAbsentFieldIsUnknown(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string} | ...) {
+			val {z} = p
+			return z
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number} | {y: string} | ...) -> unknown", values["f"])
+}
+
 // A direct field read `p.x` takes the same partial-union path as a destructure (M5 D4), so
 // reading `x` off `{x: number} | {y: string}` yields `number | undefined` rather than
 // rejecting on the `{y: string}` member that lacks `x`.
