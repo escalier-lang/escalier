@@ -30,6 +30,102 @@ later codegen. Phase 1 builds it and drives type checking and the interim
 top-level coverage check off it. Comprehensive nested-match exhaustiveness rides
 Phase 2 (#883) via the negation algebra, not this work.
 
+## Worked examples
+
+These show the two lowering stages the PRs below build: PR2 produces the
+desugared core, PR3 and PR4 produce the normalized form. The notation is
+illustrative, not the printer's final output.
+
+- `split <scrutinee> { <test> => <cont> }` tests a scrutinee against branches.
+- The desugared core keeps a branch's source pattern whole, written `pat …`, and
+  writes a fallthrough arm as `else`.
+- The normalized form replaces each pattern test with a one-tag-level test, binds
+  the leaves it introduces with `bind <name> = <path>`, and moves the catch-all or
+  fallthrough into a `default <tail>`. A projection path such as `l.start` names a
+  sub-scrutinee. A split with no covering branch has an empty tail, written `✗`.
+
+### A literal match
+
+The catch-all arm becomes the split's default tail.
+
+```
+match n {
+    1 => "one",
+    _ => "other"
+}
+```
+
+```
+# desugared core (PR2)          # normalized form (PR3)
+split n {                       split n {
+    pat 1 => leaf "one"             1 => leaf "one"
+    pat _ => leaf "other"       } default leaf "other"
+}
+```
+
+### A nested pattern
+
+The source pattern `Line { start: {x, y} }` is one deep shape in the core. PR4
+flattens it into a split on `l`, then a split on the projected `l.start`, so the
+checker only ever sees one tag-level.
+
+```
+match l {
+    Line { start: {x, y} } => [x, y]
+}
+```
+
+```
+# desugared core (PR2)                    # normalized form (PR4)
+split l {                                 split l {
+    pat Line { start: {x, y} }                Line => split l.start {
+        => leaf [x, y]                            {x, y} => bind x = l.start.x,
+}                                                           y = l.start.y;
+                                                           leaf [x, y]
+                                              } default ✗
+                                          } default ✗
+```
+
+### A guard
+
+The guard lowers to a test inside the bound branch, after the leaves bind, so it
+can read `x` and `y`. On failure it falls to the split's tail, never to a sibling
+arm. This is why a guarded arm covers nothing for exhaustiveness.
+
+```
+match p {
+    {x, y} if x > y => x,
+    _              => 0
+}
+```
+
+```
+# desugared core (PR2)              # normalized form (PR3)
+split p {                           split p {
+    pat {x, y} guard (x > y)            {x, y} => bind x = p.x, y = p.y;
+        => leaf x                                 guard (x > y) => leaf x
+    pat _ => leaf 0                                default ↘
+}                                   } default leaf 0
+```
+
+### `if let` and `val … else` share the shape
+
+Neither is special-cased. Both lower to the same two-branch split a two-arm match
+produces, which is what lets PR5 and PR6 collapse the four ad-hoc paths into one
+walk.
+
+```
+if let {x, y} = p { cons } else { alt }
+```
+
+```
+# desugared core (PR2)          # normalized form (PR6)
+split p {                       split p {
+    pat {x, y} => leaf cons         {x, y} => bind x = p.x, y = p.y; leaf cons
+    else       => leaf alt      } default leaf alt
+}
+```
+
 ## Scope and constraints
 
 - **Solver only.** All work lands in `internal/solver` and a new pure-IR
