@@ -474,15 +474,15 @@ func TestInferMemberUnionReadsPartialFieldAsUndefined(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number | undefined", values["f"])
 }
 
-// A property no listed union member carries reads as `undefined` alone (M5 D4): every member
-// contributes the missing-field `undefined` and none contributes a value, so `p.z` over
-// `{x: number} | {y: string}` binds `undefined`.
-func TestInferMemberUnionReadsAbsentFieldAsUndefined(t *testing.T) {
-	values, _, errs := inferSource(t, `
+// A property no member of an exact union carries is an error (M5 D4). Reading `p.z` off
+// `{x: number} | {y: string}` would always evaluate to undefined, which is never useful, so
+// it is rejected like an absent field on a single object rather than binding `undefined`.
+func TestInferMemberUnionAbsentFieldErrors(t *testing.T) {
+	_, _, errs := inferSource(t, `
 		fn f(p: {x: number} | {y: string}) {
 			return p.z
 		}
 	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number} | {y: string}) -> undefined", values["f"])
+	require.Len(t, errs, 1)
+	require.Equal(t, "3:13-3:14: object is missing property: z", msgWithSpan(errs[0]))
 }

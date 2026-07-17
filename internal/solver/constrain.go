@@ -669,6 +669,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 // resolves to `number | undefined`, and reading through an inexact union's tail resolves to
 // `unknown`.
 //
+// A property no listed member carries is rejected with a MissingPropertyError, since the read
+// would always evaluate to undefined and so is never useful, the same reason reading an absent
+// field off a single object is an error. An inexact union's open tail may still carry it, so a
+// property absent from every listed member of an inexact union is not an error; it reads as
+// unknown through the tail.
+//
 // It applies only to a field-read / destructure requirement: an inexact object super carrying
 // only property elements whose types are all fresh vars, read off a union every member of
 // which is an object. A genuine object subtyping demand — an exact object annotation, or an
@@ -698,9 +704,10 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 	}
 	for _, elem := range req.Elems {
 		prop := soltype.AsProperty(elem)
-		// missing tracks whether some listed member lacks the property as a required field, in
-		// which case the joined read includes undefined. An optional member field counts too,
-		// since it may be absent at runtime.
+		// present tracks whether some listed member carries the property, missing whether some
+		// lacks it as a required field, in which case the joined read includes undefined. An
+		// optional member field counts as missing too, since it may be absent at runtime.
+		present := false
 		missing := false
 		for _, obj := range members {
 			mp, found := obj.Prop(prop.Name)
@@ -708,10 +715,18 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 				missing = true
 				continue
 			}
+			present = true
 			errs = append(errs, c.constrain(mp.Type, prop.Type, seen, mutCtx)...)
 			if mp.Optional {
 				missing = true
 			}
+		}
+		if !present && !sub.Inexact {
+			// No listed member carries the property and there is no open tail to carry it, so
+			// the read is a constant undefined. Report it like an absent field on a single
+			// object. members is non-empty here, so members[0] is a valid receiver to blame.
+			errs = append(errs, &MissingPropertyError{Sub: members[0], Super: req, Name: prop.Name})
+			continue
 		}
 		if missing {
 			errs = append(errs, c.constrain(&soltype.UndefinedType{}, prop.Type, seen, mutCtx)...)
