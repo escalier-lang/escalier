@@ -850,6 +850,7 @@ func (*MethodCallBeforeInitError) isSolverError()           {}
 func (*InstancePatternNotClassError) isSolverError()        {}
 func (*ExtractorPatternNotCtorError) isSolverError()        {}
 func (*ExtractorPatternArityError) isSolverError()          {}
+func (*AliasArityMismatchError) isSolverError()             {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -939,6 +940,29 @@ func (e *ExtractorPatternArityError) Span() ast.Span      { return e.Pat.Span() 
 func (e *ExtractorPatternArityError) Related() []ast.Span { return nil }
 func (e *ExtractorPatternArityError) Message() string {
 	return fmt.Sprintf("extractor pattern `%s` expects %d arguments but got %d", e.Name, e.Expected, e.Got)
+}
+
+// AliasArityMismatchError fires when a generic-alias reference `Name<…>` supplies fewer
+// than the required number of type arguments or more than the total parameter count. A
+// trailing parameter with a default is optional, so the valid count is the range from
+// Required to Total, where Required counts the parameters with no default. The message
+// states a single count when every parameter is required and a range when a default makes
+// one optional.
+type AliasArityMismatchError struct {
+	Ref      *ast.TypeRefTypeAnn
+	Name     string
+	Required int
+	Total    int
+	Got      int
+}
+
+func (e *AliasArityMismatchError) Span() ast.Span      { return e.Ref.Span() }
+func (e *AliasArityMismatchError) Related() []ast.Span { return nil }
+func (e *AliasArityMismatchError) Message() string {
+	if e.Required == e.Total {
+		return fmt.Sprintf("type alias `%s` expects %d type arguments but got %d", e.Name, e.Total, e.Got)
+	}
+	return fmt.Sprintf("type alias `%s` expects between %d and %d type arguments but got %d", e.Name, e.Required, e.Total, e.Got)
 }
 
 // MultipleConstructorsError fires on the second and any later `constructor` block in
