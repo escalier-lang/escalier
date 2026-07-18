@@ -161,19 +161,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		return nil
 	}
 
-	// A type alias is transparent, meaning it subtypes exactly as its expanded body
-	// does, in either direction. Expand an AliasType on either side to its body and
-	// recurse through the EXISTING seen-set, so an alias is checked as its structure.
-	// This sits above the structural switch because that switch dispatches on sub and
-	// would otherwise reject a concrete sub against an AliasType super before the alias
-	// could expand. The seen-set closes a recursive alias. A non-generic recursive body
-	// reuses one Body node, so the pointer-keyed cache terminates the cycle. expandAlias
-	// is a standalone helper so callers other than constrain can reuse the same unfolding.
-	//
-	// When the OTHER side is a variable, fall through to the var arms instead so the
-	// whole AliasType node is recorded as one bound, exactly as the union/intersection
-	// blocks below do. Recording the token rather than the expanded body keeps the alias
-	// name on the coalesced binding, so `val p: Point = {…}` renders `p` as `Point`.
+	// A type alias is transparent: expand an AliasType on either side to its body and
+	// recurse through the existing seen-set, which also closes a recursive alias. This
+	// sits above the structural switch, which dispatches on sub and would otherwise
+	// reject a concrete sub against an AliasType super before it could expand. When the
+	// other side is a variable, fall through to the var arms so the whole AliasType is
+	// recorded as one bound, keeping the alias name on the coalesced binding.
 	if alias, ok := sub.(*soltype.AliasType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			return c.constrain(c.expandAlias(alias), super, seen, mutCtx)
