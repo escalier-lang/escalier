@@ -11,9 +11,9 @@ import (
 )
 
 // TestInferTypeAliasBasic covers a non-generic `type` alias end to end. The type binding
-// renders under the alias name, an object literal that fits the aliased record
-// type-checks and the binding renders under the alias name rather than the expanded body,
-// and a primitive alias flows structurally.
+// renders as its definition body, an annotated value that fits the aliased record
+// type-checks and keeps the alias name on the value binding, and a primitive alias flows
+// structurally.
 func TestInferTypeAliasBasic(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -24,7 +24,7 @@ func TestInferTypeAliasBasic(t *testing.T) {
 		{
 			name:      "RecordAliasBinds",
 			src:       `type Point = {x: number, y: number}`,
-			wantTypes: map[string]string{"Point": "Point"},
+			wantTypes: map[string]string{"Point": "{x: number, y: number}"},
 		},
 		{
 			name: "AnnotatedValueRendersUnderAliasName",
@@ -32,8 +32,9 @@ func TestInferTypeAliasBasic(t *testing.T) {
 				type Point = {x: number, y: number}
 				val p: Point = {x: 1, y: 2}
 			`,
+			// The value binding keeps the alias name, while the type binding shows the body.
 			wantValues: map[string]string{"p": "Point"},
-			wantTypes:  map[string]string{"Point": "Point"},
+			wantTypes:  map[string]string{"Point": "{x: number, y: number}"},
 		},
 		{
 			name: "PrimitiveAliasAcceptsMatchingValue",
@@ -42,7 +43,7 @@ func TestInferTypeAliasBasic(t *testing.T) {
 				val x: Foo = 5
 			`,
 			wantValues: map[string]string{"x": "Foo"},
-			wantTypes:  map[string]string{"Foo": "Foo"},
+			wantTypes:  map[string]string{"Foo": "number"},
 		},
 	}
 	for _, tt := range tests {
