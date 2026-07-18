@@ -235,6 +235,15 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 // and rest-param annotations report an unsupported feature and recover as a
 // monomorphic function. A lifetime parameter is supported. Its declared outlives
 // bounds lower into constrainLt so the annotation's borrows solve against them.
+//
+// A generic annotation reports an unsupported feature rather than resolving its `<…>`
+// list. Routing it through resolveTypeParams resolves the parameters, but the resulting
+// FuncType.TypeParams vars break the value-binding generalization path. That path inlines
+// them to `never` and panics in acceptTypeParams, since a bound parameter must stay a
+// variable. Holding them symbolic needs the keep-set retention coalesceKeeping already
+// gives a generic class's own parameters. That retention lands with the generic-function
+// generalization work, so until then the conservative report keeps a `val f: fn<T>(…)`
+// binding sound.
 func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
 	if len(ta.TypeParams) > 0 {
 		c.reportUnsupportedFeature(ta, "generic function type annotation")

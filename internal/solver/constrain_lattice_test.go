@@ -138,25 +138,35 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		require.True(t, isUnion, "variable sub should record the union whole, got %T", a.UpperBounds[0])
 	})
 
-	t.Run("free-var super member is skipped, not pinned by the trial", func(t *testing.T) {
-		// A super-union member that is itself an unbounded TypeVar must not
-		// be trialled. Trialling it would speculatively pin it to sub. The
-		// super union here has a fresh var on one branch and an
-		// incompatible prim on the other. Trialling the var would trivially
-		// succeed by recording "hi" as its lower bound. The rule skips the
-		// var member instead. The number trial then fails on its own merits
-		// (StrLit "hi" against PrimType number), the rule reports a clean
-		// union-level CannotConstrainError, and the variable carries no
-		// bounds.
+	t.Run("free-var super member is trialled last as a catch-all", func(t *testing.T) {
+		// A super-union member that is itself an unbounded TypeVar is trialled after every
+		// concrete member, since specificityOrder ranks a variable below every concrete. The
+		// super union here has a fresh var on one branch and an incompatible prim on the
+		// other. The number trial fails on its own merits (StrLit "hi" against PrimType
+		// number), so the rule falls through to the var branch: `"hi" <: extra` records "hi"
+		// as extra's lower bound and commits. The var member is a last-resort catch-all, not
+		// a speculative first pin, because it is reached only when no concrete member matches.
 		c := &Context{}
 		extra := c.freshVar(0)
 		super := newUnion(nil, []soltype.Type{extra, num()}, false)
 
-		errs := c.Constrain(strLit("hi"), super)
-		require.Len(t, errs, 1)
-		require.IsType(t, &CannotConstrainError{}, errs[0])
-		require.Empty(t, extra.LowerBounds)
+		require.Empty(t, c.Constrain(strLit("hi"), super))
+		require.Len(t, extra.LowerBounds, 1)
 		require.Empty(t, extra.UpperBounds)
+	})
+
+	t.Run("concrete match commits before the var member and leaves it unpinned", func(t *testing.T) {
+		// 5 <: (T | number). The number member is trialled before the bare var T, since
+		// specificityOrder ranks a variable below every concrete, so `5 <: number` commits
+		// and the trial never reaches `5 <: T`. T is left with no bounds, proving the var
+		// member is a last-resort catch-all rather than a speculative first pin.
+		c := &Context{}
+		tv := c.freshVar(0)
+		super := newUnion(nil, []soltype.Type{tv, num()}, false)
+
+		require.Empty(t, c.Constrain(numLit(5), super))
+		require.Empty(t, tv.LowerBounds)
+		require.Empty(t, tv.UpperBounds)
 	})
 }
 

@@ -231,38 +231,41 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	}
 
-	// sub <: (A | B) ⟹ sub <: A OR sub <: B. Trial each concrete member under a
-	// probe most-specific-first; the first success commits, the losers roll back.
-	// Free TypeVar members are skipped to avoid speculatively pinning them to sub.
+	// sub <: (A | B) ⟹ sub <: A OR sub <: B. Trial each member under a probe in
+	// specificityOrder, which ranks a variable below every concrete, so a concrete member
+	// is tried before a bare TypeVar member. A var member is therefore a last-resort
+	// catch-all, not a speculative first pin. `5 <: (T | number)` commits `number` and
+	// never touches T. `"hi" <: (T | number)` finds no concrete match and falls through to
+	// `"hi" <: T`, recording "hi" as T's lower bound. This two-pass exists rule settles the
+	// M7 union-super open question. It mirrors the IntersectionType-sub arm below, which
+	// trials its members through the same specificityOrder, so the union-super and
+	// intersection-sub exists rules share one ordering rather than diverging on whether a
+	// var member is trialled.
 	if supU, ok := super.(*soltype.UnionType); ok {
-		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
-			order := concreteSpecificityOrder(supU.Types)
-			if len(order) > 0 {
-				committed, _ := c.trialAndCommit(order, func(idx int) []SolverError {
-					// A cloned seen keeps each member's coinductive cache independent, so a
-					// failed member's entries can't wrongly short-circuit a later member.
-					return c.constrain(sub, supU.Types[idx], seen.Clone(), mutCtx)
-				})
-				if committed {
-					return nil
-				}
-				if supU.Inexact {
-					// An inexact union super has an open, unknown-typed tail. A sub that
-					// matches no named member is subsumed by that tail, so accept it. This
-					// is the dual of the union-sub arm above, which rejects an inexact sub
-					// into a closed super because that open tail can't be absorbed.
-					return nil
-				}
-				// Every concrete branch failed. Promote a BorrowEscapeError when sub's
-				// peeled inner still satisfies the union; else emit the generic error.
-				if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil {
-					if len(c.trialUnderProbe(ref.Inner, super)) == 0 {
-						return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}
-					}
-				}
-				return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && len(supU.Types) > 0 {
+			committed, _ := c.trialAndCommit(specificityOrder(supU.Types), func(idx int) []SolverError {
+				// A cloned seen keeps each member's coinductive cache independent, so a
+				// failed member's entries can't wrongly short-circuit a later member.
+				return c.constrain(sub, supU.Types[idx], seen.Clone(), mutCtx)
+			})
+			if committed {
+				return nil
 			}
-			// Every member was a free var; fall through to the var arms.
+			if supU.Inexact {
+				// An inexact union super has an open, unknown-typed tail. A sub that
+				// matches no named member is subsumed by that tail, so accept it. This
+				// is the dual of the union-sub arm above, which rejects an inexact sub
+				// into a closed super because that open tail can't be absorbed.
+				return nil
+			}
+			// Every branch failed, the var members included. Promote a BorrowEscapeError
+			// when sub's peeled inner still satisfies the union; else emit the generic error.
+			if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil {
+				if len(c.trialUnderProbe(ref.Inner, super)) == 0 {
+					return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}
+				}
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 		}
 	}
 
