@@ -263,6 +263,85 @@ func TestInferGenericTypeAliasDefaultConstrainsBody(t *testing.T) {
 	require.Equal(t, `cannot constrain "hi" <: number`, errs[0].Message())
 }
 
+// TestInferRecursiveTypeAliasBinds covers a non-generic self-recursive alias. The type
+// binding renders the self-reference under its own name at the knot rather than expanding
+// forever, and a value inhabiting the type through the optional recursive field type-checks.
+func TestInferRecursiveTypeAliasBinds(t *testing.T) {
+	src := `
+		type IntList = {head: number, tail?: IntList}
+		val one: IntList = {head: 1}
+		val two: IntList = {head: 1, tail: {head: 2}}
+	`
+	values, types, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "{head: number, tail?: IntList}", types["IntList"])
+	require.Equal(t, "IntList", values["one"])
+	require.Equal(t, "IntList", values["two"])
+}
+
+// TestInferRecursiveTypeAliasSubtypingSubject exercises a recursive alias as a subtyping
+// subject: an alias-typed binding assigned to another binding of the same alias expands
+// both sides and walks the recursive field, closing the cycle through the alias's own name.
+func TestInferRecursiveTypeAliasSubtypingSubject(t *testing.T) {
+	src := `
+		type IntList = {head: number, tail?: IntList}
+		val a: IntList = {head: 1}
+		val b: IntList = a
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "IntList", values["a"])
+	require.Equal(t, "IntList", values["b"])
+}
+
+// TestInferGenericRecursiveTypeAliasSubtypingSubject is the divergence case the canonical
+// recursion guard exists for: a generic instance List<number> used as a subtyping subject.
+// expandAlias substitutes the argument into a fresh node each unfold, so a pointer-identity
+// guard would mint a new List<number> every lap and loop; keying on the canonical
+// (alias, args) identity closes the cycle.
+func TestInferGenericRecursiveTypeAliasSubtypingSubject(t *testing.T) {
+	src := `
+		type List<T> = {head: T, tail?: List<T>}
+		val a: List<number> = {head: 1, tail: {head: 2}}
+		val b: List<number> = a
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "List<number>", values["a"])
+	require.Equal(t, "List<number>", values["b"])
+}
+
+// TestInferGenericRecursiveTypeAliasRejectsMismatch checks that a generic recursive alias
+// stays transparent under subtyping: a nested value whose recursive field carries the wrong
+// element type is rejected against the expanded body, with the full message.
+func TestInferGenericRecursiveTypeAliasRejectsMismatch(t *testing.T) {
+	src := `
+		type List<T> = {head: T, tail?: List<T>}
+		val a: List<number> = {head: 1, tail: {head: "hi"}}
+	`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, `cannot constrain "hi" <: number`, errs[0].Message())
+}
+
+// TestInferMutuallyRecursiveTypeAliases covers a mutual alias group: each body names the
+// other, so both must be pre-bound before either body resolves. Both render under their own
+// names, and an alias-typed binding assigned across the pair closes the cross-alias cycle.
+func TestInferMutuallyRecursiveTypeAliases(t *testing.T) {
+	src := `
+		type Ping = {next?: Pong}
+		type Pong = {next?: Ping}
+		val a: Ping = {}
+		val b: Ping = a
+	`
+	values, types, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "{next?: Pong}", types["Ping"])
+	require.Equal(t, "{next?: Ping}", types["Pong"])
+	require.Equal(t, "Ping", values["a"])
+	require.Equal(t, "Ping", values["b"])
+}
+
 // TestInferGenericTypeAliasArityErrors covers the two out-of-range counts. Supplying more
 // than the total parameter count and fewer than the required count each report a single
 // AliasArityMismatchError, whose message states a range when a default makes a parameter
