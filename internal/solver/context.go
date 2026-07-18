@@ -48,12 +48,12 @@ type Context struct {
 	// overwritten but never removed for scope exit.
 	classes map[string]*ClassDef
 
-	// aliases is the type-alias registry (M7), the transparent-alias twin of classes:
-	// each alias's Body, type parameters, and level, keyed by the alias's
-	// dep_graph-qualified name — the same string stored in soltype.AliasType.Name.
-	// inferTypeDecl writes an entry per `type` decl; expandAlias reads the Body to
-	// unfold an alias reference to its structural type at subtyping time. Every
-	// AliasDef comes from a top-level decl and lives for the whole inference run.
+	// aliases is the type-alias registry, the transparent-alias twin of classes. It holds
+	// each alias's Body and level, keyed by the alias's dep_graph-qualified name, the same
+	// string stored in soltype.AliasType.Name. inferTypeDecl writes an entry per `type`
+	// decl, and expandAlias reads the Body to unfold an alias reference to its structural
+	// type at subtyping time. Every AliasDef comes from a top-level decl and lives for the
+	// whole inference run.
 	aliases map[string]*AliasDef
 }
 

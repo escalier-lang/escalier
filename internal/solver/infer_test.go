@@ -221,9 +221,9 @@ func TestInferModuleForwardReferenceResolves(t *testing.T) {
 	require.Equal(t, map[string]string{"x": "5", "y": "5"}, values)
 }
 
-// A top-level `type X = Body` alias binds a type-sort name (M7 PR1): it registers
-// an AliasDef holding the resolved body and binds the name to an AliasType token, so
-// the name resolves and renders under itself rather than reporting unsupported.
+// A top-level `type X = Body` alias binds a type-sort name. It registers an AliasDef
+// holding the resolved body and binds the name to an AliasType token, so the name
+// resolves and renders under itself rather than reporting unsupported.
 func TestInferModuleTypeAliasBinds(t *testing.T) {
 	src := `type Foo = number`
 	_, types, errs := inferSource(t, src)

@@ -446,7 +446,7 @@ type RefType struct {
 // verdict and is rejected at the inference join where it forms. ClassType is a
 // RefInner too, so a `mut 'a Point` borrows a class instance. AliasType is a
 // RefInner as well, so a `mut 'a Point` over a type alias borrows through the same
-// machinery; the lifetime-generic alias form lands in M7 PR4.
+// machinery.
 type RefInner interface {
 	Type
 	isRefInner()
@@ -570,17 +570,14 @@ type ClassType struct {
 // engine expands it through the alias registry rather than comparing the token
 // nominally. A reference renders under Name, so `type Point = {x: number}` followed by
 // `val p: Point = …` shows `Point`, not the expanded record.
-//
-// M7 PR4 adds a LifetimeArgs field for a lifetime-generic alias; until then a
-// reference carries type arguments only.
 type AliasType struct {
 	// Name is the dep_graph-qualified name such as "Geometry.Point", not the bare local
 	// identifier, so two aliases named Point in different namespaces stay distinct. It
 	// also keys the registry holding the alias's Body.
 	Name string
 	// TypeArgs are the type arguments a generic reference supplies, one per alias type
-	// parameter. Empty for a bare reference such as `Point`. The generic-instance and
-	// substitution machinery lands in M7 PR2; PR1 mints only the empty-args form.
+	// parameter. Empty for a bare reference such as `Point`, which is the only form minted
+	// today, since generic aliases are not yet supported.
 	TypeArgs []Type
 }
 

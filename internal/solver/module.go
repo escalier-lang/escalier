@@ -378,8 +378,8 @@ func (c *checker) inferComponent(
 				// A `type X = Body` alias infers fully at its type key and is marked handled,
 				// so its value key is a no-op. Collect it and resolve its body after every
 				// class token and enum union in this component is bound, so a body naming a
-				// sibling class or enum resolves. PR1 handles only the non-recursive case; the
-				// recursive alias two-pass is M7 PR3.
+				// sibling class or enum resolves. A body naming a sibling that is only bound
+				// later in a mutually recursive group is not resolved here.
 				typeDecls = append(typeDecls, typeDeclEntry{decl: decl, ns: g.GetNamespace(key)})
 				handled.Add(d)
 			}

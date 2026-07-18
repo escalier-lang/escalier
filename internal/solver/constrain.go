@@ -167,9 +167,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	// This sits above the structural switch because that switch dispatches on sub and
 	// would otherwise reject a concrete sub against an AliasType super before the alias
 	// could expand. The seen-set closes a recursive alias. A non-generic recursive body
-	// reuses one Body node, so the pointer-keyed cache terminates the cycle. M7 PR3 keys
-	// the generic case on canonical identity. expandAlias is a standalone helper so M9's
-	// type-level evaluator reuses the same unfolding.
+	// reuses one Body node, so the pointer-keyed cache terminates the cycle. expandAlias
+	// is a standalone helper so callers other than constrain can reuse the same unfolding.
 	//
 	// When the OTHER side is a variable, fall through to the var arms instead so the
 	// whole AliasType node is recorded as one bound, exactly as the union/intersection

@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestInferTypeAliasBasic covers a non-generic `type` alias end to end (M7 PR1): the
-// type binding renders under the alias name, an object literal that fits the aliased
-// record type-checks and the binding renders under the alias name rather than the
-// expanded body, and a primitive alias flows structurally.
+// TestInferTypeAliasBasic covers a non-generic `type` alias end to end. The type binding
+// renders under the alias name, an object literal that fits the aliased record
+// type-checks and the binding renders under the alias name rather than the expanded body,
+// and a primitive alias flows structurally.
 func TestInferTypeAliasBasic(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -60,8 +60,8 @@ func TestInferTypeAliasBasic(t *testing.T) {
 }
 
 // TestInferTypeAliasRejectsMissingField checks that an alias is transparent under
-// subtyping: an object literal missing a field the aliased record requires is rejected
-// against the expanded body, with the full missing-property message (M7 PR1).
+// subtyping. An object literal missing a field the aliased record requires is rejected
+// against the expanded body, with the full missing-property message.
 func TestInferTypeAliasRejectsMissingField(t *testing.T) {
 	src := `
 		type Point = {x: number, y: number}
@@ -93,10 +93,24 @@ func TestInferTypeAliasMissingBodyDoesNotPanic(t *testing.T) {
 	defer cancel()
 	// Parse directly so the malformed source reaches inference; the standard harness
 	// rejects parse errors, but the real compiler and LSP keep going on a partial AST.
-	// `type Foo =` yields a TypeDecl with a nil TypeAnn that reaches inferTypeDecl.
 	module, _ := parser.ParseLibFiles(ctx, []*ast.Source{
 		{ID: 0, Path: "input.esc", Contents: `type Foo =`},
 	})
+
+	// Prove the malformed decl reaches inference: the parsed module must carry a Foo
+	// TypeDecl with a nil TypeAnn, the exact shape inferTypeDecl must survive.
+	var foo *ast.TypeDecl
+	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, d := range ns.Decls {
+			if td, ok := d.(*ast.TypeDecl); ok && td.Name.Name == "Foo" {
+				foo = td
+			}
+		}
+		return true
+	})
+	require.NotNil(t, foo, "expected a Foo TypeDecl in the parsed module")
+	require.Nil(t, foo.TypeAnn, "expected Foo's body to be nil after error recovery")
+
 	// InferModule only collects diagnostics; the nil-Node crash surfaces when a caller
 	// renders one, so exercise Span() and Message() on every returned error the way the
 	// CLI and LSP formatters do.
@@ -107,4 +121,28 @@ func TestInferTypeAliasMissingBodyDoesNotPanic(t *testing.T) {
 			_ = e.Message()
 		}
 	})
+}
+
+// TestInferTypeAliasGenericReportsUnsupported checks that a generic alias, which needs
+// argument substitution and arity checking that are not implemented, reports a single
+// unsupported-feature diagnostic and binds no type, rather than registering a half-built
+// alias whose body references unbound parameters.
+func TestInferTypeAliasGenericReportsUnsupported(t *testing.T) {
+	_, types, errs := inferSource(t, `type Box<T> = {value: T}`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported: generic type alias", errs[0].Message())
+	require.NotContains(t, types, "Box")
+}
+
+// TestInferTypeAliasShadowingPromiseRejectsArgs checks that a user `type Promise = …`
+// alias is not silently reinterpreted as the built-in Promise: applying type arguments to
+// the non-generic alias is an invalid application and reports unsupported.
+func TestInferTypeAliasShadowingPromiseRejectsArgs(t *testing.T) {
+	src := `
+		type Promise = number
+		val p: Promise<string> = 5
+	`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
 }

@@ -19,20 +19,28 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	case *ast.BooleanTypeAnn:
 		return c.annPrim(ta, soltype.BoolPrim), true
 	case *ast.TypeRefTypeAnn:
-		// Consult the type scope first so a user-defined alias, class, or type parameter
-		// wins over the hardcoded Promise stub below. A real `type Promise<T> = …` alias
-		// then resolves through its AliasDef rather than being shadowed by the stub. The
-		// prelude seeds Promise as an opaque `unknown` placeholder, not a class, so a
-		// `Promise<T>` reference with no real alias falls through here and lands on the
-		// stub. Only a bare `Promise` resolves to that placeholder.
+		// Resolve through the type scope first so a user-defined alias, class, or type
+		// parameter takes precedence over the built-in Promise stub below. A bare alias or
+		// class reference resolves here; the prelude Promise placeholder is not a class, so
+		// a `Promise<T>` reference with no user binding does not resolve here and reaches
+		// the stub.
 		if t, ok := c.resolveScopedTypeRef(scope, ta, lvl); ok {
 			return t, true
 		}
-		// M3 recognises a single generic stdlib reference: Promise<T>. The real,
-		// alias-driven Promise arrives with library type ingestion in M7.5 — until then
-		// an `async fn () -> Promise<T>` annotation resolves here, and any other name or
-		// arity reports unsupported with a `never` placeholder so the caller can recover
-		// by keeping the inferred type.
+		// A reference that applies type arguments to a user-defined non-generic alias is an
+		// invalid application, not an unknown name. Report it before the Promise stub, so a
+		// user `type Promise = …` alias is not silently reinterpreted as the built-in
+		// Promise. A bare alias reference already resolved above, so reaching here with an
+		// alias binding means arguments were supplied.
+		if b, ok := c.lookupClassBinding(scope, ast.QualIdentToString(ta.Name)); ok {
+			if _, isAlias := b.Type.(*soltype.AliasType); isAlias {
+				return c.reportUnsupported(ta), false
+			}
+		}
+		// The built-in Promise<T>. The prelude seeds Promise as an opaque placeholder, so
+		// an `async fn () -> Promise<T>` annotation resolves here. Any other name or arity
+		// reports unsupported with a `never` placeholder so the caller can recover by
+		// keeping the inferred type.
 		if ast.QualIdentToString(ta.Name) == "Promise" && len(ta.TypeArgs) == 1 {
 			// A lifetime-annotated Promise (`'a Promise<T>` or `Promise<'a, T>`) is not
 			// supported: M3's PromiseType carries no lifetime, so silently accepting it
