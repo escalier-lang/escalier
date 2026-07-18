@@ -221,20 +221,14 @@ func TestInferModuleForwardReferenceResolves(t *testing.T) {
 	require.Equal(t, map[string]string{"x": "5", "y": "5"}, values)
 }
 
-// A top-level declaration outside the M2 subset reports a clean
-// UnsupportedNodeError rather than panicking. A type alias is such a decl — type
-// bindings are M3+ — so it registers a type-sort dep_graph key the SCC driver
-// reports as unsupported. (FuncDecl, unsupported at the module level through
-// PR-2, is now wired in by PR-5; see the func/recursion tests.)
-func TestInferModuleUnsupportedDecl(t *testing.T) {
+// A top-level `type X = Body` alias binds a type-sort name (M7 PR1): it registers
+// an AliasDef holding the resolved body and binds the name to an AliasType token, so
+// the name resolves and renders under itself rather than reporting unsupported.
+func TestInferModuleTypeAliasBinds(t *testing.T) {
 	src := `type Foo = number`
 	_, types, errs := inferSource(t, src)
-	require.Len(t, errs, 1)
-	require.Equal(t, "1:1-1:18: Unsupported: TypeDecl", msgWithSpan(errs[0]))
-	// M2.5: the error self-blames from the decl node.
-	require.Equal(t, src, spanText(src, errs[0].Span()))
-	// The unsupported decl must not leak a type binding.
-	require.NotContains(t, types, "Foo")
+	require.Empty(t, errs)
+	require.Equal(t, "Foo", types["Foo"])
 }
 
 // A `val` with no initializer can't be inferred in M2 (annotation-driven binding

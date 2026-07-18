@@ -161,6 +161,31 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		return nil
 	}
 
+	// A type alias is transparent, meaning it subtypes exactly as its expanded body
+	// does, in either direction. Expand an AliasType on either side to its body and
+	// recurse through the EXISTING seen-set, so an alias is checked as its structure.
+	// This sits above the structural switch because that switch dispatches on sub and
+	// would otherwise reject a concrete sub against an AliasType super before the alias
+	// could expand. The seen-set closes a recursive alias. A non-generic recursive body
+	// reuses one Body node, so the pointer-keyed cache terminates the cycle. M7 PR3 keys
+	// the generic case on canonical identity. expandAlias is a standalone helper so M9's
+	// type-level evaluator reuses the same unfolding.
+	//
+	// When the OTHER side is a variable, fall through to the var arms instead so the
+	// whole AliasType node is recorded as one bound, exactly as the union/intersection
+	// blocks below do. Recording the token rather than the expanded body keeps the alias
+	// name on the coalesced binding, so `val p: Point = {…}` renders `p` as `Point`.
+	if alias, ok := sub.(*soltype.AliasType); ok {
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			return c.constrain(c.expandAlias(alias), super, seen, mutCtx)
+		}
+	}
+	if alias, ok := super.(*soltype.AliasType); ok {
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
+			return c.constrain(sub, c.expandAlias(alias), seen, mutCtx)
+		}
+	}
+
 	// M6 PR2 pre-switch lattice block. The structural switch below dispatches
 	// on sub and several arms return early on a non-variable super (the
 	// RefType arm most importantly), so a union/intersection super has to be

@@ -1551,6 +1551,11 @@ func describe(t soltype.Type) string {
 		// A class instance renders nominally under its display name, `Point` or
 		// `Box<number>`, so a diagnostic naming it matches the printer's surface form.
 		return soltype.Print(t)
+	case *soltype.AliasType:
+		// An alias reference renders under its own name, `Point` or `Box<number>`, so a
+		// diagnostic naming it matches the printer's surface form rather than the expanded
+		// body the constraint actually compares.
+		return soltype.Print(t)
 	case *soltype.PromiseType:
 		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
 		// object above. That is deliberate and consistent with the Union/Intersection

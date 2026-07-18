@@ -354,6 +354,7 @@ func (c *checker) inferComponent(
 	//     completed by inferEnumBody once every sibling is bound; its value key is then a
 	//     no-op whose pre-bound value var is retracted in phase 3.
 	var enumShells []*enumShell
+	var typeDecls []typeDeclEntry
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
@@ -373,6 +374,14 @@ func (c *checker) inferComponent(
 				// The returned token and def are discarded here; inferClassDecl reuses them,
 				// keyed by the same qualified name the shared namespace reconstructs.
 				c.getOrCreateClass(scope, decl, g.GetNamespace(key))
+			case *ast.TypeDecl:
+				// A `type X = Body` alias infers fully at its type key and is marked handled,
+				// so its value key is a no-op. Collect it and resolve its body after every
+				// class token and enum union in this component is bound, so a body naming a
+				// sibling class or enum resolves. PR1 handles only the non-recursive case; the
+				// recursive alias two-pass is M7 PR3.
+				typeDecls = append(typeDecls, typeDeclEntry{decl: decl, ns: g.GetNamespace(key)})
+				handled.Add(d)
 			}
 		}
 	}
@@ -380,6 +389,11 @@ func (c *checker) inferComponent(
 	// identities above, so a parameter naming a sibling enum or class resolves.
 	for _, sh := range enumShells {
 		c.inferEnumBody(sh)
+	}
+	// Each alias body resolves after the class tokens and enum unions are bound, so a
+	// non-recursive alias naming a sibling type resolves.
+	for _, td := range typeDecls {
+		c.inferTypeDecl(scope, inner, td.decl, td.ns)
 	}
 
 	// Report any remaining non-value decl as unsupported. A class was pre-bound above and

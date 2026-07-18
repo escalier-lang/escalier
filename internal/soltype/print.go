@@ -34,9 +34,9 @@ func typePrec(t Type) int {
 	case *RefType:
 		return precPrefix
 	default:
-		// PrimType, LitType, TupleType, ObjectType, ClassType, Void, NullType,
-		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited and ClassType renders as
-		// a bare name or `Name<args>`, so neither needs parens. A raw TypeVarType
+		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
+		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType and
+		// AliasType each render as a bare name or `Name<args>`, so none needs parens. A raw TypeVarType
 		// appears only when printing an un-coalesced type, see printType; it is also an
 		// atom rendered as `t{ID}`, so it lands here. A `mut 'a Point` borrow wraps the
 		// ClassType in a RefType, which carries the looser precPrefix precedence.
@@ -378,6 +378,10 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, a := range t.TypeArgs {
 				walk(a)
 			}
+		case *AliasType:
+			for _, a := range t.TypeArgs {
+				walk(a)
+			}
 		case *PromiseType:
 			walk(t.Inner)
 		case *RefType:
@@ -539,6 +543,21 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		for _, a := range t.TypeArgs {
 			parts = append(parts, p.printType(a))
+		}
+		return name + "<" + strings.Join(parts, ", ") + ">"
+	case *AliasType:
+		// An alias reference renders under its own name, with a `<...>` argument list when
+		// a generic reference supplies arguments: `Point`, `Box<number>`. The qualified
+		// Name carries a namespace prefix for registry keying, stripped here for display,
+		// the same way a class name is. Rendering the name rather than the expanded body is
+		// the point of the alias, so `val p: Point = {x: 1}` shows `Point`.
+		name := classDisplayName(t.Name)
+		if len(t.TypeArgs) == 0 {
+			return name
+		}
+		parts := make([]string, len(t.TypeArgs))
+		for i, a := range t.TypeArgs {
+			parts[i] = p.printType(a)
 		}
 		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *FuncType:
