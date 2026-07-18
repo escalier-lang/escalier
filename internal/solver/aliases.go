@@ -6,7 +6,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// AliasDef is the heavy per-alias data the AliasType token points at, keyed in the
+// AliasDef is the heavy per-alias data the AliasType handle points at, keyed in the
 // Context registry by qualified name, mirroring the ClassType/ClassDef split.
 type AliasDef struct {
 	// TypeParams are the alias's own type parameters. Always nil today, since generic
@@ -44,7 +44,7 @@ type typeDeclEntry struct {
 }
 
 // inferTypeDecl resolves a non-generic `type X = Body`, registers its AliasDef, and binds
-// the name to an AliasType token. A generic alias is reported as unsupported.
+// the name to an AliasType handle. A generic alias is reported as unsupported.
 func (c *checker) inferTypeDecl(scope *Scope, lvl int, decl *ast.TypeDecl, ns string) {
 	if len(decl.TypeParams) > 0 {
 		// A generic alias needs substitution and arity checking that are not implemented.
@@ -55,7 +55,7 @@ func (c *checker) inferTypeDecl(scope *Scope, lvl int, decl *ast.TypeDecl, ns st
 
 	// The alias's dep_graph-qualified name is the namespace joined to the local name, or
 	// the bare local name at the root namespace, the same qualified key class and enum
-	// registration use, so the registry key and the AliasType token match.
+	// registration use, so the registry key and the AliasType handle match.
 	qname := decl.Name.Name
 	if ns != "" {
 		qname = ns + "." + decl.Name.Name

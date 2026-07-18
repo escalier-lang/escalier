@@ -532,10 +532,10 @@ type IntersectionType struct{ Types []Type }
 // diagnostics/debug only.
 type ErrorType struct{} // ⊤⊥ absorbing sentinel; see PR8
 
-// ClassType is a nominal lattice element — the identity token for a class. Two
+// ClassType is a nominal lattice element — the nominal handle for a class. Two
 // ClassTypes are the same nominal type when their Name matches. The heavy per-class
 // data — the projected member body, the resolved supers, and the inferred variance —
-// lives in a side registry keyed by Name, so this token stays small and cheap to
+// lives in a side registry keyed by Name, so this handle stays small and cheap to
 // compare and rewrite.
 type ClassType struct {
 	// Name is the dep_graph-qualified name such as "Geometry.Point", not the bare
@@ -563,7 +563,7 @@ type ClassType struct {
 	Variant bool
 }
 
-// AliasType is the use-site reference to a `type Name = Body` declaration, a small token
+// AliasType is the use-site reference to a `type Name = Body` declaration, a small handle
 // whose Name keys the Body in a side registry, like ClassType. An alias is transparent:
 // the subtyping engine expands it to its Body, while it renders under Name.
 type AliasType struct {

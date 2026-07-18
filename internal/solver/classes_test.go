@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// cls builds a non-generic class instance token for the nominal constrain tests.
+// cls builds a non-generic class instance handle for the nominal constrain tests.
 func cls(name string, final bool) *soltype.ClassType {
 	return &soltype.ClassType{Name: name, Final: final}
 }

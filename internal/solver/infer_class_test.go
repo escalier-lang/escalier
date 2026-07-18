@@ -1527,7 +1527,7 @@ func TestConstructorInitErrors(t *testing.T) {
 }
 
 // TestInferClassNamespaceQualified covers the namespace-qualified class registry.
-// A class is keyed in the nominal registry, in its ClassType token, and in its scope
+// A class is keyed in the nominal registry, in its ClassType handle, and in its scope
 // type binding by its dep_graph-qualified name, e.g. "geometry.Point". So two sibling
 // `class Point` declarations under different directory-derived namespaces stay distinct:
 // a bare "Point" key would collide and merge their bodies, while the qualified keys keep
@@ -1655,7 +1655,7 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 			// condenses it into one type-key component, and the SCC pre-pass registers
 			// both shells under their qualified names before either body is walked, so
 			// each cross-namespace forward reference — `foo.A` naming `bar.B` and back —
-			// resolves through the shared token with no placeholder leak. Each field
+			// resolves through the shared handle with no placeholder leak. Each field
 			// renders the peer under its bare name.
 			wantValues: map[string]string{
 				"foo.A": "fn (peer: B) -> A",

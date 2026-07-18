@@ -340,7 +340,7 @@ func (c *checker) inferComponent(
 	// union type binding and the variant-constructor namespace — and marks the decl
 	// handled, so its value key becomes a no-op. The enum two-pass below runs first for
 	// exactly that reason.
-	// Pre-bind every nominal identity in this component — each class token and each enum
+	// Pre-bind every nominal identity in this component — each class handle and each enum
 	// union type — before any enum body resolves a variant parameter, so a group of
 	// mutually-recursive classes AND enums resolves each other. A class's variant-holding
 	// enum and an enum's field-holding class land in one type-key SCC component; binding
@@ -371,13 +371,13 @@ func (c *checker) inferComponent(
 				// A type-key component is the SCC condensation of mutually-recursive classes,
 				// so registering every class's type binding and empty ClassDef here lets a
 				// sibling resolve a forward reference — `class A { b: B }` / `class B { a: A }`.
-				// The returned token and def are discarded here; inferClassDecl reuses them,
+				// The returned handle and def are discarded here; inferClassDecl reuses them,
 				// keyed by the same qualified name the shared namespace reconstructs.
 				c.getOrCreateClass(scope, decl, g.GetNamespace(key))
 			case *ast.TypeDecl:
 				// A `type X = Body` alias infers fully at its type key and is marked handled,
 				// so its value key is a no-op. Collect it and resolve its body after every
-				// class token and enum union in this component is bound, so a body naming a
+				// class handle and enum union in this component is bound, so a body naming a
 				// sibling class or enum resolves. A body naming a sibling that is only bound
 				// later in a mutually recursive group is not resolved here.
 				typeDecls = append(typeDecls, typeDeclEntry{decl: decl, ns: g.GetNamespace(key)})
@@ -390,7 +390,7 @@ func (c *checker) inferComponent(
 	for _, sh := range enumShells {
 		c.inferEnumBody(sh)
 	}
-	// Each alias body resolves after the class tokens and enum unions are bound, so a
+	// Each alias body resolves after the class handles and enum unions are bound, so a
 	// non-recursive alias naming a sibling type resolves.
 	for _, td := range typeDecls {
 		c.inferTypeDecl(scope, inner, td.decl, td.ns)

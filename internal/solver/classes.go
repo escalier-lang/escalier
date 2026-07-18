@@ -8,12 +8,12 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// ClassDef is the heavy per-class data the nominal token soltype.ClassType points
+// ClassDef is the heavy per-class data the nominal handle soltype.ClassType points
 // at. inferClassDecl builds one per class declaration and registers it on the
 // Context under the class's dep_graph-qualified name; member lookup reads the
 // projected Body, and the nominal constrain rule (C1) reads Supers, Implements, and
 // Variance.
-// Keeping this data out of soltype.ClassType lets the token stay a small, cheap-to-
+// Keeping this data out of soltype.ClassType lets the handle stay a small, cheap-to-
 // compare identity.
 type ClassDef struct {
 	// TypeParams are the class's own quantified type parameters in declaration order,

@@ -54,7 +54,7 @@ func parseModule(t *testing.T, src string) *ast.Module {
 //
 // It builds the checker directly rather than through InferModule so the alias registry
 // stays reachable: a type-alias binding renders as its definition body, which lives on
-// the checker's Context, not on the AliasType token in scope.
+// the checker's Context, not on the AliasType handle in scope.
 func inferModule(module *ast.Module) (values, types map[string]string, errs []SolverError) {
 	c := newChecker()
 	scope := sharedPrelude().Child()
@@ -242,7 +242,7 @@ func TestInferModuleForwardReferenceResolves(t *testing.T) {
 }
 
 // A top-level `type X = Body` alias binds a type-sort name. It registers an AliasDef
-// holding the resolved body and binds the name to an AliasType token, so the name
+// holding the resolved body and binds the name to an AliasType handle, so the name
 // resolves rather than reporting unsupported. The test harness renders the binding as the
 // alias's definition body, so `type Foo = number` shows `number`.
 func TestInferModuleTypeAliasBinds(t *testing.T) {
