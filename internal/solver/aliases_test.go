@@ -7,6 +7,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -146,4 +147,62 @@ func TestInferTypeAliasShadowingPromiseRejectsArgs(t *testing.T) {
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
+}
+
+// TestExpandAliasUnregisteredReturnsError covers the defensive path in expandAlias: a
+// reference whose name is not in the registry yields an ErrorType, which absorbs under
+// subtyping rather than looping. inferTypeDecl registers before binding, so this never
+// arises from source, but the guard keeps a stray reference from diverging.
+func TestExpandAliasUnregisteredReturnsError(t *testing.T) {
+	c := newChecker()
+	got := c.ctx.expandAlias(&soltype.AliasType{Name: "Missing"})
+	require.IsType(t, &soltype.ErrorType{}, got)
+}
+
+// TestDescribeAliasType renders an alias reference under its own name in a diagnostic,
+// bare or with arguments, matching the printer's surface form.
+func TestDescribeAliasType(t *testing.T) {
+	require.Equal(t, "Point", describe(&soltype.AliasType{Name: "Point"}))
+	require.Equal(t, "Box<number>", describe(&soltype.AliasType{Name: "Box", TypeArgs: []soltype.Type{numT()}}))
+}
+
+// TestEqualTypeAliasType compares two alias references: equal when they name the same
+// alias with equal arguments, unequal on a different name, argument, or kind.
+func TestEqualTypeAliasType(t *testing.T) {
+	require.True(t, equalType(&soltype.AliasType{Name: "A"}, &soltype.AliasType{Name: "A"}))
+	require.False(t, equalType(&soltype.AliasType{Name: "A"}, &soltype.AliasType{Name: "B"}))
+	require.True(t, equalType(
+		&soltype.AliasType{Name: "Box", TypeArgs: []soltype.Type{numT()}},
+		&soltype.AliasType{Name: "Box", TypeArgs: []soltype.Type{numT()}},
+	))
+	require.False(t, equalType(
+		&soltype.AliasType{Name: "Box", TypeArgs: []soltype.Type{numT()}},
+		&soltype.AliasType{Name: "Box"},
+	))
+	require.False(t, equalType(&soltype.AliasType{Name: "Box"}, numT()))
+}
+
+// TestInferTypeAliasFlowsIntoStructuralTarget exercises the alias-on-the-sub-side path in
+// constrain: an alias-typed value assigned to a structural target expands to its body and
+// checks structurally.
+func TestInferTypeAliasFlowsIntoStructuralTarget(t *testing.T) {
+	src := `
+		type Point = {x: number, y: number}
+		val p: Point = {x: 1, y: 2}
+		val o: {x: number, y: number} = p
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "Point", values["p"])
+	require.Equal(t, "{x: number, y: number}", values["o"])
+}
+
+// TestInferTypeAliasNamespaced binds an alias declared in a namespace under its
+// dep_graph-qualified name, so the registry key carries the namespace prefix.
+func TestInferTypeAliasNamespaced(t *testing.T) {
+	_, types, errs := inferSources(t, map[string]string{
+		"geometry/types.esc": `type Coord = number`,
+	})
+	require.Empty(t, errs)
+	require.Equal(t, "number", types["geometry.Coord"])
 }
