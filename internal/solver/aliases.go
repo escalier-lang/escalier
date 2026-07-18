@@ -6,25 +6,19 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// AliasDef is the heavy per-alias data the token soltype.AliasType points at.
-// inferTypeDecl builds one per `type` declaration and registers it on the Context under
-// the alias's dep_graph-qualified name. expandAlias reads Body to unfold a reference.
-// Keeping Body out of soltype.AliasType lets the token stay a small, cheap-to-compare
-// identity, mirroring the split between ClassType and ClassDef.
+// AliasDef is the heavy per-alias data the AliasType token points at, keyed in the
+// Context registry by qualified name, mirroring the ClassType/ClassDef split.
 type AliasDef struct {
-	// TypeParams are the alias's own quantified type parameters in declaration order.
-	// Always nil today: generic aliases are not yet supported, so only non-generic
-	// aliases are registered.
+	// TypeParams are the alias's own type parameters. Always nil today, since generic
+	// aliases are not yet supported.
 	TypeParams []*soltype.TypeParam
 
 	// LifetimeParams are the alias's quantified lifetime parameters, the lifetime twin of
 	// TypeParams. Always nil today, for the same reason.
 	LifetimeParams []*soltype.LifetimeParam
 
-	// Body is the type the alias expands to, the resolved right-hand side of
-	// `type Name = Body`. expandAlias returns it so an alias reference subtypes exactly
-	// as its body does. No variance is stored beside it. A transparent alias expands, so
-	// variance is resolved structurally on the body rather than per parameter.
+	// Body is the type the alias expands to, the right-hand side of `type Name = Body`.
+	// No variance is stored: a transparent alias expands, so variance follows the body.
 	Body soltype.Type
 
 	// Level is the alias binding's generalize level. A non-generic alias has no parameters
@@ -32,13 +26,8 @@ type AliasDef struct {
 	Level int
 }
 
-// expandAlias unfolds an alias reference to the structural type it names, by reading the
-// registered AliasDef's Body. It is a standalone helper the subtyping engine calls to
-// treat an alias transparently, kept separate from constrain so other callers can reuse
-// the same unfolding. There are no type arguments to substitute, so it returns Body
-// directly. An unregistered reference yields an ErrorType so a stray reference absorbs
-// rather than looping. A well-formed program never produces one, since inferTypeDecl
-// registers the alias before binding its name.
+// expandAlias unfolds an alias reference to its registered AliasDef Body, the shared
+// transparent-alias helper. An unregistered reference yields an ErrorType so it absorbs.
 func (c *Context) expandAlias(ref *soltype.AliasType) soltype.Type {
 	def, ok := c.aliasDef(ref.Name)
 	if !ok || def.Body == nil {
@@ -47,27 +36,19 @@ func (c *Context) expandAlias(ref *soltype.AliasType) soltype.Type {
 	return def.Body
 }
 
-// typeDeclEntry pairs a `type` decl with its dep_graph namespace, so the module
-// type-key loop can defer alias-body resolution until every class token and enum union
-// in the component is bound. It is the alias counterpart of the enumShell the enum
-// two-pass carries between its passes.
+// typeDeclEntry pairs a `type` decl with its namespace, so the type-key loop can defer
+// alias-body resolution until every sibling class and enum in the component is bound.
 type typeDeclEntry struct {
 	decl *ast.TypeDecl
 	ns   string
 }
 
-// inferTypeDecl infers a `type X = Body` declaration. It resolves the body annotation,
-// registers an AliasDef holding that body, and binds the type name to an AliasType token
-// so a reference resolves and renders under its own name. Only a non-generic alias is
-// supported. A declaration carrying type parameters reports an unsupported-feature
-// diagnostic and binds nothing, because argument substitution and arity checking are not
-// implemented.
+// inferTypeDecl resolves a non-generic `type X = Body`, registers its AliasDef, and binds
+// the name to an AliasType token. A generic alias is reported as unsupported.
 func (c *checker) inferTypeDecl(scope *Scope, lvl int, decl *ast.TypeDecl, ns string) {
 	if len(decl.TypeParams) > 0 {
-		// A generic alias needs argument substitution and arity checking that are not
-		// implemented. Report the declaration and bind nothing, so a reference fails as an
-		// unknown type rather than resolving to a half-built alias whose body references
-		// unbound parameters.
+		// A generic alias needs substitution and arity checking that are not implemented.
+		// Report it and bind nothing, so a reference fails as an unknown type.
 		c.reportUnsupportedFeature(decl, "generic type alias")
 		return
 	}
@@ -80,10 +61,8 @@ func (c *checker) inferTypeDecl(scope *Scope, lvl int, decl *ast.TypeDecl, ns st
 		qname = ns + "." + decl.Name.Name
 	}
 
-	// A missing body is a parser error-recovery case. `type Foo =` with no annotation
-	// yields a nil TypeAnn, which the parser already reported. Bind the alias to a fresh
-	// var so a later reference still resolves, and skip resolveTypeAnn. Passing nil there
-	// routes to reportUnsupported(nil), whose error node has no span to render.
+	// A nil TypeAnn is parser error recovery for `type Foo =`, already reported. Bind a
+	// fresh var and skip resolveTypeAnn, since a nil annotation has no span to report on.
 	var body soltype.Type = c.freshAt(lvl)
 	if decl.TypeAnn != nil {
 		if resolved, ok := c.resolveTypeAnn(scope, decl.TypeAnn, lvl); ok {
