@@ -563,21 +563,15 @@ type ClassType struct {
 	Variant bool
 }
 
-// AliasType is the use-site reference to a user-written `type Name<Params…> = Body`
-// declaration. Like ClassType it is a small token. Name keys a side registry holding
-// the heavy Body, so the token stays cheap to compare and rewrite. An alias is
-// transparent, meaning it subtypes exactly as its expanded Body does, so the subtyping
-// engine expands it through the alias registry rather than comparing the token
-// nominally. A reference renders under Name, so `type Point = {x: number}` followed by
-// `val p: Point = …` shows `Point`, not the expanded record.
+// AliasType is the use-site reference to a `type Name = Body` declaration, a small token
+// whose Name keys the Body in a side registry, like ClassType. An alias is transparent:
+// the subtyping engine expands it to its Body, while it renders under Name.
 type AliasType struct {
-	// Name is the dep_graph-qualified name such as "Geometry.Point", not the bare local
-	// identifier, so two aliases named Point in different namespaces stay distinct. It
-	// also keys the registry holding the alias's Body.
+	// Name is the dep_graph-qualified name such as "Geometry.Point", so two aliases named
+	// Point in different namespaces stay distinct. It also keys the registry.
 	Name string
-	// TypeArgs are the type arguments a generic reference supplies, one per alias type
-	// parameter. Empty for a bare reference such as `Point`, which is the only form minted
-	// today, since generic aliases are not yet supported.
+	// TypeArgs are the arguments a generic reference supplies. Always empty today, since
+	// generic aliases are not yet supported.
 	TypeArgs []Type
 }
 
