@@ -19,14 +19,14 @@ import (
 // the expanded `Color.RGB | Color.Hex` — the way the old checker's TypeRefType does. The
 // union built here becomes that alias's body.
 //
-// Each variant is a `final` ClassType named `Color.RGB` — a nominal token qualified by
+// Each variant is a `final` ClassType named `Color.RGB` — a nominal handle qualified by
 // its enum, so two enums that share a variant name stay distinct. Each variant's
 // constructor binds as a value under the enum namespace and returns the enum type, so
 // `Color.Hex("#fff")` infers `Color.RGB | Color.Hex`, the union the enum names.
 //
 // Inference is two-phase, so a group of mutually-recursive enums resolves each other:
 //
-//   - preBindEnum mints every variant token and binds the enum's union TYPE, but does
+//   - preBindEnum mints every variant handle and binds the enum's union TYPE, but does
 //     NOT resolve variant parameters. Running it over every enum in a dep_graph type-key
 //     component before any body means `enum A { X(b: B) }` / `enum B { Y(a: A) }` each
 //     find the sibling's union already bound. A self-recursive enum resolves through its
@@ -39,12 +39,12 @@ import (
 // every later declaration that references the enum. The value key is a no-op skipped as
 // handled.
 //
-// Scope: the enum is the union of its variant tokens — the exhaustiveness substrate D2
+// Scope: the enum is the union of its variant handles — the exhaustiveness substrate D2
 // needs, which reads the union's members. A generic enum's variant arguments follow the
 // shared class variance and are not specialized here.
 
 // enumShell carries an enum's pre-bound state from preBindEnum to inferEnumBody: the
-// resolved type parameters, the minted variant tokens, and the union those form. The
+// resolved type parameters, the minted variant handles, and the union those form. The
 // body pass reuses this state so a variant constructor shares the exact type-parameter
 // vars the union holds rather than minting a second, unrelated set.
 type enumShell struct {
@@ -62,8 +62,8 @@ type enumShell struct {
 	enumType     soltype.Type
 }
 
-// preBindEnum mints an enum's variant tokens, registers their ClassDefs, and binds the
-// enum name's TYPE to the union of those tokens — without resolving any variant
+// preBindEnum mints an enum's variant handles, registers their ClassDefs, and binds the
+// enum name's TYPE to the union of those handles — without resolving any variant
 // parameter. It returns the shell inferEnumBody completes. Binding the union up front is
 // what lets a sibling enum, or the enum itself, resolve this name while its own body is
 // still being walked.
@@ -93,7 +93,7 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 	}
 	typeArgs := typeParamVars(typeParams)
 
-	// Mint each variant's nominal token and register its ClassDef, so a variant parameter
+	// Mint each variant's nominal handle and register its ClassDef, so a variant parameter
 	// referencing a sibling variant resolves before any constructor is built.
 	variants := make([]*ast.EnumVariant, 0, len(decl.Elems))
 	variantTypes := make([]soltype.Type, 0, len(decl.Elems))

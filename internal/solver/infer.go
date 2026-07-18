@@ -72,7 +72,7 @@ type checker struct {
 	// reference resolves through it first, so a bare `Point` written inside a class in
 	// namespace `Geometry` finds the sibling `Geometry.Point` before falling back to a
 	// root-namespace `Point`, mirroring dep_graph's qualified-first dependency
-	// resolution. The class registry and every ClassType token are keyed by the
+	// resolution. The class registry and every ClassType handle are keyed by the
 	// namespace-qualified name, so this reconstructs the qualified key a bare reference
 	// omits.
 	classNamespace string

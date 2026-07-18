@@ -363,7 +363,7 @@ func ctorParamsAt(params []*soltype.FuncParam, ret, sc *soltype.ClassType) []*so
 	return out
 }
 
-// instancePatClass resolves an instance pattern's name to its class token, honoring the
+// instancePatClass resolves an instance pattern's name to its class handle, honoring the
 // same scope precedence a written class reference uses. It returns ok=false when the name
 // is unbound or names a value or type parameter rather than a class.
 func (c *checker) instancePatClass(scope *Scope, name string) (*soltype.ClassType, bool) {
@@ -427,9 +427,9 @@ func (c *checker) resolveQualNamespace(scope *Scope, qi ast.QualIdent) (*Namespa
 	return nil, false
 }
 
-// resolveQualClassType resolves a qualified identifier to the class token it names in the
+// resolveQualClassType resolves a qualified identifier to the class handle it names in the
 // type sort. A bare name resolves through lookupClassBinding, honoring the class-namespace
-// precedence a written class reference uses. A member name `Color.RGB` reads the token from
+// precedence a written class reference uses. A member name `Color.RGB` reads the handle from
 // its namespace's own type map, so an enum variant resolves to its final variant class. It
 // returns ok=false when the name is unbound or names a non-class binding.
 func (c *checker) resolveQualClassType(scope *Scope, qi ast.QualIdent) (*soltype.ClassType, bool) {
@@ -497,7 +497,7 @@ func ctorSignature(t soltype.Type) (*soltype.FuncType, bool) {
 // freshClassInstance builds an instance of ct with a fresh inference var for each of the
 // class's type parameters and a fresh lifetime for each lifetime parameter, so a pattern
 // narrows a scrutinee to the class at unconstrained arguments the surrounding constraints
-// then pin. A non-generic class yields the bare token.
+// then pin. A non-generic class yields the bare handle.
 func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.ClassType {
 	def, ok := c.ctx.classDef(ct.Name)
 	if !ok {

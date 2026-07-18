@@ -237,11 +237,11 @@ func TestInferInstancePatNominalMismatch(t *testing.T) {
 
 // --- M5 D2: nominal union exhaustiveness ---
 //
-// An enum type is the union of its variant tokens, so a match over an enum reaches the
+// An enum type is the union of its variant handles, so a match over an enum reaches the
 // union exhaustiveness path. An extractor pattern covers a variant member when it names
 // that variant and binds its arguments, so an arm per variant makes the match exhaustive
 // with no catch-all. The variant name resolves through the enum's namespace, so
-// `Color.RGB` finds the `Color.RGB` variant token.
+// `Color.RGB` finds the `Color.RGB` variant handle.
 
 // Exhaustiveness of a match over an enum. Each row shares the same two-variant `Color`
 // enum and varies only the arms. A row with wantVal expects a clean inference; a row with

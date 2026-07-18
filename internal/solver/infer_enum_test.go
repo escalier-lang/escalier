@@ -119,7 +119,7 @@ func TestInferEnumMutuallyRecursive(t *testing.T) {
 // TestInferEnumClassMutuallyRecursive checks that an enum and a class that reference each
 // other are inferred correctly: the enum variant `Branch(node: Node)` names the class and
 // the class field `left: Tree` names the enum, forming one recursive group. Every nominal
-// identity — the enum union and the class token — is pre-bound before any body resolves a
+// identity — the enum union and the class handle — is pre-bound before any body resolves a
 // reference, so both directions type-check.
 func TestInferEnumClassMutuallyRecursive(t *testing.T) {
 	classValues(t, `
@@ -218,10 +218,10 @@ func TestInferEnumInFunctionBodyRejected(t *testing.T) {
 	require.Equal(t, "Declaration not allowed in function body: EnumDecl", errs[0].Message())
 }
 
-// TestEnumVariantDisplay locks in the qualified rendering of an enum variant token: a
+// TestEnumVariantDisplay locks in the qualified rendering of an enum variant handle: a
 // variant prints as `Enum.Variant` — its enum plus its own name — so two enums sharing
 // a variant name stay distinct wherever a variant surfaces, such as a union member or a
-// narrowed `match` arm. A plain class token still prints under its bare name.
+// narrowed `match` arm. A plain class handle still prints under its bare name.
 func TestEnumVariantDisplay(t *testing.T) {
 	variant := &soltype.ClassType{Name: "Geometry.Color.RGB", Final: true, Variant: true}
 	require.Equal(t, "Color.RGB", soltype.Print(variant))

@@ -2545,7 +2545,7 @@ func (c *checker) checkMatchExhaustive(scope *Scope, e *ast.MatchExpr, scrutinee
 // unionMatchExhaustive reports whether the unguarded arms cover a union scrutinee. An
 // inexact union needs a catch-all. An exact one is exhaustive when every member is
 // covered. A literal member is covered by an equal literal pattern. A nominal member, an
-// enum variant or class token, is covered by an instance or extractor pattern naming that
+// enum variant or class handle, is covered by an instance or extractor pattern naming that
 // class. A structural object or tuple member is covered by an irrefutable object or tuple
 // pattern of the member's shape. A member no arm covers leaves the match non-exhaustive.
 func (c *checker) unionMatchExhaustive(scope *Scope, e *ast.MatchExpr, u *soltype.UnionType) bool {

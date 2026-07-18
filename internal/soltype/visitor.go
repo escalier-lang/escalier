@@ -261,9 +261,9 @@ func (t *AliasType) Accept(v TypeVisitor, pol Polarity) Type {
 	args, changed := acceptTypes(cur.TypeArgs, v, pol) // type arguments covariant
 	out := cur
 	if changed {
-		// Name is the token's identity, carried through unchanged. An alias is
+		// Name is the handle's identity, carried through unchanged. An alias is
 		// transparent, so its arguments walk covariantly like a class's, and variance
-		// is resolved by expansion at subtyping time rather than stored on the token.
+		// is resolved by expansion at subtyping time rather than stored on the handle.
 		out = &AliasType{Name: cur.Name, TypeArgs: args}
 	}
 	return v.ExitType(out, pol)

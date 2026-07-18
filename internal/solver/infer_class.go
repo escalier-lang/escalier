@@ -20,7 +20,7 @@ import (
 // the ClassDef in the nominal registry, so member lookup and the nominal constrain rule
 // can read the projected body.
 //
-// A class in a mutually-recursive group reuses the nominal token and empty ClassDef the
+// A class in a mutually-recursive group reuses the nominal handle and empty ClassDef the
 // SCC driver pre-bound for the group through getOrCreateClass (M5 B2), so a forward
 // reference to a sibling defined later in the group resolves before its body is inferred.
 // A class reached without a pre-bound pair mints and registers one here.
@@ -56,16 +56,16 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
 	// the pair the SCC pre-pass registered for this class — an empty shell it minted
 	// before any type params were resolved, so that a sibling in the same recursive group
-	// resolves a forward reference to this class through the shared token (B2). A class
+	// resolves a forward reference to this class through the shared handle (B2). A class
 	// reached without a pre-registered shell mints and registers one here. The registry,
-	// the minted token, and the scope type binding are all keyed by the namespace-
+	// the minted handle, and the scope type binding are all keyed by the namespace-
 	// qualified name, so two sibling `class Point` declarations in different namespaces
 	// stay distinct.
 	self, def := c.getOrCreateClass(scope, decl, ns)
 	// Populate the type-param-derived fields the pre-pass left empty. This is the second
 	// phase: the pre-pass registers a bare identity so forward references resolve, and
 	// this call — running once every sibling is registered, so a bound like `<T: Sibling>`
-	// resolves — fills in the resolved type params. The token carries the class's own
+	// resolves — fills in the resolved type params. The handle carries the class's own
 	// type-parameter vars as its arguments.
 	self.TypeArgs = typeParamVars(typeParams)
 	def.Level = lvl - 1
@@ -159,18 +159,18 @@ func (c *checker) classValue(ctorType soltype.Type, static *soltype.ObjectType) 
 	return &soltype.ObjectType{Elems: elems}
 }
 
-// getOrCreateClass returns the nominal ClassType token and ClassDef a class binds to,
+// getOrCreateClass returns the nominal ClassType handle and ClassDef a class binds to,
 // reusing the pair already registered for the class or minting and registering a fresh
-// one when none exists. Either way the class name resolves to the returned token and def
+// one when none exists. Either way the class name resolves to the returned handle and def
 // before the body is walked, so a self- or sibling-reference in the body reaches them.
-// inferClassDecl then fills the def in place, so a sibling that captured the token as a
+// inferClassDecl then fills the def in place, so a sibling that captured the handle as a
 // forward reference sees the finished body through the same object.
 //
 // The SCC driver calls it as a pre-pass over each class in a type-key component — the
 // group of mutually-recursive classes the dep graph condensed together — so every class
 // in the group has a resolved type binding and an empty ClassDef before the first value
 // key infers a body (M5 B2). That pre-pass discards the return; only inferClassDecl reads
-// it. No placeholder-patch phase is needed: the token a sibling captured is the one that
+// it. No placeholder-patch phase is needed: the handle a sibling captured is the one that
 // carries the finished body.
 func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string) (*soltype.ClassType, *ClassDef) {
 	qname := qualifyClassName(ns, decl)
@@ -198,7 +198,7 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string)
 // qualifyClassName returns a class's dep_graph-qualified name — the namespace joined
 // to the local name with a dot, or the bare local name at the root namespace. This is
 // the same `CurrentNamespace + "." + name` rule dep_graph forms binding keys with, so
-// the registry key and the ClassType token match the value binding's qualified key.
+// the registry key and the ClassType handle match the value binding's qualified key.
 func qualifyClassName(ns string, decl *ast.ClassDecl) string {
 	if ns == "" {
 		return decl.Name.Name
@@ -275,7 +275,7 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 	return c.buildClassInstance(scope, ct, ref, lvl)
 }
 
-// buildClassInstance returns the token a class reference resolves to: the bare class with
+// buildClassInstance returns the handle a class reference resolves to: the bare class with
 // no type arguments, or a fresh instance carrying the resolved arguments for a generic one
 // like `Animal<D>`. An unresolved argument recovers to a fresh var, keeping arity cascade-safe.
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {

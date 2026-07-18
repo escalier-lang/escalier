@@ -955,7 +955,7 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.AliasType:
 		b, ok := b.(*soltype.AliasType)
 		// Two alias references are equal when they name the same alias and their type
-		// arguments compare equal positionally. The Name is the token's identity. An alias
+		// arguments compare equal positionally. The Name is the handle's identity. An alias
 		// carries no exactness flag.
 		if !ok || a.Name != b.Name {
 			return false
