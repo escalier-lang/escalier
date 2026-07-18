@@ -337,7 +337,7 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 // v then binds at string. A non-generic constructor, whose return carries no arguments, builds
 // an empty substitution and returns the parameters unchanged.
 func ctorParamsAt(params []*soltype.FuncParam, ret, sc *soltype.ClassType) []*soltype.FuncParam {
-	subst := &classSubst{
+	subst := &typeSubst{
 		types:     map[*soltype.TypeVarType]soltype.Type{},
 		lifetimes: map[*soltype.LifetimeVar]soltype.Lifetime{},
 	}

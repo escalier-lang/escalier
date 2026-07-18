@@ -27,16 +27,6 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		if t, ok := c.resolveScopedTypeRef(scope, ta, lvl); ok {
 			return t, true
 		}
-		// A reference that applies type arguments to a user-defined non-generic alias is an
-		// invalid application, not an unknown name. Report it before the Promise stub, so a
-		// user `type Promise = …` alias is not silently reinterpreted as the built-in
-		// Promise. A bare alias reference already resolved above, so reaching here with an
-		// alias binding means arguments were supplied.
-		if b, ok := c.lookupClassBinding(scope, ast.QualIdentToString(ta.Name)); ok {
-			if _, isAlias := b.Type.(*soltype.AliasType); isAlias {
-				return c.reportUnsupported(ta), false
-			}
-		}
 		// The built-in Promise<T>. The prelude seeds Promise as an opaque placeholder, so
 		// an `async fn () -> Promise<T>` annotation resolves here. Any other name or arity
 		// reports unsupported with a `never` placeholder so the caller can recover by

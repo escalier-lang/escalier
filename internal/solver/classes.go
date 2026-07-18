@@ -473,7 +473,7 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, ca
 // projectClassMember rewrites one class-body member's type-parameter and
 // lifetime-parameter vars to the arguments of one instance, the single-member analogue
 // of projectClassBody. A non-generic class, whose body holds no such vars, returns the
-// member unchanged. It runs the same classSubst walk projectClassBody runs over the
+// member unchanged. It runs the same typeSubst walk projectClassBody runs over the
 // whole body, through the shared per-member entry point, so a member reads exactly as it
 // would there.
 func (c *checker) projectClassMember(def *ClassDef, ct *soltype.ClassType, member soltype.ObjTypeElem) soltype.ObjTypeElem {
@@ -679,38 +679,45 @@ func classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
 	return nil, false
 }
 
-// classSubst rewrites a class body's type-parameter and lifetime-parameter vars to
+// typeSubst rewrites a generic body's type-parameter and lifetime-parameter vars to
 // the arguments of one instance. It maps each TypeParam.Var to the instance's
 // positional TypeArg and each LifetimeParam.Var to its positional LifetimeArg, so a
-// generic member's type reads at the instance's arguments rather than the declared
+// generic member or alias body reads at the instance's arguments rather than the declared
 // parameters.
-type classSubst struct {
+type typeSubst struct {
 	types     map[*soltype.TypeVarType]soltype.Type
 	lifetimes map[*soltype.LifetimeVar]soltype.Lifetime
 }
 
-// newClassSubst builds the substitution for one class instance. ct is that instance's
-// type, such as Box<5>, so its TypeArgs and LifetimeArgs are the concrete arguments each
-// of def's parameter vars maps to.
-func newClassSubst(def *ClassDef, ct *soltype.ClassType) *classSubst {
-	s := &classSubst{
+// newTypeSubst maps each type parameter's var to the positional type argument and each
+// lifetime parameter's var to its positional lifetime argument. A class instance and an
+// expanded generic alias both build their substitution through it.
+func newTypeSubst(typeParams []*soltype.TypeParam, typeArgs []soltype.Type, lifetimeParams []*soltype.LifetimeParam, lifetimeArgs []soltype.Lifetime) *typeSubst {
+	s := &typeSubst{
 		types:     map[*soltype.TypeVarType]soltype.Type{},
 		lifetimes: map[*soltype.LifetimeVar]soltype.Lifetime{},
 	}
-	for i, tp := range def.TypeParams {
-		if i < len(ct.TypeArgs) {
-			s.types[tp.Var] = ct.TypeArgs[i]
+	for i, tp := range typeParams {
+		if i < len(typeArgs) {
+			s.types[tp.Var] = typeArgs[i]
 		}
 	}
-	for i, lp := range def.LifetimeParams {
-		if i < len(ct.LifetimeArgs) {
-			s.lifetimes[lp.Var] = ct.LifetimeArgs[i]
+	for i, lp := range lifetimeParams {
+		if i < len(lifetimeArgs) {
+			s.lifetimes[lp.Var] = lifetimeArgs[i]
 		}
 	}
 	return s
 }
 
-func (s *classSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+// newClassSubst builds the substitution for one class instance. ct is that instance's
+// type, such as Box<5>, so its TypeArgs and LifetimeArgs are the concrete arguments each
+// of def's parameter vars maps to.
+func newClassSubst(def *ClassDef, ct *soltype.ClassType) *typeSubst {
+	return newTypeSubst(def.TypeParams, ct.TypeArgs, def.LifetimeParams, ct.LifetimeArgs)
+}
+
+func (s *typeSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
 	// A borrow's lifetime and a nested ClassType's lifetime arguments are a separate
 	// sort Accept does not walk, so rewrite them here on the way down through the
 	// shared lifetime-rewrite helpers and let Accept rebuild the type's children.
@@ -727,9 +734,9 @@ func (s *classSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Enter
 	return soltype.EnterResult{}
 }
 
-func (s *classSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+func (s *typeSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-func (s *classSubst) lifetime(lt soltype.Lifetime) soltype.Lifetime {
+func (s *typeSubst) lifetime(lt soltype.Lifetime) soltype.Lifetime {
 	lv, ok := lt.(*soltype.LifetimeVar)
 	if !ok {
 		return lt

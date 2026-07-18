@@ -323,14 +323,22 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 }
 
 // resolveScopedTypeRef resolves a type reference through lookupClassBinding, covering a
-// bare `Point` or `T` and a generic instance `Box<number>`. It returns ok=false when the
-// name is unbound or has arguments but is not a class, and never routes back through
-// resolveTypeAnn, so resolveTypeAnn's TypeRef arm can fall back to it without recursing.
+// bare `Point` or `T`, a generic class instance `Box<number>`, and a generic alias
+// instance `List<number>`. An alias binding always resolves here, with its own arity
+// diagnostic. It returns ok=false only when the name is unbound, or has arguments but is
+// neither a class nor an alias. It never routes back through resolveTypeAnn, so
+// resolveTypeAnn's TypeRef arm can fall back to it without recursing.
 func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) (soltype.Type, bool) {
 	name := ast.QualIdentToString(ref.Name)
 	b, ok := c.lookupClassBinding(scope, name)
 	if !ok {
 		return nil, false
+	}
+	// An alias reference routes through buildAliasInstance whether or not it supplies
+	// arguments, so a generic alias referenced bare still reports an arity mismatch and a
+	// defaulted parameter is filled from its default.
+	if at, ok := b.Type.(*soltype.AliasType); ok {
+		return c.buildAliasInstance(scope, at, ref, lvl), true
 	}
 	if len(ref.TypeArgs) == 0 {
 		return b.Type, true
