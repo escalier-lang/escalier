@@ -161,6 +161,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		return nil
 	}
 
+	// A type alias is transparent: expand an AliasType on either side to its body and
+	// recurse through the existing seen-set, which also closes a recursive alias. This
+	// sits above the structural switch, which dispatches on sub and would otherwise
+	// reject a concrete sub against an AliasType super before it could expand. When the
+	// other side is a variable, fall through to the var arms so the whole AliasType is
+	// recorded as one bound, keeping the alias name on the coalesced binding.
+	if alias, ok := sub.(*soltype.AliasType); ok {
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			return c.constrain(c.expandAlias(alias), super, seen, mutCtx)
+		}
+	}
+	if alias, ok := super.(*soltype.AliasType); ok {
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
+			return c.constrain(sub, c.expandAlias(alias), seen, mutCtx)
+		}
+	}
+
 	// M6 PR2 pre-switch lattice block. The structural switch below dispatches
 	// on sub and several arms return early on a non-variable super (the
 	// RefType arm most importantly), so a union/intersection super has to be

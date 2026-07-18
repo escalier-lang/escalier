@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
@@ -46,12 +47,18 @@ func parseModule(t *testing.T, src string) *ast.Module {
 	return parseModuleFiles(t, map[string]string{"input.esc": src})
 }
 
-// inferModule runs InferModule on an already-parsed module and renders the
-// top-level value/type bindings straight off the module scope's own maps (not the
-// prelude parent), so operators and the stdlib-type placeholders are excluded.
-// Only inference errors flow back; parse errors fail the test in parseModuleFiles.
+// inferModule infers an already-parsed module and renders the top-level value/type
+// bindings straight off the module scope's own maps (not the prelude parent), so
+// operators and the stdlib-type placeholders are excluded. Only inference errors flow
+// back; parse errors fail the test in parseModuleFiles.
+//
+// It builds the checker directly rather than through InferModule so the alias registry
+// stays reachable: a type-alias binding renders as its definition body, which lives on
+// the checker's Context, not on the AliasType token in scope.
 func inferModule(module *ast.Module) (values, types map[string]string, errs []SolverError) {
-	scope, _, errs := InferModule(module)
+	c := newChecker()
+	scope := sharedPrelude().Child()
+	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	values = make(map[string]string, len(scope.values))
 	for name, b := range scope.values {
 		if b.IsOverloaded() {
@@ -68,8 +75,21 @@ func inferModule(module *ast.Module) (values, types map[string]string, errs []So
 		// <T0, …> quantifier prefix when generalization left type parameters behind.
 		values[name] = renderScheme(b.Schemes[0])
 	}
-	types = renderBindings(scope.types, func(b TypeBinding) soltype.Type { return b.Type })
-	return values, types, errs
+	// A type-alias binding renders as its definition body, not its opaque name, so a test
+	// asserts the structure the alias stands for. `type Point = {x: number}` shows
+	// `{x: number}`, not `Point`. Every other type binding, including a nominal class,
+	// renders as itself.
+	types = make(map[string]string, len(scope.types))
+	for name, b := range scope.types {
+		ty := b.Type
+		if alias, ok := ty.(*soltype.AliasType); ok {
+			if def, ok := c.ctx.aliasDef(alias.Name); ok {
+				ty = def.Body
+			}
+		}
+		types[name] = soltype.Print(ty)
+	}
+	return values, types, c.errs
 }
 
 // inferSource is the single-file table harness (§3.6) — fast, no on-disk
@@ -221,20 +241,16 @@ func TestInferModuleForwardReferenceResolves(t *testing.T) {
 	require.Equal(t, map[string]string{"x": "5", "y": "5"}, values)
 }
 
-// A top-level declaration outside the M2 subset reports a clean
-// UnsupportedNodeError rather than panicking. A type alias is such a decl — type
-// bindings are M3+ — so it registers a type-sort dep_graph key the SCC driver
-// reports as unsupported. (FuncDecl, unsupported at the module level through
-// PR-2, is now wired in by PR-5; see the func/recursion tests.)
-func TestInferModuleUnsupportedDecl(t *testing.T) {
+// A top-level `type X = Body` alias binds a type-sort name. It registers an AliasDef
+// holding the resolved body and binds the name to an AliasType token, so the name
+// resolves rather than reporting unsupported. The test harness renders the binding as the
+// alias's definition body, so `type Foo = number` shows `number`.
+func TestInferModuleTypeAliasBinds(t *testing.T) {
 	src := `type Foo = number`
 	_, types, errs := inferSource(t, src)
-	require.Len(t, errs, 1)
-	require.Equal(t, "1:1-1:18: Unsupported: TypeDecl", msgWithSpan(errs[0]))
-	// M2.5: the error self-blames from the decl node.
-	require.Equal(t, src, spanText(src, errs[0].Span()))
-	// The unsupported decl must not leak a type binding.
-	require.NotContains(t, types, "Foo")
+	require.Empty(t, errs)
+	require.Contains(t, types, "Foo")
+	require.Equal(t, "number", types["Foo"])
 }
 
 // A `val` with no initializer can't be inferred in M2 (annotation-driven binding

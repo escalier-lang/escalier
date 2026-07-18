@@ -35,12 +35,12 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	// every sibling name is in scope.
 	for i, p := range params {
 		if p.Constraint != nil {
-			if ct, ok := c.resolveClassTypeAnn(scope, p.Constraint, lvl); ok {
+			if ct, ok := c.resolveTypeAnn(scope, p.Constraint, lvl); ok {
 				c.ctx.addUpperBound(out[i].Var, ct)
 			}
 		}
 		if p.Default != nil {
-			if dt, ok := c.resolveClassTypeAnn(scope, p.Default, lvl); ok {
+			if dt, ok := c.resolveTypeAnn(scope, p.Default, lvl); ok {
 				out[i].Default = dt
 			}
 		}

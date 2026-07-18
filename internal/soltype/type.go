@@ -444,8 +444,9 @@ type RefType struct {
 // `&A | &B` with independent lifetimes. A union or intersection must have uniform
 // ownership. A borrowed member beside an owned one has no single owned-or-borrowed
 // verdict and is rejected at the inference join where it forms. ClassType is a
-// RefInner too, so a `mut 'a Point` borrows a class instance. AliasType adds its
-// isRefInner arm when that type is introduced.
+// RefInner too, so a `mut 'a Point` borrows a class instance. AliasType is a
+// RefInner as well, so a `mut 'a Point` over a type alias borrows through the same
+// machinery.
 type RefInner interface {
 	Type
 	isRefInner()
@@ -457,6 +458,7 @@ func (*TypeVarType) isRefInner()      {}
 func (*UnionType) isRefInner()        {}
 func (*IntersectionType) isRefInner() {}
 func (*ClassType) isRefInner()        {}
+func (*AliasType) isRefInner()        {}
 
 // PromiseType is the result of an `async fn` and the requirement of an `await`.
 // M3 carries it as a dedicated concrete (not a generic TypeRefType), keeping the
@@ -561,6 +563,18 @@ type ClassType struct {
 	Variant bool
 }
 
+// AliasType is the use-site reference to a `type Name = Body` declaration, a small token
+// whose Name keys the Body in a side registry, like ClassType. An alias is transparent:
+// the subtyping engine expands it to its Body, while it renders under Name.
+type AliasType struct {
+	// Name is the dep_graph-qualified name such as "Geometry.Point", so two aliases named
+	// Point in different namespaces stay distinct. It also keys the registry.
+	Name string
+	// TypeArgs are the arguments a generic reference supplies. Always empty today, since
+	// generic aliases are not yet supported.
+	TypeArgs []Type
+}
+
 func (*TypeVarType) isType()      {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
@@ -578,6 +592,7 @@ func (*UnionType) isType()        {}
 func (*IntersectionType) isType() {}
 func (*ErrorType) isType()        {}
 func (*ClassType) isType()        {}
+func (*AliasType) isType()        {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).
@@ -621,6 +636,14 @@ func LevelOf(t Type) int {
 			m = max(m, LevelOfLifetime(la))
 		}
 		return max(m, LevelOfLifetime(t.Lt))
+	case *AliasType:
+		// An alias reference's level is the max level over its type arguments; the Name
+		// carries no variables. A bare reference with no arguments is level 0.
+		m := 0
+		for _, a := range t.TypeArgs {
+			m = max(m, LevelOf(a))
+		}
+		return m
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:

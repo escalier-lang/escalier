@@ -19,18 +19,28 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	case *ast.BooleanTypeAnn:
 		return c.annPrim(ta, soltype.BoolPrim), true
 	case *ast.TypeRefTypeAnn:
-		// M3 (PR3) recognises a single generic stdlib reference: Promise<T>. The
-		// real, alias-driven TypeRef resolution arrives in M7 — until then, any
-		// other name (or arity) reports unsupported with a `never` placeholder so
-		// the caller can recover by keeping the inferred type.
-		//
-		// FOOTGUN (removed in M7): this matches the bare NAME "Promise" WITHOUT
-		// consulting the type scope, so it would preempt any user-defined
-		// `type Promise<T> = …` alias. That is harmless today (user type aliases
-		// don't resolve yet, and the prelude only seeds Promise as an opaque
-		// placeholder), but M7's scope-driven TypeRef resolution MUST replace this
-		// hardcoded check — resolve the name through the scope first — so a real
-		// alias wins instead of being silently shadowed by this stub.
+		// Resolve through the type scope first so a user-defined alias, class, or type
+		// parameter takes precedence over the built-in Promise stub below. A bare alias or
+		// class reference resolves here; the prelude Promise placeholder is not a class, so
+		// a `Promise<T>` reference with no user binding does not resolve here and reaches
+		// the stub.
+		if t, ok := c.resolveScopedTypeRef(scope, ta, lvl); ok {
+			return t, true
+		}
+		// A reference that applies type arguments to a user-defined non-generic alias is an
+		// invalid application, not an unknown name. Report it before the Promise stub, so a
+		// user `type Promise = …` alias is not silently reinterpreted as the built-in
+		// Promise. A bare alias reference already resolved above, so reaching here with an
+		// alias binding means arguments were supplied.
+		if b, ok := c.lookupClassBinding(scope, ast.QualIdentToString(ta.Name)); ok {
+			if _, isAlias := b.Type.(*soltype.AliasType); isAlias {
+				return c.reportUnsupported(ta), false
+			}
+		}
+		// The built-in Promise<T>. The prelude seeds Promise as an opaque placeholder, so
+		// an `async fn () -> Promise<T>` annotation resolves here. Any other name or arity
+		// reports unsupported with a `never` placeholder so the caller can recover by
+		// keeping the inferred type.
 		if ast.QualIdentToString(ta.Name) == "Promise" && len(ta.TypeArgs) == 1 {
 			// A lifetime-annotated Promise (`'a Promise<T>` or `Promise<'a, T>`) is not
 			// supported: M3's PromiseType carries no lifetime, so silently accepting it
@@ -62,14 +72,6 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			}
 			t := &soltype.PromiseType{Inner: inner}
 			c.recordProv(t, ta, AnnotationType)
-			return t, true
-		}
-		// Consult the type scope so a reference to a class or type parameter in scope —
-		// the `D` in a `class Dog<D>` constructor's `food: D`, or a bare class name —
-		// resolves rather than reporting unsupported. Outside a class body the scope holds
-		// no such binding and this falls through; the general scope-driven TypeRef
-		// resolution for aliases and stdlib names arrives in M7.
-		if t, ok := c.resolveScopedTypeRef(scope, ta, lvl); ok {
 			return t, true
 		}
 		return c.reportUnsupported(ta), false

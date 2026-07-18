@@ -284,7 +284,7 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 	}
 	args := make([]soltype.Type, len(ref.TypeArgs))
 	for i, arg := range ref.TypeArgs {
-		if at, ok := c.resolveClassTypeAnn(scope, arg, lvl); ok {
+		if at, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
 			args[i] = at
 		} else {
 			args[i] = c.freshAt(lvl)
@@ -320,19 +320,6 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 		}
 	}
 	return bare, bareOK
-}
-
-// resolveClassTypeAnn resolves a type annotation in a class body or type-parameter bound.
-// It tries the scope through resolveScopedTypeRef first, so a class or type parameter takes
-// precedence over resolveTypeAnn's hardcoded `Promise` stub, then delegates to resolveTypeAnn
-// for primitives and structural types.
-func (c *checker) resolveClassTypeAnn(scope *Scope, ann ast.TypeAnn, lvl int) (soltype.Type, bool) {
-	if ref, ok := ann.(*ast.TypeRefTypeAnn); ok {
-		if t, ok := c.resolveScopedTypeRef(scope, ref, lvl); ok {
-			return t, true
-		}
-	}
-	return c.resolveTypeAnn(scope, ann, lvl)
 }
 
 // resolveScopedTypeRef resolves a type reference through lookupClassBinding, covering a
@@ -387,7 +374,7 @@ func (c *checker) buildFieldSigs(scope *Scope, lvl int, decl *ast.ClassDecl, bod
 		}
 		var fieldType soltype.Type
 		if field.Type != nil {
-			if t, ok := c.resolveClassTypeAnn(scope, field.Type, lvl); ok {
+			if t, ok := c.resolveTypeAnn(scope, field.Type, lvl); ok {
 				fieldType = t
 			} else {
 				fieldType = c.freshAt(lvl)

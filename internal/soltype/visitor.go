@@ -252,6 +252,23 @@ func (t *ClassType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *AliasType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	args, changed := acceptTypes(cur.TypeArgs, v, pol) // type arguments covariant
+	out := cur
+	if changed {
+		// Name is the token's identity, carried through unchanged. An alias is
+		// transparent, so its arguments walk covariantly like a class's, and variance
+		// is resolved by expansion at subtyping time rather than stored on the token.
+		out = &AliasType{Name: cur.Name, TypeArgs: args}
+	}
+	return v.ExitType(out, pol)
+}
+
 // acceptTypes walks each element covariantly, returning (originalSlice, false)
 // when nothing changed and (copy-on-write slice, true) otherwise.
 func acceptTypes(ts []Type, v TypeVisitor, pol Polarity) ([]Type, bool) {

@@ -47,6 +47,30 @@ type Context struct {
 	// top-level decl and lives for the whole inference run, so an entry is inserted or
 	// overwritten but never removed for scope exit.
 	classes map[string]*ClassDef
+
+	// aliases is the type-alias registry, the transparent-alias twin of classes. It holds
+	// each alias's Body and level, keyed by the alias's dep_graph-qualified name, the same
+	// string stored in soltype.AliasType.Name. inferTypeDecl writes an entry per `type`
+	// decl, and expandAlias reads the Body to unfold an alias reference to its structural
+	// type at subtyping time. Every AliasDef comes from a top-level decl and lives for the
+	// whole inference run.
+	aliases map[string]*AliasDef
+}
+
+// aliasDef returns the registered AliasDef for a qualified alias name, or ok=false
+// when no alias of that name has been registered on this Context.
+func (c *Context) aliasDef(name string) (*AliasDef, bool) {
+	def, ok := c.aliases[name]
+	return def, ok
+}
+
+// registerAlias inserts def under a qualified alias name, allocating the registry
+// map on first use.
+func (c *Context) registerAlias(name string, def *AliasDef) {
+	if c.aliases == nil {
+		c.aliases = map[string]*AliasDef{}
+	}
+	c.aliases[name] = def
 }
 
 // classDef returns the registered ClassDef for a qualified class name, or ok=false
