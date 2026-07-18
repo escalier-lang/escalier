@@ -53,7 +53,7 @@ func TestAcceptAliasType(t *testing.T) {
 	alias := &AliasType{Name: "Box", TypeArgs: []Type{a}}
 
 	got := alias.Accept(&replaceVar{target: a, repl: str}, Positive).(*AliasType)
-	require.NotSame(t, alias, got, "a changed argument forces a new token")
+	require.NotSame(t, alias, got, "a changed argument forces a new type")
 	require.Equal(t, "Box", got.Name, "the name carries through")
 	require.Same(t, str, got.TypeArgs[0], "the changed argument took the replacement")
 
