@@ -74,10 +74,10 @@ func (c *checker) inferTypeDecl(scope *Scope, lvl int, decl *ast.TypeDecl, ns st
 	}
 	c.ctx.registerAlias(qname, &AliasDef{Body: body, Level: lvl - 1})
 
-	token := &soltype.AliasType{Name: qname}
+	t := &soltype.AliasType{Name: qname}
 	scope.defineType(qname, TypeBinding{
-		Type:    token,
+		Type:    t,
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
 	})
-	c.recordType(decl.Name, token)
+	c.recordType(decl.Name, t)
 }
