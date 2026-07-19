@@ -116,9 +116,10 @@ without panicking and renders `fn <T>(x: T) -> T`, not `fn <T0, T: T0>(x: T) -> 
 - Generalize the inferred body into `FuncType.TypeParams` (PR1's retention), and
   instantiate the scheme per call so `f(5)` and `f("hi")` bind `T` independently.
 
-**Accept.** `fn id<T>(x: T) -> T` type-checks; `id(5)` yields `number` and
-`id("hi")` yields `string` from independent instantiations; a higher-rank parameter
-is still rejected at the rank-1 boundary.
+**Accept.** `fn id<T>(x: T) -> T` type-checks; `id(5)` yields `5` and `id("hi")`
+yields `"hi"` from independent instantiations, each preserving its literal type
+rather than widening to `number` / `string`; a higher-rank parameter is still
+rejected at the rank-1 boundary.
 
 **Depends on** PR1.
 
