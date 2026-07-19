@@ -105,14 +105,6 @@ func TestInferGenericFuncAnnotation(t *testing.T) {
 			src:  `val f: fn<T, U>(x: T, y: U) -> T = fn (x, y) { return x }`,
 			want: "fn <T, U>(x: T, y: U) -> T",
 		},
-		// A union member that is a bare type parameter resolves against the annotation's
-		// child scope, so `T` in `T | number` binds to the declared parameter and reaches
-		// constrain's union-super two-pass rule from source.
-		{
-			name: "union member type parameter",
-			src:  `val f: fn<T>(x: T | number) -> T = fn (x) { return x }`,
-			want: "fn <T>(x: T | number) -> T",
-		},
 		// A generic function in RETURN position is rank-1: the quantifier floats out of the
 		// positive position, so it is supported. The nested `T` renders on the inner function
 		// without leaking the initializer's body var as an outer quantifier.

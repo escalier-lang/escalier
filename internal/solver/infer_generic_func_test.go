@@ -108,6 +108,16 @@ func TestInferGenericFuncBodyOverPromises(t *testing.T) {
 			src:  `fn weird<T>(x: T) -> T { return 5 }`,
 			msg:  "1:1-1:36: the body forces type parameter `T` to `5`, so it cannot stand for an arbitrary type",
 		},
+		{
+			// A `T | number` parameter returned as `T` is unsound: a caller doing
+			// `leak<string>(5)` passes a valid `string | number` and receives `5` typed as
+			// `string`. The union splits into `T <: T` and `number <: T`, so the `number`
+			// branch is an independently concrete floor even though the sibling branch is
+			// the caller's own `T`.
+			name: "UnionParamWithConcreteBranch",
+			src:  `fn leak<T>(x: T | number) -> T { return x }`,
+			msg:  "1:1-1:44: the body forces type parameter `T` to `number`, so it cannot stand for an arbitrary type",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -119,17 +129,54 @@ func TestInferGenericFuncBodyOverPromises(t *testing.T) {
 	}
 }
 
-// The annotation form `val f: fn<T>(x: number) -> T = fn (x) { return x }` reuses the same
-// bounded-inference-var core. The body's return value `x` flows into the annotation's fresh
-// instance through an intermediate var, so the floor `number` is reached transitively and
-// the annotation form is flagged the same as the standalone declaration.
+// The annotation form reuses the same bounded-inference-var core. The body's return value
+// flows into the annotation's fresh instance through an intermediate var, so the floor is
+// reached transitively and the annotation form is flagged the same as the standalone
+// declaration. The binding still adopts its pristine annotation, so `f` renders with the
+// declared quantifier alongside the error.
 func TestInferGenericFuncAnnotationBodyOverPromises(t *testing.T) {
-	_, _, errs := inferSource(t, `val f: fn<T>(x: number) -> T = fn (x) { return x }`)
-	require.Len(t, errs, 1)
-	require.IsType(t, &TypeParamNotProducibleError{}, errs[0])
-	require.Equal(t,
-		"1:32-1:51: the body forces type parameter `T` to `number`, so it cannot stand for an arbitrary type",
-		msgWithSpan(errs[0]))
+	tests := []struct {
+		name string
+		src  string
+		msg  string
+		want string
+	}{
+		{
+			name: "ReturnParamForcedToConcrete",
+			src:  `val f: fn<T>(x: number) -> T = fn (x) { return x }`,
+			msg:  "1:32-1:51: the body forces type parameter `T` to `number`, so it cannot stand for an arbitrary type",
+			want: "fn <T>(x: number) -> T",
+		},
+		{
+			// The union member `T` still binds through the annotation's child scope and
+			// reaches constrain's union-super two-pass rule, so the binding solves and
+			// renders. The `number` branch is the independently concrete floor that the
+			// producibility check rejects.
+			name: "UnionParamWithConcreteBranch",
+			src:  `val f: fn<T>(x: T | number) -> T = fn (x) { return x }`,
+			msg:  "1:36-1:55: the body forces type parameter `T` to `number`, so it cannot stand for an arbitrary type",
+			want: "fn <T>(x: T | number) -> T",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.IsType(t, &TypeParamNotProducibleError{}, errs[0])
+			require.Equal(t, tt.msg, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// A bodyless `declare fn` asserts its signature with no body to check, so the producibility
+// check does not run and an over-promising shape such as `declare fn make<T>(x: number) -> T`
+// stays accepted. It is the programmer's assertion that some external implementation
+// produces `T`.
+func TestInferGenericDeclareFuncNotProducibilityChecked(t *testing.T) {
+	values, _, errs := inferSource(t, `declare fn make<T>(x: number) -> T`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T>(x: number) -> T", values["make"])
 }
 
 // A method's own type parameters stay gated at the rank-1 boundary: per-instance

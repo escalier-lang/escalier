@@ -93,38 +93,52 @@ func (v *polarityVarVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltyp
 // form `val f: fn<T>(x: number) -> T = fn (x) { return x }` reaches `number` through the
 // value's own param var that links the body to the annotation's `T`.
 //
-// A non-variable lower bound is a forced floor only when it mentions NONE of the
-// function's declared type-param vars in paramVars. `number` mentions none, so the body
-// produced a value with no dependence on the caller's choice. A `T | number` lower bound,
-// from `fn<T>(x: T | number) -> T`, mentions `T`, so the returned value carries the
-// caller's own `T` and is not a value the body forced. The seen set keeps a cyclic bound
-// graph terminating.
+// A union lower bound splits into independent obligations, since `A | B <: T` holds only
+// when both `A <: T` and `B <: T`. So each branch is examined on its own, and an
+// independently concrete branch such as the `number` in `T | number` from
+// `fn<T>(x: T | number) -> T` is a forced floor even though a sibling branch is the
+// caller's own `T`. A branch that mentions a declared type-param var carries the caller's
+// choice and is not forced. The seen set keeps a cyclic bound graph terminating.
 func forcedConcreteFloor(root *soltype.TypeVarType, paramVars set.Set[*soltype.TypeVarType]) (soltype.Type, bool) {
 	seen := set.NewSet[*soltype.TypeVarType]()
-	var walk func(v *soltype.TypeVarType) (soltype.Type, bool)
-	walk = func(v *soltype.TypeVarType) (soltype.Type, bool) {
+	var walkVar func(v *soltype.TypeVarType) (soltype.Type, bool)
+	var walkBound func(b soltype.Type) (soltype.Type, bool)
+	walkBound = func(b soltype.Type) (soltype.Type, bool) {
+		switch b := b.(type) {
+		case *soltype.TypeVarType:
+			if paramVars.Contains(b) {
+				return nil, false // a declared parameter is a rigid boundary, not a forced floor
+			}
+			return walkVar(b)
+		case *soltype.UnionType:
+			// `A | B <: T` splits into `A <: T` and `B <: T`, so any branch that forces a
+			// floor forces one on T.
+			for _, m := range b.Types {
+				if floor, found := walkBound(m); found {
+					return floor, true
+				}
+			}
+			return nil, false
+		default:
+			if mentionsAnyVar(b, paramVars) {
+				return nil, false // the value depends on the caller's own type parameter
+			}
+			return b, true // a fully concrete lower bound: the body forced this value
+		}
+	}
+	walkVar = func(v *soltype.TypeVarType) (soltype.Type, bool) {
 		if seen.Contains(v) {
 			return nil, false
 		}
 		seen.Add(v)
 		for _, b := range v.LowerBounds {
-			if bv, ok := b.(*soltype.TypeVarType); ok {
-				if paramVars.Contains(bv) {
-					continue // another declared parameter is a rigid boundary, not a forced floor
-				}
-				if floor, found := walk(bv); found {
-					return floor, true
-				}
-				continue
+			if floor, found := walkBound(b); found {
+				return floor, true
 			}
-			if mentionsAnyVar(b, paramVars) {
-				continue // the value depends on the caller's own type parameter, not forced
-			}
-			return b, true // a fully concrete lower bound: the body forced this value
 		}
 		return nil, false
 	}
-	return walk(root)
+	return walkVar(root)
 }
 
 // mentionsAnyVar reports whether t structurally contains any of the given vars. It reads
