@@ -187,7 +187,7 @@ func (c *checker) inferComponent(
 					// discarding keeps phase 2's inferFunc — which re-derives the signature
 					// while checking the body — the single reporter of any signature error.
 					p := c.openProbe()
-					sig := c.inferFunc(scope, inner, fd.FuncSig, nil, fd)
+					sig := c.inferFunc(scope, inner, fd.FuncSig, nil, fd, true)
 					c.closeProbe(p, false)
 					arms[i] = overloadArm{decl: fd, t: sig, annotated: true}
 					schemes[i] = monoScheme(sig)
@@ -225,7 +225,7 @@ func (c *checker) inferComponent(
 			for _, arm := range b.arms {
 				handled.Add(arm.decl)
 				b.sources = append(b.sources, &ast.NodeProvenance{Node: arm.decl})
-				c.inferFunc(scope, inner, arm.decl.FuncSig, arm.decl.Body, arm.decl)
+				c.inferFunc(scope, inner, arm.decl.FuncSig, arm.decl.Body, arm.decl, true)
 			}
 			continue
 		}

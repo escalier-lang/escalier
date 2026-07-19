@@ -755,6 +755,6 @@ func (c *checker) inferFuncDecl(scope *Scope, lvl int, d *ast.FuncDecl) (soltype
 	// A `declare fn` carries a nil body, so inferFunc types it as the no-body site it is:
 	// it adopts the declared return without constraining a synthetic `void`, and lowers
 	// its declared lifetime bounds instead of checking them against a body.
-	t := c.inferFunc(scope, lvl, d.FuncSig, d.Body, d)
+	t := c.inferFunc(scope, lvl, d.FuncSig, d.Body, d, true)
 	return t, &ast.NodeProvenance{Node: d}
 }

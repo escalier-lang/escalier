@@ -169,19 +169,26 @@ func TestInferFuncExprDestructuringParam(t *testing.T) {
 	require.Equal(t, "fn ([a, b]: [unknown, unknown]) -> void", render(got))
 }
 
-// A generic function (fn <T>() { ... }) is diagnosed rather than silently erased
-// to a monomorphic type — type schemes / generalization are M3.
-func TestInferFuncExprGenericUnsupported(t *testing.T) {
+// A generic function `fn <T>(x: T) -> T` resolves its type-parameter list into the
+// function's own FuncType.TypeParams, so the parameter and return read the one shared
+// `T` var rather than reporting the parameter feature as unsupported.
+func TestInferFuncExprGenericResolves(t *testing.T) {
 	c := newChecker()
-	// fn <T>() { 1 }
+	// fn <T>(x: T) -> T { return x }
 	tp := ast.NewTypeParam("T", nil, nil)
-	e := ast.NewFuncExpr(nil, []*ast.TypeParam{&tp}, nil, nil, nil, false,
-		block(exprStmt(numExpr(1))), testSpan())
+	tRef := func() ast.TypeAnn { return ast.NewRefTypeAnn(ast.NewIdentifier("T", testSpan()), nil, testSpan()) }
+	e := ast.NewFuncExpr(nil, []*ast.TypeParam{&tp}, []*ast.Param{param("x", tRef())}, tRef(),
+		nil, false, block(returnStmt(identExpr("x"))), testSpan())
 
-	c.inferExpr(NewScope(), 0, e)
-	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: TypeParam", c.errs[0].Message())
-	require.Equal(t, testSpan(), c.errs[0].Span())
+	got := c.inferExpr(NewScope(), 0, e)
+	require.Empty(t, c.errs)
+	ft, ok := got.(*soltype.FuncType)
+	require.True(t, ok)
+	require.Len(t, ft.TypeParams, 1)
+	// The parameter and return read the same var the type-param list minted, so the
+	// param type, the return type, and the TypeParams binder are one identity.
+	require.Same(t, ft.TypeParams[0].Var, ft.Params[0].Type)
+	require.Same(t, ft.TypeParams[0].Var, ft.Ret)
 }
 
 // --- CallExpr ---

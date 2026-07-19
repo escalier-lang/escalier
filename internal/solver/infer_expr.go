@@ -162,15 +162,14 @@ func astKind(n any) string {
 }
 
 // inferFuncExpr types a function expression as a soltype.FuncType and records it
-// in Info. It delegates to inferFunc, the shared core also used by inferFuncDecl
-// (the plan's "reuse inferFuncExpr on the decl's sig+body", factored so neither
-// side owns the other). M2 is monomorphic: any TypeParams on the signature are a
-// generic function (M3) and are diagnosed as unsupported by inferFunc, not
-// silently erased; an un-annotated param simply gets a fresh var, which
-// coalesces to unknown/never at render time rather than a <T0> quantifier
-// (generalization is M3).
+// in Info. It delegates to inferFunc, the shared core also used by inferFuncDecl,
+// factored so neither side owns the other. A `<T>` type-param list resolves into
+// the function's own FuncType.TypeParams, quantified by value-binding
+// generalization and freshened per call. An un-annotated param gets a fresh var,
+// which generalization turns into a quantifier or coalesces to unknown/never at
+// render time.
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
-	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e)
+	t := c.inferFunc(scope, lvl, e.FuncSig, e.Body, e, true)
 	c.recordType(e, t)
 	return t
 }
@@ -185,7 +184,7 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 // type. A bodyless (declare/ambient) function adopts its return annotation
 // without constraining anything. node supplies the span stamped onto a
 // return-annotation constraint failure.
-func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node) *soltype.FuncType {
+func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Block, node ast.Node, allowTypeParams bool) *soltype.FuncType {
 	// Give this function its own named-lifetime scope so a `&'a` in its signature
 	// resolves consistently across its params and return, without sharing the name
 	// with an enclosing or sibling function. Restored on exit so a nested function
@@ -198,21 +197,33 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// list, and the symmetric unused binder. Run before resolving the params so the scan
 	// reads the written names, not what namedLifetime has since interned.
 	c.checkLifetimeDeclarations(sig.LifetimeParams, sig.Params, sig.Return, sig.Throws)
+	// Resolve a standalone function's type parameters into a child scope so a param or
+	// return annotation reads each `T` as one shared var. The var is minted above the
+	// generalization level, so value-binding generalization quantifies it into
+	// FuncType.TypeParams and instantiate freshens it per call. A non-generic function
+	// reuses the enclosing scope and carries no type parameters.
+	//
+	// A method or constructor passes allowTypeParams=false. A member's own type
+	// parameters need the per-instance projection the class-body freeze does not yet
+	// apply, so resolving them would collapse two calls to one shared var. Report the
+	// feature as unsupported and infer monomorphically until that work lands.
+	declScope := scope
+	var typeParams []*soltype.TypeParam
 	if len(sig.TypeParams) > 0 {
-		// Generic functions (fn <T>(...)) need type schemes / generalization,
-		// which are M3. The FuncExpr/FuncDecl kind itself is supported — it is the
-		// type-param feature that is not — so diagnose it as an unsupported feature
-		// (blaming the function node) rather than silently erasing the params, then
-		// continue inferring monomorphically.
-		c.reportUnsupportedFeature(node, "TypeParam")
+		if allowTypeParams {
+			declScope = scope.Child()
+			typeParams = c.resolveTypeParams(declScope, lvl, sig.TypeParams)
+		} else {
+			c.reportUnsupportedFeature(node, "TypeParam")
+		}
 	}
-	fnScope := scope.Child()
+	fnScope := declScope.Child()
 	params := make([]*soltype.FuncParam, len(sig.Params))
 	// paramTypes maps each bound parameter name to its soltype, consumed by the M4
 	// G1 liveness pre-pass to seed parameter alias mutability.
 	paramTypes := make(map[string]soltype.Type, len(sig.Params))
 	for i, p := range sig.Params {
-		pt := c.paramType(scope, p, lvl)
+		pt := c.paramType(declScope, p, lvl)
 		// Rule 2 of PR 3. A bare annotation is owned and only an `&` annotation
 		// borrows. An `&` annotation already mints its lifetime in
 		// resolveLifetimeAnn, so a parameter has nothing to attach here. A bare
@@ -323,9 +334,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// there is no body, since a synthetic Void would falsely signal "returns
 	// nothing").
 	if sig.Async {
-		ret = c.asyncReturn(scope, node, sig.Return, ret, hasBody, lvl)
+		ret = c.asyncReturn(declScope, node, sig.Return, ret, hasBody, lvl)
 	} else if sig.Return != nil {
-		if annT, ok := c.resolveTypeAnn(scope, sig.Return, lvl); ok {
+		if annT, ok := c.resolveTypeAnn(declScope, sig.Return, lvl); ok {
 			// Only constrain the body when there IS one; a bodyless (declare/ambient)
 			// function simply adopts the annotation (constraining the synthetic Void
 			// would raise a spurious `void <: T`).
@@ -342,7 +353,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// inexact — it tolerates extra args when used as a callback (#677 §4.1), accept
 	// [required, ∞). Note exactness governs callback subtyping, not direct calls: an
 	// inexact value still rejects extras at a visible call site (the inferCall lint).
-	ft := &soltype.FuncType{Params: params, Ret: ret, Inexact: sig.Inexact}
+	ft := &soltype.FuncType{Params: params, Ret: ret, Inexact: sig.Inexact, TypeParams: typeParams}
 	// Record the function's own type against its node so a function flowing into a
 	// non-function requirement blames the function, and FuncArityMismatchError can
 	// carry a "defined here" related span. (For a named callee this raw FuncType is
