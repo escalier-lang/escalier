@@ -337,6 +337,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	case *soltype.FuncType:
 		if sup, ok := super.(*soltype.FuncType); ok {
+			// Higher-rank subtyping for a rank-2 callback. A quantifier on the super, the
+			// side being checked against, is skolemized, so the sub must satisfy it for every
+			// instantiation. For example, `fn (x) { return 5 }` fails against `<T>(x: T) -> T`.
+			// A quantifier on the sub, the side supplying the value, is instantiated with fresh
+			// vars, so the sub picks the instantiation. Re-enter once one side's binder is
+			// removed. Contravariant recursion into the params swaps sub and super, so a
+			// negative-position quantifier instantiates and a positive one skolemizes without
+			// a polarity flag here.
+			if len(sup.TypeParams) > 0 {
+				return c.constrain(sub, c.skolemizeFuncBinder(sup), seen, mutCtx)
+			}
+			if len(sub.TypeParams) > 0 {
+				return c.constrain(c.instantiateFuncBinder(sub, sub.TypeParams[0].Var.Level), sup, seen, mutCtx)
+			}
 			// Accept-set subtyping (#677 §4.2.1): read super as a callback parameter.
 			// sub <: super iff accept(sub) ⊇ accept(super) — sub must tolerate every
 			// argument count a holder of super may invoke it with. With
@@ -927,6 +941,84 @@ func callableView(ft *soltype.FuncType) *soltype.FuncType {
 		TypeParams:     ft.TypeParams,
 		LifetimeParams: ft.LifetimeParams,
 	}
+}
+
+// skolemizeFuncBinder returns a copy of ft with its own type parameters replaced by fresh
+// skolems, so a term checked against ft as a supertype must satisfy it for every
+// instantiation. Each parameter's declared bound becomes its skolem's Upper, seeded before
+// substitution so a bound naming a sibling resolves to that sibling's skolem. Only ft's own
+// TypeParams binders are substituted. A nested generic function keeps its quantifier.
+func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
+	sks := make([]*soltype.SkolemType, len(ft.TypeParams))
+	args := make([]soltype.Type, len(ft.TypeParams))
+	for i, tp := range ft.TypeParams {
+		sks[i] = c.freshSkolem(tp.Name)
+		args[i] = sks[i]
+	}
+	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
+	for i, tp := range ft.TypeParams {
+		// resolveTypeParams records at most one upper bound per parameter, itself an
+		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
+		// constraint.
+		if len(tp.Var.UpperBounds) > 0 {
+			sks[i].Upper = tp.Var.UpperBounds[0].Accept(sub, soltype.Positive)
+		}
+	}
+	return substFuncBinder(ft, sub)
+}
+
+// instantiateFuncBinder returns a copy of ft with its own type parameters replaced by fresh
+// inference vars at lvl, so the sub side of a subtype check picks the instantiation. Each
+// fresh var carries the original parameter's bounds, substituted so an F-bound referencing a
+// sibling reaches that sibling's fresh var. Only ft's own TypeParams binders are substituted.
+func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.FuncType {
+	nvs := make([]*soltype.TypeVarType, len(ft.TypeParams))
+	args := make([]soltype.Type, len(ft.TypeParams))
+	for i := range ft.TypeParams {
+		nvs[i] = c.freshVar(lvl)
+		args[i] = nvs[i]
+	}
+	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
+	for i, tp := range ft.TypeParams {
+		nvs[i].LowerBounds = acceptBounds(tp.Var.LowerBounds, sub)
+		nvs[i].UpperBounds = acceptBounds(tp.Var.UpperBounds, sub)
+	}
+	return substFuncBinder(ft, sub)
+}
+
+// substFuncBinder rebuilds ft with sub applied to its parameters and return and its own
+// TypeParams list dropped, since the binder vars are being replaced by their substitutes. A
+// nested generic function's own TypeParams pass through Accept unchanged, so it keeps its
+// quantifier.
+func substFuncBinder(ft *soltype.FuncType, sub *typeSubst) *soltype.FuncType {
+	cp := *ft
+	cp.TypeParams = nil
+	cp.Params = make([]*soltype.FuncParam, len(ft.Params))
+	for i, p := range ft.Params {
+		np := *p
+		np.Type = p.Type.Accept(sub, soltype.Negative)
+		cp.Params[i] = &np
+	}
+	cp.Ret = ft.Ret.Accept(sub, soltype.Positive)
+	if ft.SelfParam != nil {
+		ns := *ft.SelfParam
+		ns.Type = ft.SelfParam.Type.Accept(sub, soltype.Negative)
+		cp.SelfParam = &ns
+	}
+	return &cp
+}
+
+// acceptBounds applies sub to each bound in a var's bound list, preserving the nil-for-empty
+// shape.
+func acceptBounds(bounds []soltype.Type, sub *typeSubst) []soltype.Type {
+	if len(bounds) == 0 {
+		return nil
+	}
+	out := make([]soltype.Type, len(bounds))
+	for i, b := range bounds {
+		out[i] = b.Accept(sub, soltype.Positive)
+	}
+	return out
 }
 
 // ltPair keys constrainLt's coinductive seen-set by (sub, super) lifetime

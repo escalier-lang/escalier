@@ -277,12 +277,10 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 				pt = t
 			}
 		}
-		// A generic function in parameter position is rank-2, beyond the rank-1 boundary, so
-		// report it and recover to a fresh var. In return position it is rank-1 and kept.
-		if ft, ok := pt.(*soltype.FuncType); ok && len(ft.TypeParams) > 0 {
-			c.reportUnsupportedFeature(p.TypeAnn, "higher-rank function parameter")
-			pt = c.freshAt(lvl)
-		}
+		// A generic function in parameter position is a rank-2 callback such as
+		// `cb: <T>(x: T) -> T`. Its `<T>` binder is kept on the parameter's FuncType, so a
+		// call site checks each argument against it by skolemizing `T`, and a use inside the
+		// body instantiates `T` per call. constrain's FuncType arm performs both steps.
 		// The pattern is carried for rendering and round-tripping only, with no scope
 		// binding. mirrorParamPat preserves its full shape.
 		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: p.Optional}

@@ -123,16 +123,59 @@ func TestInferGenericFuncAnnotation(t *testing.T) {
 	}
 }
 
-// A generic function in parameter position is rank-2: the annotation `fn(cb: fn<T>(x: T)
-// -> T) -> number` would demand a caller pass an argument that is itself polymorphic. That
-// is beyond the rank-1 boundary, so it reports an unsupported feature and recovers to a
-// fresh var for the parameter, keeping the outer function shape.
-func TestInferHigherRankFuncParamReportsUnsupported(t *testing.T) {
+// A generic function in parameter position is a rank-2 callback: the annotation
+// `fn(cb: fn<T>(x: T) -> T) -> number` demands a caller pass an argument that is itself
+// polymorphic. The `<T>` binder is kept on the parameter, so the binding resolves and
+// renders the parameter with its quantifier rather than approximating it.
+func TestInferHigherRankFuncParamResolves(t *testing.T) {
 	values, _, errs := inferSource(t, `val f: fn(cb: fn<T>(x: T) -> T) -> number = fn (cb) { return 1 }`)
-	require.Len(t, errs, 1)
-	require.IsType(t, &UnsupportedFeatureError{}, errs[0])
-	require.Equal(t, "1:15-1:31: Unsupported: higher-rank function parameter", msgWithSpan(errs[0]))
-	require.Equal(t, "fn (cb: unknown) -> number", values["f"])
+	require.Empty(t, errs)
+	require.Equal(t, "fn (cb: fn <T>(x: T) -> T) -> number", values["f"])
+}
+
+// The body of a function with a rank-2 callback parameter may call that callback at more
+// than one type. Each `cb(...)` instantiates the callback's `T` independently, so `cb(5)`
+// and `cb("hi")` both type-check within one body rather than unifying `T` across the two
+// calls.
+func TestInferRank2CallbackCalledAtSeveralTypes(t *testing.T) {
+	src := `val f: fn(cb: fn<T>(x: T) -> T) -> number = fn (cb) {
+  val a = cb(5)
+  val b = cb("hi")
+  return 1
+}`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (cb: fn <T>(x: T) -> T) -> number", values["f"])
+}
+
+// A polymorphic argument satisfies a rank-2 callback parameter. Passing the generic `id`
+// into `f`'s `cb: fn<T>(x: T) -> T` parameter checks `id`'s type against the parameter by
+// skolemizing `T`, which `id` satisfies, so the call type-checks and yields `f`'s return.
+func TestInferRank2CallbackAcceptsPolymorphicArg(t *testing.T) {
+	src := `
+fn id<T>(x: T) -> T { return x }
+val f: fn(cb: fn<T>(x: T) -> T) -> number = fn (cb) { return 1 }
+val r = f(id)`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "number", values["r"])
+}
+
+// A monomorphic argument does not satisfy a rank-2 callback parameter. Passing `inc:
+// fn(x: number) -> number` where `fn<T>(x: T) -> T` is expected checks `inc` against the
+// parameter with `T` held rigid as a skolem, which `inc`'s concrete `number` cannot fill in
+// either the argument or the result position, so the call is rejected.
+func TestInferRank2CallbackRejectsMonomorphicArg(t *testing.T) {
+	src := `
+fn inc(x: number) -> number { return x }
+val f: fn(cb: fn<T>(x: T) -> T) -> number = fn (cb) { return 1 }
+val r = f(inc)`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 2)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.IsType(t, &CannotConstrainError{}, errs[1])
+	require.Equal(t, "4:9-4:15: cannot constrain T <: number", msgWithSpan(errs[0]))
+	require.Equal(t, "4:9-4:15: cannot constrain number <: T", msgWithSpan(errs[1]))
 }
 
 // A function-literal body whose return type is not the declared parameter does not
