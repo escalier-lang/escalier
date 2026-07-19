@@ -318,8 +318,11 @@ that core.
 [constrain_lattice_test.go](../../internal/solver/constrain_lattice_test.go)
 (`TestConstrainUnionSuperExists`): `5 <: (T | number)` commits `number` and leaves
 `T` unpinned, `"hi" <: (T | number)` falls through to `"hi" <: T`, and a concrete
-`string | number` still rejects a boolean. The source-reachable `fn f<T>(x: T |
-number)` form lands with the deferred annotation surface.
+`string | number` still rejects a boolean. The source-reachable annotation form
+`val f: fn<T>(x: T | number) -> …` lands with the deferred annotation surface; the
+standalone-declaration form `fn f<T>(x: T | number)` lands with the generic-function
+declaration work, both in
+[generic-functions-implementation-plan.md](generic-functions-implementation-plan.md).
 
 **Depends on** PR2 (generic surface), M6 (unions). Independent of PR3–PR5.
 

@@ -150,8 +150,10 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		extra := c.freshVar(0)
 		super := newUnion(nil, []soltype.Type{extra, num()}, false)
 
-		require.Empty(t, c.Constrain(strLit("hi"), super))
+		hi := strLit("hi")
+		require.Empty(t, c.Constrain(hi, super))
 		require.Len(t, extra.LowerBounds, 1)
+		require.Same(t, hi, extra.LowerBounds[0])
 		require.Empty(t, extra.UpperBounds)
 	})
 

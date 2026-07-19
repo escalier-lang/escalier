@@ -136,8 +136,9 @@ rejected at the rank-1 boundary.
   exercises M7's union-super two-pass exists trial from source.
 
 **Accept.** `val f: fn<T>(x: T) -> T = fn (x) { return x }` resolves and renders
-`fn <T>(x: T) -> T`; `fn f<T>(x: T | number)` resolves and its union member `T`
-binds per the union-super two-pass rule already in `constrain`.
+`fn <T>(x: T) -> T`; the annotation `val g: fn<T>(x: T | number) -> …` resolves and
+its union member `T` binds per the union-super two-pass rule already in `constrain`.
+The standalone-declaration form `fn f<T>(x: T | number)` is PR2's, not this PR's.
 
 **Depends on** PR1. Independent of PR2.
 
