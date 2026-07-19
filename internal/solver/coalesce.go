@@ -269,15 +269,57 @@ type occKey struct {
 // its own polarities, so the check is exactly PR1's per-variable both-polarities
 // test.
 func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
+	keep := funcTypeParamVars(t)
 	c := t.Accept(&schemeCoalescer{
-		simp:     simplifyScheme(t, genLevel),
+		simp:     simplifyScheme(t, genLevel, keep),
 		genLevel: genLevel,
+		keep:     keep,
 		seen:     set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
 	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 	// A scheme display is always coalesced from the Positive root.
 	return coalesceLifetimes(c, soltype.Positive) // D4: resolve borrow lifetimes to their display form
 }
+
+// funcTypeParamVars collects every generic function's own TypeParams binder var
+// reachable from t, descending structural children and each var's bound side-graph.
+func funcTypeParamVars(t soltype.Type) set.Set[*soltype.TypeVarType] {
+	keep := set.NewSet[*soltype.TypeVarType]()
+	t.Accept(&typeParamCollector{keep: keep, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	return keep
+}
+
+// typeParamCollector gathers FuncType.TypeParams binder vars for funcTypeParamVars,
+// walking each var's bounds explicitly since they are a side graph, not tree children.
+type typeParamCollector struct {
+	keep set.Set[*soltype.TypeVarType]
+	seen set.Set[*soltype.TypeVarType]
+}
+
+func (tc *typeParamCollector) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.FuncType:
+		for _, tp := range t.TypeParams {
+			tc.keep.Add(tp.Var)
+		}
+		return soltype.EnterResult{} // descend into params, return, and type-param bounds
+	case *soltype.TypeVarType:
+		if tc.seen.Contains(t) {
+			return soltype.EnterResult{SkipChildren: true}
+		}
+		tc.seen.Add(t)
+		for _, b := range t.LowerBounds {
+			b.Accept(tc, pol)
+		}
+		for _, b := range t.UpperBounds {
+			b.Accept(tc, pol)
+		}
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (tc *typeParamCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // schemeCoalescer is the soltype-visitor form of coalesceScheme. It has the same
 // shape as coalescer. The structural arms and the pol.Flip() variance come from
@@ -296,7 +338,11 @@ func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 type schemeCoalescer struct {
 	simp     *schemeSimplification
 	genLevel int
-	seen     set.Set[*soltype.TypeVarType]
+	// keep holds a generic function's own TypeParams binder vars, held symbolic rather
+	// than inlined to their bounds so the function's declared quantifier survives
+	// coalescing. It is the value-path analogue of coalescer.keep for a class body.
+	keep set.Set[*soltype.TypeVarType]
+	seen set.Set[*soltype.TypeVarType]
 }
 
 func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -305,6 +351,11 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		// Atom or structural node — let Accept rebuild it from coalesced children
 		// (including an overload-arm Union/Intersection input — the scoped lattice exception; see overloadIntersection).
 		return soltype.EnterResult{}
+	}
+	// A generic function's own type-parameter var stays symbolic: return it unchanged so
+	// the declared quantifier survives rather than inlining a return-only param to never.
+	if c.keep.Contains(v) {
+		return soltype.EnterResult{Type: v, SkipChildren: true}
 	}
 	rep := c.simp.rep(v)
 	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep)

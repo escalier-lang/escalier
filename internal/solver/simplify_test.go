@@ -31,7 +31,7 @@ func TestCoalesceSchemeMergesCoOccurring(t *testing.T) {
 	require.Equal(t, "fn <T0>(x: T0) -> [T0, T0]", renderScheme(scheme))
 
 	// All three variables resolve to one representative.
-	simp := simplifyScheme(body, 0)
+	simp := simplifyScheme(body, 0, nil)
 	require.Equal(t, simp.uf.find(1), simp.uf.find(2))
 	require.Equal(t, simp.uf.find(2), simp.uf.find(3))
 }
@@ -50,7 +50,7 @@ func TestCoalesceSchemeKeepsDistinctParams(t *testing.T) {
 
 	require.Equal(t, "fn <T0, T1>(a: T0, b: T1) -> [T0, T1]", renderScheme(scheme))
 
-	simp := simplifyScheme(body, 0)
+	simp := simplifyScheme(body, 0, nil)
 	require.NotEqual(t, simp.uf.find(1), simp.uf.find(2))
 }
 
@@ -110,7 +110,7 @@ func TestCoOccUnionMergesTransitively(t *testing.T) {
 	require.False(t, mutualCoOcc(2, 3, occ, coOcc), "b and c never directly co-occur")
 
 	// The union-find still collapses all three into one class via a.
-	simp := simplifyScheme(body, 0)
+	simp := simplifyScheme(body, 0, nil)
 	require.Equal(t, simp.uf.find(1), simp.uf.find(2))
 	require.Equal(t, simp.uf.find(1), simp.uf.find(3))
 }
@@ -123,7 +123,7 @@ func TestSimplifySchemeExcludesCapturedVars(t *testing.T) {
 	quantified := &soltype.TypeVarType{ID: 2, Level: 1}
 	body := &soltype.TupleType{Elems: []soltype.Type{captured, quantified}}
 
-	simp := simplifyScheme(body, 0)
+	simp := simplifyScheme(body, 0, nil)
 	require.Equal(t, 1, simp.uf.find(1), "a captured var is its own (singleton) class")
 	require.Equal(t, 2, simp.uf.find(2), "a quantified var is its own class when nothing co-occurs")
 }

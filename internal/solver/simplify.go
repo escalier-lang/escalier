@@ -390,7 +390,13 @@ func (s *schemeSimplification) rep(v *soltype.TypeVarType) *soltype.TypeVarType 
 // body. Only quantifiable variables (Level > genLevel) are merge candidates:
 // captured outer variables are not type parameters and never merge into one, which
 // also keeps every representative quantifiable so the retain decision stays uniform.
-func simplifyScheme(body soltype.Type, genLevel int) *schemeSimplification {
+//
+// A generic function's own TypeParams binder vars in keep are excluded from the
+// candidates too. They are distinct declared parameters that coalesceScheme holds
+// symbolic, so merging one into another var's class would rename it or let it mask
+// another var's name. Excluding them keeps each a singleton class that is its own
+// representative.
+func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeVarType]) *schemeSimplification {
 	vars := map[int]*soltype.TypeVarType{}
 	body.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
 
@@ -406,7 +412,7 @@ func simplifyScheme(body soltype.Type, genLevel int) *schemeSimplification {
 
 	candidates := make([]int, 0, len(vars))
 	for id, v := range vars {
-		if v.Level > genLevel {
+		if v.Level > genLevel && !keep.Contains(v) {
 			candidates = append(candidates, id)
 		}
 	}
