@@ -107,20 +107,19 @@ func TestInferGenericMethodStillGated(t *testing.T) {
 }
 
 // A parameter whose own type is polymorphic — a callback annotated `fn <V>(x: V) -> V` —
-// stays rejected at the rank-1 boundary. The type-parameter list on the declaration
-// resolves, but the generic function-type annotation on the parameter is the higher-rank
-// surface a later PR handles, so it reports as unsupported rather than being approximated.
+// stays rejected at the rank-1 boundary. The generic function-type annotation itself
+// resolves, so its `<V>` binds and the two `V` references read that quantified var, but
+// a generic function in parameter position is rank-2, so the declaration reports the
+// parameter as unsupported and recovers to a fresh var rather than approximating it.
 func TestInferGenericFuncHigherRankParamRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `fn apply<T>(g: fn <V>(x: V) -> V, y: T) -> T { return g(y) }`)
 	msgs := make([]string, len(errs))
 	for i, e := range errs {
 		msgs[i] = e.Message()
 	}
-	// The annotation gate reports the higher-rank feature, then the two `V` references
-	// inside it cascade to unsupported because the annotation's `<V>` was not resolved.
+	// The `<V>` annotation resolves, so there is no `TypeRefTypeAnn` cascade; only the
+	// rank-1 boundary rejects the generic function in parameter position.
 	require.Equal(t, []string{
-		"Unsupported: generic function type annotation",
-		"Unsupported: TypeRefTypeAnn",
-		"Unsupported: TypeRefTypeAnn",
+		"Unsupported: higher-rank function parameter",
 	}, msgs)
 }
