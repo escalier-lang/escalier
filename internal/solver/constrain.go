@@ -76,6 +76,17 @@ type constraintKey struct {
 	mutCtx     bool
 }
 
+// aliasKey returns the seen-set key operand for one side of a constraint: an AliasType's
+// interned canonical representative, or the type itself for every other kind. Canonicalizing
+// only the alias operands keeps the common path a cheap type assertion and confines the
+// interning cost to a reference that carries type arguments.
+func (c *Context) aliasKey(t soltype.Type) soltype.Type {
+	if at, ok := t.(*soltype.AliasType); ok {
+		return c.internAlias(at)
+	}
+	return t
+}
+
 // extrudeKey keys extrude's per-extrusion cache by both the origin variable's
 // ID and the polarity it was reached in, so the same variable copied in
 // covariant and contravariant position produces two distinct fresh vars.
@@ -127,7 +138,12 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 // borrow's mutability, the object/tuple arms propagate it, and the function and
 // promise arms reset it since each carries its own annotation context.
 func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) []SolverError {
-	key := constraintKey{sub, super, mutCtx}
+	// An AliasType operand keys on the canonical identity formed from the alias and its
+	// arguments rather than on its raw pointer, so two structurally-equal instances of a
+	// generic recursive alias close the cycle. expandAlias substitutes arguments into a fresh
+	// node each unfold, so a raw pointer key would see a new List<number> every lap and
+	// diverge. Every other operand is its own key.
+	key := constraintKey{c.aliasKey(sub), c.aliasKey(super), mutCtx}
 	if seen.Contains(key) {
 		return nil
 	}

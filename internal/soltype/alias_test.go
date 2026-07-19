@@ -15,6 +15,24 @@ func TestPrintAliasType(t *testing.T) {
 	require.Equal(t, "Pair<number, string>", Print(&AliasType{Name: "Pair", TypeArgs: []Type{numP(), strP()}}))
 }
 
+// TestPrintQualifiedAliasType renders an alias and class under their full dep_graph
+// namespace prefix rather than the stripped display name, so a solver identity key formed
+// from PrintQualified keeps two same-local-name nominal types in different namespaces
+// distinct. A nested class argument is qualified too, so `Box<A.Point>` and `Box<B.Point>`
+// never collide on one key.
+func TestPrintQualifiedAliasType(t *testing.T) {
+	require.Equal(t, "Geometry.Point", PrintQualified(&AliasType{Name: "Geometry.Point"}))
+	require.NotEqual(t,
+		PrintQualified(&AliasType{Name: "Box", TypeArgs: []Type{&ClassType{Name: "A.Point"}}}),
+		PrintQualified(&AliasType{Name: "Box", TypeArgs: []Type{&ClassType{Name: "B.Point"}}}),
+		"a nested class argument keeps its namespace so cross-namespace types do not collide",
+	)
+	require.Equal(t,
+		"Box<A.Point>",
+		PrintQualified(&AliasType{Name: "Box", TypeArgs: []Type{&ClassType{Name: "A.Point"}}}),
+	)
+}
+
 // TestPrintAliasBorrow renders a borrow whose inner is an alias, since AliasType is a
 // RefInner that flows through the borrow machinery like a class instance.
 func TestPrintAliasBorrow(t *testing.T) {

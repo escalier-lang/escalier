@@ -354,7 +354,7 @@ func (c *checker) inferComponent(
 	//     completed by inferEnumBody once every sibling is bound; its value key is then a
 	//     no-op whose pre-bound value var is retracted in phase 3.
 	var enumShells []*enumShell
-	var typeDecls []typeDeclEntry
+	var aliasShells []*aliasShell
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
@@ -375,12 +375,13 @@ func (c *checker) inferComponent(
 				// keyed by the same qualified name the shared namespace reconstructs.
 				c.getOrCreateClass(scope, decl, g.GetNamespace(key))
 			case *ast.TypeDecl:
-				// A `type X = Body` alias infers fully at its type key and is marked handled,
-				// so its value key is a no-op. Collect it and resolve its body after every
-				// class handle and enum union in this component is bound, so a body naming a
-				// sibling class or enum resolves. A body naming a sibling that is only bound
-				// later in a mutually recursive group is not resolved here.
-				typeDecls = append(typeDecls, typeDeclEntry{decl: decl, ns: g.GetNamespace(key)})
+				// A `type X = Body` alias infers at its type key and is marked handled, so its
+				// value key is a no-op. preBindAlias registers the alias identity and binds its
+				// name; inferAliasBody resolves the body below, once every sibling identity in
+				// the component is bound. Pre-binding the identity first lets a self or mutual
+				// reference — `type List<T> = {tail: List<T> | Null}`, or a mutual `type A =
+				// {b: B}` / `type B = {a: A}` pair — find its target already bound.
+				aliasShells = append(aliasShells, c.preBindAlias(scope, inner, decl, g.GetNamespace(key)))
 				handled.Add(d)
 			}
 		}
@@ -390,10 +391,10 @@ func (c *checker) inferComponent(
 	for _, sh := range enumShells {
 		c.inferEnumBody(sh)
 	}
-	// Each alias body resolves after the class handles and enum unions are bound, so a
-	// non-recursive alias naming a sibling type resolves.
-	for _, td := range typeDecls {
-		c.inferTypeDecl(scope, inner, td.decl, td.ns)
+	// Each alias body resolves after every alias, enum, and class identity in the component
+	// is bound, so a body naming a sibling type — or the alias itself — resolves.
+	for _, sh := range aliasShells {
+		c.inferAliasBody(sh)
 	}
 
 	// Report any remaining non-value decl as unsupported. A class was pre-bound above and

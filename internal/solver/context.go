@@ -50,11 +50,43 @@ type Context struct {
 
 	// aliases is the type-alias registry, the transparent-alias twin of classes. It holds
 	// each alias's Body and level, keyed by the alias's dep_graph-qualified name, the same
-	// string stored in soltype.AliasType.Name. inferTypeDecl writes an entry per `type`
-	// decl, and expandAlias reads the Body to unfold an alias reference to its structural
-	// type at subtyping time. Every AliasDef comes from a top-level decl and lives for the
-	// whole inference run.
+	// string stored in soltype.AliasType.Name. preBindAlias writes an entry per `type` decl,
+	// and expandAlias reads the Body to unfold an alias reference to its structural type at
+	// subtyping time. Every AliasDef comes from a top-level decl and lives for the whole
+	// inference run.
 	aliases map[string]*AliasDef
+
+	// aliasInterns maps an alias reference's canonical identity — its name and the rendered
+	// form of its type arguments, e.g. "List<number>" — to one representative AliasType, so
+	// two structurally-equal reference nodes share a pointer. constrain's seen-set keys by
+	// pointer identity, and expandAlias mints a fresh substituted node each unfold, so a
+	// generic recursive alias such as List<number> would produce a new node every lap and
+	// never hit the cache. Interning gives the cache a stable canonical key so the cycle
+	// closes. The map lives for the whole run and is never rolled back on a discarded probe.
+	// A representative is only ever compared by identity for the seen-set and never expanded,
+	// so a stale entry cannot make a constraint wrong.
+	aliasInterns map[string]*soltype.AliasType
+}
+
+// internAlias returns the shared representative for an alias reference's canonical
+// identity, minting one on first sight. Two AliasType nodes naming the same alias with
+// type arguments that render identically map to one pointer. That pointer is the canonical
+// identity formed from the alias and its arguments, the identity constrain's cycle guard
+// keys on. A non-generic reference keys on its name alone.
+func (c *Context) internAlias(at *soltype.AliasType) *soltype.AliasType {
+	// PrintQualified renders the reference under qualified names for every nested alias and
+	// class, so two aliases sharing a local name across namespaces never collide on one key,
+	// and a nested recursive alias such as List<List<number>> serializes finitely because an
+	// argument renders under its own name without expanding.
+	k := soltype.PrintQualified(at)
+	if c.aliasInterns == nil {
+		c.aliasInterns = map[string]*soltype.AliasType{}
+	}
+	if rep, ok := c.aliasInterns[k]; ok {
+		return rep
+	}
+	c.aliasInterns[k] = at
+	return at
 }
 
 // aliasDef returns the registered AliasDef for a qualified alias name, or ok=false
