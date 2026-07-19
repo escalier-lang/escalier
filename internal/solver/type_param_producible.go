@@ -6,26 +6,14 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// checkTypeParamsProducible reports each declared type parameter of a body-carrying
-// generic function that its body cannot produce for an arbitrary caller choice. A
-// declared parameter's var is a bounded inference var, so checking the body's `return x`
-// runs `constrain(number, T)`, which records `number` as a LOWER bound of `T` rather than
-// rejecting it. Nothing else verifies that the body actually produces every `T` the caller
-// could pick, so `fn make<T>(x: number) -> T { return x }` is accepted and its rendered
-// `fn <T>(x: number) -> T` over-promises.
-//
-// A parameter is flagged only when BOTH hold, so a genuinely parametric body stays valid:
-//   - it occurs in an OUTPUT position of the signature, since only an output parameter is
-//     handed back to the caller. A concrete lower bound on an input-only parameter, such
-//     as a reassignment `fn h<T>(mut x: T) { x = 5 }`, is never observed by the caller.
-//   - the body forces a concrete floor onto it, a non-variable lower bound the caller did
-//     not supply. `fn id<T>(x: T) -> T { return x }` records no concrete lower bound, so
-//     it is not flagged.
-//
-// The two callers cover both surfaces that mint a generic function. inferFunc checks a
-// standalone `fn make<T>(…)` declaration, and constrainInitAgainstAnnotation checks the
-// annotation form `val f: fn<T>(…) = fn (…) {…}` against the fresh instance its body flows
-// into. node supplies the blame span.
+// checkTypeParamsProducible flags a declared type parameter whose body cannot produce it
+// for an arbitrary caller choice. A parameter's var is a bounded inference var, so a body
+// `return x` with `x: number` records `number` as a LOWER bound of `T` rather than being
+// rejected, and `fn make<T>(x: number) -> T { return x }` renders `fn <T>(x: number) -> T`,
+// which over-promises. A parameter is flagged only when it occurs in an OUTPUT position
+// and forcedConcreteFloor finds a concrete floor the body forced onto it; `fn id<T>(x: T)
+// -> T` records none and stays valid. inferFunc calls this for a standalone declaration
+// and constrainInitAgainstAnnotation for the annotation form; node supplies the blame span.
 func (c *checker) checkTypeParamsProducible(node ast.Node, ft *soltype.FuncType) {
 	if len(ft.TypeParams) == 0 {
 		return
@@ -45,12 +33,9 @@ func (c *checker) checkTypeParamsProducible(node ast.Node, ft *soltype.FuncType)
 	}
 }
 
-// outputTypeVars collects the inference vars that occur in an OUTPUT position of a
-// function signature, walking the return covariantly and each parameter contravariantly.
-// A var inside a callback parameter's return `fn(cb: fn() -> T)` therefore reads as an
-// input and is excluded. It walks only the signature's value positions, never the
-// TypeParams binder list. FuncType.Accept visits each binder var at the call polarity,
-// which would mark every parameter as output regardless of where it appears.
+// outputTypeVars collects the inference vars in an OUTPUT position of a signature, walking
+// the return covariantly and each parameter contravariantly. It skips the TypeParams
+// binder list, which FuncType.Accept would otherwise visit at the call polarity.
 func outputTypeVars(ft *soltype.FuncType) set.Set[*soltype.TypeVarType] {
 	pv := &polarityVarVisitor{out: set.NewSet[*soltype.TypeVarType]()}
 	ft.Ret.Accept(pv, soltype.Positive)
