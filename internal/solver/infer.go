@@ -309,7 +309,16 @@ func (c *checker) freshAt(lvl int) *soltype.TypeVarType {
 // so the hot loop stays off the table. That is the perf invariant, §3.9. Bridge
 // errors never flow through here; they self-blame from their own node.
 func (c *checker) constrain(n ast.Node, source, target soltype.Type) {
-	for _, e := range c.ctx.Constrain(source, target) {
+	c.blameConstraintErrors(n, c.ctx.Constrain(source, target))
+}
+
+// blameConstraintErrors stamps each error from a constraint run with the Prov table and
+// the constraint node n, then accumulates it. It is factored out of constrain so a
+// caller that runs the engine directly — the checking-mode probe in
+// constrainInitAgainstAnnotation — assigns blame the same way. See constrain's doc for how
+// Span()/Related() then resolve per-operand blame through Prov on demand.
+func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
+	for _, e := range errs {
 		switch err := e.(type) {
 		case *CannotConstrainError:
 			err.prov, err.site = c.prov, n

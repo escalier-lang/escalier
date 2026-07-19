@@ -137,23 +137,104 @@ func TestInferHigherRankFuncParamReportsUnsupported(t *testing.T) {
 
 // A function-literal body whose return type is not the declared parameter does not
 // satisfy the polymorphic annotation `fn <T>(x: T) -> T`, since a caller expecting `T`
-// back would receive a `number`. Rejecting it needs the initializer checked against the
-// annotation with `T` held RIGID, so a concrete return cannot unify with `T`. The current
-// check runs against a fresh instance, whose `T` is an ordinary inference var, so `number`
-// unifies with it and the binding is wrongly accepted as `fn <T>(x: T) -> T`.
-//
-// DISABLED until rigid generic-annotation checking: re-enable by removing the /* */
-// wrapper once the initializer is checked against the annotation's type parameters as
-// rigid constants, so a non-polymorphic body is rejected. The generic-functions plan
-// (planning/simple_sub/generic-functions-implementation-plan.md) stays rank-1 and does
-// not schedule this, so it is follow-on work.
+// back would receive a `number`. The initializer is checked against the annotation with
+// `T` held RIGID, so the concrete return `5` cannot satisfy `T` and the definition is
+// rejected. The parameter-into-return flow in `fn (x) { return x }` still passes, since
+// the body relates `T` only to itself.
 func TestInferGenericFuncAnnotationRejectsNonPolymorphicBody(t *testing.T) {
-	/*
-		_, _, errs := inferSource(t, `val f: fn<T>(x: T) -> T = fn (x) { return 5 }`)
+	_, _, errs := inferSource(t, `val f: fn<T>(x: T) -> T = fn (x) { return 5 }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, "1:43-1:44: cannot constrain 5 <: T", msgWithSpan(errs[0]))
+}
+
+// Checking-mode skolems are concrete, so a parameter's skolem propagates through the
+// initializer's own inference var and is checked where the body returns it. A body that
+// returns a parameter typed `T` where the annotation promises a different type is therefore
+// rejected even though the offending value flows through the lambda's param var rather than
+// appearing as a literal. Each case renders `f` with its declared quantifier alongside the
+// error.
+func TestInferGenericFuncAnnotationChecksIndirectReturn(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		msg  string
+		want string
+	}{
+		{
+			// `return x` yields the skolem `T`, which cannot satisfy the concrete return
+			// `number`, so the definition is rejected.
+			name: "ParamReturnedAsConcrete",
+			src:  `val f: fn<T>(x: T) -> number = fn (x) { return x }`,
+			msg:  "1:32-1:51: cannot constrain T <: number",
+			want: "fn <T>(x: T) -> number",
+		},
+		{
+			// `return x` yields the first parameter's skolem `T`, which cannot satisfy the
+			// second parameter's distinct skolem `U` in the return, so the two do not unify.
+			name: "ParamReturnedAsDistinctSkolem",
+			src:  `val f: fn<T, U>(x: T, y: U) -> U = fn (x, y) { return x }`,
+			msg:  "1:36-1:58: cannot constrain T <: U",
+			want: "fn <T, U>(x: T, y: U) -> U",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.IsType(t, &CannotConstrainError{}, errs[0])
+			require.Equal(t, tt.msg, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// A skolem is a subtype of a union that contains it, so a body returning a parameter `T`
+// into a `T | number` return is accepted: the caller's `T` is a valid `T | number`. A
+// swapped two-parameter body that returns the value of the matching return parameter is
+// likewise accepted. These guard the acceptance side against an over-eager skolem rejection.
+func TestInferGenericFuncAnnotationChecksAcceptsPolymorphicBody(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "ParamIntoUnionReturn",
+			src:  `val f: fn<T>(x: T) -> (T | number) = fn (x) { return x }`,
+			want: "fn <T>(x: T) -> T | number",
+		},
+		{
+			name: "SecondParamReturned",
+			src:  `val f: fn<T, U>(x: T, y: U) -> U = fn (x, y) { return y }`,
+			want: "fn <T, U>(x: T, y: U) -> U",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// A declared constraint `<U: T>` makes the skolem for `U` a subtype of the skolem for `T`,
+// so a body that returns a `U` where the annotation promises `T` is accepted. Reversing the
+// direction is still rejected, since the bound gives `U <: T`, not `T <: U`.
+func TestInferGenericFuncAnnotationChecksBoundedParam(t *testing.T) {
+	t.Run("BoundedParamReachesReturn", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val f: fn<T, U: T>(x: U) -> T = fn (x) { return x }`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn <T, U: T>(x: U) -> T", values["f"])
+	})
+	t.Run("BoundDirectionIsOneWay", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val f: fn<T, U: T>(x: T) -> U = fn (x) { return x }`)
 		require.Len(t, errs, 1)
 		require.IsType(t, &CannotConstrainError{}, errs[0])
-		require.Equal(t, "1:44-1:45: cannot constrain 5 <: T", msgWithSpan(errs[0]))
-	*/
+		require.Equal(t, "1:33-1:52: cannot constrain T <: U", msgWithSpan(errs[0]))
+		require.Equal(t, "fn <T, U: T>(x: T) -> U", values["f"])
+	})
 }
 
 // A throws clause reports the documented unsupported feature and recovers

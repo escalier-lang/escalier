@@ -38,6 +38,31 @@ type TypeVarType struct {
 	Widenable bool
 }
 
+// SkolemType is a rigid type parameter, a placeholder held abstract while a term is
+// checked against a polymorphic expected type. It is a CONCRETE atomic type, not an
+// inference var, so it carries no bounds and constrain compares it nominally. A skolem is
+// a subtype only of itself, of an inference var it flows into, of its declared upper bound,
+// and of the top unknown. A concrete type is never a subtype of a skolem. Checking
+// `fn (x) { return 5 }` against `fn <T>(x: T) -> T` mints a skolem for `T`, and the return
+// `5 <: T` is rejected because `5` is not that skolem. Being concrete, a skolem also
+// propagates through an intermediate inference var as a lower bound. So
+// `fn (x) { return x }` against `fn <T>(x: T) -> number` is rejected too, since `x`'s skolem
+// floor cannot satisfy `number`.
+//
+// ID makes each parameter's skolem distinct, so two parameters `T` and `U` do not unify.
+// Name is the source parameter name, kept so a diagnostic and the printer render `T`.
+//
+// Upper is the declared constraint, so a `<U: T>` skolem is a subtype of `T` and of every
+// supertype of `T`. It is nil for an unconstrained parameter, which is a subtype of nothing
+// but itself. A parameter with several constraints carries their intersection here, matching
+// the intersection-sub subtyping rule. `fn <T, U: T>(x: U) -> T = fn (x) { return x }` is
+// accepted because the body's `U` reaches the return `T` through this bound.
+type SkolemType struct {
+	ID    int
+	Name  string
+	Upper Type
+}
+
 // BoundsAt returns the bounds relevant to a polarity: lowers in Positive
 // position (the var becomes their union), uppers in Negative (their meet).
 func (v *TypeVarType) BoundsAt(pol Polarity) []Type {
@@ -593,6 +618,7 @@ func (*IntersectionType) isType() {}
 func (*ErrorType) isType()        {}
 func (*ClassType) isType()        {}
 func (*AliasType) isType()        {}
+func (*SkolemType) isType()       {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).

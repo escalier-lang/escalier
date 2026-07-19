@@ -129,6 +129,15 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 	return v
 }
 
+// freshSkolem mints a distinct rigid type parameter carrying the given source name. It
+// draws from the same counter as freshVar so every skolem has a unique ID, which is what
+// keeps two parameters `T` and `U` from unifying.
+func (c *Context) freshSkolem(name string) *soltype.SkolemType {
+	s := &soltype.SkolemType{ID: c.varCounter, Name: name}
+	c.varCounter++
+	return s
+}
+
 // freshLifetime allocates a new lifetime variable at the given level, assigning it
 // the next id in sequence. Lifetimes now ride the same let-generalization level
 // hierarchy as types (M4 D2.5): a lifetime minted inside its scheme's

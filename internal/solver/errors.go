@@ -1645,6 +1645,10 @@ func describe(t soltype.Type) string {
 		return joinDescribe(t.Types, " & ")
 	case *soltype.TypeVarType:
 		return "t" + strconv.Itoa(t.ID)
+	case *soltype.SkolemType:
+		// A skolem renders under its source parameter name, so a rejected `return 5`
+		// against `fn <T>(x: T) -> T` reads `cannot constrain 5 <: T`.
+		return t.Name
 	}
 	return "?"
 }
