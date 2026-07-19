@@ -261,10 +261,8 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // `val q: &{x} = p` is the opt-in for an alias.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, lvl int) soltype.Type {
 	// Check a generic function annotation against a FRESH instance and adopt the untouched
-	// annotation, so its declared `<T>` stays the binding's only quantifier rather than
-	// rendering the initializer's own vars as a second one, `fn <T0, T: T0>(x: T) -> T`
-	// instead of `fn <T>(x: T) -> T`. funcTypeParamVars also catches a rank-1 generic in
-	// return position, and the binder vars sit at lvl, so freshenAbove(lvl-1, …) copies them.
+	// annotation, so its declared `<T>` stays the binding's only quantifier instead of also
+	// rendering the initializer's vars, `fn <T0, T: T0>(x: T) -> T`. Binder vars sit at lvl.
 	if funcTypeParamVars(annT).Len() > 0 {
 		inst := c.freshenAbove(lvl-1, annT, lvl, map[*soltype.TypeVarType]*soltype.TypeVarType{})
 		c.constrain(init, initT, inst)
