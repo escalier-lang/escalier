@@ -321,13 +321,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 		}
 	case *soltype.SkolemType:
-		// A skolem is a subtype of the same skolem and of its declared upper bound. An
-		// unconstrained `T` fails against a concrete `number` and against a distinct skolem
-		// `U`, so `fn (x) { return x }` is rejected against both `fn <T>(x: T) -> number` and
-		// `fn <T>(x: T) -> U`. A `<U: T>` skolem satisfies `T` through its bound. When super
-		// is a var the case falls through to the superVar arm, which records the skolem as a
-		// lower bound so it propagates through the var. A union super was already handled by
-		// the exists rule above, so `T <: T | number` succeeds before reaching here.
+		// A skolem is a subtype of the same skolem and of its declared upper bound, so an
+		// unconstrained `T` fails against `number` or a distinct `U`, while a `<U: T>` skolem
+		// satisfies `T`. When super is a var the case falls through to the superVar arm, which
+		// records the skolem as a lower bound so it propagates through the var. A union super
+		// is handled by the exists rule above, so `T <: T | number` succeeds before here.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if sup, ok := super.(*soltype.SkolemType); ok && sub.ID == sup.ID {
 				return nil

@@ -260,15 +260,11 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
 // `val q: &{x} = p` is the opt-in for an alias.
 func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
-	// Check a generic function annotation in checking mode and adopt the untouched
-	// annotation, so it renders `fn <T>(x: T) -> T`. Each declared type parameter is held
-	// rigid as a skolem while the initializer is checked against it, so a body that forces a
-	// parameter to a concrete value is rejected. `fn (x) { return x }` satisfies
-	// `fn <T>(x: T) -> T`, while `fn (x) { return 5 }` fails with `cannot constrain 5 <: T`.
-	// The check runs under a discard-only probe so the skolem bounds it records on the
-	// initializer's own vars leave no trace, and the pristine annT is adopted as the binding
-	// type. Constraining against the annotation directly would instead leak its vars as a
-	// second quantifier, `fn <T0, T: T0>(x: T) -> T`.
+	// Check a generic function annotation in checking mode, holding each declared type
+	// parameter rigid as a skolem, so `fn (x) { return 5 }` is rejected against
+	// `fn <T>(x: T) -> T` with `cannot constrain 5 <: T`. The check runs under a discard-only
+	// probe so the skolem bounds it records leave no trace, and the pristine annT is adopted
+	// as the binding type so it renders `fn <T>(x: T) -> T` rather than leaking its vars.
 	if funcTypeParamVars(annT).Len() > 0 {
 		c.blameConstraintErrors(init, c.ctx.trialUnderProbe(initT, c.skolemizeGenericAnn(annT)))
 		return annT
@@ -281,13 +277,10 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 }
 
 // skolemizeGenericAnn copies a resolved annotation, replacing every generic function's own
-// type-parameter var by a fresh skolem of the same name. This is the checking-mode rule for
-// a function literal against a polymorphic annotation: the expected type is pushed into the
-// term with its parameters held abstract, so constrain rejects a body that forces a
-// parameter to a concrete value. For example `fn (x) { return 5 }` checked against
-// `fn <T>(x: T) -> T` fails with `5 <: T`. A skolem is concrete, so it also propagates
-// through an intermediate inference var, rejecting `fn (x) { return x }` against
-// `fn <T>(x: T) -> number` where `x`'s skolem floor cannot satisfy `number`.
+// type-parameter var by a fresh skolem of the same name. This pushes the expected type into
+// the term with its parameters held abstract, so constrain rejects a body that forces a
+// parameter to a concrete value, both directly (`return 5`) and through an inference var
+// (`return x` where the annotation promises a different type).
 func (c *checker) skolemizeGenericAnn(annT soltype.Type) soltype.Type {
 	return annT.Accept(&skolemizer{c: c, subst: map[*soltype.TypeVarType]*soltype.SkolemType{}}, soltype.Positive)
 }
