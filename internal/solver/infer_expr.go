@@ -224,6 +224,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	paramTypes := make(map[string]soltype.Type, len(sig.Params))
 	for i, p := range sig.Params {
 		pt := c.paramType(declScope, p, lvl)
+		// A generic function in parameter position is rank-2, beyond the rank-1
+		// boundary, so report it and recover to a fresh var. This mirrors the same
+		// check resolveFuncTypeAnn applies to a nested function-type annotation.
+		if ft, ok := pt.(*soltype.FuncType); ok && len(ft.TypeParams) > 0 {
+			c.reportUnsupportedFeature(p.TypeAnn, "higher-rank function parameter")
+			pt = c.freshAt(lvl)
+		}
 		// Rule 2 of PR 3. A bare annotation is owned and only an `&` annotation
 		// borrows. An `&` annotation already mints its lifetime in
 		// resolveLifetimeAnn, so a parameter has nothing to attach here. A bare
