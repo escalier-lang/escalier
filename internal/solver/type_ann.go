@@ -285,12 +285,8 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 				pt = t
 			}
 		}
-		// A generic function in parameter position is rank-2: its `<…>` quantifier sits to
-		// the left of an arrow, so a caller would have to supply an argument polymorphic in
-		// its own right. That is beyond the rank-1 boundary this work keeps, so report it and
-		// recover to a fresh var. A generic function in RETURN position is rank-1, since the
-		// quantifier floats out of a positive position, so only the parameter case is
-		// rejected here.
+		// A generic function in parameter position is rank-2, beyond the rank-1 boundary, so
+		// report it and recover to a fresh var. In return position it is rank-1 and kept.
 		if ft, ok := pt.(*soltype.FuncType); ok && len(ft.TypeParams) > 0 {
 			c.reportUnsupportedFeature(p.TypeAnn, "higher-rank function parameter")
 			pt = c.freshAt(lvl)
