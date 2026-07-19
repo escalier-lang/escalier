@@ -138,11 +138,11 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 // borrow's mutability, the object/tuple arms propagate it, and the function and
 // promise arms reset it since each carries its own annotation context.
 func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) []SolverError {
-	// An AliasType operand keys on its canonical (alias, args) identity rather than its raw
-	// pointer, so two structurally-equal instances of a generic recursive alias close the
-	// cycle. expandAlias substitutes arguments into a fresh node each unfold, so a raw
-	// pointer key would see a new List<number> every lap and diverge. Every other operand is
-	// its own key.
+	// An AliasType operand keys on the canonical identity formed from the alias and its
+	// arguments rather than on its raw pointer, so two structurally-equal instances of a
+	// generic recursive alias close the cycle. expandAlias substitutes arguments into a fresh
+	// node each unfold, so a raw pointer key would see a new List<number> every lap and
+	// diverge. Every other operand is its own key.
 	key := constraintKey{c.aliasKey(sub), c.aliasKey(super), mutCtx}
 	if seen.Contains(key) {
 		return nil

@@ -297,8 +297,8 @@ func TestInferRecursiveTypeAliasSubtypingSubject(t *testing.T) {
 // TestInferGenericRecursiveTypeAliasSubtypingSubject is the divergence case the canonical
 // recursion guard exists for: a generic instance List<number> used as a subtyping subject.
 // expandAlias substitutes the argument into a fresh node each unfold, so a pointer-identity
-// guard would mint a new List<number> every lap and loop; keying on the canonical
-// (alias, args) identity closes the cycle.
+// guard would mint a new List<number> every lap and loop. Keying on the canonical identity
+// formed from the alias and its arguments closes the cycle.
 func TestInferGenericRecursiveTypeAliasSubtypingSubject(t *testing.T) {
 	src := `
 		type List<T> = {head: T, tail?: List<T>}

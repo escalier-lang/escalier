@@ -74,9 +74,9 @@ type Context struct {
 
 // internAlias returns the shared representative for an alias reference's canonical
 // identity, minting one on first sight. Two AliasType nodes naming the same alias with
-// type arguments that render identically map to one pointer — the canonical
-// (alias, args) identity constrain's cycle guard keys on. A non-generic reference keys on
-// its name alone.
+// type arguments that render identically map to one pointer. That pointer is the canonical
+// identity formed from the alias and its arguments, the identity constrain's cycle guard
+// keys on. A non-generic reference keys on its name alone.
 func (c *Context) internAlias(at *soltype.AliasType) *soltype.AliasType {
 	k := at.Name
 	if len(at.TypeArgs) > 0 {
