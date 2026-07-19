@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A generic FuncType round-trips through value-binding generalization: its own
-// TypeParams binder vars stay symbolic, so it renders `fn <T>(x: T) -> T` rather than
-// `fn <T0, T: T0>(x: T) -> T`, and a return-only param no longer inlines to never (PR1).
+// Value-binding generalization keeps a generic FuncType's own TypeParams binder vars
+// symbolic, so it renders `fn <T>(x: T) -> T` rather than `fn <T0, T: T0>(x: T) -> T`,
+// and a type parameter used only in the return stays valid instead of inlining to never.
 func TestGeneralizeRetainsFuncTypeParams(t *testing.T) {
 	tests := []struct {
 		name string
