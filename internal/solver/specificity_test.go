@@ -60,20 +60,11 @@ func TestSpecificityOrderStability(t *testing.T) {
 
 	// A nil candidate, a non-function overload arm, sorts last without disturbing the rest.
 	require.Equal(t, []int{1, 0, 2}, specificityOrder([]soltype.Type{num(), numLit(1), nil}))
-}
 
-// concreteSpecificityOrder skips free type-variable members and orders the rest
-// most-specific-first, returning original indices. The union-super exists rule consults
-// it, so a variable member is never trialled and the concrete members trial
-// most-specific-first.
-func TestConcreteSpecificityOrder(t *testing.T) {
-	v := &soltype.TypeVarType{}
-
-	// Members number(0), α(1), 1(2). The variable is skipped; the literal outranks the
-	// primitive, so the trial order over original indices is [2, 0].
-	require.Equal(t, []int{2, 0}, concreteSpecificityOrder([]soltype.Type{num(), v, numLit(1)}))
-
-	// All-variable members yield an empty order, the signal the union-super rule reads to
-	// fall through to the var arms.
-	require.Empty(t, concreteSpecificityOrder([]soltype.Type{v, &soltype.TypeVarType{}}))
+	// A union of a concrete and a bare variable orders the concrete first and the variable
+	// last. The union-super exists rule reads this order directly, so a concrete member is
+	// trialled before the variable and the variable is only reached as a last-resort
+	// catch-all.
+	v2 := &soltype.TypeVarType{}
+	require.Equal(t, []int{1, 0}, specificityOrder([]soltype.Type{v2, num()}))
 }

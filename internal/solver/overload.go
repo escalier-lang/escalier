@@ -200,28 +200,6 @@ func typeSpecificity(a, b soltype.Type) int {
 	}
 }
 
-// concreteSpecificityOrder returns the indices of types' concrete members in
-// most-specific-first order, skipping any member that is a free type variable. The
-// union-super exists rule trials these. The skip keeps the trial from speculatively
-// pinning a variable member to sub, and the specificity order keeps a less-specific
-// member from changing which branch commits.
-func concreteSpecificityOrder(types []soltype.Type) []int {
-	var concrete []soltype.Type
-	var origIdx []int
-	for i, m := range types {
-		if _, isVar := m.(*soltype.TypeVarType); isVar {
-			continue
-		}
-		concrete = append(concrete, m)
-		origIdx = append(origIdx, i)
-	}
-	order := make([]int, len(concrete))
-	for k, pos := range specificityOrder(concrete) {
-		order[k] = origIdx[pos]
-	}
-	return order
-}
-
 // hasUnconstrainedArg reports whether any top-level call argument is a fully-unconstrained
 // inference variable — a bare var with no bounds either way, which carries no type
 // information to rank overloads by. overloadOrder treats a true result as "can't rank the
