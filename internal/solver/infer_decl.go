@@ -331,22 +331,14 @@ func (s *skolemizer) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Enter
 func (s *skolemizer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // skolemizeBound resolves a type parameter's declared constraint into its skolem's Upper,
-// substituting a sibling parameter for that sibling's skolem. An unconstrained parameter
-// has no bound, so it returns nil. A parameter with several constraints returns their
-// intersection, so the skolem satisfies a super reachable through any one of them.
+// substituting a sibling parameter for that sibling's skolem. resolveTypeParams records at
+// most one constraint per parameter, itself an IntersectionType for a `<T: A & B>` bound, so
+// an unconstrained parameter returns nil and any constraint is the single skolemized bound.
 func (s *skolemizer) skolemizeBound(bounds []soltype.Type) soltype.Type {
-	switch len(bounds) {
-	case 0:
+	if len(bounds) == 0 {
 		return nil
-	case 1:
-		return bounds[0].Accept(s, soltype.Positive)
-	default:
-		members := make([]soltype.Type, len(bounds))
-		for i, b := range bounds {
-			members[i] = b.Accept(s, soltype.Positive)
-		}
-		return &soltype.IntersectionType{Types: members}
 	}
+	return bounds[0].Accept(s, soltype.Positive)
 }
 
 // tryUpgradeToOwnedMut grants the immutable→mutable upgrade when a value of type srcT,
