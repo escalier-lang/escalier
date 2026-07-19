@@ -68,7 +68,9 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	// regardless of the class's default mutability.
 	c.bindSelf(ctorScope, &ast.MethodReceiver{Mut: true}, body)
 
-	ft := c.inferFunc(ctorScope, lvl, bodySig, ctor.Fn.Body, ctor)
+	// A constructor carries no type parameters of its own, since the class owns them,
+	// so generic resolution stays off here, matching the method path.
+	ft := c.inferFunc(ctorScope, lvl, bodySig, ctor.Fn.Body, ctor, false)
 	c.checkConstructorInit(body, ctor)
 	// A constructor returns a fresh instance, not the void its statement body falls off
 	// to, so override the inferred return with the instance type.

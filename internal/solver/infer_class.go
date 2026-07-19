@@ -585,7 +585,10 @@ func (c *checker) inferMemberFunc(
 	if !static {
 		c.bindSelf(memberScope, recv, body)
 	}
-	return c.inferFunc(memberScope, lvl, fn.FuncSig, fn.Body, fn)
+	// A method's own type parameters stay gated because their per-instance projection
+	// is not yet applied by the class-body freeze, so inferFunc reports them as
+	// unsupported.
+	return c.inferFunc(memberScope, lvl, fn.FuncSig, fn.Body, fn, false)
 }
 
 // appendMethodSig installs a method signature under name, merging it into an existing

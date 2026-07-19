@@ -177,6 +177,18 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		return nil
 	}
 
+	// A variable constrained against itself is reflexively true, so it records
+	// nothing. Without this guard the self-edge `T <: T` lands in the variable's own
+	// upper bounds and renders as `fn <T: T>(x: T) -> T`. A generic function whose
+	// body flows a parameter straight into a same-typed return annotation, such as
+	// `fn id<T>(x: T) -> T { return x }`, constrains the inferred return `T` against
+	// the annotated return `T` and hits exactly this.
+	if subVar, ok := sub.(*soltype.TypeVarType); ok {
+		if superVar, ok := super.(*soltype.TypeVarType); ok && subVar == superVar {
+			return nil
+		}
+	}
+
 	// A type alias is transparent: expand an AliasType on either side to its body and
 	// recurse through the existing seen-set, which also closes a recursive alias. This
 	// sits above the structural switch, which dispatches on sub and would otherwise
