@@ -48,11 +48,10 @@ func outputTypeVars(ft *soltype.FuncType) set.Set[*soltype.TypeVarType] {
 	return pv.out
 }
 
-// polarityVarVisitor records every inference var it meets in POSITIVE position. It reads
-// only the structural polarity a var occurs at, so it does not descend into a var's bound
-// side-graph. A var is a leaf whose Accept visits it and stops. recordMutWriteView adds
-// the write view of a `mut` borrow's inner, so a var written through a mut field is seen
-// in both polarities like the occurrence visitors in simplify.go.
+// polarityVarVisitor records every inference var it meets in POSITIVE position, reading
+// only structural polarity without descending into a var's bound side-graph.
+// recordMutWriteView adds the write view of a `mut` borrow's inner, so a var written
+// through a mut field is seen in both polarities like the occurrence visitors in simplify.go.
 type polarityVarVisitor struct {
 	out set.Set[*soltype.TypeVarType]
 }
@@ -72,18 +71,13 @@ func (v *polarityVarVisitor) EnterType(t soltype.Type, pol soltype.Polarity) sol
 
 func (v *polarityVarVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// forcedConcreteFloor returns the concrete type the body forces as a lower bound of a
-// type parameter, or ok=false when the parameter carries no concrete floor. It follows a
-// lower bound that is an inference var into that var's own lower bounds, so the annotation
-// form `val f: fn<T>(x: number) -> T = fn (x) { return x }` reaches `number` through the
-// value's own param var that links the body to the annotation's `T`.
-//
-// A union lower bound splits into independent obligations, since `A | B <: T` holds only
-// when both `A <: T` and `B <: T`. So each branch is examined on its own, and an
-// independently concrete branch such as the `number` in `T | number` from
-// `fn<T>(x: T | number) -> T` is a forced floor even though a sibling branch is the
-// caller's own `T`. A branch that mentions a declared type-param var carries the caller's
-// choice and is not forced. The seen set keeps a cyclic bound graph terminating.
+// forcedConcreteFloor returns the concrete type the body forces as a lower bound of a type
+// parameter, following inference-var lower bounds transitively into their own bounds. A
+// union lower bound splits into independent obligations, since `A | B <: T` needs both
+// `A <: T` and `B <: T`, so an independently concrete branch such as the `number` in
+// `T | number` is a forced floor even when a sibling branch is the caller's own `T`. A
+// branch that mentions a declared type-param var carries the caller's choice and is not
+// forced. The seen set keeps a cyclic bound graph terminating.
 func forcedConcreteFloor(root *soltype.TypeVarType, paramVars set.Set[*soltype.TypeVarType]) (soltype.Type, bool) {
 	seen := set.NewSet[*soltype.TypeVarType]()
 	var walkVar func(v *soltype.TypeVarType) (soltype.Type, bool)
