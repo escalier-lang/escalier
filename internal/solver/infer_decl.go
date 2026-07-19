@@ -205,7 +205,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		if annT, ok := c.resolveTypeAnn(scope, d.TypeAnn, lvl); ok {
-			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
+			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT, lvl)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
@@ -227,7 +227,10 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 
 // constrainInitAgainstAnnotation constrains a `val`/`var` initializer against its
 // resolved annotation and returns the type the binding adopts, which may differ from
-// the written annotation in two refinements over a plain constrain.
+// the written annotation in three refinements over a plain constrain.
+//
+// 0. A generic function annotation is checked against a fresh instance, so the adopted
+// annotation keeps its declared `<T>` as its only quantifier. See the inline note.
 //
 // 1. A uniquely-owned initializer flowing into an OWNED-mutable annotation is allowed to
 // take that mutable type. The C2 gate rejects immutable <: mutable structurally, because
@@ -256,7 +259,16 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // bare owned destination, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
 // ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
 // `val q: &{x} = p` is the opt-in for an alias.
-func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
+func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, lvl int) soltype.Type {
+	// Check a generic function annotation against a FRESH instance and adopt the untouched
+	// annotation, so it renders `fn <T>(x: T) -> T`. Constraining the initializer against the
+	// annotation itself would leak its vars as a second quantifier, `fn <T0, T: T0>(x: T) ->
+	// T`. Binder vars sit at lvl, so freshenAbove(lvl-1, …) copies them.
+	if funcTypeParamVars(annT).Len() > 0 {
+		inst := c.freshenAbove(lvl-1, annT, lvl, map[*soltype.TypeVarType]*soltype.TypeVarType{})
+		c.constrain(init, initT, inst)
+		return annT
+	}
 	if c.tryUpgradeToOwnedMut(init, init, initT, annT) {
 		return annT
 	}

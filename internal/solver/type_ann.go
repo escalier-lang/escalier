@@ -228,26 +228,11 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 	return t, true
 }
 
-// resolveFuncTypeAnn lowers a monomorphic function type annotation
-// `fn(p: A, ...) -> R` into a soltype.FuncType, mapping ta.Inexact to
-// FuncType.Inexact. An unsupported part recovers to a fresh var so the function
-// shape survives, cascade-safe like the Promise/object/tuple arms. Generic, throws,
-// and rest-param annotations report an unsupported feature and recover as a
-// monomorphic function. A lifetime parameter is supported. Its declared outlives
-// bounds lower into constrainLt so the annotation's borrows solve against them.
-//
-// A generic annotation reports an unsupported feature rather than resolving its `<…>`
-// list. Routing it through resolveTypeParams resolves the parameters, but the resulting
-// FuncType.TypeParams vars break the value-binding generalization path. That path inlines
-// them to `never` and panics in acceptTypeParams, since a bound parameter must stay a
-// variable. Holding them symbolic needs the keep-set retention coalesceKeeping already
-// gives a generic class's own parameters. That retention lands with the generic-function
-// generalization work, so until then the conservative report keeps a `val f: fn<T>(…)`
-// binding sound.
+// resolveFuncTypeAnn lowers a function type annotation `fn<T>(p: A, ...) -> R` into a
+// soltype.FuncType, recovering an unsupported part to a fresh var so the shape survives. A
+// `<T>` list resolves through resolveTypeParams into a child scope, so a parameter, return,
+// or union member that names `T` reads the annotation's own quantified var.
 func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
-	if len(ta.TypeParams) > 0 {
-		c.reportUnsupportedFeature(ta, "generic function type annotation")
-	}
 	if ta.Throws != nil {
 		c.reportUnsupportedFeature(ta, "throws clause in function type annotation")
 	}
@@ -259,6 +244,17 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 	savedNamedLts := c.namedLifetimes
 	c.namedLifetimes = nil
 	defer func() { c.namedLifetimes = savedNamedLts }()
+
+	// Resolve the annotation's type parameters into a child scope so a parameter, the
+	// return, and any union member all read a sibling `T` as one shared var. A
+	// non-generic annotation reuses the enclosing scope.
+	annScope := scope
+	var typeParams []*soltype.TypeParam
+	if len(ta.TypeParams) > 0 {
+		annScope = scope.Child()
+		typeParams = c.resolveTypeParams(annScope, lvl, ta.TypeParams)
+	}
+
 	// Report any named lifetime this annotation uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder, before lowering its bounds interns the names.
 	c.checkLifetimeDeclarations(ta.LifetimeParams, ta.Params, ta.Return, ta.Throws)
@@ -277,9 +273,15 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 		// the function keeps its arity and shape, cascade-safe like Promise<bad>.
 		var pt soltype.Type = c.freshAt(lvl)
 		if p.TypeAnn != nil {
-			if t, ok := c.resolveTypeAnn(scope, p.TypeAnn, lvl); ok {
+			if t, ok := c.resolveTypeAnn(annScope, p.TypeAnn, lvl); ok {
 				pt = t
 			}
+		}
+		// A generic function in parameter position is rank-2, beyond the rank-1 boundary, so
+		// report it and recover to a fresh var. In return position it is rank-1 and kept.
+		if ft, ok := pt.(*soltype.FuncType); ok && len(ft.TypeParams) > 0 {
+			c.reportUnsupportedFeature(p.TypeAnn, "higher-rank function parameter")
+			pt = c.freshAt(lvl)
 		}
 		// The pattern is carried for rendering and round-tripping only, with no scope
 		// binding. mirrorParamPat preserves its full shape.
@@ -291,12 +293,12 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 	// keeping the function shape.
 	var ret soltype.Type = c.freshAt(lvl)
 	if ta.Return != nil {
-		if t, ok := c.resolveTypeAnn(scope, ta.Return, lvl); ok {
+		if t, ok := c.resolveTypeAnn(annScope, ta.Return, lvl); ok {
 			ret = t
 		}
 	}
 
-	t := &soltype.FuncType{Params: params, Ret: ret, Inexact: ta.Inexact}
+	t := &soltype.FuncType{Params: params, Ret: ret, Inexact: ta.Inexact, TypeParams: typeParams}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
