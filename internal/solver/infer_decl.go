@@ -267,6 +267,13 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 	if funcTypeParamVars(annT).Len() > 0 {
 		inst := c.freshenAbove(lvl-1, annT, lvl, map[*soltype.TypeVarType]*soltype.TypeVarType{})
 		c.constrain(init, initT, inst)
+		// The initializer's body flows into inst, so inst's type-param vars carry any
+		// concrete floor the body forces. Check them, not the pristine annT the binding
+		// adopts, so `val f: fn<T>(x: number) -> T = fn (x) { return x }` is flagged the
+		// same as the standalone `fn make<T>(x: number) -> T`.
+		if instFn, ok := inst.(*soltype.FuncType); ok {
+			c.checkTypeParamsProducible(init, instFn)
+		}
 		return annT
 	}
 	if c.tryUpgradeToOwnedMut(init, init, initT, annT) {

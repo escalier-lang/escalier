@@ -32,15 +32,6 @@ func TestInferGenericFuncDecl(t *testing.T) {
 			},
 		},
 		{
-			// A parameter used only in the return position stays a valid quantifier
-			// rather than inlining to never.
-			name: "ReturnOnlyParam",
-			src:  `fn make<T>(x: number) -> T { return x }`,
-			want: map[string]string{
-				"make": "fn <T>(x: number) -> T",
-			},
-		},
-		{
 			// A bodyless `declare fn` resolves its type-parameter list the same way,
 			// adopting its declared return without a body to constrain.
 			name: "DeclareFn",
@@ -71,6 +62,15 @@ func TestInferGenericFuncDecl(t *testing.T) {
 				"first": "fn <T: number>(x: T) -> T",
 			},
 		},
+		{
+			// A body that returns one of several parameters of the same type is genuinely
+			// parametric: `T` gets no concrete lower bound, so it is not flagged.
+			name: "ReturnsOneOfTwoSameTypeParams",
+			src:  `fn first<T>(x: T, y: T) -> T { return x }`,
+			want: map[string]string{
+				"first": "fn <T>(x: T, y: T) -> T",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -81,6 +81,55 @@ func TestInferGenericFuncDecl(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A body-carrying generic function whose body forces a declared type parameter used in an
+// output position to a concrete floor is rejected at the declaration. The caller chooses
+// the parameter, so a signature that hands back an arbitrary `T` while the body only ever
+// produces `number` over-promises.
+func TestInferGenericFuncBodyOverPromises(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		msg  string
+	}{
+		{
+			// The body returns `x: number` as `T`, so `T` carries the concrete floor
+			// `number` the caller never supplied.
+			name: "ReturnParamForcedToConcrete",
+			src:  `fn make<T>(x: number) -> T { return x }`,
+			msg:  "1:1-1:40: the body forces type parameter `T` to `number`, so it cannot stand for an arbitrary type",
+		},
+		{
+			// A literal in the return forces the floor even when the parameter also
+			// appears in an input position, since the body still never produces an
+			// arbitrary `T`.
+			name: "ReturnLiteralWithParamInInput",
+			src:  `fn weird<T>(x: T) -> T { return 5 }`,
+			msg:  "1:1-1:36: the body forces type parameter `T` to `5`, so it cannot stand for an arbitrary type",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.IsType(t, &TypeParamNotProducibleError{}, errs[0])
+			require.Equal(t, tt.msg, msgWithSpan(errs[0]))
+		})
+	}
+}
+
+// The annotation form `val f: fn<T>(x: number) -> T = fn (x) { return x }` reuses the same
+// bounded-inference-var core. The body's return value `x` flows into the annotation's fresh
+// instance through an intermediate var, so the floor `number` is reached transitively and
+// the annotation form is flagged the same as the standalone declaration.
+func TestInferGenericFuncAnnotationBodyOverPromises(t *testing.T) {
+	_, _, errs := inferSource(t, `val f: fn<T>(x: number) -> T = fn (x) { return x }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &TypeParamNotProducibleError{}, errs[0])
+	require.Equal(t,
+		"1:32-1:51: the body forces type parameter `T` to `number`, so it cannot stand for an arbitrary type",
+		msgWithSpan(errs[0]))
 }
 
 // A method's own type parameters stay gated at the rank-1 boundary: per-instance
