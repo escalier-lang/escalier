@@ -229,17 +229,9 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 }
 
 // resolveFuncTypeAnn lowers a function type annotation `fn<T>(p: A, ...) -> R` into a
-// soltype.FuncType, mapping ta.Inexact to FuncType.Inexact. An unsupported part recovers
-// to a fresh var so the function shape survives, cascade-safe like the Promise/object/tuple
-// arms. Throws and rest-param annotations report an unsupported feature and recover as a
-// monomorphic function. A lifetime parameter is supported. Its declared outlives bounds
-// lower into constrainLt so the annotation's borrows solve against them.
-//
-// A `<T>` type-parameter list resolves through resolveTypeParams into a child scope, so a
-// parameter, the return, or a union member that names `T` reads it as the annotation's own
-// quantified var. The resulting FuncType.TypeParams vars stay symbolic through the
-// value-binding generalization path, retained by the keep-set analogue coalesceScheme runs
-// for a generic function's own binder vars.
+// soltype.FuncType, recovering an unsupported part to a fresh var so the shape survives. A
+// `<T>` list resolves through resolveTypeParams into a child scope, so a parameter, return,
+// or union member that names `T` reads the annotation's own quantified var.
 func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
 	if ta.Throws != nil {
 		c.reportUnsupportedFeature(ta, "throws clause in function type annotation")
