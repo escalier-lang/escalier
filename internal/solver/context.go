@@ -1,10 +1,6 @@
 package solver
 
-import (
-	"strings"
-
-	"github.com/escalier-lang/escalier/internal/soltype"
-)
+import "github.com/escalier-lang/escalier/internal/soltype"
 
 // Context owns the engine's mutable counters. M1 carries ONLY varCounter; M4 D1
 // adds lifetimeCounter for the lifetime sort. M4 C3's read-after-write cache,
@@ -78,23 +74,11 @@ type Context struct {
 // identity formed from the alias and its arguments, the identity constrain's cycle guard
 // keys on. A non-generic reference keys on its name alone.
 func (c *Context) internAlias(at *soltype.AliasType) *soltype.AliasType {
-	k := at.Name
-	if len(at.TypeArgs) > 0 {
-		var b strings.Builder
-		b.WriteString(at.Name)
-		b.WriteByte('<')
-		for i, arg := range at.TypeArgs {
-			if i > 0 {
-				b.WriteByte(',')
-			}
-			// Print renders an alias argument under its own name without expanding it, so a
-			// nested recursive alias such as List<List<number>> serializes finitely. A live
-			// type variable renders as its unique `t{ID}` form.
-			b.WriteString(soltype.Print(arg))
-		}
-		b.WriteByte('>')
-		k = b.String()
-	}
+	// PrintQualified renders the reference under qualified names for every nested alias and
+	// class, so two aliases sharing a local name across namespaces never collide on one key,
+	// and a nested recursive alias such as List<List<number>> serializes finitely because an
+	// argument renders under its own name without expanding.
+	k := soltype.PrintQualified(at)
 	if c.aliasInterns == nil {
 		c.aliasInterns = map[string]*soltype.AliasType{}
 	}

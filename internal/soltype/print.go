@@ -68,6 +68,15 @@ func Print(t Type) string {
 	return (&namedPrinter{}).printType(t)
 }
 
+// PrintQualified renders a type like Print but under the full dep_graph-qualified name of
+// every ClassType and AliasType, so two nominal types sharing a local name in different
+// namespaces render distinctly. Print strips the namespace for display, which suits
+// user-facing output but collapses `A.Point` and `B.Point` to one string. The solver forms
+// a collision-free canonical identity key from PrintQualified. It is not a surface form.
+func PrintQualified(t Type) string {
+	return (&namedPrinter{qualify: true}).printType(t)
+}
+
 // PrintAsScheme renders a coalesced GENERALIZED type (M3): it collects the type's
 // free variables into a <T0, T1, …> quantifier prefix and renders each as its
 // assigned name. A type with no free variables renders exactly as Print would (no
@@ -410,6 +419,11 @@ type namedPrinter struct {
 	// `'l{ID}` debug form; D4's display-time coalescing populates it so a
 	// param-originated lifetime renders under its quantified name.
 	ltNames map[*LifetimeVar]string
+	// qualify renders a ClassType or AliasType under its full dep_graph-qualified name
+	// instead of the namespace-stripped display name, so two nominal types sharing a local
+	// name across namespaces stay distinct. PrintQualified sets it for identity-key use;
+	// plain Print leaves it false so user-facing output stays unqualified.
+	qualify bool
 }
 
 // printLifetime renders a lifetime in Escalier surface syntax: 'static for the
@@ -534,6 +548,9 @@ func (p *namedPrinter) printType(t Type) string {
 			// two enums sharing a name stay distinct; a plain class strips to its bare name.
 			name = enumVariantDisplayName(t.Name)
 		}
+		if p.qualify {
+			name = t.Name // full qualified name for a collision-free identity key
+		}
 		if len(t.TypeArgs) == 0 && len(t.LifetimeArgs) == 0 {
 			return name
 		}
@@ -552,6 +569,9 @@ func (p *namedPrinter) printType(t Type) string {
 		// the same way a class name is. Rendering the name rather than the expanded body is
 		// the point of the alias, so `val p: Point = {x: 1}` shows `Point`.
 		name := classDisplayName(t.Name)
+		if p.qualify {
+			name = t.Name // full qualified name for a collision-free identity key
+		}
 		if len(t.TypeArgs) == 0 {
 			return name
 		}
