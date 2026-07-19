@@ -97,7 +97,13 @@ func TestInferGenericMethodStillGated(t *testing.T) {
 	for i, e := range errs {
 		msgs[i] = e.Message()
 	}
-	require.Contains(t, msgs, "Unsupported: TypeParam")
+	// The gate reports the type-param feature, then the two `T` references cascade to
+	// unsupported because the parameter was never declared in scope.
+	require.Equal(t, []string{
+		"Unsupported: TypeParam",
+		"Unsupported: TypeRefTypeAnn",
+		"Unsupported: TypeRefTypeAnn",
+	}, msgs)
 }
 
 // A parameter whose own type is polymorphic — a callback annotated `fn <V>(x: V) -> V` —
@@ -110,5 +116,11 @@ func TestInferGenericFuncHigherRankParamRejected(t *testing.T) {
 	for i, e := range errs {
 		msgs[i] = e.Message()
 	}
-	require.Contains(t, msgs, "Unsupported: generic function type annotation")
+	// The annotation gate reports the higher-rank feature, then the two `V` references
+	// inside it cascade to unsupported because the annotation's `<V>` was not resolved.
+	require.Equal(t, []string{
+		"Unsupported: generic function type annotation",
+		"Unsupported: TypeRefTypeAnn",
+		"Unsupported: TypeRefTypeAnn",
+	}, msgs)
 }
