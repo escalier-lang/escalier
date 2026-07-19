@@ -284,23 +284,42 @@ reach the enum through the alias path — see
 The milestone hosts the union-super exists-trial open question here because this is
 where a user-written `T | number` first resolves.
 
-**Algorithms.**
-- **Generic annotation surface.** Resolve a generic function-type annotation
-  `fn <T>(x: T | number) -> …` and a union member that is a bare type parameter, by
-  routing the `<…>` list through `resolveTypeParams` and the union members through
-  the alias-aware `resolveTypeAnn`. This is the M6-deferred generic function-type
-  annotation, now reachable.
-- **Settle the union-super exists trial.** [01-milestones.md](01-milestones.md) M7
-  poses two designs for `sub <: (A | B | …)` when a member is a bare `TypeVarType`:
-  keep M6's conservative skip, or a two-pass trial (concrete members first, var
-  members second). Decide, document the choice against the mirror
-  `IntersectionType`-sub overload arm
-  ([constrain.go:366](../../internal/solver/constrain.go)), and implement it under
-  the existing probe journal ([probe.go](../../internal/solver/probe.go)).
+**Status.** The union-super exists trial is **done**; the generic function-type
+annotation surface is **deferred** to
+[generic-functions-implementation-plan.md](generic-functions-implementation-plan.md)
+PR3. The two halves separate cleanly: the trial is a `constrain`-local rule, while
+the annotation surface needs a value-binding generalization path that retains a
+function type's own `TypeParams` — the freezeClassBody analogue M5 built for methods
+but never wired into the value path. Routing the `<…>` list through
+`resolveTypeParams` resolves the parameters, but the resulting `FuncType.TypeParams`
+vars then inline to `never` and panic in `acceptTypeParams`, so the surface waits on
+that core.
 
-**Accept.** `fn f<T>(x: T | number)` resolves; `f("hi")` and `f(5)` behave per the
-chosen design; a boolean is rejected; the union and intersection exists arms are
-either aligned or their divergence is documented.
+**Algorithms.**
+- **Generic annotation surface (deferred).** Resolve a generic function-type
+  annotation `fn <T>(x: T | number) -> …` and a union member that is a bare type
+  parameter, by routing the `<…>` list through `resolveTypeParams` and the union
+  members through the alias-aware `resolveTypeAnn`. Deferred to the generic-function
+  work; see the Status note above.
+- **Settle the union-super exists trial (done — two-pass).** [01-milestones.md](01-milestones.md)
+  M7 posed two designs for `sub <: (A | B | …)` when a member is a bare
+  `TypeVarType`: keep M6's conservative skip, or a two-pass trial (concrete members
+  first, var members second). Chosen: the **two-pass trial**, implemented by trialing
+  every member through `specificityOrder`, which ranks a variable below every
+  concrete, so a concrete member commits before a var member and a var member is a
+  last-resort catch-all. This aligns the union-super arm with the mirror
+  `IntersectionType`-sub arm, which already trials through the same
+  `specificityOrder` ([constrain.go](../../internal/solver/constrain.go), the
+  `UnionType`-super and `IntersectionType`-sub arms), under the existing probe
+  journal ([probe.go](../../internal/solver/probe.go)). PR7's diagnostic follow-ups
+  build on the committed-var trial this rule performs.
+
+**Accept.** The union-super two-pass rule is exercised in
+[constrain_lattice_test.go](../../internal/solver/constrain_lattice_test.go)
+(`TestConstrainUnionSuperExists`): `5 <: (T | number)` commits `number` and leaves
+`T` unpinned, `"hi" <: (T | number)` falls through to `"hi" <: T`, and a concrete
+`string | number` still rejects a boolean. The source-reachable `fn f<T>(x: T |
+number)` form lands with the deferred annotation surface.
 
 **Depends on** PR2 (generic surface), M6 (unions). Independent of PR3–PR5.
 

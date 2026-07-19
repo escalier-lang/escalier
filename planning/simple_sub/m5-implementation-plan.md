@@ -387,7 +387,8 @@ gives every function type a home for its own generics, so it partially lifts the
 current "generic functions are unsupported" gate
 ([infer_expr.go:197-203](../../internal/solver/infer_expr.go)). M5 populates and
 consumes it for methods and leaves general `fn f<U>` *inference* to the
-generic-function work; the *representation* is shared.
+[generic-function work](generic-functions-implementation-plan.md); the
+*representation* is shared.
 
 **Known limitation.** These parameters are rank-1: a parameter whose own type is
 polymorphic (higher-rank, e.g. a callback typed `<V>(V) -> V`) is not expressible
