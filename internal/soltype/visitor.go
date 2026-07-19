@@ -83,6 +83,7 @@ func (t *UndefinedType) Accept(v TypeVisitor, pol Polarity) Type { return accept
 func (t *NeverType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *UnknownType) Accept(v TypeVisitor, pol Polarity) Type   { return acceptLeaf(t, v, pol) }
 func (t *ErrorType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
+func (t *SkolemType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
 
 func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)

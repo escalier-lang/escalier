@@ -11,9 +11,10 @@ import (
 // `return x` with `x: number` records `number` as a LOWER bound of `T` rather than being
 // rejected, and `fn make<T>(x: number) -> T { return x }` renders `fn <T>(x: number) -> T`,
 // which over-promises. A parameter is flagged only when it occurs in an OUTPUT position
-// and forcedConcreteFloor finds a concrete floor the body forced onto it; `fn id<T>(x: T)
-// -> T` records none and stays valid. inferFunc calls this for a standalone declaration
-// and constrainInitAgainstAnnotation for the annotation form; node supplies the blame span.
+// and forcedConcreteFloor finds a concrete floor the body forced onto it. `fn id<T>(x: T)
+// -> T` records none and stays valid. inferFunc calls this for a standalone declaration,
+// which has no expected type to check against. The annotation form instead checks the body
+// against a skolemized annotation in constrainInitAgainstAnnotation. node supplies the blame span.
 func (c *checker) checkTypeParamsProducible(node ast.Node, ft *soltype.FuncType) {
 	if len(ft.TypeParams) == 0 {
 		return

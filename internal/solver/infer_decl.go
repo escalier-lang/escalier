@@ -205,7 +205,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
 		if annT, ok := c.resolveTypeAnn(scope, d.TypeAnn, lvl); ok {
-			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT, lvl)
+			annT = c.constrainInitAgainstAnnotation(d.Init, initT, annT)
 			c.checkExcessLiteralMembers(d.Init, initT, annT)
 			initT = annT
 		}
@@ -259,21 +259,14 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // bare owned destination, as in `val q: {x} = p`, does not alias `p`. The constraint takes the
 // ordinary RefType<:bare arm, which trips BorrowEscapeError. The explicit `&` form
 // `val q: &{x} = p` is the opt-in for an alias.
-func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type, lvl int) soltype.Type {
-	// Check a generic function annotation against a FRESH instance and adopt the untouched
-	// annotation, so it renders `fn <T>(x: T) -> T`. Constraining the initializer against the
-	// annotation itself would leak its vars as a second quantifier, `fn <T0, T: T0>(x: T) ->
-	// T`. Binder vars sit at lvl, so freshenAbove(lvl-1, …) copies them.
+func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT soltype.Type) soltype.Type {
+	// Check a generic function annotation in checking mode, holding each declared type
+	// parameter rigid as a skolem, so `fn (x) { return 5 }` is rejected against
+	// `fn <T>(x: T) -> T` with `cannot constrain 5 <: T`. The check runs under a discard-only
+	// probe so the skolem bounds it records leave no trace, and the pristine annT is adopted
+	// as the binding type so it renders `fn <T>(x: T) -> T` rather than leaking its vars.
 	if funcTypeParamVars(annT).Len() > 0 {
-		inst := c.freshenAbove(lvl-1, annT, lvl, map[*soltype.TypeVarType]*soltype.TypeVarType{})
-		c.constrain(init, initT, inst)
-		// The initializer's body flows into inst, so inst's type-param vars carry any
-		// concrete floor the body forces. Check them, not the pristine annT the binding
-		// adopts, so `val f: fn<T>(x: number) -> T = fn (x) { return x }` is flagged the
-		// same as the standalone `fn make<T>(x: number) -> T`.
-		if instFn, ok := inst.(*soltype.FuncType); ok {
-			c.checkTypeParamsProducible(init, instFn)
-		}
+		c.blameConstraintErrors(init, c.ctx.trialUnderProbe(initT, c.skolemizeGenericAnn(annT)))
 		return annT
 	}
 	if c.tryUpgradeToOwnedMut(init, init, initT, annT) {
@@ -281,6 +274,71 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 	}
 	c.constrain(init, initT, annT)
 	return annT
+}
+
+// skolemizeGenericAnn copies a resolved annotation, replacing every generic function's own
+// type-parameter var by a fresh skolem of the same name. This pushes the expected type into
+// the term with its parameters held abstract, so constrain rejects a body that forces a
+// parameter to a concrete value, both directly (`return 5`) and through an inference var
+// (`return x` where the annotation promises a different type).
+func (c *checker) skolemizeGenericAnn(annT soltype.Type) soltype.Type {
+	return annT.Accept(&skolemizer{c: c, subst: map[*soltype.TypeVarType]*soltype.SkolemType{}}, soltype.Positive)
+}
+
+// skolemizer rewrites a resolved annotation, substituting each generic function's
+// type-parameter var with a distinct skolem. It seeds a skolem per TypeParam as it enters
+// each FuncType, then substitutes at every later occurrence of that var in the params and
+// return, so a nested generic function is skolemized under its own binder too.
+//
+// The rebuilt FuncType drops its TypeParams list: its binder vars become skolems in the
+// params and return, and constrain ignores the list. Nil-ing it also avoids acceptTypeParamVar,
+// which requires a binder to stay a *TypeVarType and would panic on a skolem.
+type skolemizer struct {
+	c     *checker
+	subst map[*soltype.TypeVarType]*soltype.SkolemType
+}
+
+func (s *skolemizer) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.FuncType:
+		if len(t.TypeParams) == 0 {
+			return soltype.EnterResult{} // monomorphic: ordinary descent
+		}
+		// Seed every skolem before carrying bounds, so a bound naming a sibling parameter
+		// resolves to that sibling's skolem.
+		for _, tp := range t.TypeParams {
+			if _, done := s.subst[tp.Var]; !done {
+				s.subst[tp.Var] = s.c.ctx.freshSkolem(tp.Name)
+			}
+		}
+		for _, tp := range t.TypeParams {
+			sk := s.subst[tp.Var]
+			if sk.Upper == nil {
+				sk.Upper = s.skolemizeBound(tp.Var.UpperBounds)
+			}
+		}
+		cp := *t
+		cp.TypeParams = nil
+		return soltype.EnterResult{Type: &cp} // descend into the copy's params and return
+	case *soltype.TypeVarType:
+		if sk, ok := s.subst[t]; ok {
+			return soltype.EnterResult{Type: sk, SkipChildren: true}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (s *skolemizer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// skolemizeBound resolves a type parameter's declared constraint into its skolem's Upper,
+// substituting a sibling parameter for that sibling's skolem. resolveTypeParams records at
+// most one constraint per parameter, itself an IntersectionType for a `<T: A & B>` bound, so
+// an unconstrained parameter returns nil and any constraint is the single skolemized bound.
+func (s *skolemizer) skolemizeBound(bounds []soltype.Type) soltype.Type {
+	if len(bounds) == 0 {
+		return nil
+	}
+	return bounds[0].Accept(s, soltype.Positive)
 }
 
 // tryUpgradeToOwnedMut grants the immutable→mutable upgrade when a value of type srcT,

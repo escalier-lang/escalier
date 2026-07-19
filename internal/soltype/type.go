@@ -38,6 +38,18 @@ type TypeVarType struct {
 	Widenable bool
 }
 
+// SkolemType is a rigid type parameter held abstract while a term is checked against a
+// polymorphic expected type. It is a CONCRETE atomic type, so constrain compares it
+// nominally and no concrete type is a subtype of it. A skolem is a subtype only of itself,
+// of an inference var it flows into, and of its declared upper bound. ID keeps two
+// parameters `T` and `U` distinct; Name is the source name for diagnostics and the printer;
+// Upper is the declared constraint (`<U: T>`), nil when unconstrained.
+type SkolemType struct {
+	ID    int
+	Name  string
+	Upper Type
+}
+
 // BoundsAt returns the bounds relevant to a polarity: lowers in Positive
 // position (the var becomes their union), uppers in Negative (their meet).
 func (v *TypeVarType) BoundsAt(pol Polarity) []Type {
@@ -593,6 +605,7 @@ func (*IntersectionType) isType() {}
 func (*ErrorType) isType()        {}
 func (*ClassType) isType()        {}
 func (*AliasType) isType()        {}
+func (*SkolemType) isType()       {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).

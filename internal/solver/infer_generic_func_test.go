@@ -129,11 +129,11 @@ func TestInferGenericFuncBodyOverPromises(t *testing.T) {
 	}
 }
 
-// The annotation form reuses the same bounded-inference-var core. The body's return value
-// flows into the annotation's fresh instance through an intermediate var, so the floor is
-// reached transitively and the annotation form is flagged the same as the standalone
-// declaration. The binding still adopts its pristine annotation, so `f` renders with the
-// declared quantifier alongside the error.
+// The annotation form is checked in checking mode: each declared type parameter is held
+// rigid while the initializer is checked against the annotation, so a body that forces a
+// parameter to a concrete value is rejected by constrain. The body returns `x: number` as
+// the rigid `T`, so the concrete `number` cannot satisfy `T`. The binding still adopts its
+// pristine annotation, so `f` renders with the declared quantifier alongside the error.
 func TestInferGenericFuncAnnotationBodyOverPromises(t *testing.T) {
 	tests := []struct {
 		name string
@@ -144,17 +144,18 @@ func TestInferGenericFuncAnnotationBodyOverPromises(t *testing.T) {
 		{
 			name: "ReturnParamForcedToConcrete",
 			src:  `val f: fn<T>(x: number) -> T = fn (x) { return x }`,
-			msg:  "1:32-1:51: the body forces type parameter `T` to `number`, so it cannot stand for an arbitrary type",
+			msg:  "1:32-1:51: cannot constrain number <: T",
 			want: "fn <T>(x: number) -> T",
 		},
 		{
-			// The union member `T` still binds through the annotation's child scope and
-			// reaches constrain's union-super two-pass rule, so the binding solves and
-			// renders. The `number` branch is the independently concrete floor that the
-			// producibility check rejects.
+			// A `T | number` parameter returned as `T` is unsound: a caller doing
+			// `f<string>(5)` passes a valid `string | number` and receives `5` typed as
+			// `string`. Checking `x: T | number` against the rigid return `T` splits the
+			// union, and the `number` branch cannot satisfy `T`, since it is not the
+			// caller's `T`.
 			name: "UnionParamWithConcreteBranch",
 			src:  `val f: fn<T>(x: T | number) -> T = fn (x) { return x }`,
-			msg:  "1:36-1:55: the body forces type parameter `T` to `number`, so it cannot stand for an arbitrary type",
+			msg:  "1:36-1:55: cannot constrain number <: T",
 			want: "fn <T>(x: T | number) -> T",
 		},
 	}
@@ -162,7 +163,7 @@ func TestInferGenericFuncAnnotationBodyOverPromises(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.IsType(t, &TypeParamNotProducibleError{}, errs[0])
+			require.IsType(t, &CannotConstrainError{}, errs[0])
 			require.Equal(t, tt.msg, msgWithSpan(errs[0]))
 			require.Equal(t, tt.want, values["f"])
 		})

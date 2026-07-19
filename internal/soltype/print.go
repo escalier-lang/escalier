@@ -615,6 +615,11 @@ func (p *namedPrinter) printType(t Type) string {
 			parts[i] = p.printTypeMinPrec(m, precIntersection)
 		}
 		return strings.Join(parts, " & ")
+	case *SkolemType:
+		// A skolem renders under its source parameter name. It is transient to a
+		// checking-mode pass and does not survive into a displayed type, so this arm is
+		// reached only defensively.
+		return t.Name
 	}
 	panic(fmt.Sprintf("printType: unhandled %T", t))
 }
