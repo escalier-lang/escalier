@@ -282,23 +282,15 @@ func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 }
 
 // funcTypeParamVars collects every generic function's own TypeParams binder var
-// reachable from t. It is the value-path analogue of classKeepVars. coalesceScheme
-// holds these symbolic rather than inlining them to their bounds, so a function type's
-// declared quantifier survives value-binding generalization instead of collapsing to
-// never and tripping acceptTypeParamVar. The walk descends structural children through
-// Accept and each var's bound side-graph, so it reaches the value FuncType a binding
-// var carries as its own lower bound and any generic function nested in a constraint.
+// reachable from t, descending structural children and each var's bound side-graph.
 func funcTypeParamVars(t soltype.Type) set.Set[*soltype.TypeVarType] {
 	keep := set.NewSet[*soltype.TypeVarType]()
 	t.Accept(&typeParamCollector{keep: keep, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
 	return keep
 }
 
-// typeParamCollector gathers FuncType.TypeParams binder vars for funcTypeParamVars. A
-// FuncType records its own type parameters, then Accept descends into the params,
-// return, and each parameter's constraint bounds. A var's bounds are a side graph, not
-// tree children, so the var arm walks them explicitly to reach a generic function a
-// binding var carries as a bound, guarding re-entry with seen.
+// typeParamCollector gathers FuncType.TypeParams binder vars for funcTypeParamVars,
+// walking each var's bounds explicitly since they are a side graph, not tree children.
 type typeParamCollector struct {
 	keep set.Set[*soltype.TypeVarType]
 	seen set.Set[*soltype.TypeVarType]
@@ -361,10 +353,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		return soltype.EnterResult{}
 	}
 	// A generic function's own type-parameter var stays symbolic: return it unchanged so
-	// the function's declared quantifier survives, instead of inlining a return-only
-	// parameter to never and tripping acceptTypeParamVar's binder-must-stay-a-var guard.
-	// simplifyScheme excludes these vars from its merge candidates, so a kept var is
-	// always its own representative and never masks another var's name.
+	// the declared quantifier survives rather than inlining a return-only param to never.
 	if c.keep.Contains(v) {
 		return soltype.EnterResult{Type: v, SkipChildren: true}
 	}

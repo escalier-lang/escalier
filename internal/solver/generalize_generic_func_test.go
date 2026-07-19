@@ -7,14 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A generic FuncType round-trips through value-binding generalization: generalize
-// coalesces the binding var whose lower bound is the function value, and the
-// function's own TypeParams binder vars are held symbolic rather than inlined to
-// their bounds. So the declared quantifier is the function's ONLY quantifier and the
-// signature renders `fn <T>(x: T) -> T`, not the double-quantified
-// `fn <T0, T: T0>(x: T) -> T`. The return-only shape is the regression that used to
-// inline its parameter var to never and trip acceptTypeParamVar's binder-must-stay-a-
-// var guard (PR1).
+// A generic FuncType round-trips through value-binding generalization: its own
+// TypeParams binder vars stay symbolic, so it renders `fn <T>(x: T) -> T` rather than
+// `fn <T0, T: T0>(x: T) -> T`, and a return-only param no longer inlines to never (PR1).
 func TestGeneralizeRetainsFuncTypeParams(t *testing.T) {
 	tests := []struct {
 		name string
@@ -107,9 +102,7 @@ func TestGeneralizeRetainsFuncTypeParams(t *testing.T) {
 }
 
 // funcTypeParamVars descends a binding var's bound side-graph to reach the value
-// FuncType, so a function's own type parameter is collected even though it is not a
-// structural child of the binding var. It also reaches a generic function nested in a
-// parameter's constraint.
+// FuncType, collecting a type parameter that is not a structural child of the var.
 func TestFuncTypeParamVarsDescendsBoundGraph(t *testing.T) {
 	c := newChecker()
 	vT := c.freshAt(1)
