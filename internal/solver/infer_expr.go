@@ -373,6 +373,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// The bound then solves like one a body would infer.
 	if hasBody {
 		c.checkDeclaredLifetimeBounds(sig.LifetimeParams, ft)
+		// A body-carrying generic function must actually produce every type parameter it
+		// declares in an output position. A bodyless `declare fn` asserts its signature
+		// with no body to check, so it is not verified here.
+		c.checkTypeParamsProducible(node, ft)
 	} else {
 		c.lowerLifetimeParamBounds(sig.LifetimeParams, lvl)
 	}

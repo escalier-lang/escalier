@@ -318,6 +318,20 @@ type VarianceMismatchError struct {
 	Class    ast.Node
 }
 
+// TypeParamNotProducibleError fires when a body-carrying generic function declares a type
+// parameter in an output position but its body forces that parameter to a concrete lower
+// bound. For `fn make<T>(x: number) -> T { return x }` the body returns `x: number` as
+// `T`, recording `number` as a lower bound of `T`'s var. The caller chooses `T`, so a
+// signature that hands back an arbitrary `T` while the body only ever produces `number`
+// over-promises. A genuinely parametric body such as `fn id<T>(x: T) -> T { return x }`
+// records no concrete lower bound on `T`, so it is not flagged. Name is the parameter,
+// Floor the concrete type the body forces, and Node the blame span.
+type TypeParamNotProducibleError struct {
+	Name  string
+	Floor soltype.Type
+	Node  ast.Node
+}
+
 func (*CannotConstrainError) isSolverError()        {}
 func (*MutFieldError) isSolverError()               {}
 func (*ReadonlyFieldError) isSolverError()          {}
@@ -340,6 +354,7 @@ func (*StructuralIntoClassError) isSolverError()    {}
 func (*NonClassSuperError) isSolverError()          {}
 func (*CannotExtendFinalClassError) isSolverError() {}
 func (*VarianceMismatchError) isSolverError()       {}
+func (*TypeParamNotProducibleError) isSolverError() {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -459,6 +474,9 @@ func (e *CannotExtendFinalClassError) Related() []ast.Span { return nil }
 
 func (e *VarianceMismatchError) Span() ast.Span      { return e.Class.Span() }
 func (e *VarianceMismatchError) Related() []ast.Span { return nil }
+
+func (e *TypeParamNotProducibleError) Span() ast.Span      { return e.Node.Span() }
+func (e *TypeParamNotProducibleError) Related() []ast.Span { return nil }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
 // site, and the site itself otherwise (or when op has no entry). The containment
@@ -1483,6 +1501,11 @@ func (e *CannotExtendFinalClassError) Message() string {
 func (e *VarianceMismatchError) Message() string {
 	return fmt.Sprintf("type parameter `%s` is declared %s but is actually %s",
 		e.Name, e.Declared, e.Inferred)
+}
+
+func (e *TypeParamNotProducibleError) Message() string {
+	return fmt.Sprintf("the body forces type parameter `%s` to `%s`, so it cannot stand for an arbitrary type",
+		e.Name, describe(e.Floor))
 }
 
 // describeBorrowInner renders the pointee of a borrow for a diagnostic. An immutable
