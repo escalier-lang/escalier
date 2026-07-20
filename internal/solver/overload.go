@@ -55,9 +55,15 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			c.closeProbe(p, false)
 			continue
 		}
-		matched := c.tryOverloadArm(args, inst)
+		matched, diags := c.tryOverloadArm(args, inst)
 		c.closeProbe(p, matched)
 		if matched {
+			// The winning arm's argument constraints can accept while emitting a warning,
+			// such as an AmbiguousUnionCommitWarning from a union-typed param. tryOverloadArm
+			// runs the error-returning engine, so those diagnostics never reached c.errs.
+			// Blame them at the call so a losing arm's rolled-back diagnostics stay dropped
+			// while the winner's survive.
+			c.blameConstraintErrors(call, diags)
 			return inst.Ret
 		}
 	}
@@ -71,17 +77,23 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 // error-returning Context.Constrain rather than the accumulating checker.constrain, so a
 // rejected argument never reaches c.errs even before the probe's errs rollback.
 //
+// On a match it also returns the warnings the accepting constraints produced, so the
+// caller can surface them at the call. An arg that passes still counts as a match even when
+// it warns, since hasHardError draws the accept line, so the returned slice holds only
+// warnings. A non-match returns nil, keeping a rejected arm's diagnostics dropped.
+//
 // Arity follows the direct-call accept-set from #677, reusing acceptSet so the overload
 // arity gate and the FuncType<:FuncType constraint gate can never drift. A count below
 // acceptSet's lower bound is too few, and a count above its upper bound is too many.
 // Either is a non-match, unless the arm is inexact or has a rest. Extra arguments that
 // such an arm absorbs impose no per-element constraint here. That per-element check needs
 // Array types, which arrive in M4.
-func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) bool {
+func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) (bool, []SolverError) {
 	n := len(args)
 	if lo, hi := acceptSet(inst); n < lo || n > hi {
-		return false
+		return false, nil
 	}
+	var diags []SolverError
 	for i, arg := range args {
 		if i >= len(inst.Params) || inst.Params[i].Rest {
 			// Past the fixed params, or AT a trailing rest param. The rest or inexact tail
@@ -90,11 +102,13 @@ func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) bo
 			// Per-element checking is M4.
 			break
 		}
-		if errs := c.ctx.Constrain(arg, inst.Params[i].Type); hasHardError(errs) {
-			return false
+		errs := c.ctx.Constrain(arg, inst.Params[i].Type)
+		if hasHardError(errs) {
+			return false, nil
 		}
+		diags = append(diags, errs...)
 	}
-	return true
+	return true, diags
 }
 
 // overloadOrder returns the indices of schemes in the order arms should be tried. When
