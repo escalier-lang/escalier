@@ -939,7 +939,9 @@ func callableView(ft *soltype.FuncType) *soltype.FuncType {
 
 // skolemizeFuncBinder replaces ft's own type parameters with fresh skolems, so a term checked
 // against ft as a supertype must satisfy it for every instantiation. Each parameter's declared
-// bound becomes its skolem's Upper, seeded first so a bound naming a sibling reaches it.
+// bound becomes its skolem's Upper, seeded first so a bound naming a sibling reaches it. For
+// example `<T>(x: T) -> T` becomes `(x: sk) -> sk` for a fresh skolem sk, which `fn (x) {
+// return 5 }` fails but a polymorphic identity satisfies.
 func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
 	sks := make([]*soltype.SkolemType, len(ft.TypeParams))
 	args := make([]soltype.Type, len(ft.TypeParams))
@@ -961,6 +963,8 @@ func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
 
 // instantiateFuncBinder replaces ft's own type parameters with fresh inference vars at lvl, so
 // the sub side of a subtype check picks the instantiation. Each fresh var carries its bounds.
+// For example a call `cb(5)` instantiates `cb: <T>(x: T) -> T` to `(x: T0) -> T0` for a fresh
+// var T0, which `5` then binds, so a later `cb("hi")` gets its own T1 rather than reusing T0.
 func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.FuncType {
 	nvs := make([]*soltype.TypeVarType, len(ft.TypeParams))
 	args := make([]soltype.Type, len(ft.TypeParams))
