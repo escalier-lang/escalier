@@ -8,13 +8,12 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Enum inference (M5 D-Enum) ports the old checker's enum model to soltype. The enum name
-// binds to BOTH a namespace and a transparent type alias whose body is the union of the
-// variant types. A reference to the enum renders under its own name, `Color` rather than
-// the expanded `Color.RGB | Color.Hex`, the way the old checker's TypeRefType does. A
-// consumer that reads the variant members, such as match exhaustiveness, first expands the
-// alias to its union body through the shared expandAlias helper, the same unfold constrain
-// performs on an alias sub or super.
+// An enum's name binds to BOTH a namespace and a transparent type alias whose body is the
+// union of the variant types. A reference to the enum renders under its own name, `Color`
+// rather than the expanded `Color.RGB | Color.Hex`. A consumer that reads the variant
+// members, such as match exhaustiveness, first expands the alias to its union body through
+// the shared expandAlias helper, the same unfold constrain performs on an alias sub or
+// super.
 //
 // Each variant is a `final` ClassType named `Color.RGB` — a nominal handle qualified by
 // its enum, so two enums that share a variant name stay distinct. Each variant's

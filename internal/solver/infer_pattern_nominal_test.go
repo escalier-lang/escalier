@@ -325,38 +325,46 @@ func TestInferMatchGenericEnumExhaustiveness(t *testing.T) {
 }
 
 // TestInferMatchUnionAliasExhaustiveness checks that exhaustiveness looks through a
-// transparent user alias, the same expansion the enum path relies on. A scrutinee typed by
-// `type Pet = Dog | Cat` expands to its class union, so an arm per class is exhaustive
-// without a catch-all, and dropping one leaves the match non-exhaustive.
+// transparent user alias, the same expansion the enum path relies on. Each row shares the
+// same `type Pet = Dog | Cat` alias and varies only the arms. The alias expands to its class
+// union, so an arm per class is exhaustive without a catch-all, and dropping one row's arm
+// leaves the match non-exhaustive with a diagnostic spanning the match expression.
 func TestInferMatchUnionAliasExhaustiveness(t *testing.T) {
-	t.Run("ArmPerMemberIsExhaustive", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			class Dog { name: string }
-			class Cat { name: string }
-			type Pet = Dog | Cat
-			fn f(p: Pet) {
-				return match p {
-					Dog(name) => name,
-					Cat(name) => name,
-				}
+	tests := []struct {
+		name    string
+		arms    string
+		wantErr string // full diagnostic with span; empty when the match is exhaustive
+	}{
+		{
+			name: "ArmPerMemberIsExhaustive",
+			arms: "Dog(name) => name,\n\t\t\t\tCat(name) => name",
+		},
+		{
+			name:    "MissingMemberIsNonExhaustive",
+			arms:    "Dog(name) => name",
+			wantErr: "6:11-8:5: match is not exhaustive; add a catch-all branch",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, `
+		class Dog { name: string }
+		class Cat { name: string }
+		type Pet = Dog | Cat
+		fn f(p: Pet) {
+			return match p {
+				`+tt.arms+`
 			}
-		`)
-		require.Empty(t, errs)
-	})
-	t.Run("MissingMemberIsNonExhaustive", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			class Dog { name: string }
-			class Cat { name: string }
-			type Pet = Dog | Cat
-			fn f(p: Pet) {
-				return match p {
-					Dog(name) => name,
-				}
+		}
+	`)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+			} else {
+				require.Len(t, errs, 1)
+				require.Equal(t, tt.wantErr, msgWithSpan(errs[0]))
 			}
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "match is not exhaustive; add a catch-all branch", errs[0].Message())
-	})
+		})
+	}
 }
 
 // A union member the coverage rules cannot evaluate — an object member here — is
