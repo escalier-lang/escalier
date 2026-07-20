@@ -367,12 +367,10 @@ func mutualCoOcc(a, b int, occ map[int]occPolarity, coOcc map[coKey]set.Set[int]
 	return true
 }
 
-// mergeCoOccurring unions every mutually-co-occurring pair among ids, keeping a
-// binder in binders as each merged class's representative. Two binders never merge
-// with each other: they are distinct declared type parameters, so collapsing one
-// into the other would drop a name the signature must keep. A binder and a
-// non-binder artifact that co-occur do merge, under the binder's name — this folds a
-// body-instantiation artifact equal to a declared parameter back into that parameter.
+// mergeCoOccurring unions every mutually-co-occurring pair among ids, keeping a binder
+// in binders as each merged class's representative. Two binders never merge: they are
+// distinct declared type parameters. A binder and a co-occurring artifact do merge,
+// under the binder's name, folding an artifact equal to a declared parameter into it.
 func mergeCoOccurring(ids []int, occ map[int]occPolarity, coOcc map[coKey]set.Set[int], binders set.Set[int]) *unionFind {
 	uf := newUnionFind()
 	uf.binders = binders

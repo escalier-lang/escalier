@@ -425,10 +425,8 @@ func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype
 	return t
 }
 
-// displayBinder maps a binder var to its cleaned display copy when one exists, and
-// otherwise returns the var unchanged. The copy carries the same pointer everywhere
-// the binder appears — the TypeParams slot, each param and return use, and any
-// structural occurrence of a folded artifact — so the printer names it once.
+// displayBinder maps a binder var to its cleaned display copy when one exists, else
+// returns it unchanged. One pointer is shared across every occurrence, so it names once.
 func (c *schemeCoalescer) displayBinder(v *soltype.TypeVarType) *soltype.TypeVarType {
 	if cv, ok := c.cleaned[v]; ok {
 		return cv
@@ -436,17 +434,11 @@ func (c *schemeCoalescer) displayBinder(v *soltype.TypeVarType) *soltype.TypeVar
 	return v
 }
 
-// cleanBinderBounds builds the display copies for coalesceScheme: for each binder var
-// whose bound list names a var in its own merged class, it returns a copy with those
-// same-class var bounds dropped. That bound is the vacuous half of a mutual cycle
-// `T <: β <: … <: T`, where β is a body-instantiation artifact the merge folded into
-// T's class. Dropping it removes the `T: T0` constraint and, with it, the artifact
-// var the printer would otherwise name T0. A concrete bound on the class already sits
-// on the binder — constrain propagates a concrete bound to every var along a var-var
-// chain — so no real constraint is lost.
-//
-// A binder with no same-class var bound is absent from the result and keeps its
-// original pointer.
+// cleanBinderBounds returns a display copy of each binder var whose bounds name a var
+// in its own merged class, with those same-class var bounds dropped. Such a bound is
+// the vacuous half of a mutual cycle `T <: β <: … <: T` and prints as `T: T0`; dropping
+// it also removes the artifact var β the printer would name T0. A concrete bound already
+// sits on the binder, so nothing real is lost. A binder needing no change is omitted.
 func cleanBinderBounds(keep set.Set[*soltype.TypeVarType], simp *schemeSimplification) map[*soltype.TypeVarType]*soltype.TypeVarType {
 	out := map[*soltype.TypeVarType]*soltype.TypeVarType{}
 	for v := range keep {
