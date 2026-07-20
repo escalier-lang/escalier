@@ -205,11 +205,12 @@ func TestInferGenericMethodStillGated(t *testing.T) {
 
 // A parameter whose own type is polymorphic — a rank-2 callback annotated `fn <V>(x: V) ->
 // V` — is accepted. The `<V>` binder is kept on the parameter, so the body's `g(y)` call
-// instantiates `V` per use and the declaration type-checks. The extra `T0` quantifier is the
-// generalization artifact a decl that instantiates a generic function in its body always
-// leaves. The monomorphic `fn wrap<U>(g: fn(x: U) -> U, …)` renders it the same way.
+// instantiates `V` per use and the declaration type-checks. The fresh var that call mints
+// is equal to the declared `T`, forming a mutual cycle `T <: β <: T`; co-occurrence folds
+// it back into `T`'s class, so the signature renders under the declared name with no
+// spurious `T0` quantifier.
 func TestInferGenericFuncHigherRankParamResolves(t *testing.T) {
 	values, _, errs := inferSource(t, `fn apply<T>(g: fn <V>(x: V) -> V, y: T) -> T { return g(y) }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0, T: T0>(g: fn <V>(x: V) -> V, y: T) -> T", values["apply"])
+	require.Equal(t, "fn <T>(g: fn <V>(x: V) -> V, y: T) -> T", values["apply"])
 }

@@ -273,10 +273,12 @@ type occKey struct {
 // test.
 func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 	keep := funcTypeParamVars(t)
+	simp := simplifyScheme(t, genLevel, keep)
 	c := t.Accept(&schemeCoalescer{
-		simp:     simplifyScheme(t, genLevel, keep),
+		simp:     simp,
 		genLevel: genLevel,
 		keep:     keep,
+		cleaned:  cleanBinderBounds(keep, simp),
 		seen:     set.NewSet[*soltype.TypeVarType](),
 	}, soltype.Positive)
 	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
@@ -345,7 +347,11 @@ type schemeCoalescer struct {
 	// than inlined to their bounds so the function's declared quantifier survives
 	// coalescing. It is the value-path analogue of coalescer.keep for a class body.
 	keep set.Set[*soltype.TypeVarType]
-	seen set.Set[*soltype.TypeVarType]
+	// cleaned maps a binder var to a display copy whose bounds drop the same-class
+	// artifact vars merged into it, so the copy renders `<T>` rather than `<T0, T: T0>`.
+	// A binder with no such bound is absent here and keeps its original pointer.
+	cleaned map[*soltype.TypeVarType]*soltype.TypeVarType
+	seen    set.Set[*soltype.TypeVarType]
 }
 
 func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -357,11 +363,17 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	}
 	// A generic function's own type-parameter var stays symbolic: return it unchanged so
 	// the declared quantifier survives rather than inlining a return-only param to never.
+	// A binder whose bounds folded away a same-class artifact renders through its cleaned
+	// copy so the vacuous `T: T0` constraint disappears.
 	if c.keep.Contains(v) {
-		return soltype.EnterResult{Type: v, SkipChildren: true}
+		return soltype.EnterResult{Type: c.displayBinder(v), SkipChildren: true}
 	}
 	rep := c.simp.rep(v)
 	retain := rep.Level > c.genLevel && c.simp.mergedOcc[rep.ID].both() && !hasEqualBounds(rep)
+	// A non-binder var whose class representative is a binder renders under that binder's
+	// display copy, so an artifact reached in a structural position reads as the declared
+	// parameter rather than a second name for the same type.
+	rep = c.displayBinder(rep)
 	if c.seen.Contains(rep) {
 		// A cycle back to a variable already on the path: a retained type parameter
 		// keeps its name (a rough μ-reference, refined in M3's precise μ-rendering),
@@ -411,6 +423,64 @@ func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
 	return t
+}
+
+// displayBinder maps a binder var to its cleaned display copy when one exists, and
+// otherwise returns the var unchanged. The copy carries the same pointer everywhere
+// the binder appears — the TypeParams slot, each param and return use, and any
+// structural occurrence of a folded artifact — so the printer names it once.
+func (c *schemeCoalescer) displayBinder(v *soltype.TypeVarType) *soltype.TypeVarType {
+	if cv, ok := c.cleaned[v]; ok {
+		return cv
+	}
+	return v
+}
+
+// cleanBinderBounds builds the display copies for coalesceScheme: for each binder var
+// whose bound list names a var in its own merged class, it returns a copy with those
+// same-class var bounds dropped. That bound is the vacuous half of a mutual cycle
+// `T <: β <: … <: T`, where β is a body-instantiation artifact the merge folded into
+// T's class. Dropping it removes the `T: T0` constraint and, with it, the artifact
+// var the printer would otherwise name T0. A concrete bound on the class already sits
+// on the binder — constrain propagates a concrete bound to every var along a var-var
+// chain — so no real constraint is lost.
+//
+// A binder with no same-class var bound is absent from the result and keeps its
+// original pointer.
+func cleanBinderBounds(keep set.Set[*soltype.TypeVarType], simp *schemeSimplification) map[*soltype.TypeVarType]*soltype.TypeVarType {
+	out := map[*soltype.TypeVarType]*soltype.TypeVarType{}
+	for v := range keep {
+		rep := simp.rep(v)
+		up, upChanged := dropSameClassVars(v.UpperBounds, rep, simp)
+		lo, loChanged := dropSameClassVars(v.LowerBounds, rep, simp)
+		if !upChanged && !loChanged {
+			continue
+		}
+		cp := *v
+		cp.UpperBounds = up
+		cp.LowerBounds = lo
+		out[v] = &cp
+	}
+	return out
+}
+
+// dropSameClassVars returns bounds with every var whose class representative is rep
+// removed, plus whether anything was dropped. A non-var bound and a var in a different
+// class pass through unchanged.
+func dropSameClassVars(bounds []soltype.Type, rep *soltype.TypeVarType, simp *schemeSimplification) ([]soltype.Type, bool) {
+	changed := false
+	out := make([]soltype.Type, 0, len(bounds))
+	for _, b := range bounds {
+		if bv, ok := b.(*soltype.TypeVarType); ok && simp.rep(bv) == rep {
+			changed = true
+			continue
+		}
+		out = append(out, b)
+	}
+	if !changed {
+		return bounds, false
+	}
+	return out, true
 }
 
 // schemeType returns a scheme's coalesced DISPLAY type (variable-free except for
