@@ -1147,11 +1147,8 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 			return c.inferMethodOverloadCall(scope, lvl, e, arms)
 		}
 	}
-	// A generic callee is instantiated at the call site so each call binds its type
-	// parameters independently. inferIdent already freshens a generalized generic binding,
-	// but a rank-2 callback parameter such as `cb: <T>(x: T) -> T` reaches here as a
-	// MonoScheme that inferIdent returns unfreshened. Without this a second `cb(...)` would
-	// pile onto the first call's binding of `T`, corrupting the parameter's own quantifier.
+	// Instantiate a generic callee so each call binds its type parameters independently. A
+	// rank-2 callback param is an unfreshened MonoScheme, so this keeps its `T` per-call.
 	if ft, ok := callee.(*soltype.FuncType); ok && len(ft.TypeParams) > 0 {
 		callee = c.ctx.instantiateFuncBinder(ft, lvl)
 	}

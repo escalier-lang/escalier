@@ -337,14 +337,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	case *soltype.FuncType:
 		if sup, ok := super.(*soltype.FuncType); ok {
-			// Higher-rank subtyping for a rank-2 callback. A quantifier on the super, the
-			// side being checked against, is skolemized, so the sub must satisfy it for every
-			// instantiation. For example, `fn (x) { return 5 }` fails against `<T>(x: T) -> T`.
-			// A quantifier on the sub, the side supplying the value, is instantiated with fresh
-			// vars, so the sub picks the instantiation. Re-enter once one side's binder is
-			// removed. Contravariant recursion into the params swaps sub and super, so a
-			// negative-position quantifier instantiates and a positive one skolemizes without
-			// a polarity flag here.
+			// Higher-rank subtyping: skolemize a super quantifier, instantiate a sub one, then
+			// re-enter. Contravariant param recursion swaps the sides, so polarity needs no flag.
 			if len(sup.TypeParams) > 0 {
 				return c.constrain(sub, c.skolemizeFuncBinder(sup), seen, mutCtx)
 			}
@@ -943,11 +937,9 @@ func callableView(ft *soltype.FuncType) *soltype.FuncType {
 	}
 }
 
-// skolemizeFuncBinder returns a copy of ft with its own type parameters replaced by fresh
-// skolems, so a term checked against ft as a supertype must satisfy it for every
-// instantiation. Each parameter's declared bound becomes its skolem's Upper, seeded before
-// substitution so a bound naming a sibling resolves to that sibling's skolem. Only ft's own
-// TypeParams binders are substituted. A nested generic function keeps its quantifier.
+// skolemizeFuncBinder replaces ft's own type parameters with fresh skolems, so a term checked
+// against ft as a supertype must satisfy it for every instantiation. Each parameter's declared
+// bound becomes its skolem's Upper, seeded first so a bound naming a sibling reaches it.
 func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
 	sks := make([]*soltype.SkolemType, len(ft.TypeParams))
 	args := make([]soltype.Type, len(ft.TypeParams))
@@ -967,10 +959,8 @@ func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
 	return substFuncBinder(ft, sub)
 }
 
-// instantiateFuncBinder returns a copy of ft with its own type parameters replaced by fresh
-// inference vars at lvl, so the sub side of a subtype check picks the instantiation. Each
-// fresh var carries the original parameter's bounds, substituted so an F-bound referencing a
-// sibling reaches that sibling's fresh var. Only ft's own TypeParams binders are substituted.
+// instantiateFuncBinder replaces ft's own type parameters with fresh inference vars at lvl, so
+// the sub side of a subtype check picks the instantiation. Each fresh var carries its bounds.
 func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.FuncType {
 	nvs := make([]*soltype.TypeVarType, len(ft.TypeParams))
 	args := make([]soltype.Type, len(ft.TypeParams))
@@ -987,9 +977,7 @@ func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.
 }
 
 // substFuncBinder rebuilds ft with sub applied to its parameters and return and its own
-// TypeParams list dropped, since the binder vars are being replaced by their substitutes. A
-// nested generic function's own TypeParams pass through Accept unchanged, so it keeps its
-// quantifier.
+// TypeParams dropped. A nested generic function's own TypeParams pass through unchanged.
 func substFuncBinder(ft *soltype.FuncType, sub *typeSubst) *soltype.FuncType {
 	cp := *ft
 	cp.TypeParams = nil

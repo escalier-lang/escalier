@@ -277,15 +277,9 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 }
 
 // skolemizeGenericAnn copies a resolved annotation, replacing a positive-position generic
-// function's own type-parameter var by a fresh skolem of the same name. This pushes the
-// expected type into the term with its parameters held abstract, so constrain rejects a body
-// that forces a parameter to a concrete value, both directly (`return 5`) and through an
-// inference var (`return x` where the annotation promises a different type).
-//
-// A generic function in NEGATIVE position is a rank-2 callback parameter such as
-// `fn (cb: <T>(x: T) -> T) -> …`. It is left generic rather than skolemized. The initializer
-// supplies its own callback there, so constrain instantiates the annotation's `T` when
-// checking that supplied callback against it, exactly as a call site would.
+// function's own type-parameter var by a fresh skolem, so constrain rejects a body that forces
+// that parameter to a concrete value. A negative-position generic function is a rank-2 callback
+// parameter, left generic instead so constrain instantiates its `T` like a call site would.
 func (c *checker) skolemizeGenericAnn(annT soltype.Type) soltype.Type {
 	return annT.Accept(&skolemizer{c: c, subst: map[*soltype.TypeVarType]*soltype.SkolemType{}}, soltype.Positive)
 }
