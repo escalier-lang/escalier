@@ -8,9 +8,9 @@ import (
 )
 
 // TestInferEnumBasic covers a non-generic enum end to end (M5 D-Enum): the enum name
-// binds as a namespace and its type binds to the union of its variants, each variant
-// constructor resolves under the namespace, and a constructor call yields the enum
-// union — `Color.Hex(...)` is `Color.RGB | Color.Hex`.
+// binds as a namespace and its type binds to an alias whose body is the union of its
+// variants, each variant constructor resolves under the namespace, and a constructor call
+// yields the enum's alias type — `Color.Hex(...)` is `Color`.
 func TestInferEnumBasic(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -30,10 +30,12 @@ func TestInferEnumBasic(t *testing.T) {
 				val blue = Color.Hex("#0000FF")
 			`,
 			wantValues: map[string]string{
-				"rgb":  "fn (r: number, g: number, b: number) -> Color.RGB | Color.Hex",
-				"red":  "Color.RGB | Color.Hex",
-				"blue": "Color.RGB | Color.Hex",
+				"rgb":  "fn (r: number, g: number, b: number) -> Color",
+				"red":  "Color",
+				"blue": "Color",
 			},
+			// The test harness renders a type-alias binding as its body, so the enum's alias
+			// shows the variant union it stands for. A value of the enum renders as `Color`.
 			wantTypes: map[string]string{"Color": "Color.RGB | Color.Hex"},
 		},
 		{
@@ -47,8 +49,8 @@ func TestInferEnumBasic(t *testing.T) {
 				val s: Signal = Signal.Go()
 			`,
 			wantValues: map[string]string{
-				"stop": "Signal.Stop | Signal.Go",
-				"s":    "Signal.Stop | Signal.Go",
+				"stop": "Signal",
+				"s":    "Signal",
 			},
 			wantTypes: map[string]string{"Signal": "Signal.Stop | Signal.Go"},
 		},
@@ -61,7 +63,7 @@ func TestInferEnumBasic(t *testing.T) {
 					Hex(code: string),
 				}
 			`,
-			wantValues: map[string]string{"red": "Color.RGB | Color.Hex"},
+			wantValues: map[string]string{"red": "Color"},
 			wantTypes:  map[string]string{"Color": "Color.RGB | Color.Hex"},
 		},
 		{
@@ -75,8 +77,8 @@ func TestInferEnumBasic(t *testing.T) {
 				val node = Tree.Node(Tree.Leaf(), Tree.Leaf())
 			`,
 			wantValues: map[string]string{
-				"leaf": "Tree.Leaf | Tree.Node",
-				"node": "Tree.Leaf | Tree.Node",
+				"leaf": "Tree",
+				"node": "Tree",
 			},
 			wantTypes: map[string]string{"Tree": "Tree.Leaf | Tree.Node"},
 		},
@@ -107,9 +109,9 @@ func TestInferEnumMutuallyRecursive(t *testing.T) {
 		val b = B.BNode(A.AEnd())
 		val ctorA = A.ANode
 	`, map[string]string{
-		"a":     "A.AEnd | A.ANode",
-		"b":     "B.BEnd | B.BNode",
-		"ctorA": "fn (next: B.BEnd | B.BNode) -> A.AEnd | A.ANode",
+		"a":     "A",
+		"b":     "B",
+		"ctorA": "fn (next: B) -> A",
 	}, map[string]string{
 		"A": "A.AEnd | A.ANode",
 		"B": "B.BEnd | B.BNode",
@@ -136,11 +138,11 @@ func TestInferEnumClassMutuallyRecursive(t *testing.T) {
 		val treeCtor = Tree.Branch
 		val kids = node.left
 	`, map[string]string{
-		"Node":     "fn (left: Tree.Leaf | Tree.Branch, right: Tree.Leaf | Tree.Branch) -> Node",
+		"Node":     "fn (left: Tree, right: Tree) -> Node",
 		"node":     "Node",
-		"branch":   "Tree.Leaf | Tree.Branch",
-		"treeCtor": "fn (node: Node) -> Tree.Leaf | Tree.Branch",
-		"kids":     "Tree.Leaf | Tree.Branch",
+		"branch":   "Tree",
+		"treeCtor": "fn (node: Node) -> Tree",
+		"kids":     "Tree",
 	}, map[string]string{
 		"Tree": "Tree.Leaf | Tree.Branch",
 		"Node": "Node",
@@ -166,10 +168,10 @@ func TestInferEnumSharedVariantName(t *testing.T) {
 		val c = Color.RGB(1, 2, 3)
 		val p = Pixel.RGB(4, 5)
 	`, map[string]string{
-		"colorRGB": "fn (r: number, g: number, b: number) -> Color.RGB | Color.Hex",
-		"pixelRGB": "fn (x: number, y: number) -> Pixel.RGB | Pixel.Empty",
-		"c":        "Color.RGB | Color.Hex",
-		"p":        "Pixel.RGB | Pixel.Empty",
+		"colorRGB": "fn (r: number, g: number, b: number) -> Color",
+		"pixelRGB": "fn (x: number, y: number) -> Pixel",
+		"c":        "Color",
+		"p":        "Pixel",
 	}, map[string]string{
 		"Color": "Color.RGB | Color.Hex",
 		"Pixel": "Pixel.RGB | Pixel.Empty",
@@ -200,7 +202,7 @@ func TestInferEnumUnnamedParams(t *testing.T) {
 		}
 		val ctor = E.Pair
 	`, map[string]string{
-		"ctor": "fn (arg0: number, arg1: string) -> E.Pair",
+		"ctor": "fn (arg0: number, arg1: string) -> E",
 	}, nil)
 }
 
@@ -232,9 +234,10 @@ func TestEnumVariantDisplay(t *testing.T) {
 
 // TestInferEnumGeneric checks that a generic enum's constructor is generalized like a
 // plain generic value, so each construction freshens the enum's type parameter and the
-// argument's type flows into the enum union. Without type aliases the enum name expands
-// to its union at each use, so the parameter also reaches the sibling variant — `None`
-// prints parameterized here; naming the union to hide that waits on M7's aliases.
+// argument's type flows into the enum's alias instance. The enum name binds to an alias
+// carrying the enum's type-parameter var, so a construction renders under the enum name
+// with the argument's type — `MyOption.Some(5)` is `MyOption<5>`, the union hidden behind
+// the alias.
 func TestInferEnumGeneric(t *testing.T) {
 	classValues(t, `
 		enum MyOption<T> {
@@ -244,7 +247,7 @@ func TestInferEnumGeneric(t *testing.T) {
 		val some = MyOption.Some(5)
 		val str = MyOption.Some("hi")
 	`, map[string]string{
-		"some": "MyOption.Some<5> | MyOption.None<5>",
-		"str":  `MyOption.Some<"hi"> | MyOption.None<"hi">`,
+		"some": "MyOption<5>",
+		"str":  `MyOption<"hi">`,
 	}, nil)
 }
