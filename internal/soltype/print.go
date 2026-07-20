@@ -157,12 +157,13 @@ func PrintAsSchemeWith(t Type, isParam func(*TypeVarType) bool, ltBounds map[*Li
 		return Print(t)
 	}
 	p := &namedPrinter{names: names, ltNames: ltNames}
-	if _, ok := t.(*ClassType); ok {
-		// A class instance already displays its type parameters inline in its `<...>`
-		// argument list, so it needs no separate quantifier prefix. A generalized
-		// Map<K, V> renders as Map<T0, T1>, not <T0, T1> Map<T0, T1>. A ClassType's only
-		// free-variable children are its arguments, so every quantified variable is
-		// shown inline and none is lost by dropping the prefix.
+	switch t.(type) {
+	case *ClassType, *AliasType:
+		// A class instance or alias reference already displays its parameters inline in its
+		// `<...>` argument list, so it needs no separate quantifier prefix. A generalized
+		// Map<K, V> renders as Map<T0, T1>, not <T0, T1> Map<T0, T1>, and Foo<'a> as Foo<'a>,
+		// not <'a> Foo<'a>. Their only free-variable children are their arguments, so every
+		// quantified variable is shown inline and none is lost by dropping the prefix.
 		return p.printType(t)
 	}
 	ltLabels := make([]string, len(ltVars))
@@ -285,6 +286,13 @@ func (c *ltVarCollector) EnterType(t Type, _ Polarity) EnterResult {
 			c.add(la)
 		}
 		c.add(t.Lt)
+	case *AliasType:
+		// An alias reference's lifetime arguments are free lifetimes reached here, so
+		// `Foo<'a>` collects 'a. They precede any lifetime nested inside the type arguments,
+		// matching print order. An alias has no own borrow lifetime. A borrow rides a RefType.
+		for _, la := range t.LifetimeArgs {
+			c.add(la)
+		}
 	case *FuncType:
 		// A function's own lifetime parameters are bound, not free, so mark their
 		// variables seen up front to exclude every use in the receiver, params, and
@@ -564,20 +572,24 @@ func (p *namedPrinter) printType(t Type) string {
 		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *AliasType:
 		// An alias reference renders under its own name, with a `<...>` argument list when
-		// a generic reference supplies arguments: `Point`, `Box<number>`. The qualified
-		// Name carries a namespace prefix for registry keying, stripped here for display,
-		// the same way a class name is. Rendering the name rather than the expanded body is
-		// the point of the alias, so `val p: Point = {x: 1}` shows `Point`.
+		// a generic reference supplies arguments: `Point`, `Box<number>`, `Foo<'a>`. Lifetime
+		// arguments render first, then type arguments, matching the ClassType order. The
+		// qualified Name carries a namespace prefix for registry keying, stripped here for
+		// display, the same way a class name is. Rendering the name rather than the expanded
+		// body is the point of the alias, so `val p: Point = {x: 1}` shows `Point`.
 		name := classDisplayName(t.Name)
 		if p.qualify {
 			name = t.Name // full qualified name for a collision-free identity key
 		}
-		if len(t.TypeArgs) == 0 {
+		if len(t.TypeArgs) == 0 && len(t.LifetimeArgs) == 0 {
 			return name
 		}
-		parts := make([]string, len(t.TypeArgs))
-		for i, a := range t.TypeArgs {
-			parts[i] = p.printType(a)
+		parts := make([]string, 0, len(t.LifetimeArgs)+len(t.TypeArgs))
+		for _, la := range t.LifetimeArgs {
+			parts = append(parts, p.printLifetime(la))
+		}
+		for _, a := range t.TypeArgs {
+			parts = append(parts, p.printType(a))
 		}
 		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *FuncType:

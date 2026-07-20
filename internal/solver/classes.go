@@ -718,14 +718,16 @@ func newClassSubst(def *ClassDef, ct *soltype.ClassType) *typeSubst {
 }
 
 func (s *typeSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	// A borrow's lifetime and a nested ClassType's lifetime arguments are a separate
-	// sort Accept does not walk, so rewrite them here on the way down through the
+	// A borrow's lifetime and a nested ClassType's or AliasType's lifetime arguments are a
+	// separate sort Accept does not walk, so rewrite them here on the way down through the
 	// shared lifetime-rewrite helpers and let Accept rebuild the type's children.
 	switch t := t.(type) {
 	case *soltype.RefType:
 		return rewriteRefLifetime(t, s.lifetime(t.Lt))
 	case *soltype.ClassType:
 		return rewriteClassLifetimes(t, s.lifetime)
+	case *soltype.AliasType:
+		return rewriteAliasLifetimes(t, s.lifetime)
 	case *soltype.TypeVarType:
 		if rep, ok := s.types[t]; ok {
 			return soltype.EnterResult{Type: rep, SkipChildren: true}

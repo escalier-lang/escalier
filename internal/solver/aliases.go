@@ -14,7 +14,9 @@ type AliasDef struct {
 	TypeParams []*soltype.TypeParam
 
 	// LifetimeParams are the alias's quantified lifetime parameters, the lifetime twin of
-	// TypeParams. Always nil today, since alias-typed borrows land with lifetime aliases.
+	// TypeParams, in declaration order so expansion substitutes lifetime arguments
+	// positionally. expandAlias maps each one to a reference's positional LifetimeArg. The
+	// slice stays empty until a `type` declaration parses a lifetime parameter binder.
 	LifetimeParams []*soltype.LifetimeParam
 
 	// Body is the type the alias expands to, the right-hand side of `type Name = Body`.
@@ -40,7 +42,7 @@ func (c *Context) expandAlias(ref *soltype.AliasType) soltype.Type {
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
 		return def.Body
 	}
-	subst := newTypeSubst(def.TypeParams, ref.TypeArgs, def.LifetimeParams, nil)
+	subst := newTypeSubst(def.TypeParams, ref.TypeArgs, def.LifetimeParams, ref.LifetimeArgs)
 	return def.Body.Accept(subst, soltype.Positive)
 }
 
