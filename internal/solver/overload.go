@@ -90,7 +90,7 @@ func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) bo
 			// Per-element checking is M4.
 			break
 		}
-		if errs := c.ctx.Constrain(arg, inst.Params[i].Type); len(errs) > 0 {
+		if errs := c.ctx.Constrain(arg, inst.Params[i].Type); hasHardError(errs) {
 			return false
 		}
 	}

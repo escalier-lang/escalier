@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -161,14 +162,86 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		// 5 <: (T | number). The number member is trialled before the bare var T, since
 		// specificityOrder ranks a variable below every concrete, so `5 <: number` commits
 		// and the trial never reaches `5 <: T`. T is left with no bounds, proving the var
-		// member is a last-resort catch-all rather than a speculative first pin.
+		// member is a last-resort catch-all rather than a speculative first pin. The choice
+		// is ambiguous, since T would also match by pinning to 5, so an
+		// AmbiguousUnionCommitWarning surfaces while the constraint still succeeds.
 		c := &Context{}
 		tv := c.freshVar(0)
 		super := newUnion(nil, []soltype.Type{tv, num()}, false)
 
-		require.Empty(t, c.Constrain(numLit(5), super))
+		errs := c.Constrain(numLit(5), super)
+		require.Equal(t, []string{
+			"ambiguous match against t0 | number: committed number, but t0 would also match; annotate to disambiguate",
+		}, Messages(errs))
+		require.False(t, hasHardError(errs))
 		require.Empty(t, tv.LowerBounds)
 		require.Empty(t, tv.UpperBounds)
+	})
+}
+
+// TestConstrainUnionCommitDiagnostics covers the PR7 trial-and-commit diagnostics on the
+// union-super exists rule: the breadcrumb a committed bare-var member leaves for a later
+// conflicting use, and the ambiguity warning when another member would also match while
+// binding an inference variable.
+func TestConstrainUnionCommitDiagnostics(t *testing.T) {
+	t.Run("var-committed member breadcrumbs a later conflict back to the union", func(t *testing.T) {
+		// "hi" <: (T | number). The number member fails ("hi" is not number), so the trial
+		// falls through to the catch-all var member and commits `"hi" <: T`, pinning T to
+		// "hi". No other member matches, so the commit is unambiguous and reports nothing.
+		c := &Context{}
+		tv := c.freshVar(0)
+		super := newUnion(nil, []soltype.Type{tv, num()}, false)
+
+		require.Empty(t, c.Constrain(strLit("hi"), super))
+		require.Len(t, tv.LowerBounds, 1)
+
+		// A later use of T as number forces "hi" <: number, which fails. The breadcrumb
+		// names the union choice that pinned T rather than blaming only this use.
+		errs := c.Constrain(tv, num())
+		require.Equal(t, []string{
+			`cannot constrain "hi" <: number; t0 was committed to a branch of t0 | number by an earlier match, so it cannot also satisfy number`,
+		}, Messages(errs))
+	})
+
+	t.Run("concrete commit with a viable var member warns as ambiguous", func(t *testing.T) {
+		// 5 <: (T | number). The number member commits, but T would also match by pinning to
+		// 5, so the choice is ambiguous and a warning surfaces while the constraint succeeds.
+		c := &Context{}
+		tv := c.freshVar(0)
+		super := newUnion(nil, []soltype.Type{tv, num()}, false)
+
+		errs := c.Constrain(numLit(5), super)
+		require.Equal(t, []string{
+			"ambiguous match against t0 | number: committed number, but t0 would also match; annotate to disambiguate",
+		}, Messages(errs))
+		require.False(t, hasHardError(errs))
+	})
+
+	t.Run("concrete commit with only concrete members is unambiguous", func(t *testing.T) {
+		// 5 <: (number | string). The number member commits and no other member matches, so
+		// nothing is ambiguous and no warning surfaces.
+		c := &Context{}
+		super := newUnion(nil, parseTypes(t, "number", "string"), false)
+		require.Empty(t, c.Constrain(numLit(5), super))
+	})
+
+	t.Run("a discarded trial drops the union-commit tag and its bound", func(t *testing.T) {
+		// The tag rides the same probe as the bound it records, so a losing outer trial that
+		// discards the commit leaves neither behind.
+		c := &Context{}
+		tv := c.freshVar(0)
+		super := newUnion(nil, []soltype.Type{tv, num()}, false)
+
+		p := newProbe(c.probe)
+		c.probe = p
+		require.Empty(t, c.constrain(strLit("hi"), super, set.NewSet[constraintKey](), false))
+		c.probe = p.parent
+		require.Contains(t, c.unionCommits, tv)
+		require.Len(t, tv.LowerBounds, 1)
+
+		p.Discard()
+		require.NotContains(t, c.unionCommits, tv)
+		require.Empty(t, tv.LowerBounds)
 	})
 }
 

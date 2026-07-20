@@ -296,7 +296,7 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 // unionDrops returns true when union member m should be dropped because the
 // sibling subsumes it. The check is m <: sibling.
 func unionDrops(c *Context, m, sibling soltype.Type) bool {
-	return len(c.trialUnderProbe(m, sibling)) == 0
+	return !hasHardError(c.trialUnderProbe(m, sibling))
 }
 
 // intersectionDrops returns true when intersection member m should be
@@ -304,7 +304,7 @@ func unionDrops(c *Context, m, sibling soltype.Type) bool {
 // <: m. The sibling is narrower, so it already implies m, and m is the wider
 // one to discard.
 func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
-	return len(c.trialUnderProbe(sibling, m)) == 0
+	return !hasHardError(c.trialUnderProbe(sibling, m))
 }
 
 // subsumeFinal re-mints every UnionType and IntersectionType node in a finalized

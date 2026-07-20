@@ -176,6 +176,25 @@ func (p *Probe) rollback() {
 	}
 }
 
+// mutatedBounds reports whether any variable this probe journaled has grown a bound since
+// the probe first touched it. A throwaway trial consults it before discarding to tell a
+// match that binds an inference variable from one that succeeds without recording anything.
+// A first-touch snapshot equal to the current length means the trial touched the var for a
+// read but appended nothing, so it does not count as a mutation.
+func (p *Probe) mutatedBounds() bool {
+	for _, e := range p.entries {
+		if len(e.v.LowerBounds) > e.prevLower || len(e.v.UpperBounds) > e.prevUpper {
+			return true
+		}
+	}
+	for _, e := range p.ltEntries {
+		if len(e.v.LowerBounds) > e.prevLower || len(e.v.UpperBounds) > e.prevUpper {
+			return true
+		}
+	}
+	return false
+}
+
 // Discard rolls back every mutation journaled under this probe. Idempotent: a
 // second Discard (or a Discard after Commit) is a no-op.
 func (p *Probe) Discard() {
@@ -255,33 +274,50 @@ func (c *checker) openProbe() *Probe {
 }
 
 // trialAndCommit tries each index in order, running its trial under a fresh child probe.
-// The first trial whose body reports no errors wins. Its bound mutations commit, and the
-// method returns (true, nil). Every losing trial rolls back, so it leaves no bound behind.
+// The first trial whose body reports no fatal error wins. Its bound mutations commit, and
+// the method returns (true, winIdx, winErrs, nil), where winIdx is the winning member's
+// index and winErrs holds any warnings the winning trial produced. Every losing trial
+// rolls back, so it leaves no bound behind. A warning does not count as failure, so a
+// branch that succeeds while emitting one still wins. hasHardError draws that line.
 //
-// When no trial wins, the method returns false with each trial's errors in trial order.
-// The caller decides what to do with them. It can promote a shared failure or report the
-// last trial's diagnostics. The union-super rule, for example, promotes a uniform
-// BorrowEscapeError when every trial reports one.
+// When no trial wins, the method returns false with winIdx -1 and each trial's errors in
+// trial order. The caller decides what to do with them. It can promote a shared failure or
+// report the last trial's diagnostics. The union-super rule, for example, promotes a
+// uniform BorrowEscapeError when every trial reports one.
 //
 // This is the single path for the speculative member trials the lattice arms run. Both
 // constrain's IntersectionType-sub exists rule and its UnionType-super exists rule route
 // through it, so the probe push-and-pop discipline lives in one place. Each trial body
 // owns its own coinductive seen clone, since only the caller holds the constraint key.
-func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError) (bool, [][]SolverError) {
-	var trialErrs [][]SolverError
+func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError) (committed bool, winIdx int, winErrs []SolverError, trialErrs [][]SolverError) {
 	for _, idx := range order {
 		p := newProbe(c.probe)
 		c.probe = p
 		errs := trial(idx)
 		c.probe = p.parent
-		if len(errs) == 0 {
+		if !hasHardError(errs) {
 			p.Commit()
-			return true, nil
+			return true, idx, errs, nil
 		}
 		p.Discard()
 		trialErrs = append(trialErrs, errs)
 	}
-	return false, trialErrs
+	return false, -1, nil, trialErrs
+}
+
+// trialMutatesBounds trials sub <: super under a throwaway probe and reports both whether
+// it succeeded and whether it recorded any bound. The union-super ambiguity check uses it
+// to tell a member that would bind an inference variable from one that succeeds without
+// recording anything, so `5 <: T` reports (true, true) while `5 <: number` reports
+// (true, false). The probe is discarded either way, so the trial leaves no trace.
+func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (ok, mutated bool) {
+	p := newProbe(c.probe)
+	c.probe = p
+	errs := c.constrain(sub, super, seen.Clone(), mutCtx)
+	mutated = p.mutatedBounds()
+	c.probe = p.parent
+	p.Discard()
+	return !hasHardError(errs), mutated
 }
 
 // trialUnderProbe trials `sub <: super` under a discard-only probe and returns

@@ -322,6 +322,8 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 		switch err := e.(type) {
 		case *CannotConstrainError:
 			err.prov, err.site = c.prov, n
+		case *AmbiguousUnionCommitWarning:
+			err.prov, err.site = c.prov, n
 		case *TupleLengthMismatchError:
 			err.prov, err.site = c.prov, n
 		case *MissingPropertyError:
