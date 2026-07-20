@@ -8,29 +8,26 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Enum inference (M5 D-Enum) ports the old checker's enum model to soltype. The old
-// checker binds the enum name to BOTH a namespace and a type alias whose body is a union
-// of the variant types. soltype has no type aliases yet (M7), so the enum name binds as a
-// namespace and its type binds directly to that union: `Color` resolves to
-// `Color.RGB | Color.Hex`.
-//
-// TODO(M7): once type aliases land, bind the enum name to a proper alias whose body is
-// this union, so a reference to the enum renders under its own name — `Color` rather than
-// the expanded `Color.RGB | Color.Hex` — the way the old checker's TypeRefType does. The
-// union built here becomes that alias's body.
+// Enum inference (M5 D-Enum) ports the old checker's enum model to soltype. The enum name
+// binds to BOTH a namespace and a transparent type alias whose body is the union of the
+// variant types. A reference to the enum renders under its own name, `Color` rather than
+// the expanded `Color.RGB | Color.Hex`, the way the old checker's TypeRefType does. A
+// consumer that reads the variant members, such as match exhaustiveness, first expands the
+// alias to its union body through the shared expandAlias helper, the same unfold constrain
+// performs on an alias sub or super.
 //
 // Each variant is a `final` ClassType named `Color.RGB` — a nominal handle qualified by
 // its enum, so two enums that share a variant name stay distinct. Each variant's
-// constructor binds as a value under the enum namespace and returns the enum type, so
-// `Color.Hex("#fff")` infers `Color.RGB | Color.Hex`, the union the enum names.
+// constructor binds as a value under the enum namespace and returns the enum's alias type,
+// so `Color.Hex("#fff")` infers `Color`, the enum the alias names.
 //
 // Inference is two-phase, so a group of mutually-recursive enums resolves each other:
 //
-//   - preBindEnum mints every variant handle and binds the enum's union TYPE, but does
+//   - preBindEnum mints every variant handle and binds the enum's alias TYPE, but does
 //     NOT resolve variant parameters. Running it over every enum in a dep_graph type-key
 //     component before any body means `enum A { X(b: B) }` / `enum B { Y(a: A) }` each
-//     find the sibling's union already bound. A self-recursive enum resolves through its
-//     own union the same way.
+//     find the sibling's alias already bound. A self-recursive enum resolves through its
+//     own alias the same way.
 //   - inferEnumBody then resolves each variant's parameters, builds its constructor, and
 //     binds the constructor namespace.
 //
@@ -63,10 +60,10 @@ type enumShell struct {
 }
 
 // preBindEnum mints an enum's variant handles, registers their ClassDefs, and binds the
-// enum name's TYPE to the union of those handles — without resolving any variant
-// parameter. It returns the shell inferEnumBody completes. Binding the union up front is
-// what lets a sibling enum, or the enum itself, resolve this name while its own body is
-// still being walked.
+// enum name's TYPE to an alias whose body is the union of those handles — without resolving
+// any variant parameter. It returns the shell inferEnumBody completes. Binding the alias up
+// front is what lets a sibling enum, or the enum itself, resolve this name while its own
+// body is still being walked.
 func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns string) *enumShell {
 	// An enum-body type reference resolves against the enum's own namespace first, the
 	// same qualified-first resolution a class body uses. Save and restore around the walk.
@@ -119,7 +116,17 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 		variantTypes = append(variantTypes, vt)
 	}
 
-	enumType := soltype.Type(&soltype.UnionType{Types: variantTypes})
+	// Register the enum as a transparent alias whose body is the variant union, then bind
+	// the enum name to an AliasType handle carrying the enum's own type-parameter vars. A
+	// reference renders under the enum name, and a consumer reading the variants expands the
+	// alias to this union body through expandAlias. The variant constructor returns the same
+	// handle, so `Color.Hex("#fff")` infers `Color`.
+	c.ctx.registerAlias(qname, &AliasDef{
+		TypeParams: typeParams,
+		Body:       &soltype.UnionType{Types: variantTypes},
+		Level:      lvl - 1,
+	})
+	enumType := soltype.Type(&soltype.AliasType{Name: qname, TypeArgs: typeArgs})
 	scope.defineType(qname, TypeBinding{
 		Type:    enumType,
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},

@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -2547,6 +2548,21 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 // value the coalesced scrutinee can take, dispatching on its union or object/tuple shape.
 func (c *checker) checkMatchExhaustive(scope *Scope, e *ast.MatchExpr, scrutinee soltype.Type) {
 	carrier := soltype.CarrierOf(scrutinee)
+	// A transparent alias scrutinee, an enum handle or a user `type` reference, carries the
+	// alias rather than the type it stands for. Expand it to that type before dispatching, the
+	// same unfold constrain performs, so `match c { Color.RGB(..) => .., Color.Hex(..) => .. }`
+	// over `val c: Color` covers the variant union without a default arm. The loop follows a
+	// chain of aliases to the underlying union or shape, and a seen-set of names breaks a
+	// degenerate alias cycle.
+	seenAliases := set.NewSet[string]()
+	for {
+		at, ok := carrier.(*soltype.AliasType)
+		if !ok || seenAliases.Contains(at.Name) {
+			break
+		}
+		seenAliases.Add(at.Name)
+		carrier = c.ctx.expandAlias(at)
+	}
 	if u, ok := carrier.(*soltype.UnionType); ok {
 		if !c.unionMatchExhaustive(scope, e, u) {
 			c.report(&NonExhaustiveMatchError{Match: e})

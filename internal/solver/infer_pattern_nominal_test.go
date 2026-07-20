@@ -260,7 +260,7 @@ func TestInferMatchEnumExhaustiveness(t *testing.T) {
 		{
 			name:    "ArmPerVariantNeedsNoCatchAll",
 			arms:    "Color.RGB(r, g, b) => r,\n\t\t\t\tColor.Hex(code) => 0",
-			wantVal: "fn (c: Color.RGB | Color.Hex) -> number",
+			wantVal: "fn (c: Color) -> number",
 		},
 		{
 			name:    "MissingVariant",
@@ -270,7 +270,7 @@ func TestInferMatchEnumExhaustiveness(t *testing.T) {
 		{
 			name:    "CatchAllCoversRemainingVariants",
 			arms:    "Color.RGB(r, g, b) => r,\n\t\t\t\t_ => 0",
-			wantVal: "fn (c: Color.RGB | Color.Hex) -> number",
+			wantVal: "fn (c: Color) -> number",
 		},
 		{
 			name:    "RefutableArgDoesNotCover",
@@ -300,6 +300,63 @@ func TestInferMatchEnumExhaustiveness(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestInferMatchGenericEnumExhaustiveness checks that a match over a generic enum value is
+// exhaustive through the alias. The scrutinee `o: MyOption<number>` carries the enum's alias
+// handle with a `number` argument, and checkMatchExhaustive expands it to the substituted
+// variant union `MyOption.Some<number> | MyOption.None<number>`. An arm per variant covers
+// that union without a catch-all.
+func TestInferMatchGenericEnumExhaustiveness(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		enum MyOption<T> {
+			Some(value: T),
+			None,
+		}
+		fn f(o: MyOption<number>) {
+			return match o {
+				MyOption.Some(value) => value,
+				MyOption.None() => 0,
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (o: MyOption<number>) -> number", values["f"])
+}
+
+// TestInferMatchUnionAliasExhaustiveness checks that exhaustiveness looks through a
+// transparent user alias, the same expansion the enum path relies on. A scrutinee typed by
+// `type Pet = Dog | Cat` expands to its class union, so an arm per class is exhaustive
+// without a catch-all, and dropping one leaves the match non-exhaustive.
+func TestInferMatchUnionAliasExhaustiveness(t *testing.T) {
+	t.Run("ArmPerMemberIsExhaustive", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Dog { name: string }
+			class Cat { name: string }
+			type Pet = Dog | Cat
+			fn f(p: Pet) {
+				return match p {
+					Dog(name) => name,
+					Cat(name) => name,
+				}
+			}
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("MissingMemberIsNonExhaustive", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Dog { name: string }
+			class Cat { name: string }
+			type Pet = Dog | Cat
+			fn f(p: Pet) {
+				return match p {
+					Dog(name) => name,
+				}
+			}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "match is not exhaustive; add a catch-all branch", errs[0].Message())
+	})
 }
 
 // A union member the coverage rules cannot evaluate — an object member here — is

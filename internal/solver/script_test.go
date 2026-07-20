@@ -57,7 +57,7 @@ func TestInferScriptSourceOrder(t *testing.T) {
 // TestInferScriptEnum checks that an enum can be declared and used in a script (bin/).
 // A script's top-level statements run in source order, so an enum declared before its
 // use binds its type and variant constructors just as in a module: a constructor call
-// yields the enum union.
+// yields the enum's alias type, rendered under its own name.
 func TestInferScriptEnum(t *testing.T) {
 	values, types, errs := inferScriptSource(t, `
 		enum Color {
@@ -68,9 +68,9 @@ func TestInferScriptEnum(t *testing.T) {
 		val mk = Color.RGB
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "Color.RGB | Color.Hex", types["Color"])
-	require.Equal(t, "Color.RGB | Color.Hex", values["c"])
-	require.Equal(t, "fn (r: number, g: number, b: number) -> Color.RGB | Color.Hex", values["mk"])
+	require.Equal(t, "Color", types["Color"])
+	require.Equal(t, "Color", values["c"])
+	require.Equal(t, "fn (r: number, g: number, b: number) -> Color", values["mk"])
 }
 
 // TestInferScriptEnumOutOfOrder checks that a script does NOT resolve an enum used before
