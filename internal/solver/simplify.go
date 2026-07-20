@@ -45,10 +45,18 @@ import (
 // renders as the same type parameter.
 
 // unionFind is the disjoint-set forest keyed by TypeVarType.ID. The smaller id is
-// kept as a class's representative so naming is stable across runs.
-type unionFind struct{ parent map[int]int }
+// kept as a class's representative so naming is stable across runs, except that a
+// binder id in binders always wins the representative slot over a non-binder — a
+// declared type parameter names its whole class, so an artifact var merged into it
+// renders under the declared name rather than a generated one.
+type unionFind struct {
+	parent  map[int]int
+	binders set.Set[int]
+}
 
-func newUnionFind() *unionFind { return &unionFind{parent: map[int]int{}} }
+func newUnionFind() *unionFind {
+	return &unionFind{parent: map[int]int{}, binders: set.NewSet[int]()}
+}
 
 func (u *unionFind) find(x int) int {
 	p, ok := u.parent[x]
@@ -69,7 +77,16 @@ func (u *unionFind) union(a, b int) {
 	if ra == rb {
 		return
 	}
-	if rb < ra { // keep the smaller id as representative for stable naming
+	// A binder root outranks a non-binder root, so a declared type parameter stays the
+	// class representative and keeps its name. When both roots are the same kind, the
+	// smaller id wins for stable naming. binders is empty on the plain path, so this
+	// reduces to the smaller-id rule.
+	aBinder, bBinder := u.binders.Contains(ra), u.binders.Contains(rb)
+	if aBinder != bBinder {
+		if bBinder {
+			ra, rb = rb, ra
+		}
+	} else if rb < ra {
 		ra, rb = rb, ra
 	}
 	u.parent[rb] = ra
@@ -350,12 +367,19 @@ func mutualCoOcc(a, b int, occ map[int]occPolarity, coOcc map[coKey]set.Set[int]
 	return true
 }
 
-// mergeCoOccurring unions every mutually-co-occurring pair among ids.
-func mergeCoOccurring(ids []int, occ map[int]occPolarity, coOcc map[coKey]set.Set[int]) *unionFind {
+// mergeCoOccurring unions every mutually-co-occurring pair among ids, keeping a binder
+// in binders as each merged class's representative. Two binders never merge: they are
+// distinct declared type parameters. A binder and a co-occurring artifact do merge,
+// under the binder's name, folding an artifact equal to a declared parameter into it.
+func mergeCoOccurring(ids []int, occ map[int]occPolarity, coOcc map[coKey]set.Set[int], binders set.Set[int]) *unionFind {
 	uf := newUnionFind()
+	uf.binders = binders
 	sort.Ints(ids)
 	for i := range ids {
 		for j := i + 1; j < len(ids); j++ {
+			if binders.Contains(ids[i]) && binders.Contains(ids[j]) {
+				continue // keep two distinct declared type parameters apart
+			}
 			if mutualCoOcc(ids[i], ids[j], occ, coOcc) {
 				uf.union(ids[i], ids[j])
 			}
@@ -391,11 +415,12 @@ func (s *schemeSimplification) rep(v *soltype.TypeVarType) *soltype.TypeVarType 
 // captured outer variables are not type parameters and never merge into one, which
 // also keeps every representative quantifiable so the retain decision stays uniform.
 //
-// A generic function's own TypeParams binder vars in keep are excluded from the
-// candidates too. They are distinct declared parameters that coalesceScheme holds
-// symbolic, so merging one into another var's class would rename it or let it mask
-// another var's name. Excluding them keeps each a singleton class that is its own
-// representative.
+// A generic function's own TypeParams binder vars in keep are candidates too, but a
+// binder always wins the representative slot and two binders never merge together
+// (mergeCoOccurring). So a binder stays a distinct type parameter under its own name,
+// while a body-instantiation artifact that co-occurs with it — the fresh var a
+// `return g(y)` mints when it instantiates a rank-2 callback — folds into the binder's
+// class and renders under the declared name instead of leaving a spurious `T0`.
 func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeVarType]) *schemeSimplification {
 	vars := map[int]*soltype.TypeVarType{}
 	body.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
@@ -410,13 +435,18 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 	coOcc := map[coKey]set.Set[int]{}
 	body.Accept(&coOccVisitor{m: m, coOcc: coOcc, seen: set.NewSet[coKey]()}, soltype.Positive)
 
+	binders := set.NewSet[int]()
 	candidates := make([]int, 0, len(vars))
 	for id, v := range vars {
-		if v.Level > genLevel && !keep.Contains(v) {
-			candidates = append(candidates, id)
+		if v.Level <= genLevel {
+			continue // captured outer var: not a type parameter, never merges
+		}
+		candidates = append(candidates, id)
+		if keep.Contains(v) {
+			binders.Add(id)
 		}
 	}
-	uf := mergeCoOccurring(candidates, occByID, coOcc)
+	uf := mergeCoOccurring(candidates, occByID, coOcc, binders)
 
 	mergedOcc := map[int]occPolarity{}
 	for id := range vars {
