@@ -203,20 +203,13 @@ func TestInferGenericMethodStillGated(t *testing.T) {
 	}, msgs)
 }
 
-// A parameter whose own type is polymorphic — a callback annotated `fn <V>(x: V) -> V` —
-// stays rejected at the rank-1 boundary. The generic function-type annotation itself
-// resolves, so its `<V>` binds and the two `V` references read that quantified var, but
-// a generic function in parameter position is rank-2, so the declaration reports the
-// parameter as unsupported and recovers to a fresh var rather than approximating it.
-func TestInferGenericFuncHigherRankParamRejected(t *testing.T) {
-	_, _, errs := inferSource(t, `fn apply<T>(g: fn <V>(x: V) -> V, y: T) -> T { return g(y) }`)
-	msgs := make([]string, len(errs))
-	for i, e := range errs {
-		msgs[i] = e.Message()
-	}
-	// The `<V>` annotation resolves, so there is no `TypeRefTypeAnn` cascade; only the
-	// rank-1 boundary rejects the generic function in parameter position.
-	require.Equal(t, []string{
-		"Unsupported: higher-rank function parameter",
-	}, msgs)
+// A parameter whose own type is polymorphic — a rank-2 callback annotated `fn <V>(x: V) ->
+// V` — is accepted. The `<V>` binder is kept on the parameter, so the body's `g(y)` call
+// instantiates `V` per use and the declaration type-checks. The extra `T0` quantifier is the
+// generalization artifact a decl that instantiates a generic function in its body always
+// leaves. The monomorphic `fn wrap<U>(g: fn(x: U) -> U, …)` renders it the same way.
+func TestInferGenericFuncHigherRankParamResolves(t *testing.T) {
+	values, _, errs := inferSource(t, `fn apply<T>(g: fn <V>(x: V) -> V, y: T) -> T { return g(y) }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T0, T: T0>(g: fn <V>(x: V) -> V, y: T) -> T", values["apply"])
 }

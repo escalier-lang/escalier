@@ -337,6 +337,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	case *soltype.FuncType:
 		if sup, ok := super.(*soltype.FuncType); ok {
+			// Higher-rank subtyping: skolemize a super quantifier, instantiate a sub one, then
+			// re-enter. Contravariant param recursion swaps the sides, so polarity needs no flag.
+			if len(sup.TypeParams) > 0 {
+				return c.constrain(sub, c.skolemizeFuncBinder(sup), seen, mutCtx)
+			}
+			if len(sub.TypeParams) > 0 {
+				return c.constrain(c.instantiateFuncBinder(sub, sub.TypeParams[0].Var.Level), sup, seen, mutCtx)
+			}
 			// Accept-set subtyping (#677 §4.2.1): read super as a callback parameter.
 			// sub <: super iff accept(sub) ⊇ accept(super) — sub must tolerate every
 			// argument count a holder of super may invoke it with. With
@@ -927,6 +935,82 @@ func callableView(ft *soltype.FuncType) *soltype.FuncType {
 		TypeParams:     ft.TypeParams,
 		LifetimeParams: ft.LifetimeParams,
 	}
+}
+
+// skolemizeFuncBinder replaces ft's own type parameters with fresh skolems, so a term checked
+// against ft as a supertype must satisfy it for every instantiation. Each parameter's declared
+// bound becomes its skolem's Upper, seeded first so a bound naming a sibling reaches it. For
+// example `<T>(x: T) -> T` becomes `(x: sk) -> sk` for a fresh skolem sk, which `fn (x) {
+// return 5 }` fails but a polymorphic identity satisfies.
+func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
+	sks := make([]*soltype.SkolemType, len(ft.TypeParams))
+	args := make([]soltype.Type, len(ft.TypeParams))
+	for i, tp := range ft.TypeParams {
+		sks[i] = c.freshSkolem(tp.Name)
+		args[i] = sks[i]
+	}
+	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
+	for i, tp := range ft.TypeParams {
+		// resolveTypeParams records at most one upper bound per parameter, itself an
+		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
+		// constraint.
+		if len(tp.Var.UpperBounds) > 0 {
+			sks[i].Upper = tp.Var.UpperBounds[0].Accept(sub, soltype.Positive)
+		}
+	}
+	return substFuncBinder(ft, sub)
+}
+
+// instantiateFuncBinder replaces ft's own type parameters with fresh inference vars at lvl, so
+// the sub side of a subtype check picks the instantiation. Each fresh var carries its bounds.
+// For example a call `cb(5)` instantiates `cb: <T>(x: T) -> T` to `(x: T0) -> T0` for a fresh
+// var T0, which `5` then binds, so a later `cb("hi")` gets its own T1 rather than reusing T0.
+func (c *Context) instantiateFuncBinder(ft *soltype.FuncType, lvl int) *soltype.FuncType {
+	nvs := make([]*soltype.TypeVarType, len(ft.TypeParams))
+	args := make([]soltype.Type, len(ft.TypeParams))
+	for i := range ft.TypeParams {
+		nvs[i] = c.freshVar(lvl)
+		args[i] = nvs[i]
+	}
+	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
+	for i, tp := range ft.TypeParams {
+		nvs[i].LowerBounds = acceptBounds(tp.Var.LowerBounds, sub)
+		nvs[i].UpperBounds = acceptBounds(tp.Var.UpperBounds, sub)
+	}
+	return substFuncBinder(ft, sub)
+}
+
+// substFuncBinder rebuilds ft with sub applied to its parameters and return and its own
+// TypeParams dropped. A nested generic function's own TypeParams pass through unchanged.
+func substFuncBinder(ft *soltype.FuncType, sub *typeSubst) *soltype.FuncType {
+	cp := *ft
+	cp.TypeParams = nil
+	cp.Params = make([]*soltype.FuncParam, len(ft.Params))
+	for i, p := range ft.Params {
+		np := *p
+		np.Type = p.Type.Accept(sub, soltype.Negative)
+		cp.Params[i] = &np
+	}
+	cp.Ret = ft.Ret.Accept(sub, soltype.Positive)
+	if ft.SelfParam != nil {
+		ns := *ft.SelfParam
+		ns.Type = ft.SelfParam.Type.Accept(sub, soltype.Negative)
+		cp.SelfParam = &ns
+	}
+	return &cp
+}
+
+// acceptBounds applies sub to each bound in a var's bound list, preserving the nil-for-empty
+// shape.
+func acceptBounds(bounds []soltype.Type, sub *typeSubst) []soltype.Type {
+	if len(bounds) == 0 {
+		return nil
+	}
+	out := make([]soltype.Type, len(bounds))
+	for i, b := range bounds {
+		out[i] = b.Accept(sub, soltype.Positive)
+	}
+	return out
 }
 
 // ltPair keys constrainLt's coinductive seen-set by (sub, super) lifetime

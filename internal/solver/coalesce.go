@@ -31,9 +31,12 @@ import (
 // See coalesceRec for the guard's behavior. M3 still owns the *precise* μ-bound
 // recursive rendering; this guard only keeps the monomorphic walk total.
 func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	// The uniform-inlining coalesce is coalesceKeeping with no retained vars and no
-	// kept-flow map, so both share one coalescer-invocation body.
-	return coalesceKeeping(t, pol, nil, nil)
+	// The uniform-inlining coalesce is coalesceKeeping with a kept-flow map of nil and, as
+	// the retained set, a generic function's own TypeParams binder vars. Holding those
+	// symbolic keeps a rank-2 callback type such as `<T>(x: T) -> T` intact instead of
+	// inlining its `T` binder to never. acceptTypeParamVar panics on a non-variable binder.
+	// funcTypeParamVars is empty for a monomorphic type, so this is inert on the common path.
+	return coalesceKeeping(t, pol, funcTypeParamVars(t), nil)
 }
 
 // coalesceKeeping is coalesce with a set of variables held symbolic rather than inlined to
