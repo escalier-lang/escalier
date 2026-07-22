@@ -232,16 +232,23 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 	return t, true
 }
 
-// resolveKeyOfTypeAnn lowers `keyof T` to the inert, unreduced KeyofType residual (M9 PR1a;
-// PR1b reduces a ground operand). An unsupported operand recovers to a fresh var, cascade-safe
-// like the Promise<bad> recovery.
+// resolveKeyOfTypeAnn lowers `keyof T` to a KeyofType and reduces it eagerly. A ground operand
+// such as `keyof {x: number}` reduces to the union of its keys at annotation time. A `keyof T`
+// over a type parameter stays the symbolic residual, which the post-solve coalescing sweep
+// reduces once T grounds. An unsupported operand recovers to a fresh var, cascade-safe like the
+// Promise<bad> recovery.
 func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl int) (soltype.Type, bool) {
 	operand, ok := c.resolveTypeAnn(scope, ta.Type, lvl)
 	if !ok {
 		operand = c.freshAt(lvl)
 	}
-	t := &soltype.KeyofType{Operand: operand}
-	c.recordProv(t, ta, AnnotationType)
+	t := newTypeEvaluator(c.ctx).reduce(&soltype.KeyofType{Operand: operand})
+	// Reduction can collapse to a member that already carries provenance, as newUnion does on a
+	// single-member union, so record only when the reduced node has none, matching
+	// resolveUnionTypeAnn. Re-recording would overwrite the narrower blame and trip debugProv.
+	if !c.hasProv(t) {
+		c.recordProv(t, ta, AnnotationType)
+	}
 	return t, true
 }
 

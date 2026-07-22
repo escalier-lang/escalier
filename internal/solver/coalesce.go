@@ -124,7 +124,7 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
-	return t
+	return reduceResidualOp(t)
 }
 
 // bubbleOwnedMut rewrites a coalesced display type so no owned-mutable cell ever
@@ -422,7 +422,21 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
-	return t
+	return reduceResidualOp(t)
+}
+
+// reduceResidualOp reduces a type-level operator left inert during the value solve, the
+// Design-A post-solve half of the two reduction sites. Both coalescers call it bottom-up in
+// ExitType, so a `keyof T` residual whose operand var has just coalesced to a concrete object
+// reduces here to the union of its keys. A non-operator node returns unchanged, and an operand
+// that stays symbolic, such as a retained type parameter, keeps the operator. The evaluator
+// carries no Context, since a coalesced operand is already a concrete shape needing no alias or
+// class projection.
+func reduceResidualOp(t soltype.Type) soltype.Type {
+	if _, ok := t.(*soltype.KeyofType); !ok {
+		return t
+	}
+	return newTypeEvaluator(nil).reduce(t)
 }
 
 // displayBinder maps a binder var to its cleaned display copy when one exists, else
