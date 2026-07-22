@@ -152,12 +152,13 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 	return newUnion(e.ctx, keys, false)
 }
 
-// keyofTuple yields a tuple's keys: the string literal "length" plus one number-literal type
-// per positional element, matching the old checker's TupleType arm. `keyof [number, string]`
-// reduces to `0 | 1 | "length"`.
+// keyofTuple yields a tuple's own keys: one number-literal type per positional element, the
+// indices Object.keys returns. `keyof [number, string]` reduces to `0 | 1`. This deliberately
+// deviates from TypeScript, whose keyof of a tuple also includes "length" and the other
+// Array.prototype members. Those are inherited rather than own keys, so Escalier omits them.
+// TODO: decide how keyof should account for inherited prototype members once interop is designed.
 func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
-	keys := make([]soltype.Type, 0, len(tup.Elems)+1)
-	keys = append(keys, strLitType("length"))
+	keys := make([]soltype.Type, 0, len(tup.Elems))
 	for i := range tup.Elems {
 		keys = append(keys, &soltype.LitType{Lit: &soltype.NumLit{Value: float64(i)}})
 	}

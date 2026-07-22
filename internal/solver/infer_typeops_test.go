@@ -71,10 +71,11 @@ func TestInferKeyofEagerReduction(t *testing.T) {
 			want: map[string]string{"g": `fn (x: "a" | "b") -> void`},
 		},
 		{
-			// A tuple yields its numeric indices as number literals plus the "length" key.
+			// A tuple yields only its own numeric indices, the keys Object.keys returns. It omits
+			// "length" and the inherited Array.prototype members TypeScript's keyof includes.
 			name: "Tuple",
 			src:  `fn g(x: keyof [number, string]) {}`,
-			want: map[string]string{"g": `fn (x: 0 | 1 | "length") -> void`},
+			want: map[string]string{"g": "fn (x: 0 | 1) -> void"},
 		},
 		{
 			// Distribution reduces the ground members and leaves the non-ground one symbolic:
