@@ -240,8 +240,8 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 // resolveAliasLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments and checks
 // their count against the alias's lifetime parameters, which have no default. A mismatch
 // reports an AliasLifetimeArityMismatchError and recovers with fresh lifetimes.
-func (c *checker) resolveAliasLifetimeArgs(ref *ast.TypeRefTypeAnn, params []*soltype.LifetimeParam, lvl int) []soltype.Lifetime {
-	total := len(params)
+func (c *checker) resolveAliasLifetimeArgs(ref *ast.TypeRefTypeAnn, ltParams []*soltype.LifetimeParam, lvl int) []soltype.Lifetime {
+	total := len(ltParams)
 	got := len(ref.LifetimeArgs)
 	if got != total {
 		c.report(&AliasLifetimeArityMismatchError{
