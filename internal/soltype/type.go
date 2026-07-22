@@ -593,7 +593,22 @@ type AliasType struct {
 	LifetimeArgs []Lifetime
 }
 
+// KeyofType is the residual `keyof Operand` type operator (M9 PR1a), the first of
+// the type-level operators. It is inert: it carries no bounds, constrain never
+// records one against it, and it flows through the solver's structural machinery
+// untouched — the "adds no new mutable solver state" invariant it shares with the
+// spike's ResidualOp. An evaluator reduces it once its operand is ground (M9 PR1b);
+// until then a `keyof T` over a type parameter stays symbolic and renders `keyof T`.
+// Exact records whether the operand's key set is complete, the seed for exactness
+// propagation through reduction (M9 PR8). It is carried through the visitor and left
+// unread until that work lands.
+type KeyofType struct {
+	Operand Type
+	Exact   bool
+}
+
 func (*TypeVarType) isType()      {}
+func (*KeyofType) isType()        {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
@@ -668,6 +683,11 @@ func LevelOf(t Type) int {
 			m = max(m, LevelOfLifetime(la))
 		}
 		return m
+	case *KeyofType:
+		// A residual operator's level is its operand's, so a `keyof T` over an out-of-level
+		// type parameter lifts the level and the freshener/extruder prune descends to
+		// freshen the operand, exactly as the single-child PromiseType arm does.
+		return LevelOf(t.Operand)
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:

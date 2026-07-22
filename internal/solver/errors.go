@@ -1685,6 +1685,14 @@ func describe(t soltype.Type) string {
 		// and informative (`Promise<number>`), whereas a function/tuple/record would
 		// be verbose spelled out, so those stay nominal.
 		return "Promise<" + describe(t.Inner) + ">"
+	case *soltype.KeyofType:
+		// A `keyof` residual renders structurally, recursing like the Promise arm, so a
+		// rejected constraint names it `keyof <operand>` rather than the default `?`. The
+		// operand renders in describe's raw mid-constrain form, so a type-variable operand
+		// shows as `t1`, not the coalesced printer's param name. describe is the second
+		// per-node type renderer beside soltype.Print; both carry the residual, so a later
+		// operator node must add an arm here as well as there.
+		return "keyof " + describe(t.Operand)
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
 		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2

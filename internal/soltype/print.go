@@ -11,14 +11,14 @@ import (
 )
 
 // Precedence levels for type operators, matching the Escalier parser (and
-// type_system/print_type.go). Higher values bind more tightly. M4 adds precPrefix
-// for the `mut`/lifetime borrow prefix (RefType); type_system's other prefix forms
-// (keyof, ...T) land with their later milestones.
+// type_system/print_type.go). Higher values bind more tightly. precPrefix covers the
+// prefix forms — the `mut`/lifetime borrow prefix (RefType) and the `keyof` operator
+// (KeyofType); the `...T` spread prefix lands with tuple/object spread types.
 const (
 	precFunc         = 2 // fn (...) -> T — return type is greedy, needs parens in union/intersection
 	precUnion        = 3 // A | B
 	precIntersection = 4 // A & B
-	precPrefix       = 5 // mut T, 'a T — a borrow prefix binds looser than an atom
+	precPrefix       = 5 // mut T, 'a T, keyof T — a prefix binds looser than an atom
 	precAtom         = 6 // primary types, never need parens
 )
 
@@ -32,6 +32,8 @@ func typePrec(t Type) int {
 	case *IntersectionType:
 		return precIntersection
 	case *RefType:
+		return precPrefix
+	case *KeyofType:
 		return precPrefix
 	default:
 		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
@@ -399,6 +401,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, a := range t.TypeArgs {
 				walk(a)
 			}
+		case *KeyofType:
+			walk(t.Operand)
 		case *PromiseType:
 			walk(t.Inner)
 		case *RefType:
@@ -594,6 +598,10 @@ func (p *namedPrinter) printType(t Type) string {
 		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *FuncType:
 		return "fn " + p.printFuncTail(t)
+	case *KeyofType:
+		// `keyof T`, mirroring type_system's KeyOfType rendering. The operand prints at
+		// precPrefix so a looser operand such as a union gets parenthesized: `keyof (A | B)`.
+		return "keyof " + p.printTypeMinPrec(t.Operand, precPrefix)
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:

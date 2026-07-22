@@ -79,6 +79,10 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.resolveIntersectionTypeAnn(scope, ta, lvl)
 	case *ast.FuncTypeAnn:
 		return c.resolveFuncTypeAnn(scope, ta, lvl)
+	case *ast.KeyOfTypeAnn:
+		return c.resolveKeyOfTypeAnn(scope, ta, lvl)
+	case *ast.TypeOfTypeAnn:
+		return c.resolveTypeOfTypeAnn(scope, ta)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -226,6 +230,74 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 		c.recordProv(t, ta, AnnotationType)
 	}
 	return t, true
+}
+
+// resolveKeyOfTypeAnn lowers `keyof T` to the inert, unreduced KeyofType residual (M9 PR1a;
+// PR1b reduces a ground operand). An unsupported operand recovers to a fresh var, cascade-safe
+// like the Promise<bad> recovery.
+func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl int) (soltype.Type, bool) {
+	operand, ok := c.resolveTypeAnn(scope, ta.Type, lvl)
+	if !ok {
+		operand = c.freshAt(lvl)
+	}
+	t := &soltype.KeyofType{Operand: operand}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveTypeOfTypeAnn resolves a `typeof v` query to the value's type at annotation time (M9
+// PR1a) — not a residual, the value→type bridge `keyof typeof x` relies on. A name or member
+// that resolves to no readable value reports an unsupported feature and recovers.
+func (c *checker) resolveTypeOfTypeAnn(scope *Scope, ta *ast.TypeOfTypeAnn) (soltype.Type, bool) {
+	if t, ok := c.resolveTypeOfQualIdent(scope, ta.Value); ok {
+		return t, true
+	}
+	return c.reportUnsupportedFeature(ta, "typeof of a name that is not a readable value"), false
+}
+
+// resolveTypeOfQualIdent resolves a `typeof` operand — a bare value name or a member chain
+// `p.x` — to the value's type, porting the old checker's resolveTypeOfQualIdent
+// (internal/checker/expand_type.go). A name reads the value's coalesced scheme type; a member
+// chain projects each property off the resolved base. ok=false when a step does not resolve.
+//
+// The result is not stamped with provenance: it is a shared binding/property type, not the
+// freshly-minted unique pointer recordProv requires, so a mismatch blames its constraint site.
+func (c *checker) resolveTypeOfQualIdent(scope *Scope, ident ast.QualIdent) (soltype.Type, bool) {
+	switch id := ident.(type) {
+	case *ast.Ident:
+		if b, ok := scope.GetValue(id.Name); ok {
+			// bindingType takes the scheme's coalesced concrete type, not a fresh inference
+			// var that would coalesce to unknown in a negative position such as the operand of
+			// `keyof typeof v`. The dep graph orders v first, so its scheme is final here; a
+			// definition-less binding yields nil, i.e. the ok=false path.
+			if t := bindingType(b); t != nil {
+				return t, true
+			}
+		}
+		return nil, false
+	case *ast.Member:
+		recv, ok := c.resolveTypeOfQualIdent(scope, id.Left)
+		if !ok {
+			return nil, false
+		}
+		return c.typeofMember(recv, id.Right.Name)
+	}
+	return nil, false
+}
+
+// typeofMember projects the named property off a `typeof p.x` receiver: it strips any borrow
+// wrapper, then reads the member off the carrier object, returning nothing when the receiver
+// is not an object or carries no such readable member.
+func (c *checker) typeofMember(recv soltype.Type, name string) (soltype.Type, bool) {
+	obj, ok := c.ctx.readCarrierObject(readCarrier(recv))
+	if !ok {
+		return nil, false
+	}
+	read, hasValue, _ := memberReadContribution(obj, name)
+	if !hasValue {
+		return nil, false
+	}
+	return read, true
 }
 
 // resolveFuncTypeAnn lowers a function type annotation `fn<T>(p: A, ...) -> R` into a
