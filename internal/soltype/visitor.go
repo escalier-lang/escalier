@@ -265,7 +265,10 @@ func (t *AliasType) Accept(v TypeVisitor, pol Polarity) Type {
 		// Name is the handle's identity, carried through unchanged. An alias is
 		// transparent, so its arguments walk covariantly like a class's, and variance
 		// is resolved by expansion at subtyping time rather than stored on the handle.
-		out = &AliasType{Name: cur.Name, TypeArgs: args}
+		// LifetimeArgs are lifetimes, not Types, so Accept never walks them; a
+		// lifetime-aware visitor freshens them in its EnterType, replacing the whole
+		// AliasType before this rebuild, so cur already holds the freshened lifetimes.
+		out = &AliasType{Name: cur.Name, TypeArgs: args, LifetimeArgs: cur.LifetimeArgs}
 	}
 	return v.ExitType(out, pol)
 }

@@ -1070,10 +1070,13 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		return equalTypeSliceWith(a.TypeArgs, b.TypeArgs, ctx)
 	case *soltype.AliasType:
 		b, ok := b.(*soltype.AliasType)
-		// Two alias references are equal when they name the same alias and their type
-		// arguments compare equal positionally. The Name is the handle's identity. An alias
-		// carries no exactness flag.
+		// Two alias references are equal when they name the same alias, their lifetime
+		// arguments compare equal positionally, and their type arguments do too. The Name is
+		// the handle's identity. An alias carries no exactness flag.
 		if !ok || a.Name != b.Name {
+			return false
+		}
+		if !sameLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs, ctx) {
 			return false
 		}
 		return equalTypeSliceWith(a.TypeArgs, b.TypeArgs, ctx)

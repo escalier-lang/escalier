@@ -1587,3 +1587,108 @@
     span: 1:1-1:24,
 }
 ---
+
+[TestParseLifetimeAnnotations/TypeAliasWithLifetimeParamBound - 1]
+&ast.DeclStmt{
+    Decl: &ast.TypeDecl{
+        Name: &ast.Ident{
+            Name: "Pair",
+            span: 1:6-1:10,
+        },
+        LifetimeParams: []*ast.LifetimeParam{
+            &ast.LifetimeParam{
+                Name: "a",
+                span: 1:11-1:13,
+            },
+            &ast.LifetimeParam{
+                Name: "b",
+                Bounds: []*ast.LifetimeAnn{
+                    &ast.LifetimeAnn{
+                        Name: "a",
+                        span: 1:19-1:21,
+                    },
+                },
+                span: 1:15-1:21,
+            },
+        },
+        TypeParams: []*ast.TypeParam{
+            &ast.TypeParam{
+                Name: "T",
+            },
+        },
+        TypeAnn: &ast.TupleTypeAnn{
+            Elems: []ast.TypeAnn{
+                &ast.RefTypeAnn{
+                    Lifetime: &ast.LifetimeAnn{
+                        Name: "a",
+                        span: 1:30-1:32,
+                    },
+                    Inner: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: 1:33-1:34,
+                        },
+                        span: 1:33-1:34,
+                    },
+                    span: 1:29-1:34,
+                },
+                &ast.RefTypeAnn{
+                    Lifetime: &ast.LifetimeAnn{
+                        Name: "b",
+                        span: 1:37-1:39,
+                    },
+                    Inner: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: 1:40-1:41,
+                        },
+                        span: 1:40-1:41,
+                    },
+                    span: 1:36-1:41,
+                },
+            },
+            span: 1:28-1:42,
+        },
+        span: 1:1-1:42,
+    },
+    span: 1:1-1:42,
+}
+---
+
+[TestParseLifetimeAnnotations/TypeAliasWithLifetimeAndTypeParams - 1]
+&ast.DeclStmt{
+    Decl: &ast.TypeDecl{
+        Name: &ast.Ident{
+            Name: "Ref",
+            span: 1:6-1:9,
+        },
+        LifetimeParams: []*ast.LifetimeParam{
+            &ast.LifetimeParam{
+                Name: "a",
+                span: 1:10-1:12,
+            },
+        },
+        TypeParams: []*ast.TypeParam{
+            &ast.TypeParam{
+                Name: "T",
+            },
+        },
+        TypeAnn: &ast.RefTypeAnn{
+            Lifetime: &ast.LifetimeAnn{
+                Name: "a",
+                span: 1:20-1:22,
+            },
+            Inner: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "T",
+                    span: 1:23-1:24,
+                },
+                span: 1:23-1:24,
+            },
+            span: 1:19-1:24,
+        },
+        span: 1:1-1:24,
+    },
+    span: 1:1-1:24,
+}
+---

@@ -93,6 +93,12 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 		"InterfaceWithLifetimeParam": {
 			input: `interface Holder<'a> { p: 'a Point }`,
 		},
+		"TypeAliasWithLifetimeAndTypeParams": {
+			input: `type Ref<'a, T> = &'a T`,
+		},
+		"TypeAliasWithLifetimeParamBound": {
+			input: `type Pair<'a, 'b: 'a, T> = [&'a T, &'b T]`,
+		},
 		"TypeRefBareLifetimeArg": {
 			input: `val v: View<'a> = ref`,
 		},
@@ -139,17 +145,16 @@ func TestParseLifetimeAnnotations(t *testing.T) {
 
 // TestParseLifetimeInUnsupportedContextErrors verifies that lifetime
 // parameters on declaration kinds that still don't support them
-// (type aliases, enums, object/class-field method shorthands) produce
-// a parse-time diagnostic rather than being silently dropped.
-// Functions, `fn`-type annotations, classes, and interfaces all
-// support `<'a, ...>` clauses — see TestParseLifetimeAnnotations.
+// (enums, object/class-field method shorthands) produce a parse-time
+// diagnostic rather than being silently dropped. Functions, `fn`-type
+// annotations, classes, interfaces, and type aliases all support
+// `<'a, ...>` clauses — see TestParseLifetimeAnnotations.
 func TestParseLifetimeInUnsupportedContextErrors(t *testing.T) {
 	const expected = "lifetime parameters are not supported in this context"
 
 	tests := map[string]struct {
 		input string
 	}{
-		"TypeAliasWithLifetimeParam":  {input: `type Box<'a> = 'a Point`},
 		"EnumWithLifetimeParam":       {input: `enum Maybe<'a> { Some, None }`},
 		"ClassFieldWithLifetimeParam":   {input: `class Box { p<'a>: Point }`},
 		"ObjectPropertyWithLifetimeParam": {input: `val x: { p<'a>: Point } = ref`},

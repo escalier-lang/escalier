@@ -101,3 +101,66 @@ func TestAliasTypeInterfaces(t *testing.T) {
 	a.isType()
 	a.isRefInner()
 }
+
+// TestPrintAliasLifetimeArgs renders a lifetime-generic alias reference: the lifetime
+// argument 'a renders before any type argument, so `Foo<'a>` and `Foo<'a, number>` show
+// their lifetime first. PrintAsScheme names the free lifetime argument 'a.
+func TestPrintAliasLifetimeArgs(t *testing.T) {
+	lx := &LifetimeVar{ID: 0, Level: 1}
+	require.Equal(t, "Foo<'a>", PrintAsScheme(&AliasType{Name: "Foo", LifetimeArgs: []Lifetime{lx}}))
+	require.Equal(t, "Foo<'a, number>", PrintAsScheme(&AliasType{
+		Name:         "Foo",
+		LifetimeArgs: []Lifetime{lx},
+		TypeArgs:     []Type{numP()},
+	}))
+}
+
+// TestPrintQualifiedAliasLifetimeArgsDistinct is the distinctness property the LifetimeArgs
+// field exists for: two references to one alias at different lifetimes serialize to different
+// identity keys, so `Foo<'a>` and `Foo<'b>` never collide on the intern-cache key the
+// recursion guard uses. Keying without the lifetime arguments would let two borrows of one
+// alias at different lifetimes share a cache entry.
+func TestPrintQualifiedAliasLifetimeArgsDistinct(t *testing.T) {
+	la := &LifetimeVar{ID: 0, Level: 1}
+	lb := &LifetimeVar{ID: 1, Level: 1}
+	require.NotEqual(t,
+		PrintQualified(&AliasType{Name: "Foo", LifetimeArgs: []Lifetime{la}}),
+		PrintQualified(&AliasType{Name: "Foo", LifetimeArgs: []Lifetime{lb}}),
+		"two lifetimes render to distinct identity keys",
+	)
+}
+
+// TestLevelOfAliasLifetimeArgs folds an alias reference's lifetime argument into its level,
+// so a free lifetime argument lifts the level the same way a type argument does.
+func TestLevelOfAliasLifetimeArgs(t *testing.T) {
+	alias := &AliasType{
+		Name:         "Foo",
+		LifetimeArgs: []Lifetime{&LifetimeVar{ID: 0, Level: 7}},
+		TypeArgs:     []Type{&TypeVarType{ID: 1, Level: 3}},
+	}
+	require.Equal(t, 7, LevelOf(alias), "the level is the max over the lifetime and type arguments")
+}
+
+// TestAcceptAliasLifetimeArgsCopyOnWrite rewrites a type argument inside an alias reference,
+// rebuilds the AliasType, carries the lifetime argument through unchanged, and replaces the
+// type argument. Lifetimes are not Types, so Accept never walks the lifetime argument.
+func TestAcceptAliasLifetimeArgsCopyOnWrite(t *testing.T) {
+	str := &PrimType{Prim: StrPrim}
+	a := &TypeVarType{ID: 1}
+	lx := &LifetimeVar{ID: 0, Level: 1}
+	alias := &AliasType{Name: "Foo", LifetimeArgs: []Lifetime{lx}, TypeArgs: []Type{a}}
+
+	got := alias.Accept(&replaceVar{target: a, repl: str}, Positive).(*AliasType)
+
+	require.NotSame(t, alias, got, "a changed type argument forces a new AliasType")
+	require.Same(t, lx, got.LifetimeArgs[0], "the lifetime argument carries through unchanged")
+	require.Same(t, str, got.TypeArgs[0], "the type argument took the replacement")
+}
+
+// TestFreeLifetimeVarsAliasLifetimeArg collects a lifetime-generic alias reference's lifetime
+// argument, so `Foo<'a>` surfaces 'a as a free lifetime the scheme quantifies.
+func TestFreeLifetimeVarsAliasLifetimeArg(t *testing.T) {
+	lx := &LifetimeVar{ID: 0, Level: 1}
+	alias := &AliasType{Name: "Foo", LifetimeArgs: []Lifetime{lx}, TypeArgs: []Type{numP()}}
+	require.Equal(t, []*LifetimeVar{lx}, freeLifetimeVars(alias))
+}

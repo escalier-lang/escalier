@@ -344,6 +344,8 @@ func freshenLifetimeFormer(t soltype.Type, lf *ltFreshener) (soltype.EnterResult
 		return rewriteFuncLifetimes(t, lf.fresh), true
 	case *soltype.ClassType:
 		return rewriteClassLifetimes(t, lf.fresh), true
+	case *soltype.AliasType:
+		return rewriteAliasLifetimes(t, lf.fresh), true
 	}
 	return soltype.EnterResult{}, false
 }
@@ -385,6 +387,26 @@ func rewriteClassLifetimes(
 	repl := *t
 	repl.LifetimeArgs = nargs
 	repl.Lt = nlt
+	return soltype.EnterResult{Type: &repl}
+}
+
+// rewriteAliasLifetimes rewrites an AliasType's lifetime arguments through tf, the non-Type
+// lifetimes Accept never walks. The type arguments still descend, sharing tf's cache. An
+// alias has no own borrow lifetime, so only the arguments are rewritten. No change signals
+// an ordinary descent.
+func rewriteAliasLifetimes(
+	t *soltype.AliasType,
+	tf func(soltype.Lifetime) soltype.Lifetime,
+) soltype.EnterResult {
+	if len(t.LifetimeArgs) == 0 {
+		return soltype.EnterResult{}
+	}
+	nargs, changed := rewriteLtSlice(t.LifetimeArgs, tf)
+	if !changed {
+		return soltype.EnterResult{}
+	}
+	repl := *t
+	repl.LifetimeArgs = nargs
 	return soltype.EnterResult{Type: &repl}
 }
 

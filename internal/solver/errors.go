@@ -869,6 +869,7 @@ func (*InstancePatternNotClassError) isSolverError()        {}
 func (*ExtractorPatternNotCtorError) isSolverError()        {}
 func (*ExtractorPatternArityError) isSolverError()          {}
 func (*AliasArityMismatchError) isSolverError()             {}
+func (*AliasLifetimeArityMismatchError) isSolverError()     {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -981,6 +982,22 @@ func (e *AliasArityMismatchError) Message() string {
 		return fmt.Sprintf("type alias `%s` expects %d type arguments but got %d", e.Name, e.Total, e.Got)
 	}
 	return fmt.Sprintf("type alias `%s` expects between %d and %d type arguments but got %d", e.Name, e.Required, e.Total, e.Got)
+}
+
+// AliasLifetimeArityMismatchError fires when a generic-alias reference `Name<'a, …>` supplies
+// a number of lifetime arguments that does not match the alias's declared `<'a, …>` clause. A
+// lifetime parameter has no default, so the counts must match exactly.
+type AliasLifetimeArityMismatchError struct {
+	Ref      *ast.TypeRefTypeAnn
+	Name     string
+	Expected int
+	Got      int
+}
+
+func (e *AliasLifetimeArityMismatchError) Span() ast.Span      { return e.Ref.Span() }
+func (e *AliasLifetimeArityMismatchError) Related() []ast.Span { return nil }
+func (e *AliasLifetimeArityMismatchError) Message() string {
+	return fmt.Sprintf("type alias `%s` expects %d lifetime arguments but got %d", e.Name, e.Expected, e.Got)
 }
 
 // MultipleConstructorsError fires on the second and any later `constructor` block in

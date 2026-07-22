@@ -582,9 +582,15 @@ type AliasType struct {
 	// Name is the dep_graph-qualified name such as "Geometry.Point", so two aliases named
 	// Point in different namespaces stay distinct. It also keys the registry.
 	Name string
-	// TypeArgs are the arguments a generic reference supplies. Always empty today, since
-	// generic aliases are not yet supported.
+	// TypeArgs are the type arguments a generic reference supplies, one per alias type
+	// parameter, substituted into the body at expansion. A non-generic reference carries none.
 	TypeArgs []Type
+	// LifetimeArgs are the lifetime arguments a lifetime-generic reference supplies, one per
+	// alias lifetime parameter, so `Foo<'a>` and `Foo<'b>` are distinct nodes rather than
+	// colliding. They join Name and TypeArgs in the instance identity the recursion guard and
+	// M9's cycle cache key on, so two borrows of one alias at different lifetimes never share a
+	// cache entry. A borrow's own lifetime rides a RefType wrapper, not this field.
+	LifetimeArgs []Lifetime
 }
 
 func (*TypeVarType) isType()      {}
@@ -650,11 +656,16 @@ func LevelOf(t Type) int {
 		}
 		return max(m, LevelOfLifetime(t.Lt))
 	case *AliasType:
-		// An alias reference's level is the max level over its type arguments; the Name
-		// carries no variables. A bare reference with no arguments is level 0.
+		// An alias reference's level is the max level over its type and lifetime arguments;
+		// the Name carries no variables. A bare reference with no arguments is level 0. A free
+		// lifetime arg such as the 'a in Foo<'a> lifts the level so the freshener/extruder
+		// prune descends to freshen it, the same reason the ClassType arm folds in its args.
 		m := 0
 		for _, a := range t.TypeArgs {
 			m = max(m, LevelOf(a))
+		}
+		for _, la := range t.LifetimeArgs {
+			m = max(m, LevelOfLifetime(la))
 		}
 		return m
 	case *PromiseType:
