@@ -58,6 +58,11 @@ type aliasShell struct {
 	// declScope is scope, or a child holding a generic alias's type parameters. The body
 	// resolves here so it reads each `T` as the one shared var the def stores.
 	declScope *Scope
+	// namedLts is the alias's own named-lifetime scope, populated by preBindAlias when it
+	// resolves the `<'a>` parameters. inferAliasBody installs it so a `&'a` in the body reads
+	// the same lifetime variable the parameter binder minted. It is nil for an alias with no
+	// lifetime parameters, which gives the body a fresh scope.
+	namedLts map[string]*soltype.LifetimeVar
 	// def is the registered AliasDef preBindAlias inserted with a nil Body; inferAliasBody
 	// fills its Body once every sibling identity in the component is bound.
 	def *AliasDef
@@ -85,6 +90,13 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 		qname = ns + "." + decl.Name.Name
 	}
 
+	// Resolve the alias's parameters in a fresh named-lifetime scope so a lifetime parameter
+	// and every `&'a` in the body share one lifetime variable, and hand that scope to
+	// inferAliasBody. Saving and restoring keeps one alias's `'a` independent of a sibling's
+	// in the same component.
+	savedNamedLts := c.namedLifetimes
+	c.namedLifetimes = nil
+
 	// Resolve the alias's type parameters into a child scope so a bound, a default, and the
 	// body all read a sibling `T` as one shared var. A non-generic alias reuses the
 	// enclosing scope.
@@ -94,8 +106,11 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 		declScope = scope.Child()
 		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 	}
+	lifetimeParams := c.resolveAliasLifetimeParams(lvl, decl.LifetimeParams)
+	aliasNamedLts := c.namedLifetimes
+	c.namedLifetimes = savedNamedLts
 
-	def := &AliasDef{TypeParams: typeParams, Level: lvl - 1}
+	def := &AliasDef{TypeParams: typeParams, LifetimeParams: lifetimeParams, Level: lvl - 1}
 	c.ctx.registerAlias(qname, def)
 
 	t := &soltype.AliasType{Name: qname}
@@ -105,7 +120,27 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 	})
 	c.recordType(decl.Name, t)
 
-	return &aliasShell{decl: decl, ns: ns, lvl: lvl, declScope: declScope, def: def}
+	return &aliasShell{decl: decl, ns: ns, lvl: lvl, declScope: declScope, namedLts: aliasNamedLts, def: def}
+}
+
+// resolveAliasLifetimeParams resolves an alias's `<'a, ...>` lifetime parameters into their
+// soltype form, minting one lifetime variable per parameter through namedLifetime so a `&'a`
+// in the body reaches the same variable. It runs inside the alias's fresh named-lifetime
+// scope, which preBindAlias installs and hands to inferAliasBody. An outlives bound resolves
+// through boundLifetime, sharing the variable a same-named parameter or borrow denotes.
+func (c *checker) resolveAliasLifetimeParams(lvl int, params []*ast.LifetimeParam) []*soltype.LifetimeParam {
+	if len(params) == 0 {
+		return nil
+	}
+	out := make([]*soltype.LifetimeParam, len(params))
+	for i, p := range params {
+		var bounds []soltype.Lifetime
+		for _, b := range p.Bounds {
+			bounds = append(bounds, c.boundLifetime(b.Name, lvl))
+		}
+		out[i] = &soltype.LifetimeParam{Name: "'" + p.Name, Var: c.namedLifetime(p.Name, lvl), Bounds: bounds}
+	}
+	return out
 }
 
 // inferAliasBody resolves a pre-bound alias's body and stores it on the shell's AliasDef.
@@ -117,6 +152,13 @@ func (c *checker) inferAliasBody(sh *aliasShell) {
 	prevNS := c.classNamespace
 	c.classNamespace = sh.ns
 	defer func() { c.classNamespace = prevNS }()
+
+	// Install the alias's own named-lifetime scope, populated by preBindAlias, so a `&'a` in
+	// the body reads the lifetime variable its `<'a>` binder minted. A non-lifetime-generic
+	// alias carries a nil scope, which gives its body a fresh one independent of any sibling.
+	savedNamedLts := c.namedLifetimes
+	c.namedLifetimes = sh.namedLts
+	defer func() { c.namedLifetimes = savedNamedLts }()
 
 	// A nil TypeAnn is parser error recovery for `type Foo =`, already reported. Bind a
 	// fresh var and skip resolveTypeAnn, since a nil annotation has no span to report on.
@@ -133,17 +175,21 @@ func (c *checker) inferAliasBody(sh *aliasShell) {
 }
 
 // buildAliasInstance resolves a use-site reference to a registered alias into an AliasType
-// carrying one type argument per parameter. A trailing parameter with a default may be
-// omitted, so its argument is filled from the default with the earlier arguments already
-// substituted, letting `type Pair<T, U = T>` resolve `Pair<number>` to `Pair<number,
-// number>`. Fewer than the required count or more than the total parameter count reports an
-// AliasArityMismatchError and recovers, so a downstream reference still resolves.
+// carrying one type argument per type parameter and one lifetime argument per lifetime
+// parameter. A trailing type parameter with a default may be omitted, so its argument is
+// filled from the default with the earlier arguments already substituted, letting `type
+// Pair<T, U = T>` resolve `Pair<number>` to `Pair<number, number>`. A lifetime parameter has
+// no default, so its count must match exactly. A mismatch on either sort reports and recovers
+// with fresh arguments, so a downstream reference still resolves.
 func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.AliasType {
 	def, _ := c.ctx.aliasDef(at.Name)
 	var params []*soltype.TypeParam
+	var ltParams []*soltype.LifetimeParam
 	if def != nil {
 		params = def.TypeParams
+		ltParams = def.LifetimeParams
 	}
+	ltArgs := c.resolveAliasLifetimeArgs(ref, ltParams, lvl)
 	total := len(params)
 	required := 0
 	for _, p := range params {
@@ -162,9 +208,13 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 		})
 	}
 	if total == 0 {
-		// A non-generic alias carries no arguments; any that were supplied are reported
-		// above. Return the bare handle so the alias still resolves under its name.
-		return at
+		// A non-generic alias carries no type arguments; any that were supplied are reported
+		// above. Return a handle carrying only the lifetime arguments, or the bare handle when
+		// there are none, so the alias still resolves under its name.
+		if len(ltArgs) == 0 {
+			return at
+		}
+		return &soltype.AliasType{Name: at.Name, LifetimeArgs: ltArgs}
 	}
 	args := make([]soltype.Type, total)
 	for i := range total {
@@ -187,5 +237,48 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 			args[i] = c.freshAt(lvl)
 		}
 	}
-	return &soltype.AliasType{Name: at.Name, TypeArgs: args}
+	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
+}
+
+// resolveAliasLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments into their
+// soltype form and checks their count against the alias's declared lifetime parameters. A
+// lifetime parameter has no default, so the count must match exactly. A mismatch reports an
+// AliasLifetimeArityMismatchError and recovers with fresh lifetimes, so expansion still has
+// one argument per parameter. Each argument resolves through boundLifetime, so `'static` maps
+// to the static lifetime and a named `'a` shares the variable that name denotes at the site.
+func (c *checker) resolveAliasLifetimeArgs(ref *ast.TypeRefTypeAnn, params []*soltype.LifetimeParam, lvl int) []soltype.Lifetime {
+	total := len(params)
+	got := len(ref.LifetimeArgs)
+	if got != total {
+		c.report(&AliasLifetimeArityMismatchError{
+			Ref:      ref,
+			Name:     ast.QualIdentToString(ref.Name),
+			Expected: total,
+			Got:      got,
+		})
+	}
+	if total == 0 {
+		return nil
+	}
+	args := make([]soltype.Lifetime, total)
+	for i := range total {
+		if i < got {
+			args[i] = c.useLifetimeArg(ref.LifetimeArgs[i], lvl)
+		} else {
+			// A missing lifetime argument was reported above. Recover with a fresh lifetime so
+			// expansion substitutes one per parameter.
+			args[i] = c.ctx.freshLifetime(lvl)
+		}
+	}
+	return args
+}
+
+// useLifetimeArg resolves one written lifetime argument. A named `'a` shares the variable that
+// name denotes at the reference site, and `'static` maps to the static lifetime, matching the
+// bound-resolution rule. An unexpected node recovers to a fresh lifetime.
+func (c *checker) useLifetimeArg(node ast.LifetimeAnnNode, lvl int) soltype.Lifetime {
+	if n, ok := node.(*ast.LifetimeAnn); ok {
+		return c.boundLifetime(n.Name, lvl)
+	}
+	return c.ctx.freshLifetime(lvl)
 }

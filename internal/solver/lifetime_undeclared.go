@@ -86,6 +86,14 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 			span:        u.Span(),
 		})
 	}
+	// A `'a` lifetime argument on a generic-alias reference marks a declared binder as used,
+	// so `<'a>` on a function that only mentions 'a inside `Ref<'a, T>` is not flagged unused.
+	// An undeclared one is not reported here. buildAliasInstance recovers it through
+	// namedLifetime, and a non-alias reference such as `Promise<'a, T>` rejects the lifetime on
+	// its own, so reporting it undeclared here would double up with misleading advice.
+	for _, u := range col.refArgs {
+		used.Add(u.Name)
+	}
 
 	// The symmetric companion: a binder no use references is dead weight. Iterating
 	// declaredOrder reports each unused name once and blames its first binder, even for a
@@ -103,20 +111,31 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 // annotations, but stops at a nested function annotation, which owns its own lifetime
 // scope.
 //
-// The set of forms this records must match the forms resolveLifetimeAnn interns through
-// namedLifetime, since a use the scan misses is one namedLifetime still mints a fresh
-// recovery lifetime for. Today that is the `&'x` borrow alone; `'x` on a referenced type,
-// as `Foo<'x>` or `'x Point`, resolves as an unsupported feature and interns nothing. When
-// that form gains support, add it here and to addLifetime.
+// A borrow's `&'x` lifetime lands in uses, which drives both the undeclared and unused scans.
+// A `'a` lifetime argument on a referenced type, the `'a` in `Ref<'a, T>`, lands in refArgs
+// instead, which drives only the unused scan. The split keeps a genuine undeclared borrow an
+// error while letting an alias argument recover through namedLifetime without an extra,
+// misleading report, since a non-alias reference such as `Promise<'a, T>` rejects the lifetime
+// on its own. The `'x Point` prefix form does not resolve onto a referenced type, so it interns
+// nothing and is not collected.
 type lifetimeUseCollector struct {
 	ast.DefaultVisitor
-	uses []*ast.LifetimeAnn
+	uses    []*ast.LifetimeAnn
+	refArgs []*ast.LifetimeAnn
 }
 
 func (v *lifetimeUseCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 	switch n := t.(type) {
 	case *ast.RefTypeAnn:
 		v.addLifetime(n.Lifetime)
+		return true
+	case *ast.TypeRefTypeAnn:
+		// A lifetime argument on a referenced type counts as a use of a declared binder, so
+		// `<'a>` used only inside `Ref<'a, T>` is not flagged unused. Record each into refArgs,
+		// then descend into the type arguments for any nested borrow.
+		for _, la := range n.LifetimeArgs {
+			v.addRefArg(la)
+		}
 		return true
 	case *ast.FuncTypeAnn:
 		// A nested function type is its own quantifier scope. Its inner borrows are not
@@ -135,6 +154,18 @@ func (v *lifetimeUseCollector) addLifetime(node ast.LifetimeAnnNode) {
 	case *ast.LifetimeAnn:
 		if n.Name != "static" {
 			v.uses = append(v.uses, n)
+		}
+	}
+}
+
+// addRefArg records a generic-alias reference's lifetime argument as a use that only marks a
+// declared binder used. A nil node carries no name and `'static` is never a binder, so both
+// are skipped, matching addLifetime.
+func (v *lifetimeUseCollector) addRefArg(node ast.LifetimeAnnNode) {
+	switch n := node.(type) {
+	case *ast.LifetimeAnn:
+		if n.Name != "static" {
+			v.refArgs = append(v.refArgs, n)
 		}
 	}
 }

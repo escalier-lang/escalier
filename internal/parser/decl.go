@@ -1219,8 +1219,9 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 		ident = ast.NewIdentifier(token.Value, token.Span)
 	}
 
-	// Parse optional type parameters
-	typeParams := p.maybeTypeParams()
+	// Parse optional lifetime and type parameters, so `type Ref<'a, T> = &'a T` binds both
+	// the lifetime parameter 'a and the type parameter T.
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
 
 	p.expect(Equal, AlwaysConsume)
 
@@ -1229,7 +1230,9 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 	if typeAnn == nil {
 		end := p.lexer.currentLocation
 		span := ast.NewSpan(start, end, p.lexer.source.ID)
-		return ast.NewTypeDecl(ident, typeParams, nil, export, declare, span)
+		decl := ast.NewTypeDecl(ident, typeParams, nil, export, declare, span)
+		decl.LifetimeParams = lifetimeParams
+		return decl
 	}
 
 	// End position is the end of the type annotation
@@ -1237,6 +1240,7 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
 	decl := ast.NewTypeDecl(ident, typeParams, typeAnn, export, declare, span)
+	decl.LifetimeParams = lifetimeParams
 	return decl
 }
 

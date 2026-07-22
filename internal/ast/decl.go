@@ -192,14 +192,15 @@ func (d *FuncDecl) SetProvenance(p provenance.Provenance) {
 }
 
 type TypeDecl struct {
-	Name       *Ident
-	TypeParams []*TypeParam
-	TypeAnn    TypeAnn
-	export     bool
-	declare    bool
-	override   bool
-	span       Span
-	provenance provenance.Provenance
+	Name           *Ident
+	LifetimeParams []*LifetimeParam
+	TypeParams     []*TypeParam
+	TypeAnn        TypeAnn
+	export         bool
+	declare        bool
+	override       bool
+	span           Span
+	provenance     provenance.Provenance
 }
 
 func NewTypeDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, declare bool, span Span) *TypeDecl {

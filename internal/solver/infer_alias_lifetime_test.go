@@ -69,3 +69,109 @@ func TestExpandAliasSubstitutesLifetimeArg(t *testing.T) {
 	require.True(t, ok, "the expanded body is a borrow")
 	require.Same(t, arg, ref.Lt, "the parameter lifetime is substituted with the reference's argument")
 }
+
+// TestInferLifetimeGenericAliasRoundTrip declares a lifetime-generic alias whose body is an
+// immutable borrow, then round-trips it through a function that supplies the lifetime and
+// type arguments. The reference renders under the alias name with its lifetime argument on
+// both the parameter and the return, so the borrow flows out at the lifetime it came in.
+func TestInferLifetimeGenericAliasRoundTrip(t *testing.T) {
+	src := `
+		type Ref<'a, T> = &'a T
+		fn f<'a>(p: Ref<'a, {x: number}>) -> Ref<'a, {x: number}> { return p }
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: Ref<'a, {x: number}>) -> Ref<'a, {x: number}>", values["f"])
+}
+
+// TestInferLifetimeGenericMutAliasRoundTrip is the mutable-borrow twin: a `&'a mut T` alias
+// body carries the lifetime and mutability through instantiation, so a `mut` borrow of the
+// alias round-trips its lifetime the same way the immutable form does.
+func TestInferLifetimeGenericMutAliasRoundTrip(t *testing.T) {
+	src := `
+		type MutRef<'a, T> = &'a mut T
+		fn f<'a>(p: MutRef<'a, {x: number}>) -> MutRef<'a, {x: number}> { return p }
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: MutRef<'a, {x: number}>) -> MutRef<'a, {x: number}>", values["f"])
+}
+
+// TestInferLifetimeGenericAliasKeepsLifetimesDistinct references one lifetime-generic alias
+// at two different lifetimes: the parameter carries 'a and the second carries 'b, so the two
+// instances render under distinct lifetimes rather than collapsing onto one.
+func TestInferLifetimeGenericAliasKeepsLifetimesDistinct(t *testing.T) {
+	src := `
+		type Ref<'a, T> = &'a T
+		fn f<'a, 'b>(p: Ref<'a, {x: number}>, q: Ref<'b, {x: number}>) -> Ref<'a, {x: number}> { return p }
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <'a, 'b>(p: Ref<'a, {x: number}>, q: Ref<'b, {x: number}>) -> Ref<'a, {x: number}>",
+		values["f"],
+	)
+}
+
+// TestInferLifetimeGenericAliasIsTransparent checks that a lifetime-generic alias and its
+// expanded borrow are interchangeable under subtyping. A `Ref<'a, {x: number}>` value flows
+// into a plain `&'a {x: number}` target, and a plain borrow flows back into the alias, so the
+// alias expands to exactly the borrow its body writes.
+func TestInferLifetimeGenericAliasIsTransparent(t *testing.T) {
+	src := `
+		type Ref<'a, T> = &'a T
+		fn f<'a>(p: Ref<'a, {x: number}>) -> &'a {x: number} { return p }
+		fn g<'a>(p: &'a {x: number}) -> Ref<'a, {x: number}> { return p }
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: Ref<'a, {x: number}>) -> &{x: number}", values["f"])
+	require.Equal(t, "fn <'a>(p: &{x: number}) -> Ref<'a, {x: number}>", values["g"])
+}
+
+// TestInferLifetimeGenericAliasArityErrors covers the lifetime-argument arity checks. A
+// lifetime parameter has no default, so supplying too many or too few lifetime arguments each
+// report a single AliasLifetimeArityMismatchError, and supplying a lifetime argument to an
+// alias that declares none is rejected the same way.
+func TestInferLifetimeGenericAliasArityErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "TooManyLifetimeArgs",
+			src: `
+				type Ref<'a, T> = &'a T
+				fn f<'a, 'b>(p: Ref<'a, 'b, {x: number}>) -> number { return p.x }
+			`,
+			want: "type alias `Ref` expects 1 lifetime arguments but got 2",
+		},
+		{
+			name: "MissingLifetimeArg",
+			src: `
+				type Ref<'a, T> = &'a T
+				fn f<'a>(p: Ref<{x: number}>) -> number { return p.x }
+			`,
+			want: "type alias `Ref` expects 1 lifetime arguments but got 0",
+		},
+		{
+			name: "LifetimeArgOnNonGenericAlias",
+			src: `
+				type Point = {x: number}
+				fn f<'a>(p: Point<'a>) -> number { return p.x }
+			`,
+			want: "type alias `Point` expects 0 lifetime arguments but got 1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			msgs := make([]string, len(errs))
+			for i, e := range errs {
+				msgs[i] = e.Message()
+			}
+			require.Contains(t, msgs, tt.want)
+		})
+	}
+}
