@@ -42,56 +42,49 @@ func TestInferKeyofResidual(t *testing.T) {
 // --- M9 PR1b: evaluator backbone + keyof reduction ---
 
 // A ground `keyof` operand reduces at annotation time (Baseline-D): the evaluator projects
-// the operand's keys and unions them. An object yields its property names as string literals,
-// a class its instance-member names, a tuple its numeric indices plus "length", and `keyof`
-// distributes over a union or intersection. A primitive operand has no enumerable keys, so it
-// reduces to `never`.
+// the operand's keys and unions them. Each case defines `type Result = keyof …` and asserts the
+// alias's reduced body. An object yields its property names as string literals, a tuple its
+// numeric indices, and `keyof` distributes over a union or intersection. A primitive operand has
+// no enumerable keys, so it reduces to `never`.
 func TestInferKeyofEagerReduction(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
-		want map[string]string
+		want string // the reduced body of the `Result` alias the source defines
 	}{
 		{
 			// The canonical accept case: a ground object reduces to the union of its keys.
 			name: "Object",
-			src:  `fn g(x: keyof {x: number, y: string}) {}`,
-			want: map[string]string{"g": `fn (x: "x" | "y") -> void`},
+			src:  `type Result = keyof {x: number, y: string}`,
+			want: `"x" | "y"`,
 		},
 		{
 			// A single-key object collapses to the lone string literal, not a one-member union.
 			name: "SingleKeyObject",
-			src:  `fn g(x: keyof {only: number}) {}`,
-			want: map[string]string{"g": `fn (x: "only") -> void`},
+			src:  `type Result = keyof {only: number}`,
+			want: `"only"`,
 		},
 		{
 			// keyof distributes over a union operand, so each member's keys union together.
 			name: "UnionDistributes",
-			src:  `fn g(x: keyof ({a: number} | {b: number})) {}`,
-			want: map[string]string{"g": `fn (x: "a" | "b") -> void`},
+			src:  `type Result = keyof ({a: number} | {b: number})`,
+			want: `"a" | "b"`,
 		},
 		{
 			// A tuple yields only its own numeric indices, the keys Object.keys returns. It omits
 			// "length" and the inherited Array.prototype members TypeScript's keyof includes.
 			name: "Tuple",
-			src:  `fn g(x: keyof [number, string]) {}`,
-			want: map[string]string{"g": "fn (x: 0 | 1) -> void"},
-		},
-		{
-			// Distribution reduces the ground members and leaves the non-ground one symbolic:
-			// the object contributes "a", the type parameter stays keyof T, and they union.
-			name: "UnionWithResidualMember",
-			src:  `fn g<T>(x: keyof (T | {a: number})) {}`,
-			want: map[string]string{"g": `fn <T>(x: "a" | keyof T) -> void`},
+			src:  `type Result = keyof [number, string]`,
+			want: "0 | 1",
 		},
 		{
 			// A transparent alias to an object expands, so keyof reduces through it.
 			name: "AliasToObject",
 			src: `
 				type Point = {x: number, y: number}
-				fn g(x: keyof Point) {}
+				type Result = keyof Point
 			`,
-			want: map[string]string{"g": `fn (x: "x" | "y") -> void`},
+			want: `"x" | "y"`,
 		},
 		{
 			// keyof over a recursive alias terminates: one expansion yields the object, and
@@ -99,38 +92,50 @@ func TestInferKeyofEagerReduction(t *testing.T) {
 			name: "RecursiveAlias",
 			src: `
 				type Tree = {value: number, children: Tree}
-				fn g(x: keyof Tree) {}
+				type Result = keyof Tree
 			`,
-			want: map[string]string{"g": `fn (x: "children" | "value") -> void`},
-		},
-		{
-			// A class projects its instance-member names, the same key set an object yields.
-			name: "Class",
-			src: `
-				class Point {
-					x: number,
-					y: number,
-				}
-				fn g(k: keyof Point) {}
-			`,
-			want: map[string]string{"g": `fn (k: "x" | "y") -> void`},
+			want: `"children" | "value"`,
 		},
 		{
 			// keyof of a primitive is never, since a primitive has no enumerable keys.
 			name: "PrimitiveIsNever",
-			src:  `fn g(x: keyof number) {}`,
-			want: map[string]string{"g": "fn (x: never) -> void"},
+			src:  `type Result = keyof number`,
+			want: "never",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			values, _, errs := inferSource(t, tt.src)
+			_, types, errs := inferSource(t, tt.src)
 			require.Empty(t, errs)
-			for name, want := range tt.want {
-				require.Equal(t, want, values[name])
-			}
+			require.Equal(t, tt.want, types["Result"])
 		})
 	}
+}
+
+// A class projects its instance-member names, the same key set an object yields. This uses a
+// function parameter rather than `type Result = keyof Point`, because a class body projects
+// after alias bodies resolve, so an alias operand would read the not-yet-projected empty body
+// and reduce to `never`. A function signature resolves after every type declaration, so the
+// class body is complete by then.
+func TestInferKeyofClass(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Point {
+			x: number,
+			y: number,
+		}
+		fn g(k: keyof Point) {}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (k: "x" | "y") -> void`, values["g"])
+}
+
+// Distribution reduces the ground members and leaves the non-ground one symbolic: the object
+// contributes "a", the type parameter stays keyof T, and they union. This uses a function so the
+// scheme renders the parameter as `T`; an alias body would render it as a raw inference var.
+func TestInferKeyofUnionWithResidualMember(t *testing.T) {
+	values, _, errs := inferSource(t, `fn g<T>(x: keyof (T | {a: number})) {}`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn <T>(x: "a" | keyof T) -> void`, values["g"])
 }
 
 // A rejected constraint whose subject is a `keyof` residual names it structurally in the
@@ -177,10 +182,9 @@ func TestInferKeyofPostSolveReduction(t *testing.T) {
 }
 
 // A `typeof v` query resolves against the value scope at annotation time, returning the
-// value's concrete type directly rather than a residual (M9 PR1a). It resolves a bare name,
-// a member chain, and the operand of `keyof typeof x` — the value→type bridge keyof relies
-// on. The value's coalesced type keeps its literal (`{a: 1}`), so that is what the query
-// yields.
+// value's concrete type directly rather than a residual (M9 PR1a). It resolves a bare name and
+// a member chain. The value's coalesced type keeps its literal `{a: 1}`, so that is what the
+// query yields.
 func TestInferTypeof(t *testing.T) {
 	tests := []struct {
 		name string
@@ -207,16 +211,6 @@ func TestInferTypeof(t *testing.T) {
 			`,
 			want: map[string]string{"w": "{a: 1}"},
 		},
-		{
-			// The canonical `keyof typeof x`: typeof resolves the value to `{a: 1}`, and keyof
-			// reduces over that ground object to its single key `"a"` (M9 PR1b).
-			name: "KeyofTypeofOperand",
-			src: `
-				val x = {a: 1}
-				fn h(k: keyof typeof x) {}
-			`,
-			want: map[string]string{"h": `fn (k: "a") -> void`},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -227,4 +221,16 @@ func TestInferTypeof(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The canonical `keyof typeof x`, the value→type bridge: typeof resolves the value `x` to its
+// object type `{a: 1}` at annotation time, and keyof reduces over that ground object to its
+// single key `"a"`.
+func TestInferKeyofTypeofValue(t *testing.T) {
+	_, types, errs := inferSource(t, `
+		val x = {a: 1}
+		type Result = keyof typeof x
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `"a"`, types["Result"])
 }
