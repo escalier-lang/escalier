@@ -123,11 +123,8 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 	return &aliasShell{decl: decl, ns: ns, lvl: lvl, declScope: declScope, namedLts: aliasNamedLts, def: def}
 }
 
-// resolveAliasLifetimeParams resolves an alias's `<'a, ...>` lifetime parameters into their
-// soltype form, minting one lifetime variable per parameter through namedLifetime so a `&'a`
-// in the body reaches the same variable. It runs inside the alias's fresh named-lifetime
-// scope, which preBindAlias installs and hands to inferAliasBody. An outlives bound resolves
-// through boundLifetime, sharing the variable a same-named parameter or borrow denotes.
+// resolveAliasLifetimeParams mints one lifetime variable per `<'a, ...>` parameter through
+// namedLifetime, so a `&'a` in the body resolved under the same scope reaches that variable.
 func (c *checker) resolveAliasLifetimeParams(lvl int, params []*ast.LifetimeParam) []*soltype.LifetimeParam {
 	if len(params) == 0 {
 		return nil
@@ -240,12 +237,9 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
 }
 
-// resolveAliasLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments into their
-// soltype form and checks their count against the alias's declared lifetime parameters. A
-// lifetime parameter has no default, so the count must match exactly. A mismatch reports an
-// AliasLifetimeArityMismatchError and recovers with fresh lifetimes, so expansion still has
-// one argument per parameter. Each argument resolves through boundLifetime, so `'static` maps
-// to the static lifetime and a named `'a` shares the variable that name denotes at the site.
+// resolveAliasLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments and checks
+// their count against the alias's lifetime parameters, which have no default. A mismatch
+// reports an AliasLifetimeArityMismatchError and recovers with fresh lifetimes.
 func (c *checker) resolveAliasLifetimeArgs(ref *ast.TypeRefTypeAnn, params []*soltype.LifetimeParam, lvl int) []soltype.Lifetime {
 	total := len(params)
 	got := len(ref.LifetimeArgs)
