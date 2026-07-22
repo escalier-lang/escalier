@@ -125,12 +125,12 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 
 // resolveAliasLifetimeParams mints one lifetime variable per `<'a, ...>` parameter through
 // namedLifetime, so a `&'a` in the body resolved under the same scope reaches that variable.
-func (c *checker) resolveAliasLifetimeParams(lvl int, params []*ast.LifetimeParam) []*soltype.LifetimeParam {
-	if len(params) == 0 {
+func (c *checker) resolveAliasLifetimeParams(lvl int, ltParams []*ast.LifetimeParam) []*soltype.LifetimeParam {
+	if len(ltParams) == 0 {
 		return nil
 	}
-	out := make([]*soltype.LifetimeParam, len(params))
-	for i, p := range params {
+	out := make([]*soltype.LifetimeParam, len(ltParams))
+	for i, p := range ltParams {
 		var bounds []soltype.Lifetime
 		for _, b := range p.Bounds {
 			bounds = append(bounds, c.boundLifetime(b.Name, lvl))
