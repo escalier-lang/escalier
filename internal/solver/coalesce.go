@@ -1101,6 +1101,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.IntersectionType:
 		b, ok := b.(*soltype.IntersectionType)
 		return ok && equalTypeSliceWith(a.Types, b.Types, ctx)
+	case *soltype.KeyofType:
+		// Two inert `keyof` residuals are equal when they carry the same exactness over
+		// equal operands. This compares the residual structurally without reducing it,
+		// matching how the operator flows through the solver untouched in M9 PR1a.
+		b, ok := b.(*soltype.KeyofType)
+		return ok && a.Exact == b.Exact && equalTypeWith(a.Operand, b.Operand, ctx)
 	}
 	return false
 }

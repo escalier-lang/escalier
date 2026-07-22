@@ -683,6 +683,21 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		if _, ok := super.(*soltype.UndefinedType); ok {
 			return nil
 		}
+	case *soltype.KeyofType:
+		// A `keyof` residual is inert (M9 PR1a): constrain neither decomposes nor reduces
+		// it. Two residuals are compatible only when structurally identical, so `keyof T
+		// <: keyof T` succeeds reflexively without recording any bound — the "adds no new
+		// mutable solver state" invariant. An unreduced residual against any other concrete
+		// cannot be compared until the evaluator reduces it (PR1b), so it fails here. When
+		// super is a variable the case falls through to the superVar arm below, which
+		// records the whole residual as one lower bound, keeping the operator symbolic on
+		// the coalesced binding.
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			if equalType(sub, super) {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+		}
 	case *soltype.IntersectionType:
 		// (A & B) <: super ⟹ A <: super OR B <: super. Trial each member in
 		// specificity order under a probe; the first success commits. Stays in

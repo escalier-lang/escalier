@@ -162,6 +162,24 @@ func (t *PromiseType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *KeyofType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The operand walks in the current polarity, the same single-child covariant visit
+	// PromiseType uses. The residual is inert in M9 PR1a — the visit rebuilds it around a
+	// rewritten operand without reducing the operator, so extrude/coalesce/freshenAbove
+	// carry `keyof T` through untouched. The evaluator's reduction lands in PR1b.
+	operand := cur.Operand.Accept(v, pol)
+	out := cur
+	if operand != cur.Operand {
+		out = &KeyofType{Operand: operand, Exact: cur.Exact}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {
