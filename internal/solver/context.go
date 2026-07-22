@@ -66,6 +66,31 @@ type Context struct {
 	// A representative is only ever compared by identity for the seen-set and never expanded,
 	// so a stale entry cannot make a constraint wrong.
 	aliasInterns map[string]*soltype.AliasType
+
+	// unionCommits maps an inference var that a union-super trial pinned by committing a bare
+	// type-variable member to the super union it was chosen from, so `"hi" <: (T | number)`
+	// records T → (T | number). A later constraint that forces an incompatible bound onto the
+	// var reads this to breadcrumb the failure back to that union choice.
+	unionCommits map[*soltype.TypeVarType]*soltype.UnionType
+}
+
+// tagUnionCommit records that committing union u pinned v, so a later failure on v can name
+// u. The prior entry is restored on rollback, so a discarded trial drops the tag with its bound.
+func (c *Context) tagUnionCommit(v *soltype.TypeVarType, u *soltype.UnionType) {
+	if c.unionCommits == nil {
+		c.unionCommits = map[*soltype.TypeVarType]*soltype.UnionType{}
+	}
+	if c.probe != nil {
+		prev, had := c.unionCommits[v]
+		c.probe.onRollback(func() {
+			if had {
+				c.unionCommits[v] = prev
+			} else {
+				delete(c.unionCommits, v)
+			}
+		})
+	}
+	c.unionCommits[v] = u
 }
 
 // internAlias returns the shared representative for an alias reference's canonical

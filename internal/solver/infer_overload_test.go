@@ -2,6 +2,7 @@ package solver
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -331,6 +332,35 @@ func TestResolveOverloadRollsBackLosingArm(t *testing.T) {
 	require.Equal(t, "number", soltype.Print(ret))
 	require.Len(t, argVar.UpperBounds, 1, "the losing string arm's speculative upper bound was rolled back")
 	require.Equal(t, num(), argVar.UpperBounds[0], "only the winning number arm's bound survives")
+}
+
+// TestResolveOverloadSurfacesWinningArmWarning checks that a warning the winning arm's
+// argument constraints emit reaches c.errs. The arm accepts the call, so hasHardError lets
+// it win, but the accepting constraint against a union param is ambiguous, and that warning
+// must not be swallowed by overload matching.
+func TestResolveOverloadSurfacesWinningArmWarning(t *testing.T) {
+	c := newChecker()
+
+	num := func() soltype.Type { return &soltype.PrimType{Prim: soltype.NumPrim} }
+	// The single arm takes `(T | number)`, a union with a bare type-variable member. Calling
+	// it with 5 commits the number member, but T would also match by pinning to 5, so the
+	// match is ambiguous.
+	tv := c.freshAt(0)
+	arm := &soltype.FuncType{
+		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: newUnion(nil, []soltype.Type{tv, num()}, false)}},
+		Ret:    num(),
+	}
+	b := ValueBinding{Schemes: []TypeScheme{monoScheme(arm)}}
+
+	call := ast.NewCall(identExpr("f"), []ast.Expr{numExpr(5)}, false, testSpan())
+	ret := c.resolveOverload(0, b, []soltype.Type{numLit(5)}, call)
+
+	require.Equal(t, "number", soltype.Print(ret))
+	require.Equal(t, []string{
+		"ambiguous match against t" + strconv.Itoa(tv.ID) + " | number: committed number, but t" +
+			strconv.Itoa(tv.ID) + " would also match; annotate to disambiguate",
+	}, Messages(c.errs))
+	require.True(t, c.errs[0].(*AmbiguousUnionCommitWarning).IsWarning())
 }
 
 // An overload binding's Sources lines up one-to-one with its Schemes (each arm

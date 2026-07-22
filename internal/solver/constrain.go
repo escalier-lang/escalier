@@ -271,13 +271,31 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	// var member is trialled.
 	if supU, ok := super.(*soltype.UnionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && len(supU.Types) > 0 {
-			committed, _ := c.trialAndCommit(specificityOrder(supU.Types), func(idx int) []SolverError {
+			order := specificityOrder(supU.Types)
+			committed, winIdx, winErrs, _ := c.trialAndCommit(order, func(idx int) []SolverError {
 				// A cloned seen keeps each member's coinductive cache independent, so a
 				// failed member's entries can't wrongly short-circuit a later member.
 				return c.constrain(sub, supU.Types[idx], seen.Clone(), mutCtx)
 			})
 			if committed {
-				return nil
+				// winErrs carries any warning the winning member's own nested trial emitted.
+				// Propagate it so a nested ambiguous union is not silently swallowed.
+				diags := winErrs
+				// A committed bare type-variable member pins that var to sub. Tag it so a
+				// later constraint that forces an incompatible bound onto the var can name
+				// the union choice that pinned it.
+				if v, ok := supU.Types[winIdx].(*soltype.TypeVarType); ok {
+					c.tagUnionCommit(v, supU)
+				}
+				// When another member would also match while binding an inference variable,
+				// the committed choice is ambiguous. Warn at the union so the user can
+				// annotate rather than depend on specificity order.
+				if alt := c.ambiguousAlternate(sub, supU, order, winIdx, seen, mutCtx); alt != nil {
+					diags = append(diags, &AmbiguousUnionCommitWarning{
+						Union: supU, Committed: supU.Types[winIdx], Alternate: alt,
+					})
+				}
+				return diags
 			}
 			if supU.Inexact {
 				// An inexact union super has an open, unknown-typed tail. A sub that
@@ -289,7 +307,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// Every branch failed, the var members included. Promote a BorrowEscapeError
 			// when sub's peeled inner still satisfies the union; else emit the generic error.
 			if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil {
-				if len(c.trialUnderProbe(ref.Inner, super)) == 0 {
+				if !hasHardError(c.trialUnderProbe(ref.Inner, super)) {
 					return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}
 				}
 			}
@@ -649,7 +667,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if sub.Lt != nil {
 				// Emit BorrowEscapeError only when the peeled inner satisfies super, so
 				// the lifetime is the blocker; otherwise surface the inner's mismatch.
-				if innerErrs := c.trialUnderProbe(sub.Inner, super); len(innerErrs) > 0 {
+				if innerErrs := c.trialUnderProbe(sub.Inner, super); hasHardError(innerErrs) {
 					return innerErrs
 				}
 				return []SolverError{&BorrowEscapeError{Sub: sub, Super: super}}
@@ -685,13 +703,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		//     types, so a non-function intersection trials its more-specific
 		//     members first; incomparable members keep declaration order.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && len(sub.Types) > 0 {
-			committed, trialErrs := c.trialAndCommit(specificityOrder(sub.Types), func(idx int) []SolverError {
+			committed, _, winErrs, trialErrs := c.trialAndCommit(specificityOrder(sub.Types), func(idx int) []SolverError {
 				// A cloned seen keeps each arm's coinductive cache independent, so a failed
 				// arm's entries can't wrongly short-circuit a later arm to success.
 				return c.constrain(sub.Types[idx], super, seen.Clone(), mutCtx)
 			})
 			if committed {
-				return nil
+				// winErrs carries any warning the winning arm's nested trial emitted.
+				return winErrs
 			}
 			if len(trialErrs) > 0 {
 				return trialErrs[len(trialErrs)-1] // no arm matched: surface the last arm's failure
@@ -725,7 +744,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			for _, lb := range subVar.LowerBounds {
 				errs = append(errs, c.constrain(lb, super, seen, false)...)
 			}
-			return errs
+			return c.breadcrumbUnionCommit(errs, subVar)
 		}
 		// super lives at an inner level: extrude it out so it isn't wrongly
 		// generalized at subVar's level.
@@ -739,12 +758,58 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			for _, ub := range superVar.UpperBounds {
 				errs = append(errs, c.constrain(sub, ub, seen, false)...)
 			}
-			return errs
+			return c.breadcrumbUnionCommit(errs, superVar)
 		}
 		return c.constrain(c.extrude(sub, soltype.Positive, superVar.Level, map[extrudeKey]*soltype.TypeVarType{}), super, seen, mutCtx)
 	}
 
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// ambiguousAlternate returns a union member, other than the committed one, that would also
+// match sub while binding an inference variable, or nil when none does. For `5 <: (T | number)`
+// number commits but T would also match by pinning to 5, so T is returned. Each candidate is
+// trialled under a throwaway probe, so the peek records no bound. A union with no bare
+// type-variable member cannot bind ambiguously, so the scan is skipped, sparing the common
+// all-concrete union super such as an enum value flowing into its variant union.
+func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, order []int, winIdx int, seen set.Set[constraintKey], mutCtx bool) soltype.Type {
+	hasVar := false
+	for _, m := range u.Types {
+		if _, ok := m.(*soltype.TypeVarType); ok {
+			hasVar = true
+			break
+		}
+	}
+	if !hasVar {
+		return nil
+	}
+	for _, j := range order {
+		if j == winIdx {
+			continue
+		}
+		if ok, mutated := c.trialMutatesBounds(sub, u.Types[j], seen, mutCtx); ok && mutated {
+			return u.Types[j]
+		}
+	}
+	return nil
+}
+
+// breadcrumbUnionCommit stamps each CannotConstrainError in errs with v's union-trial origin
+// when v was pinned by a committed bare type-variable member, so the message names the union
+// choice that forced the conflict. It is a no-op when v carries no tag; an error that already
+// has an origin keeps it, so the innermost breadcrumb survives as the failure unwinds.
+func (c *Context) breadcrumbUnionCommit(errs []SolverError, v *soltype.TypeVarType) []SolverError {
+	u, ok := c.unionCommits[v]
+	if !ok {
+		return errs
+	}
+	for _, e := range errs {
+		if cc, ok := e.(*CannotConstrainError); ok && cc.commitUnion == nil {
+			cc.commitUnion = u
+			cc.commitVar = v
+		}
+	}
+	return errs
 }
 
 // isFieldReadReq reports whether an object super is a field-read or destructure

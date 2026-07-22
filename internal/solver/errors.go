@@ -28,6 +28,26 @@ type SolverError interface {
 	Related() []ast.Span // node-derived; empty unless the kind carries related nodes
 }
 
+// isWarning reports whether e is a non-fatal diagnostic. The SolverError interface does
+// not require IsWarning, so a plain error that lacks the method is treated as fatal. Only
+// an error that implements IsWarning and returns true is a warning.
+func isWarning(e SolverError) bool {
+	w, ok := e.(interface{ IsWarning() bool })
+	return ok && w.IsWarning()
+}
+
+// hasHardError reports whether errs contains any fatal error, ignoring warnings. A
+// speculative trial consults it so a branch that succeeds while emitting a warning still
+// counts as a success rather than a failure.
+func hasHardError(errs []SolverError) bool {
+	for _, e := range errs {
+		if !isWarning(e) {
+			return true
+		}
+	}
+	return false
+}
+
 // CannotConstrainError fires when a non-variable sub/super pair fails to match:
 // prim/prim mismatch, lit/lit mismatch, lit/prim mismatch, and the generic
 // "no rule applies" fall-through at the end of constrain.
@@ -42,6 +62,13 @@ type CannotConstrainError struct {
 	Sub, Super soltype.Type
 	prov       NodeResolver // M2.5: type→node index; assigned after Constrain returns (§3.5)
 	site       ast.Node     // M2.5: the constraint node n — the use, the fallback when Sub has no entry
+
+	// commitUnion and commitVar breadcrumb a failure back to a union-super trial that pinned a
+	// var. After `"hi" <: (T | number)` commits T, a later use of T as number fails here while
+	// propagating T's lower bound. The var arm sets these so Message names the union choice,
+	// and both are nil for a plain mismatch with no union-trial origin.
+	commitUnion *soltype.UnionType
+	commitVar   *soltype.TypeVarType
 }
 
 // FuncArityMismatchError fires on FuncType <: FuncType when the two arities
@@ -1252,6 +1279,29 @@ func (e *UnusedLifetimeParamError) Message() string {
 	return "lifetime parameter '" + e.Name + " is declared but never used"
 }
 
+// AmbiguousUnionCommitWarning fires when a value matches more than one member of a union-super
+// trial, so the committed choice is not evident from the source. For `5 <: (T | number)` number
+// commits, yet T would also match by pinning to 5. It is a warning rather than an error, since
+// the program still type-checks under the committed branch and the user can annotate to fix it.
+type AmbiguousUnionCommitWarning struct {
+	Union     *soltype.UnionType
+	Committed soltype.Type // the member the trial committed
+	Alternate soltype.Type // another member that would also have matched
+	prov      NodeResolver
+	site      ast.Node
+}
+
+func (*AmbiguousUnionCommitWarning) isSolverError()   {}
+func (e *AmbiguousUnionCommitWarning) IsWarning() bool { return true }
+func (e *AmbiguousUnionCommitWarning) Span() ast.Span {
+	return spanOf(e.prov, e.Union, e.site)
+}
+func (e *AmbiguousUnionCommitWarning) Related() []ast.Span { return nil }
+func (e *AmbiguousUnionCommitWarning) Message() string {
+	return fmt.Sprintf("ambiguous match against %s: committed %s, but %s would also match; annotate to disambiguate",
+		describe(e.Union), describe(e.Committed), describe(e.Alternate))
+}
+
 func (e *UnknownIdentifierError) Span() ast.Span      { return e.Ident.Span() }
 func (e *UnknownIdentifierError) Related() []ast.Span { return nil }
 func (e *UnknownIdentifierError) Message() string {
@@ -1441,7 +1491,15 @@ func (e *AsyncReturnNotPromiseError) Message() string {
 }
 
 func (e *CannotConstrainError) Message() string {
-	return fmt.Sprintf("cannot constrain %s <: %s", describe(e.Sub), describe(e.Super))
+	msg := fmt.Sprintf("cannot constrain %s <: %s", describe(e.Sub), describe(e.Super))
+	if e.commitUnion != nil {
+		// An earlier value committed the e.commitVar branch of e.commitUnion, pinning that
+		// var. This later use forces an incompatible bound onto the same var, so the
+		// breadcrumb names the union choice that caused the conflict.
+		msg += fmt.Sprintf("; %s was committed to a branch of %s by an earlier match, so it cannot also satisfy %s",
+			describe(e.commitVar), describe(e.commitUnion), describe(e.Super))
+	}
+	return msg
 }
 
 func (e *FuncArityMismatchError) Message() string {
