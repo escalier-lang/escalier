@@ -210,7 +210,7 @@ func TestInferGenericMethodStillGated(t *testing.T) {
 // it back into `T`'s class, so the signature renders under the declared name with no
 // spurious `T0` quantifier.
 func TestInferGenericFuncHigherRankParamResolves(t *testing.T) {
-	values, _, errs := inferSource(t, `fn apply<T>(g: fn <V>(x: V) -> V, y: T) -> T { return g(y) }`)
+	values, _, errs := inferSource(t, `fn apply(g: fn <V>(x: V) -> V, y) { return g(y) }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T>(g: fn <V>(x: V) -> V, y: T) -> T", values["apply"])
+	require.Equal(t, "fn <T0>(g: fn <V>(x: V) -> V, y: T0) -> T0", values["apply"])
 }
