@@ -767,18 +767,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 }
 
 // ambiguousAlternate returns a union member, other than the committed one, that would also
-// match sub while binding an inference variable, or nil when none does. The union-super
-// arm calls it after a member commits to detect a match that is ambiguous: `5 <: (T | number)`
-// commits number but T would also match by pinning T to 5, so T is returned. Each candidate
-// is trialled under a throwaway probe, so the peek records no bound. A member that would
-// match without binding a variable, such as a second concrete member, is not ambiguous and
-// is skipped, since the committed choice binds nothing either.
-//
-// A union with no bare type-variable member cannot produce an ambiguous binding, so the
-// scan is skipped entirely. This keeps the common all-concrete union super, such as an
-// enum value flowing into its variant union, from paying for an extra round of trials.
-// newUnion flattens nested unions, so a variable member always surfaces as a direct member
-// here rather than hiding inside a nested union.
+// match sub while binding an inference variable, or nil when none does. For `5 <: (T | number)`
+// number commits but T would also match by pinning to 5, so T is returned. Each candidate is
+// trialled under a throwaway probe, so the peek records no bound. A union with no bare
+// type-variable member cannot bind ambiguously, so the scan is skipped, sparing the common
+// all-concrete union super such as an enum value flowing into its variant union.
 func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, order []int, winIdx int, seen set.Set[constraintKey], mutCtx bool) soltype.Type {
 	hasVar := false
 	for _, m := range u.Types {
@@ -801,11 +794,10 @@ func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, ord
 	return nil
 }
 
-// breadcrumbUnionCommit stamps each CannotConstrainError in errs with v's union-trial
-// origin when v was pinned by a committed bare type-variable member, so the message names
-// the union choice that forced the conflict. A no-op when v carries no such tag or when an
-// error already has an origin, which keeps the innermost breadcrumb rather than overwriting
-// it as the failure unwinds through nested var arms.
+// breadcrumbUnionCommit stamps each CannotConstrainError in errs with v's union-trial origin
+// when v was pinned by a committed bare type-variable member, so the message names the union
+// choice that forced the conflict. It is a no-op when v carries no tag; an error that already
+// has an origin keeps it, so the innermost breadcrumb survives as the failure unwinds.
 func (c *Context) breadcrumbUnionCommit(errs []SolverError, v *soltype.TypeVarType) []SolverError {
 	u, ok := c.unionCommits[v]
 	if !ok {
