@@ -63,12 +63,10 @@ type CannotConstrainError struct {
 	prov       NodeResolver // M2.5: type→node index; assigned after Constrain returns (§3.5)
 	site       ast.Node     // M2.5: the constraint node n — the use, the fallback when Sub has no entry
 
-	// commitUnion and commitVar breadcrumb a failure back to a union-super exists trial that
-	// pinned an inference var. When a value flowed into `(T | number)` and committed the T
-	// branch, T is pinned. A later use of T as number reaches this error while propagating
-	// T's committed lower bound. The var arm sets these so Message names the union choice
-	// that forced the conflict rather than blaming only the later use. Both nil for a plain
-	// mismatch with no union-trial origin.
+	// commitUnion and commitVar breadcrumb a failure back to a union-super trial that pinned a
+	// var. After `"hi" <: (T | number)` commits T, a later use of T as number fails here while
+	// propagating T's lower bound. The var arm sets these so Message names the union choice,
+	// and both are nil for a plain mismatch with no union-trial origin.
 	commitUnion *soltype.UnionType
 	commitVar   *soltype.TypeVarType
 }
@@ -1264,13 +1262,10 @@ func (e *UnusedLifetimeParamError) Message() string {
 	return "lifetime parameter '" + e.Name + " is declared but never used"
 }
 
-// AmbiguousUnionCommitWarning fires when a value flowing into a union-super exists trial
-// matches more than one member. The trial commits the first match in specificity order,
-// but another member would also succeed while binding an inference variable, so which
-// member wins is not evident from the source. For `5 <: (T | number)` the number member
-// commits, yet the T member would also match by pinning T to 5, so the choice is
-// ambiguous. It is a warning rather than an error, since the program still type-checks
-// under the committed branch, and the user can annotate to fix which member wins.
+// AmbiguousUnionCommitWarning fires when a value matches more than one member of a union-super
+// trial, so the committed choice is not evident from the source. For `5 <: (T | number)` number
+// commits, yet T would also match by pinning to 5. It is a warning rather than an error, since
+// the program still type-checks under the committed branch and the user can annotate to fix it.
 type AmbiguousUnionCommitWarning struct {
 	Union     *soltype.UnionType
 	Committed soltype.Type // the member the trial committed

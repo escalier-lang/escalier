@@ -58,11 +58,8 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 		matched, diags := c.tryOverloadArm(args, inst)
 		c.closeProbe(p, matched)
 		if matched {
-			// The winning arm's argument constraints can accept while emitting a warning,
-			// such as an AmbiguousUnionCommitWarning from a union-typed param. tryOverloadArm
-			// runs the error-returning engine, so those diagnostics never reached c.errs.
-			// Blame them at the call so a losing arm's rolled-back diagnostics stay dropped
-			// while the winner's survive.
+			// tryOverloadArm runs the error-returning engine, so a warning the winning arm
+			// accepted with never reached c.errs. Blame it at the call so the winner's survive.
 			c.blameConstraintErrors(call, diags)
 			return inst.Ret
 		}

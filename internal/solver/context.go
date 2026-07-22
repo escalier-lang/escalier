@@ -67,21 +67,15 @@ type Context struct {
 	// so a stale entry cannot make a constraint wrong.
 	aliasInterns map[string]*soltype.AliasType
 
-	// unionCommits records each inference var that a union-super exists trial pinned by
-	// committing a bare type-variable member. The key is the pinned var and the value is
-	// the super union it was chosen from, so `"hi" <: (T | number)` commits the T branch
-	// and records T → (T | number). A later constraint that forces an incompatible bound
-	// onto the var reads this to point the failure back to the union choice that pinned it,
-	// rather than blaming only the later use. The write is journaled under the active probe
-	// through tagUnionCommit, so a discarded trial drops the tag alongside the bound it
-	// recorded.
+	// unionCommits maps an inference var that a union-super trial pinned by committing a bare
+	// type-variable member to the super union it was chosen from, so `"hi" <: (T | number)`
+	// records T → (T | number). A later constraint that forces an incompatible bound onto the
+	// var reads this to breadcrumb the failure back to that union choice.
 	unionCommits map[*soltype.TypeVarType]*soltype.UnionType
 }
 
-// tagUnionCommit records that v was pinned by committing v as a bare type-variable member
-// of union u, so a later failing constraint on v can name the union that forced it. The
-// prior entry is captured and restored on rollback, so a discarded trial leaves the table
-// exactly as it was. The tag and the bound the trial recorded on v roll back together.
+// tagUnionCommit records that committing union u pinned v, so a later failure on v can name
+// u. The prior entry is restored on rollback, so a discarded trial drops the tag with its bound.
 func (c *Context) tagUnionCommit(v *soltype.TypeVarType, u *soltype.UnionType) {
 	if c.unionCommits == nil {
 		c.unionCommits = map[*soltype.TypeVarType]*soltype.UnionType{}

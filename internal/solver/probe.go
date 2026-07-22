@@ -176,11 +176,8 @@ func (p *Probe) rollback() {
 	}
 }
 
-// mutatedBounds reports whether any variable this probe journaled has grown a bound since
-// the probe first touched it. A throwaway trial consults it before discarding to tell a
-// match that binds an inference variable from one that succeeds without recording anything.
-// A first-touch snapshot equal to the current length means the trial touched the var for a
-// read but appended nothing, so it does not count as a mutation.
+// mutatedBounds reports whether any variable this probe journaled has grown a bound since first
+// touch, so a throwaway trial can tell a match that binds a var from one that records nothing.
 func (p *Probe) mutatedBounds() bool {
 	for _, e := range p.entries {
 		if len(e.v.LowerBounds) > e.prevLower || len(e.v.UpperBounds) > e.prevUpper {
@@ -305,11 +302,8 @@ func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError)
 	return false, -1, nil, trialErrs
 }
 
-// trialMutatesBounds trials sub <: super under a throwaway probe and reports both whether
-// it succeeded and whether it recorded any bound. The union-super ambiguity check uses it
-// to tell a member that would bind an inference variable from one that succeeds without
-// recording anything, so `5 <: T` reports (true, true) while `5 <: number` reports
-// (true, false). The probe is discarded either way, so the trial leaves no trace.
+// trialMutatesBounds trials sub <: super under a throwaway probe, reporting whether it succeeded
+// and whether it recorded a bound, so `5 <: T` gives (true, true) and `5 <: number` (true, false).
 func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (ok, mutated bool) {
 	p := newProbe(c.probe)
 	c.probe = p
