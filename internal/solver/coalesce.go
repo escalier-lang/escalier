@@ -425,13 +425,8 @@ func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype
 	return reduceResidualOp(t)
 }
 
-// reduceResidualOp reduces a type-level operator left inert during the value solve, the
-// Design-A post-solve half of the two reduction sites. Both coalescers call it bottom-up in
-// ExitType, so a `keyof T` residual whose operand var has just coalesced to a concrete object
-// reduces here to the union of its keys. A non-operator node returns unchanged, and an operand
-// that stays symbolic, such as a retained type parameter, keeps the operator. The evaluator
-// carries no Context, since a coalesced operand is already a concrete shape needing no alias or
-// class projection.
+// reduceResidualOp reduces a type-level operator whose operand only coalesced to a concrete
+// shape after the value solve, called bottom-up in ExitType. A non-operator node passes through.
 func reduceResidualOp(t soltype.Type) soltype.Type {
 	if _, ok := t.(*soltype.KeyofType); !ok {
 		return t

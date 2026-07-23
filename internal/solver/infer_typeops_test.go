@@ -138,6 +138,23 @@ func TestInferKeyofUnionWithResidualMember(t *testing.T) {
 	require.Equal(t, `fn <T>(x: "a" | keyof T) -> void`, values["g"])
 }
 
+// A nested `keyof keyof` terminates instead of looping on the same symbolic shape. Over a type
+// parameter neither operator grounds, so it stays the `keyof keyof T` residual. Over a ground
+// object the inner keyof reduces to a union of string literals, and keyof of those literals is
+// never, since a string literal has no enumerable keys.
+func TestInferKeyofNested(t *testing.T) {
+	t.Run("TypeParamStaysSymbolic", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn f<T>(k: keyof keyof T) {}`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn <T>(k: keyof keyof T) -> void", values["f"])
+	})
+	t.Run("GroundObjectReducesToNever", func(t *testing.T) {
+		_, types, errs := inferSource(t, `type Result = keyof keyof {a: number, b: string}`)
+		require.Empty(t, errs)
+		require.Equal(t, "never", types["Result"])
+	})
+}
+
 // A rejected constraint whose subject is a `keyof` residual names it structurally in the
 // diagnostic — `cannot constrain keyof t1 <: number` rather than the bare `?` the default
 // describe arm would render — so the inert node stays legible in error messages. describe is

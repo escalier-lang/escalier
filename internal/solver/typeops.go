@@ -5,15 +5,16 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// maxExpandDepth bounds alias-instantiation depth for the case the cycle guard cannot
-// catch, where each instantiation state is distinct because an argument grows without
-// bound, as `type Grow<T> = Grow<Array<T>>` grows its argument every lap. It is a safety
-// budget, not a derived maximum. No finite maximum exists for that fragment, so the budget
-// stops the walk and the operator over the unexpanded alias stays symbolic.
+// maxExpandDepth caps how many times an alias may expand along one reduction path. The
+// active-state guard already stops a regular recursive alias, whose instantiation state repeats.
+// This budget backstops an expanding recursive alias such as `type Grow<T> = Grow<Array<T>>`,
+// whose argument grows every lap so its state never repeats and the active guard never matches.
+// No finite analytical bound exists for that fragment, so the budget stops the walk and the
+// operator over the unexpanded alias stays symbolic.
 const maxExpandDepth = 200
 
 // typeEvaluator reduces a residual type-level operator to its value once the operand is
-// ground. M9 PR1b handles `keyof T`; the later operators join as they land. An operand is
+// ground. It currently handles `keyof T`; later operators join as they land. An operand is
 // ground when it has a projectable head shape rather than an unresolved type variable or a
 // still-unreduced residual. A ground `keyof {x: number}` reduces to the union of its keys,
 // and a `keyof T` over a type parameter stays the symbolic KeyofType.
@@ -21,12 +22,12 @@ const maxExpandDepth = 200
 // A recursive alias reached through an operand is made safe by a two-part termination
 // strategy:
 //
-//   - active holds the alias-instantiation states currently being expanded, keyed by the
-//     alias name and its rendered arguments. When one recurs with the same state, the
+//   - active holds the alias instantiations currently being expanded, each keyed by the alias
+//     name together with its rendered arguments. When one recurs with the identical key, the
 //     evaluator leaves the alias unexpanded, the finite knot standing in for the infinite
 //     regular type, rather than expanding it again.
-//   - depth is the remaining expansion budget, the catch-all for unbounded growth where the
-//     active guard never fires because every state is distinct.
+//   - depth caps expansions along one path. It backstops an expanding recursion whose argument
+//     grows every lap, so its key never repeats and the active guard never fires.
 //
 // The evaluator adds no mutable solver state. reduce is a pure function of its input, so it
 // runs at annotation time on a ground operator and again at coalescing time on a residual
@@ -63,7 +64,7 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 //
 //   - an object projects its property, getter, and setter names as string-literal types;
 //   - a class projects its instance body the same way;
-//   - a tuple yields its numeric indices plus the string literal "length";
+//   - a tuple yields only its own numeric indices, omitting the inherited "length"; see keyofTuple;
 //   - `keyof` distributes over a union or intersection, unioning each member's keys;
 //   - `keyof` of a primitive, literal, `never`, or `unknown` is `never`, since none has
 //     enumerable keys;
@@ -74,8 +75,14 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Type {
 	switch op := operand.(type) {
 	case *soltype.KeyofType:
-		// The operand is itself an operator, so reduce it to its value, then take keyof that value.
-		return e.reduceKeyof(e.reduce(op), exact)
+		// The operand is itself a keyof operator. Reduce it first, then take keyof its value. If
+		// the inner operator stays symbolic because its own operand is not ground, wrap it as
+		// `keyof (keyof …)` rather than re-reducing the same shape forever.
+		inner := e.reduce(op)
+		if _, stillKeyof := inner.(*soltype.KeyofType); stillKeyof {
+			return &soltype.KeyofType{Operand: inner, Exact: exact}
+		}
+		return e.reduceKeyof(inner, exact)
 	case *soltype.AliasType:
 		return e.reduceKeyofAlias(op, exact)
 	case *soltype.ObjectType:
@@ -103,14 +110,10 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 }
 
 // reduceKeyofAlias reduces `keyof Alias` by expanding the alias and reducing `keyof` over its
-// body under the two-part termination guard. The alias stays on the active path for the whole
-// reduction of its body, so distribution over a union or intersection member that re-references
-// the alias, directly or through a chain, sees it active and stops rather than expanding it
-// again. The depth budget decrements along the expansion path and restores as the path unwinds,
-// so it bounds an expanding recursion whose instantiation state never repeats without
-// truncating a wide union of distinct non-recursive aliases. A recurring instantiation state,
-// an exhausted budget, an unresolved body, or a nil evaluator context each leaves the alias
-// unexpanded and the operator symbolic.
+// body under the termination guard. The alias stays on the active path for the whole reduction
+// of its body, so a union or intersection member that re-references it, directly or through a
+// chain, sees it active and stops. A recurring instantiation state, an exhausted budget, an
+// unresolved body, or a nil evaluator context each leaves the alias unexpanded and symbolic.
 func (e *typeEvaluator) reduceKeyofAlias(op *soltype.AliasType, exact bool) soltype.Type {
 	symbolic := &soltype.KeyofType{Operand: op, Exact: exact}
 	if e.ctx == nil {
@@ -134,9 +137,15 @@ func (e *typeEvaluator) reduceKeyofAlias(op *soltype.AliasType, exact bool) solt
 	return result
 }
 
-// keyofObject projects an object's property, getter, and setter names as string-literal
-// types and unions them, matching the old checker's ObjectType arm. An empty projection
-// collapses to `never`, the union identity newUnion returns for no members.
+// keyofObject projects an object's property, getter, and setter names as string-literal types
+// and unions them. An empty projection collapses to `never`, the union identity newUnion returns
+// for no members.
+//
+// It omits methods, which is correct for a class instance whose methods live on the prototype
+// and so are absent from Object.keys, but wrong for a bare object whose methods are own
+// enumerable keys. keyofObject cannot tell the two apart from the ObjectType alone, so it
+// under-approximates the bare-object case. Issue #916 tracks deciding how keyof should account
+// for own vs inherited members.
 func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 	keys := make([]soltype.Type, 0, len(obj.Elems))
 	for _, elem := range obj.Elems {
