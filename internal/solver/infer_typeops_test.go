@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -41,8 +40,8 @@ func TestInferKeyofResidual(t *testing.T) {
 
 // --- M9 PR1b: evaluator backbone + keyof reduction ---
 
-// A ground `keyof` operand reduces at annotation time (Baseline-D): the evaluator projects
-// the operand's keys and unions them. Each case defines `type Result = keyof …` and asserts the
+// A `keyof` over a structural operand reduces at annotation time: the evaluator projects the
+// operand's keys and unions them. Each case defines `type Result = keyof …` and asserts the
 // alias's reduced body. An object yields its property names as string literals, a tuple its
 // numeric indices, and `keyof` distributes over a union or intersection. A primitive operand has
 // no enumerable keys, so it reduces to `never`.
@@ -78,25 +77,6 @@ func TestInferKeyofEagerReduction(t *testing.T) {
 			want: "0 | 1",
 		},
 		{
-			// A transparent alias to an object expands, so keyof reduces through it.
-			name: "AliasToObject",
-			src: `
-				type Point = {x: number, y: number}
-				type Result = keyof Point
-			`,
-			want: `"x" | "y"`,
-		},
-		{
-			// keyof over a recursive alias terminates: one expansion yields the object, and
-			// projecting its keys never descends into the recursive `children` field value.
-			name: "RecursiveAlias",
-			src: `
-				type Tree = {value: number, children: Tree}
-				type Result = keyof Tree
-			`,
-			want: `"children" | "value"`,
-		},
-		{
 			// keyof of a primitive is never, since a primitive has no enumerable keys.
 			name: "PrimitiveIsNever",
 			src:  `type Result = keyof number`,
@@ -112,12 +92,65 @@ func TestInferKeyofEagerReduction(t *testing.T) {
 	}
 }
 
-// A class projects its instance-member names, the same key set an object yields. This uses a
-// function parameter rather than `type Result = keyof Point`, because a class body projects
-// after alias bodies resolve, so an alias operand would read the not-yet-projected empty body
-// and reduce to `never`. A function signature resolves after every type declaration, so the
-// class body is complete by then.
-func TestInferKeyofClass(t *testing.T) {
+// `keyof` over a named type reference — an alias or a class — is stored unexpanded, so the type
+// keeps the name the source wrote rather than the referenced type's keys. A named reference is
+// not expanded at annotation time the way an inline object is; constrain expands it only to check
+// a constraint. Each case asserts the stored form renders `keyof Name`.
+func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "Alias",
+			src: `
+				type Point = {x: number, y: number}
+				type Result = keyof Point
+			`,
+			want: "keyof Point",
+		},
+		{
+			name: "RecursiveAlias",
+			src: `
+				type Tree = {value: number, children: Tree}
+				type Result = keyof Tree
+			`,
+			want: "keyof Tree",
+		},
+		{
+			name: "GenericAlias",
+			src: `
+				type Box<T> = {value: T}
+				type Result = keyof Box<number>
+			`,
+			want: "keyof Box<number>",
+		},
+		{
+			name: "Class",
+			src: `
+				class Point {
+					x: number,
+					y: number,
+				}
+				type Result = keyof Point
+			`,
+			want: "keyof Point",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, types, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, types["Result"])
+		})
+	}
+}
+
+// A signature keeps `keyof Point` rather than the expanded keys, the display the residual is
+// stored for. This is the canonical case: `fn g(k: keyof Point)` infers `fn (k: keyof Point)`,
+// not `fn (k: "x" | "y")`.
+func TestInferKeyofClassSignature(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Point {
 			x: number,
@@ -126,7 +159,109 @@ func TestInferKeyofClass(t *testing.T) {
 		fn g(k: keyof Point) {}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (k: "x" | "y") -> void`, values["g"])
+	require.Equal(t, `fn (k: keyof Point) -> void`, values["g"])
+}
+
+// constrain expands a `keyof` residual over a type alias or class to check satisfaction, while
+// the stored type stays named. A key the referenced type's key set contains is accepted; one it
+// lacks is rejected against the expanded keys, so the diagnostic names the projected union. The
+// expansion runs at every constraint site: a `val` annotation, a generic alias instantiation, an
+// alias that forwards to another alias, and an argument checked against a parameter's type.
+func TestInferKeyofAliasConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "AliasMemberAccepted",
+			src: `
+				type Point = {x: number, y: number}
+				val k: keyof Point = "x"
+			`,
+		},
+		{
+			name: "AliasNonMemberRejected",
+			src: `
+				type Point = {x: number, y: number}
+				val k: keyof Point = "z"
+			`,
+			wantErr: `cannot constrain "z" <: "x" | "y"`,
+		},
+		{
+			name: "GenericAliasMemberAccepted",
+			src: `
+				type Box<T> = {value: T}
+				val k: keyof Box<number> = "value"
+			`,
+		},
+		{
+			name: "GenericAliasNonMemberRejected",
+			src: `
+				type Box<T> = {value: T}
+				val k: keyof Box<number> = "size"
+			`,
+			wantErr: `cannot constrain "size" <: "value"`,
+		},
+		{
+			name: "AliasForwardingToAlias",
+			src: `
+				type Point = {x: number, y: number}
+				type P2 = Point
+				val k: keyof P2 = "y"
+			`,
+		},
+		{
+			name: "ClassMemberAccepted",
+			src: `
+				class Point {
+					x: number,
+					y: number,
+				}
+				val k: keyof Point = "x"
+			`,
+		},
+		{
+			name: "CallArgumentAccepted",
+			src: `
+				type Point = {x: number, y: number}
+				fn pick(k: keyof Point) -> number { return 1 }
+				val r = pick("x")
+			`,
+		},
+		{
+			name: "CallArgumentRejected",
+			src: `
+				type Point = {x: number, y: number}
+				fn pick(k: keyof Point) -> number { return 1 }
+				val r = pick("z")
+			`,
+			wantErr: `cannot constrain "z" <: "x" | "y"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A `keyof Point` on both sides of a flow checks reflexively without expanding: `keyof Point <:
+// keyof Point` succeeds by structural equality on the residual, so the identity function keeps
+// the name on both its parameter and its return.
+func TestInferKeyofAliasIdentity(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		type Point = {x: number, y: number}
+		fn id(k: keyof Point) -> keyof Point { return k }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (k: keyof Point) -> keyof Point`, values["id"])
 }
 
 // Distribution reduces the ground members and leaves the non-ground one symbolic: the object
@@ -167,20 +302,19 @@ func TestInferKeyofResidualErrorMessage(t *testing.T) {
 	require.Equal(t, "1:12-1:19: cannot constrain keyof t1 <: number", msgWithSpan(errs[0]))
 }
 
-// An expanding recursive alias under `keyof` terminates instead of looping. Each lap grows the
-// type argument, so the instantiation state never repeats and the cycle guard cannot fire; the
-// depth budget is the backstop. The alias stays on the active path while `keyof` distributes
-// over its union body, so the budget decrements along the recursion and stops it, leaving the
-// deepest instantiation as a `keyof A<…>` residual. `keyof A<number>` over `type A<T> = {x: T}
-// | A<{y: T}>` reduces the `{x: T}` member of every lap to "x" and leaves the tail symbolic.
+// Checking a value against `keyof` of an expanding recursive alias terminates instead of looping.
+// The reduction is budget-truncated and leaves a `keyof A<…>` residual, so constrain does not
+// recurse on it — re-expanding would grow the operand without bound — and the residual stays
+// inert, conservatively rejecting the value. The point of the test is termination; the precise
+// rejection is a consequence of the truncation, which CheckRegular will reject at definition time
+// in a later milestone.
 func TestInferKeyofExpandingAliasTerminates(t *testing.T) {
-	values, _, errs := inferSource(t, `
+	_, _, errs := inferSource(t, `
 		type A<T> = {x: T} | A<{y: T}>
-		fn g(k: keyof A<number>) {}
+		val k: keyof A<number> = "x"
 	`)
-	require.Empty(t, errs)
-	require.True(t, strings.HasPrefix(values["g"], `fn (k: "x" | keyof A<{y: `),
-		"expected a bounded residual, got %q", values["g"])
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
 }
 
 // A `keyof` residual whose operand is an inference variable stays symbolic through the value

@@ -206,6 +206,31 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	}
 
+	// A `keyof` residual is transparent for checking, the same as an alias: reduce it under this
+	// Context — expanding any alias or class its operand names — and recurse, so a check against
+	// `keyof Point` runs on the projected keys while the stored residual keeps the name. The
+	// annotation and coalescing sites pass a nil Context and leave the residual named; here the
+	// Context lets it expand. Recurse only when the reduction fully grounds — no `keyof` remains.
+	// A `keyof T` over a type parameter does not reduce at all, and an expanding recursive alias
+	// reduces to a budget-truncated union that still carries a `keyof` residual, which would
+	// re-expand and grow without bound on the recursion. Both fall through to the inert KeyofType
+	// arm below. As with an alias, defer to the var arms when the other side is a variable, so the
+	// whole residual is recorded as one bound and the name survives on the coalesced binding.
+	if kt, ok := sub.(*soltype.KeyofType); ok {
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			if reduced := newTypeEvaluator(c).reduce(kt); !containsKeyof(reduced) {
+				return c.constrain(reduced, super, seen, mutCtx)
+			}
+		}
+	}
+	if kt, ok := super.(*soltype.KeyofType); ok {
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
+			if reduced := newTypeEvaluator(c).reduce(kt); !containsKeyof(reduced) {
+				return c.constrain(sub, reduced, seen, mutCtx)
+			}
+		}
+	}
+
 	// M6 PR2 pre-switch lattice block. The structural switch below dispatches
 	// on sub and several arms return early on a non-variable super (the
 	// RefType arm most importantly), so a union/intersection super has to be
@@ -684,14 +709,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			return nil
 		}
 	case *soltype.KeyofType:
-		// A `keyof` residual is inert (M9 PR1a): constrain neither decomposes nor reduces
-		// it. Two residuals are compatible only when structurally identical, so `keyof T
-		// <: keyof T` succeeds reflexively without recording any bound — the "adds no new
-		// mutable solver state" invariant. An unreduced residual against any other concrete
-		// cannot be compared until the evaluator reduces it (PR1b), so it fails here. When
-		// super is a variable the case falls through to the superVar arm below, which
-		// records the whole residual as one lower bound, keeping the operator symbolic on
-		// the coalesced binding.
+		// A `keyof` residual the pre-switch could not ground reaches here: `keyof T` over a type
+		// parameter, or an expanding recursive alias. constrain treats it inert, neither
+		// decomposing nor reducing it, so two residuals are compatible only when structurally
+		// identical. `keyof T <: keyof T` succeeds reflexively without recording any bound, and a
+		// residual against any other concrete fails. When super is a variable the case falls
+		// through to the superVar arm below, which records the whole residual as one lower bound,
+		// keeping the operator symbolic on the coalesced binding.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if equalType(sub, super) {
 				return nil

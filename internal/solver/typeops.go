@@ -19,8 +19,14 @@ const maxExpandDepth = 200
 // still-unreduced residual. A ground `keyof {x: number}` reduces to the union of its keys,
 // and a `keyof T` over a type parameter stays the symbolic KeyofType.
 //
-// A recursive alias reached through an operand is made safe by a two-part termination
-// strategy:
+// A named type reference — an alias or a class — reduces only when the evaluator carries a
+// Context. The annotation and coalescing sites pass a nil Context, so `keyof Point` stays the
+// symbolic residual and the stored type keeps the name the source wrote. constrain passes its
+// Context so it can expand `keyof Point` to the referenced type's keys when it checks a
+// constraint, the same transparent-but-named treatment an alias itself gets.
+//
+// A recursive alias reached through an operand under a Context is made safe by a two-part
+// termination strategy:
 //
 //   - active holds the alias instantiations currently being expanded, each keyed by the alias
 //     name together with its rendered arguments. When one recurs with the identical key, the
@@ -29,14 +35,15 @@ const maxExpandDepth = 200
 //   - depth caps expansions along one path. It backstops an expanding recursion whose argument
 //     grows every lap, so its key never repeats and the active guard never fires.
 //
-// The evaluator adds no mutable solver state. reduce is a pure function of its input, so it
-// runs at annotation time on a ground operator and again at coalescing time on a residual
-// whose operand only grounded after the value solve.
+// The evaluator adds no mutable solver state. reduce is a pure function of its input. It builds
+// its result unions through newUnion with a nil Context, even when it carries one for expansion,
+// so newUnion's subsumption never calls constrain — which reduces `keyof` residuals through this
+// evaluator and would otherwise re-enter it and loop.
 type typeEvaluator struct {
-	// ctx is the alias environment, consulted to expand an alias operand and project a class
-	// body. It is nil for the coalescing-time sweep, where an operand has already coalesced to
-	// a concrete shape and needs no alias or class projection. An alias or class operand that
-	// reaches that path keeps the operator symbolic.
+	// ctx is the alias environment. When non-nil, reduce expands an alias operand and projects a
+	// class body, so constrain can check against a named operator's keys. When nil — at the
+	// annotation and coalescing sites — a named operand keeps the operator symbolic, so the
+	// stored and displayed type reads `keyof Point` rather than the expanded keys.
 	ctx    *Context
 	active set.Set[string]
 	depth  int
@@ -63,15 +70,15 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 // checker's KeyOfType case (internal/checker/expand_type.go):
 //
 //   - an object projects its property, getter, and setter names as string-literal types;
-//   - a class projects its instance body the same way;
 //   - a tuple yields only its own numeric indices, omitting the inherited "length"; see keyofTuple;
 //   - `keyof` distributes over a union or intersection, unioning each member's keys;
 //   - `keyof` of a primitive, literal, `never`, or `unknown` is `never`, since none has
 //     enumerable keys;
-//   - an alias expands to its body, and `keyof` reduces over that under the termination guard.
+//   - under a Context, an alias expands to its body and a class projects its instance body, and
+//     `keyof` reduces over that; without one, both stay symbolic.
 //
-// A type variable, a skolem, or an alias the guard left unexpanded keeps the operator symbolic,
-// rebuilt around the operand.
+// A type variable, a skolem, or a named reference the evaluator does not expand keeps the
+// operator symbolic, rebuilt around the operand.
 func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Type {
 	switch op := operand.(type) {
 	case *soltype.KeyofType:
@@ -158,7 +165,7 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 			keys = append(keys, strLitType(elem.Name))
 		}
 	}
-	return newUnion(e.ctx, keys, false)
+	return newUnion(nil, keys, false)
 }
 
 // keyofTuple yields a tuple's own keys: one number-literal type per positional element, the
@@ -171,7 +178,7 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 	for i := range tup.Elems {
 		keys = append(keys, &soltype.LitType{Lit: &soltype.NumLit{Value: float64(i)}})
 	}
-	return newUnion(e.ctx, keys, false)
+	return newUnion(nil, keys, false)
 }
 
 // keyofDistribute unions the keys of each member of a union or intersection operand, the
@@ -182,11 +189,37 @@ func (e *typeEvaluator) keyofDistribute(members []soltype.Type, exact bool) solt
 	for i, m := range members {
 		parts[i] = e.reduceKeyof(m, exact)
 	}
-	return newUnion(e.ctx, parts, false)
+	return newUnion(nil, parts, false)
 }
 
 // strLitType builds the string-literal type for one key name, the form a projected object or
 // tuple key takes in a `keyof` union.
 func strLitType(name string) soltype.Type {
 	return &soltype.LitType{Lit: &soltype.StrLit{Value: name}}
+}
+
+// containsKeyof reports whether t holds any KeyofType node. constrain consults it to decide
+// whether a reduced `keyof` fully grounded: a result with no residual is safe to recurse on,
+// while one that still carries a `keyof` — an unexpanded type parameter or a budget-truncated
+// expanding alias — must not, since re-reducing it would loop.
+func containsKeyof(t soltype.Type) bool {
+	f := &keyofFinder{}
+	t.Accept(f, soltype.Positive)
+	return f.found
+}
+
+// keyofFinder is the walking visitor behind containsKeyof. It flags the first KeyofType it
+// reaches and skips that node's children, since one occurrence is enough.
+type keyofFinder struct{ found bool }
+
+func (f *keyofFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if _, ok := t.(*soltype.KeyofType); ok {
+		f.found = true
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *keyofFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	return t
 }

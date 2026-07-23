@@ -242,7 +242,10 @@ func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl in
 	if !ok {
 		operand = c.freshAt(lvl)
 	}
-	t := newTypeEvaluator(c.ctx).reduce(&soltype.KeyofType{Operand: operand})
+	// The nil evaluator reduces a structural operand — `keyof {x: number}` ⇒ `"x"` — but keeps a
+	// named operand symbolic, so `keyof Point` is stored unexpanded and the signature renders
+	// `keyof Point`. constrain expands the alias when it checks a constraint against the residual.
+	t := newTypeEvaluator(nil).reduce(&soltype.KeyofType{Operand: operand})
 	// Reduction can collapse to a member that already carries provenance, as newUnion does on a
 	// single-member union, so record only when the reduced node has none, matching
 	// resolveUnionTypeAnn. Re-recording would overwrite the narrower blame and trip debugProv.
