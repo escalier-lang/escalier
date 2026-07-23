@@ -282,29 +282,55 @@ func TestInferKeyofAliasConstraint(t *testing.T) {
 	}
 }
 
-// Distribution reduces the ground members and leaves the non-ground one symbolic: the object
-// contributes "a", the type parameter stays keyof T, and they union. This uses a function so the
-// scheme renders the parameter as `T`; an alias body would render it as a raw inference var.
-func TestInferKeyofUnionWithResidualMember(t *testing.T) {
-	values, _, errs := inferSource(t, `fn g<T>(x: keyof (T | {a: number})) {}`)
-	require.Empty(t, errs)
-	require.Equal(t, `fn <T>(x: "a" | keyof T) -> void`, values["g"])
+// A `keyof` annotation over an inline structural operand is stored unreduced, so the parameter
+// type prints the way the source wrote it rather than the operand's keys. An inline object keeps
+// its braces, and a union operand keeps its parentheses under the `keyof` prefix. constrain
+// reduces the residual when it checks a constraint; the stored and displayed form does not.
+func TestInferKeyofAnnotationStaysSymbolic(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "InlineObject",
+			src:  `fn h(k: keyof {x: number, y: string}) {}`,
+			want: map[string]string{"h": "fn (k: keyof {x: number, y: string}) -> void"},
+		},
+		{
+			name: "UnionOperand",
+			src:  `fn g<T>(x: keyof (T | {a: number})) {}`,
+			want: map[string]string{"g": "fn <T>(x: keyof (T | {a: number})) -> void"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name])
+			}
+		})
+	}
 }
 
-// A nested `keyof keyof` terminates instead of looping on the same symbolic shape. Over a type
-// parameter neither operator grounds, so it stays the `keyof keyof T` residual. Over a ground
-// object the inner keyof reduces to a union of string literals, and keyof of those literals is
-// never, since a string literal has no enumerable keys.
+// A nested `keyof keyof` stays symbolic in the stored type and, when reduced, terminates instead
+// of looping on the same shape. Over a type parameter it stays the `keyof keyof T` residual in the
+// signature; a ground `keyof keyof {a, b}` also stays symbolic in the stored type, and reducing it
+// yields never, since the inner keyof projects string-literal keys and a string literal has no
+// keys of its own.
 func TestInferKeyofNested(t *testing.T) {
-	t.Run("TypeParamStaysSymbolic", func(t *testing.T) {
+	t.Run("TypeParamInSignature", func(t *testing.T) {
 		values, _, errs := inferSource(t, `fn f<T>(k: keyof keyof T) {}`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn <T>(k: keyof keyof T) -> void", values["f"])
 	})
-	t.Run("GroundObjectReducesToNever", func(t *testing.T) {
-		_, types, errs := inferSource(t, `type Result = keyof keyof {a: number, b: string}`)
+	t.Run("GroundObject", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `type Result = keyof keyof {a: number, b: string}`)
 		require.Empty(t, errs)
-		require.Equal(t, "never", types["Result"])
+		result := nodes["Result"]
+		require.Equal(t, "keyof keyof {a: number, b: string}", soltype.Print(result))
+		require.Equal(t, "never", soltype.Print(expandResidual(ctx, result)))
 	})
 }
 
@@ -333,21 +359,6 @@ func TestInferKeyofExpandingAliasTerminates(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-}
-
-// A `keyof` residual whose operand is an inference variable stays symbolic through the value
-// solve, then reduces at coalescing once the variable gains a concrete object bound (Design-A,
-// the post-solve reduction site). The positive-position variable inlines to its lower bound
-// `{a: number, b: string}`, and the coalescer's ExitType sweep projects that object's keys to
-// `"a" | "b"`. Source cannot yet reach this path — the operand-grounding case needs `keyof
-// typeof <param>`, and typeof of a parameter is not a readable value in PR1a — so the reduction
-// is exercised at the coalesce boundary directly.
-func TestInferKeyofPostSolveReduction(t *testing.T) {
-	c := &Context{}
-	v := c.freshVar(0)
-	v.LowerBounds = []soltype.Type{exactObj(propElem("a", num()), propElem("b", str()))}
-	got := coalesce(&soltype.KeyofType{Operand: v}, soltype.Positive)
-	require.Equal(t, `"a" | "b"`, soltype.Print(got))
 }
 
 // A `typeof v` query resolves against the value scope at annotation time, returning the
@@ -393,13 +404,16 @@ func TestInferTypeof(t *testing.T) {
 }
 
 // The canonical `keyof typeof x`, the value→type bridge: typeof resolves the value `x` to its
-// object type `{a: 1}` at annotation time, and keyof reduces over that ground object to its
-// single key `"a"`.
+// object type `{a: 1}` at annotation time, and keyof stores that object unreduced, so the type
+// prints `keyof {a: 1}`. Reducing the residual with the alias environment projects the single key
+// `"a"`.
 func TestInferKeyofTypeofValue(t *testing.T) {
-	_, types, errs := inferSource(t, `
+	nodes, ctx, errs := inferTypeNodes(t, `
 		val x = {a: 1}
 		type Result = keyof typeof x
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `"a"`, types["Result"])
+	result := nodes["Result"]
+	require.Equal(t, "keyof {a: 1}", soltype.Print(result))
+	require.Equal(t, `"a"`, soltype.Print(expandResidual(ctx, result)))
 }

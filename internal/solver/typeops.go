@@ -13,20 +13,17 @@ import (
 // operator over the unexpanded alias stays symbolic.
 const maxExpandDepth = 200
 
-// typeEvaluator reduces a residual type-level operator to its value once the operand is
-// ground. It currently handles `keyof T`; later operators join as they land. An operand is
-// ground when it has a projectable head shape rather than an unresolved type variable or a
-// still-unreduced residual. A ground `keyof {x: number}` reduces to the union of its keys,
-// and a `keyof T` over a type parameter stays the symbolic KeyofType.
+// typeEvaluator reduces a residual type-level operator to its value. It currently handles
+// `keyof T`; later operators join as they land. Only constrain invokes it, to check a constraint
+// against a `keyof` residual. Annotation and display keep the residual symbolic, so a stored type
+// prints `keyof {x: number}` or `keyof Point` the way the source wrote it, never the reduced keys.
 //
-// A named type reference — an alias or a class — reduces only when the evaluator carries a
-// Context. The annotation and coalescing sites pass a nil Context, so `keyof Point` stays the
-// symbolic residual and the stored type keeps the name the source wrote. constrain passes its
-// Context so it can expand `keyof Point` to the referenced type's keys when it checks a
-// constraint, the same transparent-but-named treatment an alias itself gets.
+// reduce projects the operand's keys: a ground `keyof {x: number}` yields `"x"`, and an alias or
+// class operand expands to the referenced type's keys, the transparent-but-named treatment an
+// alias itself gets under constrain. A `keyof T` over a type parameter has no ground key set, so
+// it stays the symbolic KeyofType.
 //
-// A recursive alias reached through an operand under a Context is made safe by a two-part
-// termination strategy:
+// A recursive alias reached through an operand is made safe by a two-part termination strategy:
 //
 //   - active holds the alias instantiations currently being expanded, each keyed by the alias
 //     name together with its rendered arguments. When one recurs with the identical key, the
@@ -36,14 +33,13 @@ const maxExpandDepth = 200
 //     grows every lap, so its key never repeats and the active guard never fires.
 //
 // The evaluator adds no mutable solver state. reduce is a pure function of its input. It builds
-// its result unions through newUnion with a nil Context, even when it carries one for expansion,
-// so newUnion's subsumption never calls constrain — which reduces `keyof` residuals through this
-// evaluator and would otherwise re-enter it and loop.
+// its result unions through newUnion with a nil Context so newUnion's subsumption never calls
+// constrain — which reduces `keyof` residuals through this evaluator and would otherwise re-enter
+// it and loop.
 type typeEvaluator struct {
-	// ctx is the alias environment. When non-nil, reduce expands an alias operand and projects a
-	// class body, so constrain can check against a named operator's keys. When nil — at the
-	// annotation and coalescing sites — a named operand keeps the operator symbolic, so the
-	// stored and displayed type reads `keyof Point` rather than the expanded keys.
+	// ctx is the alias environment, used to expand an alias operand and project a class body so a
+	// reduction reaches the referenced type's keys. constrain and the test expander both supply a
+	// non-nil Context; reduce is never invoked without one.
 	ctx    *Context
 	active set.Set[string]
 	depth  int
@@ -74,8 +70,8 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 //   - `keyof` distributes over a union or intersection, unioning each member's keys;
 //   - `keyof` of a primitive, literal, `never`, or `unknown` is `never`, since none has
 //     enumerable keys;
-//   - under a Context, an alias expands to its body and a class projects its instance body, and
-//     `keyof` reduces over that; without one, both stay symbolic.
+//   - an alias expands to its body and a class projects its instance body, and `keyof` reduces
+//     over that under the termination guard.
 //
 // A type variable, a skolem, or a named reference the evaluator does not expand keeps the
 // operator symbolic, rebuilt around the operand.
@@ -95,9 +91,6 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 	case *soltype.ObjectType:
 		return e.keyofObject(op)
 	case *soltype.ClassType:
-		if e.ctx == nil {
-			return &soltype.KeyofType{Operand: operand, Exact: exact}
-		}
 		obj, ok := e.ctx.projectClassBody(op)
 		if !ok {
 			return &soltype.KeyofType{Operand: operand, Exact: exact}
@@ -119,13 +112,10 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 // reduceKeyofAlias reduces `keyof Alias` by expanding the alias and reducing `keyof` over its
 // body under the termination guard. The alias stays on the active path for the whole reduction
 // of its body, so a union or intersection member that re-references it, directly or through a
-// chain, sees it active and stops. A recurring instantiation state, an exhausted budget, an
-// unresolved body, or a nil evaluator context each leaves the alias unexpanded and symbolic.
+// chain, sees it active and stops. A recurring instantiation state, an exhausted budget, or an
+// unresolved body each leaves the alias unexpanded and symbolic.
 func (e *typeEvaluator) reduceKeyofAlias(op *soltype.AliasType, exact bool) soltype.Type {
 	symbolic := &soltype.KeyofType{Operand: op, Exact: exact}
-	if e.ctx == nil {
-		return symbolic
-	}
 	key := soltype.PrintQualified(op)
 	if e.active.Contains(key) || e.depth <= 0 {
 		return symbolic

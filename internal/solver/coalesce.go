@@ -124,7 +124,7 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
-	return reduceResidualOp(t)
+	return t
 }
 
 // bubbleOwnedMut rewrites a coalesced display type so no owned-mutable cell ever
@@ -422,16 +422,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
-	return reduceResidualOp(t)
-}
-
-// reduceResidualOp reduces a type-level operator whose operand only coalesced to a concrete
-// shape after the value solve, called bottom-up in ExitType. A non-operator node passes through.
-func reduceResidualOp(t soltype.Type) soltype.Type {
-	if _, ok := t.(*soltype.KeyofType); !ok {
-		return t
-	}
-	return newTypeEvaluator(nil).reduce(t)
+	return t
 }
 
 // displayBinder maps a binder var to its cleaned display copy when one exists, else
