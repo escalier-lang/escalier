@@ -232,9 +232,10 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 	return t, true
 }
 
-// resolveKeyOfTypeAnn lowers `keyof T` to the inert, unreduced KeyofType residual (M9 PR1a;
-// PR1b reduces a ground operand). An unsupported operand recovers to a fresh var, cascade-safe
-// like the Promise<bad> recovery.
+// resolveKeyOfTypeAnn lowers `keyof T` to a KeyofType residual and stores it unreduced, so the
+// annotation prints the way the source wrote it — `keyof {x: number}` renders `keyof {x: number}`,
+// not `"x"`. constrain reduces the residual when it checks a constraint against it. An unsupported
+// operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
 func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl int) (soltype.Type, bool) {
 	operand, ok := c.resolveTypeAnn(scope, ta.Type, lvl)
 	if !ok {
@@ -245,14 +246,18 @@ func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl in
 	return t, true
 }
 
-// resolveTypeOfTypeAnn resolves a `typeof v` query to the value's type at annotation time (M9
-// PR1a) — not a residual, the value→type bridge `keyof typeof x` relies on. A name or member
-// that resolves to no readable value reports an unsupported feature and recovers.
+// resolveTypeOfTypeAnn lowers a `typeof v` query to a TypeofType residual: it resolves the value's
+// type at annotation time and stores it unrendered behind the value reference, so the annotation
+// prints `typeof v` the way the source wrote it while constrain compares against the resolved type.
+// A name or member that resolves to no readable value reports an unsupported feature and recovers.
 func (c *checker) resolveTypeOfTypeAnn(scope *Scope, ta *ast.TypeOfTypeAnn) (soltype.Type, bool) {
-	if t, ok := c.resolveTypeOfQualIdent(scope, ta.Value); ok {
-		return t, true
+	ty, ok := c.resolveTypeOfQualIdent(scope, ta.Value)
+	if !ok {
+		return c.reportUnsupportedFeature(ta, "typeof of a name that is not a readable value"), false
 	}
-	return c.reportUnsupportedFeature(ta, "typeof of a name that is not a readable value"), false
+	t := &soltype.TypeofType{Ident: ast.QualIdentToString(ta.Value), Ty: ty}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
 }
 
 // resolveTypeOfQualIdent resolves a `typeof` operand — a bare value name or a member chain

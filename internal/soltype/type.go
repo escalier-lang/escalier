@@ -607,8 +607,20 @@ type KeyofType struct {
 	Exact   bool
 }
 
+// TypeofType is the residual `typeof x` type query. Like KeyofType it is inert: it carries no
+// bounds, constrain never records one against it, and it flows through the solver's structural
+// machinery untouched, rendering `typeof <Ident>` the way the source wrote it. Ty is the queried
+// value's type, resolved at annotation time, and is what constrain compares against when it
+// decides a constraint on the query, the transparent-but-named treatment an alias gets. Ident is
+// the value reference for display, such as "x" or "p.inner".
+type TypeofType struct {
+	Ident string
+	Ty    Type
+}
+
 func (*TypeVarType) isType()      {}
 func (*KeyofType) isType()        {}
+func (*TypeofType) isType()       {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
@@ -688,6 +700,10 @@ func LevelOf(t Type) int {
 		// type parameter lifts the level and the freshener/extruder prune descends to
 		// freshen the operand, exactly as the single-child PromiseType arm does.
 		return LevelOf(t.Operand)
+	case *TypeofType:
+		// A `typeof x` query's level is its resolved value type's, the same single-child rule
+		// KeyofType and PromiseType follow.
+		return LevelOf(t.Ty)
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:
