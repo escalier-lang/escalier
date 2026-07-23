@@ -405,25 +405,101 @@ func TestInferTypeof(t *testing.T) {
 	}
 }
 
-// constrain unwraps a `typeof v` query to the value's type to check a constraint against it, while
-// the stored type stays the named query. A value matching that type is accepted; one that
-// mismatches is rejected against the resolved type, so the diagnostic names the value's field.
+// constrain unwraps a `typeof v` query to the value's type to check a constraint against it,
+// while the stored type stays the named query. The unwrap fires wherever the query appears: as
+// the annotation a value is assigned to (the super side), as the type of a value flowing into a
+// concrete annotation (the sub side), off a member chain, and as a function parameter's type
+// checked against an argument. A matching value is accepted; a mismatch is rejected against the
+// resolved type, so the diagnostic names the value's field.
 func TestInferTypeofConstraint(t *testing.T) {
-	t.Run("Accepted", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			val v = {a: 1}
-			val w: typeof v = v
-		`)
-		require.Empty(t, errs)
-	})
-	t.Run("Rejected", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			val v = {a: 1}
-			val w: typeof v = {a: "hi"}
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, `cannot constrain "hi" <: 1`, errs[0].Message())
-	})
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "AnnotationAccepted",
+			src: `
+				val v = {a: 1}
+				val w: typeof v = v
+			`,
+		},
+		{
+			name: "AnnotationRejected",
+			src: `
+				val v = {a: 1}
+				val w: typeof v = {a: "hi"}
+			`,
+			wantErr: `cannot constrain "hi" <: 1`,
+		},
+		{
+			// The query on the sub side: a value typed `typeof v` flows into a concrete
+			// annotation, so constrain unwraps the sub to the value's type.
+			name: "SubPositionAccepted",
+			src: `
+				val v = {a: 1}
+				val a: typeof v = v
+				val b: {a: number} = a
+			`,
+		},
+		{
+			name: "SubPositionRejected",
+			src: `
+				val v = {a: 1}
+				val a: typeof v = v
+				val b: {a: string} = a
+			`,
+			wantErr: `cannot constrain 1 <: string`,
+		},
+		{
+			name: "MemberChainRejected",
+			src: `
+				val p = {inner: {a: 1}}
+				val w: typeof p.inner = {a: "x"}
+			`,
+			wantErr: `cannot constrain "x" <: 1`,
+		},
+		{
+			name: "CallArgumentAccepted",
+			src: `
+				val v = {a: 1}
+				fn f(p: typeof v) -> number { return 1 }
+				val r = f({a: 1})
+			`,
+		},
+		{
+			name: "CallArgumentRejected",
+			src: `
+				val v = {a: 1}
+				fn f(p: typeof v) -> number { return 1 }
+				val r = f({a: "x"})
+			`,
+			wantErr: `cannot constrain "x" <: 1`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A `typeof v` on both sides of a flow checks reflexively: the identity function's `return k`
+// constrains `typeof v <: typeof v`, which constrain decides by unwrapping both sides to the
+// value's type. The signature keeps the query on both positions.
+func TestInferTypeofIdentity(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		val v = {a: 1}
+		fn id(k: typeof v) -> typeof v { return k }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (k: typeof v) -> typeof v`, values["id"])
 }
 
 // The canonical `keyof typeof x`, the value→type bridge: `typeof x` names the value and `keyof`
