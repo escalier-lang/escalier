@@ -72,54 +72,77 @@ func TestInferKeyofResidual(t *testing.T) {
 
 // --- M9 PR1b: evaluator backbone + keyof reduction ---
 
-// A `keyof` over a structural operand reduces at annotation time: the evaluator projects the
-// operand's keys and unions them. Each case defines `type Result = keyof …` and asserts the
-// alias's reduced body. An object yields its property names as string literals, a tuple its
-// numeric indices, and `keyof` distributes over a union or intersection. A primitive operand has
-// no enumerable keys, so it reduces to `never`.
+// `keyof` over an aliased operand stays symbolic like any named reference, and reducing it with
+// the alias environment projects the aliased type's keys. Each case names the operand through an
+// alias so the stored `Result` keeps `keyof Alias`, then asserts what it expands to per structural
+// shape: an object yields its property names, a tuple its numeric indices, `keyof` distributes
+// over a union, and a primitive has no enumerable keys, so it expands to `never`.
 func TestInferKeyofEagerReduction(t *testing.T) {
 	tests := []struct {
-		name string
-		src  string
-		want string // the reduced body of the `Result` alias the source defines
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
 	}{
 		{
-			// The canonical accept case: a ground object reduces to the union of its keys.
+			// The canonical accept case: an object expands to the union of its keys.
 			name: "Object",
-			src:  `type Result = keyof {x: number, y: string}`,
-			want: `"x" | "y"`,
+			src: `
+				type Obj = {x: number, y: string}
+				type Result = keyof Obj
+			`,
+			wantSymbolic: "keyof Obj",
+			wantExpanded: `"x" | "y"`,
 		},
 		{
 			// A single-key object collapses to the lone string literal, not a one-member union.
 			name: "SingleKeyObject",
-			src:  `type Result = keyof {only: number}`,
-			want: `"only"`,
+			src: `
+				type Obj = {only: number}
+				type Result = keyof Obj
+			`,
+			wantSymbolic: "keyof Obj",
+			wantExpanded: `"only"`,
 		},
 		{
 			// keyof distributes over a union operand, so each member's keys union together.
 			name: "UnionDistributes",
-			src:  `type Result = keyof ({a: number} | {b: number})`,
-			want: `"a" | "b"`,
+			src: `
+				type U = {a: number} | {b: number}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"a" | "b"`,
 		},
 		{
 			// A tuple yields only its own numeric indices, the keys Object.keys returns. It omits
 			// "length" and the inherited Array.prototype members TypeScript's keyof includes.
 			name: "Tuple",
-			src:  `type Result = keyof [number, string]`,
-			want: "0 | 1",
+			src: `
+				type Tup = [number, string]
+				type Result = keyof Tup
+			`,
+			wantSymbolic: "keyof Tup",
+			wantExpanded: "0 | 1",
 		},
 		{
 			// keyof of a primitive is never, since a primitive has no enumerable keys.
 			name: "PrimitiveIsNever",
-			src:  `type Result = keyof number`,
-			want: "never",
+			src: `
+				type Num = number
+				type Result = keyof Num
+			`,
+			wantSymbolic: "keyof Num",
+			wantExpanded: "never",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, types, errs := inferSource(t, tt.src)
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
 			require.Empty(t, errs)
-			require.Equal(t, tt.want, types["Result"])
+			result := nodes["Result"]
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
 		})
 	}
 }
