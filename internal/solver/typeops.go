@@ -27,8 +27,10 @@ const maxExpandDepth = 200
 //
 //   - active holds the alias instantiations currently being expanded, each keyed by the alias
 //     name together with its rendered arguments. When one recurs with the identical key, the
-//     evaluator leaves the alias unexpanded, the finite knot standing in for the infinite
-//     regular type, rather than expanding it again.
+//     evaluator leaves that reference as the unexpanded alias node rather than expanding it again.
+//     A recursive alias such as `type List<T> = {head: T, tail: List<T> | null}` therefore reduces
+//     to a finite type whose recursive position points back to the alias instead of unfolding
+//     forever.
 //   - depth caps expansions along one path. It backstops an expanding recursion whose argument
 //     grows every lap, so its key never repeats and the active guard never fires.
 //
