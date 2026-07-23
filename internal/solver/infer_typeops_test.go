@@ -39,45 +39,14 @@ func expandResidual(ctx *Context, ty soltype.Type) soltype.Type {
 	return newTypeEvaluator(ctx).reduce(ty)
 }
 
-// --- M9 PR1a: keyof residual node + inert plumbing ---
-
-// A `keyof T` over a type parameter stays the inert KeyofType residual: T never grounds, so
-// the evaluator (M9 PR1b) leaves the operator symbolic, and it renders `keyof T` while
-// flowing through constrain and coalesce without being decomposed.
-func TestInferKeyofResidual(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-		want map[string]string
-	}{
-		{
-			// The residual round-trips through the whole solve: resolveTypeAnn builds it, the
-			// body's `return k` flows `keyof T <: keyof T` through constrain reflexively, and
-			// coalescing renders it back as `keyof T`.
-			name: "TypeParamRoundTrips",
-			src:  `fn f<T>(k: keyof T) -> keyof T { return k }`,
-			want: map[string]string{"f": "fn <T>(k: keyof T) -> keyof T"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			values, _, errs := inferSource(t, tt.src)
-			require.Empty(t, errs)
-			for name, want := range tt.want {
-				require.Equal(t, want, values[name])
-			}
-		})
-	}
-}
-
-// --- M9 PR1b: evaluator backbone + keyof reduction ---
-
-// `keyof` over an aliased operand stays symbolic like any named reference, and reducing it with
-// the alias environment projects the aliased type's keys. Each case names the operand through an
-// alias so the stored `Result` keeps `keyof Alias`, then asserts what it expands to per structural
-// shape: an object yields its property names, a tuple its numeric indices, `keyof` distributes
-// over a union, and a primitive has no enumerable keys, so it expands to `never`.
-func TestInferKeyofEagerReduction(t *testing.T) {
+// `keyof` over a named type reference — an alias or a class — is stored unexpanded, so the type
+// keeps the name the source wrote rather than the referenced type's keys. Each case names the
+// operand through an alias or class, asserts the stored `Result` renders `keyof Name`, and asserts
+// that reducing it with the alias environment — the expansion constrain performs to check a
+// constraint — yields the referenced type's keys. The cases cover the operand shapes keyof
+// projects (object, single-key object, union, tuple, primitive) and the reference kinds it
+// resolves (recursive alias, generic alias, class).
+func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 	tests := []struct {
 		name         string
 		src          string
@@ -85,7 +54,7 @@ func TestInferKeyofEagerReduction(t *testing.T) {
 		wantExpanded string
 	}{
 		{
-			// The canonical accept case: an object expands to the union of its keys.
+			// An object expands to the union of its property names.
 			name: "Object",
 			src: `
 				type Obj = {x: number, y: string}
@@ -106,7 +75,7 @@ func TestInferKeyofEagerReduction(t *testing.T) {
 		},
 		{
 			// keyof distributes over a union operand, so each member's keys union together.
-			name: "UnionDistributes",
+			name: "Union",
 			src: `
 				type U = {a: number} | {b: number}
 				type Result = keyof U
@@ -127,7 +96,7 @@ func TestInferKeyofEagerReduction(t *testing.T) {
 		},
 		{
 			// keyof of a primitive is never, since a primitive has no enumerable keys.
-			name: "PrimitiveIsNever",
+			name: "Primitive",
 			src: `
 				type Num = number
 				type Result = keyof Num
@@ -135,40 +104,9 @@ func TestInferKeyofEagerReduction(t *testing.T) {
 			wantSymbolic: "keyof Num",
 			wantExpanded: "never",
 		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			nodes, ctx, errs := inferTypeNodes(t, tt.src)
-			require.Empty(t, errs)
-			result := nodes["Result"]
-			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
-			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
-		})
-	}
-}
-
-// `keyof` over a named type reference — an alias or a class — is stored unexpanded, so the type
-// keeps the name the source wrote rather than the referenced type's keys. A named reference is
-// not expanded at annotation time the way an inline object is; constrain expands it only to check
-// a constraint. Each case asserts the stored form renders `keyof Name`, and that reducing it with
-// the alias environment — the expansion constrain performs — yields the referenced type's keys.
-func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
-	tests := []struct {
-		name         string
-		src          string
-		wantSymbolic string
-		wantExpanded string
-	}{
 		{
-			name: "Alias",
-			src: `
-				type Point = {x: number, y: number}
-				type Result = keyof Point
-			`,
-			wantSymbolic: "keyof Point",
-			wantExpanded: `"x" | "y"`,
-		},
-		{
+			// A recursive alias terminates: projecting its keys never descends into the recursive
+			// `children` field value.
 			name: "RecursiveAlias",
 			src: `
 				type Tree = {value: number, children: Tree}
@@ -178,6 +116,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"children" | "value"`,
 		},
 		{
+			// A generic alias instantiation substitutes its argument, then projects the keys.
 			name: "GenericAlias",
 			src: `
 				type Box<T> = {value: T}
@@ -187,6 +126,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"value"`,
 		},
 		{
+			// A class projects its instance body, the same key set an object yields.
 			name: "Class",
 			src: `
 				class Point {
@@ -213,19 +153,43 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 	}
 }
 
-// A signature keeps `keyof Point` rather than the expanded keys, the display the residual is
-// stored for. This is the canonical case: `fn g(k: keyof Point)` infers `fn (k: keyof Point)`,
-// not `fn (k: "x" | "y")`.
-func TestInferKeyofClassSignature(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		class Point {
-			x: number,
-			y: number,
-		}
-		fn g(k: keyof Point) {}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, `fn (k: keyof Point) -> void`, values["g"])
+// A `keyof` residual renders symbolically in a function signature and round-trips from parameter
+// to return: `fn (k: keyof X) -> keyof X { return k }` keeps `keyof X` on both positions. For a
+// type parameter the reflexive `keyof T <: keyof T` from `return k` succeeds inertly by structural
+// equality on the residual; for a class it succeeds by expanding both sides to the projected keys.
+// Either way the displayed signature keeps the name rather than the keys.
+func TestInferKeyofSignatureStaysSymbolic(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "TypeParam",
+			src:  `fn f<T>(k: keyof T) -> keyof T { return k }`,
+			want: map[string]string{"f": "fn <T>(k: keyof T) -> keyof T"},
+		},
+		{
+			name: "Class",
+			src: `
+				class Point {
+					x: number,
+					y: number,
+				}
+				fn g(k: keyof Point) -> keyof Point { return k }
+			`,
+			want: map[string]string{"g": "fn (k: keyof Point) -> keyof Point"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name])
+			}
+		})
+	}
 }
 
 // constrain expands a `keyof` residual over a type alias or class to check satisfaction, while
@@ -316,18 +280,6 @@ func TestInferKeyofAliasConstraint(t *testing.T) {
 			require.Equal(t, tt.wantErr, errs[0].Message())
 		})
 	}
-}
-
-// A `keyof Point` on both sides of a flow checks reflexively without expanding: `keyof Point <:
-// keyof Point` succeeds by structural equality on the residual, so the identity function keeps
-// the name on both its parameter and its return.
-func TestInferKeyofAliasIdentity(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		type Point = {x: number, y: number}
-		fn id(k: keyof Point) -> keyof Point { return k }
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, `fn (k: keyof Point) -> keyof Point`, values["id"])
 }
 
 // Distribution reduces the ground members and leaves the non-ground one symbolic: the object
