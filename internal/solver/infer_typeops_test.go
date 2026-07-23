@@ -3,9 +3,41 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/dep_graph"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
+
+// inferTypeNodes infers src and returns the raw soltype.Type of each top-level type binding
+// alongside the checker's Context, so a test can reduce a stored residual instead of only reading
+// its printed form. An alias binding yields its definition body, the same node inferModule
+// prints. It is the raw-type twin of inferModule, test-only.
+func inferTypeNodes(t *testing.T, src string) (map[string]soltype.Type, *Context, []SolverError) {
+	t.Helper()
+	module := parseModule(t, src)
+	c := newChecker()
+	scope := sharedPrelude().Child()
+	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
+	nodes := make(map[string]soltype.Type, len(scope.types))
+	for name, b := range scope.types {
+		ty := b.Type
+		if alias, ok := ty.(*soltype.AliasType); ok {
+			if def, ok := c.ctx.aliasDef(alias.Name); ok {
+				ty = def.Body
+			}
+		}
+		nodes[name] = ty
+	}
+	return nodes, c.ctx, c.errs
+}
+
+// expandResidual reduces a residual type-level operator such as `keyof Point` against the alias
+// environment, the eager expansion constrain performs when it checks a constraint. Production
+// keeps a named residual symbolic at annotation and display time, so this test-only helper lets a
+// test assert what a residual expands to without routing through a constraint.
+func expandResidual(ctx *Context, ty soltype.Type) soltype.Type {
+	return newTypeEvaluator(ctx).reduce(ty)
+}
 
 // --- M9 PR1a: keyof residual node + inert plumbing ---
 
@@ -95,12 +127,14 @@ func TestInferKeyofEagerReduction(t *testing.T) {
 // `keyof` over a named type reference — an alias or a class — is stored unexpanded, so the type
 // keeps the name the source wrote rather than the referenced type's keys. A named reference is
 // not expanded at annotation time the way an inline object is; constrain expands it only to check
-// a constraint. Each case asserts the stored form renders `keyof Name`.
+// a constraint. Each case asserts the stored form renders `keyof Name`, and that reducing it with
+// the alias environment — the expansion constrain performs — yields the referenced type's keys.
 func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 	tests := []struct {
-		name string
-		src  string
-		want string
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
 	}{
 		{
 			name: "Alias",
@@ -108,7 +142,8 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Point = {x: number, y: number}
 				type Result = keyof Point
 			`,
-			want: "keyof Point",
+			wantSymbolic: "keyof Point",
+			wantExpanded: `"x" | "y"`,
 		},
 		{
 			name: "RecursiveAlias",
@@ -116,7 +151,8 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Tree = {value: number, children: Tree}
 				type Result = keyof Tree
 			`,
-			want: "keyof Tree",
+			wantSymbolic: "keyof Tree",
+			wantExpanded: `"children" | "value"`,
 		},
 		{
 			name: "GenericAlias",
@@ -124,7 +160,8 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Box<T> = {value: T}
 				type Result = keyof Box<number>
 			`,
-			want: "keyof Box<number>",
+			wantSymbolic: "keyof Box<number>",
+			wantExpanded: `"value"`,
 		},
 		{
 			name: "Class",
@@ -135,14 +172,20 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				}
 				type Result = keyof Point
 			`,
-			want: "keyof Point",
+			wantSymbolic: "keyof Point",
+			wantExpanded: `"x" | "y"`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, types, errs := inferSource(t, tt.src)
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
 			require.Empty(t, errs)
-			require.Equal(t, tt.want, types["Result"])
+			result := nodes["Result"]
+			// The stored form stays symbolic: a named operand is not expanded at annotation time.
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			// Reducing with the alias environment — what constrain does to check a constraint —
+			// expands the named operand to the referenced type's keys.
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
 		})
 	}
 }
