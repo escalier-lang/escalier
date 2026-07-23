@@ -1693,6 +1693,11 @@ func describe(t soltype.Type) string {
 		// per-node type renderer beside soltype.Print; both carry the residual, so a later
 		// operator node must add an arm here as well as there.
 		return "keyof " + describe(t.Operand)
+	case *soltype.TypeofType:
+		// A `typeof` query names the value it references, matching the printer. constrain
+		// unwraps it to the resolved type before comparing, so a diagnostic rarely names the
+		// query itself, but a rejected bound that still carries it reads `typeof x`.
+		return "typeof " + t.Ident
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
 		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2

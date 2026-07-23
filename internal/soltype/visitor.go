@@ -180,6 +180,24 @@ func (t *KeyofType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *TypeofType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The resolved value type walks in the current polarity, the same single-child covariant
+	// visit KeyofType uses. The query is inert: the visit rebuilds it around a rewritten Ty
+	// without resolving it, so extrude/coalesce/freshenAbove carry `typeof x` through untouched
+	// and it still renders under its Ident.
+	ty := cur.Ty.Accept(v, pol)
+	out := cur
+	if ty != cur.Ty {
+		out = &TypeofType{Ident: cur.Ident, Ty: ty}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {

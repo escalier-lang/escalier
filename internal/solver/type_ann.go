@@ -246,14 +246,18 @@ func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl in
 	return t, true
 }
 
-// resolveTypeOfTypeAnn resolves a `typeof v` query to the value's type at annotation time (M9
-// PR1a) — not a residual, the value→type bridge `keyof typeof x` relies on. A name or member
-// that resolves to no readable value reports an unsupported feature and recovers.
+// resolveTypeOfTypeAnn lowers a `typeof v` query to a TypeofType residual: it resolves the value's
+// type at annotation time and stores it unrendered behind the value reference, so the annotation
+// prints `typeof v` the way the source wrote it while constrain compares against the resolved type.
+// A name or member that resolves to no readable value reports an unsupported feature and recovers.
 func (c *checker) resolveTypeOfTypeAnn(scope *Scope, ta *ast.TypeOfTypeAnn) (soltype.Type, bool) {
-	if t, ok := c.resolveTypeOfQualIdent(scope, ta.Value); ok {
-		return t, true
+	ty, ok := c.resolveTypeOfQualIdent(scope, ta.Value)
+	if !ok {
+		return c.reportUnsupportedFeature(ta, "typeof of a name that is not a readable value"), false
 	}
-	return c.reportUnsupportedFeature(ta, "typeof of a name that is not a readable value"), false
+	t := &soltype.TypeofType{Ident: ast.QualIdentToString(ta.Value), Ty: ty}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
 }
 
 // resolveTypeOfQualIdent resolves a `typeof` operand — a bare value name or a member chain

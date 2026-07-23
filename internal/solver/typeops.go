@@ -57,6 +57,10 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.KeyofType:
 		return e.reduceKeyof(t.Operand, t.Exact)
+	case *soltype.TypeofType:
+		// A `typeof x` query reduces to the value's resolved type. constrain unwraps it directly
+		// in its pre-switch, so this arm serves a `typeof` reached through another operator.
+		return t.Ty
 	default:
 		return t
 	}
@@ -71,7 +75,8 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 //   - `keyof` of a primitive, literal, `never`, or `unknown` is `never`, since none has
 //     enumerable keys;
 //   - an alias expands to its body and a class projects its instance body, and `keyof` reduces
-//     over that under the termination guard.
+//     over that under the termination guard;
+//   - a `typeof` query resolves to the value's type, and `keyof` reduces over that.
 //
 // A type variable, a skolem, or a named reference the evaluator does not expand keeps the
 // operator symbolic, rebuilt around the operand.
@@ -88,6 +93,9 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 		return e.reduceKeyof(inner, exact)
 	case *soltype.AliasType:
 		return e.reduceKeyofAlias(op, exact)
+	case *soltype.TypeofType:
+		// `keyof typeof x` resolves the query to the value's type, then projects that type's keys.
+		return e.reduceKeyof(op.Ty, exact)
 	case *soltype.ObjectType:
 		return e.keyofObject(op)
 	case *soltype.ClassType:

@@ -35,6 +35,8 @@ func typePrec(t Type) int {
 		return precPrefix
 	case *KeyofType:
 		return precPrefix
+	case *TypeofType:
+		return precPrefix
 	default:
 		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
 		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType and
@@ -403,6 +405,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *KeyofType:
 			walk(t.Operand)
+		case *TypeofType:
+			walk(t.Ty)
 		case *PromiseType:
 			walk(t.Inner)
 		case *RefType:
@@ -602,6 +606,10 @@ func (p *namedPrinter) printType(t Type) string {
 		// `keyof T`, mirroring type_system's KeyOfType rendering. The operand prints at
 		// precPrefix so a looser operand such as a union gets parenthesized: `keyof (A | B)`.
 		return "keyof " + p.printTypeMinPrec(t.Operand, precPrefix)
+	case *TypeofType:
+		// `typeof x`, the value reference the source wrote. The resolved value type is not
+		// rendered — the query stays symbolic, so `keyof typeof x` prints as written.
+		return "typeof " + t.Ident
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:

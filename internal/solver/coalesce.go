@@ -1107,6 +1107,11 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// matching how the operator flows through the solver untouched in M9 PR1a.
 		b, ok := b.(*soltype.KeyofType)
 		return ok && a.Exact == b.Exact && equalTypeWith(a.Operand, b.Operand, ctx)
+	case *soltype.TypeofType:
+		// Two `typeof` queries are equal when they name the same value and resolve to equal
+		// types, compared without unwrapping — the query flows through the solver untouched.
+		b, ok := b.(*soltype.TypeofType)
+		return ok && a.Ident == b.Ident && equalTypeWith(a.Ty, b.Ty, ctx)
 	}
 	return false
 }

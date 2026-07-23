@@ -361,25 +361,26 @@ func TestInferKeyofExpandingAliasTerminates(t *testing.T) {
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 }
 
-// A `typeof v` query resolves against the value scope at annotation time, returning the
-// value's concrete type directly rather than a residual (M9 PR1a). It resolves a bare name and
-// a member chain. The value's coalesced type keeps its literal `{a: 1}`, so that is what the
-// query yields.
+// A `typeof v` query is stored as a residual behind the value reference, so an annotation prints
+// `typeof v` the way the source wrote it rather than the resolved type. It resolves a bare name
+// and a member chain; reducing the residual yields the referenced value's type. The value's
+// coalesced type keeps its literal `{a: 1}`, so that is what the query resolves to.
 func TestInferTypeof(t *testing.T) {
 	tests := []struct {
-		name string
-		src  string
-		want map[string]string
+		name         string
+		src          string
+		wantSymbolic string
+		wantResolved string
 	}{
 		{
-			// A bare `typeof v` resolves to the value's object type, which the annotated
-			// binding then adopts.
+			// A bare `typeof v` names the value and resolves to its object type.
 			name: "BareValue",
 			src: `
 				val v = {a: 1}
-				val w: typeof v = v
+				type Result = typeof v
 			`,
-			want: map[string]string{"w": "{a: 1}"},
+			wantSymbolic: "typeof v",
+			wantResolved: "{a: 1}",
 		},
 		{
 			// A member chain `typeof p.inner` resolves the base value and projects the named
@@ -387,26 +388,47 @@ func TestInferTypeof(t *testing.T) {
 			name: "MemberChain",
 			src: `
 				val p = {inner: {a: 1}}
-				val w: typeof p.inner = {a: 1}
+				type Result = typeof p.inner
 			`,
-			want: map[string]string{"w": "{a: 1}"},
+			wantSymbolic: "typeof p.inner",
+			wantResolved: "{a: 1}",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			values, _, errs := inferSource(t, tt.src)
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
 			require.Empty(t, errs)
-			for name, want := range tt.want {
-				require.Equal(t, want, values[name])
-			}
+			result := nodes["Result"]
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			require.Equal(t, tt.wantResolved, soltype.Print(expandResidual(ctx, result)))
 		})
 	}
 }
 
-// The canonical `keyof typeof x`, the value→type bridge: typeof resolves the value `x` to its
-// object type `{a: 1}` at annotation time, and keyof stores that object unreduced, so the type
-// prints `keyof {a: 1}`. Reducing the residual with the alias environment projects the single key
-// `"a"`.
+// constrain unwraps a `typeof v` query to the value's type to check a constraint against it, while
+// the stored type stays the named query. A value matching that type is accepted; one that
+// mismatches is rejected against the resolved type, so the diagnostic names the value's field.
+func TestInferTypeofConstraint(t *testing.T) {
+	t.Run("Accepted", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			val v = {a: 1}
+			val w: typeof v = v
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("Rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			val v = {a: 1}
+			val w: typeof v = {a: "hi"}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, `cannot constrain "hi" <: 1`, errs[0].Message())
+	})
+}
+
+// The canonical `keyof typeof x`, the value→type bridge: `typeof x` names the value and `keyof`
+// wraps it, both staying symbolic, so the type prints `keyof typeof x` as written. Reducing it
+// resolves `typeof x` to the value's object type `{a: 1}` and projects its single key `"a"`.
 func TestInferKeyofTypeofValue(t *testing.T) {
 	nodes, ctx, errs := inferTypeNodes(t, `
 		val x = {a: 1}
@@ -414,6 +436,6 @@ func TestInferKeyofTypeofValue(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	result := nodes["Result"]
-	require.Equal(t, "keyof {a: 1}", soltype.Print(result))
+	require.Equal(t, "keyof typeof x", soltype.Print(result))
 	require.Equal(t, `"a"`, soltype.Print(expandResidual(ctx, result)))
 }

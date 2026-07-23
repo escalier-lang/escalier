@@ -206,12 +206,28 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	}
 
+	// A `typeof x` query is transparent for checking, the same as an alias: unwrap it to the
+	// value's resolved type and recurse, so a constraint on `typeof x` runs against that type
+	// while the stored residual keeps the value reference. When the other side is a variable, fall
+	// through to the var arms so the whole query is recorded as one bound and the name survives on
+	// the coalesced binding.
+	if tq, ok := sub.(*soltype.TypeofType); ok {
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			return c.constrain(tq.Ty, super, seen, mutCtx)
+		}
+	}
+	if tq, ok := super.(*soltype.TypeofType); ok {
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
+			return c.constrain(sub, tq.Ty, seen, mutCtx)
+		}
+	}
+
 	// A `keyof` residual is transparent for checking, the same as an alias: reduce it under this
 	// Context — expanding any alias or class its operand names — and recurse, so a check against
 	// `keyof Point` runs on the projected keys while the stored residual keeps the name. The
-	// annotation and coalescing sites pass a nil Context and leave the residual named; here the
-	// Context lets it expand. Recurse only when the reduction fully grounds — no `keyof` remains.
-	// A `keyof T` over a type parameter does not reduce at all, and an expanding recursive alias
+	// annotation and display sites keep the residual symbolic and never invoke the evaluator; only
+	// here is it reduced. Recurse only when the reduction fully grounds — no `keyof` remains. A
+	// `keyof T` over a type parameter does not reduce at all, and an expanding recursive alias
 	// reduces to a budget-truncated union that still carries a `keyof` residual, which would
 	// re-expand and grow without bound on the recursion. Both fall through to the inert KeyofType
 	// arm below. As with an alias, defer to the var arms when the other side is a variable, so the
