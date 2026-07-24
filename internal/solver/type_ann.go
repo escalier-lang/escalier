@@ -66,6 +66,9 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
+		if t, ok := c.resolveStringIntrinsic(scope, ta, lvl); ok {
+			return t, true
+		}
 		return c.reportUnsupported(ta), false
 	case *ast.ObjectTypeAnn:
 		return c.resolveObjectTypeAnn(scope, ta, lvl)
@@ -87,6 +90,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.resolveIndexTypeAnn(scope, ta, lvl)
 	case *ast.TypeOfTypeAnn:
 		return c.resolveTypeOfTypeAnn(scope, ta)
+	case *ast.TemplateLitTypeAnn:
+		return c.resolveTemplateLitTypeAnn(scope, ta, lvl)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -295,6 +300,59 @@ func (c *checker) resolveTypeOfTypeAnn(scope *Scope, ta *ast.TypeOfTypeAnn) (sol
 		return c.reportUnsupportedFeature(ta, "typeof of a name that is not a readable value"), false
 	}
 	t := &soltype.TypeofType{Ident: ast.QualIdentToString(ta.Value), Ty: ty}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveTemplateLitTypeAnn lowers a template literal type such as `on${T}` to a
+// TemplateLitType residual and stores it unreduced, so the annotation prints the way the source
+// wrote it rather than the reduced union of string literals. constrain reduces the residual when it
+// checks a constraint against it, mirroring resolveKeyOfTypeAnn. The parser records one more fixed
+// segment than interpolation, so Quasis carries len(Interps)+1 entries. An unsupported
+// interpolation recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
+func (c *checker) resolveTemplateLitTypeAnn(scope *Scope, ta *ast.TemplateLitTypeAnn, lvl int) (soltype.Type, bool) {
+	quasis := make([]string, len(ta.Quasis))
+	for i, q := range ta.Quasis {
+		quasis[i] = q.Value
+	}
+	interps := make([]soltype.Type, len(ta.TypeAnns))
+	for i, ann := range ta.TypeAnns {
+		t, ok := c.resolveTypeAnn(scope, ann, lvl)
+		if !ok {
+			t = c.freshAt(lvl)
+		}
+		interps[i] = t
+	}
+	t := &soltype.TemplateLitType{Quasis: quasis, Interps: interps}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// stringIntrinsics maps each intrinsic string operator's reference name to its kind, so a
+// `Uppercase<T>` reference resolves to a StringMappingType residual. A user-defined type of the
+// same name takes precedence, since resolveScopedTypeRef runs first.
+var stringIntrinsics = map[string]soltype.StringMappingKind{
+	"Uppercase":    soltype.Uppercase,
+	"Lowercase":    soltype.Lowercase,
+	"Capitalize":   soltype.Capitalize,
+	"Uncapitalize": soltype.Uncapitalize,
+}
+
+// resolveStringIntrinsic lowers an intrinsic string-operator reference `Uppercase<T>` and its three
+// siblings to a StringMappingType residual, stored unreduced so the annotation prints the way the
+// source wrote it. It matches only a single-argument reference with no lifetime arguments; any other
+// name or arity reports ok=false so the caller falls through to its unsupported-feature recovery. An
+// unsupported operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
+func (c *checker) resolveStringIntrinsic(scope *Scope, ta *ast.TypeRefTypeAnn, lvl int) (soltype.Type, bool) {
+	kind, ok := stringIntrinsics[ast.QualIdentToString(ta.Name)]
+	if !ok || len(ta.TypeArgs) != 1 || len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
+		return nil, false
+	}
+	operand, ok := c.resolveTypeAnn(scope, ta.TypeArgs[0], lvl)
+	if !ok {
+		operand = c.freshAt(lvl)
+	}
+	t := &soltype.StringMappingType{Kind: kind, Operand: operand}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }

@@ -224,6 +224,17 @@ type TupleIndexOutOfRangeError struct {
 	site  ast.Node     // M2.5: constraint node fallback
 }
 
+// TemplateLitTooComplexError fires when reducing a template literal type would enumerate more than
+// maxTemplateLitCombinations string literals, as in `${A}${B}${C}` over three large unions whose
+// cartesian product explodes. Materializing that union would cost unbounded memory, so the type
+// expression is rejected. Like TupleIndexOutOfRangeError it is minted during the reduction constrain
+// performs, and carries the template it could not expand.
+type TemplateLitTooComplexError struct {
+	Template *soltype.TemplateLitType
+	prov     NodeResolver // M2.5: type→node index (§3.5)
+	site     ast.Node     // M2.5: constraint node fallback
+}
+
 // MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
 // borrow but the super is mutable: writing through the mutable target would mutate a
 // value the source only lent out as read-only, so an immutable reference cannot fill
@@ -400,6 +411,7 @@ func (*ExtraElementError) isSolverError()           {}
 func (*OptionalPropertyError) isSolverError()       {}
 func (*UnknownObjectKeyError) isSolverError()       {}
 func (*TupleIndexOutOfRangeError) isSolverError()   {}
+func (*TemplateLitTooComplexError) isSolverError()  {}
 func (*MutabilityMismatchError) isSolverError()     {}
 func (*BorrowEscapeError) isSolverError()           {}
 func (*ClassIntoExactObjectError) isSolverError()   {}
@@ -502,6 +514,12 @@ func (e *TupleIndexOutOfRangeError) Span() ast.Span {
 	return spanOf(e.prov, e.Tuple, e.site)
 }
 func (e *TupleIndexOutOfRangeError) Related() []ast.Span { return nil }
+
+func (e *TemplateLitTooComplexError) Span() ast.Span {
+	// The template is the offending type; blame it, else the constraint site.
+	return spanOf(e.prov, e.Template, e.site)
+}
+func (e *TemplateLitTooComplexError) Related() []ast.Span { return nil }
 
 func (e *MutabilityMismatchError) Span() ast.Span {
 	// The immutable source borrow is the actual value; blame it, degrade to the
@@ -1599,6 +1617,11 @@ func (e *TupleIndexOutOfRangeError) Message() string {
 		strconv.FormatFloat(e.Index, 'f', -1, 64), soltype.Print(e.Tuple))
 }
 
+func (e *TemplateLitTooComplexError) Message() string {
+	return fmt.Sprintf("template literal type %s is too complex to reduce; it expands to more than %d members",
+		soltype.Print(e.Template), maxTemplateLitCombinations)
+}
+
 func (e *MutabilityMismatchError) Message() string {
 	return fmt.Sprintf("cannot constrain immutable %s <: mutable %s",
 		describeBorrowInner(e.Sub.Inner), describeBorrowInner(e.Super.Inner))
@@ -1768,6 +1791,24 @@ func describe(t soltype.Type) string {
 		// enclosing spread-carrying TupleType arm above describes its elements. The operand renders
 		// in describe's raw mid-constrain form.
 		return "..." + describe(t.Operand)
+	case *soltype.TemplateLitType:
+		// A template literal residual renders `q0${i0}…qn` structurally, recursing like the
+		// keyof arm, so a rejected constraint names it the way the source wrote it. Each
+		// interpolation renders in describe's raw mid-constrain form.
+		var b strings.Builder
+		b.WriteString("`")
+		for i, quasi := range t.Quasis {
+			b.WriteString(quasi)
+			if i < len(t.Interps) {
+				b.WriteString("${" + describe(t.Interps[i]) + "}")
+			}
+		}
+		b.WriteString("`")
+		return b.String()
+	case *soltype.StringMappingType:
+		// An intrinsic string-operator residual renders `Uppercase<operand>` structurally, recursing
+		// like the keyof arm. The operand renders in describe's raw mid-constrain form.
+		return t.Kind.String() + "<" + describe(t.Operand) + ">"
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
 		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2
