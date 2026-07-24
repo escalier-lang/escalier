@@ -1768,6 +1768,24 @@ func describe(t soltype.Type) string {
 		// enclosing spread-carrying TupleType arm above describes its elements. The operand renders
 		// in describe's raw mid-constrain form.
 		return "..." + describe(t.Operand)
+	case *soltype.TemplateLitType:
+		// A template literal residual renders `q0${i0}…qn` structurally, recursing like the
+		// keyof arm, so a rejected constraint names it the way the source wrote it. Each
+		// interpolation renders in describe's raw mid-constrain form.
+		var b strings.Builder
+		b.WriteString("`")
+		for i, quasi := range t.Quasis {
+			b.WriteString(quasi)
+			if i < len(t.Interps) {
+				b.WriteString("${" + describe(t.Interps[i]) + "}")
+			}
+		}
+		b.WriteString("`")
+		return b.String()
+	case *soltype.StringMappingType:
+		// An intrinsic string-operator residual renders `Uppercase<operand>` structurally, recursing
+		// like the keyof arm. The operand renders in describe's raw mid-constrain form.
+		return t.Kind.String() + "<" + describe(t.Operand) + ">"
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
 		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2

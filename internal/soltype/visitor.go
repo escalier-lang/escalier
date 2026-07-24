@@ -235,6 +235,41 @@ func (t *RestSpreadType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *TemplateLitType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The interpolations walk in the current polarity, the multi-child analogue of KeyofType's
+	// single covariant visit. The residual is inert — the visit rebuilds it around rewritten
+	// interpolations without reducing the template, so extrude/coalesce/freshenAbove carry
+	// `on${T}` through untouched. The fixed string segments carry through unchanged.
+	interps, changed := acceptTypes(cur.Interps, v, pol)
+	out := cur
+	if changed {
+		out = &TemplateLitType{Quasis: cur.Quasis, Interps: interps}
+	}
+	return v.ExitType(out, pol)
+}
+
+func (t *StringMappingType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The operand walks in the current polarity, the same single-child covariant visit KeyofType
+	// uses. The residual is inert — the visit rebuilds it around a rewritten operand without
+	// reducing the operator, so extrude/coalesce/freshenAbove carry `Uppercase<T>` through untouched.
+	operand := cur.Operand.Accept(v, pol)
+	out := cur
+	if operand != cur.Operand {
+		out = &StringMappingType{Kind: cur.Kind, Operand: operand}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {

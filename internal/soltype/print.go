@@ -46,6 +46,14 @@ func typePrec(t Type) int {
 		// element unparenthesized, so its precedence is consulted only if it is rendered on its
 		// own. The `...` prefix binds like the other prefixes.
 		return precPrefix
+	case *TemplateLitType:
+		// A template literal is backtick-delimited, so like an object or a `Name<args>` reference
+		// it is an atom that never needs outer parens.
+		return precAtom
+	case *StringMappingType:
+		// `Uppercase<T>` renders as a name with an argument list, the same atom shape a class or
+		// alias reference takes, so it never needs outer parens.
+		return precAtom
 	default:
 		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
 		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType and
@@ -421,6 +429,12 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Ty)
 		case *RestSpreadType:
 			walk(t.Operand)
+		case *TemplateLitType:
+			for _, interp := range t.Interps {
+				walk(interp)
+			}
+		case *StringMappingType:
+			walk(t.Operand)
 		case *PromiseType:
 			walk(t.Inner)
 		case *RefType:
@@ -562,6 +576,26 @@ func (p *namedPrinter) printType(t Type) string {
 		// the `...`. The enclosing TupleType arm renders each element through printType, so a spread
 		// element reaches here in place.
 		return "..." + p.printTypeMinPrec(t.Operand, precPrefix)
+	case *TemplateLitType:
+		// A template literal renders `q0${i0}q1${i1}…qn`, interleaving the fixed segments with
+		// each interpolation, so `on${T}` round-trips. Quasis holds one more entry than
+		// Interps. Each interpolation prints with no minimum since the `${…}` braces stop anything
+		// from binding across it.
+		var b strings.Builder
+		b.WriteString("`")
+		for i, quasi := range t.Quasis {
+			b.WriteString(quasi)
+			if i < len(t.Interps) {
+				b.WriteString("${" + p.printType(t.Interps[i]) + "}")
+			}
+		}
+		b.WriteString("`")
+		return b.String()
+	case *StringMappingType:
+		// `Uppercase<T>` and its three siblings render under the operator's name with the operand as
+		// the sole argument, so `Capitalize<K>` round-trips. The operand prints with no minimum since
+		// the `<…>` brackets stop anything from binding across it.
+		return t.Kind.String() + "<" + p.printType(t.Operand) + ">"
 	case *ObjectType:
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {

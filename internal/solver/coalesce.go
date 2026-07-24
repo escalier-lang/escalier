@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -1124,6 +1125,17 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// spread element reaches here in place, the spread twin of the plain element comparison.
 		b, ok := b.(*soltype.RestSpreadType)
 		return ok && equalTypeWith(a.Operand, b.Operand, ctx)
+	case *soltype.TemplateLitType:
+		// Two template literals are equal when their fixed segments match and their interpolations
+		// are equal position-for-position, compared structurally without reducing the template.
+		b, ok := b.(*soltype.TemplateLitType)
+		return ok && slices.Equal(a.Quasis, b.Quasis) && equalTypeSliceWith(a.Interps, b.Interps, ctx)
+	case *soltype.StringMappingType:
+		// Two string-mapping residuals are equal when they name the same operator over equal
+		// operands, compared structurally without reducing, the single-child analogue of the
+		// KeyofType arm.
+		b, ok := b.(*soltype.StringMappingType)
+		return ok && a.Kind == b.Kind && equalTypeWith(a.Operand, b.Operand, ctx)
 	}
 	return false
 }
