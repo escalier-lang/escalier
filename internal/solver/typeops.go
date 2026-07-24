@@ -76,6 +76,8 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		return t.Ty
 	case *soltype.TupleType:
 		return e.reduceTuple(t)
+	case *soltype.ObjectType:
+		return e.reduceObject(t)
 	default:
 		return t
 	}
@@ -152,6 +154,174 @@ func (e *typeEvaluator) groundSpreadOperand(operand soltype.Type) soltype.Type {
 	})
 }
 
+// reduceObject merges a spread-carrying object's elements left to right into a plain ObjectType,
+// following Flow's spread semantics. An object with no `...A` spread element returns unchanged, so a
+// plain object keeps its pointer. Each element contributes its fields: a property as its own
+// one-field group, a `...A` spread as the fields of the object its operand grounds to. A later
+// field wins over an earlier key, except that a later optional field unions with the earlier value
+// rather than overriding it, see mergeSpreadElem.
+//
+// Per element it mirrors reduceTuple: a non-spread member has its value types reduced in place, and
+// a spread's operand is reduced and expanded toward a concrete object through groundObjectOperand,
+// under the termination guard reduceKeyofAlias uses.
+//
+// Unlike reduceTuple, the merge is all-or-nothing. If any spread operand stays abstract, such as a
+// type parameter or a truncated expanding alias, the whole object stays symbolic and carries every
+// element in its reduced form, so it merges once the operand grounds. reduceTuple can finalize each
+// ground spread independently, because tuple splice is positional concatenation and a later element
+// never disturbs an earlier position. An object spread instead overrides earlier keys, so a field is
+// safe to finalize only when no un-ground spread follows it. reduceObject keeps the whole object
+// symbolic rather than finalizing just that safe suffix: it is simpler and renders the way the
+// source wrote it, at the cost of re-reducing from scratch each pass.
+func (e *typeEvaluator) reduceObject(t *soltype.ObjectType) soltype.Type {
+	if !soltype.HasObjectSpread(t.Elems) {
+		return t
+	}
+	reducedElems := make([]soltype.ObjTypeElem, len(t.Elems))
+	operandElems := make([][]soltype.ObjTypeElem, 0, len(t.Elems))
+	inexact := t.Inexact
+	ground := true
+	for i, el := range t.Elems {
+		spread, ok := el.(*soltype.SpreadElem)
+		if !ok {
+			// A non-spread member has its value types reduced, then contributes as a one-field group.
+			re := e.reduceElem(el)
+			reducedElems[i] = re
+			operandElems = append(operandElems, []soltype.ObjTypeElem{re})
+			continue
+		}
+		operand := e.groundObjectOperand(spread.Type)
+		reducedElems[i] = &soltype.SpreadElem{Type: operand}
+		obj, ok := operand.(*soltype.ObjectType)
+		if !ok || soltype.HasObjectSpread(obj.Elems) {
+			ground = false
+			continue
+		}
+		operandElems = append(operandElems, obj.Elems)
+		inexact = inexact || obj.Inexact
+	}
+	if !ground {
+		return &soltype.ObjectType{Elems: reducedElems, Inexact: inexact}
+	}
+	return &soltype.ObjectType{Elems: mergeSpreadOperands(operandElems), Inexact: inexact}
+}
+
+// reduceElem reduces the value types inside one non-spread object member, the object analogue of the
+// `e.reduce(el)` reduceTuple runs on each non-spread tuple element. A property, getter, or setter
+// carries a value type that may itself be an operator such as `keyof X`, so its type is reduced. A
+// method or constructor carries only function types, which reduce leaves untouched, so it passes
+// through unchanged.
+func (e *typeEvaluator) reduceElem(el soltype.ObjTypeElem) soltype.ObjTypeElem {
+	switch el := el.(type) {
+	case *soltype.PropertyElem:
+		return &soltype.PropertyElem{Name: el.Name, Type: e.reduce(el.Type), Optional: el.Optional, Readonly: el.Readonly}
+	case *soltype.GetterElem:
+		return &soltype.GetterElem{Name: el.Name, SelfParam: el.SelfParam, Type: e.reduce(el.Type)}
+	case *soltype.SetterElem:
+		return &soltype.SetterElem{Name: el.Name, SelfParam: el.SelfParam, Param: e.reduce(el.Param)}
+	default:
+		return el
+	}
+}
+
+// groundObjectOperand reduces a `...A` spread operand toward the concrete object whose fields it
+// contributes, the object analogue of the tuple's groundSpreadOperand. It resolves a `typeof` query
+// to the value's type, projects a class instance body, and expands an alias to its body under the
+// active-state and depth guard reduceKeyofAlias uses, so a recursive alias reached through a spread
+// terminates. Any other kind — an object, a type variable, a nested operator — is reduced. It
+// returns the reduced operand rather than an ok flag, so a caller keeps that reduced form when the
+// operand does not ground, matching how reduceTuple keeps the operand it could not splice.
+func (e *typeEvaluator) groundObjectOperand(operand soltype.Type) soltype.Type {
+	switch op := operand.(type) {
+	case *soltype.TypeofType:
+		return e.groundObjectOperand(op.Ty)
+	case *soltype.ClassType:
+		if obj, ok := e.ctx.projectClassBody(op); ok {
+			return obj
+		}
+		return op
+	case *soltype.AliasType:
+		key := soltype.PrintQualified(op)
+		if e.active.Contains(key) || e.depth <= 0 {
+			return op
+		}
+		body := e.ctx.expandAlias(op)
+		if _, unresolved := body.(*soltype.ErrorType); unresolved {
+			return op
+		}
+		e.active.Add(key)
+		e.depth--
+		red := e.groundObjectOperand(body)
+		e.active.Remove(key)
+		e.depth++
+		return red
+	default:
+		return e.reduce(operand)
+	}
+}
+
+// groundToObject reports the concrete ObjectType a spread operand contributes, or ok=false when the
+// operand has no ground object shape — a type variable, a truncated expanding alias, or an object
+// that still carries a spread. It is the ok-returning wrapper over groundObjectOperand that keyof
+// and indexed access use to decide whether a spread target has grounded.
+func (e *typeEvaluator) groundToObject(operand soltype.Type) (*soltype.ObjectType, bool) {
+	obj, ok := e.groundObjectOperand(operand).(*soltype.ObjectType)
+	if !ok || soltype.HasObjectSpread(obj.Elems) {
+		return nil, false
+	}
+	return obj, true
+}
+
+// mergeSpreadOperands folds the field lists of an object spread's operands into one element list,
+// preserving first-appearance order. A field whose name is new is appended; one that overlaps an
+// earlier key is merged through mergeSpreadElem, so the operands compose left to right. It is
+// shared by the type-level reduction and the literal-level inferObject, so the spread merge rule
+// lives in one place.
+func mergeSpreadOperands(operandElems [][]soltype.ObjTypeElem) []soltype.ObjTypeElem {
+	total := 0
+	for _, elems := range operandElems {
+		total += len(elems)
+	}
+	out := make([]soltype.ObjTypeElem, 0, total)
+	pos := make(map[string]int, total)
+	for _, elems := range operandElems {
+		for _, elem := range elems {
+			name := soltype.ObjElemName(elem)
+			if i, seen := pos[name]; seen {
+				out[i] = mergeSpreadElem(out[i], elem)
+				continue
+			}
+			pos[name] = len(out)
+			out = append(out, elem)
+		}
+	}
+	return out
+}
+
+// mergeSpreadElem combines an earlier object member with a later one of the same name under Flow's
+// spread rule. A later required field overrides the earlier one, the rightmost-wins default. A
+// later optional field instead shows the earlier value through: the merged value unions
+// `earlier | later`, and the field stays required unless both are optional. `{...A, ...B}` with
+// `A = {k: number}` and `B = {k?: string}` therefore yields `k: number | string`, required. A
+// non-property member on either side has no optional flag to key the union off, so the later one
+// overrides.
+//
+// The later operand supplies the merged Readonly flag in both branches, the same rightmost-wins
+// source the override branch uses when it returns the later member whole.
+func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
+	ep, eok := earlier.(*soltype.PropertyElem)
+	lp, lok := later.(*soltype.PropertyElem)
+	if !eok || !lok || !lp.Optional {
+		return later
+	}
+	return &soltype.PropertyElem{
+		Name:     ep.Name,
+		Type:     newUnion(nil, []soltype.Type{ep.Type, lp.Type}, false),
+		Optional: ep.Optional && lp.Optional,
+		Readonly: lp.Readonly,
+	}
+}
+
 // reduceKeyof reduces `keyof operand` to the union of the operand's keys, mirroring the old
 // checker's KeyOfType case (internal/checker/expand_type.go):
 //
@@ -183,7 +353,12 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 		// `keyof typeof x` resolves the query to the value's type, then projects that type's keys.
 		return e.reduceKeyof(op.Ty, exact)
 	case *soltype.ObjectType:
-		return e.keyofObject(op)
+		// An object carrying an unreduced `...A` spread has no ground key set, so `keyof` over it
+		// stays symbolic until the spread grounds, mirroring the TupleType arm below.
+		if obj, ok := e.groundToObject(op); ok {
+			return e.keyofObject(obj)
+		}
+		return &soltype.KeyofType{Operand: operand, Exact: exact}
 	case *soltype.ClassType:
 		obj, ok := e.ctx.projectClassBody(op)
 		if !ok {
@@ -341,7 +516,12 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) solt
 		}
 		return e.reduceIndex(inner, idx, exact)
 	case *soltype.ObjectType:
-		return e.indexObject(tgt, idx, exact)
+		// An object carrying an unreduced `...A` spread has no ground fields, so indexing it stays
+		// symbolic until the spread grounds, mirroring the TupleType arm below.
+		if obj, ok := e.groundToObject(tgt); ok {
+			return e.indexObject(obj, idx, exact)
+		}
+		return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
 	case *soltype.ClassType:
 		obj, ok := e.ctx.projectClassBody(tgt)
 		if !ok {
@@ -512,6 +692,13 @@ func isResidualOp(t soltype.Type) bool {
 func tupleHasSpread(t soltype.Type) bool {
 	tup, ok := t.(*soltype.TupleType)
 	return ok && hasRestSpread(tup.Elems)
+}
+
+// objectHasSpread reports whether t is an object carrying an unreduced `...A` spread element, the
+// object twin of tupleHasSpread.
+func objectHasSpread(t soltype.Type) bool {
+	obj, ok := t.(*soltype.ObjectType)
+	return ok && soltype.HasObjectSpread(obj.Elems)
 }
 
 // hasRestSpread reports whether any element of elems is a `...P` spread.

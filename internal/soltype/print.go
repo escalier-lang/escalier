@@ -402,6 +402,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 					walk(e.Param)
 				case *ConstructorElem:
 					walk(e.Fn)
+				case *SpreadElem:
+					walk(e.Type)
 				}
 			}
 		case *ClassType:
@@ -724,6 +726,11 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		// A class value's constructor renders as the unnamed call signature
 		// `new (params) -> ret`.
 		return "new " + p.printFuncTail(e.Fn)
+	case *SpreadElem:
+		// A `...A` spread renders inline among the object's fields, so `{...A, x: T}` round-trips
+		// to the source. The operand prints at precPrefix, so a looser one such as a union gets
+		// parenthesized.
+		return "..." + p.printTypeMinPrec(e.Type, precPrefix)
 	}
 	panic(fmt.Sprintf("printObjElem: unhandled ObjTypeElem %T", e))
 }

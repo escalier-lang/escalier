@@ -491,6 +491,15 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 			return e
 		}
 		return &ConstructorElem{Fn: nf}
+	case *SpreadElem:
+		// The operand walks in the current polarity, the covariant visit KeyofType applies to its
+		// single operand. The spread is inert — the visit rebuilds it around a rewritten operand
+		// without merging, so extrude/coalesce/freshenAbove carry `...A` through untouched.
+		ty := e.Type.Accept(v, pol)
+		if ty == e.Type {
+			return e
+		}
+		return &SpreadElem{Type: ty}
 	}
 	panic(fmt.Sprintf("AcceptObjElem: unhandled ObjTypeElem %T", e))
 }

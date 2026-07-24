@@ -103,57 +103,100 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 }
 
 // resolveObjectTypeAnn lowers an object type annotation to a soltype.ObjectType,
-// honoring the trailing `...` inexact marker. M4 ships PropertyElem only: a
-// `name: T` / `name?: T` property resolves to a PropertyElem; method/getter/setter
-// members (M5), mapped/index signatures and the object rest/spread (M9) are not
-// part of M4's object and report an unsupported feature, with the object still
-// built from the properties that do resolve. Duplicate keys follow the
-// last-wins-first-position dedup inferObject uses, keeping property names unique.
+// honoring the trailing `...` inexact marker. A `name: T` / `name?: T` property resolves
+// to a PropertyElem; a `...A` spread resolves to a SpreadElem, so `{...A, x: T}` is an
+// ObjectType carrying a spread element — the object twin of a spread-carrying tuple. The
+// evaluator merges the spread once its operand grounds; until then the object stays a
+// residual that prints the way the source wrote it. Method/getter/setter members (M5) and
+// mapped/index signatures (M9) are not yet part of an object annotation and report an
+// unsupported feature, with the object still built from the members that do resolve.
 //
-// A property whose value annotation is itself unsupported recovers that value to a
-// fresh var and keeps the object shape — cascade-safe, mirroring the Promise<bad>
-// recovery — so the binding still checks structurally. The arm therefore always
-// returns ok=true: any unsupported sub-part has already reported its own error.
+// A spread-free object dedups duplicate keys last-wins-first-position, keeping property
+// names unique for Prop/equalType. A spread-carrying object keeps its elements in source
+// order without deduping, since order is significant to the merge and reduceObject dedups
+// when it grounds. A property whose value annotation is itself unsupported recovers that
+// value to a fresh var and keeps the object shape — cascade-safe, mirroring the
+// Promise<bad> recovery. The arm therefore always returns ok=true.
 func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
-	b := newObjElemBuilder(len(ta.Elems))
-	unsupported := false
+	hasSpread := false
 	for _, elem := range ta.Elems {
-		prop, ok := elem.(*ast.PropertyTypeAnn)
-		if !ok {
-			unsupported = true
-			continue
+		if _, ok := elem.(*ast.RestSpreadTypeAnn); ok {
+			hasSpread = true
+			break
 		}
-		name, ok := objKeyName(prop.Name)
-		if !ok {
-			c.reportUnsupported(prop.Name)
-			continue
-		}
-		// A missing or unsupported value annotation recovers to a fresh var, keeping
-		// the object shape cascade-safe — mirroring the Promise<bad> recovery.
-		var ft soltype.Type = c.freshAt(lvl)
-		if prop.Value != nil {
-			value := prop.Value
-			// An owned-mutable field `{a: mut {x}}` is rejected (#779): a `mut` cell
-			// nested inside a non-mut container is misleading, since the container's
-			// immutability already reaches into the field. Recover to the field's bare
-			// inner so the object keeps a sensible shape. A `&`/`&mut` borrow field is a
-			// reference to external storage, not an interior cell, so it stays legal.
-			if mta, ok := value.(*ast.MutableTypeAnn); ok {
-				c.report(&MutFieldError{Ann: mta})
-				value = mta.Target
+	}
+	unsupported := false
+	var elems []soltype.ObjTypeElem
+	if !hasSpread {
+		b := newObjElemBuilder(len(ta.Elems))
+		for _, elem := range ta.Elems {
+			prop, ok := elem.(*ast.PropertyTypeAnn)
+			if !ok {
+				unsupported = true
+				continue
 			}
-			if t, ok := c.resolveTypeAnn(scope, value, lvl); ok {
-				ft = t
+			name, ft, ok := c.resolveObjectProperty(scope, prop, lvl)
+			if !ok {
+				continue
+			}
+			b.add(name, ft, prop.Optional, prop.Readonly)
+		}
+		elems = b.elems
+	} else {
+		for _, elem := range ta.Elems {
+			switch elem := elem.(type) {
+			case *ast.PropertyTypeAnn:
+				name, ft, ok := c.resolveObjectProperty(scope, elem, lvl)
+				if !ok {
+					continue
+				}
+				elems = append(elems, &soltype.PropertyElem{Name: name, Type: ft, Optional: elem.Optional, Readonly: elem.Readonly})
+			case *ast.RestSpreadTypeAnn:
+				src, ok := c.resolveTypeAnn(scope, elem.Value, lvl)
+				if !ok {
+					src = c.freshAt(lvl)
+				}
+				elems = append(elems, &soltype.SpreadElem{Type: src})
+			default:
+				unsupported = true
 			}
 		}
-		b.add(name, ft, prop.Optional, prop.Readonly)
 	}
 	if unsupported {
-		c.reportUnsupportedFeature(ta, "object type member other than a property")
+		c.reportUnsupportedFeature(ta, "object type member other than a property or spread")
 	}
-	t := &soltype.ObjectType{Elems: b.elems, Inexact: ta.Inexact}
+	t := &soltype.ObjectType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// resolveObjectProperty lowers one `name: T` / `name?: T` property annotation to its name and
+// resolved field type. It reports false only when the property key is not a static name. A missing
+// or unsupported value annotation recovers to a fresh var, keeping the object shape cascade-safe,
+// mirroring the Promise<bad> recovery. Shared by the spread-free and spread-carrying paths.
+func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn, lvl int) (string, soltype.Type, bool) {
+	name, ok := objKeyName(prop.Name)
+	if !ok {
+		c.reportUnsupported(prop.Name)
+		return "", nil, false
+	}
+	var ft soltype.Type = c.freshAt(lvl)
+	if prop.Value != nil {
+		value := prop.Value
+		// An owned-mutable field `{a: mut {x}}` is rejected (#779): a `mut` cell
+		// nested inside a non-mut container is misleading, since the container's
+		// immutability already reaches into the field. Recover to the field's bare
+		// inner so the object keeps a sensible shape. A `&`/`&mut` borrow field is a
+		// reference to external storage, not an interior cell, so it stays legal.
+		if mta, ok := value.(*ast.MutableTypeAnn); ok {
+			c.report(&MutFieldError{Ann: mta})
+			value = mta.Target
+		}
+		if t, ok := c.resolveTypeAnn(scope, value, lvl); ok {
+			ft = t
+		}
+	}
+	return name, ft, true
 }
 
 // resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType, honoring the trailing
