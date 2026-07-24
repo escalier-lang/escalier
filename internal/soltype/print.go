@@ -402,6 +402,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 					walk(e.Param)
 				case *ConstructorElem:
 					walk(e.Fn)
+				case *SpreadElem:
+					walk(e.Type)
 				}
 			}
 		case *ClassType:
@@ -421,10 +423,6 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Ty)
 		case *RestSpreadType:
 			walk(t.Operand)
-		case *ObjectSpreadType:
-			for _, op := range t.Operands {
-				walk(op.Type)
-			}
 		case *PromiseType:
 			walk(t.Inner)
 		case *RefType:
@@ -639,27 +637,6 @@ func (p *namedPrinter) printType(t Type) string {
 		// `typeof x`, the value reference the source wrote. The resolved value type is not
 		// rendered — the query stays symbolic, so `keyof typeof x` prints as written.
 		return "typeof " + t.Ident
-	case *ObjectSpreadType:
-		// `{...A, x: T}`, the operator the source wrote, brace-delimited like an object. A spread
-		// operand renders `...` over its source at precPrefix, so a looser operand such as a union
-		// gets parenthesized. An inline field group renders its fields directly, without braces of
-		// its own. A trailing `...` inexact marker renders last, matching the ObjectType arm.
-		parts := make([]string, 0, len(t.Operands)+1)
-		for _, op := range t.Operands {
-			if op.Spread {
-				parts = append(parts, "..."+p.printTypeMinPrec(op.Type, precPrefix))
-				continue
-			}
-			if obj, ok := op.Type.(*ObjectType); ok {
-				for _, e := range obj.Elems {
-					parts = append(parts, p.printObjElem(e))
-				}
-			}
-		}
-		if t.Inexact {
-			parts = append(parts, "...")
-		}
-		return "{" + strings.Join(parts, ", ") + "}"
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:
@@ -749,6 +726,11 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		// A class value's constructor renders as the unnamed call signature
 		// `new (params) -> ret`.
 		return "new " + p.printFuncTail(e.Fn)
+	case *SpreadElem:
+		// A `...A` spread renders inline among the object's fields, so `{...A, x: T}` round-trips
+		// to the source. The operand prints at precPrefix, so a looser one such as a union gets
+		// parenthesized.
+		return "..." + p.printTypeMinPrec(e.Type, precPrefix)
 	}
 	panic(fmt.Sprintf("printObjElem: unhandled ObjTypeElem %T", e))
 }

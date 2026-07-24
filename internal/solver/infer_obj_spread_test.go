@@ -266,3 +266,34 @@ func TestInferObjectSpreadResidualErrorMessage(t *testing.T) {
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 	require.Equal(t, "1:12-1:23: cannot constrain {...t1, ...} <: number", msgWithSpan(errs[0]))
 }
+
+// keyof and indexed access compose with an object spread: over a ground spread they merge the
+// object first and then project or index it, and over an abstract spread operand they stay
+// symbolic. `keyof {...A, b}` projects A's keys plus b; `{...A, b}["a"]` selects A's field.
+func TestInferObjectSpreadUnderOperators(t *testing.T) {
+	t.Run("KeyofGroundSpread", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type A = {a: number}
+			type Result = keyof {...A, b: string}
+		`)
+		require.Empty(t, errs)
+		result := nodes["Result"]
+		require.Equal(t, "keyof {...A, b: string}", soltype.Print(result))
+		require.Equal(t, `"a" | "b"`, soltype.Print(expandResidual(ctx, result)))
+	})
+	t.Run("IndexGroundSpread", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type A = {a: number}
+			type Result = {...A, b: string}["a"]
+		`)
+		require.Empty(t, errs)
+		result := nodes["Result"]
+		require.Equal(t, `{...A, b: string}["a"]`, soltype.Print(result))
+		require.Equal(t, "number", soltype.Print(expandResidual(ctx, result)))
+	})
+	t.Run("KeyofAbstractSpreadStaysSymbolic", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn f<T>(k: keyof {...T, a: number}) {}`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn <T>(k: keyof {...T, a: number}) -> void", values["f"])
+	})
+}

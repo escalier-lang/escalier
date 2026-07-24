@@ -103,41 +103,69 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 }
 
 // resolveObjectTypeAnn lowers an object type annotation to a soltype.ObjectType,
-// honoring the trailing `...` inexact marker. M4 ships PropertyElem only: a
-// `name: T` / `name?: T` property resolves to a PropertyElem; method/getter/setter
-// members (M5), mapped/index signatures and the object rest/spread (M9) are not
-// part of M4's object and report an unsupported feature, with the object still
-// built from the properties that do resolve. Duplicate keys follow the
-// last-wins-first-position dedup inferObject uses, keeping property names unique.
+// honoring the trailing `...` inexact marker. A `name: T` / `name?: T` property resolves
+// to a PropertyElem; a `...A` spread resolves to a SpreadElem, so `{...A, x: T}` is an
+// ObjectType carrying a spread element — the object twin of a spread-carrying tuple. The
+// evaluator merges the spread once its operand grounds; until then the object stays a
+// residual that prints the way the source wrote it. Method/getter/setter members (M5) and
+// mapped/index signatures (M9) are not yet part of an object annotation and report an
+// unsupported feature, with the object still built from the members that do resolve.
 //
-// A property whose value annotation is itself unsupported recovers that value to a
-// fresh var and keeps the object shape — cascade-safe, mirroring the Promise<bad>
-// recovery — so the binding still checks structurally. The arm therefore always
-// returns ok=true: any unsupported sub-part has already reported its own error.
+// A spread-free object dedups duplicate keys last-wins-first-position, keeping property
+// names unique for Prop/equalType. A spread-carrying object keeps its elements in source
+// order without deduping, since order is significant to the merge and reduceObject dedups
+// when it grounds. A property whose value annotation is itself unsupported recovers that
+// value to a fresh var and keeps the object shape — cascade-safe, mirroring the
+// Promise<bad> recovery. The arm therefore always returns ok=true.
 func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
+	hasSpread := false
 	for _, elem := range ta.Elems {
 		if _, ok := elem.(*ast.RestSpreadTypeAnn); ok {
-			return c.resolveObjectSpreadTypeAnn(scope, ta, lvl)
+			hasSpread = true
+			break
 		}
 	}
-	b := newObjElemBuilder(len(ta.Elems))
 	unsupported := false
-	for _, elem := range ta.Elems {
-		prop, ok := elem.(*ast.PropertyTypeAnn)
-		if !ok {
-			unsupported = true
-			continue
+	var elems []soltype.ObjTypeElem
+	if !hasSpread {
+		b := newObjElemBuilder(len(ta.Elems))
+		for _, elem := range ta.Elems {
+			prop, ok := elem.(*ast.PropertyTypeAnn)
+			if !ok {
+				unsupported = true
+				continue
+			}
+			name, ft, ok := c.resolveObjectProperty(scope, prop, lvl)
+			if !ok {
+				continue
+			}
+			b.add(name, ft, prop.Optional, prop.Readonly)
 		}
-		name, ft, ok := c.resolveObjectProperty(scope, prop, lvl)
-		if !ok {
-			continue
+		elems = b.elems
+	} else {
+		for _, elem := range ta.Elems {
+			switch elem := elem.(type) {
+			case *ast.PropertyTypeAnn:
+				name, ft, ok := c.resolveObjectProperty(scope, elem, lvl)
+				if !ok {
+					continue
+				}
+				elems = append(elems, &soltype.PropertyElem{Name: name, Type: ft, Optional: elem.Optional, Readonly: elem.Readonly})
+			case *ast.RestSpreadTypeAnn:
+				src, ok := c.resolveTypeAnn(scope, elem.Value, lvl)
+				if !ok {
+					src = c.freshAt(lvl)
+				}
+				elems = append(elems, &soltype.SpreadElem{Type: src})
+			default:
+				unsupported = true
+			}
 		}
-		b.add(name, ft, prop.Optional, prop.Readonly)
 	}
 	if unsupported {
-		c.reportUnsupportedFeature(ta, "object type member other than a property")
+		c.reportUnsupportedFeature(ta, "object type member other than a property or spread")
 	}
-	t := &soltype.ObjectType{Elems: b.elems, Inexact: ta.Inexact}
+	t := &soltype.ObjectType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
@@ -145,7 +173,7 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 // resolveObjectProperty lowers one `name: T` / `name?: T` property annotation to its name and
 // resolved field type. It reports false only when the property key is not a static name. A missing
 // or unsupported value annotation recovers to a fresh var, keeping the object shape cascade-safe,
-// mirroring the Promise<bad> recovery. Shared by the plain-object and object-spread arms.
+// mirroring the Promise<bad> recovery. Shared by the spread-free and spread-carrying paths.
 func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn, lvl int) (string, soltype.Type, bool) {
 	name, ok := objKeyName(prop.Name)
 	if !ok {
@@ -169,56 +197,6 @@ func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn,
 		}
 	}
 	return name, ft, true
-}
-
-// resolveObjectSpreadTypeAnn lowers an object annotation carrying a `...A` spread to an
-// ObjectSpreadType residual and stores it unreduced, so the annotation prints the way the source
-// wrote it — `{...A, x: T}` renders `{...A, x: T}`, not the merged object. constrain merges the
-// residual when it checks a constraint against it. Consecutive explicit properties between spreads
-// group into one inline field-group operand; each `...A` becomes a spread operand. A non-property,
-// non-spread member reports an unsupported feature and is skipped, cascade-safe like the plain
-// object arm.
-func (c *checker) resolveObjectSpreadTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
-	operands := make([]soltype.ObjectSpreadOperand, 0, len(ta.Elems))
-	var pending *objElemBuilder
-	unsupported := false
-	flush := func() {
-		if pending == nil {
-			return
-		}
-		obj := &soltype.ObjectType{Elems: pending.elems}
-		operands = append(operands, soltype.ObjectSpreadOperand{Spread: false, Type: obj})
-		pending = nil
-	}
-	for _, elem := range ta.Elems {
-		switch elem := elem.(type) {
-		case *ast.PropertyTypeAnn:
-			name, ft, ok := c.resolveObjectProperty(scope, elem, lvl)
-			if !ok {
-				continue
-			}
-			if pending == nil {
-				pending = newObjElemBuilder(len(ta.Elems))
-			}
-			pending.add(name, ft, elem.Optional, elem.Readonly)
-		case *ast.RestSpreadTypeAnn:
-			flush()
-			src, ok := c.resolveTypeAnn(scope, elem.Value, lvl)
-			if !ok {
-				src = c.freshAt(lvl)
-			}
-			operands = append(operands, soltype.ObjectSpreadOperand{Spread: true, Type: src})
-		default:
-			unsupported = true
-		}
-	}
-	flush()
-	if unsupported {
-		c.reportUnsupportedFeature(ta, "object type member other than a property or spread")
-	}
-	t := &soltype.ObjectSpreadType{Operands: operands, Inexact: ta.Inexact}
-	c.recordProv(t, ta, AnnotationType)
-	return t, true
 }
 
 // resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType, honoring the trailing

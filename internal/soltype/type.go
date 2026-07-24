@@ -331,10 +331,19 @@ type SetterElem struct {
 // general call-signature-in-any-object feature.
 type ConstructorElem struct{ Fn *FuncType }
 
+// SpreadElem is a `...A` object spread written as an element of an ObjectType, the object twin of
+// the tuple's RestSpreadType (M9 PR5). `{...A, x: T}` is an ObjectType whose first element is a
+// SpreadElem over A. An object carrying one is a residual: constrain passes it through untouched,
+// the inert contract KeyofType shares, until the evaluator grounds Type to an object and merges its
+// fields in at this position. A reduced object has no SpreadElem. A spread over a type parameter
+// never grounds, so it stays symbolic and renders `...A`. Type is the spread source.
+type SpreadElem struct{ Type Type }
+
 func (*MethodElem) isObjTypeElem()      {}
 func (*GetterElem) isObjTypeElem()      {}
 func (*SetterElem) isObjTypeElem()      {}
 func (*ConstructorElem) isObjTypeElem() {}
+func (*SpreadElem) isObjTypeElem()      {}
 
 // ObjElemName returns the member name of any ObjTypeElem kind. It is the shared
 // name accessor for member lookup and structural equality, so those sites need no
@@ -355,8 +364,25 @@ func ObjElemName(e ObjTypeElem) string {
 		return e.Name
 	case *ConstructorElem:
 		return ""
+	case *SpreadElem:
+		// A spread is anonymous. It only appears in an unreduced object, and the name-keyed
+		// equality and lookup paths compare such objects positionally instead, so this name is
+		// never a match key.
+		return ""
 	}
 	panic(fmt.Sprintf("ObjElemName: unhandled ObjTypeElem %T", e))
+}
+
+// HasObjectSpread reports whether an element list carries a `...A` spread, so the object is an
+// unreduced residual rather than a concrete object. It is the object twin of hasRestSpread on the
+// tuple side.
+func HasObjectSpread(elems []ObjTypeElem) bool {
+	for _, e := range elems {
+		if _, ok := e.(*SpreadElem); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Prop returns the named property and whether it is present. Property names are
@@ -645,39 +671,11 @@ type RestSpreadType struct {
 	Operand Type
 }
 
-// ObjectSpreadType is the residual object-spread operator `{...A, x: T}` (M9 PR5),
-// modeled on Flow's object spread. It is inert, sharing the KeyofType contract: it
-// carries no bounds, constrain never records one against it, and it flows through the
-// solver's structural machinery untouched. An evaluator merges its operands into a plain
-// ObjectType once every spread operand is a ground object. Until then a spread over a type
-// parameter stays symbolic and renders `{...A, x: T}` the way the source wrote it.
-//
-// Operands merge left to right, so a later operand's field wins over an earlier key. The
-// one exception is Flow's optional show-through rule: when a later operand's field is
-// optional and overlaps an earlier key, the two value types union rather than the later
-// overriding. Inexact records the annotation's trailing `...` marker. Reduction also folds
-// in each spread operand's own inexactness, so a spread of an inexact object is inexact.
-type ObjectSpreadType struct {
-	Operands []ObjectSpreadOperand
-	Inexact  bool
-}
-
-// ObjectSpreadOperand is one operand of an ObjectSpreadType. Spread is true for a `...A`
-// operand, whose Type is the spread source. Spread is false for an inline field group such
-// as `x: T, y: U` written between spreads, whose Type is an ObjectType holding those fields.
-// Keeping the two apart lets the printer render `...A` as a spread and the field group
-// inline, so the operator round-trips to the source form.
-type ObjectSpreadOperand struct {
-	Spread bool
-	Type   Type
-}
-
 func (*TypeVarType) isType()      {}
 func (*KeyofType) isType()        {}
 func (*IndexType) isType()        {}
 func (*TypeofType) isType()       {}
 func (*RestSpreadType) isType()   {}
-func (*ObjectSpreadType) isType() {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
@@ -772,15 +770,6 @@ func LevelOf(t Type) int {
 		// same single-child rule the KeyofType arm follows. The TupleType arm already maxes over its
 		// elements, so this element contributes its operand's level there.
 		return LevelOf(t.Operand)
-	case *ObjectSpreadType:
-		// A residual object spread's level is the max over its operands, so a spread of an
-		// out-of-level type parameter lifts the level and the freshener/extruder prune descends
-		// to freshen the operand, the same rule the single-child KeyofType arm applies.
-		m := 0
-		for _, op := range t.Operands {
-			m = max(m, LevelOf(op.Type))
-		}
-		return m
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:
@@ -836,6 +825,10 @@ func levelOfElem(e ObjTypeElem) int {
 		return max(selfLevel(e.SelfParam), LevelOf(e.Param))
 	case *ConstructorElem:
 		return LevelOf(e.Fn)
+	case *SpreadElem:
+		// A `...A` spread element's level is its operand's, so an out-of-level spread operand lifts
+		// the enclosing object's level and the freshener/extruder prune descends to freshen it.
+		return LevelOf(e.Type)
 	}
 	panic(fmt.Sprintf("levelOfElem: unhandled ObjTypeElem %T", e))
 }

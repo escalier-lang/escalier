@@ -235,35 +235,6 @@ func (t *RestSpreadType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
-func (t *ObjectSpreadType) Accept(v TypeVisitor, pol Polarity) Type {
-	e := v.EnterType(t, pol)
-	if e.SkipChildren {
-		return v.ExitType(skipReplace(t, e), pol)
-	}
-	cur := descendReplacement(t, e)
-	// Each operand's type walks in the current polarity, the same covariant visit KeyofType
-	// applies to its single operand. The residual is inert: the visit rebuilds it around the
-	// rewritten operands without merging them, so extrude/coalesce/freshenAbove carry
-	// `{...A, x: T}` through untouched. The evaluator's merge lands at constrain time.
-	operands := cur.Operands
-	changed := false
-	for i, op := range cur.Operands {
-		ty := op.Type.Accept(v, pol)
-		if ty != op.Type {
-			if !changed {
-				operands = append([]ObjectSpreadOperand(nil), cur.Operands...)
-				changed = true
-			}
-			operands[i] = ObjectSpreadOperand{Spread: op.Spread, Type: ty}
-		}
-	}
-	out := cur
-	if changed {
-		out = &ObjectSpreadType{Operands: operands, Inexact: cur.Inexact}
-	}
-	return v.ExitType(out, pol)
-}
-
 func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {
@@ -520,6 +491,15 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 			return e
 		}
 		return &ConstructorElem{Fn: nf}
+	case *SpreadElem:
+		// The operand walks in the current polarity, the covariant visit KeyofType applies to its
+		// single operand. The spread is inert — the visit rebuilds it around a rewritten operand
+		// without merging, so extrude/coalesce/freshenAbove carry `...A` through untouched.
+		ty := e.Type.Accept(v, pol)
+		if ty == e.Type {
+			return e
+		}
+		return &SpreadElem{Type: ty}
 	}
 	panic(fmt.Sprintf("AcceptObjElem: unhandled ObjTypeElem %T", e))
 }

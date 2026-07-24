@@ -1746,7 +1746,28 @@ func describe(t soltype.Type) string {
 		}
 		return "tuple"
 	case *soltype.ObjectType:
-		return "object"
+		if !soltype.HasObjectSpread(t.Elems) {
+			return "object"
+		}
+		// A spread-carrying object is an unreduced residual, so it renders structurally like the
+		// KeyofType arm — a rejected constraint reads `{...t1, x: number}` rather than the nominal
+		// `object`. A spread element shows `...` over its raw mid-constrain operand; a property
+		// shows `name: <type>`. Other member kinds do not appear in a spread residual.
+		parts := make([]string, 0, len(t.Elems)+1)
+		for _, e := range t.Elems {
+			switch e := e.(type) {
+			case *soltype.SpreadElem:
+				parts = append(parts, "..."+describe(e.Type))
+			case *soltype.PropertyElem:
+				parts = append(parts, e.Name+": "+describe(e.Type))
+			}
+		}
+		if t.Inexact {
+			// A trailing `...` marks the residual inexact, matching soltype.Print and the UnionType
+			// arm so a diagnostic naming the spread reads `{...t1, ...}`.
+			parts = append(parts, "...")
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
 	case *soltype.ClassType:
 		// A class instance renders nominally under its display name, `Point` or
 		// `Box<number>`, so a diagnostic naming it matches the printer's surface form.
@@ -1786,32 +1807,6 @@ func describe(t soltype.Type) string {
 		// enclosing spread-carrying TupleType arm above describes its elements. The operand renders
 		// in describe's raw mid-constrain form.
 		return "..." + describe(t.Operand)
-	case *soltype.ObjectSpreadType:
-		// An object spread renders structurally, recursing over its operands like the Promise
-		// arm, so a rejected constraint reads `{...t1, x: number}` rather than the default `?`.
-		// A spread operand shows `...` over its raw mid-constrain form; an inline field group
-		// shows its fields. describe carries the residual beside soltype.Print, so a later
-		// operator node must add an arm here as well as there.
-		parts := make([]string, 0, len(t.Operands))
-		for _, op := range t.Operands {
-			if op.Spread {
-				parts = append(parts, "..."+describe(op.Type))
-				continue
-			}
-			if obj, ok := op.Type.(*soltype.ObjectType); ok {
-				for _, e := range obj.Elems {
-					if p, ok := e.(*soltype.PropertyElem); ok {
-						parts = append(parts, p.Name+": "+describe(p.Type))
-					}
-				}
-			}
-		}
-		if t.Inexact {
-			// A trailing `...` marks the residual inexact, matching soltype.Print and the
-			// UnionType arm so a diagnostic naming the spread reads `{...t1, ...}`.
-			parts = append(parts, "...")
-		}
-		return "{" + strings.Join(parts, ", ") + "}"
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
 		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2

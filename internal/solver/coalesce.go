@@ -1037,6 +1037,17 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		if !ok || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 			return false
 		}
+		// A spread-carrying object is an unreduced residual whose element order is significant,
+		// since a later `...B` overrides an earlier key. Two such objects are equal only when their
+		// elements match position for position, the order-sensitive rule a residual operator follows.
+		if soltype.HasObjectSpread(a.Elems) || soltype.HasObjectSpread(b.Elems) {
+			for i := range a.Elems {
+				if !equalObjElem(a.Elems[i], b.Elems[i], ctx) {
+					return false
+				}
+			}
+			return true
+		}
 		// Objects are equal up to member order, so each a-member must find a b-member
 		// that shares its name and equals it kind-for-kind. Equal lengths plus that
 		// match on every a-member is a full structural match. Comparing against every
@@ -1124,21 +1135,6 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// spread element reaches here in place, the spread twin of the plain element comparison.
 		b, ok := b.(*soltype.RestSpreadType)
 		return ok && equalTypeWith(a.Operand, b.Operand, ctx)
-	case *soltype.ObjectSpreadType:
-		// Two inert object spreads are equal when they carry the same inexactness and their
-		// operands match positionally in spread-flag and type, compared without merging — the
-		// operator flows through the solver untouched, matching the KeyofType arm.
-		b, ok := b.(*soltype.ObjectSpreadType)
-		if !ok || a.Inexact != b.Inexact || len(a.Operands) != len(b.Operands) {
-			return false
-		}
-		for i, ao := range a.Operands {
-			bo := b.Operands[i]
-			if ao.Spread != bo.Spread || !equalTypeWith(ao.Type, bo.Type, ctx) {
-				return false
-			}
-		}
-		return true
 	}
 	return false
 }
@@ -1180,6 +1176,9 @@ func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 	case *soltype.ConstructorElem:
 		b, ok := b.(*soltype.ConstructorElem)
 		return ok && equalTypeWith(a.Fn, b.Fn, ctx)
+	case *soltype.SpreadElem:
+		b, ok := b.(*soltype.SpreadElem)
+		return ok && equalTypeWith(a.Type, b.Type, ctx)
 	}
 	panic(fmt.Sprintf("equalObjElem: unhandled ObjTypeElem %T", a))
 }
