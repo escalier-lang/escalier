@@ -414,6 +414,10 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Index)
 		case *TypeofType:
 			walk(t.Ty)
+		case *TupleSpreadType:
+			for _, el := range t.Elems {
+				walk(el.Type)
+			}
 		case *PromiseType:
 			walk(t.Inner)
 		case *RefType:
@@ -544,6 +548,22 @@ func (p *namedPrinter) printType(t Type) string {
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {
 			elems = append(elems, p.printType(e))
+		}
+		if t.Inexact {
+			elems = append(elems, "...")
+		}
+		return "[" + strings.Join(elems, ", ") + "]"
+	case *TupleSpreadType:
+		// A residual tuple spread renders in surface syntax with a `...` prefix on each spread
+		// element, so `[...P, x]` round-trips. A spread operand prints at precPrefix so a looser
+		// operand such as a union gets parenthesized under the `...`.
+		elems := make([]string, 0, len(t.Elems)+1)
+		for _, el := range t.Elems {
+			if el.Spread {
+				elems = append(elems, "..."+p.printTypeMinPrec(el.Type, precPrefix))
+			} else {
+				elems = append(elems, p.printType(el.Type))
+			}
 		}
 		if t.Inexact {
 			elems = append(elems, "...")

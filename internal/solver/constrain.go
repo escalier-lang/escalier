@@ -135,19 +135,20 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 // evalTypeOperator evaluates the outermost transparent type operator of t to the type it stands
 // for, so constrain can check a constraint against that while the stored residual keeps its name.
 // An alias expands to its body, a `typeof` query resolves to the value's type, a `keyof` reduces
-// to its key set, and an indexed access `T[K]` reduces to the type at that key. The returned
-// errs carry any diagnostic the reduction produced — an unknown object key or an out-of-range
-// tuple index — for constrain to surface at the constraint site. It reports ok=false for any
-// other type, and for a reduced operator that does not fully ground — a `keyof T` or `T[K]` over
-// a type parameter, or an expanding alias whose reduction is truncated to a residual that would
-// re-expand without bound — which stays inert.
+// to its key set, an indexed access `T[K]` reduces to the type at that key, and a tuple spread
+// splices its operand tuples into a plain tuple. The returned errs carry any diagnostic the
+// reduction produced — an unknown object key or an out-of-range tuple index — for constrain to
+// surface at the constraint site. It reports ok=false for any other type, and for a reduced
+// operator that does not fully ground — a `keyof T`, `T[K]`, or `[...T, x]` over a type parameter,
+// or an expanding alias whose reduction is truncated to a residual that would re-expand without
+// bound — which stays inert.
 func (c *Context) evalTypeOperator(t soltype.Type) (soltype.Type, []SolverError, bool) {
 	switch t := t.(type) {
 	case *soltype.AliasType:
 		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
 		return t.Ty, nil, true
-	case *soltype.KeyofType, *soltype.IndexType:
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.TupleSpreadType:
 		e := newTypeEvaluator(c)
 		reduced := e.reduce(t)
 		if containsResidualOp(reduced) {
@@ -736,13 +737,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 		}
-	case *soltype.IndexType:
-		// A `T[K]` residual the pre-switch could not ground reaches here: an access over a type
-		// parameter, or an expanding recursive alias. constrain treats it inert, the same as the
-		// KeyofType arm above — two residuals are compatible only when structurally identical, so
-		// `T[K] <: T[K]` succeeds reflexively without recording a bound, and a residual against any
+	case *soltype.IndexType, *soltype.TupleSpreadType:
+		// A `T[K]` or `[...T, x]` residual the pre-switch could not ground reaches here: an operator
+		// over a type parameter, or an expanding recursive alias. constrain treats it inert, the same
+		// as the KeyofType arm above — two residuals are compatible only when structurally identical,
+		// so `T[K] <: T[K]` succeeds reflexively without recording a bound, and a residual against any
 		// other concrete fails. When super is a variable the case falls through to the superVar arm,
-		// which records the whole residual as one lower bound, keeping the access symbolic on the
+		// which records the whole residual as one lower bound, keeping the operator symbolic on the
 		// coalesced binding.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if equalType(sub, super) {

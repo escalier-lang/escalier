@@ -1750,6 +1750,22 @@ func describe(t soltype.Type) string {
 		// unwraps it to the resolved type before comparing, so a diagnostic rarely names the
 		// query itself, but a rejected bound that still carries it reads `typeof x`.
 		return "typeof " + t.Ident
+	case *soltype.TupleSpreadType:
+		// A tuple-spread residual renders structurally, recursing like the Promise arm, so a
+		// rejected constraint names it `[...t1, number]` rather than the default `?`. Each spread
+		// element leads with `...`; operands render in describe's raw mid-constrain form.
+		parts := make([]string, 0, len(t.Elems)+1)
+		for _, el := range t.Elems {
+			if el.Spread {
+				parts = append(parts, "..."+describe(el.Type))
+			} else {
+				parts = append(parts, describe(el.Type))
+			}
+		}
+		if t.Inexact {
+			parts = append(parts, "...")
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
 		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2

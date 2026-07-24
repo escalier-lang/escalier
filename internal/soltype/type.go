@@ -633,10 +633,33 @@ type TypeofType struct {
 	Ty    Type
 }
 
+// TupleSpreadType is the residual `[...P, x]` tuple-spread type operator (M9 PR6), the positional
+// analogue of the object spread. It is inert: it carries no bounds, constrain never records one
+// against it, and it flows through the solver's structural machinery untouched, the "adds no new
+// mutable solver state" invariant it shares with KeyofType. An evaluator reduces it once every
+// spread operand grounds to a concrete tuple, splicing each spread operand's elements in at the
+// operand's position to yield a plain TupleType. Until then a spread over a type parameter stays
+// symbolic and renders `[...T, x]`. The M4 literal case `[...pair, 3]` over a known tuple value
+// reduces in inferTuple. This residual covers the annotation over an abstract operand. Inexact
+// carries a trailing `...` marker, so `[...T, ...]` round-trips and reduces to an inexact tuple.
+type TupleSpreadType struct {
+	Elems   []TupleSpreadElem
+	Inexact bool
+}
+
+// TupleSpreadElem is one position of a TupleSpreadType. When Spread is true it is a spread `...P`
+// and Type is the operand spliced in on reduction; when Spread is false it is a plain positional
+// element and Type is that element's type.
+type TupleSpreadElem struct {
+	Type   Type
+	Spread bool
+}
+
 func (*TypeVarType) isType()      {}
 func (*KeyofType) isType()        {}
 func (*IndexType) isType()        {}
 func (*TypeofType) isType()       {}
+func (*TupleSpreadType) isType()  {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
@@ -725,6 +748,15 @@ func LevelOf(t Type) int {
 		// A `typeof x` query's level is its resolved value type's, the same single-child rule
 		// KeyofType and PromiseType follow.
 		return LevelOf(t.Ty)
+	case *TupleSpreadType:
+		// A residual tuple spread's level is the max over its element operands, so an out-of-level
+		// spread operand lifts the level and the freshener/extruder prune descends to freshen it,
+		// the same rule the TupleType arm applies to its elements.
+		m := 0
+		for _, el := range t.Elems {
+			m = max(m, LevelOf(el.Type))
+		}
+		return m
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:

@@ -157,19 +157,19 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 }
 
 // resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType,
-// honoring the trailing `...` inexact marker. A rest-spread / variadic element
-// (`[...P]`, `[number, ...Array<number>]`) defers with its type-level feature
-// (M9 / M7) and reports unsupported; the bare trailing `...` inexact marker is
-// carried on ta.Inexact, not as an element. An element whose annotation is
+// honoring the trailing `...` inexact marker. A rest-spread element (`[...P, x]`)
+// routes to resolveTupleSpreadTypeAnn, which builds a residual TupleSpreadType the
+// evaluator reduces once the operand grounds. The bare trailing `...` inexact marker
+// is carried on ta.Inexact, not as an element. An element whose annotation is
 // unsupported recovers to a fresh var so the tuple keeps its arity.
 func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
-	elems := make([]soltype.Type, 0, len(ta.Elems))
-	unsupported := false
 	for _, el := range ta.Elems {
 		if _, isRest := el.(*ast.RestSpreadTypeAnn); isRest {
-			unsupported = true
-			continue
+			return c.resolveTupleSpreadTypeAnn(scope, ta, lvl)
 		}
+	}
+	elems := make([]soltype.Type, 0, len(ta.Elems))
+	for _, el := range ta.Elems {
 		// An owned-mutable element `[mut {x}]` is rejected (#779), the tuple twin of
 		// the object-property rejection above: a `mut` cell nested inside a non-mut
 		// container is misleading. Recover to the element's bare inner. A `&`/`&mut`
@@ -184,10 +184,41 @@ func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl in
 			elems = append(elems, c.freshAt(lvl))
 		}
 	}
-	if unsupported {
-		c.reportUnsupportedFeature(ta, "tuple spread or variadic element")
-	}
 	t := &soltype.TupleType{Elems: elems, Inexact: ta.Inexact}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveTupleSpreadTypeAnn lowers a tuple annotation carrying a rest-spread element
+// (`[...P, x]`) to a residual soltype.TupleSpreadType and stores it unreduced, so the
+// annotation prints the way the source wrote it. The evaluator reduces it once every
+// spread operand grounds to a concrete tuple, splicing the operands in position; until
+// then a spread over a type parameter stays symbolic. Each element resolves to its type:
+// a spread carries its operand under a spread marker, a positional element carries its
+// own type. An unsupported operand recovers to a fresh var, cascade-safe like the plain
+// tuple path. A `[number, ...Array<number>]` variadic tail is distinct and stays out of
+// scope until Array lands; its spread operand fails to resolve today and recovers.
+func (c *checker) resolveTupleSpreadTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
+	elems := make([]soltype.TupleSpreadElem, 0, len(ta.Elems))
+	for _, el := range ta.Elems {
+		spread := false
+		operand := el
+		if rest, ok := el.(*ast.RestSpreadTypeAnn); ok {
+			spread = true
+			operand = rest.Value
+		} else if mta, ok := el.(*ast.MutableTypeAnn); ok {
+			// An owned-mutable positional element is rejected here for the same reason the
+			// plain tuple path rejects it; recover to its bare inner.
+			c.report(&MutFieldError{Ann: mta})
+			operand = mta.Target
+		}
+		t, ok := c.resolveTypeAnn(scope, operand, lvl)
+		if !ok {
+			t = c.freshAt(lvl)
+		}
+		elems = append(elems, soltype.TupleSpreadElem{Type: t, Spread: spread})
+	}
+	t := &soltype.TupleSpreadType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }

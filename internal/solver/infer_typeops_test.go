@@ -818,3 +818,181 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 	require.Equal(t, `1:12-1:18: cannot constrain t1["a"] <: number`, msgWithSpan(errs[0]))
 }
+
+// A tuple-spread annotation `[...P, x]` is stored as a residual and reduced by splicing each
+// spread operand's tuple in position once the operand grounds to a concrete tuple. Each case
+// asserts the stored `Result` renders the way the source wrote it, then asserts that reducing it
+// with the alias environment — the expansion constrain performs to check a constraint — splices
+// the operands. The cases cover the operand shapes reduction handles: an inline tuple, a named
+// alias expanded to a tuple, an inexact operand spliced only as the last element, an inexact
+// operand in an earlier position that keeps the spread symbolic, and a trailing `...` marker.
+func TestInferTupleSpreadReduction(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
+	}{
+		{
+			// An inline tuple operand splices its elements in position.
+			name: "InlineTuple",
+			src: `
+				type Result = [...[number, string], boolean]
+			`,
+			wantSymbolic: "[...[number, string], boolean]",
+			wantExpanded: "[number, string, boolean]",
+		},
+		{
+			// A named alias operand expands to its tuple body, then splices.
+			name: "AliasOperand",
+			src: `
+				type Pair = [number, string]
+				type Result = [...Pair, boolean]
+			`,
+			wantSymbolic: "[...Pair, boolean]",
+			wantExpanded: "[number, string, boolean]",
+		},
+		{
+			// Two spread operands splice left to right around a positional element.
+			name: "TwoSpreads",
+			src: `
+				type Result = [...[number], string, ...[boolean]]
+			`,
+			wantSymbolic: "[...[number], string, ...[boolean]]",
+			wantExpanded: "[number, string, boolean]",
+		},
+		{
+			// An inexact operand spliced as the last element extends the prefix and carries its
+			// open tail, so the result is inexact too.
+			name: "InexactOperandLast",
+			src: `
+				type Rest = [number, ...]
+				type Result = [boolean, ...Rest]
+			`,
+			wantSymbolic: "[boolean, ...Rest]",
+			wantExpanded: "[boolean, number, ...]",
+		},
+		{
+			// An inexact operand in an earlier position would put a later element at an unknown
+			// position, so the spread stays symbolic around the expanded operand.
+			name: "InexactOperandNotLast",
+			src: `
+				type Rest = [number, ...]
+				type Result = [...Rest, boolean]
+			`,
+			wantSymbolic: "[...Rest, boolean]",
+			wantExpanded: "[...[number, ...], boolean]",
+		},
+		{
+			// A trailing `...` marker round-trips and reduces to an inexact tuple.
+			name: "TrailingInexactMarker",
+			src: `
+				type Result = [...[number], ...]
+			`,
+			wantSymbolic: "[...[number], ...]",
+			wantExpanded: "[number, ...]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			result := nodes["Result"]
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}
+
+// A tuple-spread residual over a type parameter renders symbolically in a function signature and
+// round-trips from parameter to return: `fn f<T>(x: [...T, number]) -> [...T, number] { return x }`
+// keeps `[...T, number]` on both positions. The reflexive `[...T, number] <: [...T, number]` from
+// `return x` succeeds inertly by structural equality on the residual, since the abstract operand
+// never grounds.
+func TestInferTupleSpreadSignatureStaysSymbolic(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f<T>(x: [...T, number]) -> [...T, number] { return x }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T>(x: [...T, number]) -> [...T, number]", values["f"])
+}
+
+// constrain reduces a ground tuple-spread annotation to the spliced tuple to check satisfaction,
+// while the stored type stays the residual. A value whose elements match the spliced positions is
+// accepted; a mismatch is rejected against the spliced element, so the diagnostic names the
+// reduced position. The reduction runs at every constraint site: a `val` annotation over an inline
+// operand, over an aliased operand, and an argument checked against a parameter's type.
+func TestInferTupleSpreadConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "InlineOperandAccepted",
+			src: `
+				val r: [...[number, string], boolean] = [1, "a", true]
+			`,
+		},
+		{
+			name: "InlineOperandRejected",
+			src: `
+				val r: [...[number, string], boolean] = [1, "a", "b"]
+			`,
+			wantErr: `cannot constrain "b" <: boolean`,
+		},
+		{
+			name: "AliasOperandAccepted",
+			src: `
+				type Pair = [number, string]
+				val r: [...Pair, boolean] = [1, "a", true]
+			`,
+		},
+		{
+			name: "AliasOperandRejected",
+			src: `
+				type Pair = [number, string]
+				val r: [...Pair, boolean] = [1, "a", 2]
+			`,
+			wantErr: `cannot constrain 2 <: boolean`,
+		},
+		{
+			name: "CallArgumentAccepted",
+			src: `
+				fn f(p: [...[number], string]) -> number { return 1 }
+				val r = f([1, "a"])
+			`,
+		},
+		{
+			name: "CallArgumentRejected",
+			src: `
+				fn f(p: [...[number], string]) -> number { return 1 }
+				val r = f([1, 2])
+			`,
+			wantErr: `cannot constrain 2 <: string`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// Checking a value against a tuple spread of an expanding recursive alias terminates instead of
+// looping. The reduction is budget-truncated and leaves a `[...A<…>, …]` residual, so constrain
+// does not recurse on it — re-expanding would grow the operand without bound — and the residual
+// stays inert, conservatively rejecting the value. The point is termination; the precise rejection
+// is a consequence of the truncation, which CheckRegular will reject at definition time in a later
+// milestone.
+func TestInferTupleSpreadExpandingAliasTerminates(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type A<T> = [T, ...A<[T]>]
+		val r: [...A<number>, boolean] = [1, 2]
+	`)
+	require.NotEmpty(t, errs)
+}
