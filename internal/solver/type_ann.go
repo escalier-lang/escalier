@@ -206,9 +206,12 @@ func (c *checker) resolveTupleSpreadTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, 
 		if rest, ok := el.(*ast.RestSpreadTypeAnn); ok {
 			spread = true
 			operand = rest.Value
-		} else if mta, ok := el.(*ast.MutableTypeAnn); ok {
-			// An owned-mutable positional element is rejected here for the same reason the
-			// plain tuple path rejects it; recover to its bare inner.
+		}
+		// An owned-mutable element `[mut {x}]` or a mutable spread operand `[...mut P]` is
+		// rejected for the same reason the plain tuple path rejects a positional mut: a `mut`
+		// cell nested inside a non-mut container is misleading. Recover to its bare inner,
+		// keeping the spread flag so the recovered operand still splices in position.
+		if mta, ok := operand.(*ast.MutableTypeAnn); ok {
 			c.report(&MutFieldError{Ann: mta})
 			operand = mta.Target
 		}

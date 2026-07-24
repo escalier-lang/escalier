@@ -983,6 +983,21 @@ func TestInferTupleSpreadConstraint(t *testing.T) {
 	}
 }
 
+// A `mut` spread operand `[...mut P]` is rejected at the annotation site the same way a positional
+// `[mut X]` element is: the enclosing tuple decides mutability, so an owned-mutable operand nested
+// in it is misleading. The annotation reports MutFieldError and recovers to the bare operand, which
+// still splices in position, so `[...mut P, boolean]` over `type P = [number]` checks against
+// `[1, true]` with only the one diagnostic.
+func TestInferTupleSpreadMutOperandRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type P = [number]
+		val r: [...mut P, boolean] = [1, true]
+	`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &MutFieldError{}, errs[0])
+	require.Equal(t, "owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability", errs[0].Message())
+}
+
 // Checking a value against a tuple spread of an expanding recursive alias terminates instead of
 // looping. The reduction is budget-truncated and leaves a `[...A<…>, …]` residual, so constrain
 // does not recurse on it — re-expanding would grow the operand without bound — and the residual

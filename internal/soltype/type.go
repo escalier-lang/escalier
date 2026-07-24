@@ -633,7 +633,7 @@ type TypeofType struct {
 	Ty    Type
 }
 
-// TupleSpreadType is the residual `[...P, x]` tuple-spread type operator (M9 PR6), the positional
+// TupleSpreadType is the residual `[...P, x]` tuple-spread type operator, the positional
 // analogue of the object spread. It is inert: it carries no bounds, constrain never records one
 // against it, and it flows through the solver's structural machinery untouched, the "adds no new
 // mutable solver state" invariant it shares with KeyofType. An evaluator reduces it once every
