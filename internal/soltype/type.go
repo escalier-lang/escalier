@@ -607,6 +607,21 @@ type KeyofType struct {
 	Exact   bool
 }
 
+// IndexType is the residual `Target[Index]` indexed-access type operator (M9 PR2), the
+// sibling of KeyofType. Like KeyofType it is inert: it carries no bounds, constrain never
+// records one against it, and it flows through the solver's structural machinery untouched.
+// An evaluator reduces it once its operands are ground — `{x: number}["x"]` ⇒ `number`, a
+// tuple `[a, b][0]` ⇒ `a`, and a union index distributes so `T["a" | "b"]` ⇒ `T["a"] |
+// T["b"]`. Until then a `T[K]` over a type parameter stays symbolic and renders `T[K]`.
+// Exact records whether the target's member set is complete, the seed for exactness
+// propagation through reduction (M9 PR8). It is carried through the visitor and left unread
+// until that work lands.
+type IndexType struct {
+	Target Type
+	Index  Type
+	Exact  bool
+}
+
 // TypeofType is the residual `typeof x` type query. Like KeyofType it is inert: it carries no
 // bounds, constrain never records one against it, and it flows through the solver's structural
 // machinery untouched, rendering `typeof <Ident>` the way the source wrote it. Ty is the queried
@@ -620,6 +635,7 @@ type TypeofType struct {
 
 func (*TypeVarType) isType()      {}
 func (*KeyofType) isType()        {}
+func (*IndexType) isType()        {}
 func (*TypeofType) isType()       {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
@@ -700,6 +716,11 @@ func LevelOf(t Type) int {
 		// type parameter lifts the level and the freshener/extruder prune descends to
 		// freshen the operand, exactly as the single-child PromiseType arm does.
 		return LevelOf(t.Operand)
+	case *IndexType:
+		// An indexed-access residual's level is the max over its two operands, so a `T[K]`
+		// with an out-of-level target or index lifts the level and the freshener/extruder
+		// prune descends into both, the two-child analogue of the KeyofType arm.
+		return max(LevelOf(t.Target), LevelOf(t.Index))
 	case *TypeofType:
 		// A `typeof x` query's level is its resolved value type's, the same single-child rule
 		// KeyofType and PromiseType follow.

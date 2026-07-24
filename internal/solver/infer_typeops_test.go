@@ -515,3 +515,254 @@ func TestInferKeyofTypeofValue(t *testing.T) {
 	require.Equal(t, "keyof typeof x", soltype.Print(result))
 	require.Equal(t, `"a"`, soltype.Print(expandResidual(ctx, result)))
 }
+
+// Indexed access `T[K]` over a named type reference is stored unexpanded, like `keyof`, so the
+// type keeps the name the source wrote rather than the type at the key. Each case names the target
+// through an alias or class, asserts the stored `Result` renders `Name[K]`, and asserts that
+// reducing it — the expansion constrain performs to check a constraint — yields the type at the
+// key. The cases cover the target shapes indexed access resolves through: an object property, a
+// tuple element, the `T[keyof T]` value union, a union-key distribution, a generic alias
+// instantiation, and a class body.
+func TestInferIndexNamedTypeStaysSymbolic(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
+	}{
+		{
+			// A string-literal key selects the named property's value type.
+			name: "ObjectProperty",
+			src: `
+				type Obj = {x: number, y: string}
+				type Result = Obj["x"]
+			`,
+			wantSymbolic: `Obj["x"]`,
+			wantExpanded: "number",
+		},
+		{
+			// A numeric-literal key selects the tuple element at that position.
+			name: "TupleElement",
+			src: `
+				type Tup = [number, string]
+				type Result = Tup[1]
+			`,
+			wantSymbolic: "Tup[1]",
+			wantExpanded: "string",
+		},
+		{
+			// `T[keyof T]` reduces `keyof T` to the key union, then distributes the access over it,
+			// yielding the union of every value type.
+			name: "ValueUnion",
+			src: `
+				type Obj = {x: number, y: string}
+				type Result = Obj[keyof Obj]
+			`,
+			wantSymbolic: "Obj[keyof Obj]",
+			wantExpanded: "number | string",
+		},
+		{
+			// An explicit union index distributes member-wise: `Obj["x" | "y"]` ⇒ `Obj["x"] |
+			// Obj["y"]`, the same distribute mechanism `T[keyof T]` rides.
+			name: "UnionKeyDistribution",
+			src: `
+				type Obj = {x: number, y: string}
+				type Result = Obj["x" | "y"]
+			`,
+			wantSymbolic: `Obj["x" | "y"]`,
+			wantExpanded: "number | string",
+		},
+		{
+			// A generic alias instantiation substitutes its argument, then selects the property.
+			name: "GenericAlias",
+			src: `
+				type Box<T> = {value: T}
+				type Result = Box<number>["value"]
+			`,
+			wantSymbolic: `Box<number>["value"]`,
+			wantExpanded: "number",
+		},
+		{
+			// A class projects its instance body, the same key set an object yields.
+			name: "Class",
+			src: `
+				class Point {
+					x: number,
+					y: number,
+				}
+				type Result = Point["x"]
+			`,
+			wantSymbolic: `Point["x"]`,
+			wantExpanded: "number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			result := nodes["Result"]
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}
+
+// An indexed-access residual renders symbolically in a function signature and round-trips from
+// parameter to return: `fn f<T>(k: T["a"]) -> T["a"] { return k }` keeps `T["a"]` on both
+// positions. The reflexive `T["a"] <: T["a"]` from `return k` succeeds inertly by structural
+// equality on the residual, so the displayed signature keeps the access rather than the value.
+// An inline structural target keeps its braces under the access, and a `keyof` index prints
+// verbatim inside the brackets.
+func TestInferIndexStaysSymbolic(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "TypeParamRoundTrip",
+			src:  `fn f<T>(k: T["a"]) -> T["a"] { return k }`,
+			want: map[string]string{"f": `fn <T>(k: T["a"]) -> T["a"]`},
+		},
+		{
+			name: "InlineObjectTarget",
+			src:  `fn h(k: {x: number, y: string}["x"]) {}`,
+			want: map[string]string{"h": `fn (k: {x: number, y: string}["x"]) -> void`},
+		},
+		{
+			name: "KeyofIndex",
+			src:  `fn g<T>(k: T[keyof T]) {}`,
+			want: map[string]string{"g": "fn <T>(k: T[keyof T]) -> void"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name])
+			}
+		})
+	}
+}
+
+// constrain expands an indexed-access residual over an alias, tuple, or class to check
+// satisfaction, while the stored type stays named. A value matching the type at the key is
+// accepted; a mismatch is rejected against the resolved type, so the diagnostic names it. The
+// expansion runs at every constraint site: a `val` annotation and a function argument.
+func TestInferIndexConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "ObjectPropertyAccepted",
+			src: `
+				type Obj = {x: number, y: string}
+				val v: Obj["x"] = 5
+			`,
+		},
+		{
+			name: "ObjectPropertyRejected",
+			src: `
+				type Obj = {x: number, y: string}
+				val v: Obj["x"] = "hi"
+			`,
+			wantErr: `cannot constrain "hi" <: number`,
+		},
+		{
+			name: "TupleElementAccepted",
+			src: `
+				type Tup = [number, string]
+				val v: Tup[1] = "hi"
+			`,
+		},
+		{
+			name: "TupleElementRejected",
+			src: `
+				type Tup = [number, string]
+				val v: Tup[1] = 5
+			`,
+			wantErr: `cannot constrain 5 <: string`,
+		},
+		{
+			name: "ValueUnionAccepted",
+			src: `
+				type Obj = {x: number, y: string}
+				val v: Obj[keyof Obj] = "hi"
+			`,
+		},
+		{
+			name: "CallArgumentRejected",
+			src: `
+				type Obj = {x: number, y: string}
+				fn take(v: Obj["x"]) -> number { return 1 }
+				val r = take("hi")
+			`,
+			wantErr: `cannot constrain "hi" <: number`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// Reducing a ground indexed access to a key the target lacks reports a dedicated diagnostic at
+// the constraint site: an object key with no member is an UnknownObjectKeyError, and a tuple index
+// outside the element range is a TupleIndexOutOfRangeError. Each names the target's shape and the
+// offending key.
+func TestInferIndexReductionError(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+		wantTyp SolverError
+	}{
+		{
+			name: "UnknownObjectKey",
+			src: `
+				type Obj = {x: number}
+				val v: Obj["z"] = 5
+			`,
+			wantErr: `object {x: number} has no property "z"`,
+			wantTyp: &UnknownObjectKeyError{},
+		},
+		{
+			name: "TupleIndexOutOfRange",
+			src: `
+				type Tup = [number, string]
+				val v: Tup[5] = 1
+			`,
+			wantErr: "index 5 is out of range for tuple [number, string]",
+			wantTyp: &TupleIndexOutOfRangeError{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.IsType(t, tt.wantTyp, errs[0])
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A rejected constraint whose subject is an indexed-access residual names it structurally in the
+// diagnostic — `cannot constrain t1["a"] <: number` rather than the bare `?` the default describe
+// arm would render — so the inert node stays legible. describe is the raw mid-constrain renderer,
+// so the target shows as the raw var `t1` rather than the coalesced printer's param name `T`.
+func TestInferIndexResidualErrorMessage(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f<T>(k: T["a"]) -> number { return k }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, `1:12-1:18: cannot constrain t1["a"] <: number`, msgWithSpan(errs[0]))
+}

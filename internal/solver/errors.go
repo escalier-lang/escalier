@@ -200,6 +200,30 @@ type OptionalPropertyError struct {
 	site       ast.Node     // M2.5: constraint node fallback
 }
 
+// UnknownObjectKeyError fires when an indexed-access type `T[K]` (M9 PR2) indexes an object
+// with a string-literal key the object carries no member for, as in `{x: number}["z"]`. The
+// access resolves to no value, so the type expression is rejected. It is minted during the
+// reduction constrain performs to check a constraint against an indexed-access residual, and
+// carries the object and the offending key so a consumer can inspect what was indexed.
+type UnknownObjectKeyError struct {
+	Object *soltype.ObjectType
+	Key    string
+	prov   NodeResolver // M2.5: type→node index (§3.5)
+	site   ast.Node     // M2.5: constraint node fallback
+}
+
+// TupleIndexOutOfRangeError fires when an indexed-access type `T[N]` (M9 PR2) indexes a tuple
+// with a numeric literal outside its element range, as in `[number, string][5]`. The tuple has
+// no element at that position, so the type expression is rejected. Like UnknownObjectKeyError
+// it is minted during the reduction constrain performs, and carries the tuple and the offending
+// index. A non-integer or negative literal index reports through this same kind.
+type TupleIndexOutOfRangeError struct {
+	Tuple *soltype.TupleType
+	Index float64
+	prov  NodeResolver // M2.5: type→node index (§3.5)
+	site  ast.Node     // M2.5: constraint node fallback
+}
+
 // MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
 // borrow but the super is mutable: writing through the mutable target would mutate a
 // value the source only lent out as read-only, so an immutable reference cannot fill
@@ -374,6 +398,8 @@ func (*InexactUnionIntoExactError) isSolverError()  {}
 func (*ExtraPropertyError) isSolverError()          {}
 func (*ExtraElementError) isSolverError()           {}
 func (*OptionalPropertyError) isSolverError()       {}
+func (*UnknownObjectKeyError) isSolverError()       {}
+func (*TupleIndexOutOfRangeError) isSolverError()   {}
 func (*MutabilityMismatchError) isSolverError()     {}
 func (*BorrowEscapeError) isSolverError()           {}
 func (*ClassIntoExactObjectError) isSolverError()   {}
@@ -464,6 +490,18 @@ func (e *OptionalPropertyError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, ops...)
 }
 func (e *OptionalPropertyError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+
+func (e *UnknownObjectKeyError) Span() ast.Span {
+	// The indexed object is the offending value; blame it, else the constraint site.
+	return spanOf(e.prov, e.Object, e.site)
+}
+func (e *UnknownObjectKeyError) Related() []ast.Span { return nil }
+
+func (e *TupleIndexOutOfRangeError) Span() ast.Span {
+	// The indexed tuple is the offending value; blame it, else the constraint site.
+	return spanOf(e.prov, e.Tuple, e.site)
+}
+func (e *TupleIndexOutOfRangeError) Related() []ast.Span { return nil }
 
 func (e *MutabilityMismatchError) Span() ast.Span {
 	// The immutable source borrow is the actual value; blame it, degrade to the
@@ -1552,6 +1590,15 @@ func (e *OptionalPropertyError) Message() string {
 	return "object property is optional but required: " + e.Name
 }
 
+func (e *UnknownObjectKeyError) Message() string {
+	return fmt.Sprintf("object %s has no property %q", soltype.Print(e.Object), e.Key)
+}
+
+func (e *TupleIndexOutOfRangeError) Message() string {
+	return fmt.Sprintf("index %s is out of range for tuple %s",
+		strconv.FormatFloat(e.Index, 'f', -1, 64), soltype.Print(e.Tuple))
+}
+
 func (e *MutabilityMismatchError) Message() string {
 	return fmt.Sprintf("cannot constrain immutable %s <: mutable %s",
 		describeBorrowInner(e.Sub.Inner), describeBorrowInner(e.Super.Inner))
@@ -1693,6 +1740,11 @@ func describe(t soltype.Type) string {
 		// per-node type renderer beside soltype.Print; both carry the residual, so a later
 		// operator node must add an arm here as well as there.
 		return "keyof " + describe(t.Operand)
+	case *soltype.IndexType:
+		// A `T[K]` residual renders structurally, recursing like the keyof arm, so a rejected
+		// constraint names it `<target>[<index>]` rather than the default `?`. Both operands
+		// render in describe's raw mid-constrain form.
+		return describe(t.Target) + "[" + describe(t.Index) + "]"
 	case *soltype.TypeofType:
 		// A `typeof` query names the value it references, matching the printer. constrain
 		// unwraps it to the resolved type before comparing, so a diagnostic rarely names the

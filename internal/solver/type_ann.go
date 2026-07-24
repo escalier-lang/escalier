@@ -18,6 +18,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.annPrim(ta, soltype.StrPrim), true
 	case *ast.BooleanTypeAnn:
 		return c.annPrim(ta, soltype.BoolPrim), true
+	case *ast.LitTypeAnn:
+		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:
 		// Resolve through the type scope first so a user-defined alias, class, or type
 		// parameter takes precedence over the built-in Promise stub below. A bare alias or
@@ -81,6 +83,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.resolveFuncTypeAnn(scope, ta, lvl)
 	case *ast.KeyOfTypeAnn:
 		return c.resolveKeyOfTypeAnn(scope, ta, lvl)
+	case *ast.IndexTypeAnn:
+		return c.resolveIndexTypeAnn(scope, ta, lvl)
 	case *ast.TypeOfTypeAnn:
 		return c.resolveTypeOfTypeAnn(scope, ta)
 	case *ast.WildcardTypeAnn:
@@ -242,6 +246,38 @@ func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl in
 		operand = c.freshAt(lvl)
 	}
 	t := &soltype.KeyofType{Operand: operand}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveLitTypeAnn lowers a string, number, or boolean literal type annotation to its LitType,
+// reusing litTypeOf. It is the annotation home for a literal type, which an indexed access needs
+// for its key, so `Point["x"]` carries `"x"` as a LitTypeAnn index. A literal with no soltype
+// form, such as a regex, a bigint, null, or undefined, reports unsupported and recovers.
+func (c *checker) resolveLitTypeAnn(ta *ast.LitTypeAnn) (soltype.Type, bool) {
+	lit, ok := c.litTypeOf(ta.Lit)
+	if !ok {
+		return c.reportUnsupported(ta), false
+	}
+	c.recordProv(lit, ta, AnnotationType)
+	return lit, true
+}
+
+// resolveIndexTypeAnn lowers `T[K]` to an IndexType residual and stores it unreduced, so the
+// annotation prints the way the source wrote it — `Point["x"]` renders `Point["x"]`, not
+// `number`. constrain reduces the residual when it checks a constraint against it, mirroring
+// resolveKeyOfTypeAnn. An unsupported target or index recovers to a fresh var, cascade-safe like
+// the Promise<bad> recovery.
+func (c *checker) resolveIndexTypeAnn(scope *Scope, ta *ast.IndexTypeAnn, lvl int) (soltype.Type, bool) {
+	target, ok := c.resolveTypeAnn(scope, ta.Target, lvl)
+	if !ok {
+		target = c.freshAt(lvl)
+	}
+	index, ok := c.resolveTypeAnn(scope, ta.Index, lvl)
+	if !ok {
+		index = c.freshAt(lvl)
+	}
+	t := &soltype.IndexType{Target: target, Index: index}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }

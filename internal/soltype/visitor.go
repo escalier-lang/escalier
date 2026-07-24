@@ -180,6 +180,25 @@ func (t *KeyofType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *IndexType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// Both operands walk in the current polarity, the two-child analogue of KeyofType's
+	// single covariant visit. The residual is inert — the visit rebuilds it around
+	// rewritten operands without reducing the access, so extrude/coalesce/freshenAbove
+	// carry `T[K]` through untouched.
+	target := cur.Target.Accept(v, pol)
+	index := cur.Index.Accept(v, pol)
+	out := cur
+	if target != cur.Target || index != cur.Index {
+		out = &IndexType{Target: target, Index: index, Exact: cur.Exact}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *TypeofType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {

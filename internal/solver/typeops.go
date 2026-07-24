@@ -13,10 +13,11 @@ import (
 // operator over the unexpanded alias stays symbolic.
 const maxExpandDepth = 200
 
-// typeEvaluator reduces a residual type-level operator to its value. It currently handles
-// `keyof T`; later operators join as they land. Only constrain invokes it, to check a constraint
-// against a `keyof` residual. Annotation and display keep the residual symbolic, so a stored type
-// prints `keyof {x: number}` or `keyof Point` the way the source wrote it, never the reduced keys.
+// typeEvaluator reduces a residual type-level operator to its value. It handles `keyof T` and
+// indexed access `T[K]`; later operators join as they land. Only constrain invokes it, to check
+// a constraint against a residual. Annotation and display keep the residual symbolic, so a
+// stored type prints `keyof {x: number}` or `Point["x"]` the way the source wrote it, never the
+// reduced value.
 //
 // reduce projects the operand's keys: a ground `keyof {x: number}` yields `"x"`, and an alias or
 // class operand expands to the referenced type's keys, the transparent-but-named treatment an
@@ -34,10 +35,11 @@ const maxExpandDepth = 200
 //   - depth caps expansions along one path. It backstops an expanding recursion whose argument
 //     grows every lap, so its key never repeats and the active guard never fires.
 //
-// The evaluator adds no mutable solver state. reduce is a pure function of its input. It builds
-// its result unions through newUnion with a nil Context so newUnion's subsumption never calls
-// constrain — which reduces `keyof` residuals through this evaluator and would otherwise re-enter
-// it and loop.
+// The evaluator mutates no solver state — no bound or variable is touched. It accumulates
+// reduction diagnostics on errs, but a fresh evaluator is minted per reduction, so nothing
+// leaks across calls. It builds its result unions through newUnion with a nil Context so
+// newUnion's subsumption never calls constrain — which reduces residuals through this evaluator
+// and would otherwise re-enter it and loop.
 type typeEvaluator struct {
 	// ctx is the alias environment, used to expand an alias operand and project a class body so a
 	// reduction reaches the referenced type's keys. constrain and the test expander both supply a
@@ -45,6 +47,13 @@ type typeEvaluator struct {
 	ctx    *Context
 	active set.Set[string]
 	depth  int
+	// errs collects the diagnostics a reduction produces. `keyof` reduction is total and adds
+	// none; indexed-access reduction records an UnknownObjectKeyError or a
+	// TupleIndexOutOfRangeError when a ground access resolves to no member. constrain reads
+	// these after reducing an operator it is checking a constraint against, so a malformed
+	// `{x: number}["z"]` surfaces at the constraint site. It records diagnostics, not solver
+	// state, so no bound or variable is mutated.
+	errs []SolverError
 }
 
 func newTypeEvaluator(ctx *Context) *typeEvaluator {
@@ -59,6 +68,8 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.KeyofType:
 		return e.reduceKeyof(t.Operand, t.Exact)
+	case *soltype.IndexType:
+		return e.reduceIndex(t.Target, t.Index, t.Exact)
 	case *soltype.TypeofType:
 		// A `typeof x` query reduces to the value's resolved type. constrain unwraps it directly
 		// in its pre-switch, so this arm serves a `typeof` reached through another operator.
@@ -192,34 +203,181 @@ func (e *typeEvaluator) keyofDistribute(members []soltype.Type, exact bool) solt
 	return newUnion(nil, parts, false)
 }
 
+// reduceIndex reduces `target[index]` to the type stored at that key, mirroring the old
+// checker's IndexType case (internal/checker/expand_type.go):
+//
+//   - an object indexed by a string-literal key yields that member's read type, and an unknown
+//     key records an UnknownObjectKeyError;
+//   - a tuple indexed by a numeric-literal key yields that element, and an out-of-range or
+//     non-integer index records a TupleIndexOutOfRangeError;
+//   - a union index distributes, so `T["a" | "b"]` reduces to `T["a"] | T["b"]`; `T[keyof T]`
+//     rides this once `keyof T` reduces to its key union;
+//   - an alias expands to its body and a class projects its instance body, and the access
+//     reduces over that under the termination guard;
+//   - a `typeof` query resolves to the value's type, and the access reduces over that.
+//
+// A type-variable target or index, or any operand the evaluator does not ground, keeps the
+// access symbolic, rebuilt around the reduced operands.
+func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) soltype.Type {
+	idx := e.reduce(index)
+	// A union index distributes member-wise. `T[keyof T]` rides this once `keyof T` reduces to
+	// its `"a" | "b"` key union, so the access yields the union of the members' value types.
+	if u, ok := idx.(*soltype.UnionType); ok {
+		parts := make([]soltype.Type, len(u.Types))
+		for i, m := range u.Types {
+			parts[i] = e.reduceIndex(target, m, exact)
+		}
+		return newUnion(nil, parts, false)
+	}
+	switch tgt := target.(type) {
+	case *soltype.AliasType:
+		return e.reduceIndexAlias(tgt, idx, exact)
+	case *soltype.TypeofType:
+		// `(typeof x)[K]` resolves the query to the value's type, then indexes that type.
+		return e.reduceIndex(tgt.Ty, idx, exact)
+	case *soltype.KeyofType, *soltype.IndexType:
+		// The target is itself an operator. Reduce it first, then index its value. When it
+		// stays symbolic because its own operands are not ground, keep the access wrapped
+		// around the reduced target rather than re-reducing the same shape forever.
+		inner := e.reduce(target)
+		if isResidualOp(inner) {
+			return &soltype.IndexType{Target: inner, Index: idx, Exact: exact}
+		}
+		return e.reduceIndex(inner, idx, exact)
+	case *soltype.ObjectType:
+		return e.indexObject(tgt, idx, exact)
+	case *soltype.ClassType:
+		obj, ok := e.ctx.projectClassBody(tgt)
+		if !ok {
+			return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
+		}
+		return e.indexObject(obj, idx, exact)
+	case *soltype.TupleType:
+		return e.indexTuple(tgt, idx, exact)
+	default:
+		return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
+	}
+}
+
+// reduceIndexAlias reduces `Alias[K]` by expanding the alias and indexing its body under the
+// termination guard, the indexed-access twin of reduceKeyofAlias. The alias stays on the active
+// path for the whole reduction of its body, so a member that re-references it stops. A recurring
+// instantiation state, an exhausted budget, or an unresolved body each leaves the access
+// unexpanded and symbolic.
+func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Type, exact bool) soltype.Type {
+	symbolic := &soltype.IndexType{Target: op, Index: index, Exact: exact}
+	key := soltype.PrintQualified(op)
+	if e.active.Contains(key) || e.depth <= 0 {
+		return symbolic
+	}
+	body := e.ctx.expandAlias(op)
+	if _, unresolved := body.(*soltype.ErrorType); unresolved {
+		return symbolic
+	}
+	e.active.Add(key)
+	e.depth--
+	result := e.reduceIndex(body, index, exact)
+	e.active.Remove(key)
+	e.depth++
+	return result
+}
+
+// indexObject reduces `obj[key]` for a ground object. A string-literal key selects the named
+// member's read type — a property's or getter's declared type, a method's callable value — and a
+// key the object carries no member for records an UnknownObjectKeyError and reduces to the error
+// sentinel. A non-string-literal index, such as a bare `string` primitive, selects no single
+// member yet. An index signature reads it once mapped types land (M9 PR4), so the access stays
+// symbolic until then.
+func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type, exact bool) soltype.Type {
+	name, ok := strLitName(index)
+	if !ok {
+		return &soltype.IndexType{Target: obj, Index: index, Exact: exact}
+	}
+	if _, found := obj.Member(name); !found {
+		e.errs = append(e.errs, &UnknownObjectKeyError{Object: obj, Key: name})
+		return &soltype.ErrorType{}
+	}
+	read, hasValue, _ := memberReadContribution(obj, name)
+	if !hasValue {
+		// The member is a write-only setter, which exposes no readable value. Leave the access
+		// symbolic rather than resolving a write slot to a read type.
+		return &soltype.IndexType{Target: obj, Index: index, Exact: exact}
+	}
+	return read
+}
+
+// indexTuple reduces `tup[n]` for a ground tuple. A numeric-literal key selects the element at
+// that position. An index outside `[0, len)`, or a non-integer or negative literal, records a
+// TupleIndexOutOfRangeError and reduces to the error sentinel. A non-numeric-literal index has no
+// positional slot to select, so the access stays symbolic.
+func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, exact bool) soltype.Type {
+	lit, ok := index.(*soltype.LitType)
+	if !ok {
+		return &soltype.IndexType{Target: tup, Index: index, Exact: exact}
+	}
+	num, ok := lit.Lit.(*soltype.NumLit)
+	if !ok {
+		return &soltype.IndexType{Target: tup, Index: index, Exact: exact}
+	}
+	i := int(num.Value)
+	if float64(i) != num.Value || i < 0 || i >= len(tup.Elems) {
+		e.errs = append(e.errs, &TupleIndexOutOfRangeError{Tuple: tup, Index: num.Value})
+		return &soltype.ErrorType{}
+	}
+	return tup.Elems[i]
+}
+
+// strLitName returns the property name a string-literal index selects, and false for any other
+// type. Object keys are strings, so only a StrLit names a member.
+func strLitName(t soltype.Type) (string, bool) {
+	if lit, ok := t.(*soltype.LitType); ok {
+		if s, ok := lit.Lit.(*soltype.StrLit); ok {
+			return s.Value, true
+		}
+	}
+	return "", false
+}
+
+// isResidualOp reports whether t is an unreduced type-level operator node — a `keyof` or an
+// indexed access — at its top level. The evaluator consults it to stop re-reducing an operand
+// whose reduction stayed symbolic.
+func isResidualOp(t soltype.Type) bool {
+	switch t.(type) {
+	case *soltype.KeyofType, *soltype.IndexType:
+		return true
+	}
+	return false
+}
+
 // strLitType builds the string-literal type for one key name, the form a projected object or
 // tuple key takes in a `keyof` union.
 func strLitType(name string) soltype.Type {
 	return &soltype.LitType{Lit: &soltype.StrLit{Value: name}}
 }
 
-// containsKeyof reports whether t holds any KeyofType node. constrain consults it to decide
-// whether a reduced `keyof` fully grounded: a result with no residual is safe to recurse on,
-// while one that still carries a `keyof` — an unexpanded type parameter or a budget-truncated
-// expanding alias — must not, since re-reducing it would loop.
-func containsKeyof(t soltype.Type) bool {
-	f := &keyofFinder{}
+// containsResidualOp reports whether t holds any unreduced type-level operator node — a `keyof`
+// or an indexed access. constrain consults it to decide whether a reduced operator fully
+// grounded: a result with no residual is safe to recurse on, while one that still carries a
+// `keyof` or a `T[K]` — an unexpanded type parameter or a budget-truncated expanding alias —
+// must not, since re-reducing it would loop.
+func containsResidualOp(t soltype.Type) bool {
+	f := &residualOpFinder{}
 	t.Accept(f, soltype.Positive)
 	return f.found
 }
 
-// keyofFinder is the walking visitor behind containsKeyof. It flags the first KeyofType it
-// reaches and skips that node's children, since one occurrence is enough.
-type keyofFinder struct{ found bool }
+// residualOpFinder is the walking visitor behind containsResidualOp. It flags the first residual
+// operator it reaches and skips that node's children, since one occurrence is enough.
+type residualOpFinder struct{ found bool }
 
-func (f *keyofFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
-	if _, ok := t.(*soltype.KeyofType); ok {
+func (f *residualOpFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if isResidualOp(t) {
 		f.found = true
 		return soltype.EnterResult{SkipChildren: true}
 	}
 	return soltype.EnterResult{}
 }
 
-func (f *keyofFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+func (f *residualOpFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	return t
 }
