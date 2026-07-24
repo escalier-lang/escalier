@@ -633,13 +633,12 @@ type TypeofType struct {
 	Ty    Type
 }
 
-// CondType is the residual `if Check : Extends { Then } else { Else }` conditional type operator
-// (M9 PR3a). Like KeyofType it is inert: it carries no bounds, constrain never records one against
-// it, and it flows through the solver's structural machinery untouched, rendering the way the
-// source wrote it. An evaluator reduces it once Check and Extends are ground, reusing the M9 PR1b
-// machinery. It decides `Check <: Extends` with an assignability probe and reduces to Then on
-// success or Else on failure. Until then a conditional over a type parameter stays symbolic. The
-// `infer` clause in
+// CondType is the residual `if Check : Extends { Then } else { Else }` conditional type operator.
+// Like KeyofType it is inert: it carries no bounds, constrain never records one against it, and it
+// flows through the solver's structural machinery untouched, rendering the way the source wrote it.
+// An evaluator reduces it once Check and Extends are ground, reusing the M9 PR1b machinery. It
+// decides `Check <: Extends` with an assignability probe and reduces to Then on success or Else on
+// failure. Until then a conditional over a type parameter stays symbolic. The `infer` clause in
 // Extends and distribution over a naked type-parameter union are M9 PR3b, so a Check that is a bare
 // type parameter keeps the whole conditional symbolic here.
 type CondType struct {
