@@ -88,6 +88,16 @@ func TestInferObjectSpreadStaysSymbolic(t *testing.T) {
 			wantExpanded: "{a: number, x: string}",
 		},
 		{
+			// Nested spreads reduce all the way down: each level grounds to the object one level
+			// in, so `{...{...{...{x}}}}` collapses to the innermost object.
+			name: "NestedSpreads",
+			src: `
+				type Result = {...{...{...{x: number}}}}
+			`,
+			wantSymbolic: "{...{...{...{x: number}}}}",
+			wantExpanded: "{x: number}",
+		},
+		{
 			// A spread of an inexact object makes the merged object inexact.
 			name: "InexactOperand",
 			src: `
