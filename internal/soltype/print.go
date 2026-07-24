@@ -41,6 +41,11 @@ func typePrec(t Type) int {
 		return precAtom
 	case *TypeofType:
 		return precPrefix
+	case *RestSpreadType:
+		// A `...P` spread element only appears inside a tuple's bracket list, which prints each
+		// element unparenthesized, so its precedence is consulted only if it is rendered on its
+		// own. The `...` prefix binds like the other prefixes.
+		return precPrefix
 	default:
 		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
 		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType and
@@ -414,10 +419,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Index)
 		case *TypeofType:
 			walk(t.Ty)
-		case *TupleSpreadType:
-			for _, el := range t.Elems {
-				walk(el.Type)
-			}
+		case *RestSpreadType:
+			walk(t.Operand)
 		case *PromiseType:
 			walk(t.Inner)
 		case *RefType:
@@ -553,22 +556,12 @@ func (p *namedPrinter) printType(t Type) string {
 			elems = append(elems, "...")
 		}
 		return "[" + strings.Join(elems, ", ") + "]"
-	case *TupleSpreadType:
-		// A residual tuple spread renders in surface syntax with a `...` prefix on each spread
-		// element, so `[...P, x]` round-trips. A spread operand prints at precPrefix so a looser
-		// operand such as a union gets parenthesized under the `...`.
-		elems := make([]string, 0, len(t.Elems)+1)
-		for _, el := range t.Elems {
-			if el.Spread {
-				elems = append(elems, "..."+p.printTypeMinPrec(el.Type, precPrefix))
-			} else {
-				elems = append(elems, p.printType(el.Type))
-			}
-		}
-		if t.Inexact {
-			elems = append(elems, "...")
-		}
-		return "[" + strings.Join(elems, ", ") + "]"
+	case *RestSpreadType:
+		// A `...P` spread element renders with a `...` prefix so `[...P, x]` round-trips. The
+		// operand prints at precPrefix so a looser operand such as a union gets parenthesized under
+		// the `...`. The enclosing TupleType arm renders each element through printType, so a spread
+		// element reaches here in place.
+		return "..." + p.printTypeMinPrec(t.Operand, precPrefix)
 	case *ObjectType:
 		elems := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {

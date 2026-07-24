@@ -74,48 +74,43 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		// A `typeof x` query reduces to the value's resolved type. constrain unwraps it directly
 		// in its pre-switch, so this arm serves a `typeof` reached through another operator.
 		return t.Ty
-	case *soltype.TupleSpreadType:
-		return e.reduceTupleSpread(t)
+	case *soltype.TupleType:
+		return e.reduceTuple(t)
 	default:
 		return t
 	}
 }
 
-// reduceTupleSpread splices each spread operand's tuple into position, reducing `[...P, x]` to a
-// plain tuple once every spread operand grounds to a concrete tuple. It mirrors the M4 literal
-// splice in inferTuple:
+// reduceTuple splices each `...P` spread element whose operand grounds to a concrete tuple into
+// position, reducing `[...P, x]` to a plain tuple. A tuple with no spread element returns unchanged
+// so a plain tuple keeps its pointer. The splice mirrors the M4 literal case in inferTuple:
 //
-//   - a positional element carries through unchanged, reduced in case it holds a nested operator;
+//   - a non-spread element carries through, reduced in case it holds a nested operator;
 //   - a spread whose operand grounds to an exact tuple contributes that tuple's elements;
 //   - an inexact operand splices only as the last element, where its known prefix extends the
 //     result and its open tail makes the result inexact too;
-//   - an inexact operand in any earlier position keeps the whole spread symbolic, since a later
-//     element would then sit at an unknown position.
-//
-// When any spread operand stays abstract — a type parameter, or an alias the guard leaves
-// unexpanded — the spread reduces to the same operator rebuilt around the reduced operands, so it
-// stays symbolic and reduces later once the operand grounds.
-func (e *typeEvaluator) reduceTupleSpread(t *soltype.TupleSpreadType) soltype.Type {
+//   - a spread whose operand stays abstract — a type parameter, an alias the guard leaves
+//     unexpanded, or an inexact operand in a non-last position — is kept as a `...P` element around
+//     the reduced operand, so the tuple stays inert and reduces later once the operand grounds.
+func (e *typeEvaluator) reduceTuple(t *soltype.TupleType) soltype.Type {
+	if !hasRestSpread(t.Elems) {
+		return t
+	}
 	elems := make([]soltype.Type, 0, len(t.Elems))
-	rebuilt := make([]soltype.TupleSpreadElem, 0, len(t.Elems))
 	inexact := t.Inexact
-	ground := true
 	for i, el := range t.Elems {
-		if !el.Spread {
-			reduced := e.reduce(el.Type)
-			elems = append(elems, reduced)
-			rebuilt = append(rebuilt, soltype.TupleSpreadElem{Type: reduced})
-			continue
-		}
-		operand := e.groundSpreadOperand(el.Type)
-		rebuilt = append(rebuilt, soltype.TupleSpreadElem{Type: operand, Spread: true})
-		tup, ok := operand.(*soltype.TupleType)
+		rest, ok := el.(*soltype.RestSpreadType)
 		if !ok {
-			ground = false
+			elems = append(elems, e.reduce(el))
 			continue
 		}
-		if tup.Inexact && i != len(t.Elems)-1 {
-			ground = false
+		operand := e.groundSpreadOperand(rest.Operand)
+		tup, ok := operand.(*soltype.TupleType)
+		last := i == len(t.Elems)-1
+		if !ok || hasRestSpread(tup.Elems) || (tup.Inexact && !last) {
+			// The operand is not a fully-ground tuple, or is inexact in a non-last position: keep
+			// the spread residual around the reduced operand rather than splicing.
+			elems = append(elems, &soltype.RestSpreadType{Operand: operand})
 			continue
 		}
 		elems = append(elems, tup.Elems...)
@@ -123,10 +118,22 @@ func (e *typeEvaluator) reduceTupleSpread(t *soltype.TupleSpreadType) soltype.Ty
 			inexact = true
 		}
 	}
-	if !ground {
-		return &soltype.TupleSpreadType{Elems: rebuilt, Inexact: t.Inexact}
-	}
 	return &soltype.TupleType{Elems: elems, Inexact: inexact}
+}
+
+// groundTuple reduces a tuple's `...P` spreads and reports the concrete tuple when none remain. A
+// tuple with no spread returns unchanged with ok=true. A tuple whose spread never grounds returns
+// ok=false, so `keyof`/indexed access over it stays symbolic rather than projecting the spread
+// element as if it were a single position.
+func (e *typeEvaluator) groundTuple(t *soltype.TupleType) (*soltype.TupleType, bool) {
+	if !hasRestSpread(t.Elems) {
+		return t, true
+	}
+	reduced, ok := e.reduceTuple(t).(*soltype.TupleType)
+	if !ok || hasRestSpread(reduced.Elems) {
+		return nil, false
+	}
+	return reduced, true
 }
 
 // groundSpreadOperand reduces a tuple-spread operand toward a concrete tuple. It reduces any
@@ -184,7 +191,12 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 		}
 		return e.keyofObject(obj)
 	case *soltype.TupleType:
-		return e.keyofTuple(op)
+		// A tuple carrying an unreduced `...P` spread has no ground index set, so `keyof` over it
+		// stays symbolic until the spread grounds to a concrete tuple.
+		if tup, ok := e.groundTuple(op); ok {
+			return e.keyofTuple(tup)
+		}
+		return &soltype.KeyofType{Operand: operand, Exact: exact}
 	case *soltype.UnionType:
 		return e.keyofDistribute(op.Types, exact)
 	case *soltype.IntersectionType:
@@ -332,7 +344,12 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) solt
 		}
 		return e.indexObject(obj, idx, exact)
 	case *soltype.TupleType:
-		return e.indexTuple(tgt, idx, exact)
+		// A tuple carrying an unreduced `...P` spread has no ground positions, so indexing it stays
+		// symbolic until the spread grounds to a concrete tuple.
+		if tup, ok := e.groundTuple(tgt); ok {
+			return e.indexTuple(tup, idx, exact)
+		}
+		return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
 	case *soltype.UnionType:
 		// A union target distributes member-wise: `(A | B)[K]` ⇒ `A[K] | B[K]`, the other-axis
 		// twin of the union-index distribution above, matching how keyof distributes over a union
@@ -473,12 +490,31 @@ func strLitName(t soltype.Type) (string, bool) {
 }
 
 // isResidualOp reports whether t is an unreduced type-level operator node — a `keyof`, an indexed
-// access, or a tuple spread — at its top level. The evaluator consults it to stop re-reducing an
-// operand whose reduction stayed symbolic.
+// access, or a `...P` tuple-spread element — at its top level. The evaluator consults it to stop
+// re-reducing an operand whose reduction stayed symbolic.
 func isResidualOp(t soltype.Type) bool {
 	switch t.(type) {
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.TupleSpreadType:
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.RestSpreadType:
 		return true
+	}
+	return false
+}
+
+// tupleHasSpread reports whether t is a tuple carrying at least one unreduced `...P` spread
+// element. Such a tuple is inert — constrain passes it through untouched until the evaluator
+// splices the spread — whereas a plain tuple is a structural type constrain decomposes. A non-tuple
+// is never a spread tuple.
+func tupleHasSpread(t soltype.Type) bool {
+	tup, ok := t.(*soltype.TupleType)
+	return ok && hasRestSpread(tup.Elems)
+}
+
+// hasRestSpread reports whether any element of elems is a `...P` spread.
+func hasRestSpread(elems []soltype.Type) bool {
+	for _, el := range elems {
+		if _, ok := el.(*soltype.RestSpreadType); ok {
+			return true
+		}
 	}
 	return false
 }

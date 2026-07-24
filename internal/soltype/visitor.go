@@ -217,33 +217,20 @@ func (t *TypeofType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
-func (t *TupleSpreadType) Accept(v TypeVisitor, pol Polarity) Type {
+func (t *RestSpreadType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	// Each element operand walks in the current polarity, the covariant visit TupleType uses for
-	// its elements, copy-on-write like acceptTypes: a changed operand gets a fresh TupleSpreadElem
-	// carrying its Spread marker, unchanged operands keep their slot. The residual is inert — the
-	// visit rebuilds it around rewritten operands without reducing the spread, so
-	// extrude/coalesce/freshenAbove carry `[...T, x]` through untouched. The evaluator's reduction
-	// lands separately.
-	elems := cur.Elems
-	changed := false
-	for i, el := range cur.Elems {
-		ty := el.Type.Accept(v, pol)
-		if ty != el.Type {
-			if !changed {
-				elems = append([]TupleSpreadElem(nil), cur.Elems...)
-				changed = true
-			}
-			elems[i] = TupleSpreadElem{Type: ty, Spread: el.Spread}
-		}
-	}
+	// The operand walks in the current polarity, the covariant visit a tuple element gets. The
+	// spread is inert — the visit rebuilds it around a rewritten operand without splicing, so
+	// extrude/coalesce/freshenAbove carry `...T` through untouched. The enclosing TupleType.Accept
+	// walks this element like any other, so no separate spread-list traversal is needed.
+	operand := cur.Operand.Accept(v, pol)
 	out := cur
-	if changed {
-		out = &TupleSpreadType{Elems: elems, Inexact: cur.Inexact}
+	if operand != cur.Operand {
+		out = &RestSpreadType{Operand: operand}
 	}
 	return v.ExitType(out, pol)
 }

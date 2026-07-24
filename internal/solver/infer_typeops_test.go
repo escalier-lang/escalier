@@ -1013,3 +1013,55 @@ func TestInferTupleSpreadExpandingAliasTerminates(t *testing.T) {
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 	require.Equal(t, "3:36-3:42: cannot constrain tuple <: [...A<number>, boolean]", msgWithSpan(errs[0]))
 }
+
+// `keyof` and indexed access over a tuple carrying an unreduced `...P` spread stay symbolic: the
+// tuple has no ground index set until the spread grounds. Over a concrete inline spread the tuple
+// reduces first, so `keyof` projects the spliced indices and indexed access selects the spliced
+// element. Over an abstract operand both keep the operator symbolic rather than projecting the
+// `...P` element as a single position.
+func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
+	}{
+		{
+			// keyof over a ground spread reduces the tuple to [number, string, boolean], then
+			// projects its indices.
+			name:         "KeyofGroundSpread",
+			src:          `type Result = keyof [...[number, string], boolean]`,
+			wantSymbolic: "keyof [...[number, string], boolean]",
+			wantExpanded: "0 | 1 | 2",
+		},
+		{
+			// keyof over an abstract spread operand stays symbolic.
+			name:         "KeyofAbstractSpread",
+			src:          `fn f<T>(k: keyof [...T, boolean]) {}`,
+			wantSymbolic: "keyof [...T, boolean]",
+		},
+		{
+			// Indexed access over a ground spread reduces the tuple, then selects the element.
+			name:         "IndexGroundSpread",
+			src:          `type Result = [...[number, string], boolean][2]`,
+			wantSymbolic: "[...[number, string], boolean][2]",
+			wantExpanded: "boolean",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantExpanded == "" {
+				// A signature-level case: assert the residual renders symbolically and does not crash.
+				values, _, errs := inferSource(t, tt.src)
+				require.Empty(t, errs)
+				require.Equal(t, "fn <T>(k: "+tt.wantSymbolic+") -> void", values["f"])
+				return
+			}
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			result := nodes["Result"]
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}

@@ -156,50 +156,16 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	return t, true
 }
 
-// resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType,
-// honoring the trailing `...` inexact marker. A rest-spread element (`[...P, x]`)
-// routes to resolveTupleSpreadTypeAnn, which builds a residual TupleSpreadType the
-// evaluator reduces once the operand grounds. The bare trailing `...` inexact marker
-// is carried on ta.Inexact, not as an element. An element whose annotation is
-// unsupported recovers to a fresh var so the tuple keeps its arity.
+// resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType, honoring the trailing
+// `...` inexact marker. A rest-spread element (`[...P, x]`) becomes a soltype.RestSpreadType
+// element; a tuple carrying one is a residual the evaluator reduces once the spread operand grounds
+// to a concrete tuple, splicing it in position. Until then a spread over a type parameter stays
+// symbolic. The bare trailing `...` inexact marker is carried on ta.Inexact, not as an element. An
+// element whose annotation is unsupported recovers to a fresh var so the tuple keeps its arity. A
+// `[number, ...Array<number>]` variadic tail is distinct and stays out of scope until Array lands;
+// its spread operand fails to resolve today and recovers.
 func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
-	for _, el := range ta.Elems {
-		if _, isRest := el.(*ast.RestSpreadTypeAnn); isRest {
-			return c.resolveTupleSpreadTypeAnn(scope, ta, lvl)
-		}
-	}
 	elems := make([]soltype.Type, 0, len(ta.Elems))
-	for _, el := range ta.Elems {
-		// An owned-mutable element `[mut {x}]` is rejected (#779), the tuple twin of
-		// the object-property rejection above: a `mut` cell nested inside a non-mut
-		// container is misleading. Recover to the element's bare inner. A `&`/`&mut`
-		// borrow element stays legal — it references external storage.
-		if mta, ok := el.(*ast.MutableTypeAnn); ok {
-			c.report(&MutFieldError{Ann: mta})
-			el = mta.Target
-		}
-		if t, ok := c.resolveTypeAnn(scope, el, lvl); ok {
-			elems = append(elems, t)
-		} else {
-			elems = append(elems, c.freshAt(lvl))
-		}
-	}
-	t := &soltype.TupleType{Elems: elems, Inexact: ta.Inexact}
-	c.recordProv(t, ta, AnnotationType)
-	return t, true
-}
-
-// resolveTupleSpreadTypeAnn lowers a tuple annotation carrying a rest-spread element
-// (`[...P, x]`) to a residual soltype.TupleSpreadType and stores it unreduced, so the
-// annotation prints the way the source wrote it. The evaluator reduces it once every
-// spread operand grounds to a concrete tuple, splicing the operands in position; until
-// then a spread over a type parameter stays symbolic. Each element resolves to its type:
-// a spread carries its operand under a spread marker, a positional element carries its
-// own type. An unsupported operand recovers to a fresh var, cascade-safe like the plain
-// tuple path. A `[number, ...Array<number>]` variadic tail is distinct and stays out of
-// scope until Array lands; its spread operand fails to resolve today and recovers.
-func (c *checker) resolveTupleSpreadTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
-	elems := make([]soltype.TupleSpreadElem, 0, len(ta.Elems))
 	for _, el := range ta.Elems {
 		spread := false
 		operand := el
@@ -207,10 +173,10 @@ func (c *checker) resolveTupleSpreadTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, 
 			spread = true
 			operand = rest.Value
 		}
-		// An owned-mutable element `[mut {x}]` or a mutable spread operand `[...mut P]` is
-		// rejected for the same reason the plain tuple path rejects a positional mut: a `mut`
-		// cell nested inside a non-mut container is misleading. Recover to its bare inner,
-		// keeping the spread flag so the recovered operand still splices in position.
+		// An owned-mutable element `[mut {x}]` or a mutable spread operand `[...mut P]` is rejected
+		// (#779), the tuple twin of the object-property rejection: a `mut` cell nested inside a
+		// non-mut container is misleading. Recover to its bare inner. A `&`/`&mut` borrow element
+		// stays legal — it references external storage.
 		if mta, ok := operand.(*ast.MutableTypeAnn); ok {
 			c.report(&MutFieldError{Ann: mta})
 			operand = mta.Target
@@ -219,9 +185,12 @@ func (c *checker) resolveTupleSpreadTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, 
 		if !ok {
 			t = c.freshAt(lvl)
 		}
-		elems = append(elems, soltype.TupleSpreadElem{Type: t, Spread: spread})
+		if spread {
+			t = &soltype.RestSpreadType{Operand: t}
+		}
+		elems = append(elems, t)
 	}
-	t := &soltype.TupleSpreadType{Elems: elems, Inexact: ta.Inexact}
+	t := &soltype.TupleType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
