@@ -573,6 +573,19 @@ func TestInferIndexNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: "number | string",
 		},
 		{
+			// A union target distributes the access member-wise: `(A | B)["x"]` reads `x` off each
+			// member and unions the results.
+			name: "UnionTarget",
+			src: `
+				type A = {x: number}
+				type B = {x: string}
+				type U = A | B
+				type Result = U["x"]
+			`,
+			wantSymbolic: `U["x"]`,
+			wantExpanded: "number | string",
+		},
+		{
 			// A generic alias instantiation substitutes its argument, then selects the property.
 			name: "GenericAlias",
 			src: `

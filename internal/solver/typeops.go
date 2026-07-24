@@ -212,6 +212,7 @@ func (e *typeEvaluator) keyofDistribute(members []soltype.Type, exact bool) solt
 //     non-integer index records a TupleIndexOutOfRangeError;
 //   - a union index distributes, so `T["a" | "b"]` reduces to `T["a"] | T["b"]`; `T[keyof T]`
 //     rides this once `keyof T` reduces to its key union;
+//   - a union target distributes the other way, so `(A | B)[K]` reduces to `A[K] | B[K]`;
 //   - an alias expands to its body and a class projects its instance body, and the access
 //     reduces over that under the termination guard;
 //   - a `typeof` query resolves to the value's type, and the access reduces over that.
@@ -254,6 +255,15 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) solt
 		return e.indexObject(obj, idx, exact)
 	case *soltype.TupleType:
 		return e.indexTuple(tgt, idx, exact)
+	case *soltype.UnionType:
+		// A union target distributes member-wise: `(A | B)[K]` ⇒ `A[K] | B[K]`, the other-axis
+		// twin of the union-index distribution above, matching how keyof distributes over a union
+		// operand. Each member indexes with the same reduced key.
+		parts := make([]soltype.Type, len(tgt.Types))
+		for i, m := range tgt.Types {
+			parts[i] = e.reduceIndex(m, idx, exact)
+		}
+		return newUnion(nil, parts, false)
 	default:
 		return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
 	}
