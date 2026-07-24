@@ -645,7 +645,7 @@ type RestSpreadType struct {
 	Operand Type
 }
 
-// TemplateLitType is the residual template literal type operator (M9 PR7), such as
+// TemplateLitType is the residual template literal type operator, such as
 // `on${T}`. Quasis holds the fixed string segments and Interps the interpolated
 // types between them, so Quasis has exactly one more entry than Interps. Like KeyofType
 // it is inert: it carries no bounds, constrain never records one against it, and it flows
@@ -687,7 +687,7 @@ func (k StringMappingKind) String() string {
 }
 
 // StringMappingType is the residual intrinsic string operator `Uppercase<T>` and its three
-// siblings (M9 PR7). Like KeyofType it is inert: it carries no bounds, constrain never records
+// siblings. Like KeyofType it is inert: it carries no bounds, constrain never records
 // one against it, and it flows through the solver's structural machinery untouched, rendering
 // `Uppercase<T>` the way the source wrote it. An evaluator reduces it over a string-literal
 // operand — `Uppercase<"abc">` ⇒ `"ABC"` — distributing over a union operand, and stays

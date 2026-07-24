@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -57,6 +59,17 @@ func TestInferTemplateLitReduction(t *testing.T) {
 				type Result = ` + "`to-${Dir}`",
 			wantSymbolic: "`to-${Dir}`",
 			wantExpanded: `"to-left" | "to-right"`,
+		},
+		{
+			// A union interpolation grounds each member, so an aliased member collapses to its
+			// literal rather than surviving as a residual interpolation.
+			name: "UnionMemberAlias",
+			src: `
+				type B = "b"
+				type U = "a" | B
+				type Result = ` + "`x${U}`",
+			wantSymbolic: "`x${U}`",
+			wantExpanded: `"xa" | "xb"`,
 		},
 	}
 	for _, tt := range tests {
@@ -233,4 +246,18 @@ func TestInferStringIntrinsicShadowedByUserType(t *testing.T) {
 		val r: Uppercase<"abc"> = "abc"
 	`)
 	require.Empty(t, errs)
+}
+
+// A template literal whose cartesian product would exceed the combination cap is rejected with one
+// diagnostic rather than materializing an unbounded union. A 25-member union across three
+// interpolations enumerates 25^3 = 15625 combinations, past the 10000 cap.
+func TestInferTemplateLitTooComplex(t *testing.T) {
+	members := make([]string, 25)
+	for i := range members {
+		members[i] = fmt.Sprintf("%q", fmt.Sprint(i))
+	}
+	src := "type D = " + strings.Join(members, " | ") + "\nval r: `${D}${D}${D}` = \"000\""
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, "template literal type `${D}${D}${D}` is too complex to reduce; it expands to more than 10000 members", errs[0].Message())
 }

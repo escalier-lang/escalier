@@ -18,6 +18,12 @@ import (
 // operator over the unexpanded alias stays symbolic.
 const maxExpandDepth = 200
 
+// maxTemplateLitCombinations caps how many string literals a template literal may reduce to. Its
+// cartesian product over interpolated unions grows multiplicatively, so `${A}${B}${C}` over three
+// large unions could enumerate an unbounded union. The cap rejects such a template with a
+// diagnostic rather than materializing the product.
+const maxTemplateLitCombinations = 10_000
+
 // typeEvaluator reduces a residual type-level operator to its value. It handles `keyof T`, indexed
 // access `T[K]`, template literals, and the intrinsic string operators such as `Uppercase<T>`;
 // later operators join as they land. Only constrain invokes it, to check
@@ -491,22 +497,38 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, e
 }
 
 // reduceTemplateLit reduces a template literal to the union of string literals its interpolations
-// produce, taking the cartesian product over each interpolation's options. Each interpolation is
-// first grounded, so a named alias expands to its body. A grounded interpolation that is a union
-// contributes each member as an option, so `on${"a" | "b"}` yields `"ona" | "onb"`, while any
-// other grounded interpolation contributes itself. Each product combination folds its
-// string-literal interpolations into the surrounding segments; a combination whose interpolation
-// stays abstract — a type parameter, or a nested operator the evaluator could not ground — keeps
-// that interpolation and stays a `TemplateLitType`, so the whole template reduces later once the
-// interpolation grounds.
+// produce, taking the cartesian product over each interpolation's options. Each interpolation, and
+// each member of an interpolation that grounds to a union, is grounded so a named alias expands to
+// its body. A grounded interpolation that is a union contributes each member as an option, so
+// `on${"a" | "b"}` yields `"ona" | "onb"`, while any other grounded interpolation contributes
+// itself. Each product combination folds its string-literal interpolations into the surrounding
+// segments; a combination whose interpolation stays abstract — a type parameter, or a nested
+// operator the evaluator could not ground — keeps that interpolation and stays a `TemplateLitType`,
+// so the whole template reduces later once the interpolation grounds. A product that would exceed
+// maxTemplateLitCombinations is rejected with a diagnostic rather than materialized.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
 	options := make([][]soltype.Type, len(t.Interps))
+	combinations := 1
 	for i, interp := range t.Interps {
 		reduced := e.groundOperand(interp)
 		if u, ok := reduced.(*soltype.UnionType); ok {
-			options[i] = u.Types
+			// Ground each union member too, so a reducible member — an alias to a literal, or a
+			// nested operator such as `keyof O` — collapses to its string literal before the product
+			// rather than surviving as a residual interpolation.
+			members := make([]soltype.Type, len(u.Types))
+			for j, m := range u.Types {
+				members[j] = e.groundOperand(m)
+			}
+			options[i] = members
 		} else {
 			options[i] = []soltype.Type{reduced}
+		}
+		combinations *= len(options[i])
+		if combinations > maxTemplateLitCombinations {
+			// The product would enumerate more string literals than the cap allows. Reject the
+			// template with one diagnostic rather than materializing an unbounded union.
+			e.errs = append(e.errs, &TemplateLitTooComplexError{Template: t})
+			return &soltype.ErrorType{}
 		}
 	}
 	combos := cartesianProduct(options)
