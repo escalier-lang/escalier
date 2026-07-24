@@ -1107,6 +1107,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// matching how the operator flows through the solver untouched in M9 PR1a.
 		b, ok := b.(*soltype.KeyofType)
 		return ok && a.Exact == b.Exact && equalTypeWith(a.Operand, b.Operand, ctx)
+	case *soltype.IndexType:
+		// Two inert `T[K]` residuals are equal when they carry the same exactness over equal
+		// targets and equal indices, compared structurally without reducing the access, the
+		// two-child analogue of the KeyofType arm.
+		b, ok := b.(*soltype.IndexType)
+		return ok && a.Exact == b.Exact && equalTypeWith(a.Target, b.Target, ctx) && equalTypeWith(a.Index, b.Index, ctx)
 	case *soltype.TypeofType:
 		// Two `typeof` queries are equal when they name the same value and resolve to equal
 		// types, compared without unwrapping — the query flows through the solver untouched.

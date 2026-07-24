@@ -338,6 +338,10 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.prov, err.site = c.prov, n
 		case *OptionalPropertyError:
 			err.prov, err.site = c.prov, n
+		case *UnknownObjectKeyError:
+			err.prov, err.site = c.prov, n
+		case *TupleIndexOutOfRangeError:
+			err.prov, err.site = c.prov, n
 		case *FuncArityMismatchError:
 			err.prov, err.site = c.prov, n
 		case *MutabilityMismatchError:

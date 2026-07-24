@@ -134,24 +134,28 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 
 // evalTypeOperator evaluates the outermost transparent type operator of t to the type it stands
 // for, so constrain can check a constraint against that while the stored residual keeps its name.
-// An alias expands to its body, a `typeof` query resolves to the value's type, and a `keyof`
-// reduces to its key set. It reports ok=false for any other type, and for a `keyof` that does not
-// fully ground — a `keyof T` over a type parameter, or an expanding alias whose reduction is
-// truncated to a `keyof` residual that would re-expand without bound — which stays inert.
-func (c *Context) evalTypeOperator(t soltype.Type) (soltype.Type, bool) {
+// An alias expands to its body, a `typeof` query resolves to the value's type, a `keyof` reduces
+// to its key set, and an indexed access `T[K]` reduces to the type at that key. The returned
+// errs carry any diagnostic the reduction produced — an unknown object key or an out-of-range
+// tuple index — for constrain to surface at the constraint site. It reports ok=false for any
+// other type, and for a reduced operator that does not fully ground — a `keyof T` or `T[K]` over
+// a type parameter, or an expanding alias whose reduction is truncated to a residual that would
+// re-expand without bound — which stays inert.
+func (c *Context) evalTypeOperator(t soltype.Type) (soltype.Type, []SolverError, bool) {
 	switch t := t.(type) {
 	case *soltype.AliasType:
-		return c.expandAlias(t), true
+		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
-		return t.Ty, true
-	case *soltype.KeyofType:
-		reduced := newTypeEvaluator(c).reduce(t)
-		if containsKeyof(reduced) {
-			return nil, false
+		return t.Ty, nil, true
+	case *soltype.KeyofType, *soltype.IndexType:
+		e := newTypeEvaluator(c)
+		reduced := e.reduce(t)
+		if containsResidualOp(reduced) {
+			return nil, nil, false
 		}
-		return reduced, true
+		return reduced, e.errs, true
 	default:
-		return nil, false
+		return nil, nil, false
 	}
 }
 
@@ -212,21 +216,31 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		}
 	}
 
-	// An alias, a `typeof` query, and a `keyof` are transparent for checking: evaluate the
-	// outermost operator to the type it stands for and recurse, so the constraint runs on that
-	// while the stored residual keeps its name. This sits above the structural switch, which
-	// dispatches on sub and would otherwise reject a concrete sub against an operator super before
-	// it could unwrap. When the other side is a variable, fall through to the var arms so the whole
-	// operator is recorded as one bound and its name survives on the coalesced binding. A recursive
-	// alias closes through the existing seen-set, and a `keyof` that does not fully ground stays
-	// inert — see evalTypeOperator — and falls through to the KeyofType arm in the switch.
+	// An alias, a `typeof` query, a `keyof`, and an indexed access `T[K]` are transparent for
+	// checking: evaluate the outermost operator to the type it stands for and recurse, so the
+	// constraint runs on that while the stored residual keeps its name. This sits above the
+	// structural switch, which dispatches on sub and would otherwise reject a concrete sub against
+	// an operator super before it could unwrap. When the other side is a variable, fall through to
+	// the var arms so the whole operator is recorded as one bound and its name survives on the
+	// coalesced binding. A recursive alias closes through the existing seen-set, and a `keyof` or
+	// `T[K]` that does not fully ground stays inert — see evalTypeOperator — and falls through to
+	// its residual arm in the switch.
 	if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
-		if evaluated, ok := c.evalTypeOperator(sub); ok {
+		if evaluated, reduceErrs, ok := c.evalTypeOperator(sub); ok {
+			// A reduction diagnostic — an unknown key or an out-of-range index — makes the
+			// operator malformed, so surface it and stop rather than checking the constraint
+			// against the error sentinel the reduction returned.
+			if len(reduceErrs) > 0 {
+				return reduceErrs
+			}
 			return c.constrain(evaluated, super, seen, mutCtx)
 		}
 	}
 	if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
-		if evaluated, ok := c.evalTypeOperator(super); ok {
+		if evaluated, reduceErrs, ok := c.evalTypeOperator(super); ok {
+			if len(reduceErrs) > 0 {
+				return reduceErrs
+			}
 			return c.constrain(sub, evaluated, seen, mutCtx)
 		}
 	}
@@ -716,6 +730,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		// residual against any other concrete fails. When super is a variable the case falls
 		// through to the superVar arm below, which records the whole residual as one lower bound,
 		// keeping the operator symbolic on the coalesced binding.
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			if equalType(sub, super) {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+		}
+	case *soltype.IndexType:
+		// A `T[K]` residual the pre-switch could not ground reaches here: an access over a type
+		// parameter, or an expanding recursive alias. constrain treats it inert, the same as the
+		// KeyofType arm above — two residuals are compatible only when structurally identical, so
+		// `T[K] <: T[K]` succeeds reflexively without recording a bound, and a residual against any
+		// other concrete fails. When super is a variable the case falls through to the superVar arm,
+		// which records the whole residual as one lower bound, keeping the access symbolic on the
+		// coalesced binding.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if equalType(sub, super) {
 				return nil

@@ -35,6 +35,10 @@ func typePrec(t Type) int {
 		return precPrefix
 	case *KeyofType:
 		return precPrefix
+	case *IndexType:
+		// `T[K]` is a postfix primary that binds tighter than any prefix, so it never needs
+		// outer parens. `keyof T[K]` reads as `keyof (T[K])`, matching TypeScript.
+		return precAtom
 	case *TypeofType:
 		return precPrefix
 	default:
@@ -405,6 +409,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *KeyofType:
 			walk(t.Operand)
+		case *IndexType:
+			walk(t.Target)
+			walk(t.Index)
 		case *TypeofType:
 			walk(t.Ty)
 		case *PromiseType:
@@ -606,6 +613,11 @@ func (p *namedPrinter) printType(t Type) string {
 		// `keyof T`, mirroring type_system's KeyOfType rendering. The operand prints at
 		// precPrefix so a looser operand such as a union gets parenthesized: `keyof (A | B)`.
 		return "keyof " + p.printTypeMinPrec(t.Operand, precPrefix)
+	case *IndexType:
+		// `T[K]`. The target prints at precAtom so a looser target such as a union or a
+		// `keyof` gets parenthesized: `(A | B)["x"]`, `(keyof T)[K]`. The index sits inside
+		// the brackets, where nothing can bind across it, so it prints with no minimum.
+		return p.printTypeMinPrec(t.Target, precAtom) + "[" + p.printType(t.Index) + "]"
 	case *TypeofType:
 		// `typeof x`, the value reference the source wrote. The resolved value type is not
 		// rendered — the query stays symbolic, so `keyof typeof x` prints as written.
