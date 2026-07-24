@@ -319,9 +319,17 @@ func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen set.Set[const
 // succeeded. The seen-set starts fresh and the mut context at false, so the
 // trial is a self-contained covariant read check.
 func (c *Context) trialUnderProbe(sub, super soltype.Type) []SolverError {
+	return c.trialUnderProbeSeen(sub, super, set.NewSet[constraintKey]())
+}
+
+// trialUnderProbeSeen is trialUnderProbe over a caller-supplied cycle-detection set rather than a
+// fresh one, so a conditional's `Check <: Extends` branch probe closes a recursive alias through the
+// same seen-set the enclosing constraint built up. The caller clones the set when it must keep the
+// trial's keys out of its own.
+func (c *Context) trialUnderProbeSeen(sub, super soltype.Type, seen set.Set[constraintKey]) []SolverError {
 	p := newProbe(c.probe)
 	c.probe = p
-	errs := c.constrain(sub, super, set.NewSet[constraintKey](), false)
+	errs := c.constrain(sub, super, seen, false)
 	c.probe = p.parent
 	p.Discard()
 	return errs
