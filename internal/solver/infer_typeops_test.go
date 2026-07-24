@@ -586,6 +586,33 @@ func TestInferIndexNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: "number | string",
 		},
 		{
+			// An intersection target carries a key when any member has it, so `(A & B)["x"]`
+			// selects `x` from the member that declares it.
+			name: "IntersectionTarget",
+			src: `
+				type A = {x: number}
+				type B = {y: string}
+				type C = A & B
+				type Result = C["y"]
+			`,
+			wantSymbolic: `C["y"]`,
+			wantExpanded: "string",
+		},
+		{
+			// When more than one member carries the key, the access is the meet of their value
+			// types, so `(A & B)["x"]` with `A.x: number` and `B.x: string` reduces to their
+			// intersection.
+			name: "IntersectionTargetOverlap",
+			src: `
+				type A = {x: number}
+				type B = {x: string}
+				type C = A & B
+				type Result = C["x"]
+			`,
+			wantSymbolic: `C["x"]`,
+			wantExpanded: "number & string",
+		},
+		{
 			// A generic alias instantiation substitutes its argument, then selects the property.
 			name: "GenericAlias",
 			src: `
@@ -757,6 +784,18 @@ func TestInferIndexReductionError(t *testing.T) {
 			`,
 			wantErr: "index 5 is out of range for tuple [number, string]",
 			wantTyp: &TupleIndexOutOfRangeError{},
+		},
+		{
+			// A key absent from every intersection member is genuinely missing, so one member's
+			// absence diagnostic surfaces rather than one per member.
+			name: "IntersectionKeyAbsentFromAll",
+			src: `
+				type A = {x: number}
+				type B = {y: string}
+				val v: (A & B)["z"] = 5
+			`,
+			wantErr: `object {x: number} has no property "z"`,
+			wantTyp: &UnknownObjectKeyError{},
 		},
 	}
 	for _, tt := range tests {

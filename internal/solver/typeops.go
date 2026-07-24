@@ -212,7 +212,10 @@ func (e *typeEvaluator) keyofDistribute(members []soltype.Type, exact bool) solt
 //     non-integer index records a TupleIndexOutOfRangeError;
 //   - a union index distributes, so `T["a" | "b"]` reduces to `T["a"] | T["b"]`; `T[keyof T]`
 //     rides this once `keyof T` reduces to its key union;
-//   - a union target distributes the other way, so `(A | B)[K]` reduces to `A[K] | B[K]`;
+//   - a union target distributes the other way, so `(A | B)[K]` reduces to `A[K] | B[K]`, where
+//     every member must carry K;
+//   - an intersection target reduces to the meet of the value types the members that carry K
+//     contribute, so `(A & B)[K]` picks K from whichever members have it;
 //   - an alias expands to its body and a class projects its instance body, and the access
 //     reduces over that under the termination guard;
 //   - a `typeof` query resolves to the value's type, and the access reduces over that.
@@ -258,15 +261,61 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) solt
 	case *soltype.UnionType:
 		// A union target distributes member-wise: `(A | B)[K]` ⇒ `A[K] | B[K]`, the other-axis
 		// twin of the union-index distribution above, matching how keyof distributes over a union
-		// operand. Each member indexes with the same reduced key.
+		// operand. A union value is one of its members, so every member must carry K — a member
+		// lacking it records its own absence diagnostic through reduceIndex. Each member indexes
+		// with the same reduced key.
 		parts := make([]soltype.Type, len(tgt.Types))
 		for i, m := range tgt.Types {
 			parts[i] = e.reduceIndex(m, idx, exact)
 		}
 		return newUnion(nil, parts, false)
+	case *soltype.IntersectionType:
+		return e.reduceIndexIntersection(tgt, idx, exact)
 	default:
 		return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
 	}
+}
+
+// reduceIndexIntersection reduces `(A & B & …)[K]`. An intersection value satisfies every member,
+// so it carries key K when ANY member does, and the access yields the meet of the value types the
+// members that carry K contribute. This is the opposite of the union-target rule, where every
+// member must carry K. A member lacking K contributes nothing rather than erroring, so its own
+// absence diagnostic is rolled back and kept aside. The access stays symbolic when a member is not
+// ground enough to decide whether it carries K, and reports absence only when no member carries it.
+func (e *typeEvaluator) reduceIndexIntersection(tgt *soltype.IntersectionType, idx soltype.Type, exact bool) soltype.Type {
+	var resolved []soltype.Type
+	var absentErrs []SolverError
+	anySymbolic := false
+	for _, m := range tgt.Types {
+		before := len(e.errs)
+		r := e.reduceIndex(m, idx, exact)
+		if produced := e.errs[before:]; len(produced) > 0 {
+			// A ground member lacking K recorded its own absence diagnostic. A sibling may still
+			// carry K, so roll the diagnostic back and keep it aside in case none does.
+			absentErrs = append(absentErrs, produced...)
+			e.errs = e.errs[:before]
+			continue
+		}
+		if isResidualOp(r) {
+			anySymbolic = true
+			continue
+		}
+		resolved = append(resolved, r)
+	}
+	// A member the evaluator could not ground might carry K with an unknown type, so the meet is
+	// undecided. Stay symbolic rather than committing to the members that did resolve.
+	if anySymbolic {
+		return &soltype.IndexType{Target: tgt, Index: idx, Exact: exact}
+	}
+	if len(resolved) > 0 {
+		return newIntersection(nil, resolved)
+	}
+	// Every member is ground and none carries K, so K is genuinely absent. Surface one member's
+	// absence diagnostic and reduce to the error sentinel.
+	if len(absentErrs) > 0 {
+		e.errs = append(e.errs, absentErrs[0])
+	}
+	return &soltype.ErrorType{}
 }
 
 // reduceIndexAlias reduces `Alias[K]` by expanding the alias and indexing its body under the
