@@ -246,6 +246,11 @@ func (e *typeEvaluator) expandAliasGuarded(op *soltype.AliasType, fallback solty
 // and unions them. An empty projection collapses to `never`, the union identity newUnion returns
 // for no members.
 //
+// An inexact object carries an unknown-keyed tail, so its key set is open: `keyof {a: number, ...}`
+// is `"a" | ...`, an inexact union whose members are the known keys and whose tail stands for the
+// unlisted ones. keyofObject seeds the union's exactness from the object's, so an exact object
+// yields an exact key union and an inexact object an inexact one.
+//
 // It omits methods, which is correct for a class instance whose methods live on the prototype
 // and so are absent from Object.keys, but wrong for a bare object whose methods are own
 // enumerable keys. keyofObject cannot tell the two apart from the ObjectType alone, so it
@@ -263,7 +268,7 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 			keys = append(keys, strLitType(elem.Name))
 		}
 	}
-	return newUnion(nil, keys, false)
+	return newUnion(nil, keys, obj.Inexact)
 }
 
 // keyofTuple yields a tuple's own keys: one number-literal type per positional element, the
