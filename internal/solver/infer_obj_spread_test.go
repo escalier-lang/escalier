@@ -119,6 +119,20 @@ func TestInferObjectSpreadStaysSymbolic(t *testing.T) {
 	}
 }
 
+// A property value that is itself an operator reduces when the enclosing spread object reduces, the
+// same per-element reduction reduceTuple runs on a tuple element. `{k: keyof {a}, ...A}` merges to
+// `{k: "a", b: ...}`, with the `k` field's `keyof` projected rather than left symbolic.
+func TestInferObjectSpreadReducesFieldValues(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type A = {b: number}
+		type Result = {k: keyof {a: number}, ...A}
+	`)
+	require.Empty(t, errs)
+	result := nodes["Result"]
+	require.Equal(t, "{k: keyof {a: number}, ...A}", soltype.Print(result))
+	require.Equal(t, `{k: "a", b: number}`, soltype.Print(expandResidual(ctx, result)))
+}
+
 // An object spread over a type parameter has no ground operand shape, so it stays symbolic in a
 // function signature and round-trips from parameter to return. The reflexive `{...T} <: {...T}`
 // from `return x` succeeds inertly by structural equality on the residual, so the displayed
