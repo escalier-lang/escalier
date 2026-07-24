@@ -1118,6 +1118,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// types, compared without unwrapping — the query flows through the solver untouched.
 		b, ok := b.(*soltype.TypeofType)
 		return ok && a.Ident == b.Ident && equalTypeWith(a.Ty, b.Ty, ctx)
+	case *soltype.CondType:
+		// Two inert conditional residuals are equal when all four operands are equal, compared
+		// structurally without deciding either branch, the four-child analogue of the KeyofType arm.
+		b, ok := b.(*soltype.CondType)
+		return ok && equalTypeWith(a.Check, b.Check, ctx) && equalTypeWith(a.Extends, b.Extends, ctx) &&
+			equalTypeWith(a.Then, b.Then, ctx) && equalTypeWith(a.Else, b.Else, ctx)
 	case *soltype.RestSpreadType:
 		// Two `...P` spread elements are equal when their operands are, compared structurally
 		// without reducing. The enclosing TupleType arm compares element lists positionally, so a

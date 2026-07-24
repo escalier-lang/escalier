@@ -13,11 +13,11 @@ import (
 // operator over the unexpanded alias stays symbolic.
 const maxExpandDepth = 200
 
-// typeEvaluator reduces a residual type-level operator to its value. It handles `keyof T` and
-// indexed access `T[K]`; later operators join as they land. Only constrain invokes it, to check
-// a constraint against a residual. Annotation and display keep the residual symbolic, so a
-// stored type prints `keyof {x: number}` or `Point["x"]` the way the source wrote it, never the
-// reduced value.
+// typeEvaluator reduces a residual type-level operator to its value. It handles `keyof T`, indexed
+// access `T[K]`, and the conditional `if C : E { … } else { … }`; later operators join as they
+// land. Only constrain invokes it, to check a constraint against a residual. Annotation and display
+// keep the residual symbolic, so a stored type prints `keyof {x: number}` or `Point["x"]` the way
+// the source wrote it, never the reduced value.
 //
 // reduce projects the operand's keys: a ground `keyof {x: number}` yields `"x"`, and an alias or
 // class operand expands to the referenced type's keys, the transparent-but-named treatment an
@@ -47,6 +47,15 @@ type typeEvaluator struct {
 	ctx    *Context
 	active set.Set[string]
 	depth  int
+	// seen is the enclosing constraint's cycle-detection set, carried in so a conditional's
+	// `Check <: Extends` probe shares the caller's alias-cycle guard. A conditional reduces by
+	// re-entering constrain to decide its branch, and constrain expands an alias operand and
+	// re-reduces the conditional in its body, so a self-referential alias such as
+	// `type Bad = if Bad : number { number } else { string }` would recurse without bound if the
+	// probe started a fresh set. Reusing the caller's set closes that cycle the same way two
+	// structurally-equal instances of a recursive alias close through constrain's seen-set. The
+	// value solve seeds it fresh at each constraint site, and the test expander passes an empty set.
+	seen set.Set[constraintKey]
 	// errs collects the diagnostics a reduction produces. `keyof` reduction is total and adds
 	// none; indexed-access reduction records an UnknownObjectKeyError or a
 	// TupleIndexOutOfRangeError when a ground access resolves to no member. constrain reads
@@ -56,8 +65,8 @@ type typeEvaluator struct {
 	errs []SolverError
 }
 
-func newTypeEvaluator(ctx *Context) *typeEvaluator {
-	return &typeEvaluator{ctx: ctx, active: set.NewSet[string](), depth: maxExpandDepth}
+func newTypeEvaluator(ctx *Context, seen set.Set[constraintKey]) *typeEvaluator {
+	return &typeEvaluator{ctx: ctx, active: set.NewSet[string](), depth: maxExpandDepth, seen: seen}
 }
 
 // reduce reduces one type-level operator node to its value, returning any other type
@@ -74,11 +83,57 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		// A `typeof x` query reduces to the value's resolved type. constrain unwraps it directly
 		// in its pre-switch, so this arm serves a `typeof` reached through another operator.
 		return t.Ty
+	case *soltype.CondType:
+		return e.reduceCond(t)
 	case *soltype.TupleType:
 		return e.reduceTuple(t)
 	default:
 		return t
 	}
+}
+
+// reduceCond reduces `if Check : Extends { Then } else { Else }` by deciding `Check <: Extends`
+// and selecting a branch, mirroring the old checker's CondType case
+// (internal/checker/expand_type.go), which unifies Check with Extends and returns Then on success
+// or Else on failure. The decision runs only when both operands are ground:
+//
+//   - a ground Check and Extends decide the branch with an assignability probe, and the reduction
+//     continues into the selected branch alone, so an error in the unselected branch never surfaces;
+//   - a Check or Extends still carrying a type parameter or an unreduced residual keeps the whole
+//     conditional symbolic, rebuilt around the reduced Check and Extends, and reduces later once
+//     they ground. Then and Else stay unreduced in the symbolic form, since neither is selected yet.
+//
+// Distribution over a naked type-parameter union and the `infer` clause are M9 PR3b, so a bare
+// type-parameter Check stays symbolic here rather than distributing.
+func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
+	check := e.reduce(t.Check)
+	extends := e.reduce(t.Extends)
+	if !condOperandGround(check) || !condOperandGround(extends) {
+		return &soltype.CondType{Check: check, Extends: extends, Then: t.Then, Else: t.Else}
+	}
+	if e.ctx.condExtends(check, extends, e.seen) {
+		return e.reduce(t.Then)
+	}
+	return e.reduce(t.Else)
+}
+
+// condExtends decides a conditional's `Check <: Extends` test with an assignability probe. The
+// trial runs under a discard-only probe, so a speculative match records no bound and leaves no
+// solver state behind, preserving the evaluator's no-mutation invariant. It runs constrain over a
+// clone of the caller's cycle-detection set, so a recursive alias reached through the probe closes
+// through the same seen-set the caller built up, while the clone keeps the probe's own keys out of
+// the caller's set. An empty result means the subtype check held, selecting the Then branch.
+func (c *Context) condExtends(check, extends soltype.Type, seen set.Set[constraintKey]) bool {
+	return !hasHardError(c.trialUnderProbeSeen(check, extends, seen.Clone()))
+}
+
+// condOperandGround reports whether a conditional's Check or Extends operand is ground enough to
+// decide the branch. An operand carrying a type variable, a skolem, or an unreduced residual
+// operator is abstract, so the `Check <: Extends` probe cannot decide a branch over it and the
+// conditional stays symbolic. containsFreeVar catches the variable and skolem cases;
+// containsResidualOp catches a residual such as a `keyof T` the reduction left symbolic.
+func condOperandGround(t soltype.Type) bool {
+	return !containsFreeVar(t) && !containsResidualOp(t)
 }
 
 // reduceTuple splices each `...P` spread element whose operand grounds to a concrete tuple into
@@ -168,12 +223,14 @@ func (e *typeEvaluator) groundSpreadOperand(operand soltype.Type) soltype.Type {
 // operator symbolic, rebuilt around the operand.
 func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Type {
 	switch op := operand.(type) {
-	case *soltype.KeyofType:
-		// The operand is itself a keyof operator. Reduce it first, then take keyof its value. If
-		// the inner operator stays symbolic because its own operand is not ground, wrap it as
-		// `keyof (keyof …)` rather than re-reducing the same shape forever.
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType:
+		// The operand is itself an operator — a `keyof`, an indexed access, or a conditional. Reduce
+		// it first, then take keyof its value, so a ground conditional operand selects its branch and
+		// `keyof` projects that branch's keys. If the inner operator stays symbolic because its own
+		// operands are not ground, wrap it as `keyof <inner>` rather than re-reducing the same shape
+		// forever.
 		inner := e.reduce(op)
-		if _, stillKeyof := inner.(*soltype.KeyofType); stillKeyof {
+		if isResidualOp(inner) {
 			return &soltype.KeyofType{Operand: inner, Exact: exact}
 		}
 		return e.reduceKeyof(inner, exact)
@@ -331,10 +388,12 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) solt
 	case *soltype.TypeofType:
 		// `(typeof x)[K]` resolves the query to the value's type, then indexes that type.
 		return e.reduceIndex(tgt.Ty, idx, exact)
-	case *soltype.KeyofType, *soltype.IndexType:
-		// The target is itself an operator. Reduce it first, then index its value. When it
-		// stays symbolic because its own operands are not ground, keep the access wrapped
-		// around the reduced target rather than re-reducing the same shape forever.
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType:
+		// The target is itself an operator — a `keyof`, an indexed access, or a conditional. Reduce
+		// it first, then index its value, so a ground conditional target selects its branch and the
+		// access reduces over that. When the target stays symbolic because its own operands are not
+		// ground, keep the access wrapped around the reduced target rather than re-reducing the same
+		// shape forever.
 		inner := e.reduce(target)
 		if isResidualOp(inner) {
 			return &soltype.IndexType{Target: inner, Index: idx, Exact: exact}
@@ -495,11 +554,11 @@ func strLitName(t soltype.Type) (string, bool) {
 }
 
 // isResidualOp reports whether t is an unreduced type-level operator node — a `keyof`, an indexed
-// access, or a `...P` tuple-spread element — at its top level. The evaluator consults it to stop
-// re-reducing an operand whose reduction stayed symbolic.
+// access, a conditional, or a `...P` tuple-spread element — at its top level. The evaluator consults
+// it to stop re-reducing an operand whose reduction stayed symbolic.
 func isResidualOp(t soltype.Type) bool {
 	switch t.(type) {
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.RestSpreadType:
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.RestSpreadType:
 		return true
 	}
 	return false
@@ -554,5 +613,32 @@ func (f *residualOpFinder) EnterType(t soltype.Type, pol soltype.Polarity) solty
 }
 
 func (f *residualOpFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	return t
+}
+
+// containsFreeVar reports whether t holds any type variable or skolem — an abstract leaf that makes
+// t non-ground. A conditional consults it to decide whether its Check and Extends are concrete
+// enough to probe `Check <: Extends`. A conditional whose Check is a bare type parameter stays
+// symbolic, since that parameter is a free variable.
+func containsFreeVar(t soltype.Type) bool {
+	f := &freeVarFinder{}
+	t.Accept(f, soltype.Positive)
+	return f.found
+}
+
+// freeVarFinder is the walking visitor behind containsFreeVar. It flags the first type variable or
+// skolem it reaches and skips that node's children, since one occurrence is enough.
+type freeVarFinder struct{ found bool }
+
+func (f *freeVarFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t.(type) {
+	case *soltype.TypeVarType, *soltype.SkolemType:
+		f.found = true
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *freeVarFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	return t
 }
