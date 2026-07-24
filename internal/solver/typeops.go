@@ -269,6 +269,9 @@ func mergeSpreadOperands(operandElems [][]soltype.ObjTypeElem) []soltype.ObjType
 // `A = {k: number}` and `B = {k?: string}` therefore yields `k: number | string`, required. A
 // non-property member on either side has no optional flag to key the union off, so the later one
 // overrides.
+//
+// The later operand supplies the merged Readonly flag in both branches, the same rightmost-wins
+// source the override branch uses when it returns the later member whole.
 func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 	ep, eok := earlier.(*soltype.PropertyElem)
 	lp, lok := later.(*soltype.PropertyElem)
@@ -279,7 +282,7 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 		Name:     ep.Name,
 		Type:     newUnion(nil, []soltype.Type{ep.Type, lp.Type}, false),
 		Optional: ep.Optional && lp.Optional,
-		Readonly: ep.Readonly,
+		Readonly: lp.Readonly,
 	}
 }
 

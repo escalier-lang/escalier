@@ -36,7 +36,7 @@ func TestInferErrorBindingFlowsIntoCallNoCascade(t *testing.T) {
 // An object spread over an unknown identifier walks its operand, which recovers to the ErrorType
 // sentinel. The spread absorbs that sentinel rather than layering a SpreadNotObjectError on it, so
 // the only error is the unknown-identifier one and the surrounding object still builds.
-func TestInferUnsupportedExprRecoversWithoutCascade(t *testing.T) {
+func TestInferObjectSpreadOverUnknownIdentifierRecovers(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val o = {...xs}
 	`)

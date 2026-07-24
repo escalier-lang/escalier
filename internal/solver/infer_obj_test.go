@@ -217,27 +217,51 @@ func TestInferObjectShorthandUnsupported(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
-// A spread element ({...o}) splices the operand object's fields into the literal (M9 PR5). A
-// concrete inline operand merges its fields; a later property on the same key overrides. An
-// operand with no ground object shape, such as the primitive below, reports a SpreadNotObjectError.
-func TestInferObjectSpreadMerges(t *testing.T) {
-	c := newChecker()
-	// {...{a: 1}, b: 2}
-	spread := ast.NewRestSpread(objExpr(prop("a", numExpr(1))), testSpan())
-	got := c.inferExpr(NewScope(), 0, objExpr(spread, prop("b", numExpr(2))))
-	require.Empty(t, c.errs)
-	require.Equal(t, "{a: 1, b: 2}", render(got))
-}
-
-// Spreading a value with no ground object shape — a primitive here — cannot merge its fields, so
-// it reports a SpreadNotObjectError and keeps the rest of the object.
-func TestInferObjectSpreadNonObject(t *testing.T) {
-	c := newChecker()
-	spread := ast.NewRestSpread(numExpr(5), testSpan())
-	got := c.inferExpr(NewScope(), 0, objExpr(spread, prop("b", numExpr(2))))
-	require.Equal(t, "{b: 2}", render(got))
-	require.Len(t, c.errs, 1)
-	require.Equal(t, "cannot spread 5 into an object", c.errs[0].Message())
+// A spread element ({...o}) splices the operand object's fields into the literal. A concrete inline
+// operand merges its fields; a later property on the same key overrides the spread field; an
+// operand with no ground object shape, such as a primitive, reports a SpreadNotObjectError and
+// keeps the rest of the object.
+func TestInferObjectSpread(t *testing.T) {
+	tests := []struct {
+		name       string
+		elems      []ast.ObjExprElem
+		wantRender string
+		wantErr    string // "" ⇒ expect no error
+	}{
+		{
+			// {...{a: 1}, b: 2} — the operand's field splices in beside the explicit property.
+			name:       "MergesInlineObject",
+			elems:      []ast.ObjExprElem{ast.NewRestSpread(objExpr(prop("a", numExpr(1))), testSpan()), prop("b", numExpr(2))},
+			wantRender: "{a: 1, b: 2}",
+		},
+		{
+			// {...{a: 1}, a: 2} — a later property on the same key overrides the spread field.
+			name:       "LaterPropertyOverrides",
+			elems:      []ast.ObjExprElem{ast.NewRestSpread(objExpr(prop("a", numExpr(1))), testSpan()), prop("a", numExpr(2))},
+			wantRender: "{a: 2}",
+		},
+		{
+			// {...5, b: 2} — a primitive has no ground object shape, so the spread reports an
+			// error and the rest of the object still builds.
+			name:       "NonObjectRejected",
+			elems:      []ast.ObjExprElem{ast.NewRestSpread(numExpr(5), testSpan()), prop("b", numExpr(2))},
+			wantRender: "{b: 2}",
+			wantErr:    "cannot spread 5 into an object",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newChecker()
+			got := c.inferExpr(NewScope(), 0, objExpr(tt.elems...))
+			require.Equal(t, tt.wantRender, render(got))
+			if tt.wantErr == "" {
+				require.Empty(t, c.errs)
+				return
+			}
+			require.Len(t, c.errs, 1)
+			require.Equal(t, tt.wantErr, c.errs[0].Message())
+		})
+	}
 }
 
 // A computed key ({[k]: v}) carries no static field name — M4.

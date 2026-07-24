@@ -219,6 +219,17 @@ func TestInferObjectSpreadLiteral(t *testing.T) {
 			src:     `val o = {...5, x: 1}`,
 			wantErr: "cannot spread 5 into an object",
 		},
+		{
+			// A bare variable operand stays a type variable during the value solve, like the
+			// array-spread literal, so it has no ground object shape to merge and is rejected.
+			// The message names the raw mid-solve variable the operand inferred to.
+			name: "SpreadVariableRejected",
+			src: `
+				val x = {a: 1}
+				val o = {...x}
+			`,
+			wantErr: "cannot spread t2 into an object",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -232,4 +243,16 @@ func TestInferObjectSpreadLiteral(t *testing.T) {
 			require.Equal(t, tt.want, values["o"])
 		})
 	}
+}
+
+// A rejected constraint whose subject is an object-spread residual names it structurally in the
+// diagnostic — `{...t1, ...}` rather than the bare `?` the default describe arm would render — so
+// the inert node stays legible in error messages. The trailing `...` marks the residual inexact,
+// matching soltype.Print. describe is the raw mid-constrain renderer, so the operand shows as the
+// raw var `t1` rather than the param name `T` the coalesced printer would use.
+func TestInferObjectSpreadResidualErrorMessage(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f<T>(x: {...T, ...}) -> number { return x }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, "1:12-1:23: cannot constrain {...t1, ...} <: number", msgWithSpan(errs[0]))
 }

@@ -1806,6 +1806,11 @@ func describe(t soltype.Type) string {
 				}
 			}
 		}
+		if t.Inexact {
+			// A trailing `...` marks the residual inexact, matching soltype.Print and the
+			// UnionType arm so a diagnostic naming the spread reads `{...t1, ...}`.
+			parts = append(parts, "...")
+		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
