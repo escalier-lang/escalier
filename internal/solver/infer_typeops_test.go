@@ -853,6 +853,14 @@ func TestInferTupleSpreadReduction(t *testing.T) {
 			wantExpanded: "[number, string, boolean]",
 		},
 		{
+			// Nested spreads collapse inside-out: each spread operand reduces before the outer
+			// splice, so a chain of single-element spreads flattens to the innermost tuple.
+			name:         "NestedSpreads",
+			src:          `type Result = [...[...[...[number]]]]`,
+			wantSymbolic: "[...[...[...[number]]]]",
+			wantExpanded: "[number]",
+		},
+		{
 			// Two spread operands splice left to right around a positional element.
 			name: "TwoSpreads",
 			src: `
