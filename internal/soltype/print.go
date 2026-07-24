@@ -41,6 +41,11 @@ func typePrec(t Type) int {
 		return precAtom
 	case *TypeofType:
 		return precPrefix
+	case *CondType:
+		// `if C : E { T } else { E }` is self-delimiting — the leading `if` and trailing `}` bound
+		// it — so it binds like an atom and never needs outer parens, matching type_system's
+		// CondType rendering.
+		return precAtom
 	case *RestSpreadType:
 		// A `...P` spread element only appears inside a tuple's bracket list, which prints each
 		// element unparenthesized, so its precedence is consulted only if it is rendered on its
@@ -419,6 +424,11 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Index)
 		case *TypeofType:
 			walk(t.Ty)
+		case *CondType:
+			walk(t.Check)
+			walk(t.Extends)
+			walk(t.Then)
+			walk(t.Else)
 		case *RestSpreadType:
 			walk(t.Operand)
 		case *PromiseType:
@@ -635,6 +645,13 @@ func (p *namedPrinter) printType(t Type) string {
 		// `typeof x`, the value reference the source wrote. The resolved value type is not
 		// rendered — the query stays symbolic, so `keyof typeof x` prints as written.
 		return "typeof " + t.Ident
+	case *CondType:
+		// `if Check : Extends { Then } else { Else }`, the surface conditional-type syntax the
+		// parser reads and the AST printer writes. Each operand prints with no minimum precedence:
+		// the `:`, `{`, `}`, and `else` delimiters bound every position, so none can bind across a
+		// neighbor and none needs parens.
+		return "if " + p.printType(t.Check) + " : " + p.printType(t.Extends) +
+			" { " + p.printType(t.Then) + " } else { " + p.printType(t.Else) + " }"
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:

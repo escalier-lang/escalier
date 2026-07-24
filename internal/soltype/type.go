@@ -633,6 +633,22 @@ type TypeofType struct {
 	Ty    Type
 }
 
+// CondType is the residual `if Check : Extends { Then } else { Else }` conditional type operator
+// (M9 PR3a). Like KeyofType it is inert: it carries no bounds, constrain never records one against
+// it, and it flows through the solver's structural machinery untouched, rendering the way the
+// source wrote it. An evaluator reduces it once Check and Extends are ground, reusing the M9 PR1b
+// machinery. It decides `Check <: Extends` with an assignability probe and reduces to Then on
+// success or Else on failure. Until then a conditional over a type parameter stays symbolic. The
+// `infer` clause in
+// Extends and distribution over a naked type-parameter union are M9 PR3b, so a Check that is a bare
+// type parameter keeps the whole conditional symbolic here.
+type CondType struct {
+	Check   Type
+	Extends Type
+	Then    Type
+	Else    Type
+}
+
 // RestSpreadType is the residual `...P` spread element inside a tuple type, mirroring the old
 // checker's RestSpreadType (internal/type_system/types.go). It is only meaningful as an element of
 // a TupleType.Elems list: `[...P, x]` is a TupleType whose first element is a RestSpreadType. A
@@ -649,6 +665,7 @@ func (*TypeVarType) isType()      {}
 func (*KeyofType) isType()        {}
 func (*IndexType) isType()        {}
 func (*TypeofType) isType()       {}
+func (*CondType) isType()         {}
 func (*RestSpreadType) isType()   {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
@@ -738,6 +755,11 @@ func LevelOf(t Type) int {
 		// A `typeof x` query's level is its resolved value type's, the same single-child rule
 		// KeyofType and PromiseType follow.
 		return LevelOf(t.Ty)
+	case *CondType:
+		// A conditional residual's level is the max over its four operands, so an out-of-level
+		// operand lifts the level and the freshener/extruder prune descends into all four, the
+		// four-child analogue of the two-child IndexType arm.
+		return max(max(LevelOf(t.Check), LevelOf(t.Extends)), max(LevelOf(t.Then), LevelOf(t.Else)))
 	case *RestSpreadType:
 		// A `...P` spread element's level is its operand's, so an out-of-level spread operand lifts
 		// the enclosing tuple's level and the freshener/extruder prune descends to freshen it, the

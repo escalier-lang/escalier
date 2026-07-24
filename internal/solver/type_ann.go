@@ -87,6 +87,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.resolveIndexTypeAnn(scope, ta, lvl)
 	case *ast.TypeOfTypeAnn:
 		return c.resolveTypeOfTypeAnn(scope, ta)
+	case *ast.CondTypeAnn:
+		return c.resolveCondTypeAnn(scope, ta, lvl)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -283,6 +285,63 @@ func (c *checker) resolveIndexTypeAnn(scope *Scope, ta *ast.IndexTypeAnn, lvl in
 	t := &soltype.IndexType{Target: target, Index: index}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// resolveCondTypeAnn lowers `if Check : Extends { Then } else { Else }` to a CondType residual and
+// stores it unreduced, so the annotation prints the way the source wrote it. constrain decides the
+// branch when it checks a constraint against it: a ground `Check <: Extends` probe selects Then or
+// Else, while a conditional over a type parameter stays symbolic. An unsupported operand recovers to
+// a fresh var, cascade-safe like the Promise<bad> recovery.
+//
+// The `infer` clause is M9 PR3b, so a conditional whose Extends holds an `infer` reports an
+// unsupported feature and recovers. Branch selection here has no matcher to bind the `infer` name.
+// Resolving the Extends anyway would recover each `infer U` to a fresh var and silently mis-decide
+// the branch, so rejecting it keeps the two milestones cleanly split.
+func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int) (soltype.Type, bool) {
+	if annContainsInfer(ta.Extends) {
+		return c.reportUnsupportedFeature(ta, "infer clause in conditional type"), false
+	}
+	check, ok := c.resolveTypeAnn(scope, ta.Check, lvl)
+	if !ok {
+		check = c.freshAt(lvl)
+	}
+	extends, ok := c.resolveTypeAnn(scope, ta.Extends, lvl)
+	if !ok {
+		extends = c.freshAt(lvl)
+	}
+	then, ok := c.resolveTypeAnn(scope, ta.Then, lvl)
+	if !ok {
+		then = c.freshAt(lvl)
+	}
+	els, ok := c.resolveTypeAnn(scope, ta.Else, lvl)
+	if !ok {
+		els = c.freshAt(lvl)
+	}
+	t := &soltype.CondType{Check: check, Extends: extends, Then: then, Else: els}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// annContainsInfer reports whether a type annotation subtree holds an `infer U` clause. A
+// conditional consults it on its Extends operand to reject the `infer` form, which M9 PR3b handles.
+func annContainsInfer(ta ast.TypeAnn) bool {
+	f := &inferAnnFinder{}
+	ta.Accept(f)
+	return f.found
+}
+
+// inferAnnFinder is the AST visitor behind annContainsInfer. It flags the first InferTypeAnn it
+// reaches and keeps walking; one occurrence is enough to answer.
+type inferAnnFinder struct {
+	ast.DefaultVisitor
+	found bool
+}
+
+func (f *inferAnnFinder) EnterTypeAnn(ta ast.TypeAnn) bool {
+	if _, ok := ta.(*ast.InferTypeAnn); ok {
+		f.found = true
+	}
+	return true
 }
 
 // resolveTypeOfTypeAnn lowers a `typeof v` query to a TypeofType residual: it resolves the value's

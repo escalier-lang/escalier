@@ -217,6 +217,27 @@ func (t *TypeofType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *CondType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// All four operands walk in the current polarity, the four-child analogue of KeyofType's
+	// single covariant visit. The residual is inert — the visit rebuilds it around rewritten
+	// operands without deciding the branch, so extrude/coalesce/freshenAbove carry the whole
+	// conditional through untouched.
+	check := cur.Check.Accept(v, pol)
+	extends := cur.Extends.Accept(v, pol)
+	then := cur.Then.Accept(v, pol)
+	els := cur.Else.Accept(v, pol)
+	out := cur
+	if check != cur.Check || extends != cur.Extends || then != cur.Then || els != cur.Else {
+		out = &CondType{Check: check, Extends: extends, Then: then, Else: els}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *RestSpreadType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {

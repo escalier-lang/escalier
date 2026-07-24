@@ -1763,6 +1763,12 @@ func describe(t soltype.Type) string {
 		// unwraps it to the resolved type before comparing, so a diagnostic rarely names the
 		// query itself, but a rejected bound that still carries it reads `typeof x`.
 		return "typeof " + t.Ident
+	case *soltype.CondType:
+		// A conditional residual renders structurally as the surface syntax, recursing like the
+		// keyof arm, so a rejected constraint over a symbolic conditional names it in full rather
+		// than the default `?`. Every operand renders in describe's raw mid-constrain form.
+		return "if " + describe(t.Check) + " : " + describe(t.Extends) +
+			" { " + describe(t.Then) + " } else { " + describe(t.Else) + " }"
 	case *soltype.RestSpreadType:
 		// A `...P` spread element renders `...` over its operand, reached in place when the
 		// enclosing spread-carrying TupleType arm above describes its elements. The operand renders
