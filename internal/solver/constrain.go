@@ -156,6 +156,17 @@ func (c *Context) evalTypeOperator(t soltype.Type) (soltype.Type, []SolverError,
 			return nil, nil, false
 		}
 		return c.reduceResidual(t)
+	case *soltype.ObjectSpreadType:
+		e := newTypeEvaluator(c)
+		reduced := e.reduce(t)
+		// A spread whose operands ground merges to an ObjectType. One with an abstract operand
+		// stays an ObjectSpreadType, which is inert, so leave it for the structural switch. The
+		// check is on the root rather than reduceResidual's containsResidualOp: a merged object
+		// grounds even when a field value is itself a residual, which reduces at its own site.
+		if _, stillSpread := reduced.(*soltype.ObjectSpreadType); stillSpread {
+			return nil, nil, false
+		}
+		return reduced, e.errs, true
 	default:
 		return nil, nil, false
 	}
@@ -772,6 +783,19 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		// which records the whole residual as one lower bound, keeping the operator symbolic on the
 		// coalesced binding. A tuple carrying a `...P` spread is handled inertly in the TupleType arm
 		// above, the spread twin of this arm.
+		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+			if equalType(sub, super) {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+		}
+	case *soltype.ObjectSpreadType:
+		// An object spread the pre-switch could not ground reaches here: a `{...A}` over a type
+		// parameter, or a truncated expanding alias. constrain treats it inert like a `keyof`
+		// residual, neither merging nor decomposing it, so two residuals are compatible only when
+		// structurally identical. When super is a variable the case falls through to the superVar
+		// arm below, which records the whole residual as one lower bound so the operator stays
+		// symbolic on the coalesced binding.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if equalType(sub, super) {
 				return nil

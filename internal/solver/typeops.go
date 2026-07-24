@@ -76,6 +76,8 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		return t.Ty
 	case *soltype.TupleType:
 		return e.reduceTuple(t)
+	case *soltype.ObjectSpreadType:
+		return e.reduceObjectSpread(t)
 	default:
 		return t
 	}
@@ -150,6 +152,135 @@ func (e *typeEvaluator) groundSpreadOperand(operand soltype.Type) soltype.Type {
 	return e.expandAliasGuarded(alias, reduced, func(body soltype.Type) soltype.Type {
 		return e.groundSpreadOperand(body)
 	})
+}
+
+// reduceObjectSpread merges an object spread's operands left to right into a plain ObjectType,
+// following Flow's spread semantics. Each operand contributes its fields; a later field wins over
+// an earlier key, except that a later optional field unions with the earlier value rather than
+// overriding it — see mergeSpreadElem.
+//
+// The merge runs only when every spread operand grounds to a concrete object. groundToObject
+// expands an alias, projects a class body, and resolves a `typeof` query under the same
+// termination guard reduceKeyofAlias uses. A spread operand that stays abstract — a type
+// parameter, or a truncated expanding alias — leaves the whole operator symbolic, rebuilt around
+// its reduced operands so it merges later once the operand grounds. An inline field group is
+// always concrete, since resolveObjectTypeAnn builds it from explicit properties.
+func (e *typeEvaluator) reduceObjectSpread(t *soltype.ObjectSpreadType) soltype.Type {
+	operandElems := make([][]soltype.ObjTypeElem, 0, len(t.Operands))
+	inexact := t.Inexact
+	reduced := make([]soltype.ObjectSpreadOperand, len(t.Operands))
+	ground := true
+	for i, op := range t.Operands {
+		if !op.Spread {
+			// An inline field group is an ObjectType of explicit properties, already concrete.
+			reduced[i] = op
+			if obj, ok := op.Type.(*soltype.ObjectType); ok {
+				operandElems = append(operandElems, obj.Elems)
+				inexact = inexact || obj.Inexact
+			}
+			continue
+		}
+		obj, ok := e.groundToObject(op.Type)
+		if !ok {
+			// The operand is not a concrete object yet. Keep the reduced operand so the residual
+			// carries any progress made, and mark the whole operator not ground.
+			reduced[i] = soltype.ObjectSpreadOperand{Spread: true, Type: e.reduce(op.Type)}
+			ground = false
+			continue
+		}
+		reduced[i] = op
+		operandElems = append(operandElems, obj.Elems)
+		inexact = inexact || obj.Inexact
+	}
+	if !ground {
+		return &soltype.ObjectSpreadType{Operands: reduced, Inexact: t.Inexact}
+	}
+	return &soltype.ObjectType{Elems: mergeSpreadOperands(operandElems), Inexact: inexact}
+}
+
+// groundToObject reduces a spread operand to the concrete ObjectType whose fields it contributes,
+// reporting false when the operand has no ground object shape. It resolves a `typeof` query to the
+// value's type, projects a class instance body, and expands an alias under the active-state and
+// depth guard reduceKeyofAlias uses, so a recursive alias reached through a spread terminates. A
+// type variable, a skolem, or any other kind has no object shape and reports false.
+func (e *typeEvaluator) groundToObject(operand soltype.Type) (*soltype.ObjectType, bool) {
+	switch op := operand.(type) {
+	case *soltype.ObjectType:
+		return op, true
+	case *soltype.TypeofType:
+		return e.groundToObject(op.Ty)
+	case *soltype.ClassType:
+		return e.ctx.projectClassBody(op)
+	case *soltype.ObjectSpreadType:
+		if obj, ok := e.reduceObjectSpread(op).(*soltype.ObjectType); ok {
+			return obj, true
+		}
+		return nil, false
+	case *soltype.AliasType:
+		key := soltype.PrintQualified(op)
+		if e.active.Contains(key) || e.depth <= 0 {
+			return nil, false
+		}
+		body := e.ctx.expandAlias(op)
+		if _, unresolved := body.(*soltype.ErrorType); unresolved {
+			return nil, false
+		}
+		e.active.Add(key)
+		e.depth--
+		obj, ok := e.groundToObject(body)
+		e.active.Remove(key)
+		e.depth++
+		return obj, ok
+	default:
+		return nil, false
+	}
+}
+
+// mergeSpreadOperands folds the field lists of an object spread's operands into one element list,
+// preserving first-appearance order. A field whose name is new is appended; one that overlaps an
+// earlier key is merged through mergeSpreadElem, so the operands compose left to right. It is
+// shared by the type-level reduction and the literal-level inferObject, so the spread merge rule
+// lives in one place.
+func mergeSpreadOperands(operandElems [][]soltype.ObjTypeElem) []soltype.ObjTypeElem {
+	total := 0
+	for _, elems := range operandElems {
+		total += len(elems)
+	}
+	out := make([]soltype.ObjTypeElem, 0, total)
+	pos := make(map[string]int, total)
+	for _, elems := range operandElems {
+		for _, elem := range elems {
+			name := soltype.ObjElemName(elem)
+			if i, seen := pos[name]; seen {
+				out[i] = mergeSpreadElem(out[i], elem)
+				continue
+			}
+			pos[name] = len(out)
+			out = append(out, elem)
+		}
+	}
+	return out
+}
+
+// mergeSpreadElem combines an earlier object member with a later one of the same name under Flow's
+// spread rule. A later required field overrides the earlier one, the rightmost-wins default. A
+// later optional field instead shows the earlier value through: the merged value unions
+// `earlier | later`, and the field stays required unless both are optional. `{...A, ...B}` with
+// `A = {k: number}` and `B = {k?: string}` therefore yields `k: number | string`, required. A
+// non-property member on either side has no optional flag to key the union off, so the later one
+// overrides.
+func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
+	ep, eok := earlier.(*soltype.PropertyElem)
+	lp, lok := later.(*soltype.PropertyElem)
+	if !eok || !lok || !lp.Optional {
+		return later
+	}
+	return &soltype.PropertyElem{
+		Name:     ep.Name,
+		Type:     newUnion(nil, []soltype.Type{ep.Type, lp.Type}, false),
+		Optional: ep.Optional && lp.Optional,
+		Readonly: ep.Readonly,
+	}
 }
 
 // reduceKeyof reduces `keyof operand` to the union of the operand's keys, mirroring the old

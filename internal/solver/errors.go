@@ -279,6 +279,17 @@ type InexactTupleSpreadError struct {
 	Operand *soltype.TupleType
 }
 
+// SpreadNotObjectError fires when an object-literal spread element ({...o}) has an
+// operand that has no ground object shape, so its fields cannot be merged into the
+// literal. The merge copies the operand object's fields in, so the operand must ground
+// to a concrete object — directly, or through an alias, class, or `typeof` query. A
+// spread of a type variable or a primitive cannot be merged statically. Spread is the
+// offending spread element and carries the blame span. Operand is the type it inferred to.
+type SpreadNotObjectError struct {
+	Spread  *ast.ObjSpreadExpr
+	Operand soltype.Type
+}
+
 // MutFieldError fires when a `mut T` annotation appears as an object property
 // value or a tuple element inside a non-mut container — `{a: mut {x}}` or
 // `[mut {x}]`. An owned-mutable cell nested inside an immutable container is
@@ -391,6 +402,7 @@ func (*FuncArityMismatchError) isSolverError()      {}
 func (*TupleLengthMismatchError) isSolverError()    {}
 func (*SpreadNotTupleError) isSolverError()         {}
 func (*InexactTupleSpreadError) isSolverError()     {}
+func (*SpreadNotObjectError) isSolverError()        {}
 func (*MissingPropertyError) isSolverError()        {}
 func (*InexactIntoExactError) isSolverError()       {}
 func (*InexactTupleIntoExactError) isSolverError()  {}
@@ -1562,6 +1574,12 @@ func (e *InexactTupleSpreadError) Message() string {
 	return "cannot spread an inexact tuple except as the last element"
 }
 
+func (e *SpreadNotObjectError) Span() ast.Span      { return e.Spread.Span() }
+func (e *SpreadNotObjectError) Related() []ast.Span { return nil }
+func (e *SpreadNotObjectError) Message() string {
+	return "cannot spread " + describe(e.Operand) + " into an object"
+}
+
 func (e *MissingPropertyError) Message() string {
 	return "object is missing property: " + e.Name
 }
@@ -1768,6 +1786,27 @@ func describe(t soltype.Type) string {
 		// enclosing spread-carrying TupleType arm above describes its elements. The operand renders
 		// in describe's raw mid-constrain form.
 		return "..." + describe(t.Operand)
+	case *soltype.ObjectSpreadType:
+		// An object spread renders structurally, recursing over its operands like the Promise
+		// arm, so a rejected constraint reads `{...t1, x: number}` rather than the default `?`.
+		// A spread operand shows `...` over its raw mid-constrain form; an inline field group
+		// shows its fields. describe carries the residual beside soltype.Print, so a later
+		// operator node must add an arm here as well as there.
+		parts := make([]string, 0, len(t.Operands))
+		for _, op := range t.Operands {
+			if op.Spread {
+				parts = append(parts, "..."+describe(op.Type))
+				continue
+			}
+			if obj, ok := op.Type.(*soltype.ObjectType); ok {
+				for _, e := range obj.Elems {
+					if p, ok := e.(*soltype.PropertyElem); ok {
+						parts = append(parts, p.Name+": "+describe(p.Type))
+					}
+				}
+			}
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
 		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2

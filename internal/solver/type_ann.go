@@ -115,6 +115,11 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 // recovery — so the binding still checks structurally. The arm therefore always
 // returns ok=true: any unsupported sub-part has already reported its own error.
 func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
+	for _, elem := range ta.Elems {
+		if _, ok := elem.(*ast.RestSpreadTypeAnn); ok {
+			return c.resolveObjectSpreadTypeAnn(scope, ta, lvl)
+		}
+	}
 	b := newObjElemBuilder(len(ta.Elems))
 	unsupported := false
 	for _, elem := range ta.Elems {
@@ -123,28 +128,9 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 			unsupported = true
 			continue
 		}
-		name, ok := objKeyName(prop.Name)
+		name, ft, ok := c.resolveObjectProperty(scope, prop, lvl)
 		if !ok {
-			c.reportUnsupported(prop.Name)
 			continue
-		}
-		// A missing or unsupported value annotation recovers to a fresh var, keeping
-		// the object shape cascade-safe — mirroring the Promise<bad> recovery.
-		var ft soltype.Type = c.freshAt(lvl)
-		if prop.Value != nil {
-			value := prop.Value
-			// An owned-mutable field `{a: mut {x}}` is rejected (#779): a `mut` cell
-			// nested inside a non-mut container is misleading, since the container's
-			// immutability already reaches into the field. Recover to the field's bare
-			// inner so the object keeps a sensible shape. A `&`/`&mut` borrow field is a
-			// reference to external storage, not an interior cell, so it stays legal.
-			if mta, ok := value.(*ast.MutableTypeAnn); ok {
-				c.report(&MutFieldError{Ann: mta})
-				value = mta.Target
-			}
-			if t, ok := c.resolveTypeAnn(scope, value, lvl); ok {
-				ft = t
-			}
 		}
 		b.add(name, ft, prop.Optional, prop.Readonly)
 	}
@@ -152,6 +138,85 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 		c.reportUnsupportedFeature(ta, "object type member other than a property")
 	}
 	t := &soltype.ObjectType{Elems: b.elems, Inexact: ta.Inexact}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveObjectProperty lowers one `name: T` / `name?: T` property annotation to its name and
+// resolved field type. It reports false only when the property key is not a static name. A missing
+// or unsupported value annotation recovers to a fresh var, keeping the object shape cascade-safe,
+// mirroring the Promise<bad> recovery. Shared by the plain-object and object-spread arms.
+func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn, lvl int) (string, soltype.Type, bool) {
+	name, ok := objKeyName(prop.Name)
+	if !ok {
+		c.reportUnsupported(prop.Name)
+		return "", nil, false
+	}
+	var ft soltype.Type = c.freshAt(lvl)
+	if prop.Value != nil {
+		value := prop.Value
+		// An owned-mutable field `{a: mut {x}}` is rejected (#779): a `mut` cell
+		// nested inside a non-mut container is misleading, since the container's
+		// immutability already reaches into the field. Recover to the field's bare
+		// inner so the object keeps a sensible shape. A `&`/`&mut` borrow field is a
+		// reference to external storage, not an interior cell, so it stays legal.
+		if mta, ok := value.(*ast.MutableTypeAnn); ok {
+			c.report(&MutFieldError{Ann: mta})
+			value = mta.Target
+		}
+		if t, ok := c.resolveTypeAnn(scope, value, lvl); ok {
+			ft = t
+		}
+	}
+	return name, ft, true
+}
+
+// resolveObjectSpreadTypeAnn lowers an object annotation carrying a `...A` spread to an
+// ObjectSpreadType residual and stores it unreduced, so the annotation prints the way the source
+// wrote it — `{...A, x: T}` renders `{...A, x: T}`, not the merged object. constrain merges the
+// residual when it checks a constraint against it. Consecutive explicit properties between spreads
+// group into one inline field-group operand; each `...A` becomes a spread operand. A non-property,
+// non-spread member reports an unsupported feature and is skipped, cascade-safe like the plain
+// object arm.
+func (c *checker) resolveObjectSpreadTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
+	operands := make([]soltype.ObjectSpreadOperand, 0, len(ta.Elems))
+	var pending *objElemBuilder
+	unsupported := false
+	flush := func() {
+		if pending == nil {
+			return
+		}
+		obj := &soltype.ObjectType{Elems: pending.elems}
+		operands = append(operands, soltype.ObjectSpreadOperand{Spread: false, Type: obj})
+		pending = nil
+	}
+	for _, elem := range ta.Elems {
+		switch elem := elem.(type) {
+		case *ast.PropertyTypeAnn:
+			name, ft, ok := c.resolveObjectProperty(scope, elem, lvl)
+			if !ok {
+				continue
+			}
+			if pending == nil {
+				pending = newObjElemBuilder(len(ta.Elems))
+			}
+			pending.add(name, ft, elem.Optional, elem.Readonly)
+		case *ast.RestSpreadTypeAnn:
+			flush()
+			src, ok := c.resolveTypeAnn(scope, elem.Value, lvl)
+			if !ok {
+				src = c.freshAt(lvl)
+			}
+			operands = append(operands, soltype.ObjectSpreadOperand{Spread: true, Type: src})
+		default:
+			unsupported = true
+		}
+	}
+	flush()
+	if unsupported {
+		c.reportUnsupportedFeature(ta, "object type member other than a property or spread")
+	}
+	t := &soltype.ObjectSpreadType{Operands: operands, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }

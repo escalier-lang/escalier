@@ -1124,6 +1124,21 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// spread element reaches here in place, the spread twin of the plain element comparison.
 		b, ok := b.(*soltype.RestSpreadType)
 		return ok && equalTypeWith(a.Operand, b.Operand, ctx)
+	case *soltype.ObjectSpreadType:
+		// Two inert object spreads are equal when they carry the same inexactness and their
+		// operands match positionally in spread-flag and type, compared without merging — the
+		// operator flows through the solver untouched, matching the KeyofType arm.
+		b, ok := b.(*soltype.ObjectSpreadType)
+		if !ok || a.Inexact != b.Inexact || len(a.Operands) != len(b.Operands) {
+			return false
+		}
+		for i, ao := range a.Operands {
+			bo := b.Operands[i]
+			if ao.Spread != bo.Spread || !equalTypeWith(ao.Type, bo.Type, ctx) {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }

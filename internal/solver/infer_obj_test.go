@@ -217,15 +217,27 @@ func TestInferObjectShorthandUnsupported(t *testing.T) {
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 
-// A spread element ({...o}) is M4; it reports unsupported without walking its
-// value, so the unknown `o` inside it never surfaces a second error.
-func TestInferObjectSpreadUnsupported(t *testing.T) {
+// A spread element ({...o}) splices the operand object's fields into the literal (M9 PR5). A
+// concrete inline operand merges its fields; a later property on the same key overrides. An
+// operand with no ground object shape, such as the primitive below, reports a SpreadNotObjectError.
+func TestInferObjectSpreadMerges(t *testing.T) {
 	c := newChecker()
-	spread := ast.NewRestSpread(identExpr("o"), testSpan())
-	got := c.inferExpr(NewScope(), 0, objExpr(spread))
-	require.Equal(t, "{}", render(got))
+	// {...{a: 1}, b: 2}
+	spread := ast.NewRestSpread(objExpr(prop("a", numExpr(1))), testSpan())
+	got := c.inferExpr(NewScope(), 0, objExpr(spread, prop("b", numExpr(2))))
+	require.Empty(t, c.errs)
+	require.Equal(t, "{a: 1, b: 2}", render(got))
+}
+
+// Spreading a value with no ground object shape — a primitive here — cannot merge its fields, so
+// it reports a SpreadNotObjectError and keeps the rest of the object.
+func TestInferObjectSpreadNonObject(t *testing.T) {
+	c := newChecker()
+	spread := ast.NewRestSpread(numExpr(5), testSpan())
+	got := c.inferExpr(NewScope(), 0, objExpr(spread, prop("b", numExpr(2))))
+	require.Equal(t, "{b: 2}", render(got))
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: ObjSpreadExpr", c.errs[0].Message())
+	require.Equal(t, "cannot spread 5 into an object", c.errs[0].Message())
 }
 
 // A computed key ({[k]: v}) carries no static field name — M4.

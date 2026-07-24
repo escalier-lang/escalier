@@ -645,11 +645,39 @@ type RestSpreadType struct {
 	Operand Type
 }
 
+// ObjectSpreadType is the residual object-spread operator `{...A, x: T}` (M9 PR5),
+// modeled on Flow's object spread. It is inert, sharing the KeyofType contract: it
+// carries no bounds, constrain never records one against it, and it flows through the
+// solver's structural machinery untouched. An evaluator merges its operands into a plain
+// ObjectType once every spread operand is a ground object. Until then a spread over a type
+// parameter stays symbolic and renders `{...A, x: T}` the way the source wrote it.
+//
+// Operands merge left to right, so a later operand's field wins over an earlier key. The
+// one exception is Flow's optional show-through rule: when a later operand's field is
+// optional and overlaps an earlier key, the two value types union rather than the later
+// overriding. Inexact records the annotation's trailing `...` marker. Reduction also folds
+// in each spread operand's own inexactness, so a spread of an inexact object is inexact.
+type ObjectSpreadType struct {
+	Operands []ObjectSpreadOperand
+	Inexact  bool
+}
+
+// ObjectSpreadOperand is one operand of an ObjectSpreadType. Spread is true for a `...A`
+// operand, whose Type is the spread source. Spread is false for an inline field group such
+// as `x: T, y: U` written between spreads, whose Type is an ObjectType holding those fields.
+// Keeping the two apart lets the printer render `...A` as a spread and the field group
+// inline, so the operator round-trips to the source form.
+type ObjectSpreadOperand struct {
+	Spread bool
+	Type   Type
+}
+
 func (*TypeVarType) isType()      {}
 func (*KeyofType) isType()        {}
 func (*IndexType) isType()        {}
 func (*TypeofType) isType()       {}
 func (*RestSpreadType) isType()   {}
+func (*ObjectSpreadType) isType() {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
@@ -744,6 +772,15 @@ func LevelOf(t Type) int {
 		// same single-child rule the KeyofType arm follows. The TupleType arm already maxes over its
 		// elements, so this element contributes its operand's level there.
 		return LevelOf(t.Operand)
+	case *ObjectSpreadType:
+		// A residual object spread's level is the max over its operands, so a spread of an
+		// out-of-level type parameter lifts the level and the freshener/extruder prune descends
+		// to freshen the operand, the same rule the single-child KeyofType arm applies.
+		m := 0
+		for _, op := range t.Operands {
+			m = max(m, LevelOf(op.Type))
+		}
+		return m
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:
