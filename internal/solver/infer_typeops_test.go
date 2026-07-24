@@ -1009,5 +1009,7 @@ func TestInferTupleSpreadExpandingAliasTerminates(t *testing.T) {
 		type A<T> = [T, ...A<[T]>]
 		val r: [...A<number>, boolean] = [1, 2]
 	`)
-	require.NotEmpty(t, errs)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, "3:36-3:42: cannot constrain tuple <: [...A<number>, boolean]", msgWithSpan(errs[0]))
 }
