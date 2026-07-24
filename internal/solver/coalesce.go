@@ -1118,6 +1118,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// types, compared without unwrapping — the query flows through the solver untouched.
 		b, ok := b.(*soltype.TypeofType)
 		return ok && a.Ident == b.Ident && equalTypeWith(a.Ty, b.Ty, ctx)
+	case *soltype.RestSpreadType:
+		// Two `...P` spread elements are equal when their operands are, compared structurally
+		// without reducing. The enclosing TupleType arm compares element lists positionally, so a
+		// spread element reaches here in place, the spread twin of the plain element comparison.
+		b, ok := b.(*soltype.RestSpreadType)
+		return ok && equalTypeWith(a.Operand, b.Operand, ctx)
 	}
 	return false
 }

@@ -633,10 +633,23 @@ type TypeofType struct {
 	Ty    Type
 }
 
+// RestSpreadType is the residual `...P` spread element inside a tuple type, mirroring the old
+// checker's RestSpreadType (internal/type_system/types.go). It is only meaningful as an element of
+// a TupleType.Elems list: `[...P, x]` is a TupleType whose first element is a RestSpreadType. A
+// tuple carrying one is inert — constrain passes it through untouched, the "adds no new mutable
+// solver state" invariant it shares with KeyofType — until the evaluator splices Operand's tuple
+// elements in at its position. A spread over a type parameter never grounds, so it stays symbolic
+// and renders `...T`. The M4 literal case `[...pair, 3]` over a known tuple value reduces in
+// inferTuple; this element covers the annotation over an abstract operand.
+type RestSpreadType struct {
+	Operand Type
+}
+
 func (*TypeVarType) isType()      {}
 func (*KeyofType) isType()        {}
 func (*IndexType) isType()        {}
 func (*TypeofType) isType()       {}
+func (*RestSpreadType) isType()   {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
 func (*FuncType) isType()         {}
@@ -725,6 +738,12 @@ func LevelOf(t Type) int {
 		// A `typeof x` query's level is its resolved value type's, the same single-child rule
 		// KeyofType and PromiseType follow.
 		return LevelOf(t.Ty)
+	case *RestSpreadType:
+		// A `...P` spread element's level is its operand's, so an out-of-level spread operand lifts
+		// the enclosing tuple's level and the freshener/extruder prune descends to freshen it, the
+		// same single-child rule the KeyofType arm follows. The TupleType arm already maxes over its
+		// elements, so this element contributes its operand's level there.
+		return LevelOf(t.Operand)
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:

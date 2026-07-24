@@ -818,3 +818,258 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 	require.Equal(t, `1:12-1:18: cannot constrain t1["a"] <: number`, msgWithSpan(errs[0]))
 }
+
+// A tuple-spread annotation `[...P, x]` is stored as a residual and reduced by splicing each
+// spread operand's tuple in position once the operand grounds to a concrete tuple. Each case
+// asserts the stored `Result` renders the way the source wrote it, then asserts that reducing it
+// with the alias environment — the expansion constrain performs to check a constraint — splices
+// the operands. The cases cover the operand shapes reduction handles: an inline tuple, a named
+// alias expanded to a tuple, an inexact operand spliced only as the last element, an inexact
+// operand in an earlier position that keeps the spread symbolic, and a trailing `...` marker.
+func TestInferTupleSpreadReduction(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
+	}{
+		{
+			// An inline tuple operand splices its elements in position.
+			name: "InlineTuple",
+			src: `
+				type Result = [...[number, string], boolean]
+			`,
+			wantSymbolic: "[...[number, string], boolean]",
+			wantExpanded: "[number, string, boolean]",
+		},
+		{
+			// A named alias operand expands to its tuple body, then splices.
+			name: "AliasOperand",
+			src: `
+				type Pair = [number, string]
+				type Result = [...Pair, boolean]
+			`,
+			wantSymbolic: "[...Pair, boolean]",
+			wantExpanded: "[number, string, boolean]",
+		},
+		{
+			// Nested spreads collapse inside-out: each spread operand reduces before the outer
+			// splice, so a chain of single-element spreads flattens to the innermost tuple.
+			name:         "NestedSpreads",
+			src:          `type Result = [...[...[...[number]]]]`,
+			wantSymbolic: "[...[...[...[number]]]]",
+			wantExpanded: "[number]",
+		},
+		{
+			// Two spread operands splice left to right around a positional element.
+			name: "TwoSpreads",
+			src: `
+				type Result = [...[number], string, ...[boolean]]
+			`,
+			wantSymbolic: "[...[number], string, ...[boolean]]",
+			wantExpanded: "[number, string, boolean]",
+		},
+		{
+			// An inexact operand spliced as the last element extends the prefix and carries its
+			// open tail, so the result is inexact too.
+			name: "InexactOperandLast",
+			src: `
+				type Rest = [number, ...]
+				type Result = [boolean, ...Rest]
+			`,
+			wantSymbolic: "[boolean, ...Rest]",
+			wantExpanded: "[boolean, number, ...]",
+		},
+		{
+			// An inexact operand in an earlier position would put a later element at an unknown
+			// position, so the spread stays symbolic around the expanded operand.
+			name: "InexactOperandNotLast",
+			src: `
+				type Rest = [number, ...]
+				type Result = [...Rest, boolean]
+			`,
+			wantSymbolic: "[...Rest, boolean]",
+			wantExpanded: "[...[number, ...], boolean]",
+		},
+		{
+			// A trailing `...` marker round-trips and reduces to an inexact tuple.
+			name: "TrailingInexactMarker",
+			src: `
+				type Result = [...[number], ...]
+			`,
+			wantSymbolic: "[...[number], ...]",
+			wantExpanded: "[number, ...]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			result := nodes["Result"]
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}
+
+// A tuple-spread residual over a type parameter renders symbolically in a function signature and
+// round-trips from parameter to return: `fn f<T>(x: [...T, number]) -> [...T, number] { return x }`
+// keeps `[...T, number]` on both positions. The reflexive `[...T, number] <: [...T, number]` from
+// `return x` succeeds inertly by structural equality on the residual, since the abstract operand
+// never grounds.
+func TestInferTupleSpreadSignatureStaysSymbolic(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f<T>(x: [...T, number]) -> [...T, number] { return x }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T>(x: [...T, number]) -> [...T, number]", values["f"])
+}
+
+// constrain reduces a ground tuple-spread annotation to the spliced tuple to check satisfaction,
+// while the stored type stays the residual. A value whose elements match the spliced positions is
+// accepted; a mismatch is rejected against the spliced element, so the diagnostic names the
+// reduced position. The reduction runs at every constraint site: a `val` annotation over an inline
+// operand, over an aliased operand, and an argument checked against a parameter's type.
+func TestInferTupleSpreadConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "InlineOperandAccepted",
+			src: `
+				val r: [...[number, string], boolean] = [1, "a", true]
+			`,
+		},
+		{
+			name: "InlineOperandRejected",
+			src: `
+				val r: [...[number, string], boolean] = [1, "a", "b"]
+			`,
+			wantErr: `cannot constrain "b" <: boolean`,
+		},
+		{
+			name: "AliasOperandAccepted",
+			src: `
+				type Pair = [number, string]
+				val r: [...Pair, boolean] = [1, "a", true]
+			`,
+		},
+		{
+			name: "AliasOperandRejected",
+			src: `
+				type Pair = [number, string]
+				val r: [...Pair, boolean] = [1, "a", 2]
+			`,
+			wantErr: `cannot constrain 2 <: boolean`,
+		},
+		{
+			name: "CallArgumentAccepted",
+			src: `
+				fn f(p: [...[number], string]) -> number { return 1 }
+				val r = f([1, "a"])
+			`,
+		},
+		{
+			name: "CallArgumentRejected",
+			src: `
+				fn f(p: [...[number], string]) -> number { return 1 }
+				val r = f([1, 2])
+			`,
+			wantErr: `cannot constrain 2 <: string`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A `mut` spread operand `[...mut P]` is rejected at the annotation site the same way a positional
+// `[mut X]` element is: the enclosing tuple decides mutability, so an owned-mutable operand nested
+// in it is misleading. The annotation reports MutFieldError and recovers to the bare operand, which
+// still splices in position, so `[...mut P, boolean]` over `type P = [number]` checks against
+// `[1, true]` with only the one diagnostic.
+func TestInferTupleSpreadMutOperandRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type P = [number]
+		val r: [...mut P, boolean] = [1, true]
+	`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &MutFieldError{}, errs[0])
+	require.Equal(t, "owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability", errs[0].Message())
+}
+
+// Checking a value against a tuple spread of an expanding recursive alias terminates instead of
+// looping. The reduction is budget-truncated and leaves a `[...A<…>, …]` residual, so constrain
+// does not recurse on it — re-expanding would grow the operand without bound — and the residual
+// stays inert, conservatively rejecting the value. The point is termination; the precise rejection
+// is a consequence of the truncation, which CheckRegular will reject at definition time in a later
+// milestone.
+func TestInferTupleSpreadExpandingAliasTerminates(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type A<T> = [T, ...A<[T]>]
+		val r: [...A<number>, boolean] = [1, 2]
+	`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, "3:36-3:42: cannot constrain tuple <: [...A<number>, boolean]", msgWithSpan(errs[0]))
+}
+
+// `keyof` and indexed access over a tuple carrying an unreduced `...P` spread stay symbolic: the
+// tuple has no ground index set until the spread grounds. Over a concrete inline spread the tuple
+// reduces first, so `keyof` projects the spliced indices and indexed access selects the spliced
+// element. Over an abstract operand both keep the operator symbolic rather than projecting the
+// `...P` element as a single position.
+func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
+	}{
+		{
+			// keyof over a ground spread reduces the tuple to [number, string, boolean], then
+			// projects its indices.
+			name:         "KeyofGroundSpread",
+			src:          `type Result = keyof [...[number, string], boolean]`,
+			wantSymbolic: "keyof [...[number, string], boolean]",
+			wantExpanded: "0 | 1 | 2",
+		},
+		{
+			// keyof over an abstract spread operand stays symbolic.
+			name:         "KeyofAbstractSpread",
+			src:          `fn f<T>(k: keyof [...T, boolean]) {}`,
+			wantSymbolic: "keyof [...T, boolean]",
+		},
+		{
+			// Indexed access over a ground spread reduces the tuple, then selects the element.
+			name:         "IndexGroundSpread",
+			src:          `type Result = [...[number, string], boolean][2]`,
+			wantSymbolic: "[...[number, string], boolean][2]",
+			wantExpanded: "boolean",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantExpanded == "" {
+				// A signature-level case: assert the residual renders symbolically and does not crash.
+				values, _, errs := inferSource(t, tt.src)
+				require.Empty(t, errs)
+				require.Equal(t, "fn <T>(k: "+tt.wantSymbolic+") -> void", values["f"])
+				return
+			}
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			result := nodes["Result"]
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}

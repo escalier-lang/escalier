@@ -156,36 +156,39 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	return t, true
 }
 
-// resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType,
-// honoring the trailing `...` inexact marker. A rest-spread / variadic element
-// (`[...P]`, `[number, ...Array<number>]`) defers with its type-level feature
-// (M9 / M7) and reports unsupported; the bare trailing `...` inexact marker is
-// carried on ta.Inexact, not as an element. An element whose annotation is
-// unsupported recovers to a fresh var so the tuple keeps its arity.
+// resolveTupleTypeAnn lowers a tuple type annotation to a soltype.TupleType, honoring the trailing
+// `...` inexact marker. A rest-spread element (`[...P, x]`) becomes a soltype.RestSpreadType
+// element; a tuple carrying one is a residual the evaluator reduces once the spread operand grounds
+// to a concrete tuple, splicing it in position. Until then a spread over a type parameter stays
+// symbolic. The bare trailing `...` inexact marker is carried on ta.Inexact, not as an element. An
+// element whose annotation is unsupported recovers to a fresh var so the tuple keeps its arity. A
+// `[number, ...Array<number>]` variadic tail is distinct and stays out of scope until Array lands;
+// its spread operand fails to resolve today and recovers.
 func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
 	elems := make([]soltype.Type, 0, len(ta.Elems))
-	unsupported := false
 	for _, el := range ta.Elems {
-		if _, isRest := el.(*ast.RestSpreadTypeAnn); isRest {
-			unsupported = true
-			continue
+		spread := false
+		operand := el
+		if rest, ok := el.(*ast.RestSpreadTypeAnn); ok {
+			spread = true
+			operand = rest.Value
 		}
-		// An owned-mutable element `[mut {x}]` is rejected (#779), the tuple twin of
-		// the object-property rejection above: a `mut` cell nested inside a non-mut
-		// container is misleading. Recover to the element's bare inner. A `&`/`&mut`
-		// borrow element stays legal — it references external storage.
-		if mta, ok := el.(*ast.MutableTypeAnn); ok {
+		// An owned-mutable element `[mut {x}]` or a mutable spread operand `[...mut P]` is rejected
+		// (#779), the tuple twin of the object-property rejection: a `mut` cell nested inside a
+		// non-mut container is misleading. Recover to its bare inner. A `&`/`&mut` borrow element
+		// stays legal — it references external storage.
+		if mta, ok := operand.(*ast.MutableTypeAnn); ok {
 			c.report(&MutFieldError{Ann: mta})
-			el = mta.Target
+			operand = mta.Target
 		}
-		if t, ok := c.resolveTypeAnn(scope, el, lvl); ok {
-			elems = append(elems, t)
-		} else {
-			elems = append(elems, c.freshAt(lvl))
+		t, ok := c.resolveTypeAnn(scope, operand, lvl)
+		if !ok {
+			t = c.freshAt(lvl)
 		}
-	}
-	if unsupported {
-		c.reportUnsupportedFeature(ta, "tuple spread or variadic element")
+		if spread {
+			t = &soltype.RestSpreadType{Operand: t}
+		}
+		elems = append(elems, t)
 	}
 	t := &soltype.TupleType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)

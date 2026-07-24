@@ -1713,6 +1713,19 @@ func describe(t soltype.Type) string {
 	case *soltype.FuncType:
 		return "function"
 	case *soltype.TupleType:
+		if tupleHasSpread(t) {
+			// A tuple carrying an unreduced `...P` spread renders structurally so a rejected
+			// constraint names it `[...t1, number]` rather than the bare nominal "tuple". A plain
+			// tuple stays nominal, since spelling out every element would be verbose.
+			parts := make([]string, 0, len(t.Elems)+1)
+			for _, el := range t.Elems {
+				parts = append(parts, describe(el))
+			}
+			if t.Inexact {
+				parts = append(parts, "...")
+			}
+			return "[" + strings.Join(parts, ", ") + "]"
+		}
 		return "tuple"
 	case *soltype.ObjectType:
 		return "object"
@@ -1750,6 +1763,11 @@ func describe(t soltype.Type) string {
 		// unwraps it to the resolved type before comparing, so a diagnostic rarely names the
 		// query itself, but a rejected bound that still carries it reads `typeof x`.
 		return "typeof " + t.Ident
+	case *soltype.RestSpreadType:
+		// A `...P` spread element renders `...` over its operand, reached in place when the
+		// enclosing spread-carrying TupleType arm above describes its elements. The operand renders
+		// in describe's raw mid-constrain form.
+		return "..." + describe(t.Operand)
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
 		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2

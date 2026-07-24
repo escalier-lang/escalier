@@ -217,6 +217,24 @@ func (t *TypeofType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *RestSpreadType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The operand walks in the current polarity, the covariant visit a tuple element gets. The
+	// spread is inert — the visit rebuilds it around a rewritten operand without splicing, so
+	// extrude/coalesce/freshenAbove carry `...T` through untouched. The enclosing TupleType.Accept
+	// walks this element like any other, so no separate spread-list traversal is needed.
+	operand := cur.Operand.Accept(v, pol)
+	out := cur
+	if operand != cur.Operand {
+		out = &RestSpreadType{Operand: operand}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *RefType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {
