@@ -2200,8 +2200,10 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			// own: substituteMappedKey rewrites K to the key, the template literal and `Capitalize`
 			// reduce it to a string literal, and remappedNames reads that literal as the field name.
 			name: "RemapComputesNameFromKey",
-			src: "\n\t\t\t\ttype Src = {name: string, age: number}\n" +
-				"\t\t\t\ttype Result = {[`get${Capitalize<K>}`]: Src[K] for K in keyof Src}\n",
+			src: `
+				type Src = {name: string, age: number}
+				type Result = {[` + "`get${Capitalize<K>}`" + `]: Src[K] for K in keyof Src}
+			`,
 			wantSymbolic: "{[`get${Capitalize<K>}`]: Src[K] for K in keyof Src}",
 			wantExpanded: "{getAge: number, getName: string}",
 		},
