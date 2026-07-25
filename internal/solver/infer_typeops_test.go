@@ -2054,3 +2054,440 @@ func TestInferCondCaptureFromConstraint(t *testing.T) {
 		})
 	}
 }
+
+// A mapped type is stored unreduced, so an annotation prints the way the source wrote it, and
+// reducing it — what constrain does to check a constraint against it — emits one field per key of
+// the Keys union. Each case asserts both forms. The expectations match what TypeScript reduces the
+// equivalent `{[K in Keys]: …}` to, except where noted.
+func TestInferMappedTypeReduction(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
+	}{
+		{
+			// The identity map: every key of the operand keeps its own value type.
+			name: "IdentityOverKeyof",
+			src: `
+				type Point = {x: number, y: string}
+				type Result = {[K]: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: "{[K]: Point[K] for K in keyof Point}",
+			wantExpanded: "{x: number, y: string}",
+		},
+		{
+			// A value expression that never names the key gives every field the same type, the shape
+			// `Record<K, V>` takes.
+			name: "ValueIgnoresKey",
+			src: `
+				type Names = "a" | "b"
+				type Result = {[K]: boolean for K in Names}
+			`,
+			wantSymbolic: "{[K]: boolean for K in Names}",
+			wantExpanded: "{a: boolean, b: boolean}",
+		},
+		{
+			// A single-key operand emits a single-field object; `keyof` collapsed its union to the
+			// lone literal, which mappedKeyMembers reads as one key.
+			name: "SingleKey",
+			src: `
+				type One = {only: number}
+				type Result = {[K]: One[K] for K in keyof One}
+			`,
+			wantSymbolic: "{[K]: One[K] for K in keyof One}",
+			wantExpanded: "{only: number}",
+		},
+		{
+			// An empty key set emits no fields. `keyof {}` is `never`, the union identity.
+			name: "EmptyKeySet",
+			src: `
+				type Empty = {}
+				type Result = {[K]: Empty[K] for K in keyof Empty}
+			`,
+			wantSymbolic: "{[K]: Empty[K] for K in keyof Empty}",
+			wantExpanded: "{}",
+		},
+		{
+			// `?` marks every emitted field optional, the shape `Partial<T>` takes.
+			name: "AddOptional",
+			src: `
+				type Point = {x: number, y: string}
+				type Result = {[K]?: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: "{[K]+?: Point[K] for K in keyof Point}",
+			wantExpanded: "{x?: number, y?: string}",
+		},
+		{
+			// `-?` leaves every field required, the shape `Required<T>` takes. A field this reduction
+			// emits carries no marker of its own, so removing one is already the default.
+			name: "RemoveOptional",
+			src: `
+				type Point = {x?: number, y: string}
+				type Result = {[K]-?: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: "{[K]-?: Point[K] for K in keyof Point}",
+			wantExpanded: "{x: number, y: string}",
+		},
+		{
+			// `readonly` marks every emitted field readonly, the shape `Readonly<T>` takes.
+			name: "AddReadonly",
+			src: `
+				type Point = {x: number, y: string}
+				type Result = {readonly [K]: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: "{readonly [K]: Point[K] for K in keyof Point}",
+			wantExpanded: "{readonly x: number, readonly y: string}",
+		},
+		{
+			// `-readonly` leaves every field writable, the twin of the `-?` case above.
+			name: "RemoveReadonly",
+			src: `
+				type Point = {readonly x: number, y: string}
+				type Result = {-readonly [K]: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: "{-readonly [K]: Point[K] for K in keyof Point}",
+			wantExpanded: "{x: number, y: string}",
+		},
+		{
+			// The `if C : E` filter drops a key that fails the test, narrowing the key set the way
+			// `Pick<T, K>` does. Only "x" is a subtype of `"x"`.
+			name: "FilterKeepsMatchingKeys",
+			src: `
+				type Point = {x: number, y: string}
+				type Result = {[K]: Point[K] for K in keyof Point if K : "x"}
+			`,
+			wantSymbolic: `{[K]: Point[K] for K in keyof Point if K : "x"}`,
+			wantExpanded: "{x: number}",
+		},
+		{
+			// The filter reads the value at the key as well as the key itself, so a key whose value
+			// type fails the test is dropped.
+			name: "FilterOnValueType",
+			src: `
+				type Mixed = {n: number, s: string}
+				type Result = {[K]: Mixed[K] for K in keyof Mixed if Mixed[K] : number}
+			`,
+			wantSymbolic: "{[K]: Mixed[K] for K in keyof Mixed if Mixed[K] : number}",
+			wantExpanded: "{n: number}",
+		},
+		{
+			// A filter no key satisfies drops every field.
+			name: "FilterDropsEveryKey",
+			src: `
+				type Point = {x: number, y: string}
+				type Result = {[K]: Point[K] for K in keyof Point if K : "z"}
+			`,
+			wantSymbolic: `{[K]: Point[K] for K in keyof Point if K : "z"}`,
+			wantExpanded: "{}",
+		},
+		{
+			// A key the bracketed expression remaps to `never` is dropped, the way `Omit<T, K>`
+			// removes a key. The conditional in the brackets is branch selection, not a capture.
+			name: "RemapToNeverDropsKey",
+			src: `
+				type Point = {x: number, y: string}
+				type Result = {[if K : "x" { never } else { K }]: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: `{[if K : "x" { never } else { K }]: Point[K] for K in keyof Point}`,
+			wantExpanded: "{y: string}",
+		},
+		{
+			// A key remapped to another literal renames the field while the value still reads the
+			// original key.
+			name: "RemapRenamesField",
+			src: `
+				type Point = {x: number}
+				type Result = {["renamed"]: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: `{["renamed"]: Point[K] for K in keyof Point}`,
+			wantExpanded: "{renamed: number}",
+		},
+		{
+			// Two keys remapped to one name collapse to a single field, last value winning, the
+			// duplicate-key rule an object literal follows.
+			name: "RemapCollidingKeysCollapse",
+			src: `
+				type Point = {x: number, y: string}
+				type Result = {["one"]: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: `{["one"]: Point[K] for K in keyof Point}`,
+			wantExpanded: "{one: string}",
+		},
+		{
+			// A mapped type nests: the outer key is in scope inside the inner one, so the inner value
+			// reads it.
+			name: "Nested",
+			src: `
+				type Point = {x: number}
+				type Result = {[K]: {[J]: Point[K] for J in keyof Point} for K in keyof Point}
+			`,
+			wantSymbolic: "{[K]: {[J]: Point[K] for J in keyof Point} for K in keyof Point}",
+			wantExpanded: "{x: {x: number}}",
+		},
+		{
+			// An inexact operand has an open key set, so `keyof` yields an inexact key union and the
+			// object built from it stays open too.
+			name: "InexactOperandYieldsInexactObject",
+			src: `
+				type Point = {x: number, ...}
+				type Result = {[K]: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: "{[K]: Point[K] for K in keyof Point}",
+			wantExpanded: "{x: number, ...}",
+		},
+		{
+			// The mapped type's own trailing `...` makes the result inexact even over an exact
+			// operand.
+			name: "InexactMarkerOnMappedType",
+			src: `
+				type Point = {x: number}
+				type Result = {[K]: Point[K] for K in keyof Point, ...}
+			`,
+			wantSymbolic: "{[K]: Point[K] for K in keyof Point, ...}",
+			wantExpanded: "{x: number, ...}",
+		},
+		{
+			// `keyof` over a mapped type reduces the mapped type first, then projects the names of
+			// the fields it emitted.
+			name: "KeyofOverMappedType",
+			src: `
+				type Point = {x: number, y: string}
+				type Result = keyof {[K]: Point[K] for K in keyof Point}
+			`,
+			wantSymbolic: "keyof {[K]: Point[K] for K in keyof Point}",
+			wantExpanded: `"x" | "y"`,
+		},
+		{
+			// An indexed access into a mapped type reduces the mapped type first, then reads one of
+			// the fields it emitted.
+			name: "IndexIntoMappedType",
+			src: `
+				type Point = {x: number, y: string}
+				type Result = {[K]: Point[K] for K in keyof Point}["y"]
+			`,
+			wantSymbolic: `{[K]: Point[K] for K in keyof Point}["y"]`,
+			wantExpanded: "string",
+		},
+		{
+			// A spread of a mapped type merges the fields it emits into the enclosing object.
+			name: "SpreadOfMappedType",
+			src: `
+				type Point = {x: number}
+				type Result = {...{[K]: Point[K] for K in keyof Point}, y: string}
+			`,
+			wantSymbolic: "{...{[K]: Point[K] for K in keyof Point}, y: string}",
+			wantExpanded: "{x: number, y: string}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			result := nodes["Result"]
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}
+
+// A generic alias whose body is a mapped type reduces per instantiation: the argument substituted
+// for the type parameter grounds the Keys operand, so the alias reference reduces to the object for
+// that argument. These are the shapes the TS utility types take, verified end to end in a later PR.
+func TestInferMappedTypeGenericAlias(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// `Partial<T>`: every key optional.
+			name: "Partial",
+			src: `
+				type Partial<T> = {[K]?: T[K] for K in keyof T}
+				type Result = Partial<{a: number, b: string}>
+			`,
+			wantExpanded: "{a?: number, b?: string}",
+		},
+		{
+			// `Readonly<T>`: every key readonly.
+			name: "Readonly",
+			src: `
+				type Readonly<T> = {readonly [K]: T[K] for K in keyof T}
+				type Result = Readonly<{a: number}>
+			`,
+			wantExpanded: "{readonly a: number}",
+		},
+		{
+			// `Pick<T, K>`: the filter keeps the keys the second argument names.
+			name: "Pick",
+			src: `
+				type Pick<T, Ks> = {[K]: T[K] for K in keyof T if K : Ks}
+				type Result = Pick<{a: number, b: string, c: boolean}, "a" | "c">
+			`,
+			wantExpanded: "{a: number, c: boolean}",
+		},
+		{
+			// `Omit<T, K>`: the bracketed expression remaps the named keys to `never`, dropping them.
+			name: "Omit",
+			src: `
+				type Omit<T, Ks> = {[if K : Ks { never } else { K }]: T[K] for K in keyof T}
+				type Result = Omit<{a: number, b: string, c: boolean}, "b">
+			`,
+			wantExpanded: "{a: number, c: boolean}",
+		},
+		{
+			// `Record<Ks, V>` over a literal key union. The primitive-key form `Record<string, V>`
+			// needs an index signature, which stays symbolic — see TestInferMappedTypeStaysSymbolic.
+			name: "Record",
+			src: `
+				type Record<Ks, V> = {[K]: V for K in Ks}
+				type Result = Record<"a" | "b", number>
+			`,
+			wantExpanded: "{a: number, b: number}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A mapped type whose key set the evaluator cannot enumerate stays symbolic: reducing it returns
+// the same operator rebuilt around its reduced operands, so it renders the way the source wrote it
+// and reduces later once the operand grounds. Each case asserts the reduction is a no-op on the
+// printed form.
+func TestInferMappedTypeStaysSymbolic(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// A type parameter has no ground key set, so the whole mapped type is inert. This is the
+			// form every generic utility alias is written in.
+			name: "TypeParameterOperand",
+			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> number { return 1 }`,
+			want: "fn <T>(x: {[K]: T[K] for K in keyof T}) -> number",
+		},
+		{
+			// A primitive key constraint names infinitely many keys, which an object with named
+			// fields cannot express. TypeScript writes it as the index signature `{[k: string]: T}`;
+			// soltype has no index-signature element yet, so the mapped type stays inert.
+			name: "PrimitiveKeyConstraint",
+			src:  `fn f(x: {[K]: number for K in string}) -> number { return 1 }`,
+			want: "fn (x: {[K]: number for K in string}) -> number",
+		},
+		{
+			// A tuple's keys are number literals, which name no object field, so the mapped type
+			// stays inert rather than emitting fields under stringified indices.
+			name: "TupleKeys",
+			src: `
+				type Pair = [number, string]
+				fn f(x: {[K]: Pair[K] for K in keyof Pair}) -> number { return 1 }
+			`,
+			want: "fn (x: {[K]: Pair[K] for K in keyof Pair}) -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// constrain reduces a mapped type to check satisfaction, while the stored type keeps the form the
+// source wrote. A value matching the emitted fields is accepted; one that does not is rejected
+// against the reduced object, so the diagnostic names the field that failed.
+func TestInferMappedTypeConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "MatchingValueAccepted",
+			src: `
+				type Point = {x: number, y: string}
+				val p: {[K]: Point[K] for K in keyof Point} = {x: 1, y: "hi"}
+			`,
+		},
+		{
+			name: "WrongFieldTypeRejected",
+			src: `
+				type Point = {x: number, y: string}
+				val p: {[K]: Point[K] for K in keyof Point} = {x: 1, y: 2}
+			`,
+			wantErr: `cannot constrain 2 <: string`,
+		},
+		{
+			// An optional-marking mapped type accepts a value that omits a field.
+			name: "OptionalFieldMayBeOmitted",
+			src: `
+				type Point = {x: number, y: string}
+				val p: {[K]?: Point[K] for K in keyof Point} = {x: 1}
+			`,
+		},
+		{
+			// A field a filter dropped is not part of the reduced object, so supplying it is an
+			// excess property.
+			name: "FilteredFieldRejected",
+			src: `
+				type Point = {x: number, y: string}
+				val p: {[K]: Point[K] for K in keyof Point if K : "x"} = {x: 1, y: "hi"}
+			`,
+			wantErr: `object has extra property: y`,
+		},
+		{
+			// A member read goes through the reduced object, so a field the mapped type emits reads
+			// at the value type its Value expression gave it.
+			name: "FieldReadThroughMappedParam",
+			src: `
+				type Point = {x: number, y: string}
+				fn f(p: {[K]: Point[K] for K in keyof Point}) -> number { return p.x }
+				val n = f({x: 1, y: "hi"})
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A mapped type over a recursive alias terminates on the evaluator's active-state guard: the alias
+// stays on the active path while its body reduces, so a field that re-references it is left as the
+// unexpanded alias rather than unfolding forever. The reduction finishes and the recursive position
+// keeps the alias name.
+func TestInferMappedTypeRecursiveAliasTerminates(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Rec<T> = {[K]: Rec<T> for K in keyof T}
+		type Result = Rec<{a: number}>
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "{a: Rec<{a: number}>}", soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+}
+
+// Two mapped types resolved separately from the same source compare equal even though each drew its
+// own key binding id, so a signature that writes one in both a parameter and the return accepts
+// `return x`. The reflexive `M <: M` succeeds inertly on the symbolic form, by structural equality
+// under the key pairing rather than by reducing.
+func TestInferMappedTypeSignatureRoundTrips(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]: T[K] for K in keyof T} { return x }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T>(x: {[K]: T[K] for K in keyof T}) -> {[K]: T[K] for K in keyof T}", values["f"])
+}

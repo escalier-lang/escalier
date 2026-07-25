@@ -174,6 +174,17 @@ func (c *Context) freshInferDecl(name string) *soltype.InferType {
 	return t
 }
 
+// freshMappedKey mints the binding one mapped type's `for K in …` clause introduces, carrying the
+// source name for display. It draws from the same counter as freshVar so every binding has a unique
+// id, which is what keeps a nested mapped type's key distinct from the enclosing one's when both are
+// written K. resolveMappedTypeAnn binds the node it returns in the scope the value, key-remapping,
+// and filter positions resolve in, so each reference to K is that one binding.
+func (c *Context) freshMappedKey(name string) *soltype.MappedKeyType {
+	t := &soltype.MappedKeyType{ID: c.varCounter, Name: name}
+	c.varCounter++
+	return t
+}
+
 // freshLifetime allocates a new lifetime variable at the given level, assigning it
 // the next id in sequence. Lifetimes now ride the same let-generalization level
 // hierarchy as types (M4 D2.5): a lifetime minted inside its scheme's

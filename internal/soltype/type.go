@@ -721,6 +721,64 @@ type InferType struct {
 	Binder bool
 }
 
+// MappedModifier states how a mapped type adjusts one member marker — `readonly` or `?` — on each
+// field it emits. ModNone leaves the marker off, ModAdd sets it, and ModRemove clears it. The
+// source writes `readonly`/`+readonly` and `?`/`+?` for ModAdd and `-readonly`/`-?` for ModRemove.
+type MappedModifier int
+
+const (
+	ModNone MappedModifier = iota
+	ModAdd
+	ModRemove
+)
+
+// MappedKeyType is the key variable a mapped type binds, the `K` of
+// `{[K]: T[K] for K in keyof T}`. It is an inert leaf: nothing constrains against it, and the
+// evaluator substitutes one key of the mapped type's Keys union for it before reducing the
+// positions that name it. A mapped type still carrying it in a reduced position has not chosen a
+// key yet, so the whole mapped type is inert.
+//
+// ID is the binding this node stands for. The `for K in …` clause and every reference to K in the
+// value, key-remapping, and filter positions carry one id, so substituting a key reaches exactly
+// the positions that binding stands at. A nested mapped type writing the same name draws a distinct
+// id, which is what makes its own binding shadow the enclosing one. Name is the source name,
+// carried for display.
+type MappedKeyType struct {
+	ID   int
+	Name string
+}
+
+// MappedType is the residual `{[K]: V for K in Keys}` mapped type operator. Like KeyofType it is
+// inert: it carries no bounds, constrain never records one against it, and it flows through the
+// solver's structural machinery untouched, rendering the way the source wrote it. The evaluator
+// reduces it to a plain ObjectType once Keys grounds to a union of string-literal keys, emitting
+// one field per key with Key bound to that key.
+//
+// The fields mirror the surface syntax `{readonly [Name]?: Value for Key in Keys if Check : Extends}`:
+//
+//   - Keys is the constraint after `in`, the key set to iterate. `keyof T` is the usual source.
+//   - Value is the type each emitted field takes, normally an indexed access such as `T[K]`.
+//   - Name is the key-remapping expression written in the brackets. It is nil when the brackets
+//     hold the bare key variable, so no remapping applies. A key it reduces to `never` drops that
+//     field, the way TypeScript's `as` clause filters.
+//   - Check and Extends are the optional `if C : E` filter. A key whose substituted `Check <: Extends`
+//     fails is dropped. Both are nil when the source wrote no filter.
+//   - Optional and Readonly are the `?` and `readonly` markers, each adding or removing the marker
+//     on every emitted field.
+//   - Inexact carries the enclosing object annotation's trailing `...`, so `{[K]: V for K in Keys, ...}`
+//     reduces to an inexact object.
+type MappedType struct {
+	Key      *MappedKeyType
+	Keys     Type
+	Value    Type
+	Name     Type // nil ⇒ the brackets hold the bare key variable, no remapping
+	Check    Type // nil with Extends ⇒ no `if C : E` filter
+	Extends  Type
+	Optional MappedModifier
+	Readonly MappedModifier
+	Inexact  bool
+}
+
 // RestSpreadType is the residual `...P` spread element inside a tuple type, mirroring the old
 // checker's RestSpreadType (internal/type_system/types.go). It is only meaningful as an element of
 // a TupleType.Elems list: `[...P, x]` is a TupleType whose first element is a RestSpreadType. A
@@ -791,6 +849,8 @@ func (*IndexType) isType()           {}
 func (*TypeofType) isType()          {}
 func (*CondType) isType()            {}
 func (*InferType) isType()           {}
+func (*MappedKeyType) isType()       {}
+func (*MappedType) isType()          {}
 func (*RestSpreadType) isType()      {}
 func (*TemplateLitType) isType()     {}
 func (*StringIntrinsicType) isType() {}
@@ -887,6 +947,19 @@ func LevelOf(t Type) int {
 		// operand lifts the level and the freshener/extruder prune descends into all four, the
 		// four-child analogue of the two-child IndexType arm.
 		return max(max(LevelOf(t.Check), LevelOf(t.Extends)), max(LevelOf(t.Then), LevelOf(t.Else)))
+	case *MappedType:
+		// A mapped residual's level is the max over the operands that can hold a variable, so an
+		// out-of-level operand lifts the level and the freshener/extruder prune descends into each,
+		// the many-child analogue of the four-child CondType arm. Key is a binding this node owns
+		// rather than a variable the solver generalizes, so it contributes nothing. Name, Check, and
+		// Extends are absent unless the source wrote them.
+		m := max(LevelOf(t.Keys), LevelOf(t.Value))
+		for _, operand := range []Type{t.Name, t.Check, t.Extends} {
+			if operand != nil {
+				m = max(m, LevelOf(operand))
+			}
+		}
+		return m
 	case *RestSpreadType:
 		// A `...P` spread element's level is its operand's, so an out-of-level spread operand lifts
 		// the enclosing tuple's level and the freshener/extruder prune descends to freshen it, the
@@ -935,9 +1008,9 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	default:
 		// PrimType, LitType, Void, NullType, UndefinedType, NeverType, UnknownType,
-		// ErrorType, InferType: childless leaves. ErrorType is a sentinel at level 0, and an
-		// InferType names a capture the evaluator substitutes rather than a variable the solver
-		// generalizes, so neither lifts the level.
+		// ErrorType, InferType, MappedKeyType: childless leaves. ErrorType is a sentinel at level 0.
+		// An InferType names a capture and a MappedKeyType names a mapped type's key, both of which
+		// the evaluator substitutes rather than the solver generalizing, so none lifts the level.
 		return 0
 	}
 }

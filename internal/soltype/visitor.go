@@ -85,6 +85,7 @@ func (t *UnknownType) Accept(v TypeVisitor, pol Polarity) Type   { return accept
 func (t *ErrorType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *SkolemType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
 func (t *InferType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
+func (t *MappedKeyType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 
 func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
@@ -237,6 +238,49 @@ func (t *CondType) Accept(v TypeVisitor, pol Polarity) Type {
 		out = &CondType{Check: check, Extends: extends, Then: then, Else: els, Distribute: cur.Distribute}
 	}
 	return v.ExitType(out, pol)
+}
+
+func (t *MappedType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// Every operand walks in the current polarity, the many-child analogue of CondType's four-child
+	// visit. The residual is inert — the visit rebuilds it around rewritten operands without
+	// emitting any field, so extrude/coalesce/freshenAbove carry the whole mapped type through
+	// untouched. Key is the binding this node owns, not a type to rewrite, so it carries through.
+	keys := cur.Keys.Accept(v, pol)
+	value := cur.Value.Accept(v, pol)
+	name, nameChanged := acceptOptional(cur.Name, v, pol)
+	check, checkChanged := acceptOptional(cur.Check, v, pol)
+	extends, extendsChanged := acceptOptional(cur.Extends, v, pol)
+	out := cur
+	if keys != cur.Keys || value != cur.Value || nameChanged || checkChanged || extendsChanged {
+		out = &MappedType{
+			Key:      cur.Key,
+			Keys:     keys,
+			Value:    value,
+			Name:     name,
+			Check:    check,
+			Extends:  extends,
+			Optional: cur.Optional,
+			Readonly: cur.Readonly,
+			Inexact:  cur.Inexact,
+		}
+	}
+	return v.ExitType(out, pol)
+}
+
+// acceptOptional walks an operand a node carries only when the source wrote it, returning the
+// walked type and whether the visit replaced it. A nil operand stays nil and reports no change, so
+// a caller rebuilds only when a present operand was rewritten.
+func acceptOptional(t Type, v TypeVisitor, pol Polarity) (Type, bool) {
+	if t == nil {
+		return nil, false
+	}
+	out := t.Accept(v, pol)
+	return out, out != t
 }
 
 func (t *RestSpreadType) Accept(v TypeVisitor, pol Polarity) Type {

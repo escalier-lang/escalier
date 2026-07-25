@@ -1853,6 +1853,25 @@ func describe(t soltype.Type) string {
 			return "infer " + t.Name
 		}
 		return t.Name
+	case *soltype.MappedKeyType:
+		// A mapped type's key variable renders as its bare name, matching the printer, so a rejected
+		// constraint over a symbolic mapped type reads the way the source wrote it.
+		return t.Name
+	case *soltype.MappedType:
+		// A mapped residual renders structurally as the surface syntax, recursing like the keyof arm,
+		// so a rejected constraint over a symbolic mapped type names it in full rather than the
+		// default `?`. Every operand renders in describe's raw mid-constrain form. The modifiers and
+		// the inexact marker are omitted, since a diagnostic names the shape rather than round-trips
+		// it.
+		key := t.Key.Name
+		if t.Name != nil {
+			key = describe(t.Name)
+		}
+		out := "{[" + key + "]: " + describe(t.Value) + " for " + t.Key.Name + " in " + describe(t.Keys)
+		if t.Check != nil && t.Extends != nil {
+			out += " if " + describe(t.Check) + " : " + describe(t.Extends)
+		}
+		return out + "}"
 	case *soltype.RestSpreadType:
 		// A `...P` spread element renders `...` over its operand, reached in place when the
 		// enclosing spread-carrying TupleType arm above describes its elements. The operand renders
