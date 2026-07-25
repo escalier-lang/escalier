@@ -1855,6 +1855,12 @@ func TestInferCondAliasComposition(t *testing.T) {
 // and composed aliases included. A member selected at the outer conditional is the member the inner
 // one decides on, and an alias whose own Check is a naked parameter distributes inside its own
 // reduction. Each expectation matches TypeScript's reduction of the same chain.
+//
+// An alias that needs to distribute over a Check it cannot write nakedly can wrap its body in
+// `if T : T { … } else { … }`, the TypeScript idiom for forcing distribution. That outer Check is a
+// naked parameter, so it distributes, and each member then runs through the body on its own. Its
+// Else branch is unreachable, since a member is always a subtype of itself, so the type written
+// there never reaches the result.
 func TestInferCondDistributionThroughNesting(t *testing.T) {
 	const aliases = `
 		type IsStr<T> = if T : string { "y" } else { "n" }
@@ -1907,6 +1913,37 @@ func TestInferCondDistributionThroughNesting(t *testing.T) {
 			name:         "ThreeAliasesDeepWithUnion",
 			src:          aliases + `type Result = Outer<string | number>`,
 			wantExpanded: `"outer-other"`,
+		},
+		{
+			// Wrapping the previous case's body in `if T : T` gives it a naked Check, so each member
+			// runs the alias-check test on its own: `IsStr<string>` yields "y" and `IsStr<number>`
+			// yields "n", selecting a different branch per member instead of one branch for the union.
+			name: "ForcedDistributionOverAliasCheck",
+			src: aliases + `
+				type LabelF<T> = if T : T { if IsStr<T> : "y" { "text" } else { "other" } } else { "unreachable" }
+				type Result = LabelF<string | number>
+			`,
+			wantExpanded: `"other" | "text"`,
+		},
+		{
+			// The same idiom over a tuple-wrapped Check, which does not distribute on its own. Forcing
+			// it turns the single `["a" | "b"]` the union yields into one tuple per member.
+			name: "ForcedDistributionOverTupleWrappedCheck",
+			src: `
+				type WrapF<T> = if T : T { if [T] : [string] { [T] } else { boolean } } else { "unreachable" }
+				type Result = WrapF<"a" | "b">
+			`,
+			wantExpanded: `["a"] | ["b"]`,
+		},
+		{
+			// The unforced form of the case above, for contrast: the union decides as a whole and the
+			// branch keeps it, so one tuple of the union comes back rather than a union of tuples.
+			name: "UnforcedTupleWrappedCheckKeepsTheUnion",
+			src: `
+				type WrapN<T> = if [T] : [string] { [T] } else { boolean }
+				type Result = WrapN<"a" | "b">
+			`,
+			wantExpanded: `["a" | "b"]`,
 		},
 	}
 	for _, tt := range tests {
