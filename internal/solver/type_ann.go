@@ -367,8 +367,8 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 
 	savedInExtends := c.inCondExtends
 	c.inCondExtends = false
-	check, ok := c.resolveTypeAnn(scope, ta.Check, lvl)
-	if !ok {
+	check, checkOK := c.resolveTypeAnn(scope, ta.Check, lvl)
+	if !checkOK {
 		check = c.freshAt(lvl)
 	}
 	c.inCondExtends = true
@@ -387,7 +387,14 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 	}
 	c.inCondExtends = savedInExtends
 
-	_, distribute := check.(*soltype.TypeVarType)
+	// A conditional is distributive only when Check is written as a naked type parameter: a bare
+	// TypeRefTypeAnn that resolved to a type variable. Guarding on the source node and the
+	// successful resolution keeps a wildcard `_` and a recovery variable from a failed Check
+	// resolution — both fresh TypeVarTypes — from being mistaken for a naked parameter.
+	distribute := false
+	if ref, isRef := ta.Check.(*ast.TypeRefTypeAnn); isRef && checkOK && len(ref.TypeArgs) == 0 {
+		_, distribute = check.(*soltype.TypeVarType)
+	}
 	t := &soltype.CondType{Check: check, Extends: extends, Then: then, Else: els, Distribute: distribute}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true

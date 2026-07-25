@@ -1290,6 +1290,19 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 	require.Equal(t, "1:12-1:51: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(errs[0]))
 }
 
+// A symbolic conditional whose Extends holds an `infer U` renders the binding under its `infer`
+// prefix in a diagnostic. A type-parameter Check keeps the conditional symbolic — the `infer` matcher
+// never runs and the branch is never expanded — so the rejected `return k` names the whole residual,
+// and describe's InferType arm shows the Extends position as `Promise<infer U>`. describe is the raw
+// mid-constrain renderer, so the Check shows as the raw var `t1` and the Then's `U` reference as the
+// raw var `t2`, not the coalesced printer's names.
+func TestInferCondInferResidualErrorMessage(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f<T>(k: if T : Promise<infer U> { U } else { boolean }) -> number { return k }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, "1:12-1:56: cannot constrain if t1 : Promise<infer U> { t2 } else { boolean } <: number", msgWithSpan(errs[0]))
+}
+
 // A conditional whose Extends holds an `infer U` reduces by matching the ground Check against the
 // Extends pattern structurally, binding `U` to the matched position and substituting it into the
 // selected branch. Each case names a ground Check and an Extends carrying an `infer`, and asserts
@@ -1479,6 +1492,36 @@ func TestInferCondDistributionReduction(t *testing.T) {
 	require.True(t, ok)
 	reduced := expandResidual(ctx, ctx.expandAlias(ref))
 	require.Equal(t, "number | boolean", soltype.Print(reduced))
+}
+
+// A conditional is marked distributive only when its Check is written as a naked type parameter, so
+// distribution fires for exactly the TypeScript-distributive conditionals. A bare `T` reference is
+// distributive; a wildcard `_` Check and a Check whose reference does not resolve each reduce to a
+// fresh variable but are not naked parameters, so neither is marked distributive.
+func TestInferCondDistributeFlag(t *testing.T) {
+	t.Run("NakedParameter", func(t *testing.T) {
+		nodes, _, errs := inferTypeNodes(t, `type Choose<T> = if T : number { string } else { boolean }`)
+		require.Empty(t, errs)
+		cond, ok := nodes["Choose"].(*soltype.CondType)
+		require.True(t, ok)
+		require.True(t, cond.Distribute)
+	})
+	t.Run("WildcardCheckNotDistributive", func(t *testing.T) {
+		nodes, _, errs := inferTypeNodes(t, `type Result = if _ : number { string } else { boolean }`)
+		require.Empty(t, errs)
+		cond, ok := nodes["Result"].(*soltype.CondType)
+		require.True(t, ok)
+		require.False(t, cond.Distribute)
+	})
+	t.Run("UnresolvedCheckNotDistributive", func(t *testing.T) {
+		nodes, _, errs := inferTypeNodes(t, `type Result = if Bogus : number { string } else { boolean }`)
+		// Bogus does not resolve, so the Check recovers to a fresh variable and the annotation
+		// reports the unresolved reference.
+		require.Len(t, errs, 1)
+		cond, ok := nodes["Result"].(*soltype.CondType)
+		require.True(t, ok)
+		require.False(t, cond.Distribute)
+	})
 }
 
 // An `infer` clause is legal only inside a conditional type's Extends operand. Outside it — here in a
