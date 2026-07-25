@@ -222,6 +222,13 @@ func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check, extends solt
 // reference. A pattern position with no arm, such as a union or a borrow, reports a mismatch, which
 // selects the Else branch. Reporting success there instead would leave the binder uncaptured, and
 // the caller would reject the branch anyway.
+//
+// The type switch here is deliberate rather than a traversal that should be moved onto the soltype
+// visitor, which walks one tree. This is a relation over two, the shape equalTypeWith and constrain
+// also take. Four of its steps are outside what a single-tree rewrite expresses: it stops at the
+// first mismatch, it normalizes only the check side through alignCheck, it descends into an object
+// by member name rather than by child position, and it produces captures rather than a type. The
+// single-tree walks around it — containsInfer, substituteInfer, substituteOccurrences — are visitors.
 func (e *typeEvaluator) matchInfer(check, pattern soltype.Type, captures map[int]soltype.Type) bool {
 	if binder, ok := pattern.(*soltype.InferType); ok {
 		capture(captures, binder.ID, check)
