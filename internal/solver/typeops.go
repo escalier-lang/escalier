@@ -1,6 +1,11 @@
 package solver
 
 import (
+	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -13,11 +18,18 @@ import (
 // operator over the unexpanded alias stays symbolic.
 const maxExpandDepth = 200
 
+// maxTemplateLitCombinations caps how many string literals a template literal may reduce to. Its
+// cartesian product over interpolated unions grows multiplicatively, so `${A}${B}${C}` over three
+// large unions could enumerate an unbounded union. The cap rejects such a template with a
+// diagnostic rather than materializing the product.
+const maxTemplateLitCombinations = 10_000
+
 // typeEvaluator reduces a residual type-level operator to its value. It handles `keyof T`, indexed
-// access `T[K]`, and the conditional `if C : E { … } else { … }`; later operators join as they
-// land. Only constrain invokes it, to check a constraint against a residual. Annotation and display
-// keep the residual symbolic, so a stored type prints `keyof {x: number}` or `Point["x"]` the way
-// the source wrote it, never the reduced value.
+// access `T[K]`, the conditional `if C : E { … } else { … }`, template literals, and the intrinsic
+// string operators such as `Uppercase<T>`; later operators join as they land. Only constrain invokes
+// it, to check a constraint against a residual. Annotation and display keep the residual symbolic, so
+// a stored type prints `keyof {x: number}` or `Point["x"]` the way the source wrote it, never the
+// reduced value.
 //
 // reduce projects the operand's keys: a ground `keyof {x: number}` yields `"x"`, and an alias or
 // class operand expands to the referenced type's keys, the transparent-but-named treatment an
@@ -89,6 +101,10 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		return e.reduceTuple(t)
 	case *soltype.ObjectType:
 		return e.reduceObject(t)
+	case *soltype.TemplateLitType:
+		return e.reduceTemplateLit(t)
+	case *soltype.StringIntrinsicType:
+		return e.reduceStringIntrinsic(t.Kind, t.Operand)
 	default:
 		return t
 	}
@@ -341,7 +357,7 @@ func (e *typeEvaluator) reduceTuple(t *soltype.TupleType) soltype.Type {
 			elems = append(elems, e.reduce(el))
 			continue
 		}
-		operand := e.groundSpreadOperand(rest.Operand)
+		operand := e.groundOperand(rest.Operand)
 		tup, ok := operand.(*soltype.TupleType)
 		last := i == len(t.Elems)-1
 		if !ok || hasRestSpread(tup.Elems) || (tup.Inexact && !last) {
@@ -373,19 +389,21 @@ func (e *typeEvaluator) groundTuple(t *soltype.TupleType) (*soltype.TupleType, b
 	return reduced, true
 }
 
-// groundSpreadOperand reduces a tuple-spread operand toward a concrete tuple. It reduces any
-// nested operator, then expands a named alias to its body under the shared termination guard, so
-// `[...Pair, x]` over `type Pair = [number, string]` grounds to the referenced tuple. A type
-// parameter, a recurring alias state, an exhausted budget, or an unresolved alias body each leaves
-// the operand unexpanded, which keeps the spread symbolic.
-func (e *typeEvaluator) groundSpreadOperand(operand soltype.Type) soltype.Type {
+// groundOperand reduces an operator's operand toward a concrete type. It reduces any nested
+// operator, then expands a named alias to its body under the shared termination guard, so a spread
+// operand `Pair` over `type Pair = [number, string]` grounds to the referenced tuple and a template
+// interpolation `Dir` over `type Dir = "a" | "b"` grounds to the referenced union. A type parameter,
+// a recurring alias state, an exhausted budget, or an unresolved alias body each leaves the operand
+// unexpanded, which keeps the enclosing operator symbolic. The tuple-spread, template-literal, and
+// string-intrinsic reductions share it.
+func (e *typeEvaluator) groundOperand(operand soltype.Type) soltype.Type {
 	reduced := e.reduce(operand)
 	alias, ok := reduced.(*soltype.AliasType)
 	if !ok {
 		return reduced
 	}
 	return e.expandAliasGuarded(alias, reduced, func(body soltype.Type) soltype.Type {
-		return e.groundSpreadOperand(body)
+		return e.groundOperand(body)
 	})
 }
 
@@ -902,6 +920,173 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, e
 	return tup.Elems[i]
 }
 
+// reduceTemplateLit reduces a template literal to the union of string literals its interpolations
+// produce, taking the cartesian product over each interpolation's choices. Each interpolation, and
+// each member of an interpolation that grounds to a union, is grounded so a named alias expands to
+// its body. A grounded interpolation that is a union contributes each member as a choice, so
+// `on${"a" | "b"}` yields `"ona" | "onb"`, while any other grounded interpolation contributes
+// itself. Each product combination folds its string-literal interpolations into the surrounding
+// segments; a combination whose interpolation stays abstract — a type parameter, or a nested
+// operator the evaluator could not ground — keeps that interpolation and stays a `TemplateLitType`,
+// so the whole template reduces later once the interpolation grounds. A product that would exceed
+// maxTemplateLitCombinations is rejected with a diagnostic rather than materialized.
+func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
+	interpChoices := make([][]soltype.Type, len(t.Interps))
+	combinations := 1
+	for i, interp := range t.Interps {
+		reduced := e.groundOperand(interp)
+		if u, ok := reduced.(*soltype.UnionType); ok {
+			// Ground each union member too, so a reducible member — an alias to a literal, or a
+			// nested operator such as `keyof O` — collapses to its string literal before the product
+			// rather than surviving as a residual interpolation.
+			members := make([]soltype.Type, len(u.Types))
+			for j, m := range u.Types {
+				members[j] = e.groundOperand(m)
+			}
+			interpChoices[i] = members
+		} else {
+			interpChoices[i] = []soltype.Type{reduced}
+		}
+		combinations *= len(interpChoices[i])
+		if combinations > maxTemplateLitCombinations {
+			// The product would enumerate more string literals than the cap allows. Reject the
+			// template with one diagnostic rather than materializing an unbounded union.
+			e.errs = append(e.errs, &TemplateLitTooComplexError{Template: t})
+			return &soltype.ErrorType{}
+		}
+	}
+	combos := cartesianProduct(interpChoices)
+	parts := make([]soltype.Type, 0, len(combos))
+	for _, combo := range combos {
+		parts = append(parts, foldTemplatePart(t.Quasis, combo))
+	}
+	return newUnion(nil, parts, false)
+}
+
+// foldTemplatePart folds one cartesian-product combination into a single template result. It
+// interleaves the fixed segments with that combination's interpolation values: a string-representable
+// literal folds into the surrounding text, while any other value closes the accumulated segment and
+// carries through as a residual interpolation. A combination whose values all fold collapses to a
+// lone string-literal type; one carrying an abstract value stays a `TemplateLitType`. Quasis holds
+// one more entry than interpValues, so the loop reads interpValues[i] between quasi i and quasi i+1.
+func foldTemplatePart(quasis []string, interpValues []soltype.Type) soltype.Type {
+	newQuasis := []string{}
+	newInterps := []soltype.Type{}
+	current := ""
+	for i, quasi := range quasis {
+		// current accumulates the literal text since the last abstract interpolation. The folding
+		// branch below leaves current intact, so this appends quasi i onto the earlier quasi and
+		// any literals folded into it — `a${"1"}b` builds "a" then "a1" then "a1b". After the
+		// abstract branch resets current to "", or on the first iteration, this starts a fresh
+		// segment instead.
+		current += quasi
+		if i >= len(interpValues) {
+			continue
+		}
+		if s, ok := stringifyLit(interpValues[i]); ok {
+			current += s
+			continue
+		}
+		newQuasis = append(newQuasis, current)
+		current = ""
+		newInterps = append(newInterps, interpValues[i])
+	}
+	newQuasis = append(newQuasis, current)
+	if len(newInterps) == 0 {
+		return strLitType(newQuasis[0])
+	}
+	return &soltype.TemplateLitType{Quasis: newQuasis, Interps: newInterps}
+}
+
+// cartesianProduct returns every combination that picks one choice from each position, so the
+// template reducer can enumerate `${A}${B}` over unions A and B. An empty choice list — a
+// template with no interpolations — yields one empty combination, so a bare `abc` collapses
+// to the single literal `"abc"`.
+func cartesianProduct(interpChoices [][]soltype.Type) [][]soltype.Type {
+	result := [][]soltype.Type{{}}
+	for _, choices := range interpChoices {
+		next := make([][]soltype.Type, 0, len(result)*len(choices))
+		for _, combo := range result {
+			for _, choice := range choices {
+				extended := make([]soltype.Type, len(combo)+1)
+				copy(extended, combo)
+				extended[len(combo)] = choice
+				next = append(next, extended)
+			}
+		}
+		result = next
+	}
+	return result
+}
+
+// stringifyLit returns the surface string a literal type contributes inside a template, and false
+// for any non-literal type. A string literal contributes its value, a number its decimal form, and
+// a boolean `true`/`false`, matching how each renders in source.
+func stringifyLit(t soltype.Type) (string, bool) {
+	lit, ok := t.(*soltype.LitType)
+	if !ok {
+		return "", false
+	}
+	switch l := lit.Lit.(type) {
+	case *soltype.StrLit:
+		return l.Value, true
+	case *soltype.NumLit:
+		return strconv.FormatFloat(l.Value, 'f', -1, 64), true
+	case *soltype.BoolLit:
+		return strconv.FormatBool(l.Value), true
+	}
+	return "", false
+}
+
+// reduceStringIntrinsic reduces an intrinsic string operator such as `Uppercase<T>` over its operand.
+// A string-literal operand maps to the transformed literal — `Uppercase<"abc">` ⇒ `"ABC"` — and a
+// union operand distributes member-wise, so `Uppercase<"a" | "b">` ⇒ `"A" | "B"`. The operand is
+// first grounded, so a named alias expands to its body. An operand that is not a string literal,
+// such as a type parameter, keeps the operator symbolic as a `StringIntrinsicType` rebuilt around the
+// grounded operand.
+func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, operand soltype.Type) soltype.Type {
+	reduced := e.groundOperand(operand)
+	switch op := reduced.(type) {
+	case *soltype.UnionType:
+		parts := make([]soltype.Type, len(op.Types))
+		for i, m := range op.Types {
+			parts[i] = e.reduceStringIntrinsic(kind, m)
+		}
+		return newUnion(nil, parts, false)
+	case *soltype.LitType:
+		if s, ok := op.Lit.(*soltype.StrLit); ok {
+			return strLitType(applyStringIntrinsic(kind, s.Value))
+		}
+	}
+	return &soltype.StringIntrinsicType{Kind: kind, Operand: reduced}
+}
+
+// applyStringIntrinsic transforms one string by the named intrinsic operator. Uppercase and Lowercase
+// map every character; Capitalize and Uncapitalize map only the first, leaving the rest unchanged.
+func applyStringIntrinsic(kind soltype.StringIntrinsicKind, s string) string {
+	switch kind {
+	case soltype.Uppercase:
+		return strings.ToUpper(s)
+	case soltype.Lowercase:
+		return strings.ToLower(s)
+	case soltype.Capitalize:
+		return mapFirstRune(s, unicode.ToUpper)
+	case soltype.Uncapitalize:
+		return mapFirstRune(s, unicode.ToLower)
+	}
+	return s
+}
+
+// mapFirstRune applies f to the first rune of s and leaves the remainder unchanged, the transform
+// Capitalize and Uncapitalize share. An empty string maps to itself.
+func mapFirstRune(s string, f func(rune) rune) string {
+	if s == "" {
+		return s
+	}
+	r, size := utf8.DecodeRuneInString(s)
+	return string(f(r)) + s[size:]
+}
+
 // strLitName returns the property name a string-literal index selects, and false for any other
 // type. Object keys are strings, so only a StrLit names a member.
 func strLitName(t soltype.Type) (string, bool) {
@@ -913,12 +1098,14 @@ func strLitName(t soltype.Type) (string, bool) {
 	return "", false
 }
 
-// isResidualOp reports whether t is an unreduced type-level operator node — a `keyof`, an indexed
-// access, a conditional, or a `...P` tuple-spread element — at its top level. The evaluator consults
-// it to stop re-reducing an operand whose reduction stayed symbolic.
+// isResidualOp reports whether t is an unreduced type-level operator node at its top level — a
+// `keyof`, an indexed access, a conditional, a `...P` tuple-spread element, a template literal whose
+// interpolation stayed abstract, or an intrinsic string operator over an abstract operand. The
+// evaluator consults it to stop re-reducing an operand whose reduction stayed symbolic.
 func isResidualOp(t soltype.Type) bool {
 	switch t.(type) {
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.RestSpreadType:
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.RestSpreadType,
+		*soltype.TemplateLitType, *soltype.StringIntrinsicType:
 		return true
 	}
 	return false

@@ -75,6 +75,15 @@ type aliasShell struct {
 // body is still being walked. expandAlias only runs at subtyping time, after every body in
 // the component is filled, so the nil Body is never read during pre-binding.
 func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns string) *aliasShell {
+	// The four intrinsic string operators — Uppercase, Lowercase, Capitalize, Uncapitalize — are
+	// built-in type operators, not aliases a user may shadow. Reject a `type Uppercase<T> = …`
+	// declaration and skip binding it, so a `Uppercase<…>` reference resolves to the built-in
+	// operator rather than the user's definition.
+	if _, reserved := stringIntrinsics[decl.Name.Name]; reserved {
+		c.report(&ReservedTypeNameError{Decl: decl})
+		return nil
+	}
+
 	// An alias-body type reference resolves against the alias's own namespace first, the
 	// same qualified-first resolution a class or enum body uses, so a namespaced alias
 	// resolves a bare sibling reference. Save and restore around type-parameter resolution.

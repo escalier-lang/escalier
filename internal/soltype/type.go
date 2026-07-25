@@ -733,31 +733,85 @@ type RestSpreadType struct {
 	Operand Type
 }
 
-func (*TypeVarType) isType()      {}
-func (*KeyofType) isType()        {}
-func (*IndexType) isType()        {}
-func (*TypeofType) isType()       {}
-func (*CondType) isType()         {}
-func (*InferType) isType()        {}
-func (*RestSpreadType) isType()   {}
-func (*PrimType) isType()         {}
-func (*LitType) isType()          {}
-func (*FuncType) isType()         {}
-func (*TupleType) isType()        {}
-func (*ObjectType) isType()       {}
-func (*RefType) isType()          {}
-func (*PromiseType) isType()      {}
-func (*Void) isType()             {}
-func (*NullType) isType()         {}
-func (*UndefinedType) isType()    {}
-func (*NeverType) isType()        {}
-func (*UnknownType) isType()      {}
-func (*UnionType) isType()        {}
-func (*IntersectionType) isType() {}
-func (*ErrorType) isType()        {}
-func (*ClassType) isType()        {}
-func (*AliasType) isType()        {}
-func (*SkolemType) isType()       {}
+// TemplateLitType is the residual template literal type operator, such as
+// `on${T}`. Quasis holds the fixed string segments and Interps the interpolated
+// types between them, so Quasis has exactly one more entry than Interps. Like KeyofType
+// it is inert: it carries no bounds, constrain never records one against it, and it flows
+// through the solver's structural machinery untouched, rendering `on${T}` the way
+// the source wrote it. An evaluator reduces it once its interpolations are ground, taking
+// the cartesian product over interpolated unions — `on${"a" | "b"}` ⇒ `"ona" | "onb"`.
+// A template whose interpolation stays abstract, such as a type parameter, keeps that
+// interpolation and stays symbolic.
+type TemplateLitType struct {
+	Quasis  []string
+	Interps []Type
+}
+
+// StringIntrinsicKind names one of the four string intrinsics TypeScript exposes: Uppercase,
+// Lowercase, Capitalize, and Uncapitalize. Each is written `intrinsic` in the shipped .d.ts.
+type StringIntrinsicKind int
+
+const (
+	Uppercase StringIntrinsicKind = iota
+	Lowercase
+	Capitalize
+	Uncapitalize
+)
+
+// String renders the operator's surface name, used by the printer to render `Uppercase<T>`
+// and by the resolver to register the four intrinsics under their reference names.
+func (k StringIntrinsicKind) String() string {
+	switch k {
+	case Uppercase:
+		return "Uppercase"
+	case Lowercase:
+		return "Lowercase"
+	case Capitalize:
+		return "Capitalize"
+	case Uncapitalize:
+		return "Uncapitalize"
+	}
+	panic(fmt.Sprintf("StringIntrinsicKind.String: unhandled kind %d", int(k)))
+}
+
+// StringIntrinsicType is the residual intrinsic string operator `Uppercase<T>` and its three
+// siblings. Like KeyofType it is inert: it carries no bounds, constrain never records
+// one against it, and it flows through the solver's structural machinery untouched, rendering
+// `Uppercase<T>` the way the source wrote it. An evaluator reduces it over a string-literal
+// operand — `Uppercase<"abc">` ⇒ `"ABC"` — distributing over a union operand, and stays
+// symbolic over an abstract operand such as a type parameter.
+type StringIntrinsicType struct {
+	Kind    StringIntrinsicKind
+	Operand Type
+}
+
+func (*TypeVarType) isType()         {}
+func (*KeyofType) isType()           {}
+func (*IndexType) isType()           {}
+func (*TypeofType) isType()          {}
+func (*CondType) isType()            {}
+func (*InferType) isType()           {}
+func (*RestSpreadType) isType()      {}
+func (*TemplateLitType) isType()     {}
+func (*StringIntrinsicType) isType() {}
+func (*PrimType) isType()            {}
+func (*LitType) isType()             {}
+func (*FuncType) isType()            {}
+func (*TupleType) isType()           {}
+func (*ObjectType) isType()          {}
+func (*RefType) isType()             {}
+func (*PromiseType) isType()         {}
+func (*Void) isType()                {}
+func (*NullType) isType()            {}
+func (*UndefinedType) isType()       {}
+func (*NeverType) isType()           {}
+func (*UnknownType) isType()         {}
+func (*UnionType) isType()           {}
+func (*IntersectionType) isType()    {}
+func (*ErrorType) isType()           {}
+func (*ClassType) isType()           {}
+func (*AliasType) isType()           {}
+func (*SkolemType) isType()          {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).
@@ -838,6 +892,19 @@ func LevelOf(t Type) int {
 		// the enclosing tuple's level and the freshener/extruder prune descends to freshen it, the
 		// same single-child rule the KeyofType arm follows. The TupleType arm already maxes over its
 		// elements, so this element contributes its operand's level there.
+		return LevelOf(t.Operand)
+	case *TemplateLitType:
+		// A template literal's level is the max over its interpolations, so an out-of-level
+		// interpolation lifts the level and the freshener/extruder prune descends into it, the
+		// multi-child analogue of the KeyofType arm. The fixed string segments carry no variables.
+		m := 0
+		for _, interp := range t.Interps {
+			m = max(m, LevelOf(interp))
+		}
+		return m
+	case *StringIntrinsicType:
+		// A string-intrinsic residual's level is its operand's, the same single-child rule the
+		// KeyofType arm follows.
 		return LevelOf(t.Operand)
 	case *PromiseType:
 		return LevelOf(t.Inner)

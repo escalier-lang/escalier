@@ -136,7 +136,9 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 // for, so constrain can check a constraint against that while the stored residual keeps its name.
 // An alias expands to its body, a `typeof` query resolves to the value's type, a `keyof` reduces
 // to its key set, an indexed access `T[K]` reduces to the type at that key, a conditional selects
-// its Then or Else branch, and a tuple carrying a `...P` spread splices its operand tuples into a
+// its Then or Else branch, a template literal reduces to the union of string literals its
+// interpolations produce, an intrinsic string operator such as `Uppercase<T>` reduces over its
+// string-literal operand, and a tuple carrying a `...P` spread splices its operand tuples into a
 // plain tuple. A plain tuple is a structural type
 // constrain decomposes, not an operator, so it reports ok=false. The returned errs carry any
 // diagnostic the reduction produced — an unknown object key or an out-of-range tuple index — for
@@ -150,7 +152,7 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) 
 		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
 		return t.Ty, nil, true
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType:
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.TemplateLitType, *soltype.StringIntrinsicType:
 		return c.reduceResidual(t, seen)
 	case *soltype.TupleType:
 		if !tupleHasSpread(t) {
@@ -780,29 +782,16 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		if _, ok := super.(*soltype.UndefinedType); ok {
 			return nil
 		}
-	case *soltype.KeyofType:
-		// A `keyof` residual the pre-switch could not ground reaches here: `keyof T` over a type
-		// parameter, or an expanding recursive alias. constrain treats it inert, neither
-		// decomposing nor reducing it, so two residuals are compatible only when structurally
-		// identical. `keyof T <: keyof T` succeeds reflexively without recording any bound, and a
-		// residual against any other concrete fails. When super is a variable the case falls
-		// through to the superVar arm below, which records the whole residual as one lower bound,
-		// keeping the operator symbolic on the coalesced binding.
-		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
-			if equalType(sub, super) {
-				return nil
-			}
-			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
-		}
-	case *soltype.IndexType:
-		// A `T[K]` residual the pre-switch could not ground reaches here: an access over a type
-		// parameter, or an expanding recursive alias. constrain treats it inert, the same as the
-		// KeyofType arm above — two residuals are compatible only when structurally identical, so
-		// `T[K] <: T[K]` succeeds reflexively without recording a bound, and a residual against any
-		// other concrete fails. When super is a variable the case falls through to the superVar arm,
-		// which records the whole residual as one lower bound, keeping the operator symbolic on the
-		// coalesced binding. A tuple carrying a `...P` spread is handled inertly in the TupleType arm
-		// above, the spread twin of this arm.
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.TemplateLitType, *soltype.StringIntrinsicType:
+		// A residual type-level operator the pre-switch could not ground reaches here: a `keyof T`,
+		// `T[K]`, `on${T}`, or `Uppercase<T>` over a type parameter, or an expanding recursive
+		// alias. constrain treats every such operator inert, neither decomposing nor reducing it, so
+		// two residuals are compatible only when structurally identical. A reflexive `keyof T <: keyof
+		// T` succeeds without recording any bound, and a residual against any other concrete fails.
+		// When super is a variable the case falls through to the superVar arm below, which records the
+		// whole residual as one lower bound, keeping the operator symbolic on the coalesced binding. A
+		// tuple carrying a `...P` spread is handled inertly in the TupleType arm above, the spread
+		// twin of these operators.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if equalType(sub, super) {
 				return nil
