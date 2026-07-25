@@ -2194,6 +2194,18 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			wantExpanded: "{one: number | string}",
 		},
 		{
+			// A key remapping may compute a name rather than naming one written in source, by
+			// interpolating the key into a template literal and running it through a string
+			// intrinsic. This is the `Getters<T>` shape, and it needs no mapped-type machinery of its
+			// own: substituteMappedKey rewrites K to the key, the template literal and `Capitalize`
+			// reduce it to a string literal, and remappedNames reads that literal as the field name.
+			name: "RemapComputesNameFromKey",
+			src: "\n\t\t\t\ttype Src = {name: string, age: number}\n" +
+				"\t\t\t\ttype Result = {[`get${Capitalize<K>}`]: Src[K] for K in keyof Src}\n",
+			wantSymbolic: "{[`get${Capitalize<K>}`]: Src[K] for K in keyof Src}",
+			wantExpanded: "{getAge: number, getName: string}",
+		},
+		{
 			// A remapping that reduces to a union of names emits one field per name, each carrying
 			// the value the key it came from contributes.
 			name: "RemapToUnionOfNames",
