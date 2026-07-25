@@ -662,16 +662,63 @@ type TypeofType struct {
 // CondType is the residual `if Check : Extends { Then } else { Else }` conditional type operator.
 // Like KeyofType it is inert: it carries no bounds, constrain never records one against it, and it
 // flows through the solver's structural machinery untouched, rendering the way the source wrote it.
-// An evaluator reduces it once Check and Extends are ground, reusing the M9 PR1b machinery. It
-// decides `Check <: Extends` with an assignability probe and reduces to Then on success or Else on
-// failure. Until then a conditional over a type parameter stays symbolic. The `infer` clause in
-// Extends and distribution over a naked type-parameter union are M9 PR3b, so a Check that is a bare
-// type parameter keeps the whole conditional symbolic here.
+// An evaluator reduces it once Check and Extends are ground. It decides `Check <: Extends` with an
+// assignability probe and reduces to Then on success or Else on failure. Until then a conditional
+// over a type parameter stays symbolic.
+//
+// An Extends carrying an `infer U` binder is matched structurally against Check first, so each
+// binder captures the type at its position and the Then branch reads those captures. See InferType.
 type CondType struct {
 	Check   Type
 	Extends Type
 	Then    Type
 	Else    Type
+	// Distribute marks a conditional whose Check was written as a bare type-parameter reference,
+	// such as the `T` of `type Wrap<T> = if T : string { [T] } else { boolean }`. It mirrors
+	// TypeScript's naked-type-parameter rule, stated here in full since two separate conditions
+	// decide whether a union Check is taken apart, and both must hold:
+	//
+	//  1. The Check was written as a bare parameter name, which is what this flag records. Every
+	//     other written form leaves it clear, `[T]`, `{value: T}`, and `Other<T>` alike.
+	//  2. The Check reduced to a union. A conditional over a single type has nothing to take apart,
+	//     so the flag on its own changes no reduction.
+	//
+	// When both hold, the conditional decides one member at a time and unions the results. Every
+	// position that named the parameter reads the member rather than the whole union, the Extends
+	// operand and both branches alike, so `Wrap<"a" | 1>` reduces to `["a"] | boolean`.
+	//
+	// When either fails, the conditional decides once over the whole union. That is how a user
+	// captures a union as a single type: `if [T] : [infer U] { [U] } else { "no" }` binds U to the
+	// whole union and yields `[1 | "a"]` for `"a" | 1`, where the same alias written `if T : [infer
+	// U]` over `["a"] | [1]` binds U per member and yields `[1] | ["a"]`.
+	//
+	// A body that needs both a Check it cannot write bare and distribution can wrap itself in
+	// `if T : T { … } else { … }`, whose own Check is bare. The wrapper distributes and each member
+	// runs the inner conditional on its own. Its Else branch is unreachable, since a member is
+	// always a subtype of itself.
+	Distribute bool
+}
+
+// InferType is the `infer U` clause a conditional's Extends operand declares, and the reference to
+// that name from the conditional's Then branch. The evaluator stands a fresh inference variable in
+// for each clause, lets the `Check <: Extends` constraint infer what that variable holds, and
+// substitutes the result before it reduces the selected branch.
+//
+// ID is the declaration the two forms share. The clause and every reference to it carry one id, so
+// substituting a captured type reaches exactly the positions that declaration stands at. A nested
+// conditional writing the same name draws a distinct id, which is what makes its clause and
+// references a separate declaration that shadows the enclosing one.
+//
+// Name is the source name, carried for display. Binder marks the declaring clause, which renders
+// `infer U` where a reference renders the bare `U`, so a stored conditional prints
+// `if T : [infer U] { U } else { boolean }` the way the source wrote it.
+//
+// It is a leaf with no bounds, and nothing constrains against it. A conditional whose captures no
+// match has filled has not decided its branch, so the whole conditional is still inert.
+type InferType struct {
+	ID     int
+	Name   string
+	Binder bool
 }
 
 // RestSpreadType is the residual `...P` spread element inside a tuple type, mirroring the old
@@ -691,6 +738,7 @@ func (*KeyofType) isType()        {}
 func (*IndexType) isType()        {}
 func (*TypeofType) isType()       {}
 func (*CondType) isType()         {}
+func (*InferType) isType()        {}
 func (*RestSpreadType) isType()   {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
@@ -820,7 +868,9 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	default:
 		// PrimType, LitType, Void, NullType, UndefinedType, NeverType, UnknownType,
-		// ErrorType: childless leaves. ErrorType is a sentinel at level 0.
+		// ErrorType, InferType: childless leaves. ErrorType is a sentinel at level 0, and an
+		// InferType names a capture the evaluator substitutes rather than a variable the solver
+		// generalizes, so neither lifts the level.
 		return 0
 	}
 }

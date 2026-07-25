@@ -105,19 +105,199 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 //     conditional symbolic, rebuilt around the reduced Check and Extends, and reduces later once
 //     they ground. Then and Else stay unreduced in the symbolic form, since neither is selected yet.
 //
-// Distribution over a naked type-parameter union and the `infer` clause are M9 PR3b, so a bare
-// type-parameter Check stays symbolic here rather than distributing.
+// A conditional written over a naked type parameter distributes: a Check that grounds to a union is
+// decided one member at a time and the branch results union, so `type Wrap<T> = if T : string { [T] }
+// else { boolean }` reduces `Wrap<"a" | 1>` to `["a"] | boolean`. An Extends carrying an `infer U`
+// binder routes through reduceCondInfer, which infers a capture for each binder from the same
+// subtype check that decides the branch.
 func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 	check := e.reduce(t.Check)
 	extends := e.reduce(t.Extends)
-	if !condOperandGround(check) || !condOperandGround(extends) {
-		return &soltype.CondType{Check: check, Extends: extends, Then: t.Then, Else: t.Else}
+	// An Extends operand holds its `infer` binders by design, so only the Check is tested for one. A
+	// binder reaches the Check position only when an enclosing conditional left its Then branch
+	// unsubstituted. That position stands for a type no match has chosen yet, so the Check is not
+	// ground and the conditional stays symbolic.
+	if !condOperandGround(check) || containsInfer(check) || !condOperandGround(extends) {
+		return &soltype.CondType{Check: check, Extends: extends, Then: t.Then, Else: t.Else, Distribute: t.Distribute}
+	}
+	if union, ok := check.(*soltype.UnionType); ok && t.Distribute {
+		return e.distributeCond(t, union)
+	}
+	if containsInfer(extends) {
+		return e.reduceCondInfer(t, check, extends)
 	}
 	if e.ctx.condExtends(check, extends, e.seen) {
 		return e.reduce(t.Then)
 	}
 	return e.reduce(t.Else)
 }
+
+// distributeCond decides a distributive conditional one union member at a time and unions the
+// branches each member selects, so `type Wrap<T> = if T : string { [T] } else { boolean }` reduces
+// `Wrap<"a" | 1>` to `["a"] | boolean` rather than to the single branch the whole union selects.
+//
+// Every position that named the distributed type parameter reads it as the member, the Extends
+// operand included, so each lap is the conditional the alias would have produced had it been
+// instantiated with that member alone. `type X<T> = if T : [T] { "wrap" } else { "no" }` over
+// `[string] | string` therefore tests `[string]` against `[[string]]`, which fails, and reduces to
+// `"no"`, matching TypeScript. Expanding the alias installed one shared pointer at every occurrence
+// of the parameter, so replacing that pointer reaches exactly the positions it stood at, and a
+// branch naming it sees the member too — `Wrap<"a" | "b">` reduces to `["a"] | ["b"]`.
+//
+// The pointer replaced is the Check as stored, and each rebuilt operand is taken from the stored
+// conditional rather than from a reduced copy. Reduction may reallocate the nodes it walks, so
+// pointer identity holds only against the operands the alias expansion produced. reduceCond reduces
+// the rebuilt operands itself.
+//
+// Each member reduces through a copy of the conditional with Distribute cleared: the member is no
+// longer a union, and clearing it states that this pass already applied the rule.
+func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.UnionType) soltype.Type {
+	parts := make([]soltype.Type, len(check.Types))
+	for i, member := range check.Types {
+		parts[i] = e.reduceCond(&soltype.CondType{
+			Check:   member,
+			Extends: substituteOccurrences(t.Extends, t.Check, member),
+			Then:    substituteOccurrences(t.Then, t.Check, member),
+			Else:    substituteOccurrences(t.Else, t.Check, member),
+		})
+	}
+	return newUnion(nil, parts, false)
+}
+
+// substituteOccurrences rewrites every occurrence of the from type inside in to the to type,
+// matching on pointer identity. Expanding a generic alias substitutes one shared pointer for each
+// occurrence of a type parameter, so identity picks out the positions that parameter stood at
+// without touching an equal type the body wrote itself.
+func substituteOccurrences(in, from, to soltype.Type) soltype.Type {
+	return in.Accept(&occurrenceSubst{from: from, to: to}, soltype.Positive)
+}
+
+// occurrenceSubst is the rewriting visitor behind substituteOccurrences.
+type occurrenceSubst struct{ from, to soltype.Type }
+
+func (s *occurrenceSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if t == s.from {
+		return soltype.EnterResult{Type: s.to, SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (s *occurrenceSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// reduceCondInfer decides a conditional whose Extends operand declares `infer` captures, such as
+// `if T : [infer U] { U } else { boolean }`. One subtype check does both jobs:
+//
+//  1. Each declaration is replaced by a fresh inference variable, turning the pattern into an
+//     ordinary type. `[infer U]` becomes `[t7]`.
+//  2. `Check <: pattern` runs under a probe. Its result decides the branch, and the type each
+//     variable was inferred to along the way is the capture for that declaration.
+//  3. On success the captures are substituted into the Then branch, so a reference to a captured
+//     name reduces to the type the constraint inferred for it.
+//
+// Letting constrain infer the captures is what keeps this total over the type set. A structural
+// matcher would need an arm per container kind and would silently take the Else branch for a kind it
+// had no arm for; constrain already decomposes every kind, so a pattern position it can align, it
+// can capture from. Union and intersection patterns work for the same reason.
+//
+// The probe is discarded, so the variables and every bound recorded against them are gone by the
+// time this returns and the evaluator's no-mutation invariant holds. A failed constraint selects
+// Else, which covers a shape mismatch and a pattern whose written positions reject the Check alike.
+func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check, extends soltype.Type) soltype.Type {
+	decls := inferDeclIDs(extends)
+	vars := make([]*soltype.TypeVarType, len(decls))
+	holes := make(map[int]soltype.Type, len(decls))
+	for i, id := range decls {
+		// Level 0 matches the ground Check, so constrain records against these variables directly
+		// rather than extruding. They never outlive the probe, so no generalization sees them.
+		vars[i] = e.ctx.freshVar(0)
+		holes[id] = vars[i]
+	}
+	captured, ok := e.ctx.trialCaptures(check, substituteInfer(extends, holes), vars, e.seen.Clone())
+	if !ok {
+		return e.reduce(t.Else)
+	}
+	captures := make(map[int]soltype.Type, len(decls))
+	for i, id := range decls {
+		captures[id] = captured[i]
+	}
+	return e.reduce(substituteInfer(t.Then, captures))
+}
+
+// inferDeclIDs returns the ids of the `infer` declarations t holds, in first-appearance order with
+// duplicates collapsed, so a name written at two positions in one pattern yields one id and takes
+// one variable. The order is the order trialCaptures reports its results in.
+func inferDeclIDs(t soltype.Type) []int {
+	f := &inferDeclFinder{seen: set.NewSet[int]()}
+	t.Accept(f, soltype.Positive)
+	return f.ids
+}
+
+// inferDeclFinder is the walking visitor behind inferDeclIDs.
+type inferDeclFinder struct {
+	seen set.Set[int]
+	ids  []int
+}
+
+func (f *inferDeclFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if iv, ok := t.(*soltype.InferType); ok && !f.seen.Contains(iv.ID) {
+		f.seen.Add(iv.ID)
+		f.ids = append(f.ids, iv.ID)
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *inferDeclFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
+
+// substituteInfer rewrites every `infer` node whose declaration captures holds a type for to that
+// type, covering the clause that declares the name and the branch references that read it alike,
+// since both carry the declaration's id. A nested conditional writing the same name declares its own
+// id, so its clause and references are left for that conditional's own match to fill — shadowing
+// needs no special handling here. A declaration with no capture is left in place, which is how the
+// caller detects a match that filled only part of the pattern.
+func substituteInfer(t soltype.Type, captures map[int]soltype.Type) soltype.Type {
+	if len(captures) == 0 {
+		return t
+	}
+	return t.Accept(&inferSubst{captures: captures}, soltype.Positive)
+}
+
+// inferSubst is the rewriting visitor behind substituteInfer. It replaces a captured `infer` node
+// with the matched type and skips that node's children, since the replacement is already reduced.
+type inferSubst struct{ captures map[int]soltype.Type }
+
+func (s *inferSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if iv, ok := t.(*soltype.InferType); ok {
+		if matched, found := s.captures[iv.ID]; found {
+			return soltype.EnterResult{Type: matched, SkipChildren: true}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (s *inferSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// containsInfer reports whether t holds an `infer` node with no capture substituted into it yet. A
+// conditional consults it on its Extends operand to route to the capturing reduction, and on a
+// pattern to reject a match that left a binder uncaptured.
+func containsInfer(t soltype.Type) bool {
+	f := &inferFinder{}
+	t.Accept(f, soltype.Positive)
+	return f.found
+}
+
+// inferFinder is the walking visitor behind containsInfer. It flags the first `infer` node it
+// reaches and skips that node's children, since one occurrence is enough.
+type inferFinder struct{ found bool }
+
+func (f *inferFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if _, ok := t.(*soltype.InferType); ok {
+		f.found = true
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *inferFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
 
 // condExtends decides a conditional's `Check <: Extends` test with an assignability probe. The
 // trial runs under a discard-only probe, so a speculative match records no bound and leaves no

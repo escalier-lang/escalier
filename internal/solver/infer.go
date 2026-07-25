@@ -76,6 +76,13 @@ type checker struct {
 	// namespace-qualified name, so this reconstructs the qualified key a bare reference
 	// omits.
 	classNamespace string
+
+	// inCondExtends is set while resolveCondTypeAnn resolves a conditional's Extends operand, the
+	// one position an `infer U` clause may appear in. resolveTypeAnn's InferTypeAnn arm consults it
+	// to tell a binder from a stray `infer` elsewhere in an annotation, which it rejects. It is
+	// saved and restored around each operand, so an `infer` in a nested conditional's Then branch is
+	// rejected even though the outer Extends is still being walked.
+	inCondExtends bool
 }
 
 // fieldKey identifies a written field by the receiver variable's ID and the

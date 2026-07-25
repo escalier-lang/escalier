@@ -314,6 +314,52 @@ func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen set.Set[const
 	return !hasHardError(errs), mutated
 }
 
+// trialCaptures trials `sub <: super` under a throwaway probe and reports what each variable in vars
+// picked up, or ok=false when the trial failed. A conditional's `infer` reduction calls it with one
+// fresh variable per `infer` clause standing in the pattern, so the constraint that decides the
+// branch is also what infers the captures — the same read constrain performs for any other subtype
+// check, rather than a second structural walk that would have to know every type kind.
+//
+// The bounds are read after constrain returns and before the probe rolls them back, the window
+// trialMutatesBounds reads p.mutatedBounds() in. The trial is discarded either way, so no bound
+// survives on any type the caller handed in.
+func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVarType, seen set.Set[constraintKey]) ([]soltype.Type, bool) {
+	p := newProbe(c.probe)
+	c.probe = p
+	errs := c.constrain(sub, super, seen, false)
+	ok := !hasHardError(errs)
+	var captured []soltype.Type
+	if ok {
+		captured = make([]soltype.Type, len(vars))
+		for i, v := range vars {
+			captured[i] = capturedBound(v)
+		}
+	}
+	c.probe = p.parent
+	p.Discard()
+	return captured, ok
+}
+
+// capturedBound reads the type one `infer` variable was inferred to. A variable in a covariant
+// pattern position collects the matched types as lower bounds, so the capture is their union: a name
+// written at two tuple positions matched against `[number, string]` captures `number | string`. A
+// variable in a contravariant position, such as the parameter of a function pattern, collects upper
+// bounds instead, so the capture is their meet. A variable the constraint never bounded, which an
+// optional-property pattern matched against an object lacking that property produces, is
+// unconstrained, so the capture is `unknown`.
+//
+// It builds through newUnion and newIntersection with a nil Context, so their subsumption never
+// calls constrain while a trial is still open.
+func capturedBound(v *soltype.TypeVarType) soltype.Type {
+	if len(v.LowerBounds) > 0 {
+		return newUnion(nil, v.LowerBounds, false)
+	}
+	if len(v.UpperBounds) > 0 {
+		return newIntersection(nil, v.UpperBounds)
+	}
+	return &soltype.UnknownType{}
+}
+
 // trialUnderProbe trials `sub <: super` under a discard-only probe and returns
 // the trial's errors, leaving no bound behind; an empty result means it
 // succeeded. The seen-set starts fresh and the mut context at false, so the

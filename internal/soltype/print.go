@@ -24,7 +24,7 @@ const (
 
 // typePrec returns the printing precedence of a coalesced M1 type.
 func typePrec(t Type) int {
-	switch t.(type) {
+	switch t := t.(type) {
 	case *FuncType:
 		return precFunc
 	case *UnionType:
@@ -45,6 +45,13 @@ func typePrec(t Type) int {
 		// `if C : E { T } else { E }` is self-delimiting — the leading `if` and trailing `}` bound
 		// it — so it binds like an atom and never needs outer parens, matching type_system's
 		// CondType rendering.
+		return precAtom
+	case *InferType:
+		// The `infer U` binder leads with a keyword, so it binds like the other prefixes. A
+		// reference to that name renders as the bare `U`, an atom.
+		if t.Binder {
+			return precPrefix
+		}
 		return precAtom
 	case *RestSpreadType:
 		// A `...P` spread element only appears inside a tuple's bracket list, which prints each
@@ -654,6 +661,14 @@ func (p *namedPrinter) printType(t Type) string {
 		// neighbor and none needs parens.
 		return "if " + p.printType(t.Check) + " : " + p.printType(t.Extends) +
 			" { " + p.printType(t.Then) + " } else { " + p.printType(t.Else) + " }"
+	case *InferType:
+		// The binder renders `infer U`, the clause the source wrote in the Extends operand, and a
+		// reference to that name renders as the bare `U`, so a stored conditional round-trips to
+		// `if T : [infer U] { U } else { boolean }`.
+		if t.Binder {
+			return "infer " + t.Name
+		}
+		return t.Name
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:

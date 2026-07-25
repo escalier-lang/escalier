@@ -40,6 +40,17 @@ func expandResidual(ctx *Context, ty soltype.Type) soltype.Type {
 	return newTypeEvaluator(ctx, set.NewSet[constraintKey]()).reduce(ty)
 }
 
+// expandAliasResidual substitutes a generic alias instance's arguments into the alias body and then
+// reduces the result, the two steps constrain performs when it checks a constraint against a
+// reference such as `Elem<[number]>`. A test uses it to assert what one instantiation reduces to.
+// A type that is not an alias reference reduces directly, so a table may mix the two shapes.
+func expandAliasResidual(ctx *Context, ty soltype.Type) soltype.Type {
+	if alias, ok := ty.(*soltype.AliasType); ok {
+		ty = ctx.expandAlias(alias)
+	}
+	return expandResidual(ctx, ty)
+}
+
 // `keyof` over a named type reference — an alias or a class — is stored unexpanded, so the type
 // keeps the name the source wrote rather than the referenced type's keys. Each case names the
 // operand through an alias or class, asserts the stored `Result` renders `keyof Name`, and asserts
@@ -1290,14 +1301,27 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 	require.Equal(t, "1:12-1:51: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(errs[0]))
 }
 
-// A conditional whose Extends holds an `infer` clause is unsupported until M9 PR3b: branch selection
-// has no matcher to bind the `infer` name. The annotation reports one UnsupportedFeatureError rather
-// than resolving the Extends and silently mis-deciding the branch.
-func TestInferCondInferUnsupported(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f<T>(x: if T : Array<infer U> { U } else { never }) {}`)
-	require.Len(t, errs, 1)
-	require.IsType(t, &UnsupportedFeatureError{}, errs[0])
-	require.Equal(t, "Unsupported: infer clause in conditional type", errs[0].Message())
+// An `infer U` clause outside a conditional's Extends operand names no matched position, so it
+// reports one UnsupportedFeatureError rather than resolving to a capture nothing ever fills. The
+// cases cover the positions an `infer` can be written in but never captures from: a plain
+// annotation, a conditional's Check, and the Then branch of a conditional that captures nothing.
+func TestInferOutsideExtendsUnsupported(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{name: "PlainAnnotation", src: `val x: infer U = 5`},
+		{name: "CondCheck", src: `type Result = if infer U : number { "y" } else { "n" }`},
+		{name: "CondThen", src: `type Result = if number : number { infer U } else { "n" }`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.IsType(t, &UnsupportedFeatureError{}, errs[0])
+			require.Equal(t, "Unsupported: infer outside a conditional type's extends operand", errs[0].Message())
+		})
+	}
 }
 
 // Checking a value against a self-referential conditional alias terminates instead of looping. A
@@ -1343,6 +1367,690 @@ func TestInferCondComposesWithOperators(t *testing.T) {
 			nodes, ctx, errs := inferTypeNodes(t, tt.src)
 			require.Empty(t, errs)
 			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// An `infer U` clause in a conditional's Extends operand captures the type sitting at its matched
+// position, and the Then branch reads that capture. Each case reduces a conditional whose Check is
+// ground and asserts the type the selected branch yields. The cases cover the positions the matcher
+// walks — a tuple element, an object property, a function parameter and return, a promise payload,
+// and a type argument — plus the capture-combining and mismatch rules.
+func TestInferCondInferCapture(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// The single tuple element is captured and returned by the Then branch.
+			name:         "TupleElement",
+			src:          `type Result = if [number] : [infer U] { U } else { boolean }`,
+			wantExpanded: "number",
+		},
+		{
+			// Two captures bind independently, and the Then branch may reorder them.
+			name:         "TwoTupleElements",
+			src:          `type Result = if [number, string] : [infer A, infer B] { [B, A] } else { boolean }`,
+			wantExpanded: "[string, number]",
+		},
+		{
+			// One name written at two positions keeps both matched types, unioned.
+			name:         "RepeatedName",
+			src:          `type Result = if [number, string] : [infer U, infer U] { U } else { boolean }`,
+			wantExpanded: "number | string",
+		},
+		{
+			// A tuple whose arity differs from the pattern's does not align, so Else is selected.
+			name:         "TupleArityMismatch",
+			src:          `type Result = if [number] : [infer A, infer B] { A } else { boolean }`,
+			wantExpanded: "boolean",
+		},
+		{
+			// A pattern mixing a capture with a written type binds the capture, then the
+			// `Check <: Extends` probe rejects on the written position, so Else is selected.
+			name:         "WrittenPositionRejects",
+			src:          `type Result = if [number, string] : [infer A, number] { A } else { boolean }`,
+			wantExpanded: "boolean",
+		},
+		{
+			name:         "ObjectProperty",
+			src:          `type Result = if {a: number, b: string} : {a: infer A, b: infer B} { [A, B] } else { boolean }`,
+			wantExpanded: "[number, string]",
+		},
+		{
+			// An inexact pattern captures from a wider object, since the probe allows the extra key.
+			name:         "InexactObjectPattern",
+			src:          `type Result = if {a: number, b: string} : {a: infer A, ...} { A } else { boolean }`,
+			wantExpanded: "number",
+		},
+		{
+			// An exact pattern narrower than the Check is rejected by the probe, so Else is selected.
+			name:         "ExactObjectPatternRejectsWiderCheck",
+			src:          `type Result = if {a: number, b: string} : {a: infer A} { A } else { boolean }`,
+			wantExpanded: "boolean",
+		},
+		{
+			// A property the Check does not carry cannot be matched, so Else is selected.
+			name:         "MissingObjectProperty",
+			src:          `type Result = if {a: number} : {z: infer Z, ...} { Z } else { boolean }`,
+			wantExpanded: "boolean",
+		},
+		{
+			name: "FunctionReturn",
+			src: `
+				type F = fn (x: number) -> string
+				type Result = if F : fn (x: number) -> infer R { R } else { boolean }
+			`,
+			wantExpanded: "string",
+		},
+		{
+			name: "FunctionParam",
+			src: `
+				type F = fn (x: number) -> string
+				type Result = if F : fn (x: infer P) -> string { P } else { boolean }
+			`,
+			wantExpanded: "number",
+		},
+		{
+			name:         "PromisePayload",
+			src:          `type Result = if Promise<number> : Promise<infer U> { U } else { boolean }`,
+			wantExpanded: "number",
+		},
+		{
+			// The Check names an alias, which expands to the tuple the pattern matches against.
+			name: "AliasCheckExpands",
+			src: `
+				type Pair = [number, string]
+				type Result = if Pair : [infer A, infer B] { A } else { boolean }
+			`,
+			wantExpanded: "number",
+		},
+		{
+			// Both sides name the same alias, so the match runs argument by argument.
+			name: "SameAliasArguments",
+			src: `
+				type Box<T> = {v: T}
+				type Result = if Box<number> : Box<infer U> { U } else { boolean }
+			`,
+			wantExpanded: "number",
+		},
+		{
+			// The pattern's alias expands to its body, so a structural Check still captures.
+			name: "AliasPatternExpands",
+			src: `
+				type Box<T> = {v: T}
+				type Result = if {v: number} : Box<infer U> { U } else { boolean }
+			`,
+			wantExpanded: "number",
+		},
+		{
+			// A Check of an unrelated shape does not align with the pattern, so Else is selected.
+			name:         "ShapeMismatch",
+			src:          `type Result = if string : [infer U] { U } else { boolean }`,
+			wantExpanded: "boolean",
+		},
+		{
+			// A capture may be read from a nested conditional in the Then branch, which decides
+			// after the capture is substituted in.
+			name:         "NestedConditionalReadsCapture",
+			src:          `type Result = if [number] : [infer U] { if U : number { "num" } else { "other" } } else { boolean }`,
+			wantExpanded: `"num"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A conditional written over a naked type parameter distributes over a union Check: each member
+// decides its own branch and the results union. A Check written as anything else decides the union
+// as a whole, which is how a user opts out. Each case instantiates a generic alias and asserts the
+// type the instantiation reduces to.
+func TestInferCondDistribution(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// The members select different branches, so the result unions one of each.
+			name: "MembersSelectDifferentBranches",
+			src: `
+				type Wrap<T> = if T : string { [T] } else { boolean }
+				type Result = Wrap<"a" | 1>
+			`,
+			wantExpanded: `boolean | ["a"]`,
+		},
+		{
+			// A branch naming the distributed parameter reads it as the member, so the two members
+			// yield two distinct tuples rather than one tuple of the whole union.
+			name: "BranchReadsTheMember",
+			src: `
+				type Wrap<T> = if T : string { [T] } else { boolean }
+				type Result = Wrap<"a" | "b">
+			`,
+			wantExpanded: `["a"] | ["b"]`,
+		},
+		{
+			// A tuple-wrapped Check is not a naked type parameter, so the union decides as a whole and
+			// the branch keeps it: one tuple of the union rather than a union of tuples.
+			name: "TupleWrappedCheckOptsOut",
+			src: `
+				type NoDist<T> = if [T] : [string] { [T] } else { boolean }
+				type Result = NoDist<"a" | "b">
+			`,
+			wantExpanded: `["a" | "b"]`,
+		},
+		{
+			// A union written directly in the Check is not a type-parameter reference, so it decides
+			// as a whole and takes the Else branch.
+			name:         "WrittenUnionCheckDoesNotDistribute",
+			src:          `type Result = if number | string : number { "y" } else { "n" }`,
+			wantExpanded: `"n"`,
+		},
+		{
+			// The parameter also appears in the Extends operand, so each member is tested against a
+			// pattern built from that member: `[string]` against `[[string]]` and `string` against
+			// `[string]`, both of which fail. TypeScript reduces the same alias applied to the same
+			// union to `"no"`.
+			name: "MemberReachesTheExtendsOperand",
+			src: `
+				type X<T> = if T : [T] { "wrap" } else { "no" }
+				type Result = X<[string] | string>
+			`,
+			wantExpanded: `"no"`,
+		},
+		{
+			// Distribution and capture compose: each member matches the pattern on its own, so the
+			// captures union.
+			name: "DistributesOverCapture",
+			src: `
+				type Elem<T> = if T : [infer U] { U } else { boolean }
+				type Result = Elem<[number] | [string]>
+			`,
+			wantExpanded: "number | string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A conditional whose Check never grounds keeps its `infer` clause symbolic, so the stored type
+// renders the way the source wrote it: the Extends operand shows the `infer U` binder and the Then
+// branch shows the bare reference `U`.
+func TestInferCondInferStaysSymbolic(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f<T>(x: if T : [infer U] { U } else { boolean }) {}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T>(x: if T : [infer U] { U } else { boolean }) -> void", values["f"])
+}
+
+// constrain reduces a capturing conditional at the constraint site, so a value is checked against
+// the type the capture resolved to. The cases instantiate an element-extracting alias and check a
+// value against it, accepted when it matches the captured element type and rejected against that
+// type by name when it does not.
+func TestInferCondInferConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "CapturedTypeAccepted",
+			src: `
+				type Elem<T> = if T : [infer U] { U } else { boolean }
+				val x: Elem<[number]> = 5
+			`,
+		},
+		{
+			name: "CapturedTypeRejected",
+			src: `
+				type Elem<T> = if T : [infer U] { U } else { boolean }
+				val x: Elem<[number]> = "hi"
+			`,
+			wantErr: `cannot constrain "hi" <: number`,
+		},
+		{
+			name: "NonMatchingArgumentTakesElse",
+			src: `
+				type Elem<T> = if T : [infer U] { U } else { boolean }
+				val x: Elem<string> = true
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A capture is in scope for the Then branch only, the position TypeScript scopes it to, so the same
+// name written in the Else branch is an unbound type reference.
+func TestInferCondCaptureNotInScopeInElse(t *testing.T) {
+	_, _, errs := inferSource(t, `type Result = if [number] : [infer U] { U } else { U }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &UnsupportedNodeError{}, errs[0])
+	require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
+}
+
+// An alias whose Then branch re-instantiates itself with a capture terminates and resolves, one
+// expansion per lap: `Deep<[[number]]>` captures `[number]`, reduces to `Deep<[number]>`, and that
+// reduces to `number`, which the value is then checked against. This is the shape `Awaited<T>` takes,
+// so it is what a later flattening operator rests on. Each lap shrinks its argument, so the alias
+// guard is never what stops it — the Else branch is reached on its own.
+func TestInferCondRecursiveCaptureAlias(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "InnermostTypeAccepted",
+			src: `
+				type Deep<T> = if T : [infer U] { Deep<U> } else { T }
+				val x: Deep<[[number]]> = 5
+			`,
+		},
+		{
+			name: "InnermostTypeRejected",
+			src: `
+				type Deep<T> = if T : [infer U] { Deep<U> } else { T }
+				val x: Deep<[[number]]> = "hi"
+			`,
+			wantErr: `cannot constrain "hi" <: number`,
+		},
+		{
+			// A branch that re-wraps the capture reaches the same instantiation every lap, so it
+			// never shrinks toward the Else branch. It terminates on constrain's cycle-detection
+			// set instead: an alias operand is compared under an interned canonical representative,
+			// so the repeated `5 <: Same<[number]>` state closes the cycle and the constraint is
+			// accepted. The point of the case is termination, not the type the closed cycle admits.
+			// CheckRegular will reject the definition itself in a later milestone.
+			name: "SameSizeRecursionTerminates",
+			src: `
+				type Same<T> = if T : [infer U] { Same<[U]> } else { T }
+				val x: Same<[number]> = 5
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A nested conditional that binds a name its enclosing conditional already captured shadows it: the
+// inner Then branch reads the inner capture, and the inner binder is filled by the inner match
+// rather than by the outer one. Without shadowing the outer `U` would replace both the inner binder
+// and the inner reference, turning the inner pattern into `[number]`, which `[string]` fails to
+// match, so the case would take the inner Else branch and reduce to `boolean`.
+func TestInferCondNestedCaptureShadowsOuter(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Result = if [number] : [infer U] {
+			if [string] : [infer U] { U } else { boolean }
+		} else { boolean }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "string", soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+}
+
+// A conditional whose Check names a type that does not resolve recovers that operand to a fresh var,
+// and the recovery must not be read as a type parameter: the conditional is not distributive, so a
+// union reaching the Check position later would decide as a whole. The annotation reports the
+// unresolved name once and keeps the conditional shape.
+func TestInferCondUnresolvedCheckIsNotDistributive(t *testing.T) {
+	nodes, _, errs := inferTypeNodes(t, `type Result = if Bogus : string { number } else { boolean }`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
+	cond, ok := nodes["Result"].(*soltype.CondType)
+	require.True(t, ok)
+	require.False(t, cond.Distribute)
+}
+
+// Two conditionals resolved separately from the same source denote the same type, so a value of one
+// satisfies the other and `return k` is accepted. Each resolution declares its own identity for the
+// `infer` name, so equality pairs the two declarations where their clauses meet rather than
+// comparing the identities directly, the same way two functions' type parameters pair by position.
+func TestInferCondSeparateResolutionsAreEqual(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f<T>(k: if T : [infer U] { U } else { boolean }) -> if T : [infer U] { U } else { boolean } {
+			return k
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <T>(k: if T : [infer U] { U } else { boolean }) -> if T : [infer U] { U } else { boolean }",
+		values["f"])
+}
+
+// A conditional may sit inside any operand of another conditional, and each one decides its own
+// branch once its own operands are ground. The cases place a nested conditional at each of the four
+// positions, stack three of them, and run a type parameter into an inner Check through alias
+// instantiation. Every expectation matches what TypeScript reduces the equivalent
+// `C extends E ? T : E` chain to.
+func TestInferCondNestedConditionals(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// The outer Then holds a conditional, so selecting Then reduces it in turn.
+			name:         "NestedInThen",
+			src:          `type Result = if number : number { if string : string { "a" } else { "b" } } else { "c" }`,
+			wantExpanded: `"a"`,
+		},
+		{
+			// The outer Else holds a conditional, whose own Check fails, so its Else is selected.
+			name:         "NestedInElse",
+			src:          `type Result = if string : number { "a" } else { if number : string { "b" } else { "c" } }`,
+			wantExpanded: `"c"`,
+		},
+		{
+			// The Check is a conditional, which reduces to `string` before the outer test runs.
+			name:         "NestedInCheck",
+			src:          `type Result = if (if number : number { string } else { boolean }) : string { "yes" } else { "no" }`,
+			wantExpanded: `"yes"`,
+		},
+		{
+			// The Extends is a conditional, which reduces to `"a"` before the outer test runs.
+			name:         "NestedInExtends",
+			src:          `type Result = if "a" : (if number : number { "a" } else { "b" }) { "hit" } else { "miss" }`,
+			wantExpanded: `"hit"`,
+		},
+		{
+			name:         "ThreeLevels",
+			src:          `type Result = if number : number { if string : string { if boolean : boolean { "deep" } else { "x" } } else { "y" } } else { "z" }`,
+			wantExpanded: `"deep"`,
+		},
+		{
+			// Instantiating the alias substitutes the argument at both the outer and the inner Check,
+			// so the inner conditional decides on the same argument the outer one did.
+			name: "ArgumentReachesInnerCheck",
+			src: `
+				type Pick2<T> = if T : string { if T : "a" { "sa" } else { "s" } } else { "n" }
+				type Result = Pick2<"a">
+			`,
+			wantExpanded: `"sa"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A conditional alias may appear in another conditional's Check, so the outer test runs on what the
+// inner alias reduced to. The Check is not decided by the evaluator directly — an alias reference is
+// ground, so the `Check <: Extends` probe re-enters constrain, which expands the alias and reduces
+// the conditional in its body. Each expectation matches TypeScript's reduction of the same chain.
+func TestInferCondAliasComposition(t *testing.T) {
+	// isStr reduces to "y" for a string argument and "n" otherwise; label tests isStr's result and
+	// outer tests label's, so a reduction runs three aliases deep.
+	const aliases = `
+		type IsStr<T> = if T : string { "y" } else { "n" }
+		type Label<T> = if IsStr<T> : "y" { "text" } else { "other" }
+		type Outer<T> = if Label<T> : "text" { "outer-text" } else { "outer-other" }
+	`
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// IsStr<string> reduces to "y", which the outer conditional matches.
+			name:         "InnerAliasSelectsThen",
+			src:          aliases + `type Result = Label<string>`,
+			wantExpanded: `"text"`,
+		},
+		{
+			// IsStr<number> reduces to "n", so the outer conditional takes Else.
+			name:         "InnerAliasSelectsElse",
+			src:          aliases + `type Result = Label<number>`,
+			wantExpanded: `"other"`,
+		},
+		{
+			// Three aliases deep: Outer tests Label's result, which tested IsStr's.
+			name:         "ThreeAliasesDeep",
+			src:          aliases + `type Result = Outer<string>`,
+			wantExpanded: `"outer-text"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// Distribution reaches every position the distributed type parameter stands at, nested conditionals
+// and composed aliases included. A member selected at the outer conditional is the member the inner
+// one decides on, and an alias whose own Check is a naked parameter distributes inside its own
+// reduction. Each expectation matches TypeScript's reduction of the same chain.
+//
+// An alias that needs to distribute over a Check it cannot write nakedly can wrap its body in
+// `if T : T { … } else { … }`, the TypeScript idiom for forcing distribution. That outer Check is a
+// naked parameter, so it distributes, and each member then runs through the body on its own. Its
+// Else branch is unreachable, since a member is always a subtype of itself, so the type written
+// there never reaches the result.
+func TestInferCondDistributionThroughNesting(t *testing.T) {
+	const aliases = `
+		type IsStr<T> = if T : string { "y" } else { "n" }
+		type Label<T> = if IsStr<T> : "y" { "text" } else { "other" }
+		type Outer<T> = if Label<T> : "text" { "outer-text" } else { "outer-other" }
+	`
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// The member reaches the nested conditional's Check, so `"a"` and `"b"` take the outer
+			// Then and then split on the inner test, while `1` takes the outer Else.
+			name: "MemberReachesNestedCheck",
+			src: `
+				type Wrap<T> = if T : string { if T : "a" { "exact" } else { "other" } } else { "num" }
+				type Result = Wrap<"a" | "b" | 1>
+			`,
+			wantExpanded: `"exact" | "num" | "other"`,
+		},
+		{
+			// Every member takes the outer Then, and the inner test still separates them.
+			name: "MembersSplitOnInnerCheckAlone",
+			src: `
+				type Wrap<T> = if T : string { if T : "a" { "exact" } else { "other" } } else { "num" }
+				type Result = Wrap<"a" | "b">
+			`,
+			wantExpanded: `"exact" | "other"`,
+		},
+		{
+			// The member also reaches a nested conditional's Extends operand: `"a" <: "a"` holds for
+			// the first member and `"a" <: "b"` fails for the second.
+			name: "MemberReachesNestedExtends",
+			src: `
+				type W<T> = if T : string { if "a" : T { "isA" } else { "notA" } } else { "num" }
+				type Result = W<"a" | "b">
+			`,
+			wantExpanded: `"isA" | "notA"`,
+		},
+		{
+			// Label's Check is `IsStr<T>`, an alias reference rather than a naked parameter, so Label
+			// does not distribute. IsStr does, reducing to `"y" | "n"`, which fails `<: "y"`.
+			name:         "OuterAliasDoesNotDistributeButInnerDoes",
+			src:          aliases + `type Result = Label<string | number>`,
+			wantExpanded: `"other"`,
+		},
+		{
+			// The same non-distributing composition one alias deeper.
+			name:         "ThreeAliasesDeepWithUnion",
+			src:          aliases + `type Result = Outer<string | number>`,
+			wantExpanded: `"outer-other"`,
+		},
+		{
+			// Wrapping the previous case's body in `if T : T` gives it a naked Check, so each member
+			// runs the alias-check test on its own: `IsStr<string>` yields "y" and `IsStr<number>`
+			// yields "n", selecting a different branch per member instead of one branch for the union.
+			name: "ForcedDistributionOverAliasCheck",
+			src: aliases + `
+				type LabelF<T> = if T : T { if IsStr<T> : "y" { "text" } else { "other" } } else { "unreachable" }
+				type Result = LabelF<string | number>
+			`,
+			wantExpanded: `"other" | "text"`,
+		},
+		{
+			// The same idiom over a tuple-wrapped Check, which does not distribute on its own. Forcing
+			// it turns the single `["a" | "b"]` the union yields into one tuple per member.
+			name: "ForcedDistributionOverTupleWrappedCheck",
+			src: `
+				type WrapF<T> = if T : T { if [T] : [string] { [T] } else { boolean } } else { "unreachable" }
+				type Result = WrapF<"a" | "b">
+			`,
+			wantExpanded: `["a"] | ["b"]`,
+		},
+		{
+			// The unforced form of the case above, for contrast: the union decides as a whole and the
+			// branch keeps it, so one tuple of the union comes back rather than a union of tuples.
+			name: "UnforcedTupleWrappedCheckKeepsTheUnion",
+			src: `
+				type WrapN<T> = if [T] : [string] { [T] } else { boolean }
+				type Result = WrapN<"a" | "b">
+			`,
+			wantExpanded: `["a" | "b"]`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A distributed member reaches an alias reference written in a branch, so each member instantiates
+// that alias with itself. `Branch<"a" | 1>` admits `"y"`, from `IsStr<"a">` on the string member, and
+// `"num"` from the other member, which is what TypeScript reduces the same alias to. reduce leaves an
+// alias in a result position under its own name, so the stored type is checked through constrain,
+// which expands it; a rejected value names the residual form the annotation holds.
+func TestInferCondDistributionIntoBranchAlias(t *testing.T) {
+	const aliases = `
+		type IsStr<T> = if T : string { "y" } else { "n" }
+		type Branch<T> = if T : string { IsStr<T> } else { "num" }
+	`
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "StringMemberBranchAccepted",
+			src:  aliases + `val x: Branch<"a" | 1> = "y"`,
+		},
+		{
+			name: "OtherMemberBranchAccepted",
+			src:  aliases + `val x: Branch<"a" | 1> = "num"`,
+		},
+		{
+			// "n" is what IsStr yields for a non-string argument, which no member produces here.
+			name:    "UnreachableBranchRejected",
+			src:     aliases + `val x: Branch<"a" | 1> = "n"`,
+			wantErr: `cannot constrain "n" <: "num" | IsStr<"a">`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// The capture for an `infer` declaration is whatever the `Check <: Extends` constraint inferred for
+// it, so the position it sits in decides how several matched types combine and what an unmatched one
+// yields. Each expectation matches TypeScript's reduction of the equivalent conditional.
+func TestInferCondCaptureFromConstraint(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// A covariant position collects the matched types as lower bounds, so two of them union.
+			name:         "CovariantCandidatesUnion",
+			src:          `type Result = if [number, string] : [infer U, infer U] { [U] } else { "no" }`,
+			wantExpanded: `[number | string]`,
+		},
+		{
+			// A function parameter is contravariant, so its candidates collect as upper bounds and
+			// meet instead.
+			name: "ContravariantCandidatesMeet",
+			src: `
+				type F = fn (x: {a: number}, y: {b: string}) -> boolean
+				type P2<T> = if T : fn (x: infer P, y: infer P) -> boolean { [P] } else { "no" }
+				type Result = P2<F>
+			`,
+			wantExpanded: `[{a: number} & {b: string}]`,
+		},
+		{
+			// An optional property the Check does not carry leaves its capture unconstrained, so the
+			// constraint holds and the capture is `unknown`.
+			name:         "UnconstrainedCaptureIsUnknown",
+			src:          `type Result = if {} : {a?: infer U, ...} { [U] } else { "no" }`,
+			wantExpanded: `[unknown]`,
+		},
+		{
+			// A union pattern is decided by constrain's union arm: `"a" <: number` fails, so the
+			// remaining arm takes the capture.
+			name:         "UnionPatternCaptures",
+			src:          `type Result = if "a" : number | infer U { [U] } else { "no" }`,
+			wantExpanded: `["a"]`,
+		},
+		{
+			// An intersection Check is decomposed by constrain too, so a pattern reads a member off
+			// whichever operand carries it.
+			name:         "IntersectionCheckCaptures",
+			src:          `type Result = if {a: number} & {b: string} : {a: infer A, ...} { [A] } else { "no" }`,
+			wantExpanded: `[number]`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})
 	}
 }
