@@ -828,6 +828,12 @@ type alphaCtx struct {
 	// the common lifetime-param-free case allocates nothing.
 	ltpAToB map[int]int
 	ltpBToA map[int]int
+	// inferAToB and inferBToA pair the `infer` declarations of two conditionals, bound when a pair
+	// of declaring clauses meets rather than at a declaration list, since a clause sits at an
+	// arbitrary depth inside an Extends operand. They start nil and allocate on the first pairing,
+	// so a comparison over types carrying no conditional allocates nothing.
+	inferAToB map[int]int
+	inferBToA map[int]int
 }
 
 // bindTypeParams pairs two generic FuncTypes' type parameters positionally, so every
@@ -858,6 +864,33 @@ func (ctx *alphaCtx) sameTypeVar(a, b *soltype.TypeVarType) bool {
 		return false // b is a bound parameter, a is not — mismatch
 	}
 	return a == b
+}
+
+// sameInferDecl reports whether two `infer` nodes stand for corresponding declarations. Meeting a
+// pair of declaring clauses records the correspondence, the way bindTypeParams records a function's
+// parameters, and every later reference is checked against it. Two conditionals resolved separately
+// from the same source therefore compare equal even though each drew its own declaration id, which
+// is what lets `fn (k: if T : [infer U] { U } else { X }) -> if T : [infer U] { U } else { X }`
+// accept `return k`. A reference reached with no correspondence recorded — a branch compared on its
+// own, away from the conditional that declares its names — falls back to id equality, the rule
+// sameTypeVar applies to a variable bound on neither side.
+func (ctx *alphaCtx) sameInferDecl(a, b *soltype.InferType) bool {
+	if j, ok := ctx.inferAToB[a.ID]; ok {
+		return j == b.ID
+	}
+	if _, ok := ctx.inferBToA[b.ID]; ok {
+		return false // b's declaration corresponds to some other declaration on a's side
+	}
+	if !a.Binder {
+		return a.ID == b.ID
+	}
+	if ctx.inferAToB == nil {
+		ctx.inferAToB = map[int]int{}
+		ctx.inferBToA = map[int]int{}
+	}
+	ctx.inferAToB[a.ID] = b.ID
+	ctx.inferBToA[b.ID] = a.ID
+	return true
 }
 
 // bindLifetimeParams pairs two generic FuncTypes' lifetime parameters positionally, the
@@ -1139,10 +1172,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			equalTypeWith(a.Check, b.Check, ctx) && equalTypeWith(a.Extends, b.Extends, ctx) &&
 			equalTypeWith(a.Then, b.Then, ctx) && equalTypeWith(a.Else, b.Else, ctx)
 	case *soltype.InferType:
-		// Two `infer` nodes are equal when they name the same capture in the same role, so a binder
-		// never equals a reference to the name it introduces.
+		// Two `infer` nodes are equal when they play the same role — a declaring clause never equals
+		// a reference to the name it declares — and their declarations correspond under the pairing
+		// sameInferDecl builds. The names themselves are not compared, the same way two functions'
+		// type parameters compare by position rather than by name.
 		b, ok := b.(*soltype.InferType)
-		return ok && a.Name == b.Name && a.Binder == b.Binder
+		return ok && a.Binder == b.Binder && ctx.sameInferDecl(a, b)
 	case *soltype.RestSpreadType:
 		// Two `...P` spread elements are equal when their operands are, compared structurally
 		// without reducing. The enclosing TupleType arm compares element lists positionally, so a

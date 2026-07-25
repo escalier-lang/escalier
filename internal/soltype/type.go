@@ -682,17 +682,24 @@ type CondType struct {
 	Distribute bool
 }
 
-// InferType is the `infer U` name a conditional's Extends operand introduces, and the reference to
-// that name from the conditional's Then branch. Binder tells the two apart: the `infer U` clause in
-// `if T : [infer U] { U } else { boolean }` resolves to an InferType with Binder set, while the `U` in
-// the Then branch resolves to one without it. The evaluator's structural matcher walks Check against
-// Extends, records the type at each binder's position, and substitutes those captures for both forms
-// before it reduces the selected branch, so a stored conditional prints `if T : [infer U] { U } else
-// { boolean }` the way the source wrote it.
+// InferType is the `infer U` clause a conditional's Extends operand declares, and the reference to
+// that name from the conditional's Then branch. The evaluator's structural matcher walks Check
+// against Extends, records the type at each clause's position, and substitutes those captures before
+// it reduces the selected branch.
 //
-// It is a leaf with no bounds, and nothing constrains against it. A conditional carrying an
-// unsubstituted binder has not decided its branch, so the whole conditional is still inert.
+// ID is the declaration the two forms share. The clause and every reference to it carry one id, so
+// substituting a captured type reaches exactly the positions that declaration stands at. A nested
+// conditional writing the same name draws a distinct id, which is what makes its clause and
+// references a separate declaration that shadows the enclosing one.
+//
+// Name is the source name, carried for display. Binder marks the declaring clause, which renders
+// `infer U` where a reference renders the bare `U`, so a stored conditional prints
+// `if T : [infer U] { U } else { boolean }` the way the source wrote it.
+//
+// It is a leaf with no bounds, and nothing constrains against it. A conditional whose captures no
+// match has filled has not decided its branch, so the whole conditional is still inert.
 type InferType struct {
+	ID     int
 	Name   string
 	Binder bool
 }

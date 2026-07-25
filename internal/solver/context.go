@@ -163,6 +163,17 @@ func (c *Context) freshSkolem(name string) *soltype.SkolemType {
 	return s
 }
 
+// freshInferDecl mints the declaration one `infer U` clause introduces, carrying the source name for
+// display. It draws from the same counter as freshVar so every declaration has a unique id, which is
+// what keeps a nested conditional's `infer U` distinct from the enclosing conditional's clause of the
+// same name. The node it returns is the reference form, which resolveCondTypeAnn binds in the scope
+// the branches read; the clause itself copies the id onto a binder.
+func (c *Context) freshInferDecl(name string) *soltype.InferType {
+	t := &soltype.InferType{ID: c.varCounter, Name: name}
+	c.varCounter++
+	return t
+}
+
 // freshLifetime allocates a new lifetime variable at the given level, assigning it
 // the next id in sequence. Lifetimes now ride the same let-generalization level
 // hierarchy as types (M4 D2.5): a lifetime minted inside its scheme's

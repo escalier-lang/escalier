@@ -1729,3 +1729,19 @@ func TestInferCondUnresolvedCheckIsNotDistributive(t *testing.T) {
 	require.True(t, ok)
 	require.False(t, cond.Distribute)
 }
+
+// Two conditionals resolved separately from the same source denote the same type, so a value of one
+// satisfies the other and `return k` is accepted. Each resolution declares its own identity for the
+// `infer` name, so equality pairs the two declarations where their clauses meet rather than
+// comparing the identities directly, the same way two functions' type parameters pair by position.
+func TestInferCondSeparateResolutionsAreEqual(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f<T>(k: if T : [infer U] { U } else { boolean }) -> if T : [infer U] { U } else { boolean } {
+			return k
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <T>(k: if T : [infer U] { U } else { boolean }) -> if T : [infer U] { U } else { boolean }",
+		values["f"])
+}
