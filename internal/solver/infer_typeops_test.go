@@ -1997,3 +1997,60 @@ func TestInferCondDistributionIntoBranchAlias(t *testing.T) {
 		})
 	}
 }
+
+// The capture for an `infer` declaration is whatever the `Check <: Extends` constraint inferred for
+// it, so the position it sits in decides how several matched types combine and what an unmatched one
+// yields. Each expectation matches TypeScript's reduction of the equivalent conditional.
+func TestInferCondCaptureFromConstraint(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// A covariant position collects the matched types as lower bounds, so two of them union.
+			name:         "CovariantCandidatesUnion",
+			src:          `type Result = if [number, string] : [infer U, infer U] { [U] } else { "no" }`,
+			wantExpanded: `[number | string]`,
+		},
+		{
+			// A function parameter is contravariant, so its candidates collect as upper bounds and
+			// meet instead.
+			name: "ContravariantCandidatesMeet",
+			src: `
+				type F = fn (x: {a: number}, y: {b: string}) -> boolean
+				type P2<T> = if T : fn (x: infer P, y: infer P) -> boolean { [P] } else { "no" }
+				type Result = P2<F>
+			`,
+			wantExpanded: `[{a: number} & {b: string}]`,
+		},
+		{
+			// An optional property the Check does not carry leaves its capture unconstrained, so the
+			// constraint holds and the capture is `unknown`.
+			name:         "UnconstrainedCaptureIsUnknown",
+			src:          `type Result = if {} : {a?: infer U, ...} { [U] } else { "no" }`,
+			wantExpanded: `[unknown]`,
+		},
+		{
+			// A union pattern is decided by constrain's union arm: `"a" <: number` fails, so the
+			// remaining arm takes the capture.
+			name:         "UnionPatternCaptures",
+			src:          `type Result = if "a" : number | infer U { [U] } else { "no" }`,
+			wantExpanded: `["a"]`,
+		},
+		{
+			// An intersection Check is decomposed by constrain too, so a pattern reads a member off
+			// whichever operand carries it.
+			name:         "IntersectionCheckCaptures",
+			src:          `type Result = if {a: number} & {b: string} : {a: infer A, ...} { [A] } else { "no" }`,
+			wantExpanded: `[number]`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}

@@ -108,7 +108,8 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 // A conditional written over a naked type parameter distributes: a Check that grounds to a union is
 // decided one member at a time and the branch results union, so `type Wrap<T> = if T : string { [T] }
 // else { boolean }` reduces `Wrap<"a" | 1>` to `["a"] | boolean`. An Extends carrying an `infer U`
-// binder routes through reduceCondInfer, which captures the type at each binder's position first.
+// binder routes through reduceCondInfer, which infers a capture for each binder from the same
+// subtype check that decides the branch.
 func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 	check := e.reduce(t.Check)
 	extends := e.reduce(t.Extends)
@@ -184,188 +185,68 @@ func (s *occurrenceSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.
 func (s *occurrenceSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // reduceCondInfer decides a conditional whose Extends operand declares `infer` captures, such as
-// `if T : [infer U] { U } else { boolean }`. It runs in three steps:
+// `if T : [infer U] { U } else { boolean }`. One subtype check does both jobs:
 //
-//  1. matchInfer walks Check against Extends and records the type at each binder's position.
-//  2. Those captures are substituted into Extends, turning the pattern into an ordinary type, and
-//     the resulting `Check <: Extends` probe decides the branch the same way a capture-free
-//     conditional does. Substituting first is what lets a pattern mix captures with written types:
-//     `[infer A, number]` over `[number, string]` binds A but the probe still rejects on element 1.
+//  1. Each declaration is replaced by a fresh inference variable, turning the pattern into an
+//     ordinary type. `[infer U]` becomes `[t7]`.
+//  2. `Check <: pattern` runs under a probe. Its result decides the branch, and the type each
+//     variable was inferred to along the way is the capture for that declaration.
 //  3. On success the captures are substituted into the Then branch, so a reference to a captured
-//     name reduces to the type that was matched.
+//     name reduces to the type the constraint inferred for it.
 //
-// A structural mismatch, or a pattern position the matcher has no arm for, leaves a binder without a
-// capture and selects Else. The post-substitution check for a surviving binder is what makes that
-// total: no branch is ever selected with an unsubstituted capture in it.
+// Letting constrain infer the captures is what keeps this total over the type set. A structural
+// matcher would need an arm per container kind and would silently take the Else branch for a kind it
+// had no arm for; constrain already decomposes every kind, so a pattern position it can align, it
+// can capture from. Union and intersection patterns work for the same reason.
+//
+// The probe is discarded, so the variables and every bound recorded against them are gone by the
+// time this returns and the evaluator's no-mutation invariant holds. A failed constraint selects
+// Else, which covers a shape mismatch and a pattern whose written positions reject the Check alike.
 func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check, extends soltype.Type) soltype.Type {
-	captures := map[int]soltype.Type{}
-	if !e.matchInfer(check, extends, captures) {
+	decls := inferDeclIDs(extends)
+	vars := make([]*soltype.TypeVarType, len(decls))
+	holes := make(map[int]soltype.Type, len(decls))
+	for i, id := range decls {
+		// Level 0 matches the ground Check, so constrain records against these variables directly
+		// rather than extruding. They never outlive the probe, so no generalization sees them.
+		vars[i] = e.ctx.freshVar(0)
+		holes[id] = vars[i]
+	}
+	captured, ok := e.ctx.trialCaptures(check, substituteInfer(extends, holes), vars, e.seen.Clone())
+	if !ok {
 		return e.reduce(t.Else)
 	}
-	pattern := substituteInfer(extends, captures)
-	if containsInfer(pattern) {
-		return e.reduce(t.Else)
-	}
-	if !e.ctx.condExtends(check, pattern, e.seen) {
-		return e.reduce(t.Else)
+	captures := make(map[int]soltype.Type, len(decls))
+	for i, id := range decls {
+		captures[id] = captured[i]
 	}
 	return e.reduce(substituteInfer(t.Then, captures))
 }
 
-// matchInfer walks the ground type check alongside the Extends pattern and records into captures
-// the type sitting at each `infer` binder's position, reporting whether the two aligned. A pattern
-// subtree declaring no binder needs no alignment — the `Check <: Extends` probe decides it — so the
-// walk stops there and reports success.
-//
-// The arms cover the positions a capture is written in: a tuple element, an object property, a
-// function parameter or return, a promise payload, and a type argument of an alias or class
-// reference. A pattern position with no arm, such as a union or a borrow, reports a mismatch, which
-// selects the Else branch. Reporting success there instead would leave the binder uncaptured, and
-// the caller would reject the branch anyway.
-//
-// The type switch here is deliberate rather than a traversal that should be moved onto the soltype
-// visitor, which walks one tree. This is a relation over two, the shape equalTypeWith and constrain
-// also take. Four of its steps are outside what a single-tree rewrite expresses: it stops at the
-// first mismatch, it normalizes only the check side through alignCheck, it descends into an object
-// by member name rather than by child position, and it produces captures rather than a type. The
-// single-tree walks around it — containsInfer, substituteInfer, substituteOccurrences — are visitors.
-func (e *typeEvaluator) matchInfer(check, pattern soltype.Type, captures map[int]soltype.Type) bool {
-	if binder, ok := pattern.(*soltype.InferType); ok {
-		capture(captures, binder.ID, check)
-		return true
-	}
-	if !containsInfer(pattern) {
-		return true
-	}
-	switch pat := pattern.(type) {
-	case *soltype.TupleType:
-		tup, ok := e.alignCheck(check).(*soltype.TupleType)
-		if !ok || len(tup.Elems) != len(pat.Elems) || hasRestSpread(tup.Elems) {
-			return false
-		}
-		for i, el := range pat.Elems {
-			if !e.matchInfer(tup.Elems[i], el, captures) {
-				return false
-			}
-		}
-		return true
-	case *soltype.ObjectType:
-		obj, ok := e.groundToObject(check)
-		if !ok {
-			return false
-		}
-		for _, el := range pat.Elems {
-			prop, ok := el.(*soltype.PropertyElem)
-			if !ok {
-				// Only a named property pattern has a member to read the capture off. Any other
-				// member is skipped, and a binder it carries stays uncaptured, which the caller
-				// rejects when it finds one surviving substitution.
-				continue
-			}
-			read, hasValue, _ := memberReadContribution(obj, prop.Name)
-			if !hasValue {
-				return false
-			}
-			if !e.matchInfer(read, prop.Type, captures) {
-				return false
-			}
-		}
-		return true
-	case *soltype.FuncType:
-		fn, ok := e.alignCheck(check).(*soltype.FuncType)
-		if !ok || len(fn.Params) != len(pat.Params) {
-			return false
-		}
-		for i, p := range pat.Params {
-			if !e.matchInfer(fn.Params[i].Type, p.Type, captures) {
-				return false
-			}
-		}
-		return e.matchInfer(fn.Ret, pat.Ret, captures)
-	case *soltype.PromiseType:
-		promise, ok := e.alignCheck(check).(*soltype.PromiseType)
-		if !ok {
-			return false
-		}
-		return e.matchInfer(promise.Inner, pat.Inner, captures)
-	case *soltype.ClassType:
-		cls, ok := e.alignCheck(check).(*soltype.ClassType)
-		if !ok || cls.Name != pat.Name {
-			return false
-		}
-		return e.matchInferArgs(cls.TypeArgs, pat.TypeArgs, captures)
-	case *soltype.AliasType:
-		return e.matchInferAlias(check, pat, captures)
-	default:
-		return false
-	}
+// inferDeclIDs returns the ids of the `infer` declarations t holds, in first-appearance order with
+// duplicates collapsed, so a name written at two positions in one pattern yields one id and takes
+// one variable. The order is the order trialCaptures reports its results in.
+func inferDeclIDs(t soltype.Type) []int {
+	f := &inferDeclFinder{seen: set.NewSet[int]()}
+	t.Accept(f, soltype.Positive)
+	return f.ids
 }
 
-// matchInferAlias matches a named-alias pattern such as `Box<infer U>`. A check naming the same
-// alias matches argument by argument, which is the exact case `Awaited`-shaped patterns rely on.
-// Otherwise the pattern's alias expands to its body and the match retries against that, so
-// `Box<infer U>` over `type Box<T> = {v: T}` still captures U from a plain `{v: number}`. Expansion
-// runs under the shared termination guard, so a recursive alias pattern stops rather than unfolding
-// forever, and a guard that blocks expansion reports a mismatch.
-//
-// Comparing names first is what makes a recursive alias such as `type List<T> = {head: T, tail:
-// List<T> | null}` match: expanding both sides would reach the `List<T> | null` field, a union the
-// matcher has no arm for. The match against the expanded body runs inside the guard's callback,
-// where the alias is still on the active path, so a body that re-references the alias stops.
-func (e *typeEvaluator) matchInferAlias(check soltype.Type, pat *soltype.AliasType, captures map[int]soltype.Type) bool {
-	if alias, ok := e.reduce(check).(*soltype.AliasType); ok && alias.Name == pat.Name {
-		return e.matchInferArgs(alias.TypeArgs, pat.TypeArgs, captures)
-	}
-	matched := false
-	e.expandAliasGuarded(pat, nil, func(body soltype.Type) soltype.Type {
-		matched = e.matchInfer(check, body, captures)
-		return nil
-	})
-	return matched
+// inferDeclFinder is the walking visitor behind inferDeclIDs.
+type inferDeclFinder struct {
+	seen set.Set[int]
+	ids  []int
 }
 
-// matchInferArgs matches two positional type-argument lists, the shared body of the class and alias
-// arms. Differing arity is a mismatch, since no position lines up.
-func (e *typeEvaluator) matchInferArgs(checkArgs, patArgs []soltype.Type, captures map[int]soltype.Type) bool {
-	if len(checkArgs) != len(patArgs) {
-		return false
+func (f *inferDeclFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if iv, ok := t.(*soltype.InferType); ok && !f.seen.Contains(iv.ID) {
+		f.seen.Add(iv.ID)
+		f.ids = append(f.ids, iv.ID)
 	}
-	for i, arg := range patArgs {
-		if !e.matchInfer(checkArgs[i], arg, captures) {
-			return false
-		}
-	}
-	return true
+	return soltype.EnterResult{}
 }
 
-// capture records the type matched at one binder's position. A name written at two positions, as in
-// `[infer U, infer U]`, keeps both matched types by unioning them, so `[number, string]` captures
-// `number | string`.
-func capture(captures map[int]soltype.Type, decl int, matched soltype.Type) {
-	if prev, ok := captures[decl]; ok {
-		captures[decl] = newUnion(nil, []soltype.Type{prev, matched}, false)
-		return
-	}
-	captures[decl] = matched
-}
-
-// alignCheck reduces a check operand toward the structural shape a pattern matches against. A
-// `typeof` query resolves to the value's type and a named alias expands to its body, both under the
-// termination guard, so `if Pair : [infer A, infer B]` over `type Pair = [number, string]` aligns
-// with the tuple pattern. A guard that blocks expansion leaves the alias in place, which the caller
-// reads as a mismatch. The object arm uses groundToObject instead, which also projects a class body.
-func (e *typeEvaluator) alignCheck(check soltype.Type) soltype.Type {
-	switch c := check.(type) {
-	case *soltype.TypeofType:
-		return e.alignCheck(c.Ty)
-	case *soltype.AliasType:
-		return e.expandAliasGuarded(c, c, func(body soltype.Type) soltype.Type {
-			return e.alignCheck(body)
-		})
-	default:
-		return e.reduce(check)
-	}
-}
+func (f *inferDeclFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
 
 // substituteInfer rewrites every `infer` node whose declaration captures holds a type for to that
 // type, covering the clause that declares the name and the branch references that read it alike,
@@ -396,7 +277,7 @@ func (s *inferSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Enter
 func (s *inferSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // containsInfer reports whether t holds an `infer` node with no capture substituted into it yet. A
-// conditional consults it on its Extends operand to route to the matcher, and on a substituted
+// conditional consults it on its Extends operand to route to the capturing reduction, and on a
 // pattern to reject a match that left a binder uncaptured.
 func containsInfer(t soltype.Type) bool {
 	f := &inferFinder{}

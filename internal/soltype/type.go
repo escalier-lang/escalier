@@ -700,9 +700,9 @@ type CondType struct {
 }
 
 // InferType is the `infer U` clause a conditional's Extends operand declares, and the reference to
-// that name from the conditional's Then branch. The evaluator's structural matcher walks Check
-// against Extends, records the type at each clause's position, and substitutes those captures before
-// it reduces the selected branch.
+// that name from the conditional's Then branch. The evaluator stands a fresh inference variable in
+// for each clause, lets the `Check <: Extends` constraint infer what that variable holds, and
+// substitutes the result before it reduces the selected branch.
 //
 // ID is the declaration the two forms share. The clause and every reference to it carry one id, so
 // substituting a captured type reaches exactly the positions that declaration stands at. A nested

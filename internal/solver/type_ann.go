@@ -349,7 +349,7 @@ func (c *checker) resolveIndexTypeAnn(scope *Scope, ta *ast.IndexTypeAnn, lvl in
 // scope covers the Extends and Then operands, matching the position TypeScript scopes an `infer`
 // name to, so `if T : [infer U] { U } else { boolean }` resolves its Then branch to the capture its
 // Extends declares while the same name written in the Else branch is an unbound reference. The
-// evaluator fills each capture by structural match at reduction time.
+// evaluator fills each capture from the subtype check that decides the branch, at reduction time.
 //
 // A conditional whose Check is written as a bare type-parameter reference is marked Distribute, the
 // naked-type-parameter rule the evaluator applies when the Check grounds to a union.
@@ -405,9 +405,9 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 	return t, true
 }
 
-// resolveInferTypeAnn lowers an `infer U` clause to the binder the evaluator's structural matcher
-// captures a type at, reading U's declaration from the scope resolveCondTypeAnn declared it in so
-// the binder and the branch's references carry one id. The clause is legal only inside a
+// resolveInferTypeAnn lowers an `infer U` clause to the binder the evaluator captures a type at,
+// reading U's declaration from the scope resolveCondTypeAnn declared it in so the binder and the
+// branch's references carry one id. The clause is legal only inside a
 // conditional's Extends operand, which is where a matched position exists to capture; anywhere else
 // it names no capture, so it reports an unsupported feature and recovers.
 func (c *checker) resolveInferTypeAnn(scope *Scope, ta *ast.InferTypeAnn) (soltype.Type, bool) {
