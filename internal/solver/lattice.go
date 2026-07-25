@@ -41,6 +41,10 @@ func newUnion(c *Context, parts []soltype.Type, inexact bool) soltype.Type {
 // newIntersection is the meet twin of newUnion. An IntersectionType carries
 // no exactness flag, since exactness is a property of the result rather than
 // the meet, so the API is one argument shorter.
+//
+// TODO(#927): collapse an uninhabited intersection to never. Two members that no value satisfies
+// together, such as `number & string`, survive the pipeline below, so a conditional capture that
+// meets contravariant candidates renders `number & string` where TypeScript renders `never`.
 func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 	flat := flattenIntersection(parts)
 	pruned, hadError := pruneIntersection(flat)
