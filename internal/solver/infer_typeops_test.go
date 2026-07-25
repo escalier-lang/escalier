@@ -1745,3 +1745,218 @@ func TestInferCondSeparateResolutionsAreEqual(t *testing.T) {
 		"fn <T>(k: if T : [infer U] { U } else { boolean }) -> if T : [infer U] { U } else { boolean }",
 		values["f"])
 }
+
+// A conditional may sit inside any operand of another conditional, and each one decides its own
+// branch once its own operands are ground. The cases place a nested conditional at each of the four
+// positions, stack three of them, and run a type parameter into an inner Check through alias
+// instantiation. Every expectation matches what TypeScript reduces the equivalent
+// `C extends E ? T : E` chain to.
+func TestInferCondNestedConditionals(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// The outer Then holds a conditional, so selecting Then reduces it in turn.
+			name:         "NestedInThen",
+			src:          `type Result = if number : number { if string : string { "a" } else { "b" } } else { "c" }`,
+			wantExpanded: `"a"`,
+		},
+		{
+			// The outer Else holds a conditional, whose own Check fails, so its Else is selected.
+			name:         "NestedInElse",
+			src:          `type Result = if string : number { "a" } else { if number : string { "b" } else { "c" } }`,
+			wantExpanded: `"c"`,
+		},
+		{
+			// The Check is a conditional, which reduces to `string` before the outer test runs.
+			name:         "NestedInCheck",
+			src:          `type Result = if (if number : number { string } else { boolean }) : string { "yes" } else { "no" }`,
+			wantExpanded: `"yes"`,
+		},
+		{
+			// The Extends is a conditional, which reduces to `"a"` before the outer test runs.
+			name:         "NestedInExtends",
+			src:          `type Result = if "a" : (if number : number { "a" } else { "b" }) { "hit" } else { "miss" }`,
+			wantExpanded: `"hit"`,
+		},
+		{
+			name:         "ThreeLevels",
+			src:          `type Result = if number : number { if string : string { if boolean : boolean { "deep" } else { "x" } } else { "y" } } else { "z" }`,
+			wantExpanded: `"deep"`,
+		},
+		{
+			// Instantiating the alias substitutes the argument at both the outer and the inner Check,
+			// so the inner conditional decides on the same argument the outer one did.
+			name: "ArgumentReachesInnerCheck",
+			src: `
+				type Pick2<T> = if T : string { if T : "a" { "sa" } else { "s" } } else { "n" }
+				type Result = Pick2<"a">
+			`,
+			wantExpanded: `"sa"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A conditional alias may appear in another conditional's Check, so the outer test runs on what the
+// inner alias reduced to. The Check is not decided by the evaluator directly — an alias reference is
+// ground, so the `Check <: Extends` probe re-enters constrain, which expands the alias and reduces
+// the conditional in its body. Each expectation matches TypeScript's reduction of the same chain.
+func TestInferCondAliasComposition(t *testing.T) {
+	// isStr reduces to "y" for a string argument and "n" otherwise; label tests isStr's result and
+	// outer tests label's, so a reduction runs three aliases deep.
+	const aliases = `
+		type IsStr<T> = if T : string { "y" } else { "n" }
+		type Label<T> = if IsStr<T> : "y" { "text" } else { "other" }
+		type Outer<T> = if Label<T> : "text" { "outer-text" } else { "outer-other" }
+	`
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// IsStr<string> reduces to "y", which the outer conditional matches.
+			name:         "InnerAliasSelectsThen",
+			src:          aliases + `type Result = Label<string>`,
+			wantExpanded: `"text"`,
+		},
+		{
+			// IsStr<number> reduces to "n", so the outer conditional takes Else.
+			name:         "InnerAliasSelectsElse",
+			src:          aliases + `type Result = Label<number>`,
+			wantExpanded: `"other"`,
+		},
+		{
+			// Three aliases deep: Outer tests Label's result, which tested IsStr's.
+			name:         "ThreeAliasesDeep",
+			src:          aliases + `type Result = Outer<string>`,
+			wantExpanded: `"outer-text"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// Distribution reaches every position the distributed type parameter stands at, nested conditionals
+// and composed aliases included. A member selected at the outer conditional is the member the inner
+// one decides on, and an alias whose own Check is a naked parameter distributes inside its own
+// reduction. Each expectation matches TypeScript's reduction of the same chain.
+func TestInferCondDistributionThroughNesting(t *testing.T) {
+	const aliases = `
+		type IsStr<T> = if T : string { "y" } else { "n" }
+		type Label<T> = if IsStr<T> : "y" { "text" } else { "other" }
+		type Outer<T> = if Label<T> : "text" { "outer-text" } else { "outer-other" }
+	`
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// The member reaches the nested conditional's Check, so `"a"` and `"b"` take the outer
+			// Then and then split on the inner test, while `1` takes the outer Else.
+			name: "MemberReachesNestedCheck",
+			src: `
+				type Wrap<T> = if T : string { if T : "a" { "exact" } else { "other" } } else { "num" }
+				type Result = Wrap<"a" | "b" | 1>
+			`,
+			wantExpanded: `"exact" | "num" | "other"`,
+		},
+		{
+			// Every member takes the outer Then, and the inner test still separates them.
+			name: "MembersSplitOnInnerCheckAlone",
+			src: `
+				type Wrap<T> = if T : string { if T : "a" { "exact" } else { "other" } } else { "num" }
+				type Result = Wrap<"a" | "b">
+			`,
+			wantExpanded: `"exact" | "other"`,
+		},
+		{
+			// The member also reaches a nested conditional's Extends operand: `"a" <: "a"` holds for
+			// the first member and `"a" <: "b"` fails for the second.
+			name: "MemberReachesNestedExtends",
+			src: `
+				type W<T> = if T : string { if "a" : T { "isA" } else { "notA" } } else { "num" }
+				type Result = W<"a" | "b">
+			`,
+			wantExpanded: `"isA" | "notA"`,
+		},
+		{
+			// Label's Check is `IsStr<T>`, an alias reference rather than a naked parameter, so Label
+			// does not distribute. IsStr does, reducing to `"y" | "n"`, which fails `<: "y"`.
+			name:         "OuterAliasDoesNotDistributeButInnerDoes",
+			src:          aliases + `type Result = Label<string | number>`,
+			wantExpanded: `"other"`,
+		},
+		{
+			// The same non-distributing composition one alias deeper.
+			name:         "ThreeAliasesDeepWithUnion",
+			src:          aliases + `type Result = Outer<string | number>`,
+			wantExpanded: `"outer-other"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A distributed member reaches an alias reference written in a branch, so each member instantiates
+// that alias with itself. `Branch<"a" | 1>` admits `"y"`, from `IsStr<"a">` on the string member, and
+// `"num"` from the other member, which is what TypeScript reduces the same alias to. reduce leaves an
+// alias in a result position under its own name, so the stored type is checked through constrain,
+// which expands it; a rejected value names the residual form the annotation holds.
+func TestInferCondDistributionIntoBranchAlias(t *testing.T) {
+	const aliases = `
+		type IsStr<T> = if T : string { "y" } else { "n" }
+		type Branch<T> = if T : string { IsStr<T> } else { "num" }
+	`
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "StringMemberBranchAccepted",
+			src:  aliases + `val x: Branch<"a" | 1> = "y"`,
+		},
+		{
+			name: "OtherMemberBranchAccepted",
+			src:  aliases + `val x: Branch<"a" | 1> = "num"`,
+		},
+		{
+			// "n" is what IsStr yields for a non-string argument, which no member produces here.
+			name:    "UnreachableBranchRejected",
+			src:     aliases + `val x: Branch<"a" | 1> = "n"`,
+			wantErr: `cannot constrain "n" <: "num" | IsStr<"a">`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
