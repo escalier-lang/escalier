@@ -84,6 +84,7 @@ func (t *NeverType) Accept(v TypeVisitor, pol Polarity) Type     { return accept
 func (t *UnknownType) Accept(v TypeVisitor, pol Polarity) Type   { return acceptLeaf(t, v, pol) }
 func (t *ErrorType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *SkolemType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
+func (t *InferType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 
 func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
@@ -233,7 +234,7 @@ func (t *CondType) Accept(v TypeVisitor, pol Polarity) Type {
 	els := cur.Else.Accept(v, pol)
 	out := cur
 	if check != cur.Check || extends != cur.Extends || then != cur.Then || els != cur.Else {
-		out = &CondType{Check: check, Extends: extends, Then: then, Else: els}
+		out = &CondType{Check: check, Extends: extends, Then: then, Else: els, Distribute: cur.Distribute}
 	}
 	return v.ExitType(out, pol)
 }

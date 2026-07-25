@@ -2,6 +2,7 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -89,6 +90,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.resolveTypeOfTypeAnn(scope, ta)
 	case *ast.CondTypeAnn:
 		return c.resolveCondTypeAnn(scope, ta, lvl)
+	case *ast.InferTypeAnn:
+		return c.resolveInferTypeAnn(ta)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -340,23 +343,42 @@ func (c *checker) resolveIndexTypeAnn(scope *Scope, ta *ast.IndexTypeAnn, lvl in
 // Else, while a conditional over a type parameter stays symbolic. An unsupported operand recovers to
 // a fresh var, cascade-safe like the Promise<bad> recovery.
 //
-// The `infer` clause is M9 PR3b, so a conditional whose Extends holds an `infer` reports an
-// unsupported feature and recovers. Branch selection here has no matcher to bind the `infer` name.
-// Resolving the Extends anyway would recover each `infer U` to a fresh var and silently mis-decide
-// the branch, so rejecting it keeps the two milestones cleanly split.
+// Each `infer U` clause in the Extends operand introduces the name U. The clause itself resolves to
+// an InferType binder, and the same name resolves in the Then branch to an InferType reference, so
+// `if T : [infer U] { U } else { boolean }` stores a conditional whose Then branch points at the
+// capture its Extends declares. The names are bound in a child scope covering the Then branch alone,
+// matching the position TypeScript scopes them to, so an `infer` name written in the Else branch is
+// an unbound reference. The evaluator binds each capture by structural match at reduction time.
+//
+// A conditional whose Check is written as a bare type-parameter reference is marked Distribute, the
+// naked-type-parameter rule the evaluator applies when the Check grounds to a union.
 func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int) (soltype.Type, bool) {
-	if annContainsInfer(ta.Extends) {
-		return c.reportUnsupportedFeature(ta, "infer clause in conditional type"), false
-	}
+	// The Extends operand is the one position an `infer` clause is legal in. Save and restore the
+	// flag around each operand so a nested conditional's own operands decide it independently.
+	savedInCondExtends := c.inCondExtends
+	defer func() { c.inCondExtends = savedInCondExtends }()
+
+	c.inCondExtends = false
 	check, ok := c.resolveTypeAnn(scope, ta.Check, lvl)
 	if !ok {
 		check = c.freshAt(lvl)
 	}
+
+	c.inCondExtends = true
 	extends, ok := c.resolveTypeAnn(scope, ta.Extends, lvl)
 	if !ok {
 		extends = c.freshAt(lvl)
 	}
-	then, ok := c.resolveTypeAnn(scope, ta.Then, lvl)
+
+	c.inCondExtends = false
+	thenScope := scope
+	if names := inferAnnNames(ta.Extends); len(names) > 0 {
+		thenScope = scope.Child()
+		for _, name := range names {
+			thenScope.defineType(name, TypeBinding{Type: &soltype.InferType{Name: name}})
+		}
+	}
+	then, ok := c.resolveTypeAnn(thenScope, ta.Then, lvl)
 	if !ok {
 		then = c.freshAt(lvl)
 	}
@@ -364,29 +386,66 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 	if !ok {
 		els = c.freshAt(lvl)
 	}
-	t := &soltype.CondType{Check: check, Extends: extends, Then: then, Else: els}
+
+	t := &soltype.CondType{
+		Check:      check,
+		Extends:    extends,
+		Then:       then,
+		Else:       els,
+		Distribute: nakedTypeParamCheck(ta.Check, check),
+	}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
 
-// annContainsInfer reports whether a type annotation subtree holds an `infer U` clause. A
-// conditional consults it on its Extends operand to reject the `infer` form, which M9 PR3b handles.
-func annContainsInfer(ta ast.TypeAnn) bool {
-	f := &inferAnnFinder{}
-	ta.Accept(f)
-	return f.found
+// resolveInferTypeAnn lowers an `infer U` clause to the InferType binder the evaluator's structural
+// matcher captures a type at. The clause is legal only inside a conditional's Extends operand, which
+// is where a matched position exists to capture; anywhere else it names no capture, so it reports an
+// unsupported feature and recovers.
+func (c *checker) resolveInferTypeAnn(ta *ast.InferTypeAnn) (soltype.Type, bool) {
+	if !c.inCondExtends {
+		return c.reportUnsupportedFeature(ta, "infer outside a conditional type's extends operand"), false
+	}
+	t := &soltype.InferType{Name: ta.Name, Binder: true}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
 }
 
-// inferAnnFinder is the AST visitor behind annContainsInfer. It flags the first InferTypeAnn it
-// reaches and keeps walking; one occurrence is enough to answer.
+// nakedTypeParamCheck reports whether a conditional's Check was written as a bare reference to a
+// type parameter, the shape TypeScript distributes a union Check over. The written form must be a
+// name with no type arguments, and that name must resolve to a type variable, which is what
+// resolveTypeParams mints for each `<T>` binder. A literal type, an alias, or a `[T]` wrapper each
+// fails one of the two tests, so the conditional decides a union Check as a whole.
+func nakedTypeParamCheck(ann ast.TypeAnn, resolved soltype.Type) bool {
+	ref, ok := ann.(*ast.TypeRefTypeAnn)
+	if !ok || len(ref.TypeArgs) > 0 {
+		return false
+	}
+	_, isVar := resolved.(*soltype.TypeVarType)
+	return isVar
+}
+
+// inferAnnNames returns the names the `infer U` clauses of one annotation subtree introduce, in
+// source order with duplicates collapsed. resolveCondTypeAnn reads its Extends operand's names to
+// bind them for the Then branch.
+func inferAnnNames(ta ast.TypeAnn) []string {
+	f := &inferAnnFinder{seen: set.NewSet[string]()}
+	ta.Accept(f)
+	return f.names
+}
+
+// inferAnnFinder is the AST visitor behind inferAnnNames. It collects each InferTypeAnn name it
+// reaches, skipping one it has already recorded so a name written twice binds once.
 type inferAnnFinder struct {
 	ast.DefaultVisitor
-	found bool
+	seen  set.Set[string]
+	names []string
 }
 
 func (f *inferAnnFinder) EnterTypeAnn(ta ast.TypeAnn) bool {
-	if _, ok := ta.(*ast.InferTypeAnn); ok {
-		f.found = true
+	if it, ok := ta.(*ast.InferTypeAnn); ok && !f.seen.Contains(it.Name) {
+		f.seen.Add(it.Name)
+		f.names = append(f.names, it.Name)
 	}
 	return true
 }

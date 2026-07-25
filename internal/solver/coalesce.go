@@ -1132,9 +1132,17 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.CondType:
 		// Two inert conditional residuals are equal when all four operands are equal, compared
 		// structurally without deciding either branch, the four-child analogue of the KeyofType arm.
+		// Distribute must match too: it changes what a union Check reduces to, so a distributive
+		// conditional is a different type from an otherwise identical non-distributive one.
 		b, ok := b.(*soltype.CondType)
-		return ok && equalTypeWith(a.Check, b.Check, ctx) && equalTypeWith(a.Extends, b.Extends, ctx) &&
+		return ok && a.Distribute == b.Distribute &&
+			equalTypeWith(a.Check, b.Check, ctx) && equalTypeWith(a.Extends, b.Extends, ctx) &&
 			equalTypeWith(a.Then, b.Then, ctx) && equalTypeWith(a.Else, b.Else, ctx)
+	case *soltype.InferType:
+		// Two `infer` nodes are equal when they name the same capture in the same role, so a binder
+		// never equals a reference to the name it introduces.
+		b, ok := b.(*soltype.InferType)
+		return ok && a.Name == b.Name && a.Binder == b.Binder
 	case *soltype.RestSpreadType:
 		// Two `...P` spread elements are equal when their operands are, compared structurally
 		// without reducing. The enclosing TupleType arm compares element lists positionally, so a

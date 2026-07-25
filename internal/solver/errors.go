@@ -1808,6 +1808,14 @@ func describe(t soltype.Type) string {
 		// than the default `?`. Every operand renders in describe's raw mid-constrain form.
 		return "if " + describe(t.Check) + " : " + describe(t.Extends) +
 			" { " + describe(t.Then) + " } else { " + describe(t.Else) + " }"
+	case *soltype.InferType:
+		// An `infer U` binder renders with its keyword and a reference to the name renders bare, the
+		// same split the printer makes, so a rejected constraint over a conditional carrying a
+		// capture reads the way the source wrote it.
+		if t.Binder {
+			return "infer " + t.Name
+		}
+		return t.Name
 	case *soltype.RestSpreadType:
 		// A `...P` spread element renders `...` over its operand, reached in place when the
 		// enclosing spread-carrying TupleType arm above describes its elements. The operand renders
