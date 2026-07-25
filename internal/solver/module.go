@@ -381,7 +381,11 @@ func (c *checker) inferComponent(
 				// the component is bound. Pre-binding the identity first lets a self or mutual
 				// reference — `type List<T> = {tail: List<T> | Null}`, or a mutual `type A =
 				// {b: B}` / `type B = {a: A}` pair — find its target already bound.
-				aliasShells = append(aliasShells, c.preBindAlias(scope, inner, decl, g.GetNamespace(key)))
+				// preBindAlias returns nil for a reserved built-in name it rejected, which is not
+				// bound and has no body to resolve, so skip appending it.
+				if sh := c.preBindAlias(scope, inner, decl, g.GetNamespace(key)); sh != nil {
+					aliasShells = append(aliasShells, sh)
+				}
 				handled.Add(d)
 			}
 		}

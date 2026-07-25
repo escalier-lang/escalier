@@ -235,17 +235,18 @@ func TestInferTemplateLitWithStringIntrinsic(t *testing.T) {
 	require.Equal(t, `"onClick"`, soltype.Print(expandResidual(ctx, result)))
 }
 
-// A user-defined type named after an intrinsic takes precedence over the built-in operator, since
-// resolveScopedTypeRef runs before the intrinsic recognition. A `type Uppercase<T> = T` shadows the
-// string operator, so `Uppercase<"abc">` resolves to the alias body `"abc"`. A value `"abc"` then
-// satisfies the annotation; were the intrinsic still in force it would reduce to `"ABC"` and reject
-// `"abc"`, so acceptance witnesses that the user type won.
-func TestInferStringIntrinsicShadowedByUserType(t *testing.T) {
+// The four intrinsic string operators are built-in, not aliases, so a `type Uppercase<T> = …`
+// declaration is rejected and the declaration never binds. A `Uppercase<…>` reference then still
+// resolves to the built-in operator: `Uppercase<"abc">` reduces to `"ABC"`, so `"abc"` is rejected
+// against it. Two errors surface — the reserved-name declaration and the failed constraint.
+func TestInferStringIntrinsicCannotBeRedefined(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type Uppercase<T> = T
 		val r: Uppercase<"abc"> = "abc"
 	`)
-	require.Empty(t, errs)
+	require.Len(t, errs, 2)
+	require.Equal(t, `"Uppercase" is a built-in type operator and cannot be redefined`, errs[0].Message())
+	require.Equal(t, `cannot constrain "abc" <: "ABC"`, errs[1].Message())
 }
 
 // A template literal whose cartesian product would exceed the combination cap is rejected with one

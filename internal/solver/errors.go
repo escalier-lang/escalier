@@ -965,6 +965,7 @@ func (*ExtractorPatternNotCtorError) isSolverError()        {}
 func (*ExtractorPatternArityError) isSolverError()          {}
 func (*AliasArityMismatchError) isSolverError()             {}
 func (*AliasLifetimeArityMismatchError) isSolverError()     {}
+func (*ReservedTypeNameError) isSolverError()               {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -1093,6 +1094,19 @@ func (e *AliasLifetimeArityMismatchError) Span() ast.Span      { return e.Ref.Sp
 func (e *AliasLifetimeArityMismatchError) Related() []ast.Span { return nil }
 func (e *AliasLifetimeArityMismatchError) Message() string {
 	return fmt.Sprintf("type alias `%s` expects %d lifetime arguments but got %d", e.Name, e.Expected, e.Got)
+}
+
+// ReservedTypeNameError fires when a `type` declaration uses the name of a built-in intrinsic
+// string operator — Uppercase, Lowercase, Capitalize, or Uncapitalize. These are compiler
+// operators, not aliases, so a user cannot redefine them.
+type ReservedTypeNameError struct {
+	Decl *ast.TypeDecl
+}
+
+func (e *ReservedTypeNameError) Span() ast.Span      { return e.Decl.Name.Span() }
+func (e *ReservedTypeNameError) Related() []ast.Span { return nil }
+func (e *ReservedTypeNameError) Message() string {
+	return fmt.Sprintf("%q is a built-in type operator and cannot be redefined", e.Decl.Name.Name)
 }
 
 // MultipleConstructorsError fires on the second and any later `constructor` block in
