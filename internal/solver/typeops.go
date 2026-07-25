@@ -975,6 +975,11 @@ func buildTemplatePart(quasis []string, combo []soltype.Type) soltype.Type {
 	newInterps := []soltype.Type{}
 	current := ""
 	for i, quasi := range quasis {
+		// current accumulates the literal text since the last abstract interpolation. The folding
+		// branch below leaves current intact, so this appends quasi i onto the earlier quasi and
+		// any literals folded into it — `a${"1"}b` builds "a" then "a1" then "a1b". After the
+		// abstract branch resets current to "", or on the first iteration, this starts a fresh
+		// segment instead.
 		current += quasi
 		if i >= len(combo) {
 			continue
