@@ -24,7 +24,7 @@ const maxExpandDepth = 200
 // diagnostic rather than materializing the product.
 const maxTemplateLitCombinations = 10_000
 
-// typeEvaluator reduces a residual type-level operator to its value. It handles `keyof T`, indexed
+// typeEvaluator reduces a residual type-level operator to its value. It reduces `keyof T`, indexed
 // access `T[K]`, the conditional `if C : E { … } else { … }`, the mapped type
 // `{[K]: V for K in Keys}`, template literals, and the intrinsic string operators such as
 // `Uppercase<T>`; later operators join as they land. Only constrain invokes it, to check a
@@ -394,10 +394,11 @@ func (e *typeEvaluator) groundTuple(t *soltype.TupleType) (*soltype.TupleType, b
 // groundOperand reduces an operator's operand toward a concrete type. It reduces any nested
 // operator, then expands a named alias to its body under the shared termination guard, so a spread
 // operand `Pair` over `type Pair = [number, string]` grounds to the referenced tuple and a template
-// interpolation `Dir` over `type Dir = "a" | "b"` grounds to the referenced union. A type parameter,
-// a recurring alias state, an exhausted budget, or an unresolved alias body each leaves the operand
-// unexpanded, which keeps the enclosing operator symbolic. The tuple-spread, template-literal, and
-// string-intrinsic reductions share it.
+// interpolation `Dir` over `type Dir = "a" | "b"` grounds to the referenced union. A mapped type's
+// key set grounds the same way, so `for K in Names` over `type Names = "a" | "b"` reaches the union.
+// A type parameter, a recurring alias state, an exhausted budget, or an unresolved alias body each
+// leaves the operand unexpanded, which keeps the enclosing operator symbolic. The tuple-spread,
+// template-literal, string-intrinsic, and mapped-type reductions share it.
 func (e *typeEvaluator) groundOperand(operand soltype.Type) soltype.Type {
 	reduced := e.reduce(operand)
 	alias, ok := reduced.(*soltype.AliasType)
@@ -480,7 +481,7 @@ func (e *typeEvaluator) reduceElem(el soltype.ObjTypeElem) soltype.ObjTypeElem {
 }
 
 // groundObjectOperand reduces a `...A` spread operand toward the concrete object whose fields it
-// contributes, the object analogue of the tuple's groundSpreadOperand. It resolves a `typeof` query
+// contributes, the object analogue of groundOperand. It resolves a `typeof` query
 // to the value's type, projects a class instance body, and expands an alias to its body under the
 // active-state and depth guard reduceKeyofAlias uses, so a recursive alias reached through a spread
 // terminates. Any other kind — an object, a type variable, a nested operator — is reduced. It
@@ -579,7 +580,7 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 
 // reduceMapped reduces `{[K]: V for K in Keys}` to the object its keys and value expression
 // describe, mirroring the old checker's expandMappedElems (internal/checker/expand_type.go). It
-// emits one field per key of the Keys union, each built by mappedField with that key substituted
+// emits one field per key of the Keys union, each built by mappedFields with that key substituted
 // for K:
 //
 //	{[K]: T[K] for K in keyof T}   with T = {x: number, y: string}
@@ -587,21 +588,25 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 //
 // The whole mapped type stays symbolic unless every key resolves. Keys must ground to a union of
 // string-literal types, which is what a `keyof` over an object reduces to, and each key must reach
-// a field mappedField can build. A Keys operand that is a type parameter or an unreduced operator
+// a field mappedFields can build. A Keys operand that is a type parameter or an unreduced operator
 // keeps the mapped type inert, so `{[K]: T[K] for K in keyof T}` over an abstract T renders the way
 // the source wrote it and reduces later once T grounds.
 //
 // A key set the evaluator cannot enumerate leaves the mapped type symbolic too. A primitive key
 // constraint such as `{[K]: T for K in string}` names infinitely many keys, which an object with
-// named fields cannot express; TypeScript writes it as the index signature `{[k: string]: T}`.
-// soltype has no index-signature element yet — M7.5 introduces one for the library types it
-// ingests — so such a mapped type stays inert rather than reducing to a wrong shape.
+// named fields cannot express. TypeScript writes that as the index signature `{[k: string]: T}`.
+// soltype has no index-signature element, so such a mapped type stays inert rather than reducing to
+// a wrong shape. The same holds for a key that is a number literal, which names no object field.
+//
+// Two keys that remap to one name merge into a single field whose type is their union, so no key's
+// contribution is lost. See mergeMappedField.
 //
 // The result is inexact when the source object's trailing `...` said so, and also when the key union
 // is inexact. `keyof {a: number, ...}` reduces to `"a" | ...`, an open key set, so the object built
-// from it lists the fields for the known keys and stays open for the rest.
+// from it lists the fields for the known keys and stays open for the rest. A filter narrows which of
+// the known keys survive but cannot rule out the unlisted ones, so the result stays open there too.
 func (e *typeEvaluator) reduceMapped(t *soltype.MappedType) soltype.Type {
-	keys := e.groundMappedKeys(t.Keys)
+	keys := e.groundOperand(t.Keys)
 	symbolic := &soltype.MappedType{
 		Key: t.Key, Keys: keys, Value: t.Value, Name: t.Name, Check: t.Check, Extends: t.Extends,
 		Optional: t.Optional, Readonly: t.Readonly, Inexact: t.Inexact,
@@ -609,18 +614,25 @@ func (e *typeEvaluator) reduceMapped(t *soltype.MappedType) soltype.Type {
 	if !condOperandGround(keys) {
 		return symbolic
 	}
+	source, homomorphic := e.homomorphicSource(t.Keys)
 	members, inexact := mappedKeyMembers(keys)
-	b := newObjElemBuilder(len(members))
+	var elems []soltype.ObjTypeElem
+	pos := make(map[string]int, len(members))
 	for _, member := range members {
-		elem, ok := e.mappedField(t, member)
+		fields, ok := e.mappedFields(t, member, source, homomorphic)
 		if !ok {
 			return symbolic
 		}
-		if elem != nil {
-			b.add(elem.Name, elem.Type, elem.Optional, elem.Readonly)
+		for _, field := range fields {
+			if i, dup := pos[field.Name]; dup {
+				elems[i] = mergeMappedField(soltype.AsProperty(elems[i]), field)
+				continue
+			}
+			pos[field.Name] = len(elems)
+			elems = append(elems, field)
 		}
 	}
-	return &soltype.ObjectType{Elems: b.elems, Inexact: t.Inexact || inexact}
+	return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact || inexact}
 }
 
 // mappedKeyMembers splits a mapped type's reduced Keys operand into the individual keys to emit a
@@ -638,31 +650,41 @@ func mappedKeyMembers(keys soltype.Type) ([]soltype.Type, bool) {
 	}
 }
 
-// mappedField builds the one field a mapped type emits for a single key. ok=false means the key
-// resolved to nothing the field could be built from, which keeps the whole mapped type symbolic. A
-// nil element with ok=true means the field is deliberately dropped, which the `if C : E` filter and
-// a key remapped to `never` both do.
+// mergeMappedField combines two fields a key remapping gave the same name. Their value types union,
+// so reading the field yields whichever key's value the object actually holds, matching TypeScript.
+// A name reachable from an optional or readonly key carries that marker, so the merged field takes
+// each marker from either contributor. The union is built through newUnion with a nil Context, the
+// evaluator's rule for keeping subsumption from re-entering constrain.
+func mergeMappedField(earlier, later *soltype.PropertyElem) *soltype.PropertyElem {
+	return &soltype.PropertyElem{
+		Name:     earlier.Name,
+		Type:     newUnion(nil, []soltype.Type{earlier.Type, later.Type}, false),
+		Optional: earlier.Optional || later.Optional,
+		Readonly: earlier.Readonly || later.Readonly,
+	}
+}
+
+// mappedFields builds the fields a mapped type emits for a single key. ok=false means the key
+// resolved to nothing a field could be built from, which keeps the whole mapped type symbolic. An
+// empty slice with ok=true means the key is deliberately dropped, which the `if C : E` filter and a
+// key remapped to `never` both do. A key remapping that yields a union of names emits one field per
+// name.
 //
-// The steps, each with the key substituted for the mapped type's key variable:
+// The steps, each reading the original key rather than a remapped one, so the filter and the
+// remapping are independent and their order is not observable:
 //
-//  1. The key must be a string literal, since an object field is named by a string. A key that is
-//     a primitive, a number literal, or an unreduced operator has no field name to emit.
+//  1. The key must be a string literal, since an object field is named by a string. A key that is a
+//     primitive, a number literal, or an unreduced operator has no field name to emit.
 //  2. The `if Check : Extends` filter, when the source wrote one, decides `Check <: Extends` with
 //     the same assignability probe a conditional's branch selection uses. A key that fails the test
 //     is dropped, which is how `Omit` and `Pick` narrow a key set.
-//  3. The key-remapping expression in the brackets, when the source wrote one, reduces to the name
-//     the field takes. Reducing it to `never` drops the field, matching TypeScript's `as` clause.
+//  3. The key-remapping expression in the brackets, when the source wrote one, reduces to the names
+//     the key contributes. `never` drops the key, matching TypeScript's `as` clause.
 //  4. The value expression reduces to the field's type. It is normally an indexed access such as
 //     `T[K]`, which is why mapped types build on indexed-access reduction.
 //
-// The `readonly` and `?` markers are set when the source wrote the adding form. The removing forms
-// `-readonly` and `-?` clear a marker that is already clear, since a field this reduction emits
-// carries no marker of its own.
-//
-// TODO(#916-adjacent): TypeScript preserves the source member's `readonly` and `?` markers through
-// a mapped type whose constraint is written `keyof T`, so `Pick<T, K>` keeps an optional property
-// optional. This reduction always emits an unmarked field, matching the old checker.
-func (e *typeEvaluator) mappedField(t *soltype.MappedType, key soltype.Type) (*soltype.PropertyElem, bool) {
+// Each emitted field takes its `readonly` and `?` markers from mappedMarkers.
+func (e *typeEvaluator) mappedFields(t *soltype.MappedType, key soltype.Type, source *soltype.ObjectType, homomorphic bool) ([]*soltype.PropertyElem, bool) {
 	name, ok := strLitName(key)
 	if !ok {
 		return nil, false
@@ -677,38 +699,85 @@ func (e *typeEvaluator) mappedField(t *soltype.MappedType, key soltype.Type) (*s
 			return nil, true
 		}
 	}
+	names := []string{name}
 	if t.Name != nil {
-		remapped := e.reduce(substituteMappedKey(t.Name, t.Key, key))
-		if _, dropped := remapped.(*soltype.NeverType); dropped {
-			return nil, true
-		}
-		if name, ok = strLitName(remapped); !ok {
+		if names, ok = e.remappedNames(t, key); !ok {
 			return nil, false
 		}
 	}
-	return &soltype.PropertyElem{
-		Name:     name,
-		Type:     e.reduce(substituteMappedKey(t.Value, t.Key, key)),
-		Optional: t.Optional == soltype.ModAdd,
-		Readonly: t.Readonly == soltype.ModAdd,
-	}, true
+	optional, readonly := mappedMarkers(t, name, source, homomorphic)
+	value := e.reduce(substituteMappedKey(t.Value, t.Key, key))
+	fields := make([]*soltype.PropertyElem, len(names))
+	for i, n := range names {
+		fields[i] = &soltype.PropertyElem{Name: n, Type: value, Optional: optional, Readonly: readonly}
+	}
+	return fields, true
 }
 
-// groundMappedKeys reduces a mapped type's Keys operand toward the concrete key set to iterate. It
-// reduces any nested operator, so a `keyof T` over a ground T becomes that type's key union, then
-// expands a named alias to its body under the shared termination guard, so `for K in Names` over
-// `type Names = "a" | "b"` reaches the union. A type parameter, a recurring alias state, an
-// exhausted budget, or an unresolved alias body each leaves the operand unexpanded, which keeps the
-// mapped type symbolic. It mirrors groundSpreadOperand on the tuple side.
-func (e *typeEvaluator) groundMappedKeys(keys soltype.Type) soltype.Type {
-	reduced := e.reduce(keys)
-	alias, ok := reduced.(*soltype.AliasType)
-	if !ok {
-		return reduced
+// remappedNames reduces a mapped type's key-remapping expression for one key and reports the field
+// names it yields. A single string literal names one field and `never` names none, dropping the key.
+// A union names one field per string-literal member, and drops any `never` member, so a remapping
+// written as a conditional over a union of keys contributes each surviving name. ok=false when a
+// name position reduces to something that cannot name a field, which keeps the mapped type symbolic.
+func (e *typeEvaluator) remappedNames(t *soltype.MappedType, key soltype.Type) ([]string, bool) {
+	remapped := e.groundOperand(substituteMappedKey(t.Name, t.Key, key))
+	members, _ := mappedKeyMembers(remapped)
+	names := make([]string, 0, len(members))
+	for _, member := range members {
+		if _, dropped := member.(*soltype.NeverType); dropped {
+			continue
+		}
+		name, ok := strLitName(member)
+		if !ok {
+			return nil, false
+		}
+		names = append(names, name)
 	}
-	return e.expandAliasGuarded(alias, reduced, func(body soltype.Type) soltype.Type {
-		return e.groundMappedKeys(body)
-	})
+	return names, true
+}
+
+// mappedMarkers reports the `?` and `readonly` markers one emitted field carries. A written modifier
+// decides the marker outright: the adding form sets it and the removing form clears it. With no
+// modifier written, a homomorphic mapped type inherits the marker from the source member the key
+// names, so `{[K]: T[K] for K in keyof T}` is the identity on T and `Pick` keeps an optional
+// property optional. Any other mapped type emits the field unmarked, and so does a homomorphic one
+// whose source carries no property under that name, such as one mapping over a class's projected
+// keys.
+func mappedMarkers(t *soltype.MappedType, key string, source *soltype.ObjectType, homomorphic bool) (optional, readonly bool) {
+	optional = t.Optional == soltype.ModAdd
+	readonly = t.Readonly == soltype.ModAdd
+	if !homomorphic {
+		return optional, readonly
+	}
+	prop, found := source.Prop(key)
+	if !found {
+		return optional, readonly
+	}
+	if t.Optional == soltype.ModNone {
+		optional = prop.Optional
+	}
+	if t.Readonly == soltype.ModNone {
+		readonly = prop.Readonly
+	}
+	return optional, readonly
+}
+
+// homomorphicSource reports the object a mapped type's emitted fields inherit their `?` and
+// `readonly` markers from. A mapped type is homomorphic when its key set is written `keyof T` for
+// some T, which is TypeScript's rule and the shape every marker-preserving utility type takes:
+// `Partial`, `Readonly`, and `Pick` each map over `keyof T`. The operand grounds to a concrete
+// object the same way a spread operand does, so an alias or class named there resolves to the object
+// whose members carry the markers.
+//
+// Any other key set makes the mapped type non-homomorphic. `Record<Ks, V>` maps over a bare key
+// union with no source object to read a marker off, so its fields are unmarked, again matching
+// TypeScript.
+func (e *typeEvaluator) homomorphicSource(keys soltype.Type) (*soltype.ObjectType, bool) {
+	keyof, ok := keys.(*soltype.KeyofType)
+	if !ok {
+		return nil, false
+	}
+	return e.groundToObject(keyof.Operand)
 }
 
 // substituteMappedKey rewrites every reference to one mapped type's key variable to the key being
@@ -1306,12 +1375,12 @@ func strLitType(name string) soltype.Type {
 	return &soltype.LitType{Lit: &soltype.StrLit{Value: name}}
 }
 
-// containsResidualOp reports whether t holds any unreduced type-level operator node — a `keyof`, an
+// containsResidualOp reports whether t holds any unreduced type-level operator node: a `keyof`, an
 // indexed access, a conditional, a mapped type, or a tuple spread. constrain consults it to decide
-// whether a reduced operator fully grounded: a result with no residual is safe to recurse on, while
-// one that still carries a `keyof`, a `T[K]`, a `{[K]: V for K in Keys}`, or a `[...T, x]` — an
-// unexpanded type parameter or a budget-truncated expanding alias — must not, since re-reducing it
-// would loop.
+// whether a reduced operator fully grounded. A result with no residual is safe to recurse on. One
+// that still carries a `keyof`, a `T[K]`, a `{[K]: V for K in Keys}`, or a `[...T, x]` is not, since
+// re-reducing it would loop. Such a residual survives reduction when its operand is an unexpanded
+// type parameter, or an expanding alias the depth budget truncated.
 func containsResidualOp(t soltype.Type) bool {
 	f := &residualOpFinder{}
 	t.Accept(f, soltype.Positive)

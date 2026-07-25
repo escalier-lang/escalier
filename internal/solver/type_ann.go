@@ -23,9 +23,14 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		// `never` is the bottom of the lattice, the empty type. A mapped type's key-remapping
 		// expression names it to drop a field, `{[if K : "id" { never } else { K }]: … }`, which is
 		// how a mapped type filters its key set.
-		t := &soltype.NeverType{}
-		c.recordProv(t, ta, AnnotationType)
-		return t, true
+		//
+		// No provenance is recorded. soltype.NeverType has no fields, so Go gives every
+		// `&soltype.NeverType{}` the same address, and the Prov side table is keyed by pointer
+		// identity. Recording against it would file every `never` annotation in the module under one
+		// entry, so each would report the last one's span as its blame, and the debugProv guard would
+		// panic on the second. A caller that needs a span for a rejected `never` falls back to the
+		// constraint site.
+		return &soltype.NeverType{}, true
 	case *ast.LitTypeAnn:
 		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:
@@ -136,9 +141,9 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 // Promise<bad> recovery. The arm therefore always returns ok=true.
 func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
 	// A mapped type is written as an object annotation whose single member is the `[K]: V for K in
-	// Keys` form, and it describes the whole object rather than one of its members, so it lowers to
-	// its own type node instead of an element. An object mixing the mapped member with ordinary ones
-	// has no such reading and falls through to the member loop below, which reports it unsupported.
+	// Keys` form. It describes the whole object rather than one of its members, so it lowers to its
+	// own type node instead of an element. An object mixing the mapped member with ordinary ones has
+	// no such reading and falls through to the member loop below, which reports it unsupported.
 	if len(ta.Elems) == 1 {
 		if mapped, ok := ta.Elems[0].(*ast.MappedTypeAnn); ok {
 			return c.resolveMappedTypeAnn(scope, ta, mapped, lvl)
@@ -205,11 +210,12 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 // reduces to. constrain reduces the residual when it checks a constraint against it, mirroring
 // resolveKeyOfTypeAnn.
 //
-// The `for K in Keys` clause binds K, so the constraint resolves in the enclosing scope while the
-// value, the bracketed key-remapping expression, and the `if C : E` filter resolve in a child scope
-// where K names the binding the evaluator substitutes a key for. That is the scope TypeScript gives
-// a mapped type's key parameter, so `{[K]: T[K] for K in keyof T}` reads the same K in its value
-// position that its clause introduced.
+// The `for K in Keys` clause binds K. The constraint itself resolves in the enclosing scope, since
+// K is not in scope for the key set that binds it. The value, the bracketed key-remapping
+// expression, and the `if C : E` filter each resolve in a child scope where K names the binding the
+// evaluator substitutes a key for. That is the scope TypeScript gives a mapped type's key parameter,
+// so `{[K]: T[K] for K in keyof T}` reads the same K in its value position that its clause
+// introduced.
 //
 // An unsupported operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery. A
 // recovered operand leaves the mapped type unable to ground, so it stays symbolic rather than

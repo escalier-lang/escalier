@@ -914,9 +914,10 @@ func (ctx *alphaCtx) bindMappedKeys(a, b *soltype.MappedKeyType) {
 }
 
 // sameMappedKey reports whether two mapped-type key references stand for corresponding bindings
-// under the pairing bindMappedKeys recorded. A reference reached with no pairing recorded — a value
-// position compared on its own, away from the mapped type that binds its key — falls back to id
-// equality, the rule sameTypeVar applies to a variable bound on neither side.
+// under the pairing bindMappedKeys recorded. A reference may be reached with no pairing recorded,
+// which happens when a value position is compared on its own, away from the mapped type that binds
+// its key. That case falls back to id equality, the rule sameTypeVar applies to a variable bound on
+// neither side.
 func (ctx *alphaCtx) sameMappedKey(a, b *soltype.MappedKeyType) bool {
 	if j, ok := ctx.keyAToB[a.ID]; ok {
 		return j == b.ID
@@ -1250,6 +1251,16 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	return false
 }
 
+// equalOptionalType compares two operands a node carries only when the source wrote them. Two
+// absent operands are equal, one absent and one present are not, and two present operands compare
+// structurally.
+func equalOptionalType(a, b soltype.Type, ctx *alphaCtx) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return equalTypeWith(a, b, ctx)
+}
+
 // equalObjElem reports structural equality of two object members. It returns false
 // on a kind mismatch, so the caller matches a-members to b-members by name and kind
 // together. Each kind compares its own payload:
@@ -1261,16 +1272,6 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 //   - a setter compares its parameter type;
 //   - a constructor compares its call signature.
 //
-// equalOptionalType compares two operands a node carries only when the source wrote them. Two
-// absent operands are equal, one absent and one present are not, and two present operands compare
-// structurally.
-func equalOptionalType(a, b soltype.Type, ctx *alphaCtx) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return equalTypeWith(a, b, ctx)
-}
-
 // It panics on an unknown element kind, matching AsProperty.
 func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 	switch a := a.(type) {

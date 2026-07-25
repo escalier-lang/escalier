@@ -2119,17 +2119,6 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			wantExpanded: "{x?: number, y?: string}",
 		},
 		{
-			// `-?` leaves every field required, the shape `Required<T>` takes. A field this reduction
-			// emits carries no marker of its own, so removing one is already the default.
-			name: "RemoveOptional",
-			src: `
-				type Point = {x?: number, y: string}
-				type Result = {[K]-?: Point[K] for K in keyof Point}
-			`,
-			wantSymbolic: "{[K]-?: Point[K] for K in keyof Point}",
-			wantExpanded: "{x: number, y: string}",
-		},
-		{
 			// `readonly` marks every emitted field readonly, the shape `Readonly<T>` takes.
 			name: "AddReadonly",
 			src: `
@@ -2138,16 +2127,6 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			`,
 			wantSymbolic: "{readonly [K]: Point[K] for K in keyof Point}",
 			wantExpanded: "{readonly x: number, readonly y: string}",
-		},
-		{
-			// `-readonly` leaves every field writable, the twin of the `-?` case above.
-			name: "RemoveReadonly",
-			src: `
-				type Point = {readonly x: number, y: string}
-				type Result = {-readonly [K]: Point[K] for K in keyof Point}
-			`,
-			wantSymbolic: "{-readonly [K]: Point[K] for K in keyof Point}",
-			wantExpanded: "{x: number, y: string}",
 		},
 		{
 			// The `if C : E` filter drops a key that fails the test, narrowing the key set the way
@@ -2204,15 +2183,70 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			wantExpanded: "{renamed: number}",
 		},
 		{
-			// Two keys remapped to one name collapse to a single field, last value winning, the
-			// duplicate-key rule an object literal follows.
-			name: "RemapCollidingKeysCollapse",
+			// Two keys remapped to one name merge into a single field whose type unions both keys'
+			// values, so neither key's contribution is lost.
+			name: "RemapCollidingKeysUnion",
 			src: `
 				type Point = {x: number, y: string}
 				type Result = {["one"]: Point[K] for K in keyof Point}
 			`,
 			wantSymbolic: `{["one"]: Point[K] for K in keyof Point}`,
-			wantExpanded: "{one: string}",
+			wantExpanded: "{one: number | string}",
+		},
+		{
+			// A remapping that reduces to a union of names emits one field per name, each carrying
+			// the value the key it came from contributes.
+			name: "RemapToUnionOfNames",
+			src: `
+				type Names = "a" | "b"
+				type Src = {x: number}
+				type Result = {[Names]: Src[K] for K in keyof Src}
+			`,
+			wantSymbolic: "{[Names]: Src[K] for K in keyof Src}",
+			wantExpanded: "{a: number, b: number}",
+		},
+		{
+			// The identity mapped type is the identity: with no modifier written, each emitted field
+			// inherits the source member's `?` and `readonly` markers.
+			name: "HomomorphicPreservesMarkers",
+			src: `
+				type Src = {a?: number, readonly b: string, c: boolean}
+				type Result = {[K]: Src[K] for K in keyof Src}
+			`,
+			wantSymbolic: "{[K]: Src[K] for K in keyof Src}",
+			wantExpanded: "{a?: number, readonly b: string, c: boolean}",
+		},
+		{
+			// `-?` clears an inherited optional marker, which is what distinguishes it from writing
+			// no modifier at all.
+			name: "RemoveOptionalClearsInherited",
+			src: `
+				type Src = {a?: number, b: string}
+				type Result = {[K]-?: Src[K] for K in keyof Src}
+			`,
+			wantSymbolic: "{[K]-?: Src[K] for K in keyof Src}",
+			wantExpanded: "{a: number, b: string}",
+		},
+		{
+			// `-readonly` clears an inherited readonly marker, the twin of the case above.
+			name: "RemoveReadonlyClearsInherited",
+			src: `
+				type Src = {readonly a: number, b: string}
+				type Result = {-readonly [K]: Src[K] for K in keyof Src}
+			`,
+			wantSymbolic: "{-readonly [K]: Src[K] for K in keyof Src}",
+			wantExpanded: "{a: number, b: string}",
+		},
+		{
+			// A mapped type over a bare key union has no source object to read a marker off, so its
+			// fields are unmarked even though the value type is shared. This is the `Record` shape.
+			name: "NonHomomorphicEmitsUnmarkedFields",
+			src: `
+				type Names = "a" | "b"
+				type Result = {[K]: boolean for K in Names}
+			`,
+			wantSymbolic: "{[K]: boolean for K in Names}",
+			wantExpanded: "{a: boolean, b: boolean}",
 		},
 		{
 			// A mapped type nests: the outer key is in scope inside the inner one, so the inner value
@@ -2287,6 +2321,69 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			result := nodes["Result"]
 			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
 			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}
+
+// A homomorphic mapped type — one whose key set is written `keyof T` — carries the source member's
+// `?` and `readonly` markers onto each field it emits, so the identity mapped type really is the
+// identity and a marker survives composition. Dropping a marker here would be unsound rather than
+// imprecise: it launders a readonly field into a writable one, and it makes a `Pick` parameter
+// reject a value TypeScript accepts.
+func TestInferMappedTypeMarkersSurviveComposition(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// The identity applied to `Partial<T>` must give `Partial<T>` back. Reducing to
+			// `{a: number}` would silently make an optional field required.
+			name: "IdentityOverPartial",
+			src: `
+				type Partial<T> = {[K]?: T[K] for K in keyof T}
+				type Id<T> = {[K]: T[K] for K in keyof T}
+				type Result = Id<Partial<{a: number}>>
+			`,
+			wantExpanded: "{a?: number}",
+		},
+		{
+			// A readonly field stays readonly through the identity. Reducing to `{x: number}` would
+			// hand out a writable view of a readonly field.
+			name: "IdentityPreservesReadonly",
+			src: `
+				type Src = {readonly x: number, y?: string}
+				type Id<T> = {[K]: T[K] for K in keyof T}
+				type Result = Id<Src>
+			`,
+			wantExpanded: "{readonly x: number, y?: string}",
+		},
+		{
+			// `Pick` keeps an optional member optional, so a `Pick<Src, "a">` parameter accepts a
+			// value that omits `a`.
+			name: "PickKeepsOptional",
+			src: `
+				type Pick<T, Ks> = {[K]: T[K] for K in keyof T if K : Ks}
+				type Src = {a?: number, b: string}
+				type Result = Pick<Src, "a">
+			`,
+			wantExpanded: "{a?: number}",
+		},
+		{
+			// `Required<T>` is what clears the marker, and it must still do so.
+			name: "RequiredClearsOptional",
+			src: `
+				type Required<T> = {[K]-?: T[K] for K in keyof T}
+				type Result = Required<{a?: number, b: string}>
+			`,
+			wantExpanded: "{a: number, b: string}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})
 	}
 }

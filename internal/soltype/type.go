@@ -721,9 +721,11 @@ type InferType struct {
 	Binder bool
 }
 
-// MappedModifier states how a mapped type adjusts one member marker — `readonly` or `?` — on each
-// field it emits. ModNone leaves the marker off, ModAdd sets it, and ModRemove clears it. The
-// source writes `readonly`/`+readonly` and `?`/`+?` for ModAdd and `-readonly`/`-?` for ModRemove.
+// MappedModifier states how a mapped type adjusts one member marker, `readonly` or `?`, on each
+// field it emits. ModAdd sets the marker and ModRemove clears it. ModNone means the source wrote no
+// modifier, which leaves the marker to be inherited from the field's source member when the mapped
+// type is homomorphic and off otherwise. The source writes `readonly`/`+readonly` and `?`/`+?` for
+// ModAdd and `-readonly`/`-?` for ModRemove.
 type MappedModifier int
 
 const (
@@ -760,11 +762,14 @@ type MappedKeyType struct {
 //   - Value is the type each emitted field takes, normally an indexed access such as `T[K]`.
 //   - Name is the key-remapping expression written in the brackets. It is nil when the brackets
 //     hold the bare key variable, so no remapping applies. A key it reduces to `never` drops that
-//     field, the way TypeScript's `as` clause filters.
+//     field, the way TypeScript's `as` clause filters, and one it reduces to a union of names
+//     contributes a field per name.
 //   - Check and Extends are the optional `if C : E` filter. A key whose substituted `Check <: Extends`
 //     fails is dropped. Both are nil when the source wrote no filter.
 //   - Optional and Readonly are the `?` and `readonly` markers, each adding or removing the marker
-//     on every emitted field.
+//     on every emitted field. With neither written, a mapped type whose Keys is written `keyof T`
+//     inherits each marker from the member the key names on T, so the identity mapped type really
+//     is the identity.
 //   - Inexact carries the enclosing object annotation's trailing `...`, so `{[K]: V for K in Keys, ...}`
 //     reduces to an inexact object.
 type MappedType struct {

@@ -816,12 +816,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	case *soltype.MappedType:
 		// A mapped residual the pre-switch could not ground reaches here: a mapped type whose Keys
 		// operand is a type parameter, so no key set exists to emit fields from. constrain treats it
-		// inert, the same as the KeyofType, IndexType, and CondType arms above — two residuals are
-		// compatible only when structurally identical, so a mapped type against an equal mapped type
-		// succeeds reflexively without recording a bound, and a residual against any other concrete
-		// fails. When super is a variable the case falls through to the superVar arm, which records
-		// the whole mapped type as one lower bound, keeping the operator symbolic on the coalesced
-		// binding.
+		// inert, the same as the KeyofType, IndexType, and CondType arms above. Two residuals are
+		// compatible only when structurally identical. A mapped type against an equal mapped type
+		// therefore succeeds reflexively without recording a bound, and a residual against any other
+		// concrete type fails. When super is a variable the case falls through to the superVar arm,
+		// which records the whole mapped type as one lower bound, keeping the operator symbolic on
+		// the coalesced binding.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if equalType(sub, super) {
 				return nil
