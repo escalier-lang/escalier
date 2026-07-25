@@ -1554,6 +1554,18 @@ func TestInferCondDistribution(t *testing.T) {
 			wantExpanded: `"n"`,
 		},
 		{
+			// The parameter also appears in the Extends operand, so each member is tested against a
+			// pattern built from that member: `[string]` against `[[string]]` and `string` against
+			// `[string]`, both of which fail. TypeScript reduces the same alias applied to the same
+			// union to `"no"`.
+			name: "MemberReachesTheExtendsOperand",
+			src: `
+				type X<T> = if T : [T] { "wrap" } else { "no" }
+				type Result = X<[string] | string>
+			`,
+			wantExpanded: `"no"`,
+		},
+		{
 			// Distribution and capture compose: each member matches the pattern on its own, so the
 			// captures union.
 			name: "DistributesOverCapture",

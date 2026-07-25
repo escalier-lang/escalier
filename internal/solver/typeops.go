@@ -120,7 +120,7 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 		return &soltype.CondType{Check: check, Extends: extends, Then: t.Then, Else: t.Else, Distribute: t.Distribute}
 	}
 	if union, ok := check.(*soltype.UnionType); ok && t.Distribute {
-		return e.distributeCond(t, union, extends)
+		return e.distributeCond(t, union)
 	}
 	if containsInfer(extends) {
 		return e.reduceCondInfer(t, check, extends)
@@ -135,21 +135,27 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 // branches each member selects, so `type Wrap<T> = if T : string { [T] } else { boolean }` reduces
 // `Wrap<"a" | 1>` to `["a"] | boolean` rather than to the single branch the whole union selects.
 //
-// A branch that names the distributed type parameter reads it as the member, not the union, which is
-// why `Wrap<"a" | "b">` reduces to `["a"] | ["b"]`. Expanding the alias replaced every occurrence of
-// that parameter — the Check position and the two branches alike — with one shared type pointer, so
-// rewriting the branches' occurrences of the unreduced Check narrows exactly the positions the
-// parameter stood at. The Extends operand keeps the union, matching TypeScript, where each member is
-// tested against the whole right-hand side.
+// Every position that named the distributed type parameter reads it as the member, the Extends
+// operand included, so each lap is the conditional the alias would have produced had it been
+// instantiated with that member alone. `type X<T> = if T : [T] { "wrap" } else { "no" }` over
+// `[string] | string` therefore tests `[string]` against `[[string]]`, which fails, and reduces to
+// `"no"`, matching TypeScript. Expanding the alias installed one shared pointer at every occurrence
+// of the parameter, so replacing that pointer reaches exactly the positions it stood at, and a
+// branch naming it sees the member too — `Wrap<"a" | "b">` reduces to `["a"] | ["b"]`.
+//
+// The pointer replaced is the Check as stored, and each rebuilt operand is taken from the stored
+// conditional rather than from a reduced copy. Reduction may reallocate the nodes it walks, so
+// pointer identity holds only against the operands the alias expansion produced. reduceCond reduces
+// the rebuilt operands itself.
 //
 // Each member reduces through a copy of the conditional with Distribute cleared: the member is no
 // longer a union, and clearing it states that this pass already applied the rule.
-func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.UnionType, extends soltype.Type) soltype.Type {
+func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.UnionType) soltype.Type {
 	parts := make([]soltype.Type, len(check.Types))
 	for i, member := range check.Types {
 		parts[i] = e.reduceCond(&soltype.CondType{
 			Check:   member,
-			Extends: extends,
+			Extends: substituteOccurrences(t.Extends, t.Check, member),
 			Then:    substituteOccurrences(t.Then, t.Check, member),
 			Else:    substituteOccurrences(t.Else, t.Check, member),
 		})
