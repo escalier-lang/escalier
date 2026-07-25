@@ -921,9 +921,9 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, e
 }
 
 // reduceTemplateLit reduces a template literal to the union of string literals its interpolations
-// produce, taking the cartesian product over each interpolation's options. Each interpolation, and
+// produce, taking the cartesian product over each interpolation's choices. Each interpolation, and
 // each member of an interpolation that grounds to a union, is grounded so a named alias expands to
-// its body. A grounded interpolation that is a union contributes each member as an option, so
+// its body. A grounded interpolation that is a union contributes each member as a choice, so
 // `on${"a" | "b"}` yields `"ona" | "onb"`, while any other grounded interpolation contributes
 // itself. Each product combination folds its string-literal interpolations into the surrounding
 // segments; a combination whose interpolation stays abstract — a type parameter, or a nested
@@ -931,7 +931,7 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, e
 // so the whole template reduces later once the interpolation grounds. A product that would exceed
 // maxTemplateLitCombinations is rejected with a diagnostic rather than materialized.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
-	options := make([][]soltype.Type, len(t.Interps))
+	interpChoices := make([][]soltype.Type, len(t.Interps))
 	combinations := 1
 	for i, interp := range t.Interps {
 		reduced := e.groundOperand(interp)
@@ -943,11 +943,11 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 			for j, m := range u.Types {
 				members[j] = e.groundOperand(m)
 			}
-			options[i] = members
+			interpChoices[i] = members
 		} else {
-			options[i] = []soltype.Type{reduced}
+			interpChoices[i] = []soltype.Type{reduced}
 		}
-		combinations *= len(options[i])
+		combinations *= len(interpChoices[i])
 		if combinations > maxTemplateLitCombinations {
 			// The product would enumerate more string literals than the cap allows. Reject the
 			// template with one diagnostic rather than materializing an unbounded union.
@@ -955,7 +955,7 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 			return &soltype.ErrorType{}
 		}
 	}
-	combos := cartesianProduct(options)
+	combos := cartesianProduct(interpChoices)
 	parts := make([]soltype.Type, 0, len(combos))
 	for _, combo := range combos {
 		parts = append(parts, buildTemplatePart(t.Quasis, combo))
@@ -994,19 +994,19 @@ func buildTemplatePart(quasis []string, combo []soltype.Type) soltype.Type {
 	return &soltype.TemplateLitType{Quasis: newQuasis, Interps: newInterps}
 }
 
-// cartesianProduct returns every combination that picks one option from each position, so the
-// template reducer can enumerate `${A}${B}` over unions A and B. An empty options list — a
+// cartesianProduct returns every combination that picks one choice from each position, so the
+// template reducer can enumerate `${A}${B}` over unions A and B. An empty choice list — a
 // template with no interpolations — yields one empty combination, so a bare `abc` collapses
 // to the single literal `"abc"`.
-func cartesianProduct(options [][]soltype.Type) [][]soltype.Type {
+func cartesianProduct(interpChoices [][]soltype.Type) [][]soltype.Type {
 	result := [][]soltype.Type{{}}
-	for _, opts := range options {
-		next := make([][]soltype.Type, 0, len(result)*len(opts))
+	for _, choices := range interpChoices {
+		next := make([][]soltype.Type, 0, len(result)*len(choices))
 		for _, combo := range result {
-			for _, opt := range opts {
+			for _, choice := range choices {
 				extended := make([]soltype.Type, len(combo)+1)
 				copy(extended, combo)
-				extended[len(combo)] = opt
+				extended[len(combo)] = choice
 				next = append(next, extended)
 			}
 		}
