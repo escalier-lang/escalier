@@ -2337,6 +2337,41 @@ func TestInferMappedTypeReduction(t *testing.T) {
 	}
 }
 
+// A rejected constraint between two inert mapped residuals names each side's modifiers and inexact
+// marker. equalTypeWith reads those fields when deciding whether two residuals are equal, so a
+// diagnostic that omitted one would print both sides identically and read as a type failing to
+// satisfy itself.
+func TestInferMappedTypeErrorNamesModifiers(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AddOptional",
+			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]?: T[K] for K in keyof T} { return x }`,
+			want: "cannot constrain {[K]: t1[K] for K in keyof t1} <: {[K]+?: t1[K] for K in keyof t1}",
+		},
+		{
+			name: "RemoveOptional",
+			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]-?: T[K] for K in keyof T} { return x }`,
+			want: "cannot constrain {[K]: t1[K] for K in keyof t1} <: {[K]-?: t1[K] for K in keyof t1}",
+		},
+		{
+			name: "AddReadonly",
+			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {readonly [K]: T[K] for K in keyof T} { return x }`,
+			want: "cannot constrain {[K]: t1[K] for K in keyof t1} <: {readonly [K]: t1[K] for K in keyof t1}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
+}
+
 // A homomorphic mapped type — one whose key set is written `keyof T` — carries the source member's
 // `?` and `readonly` markers onto each field it emits, so the identity mapped type really is the
 // identity and a marker survives composition. Dropping a marker here would be unsound rather than

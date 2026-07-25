@@ -1860,16 +1860,38 @@ func describe(t soltype.Type) string {
 	case *soltype.MappedType:
 		// A mapped residual renders structurally as the surface syntax, recursing like the keyof arm,
 		// so a rejected constraint over a symbolic mapped type names it in full rather than the
-		// default `?`. Every operand renders in describe's raw mid-constrain form. The modifiers and
-		// the inexact marker are omitted, since a diagnostic names the shape rather than round-trips
-		// it.
-		key := t.Key.Name
-		if t.Name != nil {
-			key = describe(t.Name)
+		// default `?`. Every operand renders in describe's raw mid-constrain form.
+		//
+		// The modifiers and the inexact marker render too, because equalTypeWith reads them when it
+		// decides whether two inert mapped residuals are equal. Omitting one lets a rejection print
+		// both sides identically, so `{[K]: T[K] for K in keyof T}` against its `?`-adding twin would
+		// read as a type failing to satisfy itself.
+		out := "{"
+		switch t.Readonly {
+		case soltype.ModAdd:
+			out += "readonly "
+		case soltype.ModRemove:
+			out += "-readonly "
+		case soltype.ModNone:
 		}
-		out := "{[" + key + "]: " + describe(t.Value) + " for " + t.Key.Name + " in " + describe(t.Keys)
+		if t.Name != nil {
+			out += "[" + describe(t.Name) + "]"
+		} else {
+			out += "[" + t.Key.Name + "]"
+		}
+		switch t.Optional {
+		case soltype.ModAdd:
+			out += "+?"
+		case soltype.ModRemove:
+			out += "-?"
+		case soltype.ModNone:
+		}
+		out += ": " + describe(t.Value) + " for " + t.Key.Name + " in " + describe(t.Keys)
 		if t.Check != nil && t.Extends != nil {
 			out += " if " + describe(t.Check) + " : " + describe(t.Extends)
+		}
+		if t.Inexact {
+			out += ", ..."
 		}
 		return out + "}"
 	case *soltype.RestSpreadType:
