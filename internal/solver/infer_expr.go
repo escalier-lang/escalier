@@ -1856,9 +1856,10 @@ func (c *checker) inferTuple(scope *Scope, lvl int, e *ast.TupleExpr) soltype.Ty
 
 // inferObject types an object literal as an exact soltype.ObjectType. A property
 // with a static key folds into the object. A static key is an identifier label, a
-// string-literal key, or a numeric key like {0: v}. The forms it does not cover
-// each report an UnsupportedNodeError and are skipped rather than panicking:
-//   - spreads ({...o}), deferred to M9 with object rest/spread,
+// string-literal key, or a numeric key like {0: v}. A spread ({...o}) merges the
+// operand object's fields in, following the same left-to-right rule the type-level
+// operator applies. The forms it does not cover each report an UnsupportedNodeError
+// and are skipped rather than panicking:
 //   - method/constructor elements, which arrive with classes in M5,
 //   - computed keys ({[k]: v}), which need M9 index signatures,
 //   - shorthand ({x}, a property with no value).
@@ -1874,12 +1875,36 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 	// Resolve the enclosing statement's CFG point before inferring property values,
 	// which can overwrite c.fn.currentStmt with an inner branch statement.
 	stmtRef, hasStmtRef := c.currentStmtRef()
-	b := newObjElemBuilder(len(e.Elems))
+	// Each element contributes one field list, folded left to right by mergeSpreadOperands so a
+	// later element wins over an earlier key. A property contributes its single field; a spread
+	// contributes the operand object's fields, so `{...a, x: 1}` merges a's fields under x.
+	operandElems := make([][]soltype.ObjTypeElem, 0, len(e.Elems))
+	inexact := false
 	for _, elem := range e.Elems {
+		if spread, ok := elem.(*ast.ObjSpreadExpr); ok {
+			op := c.inferExpr(scope, lvl, spread.Value)
+			if _, errored := op.(*soltype.ErrorType); errored {
+				// The operand already reported its own failure; absorb it rather than layering a
+				// SpreadNotObjectError on the recovery sentinel, the object twin of the array arm.
+				continue
+			}
+			obj, ground := newTypeEvaluator(c.ctx).groundToObject(op)
+			if !ground {
+				// A spread whose operand has no ground object shape — a type variable, a
+				// primitive — cannot merge its fields. Report it and keep the rest of the object.
+				c.report(&SpreadNotObjectError{Spread: spread, Operand: op})
+				continue
+			}
+			operandElems = append(operandElems, obj.Elems)
+			inexact = inexact || obj.Inexact
+			// Spreading an owned object moves it into the new object, the object twin of the
+			// array-spread move.
+			c.consumeIntoLiteral(spread.Value, op, stmtRef, hasStmtRef)
+			continue
+		}
 		prop, ok := elem.(*ast.PropertyExpr)
 		if !ok {
-			// ObjSpreadExpr is object rest/spread, which is M9. The method and
-			// constructor elements CallableExpr and ConstructorExpr arrive with
+			// The method and constructor elements CallableExpr and ConstructorExpr arrive with
 			// classes in M5.
 			c.reportUnsupported(elem)
 			continue
@@ -1898,11 +1923,12 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 			continue
 		}
 		ft := c.inferExpr(scope, lvl, prop.Value)
-		b.add(name, ft, false, false) // a literal property is never optional or readonly
+		// A literal property is never optional or readonly.
+		operandElems = append(operandElems, []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: ft}})
 		// Building an owned value into the object moves it.
 		c.consumeIntoLiteral(prop.Value, ft, stmtRef, hasStmtRef)
 	}
-	t := &soltype.ObjectType{Elems: b.elems}
+	t := &soltype.ObjectType{Elems: mergeSpreadOperands(operandElems), Inexact: inexact}
 	c.recordType(e, t)
 	c.recordProv(t, e, ObjectField)
 	return t

@@ -33,16 +33,14 @@ func TestInferErrorBindingFlowsIntoCallNoCascade(t *testing.T) {
 	require.Equal(t, "fn () -> number", values["f"])
 }
 
-// An unsupported expression recovers to the ErrorType sentinel and flows on without
-// cascading. Here the unsupported expression is an object spread, which is M9. The
-// only error is the unsupported-node one, and the surrounding object still builds.
-func TestInferUnsupportedExprRecoversWithoutCascade(t *testing.T) {
+// An object spread over an unknown identifier walks its operand, which recovers to the ErrorType
+// sentinel. The spread absorbs that sentinel rather than layering a SpreadNotObjectError on it, so
+// the only error is the unknown-identifier one and the surrounding object still builds.
+func TestInferObjectSpreadOverUnknownIdentifierRecovers(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		val o = {...xs}
 	`)
-	// One error for the spread itself; `xs` is never walked (so no extra
-	// unknown-identifier), and the broken element does not cascade.
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:12-2:17: Unsupported: ObjSpreadExpr", msgWithSpan(errs[0]))
+	require.Equal(t, "2:15-2:17: Unknown identifier: xs", msgWithSpan(errs[0]))
 	require.Equal(t, "{}", values["o"])
 }

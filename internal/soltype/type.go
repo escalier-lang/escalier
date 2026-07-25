@@ -331,10 +331,19 @@ type SetterElem struct {
 // general call-signature-in-any-object feature.
 type ConstructorElem struct{ Fn *FuncType }
 
+// SpreadElem is a `...A` object spread written as an element of an ObjectType, the object twin of
+// the tuple's RestSpreadType (M9 PR5). `{...A, x: T}` is an ObjectType whose first element is a
+// SpreadElem over A. An object carrying one is a residual: constrain passes it through untouched,
+// the inert contract KeyofType shares, until the evaluator grounds Type to an object and merges its
+// fields in at this position. A reduced object has no SpreadElem. A spread over a type parameter
+// never grounds, so it stays symbolic and renders `...A`. Type is the spread source.
+type SpreadElem struct{ Type Type }
+
 func (*MethodElem) isObjTypeElem()      {}
 func (*GetterElem) isObjTypeElem()      {}
 func (*SetterElem) isObjTypeElem()      {}
 func (*ConstructorElem) isObjTypeElem() {}
+func (*SpreadElem) isObjTypeElem()      {}
 
 // ObjElemName returns the member name of any ObjTypeElem kind. It is the shared
 // name accessor for member lookup and structural equality, so those sites need no
@@ -355,8 +364,25 @@ func ObjElemName(e ObjTypeElem) string {
 		return e.Name
 	case *ConstructorElem:
 		return ""
+	case *SpreadElem:
+		// A spread is anonymous. It only appears in an unreduced object, and the name-keyed
+		// equality and lookup paths compare such objects positionally instead, so this name is
+		// never a match key.
+		return ""
 	}
 	panic(fmt.Sprintf("ObjElemName: unhandled ObjTypeElem %T", e))
+}
+
+// HasObjectSpread reports whether an element list carries a `...A` spread, so the object is an
+// unreduced residual rather than a concrete object. It is the object twin of hasRestSpread on the
+// tuple side.
+func HasObjectSpread(elems []ObjTypeElem) bool {
+	for _, e := range elems {
+		if _, ok := e.(*SpreadElem); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Prop returns the named property and whether it is present. Property names are
@@ -799,6 +825,10 @@ func levelOfElem(e ObjTypeElem) int {
 		return max(selfLevel(e.SelfParam), LevelOf(e.Param))
 	case *ConstructorElem:
 		return LevelOf(e.Fn)
+	case *SpreadElem:
+		// A `...A` spread element's level is its operand's, so an out-of-level spread operand lifts
+		// the enclosing object's level and the freshener/extruder prune descends to freshen it.
+		return LevelOf(e.Type)
 	}
 	panic(fmt.Sprintf("levelOfElem: unhandled ObjTypeElem %T", e))
 }

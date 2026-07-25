@@ -279,6 +279,17 @@ type InexactTupleSpreadError struct {
 	Operand *soltype.TupleType
 }
 
+// SpreadNotObjectError fires when an object-literal spread element ({...o}) has an
+// operand that has no ground object shape, so its fields cannot be merged into the
+// literal. The merge copies the operand object's fields in, so the operand must ground
+// to a concrete object — directly, or through an alias, class, or `typeof` query. A
+// spread of a type variable or a primitive cannot be merged statically. Spread is the
+// offending spread element and carries the blame span. Operand is the type it inferred to.
+type SpreadNotObjectError struct {
+	Spread  *ast.ObjSpreadExpr
+	Operand soltype.Type
+}
+
 // MutFieldError fires when a `mut T` annotation appears as an object property
 // value or a tuple element inside a non-mut container — `{a: mut {x}}` or
 // `[mut {x}]`. An owned-mutable cell nested inside an immutable container is
@@ -391,6 +402,7 @@ func (*FuncArityMismatchError) isSolverError()      {}
 func (*TupleLengthMismatchError) isSolverError()    {}
 func (*SpreadNotTupleError) isSolverError()         {}
 func (*InexactTupleSpreadError) isSolverError()     {}
+func (*SpreadNotObjectError) isSolverError()        {}
 func (*MissingPropertyError) isSolverError()        {}
 func (*InexactIntoExactError) isSolverError()       {}
 func (*InexactTupleIntoExactError) isSolverError()  {}
@@ -1562,6 +1574,12 @@ func (e *InexactTupleSpreadError) Message() string {
 	return "cannot spread an inexact tuple except as the last element"
 }
 
+func (e *SpreadNotObjectError) Span() ast.Span      { return e.Spread.Span() }
+func (e *SpreadNotObjectError) Related() []ast.Span { return nil }
+func (e *SpreadNotObjectError) Message() string {
+	return "cannot spread " + describe(e.Operand) + " into an object"
+}
+
 func (e *MissingPropertyError) Message() string {
 	return "object is missing property: " + e.Name
 }
@@ -1728,7 +1746,28 @@ func describe(t soltype.Type) string {
 		}
 		return "tuple"
 	case *soltype.ObjectType:
-		return "object"
+		if !soltype.HasObjectSpread(t.Elems) {
+			return "object"
+		}
+		// A spread-carrying object is an unreduced residual, so it renders structurally like the
+		// KeyofType arm — a rejected constraint reads `{...t1, x: number}` rather than the nominal
+		// `object`. A spread element shows `...` over its raw mid-constrain operand; a property
+		// shows `name: <type>`. Other member kinds do not appear in a spread residual.
+		parts := make([]string, 0, len(t.Elems)+1)
+		for _, e := range t.Elems {
+			switch e := e.(type) {
+			case *soltype.SpreadElem:
+				parts = append(parts, "..."+describe(e.Type))
+			case *soltype.PropertyElem:
+				parts = append(parts, e.Name+": "+describe(e.Type))
+			}
+		}
+		if t.Inexact {
+			// A trailing `...` marks the residual inexact, matching soltype.Print and the UnionType
+			// arm so a diagnostic naming the spread reads `{...t1, ...}`.
+			parts = append(parts, "...")
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
 	case *soltype.ClassType:
 		// A class instance renders nominally under its display name, `Point` or
 		// `Box<number>`, so a diagnostic naming it matches the printer's surface form.

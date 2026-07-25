@@ -156,6 +156,22 @@ func (c *Context) evalTypeOperator(t soltype.Type) (soltype.Type, []SolverError,
 			return nil, nil, false
 		}
 		return c.reduceResidual(t)
+	case *soltype.ObjectType:
+		// A plain object is handled structurally, not as a transparent operator. Only a
+		// spread-carrying object is a residual to reduce here, the object twin of the TupleType arm.
+		if !soltype.HasObjectSpread(t.Elems) {
+			return nil, nil, false
+		}
+		e := newTypeEvaluator(c)
+		reduced := e.reduce(t)
+		// A spread whose operands ground merges to a spread-free object. One with an abstract operand
+		// stays a spread-carrying object, which is inert, so leave it for the structural switch. The
+		// check is on the root rather than reduceResidual's containsResidualOp: a merged object
+		// grounds even when a field value is itself a residual, which reduces at its own site.
+		if obj, ok := reduced.(*soltype.ObjectType); ok && soltype.HasObjectSpread(obj.Elems) {
+			return nil, nil, false
+		}
+		return reduced, e.errs, true
 	default:
 		return nil, nil, false
 	}
@@ -517,14 +533,26 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			return errs
 		}
 	case *soltype.ObjectType:
-		if sup, ok := super.(*soltype.FuncType); ok {
+		if objectHasSpread(sub) || objectHasSpread(super) {
+			// One side carries an unreduced `...A` spread the pre-switch could not ground: a spread
+			// over a type parameter, or an expanding recursive alias. constrain treats such an object
+			// inert, the same as the spread-tuple and KeyofType/IndexType residuals — it is never
+			// decomposed, so two spread-objects are compatible only when structurally identical. When
+			// super is a variable the case falls through to the superVar arm below, which records the
+			// whole object as one lower bound, keeping the spread symbolic on the coalesced binding.
+			if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
+				if equalType(sub, super) {
+					return nil
+				}
+				return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+			}
+		} else if sup, ok := super.(*soltype.FuncType); ok {
 			// An object with a constructor signature is a subtype of the matching function
 			// type; codegen makes the constructor behave as a plain function where expected.
 			if ctor, ok := sub.Constructor(); ok {
 				return c.constrain(ctor.Fn, sup, seen, mutCtx)
 			}
-		}
-		if sup, ok := super.(*soltype.ObjectType); ok {
+		} else if sup, ok := super.(*soltype.ObjectType); ok {
 			// One ObjectType <: ObjectType rule serves both uses the M2 arm
 			// conflated: member-access field SELECTION (the super is an inexact
 			// "has at least this field" requirement minted by inferMember) and
