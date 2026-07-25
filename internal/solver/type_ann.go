@@ -428,7 +428,8 @@ func (c *checker) resolveInferTypeAnn(scope *Scope, ta *ast.InferTypeAnn) (solty
 // type parameter, the shape TypeScript distributes a union Check over. The written form must be a
 // name with no type arguments, and that name must resolve to a type variable, which is what
 // resolveTypeParams mints for each `<T>` binder. A literal type, an alias, or a `[T]` wrapper each
-// fails one of the two tests, so the conditional decides a union Check as a whole.
+// fails one of the two tests, so the conditional decides a union Check as a whole. This is the first
+// of the two conditions distribution needs; soltype.CondType's Distribute field states both.
 func nakedTypeParamCheck(ann ast.TypeAnn, resolved soltype.Type) bool {
 	ref, ok := ann.(*ast.TypeRefTypeAnn)
 	if !ok || len(ref.TypeArgs) > 0 {

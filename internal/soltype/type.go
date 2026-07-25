@@ -674,11 +674,28 @@ type CondType struct {
 	Then    Type
 	Else    Type
 	// Distribute marks a conditional whose Check was written as a bare type-parameter reference,
-	// such as the `T` of `type Wrap<T> = if T : string { [T] } else { boolean }`. Such a conditional
-	// distributes over a union Check, deciding each member separately and unioning the results, so
-	// `Wrap<"a" | 1>` reduces to `["a"] | boolean` rather than to the single branch the whole union
-	// selects. A Check written as anything else, `[T]` included, decides the union as a whole, which
-	// is how a user opts out of distribution. It mirrors TypeScript's naked-type-parameter rule.
+	// such as the `T` of `type Wrap<T> = if T : string { [T] } else { boolean }`. It mirrors
+	// TypeScript's naked-type-parameter rule, stated here in full since two separate conditions
+	// decide whether a union Check is taken apart, and both must hold:
+	//
+	//  1. The Check was written as a bare parameter name, which is what this flag records. Every
+	//     other written form leaves it clear, `[T]`, `{value: T}`, and `Other<T>` alike.
+	//  2. The Check reduced to a union. A conditional over a single type has nothing to take apart,
+	//     so the flag on its own changes no reduction.
+	//
+	// When both hold, the conditional decides one member at a time and unions the results. Every
+	// position that named the parameter reads the member rather than the whole union, the Extends
+	// operand and both branches alike, so `Wrap<"a" | 1>` reduces to `["a"] | boolean`.
+	//
+	// When either fails, the conditional decides once over the whole union. That is how a user
+	// captures a union as a single type: `if [T] : [infer U] { [U] } else { "no" }` binds U to the
+	// whole union and yields `[1 | "a"]` for `"a" | 1`, where the same alias written `if T : [infer
+	// U]` over `["a"] | [1]` binds U per member and yields `[1] | ["a"]`.
+	//
+	// A body that needs both a Check it cannot write bare and distribution can wrap itself in
+	// `if T : T { … } else { … }`, whose own Check is bare. The wrapper distributes and each member
+	// runs the inner conditional on its own. Its Else branch is unreachable, since a member is
+	// always a subtype of itself.
 	Distribute bool
 }
 
