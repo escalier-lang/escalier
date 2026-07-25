@@ -359,8 +359,8 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 	defer func() { c.inCondExtends = savedInCondExtends }()
 
 	c.inCondExtends = false
-	check, ok := c.resolveTypeAnn(scope, ta.Check, lvl)
-	if !ok {
+	check, checkOK := c.resolveTypeAnn(scope, ta.Check, lvl)
+	if !checkOK {
 		check = c.freshAt(lvl)
 	}
 
@@ -392,7 +392,10 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 		Extends:    extends,
 		Then:       then,
 		Else:       els,
-		Distribute: nakedTypeParamCheck(ta.Check, check),
+		// A Check the resolver could not resolve recovered to a fresh var, which is the same kind
+		// nakedTypeParamCheck accepts, so the flag is decided only when the written Check actually
+		// resolved. Otherwise a bare unresolvable name would be read as a type parameter.
+		Distribute: checkOK && nakedTypeParamCheck(ta.Check, check),
 	}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true

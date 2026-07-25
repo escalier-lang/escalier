@@ -1663,6 +1663,19 @@ func TestInferCondRecursiveCaptureAlias(t *testing.T) {
 			`,
 			wantErr: `cannot constrain "hi" <: number`,
 		},
+		{
+			// A branch that re-wraps the capture reaches the same instantiation every lap, so it
+			// never shrinks toward the Else branch. It terminates on constrain's cycle-detection
+			// set instead: an alias operand is compared under an interned canonical representative,
+			// so the repeated `5 <: Same<[number]>` state closes the cycle and the constraint is
+			// accepted. The point of the case is termination, not the type the closed cycle admits.
+			// CheckRegular will reject the definition itself in a later milestone.
+			name: "SameSizeRecursionTerminates",
+			src: `
+				type Same<T> = if T : [infer U] { Same<[U]> } else { T }
+				val x: Same<[number]> = 5
+			`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1675,4 +1688,32 @@ func TestInferCondRecursiveCaptureAlias(t *testing.T) {
 			require.Equal(t, tt.wantErr, errs[0].Message())
 		})
 	}
+}
+
+// A nested conditional that binds a name its enclosing conditional already captured shadows it: the
+// inner Then branch reads the inner capture, and the inner binder is filled by the inner match
+// rather than by the outer one. Without shadowing the outer `U` would replace both the inner binder
+// and the inner reference, turning the inner pattern into `[number]`, which `[string]` fails to
+// match, so the case would take the inner Else branch and reduce to `boolean`.
+func TestInferCondNestedCaptureShadowsOuter(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Result = if [number] : [infer U] {
+			if [string] : [infer U] { U } else { boolean }
+		} else { boolean }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "string", soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+}
+
+// A conditional whose Check names a type that does not resolve recovers that operand to a fresh var,
+// and the recovery must not be read as a type parameter: the conditional is not distributive, so a
+// union reaching the Check position later would decide as a whole. The annotation reports the
+// unresolved name once and keeps the conditional shape.
+func TestInferCondUnresolvedCheckIsNotDistributive(t *testing.T) {
+	nodes, _, errs := inferTypeNodes(t, `type Result = if Bogus : string { number } else { boolean }`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
+	cond, ok := nodes["Result"].(*soltype.CondType)
+	require.True(t, ok)
+	require.False(t, cond.Distribute)
 }

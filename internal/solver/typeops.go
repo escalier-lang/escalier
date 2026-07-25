@@ -196,14 +196,14 @@ func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check, extends solt
 	if !e.matchInfer(check, extends, captures) {
 		return e.reduce(t.Else)
 	}
-	pattern := substituteInfer(extends, captures)
+	pattern := substituteBinders(extends, captures)
 	if containsInfer(pattern) {
 		return e.reduce(t.Else)
 	}
 	if !e.ctx.condExtends(check, pattern, e.seen) {
 		return e.reduce(t.Else)
 	}
-	return e.reduce(substituteInfer(t.Then, captures))
+	return e.reduce(substituteCaptures(t.Then, captures))
 }
 
 // matchInfer walks the ground type check alongside the Extends pattern and records into captures
@@ -354,32 +354,112 @@ func (e *typeEvaluator) alignCheck(check soltype.Type) soltype.Type {
 	}
 }
 
-// substituteInfer rewrites every `infer` node in t whose name has a capture to the captured type,
-// covering both the binder in a pattern and a reference to that name in a Then branch. A name with
-// no capture is left in place, which is how the caller detects a match that bound only part of the
-// pattern. Names are matched as written, so a nested conditional inside the branch that reuses an
-// outer name is rewritten too rather than shadowing it.
-func substituteInfer(t soltype.Type, captures map[string]soltype.Type) soltype.Type {
+// substituteBinders rewrites each `infer U` binder in a pattern to the type captured for U, turning
+// the Extends operand into an ordinary type the `Check <: Extends` probe can decide. A binder whose
+// name has no capture is left in place, which is how the caller detects a match that bound only part
+// of the pattern.
+func substituteBinders(t soltype.Type, captures map[string]soltype.Type) soltype.Type {
+	return substituteInfer(t, captures, true)
+}
+
+// substituteCaptures rewrites each reference to a captured name in a selected branch to the type
+// captured for it, so the branch reduces to what the match found. A nested conditional that binds
+// the same name again keeps its own binder and its own Then branch, so the inner capture shadows the
+// outer one rather than being overwritten by it.
+func substituteCaptures(t soltype.Type, captures map[string]soltype.Type) soltype.Type {
+	return substituteInfer(t, captures, false)
+}
+
+// substituteInfer is the shared body of substituteBinders and substituteCaptures. Its two callers
+// need opposite halves of the `infer` nodes, which binders selects: a pattern replaces the binders
+// that declare the names, and a branch replaces the references that read them.
+func substituteInfer(t soltype.Type, captures map[string]soltype.Type, binders bool) soltype.Type {
 	if len(captures) == 0 {
 		return t
 	}
-	return t.Accept(&inferSubst{captures: captures}, soltype.Positive)
+	return t.Accept(&inferSubst{captures: captures, binders: binders}, soltype.Positive)
 }
 
 // inferSubst is the rewriting visitor behind substituteInfer. It replaces a captured `infer` node
 // with the matched type and skips that node's children, since the replacement is already reduced.
-type inferSubst struct{ captures map[string]soltype.Type }
+type inferSubst struct {
+	captures map[string]soltype.Type
+	binders  bool
+}
 
-func (s *inferSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	if iv, ok := t.(*soltype.InferType); ok {
-		if matched, found := s.captures[iv.Name]; found {
+func (s *inferSubst) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.InferType:
+		if matched, found := s.captures[t.Name]; found && t.Binder == s.binders {
 			return soltype.EnterResult{Type: matched, SkipChildren: true}
+		}
+	case *soltype.CondType:
+		if shadowed := shadowedCaptures(t, s.captures); len(shadowed) > 0 {
+			return s.rewriteShadowingCond(t, pol, shadowed)
 		}
 	}
 	return soltype.EnterResult{}
 }
 
 func (s *inferSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// rewriteShadowingCond rewrites a nested conditional that declares a name the enclosing conditional
+// also captured. Its Then branch reads the inner capture, so that branch is rewritten with the
+// shadowed names dropped and the inner binder survives to be filled when the inner conditional
+// reduces. The other three operands sit outside the inner name's scope, so they still read the outer
+// captures and are rewritten with the full set.
+func (s *inferSubst) rewriteShadowingCond(t *soltype.CondType, pol soltype.Polarity, shadowed []string) soltype.EnterResult {
+	inner := &inferSubst{captures: withoutNames(s.captures, shadowed), binders: s.binders}
+	return soltype.EnterResult{
+		Type: &soltype.CondType{
+			Check:      t.Check.Accept(s, pol),
+			Extends:    t.Extends.Accept(s, pol),
+			Then:       t.Then.Accept(inner, pol),
+			Else:       t.Else.Accept(s, pol),
+			Distribute: t.Distribute,
+		},
+		SkipChildren: true,
+	}
+}
+
+// shadowedCaptures returns the names the nested conditional t declares that captures also holds a
+// type for. Those are the names whose meaning differs inside t's Then branch.
+func shadowedCaptures(t *soltype.CondType, captures map[string]soltype.Type) []string {
+	var shadowed []string
+	f := &inferBinderFinder{}
+	t.Extends.Accept(f, soltype.Positive)
+	for _, name := range f.names {
+		if _, found := captures[name]; found {
+			shadowed = append(shadowed, name)
+		}
+	}
+	return shadowed
+}
+
+// inferBinderFinder collects the names the `infer U` binders of one Extends operand declare.
+type inferBinderFinder struct{ names []string }
+
+func (f *inferBinderFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if iv, ok := t.(*soltype.InferType); ok && iv.Binder {
+		f.names = append(f.names, iv.Name)
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *inferBinderFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
+
+// withoutNames copies captures with the given names removed, the capture set that is in scope inside
+// a nested conditional's Then branch.
+func withoutNames(captures map[string]soltype.Type, names []string) map[string]soltype.Type {
+	out := make(map[string]soltype.Type, len(captures))
+	for name, matched := range captures {
+		out[name] = matched
+	}
+	for _, name := range names {
+		delete(out, name)
+	}
+	return out
+}
 
 // containsInfer reports whether t holds an `infer` node with no capture substituted into it yet. A
 // conditional consults it on its Extends operand to route to the matcher, and on a substituted
