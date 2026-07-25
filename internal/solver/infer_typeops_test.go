@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +37,7 @@ func inferTypeNodes(t *testing.T, src string) (map[string]soltype.Type, *Context
 // keeps a named residual symbolic at annotation and display time, so this test-only helper lets a
 // test assert what a residual expands to without routing through a constraint.
 func expandResidual(ctx *Context, ty soltype.Type) soltype.Type {
-	return newTypeEvaluator(ctx).reduce(ty)
+	return newTypeEvaluator(ctx, set.NewSet[constraintKey]()).reduce(ty)
 }
 
 // `keyof` over a named type reference — an alias or a class — is stored unexpanded, so the type
@@ -1107,6 +1108,241 @@ func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
 			result := nodes["Result"]
 			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
 			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}
+
+// A conditional `if Check : Extends { Then } else { Else }` over ground operands is stored
+// unreduced, so the type prints the way the source wrote it, and reducing it — the branch selection
+// constrain performs to check a constraint — decides `Check <: Extends` and yields the selected
+// branch. Each case names a ground Check and Extends, asserts the stored `Result` renders the
+// conditional verbatim, and asserts the reduced branch. The cases cover the decision shapes branch
+// selection handles: a reflexive primitive match, a literal against its primitive, a rejected
+// primitive that takes Else, a selected branch that is itself a union, and a Check resolved through
+// an alias.
+func TestInferCondBranchSelection(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
+	}{
+		{
+			// A primitive is a subtype of itself, so the Then branch is selected.
+			name:         "ReflexivePrimitive",
+			src:          `type Result = if number : number { "yes" } else { "no" }`,
+			wantSymbolic: `if number : number { "yes" } else { "no" }`,
+			wantExpanded: `"yes"`,
+		},
+		{
+			// A string literal is a subtype of the `string` primitive, so Then is selected.
+			name:         "LiteralUnderPrimitive",
+			src:          `type Result = if "hi" : string { number } else { boolean }`,
+			wantSymbolic: `if "hi" : string { number } else { boolean }`,
+			wantExpanded: "number",
+		},
+		{
+			// `string` is not a subtype of `number`, so the Else branch is selected.
+			name:         "RejectedTakesElse",
+			src:          `type Result = if string : number { number } else { boolean }`,
+			wantSymbolic: `if string : number { number } else { boolean }`,
+			wantExpanded: "boolean",
+		},
+		{
+			// The selected branch is reduced too, so a union branch yields the union.
+			name:         "UnionBranch",
+			src:          `type Result = if number : number { number | string } else { boolean }`,
+			wantSymbolic: `if number : number { number | string } else { boolean }`,
+			wantExpanded: "number | string",
+		},
+		{
+			// A Check named through an alias decides by expanding the alias for the probe, while the
+			// stored conditional keeps the alias name.
+			name: "AliasCheck",
+			src: `
+				type N = number
+				type Result = if N : number { "yes" } else { "no" }
+			`,
+			wantSymbolic: `if N : number { "yes" } else { "no" }`,
+			wantExpanded: `"yes"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			result := nodes["Result"]
+			require.Equal(t, tt.wantSymbolic, soltype.Print(result))
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, result)))
+		})
+	}
+}
+
+// A conditional over a type parameter renders symbolically in a function signature and stays
+// symbolic there: `fn f<T>(x: if T : number { string } else { boolean })` keeps the whole
+// conditional, since `T` never grounds so the `T <: number` probe cannot decide a branch. A
+// non-ground Extends keeps it symbolic the same way.
+func TestInferCondSignatureStaysSymbolic(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "TypeParamCheck",
+			src:  `fn f<T>(x: if T : number { string } else { boolean }) {}`,
+			want: map[string]string{"f": "fn <T>(x: if T : number { string } else { boolean }) -> void"},
+		},
+		{
+			name: "TypeParamExtends",
+			src:  `fn g<T>(x: if number : T { string } else { boolean }) {}`,
+			want: map[string]string{"g": "fn <T>(x: if number : T { string } else { boolean }) -> void"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name])
+			}
+		})
+	}
+}
+
+// constrain reduces a conditional to the selected branch to check satisfaction, while the stored
+// type stays the residual. A value matching the selected branch is accepted; a mismatch is rejected
+// against that branch, so the diagnostic names the branch the conditional resolved to. The reduction
+// runs at every constraint site: a `val` annotation whose conditional takes Then, one that takes
+// Else, a generic alias instantiation that substitutes its argument before deciding, and a function
+// argument.
+func TestInferCondConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "ThenBranchAccepted",
+			src:  `val x: if number : number { string } else { boolean } = "hi"`,
+		},
+		{
+			name:    "ThenBranchRejected",
+			src:     `val x: if number : number { string } else { boolean } = 5`,
+			wantErr: `cannot constrain 5 <: string`,
+		},
+		{
+			name: "ElseBranchAccepted",
+			src:  `val x: if string : number { string } else { boolean } = true`,
+		},
+		{
+			name:    "ElseBranchRejected",
+			src:     `val x: if string : number { string } else { boolean } = "hi"`,
+			wantErr: `cannot constrain "hi" <: boolean`,
+		},
+		{
+			// A generic alias substitutes its argument into the conditional, then decides the branch:
+			// `Choose<number>` reduces to the Then branch `string`.
+			name: "GenericAliasThen",
+			src: `
+				type Choose<T> = if T : number { string } else { boolean }
+				val x: Choose<number> = "hi"
+			`,
+		},
+		{
+			name: "GenericAliasElse",
+			src: `
+				type Choose<T> = if T : number { string } else { boolean }
+				val x: Choose<string> = 5
+			`,
+			wantErr: "cannot constrain 5 <: boolean",
+		},
+		{
+			name: "CallArgumentRejected",
+			src: `
+				fn take(v: if number : number { string } else { boolean }) -> number { return 1 }
+				val r = take(5)
+			`,
+			wantErr: `cannot constrain 5 <: string`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A rejected constraint whose subject is a symbolic conditional names it structurally in the
+// diagnostic — the full `if … : … { … } else { … }` form rather than the bare `?` the default
+// describe arm would render — so the inert node stays legible. describe is the raw mid-constrain
+// renderer, so the Check shows as the raw var `t1` rather than the coalesced printer's param name.
+func TestInferCondResidualErrorMessage(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f<T>(k: if T : number { string } else { boolean }) -> number { return k }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, "1:12-1:51: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(errs[0]))
+}
+
+// A conditional whose Extends holds an `infer` clause is unsupported until M9 PR3b: branch selection
+// has no matcher to bind the `infer` name. The annotation reports one UnsupportedFeatureError rather
+// than resolving the Extends and silently mis-deciding the branch.
+func TestInferCondInferUnsupported(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f<T>(x: if T : Array<infer U> { U } else { never }) {}`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &UnsupportedFeatureError{}, errs[0])
+	require.Equal(t, "Unsupported: infer clause in conditional type", errs[0].Message())
+}
+
+// Checking a value against a self-referential conditional alias terminates instead of looping. A
+// conditional decides its branch by re-entering constrain to probe `Check <: Extends`, and constrain
+// expands an alias Check back into the same conditional, so `type Bad = if Bad : number { … }` would
+// recurse without bound if the probe started a fresh cycle-detection set. The probe reuses the
+// caller's set, so the repeated `Bad <: number` state closes the cycle. The point of the test is
+// termination; the branch the truncated cycle selects is a consequence, which CheckRegular will
+// reject at definition time in a later milestone.
+func TestInferCondRecursiveAliasTerminates(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type Bad = if Bad : number { number } else { string }
+		val x: Bad = 5
+	`)
+	require.Empty(t, errs)
+}
+
+// `keyof` and indexed access compose over a ground conditional: the conditional selects its branch
+// first, then the outer operator reduces over that branch. `keyof (if number : number { {x, y} }
+// else { {z} })` projects the Then branch's keys, and indexing the Else branch of a rejected
+// conditional selects that branch's member.
+func TestInferCondComposesWithOperators(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// number <: number holds, so keyof projects the Then branch's keys.
+			name:         "KeyofOverCond",
+			src:          `type Result = keyof if number : number { {x: number, y: string} } else { {z: boolean} }`,
+			wantExpanded: `"x" | "y"`,
+		},
+		{
+			// string is not a subtype of number, so the access reads `x` off the Else branch.
+			name:         "IndexOverCond",
+			src:          `type Result = (if string : number { {x: number} } else { {x: boolean} })["x"]`,
+			wantExpanded: "boolean",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, nodes["Result"])))
 		})
 	}
 }

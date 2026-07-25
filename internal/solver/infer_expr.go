@@ -1888,7 +1888,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 				// SpreadNotObjectError on the recovery sentinel, the object twin of the array arm.
 				continue
 			}
-			obj, ground := newTypeEvaluator(c.ctx).groundToObject(op)
+			obj, ground := newTypeEvaluator(c.ctx, set.NewSet[constraintKey]()).groundToObject(op)
 			if !ground {
 				// A spread whose operand has no ground object shape — a type variable, a
 				// primitive — cannot merge its fields. Report it and keep the rest of the object.
