@@ -958,19 +958,18 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 	combos := cartesianProduct(interpChoices)
 	parts := make([]soltype.Type, 0, len(combos))
 	for _, combo := range combos {
-		parts = append(parts, buildTemplatePart(t.Quasis, combo))
+		parts = append(parts, foldTemplatePart(t.Quasis, combo))
 	}
 	return newUnion(nil, parts, false)
 }
 
-// buildTemplatePart assembles one cartesian-product combination into a single template result.
-// It interleaves the fixed segments with the combination's interpolations: a string-representable
-// literal folds into the surrounding text, while any other interpolation closes the accumulated
-// segment and carries through as a residual interpolation. A combination whose interpolations all
-// fold collapses to a lone string-literal type; one carrying an abstract interpolation stays a
-// `TemplateLitType`. Quasis holds one more entry than the combination, so the loop reads
-// combo[i] between quasi i and quasi i+1.
-func buildTemplatePart(quasis []string, combo []soltype.Type) soltype.Type {
+// foldTemplatePart folds one cartesian-product combination into a single template result. It
+// interleaves the fixed segments with that combination's interpolation values: a string-representable
+// literal folds into the surrounding text, while any other value closes the accumulated segment and
+// carries through as a residual interpolation. A combination whose values all fold collapses to a
+// lone string-literal type; one carrying an abstract value stays a `TemplateLitType`. Quasis holds
+// one more entry than interpValues, so the loop reads interpValues[i] between quasi i and quasi i+1.
+func foldTemplatePart(quasis []string, interpValues []soltype.Type) soltype.Type {
 	newQuasis := []string{}
 	newInterps := []soltype.Type{}
 	current := ""
@@ -981,16 +980,16 @@ func buildTemplatePart(quasis []string, combo []soltype.Type) soltype.Type {
 		// abstract branch resets current to "", or on the first iteration, this starts a fresh
 		// segment instead.
 		current += quasi
-		if i >= len(combo) {
+		if i >= len(interpValues) {
 			continue
 		}
-		if s, ok := stringifyLit(combo[i]); ok {
+		if s, ok := stringifyLit(interpValues[i]); ok {
 			current += s
 			continue
 		}
 		newQuasis = append(newQuasis, current)
 		current = ""
-		newInterps = append(newInterps, combo[i])
+		newInterps = append(newInterps, interpValues[i])
 	}
 	newQuasis = append(newQuasis, current)
 	if len(newInterps) == 0 {
