@@ -1190,11 +1190,11 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// are equal position-for-position, compared structurally without reducing the template.
 		b, ok := b.(*soltype.TemplateLitType)
 		return ok && slices.Equal(a.Quasis, b.Quasis) && equalTypeSliceWith(a.Interps, b.Interps, ctx)
-	case *soltype.StringMappingType:
-		// Two string-mapping residuals are equal when they name the same operator over equal
+	case *soltype.StringIntrinsicType:
+		// Two string-intrinsic residuals are equal when they name the same operator over equal
 		// operands, compared structurally without reducing, the single-child analogue of the
 		// KeyofType arm.
-		b, ok := b.(*soltype.StringMappingType)
+		b, ok := b.(*soltype.StringIntrinsicType)
 		return ok && a.Kind == b.Kind && equalTypeWith(a.Operand, b.Operand, ctx)
 	}
 	return false

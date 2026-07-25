@@ -508,9 +508,9 @@ func (c *checker) resolveTemplateLitTypeAnn(scope *Scope, ta *ast.TemplateLitTyp
 }
 
 // stringIntrinsics maps each intrinsic string operator's reference name to its kind, so a
-// `Uppercase<T>` reference resolves to a StringMappingType residual. A user-defined type of the
+// `Uppercase<T>` reference resolves to a StringIntrinsicType residual. A user-defined type of the
 // same name takes precedence, since resolveScopedTypeRef runs first.
-var stringIntrinsics = map[string]soltype.StringMappingKind{
+var stringIntrinsics = map[string]soltype.StringIntrinsicKind{
 	"Uppercase":    soltype.Uppercase,
 	"Lowercase":    soltype.Lowercase,
 	"Capitalize":   soltype.Capitalize,
@@ -518,7 +518,7 @@ var stringIntrinsics = map[string]soltype.StringMappingKind{
 }
 
 // resolveStringIntrinsic lowers an intrinsic string-operator reference `Uppercase<T>` and its three
-// siblings to a StringMappingType residual, stored unreduced so the annotation prints the way the
+// siblings to a StringIntrinsicType residual, stored unreduced so the annotation prints the way the
 // source wrote it. It matches only a single-argument reference with no lifetime arguments; any other
 // name or arity reports ok=false so the caller falls through to its unsupported-feature recovery. An
 // unsupported operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
@@ -531,7 +531,7 @@ func (c *checker) resolveStringIntrinsic(scope *Scope, ta *ast.TypeRefTypeAnn, l
 	if !ok {
 		operand = c.freshAt(lvl)
 	}
-	t := &soltype.StringMappingType{Kind: kind, Operand: operand}
+	t := &soltype.StringIntrinsicType{Kind: kind, Operand: operand}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }

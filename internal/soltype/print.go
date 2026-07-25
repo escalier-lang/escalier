@@ -62,7 +62,7 @@ func typePrec(t Type) int {
 		// A template literal is backtick-delimited, so like an object or a `Name<args>` reference
 		// it is an atom that never needs outer parens.
 		return precAtom
-	case *StringMappingType:
+	case *StringIntrinsicType:
 		// `Uppercase<T>` renders as a name with an argument list, the same atom shape a class or
 		// alias reference takes, so it never needs outer parens.
 		return precAtom
@@ -452,7 +452,7 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, interp := range t.Interps {
 				walk(interp)
 			}
-		case *StringMappingType:
+		case *StringIntrinsicType:
 			walk(t.Operand)
 		case *PromiseType:
 			walk(t.Inner)
@@ -610,7 +610,7 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		b.WriteString("`")
 		return b.String()
-	case *StringMappingType:
+	case *StringIntrinsicType:
 		// `Uppercase<T>` and its three siblings render under the operator's name with the operand as
 		// the sole argument, so `Capitalize<K>` round-trips. The operand prints with no minimum since
 		// the `<…>` brackets stop anything from binding across it.

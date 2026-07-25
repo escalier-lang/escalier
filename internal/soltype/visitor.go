@@ -275,7 +275,7 @@ func (t *TemplateLitType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
-func (t *StringMappingType) Accept(v TypeVisitor, pol Polarity) Type {
+func (t *StringIntrinsicType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {
 		return v.ExitType(skipReplace(t, e), pol)
@@ -287,7 +287,7 @@ func (t *StringMappingType) Accept(v TypeVisitor, pol Polarity) Type {
 	operand := cur.Operand.Accept(v, pol)
 	out := cur
 	if operand != cur.Operand {
-		out = &StringMappingType{Kind: cur.Kind, Operand: operand}
+		out = &StringIntrinsicType{Kind: cur.Kind, Operand: operand}
 	}
 	return v.ExitType(out, pol)
 }

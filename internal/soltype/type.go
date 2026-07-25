@@ -747,12 +747,12 @@ type TemplateLitType struct {
 	Interps []Type
 }
 
-// StringMappingKind names one of the four intrinsic string-manipulation operators TypeScript
-// exposes: Uppercase, Lowercase, Capitalize, and Uncapitalize.
-type StringMappingKind int
+// StringIntrinsicKind names one of the four string intrinsics TypeScript exposes: Uppercase,
+// Lowercase, Capitalize, and Uncapitalize. Each is written `intrinsic` in the shipped .d.ts.
+type StringIntrinsicKind int
 
 const (
-	Uppercase StringMappingKind = iota
+	Uppercase StringIntrinsicKind = iota
 	Lowercase
 	Capitalize
 	Uncapitalize
@@ -760,7 +760,7 @@ const (
 
 // String renders the operator's surface name, used by the printer to render `Uppercase<T>`
 // and by the resolver to register the four intrinsics under their reference names.
-func (k StringMappingKind) String() string {
+func (k StringIntrinsicKind) String() string {
 	switch k {
 	case Uppercase:
 		return "Uppercase"
@@ -771,47 +771,47 @@ func (k StringMappingKind) String() string {
 	case Uncapitalize:
 		return "Uncapitalize"
 	}
-	panic(fmt.Sprintf("StringMappingKind.String: unhandled kind %d", int(k)))
+	panic(fmt.Sprintf("StringIntrinsicKind.String: unhandled kind %d", int(k)))
 }
 
-// StringMappingType is the residual intrinsic string operator `Uppercase<T>` and its three
+// StringIntrinsicType is the residual intrinsic string operator `Uppercase<T>` and its three
 // siblings. Like KeyofType it is inert: it carries no bounds, constrain never records
 // one against it, and it flows through the solver's structural machinery untouched, rendering
 // `Uppercase<T>` the way the source wrote it. An evaluator reduces it over a string-literal
 // operand — `Uppercase<"abc">` ⇒ `"ABC"` — distributing over a union operand, and stays
 // symbolic over an abstract operand such as a type parameter.
-type StringMappingType struct {
-	Kind    StringMappingKind
+type StringIntrinsicType struct {
+	Kind    StringIntrinsicKind
 	Operand Type
 }
 
-func (*TypeVarType) isType()       {}
-func (*KeyofType) isType()         {}
-func (*IndexType) isType()         {}
-func (*TypeofType) isType()        {}
-func (*CondType) isType()          {}
-func (*InferType) isType()         {}
-func (*RestSpreadType) isType()    {}
-func (*TemplateLitType) isType()   {}
-func (*StringMappingType) isType() {}
-func (*PrimType) isType()          {}
-func (*LitType) isType()           {}
-func (*FuncType) isType()          {}
-func (*TupleType) isType()         {}
-func (*ObjectType) isType()        {}
-func (*RefType) isType()           {}
-func (*PromiseType) isType()       {}
-func (*Void) isType()              {}
-func (*NullType) isType()          {}
-func (*UndefinedType) isType()     {}
-func (*NeverType) isType()         {}
-func (*UnknownType) isType()       {}
-func (*UnionType) isType()         {}
-func (*IntersectionType) isType()  {}
-func (*ErrorType) isType()         {}
-func (*ClassType) isType()         {}
-func (*AliasType) isType()         {}
-func (*SkolemType) isType()        {}
+func (*TypeVarType) isType()         {}
+func (*KeyofType) isType()           {}
+func (*IndexType) isType()           {}
+func (*TypeofType) isType()          {}
+func (*CondType) isType()            {}
+func (*InferType) isType()           {}
+func (*RestSpreadType) isType()      {}
+func (*TemplateLitType) isType()     {}
+func (*StringIntrinsicType) isType() {}
+func (*PrimType) isType()            {}
+func (*LitType) isType()             {}
+func (*FuncType) isType()            {}
+func (*TupleType) isType()           {}
+func (*ObjectType) isType()          {}
+func (*RefType) isType()             {}
+func (*PromiseType) isType()         {}
+func (*Void) isType()                {}
+func (*NullType) isType()            {}
+func (*UndefinedType) isType()       {}
+func (*NeverType) isType()           {}
+func (*UnknownType) isType()         {}
+func (*UnionType) isType()           {}
+func (*IntersectionType) isType()    {}
+func (*ErrorType) isType()           {}
+func (*ClassType) isType()           {}
+func (*AliasType) isType()           {}
+func (*SkolemType) isType()          {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).
@@ -902,8 +902,8 @@ func LevelOf(t Type) int {
 			m = max(m, LevelOf(interp))
 		}
 		return m
-	case *StringMappingType:
-		// A string-mapping residual's level is its operand's, the same single-child rule the
+	case *StringIntrinsicType:
+		// A string-intrinsic residual's level is its operand's, the same single-child rule the
 		// KeyofType arm follows.
 		return LevelOf(t.Operand)
 	case *PromiseType:

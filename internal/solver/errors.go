@@ -1872,7 +1872,7 @@ func describe(t soltype.Type) string {
 		}
 		b.WriteString("`")
 		return b.String()
-	case *soltype.StringMappingType:
+	case *soltype.StringIntrinsicType:
 		// An intrinsic string-operator residual renders `Uppercase<operand>` structurally, recursing
 		// like the keyof arm. The operand renders in describe's raw mid-constrain form.
 		return t.Kind.String() + "<" + describe(t.Operand) + ">"

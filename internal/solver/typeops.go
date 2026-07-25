@@ -103,8 +103,8 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		return e.reduceObject(t)
 	case *soltype.TemplateLitType:
 		return e.reduceTemplateLit(t)
-	case *soltype.StringMappingType:
-		return e.reduceStringMapping(t.Kind, t.Operand)
+	case *soltype.StringIntrinsicType:
+		return e.reduceStringIntrinsic(t.Kind, t.Operand)
 	default:
 		return t
 	}
@@ -395,7 +395,7 @@ func (e *typeEvaluator) groundTuple(t *soltype.TupleType) (*soltype.TupleType, b
 // interpolation `Dir` over `type Dir = "a" | "b"` grounds to the referenced union. A type parameter,
 // a recurring alias state, an exhausted budget, or an unresolved alias body each leaves the operand
 // unexpanded, which keeps the enclosing operator symbolic. The tuple-spread, template-literal, and
-// string-mapping reductions share it.
+// string-intrinsic reductions share it.
 func (e *typeEvaluator) groundOperand(operand soltype.Type) soltype.Type {
 	reduced := e.reduce(operand)
 	alias, ok := reduced.(*soltype.AliasType)
@@ -1038,32 +1038,32 @@ func stringifyLit(t soltype.Type) (string, bool) {
 	return "", false
 }
 
-// reduceStringMapping reduces an intrinsic string operator such as `Uppercase<T>` over its operand.
+// reduceStringIntrinsic reduces an intrinsic string operator such as `Uppercase<T>` over its operand.
 // A string-literal operand maps to the transformed literal — `Uppercase<"abc">` ⇒ `"ABC"` — and a
 // union operand distributes member-wise, so `Uppercase<"a" | "b">` ⇒ `"A" | "B"`. The operand is
 // first grounded, so a named alias expands to its body. An operand that is not a string literal,
-// such as a type parameter, keeps the operator symbolic as a `StringMappingType` rebuilt around the
+// such as a type parameter, keeps the operator symbolic as a `StringIntrinsicType` rebuilt around the
 // grounded operand.
-func (e *typeEvaluator) reduceStringMapping(kind soltype.StringMappingKind, operand soltype.Type) soltype.Type {
+func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, operand soltype.Type) soltype.Type {
 	reduced := e.groundOperand(operand)
 	switch op := reduced.(type) {
 	case *soltype.UnionType:
 		parts := make([]soltype.Type, len(op.Types))
 		for i, m := range op.Types {
-			parts[i] = e.reduceStringMapping(kind, m)
+			parts[i] = e.reduceStringIntrinsic(kind, m)
 		}
 		return newUnion(nil, parts, false)
 	case *soltype.LitType:
 		if s, ok := op.Lit.(*soltype.StrLit); ok {
-			return strLitType(applyStringMapping(kind, s.Value))
+			return strLitType(applyStringIntrinsic(kind, s.Value))
 		}
 	}
-	return &soltype.StringMappingType{Kind: kind, Operand: reduced}
+	return &soltype.StringIntrinsicType{Kind: kind, Operand: reduced}
 }
 
-// applyStringMapping transforms one string by the named intrinsic operator. Uppercase and Lowercase
+// applyStringIntrinsic transforms one string by the named intrinsic operator. Uppercase and Lowercase
 // map every character; Capitalize and Uncapitalize map only the first, leaving the rest unchanged.
-func applyStringMapping(kind soltype.StringMappingKind, s string) string {
+func applyStringIntrinsic(kind soltype.StringIntrinsicKind, s string) string {
 	switch kind {
 	case soltype.Uppercase:
 		return strings.ToUpper(s)
@@ -1105,7 +1105,7 @@ func strLitName(t soltype.Type) (string, bool) {
 func isResidualOp(t soltype.Type) bool {
 	switch t.(type) {
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.RestSpreadType,
-		*soltype.TemplateLitType, *soltype.StringMappingType:
+		*soltype.TemplateLitType, *soltype.StringIntrinsicType:
 		return true
 	}
 	return false

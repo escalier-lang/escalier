@@ -152,7 +152,7 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) 
 		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
 		return t.Ty, nil, true
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.TemplateLitType, *soltype.StringMappingType:
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.TemplateLitType, *soltype.StringIntrinsicType:
 		return c.reduceResidual(t, seen)
 	case *soltype.TupleType:
 		if !tupleHasSpread(t) {
@@ -782,7 +782,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		if _, ok := super.(*soltype.UndefinedType); ok {
 			return nil
 		}
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.TemplateLitType, *soltype.StringMappingType:
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.TemplateLitType, *soltype.StringIntrinsicType:
 		// A residual type-level operator the pre-switch could not ground reaches here: a `keyof T`,
 		// `T[K]`, `on${T}`, or `Uppercase<T>` over a type parameter, or an expanding recursive
 		// alias. constrain treats every such operator inert, neither decomposing nor reducing it, so

@@ -129,7 +129,7 @@ func TestInferTemplateLitConstraint(t *testing.T) {
 // reduced over a string-literal operand. Each case asserts the stored `Result` renders the way the
 // source wrote it, then asserts that reducing it maps the operand's characters, distributing over a
 // union operand. The cases cover each of the four operators and the union-distribution rule.
-func TestInferStringMappingReduction(t *testing.T) {
+func TestInferStringIntrinsicReduction(t *testing.T) {
 	tests := []struct {
 		name         string
 		src          string
@@ -179,21 +179,21 @@ func TestInferStringMappingReduction(t *testing.T) {
 	}
 }
 
-// A string-mapping residual over a type parameter renders symbolically in a function signature and
+// A string-intrinsic residual over a type parameter renders symbolically in a function signature and
 // round-trips from parameter to return: `fn f<T>(k: Uppercase<T>) -> Uppercase<T> { return k }`
 // keeps `Uppercase<T>` on both positions. The reflexive `Uppercase<T> <: Uppercase<T>` from
 // `return k` succeeds inertly by structural equality on the residual, since the abstract operand
 // never grounds.
-func TestInferStringMappingSignatureStaysSymbolic(t *testing.T) {
+func TestInferStringIntrinsicSignatureStaysSymbolic(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f<T>(k: Uppercase<T>) -> Uppercase<T> { return k }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T>(k: Uppercase<T>) -> Uppercase<T>", values["f"])
 }
 
-// constrain reduces a ground string-mapping residual to the transformed literal to check
+// constrain reduces a ground string-intrinsic residual to the transformed literal to check
 // satisfaction, while the stored type stays the residual. The transformed literal is accepted; any
 // other literal is rejected against it, so the diagnostic names the mapped value.
-func TestInferStringMappingConstraint(t *testing.T) {
+func TestInferStringIntrinsicConstraint(t *testing.T) {
 	tests := []struct {
 		name    string
 		src     string
