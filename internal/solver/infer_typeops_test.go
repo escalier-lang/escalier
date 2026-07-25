@@ -1290,14 +1290,215 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 	require.Equal(t, "1:12-1:51: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(errs[0]))
 }
 
-// A conditional whose Extends holds an `infer` clause is unsupported until M9 PR3b: branch selection
-// has no matcher to bind the `infer` name. The annotation reports one UnsupportedFeatureError rather
-// than resolving the Extends and silently mis-deciding the branch.
-func TestInferCondInferUnsupported(t *testing.T) {
-	_, _, errs := inferSource(t, `fn f<T>(x: if T : Array<infer U> { U } else { never }) {}`)
+// A conditional whose Extends holds an `infer U` reduces by matching the ground Check against the
+// Extends pattern structurally, binding `U` to the matched position and substituting it into the
+// selected branch. Each case names a ground Check and an Extends carrying an `infer`, and asserts
+// the reduced branch. The cases cover the pattern shapes the matcher decomposes: a tuple element, a
+// function parameter, a function return, a promise payload, an object property, two positions
+// sharing one `infer`, and a Check whose shape does not match the pattern so the Else branch is
+// taken.
+func TestInferCondInferReduction(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// A tuple pattern binds `U` to the element at the `infer` position.
+			name:         "TupleElement",
+			src:          `type Result = if [number, string] : [infer U, string] { U } else { boolean }`,
+			wantExpanded: "number",
+		},
+		{
+			// A function pattern binds `U` to the parameter at the `infer` position.
+			name:         "FunctionParameter",
+			src:          `type Result = if fn (x: number) -> string : fn (x: infer U) -> string { U } else { boolean }`,
+			wantExpanded: "number",
+		},
+		{
+			// A function pattern binds `R` to the return at the `infer` position.
+			name:         "FunctionReturn",
+			src:          `type Result = if fn (x: number) -> string : fn (x: number) -> infer R { R } else { boolean }`,
+			wantExpanded: "string",
+		},
+		{
+			// A promise pattern binds `U` to the payload, the extraction Awaited<T> builds on.
+			name:         "PromisePayload",
+			src:          `type Result = if Promise<number> : Promise<infer U> { U } else { boolean }`,
+			wantExpanded: "number",
+		},
+		{
+			// An object pattern binds `U` to the named property's type.
+			name:         "ObjectProperty",
+			src:          `type Result = if {value: number} : {value: infer U} { U } else { boolean }`,
+			wantExpanded: "number",
+		},
+		{
+			// Two positions sharing one `infer U` capture the leftmost, so the branch reads the
+			// first element's type.
+			name:         "RepeatedInferName",
+			src:          `type Result = if [number, string] : [infer U, infer U] { U } else { boolean }`,
+			wantExpanded: "number",
+		},
+		{
+			// A Check whose shape does not match the pattern takes the Else branch: a primitive is
+			// not a tuple, so no `infer` binds.
+			name:         "MismatchTakesElse",
+			src:          `type Result = if number : [infer U, string] { U } else { boolean }`,
+			wantExpanded: "boolean",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// constrain reduces an `infer` conditional to the selected branch to check satisfaction, expanding a
+// generic alias's argument into the Check before matching. A value matching the captured type is
+// accepted; a mismatch is rejected against that type, so the diagnostic names the branch the
+// conditional resolved to. Each case defines a generic alias whose body extracts a type through
+// `infer` and checks a value against an instantiation of it.
+func TestInferCondInferConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "TupleFirstAccepted",
+			src: `
+				type First<T> = if T : [infer U, string] { U } else { boolean }
+				val v: First<[number, string]> = 5
+			`,
+		},
+		{
+			name: "TupleFirstRejected",
+			src: `
+				type First<T> = if T : [infer U, string] { U } else { boolean }
+				val v: First<[number, string]> = "hi"
+			`,
+			wantErr: `cannot constrain "hi" <: number`,
+		},
+		{
+			name: "PromisePayloadAccepted",
+			src: `
+				type Payload<T> = if T : Promise<infer U> { U } else { boolean }
+				val v: Payload<Promise<string>> = "hi"
+			`,
+		},
+		{
+			name: "ReturnTypeRejected",
+			src: `
+				type Ret<T> = if T : fn (x: number) -> infer R { R } else { boolean }
+				val v: Ret<fn (x: number) -> string> = 5
+			`,
+			wantErr: `cannot constrain 5 <: string`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A conditional whose Check is a naked type parameter distributes over a union argument member-wise,
+// matching TypeScript. Each member evaluates the conditional independently, so `Widen` maps every
+// member of `"a" | "b"` through its own branch decision and unions the results. Without
+// distribution the whole union `"a" | "b"` would fail the `<: "a"` probe and take the Else branch
+// alone; distribution instead selects Then for `"a"` and Else for `"b"`, so the result is the union
+// `number | boolean`. constrain accepts a value the distributed union covers and rejects one it does
+// not.
+func TestInferCondDistribution(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			// number rides the "a" member's Then branch, present only because distribution evaluates
+			// that member on its own.
+			name: "MemberThenBranchAccepted",
+			src: `
+				type Widen<T> = if T : "a" { number } else { boolean }
+				val v: Widen<"a" | "b"> = 5
+			`,
+		},
+		{
+			// boolean rides the "b" member's Else branch.
+			name: "MemberElseBranchAccepted",
+			src: `
+				type Widen<T> = if T : "a" { number } else { boolean }
+				val v: Widen<"a" | "b"> = true
+			`,
+		},
+		{
+			// A string is in neither branch of the distributed union number | boolean.
+			name: "OutsideDistributedUnionRejected",
+			src: `
+				type Widen<T> = if T : "a" { number } else { boolean }
+				val v: Widen<"a" | "b"> = "hi"
+			`,
+			wantErr: `cannot constrain "hi" <: number | boolean`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A distributive conditional reduces to the distributed union directly. `Widen<"a" | "b">` maps `"a"`
+// to its Then branch `number` and `"b"` to its Else branch `boolean`, so the reduction is the union
+// `number | boolean`. The alias reference expands its union argument into the naked Check before
+// distributing.
+func TestInferCondDistributionReduction(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Widen<T> = if T : "a" { number } else { boolean }
+		type Result = Widen<"a" | "b">
+	`)
+	require.Empty(t, errs)
+	ref, ok := nodes["Result"].(*soltype.AliasType)
+	require.True(t, ok)
+	reduced := expandResidual(ctx, ctx.expandAlias(ref))
+	require.Equal(t, "number | boolean", soltype.Print(reduced))
+}
+
+// An `infer` clause is legal only inside a conditional type's Extends operand. Outside it — here in a
+// bare type alias — there is no conditional to bind the name, so the annotation reports one
+// UnsupportedFeatureError and recovers.
+func TestInferInferOutsideCondRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `type Result = infer U`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &UnsupportedFeatureError{}, errs[0])
-	require.Equal(t, "Unsupported: infer clause in conditional type", errs[0].Message())
+	require.Equal(t, "Unsupported: infer clause outside a conditional type's extends operand", errs[0].Message())
+}
+
+// An `infer` in a conditional's Then branch — not its Extends — is rejected: `infer` binds a capture
+// only in the pattern position. The Then is resolved with the `infer`-legal context cleared, so it
+// reports the same unsupported feature as an `infer` in a bare alias.
+func TestInferInferInThenRejected(t *testing.T) {
+	_, _, errs := inferSource(t, `type Result = if number : number { infer U } else { boolean }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &UnsupportedFeatureError{}, errs[0])
+	require.Equal(t, "Unsupported: infer clause outside a conditional type's extends operand", errs[0].Message())
 }
 
 // Checking a value against a self-referential conditional alias terminates instead of looping. A

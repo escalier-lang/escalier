@@ -431,6 +431,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Extends)
 			walk(t.Then)
 			walk(t.Else)
+		case *InferType:
+			walk(t.Var)
 		case *RestSpreadType:
 			walk(t.Operand)
 		case *PromiseType:
@@ -654,6 +656,10 @@ func (p *namedPrinter) printType(t Type) string {
 		// neighbor and none needs parens.
 		return "if " + p.printType(t.Check) + " : " + p.printType(t.Extends) +
 			" { " + p.printType(t.Then) + " } else { " + p.printType(t.Else) + " }"
+	case *InferType:
+		// `infer U`, the binding position inside a conditional's Extends. The branches render
+		// their references to the same variable under the variable's own name, not this prefix.
+		return "infer " + t.Name
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:

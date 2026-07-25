@@ -94,30 +94,254 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 	}
 }
 
-// reduceCond reduces `if Check : Extends { Then } else { Else }` by deciding `Check <: Extends`
-// and selecting a branch, mirroring the old checker's CondType case
-// (internal/checker/expand_type.go), which unifies Check with Extends and returns Then on success
-// or Else on failure. The decision runs only when both operands are ground:
+// reduceCond reduces `if Check : Extends { Then } else { Else }` to the selected branch. It first
+// reduces Check, then handles distribution before deciding the branch:
 //
-//   - a ground Check and Extends decide the branch with an assignability probe, and the reduction
-//     continues into the selected branch alone, so an error in the unselected branch never surfaces;
-//   - a Check or Extends still carrying a type parameter or an unreduced residual keeps the whole
-//     conditional symbolic, rebuilt around the reduced Check and Extends, and reduces later once
-//     they ground. Then and Else stay unreduced in the symbolic form, since neither is selected yet.
-//
-// Distribution over a naked type-parameter union and the `infer` clause are M9 PR3b, so a bare
-// type-parameter Check stays symbolic here rather than distributing.
+//   - a distributive conditional whose naked type parameter has been instantiated with a union
+//     evaluates once per member and unions the results, matching TypeScript. The naked parameter was
+//     substituted to the whole union at every position, so each member evaluation replaces that union
+//     with the one member throughout Check, Extends, and the branches, reconstructing the per-member
+//     conditional. `Exclude<"a" | "b", "a">` reduces to `"b"`;
+//   - otherwise the branch is decided directly on the reduced Check by reduceCondBranch.
 func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 	check := e.reduce(t.Check)
+	if t.Distribute {
+		if u, ok := check.(*soltype.UnionType); ok {
+			parts := make([]soltype.Type, len(u.Types))
+			for i, m := range u.Types {
+				parts[i] = e.reduceCondBranch(distributeMember(t, m), m)
+			}
+			return newUnion(nil, parts, false)
+		}
+	}
+	return e.reduceCondBranch(t, check)
+}
+
+// reduceCondBranch decides one conditional's branch given its already-reduced Check. It takes two
+// paths, mirroring the old checker's CondType case (internal/checker/expand_type.go):
+//
+//   - an Extends carrying an `infer U` reduces through the structural matcher in reduceCondInfer,
+//     which binds each `infer` position and substitutes the captures into Then;
+//   - an Extends with no `infer` decides `Check <: Extends` with an assignability probe once both
+//     operands are ground, reducing to Then on success or Else on failure. A Check or Extends still
+//     carrying a type parameter or an unreduced residual keeps the whole conditional symbolic,
+//     rebuilt around the reduced operands, and reduces later once they ground.
+func (e *typeEvaluator) reduceCondBranch(t *soltype.CondType, check soltype.Type) soltype.Type {
+	if containsInferType(t.Extends) {
+		return e.reduceCondInfer(t, check)
+	}
 	extends := e.reduce(t.Extends)
 	if !condOperandGround(check) || !condOperandGround(extends) {
-		return &soltype.CondType{Check: check, Extends: extends, Then: t.Then, Else: t.Else}
+		return symbolicCond(t, check, extends)
 	}
 	if e.ctx.condExtends(check, extends, e.seen) {
 		return e.reduce(t.Then)
 	}
 	return e.reduce(t.Else)
 }
+
+// symbolicCond rebuilds a conditional around a reduced Check and Extends while keeping its branches
+// and distributive flag, the form the evaluator returns when it cannot yet decide the branch. The
+// conditional reduces later once the operands ground.
+func symbolicCond(t *soltype.CondType, check, extends soltype.Type) *soltype.CondType {
+	return &soltype.CondType{Check: check, Extends: extends, Then: t.Then, Else: t.Else, Distribute: t.Distribute}
+}
+
+// reduceCondInfer decides a conditional whose Extends holds one or more `infer U` positions. It
+// matches the ground Check against the Extends pattern structurally, recording each `infer`
+// position's type; on a match it substitutes those captures into Then and reduces it, and on a
+// mismatch it reduces Else. The conditional stays symbolic when Check is not ground or the non-infer
+// part of Extends is not ground, since the matcher needs a concrete Check and a ground leaf position
+// to decide against.
+func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check soltype.Type) soltype.Type {
+	if !condOperandGround(check) || !inferExtendsGround(t.Extends) {
+		return symbolicCond(t, check, t.Extends)
+	}
+	bindings := map[*soltype.TypeVarType]soltype.Type{}
+	if e.matchInfer(check, t.Extends, bindings) {
+		return e.reduce(substituteInferBindings(t.Then, bindings))
+	}
+	return e.reduce(t.Else)
+}
+
+// matchInfer reports whether the ground type check satisfies the Extends pattern pat, recording each
+// `infer U` position's matched type into bindings keyed by the InferType's variable. It matches
+// structurally over the constructors an `infer` can be extracted from — a promise payload, a tuple
+// element, a function parameter or return, and an object property — and binds an `infer` position to
+// whatever check carries there. A leaf pattern with no `infer` is a plain constraint, decided by the
+// `Check <: pat` probe branch selection uses.
+func (e *typeEvaluator) matchInfer(check, pat soltype.Type, bindings map[*soltype.TypeVarType]soltype.Type) bool {
+	check = e.reduce(check)
+	switch p := pat.(type) {
+	case *soltype.InferType:
+		// Bind the first match for a name and keep it, so two positions sharing an `infer U` capture
+		// the leftmost, matching TypeScript's behavior for a repeated infer name in covariant
+		// positions.
+		if _, seen := bindings[p.Var]; !seen {
+			bindings[p.Var] = check
+		}
+		return true
+	case *soltype.PromiseType:
+		c, ok := check.(*soltype.PromiseType)
+		return ok && e.matchInfer(c.Inner, p.Inner, bindings)
+	case *soltype.TupleType:
+		c, ok := check.(*soltype.TupleType)
+		if !ok || len(c.Elems) != len(p.Elems) || hasRestSpread(c.Elems) || hasRestSpread(p.Elems) {
+			return false
+		}
+		for i := range p.Elems {
+			if !e.matchInfer(c.Elems[i], p.Elems[i], bindings) {
+				return false
+			}
+		}
+		return true
+	case *soltype.FuncType:
+		c, ok := check.(*soltype.FuncType)
+		if !ok || len(c.Params) != len(p.Params) {
+			return false
+		}
+		for i := range p.Params {
+			if !e.matchInfer(c.Params[i].Type, p.Params[i].Type, bindings) {
+				return false
+			}
+		}
+		return e.matchInfer(c.Ret, p.Ret, bindings)
+	case *soltype.ObjectType:
+		return e.matchInferObject(check, p, bindings)
+	default:
+		if containsInferType(pat) {
+			// An `infer` nested in a pattern shape the matcher does not decompose cannot be bound.
+			// Fail the whole match rather than probe against the free infer variable, which would
+			// record a bound and break the evaluator's no-mutation invariant.
+			return false
+		}
+		return e.ctx.condExtends(check, pat, e.seen)
+	}
+}
+
+// matchInferObject matches an object pattern property by property: check must be an object carrying
+// each pattern property under a readable value, and that value must match the pattern property's
+// type. Extra members on check are ignored, the structural width TypeScript allows.
+func (e *typeEvaluator) matchInferObject(check soltype.Type, pat *soltype.ObjectType, bindings map[*soltype.TypeVarType]soltype.Type) bool {
+	obj, ok := check.(*soltype.ObjectType)
+	if !ok {
+		return false
+	}
+	for _, elem := range pat.Elems {
+		prop, ok := elem.(*soltype.PropertyElem)
+		if !ok {
+			// Only a plain-property pattern is matched; a method, getter, or spread pattern is not.
+			return false
+		}
+		read, hasValue, _ := memberReadContribution(obj, prop.Name)
+		if !hasValue || !e.matchInfer(read, prop.Type, bindings) {
+			return false
+		}
+	}
+	return true
+}
+
+// substituteInferBindings replaces each `infer` variable in a conditional's Then branch with the
+// type matched at its `infer` position, so the branch reads the captured types. It reuses the
+// generic-body substitution typeSubst, mapping each infer variable to its bound type.
+func substituteInferBindings(t soltype.Type, bindings map[*soltype.TypeVarType]soltype.Type) soltype.Type {
+	if len(bindings) == 0 {
+		return t
+	}
+	subst := &typeSubst{types: bindings, lifetimes: map[*soltype.LifetimeVar]soltype.Lifetime{}}
+	return t.Accept(subst, soltype.Positive)
+}
+
+// distributeMember builds the per-member conditional for one union member of a distributive
+// conditional. Instantiating the alias substituted the naked type parameter to the whole union at
+// every position, installing one shared pointer — t.Check — at each occurrence. Replacing that
+// pointer with the member m throughout reconstructs the conditional as if the parameter had been
+// instantiated with m alone. The result is non-distributive: a single member is not a union, so
+// nothing distributes.
+//
+// The replaced pointer is t.Check as stored, not the reduced Check: typeSubst installs the identical
+// argument pointer at every naked-parameter position, and no visitor runs between that substitution
+// and this reduction, so t.Check is the exact pointer sitting in Extends, Then, and Else. Keying on
+// the stored pointer rather than the reduced one keeps the match correct even if reduce later grows
+// a union arm that reallocates.
+func distributeMember(t *soltype.CondType, m soltype.Type) *soltype.CondType {
+	return &soltype.CondType{
+		Check:   m,
+		Extends: replaceType(t.Extends, t.Check, m),
+		Then:    replaceType(t.Then, t.Check, m),
+		Else:    replaceType(t.Else, t.Check, m),
+	}
+}
+
+// inferExtendsGround reports whether the non-`infer` part of a conditional's Extends pattern is
+// ground, so the matcher can decide each leaf position. An `infer` position is a hole to fill rather
+// than an operand, so its subtree is skipped; a type variable, a skolem, or an unreduced residual
+// anywhere else makes the pattern non-ground and keeps the conditional symbolic.
+func inferExtendsGround(extends soltype.Type) bool {
+	f := &inferGroundFinder{}
+	extends.Accept(f, soltype.Positive)
+	return !f.nonGround
+}
+
+type inferGroundFinder struct{ nonGround bool }
+
+func (f *inferGroundFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t.(type) {
+	case *soltype.InferType:
+		return soltype.EnterResult{SkipChildren: true}
+	case *soltype.TypeVarType, *soltype.SkolemType:
+		f.nonGround = true
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	if isResidualOp(t) {
+		f.nonGround = true
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *inferGroundFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
+
+// containsInferType reports whether t holds an `infer U` binding position. reduceCondBranch consults
+// it on Extends to route into the structural matcher, and matchInfer consults it to refuse a pattern
+// shape it cannot decompose.
+func containsInferType(t soltype.Type) bool {
+	f := &inferTypeFinder{}
+	t.Accept(f, soltype.Positive)
+	return f.found
+}
+
+type inferTypeFinder struct{ found bool }
+
+func (f *inferTypeFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if _, ok := t.(*soltype.InferType); ok {
+		f.found = true
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *inferTypeFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
+
+// replaceType rewrites every occurrence of the type from — matched by pointer identity — to the type
+// to, leaving the rest of root unchanged. distributeMember uses it to swap a distributive
+// conditional's union for one member; the union appears by the same pointer at every naked-parameter
+// position, so pointer identity finds exactly those positions.
+func replaceType(root, from, to soltype.Type) soltype.Type {
+	r := &typeReplacer{from: from, to: to}
+	return root.Accept(r, soltype.Positive)
+}
+
+type typeReplacer struct{ from, to soltype.Type }
+
+func (r *typeReplacer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if t == r.from {
+		return soltype.EnterResult{Type: r.to, SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (r *typeReplacer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
 
 // condExtends decides a conditional's `Check <: Extends` test with an assignability probe. The
 // trial runs under a discard-only probe, so a speculative match records no bound and leaves no
@@ -736,6 +960,11 @@ func strLitName(t soltype.Type) (string, bool) {
 // isResidualOp reports whether t is an unreduced type-level operator node — a `keyof`, an indexed
 // access, a conditional, or a `...P` tuple-spread element — at its top level. The evaluator consults
 // it to stop re-reducing an operand whose reduction stayed symbolic.
+//
+// An `infer` binding is deliberately not listed: it only ever sits inside a conditional's Extends,
+// never as a top-level reduce target, and every site that inspects an Extends pattern —
+// inferExtendsGround, matchInfer, containsInferType — handles it explicitly before consulting this
+// predicate. A symbolic conditional carrying an `infer` is already caught here by its CondType head.
 func isResidualOp(t soltype.Type) bool {
 	switch t.(type) {
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.RestSpreadType:

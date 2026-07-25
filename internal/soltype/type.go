@@ -662,16 +662,34 @@ type TypeofType struct {
 // CondType is the residual `if Check : Extends { Then } else { Else }` conditional type operator.
 // Like KeyofType it is inert: it carries no bounds, constrain never records one against it, and it
 // flows through the solver's structural machinery untouched, rendering the way the source wrote it.
-// An evaluator reduces it once Check and Extends are ground, reusing the M9 PR1b machinery. It
-// decides `Check <: Extends` with an assignability probe and reduces to Then on success or Else on
-// failure. Until then a conditional over a type parameter stays symbolic. The `infer` clause in
-// Extends and distribution over a naked type-parameter union are M9 PR3b, so a Check that is a bare
-// type parameter keeps the whole conditional symbolic here.
+// An evaluator reduces it once Check and Extends are ground. It decides the branch two ways. When
+// Extends holds no `infer`, it probes `Check <: Extends` and reduces to Then on success or Else on
+// failure. When Extends holds an `infer U`, a structural matcher binds each `infer` position and
+// reduces Then with those bindings substituted in. Until Check grounds a conditional over a type
+// parameter stays symbolic.
+//
+// Distribute marks a conditional whose Check is written as a naked type parameter, the syntactic
+// condition TypeScript uses for a distributive conditional. When the parameter is instantiated with
+// a union, the conditional evaluates per member and unions the results, so `Exclude<"a" | "b", "a">`
+// reduces to `"b"`. It is set at annotation time from the source shape and carried through the
+// solver untouched.
 type CondType struct {
-	Check   Type
-	Extends Type
-	Then    Type
-	Else    Type
+	Check      Type
+	Extends    Type
+	Then       Type
+	Else       Type
+	Distribute bool
+}
+
+// InferType is an `infer U` binding position inside a conditional's Extends operand. Var is the
+// type variable the same conditional's Then and Else branches resolve their `U` references to, so
+// binding Var to the type matched at this position and substituting it into Then is what extracts
+// the captured type. It is inert: it carries no bounds and flows through the solver's structural
+// machinery untouched, rendering `infer U`. It is only meaningful nested inside a CondType.Extends;
+// the resolver rejects it anywhere else.
+type InferType struct {
+	Name string
+	Var  *TypeVarType
 }
 
 // RestSpreadType is the residual `...P` spread element inside a tuple type, mirroring the old
@@ -691,6 +709,7 @@ func (*KeyofType) isType()        {}
 func (*IndexType) isType()        {}
 func (*TypeofType) isType()       {}
 func (*CondType) isType()         {}
+func (*InferType) isType()        {}
 func (*RestSpreadType) isType()   {}
 func (*PrimType) isType()         {}
 func (*LitType) isType()          {}
@@ -785,6 +804,11 @@ func LevelOf(t Type) int {
 		// operand lifts the level and the freshener/extruder prune descends into all four, the
 		// four-child analogue of the two-child IndexType arm.
 		return max(max(LevelOf(t.Check), LevelOf(t.Extends)), max(LevelOf(t.Then), LevelOf(t.Else)))
+	case *InferType:
+		// An `infer U` binding's level is its variable's, so an out-of-level infer var lifts the
+		// enclosing conditional's level and the freshener/extruder prune descends to freshen it,
+		// the same single-child rule the KeyofType arm follows.
+		return LevelOf(t.Var)
 	case *RestSpreadType:
 		// A `...P` spread element's level is its operand's, so an out-of-level spread operand lifts
 		// the enclosing tuple's level and the freshener/extruder prune descends to freshen it, the

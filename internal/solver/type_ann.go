@@ -2,6 +2,7 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -89,6 +90,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.resolveTypeOfTypeAnn(scope, ta)
 	case *ast.CondTypeAnn:
 		return c.resolveCondTypeAnn(scope, ta, lvl)
+	case *ast.InferTypeAnn:
+		return c.resolveInferTypeAnn(scope, ta)
 	case *ast.WildcardTypeAnn:
 		// `_` in type-annotation position is an inference placeholder: mint a fresh
 		// var at the current level for the surrounding annotation to fill in. Today
@@ -336,57 +339,109 @@ func (c *checker) resolveIndexTypeAnn(scope *Scope, ta *ast.IndexTypeAnn, lvl in
 
 // resolveCondTypeAnn lowers `if Check : Extends { Then } else { Else }` to a CondType residual and
 // stores it unreduced, so the annotation prints the way the source wrote it. constrain decides the
-// branch when it checks a constraint against it: a ground `Check <: Extends` probe selects Then or
-// Else, while a conditional over a type parameter stays symbolic. An unsupported operand recovers to
-// a fresh var, cascade-safe like the Promise<bad> recovery.
+// branch when it checks a constraint against it: a ground conditional selects Then or Else, while a
+// conditional over a type parameter stays symbolic. An unsupported operand recovers to a fresh var,
+// cascade-safe like the Promise<bad> recovery.
 //
-// The `infer` clause is M9 PR3b, so a conditional whose Extends holds an `infer` reports an
-// unsupported feature and recovers. Branch selection here has no matcher to bind the `infer` name.
-// Resolving the Extends anyway would recover each `infer U` to a fresh var and silently mis-decide
-// the branch, so rejecting it keeps the two milestones cleanly split.
+// An `infer U` in Extends binds `U` for the branches. Each infer name is declared in a child scope
+// before Extends resolves, so its InferType node reads the same variable the Then and Else
+// references resolve to, and the evaluator's matcher binds that variable to the type matched at the
+// `infer` position. Check, Then, and Else resolve with `inCondExtends` cleared so an `infer` outside
+// the Extends operand is rejected.
+//
+// Distribute records whether Check is written as a naked type parameter, the syntactic condition for
+// a distributive conditional: a bare TypeRefTypeAnn resolving to a type variable. When that
+// parameter is later instantiated with a union, the evaluator distributes the conditional over the
+// union members.
 func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int) (soltype.Type, bool) {
-	if annContainsInfer(ta.Extends) {
-		return c.reportUnsupportedFeature(ta, "infer clause in conditional type"), false
+	// Declare each `infer U` name in a child scope before Extends resolves, so the InferType node
+	// built in Extends and the `U` references in the branches all resolve to one shared variable.
+	condScope := scope
+	inferNames := collectInferNames(ta.Extends)
+	if len(inferNames) > 0 {
+		condScope = scope.Child()
+		for _, name := range inferNames {
+			condScope.defineType(name, TypeBinding{Type: c.freshAt(lvl)})
+		}
 	}
+
+	savedInExtends := c.inCondExtends
+	c.inCondExtends = false
 	check, ok := c.resolveTypeAnn(scope, ta.Check, lvl)
 	if !ok {
 		check = c.freshAt(lvl)
 	}
-	extends, ok := c.resolveTypeAnn(scope, ta.Extends, lvl)
+	c.inCondExtends = true
+	extends, ok := c.resolveTypeAnn(condScope, ta.Extends, lvl)
 	if !ok {
 		extends = c.freshAt(lvl)
 	}
-	then, ok := c.resolveTypeAnn(scope, ta.Then, lvl)
+	c.inCondExtends = false
+	then, ok := c.resolveTypeAnn(condScope, ta.Then, lvl)
 	if !ok {
 		then = c.freshAt(lvl)
 	}
-	els, ok := c.resolveTypeAnn(scope, ta.Else, lvl)
+	els, ok := c.resolveTypeAnn(condScope, ta.Else, lvl)
 	if !ok {
 		els = c.freshAt(lvl)
 	}
-	t := &soltype.CondType{Check: check, Extends: extends, Then: then, Else: els}
+	c.inCondExtends = savedInExtends
+
+	_, distribute := check.(*soltype.TypeVarType)
+	t := &soltype.CondType{Check: check, Extends: extends, Then: then, Else: els, Distribute: distribute}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
 
-// annContainsInfer reports whether a type annotation subtree holds an `infer U` clause. A
-// conditional consults it on its Extends operand to reject the `infer` form, which M9 PR3b handles.
-func annContainsInfer(ta ast.TypeAnn) bool {
-	f := &inferAnnFinder{}
+// resolveInferTypeAnn lowers an `infer U` clause to a soltype.InferType binding, reading `U`'s
+// variable from the scope resolveCondTypeAnn declared it in, so the binding shares one variable with
+// the branches' `U` references. An `infer` outside a conditional's Extends operand — the only legal
+// position — reports an unsupported feature and recovers, since there is no conditional to bind it.
+func (c *checker) resolveInferTypeAnn(scope *Scope, ta *ast.InferTypeAnn) (soltype.Type, bool) {
+	if !c.inCondExtends {
+		return c.reportUnsupportedFeature(ta, "infer clause outside a conditional type's extends operand"), false
+	}
+	b, ok := scope.GetType(ta.Name)
+	v, isVar := b.Type.(*soltype.TypeVarType)
+	if !ok || !isVar {
+		// resolveCondTypeAnn declares every infer name it collects, so a resolved name is always a
+		// variable. A missing binding means the name was not collected, which cannot happen for an
+		// `infer` reached inside a collected Extends; recover defensively rather than crash.
+		return c.reportUnsupportedFeature(ta, "infer clause outside a conditional type's extends operand"), false
+	}
+	t := &soltype.InferType{Name: ta.Name, Var: v}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// collectInferNames returns the `infer U` names declared in a conditional's Extends operand, in
+// first-appearance order with duplicates removed, so resolveCondTypeAnn declares one variable per
+// name. Two `infer U` positions sharing a name bind the same variable, matching TypeScript.
+func collectInferNames(ta ast.TypeAnn) []string {
+	f := &inferNameCollector{seen: set.NewSet[string]()}
 	ta.Accept(f)
-	return f.found
+	return f.names
 }
 
-// inferAnnFinder is the AST visitor behind annContainsInfer. It flags the first InferTypeAnn it
-// reaches and keeps walking; one occurrence is enough to answer.
-type inferAnnFinder struct {
+// inferNameCollector is the AST visitor behind collectInferNames. It records each InferTypeAnn name
+// once, keeping first-appearance order.
+type inferNameCollector struct {
 	ast.DefaultVisitor
-	found bool
+	seen  set.Set[string]
+	names []string
 }
 
-func (f *inferAnnFinder) EnterTypeAnn(ta ast.TypeAnn) bool {
-	if _, ok := ta.(*ast.InferTypeAnn); ok {
-		f.found = true
+func (f *inferNameCollector) EnterTypeAnn(ta ast.TypeAnn) bool {
+	switch ta := ta.(type) {
+	case *ast.InferTypeAnn:
+		if !f.seen.Contains(ta.Name) {
+			f.seen.Add(ta.Name)
+			f.names = append(f.names, ta.Name)
+		}
+	case *ast.CondTypeAnn:
+		// A nested conditional scopes its own `infer` names, declared by its own resolveCondTypeAnn
+		// call. Stop descending so the enclosing conditional claims only the names in its own Extends.
+		return false
 	}
 	return true
 }

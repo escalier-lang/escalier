@@ -66,6 +66,13 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
+	// inCondExtends is true only while resolving a conditional type's Extends operand, the one
+	// position where an `infer U` clause is legal. resolveInferTypeAnn reads it to accept the
+	// clause there and report an unsupported feature anywhere else. resolveCondTypeAnn sets it
+	// around the Extends resolution and clears it around Check, Then, and Else, so a nested
+	// conditional's non-Extends operands reject `infer` even when they sit inside an outer Extends.
+	inCondExtends bool
+
 	// classNamespace is the dep_graph namespace of the class declaration currently
 	// being inferred, empty at the root namespace and outside any class body.
 	// inferClassDecl sets it on entry and restores it on exit. A class-body type

@@ -1130,11 +1130,18 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		b, ok := b.(*soltype.TypeofType)
 		return ok && a.Ident == b.Ident && equalTypeWith(a.Ty, b.Ty, ctx)
 	case *soltype.CondType:
-		// Two inert conditional residuals are equal when all four operands are equal, compared
-		// structurally without deciding either branch, the four-child analogue of the KeyofType arm.
+		// Two inert conditional residuals are equal when they share the distributive flag and all
+		// four operands are equal, compared structurally without deciding either branch, the
+		// four-child analogue of the KeyofType arm.
 		b, ok := b.(*soltype.CondType)
-		return ok && equalTypeWith(a.Check, b.Check, ctx) && equalTypeWith(a.Extends, b.Extends, ctx) &&
-			equalTypeWith(a.Then, b.Then, ctx) && equalTypeWith(a.Else, b.Else, ctx)
+		return ok && a.Distribute == b.Distribute && equalTypeWith(a.Check, b.Check, ctx) &&
+			equalTypeWith(a.Extends, b.Extends, ctx) && equalTypeWith(a.Then, b.Then, ctx) &&
+			equalTypeWith(a.Else, b.Else, ctx)
+	case *soltype.InferType:
+		// Two `infer U` bindings are equal when they name the same capture and bind the same
+		// variable, so a reflexive symbolic conditional compares equal against itself.
+		b, ok := b.(*soltype.InferType)
+		return ok && a.Name == b.Name && a.Var == b.Var
 	case *soltype.RestSpreadType:
 		// Two `...P` spread elements are equal when their operands are, compared structurally
 		// without reducing. The enclosing TupleType arm compares element lists positionally, so a

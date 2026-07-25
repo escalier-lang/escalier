@@ -233,7 +233,33 @@ func (t *CondType) Accept(v TypeVisitor, pol Polarity) Type {
 	els := cur.Else.Accept(v, pol)
 	out := cur
 	if check != cur.Check || extends != cur.Extends || then != cur.Then || els != cur.Else {
-		out = &CondType{Check: check, Extends: extends, Then: then, Else: els}
+		out = &CondType{Check: check, Extends: extends, Then: then, Else: els, Distribute: cur.Distribute}
+	}
+	return v.ExitType(out, pol)
+}
+
+func (t *InferType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The binding variable walks in the current polarity so a freshening or instantiation rewrites
+	// it in lockstep with the Then and Else branches that reference the same variable.
+	//
+	// A FuncType type-parameter binder demands to stay a variable and panics through
+	// acceptTypeParamVar when a visitor inlines it to a non-variable, on the contract that an
+	// inlining visitor skips the binder first. An `infer` binder deliberately relaxes that: the
+	// display coalescer inlines the branch references but has no retention entry to skip this binder,
+	// so a non-variable rewrite is tolerated by keeping the original Var. Var must stay a variable to
+	// remain a binding position, so the inlined form is dropped here and the branch references inline
+	// independently at display time. This affects only the display of a fully symbolic conditional,
+	// never a reduction, and giving `infer` binders the same retention treatment type parameters get
+	// is deferred.
+	rewritten := cur.Var.Accept(v, pol)
+	out := cur
+	if nv, ok := rewritten.(*TypeVarType); ok && nv != cur.Var {
+		out = &InferType{Name: cur.Name, Var: nv}
 	}
 	return v.ExitType(out, pol)
 }
