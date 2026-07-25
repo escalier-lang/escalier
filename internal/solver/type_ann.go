@@ -127,6 +127,10 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	}
 	unsupported := false
 	var elems []soltype.ObjTypeElem
+	// The two paths differ only in when duplicate keys collapse. A spread-free object is never
+	// reduced later, so its duplicates must collapse here to the unique-key shape Prop and equalType
+	// assume. A spread-carrying object keeps source order for the override merge and dedups in
+	// reduceObject once its spreads ground.
 	if !hasSpread {
 		b := newObjElemBuilder(len(ta.Elems))
 		for _, elem := range ta.Elems {
