@@ -16,6 +16,11 @@ import (
 // whose argument grows every lap so its state never repeats and the active guard never matches.
 // No finite analytical bound exists for that fragment, so the budget stops the walk and the
 // operator over the unexpanded alias stays symbolic.
+//
+// TODO(#929): expandAliasGuarded restores the budget after each sibling, so a caller that expands
+// one operand per member gives every member the full remaining budget. A mapped type reduces its
+// value expression once per key, which makes an expanding alias reached from there an exponential
+// walk rather than a capped one.
 const maxExpandDepth = 200
 
 // maxTemplateLitCombinations caps how many string literals a template literal may reduce to. Its
@@ -598,6 +603,9 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 // soltype has no index-signature element, so such a mapped type stays inert rather than reducing to
 // a wrong shape. The same holds for a key that is a number literal, which names no object field.
 //
+// TODO(#930): reduce a primitive key constraint to an index-signature element once soltype carries
+// one, and give a number-literal key a field to name.
+//
 // Two keys that remap to one name merge into a single field whose type is their union, so no key's
 // contribution is lost. See mergeMappedField.
 //
@@ -858,8 +866,12 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 		}
 		return &soltype.KeyofType{Operand: operand, Exact: exact}
 	case *soltype.UnionType:
+		// TODO(#928): a key is readable from a union only when every member carries it, so this
+		// should intersect the operands' key sets. Unioning them lets `keyof (A | B)` name a key
+		// that only A has, and `(A | B)[K]` then reads it off a value that is a B.
 		return e.keyofDistribute(op.Types, exact)
 	case *soltype.IntersectionType:
+		// An intersection carries every operand's members, so its key sets union.
 		return e.keyofDistribute(op.Types, exact)
 	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType:
 		return &soltype.NeverType{}
