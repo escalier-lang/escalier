@@ -1782,6 +1782,16 @@ func describeMapped(t *soltype.MappedElem) string {
 	return out
 }
 
+// describeMaxDepth bounds how deep describe renders a nominal reference's type arguments before
+// PrintElided replaces the rest with an ellipsis. A reduction can leave a residual whose alias
+// argument is far larger than any type the source wrote, and rendering that in full buries the
+// diagnostic. See maxExpandKeyChars for how such an argument grows.
+//
+// Three levels render every message the test suite asserts in full, so four leaves one level of
+// headroom over what a hand-written annotation reaches. An ordinary diagnostic is therefore
+// unaffected and only a machine-grown argument elides.
+const describeMaxDepth = 4
+
 func describe(t soltype.Type) string {
 	switch t := t.(type) {
 	case *soltype.PrimType:
@@ -1846,12 +1856,12 @@ func describe(t soltype.Type) string {
 	case *soltype.ClassType:
 		// A class instance renders nominally under its display name, `Point` or
 		// `Box<number>`, so a diagnostic naming it matches the printer's surface form.
-		return soltype.Print(t)
+		return soltype.PrintElided(t, describeMaxDepth)
 	case *soltype.AliasType:
 		// An alias reference renders under its own name, `Point` or `Box<number>`, so a
 		// diagnostic naming it matches the printer's surface form rather than the expanded
 		// body the constraint actually compares.
-		return soltype.Print(t)
+		return soltype.PrintElided(t, describeMaxDepth)
 	case *soltype.PromiseType:
 		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
 		// object above. That is deliberate and consistent with the Union/Intersection

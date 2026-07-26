@@ -647,13 +647,13 @@ func TestInferDoublingAliasArgumentTerminates(t *testing.T) {
 		want string
 	}{
 		{
-			// The recursion sits under `keyof`, which expands the alias operand each lap.
-			name: "UnderKeyof",
+			// The recursion sits in an object spread's operand, which grounds the alias each lap.
+			name: "UnderObjectSpread",
 			src: `
-				type Grow<T> = keyof Grow<{a: T, b: T}>
-				val k: Grow<{a: number, b: number}> = "x"
+				type Grow<T> = {...Grow<{a: T, b: T}>}
+				val v: Grow<{a: number, b: number}> = 1
 			`,
-			want: `3:43-3:46: cannot constrain "x" <: keyof Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>`,
+			want: `3:43-3:44: cannot constrain 1 <: {...Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>}`,
 		},
 		{
 			// The recursion sits in an indexed access's target, which expands it each lap too.
@@ -673,6 +673,74 @@ func TestInferDoublingAliasArgumentTerminates(t *testing.T) {
 			require.Equal(t, test.want, msgWithSpan(errs[0]))
 		})
 	}
+}
+
+// `keyof keyof X` reduces to `never` for every X. What the inner `keyof` projects is a key set —
+// string literals for an object, number literals for a tuple — and `keyof` over a literal is
+// already `never`, so the outer operator has no keys to name whatever the inner operand turns out
+// to be. Each case names an operand shape the inner `keyof` treats differently and asserts the
+// same answer.
+func TestInferKeyofKeyofIsNever(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		// The inner `keyof` grounds to `"a" | "b"`, whose members are string literals.
+		{"Object", `type Result = keyof keyof {a: number, b: string}`},
+		// The inner `keyof` grounds to `0 | 1`, whose members are number literals.
+		{"Tuple", `type Result = keyof keyof [number, string]`},
+		// The inner `keyof` grounds to `never`, the empty key set.
+		{"Never", `type Result = keyof keyof never`},
+		// The inner `keyof` stays symbolic over a type parameter. The rule still holds, since
+		// `keyof T` names a key set for every T.
+		{"TypeParam", `type Result<T> = keyof keyof T`},
+		// The operand is an alias, which the inner `keyof` would expand.
+		{"Alias", `
+			type Obj = {a: number}
+			type Result = keyof keyof Obj
+		`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			types, ctx, errs := inferTypeNodes(t, test.src)
+			require.Empty(t, errs)
+			require.Contains(t, types, "Result")
+			require.Equal(t, "never", soltype.Print(expandResidual(ctx, types["Result"])))
+		})
+	}
+}
+
+// A diagnostic naming a truncated residual renders the alias argument elided rather than in full.
+// The argument doubles for as many laps as maxExpandKeyChars allows, so rendering it whole buries
+// the message under more than a hundred thousand characters. describeMaxDepth cuts it at four
+// levels, which is deeper than any argument a hand-written annotation carries.
+//
+// The elided form is stable even though where the budget ran out is not: everything past the cut
+// is an ellipsis, so the message depends only on the first four levels, and the walk passes those
+// long before the budget binds.
+func TestInferTruncatedResidualElidesInDiagnostic(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type Grow<T> = {[K]: Grow<{a: T, b: T}>[K] for K in keyof T}
+		val x: Grow<{a: number, b: number}> = {a: 1, b: 2}
+	`)
+	require.Len(t, errs, 2)
+	require.Equal(t,
+		`3:45-3:46: cannot constrain 1 <: Grow<{a: {a: {a: …, b: …}, b: {a: …, b: …}}, b: {a: {a: …, b: …}, b: {a: …, b: …}}}>["a"]`,
+		msgWithSpan(errs[0]))
+}
+
+// An expanding recursive alias under `keyof` reduces to `never` on the `keyof keyof` rule rather
+// than running until maxExpandKeyChars stops it. The alias body is `keyof Grow<…>`, so one
+// expansion puts a `keyof` directly under a `keyof` and the rule answers without reducing the
+// operand that would have grown.
+func TestInferKeyofExpandingAliasIsNever(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type Grow<T> = keyof Grow<{a: T, b: T}>
+		val k: Grow<{a: number, b: number}> = "x"
+	`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, `3:41-3:44: cannot constrain "x" <: never`, msgWithSpan(errs[0]))
 }
 
 // A `typeof v` query is stored as a residual behind the value reference, so an annotation prints

@@ -876,6 +876,7 @@ func (s *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Ty
 //     union and unioning them for an intersection;
 //   - `keyof` of a primitive, literal, `never`, or `unknown` is `never`, since none has
 //     enumerable keys;
+//   - `keyof` of a `keyof` is `never` for the same reason, since a key set holds only literals;
 //   - an alias expands to its body and a class projects its instance body, and `keyof` reduces
 //     over that under the termination guard;
 //   - a `typeof` query resolves to the value's type, and `keyof` reduces over that.
@@ -884,9 +885,23 @@ func (s *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Ty
 // operator symbolic, rebuilt around the operand.
 func (e *typeEvaluator) reduceKeyof(operand soltype.Type, inexact bool) soltype.Type {
 	switch op := operand.(type) {
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType:
-		// The operand is itself an operator — a `keyof`, an indexed access, or a conditional. Reduce
-		// it first, then take keyof its value, so a ground conditional operand selects its branch and
+	case *soltype.KeyofType:
+		// `keyof keyof X` is `never` for every X, so the inner operand needs no reduction at all.
+		// A key set is a union of string literals for an object and of number literals for a
+		// tuple, and the LitType arm below already reduces `keyof` over either to `never`;
+		// keyofDistribute carries that through the union, and `keyof never` is `never` too. The
+		// rule holds even when the inner `keyof` stays symbolic over a type parameter, since what
+		// `keyof T` projects is a key set whatever T turns out to be.
+		//
+		// Reducing the inner operand would be wasted work and, over an expanding recursive alias
+		// such as `type Grow<T> = keyof Grow<{a: T, b: T}>`, work the evaluator only escapes by
+		// spending maxExpandKeyChars. The one cost is that a diagnostic only the inner reduction
+		// would raise goes unreported, as in `keyof keyof {a: number}["z"]`, where the unknown key
+		// is never reached. The result is `never` either way.
+		return &soltype.NeverType{}
+	case *soltype.IndexType, *soltype.CondType:
+		// The operand is itself an operator — an indexed access or a conditional. Reduce it first,
+		// then take keyof its value, so a ground conditional operand selects its branch and
 		// `keyof` projects that branch's keys. If the inner operator stays symbolic because its own
 		// operands are not ground, wrap it as `keyof <inner>` rather than re-reducing the same shape
 		// forever. A mapped member arrives inside an ObjectType, so the ObjectType arm below covers
