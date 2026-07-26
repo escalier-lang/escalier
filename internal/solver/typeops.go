@@ -703,7 +703,9 @@ func mergeMappedField(earlier, later *soltype.PropertyElem) *soltype.PropertyEle
 //     primitive, a number literal, or an unreduced operator has no field name to emit.
 //  2. The `if Check : Extends` filter, when the source wrote one, decides `Check <: Extends` with
 //     the same assignability probe a conditional's branch selection uses. A key that fails the test
-//     is dropped, which is how `Omit` and `Pick` narrow a key set.
+//     is dropped, which is how `Omit` and `Pick` narrow a key set. Both operands are arbitrary type
+//     expressions with the key substituted, so a filter may test the value at that key rather than
+//     the key itself, as `if T[K] : number` does.
 //  3. The key-remapping expression in the brackets, when the source wrote one, reduces to the names
 //     the key contributes. `never` drops the key, matching TypeScript's `as` clause.
 //  4. The value expression reduces to the field's type. It is normally an indexed access such as

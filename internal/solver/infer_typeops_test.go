@@ -2339,6 +2339,83 @@ func TestInferMappedTypeReduction(t *testing.T) {
 	}
 }
 
+// The `if Check : Extends` filter tests two arbitrary type expressions, not just the key. Both
+// operands resolve in the scope where K is bound and are reduced with the key substituted, so either
+// side may name the key, the value at that key, a computed type over the key, or nothing at all.
+// That makes value-based filtering — TypeScript's `PickByType` idiom — expressible without any
+// filter machinery specific to it.
+func TestInferMappedTypeFilterTestsArbitraryTypes(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// Keep the keys whose value is a number, testing the value rather than the key.
+			name: "ByValueType",
+			src: `
+				type Src = {a: number, b: string, c: number}
+				type Result = {[K]: Src[K] for K in keyof Src if Src[K] : number}
+			`,
+			wantExpanded: "{a: number, c: number}",
+		},
+		{
+			// The same shape with the test inverted keeps the complementary keys.
+			name: "ByValueTypeComplement",
+			src: `
+				type Src = {a: number, b: string, c: number}
+				type Result = {[K]: Src[K] for K in keyof Src if Src[K] : string}
+			`,
+			wantExpanded: "{b: string}",
+		},
+		{
+			// The check may reach into the value rather than comparing it whole.
+			name: "ByNestedFieldOfValue",
+			src: `
+				type Src = {a: {kind: "x"}, b: {kind: "y"}}
+				type Result = {[K]: Src[K] for K in keyof Src if Src[K]["kind"] : "x"}
+			`,
+			wantExpanded: `{a: {kind: "x"}}`,
+		},
+		{
+			// The check may be a computed type over the key rather than the key itself.
+			name: "ByComputedTypeOverKey",
+			src: `
+				type Src = {ax: number, bx: string}
+				type Result = {[K]: Src[K] for K in keyof Src if ` + "`${K}`" + ` : "ax"}
+			`,
+			wantExpanded: "{ax: number}",
+		},
+		{
+			// Neither operand need mention the key. A condition that fails drops every key, leaving
+			// the empty object.
+			name: "ConditionIndependentOfKey",
+			src: `
+				type Src = {a: number, b: string}
+				type Result = {[K]: Src[K] for K in keyof Src if number : string}
+			`,
+			wantExpanded: "{}",
+		},
+		{
+			// Value-based filtering works through a generic parameter, which is how a reusable
+			// `PickByType<T, V>` alias would be written.
+			name: "ByValueTypeThroughGeneric",
+			src: `
+				type NumbersOf<T> = {[K]: T[K] for K in keyof T if T[K] : number}
+				type Result = NumbersOf<{a: number, b: string}>
+			`,
+			wantExpanded: "{a: number}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
 // A mapped member sits in its object's element list alongside whatever else the source wrote, so
 // `{id: number, [K]: V for K in Keys}` is one object annotation. TypeScript has no such form and
 // writes the intersection `{id: number} & {[K in Keys]: V}` instead. reduceObject merges the
