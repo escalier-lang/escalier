@@ -235,6 +235,20 @@ type TemplateLitTooComplexError struct {
 	site     ast.Node     // M2.5: constraint node fallback
 }
 
+// RequiredUncountableKeysError fires when a mapped type demands a field at every key of a key set
+// that names infinitely many keys, as in `{[K: string]: number}`. No object carries infinitely many
+// fields, so the type is uninhabited and nothing can ever satisfy it. Only the `?`-adding form is
+// meaningful over such a key set, and that form is the index signature.
+//
+// It is minted during reduction, once the key set has grounded. A mapped type whose key set is still
+// abstract, such as one over a bare type parameter, is expected to stay symbolic and reports nothing.
+// The error carries the offending member so a consumer can render the form the source wrote.
+type RequiredUncountableKeysError struct {
+	Mapped *soltype.MappedElem
+	prov   NodeResolver // M2.5: type→node index (§3.5)
+	site   ast.Node     // M2.5: constraint node fallback
+}
+
 // MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
 // borrow but the super is mutable: writing through the mutable target would mutate a
 // value the source only lent out as read-only, so an immutable reference cannot fill
@@ -424,7 +438,10 @@ func (*OptionalPropertyError) isSolverError()       {}
 func (*UnknownObjectKeyError) isSolverError()       {}
 func (*TupleIndexOutOfRangeError) isSolverError()   {}
 func (*TemplateLitTooComplexError) isSolverError()  {}
-func (*MutabilityMismatchError) isSolverError()     {}
+
+func (*RequiredUncountableKeysError) isSolverError() {}
+
+func (*MutabilityMismatchError) isSolverError() {}
 func (*BorrowEscapeError) isSolverError()           {}
 func (*ClassIntoExactObjectError) isSolverError()   {}
 func (*StructuralIntoClassError) isSolverError()    {}
@@ -532,6 +549,14 @@ func (e *TemplateLitTooComplexError) Span() ast.Span {
 	return spanOf(e.prov, e.Template, e.site)
 }
 func (e *TemplateLitTooComplexError) Related() []ast.Span { return nil }
+
+func (e *RequiredUncountableKeysError) Span() ast.Span {
+	// The key set is what makes the mapped type uninhabited, and it is the operand the source wrote
+	// a span for. Blame it, else the constraint site. The mapped member itself is not a Type, so it
+	// resolves through no node of its own.
+	return spanOf(e.prov, e.Mapped.Keys, e.site)
+}
+func (e *RequiredUncountableKeysError) Related() []ast.Span { return nil }
 
 func (e *MutabilityMismatchError) Span() ast.Span {
 	// The immutable source borrow is the actual value; blame it, degrade to the
@@ -1649,6 +1674,16 @@ func (e *TupleIndexOutOfRangeError) Message() string {
 		strconv.FormatFloat(e.Index, 'f', -1, 64), soltype.Print(e.Tuple))
 }
 
+func (e *RequiredUncountableKeysError) Message() string {
+	keys := describe(e.Mapped.Keys)
+	fixed := &soltype.MappedElem{
+		Key: e.Mapped.Key, Keys: e.Mapped.Keys, Value: e.Mapped.Value,
+		Optional: soltype.ModAdd, Readonly: e.Mapped.Readonly,
+	}
+	return fmt.Sprintf("no object has a field at every key of %s, so %s is uninhabited; write %s instead",
+		keys, describeMapped(e.Mapped), describeMapped(fixed))
+}
+
 func (e *TemplateLitTooComplexError) Message() string {
 	return fmt.Sprintf("template literal type %s is too complex to reduce; it expands to more than %d members",
 		soltype.Print(e.Template), maxTemplateLitCombinations)
@@ -1763,6 +1798,10 @@ func describeMapped(t *soltype.MappedElem) string {
 		out += "-readonly "
 	case soltype.ModNone:
 	}
+	if soltype.IsIndexSignature(t) {
+		return out + "[" + t.Key.Name + ": " + describe(t.Keys) + "]" +
+			describeIndexSigOptional(t.Optional) + ": " + describe(t.Value)
+	}
 	if t.Name != nil {
 		out += "[" + describe(t.Name) + "]"
 	} else {
@@ -1791,6 +1830,21 @@ func describeMapped(t *soltype.MappedElem) string {
 // headroom over what a hand-written annotation reaches. An ordinary diagnostic is therefore
 // unaffected and only a machine-grown argument elides.
 const describeMaxDepth = 4
+
+// describeIndexSigOptional renders an index signature's `?` marker, mirroring soltype's
+// indexSigOptional so a mid-constrain description and a printed type spell the same member the same
+// way. The legal form adds the marker and spells it `?`; the other two forms still render distinctly.
+func describeIndexSigOptional(mod soltype.MappedModifier) string {
+	switch mod {
+	case soltype.ModAdd:
+		return "?"
+	case soltype.ModRemove:
+		return "-?"
+	case soltype.ModNone:
+		return ""
+	}
+	panic(fmt.Sprintf("describeIndexSigOptional: unhandled MappedModifier %v", mod))
+}
 
 func describe(t soltype.Type) string {
 	switch t := t.(type) {

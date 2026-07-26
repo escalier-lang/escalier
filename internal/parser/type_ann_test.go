@@ -153,6 +153,21 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MappedObjectTypeWithFiltering": {
 			input: "{[K]: T[K] for K in keyof T if T[K] : string}",
 		},
+		"MappedObjectTypeShorthand": {
+			input: "{[K: keyof T]: T[K]}",
+		},
+		"MappedObjectTypeShorthandOptional": {
+			input: "{[K: string]?: number}",
+		},
+		"MappedObjectTypeShorthandReadonly": {
+			input: "{readonly [K: keyof T]: T[K]}",
+		},
+		"MappedObjectTypeShorthandWithFiltering": {
+			input: "{[K: keyof T]: T[K] if T[K] : string}",
+		},
+		"MappedObjectTypeShorthandAlongsideProperty": {
+			input: "{id: number, [K: string]?: number}",
+		},
 		"ObjectTypeWithRestSpread": {
 			input: "{x: string, ...T}",
 		},

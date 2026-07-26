@@ -1970,3 +1970,198 @@
     span: 1:1-1:13,
 }
 ---
+
+[TestParseTypeAnnNoErrors/MappedObjectTypeShorthandWithFiltering - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name: "K",
+                Constraint: &ast.KeyOfTypeAnn{
+                    Type: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: 1:12-1:13,
+                        },
+                        span: 1:12-1:13,
+                    },
+                    span: 1:6-1:13,
+                },
+            },
+            Value: &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: 1:16-1:17,
+                    },
+                    span: 1:16-1:17,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "K",
+                        span: 1:18-1:19,
+                    },
+                    span: 1:18-1:19,
+                },
+                span: 1:16-1:20,
+            },
+            Check: &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: 1:24-1:25,
+                    },
+                    span: 1:24-1:25,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "K",
+                        span: 1:26-1:27,
+                    },
+                    span: 1:26-1:27,
+                },
+                span: 1:24-1:28,
+            },
+            Extends: &ast.StringTypeAnn{
+                span: 1:31-1:37,
+            },
+            Shorthand: true,
+        },
+    },
+    span: 1:1-1:38,
+}
+---
+
+[TestParseTypeAnnNoErrors/MappedObjectTypeShorthandAlongsideProperty - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.PropertyTypeAnn{
+            Name: &ast.IdentExpr{
+                Name: "id",
+                span: 1:2-1:4,
+            },
+            Value: &ast.NumberTypeAnn{
+                span: 1:6-1:12,
+            },
+        },
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name: "K",
+                Constraint: &ast.StringTypeAnn{
+                    span: 1:18-1:24,
+                },
+            },
+            Value: &ast.NumberTypeAnn{
+                span: 1:28-1:34,
+            },
+            Optional: &"add",
+            Shorthand: true,
+        },
+    },
+    span: 1:1-1:35,
+}
+---
+
+[TestParseTypeAnnNoErrors/MappedObjectTypeShorthandOptional - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name: "K",
+                Constraint: &ast.StringTypeAnn{
+                    span: 1:6-1:12,
+                },
+            },
+            Value: &ast.NumberTypeAnn{
+                span: 1:16-1:22,
+            },
+            Optional: &"add",
+            Shorthand: true,
+        },
+    },
+    span: 1:1-1:23,
+}
+---
+
+[TestParseTypeAnnNoErrors/MappedObjectTypeShorthand - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name: "K",
+                Constraint: &ast.KeyOfTypeAnn{
+                    Type: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: 1:12-1:13,
+                        },
+                        span: 1:12-1:13,
+                    },
+                    span: 1:6-1:13,
+                },
+            },
+            Value: &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: 1:16-1:17,
+                    },
+                    span: 1:16-1:17,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "K",
+                        span: 1:18-1:19,
+                    },
+                    span: 1:18-1:19,
+                },
+                span: 1:16-1:20,
+            },
+            Shorthand: true,
+        },
+    },
+    span: 1:1-1:21,
+}
+---
+
+[TestParseTypeAnnNoErrors/MappedObjectTypeShorthandReadonly - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.MappedTypeAnn{
+            TypeParam: &ast.IndexParamTypeAnn{
+                Name: "K",
+                Constraint: &ast.KeyOfTypeAnn{
+                    Type: &ast.TypeRefTypeAnn{
+                        Name: &ast.Ident{
+                            Name: "T",
+                            span: 1:21-1:22,
+                        },
+                        span: 1:21-1:22,
+                    },
+                    span: 1:15-1:22,
+                },
+            },
+            Value: &ast.IndexTypeAnn{
+                Target: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "T",
+                        span: 1:25-1:26,
+                    },
+                    span: 1:25-1:26,
+                },
+                Index: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "K",
+                        span: 1:27-1:28,
+                    },
+                    span: 1:27-1:28,
+                },
+                span: 1:25-1:29,
+            },
+            ReadOnly: &"add",
+            Shorthand: true,
+        },
+    },
+    span: 1:1-1:30,
+}
+---

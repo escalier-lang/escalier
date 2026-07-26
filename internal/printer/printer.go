@@ -1375,11 +1375,16 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 				p.writeString("-readonly ")
 			}
 		}
-		// Print [name]
+		// Print [name], or [key: constraint] for the index-signature shorthand
 		p.writeString("[")
-		if e.Name != nil {
+		switch {
+		case e.Shorthand:
+			p.writeString(e.TypeParam.Name)
+			p.writeString(": ")
+			p.printTypeAnn(e.TypeParam.Constraint)
+		case e.Name != nil:
 			p.printTypeAnn(e.Name)
-		} else {
+		default:
 			p.writeString(e.TypeParam.Name)
 		}
 		p.writeString("]")
@@ -1394,11 +1399,13 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		// Print : value
 		p.writeString(": ")
 		p.printTypeAnn(e.Value)
-		// Print for K in constraint
-		p.writeString(" for ")
-		p.writeString(e.TypeParam.Name)
-		p.writeString(" in ")
-		p.printTypeAnn(e.TypeParam.Constraint)
+		// The shorthand already wrote the key and its constraint inside the brackets
+		if !e.Shorthand {
+			p.writeString(" for ")
+			p.writeString(e.TypeParam.Name)
+			p.writeString(" in ")
+			p.printTypeAnn(e.TypeParam.Constraint)
+		}
 		// Print if clause if present
 		if e.Check != nil && e.Extends != nil {
 			p.writeString(" if ")

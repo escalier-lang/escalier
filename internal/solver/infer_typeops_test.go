@@ -2407,6 +2407,28 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			wantExpanded: "{a: boolean, b: boolean}",
 		},
 		{
+			// A number-literal key names the field its digits spell, the coercion JavaScript applies
+			// when `{1: v}` stores under the key "1".
+			name: "NumberLiteralKeys",
+			src: `
+				type Keys = "a" | 1
+				type Result = {[K]: boolean for K in Keys}
+			`,
+			wantSymbolic: "{[K]: boolean for K in Keys}",
+			wantExpanded: `{"1": boolean, a: boolean}`,
+		},
+		{
+			// A tuple's keys are number literals, so a homomorphic map over one emits a field per
+			// index. The value expression still indexes the tuple positionally.
+			name: "TupleKeys",
+			src: `
+				type Pair = [number, string]
+				type Result = {[K]: Pair[K] for K in keyof Pair}
+			`,
+			wantSymbolic: "{[K]: Pair[K] for K in keyof Pair}",
+			wantExpanded: `{"0": number, "1": string}`,
+		},
+		{
 			// A single-key operand emits a single-field object; `keyof` collapsed its union to the
 			// lone literal, which mappedKeyMembers reads as one key.
 			name: "SingleKey",
@@ -3163,17 +3185,23 @@ func TestInferMappedTypeStaysSymbolic(t *testing.T) {
 			want: "fn <T>(x: {[K]: T[K] for K in keyof T}) -> number",
 		},
 		{
-			// A primitive key constraint names infinitely many keys, which an object with named
-			// fields cannot express. TypeScript writes it as the index signature `{[k: string]: T}`;
-			// soltype has no index-signature element yet, so the mapped type stays inert.
-			name: "PrimitiveKeyConstraint",
-			src:  `fn f(x: {[K]: number for K in string}) -> number { return 1 }`,
-			want: "fn (x: {[K]: number for K in string}) -> number",
+			// An uncountable key set names infinitely many keys, so there is no field list to expand
+			// the member into. The unexpanded member is itself the index signature, and it renders in
+			// the `[K: Keys]?: V` shorthand whichever of the two spellings the source wrote.
+			name: "IndexSignature",
+			src:  `fn f(x: {[K: string]?: number}) -> number { return 1 }`,
+			want: "fn (x: {[K: string]?: number}) -> number",
 		},
 		{
-			// A tuple's keys are number literals, which name no object field, so the mapped type
-			// stays inert rather than emitting fields under stringified indices.
-			name: "TupleKeys",
+			name: "IndexSignatureWrittenLongForm",
+			src:  `fn f(x: {[K]?: number for K in string}) -> number { return 1 }`,
+			want: "fn (x: {[K: string]?: number}) -> number",
+		},
+		{
+			// An annotation is stored unreduced, so a mapped type over a key set that does ground
+			// still renders the way the source wrote it until a constraint reduces it. See
+			// TestInferMappedTypeReduction for the fields this one emits.
+			name: "GroundKeySetIsStoredUnreduced",
 			src: `
 				type Pair = [number, string]
 				fn f(x: {[K]: Pair[K] for K in keyof Pair}) -> number { return 1 }
@@ -3186,6 +3214,172 @@ func TestInferMappedTypeStaysSymbolic(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Empty(t, errs)
 			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// A mapped type over an uncountable key set is uninhabited unless it adds `?`, since no object
+// carries a field at every key of an infinite set. Reduction rejects the required form and names the
+// `?`-adding form as the fix. Like every other reduction diagnostic it fires where the type is
+// reduced, which is the constraint site.
+func TestInferRequiredUncountableKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name:    "ShorthandNoMarker",
+			src:     `val p: {[K: string]: number} = {a: 1}`,
+			wantErr: "no object has a field at every key of string, so [K: string]: number is uninhabited; write [K: string]?: number instead",
+		},
+		{
+			name:    "LongFormNoMarker",
+			src:     `val p: {[K]: number for K in string} = {a: 1}`,
+			wantErr: "no object has a field at every key of string, so [K: string]: number is uninhabited; write [K: string]?: number instead",
+		},
+		{
+			// `-?` strips the marker, which is the required form again.
+			name:    "RemovesMarker",
+			src:     `val p: {[K: string]-?: number} = {a: 1}`,
+			wantErr: "no object has a field at every key of string, so [K: string]-?: number is uninhabited; write [K: string]?: number instead",
+		},
+		{
+			// A number key set is uncountable for the same reason a string one is.
+			name:    "NumberKeys",
+			src:     `val p: {[K: number]: boolean} = {a: true}`,
+			wantErr: "no object has a field at every key of number, so [K: number]: boolean is uninhabited; write [K: number]?: boolean instead",
+		},
+		{
+			// A union is uncountable when any member is. Union normalization orders the members, so
+			// the rendered key set reads `number | string` whichever order the source wrote.
+			name:    "UnionWithPrimitiveMember",
+			src:     `val p: {[K: string | number]: boolean} = {a: true}`,
+			wantErr: "no object has a field at every key of number | string, so [K: number | string]: boolean is uninhabited; write [K: number | string]?: boolean instead",
+		},
+		{
+			// A `readonly` marker is orthogonal to `?` and carries into the suggested fix.
+			name:    "ReadonlyCarriesIntoTheFix",
+			src:     `val p: {readonly [K: string]: number} = {a: 1}`,
+			wantErr: "no object has a field at every key of string, so readonly [K: string]: number is uninhabited; write readonly [K: string]?: number instead",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.IsType(t, &RequiredUncountableKeysError{}, errs[0])
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// An index signature names no single key, so satisfying it means every key the source can carry
+// holds a value of the signature's type. It also absorbs width, so a source with extra keys is not
+// rejected for carrying them.
+func TestInferIndexSignatureConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "EveryPropertyMatchesTheValueType",
+			src:  `val p: {[K: string]?: number} = {a: 1, b: 2}`,
+		},
+		{
+			name:    "WrongPropertyTypeRejected",
+			src:     `val p: {[K: string]?: number} = {a: 1, b: "two"}`,
+			wantErr: `cannot constrain "two" <: number`,
+		},
+		{
+			name: "EmptyObjectAccepted",
+			src:  `val p: {[K: string]?: number} = {}`,
+		},
+		{
+			// The signature is written without a trailing `...`, but it absorbs every key, so no
+			// property counts as excess against it.
+			name: "ExtraPropertiesAbsorbed",
+			src:  `val p: {[K: string]?: number} = {a: 1, b: 2, c: 3}`,
+		},
+		{
+			name: "IndexSignatureIntoIndexSignature",
+			src: `
+				val p: {[K: string]?: number} = {a: 1}
+				val q: {[K: string]?: number} = p
+			`,
+		},
+		{
+			// The value types are checked covariantly, so a wider one cannot fill a narrower target.
+			name: "IndexSignatureValueTypeCovariant",
+			src: `
+				val p: {[K: string]?: number} = {a: 1}
+				val q: {[K: string]?: string} = p
+			`,
+			wantErr: `cannot constrain number <: string`,
+		},
+		{
+			// An index signature cannot guarantee any particular key is present, so it does not
+			// satisfy a target that requires one.
+			name: "DoesNotSatisfyARequiredProperty",
+			src: `
+				val p: {[K: string]?: number} = {a: 1}
+				val q: {a: number} = p
+			`,
+			wantErr: `cannot constrain undefined <: number`,
+		},
+		{
+			// An optional target property tolerates the key being absent, so the signature fills it.
+			name: "SatisfiesAnOptionalProperty",
+			src: `
+				val p: {[K: string]?: number} = {a: 1}
+				val q: {a?: number} = p
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A mapped type whose key set has not grounded is expected to stay symbolic, so the uncountable-key
+// rule must not reach it. A key set that is a bare type parameter grounds only at instantiation, and
+// the parameter's own constraint does not make the key set uncountable on its own.
+func TestInferUncountableKeysNotReportedWhileAbstract(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "KeySetIsTypeParameter",
+			src:  `fn f<T>(x: {[K]: number for K in keyof T}) -> number { return 1 }`,
+		},
+		{
+			name: "ShorthandOverTypeParameter",
+			src:  `fn f<T>(x: {[K: keyof T]: number}) -> number { return 1 }`,
+		},
+		{
+			// `keyof T` over a ground T is a countable key set even though it is written as an
+			// operator, so the required form over it is legal and expands.
+			name: "GroundKeyofIsCountable",
+			src: `
+				type Point = {x: number, y: string}
+				val p: {[K: keyof Point]: Point[K]} = {x: 1, y: "hi"}
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
 		})
 	}
 }

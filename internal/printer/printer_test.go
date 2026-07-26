@@ -1654,6 +1654,16 @@ func TestPrintObjectTypeElements(t *testing.T) {
 			"{\n    [K]+?: T[K] for K in keyof T\n}",
 		},
 		{
+			"mapped type shorthand",
+			"{[K: keyof T]: T[K]}",
+			"{\n    [K: keyof T]: T[K]\n}",
+		},
+		{
+			"mapped type shorthand with optional add",
+			"{[K: string]?: number}",
+			"{\n    [K: string]+?: number\n}",
+		},
+		{
 			"rest spread",
 			"{...BaseType}",
 			"{\n    ...BaseType\n}",

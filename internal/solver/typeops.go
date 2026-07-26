@@ -645,18 +645,11 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 // member inert, so `{[K]: T[K] for K in keyof T}` over an abstract T renders the way the source
 // wrote it and expands later once T grounds.
 //
-// A key set the evaluator cannot enumerate leaves the member unexpanded too. A primitive key
-// constraint such as `{[K]?: T for K in string}` names infinitely many keys, which an object with
-// named fields cannot express. TypeScript writes that as the index signature `{[k: string]: T}`.
-// soltype has no index-signature element, so such a member stays inert rather than expanding to a
-// wrong shape. The same holds for a key that is a number literal, which names no object field.
-//
-// TODO(#930): expand a primitive key constraint to an index-signature element once soltype carries
-// one, and give a number-literal key a field to name.
-//
-// TODO(#934): reject the required form over a primitive key. `{[K]: T for K in string}` asks for a
-// field at every key of an infinite set, which no object has, so it is uninhabited. Only the
-// `?`-adding form is meaningful there, and it is the one that becomes an index signature.
+// An uncountable key set leaves the member unexpanded, and that unexpanded member is the index
+// signature. `{[K: string]?: T}` names infinitely many keys, so there is no field list to expand it
+// into; constrain and member access read the member where it sits instead. The required form over
+// such a key set demands a field at every one of infinitely many keys, which no object has, so it
+// reports a RequiredUncountableKeysError.
 //
 // Two keys that remap to one name merge into a single field whose type is their union, so no key's
 // contribution is lost. See mergeMappedField.
@@ -674,6 +667,16 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 		Optional: t.Optional, Readonly: t.Readonly,
 	}
 	if !condOperandGround(keys) {
+		return reduced, nil, false, false
+	}
+	if soltype.UncountableKeys(keys) {
+		// An uncountable key set has no keys to enumerate, so the member stays unexpanded and is
+		// itself the index signature. The required form over such a key set is uninhabited and is
+		// rejected. A rename or filter over one has no enumerable keys to run over, so it stays
+		// symbolic without a diagnostic; that gap is #930.
+		if soltype.IsIndexSignature(reduced) && reduced.Optional != soltype.ModAdd {
+			e.errs = append(e.errs, &RequiredUncountableKeysError{Mapped: reduced})
+		}
 		return reduced, nil, false, false
 	}
 	source, homomorphic := e.homomorphicSource(t.Keys)
@@ -734,8 +737,9 @@ func mergeMappedField(earlier, later *soltype.PropertyElem) *soltype.PropertyEle
 // The steps, each reading the original key rather than a remapped one, so the filter and the
 // remapping are independent and their order is not observable:
 //
-//  1. The key must be a string literal, since an object field is named by a string. A key that is a
-//     primitive, a number literal, or an unreduced operator has no field name to emit.
+//  1. The key must name a field, which mappedKeyName decides. A string literal names one directly
+//     and a number literal names the field its digits spell. A primitive or an unreduced operator
+//     names none.
 //  2. The `if Check : Extends` filter, when the source wrote one, decides `Check <: Extends` with
 //     the same assignability probe a conditional's branch selection uses. A key that fails the test
 //     is dropped, which is how `Omit` and `Pick` narrow a key set. Both operands are arbitrary type
@@ -748,7 +752,7 @@ func mergeMappedField(earlier, later *soltype.PropertyElem) *soltype.PropertyEle
 //
 // Each emitted field takes its `readonly` and `?` markers from mappedMarkers.
 func (e *typeEvaluator) mappedFields(t *soltype.MappedElem, key soltype.Type, source *soltype.ObjectType, homomorphic bool) ([]*soltype.PropertyElem, bool) {
-	name, ok := strLitName(key)
+	name, ok := mappedKeyName(key)
 	if !ok {
 		return nil, false
 	}
@@ -790,7 +794,7 @@ func (e *typeEvaluator) remappedNames(t *soltype.MappedElem, key soltype.Type) (
 		if _, dropped := member.(*soltype.NeverType); dropped {
 			continue
 		}
-		name, ok := strLitName(member)
+		name, ok := mappedKeyName(member)
 		if !ok {
 			return nil, false
 		}
@@ -1530,6 +1534,23 @@ func strLitName(t soltype.Type) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// mappedKeyName returns the field name a mapped type's key emits, and false for a key that names no
+// field. A string literal names the field directly. A number literal names the field its digits
+// spell, the same coercion JavaScript applies when `{0: v}` stores under the key "0" and the same one
+// objKeyName applies to a numeric key in an object literal. So `{[K]: boolean for K in "a" | 1}`
+// emits the fields `a` and `1`.
+//
+// It is separate from strLitName because an indexed access is not a mapped key. `T[0]` reads a
+// tuple's first element positionally, so a number there must not be coerced to a field name.
+func mappedKeyName(t soltype.Type) (string, bool) {
+	if lit, ok := t.(*soltype.LitType); ok {
+		if n, ok := lit.Lit.(*soltype.NumLit); ok {
+			return strconv.FormatFloat(n.Value, 'f', -1, 64), true
+		}
+	}
+	return strLitName(t)
 }
 
 // isResidualOp reports whether t is an unreduced type-level operator at its top level. That is a

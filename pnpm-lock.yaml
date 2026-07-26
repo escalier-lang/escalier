@@ -105,6 +105,8 @@ importers:
 
   fixtures/bin_only: {}
 
+  fixtures/class_field_name_collision: {}
+
   fixtures/class_with_computed_members: {}
 
   fixtures/class_with_fluent_mutating_methods: {}

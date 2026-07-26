@@ -408,7 +408,39 @@ func HasMappedElem(elems []ObjTypeElem) bool {
 // set may still ground. Such an object is never decomposed structurally, since its final member list
 // is not yet known; the evaluator reduces it first and constrain compares it inertly until then.
 func HasResidualElem(elems []ObjTypeElem) bool {
-	return HasObjectSpread(elems) || HasMappedElem(elems)
+	if HasObjectSpread(elems) {
+		return true
+	}
+	for _, e := range elems {
+		if m, ok := e.(*MappedElem); ok && !MappedElemSettled(m) {
+			return true
+		}
+	}
+	return false
+}
+
+// MappedElemSettled reports whether a mapped member has reached its final form, so that reducing it
+// again would change nothing and constrain can read it where it sits. Only an index signature that
+// adds `?` qualifies. `{[K: string]?: number}` has no keys to enumerate, so there is no field list
+// for reduction to produce and the member is the shape itself.
+//
+// Every other mapped member still needs reduction. One over a countable key set expands to the
+// fields its keys name. One whose key set has not grounded resumes when it does. The required form
+// over an uncountable key set is uninhabited, and reduction is where that is reported, so leaving it
+// unsettled is what lets the diagnostic fire.
+func MappedElemSettled(m *MappedElem) bool {
+	return IsIndexSignature(m) && m.Optional == ModAdd
+}
+
+// IndexSignature returns the object's index signature and whether it has one. An object carries at
+// most one, since a second would be a second mapped member over the same infinite key set.
+func (o *ObjectType) IndexSignature() (*MappedElem, bool) {
+	for _, e := range o.Elems {
+		if m, ok := e.(*MappedElem); ok && MappedElemSettled(m) {
+			return m, true
+		}
+	}
+	return nil, false
 }
 
 // AsMapped returns the mapped member of an element list and whether one is present. A caller that
@@ -420,6 +452,45 @@ func AsMapped(elems []ObjTypeElem) (*MappedElem, bool) {
 		}
 	}
 	return nil, false
+}
+
+// UncountableKeys reports whether a mapped type's key set names infinitely many keys. A primitive
+// such as `string` or `number` does, since every string is one of its members. A union is
+// uncountable when any member is, though a union mixing a literal with its own primitive normally
+// dissolves before reaching here — `"a" | string` reduces to `string` through subsumption. A union
+// of string literals, a `keyof T` over a ground T, and `never` are all countable.
+//
+// The caller must have grounded the key set first. An abstract operand such as a bare type parameter
+// reaches the default arm and reads as countable, which keeps a symbolic mapped type from being
+// judged before its key set is known.
+//
+// Two rules turn on this. A mapped type over an uncountable key set is an index signature, so it
+// renders in the `[K: Keys]?: V` shorthand. It is also uninhabited unless it adds `?`, since no
+// object carries a field at every key of an infinite set.
+func UncountableKeys(t Type) bool {
+	switch t := t.(type) {
+	case *PrimType:
+		return t.Prim == StrPrim || t.Prim == NumPrim
+	case *UnionType:
+		for _, member := range t.Types {
+			if UncountableKeys(member) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+// IsIndexSignature reports whether a mapped member is an index signature, the form written
+// `{[K: string]?: number}`. Its key set must be uncountable, which is what makes it an index
+// signature rather than a field list. It must also carry neither a key remapping nor an `if C : E`
+// filter, since a key set with infinitely many members has no enumerable keys for either to run over.
+//
+// The caller must have grounded the key set first, the same precondition UncountableKeys carries.
+func IsIndexSignature(m *MappedElem) bool {
+	return m.Name == nil && m.Check == nil && m.Extends == nil && UncountableKeys(m.Keys)
 }
 
 // MappedOptionalOperands returns the operands a mapped member carries only when the source wrote

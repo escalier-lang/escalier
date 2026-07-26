@@ -176,7 +176,14 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) 
 		// containsResidualOp: a reduced object grounds even when a field value is itself a residual,
 		// which reduces at its own site.
 		if obj, ok := reduced.(*soltype.ObjectType); ok && soltype.HasResidualElem(obj.Elems) {
-			return nil, nil, false
+			// A diagnostic still surfaces from an object that stayed residual. An index signature
+			// demanding a field at every key of an infinite set is uninhabited whichever way the
+			// constraint would have gone, so reporting it does not depend on the object grounding.
+			// The caller returns on a non-empty errs without reading the reduced type.
+			if len(e.errs) == 0 {
+				return nil, nil, false
+			}
+			return reduced, e.errs, true
 		}
 		return reduced, e.errs, true
 	default:
@@ -606,6 +613,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					}
 					continue
 				}
+				// An index-signature requirement names no single key, so it is checked against every
+				// property the sub carries rather than against one member.
+				if superIdx, ok := superElem.(*soltype.MappedElem); ok {
+					errs = append(errs, c.constrainIntoIndexSignature(sub, superIdx, seen, mutCtx)...)
+					continue
+				}
 				// A method, getter, or setter requirement, carried only by a class value,
 				// checks against the sub's member by variance instead of panicking in AsProperty.
 				if _, isProp := superElem.(*soltype.PropertyElem); !isProp {
@@ -615,6 +628,19 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 				superProp := soltype.AsProperty(superElem) // every remaining elem is a property
 				subProp, ok := sub.Prop(superProp.Name)
 				if !ok {
+					if subIdx, has := sub.IndexSignature(); has {
+						// The sub declares no field under this name, but its index signature covers
+						// every key, so it supplies this one. The key may still be absent at
+						// runtime, so the value read out is `V | undefined`. A required target
+						// rejects on the undefined arm, which is how `{[K: string]?: number}` fails
+						// to fill `{a: number}`. A field-read requirement instead joins both arms
+						// into its fresh result variable, so `p.a` reads as `number | undefined`.
+						errs = append(errs, c.constrain(subIdx.Value, superProp.Type, seen, mutCtx)...)
+						if !superProp.Optional {
+							errs = append(errs, c.constrain(&soltype.UndefinedType{}, superProp.Type, seen, mutCtx)...)
+						}
+						continue
+					}
 					if !superProp.Optional {
 						errs = append(errs, &MissingPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
 					}
@@ -652,7 +678,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			// When the super is inexact, width tolerance is the complete rule and the
 			// depth loop above is all there is. When the super is exact, the sub may
 			// carry no extra properties and may not itself be inexact.
-			if !sup.Inexact {
+			//
+			// An index signature on the super absorbs every key, so it makes the super tolerate
+			// width the same way inexactness does and there is no extra property to report.
+			if _, superHasIdx := sup.IndexSignature(); !sup.Inexact && !superHasIdx {
 				if sub.Inexact {
 					errs = append(errs, &InexactIntoExactError{Sub: sub, Super: sup})
 				}
@@ -1091,6 +1120,34 @@ func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.
 		return nil, false, true
 	}
 	return nil, false, true
+}
+
+// constrainIntoIndexSignature checks an object against an index-signature requirement such as
+// `{[K: string]?: number}`. The requirement names no single key, so satisfying it means every key
+// the sub can carry holds a value of the signature's type.
+//
+// Two things on the sub can carry a key. Each declared property contributes its own value type,
+// checked covariantly, which is what makes `{a: 1, b: 2}` satisfy `{[K: string]?: number}`. The
+// sub's own index signature, when it has one, contributes the type of every other key and is checked
+// the same way.
+//
+// A sub with neither declared properties nor an index signature satisfies the requirement trivially,
+// since it carries no key that could hold a wrong value.
+//
+// A method, getter, setter, or constructor member is skipped. Whether a callable member satisfies a
+// value-typed index signature is the same open question as unifying properties with methods and
+// accessors, escalier-lang/escalier#864.
+func (c *Context) constrainIntoIndexSignature(sub *soltype.ObjectType, superIdx *soltype.MappedElem, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+	var errs []SolverError
+	for _, subElem := range sub.Elems {
+		switch subElem := subElem.(type) {
+		case *soltype.PropertyElem:
+			errs = append(errs, c.constrain(subElem.Type, superIdx.Value, seen, mutCtx)...)
+		case *soltype.MappedElem:
+			errs = append(errs, c.constrain(subElem.Value, superIdx.Value, seen, mutCtx)...)
+		}
+	}
+	return errs
 }
 
 // constrainObjMember checks a method, getter, or setter requirement on an object super
