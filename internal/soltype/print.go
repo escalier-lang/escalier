@@ -839,7 +839,7 @@ func (p *namedPrinter) printMapped(t *MappedElem) string {
 	}
 	if IsIndexSignature(t) {
 		return out + "[" + t.Key.Name + ": " + p.printType(t.Keys) + "]" +
-			indexSigOptional(t.Optional) + ": " + p.printType(t.Value)
+			IndexSigMarker(t.Optional) + ": " + p.printType(t.Value)
 	}
 	if t.Name != nil {
 		out += "[" + p.printType(t.Name) + "]"
@@ -861,11 +861,15 @@ func (p *namedPrinter) printMapped(t *MappedElem) string {
 	return out
 }
 
-// indexSigOptional renders the `?` marker of an index signature. The legal form adds the marker, and
-// it renders as the plain `?` the shorthand spells rather than the `+?` the long form uses, since
-// the shorthand has no inherited marker for a `+` to distinguish it from. The other two forms still
-// render distinctly, so a diagnostic rejecting one never prints it identically to the legal form.
-func indexSigOptional(mod MappedModifier) string {
+// IndexSigMarker renders the `?` marker of an index signature. The legal form adds the marker and
+// renders it as the plain `?` the shorthand spells, not the `+?` the long form uses. The `+` marks a
+// modifier that overrides an inherited one, and an uncountable key set has no source object to
+// inherit from, so there is nothing for it to distinguish. The other two forms still render
+// distinctly, so a diagnostic rejecting one never prints it identically to the legal form.
+//
+// It is exported so the solver's mid-constrain renderer spells the marker the same way this printer
+// does, without a second copy of the mapping to keep in step.
+func IndexSigMarker(mod MappedModifier) string {
 	switch mod {
 	case ModAdd:
 		return "?"

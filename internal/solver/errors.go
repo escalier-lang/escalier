@@ -419,36 +419,34 @@ type TypeParamNotProducibleError struct {
 	Node  ast.Node
 }
 
-func (*CannotConstrainError) isSolverError()        {}
-func (*MutFieldError) isSolverError()               {}
-func (*ReadonlyFieldError) isSolverError()          {}
-func (*ReadonlyFieldSubtypeError) isSolverError()   {}
-func (*FuncArityMismatchError) isSolverError()      {}
-func (*TupleLengthMismatchError) isSolverError()    {}
-func (*SpreadNotTupleError) isSolverError()         {}
-func (*InexactTupleSpreadError) isSolverError()     {}
-func (*SpreadNotObjectError) isSolverError()        {}
-func (*MissingPropertyError) isSolverError()        {}
-func (*InexactIntoExactError) isSolverError()       {}
-func (*InexactTupleIntoExactError) isSolverError()  {}
-func (*InexactUnionIntoExactError) isSolverError()  {}
-func (*ExtraPropertyError) isSolverError()          {}
-func (*ExtraElementError) isSolverError()           {}
-func (*OptionalPropertyError) isSolverError()       {}
-func (*UnknownObjectKeyError) isSolverError()       {}
-func (*TupleIndexOutOfRangeError) isSolverError()   {}
-func (*TemplateLitTooComplexError) isSolverError()  {}
-
+func (*CannotConstrainError) isSolverError()         {}
+func (*MutFieldError) isSolverError()                {}
+func (*ReadonlyFieldError) isSolverError()           {}
+func (*ReadonlyFieldSubtypeError) isSolverError()    {}
+func (*FuncArityMismatchError) isSolverError()       {}
+func (*TupleLengthMismatchError) isSolverError()     {}
+func (*SpreadNotTupleError) isSolverError()          {}
+func (*InexactTupleSpreadError) isSolverError()      {}
+func (*SpreadNotObjectError) isSolverError()         {}
+func (*MissingPropertyError) isSolverError()         {}
+func (*InexactIntoExactError) isSolverError()        {}
+func (*InexactTupleIntoExactError) isSolverError()   {}
+func (*InexactUnionIntoExactError) isSolverError()   {}
+func (*ExtraPropertyError) isSolverError()           {}
+func (*ExtraElementError) isSolverError()            {}
+func (*OptionalPropertyError) isSolverError()        {}
+func (*UnknownObjectKeyError) isSolverError()        {}
+func (*TupleIndexOutOfRangeError) isSolverError()    {}
+func (*TemplateLitTooComplexError) isSolverError()   {}
 func (*RequiredUncountableKeysError) isSolverError() {}
-
-func (*MutabilityMismatchError) isSolverError() {}
-func (*BorrowEscapeError) isSolverError()           {}
-func (*ClassIntoExactObjectError) isSolverError()   {}
-func (*StructuralIntoClassError) isSolverError()    {}
-func (*NonClassSuperError) isSolverError()          {}
-func (*CannotExtendFinalClassError) isSolverError() {}
-func (*VarianceMismatchError) isSolverError()       {}
-func (*TypeParamNotProducibleError) isSolverError() {}
+func (*MutabilityMismatchError) isSolverError()      {}
+func (*BorrowEscapeError) isSolverError()            {}
+func (*ClassIntoExactObjectError) isSolverError()    {}
+func (*StructuralIntoClassError) isSolverError()     {}
+func (*NonClassSuperError) isSolverError()           {}
+func (*CannotExtendFinalClassError) isSolverError()  {}
+func (*VarianceMismatchError) isSolverError()        {}
+func (*TypeParamNotProducibleError) isSolverError()  {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -1800,7 +1798,7 @@ func describeMapped(t *soltype.MappedElem) string {
 	}
 	if soltype.IsIndexSignature(t) {
 		return out + "[" + t.Key.Name + ": " + describe(t.Keys) + "]" +
-			describeIndexSigOptional(t.Optional) + ": " + describe(t.Value)
+			soltype.IndexSigMarker(t.Optional) + ": " + describe(t.Value)
 	}
 	if t.Name != nil {
 		out += "[" + describe(t.Name) + "]"
@@ -1830,21 +1828,6 @@ func describeMapped(t *soltype.MappedElem) string {
 // headroom over what a hand-written annotation reaches. An ordinary diagnostic is therefore
 // unaffected and only a machine-grown argument elides.
 const describeMaxDepth = 4
-
-// describeIndexSigOptional renders an index signature's `?` marker, mirroring soltype's
-// indexSigOptional so a mid-constrain description and a printed type spell the same member the same
-// way. The legal form adds the marker and spells it `?`; the other two forms still render distinctly.
-func describeIndexSigOptional(mod soltype.MappedModifier) string {
-	switch mod {
-	case soltype.ModAdd:
-		return "?"
-	case soltype.ModRemove:
-		return "-?"
-	case soltype.ModNone:
-		return ""
-	}
-	panic(fmt.Sprintf("describeIndexSigOptional: unhandled MappedModifier %v", mod))
-}
 
 func describe(t soltype.Type) string {
 	switch t := t.(type) {

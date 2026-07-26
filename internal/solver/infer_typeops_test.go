@@ -3303,6 +3303,44 @@ func TestInferIndexSignatureConstraint(t *testing.T) {
 			src:  `val p: {[K: string]?: number} = {a: 1, b: 2, c: 3}`,
 		},
 		{
+			// An index signature is a settled form, not a reduction still in progress, so an object
+			// carrying one is ground. A conditional over it therefore selects a branch instead of
+			// staying symbolic.
+			name: "ConditionalOverAnIndexSignatureSelectsABranch",
+			src: `
+				type Dict = {[K: string]?: number}
+				type Fits = if Dict : {a?: number} { "yes" } else { "no" }
+				type Misses = if Dict : {a: number} { "yes" } else { "no" }
+				val fits: Fits = "yes"
+				val misses: Misses = "no"
+			`,
+		},
+		{
+			// A named property on the target states the type at its own key, so the signature covers
+			// only the other keys.
+			name: "NamedPropertyBesideTheSignature",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				val c: Config = {name: "app", debug: true}
+			`,
+		},
+		{
+			name: "NamedPropertyBesideTheSignatureStillChecked",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				val c: Config = {name: 1, debug: true}
+			`,
+			wantErr: `cannot constrain 1 <: string`,
+		},
+		{
+			name: "OtherKeysStillCheckedAgainstTheSignature",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				val c: Config = {name: "app", debug: 1}
+			`,
+			wantErr: `cannot constrain 1 <: boolean`,
+		},
+		{
 			name: "IndexSignatureIntoIndexSignature",
 			src: `
 				val p: {[K: string]?: number} = {a: 1}
@@ -3326,7 +3364,7 @@ func TestInferIndexSignatureConstraint(t *testing.T) {
 				val p: {[K: string]?: number} = {a: 1}
 				val q: {a: number} = p
 			`,
-			wantErr: `cannot constrain undefined <: number`,
+			wantErr: `object property is optional but required: a`,
 		},
 		{
 			// An optional target property tolerates the key being absent, so the signature fills it.

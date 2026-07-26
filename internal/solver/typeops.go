@@ -647,7 +647,7 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 //
 // An uncountable key set leaves the member unexpanded, and that unexpanded member is the index
 // signature. `{[K: string]?: T}` names infinitely many keys, so there is no field list to expand it
-// into; constrain and member access read the member where it sits instead. The required form over
+// into. constrain and member access read the member where it sits instead. The required form over
 // such a key set demands a field at every one of infinitely many keys, which no object has, so it
 // reports a RequiredUncountableKeysError.
 //
@@ -673,7 +673,7 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 		// An uncountable key set has no keys to enumerate, so the member stays unexpanded and is
 		// itself the index signature. The required form over such a key set is uninhabited and is
 		// rejected. A rename or filter over one has no enumerable keys to run over, so it stays
-		// symbolic without a diagnostic; that gap is #930.
+		// symbolic with no diagnostic. That gap is #930.
 		if soltype.IsIndexSignature(reduced) && reduced.Optional != soltype.ModAdd {
 			e.errs = append(e.errs, &RequiredUncountableKeysError{Mapped: reduced})
 		}
@@ -1568,10 +1568,11 @@ func isResidualOp(t soltype.Type) bool {
 }
 
 // objectHasMapped reports whether t is an object whose member list still carries an unreduced
-// `[K]: V for K in Keys` member, the mapped twin of objectHasSpread.
+// `[K]: V for K in Keys` member, the mapped twin of objectHasSpread. An index signature does not
+// count: it is the final form of its member, so an object carrying one is ground.
 func objectHasMapped(t soltype.Type) bool {
 	obj, ok := t.(*soltype.ObjectType)
-	return ok && soltype.HasMappedElem(obj.Elems)
+	return ok && soltype.HasUnsettledMapped(obj.Elems)
 }
 
 // objectIsResidual reports whether t is an object carrying either unreduced member kind, the type-

@@ -616,7 +616,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 				// An index-signature requirement names no single key, so it is checked against every
 				// property the sub carries rather than against one member.
 				if superIdx, ok := superElem.(*soltype.MappedElem); ok {
-					errs = append(errs, c.constrainIntoIndexSignature(sub, superIdx, seen, mutCtx)...)
+					errs = append(errs, c.constrainIntoIndexSignature(sub, sup, superIdx, seen, mutCtx)...)
 					continue
 				}
 				// A method, getter, or setter requirement, carried only by a class value,
@@ -631,14 +631,18 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 					if subIdx, has := sub.IndexSignature(); has {
 						// The sub declares no field under this name, but its index signature covers
 						// every key, so it supplies this one. The key may still be absent at
-						// runtime, so the value read out is `V | undefined`. A required target
-						// rejects on the undefined arm, which is how `{[K: string]?: number}` fails
-						// to fill `{a: number}`. A field-read requirement instead joins both arms
-						// into its fresh result variable, so `p.a` reads as `number | undefined`.
-						errs = append(errs, c.constrain(subIdx.Value, superProp.Type, seen, mutCtx)...)
-						if !superProp.Optional {
+						// runtime, which makes the signature's contribution optional and puts this
+						// on the same three branches as an optional sub property below.
+						if fieldRead {
+							errs = append(errs, c.constrain(subIdx.Value, superProp.Type, seen, mutCtx)...)
 							errs = append(errs, c.constrain(&soltype.UndefinedType{}, superProp.Type, seen, mutCtx)...)
+							continue
 						}
+						if !superProp.Optional {
+							errs = append(errs, &OptionalPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
+							continue
+						}
+						errs = append(errs, c.constrain(subIdx.Value, superProp.Type, seen, mutCtx)...)
 						continue
 					}
 					if !superProp.Optional {
@@ -1134,14 +1138,23 @@ func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.
 // A sub with neither declared properties nor an index signature satisfies the requirement trivially,
 // since it carries no key that could hold a wrong value.
 //
+// A key the super also declares as a named property is skipped, because that property states the
+// type at that one key and the depth loop already checked the sub against it. So
+// `{name: "x", debug: true}` satisfies `{name: string, [K: string]?: boolean}`: `name` is checked
+// against `string` and `debug` against `boolean`. Without the skip the signature would demand
+// `"x" <: boolean` and reject a value the super's own declaration accepts.
+//
 // A method, getter, setter, or constructor member is skipped. Whether a callable member satisfies a
 // value-typed index signature is the same open question as unifying properties with methods and
 // accessors, escalier-lang/escalier#864.
-func (c *Context) constrainIntoIndexSignature(sub *soltype.ObjectType, superIdx *soltype.MappedElem, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, superIdx *soltype.MappedElem, seen set.Set[constraintKey], mutCtx bool) []SolverError {
 	var errs []SolverError
 	for _, subElem := range sub.Elems {
 		switch subElem := subElem.(type) {
 		case *soltype.PropertyElem:
+			if _, declared := sup.Prop(subElem.Name); declared {
+				continue
+			}
 			errs = append(errs, c.constrain(subElem.Type, superIdx.Value, seen, mutCtx)...)
 		case *soltype.MappedElem:
 			errs = append(errs, c.constrain(subElem.Value, superIdx.Value, seen, mutCtx)...)

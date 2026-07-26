@@ -408,9 +408,13 @@ func HasMappedElem(elems []ObjTypeElem) bool {
 // set may still ground. Such an object is never decomposed structurally, since its final member list
 // is not yet known; the evaluator reduces it first and constrain compares it inertly until then.
 func HasResidualElem(elems []ObjTypeElem) bool {
-	if HasObjectSpread(elems) {
-		return true
-	}
+	return HasObjectSpread(elems) || HasUnsettledMapped(elems)
+}
+
+// HasUnsettledMapped reports whether an element list carries a mapped member that reduction has not
+// finished with. It is the mapped half of HasResidualElem. It also decides whether an object counts
+// as ground, since an object whose every mapped member is settled has no reduction left to do.
+func HasUnsettledMapped(elems []ObjTypeElem) bool {
 	for _, e := range elems {
 		if m, ok := e.(*MappedElem); ok && !MappedElemSettled(m) {
 			return true
@@ -456,9 +460,9 @@ func AsMapped(elems []ObjTypeElem) (*MappedElem, bool) {
 
 // UncountableKeys reports whether a mapped type's key set names infinitely many keys. A primitive
 // such as `string` or `number` does, since every string is one of its members. A union is
-// uncountable when any member is, though a union mixing a literal with its own primitive normally
-// dissolves before reaching here — `"a" | string` reduces to `string` through subsumption. A union
-// of string literals, a `keyof T` over a ground T, and `never` are all countable.
+// uncountable when any member is. A union mixing a literal with its own primitive rarely reaches
+// here, because subsumption already reduced `"a" | string` to `string`. A union of string literals,
+// a `keyof T` over a ground T, and `never` are all countable.
 //
 // The caller must have grounded the key set first. An abstract operand such as a bare type parameter
 // reaches the default arm and reads as countable, which keeps a symbolic mapped type from being
