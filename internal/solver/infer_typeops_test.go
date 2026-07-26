@@ -2339,6 +2339,76 @@ func TestInferMappedTypeReduction(t *testing.T) {
 	}
 }
 
+// A key remapping may compute the name with a template literal and a string intrinsic, and that
+// composes with everything else an object's member list can hold. The mapped member is one member
+// among others, so a renamed field merges with explicit siblings, spreads, and a second mapped
+// member under the same source-order rule.
+func TestInferMappedTypeTemplateRenameInObject(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// A computed rename composes with an ordinary sibling, the `Getters<T>` shape written as one
+			// object rather than an intersection.
+			name: "RenameAlongsideExplicitMember",
+			src: `
+				type Src = {name: string, age: number}
+				type Result = {id: number, [` + "`get${Capitalize<K>}`" + `]: Src[K] for K in keyof Src}
+			`,
+			wantExpanded: "{id: number, getAge: number, getName: string}",
+		},
+		{
+			// A computed name colliding with an explicit sibling overrides it, the rightmost-wins rule
+			// every merged group follows.
+			name: "RenameCollidesWithExplicitMember",
+			src: `
+				type Src = {x: number}
+				type Result = {getX: string, [` + "`get${Capitalize<K>}`" + `]: Src[K] for K in keyof Src}
+			`,
+			wantExpanded: "{getX: number}",
+		},
+		{
+			// Two mapped members may each rename over the same key set, which is how a getter/setter pair
+			// is expressed.
+			name: "TwoRenamingMembers",
+			src: `
+				type Src = {a: number}
+				type Result = {[` + "`get${Capitalize<K>}`" + `]: Src[K] for K in keyof Src, [` + "`set${Capitalize<K>}`" + `]: Src[K] for K in keyof Src}
+			`,
+			wantExpanded: "{getA: number, setA: number}",
+		},
+		{
+			// A renaming member merges after a spread's fields, in source order.
+			name: "RenameComposesWithSpread",
+			src: `
+				type Base = {z: boolean}
+				type Src = {a: number}
+				type Result = {...Base, [` + "`get${Capitalize<K>}`" + `]: Src[K] for K in keyof Src}
+			`,
+			wantExpanded: "{z: boolean, getA: number}",
+		},
+		{
+			// Renaming and filtering apply together: the filter reads the pre-rename key, so only the keys
+			// that survive it are renamed.
+			name: "RenameWithFilter",
+			src: `
+				type Src = {a: number, b: string}
+				type Result = {id: boolean, [` + "`get${Capitalize<K>}`" + `]: Src[K] for K in keyof Src if Src[K] : number}
+			`,
+			wantExpanded: "{id: boolean, getA: number}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
 // The `if Check : Extends` filter tests two arbitrary type expressions, not just the key. Both
 // operands resolve in the scope where K is bound and are reduced with the key substituted, so either
 // side may name the key, the value at that key, a computed type over the key, or nothing at all.
