@@ -129,6 +129,38 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"shared"`,
 		},
 		{
+			// Every shared key survives, not just one: "x" and "y" are on both members, while "a"
+			// and "b" each appear on one and drop out.
+			name: "UnionSharedKeys",
+			src: `
+				type U = {a: number, x: string, y: boolean} | {b: number, x: string, y: boolean}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"x" | "y"`,
+		},
+		{
+			// One member's keys are a subset of the other's, so the intersection is that subset
+			// and only the key the wider member adds on its own drops out.
+			name: "UnionSubsetKeys",
+			src: `
+				type U = {a: number, b: string} | {a: number, b: string, c: boolean}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"a" | "b"`,
+		},
+		{
+			// Three members intersect pairwise down to the one key all three carry.
+			name: "UnionThreeMembers",
+			src: `
+				type U = {a: number, x: string} | {b: number, x: string} | {a: number, b: number, x: string}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"x"`,
+		},
+		{
 			// An intersection carries both operands' members, so its key sets union. This is the
 			// case that keeps every key, in contrast to the union arm above.
 			name: "Intersection",
