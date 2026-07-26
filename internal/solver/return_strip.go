@@ -156,6 +156,11 @@ func stripBorrowTree(
 		}
 		return soltype.NewRef(t.Mut, nil, inner)
 	case *soltype.ObjectType:
+		// A residual object has no settled property list to walk, the same guard stripOwnedMut
+		// applies. Its borrows are reached once the evaluator reduces it.
+		if soltype.HasResidualElem(t.Elems) {
+			return t
+		}
 		elems := make([]soltype.ObjTypeElem, len(t.Elems))
 		for i, e := range t.Elems {
 			p := soltype.AsProperty(e)

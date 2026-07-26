@@ -1373,7 +1373,7 @@ type AmbiguousUnionCommitWarning struct {
 	site      ast.Node
 }
 
-func (*AmbiguousUnionCommitWarning) isSolverError()   {}
+func (*AmbiguousUnionCommitWarning) isSolverError()    {}
 func (e *AmbiguousUnionCommitWarning) IsWarning() bool { return true }
 func (e *AmbiguousUnionCommitWarning) Span() ast.Span {
 	return spanOf(e.prov, e.Union, e.site)
@@ -1746,6 +1746,42 @@ func (e *ReadonlyFieldSubtypeError) Message() string {
 // output as user-facing Escalier syntax (see m1-implementation-plan §2.2). It
 // lives in solver because it walks bound-carrying variables, and its wording
 // matches the spike's verbatim so test assertions stay stable.
+// describeMapped renders a `[K]: V for K in Keys` member in describe's raw mid-constrain form, so a
+// rejected constraint over a symbolic mapped type names it in full rather than the default `?`. The
+// enclosing object supplies the braces and any trailing `...`.
+//
+// The modifiers render too, because equalObjElem reads them when it decides whether two inert mapped
+// members are equal. Omitting one lets a rejection print both sides identically, so
+// `{[K]: T[K] for K in keyof T}` against its `?`-adding twin would read as a type failing to satisfy
+// itself.
+func describeMapped(t *soltype.MappedElem) string {
+	out := ""
+	switch t.Readonly {
+	case soltype.ModAdd:
+		out += "readonly "
+	case soltype.ModRemove:
+		out += "-readonly "
+	case soltype.ModNone:
+	}
+	if t.Name != nil {
+		out += "[" + describe(t.Name) + "]"
+	} else {
+		out += "[" + t.Key.Name + "]"
+	}
+	switch t.Optional {
+	case soltype.ModAdd:
+		out += "+?"
+	case soltype.ModRemove:
+		out += "-?"
+	case soltype.ModNone:
+	}
+	out += ": " + describe(t.Value) + " for " + t.Key.Name + " in " + describe(t.Keys)
+	if t.Check != nil && t.Extends != nil {
+		out += " if " + describe(t.Check) + " : " + describe(t.Extends)
+	}
+	return out
+}
+
 func describe(t soltype.Type) string {
 	switch t := t.(type) {
 	case *soltype.PrimType:
@@ -1783,13 +1819,13 @@ func describe(t soltype.Type) string {
 		}
 		return "tuple"
 	case *soltype.ObjectType:
-		if !soltype.HasObjectSpread(t.Elems) {
+		if !soltype.HasResidualElem(t.Elems) {
 			return "object"
 		}
-		// A spread-carrying object is an unreduced residual, so it renders structurally like the
-		// KeyofType arm — a rejected constraint reads `{...t1, x: number}` rather than the nominal
-		// `object`. A spread element shows `...` over its raw mid-constrain operand; a property
-		// shows `name: <type>`. Other member kinds do not appear in a spread residual.
+		// A residual object renders structurally like the KeyofType arm, so a rejected constraint
+		// reads `{...t1, x: number}` rather than the nominal `object`. A spread element shows `...`
+		// over its raw mid-constrain operand, a property shows `name: <type>`, and a mapped member
+		// shows the surface form describeMapped builds. No other member kind appears in a residual.
 		parts := make([]string, 0, len(t.Elems)+1)
 		for _, e := range t.Elems {
 			switch e := e.(type) {
@@ -1797,6 +1833,8 @@ func describe(t soltype.Type) string {
 				parts = append(parts, "..."+describe(e.Type))
 			case *soltype.PropertyElem:
 				parts = append(parts, e.Name+": "+describe(e.Type))
+			case *soltype.MappedElem:
+				parts = append(parts, describeMapped(e))
 			}
 		}
 		if t.Inexact {
@@ -1857,43 +1895,6 @@ func describe(t soltype.Type) string {
 		// A mapped type's key variable renders as its bare name, matching the printer, so a rejected
 		// constraint over a symbolic mapped type reads the way the source wrote it.
 		return t.Name
-	case *soltype.MappedType:
-		// A mapped residual renders structurally as the surface syntax, recursing like the keyof arm,
-		// so a rejected constraint over a symbolic mapped type names it in full rather than the
-		// default `?`. Every operand renders in describe's raw mid-constrain form.
-		//
-		// The modifiers and the inexact marker render too, because equalTypeWith reads them when it
-		// decides whether two inert mapped residuals are equal. Omitting one lets a rejection print
-		// both sides identically, so `{[K]: T[K] for K in keyof T}` against its `?`-adding twin would
-		// read as a type failing to satisfy itself.
-		out := "{"
-		switch t.Readonly {
-		case soltype.ModAdd:
-			out += "readonly "
-		case soltype.ModRemove:
-			out += "-readonly "
-		case soltype.ModNone:
-		}
-		if t.Name != nil {
-			out += "[" + describe(t.Name) + "]"
-		} else {
-			out += "[" + t.Key.Name + "]"
-		}
-		switch t.Optional {
-		case soltype.ModAdd:
-			out += "+?"
-		case soltype.ModRemove:
-			out += "-?"
-		case soltype.ModNone:
-		}
-		out += ": " + describe(t.Value) + " for " + t.Key.Name + " in " + describe(t.Keys)
-		if t.Check != nil && t.Extends != nil {
-			out += " if " + describe(t.Check) + " : " + describe(t.Extends)
-		}
-		if t.Inexact {
-			out += ", ..."
-		}
-		return out + "}"
 	case *soltype.RestSpreadType:
 		// A `...P` spread element renders `...` over its operand, reached in place when the
 		// enclosing spread-carrying TupleType arm above describes its elements. The operand renders

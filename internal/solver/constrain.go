@@ -152,7 +152,7 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) 
 		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
 		return t.Ty, nil, true
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.MappedType,
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType,
 		*soltype.TemplateLitType, *soltype.StringIntrinsicType:
 		return c.reduceResidual(t, seen)
 	case *soltype.TupleType:
@@ -161,18 +161,21 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) 
 		}
 		return c.reduceResidual(t, seen)
 	case *soltype.ObjectType:
-		// A plain object is handled structurally, not as a transparent operator. Only a
-		// spread-carrying object is a residual to reduce here, the object twin of the TupleType arm.
-		if !soltype.HasObjectSpread(t.Elems) {
+		// A plain object is handled structurally, not as a transparent operator. Only a residual
+		// object is reduced here, the object twin of the TupleType arm. An object is residual when it
+		// carries a `...A` spread whose operand may still merge, or a `[K]: V for K in Keys` member
+		// whose key set may still ground.
+		if !soltype.HasResidualElem(t.Elems) {
 			return nil, nil, false
 		}
 		e := newTypeEvaluator(c, seen)
 		reduced := e.reduce(t)
-		// A spread whose operands ground merges to a spread-free object. One with an abstract operand
-		// stays a spread-carrying object, which is inert, so leave it for the structural switch. The
-		// check is on the root rather than reduceResidual's containsResidualOp: a merged object
-		// grounds even when a field value is itself a residual, which reduces at its own site.
-		if obj, ok := reduced.(*soltype.ObjectType); ok && soltype.HasObjectSpread(obj.Elems) {
+		// A spread whose operands ground merges to a spread-free object, and a mapped member whose
+		// key set grounds becomes the fields it emits. One that stays residual is inert, so leave it
+		// for the structural switch. The check is on the root rather than reduceResidual's
+		// containsResidualOp: a reduced object grounds even when a field value is itself a residual,
+		// which reduces at its own site.
+		if obj, ok := reduced.(*soltype.ObjectType); ok && soltype.HasResidualElem(obj.Elems) {
 			return nil, nil, false
 		}
 		return reduced, e.errs, true
@@ -539,13 +542,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			return errs
 		}
 	case *soltype.ObjectType:
-		if objectHasSpread(sub) || objectHasSpread(super) {
-			// One side carries an unreduced `...A` spread the pre-switch could not ground: a spread
-			// over a type parameter, or an expanding recursive alias. constrain treats such an object
-			// inert, the same as the spread-tuple and KeyofType/IndexType residuals — it is never
-			// decomposed, so two spread-objects are compatible only when structurally identical. When
-			// super is a variable the case falls through to the superVar arm below, which records the
-			// whole object as one lower bound, keeping the spread symbolic on the coalesced binding.
+		if objectIsResidual(sub) || objectIsResidual(super) {
+			// One side is an unreduced residual the pre-switch could not ground. That is an object
+			// carrying a `...A` spread over a type parameter or an expanding recursive alias, or one
+			// carrying a `[K]: V for K in Keys` member whose key set never ground. constrain treats
+			// such an object inert, the same as the spread-tuple and KeyofType/IndexType residuals —
+			// it is never decomposed, so two residual objects are compatible only when structurally
+			// identical. When super is a variable the case falls through to the superVar arm below,
+			// which records the whole object as one lower bound, keeping the residual symbolic on the
+			// coalesced binding.
 			if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 				if equalType(sub, super) {
 					return nil
@@ -807,21 +812,6 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		// recording a bound, and a residual against any other concrete fails. When super is a
 		// variable the case falls through to the superVar arm, which records the whole conditional as
 		// one lower bound, keeping the operator symbolic on the coalesced binding.
-		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
-			if equalType(sub, super) {
-				return nil
-			}
-			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
-		}
-	case *soltype.MappedType:
-		// A mapped residual the pre-switch could not ground reaches here: a mapped type whose Keys
-		// operand is a type parameter, so no key set exists to emit fields from. constrain treats it
-		// inert, the same as the KeyofType, IndexType, and CondType arms above. Two residuals are
-		// compatible only when structurally identical. A mapped type against an equal mapped type
-		// therefore succeeds reflexively without recording a bound, and a residual against any other
-		// concrete type fails. When super is a variable the case falls through to the superVar arm,
-		// which records the whole mapped type as one lower bound, keeping the operator symbolic on
-		// the coalesced binding.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			if equalType(sub, super) {
 				return nil

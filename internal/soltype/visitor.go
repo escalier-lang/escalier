@@ -240,38 +240,6 @@ func (t *CondType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
-func (t *MappedType) Accept(v TypeVisitor, pol Polarity) Type {
-	e := v.EnterType(t, pol)
-	if e.SkipChildren {
-		return v.ExitType(skipReplace(t, e), pol)
-	}
-	cur := descendReplacement(t, e)
-	// Every operand walks in the current polarity, the many-child analogue of CondType's four-child
-	// visit. The residual is inert — the visit rebuilds it around rewritten operands without
-	// emitting any field, so extrude/coalesce/freshenAbove carry the whole mapped type through
-	// untouched. Key is the binding this node owns, not a type to rewrite, so it carries through.
-	keys := cur.Keys.Accept(v, pol)
-	value := cur.Value.Accept(v, pol)
-	name, nameChanged := acceptOptional(cur.Name, v, pol)
-	check, checkChanged := acceptOptional(cur.Check, v, pol)
-	extends, extendsChanged := acceptOptional(cur.Extends, v, pol)
-	out := cur
-	if keys != cur.Keys || value != cur.Value || nameChanged || checkChanged || extendsChanged {
-		out = &MappedType{
-			Key:      cur.Key,
-			Keys:     keys,
-			Value:    value,
-			Name:     name,
-			Check:    check,
-			Extends:  extends,
-			Optional: cur.Optional,
-			Readonly: cur.Readonly,
-			Inexact:  cur.Inexact,
-		}
-	}
-	return v.ExitType(out, pol)
-}
-
 // acceptOptional walks an operand a node carries only when the source wrote it, returning the
 // walked type and whether the visit replaced it. A nil operand stays nil and reports no change, so
 // a caller rebuilds only when a present operand was rewritten.
@@ -563,6 +531,30 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 			return e
 		}
 		return &PropertyElem{Name: e.Name, Type: pt, Optional: e.Optional, Readonly: e.Readonly}
+	case *MappedElem:
+		// Every operand walks in the current polarity, the many-child analogue of CondType's
+		// four-child visit. The member is inert — the visit rebuilds it around rewritten operands
+		// without emitting any field, so extrude/coalesce/freshenAbove carry the whole mapped member
+		// through untouched. Key is the binding this member owns, not a type to rewrite, so it
+		// carries through.
+		keys := e.Keys.Accept(v, pol)
+		value := e.Value.Accept(v, pol)
+		name, nameChanged := acceptOptional(e.Name, v, pol)
+		check, checkChanged := acceptOptional(e.Check, v, pol)
+		extends, extendsChanged := acceptOptional(e.Extends, v, pol)
+		if keys == e.Keys && value == e.Value && !nameChanged && !checkChanged && !extendsChanged {
+			return e
+		}
+		return &MappedElem{
+			Key:      e.Key,
+			Keys:     keys,
+			Value:    value,
+			Name:     name,
+			Check:    check,
+			Extends:  extends,
+			Optional: e.Optional,
+			Readonly: e.Readonly,
+		}
 	case *GetterElem:
 		self, selfChanged := acceptSelfParam(e.SelfParam, v, pol) // receiver contravariant
 		rt := e.Type.Accept(v, pol)                               // covariant read

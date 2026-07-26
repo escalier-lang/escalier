@@ -593,7 +593,13 @@ func propagateOpen(vars map[int]*soltype.TypeVarType) {
 				continue
 			}
 			for _, elem := range ob.Elems {
-				pv, ok := soltype.AsProperty(elem).Type.(*soltype.TypeVarType)
+				// Only a property carries a value var to open. A residual object's spread or mapped
+				// member holds operands the evaluator substitutes rather than the solver generalizes.
+				prop, isProp := elem.(*soltype.PropertyElem)
+				if !isProp {
+					continue
+				}
+				pv, ok := prop.Type.(*soltype.TypeVarType)
 				if ok && !pv.Open {
 					pv.Open = true
 					work = append(work, pv)

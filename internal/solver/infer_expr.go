@@ -788,6 +788,11 @@ func sameObjectKeys(a, b *soltype.ObjectType) bool {
 	if len(a.Elems) != len(b.Elems) {
 		return false
 	}
+	// A residual object has no settled key set to compare, so it never satisfies the join's
+	// invariant-field precondition.
+	if soltype.HasResidualElem(a.Elems) || soltype.HasResidualElem(b.Elems) {
+		return false
+	}
 	for _, e := range a.Elems {
 		if _, ok := b.Prop(soltype.AsProperty(e).Name); !ok {
 			return false

@@ -205,10 +205,15 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	return t, true
 }
 
-// resolveMappedTypeAnn lowers `{[K]: V for K in Keys}` to a MappedType residual and stores it
-// unreduced, so the annotation prints the way the source wrote it rather than as the object it
-// reduces to. constrain reduces the residual when it checks a constraint against it, mirroring
-// resolveKeyOfTypeAnn.
+// resolveMappedTypeAnn lowers `{[K]: V for K in Keys}` to an ObjectType whose sole member is a
+// MappedElem, stored unreduced so the annotation prints the way the source wrote it rather than as
+// the members it reduces to. constrain reduces the object when it checks a constraint against it,
+// mirroring resolveKeyOfTypeAnn.
+//
+// The member is alone in the list because it computes every field rather than naming one, so an
+// object mixing it with ordinary members has no reading. resolveObjectTypeAnn rejects that mix
+// before reaching here, which is what lets every walk over an element list treat a mapped member as
+// standing for the whole object.
 //
 // The `for K in Keys` clause binds K. The constraint itself resolves in the enclosing scope, since
 // K is not in scope for the key set that binds it. The value, the bracketed key-remapping
@@ -244,7 +249,7 @@ func (c *checker) resolveMappedTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, mapp
 		extends = c.resolveMappedOperand(mappedScope, mapped.Extends, lvl)
 	}
 
-	t := &soltype.MappedType{
+	elem := &soltype.MappedElem{
 		Key:      key,
 		Keys:     keys,
 		Value:    value,
@@ -253,8 +258,8 @@ func (c *checker) resolveMappedTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, mapp
 		Extends:  extends,
 		Optional: mappedModifier(mapped.Optional),
 		Readonly: mappedModifier(mapped.ReadOnly),
-		Inexact:  ta.Inexact,
 	}
+	t := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{elem}, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }

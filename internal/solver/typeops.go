@@ -102,8 +102,6 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		return t.Ty
 	case *soltype.CondType:
 		return e.reduceCond(t)
-	case *soltype.MappedType:
-		return e.reduceMapped(t)
 	case *soltype.TupleType:
 		return e.reduceTuple(t)
 	case *soltype.ObjectType:
@@ -435,6 +433,11 @@ func (e *typeEvaluator) groundOperand(operand soltype.Type) soltype.Type {
 // symbolic rather than finalizing just that safe suffix: it is simpler and renders the way the
 // source wrote it, at the cost of re-reducing from scratch each pass.
 func (e *typeEvaluator) reduceObject(t *soltype.ObjectType) soltype.Type {
+	// A mapped member computes the whole member list, so it is reduced instead of merged. It is
+	// always alone in the list, which is why the two paths never meet.
+	if mapped, ok := soltype.AsMapped(t.Elems); ok {
+		return e.reduceMapped(t, mapped)
+	}
 	if !soltype.HasObjectSpread(t.Elems) {
 		return t
 	}
@@ -613,11 +616,16 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 // is inexact. `keyof {a: number, ...}` reduces to `"a" | ...`, an open key set, so the object built
 // from it lists the fields for the known keys and stays open for the rest. A filter narrows which of
 // the known keys survive but cannot rule out the unlisted ones, so the result stays open there too.
-func (e *typeEvaluator) reduceMapped(t *soltype.MappedType) soltype.Type {
+func (e *typeEvaluator) reduceMapped(obj *soltype.ObjectType, t *soltype.MappedElem) soltype.Type {
 	keys := e.groundOperand(t.Keys)
-	symbolic := &soltype.MappedType{
-		Key: t.Key, Keys: keys, Value: t.Value, Name: t.Name, Check: t.Check, Extends: t.Extends,
-		Optional: t.Optional, Readonly: t.Readonly, Inexact: t.Inexact,
+	// The symbolic form keeps the reduced key set, so a later pass resumes from the ground it gained
+	// rather than re-expanding the operand from scratch.
+	symbolic := &soltype.ObjectType{
+		Elems: []soltype.ObjTypeElem{&soltype.MappedElem{
+			Key: t.Key, Keys: keys, Value: t.Value, Name: t.Name, Check: t.Check, Extends: t.Extends,
+			Optional: t.Optional, Readonly: t.Readonly,
+		}},
+		Inexact: obj.Inexact,
 	}
 	if !condOperandGround(keys) {
 		return symbolic
@@ -640,7 +648,7 @@ func (e *typeEvaluator) reduceMapped(t *soltype.MappedType) soltype.Type {
 			elems = append(elems, field)
 		}
 	}
-	return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact || inexact}
+	return &soltype.ObjectType{Elems: elems, Inexact: obj.Inexact || inexact}
 }
 
 // mappedKeyMembers splits a mapped type's reduced Keys operand into the individual keys to emit a
@@ -692,7 +700,7 @@ func mergeMappedField(earlier, later *soltype.PropertyElem) *soltype.PropertyEle
 //     `T[K]`, which is why mapped types build on indexed-access reduction.
 //
 // Each emitted field takes its `readonly` and `?` markers from mappedMarkers.
-func (e *typeEvaluator) mappedFields(t *soltype.MappedType, key soltype.Type, source *soltype.ObjectType, homomorphic bool) ([]*soltype.PropertyElem, bool) {
+func (e *typeEvaluator) mappedFields(t *soltype.MappedElem, key soltype.Type, source *soltype.ObjectType, homomorphic bool) ([]*soltype.PropertyElem, bool) {
 	name, ok := strLitName(key)
 	if !ok {
 		return nil, false
@@ -727,7 +735,7 @@ func (e *typeEvaluator) mappedFields(t *soltype.MappedType, key soltype.Type, so
 // A union names one field per string-literal member, and drops any `never` member, so a remapping
 // written as a conditional over a union of keys contributes each surviving name. ok=false when a
 // name position reduces to something that cannot name a field, which keeps the mapped type symbolic.
-func (e *typeEvaluator) remappedNames(t *soltype.MappedType, key soltype.Type) ([]string, bool) {
+func (e *typeEvaluator) remappedNames(t *soltype.MappedElem, key soltype.Type) ([]string, bool) {
 	remapped := e.groundOperand(substituteMappedKey(t.Name, t.Key, key))
 	members, _ := mappedKeyMembers(remapped)
 	names := make([]string, 0, len(members))
@@ -751,7 +759,7 @@ func (e *typeEvaluator) remappedNames(t *soltype.MappedType, key soltype.Type) (
 // property optional. Any other mapped type emits the field unmarked, and so does a homomorphic one
 // whose source carries no property under that name, such as one mapping over a class's projected
 // keys.
-func mappedMarkers(t *soltype.MappedType, key string, source *soltype.ObjectType, homomorphic bool) (optional, readonly bool) {
+func mappedMarkers(t *soltype.MappedElem, key string, source *soltype.ObjectType, homomorphic bool) (optional, readonly bool) {
 	optional = t.Optional == soltype.ModAdd
 	readonly = t.Readonly == soltype.ModAdd
 	if !homomorphic {
@@ -828,13 +836,13 @@ func (s *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Ty
 // operator symbolic, rebuilt around the operand.
 func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Type {
 	switch op := operand.(type) {
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.MappedType:
-		// The operand is itself an operator — a `keyof`, an indexed access, a conditional, or a
-		// mapped type. Reduce it first, then take keyof its value, so a ground conditional operand
-		// selects its branch and `keyof` projects that branch's keys, and a ground mapped type emits
-		// its fields and `keyof` projects their names. If the inner operator stays symbolic because
-		// its own operands are not ground, wrap it as `keyof <inner>` rather than re-reducing the
-		// same shape forever.
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType:
+		// The operand is itself an operator — a `keyof`, an indexed access, or a conditional. Reduce
+		// it first, then take keyof its value, so a ground conditional operand selects its branch and
+		// `keyof` projects that branch's keys. If the inner operator stays symbolic because its own
+		// operands are not ground, wrap it as `keyof <inner>` rather than re-reducing the same shape
+		// forever. A mapped member arrives inside an ObjectType, so the ObjectType arm below covers
+		// it: grounding the object emits the member's fields and `keyof` projects their names.
 		inner := e.reduce(op)
 		if isResidualOp(inner) {
 			return &soltype.KeyofType{Operand: inner, Exact: exact}
@@ -1003,13 +1011,13 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) solt
 	case *soltype.TypeofType:
 		// `(typeof x)[K]` resolves the query to the value's type, then indexes that type.
 		return e.reduceIndex(tgt.Ty, idx, exact)
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.MappedType:
-		// The target is itself an operator — a `keyof`, an indexed access, a conditional, or a mapped
-		// type. Reduce it first, then index its value, so a ground conditional target selects its
-		// branch and the access reduces over that, and a ground mapped type emits its fields and the
-		// access reads one. When the target stays symbolic because its own operands are not ground,
-		// keep the access wrapped around the reduced target rather than re-reducing the same shape
-		// forever.
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType:
+		// The target is itself an operator — a `keyof`, an indexed access, or a conditional. Reduce
+		// it first, then index its value, so a ground conditional target selects its branch and the
+		// access reduces over that. When the target stays symbolic because its own operands are not
+		// ground, keep the access wrapped around the reduced target rather than re-reducing the same
+		// shape forever. A mapped member arrives inside an ObjectType, which grounds through the
+		// object path before the access reads one of its emitted fields.
 		inner := e.reduce(target)
 		if isResidualOp(inner) {
 			return &soltype.IndexType{Target: inner, Index: idx, Exact: exact}
@@ -1341,18 +1349,33 @@ func strLitName(t soltype.Type) (string, bool) {
 	return "", false
 }
 
-// isResidualOp reports whether t is an unreduced type-level operator node at its top level. That is
-// a `keyof`, an indexed access, a conditional, a mapped type, a `...P` tuple-spread element, a
-// template literal whose interpolation stayed abstract, or an intrinsic string operator over an
-// abstract operand. The evaluator consults it to stop re-reducing an operand whose reduction stayed
-// symbolic.
+// isResidualOp reports whether t is an unreduced type-level operator at its top level. That is a
+// `keyof`, an indexed access, a conditional, a `...P` tuple-spread element, a template literal whose
+// interpolation stayed abstract, an intrinsic string operator over an abstract operand, or an object
+// carrying a mapped member whose key set never ground. The evaluator consults it to stop re-reducing
+// an operand whose reduction stayed symbolic.
 func isResidualOp(t soltype.Type) bool {
 	switch t.(type) {
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.MappedType,
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType,
 		*soltype.RestSpreadType, *soltype.TemplateLitType, *soltype.StringIntrinsicType:
 		return true
 	}
-	return false
+	return objectHasMapped(t)
+}
+
+// objectHasMapped reports whether t is an object whose member list still carries an unreduced
+// `[K]: V for K in Keys` member, the mapped twin of objectHasSpread.
+func objectHasMapped(t soltype.Type) bool {
+	obj, ok := t.(*soltype.ObjectType)
+	return ok && soltype.HasMappedElem(obj.Elems)
+}
+
+// objectIsResidual reports whether t is an object carrying either unreduced member kind, the type-
+// level form of soltype.HasResidualElem. constrain consults it to decide whether to compare an
+// object inertly rather than decomposing it.
+func objectIsResidual(t soltype.Type) bool {
+	obj, ok := t.(*soltype.ObjectType)
+	return ok && soltype.HasResidualElem(obj.Elems)
 }
 
 // tupleHasSpread reports whether t is a tuple carrying at least one unreduced `...P` spread

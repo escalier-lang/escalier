@@ -1105,10 +1105,11 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		if !ok || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 			return false
 		}
-		// A spread-carrying object is an unreduced residual whose element order is significant,
-		// since a later `...B` overrides an earlier key. Two such objects are equal only when their
-		// elements match position for position, the order-sensitive rule a residual operator follows.
-		if soltype.HasObjectSpread(a.Elems) || soltype.HasObjectSpread(b.Elems) {
+		// An unreduced residual object compares position for position rather than by member name.
+		// A spread-carrying object needs that because element order is significant, since a later
+		// `...B` overrides an earlier key. A mapped-carrying object needs it because its member names
+		// no field, so the name-keyed path below has no key to match on.
+		if soltype.HasResidualElem(a.Elems) || soltype.HasResidualElem(b.Elems) {
 			for i := range a.Elems {
 				if !equalObjElem(a.Elems[i], b.Elems[i], ctx) {
 					return false
@@ -1218,18 +1219,6 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// the enclosing pair of mapped types recorded.
 		b, ok := b.(*soltype.MappedKeyType)
 		return ok && ctx.sameMappedKey(a, b)
-	case *soltype.MappedType:
-		// Two inert mapped residuals are equal when every operand is equal and the modifiers and the
-		// inexact marker match, compared structurally without emitting a field. Pairing the key
-		// bindings first lets each side's references to its own key match the other's.
-		b, ok := b.(*soltype.MappedType)
-		if !ok || a.Optional != b.Optional || a.Readonly != b.Readonly || a.Inexact != b.Inexact {
-			return false
-		}
-		ctx.bindMappedKeys(a.Key, b.Key)
-		return equalTypeWith(a.Keys, b.Keys, ctx) && equalTypeWith(a.Value, b.Value, ctx) &&
-			equalOptionalType(a.Name, b.Name, ctx) && equalOptionalType(a.Check, b.Check, ctx) &&
-			equalOptionalType(a.Extends, b.Extends, ctx)
 	case *soltype.RestSpreadType:
 		// Two `...P` spread elements are equal when their operands are, compared structurally
 		// without reducing. The enclosing TupleType arm compares element lists positionally, so a
@@ -1275,6 +1264,19 @@ func equalOptionalType(a, b soltype.Type, ctx *alphaCtx) bool {
 // It panics on an unknown element kind, matching AsProperty.
 func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 	switch a := a.(type) {
+	case *soltype.MappedElem:
+		// Two inert mapped members are equal when every operand is equal and the modifiers match,
+		// compared structurally without emitting a field. Pairing the key bindings first lets each
+		// side's references to its own key match the other's. The enclosing objects compare their
+		// inexact markers, so this member carries none.
+		b, ok := b.(*soltype.MappedElem)
+		if !ok || a.Optional != b.Optional || a.Readonly != b.Readonly {
+			return false
+		}
+		ctx.bindMappedKeys(a.Key, b.Key)
+		return equalTypeWith(a.Keys, b.Keys, ctx) && equalTypeWith(a.Value, b.Value, ctx) &&
+			equalOptionalType(a.Name, b.Name, ctx) && equalOptionalType(a.Check, b.Check, ctx) &&
+			equalOptionalType(a.Extends, b.Extends, ctx)
 	case *soltype.PropertyElem:
 		b, ok := b.(*soltype.PropertyElem)
 		return ok && a.Optional == b.Optional && a.Readonly == b.Readonly && equalTypeWith(a.Type, b.Type, ctx)

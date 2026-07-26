@@ -2339,6 +2339,30 @@ func TestInferMappedTypeReduction(t *testing.T) {
 	}
 }
 
+// A residual object — one carrying a `...A` spread or a `[K]: V for K in Keys` member — reaches the
+// property-level walks that peel owned-mut cells, strip borrows, and compare key sets. None of those
+// has a settled property list to walk, so each treats the object as opaque. Asserting every member
+// is a property instead panics, which is what these shapes pin.
+func TestInferResidualObjectSurvivesPropertyWalks(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"MappedIntoOwnedMutCell", "type P = {x: number}\nvar v: mut {[K]: P[K] for K in keyof P} = {x: 1}"},
+		{"SpreadIntoOwnedMutCell", "fn f<T>(p: T) -> number { return 1 }\nvar v: mut {...T} = {x: 1}"},
+		{"MappedBehindBorrow", "type P = {x: number}\nfn f(a: &{[K]: P[K] for K in keyof P}) -> number { return 1 }"},
+		{"MappedInUnion", "type P = {x: number}\nfn f(a: {[K]: P[K] for K in keyof P} | number) -> number { return 1 }"},
+		{"MappedReturnPosition", "type P = {x: number}\nfn f() -> {[K]: P[K] for K in keyof P} { return {x: 1} }"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The assertion is that inference completes at all. Each shape panicked before the walks
+			// learned to skip a residual object, so reaching any conclusion here is the result.
+			require.NotPanics(t, func() { inferSource(t, tt.src) })
+		})
+	}
+}
+
 // A rejected constraint between two inert mapped residuals names each side's modifiers and inexact
 // marker. equalTypeWith reads those fields when deciding whether two residuals are equal, so a
 // diagnostic that omitted one would print both sides identically and read as a type failing to

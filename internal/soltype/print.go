@@ -53,10 +53,6 @@ func typePrec(t Type) int {
 			return precPrefix
 		}
 		return precAtom
-	case *MappedType:
-		// `{[K]: V for K in Keys}` is brace-delimited like an object type, so it binds like an atom
-		// and never needs outer parens.
-		return precAtom
 	case *MappedKeyType:
 		// A mapped type's key variable renders as its bare name, an atom.
 		return precAtom
@@ -431,6 +427,12 @@ func freeTypeVars(t Type) []*TypeVarType {
 					walk(e.Fn)
 				case *SpreadElem:
 					walk(e.Type)
+				case *MappedElem:
+					walk(e.Keys)
+					walk(e.Value)
+					for _, operand := range MappedOptionalOperands(e) {
+						walk(operand)
+					}
 				}
 			}
 		case *ClassType:
@@ -453,14 +455,6 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Extends)
 			walk(t.Then)
 			walk(t.Else)
-		case *MappedType:
-			walk(t.Keys)
-			walk(t.Value)
-			for _, operand := range []Type{t.Name, t.Check, t.Extends} {
-				if operand != nil {
-					walk(operand)
-				}
-			}
 		case *RestSpreadType:
 			walk(t.Operand)
 		case *TemplateLitType:
@@ -718,8 +712,6 @@ func (p *namedPrinter) printType(t Type) string {
 			return "infer " + t.Name
 		}
 		return t.Name
-	case *MappedType:
-		return p.printMapped(t)
 	case *MappedKeyType:
 		// A mapped type's key variable renders as the bare name the source bound it under, so a
 		// stored mapped type round-trips to `{[K]: T[K] for K in keyof T}`.
@@ -766,17 +758,17 @@ func (p *namedPrinter) printType(t Type) string {
 	panic(fmt.Sprintf("printType: unhandled %T", t))
 }
 
-// printMapped renders a mapped type in the surface syntax the parser reads and the AST printer
-// writes, `{readonly [Name]+?: Value for Key in Keys if Check : Extends}`, so a stored mapped type
+// printMapped renders a mapped member in the surface syntax the parser reads and the AST printer
+// writes, `readonly [Name]+?: Value for Key in Keys if Check : Extends`, so a stored mapped type
 // round-trips to what the source wrote. It mirrors type_system's MappedElem rendering so the two
-// checkers' rendered types stay string-comparable.
+// checkers' rendered types stay string-comparable. The enclosing object supplies the braces and any
+// trailing `...`, the same way it does for an ordinary member.
 //
 // The brackets hold the key-remapping expression when the source wrote one and the bare key name
 // otherwise. Every operand prints with no minimum precedence: the brackets, the `:`, and the `for`,
-// `in`, and `if` keywords bound each position, so none can bind across a neighbor. A trailing `...`
-// renders after the member, the same inexact marker an object type carries.
-func (p *namedPrinter) printMapped(t *MappedType) string {
-	out := "{"
+// `in`, and `if` keywords bound each position, so none can bind across a neighbor.
+func (p *namedPrinter) printMapped(t *MappedElem) string {
+	out := ""
 	switch t.Readonly {
 	case ModAdd:
 		out += "readonly "
@@ -801,10 +793,7 @@ func (p *namedPrinter) printMapped(t *MappedType) string {
 	if t.Check != nil && t.Extends != nil {
 		out += " if " + p.printType(t.Check) + " : " + p.printType(t.Extends)
 	}
-	if t.Inexact {
-		out += ", ..."
-	}
-	return out + "}"
+	return out
 }
 
 // printObjElem renders one object member in Escalier surface syntax. Each kind has
@@ -822,6 +811,8 @@ func (p *namedPrinter) printMapped(t *MappedType) string {
 // method's. It panics on an unknown element kind, matching AsProperty.
 func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 	switch e := e.(type) {
+	case *MappedElem:
+		return p.printMapped(e)
 	case *PropertyElem:
 		opt := ""
 		if e.Optional {
