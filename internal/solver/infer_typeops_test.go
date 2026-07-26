@@ -2398,6 +2398,28 @@ func TestInferMappedMemberMixesWithOrdinaryMembers(t *testing.T) {
 			wantExpanded: "{a: string, b: string, c: number}",
 		},
 		{
+			// Two mapped members whose key sets overlap merge under the same rightmost-wins rule an
+			// explicit collision follows, so the later member's value type wins on the shared key.
+			name: "TwoMappedMembersCollide",
+			src: `
+				type K1 = "a" | "b"
+				type K2 = "b" | "c"
+				type Result = {[K]: string for K in K1, [K]: number for K in K2}
+			`,
+			wantExpanded: "{a: string, b: number, c: number}",
+		},
+		{
+			// Each mapped member carries its own modifiers, so one may add `?` while its sibling adds
+			// `readonly` without either leaking onto the other's fields.
+			name: "TwoMappedMembersKeepOwnModifiers",
+			src: `
+				type K1 = "a"
+				type K2 = "b"
+				type Result = {[K]?: string for K in K1, readonly [K]: number for K in K2}
+			`,
+			wantExpanded: "{a?: string, readonly b: number}",
+		},
+		{
 			// The homomorphic marker inheritance still applies to the computed fields, and leaves the
 			// explicit sibling alone.
 			name: "MarkersSurviveAlongsideExplicitMember",
@@ -2415,6 +2437,33 @@ func TestInferMappedMemberMixesWithOrdinaryMembers(t *testing.T) {
 			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})
 	}
+}
+
+// Two mapped members in one object each bind their own K. The two bindings draw distinct ids even
+// when the source writes the same name, so equality pairs each member's binder with its counterpart
+// at the same position rather than conflating the two. That makes the reflexive constraint succeed
+// and a swapped pair fail, since member order is significant in an unreduced object.
+func TestInferTwoMappedMembersBindIndependently(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f<T, U>(x: {[K]: T[K] for K in keyof T, [K]: U[K] for K in keyof U}) -> number { return 1 }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t,
+		"fn <T, U>(x: {[K]: T[K] for K in keyof T, [K]: U[K] for K in keyof U}) -> number",
+		values["f"])
+
+	_, _, errs = inferSource(t, `
+		fn g<T, U>(x: {[K]: T[K] for K in keyof T, [K]: U[K] for K in keyof U}) -> {[K]: T[K] for K in keyof T, [K]: U[K] for K in keyof U} { return x }
+	`)
+	require.Empty(t, errs)
+
+	_, _, errs = inferSource(t, `
+		fn h<T, U>(x: {[K]: T[K] for K in keyof T, [K]: U[K] for K in keyof U}) -> {[K]: U[K] for K in keyof U, [K]: T[K] for K in keyof T} { return x }
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		"cannot constrain {[K]: t1[K] for K in keyof t1, [K]: t2[K] for K in keyof t2} <: {[K]: t2[K] for K in keyof t2, [K]: t1[K] for K in keyof t1}",
+		errs[0].Message())
 }
 
 // A mixed object with an abstract key set stays symbolic and renders the way the source wrote it,
