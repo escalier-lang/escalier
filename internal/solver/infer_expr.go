@@ -2211,8 +2211,8 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 // dynamic key (Foo[k]) is rejected. A value object indexed by a constant string
 // key is the bracket form of property access — obj["foo-bar"] reads the same
 // property as obj.foo would, and lets the source name a property whose key is not
-// a valid identifier. A dynamic key over a value (array element / index-signature
-// read) needs Array and index types from M7, so it stays unsupported here.
+// a valid identifier. A dynamic key reads through the receiver's index signature,
+// which dynamicIndexRead resolves.
 func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objPos bool) pathResult {
 	if e.OptChain {
 		c.reportUnsupportedFeature(e, "OptionalChain")
@@ -2236,11 +2236,42 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 		}
 		return c.valueProp(lvl, e, e.Index, name, obj.value)
 	}
-	// A dynamic key over a value (array element / index-signature read) needs Array
-	// and index types, which land in M7; until then it is outside the supported
-	// subset.
-	c.reportUnsupported(e)
-	return pathResult{err: true}
+	return c.dynamicIndexRead(scope, lvl, e, obj.value, objPos)
+}
+
+// dynamicIndexRead resolves `recv[k]` for a key that is not a constant string, the form that names
+// no single property. It types the read as the indexed access `Recv[Kt]`, where Recv is the
+// receiver's type and Kt the key expression's, and reduces it with the same evaluator the type-level
+// `T[K]` uses. A read written `d[k]` therefore agrees with `d.foo` and `d["foo"]`, which resolve
+// through indexObject by the same rules.
+//
+// The reduction is what makes an index signature readable. `{[K: string]?: number}` indexed by any
+// string is `number | undefined`, since the signature's `?` says the key may be absent. The two
+// rejections come from the reduction too. A key the signature's key set does not accept records an
+// IndexSignatureKeyError, and a receiver with no index signature at all records a
+// NoIndexSignatureError.
+//
+// A receiver that has not grounded leaves the access symbolic, and the value level cannot use that.
+// Every expression must have a type, and an unreduced operator over an inference variable is not one
+// a later constraint would resolve on its own. Such a read stays unsupported. Reaching it needs an
+// array or tuple receiver, or a receiver inferred purely from use, none of which this resolves.
+func (c *checker) dynamicIndexRead(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
+	key := c.inferExpr(scope, lvl, e.Index)
+	access := &soltype.IndexType{Target: recv, Index: key}
+	reduced, reduceErrs, ok := c.ctx.reduceResidual(access, set.NewSet[constraintKey]())
+	if len(reduceErrs) > 0 {
+		c.blameConstraintErrors(e, reduceErrs)
+		return pathResult{err: true}
+	}
+	if !ok {
+		c.reportUnsupported(e)
+		return pathResult{err: true}
+	}
+	if !objPos {
+		c.recordMemberUse(e)
+	}
+	c.recordType(e, reduced)
+	return pathResult{value: reduced}
 }
 
 // resolveNamespaceMember looks name up in ns directly and non-lexically — a

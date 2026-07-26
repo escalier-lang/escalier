@@ -1314,17 +1314,35 @@ func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Ty
 }
 
 // indexObject reduces `obj[key]` for a ground object. A string-literal key selects the named
-// member's read type — a property's or getter's declared type, a method's callable value — and a
-// key the object carries no member for records an UnknownObjectKeyError and reduces to the error
-// sentinel. A non-string-literal index, such as a bare `string` primitive, selects no single
-// member yet. An index signature reads it once mapped types land (M9 PR4), so the access stays
-// symbolic until then.
+// member's read type, which is a property's or getter's declared type or a method's callable value.
+// A declared member always holds a value, so that read carries no `undefined`.
+//
+// A key that names no declared member falls to the object's index signature, which covers every key
+// of its key set. That read is `Value | undefined`, since the signature says the key may be present
+// rather than that it is. An object with no index signature instead records an UnknownObjectKeyError
+// and reduces to the error sentinel.
+//
+// A key that is not a string literal, such as the bare `string` primitive, names no single member.
+// It reads through the index signature the same way. Without one, a ground key of that shape can
+// never name a member, so it records a NoIndexSignatureError. A key that has not grounded may still
+// reduce to a literal, so the access stays symbolic instead.
 func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type, inexact bool) soltype.Type {
+	idx, hasIdx := obj.IndexSignature()
 	name, ok := strLitName(index)
 	if !ok {
+		if hasIdx {
+			return e.indexSignatureRead(obj, idx, index, inexact)
+		}
+		if condOperandGround(index) {
+			e.errs = append(e.errs, &NoIndexSignatureError{Object: obj, Index: index})
+			return &soltype.ErrorType{}
+		}
 		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
 	}
 	if _, found := obj.Member(name); !found {
+		if hasIdx {
+			return e.indexSignatureRead(obj, idx, index, inexact)
+		}
 		e.errs = append(e.errs, &UnknownObjectKeyError{Object: obj, Key: name})
 		return &soltype.ErrorType{}
 	}
@@ -1335,6 +1353,30 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
 	}
 	return read
+}
+
+// indexSignatureRead reduces `obj[key]` through obj's index signature. The key must be assignable to
+// the signature's key set, decided by the same assignability probe a conditional's branch selection
+// uses. A key outside the set reads nothing the signature describes, so it records an
+// IndexSignatureKeyError. `{[K: number]?: V}` indexed by a string takes that error, with no coercion
+// of the key to the set's type.
+//
+// The result unions `undefined` onto the signature's value type. The signature adds `?`, which is
+// the only legal form over an uncountable key set, and that marker says the key may be absent. So
+// reading `{[K: string]?: number}` at any key is `number | undefined`, the sound answer TypeScript
+// reaches only under noUncheckedIndexedAccess.
+//
+// A key that has not grounded leaves the access symbolic rather than probing an abstract key against
+// the set, so a read off a generic key resumes once the key grounds.
+func (e *typeEvaluator) indexSignatureRead(obj *soltype.ObjectType, idx *soltype.MappedElem, index soltype.Type, inexact bool) soltype.Type {
+	if !condOperandGround(index) {
+		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
+	}
+	if !e.ctx.condExtends(index, idx.Keys, e.seen) {
+		e.errs = append(e.errs, &IndexSignatureKeyError{Object: obj, Keys: idx.Keys, Index: index})
+		return &soltype.ErrorType{}
+	}
+	return newUnion(nil, []soltype.Type{idx.Value, &soltype.UndefinedType{}}, false)
 }
 
 // indexTuple reduces `tup[n]` for a ground tuple. A numeric-literal key selects the element at

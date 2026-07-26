@@ -249,6 +249,37 @@ type RequiredUncountableKeysError struct {
 	site   ast.Node     // M2.5: constraint node fallback
 }
 
+// IndexSignatureKeyError fires when an indexed access reads an object through its index signature
+// with a key the signature's key set does not accept, as in `{[K: number]?: V}["a"]`. The signature
+// describes the value at every key of its set and says nothing about a key outside it, so the access
+// resolves to nothing. The key is not coerced to the set's type, so a number key on a string
+// signature takes this error rather than reading through as its digits.
+//
+// Like UnknownObjectKeyError it is minted during the reduction constrain performs, and carries the
+// indexed object, the key set it declares, and the offending key.
+type IndexSignatureKeyError struct {
+	Object *soltype.ObjectType
+	Keys   soltype.Type
+	Index  soltype.Type
+	prov   NodeResolver // M2.5: type→node index (§3.5)
+	site   ast.Node     // M2.5: constraint node fallback
+}
+
+// NoIndexSignatureError fires when an indexed access reads an object with a ground key that names no
+// declared member and is not a string literal, as in `{a: number}[string]`. Such a key selects no
+// single member, and without an index signature the object says nothing about the keys it does not
+// declare, so the access resolves to nothing. The fix is an index signature, which is what gives an
+// object a type at every key of a set.
+//
+// A key that has not grounded may still reduce to a literal naming a declared member, so it leaves
+// the access symbolic rather than reaching here.
+type NoIndexSignatureError struct {
+	Object *soltype.ObjectType
+	Index  soltype.Type
+	prov   NodeResolver // M2.5: type→node index (§3.5)
+	site   ast.Node     // M2.5: constraint node fallback
+}
+
 // MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
 // borrow but the super is mutable: writing through the mutable target would mutate a
 // value the source only lent out as read-only, so an immutable reference cannot fill
@@ -439,6 +470,8 @@ func (*UnknownObjectKeyError) isSolverError()        {}
 func (*TupleIndexOutOfRangeError) isSolverError()    {}
 func (*TemplateLitTooComplexError) isSolverError()   {}
 func (*RequiredUncountableKeysError) isSolverError() {}
+func (*IndexSignatureKeyError) isSolverError()       {}
+func (*NoIndexSignatureError) isSolverError()        {}
 func (*MutabilityMismatchError) isSolverError()      {}
 func (*BorrowEscapeError) isSolverError()            {}
 func (*ClassIntoExactObjectError) isSolverError()    {}
@@ -555,6 +588,20 @@ func (e *RequiredUncountableKeysError) Span() ast.Span {
 	return spanOf(e.prov, e.Mapped.Keys, e.site)
 }
 func (e *RequiredUncountableKeysError) Related() []ast.Span { return nil }
+
+func (e *IndexSignatureKeyError) Span() ast.Span {
+	// The indexed object is the offending value, matching UnknownObjectKeyError's blame; else the
+	// constraint site.
+	return spanOf(e.prov, e.Object, e.site)
+}
+func (e *IndexSignatureKeyError) Related() []ast.Span { return nil }
+
+func (e *NoIndexSignatureError) Span() ast.Span {
+	// The indexed object is the offending value, matching UnknownObjectKeyError's blame; else the
+	// constraint site.
+	return spanOf(e.prov, e.Object, e.site)
+}
+func (e *NoIndexSignatureError) Related() []ast.Span { return nil }
 
 func (e *MutabilityMismatchError) Span() ast.Span {
 	// The immutable source borrow is the actual value; blame it, degrade to the
@@ -1680,6 +1727,16 @@ func (e *RequiredUncountableKeysError) Message() string {
 	}
 	return fmt.Sprintf("no object has a field at every key of %s, so %s is uninhabited; write %s instead",
 		keys, describeMapped(e.Mapped), describeMapped(fixed))
+}
+
+func (e *IndexSignatureKeyError) Message() string {
+	return fmt.Sprintf("index signature of %s accepts a key of type %s, not %s",
+		soltype.Print(e.Object), describe(e.Keys), describe(e.Index))
+}
+
+func (e *NoIndexSignatureError) Message() string {
+	return fmt.Sprintf("object %s has no index signature to read a key of type %s",
+		soltype.Print(e.Object), describe(e.Index))
 }
 
 func (e *TemplateLitTooComplexError) Message() string {

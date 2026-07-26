@@ -3274,6 +3274,172 @@ func TestInferRequiredUncountableKeys(t *testing.T) {
 	}
 }
 
+// An indexed access reads an object through its index signature when the key names no declared
+// member. The result unions `undefined` onto the signature's value type, since the `?` the signature
+// must carry says the key may be absent. A declared member is always present, so reading one by name
+// carries no `undefined` even on an object that also has a signature.
+func TestInferIndexAccessThroughIndexSignature(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "StringLiteralKeyReadsAsValueOrUndefined",
+			src: `
+				type Dict = {[K: string]?: number}
+				val v: Dict["anything"] = 1
+			`,
+		},
+		{
+			// The key set itself is a legal key, and reads the same way.
+			name: "PrimitiveKeyReadsAsValueOrUndefined",
+			src: `
+				type Dict = {[K: string]?: number}
+				val v: Dict[string] = 1
+			`,
+		},
+		{
+			// The `undefined` arm is real, so a target that cannot hold it rejects.
+			name: "UndefinedArmIsEnforced",
+			src: `
+				type Dict = {[K: string]?: number}
+				type Read = Dict["anything"]
+				fn f(x: Read) -> number { return x }
+			`,
+			wantErr: `cannot constrain undefined <: number`,
+		},
+		{
+			// A declared member wins over the signature and is always present.
+			name: "DeclaredMemberReadsWithoutUndefined",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				fn f(x: Config["name"]) -> string { return x }
+			`,
+		},
+		{
+			name: "UndeclaredKeyFallsToTheSignature",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				val v: Config["other"] = true
+			`,
+		},
+		{
+			// The key is not coerced to the key set's type, so a string key on a number signature
+			// is rejected rather than read as its digits.
+			name: "KeyOutsideTheKeySetRejected",
+			src: `
+				type ByIndex = {[K: number]?: string}
+				val v: ByIndex["a"] = "x"
+			`,
+			wantErr: `index signature of {[K: number]?: string} accepts a key of type number, not "a"`,
+		},
+		{
+			// Without a signature the object says nothing about keys it does not declare.
+			name: "NoIndexSignatureRejected",
+			src: `
+				type Obj = {a: number}
+				val v: Obj[string] = 1
+			`,
+			wantErr: `object {a: number} has no index signature to read a key of type string`,
+		},
+		{
+			// A key set narrower than the object's own keys needs no signature, since every key in
+			// it is declared. This is the existing union-index distribution.
+			name: "KeySubsetNeedsNoSignature",
+			src: `
+				type Obj = {a: number, b: string}
+				val v: Obj["a" | "b"] = 1
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A dynamic key `recv[k]` is typed as the indexed access `Recv[Kt]`, so it resolves by the same
+// rules the type-level `T[K]` does. A read off an index signature therefore agrees with the constant
+// and dot forms, all three yielding `Value | undefined`.
+func TestInferDynamicIndexRead(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantFn  string // "" ⇒ don't check the inferred signature
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name:   "DynamicKeyOffAnIndexSignature",
+			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict, k: string) { return d[k] }",
+			wantFn: "fn (d: Dict, k: string) -> number | undefined",
+		},
+		{
+			// The constant-key and dot forms already resolved this way, and the dynamic form agrees.
+			name:   "ConstantKeyAgreesWithTheDynamicForm",
+			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict) { return d[\"a\"] }",
+			wantFn: "fn (d: Dict) -> number | undefined",
+		},
+		{
+			name:   "DotFormAgreesWithTheDynamicForm",
+			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict) { return d.a }",
+			wantFn: "fn (d: Dict) -> number | undefined",
+		},
+		{
+			// A dynamic key cannot be shown to name the declared member, so it reads through the
+			// signature rather than through `name`.
+			name:   "DynamicKeyOnAMixedObjectReadsTheSignature",
+			src:    "type Config = {name: string, [K: string]?: boolean}\nfn f(c: Config, k: string) { return c[k] }",
+			wantFn: "fn (c: Config, k: string) -> boolean | undefined",
+		},
+		{
+			// A key set narrower than the object's keys resolves without a signature, and carries no
+			// `undefined` because every key in it is declared.
+			name:   "KeySubsetOfADeclaredObject",
+			src:    "fn f(o: {a: number, b: string}, k: \"a\" | \"b\") { return o[k] }",
+			wantFn: `fn (o: {a: number, b: string}, k: "a" | "b") -> number | string`,
+		},
+		{
+			name:    "NoIndexSignatureRejected",
+			src:     "fn f(o: {a: number}, k: string) { return o[k] }",
+			wantErr: `object {a: number} has no index signature to read a key of type string`,
+		},
+		{
+			name:    "KeyOutsideTheKeySetRejected",
+			src:     "type ByIndex = {[K: number]?: string}\nfn f(d: ByIndex, k: string) { return d[k] }",
+			wantErr: `index signature of {[K: number]?: string} accepts a key of type number, not string`,
+		},
+		{
+			// A receiver that has not grounded has no index signature to read yet. Resolving it needs
+			// a receiver inferred from use, which this does not do.
+			name:    "AbstractReceiverUnsupported",
+			src:     "fn f<T>(o: T, k: string) { return o[k] }",
+			wantErr: "Unsupported: IndexExpr",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+			} else {
+				require.Len(t, errs, 1)
+				require.Equal(t, tt.wantErr, errs[0].Message())
+			}
+			if tt.wantFn != "" {
+				require.Equal(t, tt.wantFn, values["f"])
+			}
+		})
+	}
+}
+
 // An index signature names no single key, so satisfying it means every key the source can carry
 // holds a value of the signature's type. It also absorbs width, so a source with extra keys is not
 // rejected for carrying them.
