@@ -615,13 +615,17 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 // wrote it and expands later once T grounds.
 //
 // A key set the evaluator cannot enumerate leaves the member unexpanded too. A primitive key
-// constraint such as `{[K]: T for K in string}` names infinitely many keys, which an object with
+// constraint such as `{[K]?: T for K in string}` names infinitely many keys, which an object with
 // named fields cannot express. TypeScript writes that as the index signature `{[k: string]: T}`.
 // soltype has no index-signature element, so such a member stays inert rather than expanding to a
 // wrong shape. The same holds for a key that is a number literal, which names no object field.
 //
 // TODO(#930): expand a primitive key constraint to an index-signature element once soltype carries
 // one, and give a number-literal key a field to name.
+//
+// TODO(#934): reject the required form over a primitive key. `{[K]: T for K in string}` asks for a
+// field at every key of an infinite set, which no object has, so it is uninhabited. Only the
+// `?`-adding form is meaningful there, and it is the one that becomes an index signature.
 //
 // Two keys that remap to one name merge into a single field whose type is their union, so no key's
 // contribution is lost. See mergeMappedField.
