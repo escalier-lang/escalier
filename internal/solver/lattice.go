@@ -506,9 +506,12 @@ func compareObjectFields(a, b *soltype.ObjectType) int {
 }
 
 func sortedPropertyNames(o *soltype.ObjectType) []string {
+	// A residual object's members are a spread or a mapped member, neither of which names a field.
+	// soltype.ObjElemName returns "" for both, so they sort together and compare equal, which leaves
+	// the caller's ordering decided by the members that do name something.
 	names := make([]string, len(o.Elems))
 	for i, e := range o.Elems {
-		names[i] = soltype.AsProperty(e).Name
+		names[i] = soltype.ObjElemName(e)
 	}
 	sort.Strings(names)
 	return names

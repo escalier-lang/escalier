@@ -85,6 +85,7 @@ func (t *UnknownType) Accept(v TypeVisitor, pol Polarity) Type   { return accept
 func (t *ErrorType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *SkolemType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
 func (t *InferType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
+func (t *MappedKeyType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 
 func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
@@ -237,6 +238,17 @@ func (t *CondType) Accept(v TypeVisitor, pol Polarity) Type {
 		out = &CondType{Check: check, Extends: extends, Then: then, Else: els, Distribute: cur.Distribute}
 	}
 	return v.ExitType(out, pol)
+}
+
+// acceptOptional walks an operand a node carries only when the source wrote it, returning the
+// walked type and whether the visit replaced it. A nil operand stays nil and reports no change, so
+// a caller rebuilds only when a present operand was rewritten.
+func acceptOptional(t Type, v TypeVisitor, pol Polarity) (Type, bool) {
+	if t == nil {
+		return nil, false
+	}
+	out := t.Accept(v, pol)
+	return out, out != t
 }
 
 func (t *RestSpreadType) Accept(v TypeVisitor, pol Polarity) Type {
@@ -519,6 +531,30 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 			return e
 		}
 		return &PropertyElem{Name: e.Name, Type: pt, Optional: e.Optional, Readonly: e.Readonly}
+	case *MappedElem:
+		// Every operand walks in the current polarity, the many-child analogue of CondType's
+		// four-child visit. The member is inert — the visit rebuilds it around rewritten operands
+		// without emitting any field, so extrude/coalesce/freshenAbove carry the whole mapped member
+		// through untouched. Key is the binding this member owns, not a type to rewrite, so it
+		// carries through.
+		keys := e.Keys.Accept(v, pol)
+		value := e.Value.Accept(v, pol)
+		name, nameChanged := acceptOptional(e.Name, v, pol)
+		check, checkChanged := acceptOptional(e.Check, v, pol)
+		extends, extendsChanged := acceptOptional(e.Extends, v, pol)
+		if keys == e.Keys && value == e.Value && !nameChanged && !checkChanged && !extendsChanged {
+			return e
+		}
+		return &MappedElem{
+			Key:      e.Key,
+			Keys:     keys,
+			Value:    value,
+			Name:     name,
+			Check:    check,
+			Extends:  extends,
+			Optional: e.Optional,
+			Readonly: e.Readonly,
+		}
 	case *GetterElem:
 		self, selfChanged := acceptSelfParam(e.SelfParam, v, pol) // receiver contravariant
 		rt := e.Type.Accept(v, pol)                               // covariant read

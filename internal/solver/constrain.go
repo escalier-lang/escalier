@@ -136,23 +136,24 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 // for, so constrain can check a constraint against that while the stored residual keeps its name.
 // An alias expands to its body, a `typeof` query resolves to the value's type, a `keyof` reduces
 // to its key set, an indexed access `T[K]` reduces to the type at that key, a conditional selects
-// its Then or Else branch, a template literal reduces to the union of string literals its
-// interpolations produce, an intrinsic string operator such as `Uppercase<T>` reduces over its
-// string-literal operand, and a tuple carrying a `...P` spread splices its operand tuples into a
-// plain tuple. A plain tuple is a structural type
+// its Then or Else branch, a mapped type emits one field per key, a template literal reduces to the
+// union of string literals its interpolations produce, an intrinsic string operator such as
+// `Uppercase<T>` reduces over its string-literal operand, and a tuple carrying a `...P` spread
+// splices its operand tuples into a plain tuple. A plain tuple is a structural type
 // constrain decomposes, not an operator, so it reports ok=false. The returned errs carry any
 // diagnostic the reduction produced — an unknown object key or an out-of-range tuple index — for
 // constrain to surface at the constraint site. It reports ok=false for any other type, and for a
-// reduced operator that does not fully ground — a `keyof T`, `T[K]`, or `[...T, x]` over a type
-// parameter, or an expanding alias whose reduction is truncated to a residual that would re-expand
-// without bound — which stays inert.
+// reduced operator that does not fully ground — a `keyof T`, `T[K]`, `{[K]: V for K in Keys}`, or
+// `[...T, x]` over a type parameter, or an expanding alias whose reduction is truncated to a
+// residual that would re-expand without bound — which stays inert.
 func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) (soltype.Type, []SolverError, bool) {
 	switch t := t.(type) {
 	case *soltype.AliasType:
 		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
 		return t.Ty, nil, true
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.TemplateLitType, *soltype.StringIntrinsicType:
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType,
+		*soltype.TemplateLitType, *soltype.StringIntrinsicType:
 		return c.reduceResidual(t, seen)
 	case *soltype.TupleType:
 		if !tupleHasSpread(t) {
@@ -160,18 +161,21 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) 
 		}
 		return c.reduceResidual(t, seen)
 	case *soltype.ObjectType:
-		// A plain object is handled structurally, not as a transparent operator. Only a
-		// spread-carrying object is a residual to reduce here, the object twin of the TupleType arm.
-		if !soltype.HasObjectSpread(t.Elems) {
+		// A plain object is handled structurally, not as a transparent operator. Only a residual
+		// object is reduced here, the object twin of the TupleType arm. An object is residual when it
+		// carries a `...A` spread whose operand may still merge, or a `[K]: V for K in Keys` member
+		// whose key set may still ground.
+		if !soltype.HasResidualElem(t.Elems) {
 			return nil, nil, false
 		}
 		e := newTypeEvaluator(c, seen)
 		reduced := e.reduce(t)
-		// A spread whose operands ground merges to a spread-free object. One with an abstract operand
-		// stays a spread-carrying object, which is inert, so leave it for the structural switch. The
-		// check is on the root rather than reduceResidual's containsResidualOp: a merged object
-		// grounds even when a field value is itself a residual, which reduces at its own site.
-		if obj, ok := reduced.(*soltype.ObjectType); ok && soltype.HasObjectSpread(obj.Elems) {
+		// A spread whose operands ground merges to a spread-free object, and a mapped member whose
+		// key set grounds becomes the fields it emits. One that stays residual is inert, so leave it
+		// for the structural switch. The check is on the root rather than reduceResidual's
+		// containsResidualOp: a reduced object grounds even when a field value is itself a residual,
+		// which reduces at its own site.
+		if obj, ok := reduced.(*soltype.ObjectType); ok && soltype.HasResidualElem(obj.Elems) {
 			return nil, nil, false
 		}
 		return reduced, e.errs, true
@@ -538,13 +542,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			return errs
 		}
 	case *soltype.ObjectType:
-		if objectHasSpread(sub) || objectHasSpread(super) {
-			// One side carries an unreduced `...A` spread the pre-switch could not ground: a spread
-			// over a type parameter, or an expanding recursive alias. constrain treats such an object
-			// inert, the same as the spread-tuple and KeyofType/IndexType residuals — it is never
-			// decomposed, so two spread-objects are compatible only when structurally identical. When
-			// super is a variable the case falls through to the superVar arm below, which records the
-			// whole object as one lower bound, keeping the spread symbolic on the coalesced binding.
+		if objectIsResidual(sub) || objectIsResidual(super) {
+			// One side is an unreduced residual the pre-switch could not ground. That is an object
+			// carrying a `...A` spread over a type parameter or an expanding recursive alias, or one
+			// carrying a `[K]: V for K in Keys` member whose key set never ground. constrain treats
+			// such an object inert, the same as the spread-tuple and KeyofType/IndexType residuals —
+			// it is never decomposed, so two residual objects are compatible only when structurally
+			// identical. When super is a variable the case falls through to the superVar arm below,
+			// which records the whole object as one lower bound, keeping the residual symbolic on the
+			// coalesced binding.
 			if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 				if equalType(sub, super) {
 					return nil

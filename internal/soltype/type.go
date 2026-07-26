@@ -343,6 +343,7 @@ func (*MethodElem) isObjTypeElem()      {}
 func (*GetterElem) isObjTypeElem()      {}
 func (*SetterElem) isObjTypeElem()      {}
 func (*ConstructorElem) isObjTypeElem() {}
+func (*MappedElem) isObjTypeElem()      {}
 func (*SpreadElem) isObjTypeElem()      {}
 
 // ObjElemName returns the member name of any ObjTypeElem kind. It is the shared
@@ -369,6 +370,11 @@ func ObjElemName(e ObjTypeElem) string {
 		// equality and lookup paths compare such objects positionally instead, so this name is
 		// never a match key.
 		return ""
+	case *MappedElem:
+		// A mapped member names no single field; it stands for the whole computed member list. Like
+		// a spread it only appears in an unreduced object, compared positionally rather than by
+		// name, so this name is never a match key either.
+		return ""
 	}
 	panic(fmt.Sprintf("ObjElemName: unhandled ObjTypeElem %T", e))
 }
@@ -383,6 +389,50 @@ func HasObjectSpread(elems []ObjTypeElem) bool {
 		}
 	}
 	return false
+}
+
+// HasMappedElem reports whether an element list carries a `[K]: V for K in Keys` member, so the
+// object is an unreduced residual rather than a concrete object. Such a member is always the only
+// one in its list, since resolveObjectTypeAnn rejects an object mixing it with ordinary members.
+func HasMappedElem(elems []ObjTypeElem) bool {
+	for _, e := range elems {
+		if _, ok := e.(*MappedElem); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// HasResidualElem reports whether an element list makes its object an unreduced residual, carrying
+// either a `...A` spread whose operand may still merge or a `[K]: V for K in Keys` member whose key
+// set may still ground. Such an object is never decomposed structurally, since its final member list
+// is not yet known; the evaluator reduces it first and constrain compares it inertly until then.
+func HasResidualElem(elems []ObjTypeElem) bool {
+	return HasObjectSpread(elems) || HasMappedElem(elems)
+}
+
+// AsMapped returns the mapped member of an element list and whether one is present. A caller that
+// has already checked HasMappedElem uses it to reach the member without repeating the type switch.
+func AsMapped(elems []ObjTypeElem) (*MappedElem, bool) {
+	for _, e := range elems {
+		if m, ok := e.(*MappedElem); ok {
+			return m, true
+		}
+	}
+	return nil, false
+}
+
+// MappedOptionalOperands returns the operands a mapped member carries only when the source wrote
+// them, skipping the absent ones. The key-remapping expression and the two filter operands each
+// have a nil form, so every walk over them shares this one nil-filtering step.
+func MappedOptionalOperands(m *MappedElem) []Type {
+	operands := make([]Type, 0, 3)
+	for _, operand := range []Type{m.Name, m.Check, m.Extends} {
+		if operand != nil {
+			operands = append(operands, operand)
+		}
+	}
+	return operands
 }
 
 // Prop returns the named property and whether it is present. Property names are
@@ -721,6 +771,71 @@ type InferType struct {
 	Binder bool
 }
 
+// MappedModifier states how a mapped type adjusts one member marker, `readonly` or `?`, on each
+// field it emits. ModAdd sets the marker and ModRemove clears it. ModNone means the source wrote no
+// modifier, which leaves the marker to be inherited from the field's source member when the mapped
+// type is homomorphic and off otherwise. The source writes `readonly`/`+readonly` and `?`/`+?` for
+// ModAdd and `-readonly`/`-?` for ModRemove.
+type MappedModifier int
+
+const (
+	ModNone MappedModifier = iota
+	ModAdd
+	ModRemove
+)
+
+// MappedKeyType is the key variable a mapped type binds, the `K` of
+// `{[K]: T[K] for K in keyof T}`. It is an inert leaf: nothing constrains against it, and the
+// evaluator substitutes one key of the mapped type's Keys union for it before reducing the
+// positions that name it. A mapped type still carrying it in a reduced position has not chosen a
+// key yet, so the whole mapped type is inert.
+//
+// ID is the binding this node stands for. The `for K in …` clause and every reference to K in the
+// value, key-remapping, and filter positions carry one id, so substituting a key reaches exactly
+// the positions that binding stands at. A nested mapped type writing the same name draws a distinct
+// id, which is what makes its own binding shadow the enclosing one. Name is the source name,
+// carried for display.
+type MappedKeyType struct {
+	ID   int
+	Name string
+}
+
+// MappedElem is the `[K]: V for K in Keys` member that computes an object's whole member list. It
+// is the only member its object carries, because it describes every field rather than one of them;
+// resolveObjectTypeAnn rejects an object mixing it with ordinary members. An object holding one is
+// an unreduced residual: constrain records no bound against it and it flows through the solver's
+// structural machinery untouched, rendering the way the source wrote it. The evaluator replaces it
+// with the members it computes once Keys grounds to a union of string-literal keys, emitting one
+// field per key with Key bound to that key.
+//
+// The fields mirror the surface syntax `{readonly [Name]?: Value for Key in Keys if Check : Extends}`:
+//
+//   - Keys is the constraint after `in`, the key set to iterate. `keyof T` is the usual source.
+//   - Value is the type each emitted field takes, normally an indexed access such as `T[K]`.
+//   - Name is the key-remapping expression written in the brackets. It is nil when the brackets
+//     hold the bare key variable, so no remapping applies. A key it reduces to `never` drops that
+//     field, the way TypeScript's `as` clause filters, and one it reduces to a union of names
+//     contributes a field per name.
+//   - Check and Extends are the optional `if C : E` filter. A key whose substituted `Check <: Extends`
+//     fails is dropped. Both are nil when the source wrote no filter.
+//   - Optional and Readonly are the `?` and `readonly` markers, each adding or removing the marker
+//     on every emitted field. With neither written, a mapped member whose Keys is written `keyof T`
+//     inherits each marker from the member the key names on T, so the identity mapped type really
+//     is the identity.
+//
+// The enclosing ObjectType carries the trailing `...` inexact marker, so `{[K]: V for K in Keys, ...}`
+// reduces to an inexact object without this member holding a flag of its own.
+type MappedElem struct {
+	Key      *MappedKeyType
+	Keys     Type
+	Value    Type
+	Name     Type // nil ⇒ the brackets hold the bare key variable, no remapping
+	Check    Type // nil with Extends ⇒ no `if C : E` filter
+	Extends  Type
+	Optional MappedModifier
+	Readonly MappedModifier
+}
+
 // RestSpreadType is the residual `...P` spread element inside a tuple type, mirroring the old
 // checker's RestSpreadType (internal/type_system/types.go). It is only meaningful as an element of
 // a TupleType.Elems list: `[...P, x]` is a TupleType whose first element is a RestSpreadType. A
@@ -791,6 +906,7 @@ func (*IndexType) isType()           {}
 func (*TypeofType) isType()          {}
 func (*CondType) isType()            {}
 func (*InferType) isType()           {}
+func (*MappedKeyType) isType()       {}
 func (*RestSpreadType) isType()      {}
 func (*TemplateLitType) isType()     {}
 func (*StringIntrinsicType) isType() {}
@@ -935,9 +1051,9 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	default:
 		// PrimType, LitType, Void, NullType, UndefinedType, NeverType, UnknownType,
-		// ErrorType, InferType: childless leaves. ErrorType is a sentinel at level 0, and an
-		// InferType names a capture the evaluator substitutes rather than a variable the solver
-		// generalizes, so neither lifts the level.
+		// ErrorType, InferType, MappedKeyType: childless leaves. ErrorType is a sentinel at level 0.
+		// An InferType names a capture and a MappedKeyType names a mapped type's key, both of which
+		// the evaluator substitutes rather than the solver generalizing, so none lifts the level.
 		return 0
 	}
 }
@@ -967,6 +1083,17 @@ func levelOfElem(e ObjTypeElem) int {
 		// A `...A` spread element's level is its operand's, so an out-of-level spread operand lifts
 		// the enclosing object's level and the freshener/extruder prune descends to freshen it.
 		return LevelOf(e.Type)
+	case *MappedElem:
+		// A mapped member's level is the max over the operands that can hold a variable, so an
+		// out-of-level operand lifts the enclosing object's level and the freshener/extruder prune
+		// descends into each. Key is a binding this member owns rather than a variable the solver
+		// generalizes, so it contributes nothing. Name, Check, and Extends are absent unless the
+		// source wrote them.
+		m := max(LevelOf(e.Keys), LevelOf(e.Value))
+		for _, operand := range MappedOptionalOperands(e) {
+			m = max(m, LevelOf(operand))
+		}
+		return m
 	}
 	panic(fmt.Sprintf("levelOfElem: unhandled ObjTypeElem %T", e))
 }

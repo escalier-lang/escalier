@@ -19,6 +19,18 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.annPrim(ta, soltype.StrPrim), true
 	case *ast.BooleanTypeAnn:
 		return c.annPrim(ta, soltype.BoolPrim), true
+	case *ast.NeverTypeAnn:
+		// `never` is the bottom of the lattice, the empty type. A mapped type's key-remapping
+		// expression names it to drop a field, `{[if K : "id" { never } else { K }]: … }`, which is
+		// how a mapped type filters its key set.
+		//
+		// No provenance is recorded. soltype.NeverType has no fields, so Go gives every
+		// `&soltype.NeverType{}` the same address, and the Prov side table is keyed by pointer
+		// identity. Recording against it would file every `never` annotation in the module under one
+		// entry, so each would report the last one's span as its blame, and the debugProv guard would
+		// panic on the second. A caller that needs a span for a rejected `never` falls back to the
+		// constraint site.
+		return &soltype.NeverType{}, true
 	case *ast.LitTypeAnn:
 		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:
@@ -128,20 +140,27 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 // value to a fresh var and keeps the object shape — cascade-safe, mirroring the
 // Promise<bad> recovery. The arm therefore always returns ok=true.
 func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl int) (soltype.Type, bool) {
-	hasSpread := false
+	// A `...A` spread and a `[K]: V for K in Keys` mapped member each make the object an unreduced
+	// residual whose final member list the evaluator computes. Either one puts the whole object on
+	// the ordered path below, which keeps source order for the override merge.
+	//
+	// The two mix freely with ordinary members, so `{a: number, [K]: V for K in Keys}` is one object
+	// annotation. TypeScript has no such form and writes the intersection
+	// `{a: number} & {[K in Keys]: V}` instead.
+	hasResidual := false
 	for _, elem := range ta.Elems {
-		if _, ok := elem.(*ast.RestSpreadTypeAnn); ok {
-			hasSpread = true
-			break
+		switch elem.(type) {
+		case *ast.RestSpreadTypeAnn, *ast.MappedTypeAnn:
+			hasResidual = true
 		}
 	}
 	unsupported := false
 	var elems []soltype.ObjTypeElem
-	// The two paths differ only in when duplicate keys collapse. A spread-free object is never
+	// The two paths differ only in when duplicate keys collapse. A residual-free object is never
 	// reduced later, so its duplicates must collapse here to the unique-key shape Prop and equalType
-	// assume. A spread-carrying object keeps source order for the override merge and dedups in
-	// reduceObject once its spreads ground.
-	if !hasSpread {
+	// assume. A residual object keeps source order for the override merge and dedups in reduceObject
+	// once its spreads and mapped members ground.
+	if !hasResidual {
 		b := newObjElemBuilder(len(ta.Elems))
 		for _, elem := range ta.Elems {
 			prop, ok := elem.(*ast.PropertyTypeAnn)
@@ -171,6 +190,8 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 					src = c.freshAt(lvl)
 				}
 				elems = append(elems, &soltype.SpreadElem{Type: src})
+			case *ast.MappedTypeAnn:
+				elems = append(elems, c.resolveMappedElem(scope, elem, lvl))
 			default:
 				unsupported = true
 			}
@@ -182,6 +203,87 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	t := &soltype.ObjectType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// resolveMappedElem lowers a `[K]: V for K in Keys` member to a MappedElem, stored unreduced so the
+// annotation prints the way the source wrote it rather than as the members it computes. constrain
+// reduces the enclosing object when it checks a constraint against it, mirroring resolveKeyOfTypeAnn.
+//
+// The member sits in its object's element list alongside whatever else the source wrote, so
+// `{a: number, [K]: V for K in Keys}` is one object rather than an intersection. reduceObject merges
+// the computed fields with the sibling members in source order, the same merge a `...A` spread feeds.
+//
+// The `for K in Keys` clause binds K. The constraint itself resolves in the enclosing scope, since
+// K is not in scope for the key set that binds it. The value, the bracketed key-remapping
+// expression, and the `if C : E` filter each resolve in a child scope where K names the binding the
+// evaluator substitutes a key for. That is the scope TypeScript gives a mapped type's key parameter,
+// so `{[K]: T[K] for K in keyof T}` reads the same K in its value position that its clause
+// introduced.
+//
+// An unsupported operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery. A
+// recovered operand leaves the mapped type unable to ground, so it stays symbolic rather than
+// reducing to a wrong object.
+func (c *checker) resolveMappedElem(scope *Scope, mapped *ast.MappedTypeAnn, lvl int) *soltype.MappedElem {
+	keys, ok := c.resolveTypeAnn(scope, mapped.TypeParam.Constraint, lvl)
+	if !ok {
+		keys = c.freshAt(lvl)
+	}
+
+	key := c.ctx.freshMappedKey(mapped.TypeParam.Name)
+	mappedScope := scope.Child()
+	mappedScope.defineType(mapped.TypeParam.Name, TypeBinding{Type: key})
+
+	value, ok := c.resolveTypeAnn(mappedScope, mapped.Value, lvl)
+	if !ok {
+		value = c.freshAt(lvl)
+	}
+	name := c.resolveMappedOperand(mappedScope, mapped.Name, lvl)
+	// The parser fills Check and Extends together or leaves both nil, so one present without the
+	// other is a malformed filter the reduction would have to guess at. Resolve the pair only when
+	// both are written, which drops such a filter rather than applying half of it.
+	var check, extends soltype.Type
+	if mapped.Check != nil && mapped.Extends != nil {
+		check = c.resolveMappedOperand(mappedScope, mapped.Check, lvl)
+		extends = c.resolveMappedOperand(mappedScope, mapped.Extends, lvl)
+	}
+
+	return &soltype.MappedElem{
+		Key:      key,
+		Keys:     keys,
+		Value:    value,
+		Name:     name,
+		Check:    check,
+		Extends:  extends,
+		Optional: mappedModifier(mapped.Optional),
+		Readonly: mappedModifier(mapped.ReadOnly),
+	}
+}
+
+// resolveMappedOperand lowers one of a mapped type's optional operands — the bracketed key-remapping
+// expression, or either half of the `if C : E` filter. An absent annotation stays absent, and an
+// unsupported one recovers to a fresh var so the mapped type keeps its shape.
+func (c *checker) resolveMappedOperand(scope *Scope, ta ast.TypeAnn, lvl int) soltype.Type {
+	if ta == nil {
+		return nil
+	}
+	if t, ok := c.resolveTypeAnn(scope, ta, lvl); ok {
+		return t
+	}
+	return c.freshAt(lvl)
+}
+
+// mappedModifier converts one written `readonly` or `?` marker to the modifier the reduction
+// applies. An absent marker leaves the emitted field unmarked; `+` and the bare form add the marker
+// and `-` removes it.
+func mappedModifier(m *ast.MappedModifier) soltype.MappedModifier {
+	switch {
+	case m == nil:
+		return soltype.ModNone
+	case *m == ast.MMRemove:
+		return soltype.ModRemove
+	default:
+		return soltype.ModAdd
+	}
 }
 
 // resolveObjectProperty lowers one `name: T` / `name?: T` property annotation to its name and

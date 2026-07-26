@@ -835,6 +835,12 @@ type alphaCtx struct {
 	// so a comparison over types carrying no conditional allocates nothing.
 	inferAToB map[int]int
 	inferBToA map[int]int
+	// keyAToB and keyBToA pair the key bindings of two mapped types, bound when a pair of mapped
+	// types meets, the way bindTypeParams binds a function's parameters. They start nil and
+	// allocate on the first pairing, so a comparison over types carrying no mapped type allocates
+	// nothing.
+	keyAToB map[int]int
+	keyBToA map[int]int
 }
 
 // bindTypeParams pairs two generic FuncTypes' type parameters positionally, so every
@@ -892,6 +898,34 @@ func (ctx *alphaCtx) sameInferDecl(a, b *soltype.InferType) bool {
 	ctx.inferAToB[a.ID] = b.ID
 	ctx.inferBToA[b.ID] = a.ID
 	return true
+}
+
+// bindMappedKeys pairs the key bindings of two mapped types, so every later reference to one side's
+// key must match the other's partner. Two mapped types resolved separately from the same source
+// therefore compare equal even though each drew its own binding id, the same reason
+// sameInferDecl pairs two conditionals' capture declarations.
+func (ctx *alphaCtx) bindMappedKeys(a, b *soltype.MappedKeyType) {
+	if ctx.keyAToB == nil {
+		ctx.keyAToB = map[int]int{}
+		ctx.keyBToA = map[int]int{}
+	}
+	ctx.keyAToB[a.ID] = b.ID
+	ctx.keyBToA[b.ID] = a.ID
+}
+
+// sameMappedKey reports whether two mapped-type key references stand for corresponding bindings
+// under the pairing bindMappedKeys recorded. A reference may be reached with no pairing recorded,
+// which happens when a value position is compared on its own, away from the mapped type that binds
+// its key. That case falls back to id equality, the rule sameTypeVar applies to a variable bound on
+// neither side.
+func (ctx *alphaCtx) sameMappedKey(a, b *soltype.MappedKeyType) bool {
+	if j, ok := ctx.keyAToB[a.ID]; ok {
+		return j == b.ID
+	}
+	if _, ok := ctx.keyBToA[b.ID]; ok {
+		return false // b's binding corresponds to some other binding on a's side
+	}
+	return a.ID == b.ID
 }
 
 // bindLifetimeParams pairs two generic FuncTypes' lifetime parameters positionally, the
@@ -1071,10 +1105,11 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		if !ok || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 			return false
 		}
-		// A spread-carrying object is an unreduced residual whose element order is significant,
-		// since a later `...B` overrides an earlier key. Two such objects are equal only when their
-		// elements match position for position, the order-sensitive rule a residual operator follows.
-		if soltype.HasObjectSpread(a.Elems) || soltype.HasObjectSpread(b.Elems) {
+		// An unreduced residual object compares position for position rather than by member name.
+		// A spread-carrying object needs that because element order is significant, since a later
+		// `...B` overrides an earlier key. A mapped-carrying object needs it because its member names
+		// no field, so the name-keyed path below has no key to match on.
+		if soltype.HasResidualElem(a.Elems) || soltype.HasResidualElem(b.Elems) {
 			for i := range a.Elems {
 				if !equalObjElem(a.Elems[i], b.Elems[i], ctx) {
 					return false
@@ -1179,6 +1214,11 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// type parameters compare by position rather than by name.
 		b, ok := b.(*soltype.InferType)
 		return ok && a.Binder == b.Binder && ctx.sameInferDecl(a, b)
+	case *soltype.MappedKeyType:
+		// Two mapped-type key references are equal when their bindings correspond under the pairing
+		// the enclosing pair of mapped types recorded.
+		b, ok := b.(*soltype.MappedKeyType)
+		return ok && ctx.sameMappedKey(a, b)
 	case *soltype.RestSpreadType:
 		// Two `...P` spread elements are equal when their operands are, compared structurally
 		// without reducing. The enclosing TupleType arm compares element lists positionally, so a
@@ -1200,6 +1240,16 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	return false
 }
 
+// equalOptionalType compares two operands a node carries only when the source wrote them. Two
+// absent operands are equal, one absent and one present are not, and two present operands compare
+// structurally.
+func equalOptionalType(a, b soltype.Type, ctx *alphaCtx) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return equalTypeWith(a, b, ctx)
+}
+
 // equalObjElem reports structural equality of two object members. It returns false
 // on a kind mismatch, so the caller matches a-members to b-members by name and kind
 // together. Each kind compares its own payload:
@@ -1214,6 +1264,19 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 // It panics on an unknown element kind, matching AsProperty.
 func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 	switch a := a.(type) {
+	case *soltype.MappedElem:
+		// Two inert mapped members are equal when every operand is equal and the modifiers match,
+		// compared structurally without emitting a field. Pairing the key bindings first lets each
+		// side's references to its own key match the other's. The enclosing objects compare their
+		// inexact markers, so this member carries none.
+		b, ok := b.(*soltype.MappedElem)
+		if !ok || a.Optional != b.Optional || a.Readonly != b.Readonly {
+			return false
+		}
+		ctx.bindMappedKeys(a.Key, b.Key)
+		return equalTypeWith(a.Keys, b.Keys, ctx) && equalTypeWith(a.Value, b.Value, ctx) &&
+			equalOptionalType(a.Name, b.Name, ctx) && equalOptionalType(a.Check, b.Check, ctx) &&
+			equalOptionalType(a.Extends, b.Extends, ctx)
 	case *soltype.PropertyElem:
 		b, ok := b.(*soltype.PropertyElem)
 		return ok && a.Optional == b.Optional && a.Readonly == b.Readonly && equalTypeWith(a.Type, b.Type, ctx)

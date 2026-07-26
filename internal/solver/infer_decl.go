@@ -481,6 +481,12 @@ func stripOwnedMut(t soltype.Type) soltype.Type {
 		}
 		return t
 	case *soltype.ObjectType:
+		// A residual object carries a `...A` spread or a `[K]: V for K in Keys` member instead of a
+		// settled property list, so there is no field to peel. Return it unchanged; the evaluator
+		// reduces it at the constraint site and the peel applies to whatever it becomes.
+		if soltype.HasResidualElem(t.Elems) {
+			return t
+		}
 		elems := make([]soltype.ObjTypeElem, len(t.Elems))
 		for i, e := range t.Elems {
 			p := soltype.AsProperty(e)
