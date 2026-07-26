@@ -583,6 +583,98 @@ func TestInferKeyofExpandingAliasTerminates(t *testing.T) {
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 }
 
+// Checking a value against a mapped type whose value expression reaches an expanding recursive
+// alias terminates instead of looping. A mapped type reduces that expression once per key, so the
+// alias expands once per key, and maxExpandDepth is restored between the two — each key would
+// otherwise restart from the full remaining depth and make the walk a search tree exponential in
+// the budget. maxExpandKeyChars is monotonic, so the keys spend one shared pool.
+//
+// Each case asserts how many diagnostics the reduction produces and their kind, and nothing about
+// the residual each field truncates to. Where the shared budget runs out fixes that residual, so
+// its rendered form pins the backstop's arithmetic rather than any intended behavior. The point of
+// the test is that the checker finishes.
+func TestInferMappedExpandingAliasTerminates(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		wantErrs int
+	}{
+		{
+			// Two keys per lap. Each key reduces `Grow<{a: T, b: T}>[K]`, so the walk branches
+			// twice per lap and the alias argument doubles along every branch.
+			name: "TwoKeysPerLap",
+			src: `
+				type Grow<T> = {[K]: Grow<{a: T, b: T}>[K] for K in keyof T}
+				val x: Grow<{a: number, b: number}> = {a: 1, b: 2}
+			`,
+			wantErrs: 2,
+		},
+		{
+			// One key per lap. The walk does not branch and the argument gains one wrapper a lap,
+			// so maxExpandDepth is what stops it and the shared pool never binds.
+			name: "OneKeyPerLap",
+			src: `
+				type Grow<T> = {[K]: Grow<{a: T}>[K] for K in keyof T}
+				val x: Grow<{a: number}> = {a: 1}
+			`,
+			wantErrs: 1,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Len(t, errs, test.wantErrs)
+			for _, errVal := range errs {
+				require.IsType(t, &CannotConstrainError{}, errVal)
+			}
+		})
+	}
+}
+
+// Checking a value against an alias whose argument doubles each lap terminates instead of looping.
+// The instantiation key the guard renders doubles with the argument, so a walk of a few dozen laps
+// would render a key of astronomical length even though it never branches. maxExpandDepth counts
+// laps rather than the size of what each lap expands, so it does not bound that on its own;
+// charging maxExpandKeyChars by the rendered key length stops the walk after a logarithmic number
+// of laps.
+//
+// Neither case involves a mapped type, so the hazard the shared pool closes is in the guard rather
+// than in one operator's reduction.
+func TestInferDoublingAliasArgumentTerminates(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// The recursion sits under `keyof`, which expands the alias operand each lap.
+			name: "UnderKeyof",
+			src: `
+				type Grow<T> = keyof Grow<{a: T, b: T}>
+				val k: Grow<{a: number, b: number}> = "x"
+			`,
+			want: `3:43-3:46: cannot constrain "x" <: keyof Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>`,
+		},
+		{
+			// The recursion sits in an indexed access's target, which expands it each lap too.
+			name: "UnderIndexedAccess",
+			src: `
+				type Grow<T> = Grow<{a: T, b: T}>["a"]
+				val v: Grow<{a: number, b: number}> = 1
+			`,
+			want: `3:43-3:44: cannot constrain 1 <: Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>["a"]`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Len(t, errs, 1)
+			require.IsType(t, &CannotConstrainError{}, errs[0])
+			require.Equal(t, test.want, msgWithSpan(errs[0]))
+		})
+	}
+}
+
 // A `typeof v` query is stored as a residual behind the value reference, so an annotation prints
 // `typeof v` the way the source wrote it rather than the resolved type. It resolves a bare name
 // and a member chain; reducing the residual yields the referenced value's type. The value's
