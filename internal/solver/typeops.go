@@ -1000,11 +1000,11 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, exact bool) soltype.Ty
 	var shared []soltype.Type
 	inexact := op.Inexact
 	for i, m := range op.Types {
-		keys, open, ok := literalKeys(e.reduceKeyof(m, exact))
+		keys, memberInexact, ok := literalKeys(e.reduceKeyof(m, exact))
 		if !ok {
 			return &soltype.KeyofType{Operand: op, Exact: exact}
 		}
-		if open {
+		if memberInexact {
 			inexact = true
 		}
 		if i == 0 {
@@ -1023,14 +1023,14 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, exact bool) soltype.Ty
 }
 
 // literalKeys decomposes a reduced `keyof` result into the literal keys it names and whether its
-// key set is open. It reports false for a result that names no enumerable key set, such as the
+// key set is inexact. It reports false for a result that names no enumerable key set, such as the
 // `keyof T` residual over a type parameter, so a caller that needs the keys can fall back to
 // leaving its own operator symbolic.
 //
-// `never` decomposes to an empty closed set, a lone literal to that one key, and a union to its
+// `never` decomposes to an empty exact set, a lone literal to that one key, and a union to its
 // members with the union's own exactness. A union carrying a non-literal member is not a key set
 // the reduction produced, so it reports false rather than silently dropping that member.
-func literalKeys(reduced soltype.Type) (keys []soltype.Type, open bool, ok bool) {
+func literalKeys(reduced soltype.Type) (keys []soltype.Type, inexact bool, ok bool) {
 	switch t := reduced.(type) {
 	case *soltype.NeverType:
 		return nil, false, true
