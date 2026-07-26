@@ -1542,6 +1542,20 @@ and the M7 interlock.
   type unions (e.g. `` `on${Capitalize<K>}` ``), including the intrinsic
   string-manipulation operators `Uppercase`/`Lowercase`/`Capitalize`/
   `Uncapitalize`.
+- **Regex-checked string types** — a regex literal used as a type, denoting the
+  strings its pattern matches (`type HexDigit = /^[0-9A-Fa-f]$/`). A string literal
+  checks against the pattern by matching it, a named capture group binds its matched
+  substring as a string-literal type, and regex-against-regex is pattern equality,
+  all matching the old checker
+  ([internal/type_system/types.go](../../internal/type_system/types.go) `RegexType`,
+  [internal/checker/regex.go](../../internal/checker/regex.go),
+  [internal/checker/unify.go](../../internal/checker/unify.go)). M9 additionally adds
+  **interpolation** (#933), so a pattern composes from named parts —
+  `` /^#${HexDigit}{3}$/ `` — which is why it lands here rather than with literal
+  types: an interpolated pattern is a reducible operator with the same
+  ground-vs-residual shape as template literal types, splicing each operand's pattern
+  in a non-capturing group with the operand's anchors dropped. No earlier milestone
+  claimed the feature, so this is a parity gap M9 closes, not a carry-over.
 - **Exactness propagation through operators**
   ([exact-types/requirements.md](../exact-types/requirements.md) §7): `keyof T`
   is exact iff `T`'s key set is exact; `T[K]`, conditional results, mapped
@@ -1593,6 +1607,10 @@ types incl. `infer` and distribution; recursive aliases terminate (finite knot
 or budget). Errors (e.g. arity, non-regular recursion) assert full messages.
 Plus: `keyof` of an exact object is an exact union and of an inexact object an
 inexact union; `Exact<{x, ...}>` ⇒ `{x}` and `Inexact<{x}>` ⇒ `{x, ...}`.
+Plus, on regex string types: `val c: HexColor = "#fff"` checks and `"#ffff"` reports
+a full non-match message; a named capture group binds its matched substring in a
+conditional's branch; `` /^#${HexDigit}{3}$/ `` reduces to the spliced pattern and
+accepts `"#a0f"`; an interpolated regex over a type parameter stays symbolic.
 Plus, matching the old checker's coverage: `keyof [a, b]` ⇒ `0 | 1 | "length"`
 and `keyof` distributes over a union target; `typeof v` for `val v = {a: 1}`
 resolves to `{a: number}` and `keyof typeof v` ⇒ `"a"`; a `{[k in string]: T}`

@@ -120,7 +120,15 @@ spike work rather than inventing it:
 7. **`FuncType.Throws` and `FuncType.Yields` fields** with parallel arms in
    `constrain` / `extrude` / `LevelOf` / the printer, plus per-body inference
    variables that accumulate lowers from `throw e` / `yield e`.
-8. **The TS utility-type suite** (`Pick`, `Omit`, `Partial`, …, `Awaited`,
+8. **Regex-checked string types** — `type HexDigit = /^[0-9A-Fa-f]$/` as a type, with
+   string-literal matching, named-capture-group typing, and interpolation of one
+   regex type into another. The old checker has all of this except interpolation
+   ([type_system/types.go](../../internal/type_system/types.go) `RegexType`,
+   [checker/regex.go](../../internal/checker/regex.go),
+   [checker/unify.go:823-868](../../internal/checker/unify.go)); no milestone claimed
+   it, so `soltype` has no node for it and a regex literal in type position reports
+   unsupported ([solver/type_ann.go:316](../../internal/solver/type_ann.go)).
+9. **The TS utility-type suite** (`Pick`, `Omit`, `Partial`, …, `Awaited`,
    `Record`, `Capitalize`) as end-to-end verification, defined in Escalier and
    asserted to match TS reductions.
 
@@ -128,9 +136,10 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Fifteen PRs across five tracks. Track A builds the evaluator and the core
-operators in dependency order. Track B adds spread and template-literal
-operators, which hang off the backbone but are independent of each other. Track C
+Sixteen PRs across five tracks. Track A builds the evaluator and the core
+operators in dependency order. Track B adds the spread, template-literal, and
+regex string operators, which hang off the backbone but are independent of each
+other. Track C
 adds exactness propagation and the recursion static-check. Track D is the two
 function-signature effects, which touch `FuncType` and not the evaluator at all,
 so it runs fully in parallel with A–C. Track E is the capstone verification.
@@ -389,6 +398,99 @@ intrinsics registered as built-in operators.
 
 **Depends on** PR1b. Independent of PR2–PR6.
 
+### PR7.5 — Regex-checked string types + interpolation
+
+A **regex-checked string type** is a regex literal used as a type: `type HexDigit =
+/^[0-9A-Fa-f]$/` denotes the strings its pattern matches. The feature is documented
+([docs/00_types.md](../../docs/00_types.md) §"Regex checked string type") and the old
+checker implements it, but no milestone claimed it, so `soltype` has no node and a
+regex literal in type position reports unsupported
+([solver/type_ann.go:316](../../internal/solver/type_ann.go)). This PR closes that
+parity gap and adds the interpolation [#933](https://github.com/escalier-lang/escalier/issues/933)
+asks for, so a pattern can be composed from named parts:
+
+```
+type HexDigit = /^[0-9A-Fa-f]$/
+type HexColor = /^#${HexDigit}{3}$/
+type Color    = /^${RGBColor}|${HexColor}$/
+```
+
+Interpolation is what makes this an M9 concern rather than literal-type work: an
+interpolated pattern is a reducible operator with the same ground-vs-residual split
+as the rest of the track, and its shape mirrors PR7's template literal type. The two
+halves land together because the interpolated form has nothing to splice until the
+non-interpolated form exists.
+
+**Data structures.**
+- `soltype.RegexType{Quasis []string, Interps []Type, Flags string, Regex
+  *regexp.Regexp, Groups map[string]Type}`, deliberately parallel to
+  `TemplateLitType` ([soltype/type.go:745](../../internal/soltype/type.go)): `Quasis`
+  holds the fixed pattern segments and `Interps` the interpolated types between them,
+  one more quasi than interp. A pattern with no interpolation is **ground** at resolve
+  time — `Regex` holds the compiled pattern and `Groups` maps each named capture group
+  to its type. An interpolated pattern is a residual with the PR1a inert contract:
+  visitor arm, printer arm rendering the source form, `LevelOf` over the interps, and
+  pass-through in `constrain` / `extrude` / `coalesce` alongside the other residuals
+  ([constrain.go:155](../../internal/solver/constrain.go)).
+- Pattern compilation reuses `convertJSRegexToGo`
+  ([type_system/regex.go](../../internal/type_system/regex.go)), which maps JS flags
+  onto Go's inline-flag syntax. Move it to a shared home rather than forking it, since
+  `soltype` must not import `type_system`.
+
+**Algorithms.**
+- **String-literal matching.** `constrain("#fff", /^#[0-9a-f]{3}$/)` succeeds when the
+  literal matches the pattern, porting the old checker's
+  [unify.go:836-868](../../internal/checker/unify.go) arm. A non-match is a new
+  `SolverError` asserting the literal and the pattern in its full message.
+- **Named capture groups.** Matching a string literal against a pattern with named
+  groups constrains each group's type to the matched substring as a string-literal
+  type. Under the old checker a group in a conditional's `extends` position gets a
+  fresh var so the branch body can read it
+  ([checker/regex.go](../../internal/checker/regex.go) `FindNamedGroups` /
+  `replaceRegexGroupTypes`); in the new solver that role belongs to PR3b's `infer`
+  environment, so the group binds through the same machinery instead of a bespoke
+  substitution pass.
+- **Regex against regex** is pattern equality, not language inclusion — deciding
+  whether one regular language contains another is expensive and the old checker
+  already settles for equality ([unify.go:823-835](../../internal/checker/unify.go)).
+  Keep that, and keep it stated as a deliberate limit rather than a TODO.
+- **Interpolation reduction (#933).** Splice each interp's pattern text into the outer
+  pattern once every interp is ground, then compile the result. A `RegexType` interp
+  contributes its own pattern, a string-literal interp contributes its text with
+  regex metacharacters escaped, and a union of either contributes an alternation. Any
+  other operand is an error with a full message. An interp that stays abstract keeps
+  the node residual, reduced post-coalescing like every other operator.
+- **Splice hygiene.** Two rules make composition behave the way the issue's examples
+  read. A spliced operand is wrapped in a non-capturing group `(?:…)`, so a quantifier
+  or alternation at the splice site applies to the whole operand — `${HexDigit}{3}`
+  repeats the digit class three times, and `${RGBColor}|${HexColor}` alternates the two
+  whole patterns. Anchors on the operand are dropped, since `HexDigit`'s `^`/`$` assert
+  against the operand's own bounds and would make the spliced pattern unmatchable.
+
+**Open design questions to settle in this PR.**
+- Whether flags on an operand carry into the splice, are rejected, or are ignored. Go
+  can express per-group flags inline, so carrying them is possible; whether it is
+  comprehensible is the question.
+- What happens when two spliced operands contribute the same capture-group name. Go's
+  regex compiler rejects a duplicate name outright, so the choices are a precise
+  Escalier-level error or renaming during the splice.
+
+**Wiring.** A `resolveLitTypeAnn` arm for `*ast.RegexLit`
+([type_ann.go](../../internal/solver/type_ann.go)), which today falls through to
+`reportUnsupported`; lexer and parser support for `${…}` inside a regex literal in
+type position, which `lexRegex` ([parser/lexer.go:113](../../internal/parser/lexer.go))
+does not yet split on; a printer arm.
+
+**Accept.** `val c: HexColor = "#fff"` checks and `"#ffff"` reports the full
+non-match message; a named group binds its matched substring in a conditional's
+branch; `/^#${HexDigit}{3}$/` reduces to the spliced pattern and accepts `"#a0f"`;
+an interpolated regex over a type parameter stays residual and renders its source
+form; two nested levels compose, as in the issue's `Color`.
+
+**Depends on** PR1b for the evaluator and the residual plumbing, PR3b for the
+`infer` environment the named-group binding reuses, and PR7 for the quasis/interps
+parser and printer shape it mirrors. Independent of PR2, PR4, PR5, PR6.
+
 ### PR8 — Exactness propagation through operators + `Exact<T>` / `Inexact<T>`
 
 The first milestone where exactness must **propagate through reduction**, not just
@@ -539,7 +641,10 @@ or a single function-signature effect, sized comparably to a typical M4/M6 PR.
 Mapped types (PR4) and object spread (PR5) are the next-largest — the fiddly
 modifier/`as`-remapping semantics and the Flow optional-field union rule
 respectively — but each is one self-contained operator and stays within the M4/M6
-band. PR10 and PR11 touch only `FuncType` and never the evaluator, so they carry
+band. PR7.5 carries two halves — the regex node plus its matching rule, and the
+interpolation splice — but the first half is a direct port of the old checker's arms
+and the second reuses PR7's shape, so it sizes with PR7 rather than with PR4.
+PR10 and PR11 touch only `FuncType` and never the evaluator, so they carry
 no operator-track review burden. PR13 is verification-heavy but low-risk; if the
 utility corpus balloons it splits cleanly by category (mapped-based,
 conditional-based, template-based).
@@ -561,6 +666,7 @@ PR1a (residual-node representation + inert plumbing)
       ├─► PR5 (object spread types)
       ├─► PR6 (tuple spread types)
       ├─► PR7 (template literal types + intrinsics)
+      │    └─► PR7.5 (regex string types + interpolation)  ── also needs PR3b
       └─► PR8 (exactness propagation + Exact/Inexact)  ── needs PR1b–PR7
 
 PR10 (throws clause)                      ── needs M3 only; parallel to everything
@@ -586,6 +692,7 @@ graph TD
     PR5["PR5 (object spread types)"]
     PR6["PR6 (tuple spread types)"]
     PR7["PR7 (template literal types + intrinsics)"]
+    PR75["PR7.5 (regex string types + interpolation)"]
     PR8["PR8 (exactness propagation + Exact/Inexact)"]
     PR9["PR9 (CheckRegular static check)"]
     PR10["PR10 (throws clause)"]
@@ -609,6 +716,8 @@ graph TD
     PR2 --> PR4
     PR2 --> PR13
     PR3a --> PR4
+    PR7 --> PR75
+    PR3b --> PR75
     PR3b --> PR9
     PR1b --> PR9
     PR3b --> PR12
@@ -638,6 +747,8 @@ graph TD
 - **Track A** (PR1a → PR1b → PR2/PR3a → PR3b/PR4, plus PR5/PR6/PR7 hanging directly
   off PR1b) is the operator core. PR5, PR6, and PR7 are mutually independent and can
   be built concurrently once PR1b lands.
+- **Track B** — PR7.5 (regex string types) follows PR7 and PR3b and is independent of
+  the rest of the operator suite, so it runs alongside PR4 and PR9.
 - **Track C** — PR8 (exactness) is a barrier that waits for all operators; PR9
   (CheckRegular) needs only PR1b + PR3b and runs alongside PR4–PR8.
 - **Track D** — PR10 (throws) has no operator dependency and can start on day one
