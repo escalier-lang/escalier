@@ -86,7 +86,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"only"`,
 		},
 		{
-			// An inexact object carries an open key tail, so its key union is inexact: the known
+			// An inexact object's key union is inexact too: the known
 			// keys plus a trailing `...` standing for the unlisted ones.
 			name: "InexactObject",
 			src: `
@@ -2274,7 +2274,7 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			wantExpanded: "{x: {x: number}}",
 		},
 		{
-			// An inexact operand has an open key set, so `keyof` yields an inexact key union and the
+			// An inexact operand has an inexact key set, so `keyof` yields an inexact key union and the
 			// object built from it stays open too.
 			name: "InexactOperandYieldsInexactObject",
 			src: `

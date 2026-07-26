@@ -455,14 +455,14 @@ func (e *typeEvaluator) reduceObject(t *soltype.ObjectType) soltype.Type {
 		case *soltype.MappedElem:
 			// A mapped member contributes the fields it computes as one group, the same shape a
 			// spread's operand object contributes, so both merge under one rule in source order.
-			reduced, fields, openKeys, ok := e.expandMapped(el)
+			reduced, fields, inexactKeys, ok := e.expandMapped(el)
 			reducedElems[i] = reduced
 			if !ok {
 				ground = false
 				continue
 			}
 			operandElems = append(operandElems, fields)
-			inexact = inexact || openKeys
+			inexact = inexact || inexactKeys
 		default:
 			// An ordinary member has its value types reduced, then contributes as a one-field group.
 			re := e.reduceElem(el)
@@ -630,11 +630,11 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 // Two keys that remap to one name merge into a single field whose type is their union, so no key's
 // contribution is lost. See mergeMappedField.
 //
-// openKeys reports that the key union was itself open, as `keyof {a: number, ...}` is. The caller
-// folds it into the object's inexact marker, so the fields for the known keys are listed and the
-// object stays open for the rest. A filter narrows which of the known keys survive but cannot rule
-// out the unlisted ones, so the result stays open there too.
-func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.MappedElem, fields []soltype.ObjTypeElem, openKeys bool, ok bool) {
+// inexactKeys reports that the key union was itself inexact, as `keyof {a: number, ...}` is. The
+// caller folds it into the object's inexact marker, so the fields for the known keys are listed and
+// the object stays inexact for the rest. A filter narrows which of the known keys survive but cannot
+// rule out the unlisted ones, so the result stays inexact there too.
+func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.MappedElem, fields []soltype.ObjTypeElem, inexactKeys bool, ok bool) {
 	keys := e.groundOperand(t.Keys)
 	// The unexpanded form keeps the reduced key set, so a later pass resumes from the ground it
 	// gained rather than re-expanding the operand from scratch.
@@ -646,7 +646,7 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 		return reduced, nil, false, false
 	}
 	source, homomorphic := e.homomorphicSource(t.Keys)
-	members, openKeys := mappedKeyMembers(keys)
+	members, inexactKeys := mappedKeyMembers(keys)
 	pos := make(map[string]int, len(members))
 	for _, member := range members {
 		built, ok := e.mappedFields(t, member, source, homomorphic)
@@ -662,11 +662,11 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 			fields = append(fields, field)
 		}
 	}
-	return reduced, fields, openKeys, true
+	return reduced, fields, inexactKeys, true
 }
 
 // mappedKeyMembers splits a mapped type's reduced Keys operand into the individual keys to emit a
-// field for, and reports whether the key set is open. A union contributes its members and carries
+// field for, and reports whether the key set is inexact. A union contributes its members and carries
 // its own inexact marker through; `never` is the empty key set, so it contributes none; any other
 // type is a single key.
 func mappedKeyMembers(keys soltype.Type) ([]soltype.Type, bool) {
