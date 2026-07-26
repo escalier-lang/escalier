@@ -2339,6 +2339,110 @@ func TestInferMappedTypeReduction(t *testing.T) {
 	}
 }
 
+// A mapped member sits in its object's element list alongside whatever else the source wrote, so
+// `{id: number, [K]: V for K in Keys}` is one object annotation. TypeScript has no such form and
+// writes the intersection `{id: number} & {[K in Keys]: V}` instead. reduceObject merges the
+// computed fields with their siblings in source order, the same merge a `...A` spread feeds, so a
+// collision follows the rightmost-wins rule spreads already use.
+func TestInferMappedMemberMixesWithOrdinaryMembers(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			name: "ExplicitBeforeMapped",
+			src: `
+				type Keys = "a" | "b"
+				type Result = {id: number, [K]: string for K in Keys}
+			`,
+			wantExpanded: "{id: number, a: string, b: string}",
+		},
+		{
+			// Source order decides the member order, so a mapped member written first contributes
+			// its fields first.
+			name: "MappedBeforeExplicit",
+			src: `
+				type Keys = "a" | "b"
+				type Result = {[K]: string for K in Keys, id: number}
+			`,
+			wantExpanded: "{a: string, b: string, id: number}",
+		},
+		{
+			// A computed field colliding with an explicit one written earlier overrides it, the
+			// rightmost-wins rule mergeSpreadOperands applies to every group it merges.
+			name: "CollisionTakesRightmost",
+			src: `
+				type Keys = "a" | "id"
+				type Result = {id: number, [K]: string for K in Keys}
+			`,
+			wantExpanded: "{id: string, a: string}",
+		},
+		{
+			name: "ComposesWithSpread",
+			src: `
+				type Keys = "a" | "b"
+				type Base = {z: boolean}
+				type Result = {...Base, id: number, [K]: string for K in Keys}
+			`,
+			wantExpanded: "{z: boolean, id: number, a: string, b: string}",
+		},
+		{
+			// Two mapped members in one object each contribute their own group.
+			name: "TwoMappedMembers",
+			src: `
+				type K1 = "a" | "b"
+				type K2 = "c"
+				type Result = {[K]: string for K in K1, [K]: number for K in K2}
+			`,
+			wantExpanded: "{a: string, b: string, c: number}",
+		},
+		{
+			// The homomorphic marker inheritance still applies to the computed fields, and leaves the
+			// explicit sibling alone.
+			name: "MarkersSurviveAlongsideExplicitMember",
+			src: `
+				type Src = {x?: number, readonly y: string}
+				type Result = {id: boolean, [K]: Src[K] for K in keyof Src}
+			`,
+			wantExpanded: "{id: boolean, x?: number, readonly y: string}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A mixed object with an abstract key set stays symbolic and renders the way the source wrote it,
+// and a value checked against a ground one must satisfy the explicit member and the computed ones
+// alike.
+func TestInferMappedMemberMixedConstraint(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f<T>(x: {id: number, [K]: T[K] for K in keyof T}) -> number { return 1 }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <T>(x: {id: number, [K]: T[K] for K in keyof T}) -> number", values["f"])
+
+	_, _, errs = inferSource(t, `
+		type Keys = "a" | "b"
+		fn g(p: {id: number, [K]: string for K in Keys}) -> number { return 1 }
+		val ok = g({id: 1, a: "x", b: "y"})
+	`)
+	require.Empty(t, errs)
+
+	_, _, errs = inferSource(t, `
+		type Keys = "a" | "b"
+		fn g(p: {id: number, [K]: string for K in Keys}) -> number { return 1 }
+		val bad = g({id: 1, a: "x"})
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "object is missing property: b", errs[0].Message())
+}
+
 // A residual object — one carrying a `...A` spread or a `[K]: V for K in Keys` member — reaches the
 // property-level walks that peel owned-mut cells, strip borrows, and compare key sets. None of those
 // has a settled property list to walk, so each treats the object as opaque. Asserting every member

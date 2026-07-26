@@ -433,12 +433,7 @@ func (e *typeEvaluator) groundOperand(operand soltype.Type) soltype.Type {
 // symbolic rather than finalizing just that safe suffix: it is simpler and renders the way the
 // source wrote it, at the cost of re-reducing from scratch each pass.
 func (e *typeEvaluator) reduceObject(t *soltype.ObjectType) soltype.Type {
-	// A mapped member computes the whole member list, so it is reduced instead of merged. It is
-	// always alone in the list, which is why the two paths never meet.
-	if mapped, ok := soltype.AsMapped(t.Elems); ok {
-		return e.reduceMapped(t, mapped)
-	}
-	if !soltype.HasObjectSpread(t.Elems) {
+	if !soltype.HasResidualElem(t.Elems) {
 		return t
 	}
 	reducedElems := make([]soltype.ObjTypeElem, len(t.Elems))
@@ -446,23 +441,34 @@ func (e *typeEvaluator) reduceObject(t *soltype.ObjectType) soltype.Type {
 	inexact := t.Inexact
 	ground := true
 	for i, el := range t.Elems {
-		spread, ok := el.(*soltype.SpreadElem)
-		if !ok {
-			// A non-spread member has its value types reduced, then contributes as a one-field group.
+		switch el := el.(type) {
+		case *soltype.SpreadElem:
+			operand := e.groundObjectOperand(el.Type)
+			reducedElems[i] = &soltype.SpreadElem{Type: operand}
+			obj, ok := operand.(*soltype.ObjectType)
+			if !ok || soltype.HasResidualElem(obj.Elems) {
+				ground = false
+				continue
+			}
+			operandElems = append(operandElems, obj.Elems)
+			inexact = inexact || obj.Inexact
+		case *soltype.MappedElem:
+			// A mapped member contributes the fields it computes as one group, the same shape a
+			// spread's operand object contributes, so both merge under one rule in source order.
+			reduced, fields, openKeys, ok := e.expandMapped(el)
+			reducedElems[i] = reduced
+			if !ok {
+				ground = false
+				continue
+			}
+			operandElems = append(operandElems, fields)
+			inexact = inexact || openKeys
+		default:
+			// An ordinary member has its value types reduced, then contributes as a one-field group.
 			re := e.reduceElem(el)
 			reducedElems[i] = re
 			operandElems = append(operandElems, []soltype.ObjTypeElem{re})
-			continue
 		}
-		operand := e.groundObjectOperand(spread.Type)
-		reducedElems[i] = &soltype.SpreadElem{Type: operand}
-		obj, ok := operand.(*soltype.ObjectType)
-		if !ok || soltype.HasObjectSpread(obj.Elems) {
-			ground = false
-			continue
-		}
-		operandElems = append(operandElems, obj.Elems)
-		inexact = inexact || obj.Inexact
 	}
 	if !ground {
 		return &soltype.ObjectType{Elems: reducedElems, Inexact: inexact}
@@ -586,69 +592,73 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 	}
 }
 
-// reduceMapped reduces `{[K]: V for K in Keys}` to the object its keys and value expression
-// describe, mirroring the old checker's expandMappedElems (internal/checker/expand_type.go). It
-// emits one field per key of the Keys union, each built by mappedFields with that key substituted
-// for K:
+// expandMapped computes the fields a `[K]: V for K in Keys` member contributes to its object,
+// mirroring the old checker's expandMappedElems (internal/checker/expand_type.go). It emits one
+// field per key of the Keys union, each built by mappedFields with that key substituted for K:
 //
 //	{[K]: T[K] for K in keyof T}   with T = {x: number, y: string}
 //	⇒ {x: number, y: string}
 //
-// The whole mapped type stays symbolic unless every key resolves. Keys must ground to a union of
-// string-literal types, which is what a `keyof` over an object reduces to, and each key must reach
-// a field mappedFields can build. A Keys operand that is a type parameter or an unreduced operator
-// keeps the mapped type inert, so `{[K]: T[K] for K in keyof T}` over an abstract T renders the way
-// the source wrote it and reduces later once T grounds.
+// reduceObject merges the returned fields with the member's siblings in source order, so a mapped
+// member composes with ordinary members and with `...A` spreads in one object:
 //
-// A key set the evaluator cannot enumerate leaves the mapped type symbolic too. A primitive key
+//	{id: number, [K]: string for K in Keys}   with Keys = "a" | "b"
+//	⇒ {id: number, a: string, b: string}
+//
+// TypeScript has no such form and writes that as the intersection `{id: number} & {[K in Keys]: string}`.
+//
+// ok=false leaves the member unexpanded and its object symbolic, carrying the reduced key set so a
+// later pass resumes from it. That happens when Keys does not ground to a union of string-literal
+// keys, which is what a `keyof` over an object reduces to, or when a key reaches no field
+// mappedFields can build. A Keys operand that is a type parameter or an unreduced operator keeps the
+// member inert, so `{[K]: T[K] for K in keyof T}` over an abstract T renders the way the source
+// wrote it and expands later once T grounds.
+//
+// A key set the evaluator cannot enumerate leaves the member unexpanded too. A primitive key
 // constraint such as `{[K]: T for K in string}` names infinitely many keys, which an object with
 // named fields cannot express. TypeScript writes that as the index signature `{[k: string]: T}`.
-// soltype has no index-signature element, so such a mapped type stays inert rather than reducing to
-// a wrong shape. The same holds for a key that is a number literal, which names no object field.
+// soltype has no index-signature element, so such a member stays inert rather than expanding to a
+// wrong shape. The same holds for a key that is a number literal, which names no object field.
 //
-// TODO(#930): reduce a primitive key constraint to an index-signature element once soltype carries
+// TODO(#930): expand a primitive key constraint to an index-signature element once soltype carries
 // one, and give a number-literal key a field to name.
 //
 // Two keys that remap to one name merge into a single field whose type is their union, so no key's
 // contribution is lost. See mergeMappedField.
 //
-// The result is inexact when the source object's trailing `...` said so, and also when the key union
-// is inexact. `keyof {a: number, ...}` reduces to `"a" | ...`, an open key set, so the object built
-// from it lists the fields for the known keys and stays open for the rest. A filter narrows which of
-// the known keys survive but cannot rule out the unlisted ones, so the result stays open there too.
-func (e *typeEvaluator) reduceMapped(obj *soltype.ObjectType, t *soltype.MappedElem) soltype.Type {
+// openKeys reports that the key union was itself open, as `keyof {a: number, ...}` is. The caller
+// folds it into the object's inexact marker, so the fields for the known keys are listed and the
+// object stays open for the rest. A filter narrows which of the known keys survive but cannot rule
+// out the unlisted ones, so the result stays open there too.
+func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.MappedElem, fields []soltype.ObjTypeElem, openKeys bool, ok bool) {
 	keys := e.groundOperand(t.Keys)
-	// The symbolic form keeps the reduced key set, so a later pass resumes from the ground it gained
-	// rather than re-expanding the operand from scratch.
-	symbolic := &soltype.ObjectType{
-		Elems: []soltype.ObjTypeElem{&soltype.MappedElem{
-			Key: t.Key, Keys: keys, Value: t.Value, Name: t.Name, Check: t.Check, Extends: t.Extends,
-			Optional: t.Optional, Readonly: t.Readonly,
-		}},
-		Inexact: obj.Inexact,
+	// The unexpanded form keeps the reduced key set, so a later pass resumes from the ground it
+	// gained rather than re-expanding the operand from scratch.
+	reduced = &soltype.MappedElem{
+		Key: t.Key, Keys: keys, Value: t.Value, Name: t.Name, Check: t.Check, Extends: t.Extends,
+		Optional: t.Optional, Readonly: t.Readonly,
 	}
 	if !condOperandGround(keys) {
-		return symbolic
+		return reduced, nil, false, false
 	}
 	source, homomorphic := e.homomorphicSource(t.Keys)
-	members, inexact := mappedKeyMembers(keys)
-	var elems []soltype.ObjTypeElem
+	members, openKeys := mappedKeyMembers(keys)
 	pos := make(map[string]int, len(members))
 	for _, member := range members {
-		fields, ok := e.mappedFields(t, member, source, homomorphic)
+		built, ok := e.mappedFields(t, member, source, homomorphic)
 		if !ok {
-			return symbolic
+			return reduced, nil, false, false
 		}
-		for _, field := range fields {
+		for _, field := range built {
 			if i, dup := pos[field.Name]; dup {
-				elems[i] = mergeMappedField(soltype.AsProperty(elems[i]), field)
+				fields[i] = mergeMappedField(soltype.AsProperty(fields[i]), field)
 				continue
 			}
-			pos[field.Name] = len(elems)
-			elems = append(elems, field)
+			pos[field.Name] = len(fields)
+			fields = append(fields, field)
 		}
 	}
-	return &soltype.ObjectType{Elems: elems, Inexact: obj.Inexact || inexact}
+	return reduced, fields, openKeys, true
 }
 
 // mappedKeyMembers splits a mapped type's reduced Keys operand into the individual keys to emit a
