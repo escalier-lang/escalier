@@ -1836,14 +1836,15 @@ func (e *ReadonlyFieldSubtypeError) Message() string {
 // output as user-facing Escalier syntax (see m1-implementation-plan §2.2). It
 // lives in solver because it walks bound-carrying variables, and its wording
 // matches the spike's verbatim so test assertions stay stable.
-// describeMapped renders a `[K]: V for K in Keys` member in describe's raw mid-constrain form, so a
-// rejected constraint over a symbolic mapped type names it in full rather than the default `?`. The
-// enclosing object supplies the braces and any trailing `...`.
+// describeMapped renders a mapped member in describe's raw mid-constrain form, so a rejected
+// constraint over a symbolic mapped type names it in full rather than the default `?`. It picks
+// between the shorthand and the long form on the same rule soltype's printMapped uses, so one member
+// reads the same in a diagnostic as it does in a printed type. The enclosing object supplies the
+// braces and any trailing `...`.
 //
 // The modifiers render too, because equalObjElem reads them when it decides whether two inert mapped
 // members are equal. Omitting one lets a rejection print both sides identically, so
-// `{[K]: T[K] for K in keyof T}` against its `?`-adding twin would read as a type failing to satisfy
-// itself.
+// `{[K: keyof T]: T[K]}` against its `?`-adding twin would read as a type failing to satisfy itself.
 func describeMapped(t *soltype.MappedElem) string {
 	out := ""
 	switch t.Readonly {
@@ -1853,23 +1854,24 @@ func describeMapped(t *soltype.MappedElem) string {
 		out += "-readonly "
 	case soltype.ModNone:
 	}
-	if soltype.IsIndexSignature(t) {
-		return out + "[" + t.Key.Name + ": " + describe(t.Keys) + "]" +
-			soltype.IndexSigMarker(t.Optional) + ": " + describe(t.Value)
-	}
-	if t.Name != nil {
-		out += "[" + describe(t.Name) + "]"
+	shorthand := soltype.MappedShorthandForm(t)
+	if shorthand {
+		out += "[" + t.Key.Name + ": " + describe(t.Keys) + "]"
+		out += soltype.ShorthandOptionalMarker(t.Optional)
 	} else {
-		out += "[" + t.Key.Name + "]"
+		out += "[" + describe(t.Name) + "]"
+		switch t.Optional {
+		case soltype.ModAdd:
+			out += "+?"
+		case soltype.ModRemove:
+			out += "-?"
+		case soltype.ModNone:
+		}
 	}
-	switch t.Optional {
-	case soltype.ModAdd:
-		out += "+?"
-	case soltype.ModRemove:
-		out += "-?"
-	case soltype.ModNone:
+	out += ": " + describe(t.Value)
+	if !shorthand {
+		out += " for " + t.Key.Name + " in " + describe(t.Keys)
 	}
-	out += ": " + describe(t.Value) + " for " + t.Key.Name + " in " + describe(t.Keys)
 	if t.Check != nil && t.Extends != nil {
 		out += " if " + describe(t.Check) + " : " + describe(t.Extends)
 	}

@@ -820,14 +820,20 @@ func (p *namedPrinter) printType(t Type) string {
 }
 
 // printMapped renders a mapped member in the surface syntax the parser reads and the AST printer
-// writes, `readonly [Name]+?: Value for Key in Keys if Check : Extends`, so a stored mapped type
-// round-trips to what the source wrote. It mirrors type_system's MappedElem rendering so the two
-// checkers' rendered types stay string-comparable. The enclosing object supplies the braces and any
-// trailing `...`, the same way it does for an ordinary member.
+// writes. The enclosing object supplies the braces and any trailing `...`, the same way it does for
+// an ordinary member.
 //
-// The brackets hold the key-remapping expression when the source wrote one and the bare key name
-// otherwise. Every operand prints with no minimum precedence: the brackets, the `:`, and the `for`,
-// `in`, and `if` keywords bound each position, so none can bind across a neighbor.
+// A member that does not remap its keys renders in the shorthand, `readonly [Key: Keys]?: Value`.
+// The brackets are free to hold the key variable and its constraint, so nothing needs a trailing
+// `for Key in Keys`. `{[K]: T[K] for K in keyof T}` therefore renders `{[K: keyof T]: T[K]}`, and
+// its `?`-adding twin renders `{[K: keyof T]?: T[K]}`. An `if Check : Extends` filter trails the
+// value in either form.
+//
+// A member that remaps its keys renders long, `readonly [Name]+?: Value for Key in Keys`, because
+// the remapping expression occupies the brackets the shorthand needs for the constraint.
+//
+// Every operand prints with no minimum precedence: the brackets, the `:`, and the `for`, `in`, and
+// `if` keywords bound each position, so none can bind across a neighbor.
 func (p *namedPrinter) printMapped(t *MappedElem) string {
 	out := ""
 	switch t.Readonly {
@@ -837,39 +843,37 @@ func (p *namedPrinter) printMapped(t *MappedElem) string {
 		out += "-readonly "
 	case ModNone:
 	}
-	if IsIndexSignature(t) {
-		return out + "[" + t.Key.Name + ": " + p.printType(t.Keys) + "]" +
-			IndexSigMarker(t.Optional) + ": " + p.printType(t.Value)
-	}
-	if t.Name != nil {
-		out += "[" + p.printType(t.Name) + "]"
+	if MappedShorthandForm(t) {
+		out += "[" + t.Key.Name + ": " + p.printType(t.Keys) + "]"
+		out += ShorthandOptionalMarker(t.Optional)
 	} else {
-		out += "[" + t.Key.Name + "]"
-	}
-	switch t.Optional {
-	case ModAdd:
-		out += "+?"
-	case ModRemove:
-		out += "-?"
-	case ModNone:
+		out += "[" + p.printType(t.Name) + "]"
+		switch t.Optional {
+		case ModAdd:
+			out += "+?"
+		case ModRemove:
+			out += "-?"
+		case ModNone:
+		}
 	}
 	out += ": " + p.printType(t.Value)
-	out += " for " + t.Key.Name + " in " + p.printType(t.Keys)
+	if !MappedShorthandForm(t) {
+		out += " for " + t.Key.Name + " in " + p.printType(t.Keys)
+	}
 	if t.Check != nil && t.Extends != nil {
 		out += " if " + p.printType(t.Check) + " : " + p.printType(t.Extends)
 	}
 	return out
 }
 
-// IndexSigMarker renders the `?` marker of an index signature. The legal form adds the marker and
-// renders it as the plain `?` the shorthand spells, not the `+?` the long form uses. The `+` marks a
-// modifier that overrides an inherited one, and an uncountable key set has no source object to
-// inherit from, so there is nothing for it to distinguish. The other two forms still render
-// distinctly, so a diagnostic rejecting one never prints it identically to the legal form.
+// ShorthandOptionalMarker renders a mapped member's `?` marker as the shorthand spells it. The
+// shorthand writes `?` where the long form writes `+?`, because `[K: Keys]?: V` is what the parser
+// reads and so what a rendered type should round-trip to. The three modifiers still render
+// distinctly as `?`, `-?`, and nothing, so no two members print identically.
 //
 // It is exported so the solver's mid-constrain renderer spells the marker the same way this printer
 // does, without a second copy of the mapping to keep in step.
-func IndexSigMarker(mod MappedModifier) string {
+func ShorthandOptionalMarker(mod MappedModifier) string {
 	switch mod {
 	case ModAdd:
 		return "?"

@@ -1375,7 +1375,8 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 				p.writeString("-readonly ")
 			}
 		}
-		// Print [name], or [key: constraint] for the index-signature shorthand
+		// Print [name], or [key: constraint] for the shorthand. This echoes the spelling the
+		// source used rather than normalizing to one, the way a formatter preserves the input.
 		p.writeString("[")
 		switch {
 		case e.Shorthand:
@@ -1388,10 +1389,14 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 			p.writeString(e.TypeParam.Name)
 		}
 		p.writeString("]")
-		// Print optional modifier
+		// Print optional modifier. The shorthand spells the adding form `?`, the long form `+?`.
 		if e.Optional != nil {
 			if *e.Optional == ast.MMAdd {
-				p.writeString("+?")
+				if e.Shorthand {
+					p.writeString("?")
+				} else {
+					p.writeString("+?")
+				}
 			} else if *e.Optional == ast.MMRemove {
 				p.writeString("-?")
 			}

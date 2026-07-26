@@ -1659,9 +1659,10 @@ func TestPrintObjectTypeElements(t *testing.T) {
 			"{\n    [K: keyof T]: T[K]\n}",
 		},
 		{
+			// The shorthand spells the adding form `?`, where the long form spells it `+?`.
 			"mapped type shorthand with optional add",
 			"{[K: string]?: number}",
-			"{\n    [K: string]+?: number\n}",
+			"{\n    [K: string]?: number\n}",
 		},
 		{
 			"rest spread",

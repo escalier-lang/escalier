@@ -2390,9 +2390,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "IdentityOverKeyof",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {[K]: Point[K] for K in keyof Point}
+				type Result = {[K: keyof Point]: Point[K]}
 			`,
-			wantSymbolic: "{[K]: Point[K] for K in keyof Point}",
+			wantSymbolic: "{[K: keyof Point]: Point[K]}",
 			wantExpanded: "{x: number, y: string}",
 		},
 		{
@@ -2401,9 +2401,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "ValueIgnoresKey",
 			src: `
 				type Names = "a" | "b"
-				type Result = {[K]: boolean for K in Names}
+				type Result = {[K: Names]: boolean}
 			`,
-			wantSymbolic: "{[K]: boolean for K in Names}",
+			wantSymbolic: "{[K: Names]: boolean}",
 			wantExpanded: "{a: boolean, b: boolean}",
 		},
 		{
@@ -2412,9 +2412,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "NumberLiteralKeys",
 			src: `
 				type Keys = "a" | 1
-				type Result = {[K]: boolean for K in Keys}
+				type Result = {[K: Keys]: boolean}
 			`,
-			wantSymbolic: "{[K]: boolean for K in Keys}",
+			wantSymbolic: "{[K: Keys]: boolean}",
 			wantExpanded: `{"1": boolean, a: boolean}`,
 		},
 		{
@@ -2423,9 +2423,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "TupleKeys",
 			src: `
 				type Pair = [number, string]
-				type Result = {[K]: Pair[K] for K in keyof Pair}
+				type Result = {[K: keyof Pair]: Pair[K]}
 			`,
-			wantSymbolic: "{[K]: Pair[K] for K in keyof Pair}",
+			wantSymbolic: "{[K: keyof Pair]: Pair[K]}",
 			wantExpanded: `{"0": number, "1": string}`,
 		},
 		{
@@ -2434,9 +2434,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "SingleKey",
 			src: `
 				type One = {only: number}
-				type Result = {[K]: One[K] for K in keyof One}
+				type Result = {[K: keyof One]: One[K]}
 			`,
-			wantSymbolic: "{[K]: One[K] for K in keyof One}",
+			wantSymbolic: "{[K: keyof One]: One[K]}",
 			wantExpanded: "{only: number}",
 		},
 		{
@@ -2444,9 +2444,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "EmptyKeySet",
 			src: `
 				type Empty = {}
-				type Result = {[K]: Empty[K] for K in keyof Empty}
+				type Result = {[K: keyof Empty]: Empty[K]}
 			`,
-			wantSymbolic: "{[K]: Empty[K] for K in keyof Empty}",
+			wantSymbolic: "{[K: keyof Empty]: Empty[K]}",
 			wantExpanded: "{}",
 		},
 		{
@@ -2456,7 +2456,7 @@ func TestInferMappedTypeReduction(t *testing.T) {
 				type Point = {x: number, y: string}
 				type Result = {[K]?: Point[K] for K in keyof Point}
 			`,
-			wantSymbolic: "{[K]+?: Point[K] for K in keyof Point}",
+			wantSymbolic: "{[K: keyof Point]?: Point[K]}",
 			wantExpanded: "{x?: number, y?: string}",
 		},
 		{
@@ -2464,9 +2464,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "AddReadonly",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {readonly [K]: Point[K] for K in keyof Point}
+				type Result = {readonly [K: keyof Point]: Point[K]}
 			`,
-			wantSymbolic: "{readonly [K]: Point[K] for K in keyof Point}",
+			wantSymbolic: "{readonly [K: keyof Point]: Point[K]}",
 			wantExpanded: "{readonly x: number, readonly y: string}",
 		},
 		{
@@ -2475,9 +2475,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "FilterKeepsMatchingKeys",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {[K]: Point[K] for K in keyof Point if K : "x"}
+				type Result = {[K: keyof Point]: Point[K] if K : "x"}
 			`,
-			wantSymbolic: `{[K]: Point[K] for K in keyof Point if K : "x"}`,
+			wantSymbolic: `{[K: keyof Point]: Point[K] if K : "x"}`,
 			wantExpanded: "{x: number}",
 		},
 		{
@@ -2486,9 +2486,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "FilterOnValueType",
 			src: `
 				type Mixed = {n: number, s: string}
-				type Result = {[K]: Mixed[K] for K in keyof Mixed if Mixed[K] : number}
+				type Result = {[K: keyof Mixed]: Mixed[K] if Mixed[K] : number}
 			`,
-			wantSymbolic: "{[K]: Mixed[K] for K in keyof Mixed if Mixed[K] : number}",
+			wantSymbolic: "{[K: keyof Mixed]: Mixed[K] if Mixed[K] : number}",
 			wantExpanded: "{n: number}",
 		},
 		{
@@ -2496,9 +2496,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "FilterDropsEveryKey",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {[K]: Point[K] for K in keyof Point if K : "z"}
+				type Result = {[K: keyof Point]: Point[K] if K : "z"}
 			`,
-			wantSymbolic: `{[K]: Point[K] for K in keyof Point if K : "z"}`,
+			wantSymbolic: `{[K: keyof Point]: Point[K] if K : "z"}`,
 			wantExpanded: "{}",
 		},
 		{
@@ -2566,9 +2566,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "HomomorphicPreservesMarkers",
 			src: `
 				type Src = {a?: number, readonly b: string, c: boolean}
-				type Result = {[K]: Src[K] for K in keyof Src}
+				type Result = {[K: keyof Src]: Src[K]}
 			`,
-			wantSymbolic: "{[K]: Src[K] for K in keyof Src}",
+			wantSymbolic: "{[K: keyof Src]: Src[K]}",
 			wantExpanded: "{a?: number, readonly b: string, c: boolean}",
 		},
 		{
@@ -2577,9 +2577,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "RemoveOptionalClearsInherited",
 			src: `
 				type Src = {a?: number, b: string}
-				type Result = {[K]-?: Src[K] for K in keyof Src}
+				type Result = {[K: keyof Src]-?: Src[K]}
 			`,
-			wantSymbolic: "{[K]-?: Src[K] for K in keyof Src}",
+			wantSymbolic: "{[K: keyof Src]-?: Src[K]}",
 			wantExpanded: "{a: number, b: string}",
 		},
 		{
@@ -2587,9 +2587,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "RemoveReadonlyClearsInherited",
 			src: `
 				type Src = {readonly a: number, b: string}
-				type Result = {-readonly [K]: Src[K] for K in keyof Src}
+				type Result = {-readonly [K: keyof Src]: Src[K]}
 			`,
-			wantSymbolic: "{-readonly [K]: Src[K] for K in keyof Src}",
+			wantSymbolic: "{-readonly [K: keyof Src]: Src[K]}",
 			wantExpanded: "{a: number, b: string}",
 		},
 		{
@@ -2598,9 +2598,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "NonHomomorphicEmitsUnmarkedFields",
 			src: `
 				type Names = "a" | "b"
-				type Result = {[K]: boolean for K in Names}
+				type Result = {[K: Names]: boolean}
 			`,
-			wantSymbolic: "{[K]: boolean for K in Names}",
+			wantSymbolic: "{[K: Names]: boolean}",
 			wantExpanded: "{a: boolean, b: boolean}",
 		},
 		{
@@ -2609,9 +2609,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "Nested",
 			src: `
 				type Point = {x: number}
-				type Result = {[K]: {[J]: Point[K] for J in keyof Point} for K in keyof Point}
+				type Result = {[K: keyof Point]: {[J: keyof Point]: Point[K]}}
 			`,
-			wantSymbolic: "{[K]: {[J]: Point[K] for J in keyof Point} for K in keyof Point}",
+			wantSymbolic: "{[K: keyof Point]: {[J: keyof Point]: Point[K]}}",
 			wantExpanded: "{x: {x: number}}",
 		},
 		{
@@ -2620,9 +2620,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "InexactOperandYieldsInexactObject",
 			src: `
 				type Point = {x: number, ...}
-				type Result = {[K]: Point[K] for K in keyof Point}
+				type Result = {[K: keyof Point]: Point[K]}
 			`,
-			wantSymbolic: "{[K]: Point[K] for K in keyof Point}",
+			wantSymbolic: "{[K: keyof Point]: Point[K]}",
 			wantExpanded: "{x: number, ...}",
 		},
 		{
@@ -2631,9 +2631,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "InexactMarkerOnMappedType",
 			src: `
 				type Point = {x: number}
-				type Result = {[K]: Point[K] for K in keyof Point, ...}
+				type Result = {[K: keyof Point]: Point[K], ...}
 			`,
-			wantSymbolic: "{[K]: Point[K] for K in keyof Point, ...}",
+			wantSymbolic: "{[K: keyof Point]: Point[K], ...}",
 			wantExpanded: "{x: number, ...}",
 		},
 		{
@@ -2642,9 +2642,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "KeyofOverMappedType",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = keyof {[K]: Point[K] for K in keyof Point}
+				type Result = keyof {[K: keyof Point]: Point[K]}
 			`,
-			wantSymbolic: "keyof {[K]: Point[K] for K in keyof Point}",
+			wantSymbolic: "keyof {[K: keyof Point]: Point[K]}",
 			wantExpanded: `"x" | "y"`,
 		},
 		{
@@ -2653,9 +2653,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "IndexIntoMappedType",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {[K]: Point[K] for K in keyof Point}["y"]
+				type Result = {[K: keyof Point]: Point[K]}["y"]
 			`,
-			wantSymbolic: `{[K]: Point[K] for K in keyof Point}["y"]`,
+			wantSymbolic: `{[K: keyof Point]: Point[K]}["y"]`,
 			wantExpanded: "string",
 		},
 		{
@@ -2663,9 +2663,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "SpreadOfMappedType",
 			src: `
 				type Point = {x: number}
-				type Result = {...{[K]: Point[K] for K in keyof Point}, y: string}
+				type Result = {...{[K: keyof Point]: Point[K]}, y: string}
 			`,
-			wantSymbolic: "{...{[K]: Point[K] for K in keyof Point}, y: string}",
+			wantSymbolic: "{...{[K: keyof Point]: Point[K]}, y: string}",
 			wantExpanded: "{x: number, y: string}",
 		},
 	}
@@ -2937,7 +2937,7 @@ func TestInferTwoMappedMembersBindIndependently(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <T, U>(x: {[K]: T[K] for K in keyof T, [K]: U[K] for K in keyof U}) -> number",
+		"fn <T, U>(x: {[K: keyof T]: T[K], [K: keyof U]: U[K]}) -> number",
 		values["f"])
 
 	_, _, errs = inferSource(t, `
@@ -2950,7 +2950,7 @@ func TestInferTwoMappedMembersBindIndependently(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"cannot constrain {[K]: t1[K] for K in keyof t1, [K]: t2[K] for K in keyof t2} <: {[K]: t2[K] for K in keyof t2, [K]: t1[K] for K in keyof t1}",
+		"cannot constrain {[K: keyof t1]: t1[K], [K: keyof t2]: t2[K]} <: {[K: keyof t2]: t2[K], [K: keyof t1]: t1[K]}",
 		errs[0].Message())
 }
 
@@ -2962,7 +2962,7 @@ func TestInferMappedMemberMixedConstraint(t *testing.T) {
 		fn f<T>(x: {id: number, [K]: T[K] for K in keyof T}) -> number { return 1 }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T>(x: {id: number, [K]: T[K] for K in keyof T}) -> number", values["f"])
+	require.Equal(t, "fn <T>(x: {id: number, [K: keyof T]: T[K]}) -> number", values["f"])
 
 	_, _, errs = inferSource(t, `
 		type Keys = "a" | "b"
@@ -3017,17 +3017,17 @@ func TestInferMappedTypeErrorNamesModifiers(t *testing.T) {
 		{
 			name: "AddOptional",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]?: T[K] for K in keyof T} { return x }`,
-			want: "cannot constrain {[K]: t1[K] for K in keyof t1} <: {[K]+?: t1[K] for K in keyof t1}",
+			want: "cannot constrain {[K: keyof t1]: t1[K]} <: {[K: keyof t1]?: t1[K]}",
 		},
 		{
 			name: "RemoveOptional",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]-?: T[K] for K in keyof T} { return x }`,
-			want: "cannot constrain {[K]: t1[K] for K in keyof t1} <: {[K]-?: t1[K] for K in keyof t1}",
+			want: "cannot constrain {[K: keyof t1]: t1[K]} <: {[K: keyof t1]-?: t1[K]}",
 		},
 		{
 			name: "AddReadonly",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {readonly [K]: T[K] for K in keyof T} { return x }`,
-			want: "cannot constrain {[K]: t1[K] for K in keyof t1} <: {readonly [K]: t1[K] for K in keyof t1}",
+			want: "cannot constrain {[K: keyof t1]: t1[K]} <: {readonly [K: keyof t1]: t1[K]}",
 		},
 	}
 	for _, tt := range tests {
@@ -3182,7 +3182,7 @@ func TestInferMappedTypeStaysSymbolic(t *testing.T) {
 			// form every generic utility alias is written in.
 			name: "TypeParameterOperand",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> number { return 1 }`,
-			want: "fn <T>(x: {[K]: T[K] for K in keyof T}) -> number",
+			want: "fn <T>(x: {[K: keyof T]: T[K]}) -> number",
 		},
 		{
 			// An uncountable key set names infinitely many keys, so there is no field list to expand
@@ -3204,9 +3204,9 @@ func TestInferMappedTypeStaysSymbolic(t *testing.T) {
 			name: "GroundKeySetIsStoredUnreduced",
 			src: `
 				type Pair = [number, string]
-				fn f(x: {[K]: Pair[K] for K in keyof Pair}) -> number { return 1 }
+				fn f(x: {[K: keyof Pair]: Pair[K]}) -> number { return 1 }
 			`,
-			want: "fn (x: {[K]: Pair[K] for K in keyof Pair}) -> number",
+			want: "fn (x: {[K: keyof Pair]: Pair[K]}) -> number",
 		},
 	}
 	for _, tt := range tests {
@@ -3601,14 +3601,14 @@ func TestInferMappedTypeConstraint(t *testing.T) {
 			name: "MatchingValueAccepted",
 			src: `
 				type Point = {x: number, y: string}
-				val p: {[K]: Point[K] for K in keyof Point} = {x: 1, y: "hi"}
+				val p: {[K: keyof Point]: Point[K]} = {x: 1, y: "hi"}
 			`,
 		},
 		{
 			name: "WrongFieldTypeRejected",
 			src: `
 				type Point = {x: number, y: string}
-				val p: {[K]: Point[K] for K in keyof Point} = {x: 1, y: 2}
+				val p: {[K: keyof Point]: Point[K]} = {x: 1, y: 2}
 			`,
 			wantErr: `cannot constrain 2 <: string`,
 		},
@@ -3626,7 +3626,7 @@ func TestInferMappedTypeConstraint(t *testing.T) {
 			name: "FilteredFieldRejected",
 			src: `
 				type Point = {x: number, y: string}
-				val p: {[K]: Point[K] for K in keyof Point if K : "x"} = {x: 1, y: "hi"}
+				val p: {[K: keyof Point]: Point[K] if K : "x"} = {x: 1, y: "hi"}
 			`,
 			wantErr: `object has extra property: y`,
 		},
@@ -3636,7 +3636,7 @@ func TestInferMappedTypeConstraint(t *testing.T) {
 			name: "FieldReadThroughMappedParam",
 			src: `
 				type Point = {x: number, y: string}
-				fn f(p: {[K]: Point[K] for K in keyof Point}) -> number { return p.x }
+				fn f(p: {[K: keyof Point]: Point[K]}) -> number { return p.x }
 				val n = f({x: 1, y: "hi"})
 			`,
 		},
@@ -3676,5 +3676,5 @@ func TestInferMappedTypeSignatureRoundTrips(t *testing.T) {
 		fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]: T[K] for K in keyof T} { return x }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T>(x: {[K]: T[K] for K in keyof T}) -> {[K]: T[K] for K in keyof T}", values["f"])
+	require.Equal(t, "fn <T>(x: {[K: keyof T]: T[K]}) -> {[K: keyof T]: T[K]}", values["f"])
 }

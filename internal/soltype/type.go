@@ -487,6 +487,18 @@ func UncountableKeys(t Type) bool {
 	}
 }
 
+// MappedShorthandForm reports whether a mapped member is spelled in the `[Key: Keys]` shorthand,
+// which names the key variable and its constraint inside the brackets rather than in a trailing
+// `for Key in Keys`. A member qualifies unless it remaps its keys, since the remapping expression
+// occupies the brackets the constraint would go in. An `if Check : Extends` filter trails the value
+// in either form, so it does not rule the shorthand out.
+//
+// Both spellings lower to the same member, so this decides rendering only. It is not a fact about
+// what the source wrote.
+func MappedShorthandForm(m *MappedElem) bool {
+	return m.Name == nil
+}
+
 // IsIndexSignature reports whether a mapped member is an index signature, the form written
 // `{[K: string]?: number}`. Its key set must be uncountable, which is what makes it an index
 // signature rather than a field list. It must also carry neither a key remapping nor an `if C : E`
