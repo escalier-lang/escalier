@@ -841,7 +841,8 @@ func (s *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Ty
 //
 //   - an object projects its property, getter, and setter names as string-literal types;
 //   - a tuple yields only its own numeric indices, omitting the inherited "length"; see keyofTuple;
-//   - `keyof` distributes over a union or intersection, unioning each member's keys;
+//   - `keyof` distributes over a union or intersection, intersecting each member's keys for a
+//     union and unioning them for an intersection;
 //   - `keyof` of a primitive, literal, `never`, or `unknown` is `never`, since none has
 //     enumerable keys;
 //   - an alias expands to its body and a class projects its instance body, and `keyof` reduces
@@ -890,13 +891,12 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 		}
 		return &soltype.KeyofType{Operand: operand, Exact: exact}
 	case *soltype.UnionType:
-		// TODO(#928): a key is readable from a union only when every member carries it, so this
-		// should intersect the operands' key sets. Unioning them lets `keyof (A | B)` name a key
-		// that only A has, and `(A | B)[K]` then reads it off a value that is a B.
-		return e.keyofDistribute(op.Types, exact)
+		// A value of a union type is one of its members, so only a key every member carries can
+		// be read from it. Its key sets therefore intersect.
+		return e.keyofUnion(op, exact)
 	case *soltype.IntersectionType:
 		// An intersection carries every operand's members, so its key sets union.
-		return e.keyofDistribute(op.Types, exact)
+		return e.keyofIntersection(op.Types, exact)
 	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType:
 		return &soltype.NeverType{}
 	default:
@@ -980,10 +980,93 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 	return newUnion(nil, keys, false)
 }
 
-// keyofDistribute unions the keys of each member of a union or intersection operand, the
-// shared body of both distribution arms: `keyof (A | B)` and `keyof (A & B)` both reduce to
-// `keyof A | keyof B`, since an intersection carries the keys of all its members.
-func (e *typeEvaluator) keyofDistribute(members []soltype.Type, exact bool) soltype.Type {
+// keyofUnion intersects the keys of a union operand's members. A value typed `A | B` is either
+// an A or a B, so only a key both carry can be read from it. `keyof ({a: number, shared: string}
+// | {b: boolean, shared: string})` reduces to `"shared"`. This is the mirror of the
+// IntersectionType arm, which unions its members' keys through keyofIntersection.
+//
+// An inexact key set is open, so it can carry keys its written members do not name. That makes
+// the result inexact whenever the operand union is inexact or any member's key set is. Take
+// `keyof ({a: number, shared: string} | {b: boolean, shared: string, ...})`, which reduces to
+// `"shared" | ...`. Only "shared" is written on both members, so only "shared" is definitely a
+// key, but the second member's open tail may carry "a" too. Intersecting the written keys keeps
+// every key the result names one that every member definitely carries, and the trailing `...`
+// records that the true key set may be larger.
+//
+// Some members have no key set to intersect. A type parameter is one, and so is an operator
+// whose own operands are not ground. Either leaves the intersection uncomputable, so the whole
+// operator stays symbolic and renders `keyof (T | {a: number})`.
+func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, exact bool) soltype.Type {
+	var shared []soltype.Type
+	inexact := op.Inexact
+	for i, m := range op.Types {
+		keys, open, ok := literalKeys(e.reduceKeyof(m, exact))
+		if !ok {
+			return &soltype.KeyofType{Operand: op, Exact: exact}
+		}
+		if open {
+			inexact = true
+		}
+		if i == 0 {
+			// literalKeys hands back the reduced member's own member slice, and newUnion sorts
+			// its input in place, so seed the accumulator with a copy. Every later round
+			// allocates a fresh slice in intersectTypes.
+			shared = append([]soltype.Type(nil), keys...)
+			continue
+		}
+		shared = intersectTypes(shared, keys)
+		if len(shared) == 0 {
+			break
+		}
+	}
+	return newUnion(nil, shared, inexact)
+}
+
+// literalKeys decomposes a reduced `keyof` result into the literal keys it names and whether its
+// key set is open. It reports false for a result that names no enumerable key set, such as the
+// `keyof T` residual over a type parameter, so a caller that needs the keys can fall back to
+// leaving its own operator symbolic.
+//
+// `never` decomposes to an empty closed set, a lone literal to that one key, and a union to its
+// members with the union's own exactness. A union carrying a non-literal member is not a key set
+// the reduction produced, so it reports false rather than silently dropping that member.
+func literalKeys(reduced soltype.Type) (keys []soltype.Type, open bool, ok bool) {
+	switch t := reduced.(type) {
+	case *soltype.NeverType:
+		return nil, false, true
+	case *soltype.LitType:
+		return []soltype.Type{t}, false, true
+	case *soltype.UnionType:
+		for _, m := range t.Types {
+			if _, isLit := m.(*soltype.LitType); !isLit {
+				return nil, false, false
+			}
+		}
+		return t.Types, t.Inexact, true
+	default:
+		return nil, false, false
+	}
+}
+
+// intersectTypes returns the members of a that equalType-match a member of b, preserving a's
+// order. Both inputs are small key sets, so the quadratic scan costs less than building a set
+// keyed on a canonical form.
+func intersectTypes(a, b []soltype.Type) []soltype.Type {
+	both := make([]soltype.Type, 0, len(a))
+	for _, x := range a {
+		for _, y := range b {
+			if equalType(x, y) {
+				both = append(both, x)
+				break
+			}
+		}
+	}
+	return both
+}
+
+// keyofIntersection unions the keys of each member of an intersection operand: `keyof (A & B)`
+// reduces to `keyof A | keyof B`, since an intersection carries the members of all its operands.
+func (e *typeEvaluator) keyofIntersection(members []soltype.Type, exact bool) soltype.Type {
 	parts := make([]soltype.Type, len(members))
 	for i, m := range members {
 		parts[i] = e.reduceKeyof(m, exact)

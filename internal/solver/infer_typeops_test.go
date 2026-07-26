@@ -108,14 +108,69 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"only" | ...`,
 		},
 		{
-			// keyof distributes over a union operand, so each member's keys union together.
+			// A key is readable from a union only when every member carries it, so the members'
+			// key sets intersect. These two share no key, so the intersection is empty.
 			name: "Union",
 			src: `
 				type U = {a: number} | {b: number}
 				type Result = keyof U
 			`,
 			wantSymbolic: "keyof U",
-			wantExpanded: `"a" | "b"`,
+			wantExpanded: "never",
+		},
+		{
+			// The shared key survives the intersection and the per-member keys drop out.
+			name: "UnionSharedKey",
+			src: `
+				type U = {a: number, shared: string} | {b: boolean, shared: string}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"shared"`,
+		},
+		{
+			// An intersection carries both operands' members, so its key sets union. This is the
+			// case that keeps every key, in contrast to the union arm above.
+			name: "Intersection",
+			src: `
+				type I = {a: number, shared: string} & {b: boolean, shared: string}
+				type Result = keyof I
+			`,
+			wantSymbolic: "keyof I",
+			wantExpanded: `"a" | "b" | "shared"`,
+		},
+		{
+			// An inexact member's open key set may carry "a" as well, so the intersection cannot
+			// rule "a" out. The written keys intersect to "shared" and the result stays open.
+			name: "UnionInexactMember",
+			src: `
+				type U = {a: number, shared: string} | {b: boolean, shared: string, ...}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"shared" | ...`,
+		},
+		{
+			// An inexact union has an unlisted member whose keys are unknown, so it cannot close
+			// the key set either. The written members still intersect to "shared", left open.
+			name: "InexactUnion",
+			src: `
+				type U = {a: number, shared: string} | {b: boolean, shared: string} | ...
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"shared" | ...`,
+		},
+		{
+			// A primitive member has no keys, so the intersection with it is empty however many
+			// keys the object member carries.
+			name: "UnionWithPrimitive",
+			src: `
+				type U = {a: number} | number
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: "never",
 		},
 		{
 			// A tuple yields only its own numeric indices, the keys Object.keys returns. It omits
@@ -217,6 +272,14 @@ func TestInferKeyofSignatureStaysSymbolic(t *testing.T) {
 			name: "TypeParam",
 			src:  `fn f<T>(k: keyof T) -> keyof T { return k }`,
 			want: map[string]string{"f": "fn <T>(k: keyof T) -> keyof T"},
+		},
+		{
+			// A union operand with a type-parameter member has no enumerable key set to
+			// intersect, so the whole operator stays symbolic rather than reducing to the object
+			// member's keys.
+			name: "UnionWithTypeParam",
+			src:  `fn f<T>(k: keyof (T | {a: number})) -> keyof (T | {a: number}) { return k }`,
+			want: map[string]string{"f": "fn <T>(k: keyof (T | {a: number})) -> keyof (T | {a: number})"},
 		},
 		{
 			name: "Class",
