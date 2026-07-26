@@ -589,15 +589,16 @@ func TestInferKeyofExpandingAliasTerminates(t *testing.T) {
 // otherwise restart from the full remaining depth and make the walk a search tree exponential in
 // the budget. maxExpandKeyChars is monotonic, so the keys spend one shared pool.
 //
-// Each case asserts how many diagnostics the reduction produces and their kind, and nothing about
-// the residual each field truncates to. Where the shared budget runs out fixes that residual, so
-// its rendered form pins the backstop's arithmetic rather than any intended behavior. The point of
-// the test is that the checker finishes.
+// Each field reduces to a residual the evaluator gave up expanding, and the diagnostic names it
+// `Grow<…>` rather than spelling out the argument. That argument is whatever the recursion had
+// grown by the time the budget ran out, so its levels say nothing about the source; spelling them
+// out ran past a hundred thousand characters. Eliding also makes the messages independent of where
+// the shared pool happened to run out, which is why they can be asserted at all.
 func TestInferMappedExpandingAliasTerminates(t *testing.T) {
 	tests := []struct {
-		name     string
-		src      string
-		wantErrs int
+		name string
+		src  string
+		want []string
 	}{
 		{
 			// Two keys per lap. Each key reduces `Grow<{a: T, b: T}>[K]`, so the walk branches
@@ -607,7 +608,10 @@ func TestInferMappedExpandingAliasTerminates(t *testing.T) {
 				type Grow<T> = {[K]: Grow<{a: T, b: T}>[K] for K in keyof T}
 				val x: Grow<{a: number, b: number}> = {a: 1, b: 2}
 			`,
-			wantErrs: 2,
+			want: []string{
+				`3:47-3:48: cannot constrain 1 <: Grow<…>["a"]`,
+				`3:53-3:54: cannot constrain 2 <: Grow<…>["b"]`,
+			},
 		},
 		{
 			// One key per lap. The walk does not branch and the argument gains one wrapper a lap,
@@ -617,15 +621,16 @@ func TestInferMappedExpandingAliasTerminates(t *testing.T) {
 				type Grow<T> = {[K]: Grow<{a: T}>[K] for K in keyof T}
 				val x: Grow<{a: number}> = {a: 1}
 			`,
-			wantErrs: 1,
+			want: []string{`3:36-3:37: cannot constrain 1 <: Grow<…>["a"]`},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Len(t, errs, test.wantErrs)
-			for _, errVal := range errs {
+			require.Len(t, errs, len(test.want))
+			for i, errVal := range errs {
 				require.IsType(t, &CannotConstrainError{}, errVal)
+				require.Equal(t, test.want[i], msgWithSpan(errVal))
 			}
 		})
 	}
@@ -708,25 +713,6 @@ func TestInferKeyofKeyofIsNever(t *testing.T) {
 			require.Equal(t, "never", soltype.Print(expandResidual(ctx, types["Result"])))
 		})
 	}
-}
-
-// A diagnostic naming a truncated residual renders the alias argument elided rather than in full.
-// The argument doubles for as many laps as maxExpandKeyChars allows, so rendering it whole buries
-// the message under more than a hundred thousand characters. describeMaxDepth cuts it at four
-// levels, which is deeper than any argument a hand-written annotation carries.
-//
-// The elided form is stable even though where the budget ran out is not: everything past the cut
-// is an ellipsis, so the message depends only on the first four levels, and the walk passes those
-// long before the budget binds.
-func TestInferTruncatedResidualElidesInDiagnostic(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		type Grow<T> = {[K]: Grow<{a: T, b: T}>[K] for K in keyof T}
-		val x: Grow<{a: number, b: number}> = {a: 1, b: 2}
-	`)
-	require.Len(t, errs, 2)
-	require.Equal(t,
-		`3:45-3:46: cannot constrain 1 <: Grow<{a: {a: {a: …, b: …}, b: {a: …, b: …}}, b: {a: {a: …, b: …}, b: {a: …, b: …}}}>["a"]`,
-		msgWithSpan(errs[0]))
 }
 
 // An expanding recursive alias under `keyof` reduces to `never` on the `keyof keyof` rule rather

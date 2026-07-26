@@ -667,6 +667,17 @@ type AliasType struct {
 	// M9's cycle cache key on, so two borrows of one alias at different lifetimes never share a
 	// cache entry. A borrow's own lifetime rides a RefType wrapper, not this field.
 	LifetimeArgs []Lifetime
+	// Truncated marks a reference the type evaluator stopped expanding because its expansion
+	// budget ran out. That happens only for a recursion the evaluator cannot finish, one whose
+	// argument grows every lap so the reference never repeats a state the cycle guard would
+	// catch. TypeArgs on such a reference are whatever the walk had grown by the time it
+	// stopped, not anything the source wrote, so PrintElided renders them as a single ellipsis.
+	// See maxExpandKeyChars in internal/solver for how the budget is spent.
+	//
+	// Print and PrintQualified ignore it and render the arguments in full. PrintQualified forms
+	// the identity key the recursion guard and constrain's cycle set compare, and collapsing two
+	// truncated references to one key would close a cycle between instantiations that differ.
+	Truncated bool
 }
 
 // KeyofType is the residual `keyof Operand` type operator (M9 PR1a), the first of

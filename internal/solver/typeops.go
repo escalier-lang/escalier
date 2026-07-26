@@ -46,10 +46,10 @@ const maxExpandDepth = 200
 // therefore remains the governing cap for that shape, and this budget binds only on faster growth
 // or on sibling branching.
 //
-// The budget also bounds the diagnostic a divergent alias produces. Truncation leaves the operator
-// over the unexpanded alias symbolic, the same outcome as exhausting maxExpandDepth. An error
-// message naming that residual renders the argument the walk had grown by the time it stopped,
-// which is at most what the last reference charged.
+// Truncation leaves the operator over the unexpanded alias symbolic, the same outcome as
+// exhausting maxExpandDepth, and marks that alias reference Truncated. A diagnostic naming the
+// residual renders it `Grow<…>` rather than spelling out the argument the walk had grown, so how
+// much the budget allowed before stopping never reaches the message.
 const maxExpandKeyChars = 100_000
 
 // maxTemplateLitCombinations caps how many string literals a template literal may reduce to. Its
@@ -450,7 +450,7 @@ func (e *typeEvaluator) groundOperand(operand soltype.Type) soltype.Type {
 	if !ok {
 		return reduced
 	}
-	return e.expandAliasGuarded(alias, reduced, func(body soltype.Type) soltype.Type {
+	return e.expandAliasGuarded(alias, aliasItself, func(body soltype.Type) soltype.Type {
 		return e.groundOperand(body)
 	})
 }
@@ -553,7 +553,7 @@ func (e *typeEvaluator) groundObjectOperand(operand soltype.Type) soltype.Type {
 		}
 		return op
 	case *soltype.AliasType:
-		return e.expandAliasGuarded(op, op, func(body soltype.Type) soltype.Type {
+		return e.expandAliasGuarded(op, aliasItself, func(body soltype.Type) soltype.Type {
 			return e.groundObjectOperand(body)
 		})
 	default:
@@ -888,10 +888,11 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, inexact bool) soltype.
 	case *soltype.KeyofType:
 		// `keyof keyof X` is `never` for every X, so the inner operand needs no reduction at all.
 		// A key set is a union of string literals for an object and of number literals for a
-		// tuple, and the LitType arm below already reduces `keyof` over either to `never`;
-		// keyofDistribute carries that through the union, and `keyof never` is `never` too. The
-		// rule holds even when the inner `keyof` stays symbolic over a type parameter, since what
-		// `keyof T` projects is a key set whatever T turns out to be.
+		// tuple, and the LitType arm below already reduces `keyof` over either to `never`.
+		// keyofUnion intersects those, so a key set of more than one member still yields
+		// `never`, and `keyof never` is `never` too. The rule holds even when the inner `keyof`
+		// stays symbolic over a type parameter, since what `keyof T` projects is a key set
+		// whatever T turns out to be.
 		//
 		// Reducing the inner operand would be wasted work and, over an expanding recursive alias
 		// such as `type Grow<T> = keyof Grow<{a: T, b: T}>`, work the evaluator only escapes by
@@ -953,7 +954,9 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, inexact bool) soltype.
 // reduceKeyofAlias reduces `keyof Alias` by expanding the alias and reducing `keyof` over its
 // body under the termination guard, leaving the alias symbolic when the guard blocks expansion.
 func (e *typeEvaluator) reduceKeyofAlias(op *soltype.AliasType, inexact bool) soltype.Type {
-	symbolic := &soltype.KeyofType{Operand: op, Inexact: inexact}
+	symbolic := func(a *soltype.AliasType) soltype.Type {
+		return &soltype.KeyofType{Operand: a, Inexact: inexact}
+	}
 	return e.expandAliasGuarded(op, symbolic, func(body soltype.Type) soltype.Type {
 		return e.reduceKeyof(body, inexact)
 	})
@@ -963,25 +966,33 @@ func (e *typeEvaluator) reduceKeyofAlias(op *soltype.AliasType, inexact bool) so
 // termination guard that makes reduction safe over a recursive alias. The alias stays on the
 // active path for the whole reduction of its body, so a member that re-references it, directly
 // or through a chain, sees it active and stops. A recurring instantiation state, an exhausted
-// budget, or an unresolved body each returns fallback with the alias left unexpanded, so the
-// operator over it stays symbolic.
+// budget, or an unresolved body each leaves the alias unexpanded, so the operator over it stays
+// symbolic.
+//
+// fallback builds that symbolic result around the alias reference it is handed, which is op except
+// when the budget ran out — there it is a copy marked Truncated, so a diagnostic naming it elides
+// the arguments the walk had grown rather than spelling them out. A caller whose symbolic form is
+// the bare reference returns the argument unchanged.
 //
 // Every reduction that expands an alias routes through here, so one guard covers `keyof`, indexed
 // access, and the operand-grounding both spread forms use, and the budgets are shared across them.
-func (e *typeEvaluator) expandAliasGuarded(op *soltype.AliasType, fallback soltype.Type, cont func(body soltype.Type) soltype.Type) soltype.Type {
+func (e *typeEvaluator) expandAliasGuarded(op *soltype.AliasType, fallback func(*soltype.AliasType) soltype.Type, cont func(body soltype.Type) soltype.Type) soltype.Type {
 	if e.depth <= 0 || e.keyChars <= 0 {
-		return fallback
+		return fallback(markTruncated(op))
 	}
 	key := soltype.PrintQualified(op)
 	e.keyChars -= len(key)
 	if e.active.Contains(key) {
-		return fallback
+		// A repeated instantiation state is a regular recursion the evaluator represents by
+		// pointing back at the alias, so op is the reference the source wrote and renders as
+		// written. Only a budget exhaustion carries a grown argument worth hiding.
+		return fallback(op)
 	}
 	body := e.ctx.expandAlias(op)
 	if _, unresolved := body.(*soltype.ErrorType); unresolved {
 		// expandAlias yields ErrorType for an unregistered alias, or one whose body a dep-graph
 		// sibling has not filled yet. Keep the operator symbolic rather than reducing over `error`.
-		return fallback
+		return fallback(op)
 	}
 	e.active.Add(key)
 	e.depth--
@@ -989,6 +1000,21 @@ func (e *typeEvaluator) expandAliasGuarded(op *soltype.AliasType, fallback solty
 	e.active.Remove(key)
 	e.depth++
 	return result
+}
+
+// aliasItself is the fallback for a caller whose symbolic form is the bare alias reference, so the
+// grounding walks keep whichever reference expandAliasGuarded handed back.
+func aliasItself(op *soltype.AliasType) soltype.Type { return op }
+
+// markTruncated copies op with the Truncated marker set, so tagging one reference never mutates a
+// node the annotation it came from still points at. A reference already marked is returned as is.
+func markTruncated(op *soltype.AliasType) *soltype.AliasType {
+	if op.Truncated {
+		return op
+	}
+	marked := *op
+	marked.Truncated = true
+	return &marked
 }
 
 // keyofObject projects an object's property, getter, and setter names as string-literal types
@@ -1275,7 +1301,9 @@ func (e *typeEvaluator) reduceIndexIntersection(tgt *soltype.IntersectionType, i
 // instantiation state, an exhausted budget, or an unresolved body each leaves the access
 // unexpanded and symbolic.
 func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Type, inexact bool) soltype.Type {
-	symbolic := &soltype.IndexType{Target: op, Index: index, Inexact: inexact}
+	symbolic := func(a *soltype.AliasType) soltype.Type {
+		return &soltype.IndexType{Target: a, Index: index, Inexact: inexact}
+	}
 	return e.expandAliasGuarded(op, symbolic, func(body soltype.Type) soltype.Type {
 		return e.reduceIndex(body, index, inexact)
 	})

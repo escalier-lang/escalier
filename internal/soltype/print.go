@@ -121,13 +121,19 @@ const ElisionMark = "…"
 // with ElisionMark, so `Grow<{a: {a: {a: number}}}>` at maxDepth 3 reads `Grow<{a: {a: …}}>`. The
 // root sits at depth 0, so maxDepth 1 renders only the root's immediate children.
 //
-// A type reduction can build a type far larger than any the source wrote. An alias whose argument
-// grows every lap doubles that argument until the evaluator's budget stops it, and the residual
-// left behind carries the argument as it stood — see maxExpandKeyChars in internal/solver. Print
-// renders that in full, which is right for an identity key but useless in a diagnostic, where it
-// buries the one line a reader needs under tens of thousands of characters.
+// An alias reference marked Truncated elides its whole argument list instead, `Grow<…>`, however
+// shallow the argument is. The evaluator sets that marker on a reference it gave up expanding, so
+// none of what the argument holds came from the source and rendering levels of it names nothing a
+// reader can act on.
 //
-// maxDepth <= 0 elides nothing, so the zero value renders exactly as Print does.
+// A type reduction can build a type far larger than any the source wrote. An alias whose argument
+// grows every lap doubles that argument until the evaluator's budget stops it — see
+// maxExpandKeyChars in internal/solver. Print renders that in full, which is right for an identity
+// key but useless in a diagnostic, where it buries the one line a reader needs under tens of
+// thousands of characters. The depth limit bounds the same growth reached through a type that
+// carries no marker.
+//
+// maxDepth <= 0 elides nothing, so the zero value renders exactly as Print does, marker or not.
 func PrintElided(t Type, maxDepth int) string {
 	return (&namedPrinter{maxDepth: maxDepth}).printType(t)
 }
@@ -721,6 +727,13 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		if len(t.TypeArgs) == 0 && len(t.LifetimeArgs) == 0 {
 			return name
+		}
+		if p.maxDepth > 0 && t.Truncated {
+			// The evaluator gave up expanding this reference, so its arguments are what its own
+			// recursion had grown rather than what the source wrote. Rendering four levels of that
+			// ends in an ellipsis anyway and names nothing a reader can act on, so the whole
+			// argument list collapses to one. See AliasType.Truncated.
+			return name + "<" + ElisionMark + ">"
 		}
 		parts := make([]string, 0, len(t.LifetimeArgs)+len(t.TypeArgs))
 		for _, la := range t.LifetimeArgs {

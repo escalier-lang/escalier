@@ -713,6 +713,9 @@ func TestPrintElided(t *testing.T) {
 		return ty
 	}
 	alias := func(arg Type) Type { return &AliasType{Name: "Grow", TypeArgs: []Type{arg}} }
+	truncated := func(arg Type) Type {
+		return &AliasType{Name: "Grow", TypeArgs: []Type{arg}, Truncated: true}
+	}
 
 	tests := []struct {
 		name     string
@@ -738,6 +741,10 @@ func TestPrintElided(t *testing.T) {
 			want:     "Grow<{a: {a: …}, b: {a: …}}>",
 		},
 		{"ZeroElidesNothing", alias(nest(3)), 0, "Grow<{a: {a: {a: number}}}>"},
+		// A reference the evaluator gave up expanding elides its whole argument list, however
+		// shallow the argument happens to be, since none of it came from the source.
+		{"TruncatedElidesArgs", truncated(nest(3)), 4, "Grow<…>"},
+		{"TruncatedElidesShallowArgs", truncated(numP()), 4, "Grow<…>"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -754,4 +761,16 @@ func TestPrintElidedZeroMatchesPrint(t *testing.T) {
 		&TupleType{Elems: []Type{strP(), boolP()}},
 	}}
 	require.Equal(t, Print(ty), PrintElided(ty, 0))
+}
+
+// Print and PrintQualified ignore the Truncated marker and render the arguments in full. Only a
+// diagnostic elides them. PrintQualified forms the identity key the recursion guard compares, and
+// collapsing every truncated reference to one `Grow<…>` would close a cycle between instantiations
+// that differ.
+func TestPrintTruncatedAliasRendersArgsInFull(t *testing.T) {
+	ty := &AliasType{Name: "Grow", TypeArgs: []Type{
+		&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP()}}},
+	}, Truncated: true}
+	require.Equal(t, "Grow<{a: number}>", Print(ty))
+	require.Equal(t, "Grow<{a: number}>", PrintQualified(ty))
 }
