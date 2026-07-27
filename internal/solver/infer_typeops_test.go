@@ -194,6 +194,18 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"shared" | ...`,
 		},
 		{
+			// An empty intersection is never even when a member was inexact. The open tail marks
+			// a key set that may be larger than its written keys, but a union with no member is
+			// never whatever its exactness, so nothing survives to carry the tail.
+			name: "UnionInexactMemberDisjoint",
+			src: `
+				type U = {a: number, ...} | {b: boolean}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: "never",
+		},
+		{
 			// A primitive member has no keys, so the intersection with it is empty however many
 			// keys the object member carries.
 			name: "UnionWithPrimitive",
@@ -420,6 +432,72 @@ func TestInferKeyofAliasConstraint(t *testing.T) {
 				require.Empty(t, errs)
 				return
 			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A union operand whose members include a type parameter has one member whose keys the evaluator
+// cannot read. That member can only shrink the intersection, so the reduction folds the members it
+// can read first and consults the unreadable one only for what remains. When the readable members
+// already intersect to nothing, the result is never, since no key the type parameter turns out to
+// carry can be put back. When they still share a key, the intersection is uncomputable and the
+// whole operator stays symbolic.
+//
+// Each case checks an argument against the parameter, so the diagnostic names what `keyof`
+// reduced to. The first three write the type parameter in a different position of the same
+// operand and reduce alike, since skipping an unreadable member rather than bailing out on it
+// keeps the result independent of member order.
+func TestInferKeyofUnionWithUnreadableMember(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{
+			// The two readable members share no key, so the intersection is empty before the
+			// type parameter is even consulted.
+			name: "DisjointReadableMembersLast",
+			src: `
+				fn f<T>(k: keyof ({a: number} | {b: number} | T)) {}
+				val r = f("a")
+			`,
+			wantErr: `cannot constrain "a" <: never`,
+		},
+		{
+			// The same operand with the type parameter written first reduces the same way.
+			name: "DisjointReadableMembersFirst",
+			src: `
+				fn f<T>(k: keyof (T | {a: number} | {b: number})) {}
+				val r = f("a")
+			`,
+			wantErr: `cannot constrain "a" <: never`,
+		},
+		{
+			// And with a readable member on each side of it.
+			name: "DisjointReadableMembersAround",
+			src: `
+				fn f<T>(k: keyof ({a: number} | {b: number} | T | {c: number})) {}
+				val r = f("a")
+			`,
+			wantErr: `cannot constrain "a" <: never`,
+		},
+		{
+			// The readable members both carry "x", so the type parameter decides whether "x"
+			// survives and the operator stays symbolic. The union renders its members in
+			// canonical order, so the type variable leads.
+			name: "OverlappingReadableMembers",
+			src: `
+				fn f<T>(k: keyof ({a: number, x: string} | {b: number, x: string} | T)) {}
+				val r = f("a")
+			`,
+			wantErr: `cannot constrain "a" <: keyof t10 | object | object`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
 			require.Equal(t, tt.wantErr, errs[0].Message())
 		})

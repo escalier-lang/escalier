@@ -994,30 +994,44 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 // records that the true key set may be larger.
 //
 // Some members have no key set to intersect. A type parameter is one, and so is an operator
-// whose own operands are not ground. Either leaves the intersection uncomputable, so the whole
-// operator stays symbolic and renders `keyof (T | {a: number})`.
+// whose own operands are not ground. Such a member can only shrink the intersection, never grow
+// it, so the fold skips it and keeps going. If the members it can read intersect to nothing, the
+// whole intersection is empty whatever the skipped member's keys turn out to be, and the result
+// is never. Otherwise the intersection is uncomputable and the whole operator stays symbolic,
+// rendering `keyof (T | {a: number})`. Skipping rather than bailing out on the first such member
+// keeps the result independent of the order the operand lists its members.
 func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, exact bool) soltype.Type {
 	var shared []soltype.Type
+	seeded := false
+	unreadable := false
 	inexact := op.Inexact
-	for i, m := range op.Types {
+	for _, m := range op.Types {
 		keys, memberInexact, ok := literalKeys(e.reduceKeyof(m, exact))
 		if !ok {
-			return &soltype.KeyofType{Operand: op, Exact: exact}
+			unreadable = true
+			continue
 		}
 		if memberInexact {
 			inexact = true
 		}
-		if i == 0 {
+		if seeded {
+			shared = intersectTypes(shared, keys)
+		} else {
 			// literalKeys hands back the reduced member's own member slice, and newUnion sorts
 			// its input in place, so seed the accumulator with a copy. Every later round
 			// allocates a fresh slice in intersectTypes.
 			shared = append([]soltype.Type(nil), keys...)
-			continue
+			seeded = true
 		}
-		shared = intersectTypes(shared, keys)
 		if len(shared) == 0 {
-			break
+			// No later member can put a key back into an empty intersection, so stop here rather
+			// than reducing the rest. This holds for an unreadable member too, which is why the
+			// answer is never even when one has already been skipped.
+			return &soltype.NeverType{}
 		}
+	}
+	if unreadable {
+		return &soltype.KeyofType{Operand: op, Exact: exact}
 	}
 	return newUnion(nil, shared, inexact)
 }
