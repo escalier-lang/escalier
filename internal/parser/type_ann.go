@@ -569,12 +569,16 @@ loop:
 }
 
 // simpleTypeRefName reports the identifier a type annotation names when it is a bare reference such
-// as `K`, with no qualifier and no type arguments. A mapped type's key variable is spelled that way,
-// so the bracket contents of `[K: Keys]` reach here to be read back as the name `K`. ok=false for
-// any other annotation, which is not a name a key variable can take.
+// as `K`, with no qualifier, no type arguments, and no lifetime. A mapped type's key variable is
+// spelled that way, so the bracket contents of `[K: Keys]` reach here to be read back as the name
+// `K`. ok=false for any other annotation, which is not a name a key variable can take.
+//
+// The lifetime checks matter because a key variable has no lifetime to carry. Accepting `'a K` or
+// `K<'a>` here would read the name back and drop the lifetime silently, so both are rejected and the
+// annotation falls through to the parser's other bracket forms.
 func simpleTypeRefName(t ast.TypeAnn) (string, bool) {
 	ref, ok := t.(*ast.TypeRefTypeAnn)
-	if !ok || len(ref.TypeArgs) > 0 {
+	if !ok || len(ref.TypeArgs) > 0 || len(ref.LifetimeArgs) > 0 || ref.Lifetime != nil {
 		return "", false
 	}
 	ident, ok := ref.Name.(*ast.Ident)

@@ -1681,12 +1681,8 @@ func TestPrintObjectTypeElements(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			typeAnn := parseTypeAnn(t, tt.input)
 			result, err := Print(typeAnn, opts)
-			if err != nil {
-				t.Fatalf("Print error: %v", err)
-			}
-			if result != tt.expected {
-				t.Errorf("Expected:\n%s\n\nGot:\n%s", tt.expected, result)
-			}
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
 		})
 	}
 }

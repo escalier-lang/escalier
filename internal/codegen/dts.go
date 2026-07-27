@@ -781,43 +781,37 @@ func (b *Builder) buildTypeAnn(t type_sys.Type) TypeAnn {
 			nil,
 		)
 	case *type_sys.ObjectType:
-		// Check if there are multiple MappedElems - if so, we need to create an intersection
-		// because TypeScript only allows one mapped type per object literal
-		mappedElemCount := 0
+		// TypeScript requires a mapped type to be the SOLE member of its type literal — a literal
+		// holding one alongside anything else is the error "A mapped type may not declare properties
+		// or methods" (TS7061). So an object carrying a mapped member together with any other member
+		// is emitted as an intersection: one literal per mapped member, plus one holding the rest.
+		//
+		// Escalier has no such restriction, so `{name: string, readonly [K: string]?: boolean}` is a
+		// single object here and emits `{readonly [K in string]?: boolean} & {name: string}`.
+		var mappedAnns []TypeAnn
+		var nonMappedElems []ObjTypeAnnElem
 		for _, elem := range t.Elems {
-			if _, ok := elem.(*type_sys.MappedElem); ok {
-				mappedElemCount++
+			if mappedElem, ok := elem.(*type_sys.MappedElem); ok {
+				// Each mapped element gets its own object type in the intersection
+				mappedAnn := b.buildObjTypeAnnElem(mappedElem, t.SymbolKeyMap)
+				mappedAnns = append(mappedAnns, NewObjectTypeAnn([]ObjTypeAnnElem{mappedAnn}))
+			} else {
+				// Accumulate non-mapped elements to group them together.
+				// Use the plural builder so overloaded MethodElems fan
+				// out to one MethodTypeAnn per arm here too.
+				nonMappedElems = append(nonMappedElems, b.buildObjTypeAnnElems(elem, t.SymbolKeyMap)...)
 			}
 		}
 
-		// If there are multiple mapped elements, we need to split into an intersection type
-		// because TypeScript only allows one mapped type per object literal
-		if mappedElemCount > 1 {
-			var intersectionTypes []TypeAnn
-			var nonMappedElems []ObjTypeAnnElem
-
-			for _, elem := range t.Elems {
-				if mappedElem, ok := elem.(*type_sys.MappedElem); ok {
-					// Each mapped element gets its own object type in the intersection
-					mappedAnn := b.buildObjTypeAnnElem(mappedElem, t.SymbolKeyMap)
-					intersectionTypes = append(intersectionTypes, NewObjectTypeAnn([]ObjTypeAnnElem{mappedAnn}))
-				} else {
-					// Accumulate non-mapped elements to group them together.
-					// Use the plural builder so overloaded MethodElems fan
-					// out to one MethodTypeAnn per arm here too.
-					nonMappedElems = append(nonMappedElems, b.buildObjTypeAnnElems(elem, t.SymbolKeyMap)...)
-				}
-			}
-
-			// If there are non-mapped elements, add them as a single object type at the end
+		// One mapped member on its own already is a valid literal, so it needs no intersection.
+		if len(mappedAnns) > 1 || (len(mappedAnns) == 1 && len(nonMappedElems) > 0) {
+			intersectionTypes := mappedAnns
 			if len(nonMappedElems) > 0 {
 				intersectionTypes = append(intersectionTypes, NewObjectTypeAnn(nonMappedElems))
 			}
-
 			return NewIntersectionTypeAnn(intersectionTypes)
 		}
 
-		// Single mapped element or no mapped elements - use regular object type
 		elems := make([]ObjTypeAnnElem, 0, len(t.Elems))
 		for _, elem := range t.Elems {
 			elems = append(elems, b.buildObjTypeAnnElems(elem, t.SymbolKeyMap)...)

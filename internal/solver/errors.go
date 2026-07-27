@@ -249,17 +249,17 @@ type RequiredUncountableKeysError struct {
 	site   ast.Node     // M2.5: constraint node fallback
 }
 
-// IndexSignatureKeyError fires when an indexed access reads an object through its index signature
-// with a key the signature's key set does not accept, as in `{[K: number]?: V}["a"]`. The signature
-// describes the value at every key of its set and says nothing about a key outside it, so the access
-// resolves to nothing. The key is not coerced to the set's type, so a number key on a string
-// signature takes this error rather than reading through as its digits.
+// IndexSignatureKeyError fires when an indexed access reads an object with a key that none of its
+// index signatures accepts, as in `{[K: number]?: V}["a"]`. A signature describes the value at every
+// key of its own key set and says nothing about a key outside it, so the access resolves to nothing.
+// The key is not coerced to a set's type, so a string key on a number signature takes this error
+// rather than reading through as the number it spells.
 //
-// Like UnknownObjectKeyError it is minted during the reduction constrain performs, and carries the
-// indexed object, the key set it declares, and the offending key.
+// An object may carry several signatures over different key sets, so the message names each set it
+// could have matched. Like UnknownObjectKeyError it is minted during the reduction constrain
+// performs, and carries the indexed object and the offending key.
 type IndexSignatureKeyError struct {
 	Object *soltype.ObjectType
-	Keys   soltype.Type
 	Index  soltype.Type
 	prov   NodeResolver // M2.5: type→node index (§3.5)
 	site   ast.Node     // M2.5: constraint node fallback
@@ -1730,8 +1730,13 @@ func (e *RequiredUncountableKeysError) Message() string {
 }
 
 func (e *IndexSignatureKeyError) Message() string {
+	sigs := e.Object.IndexSignatures()
+	accepted := make([]string, len(sigs))
+	for i, sig := range sigs {
+		accepted[i] = describe(sig.Keys)
+	}
 	return fmt.Sprintf("index signature of %s accepts a key of type %s, not %s",
-		soltype.Print(e.Object), describe(e.Keys), describe(e.Index))
+		soltype.Print(e.Object), strings.Join(accepted, " or "), describe(e.Index))
 }
 
 func (e *NoIndexSignatureError) Message() string {

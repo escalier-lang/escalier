@@ -436,15 +436,18 @@ func MappedElemSettled(m *MappedElem) bool {
 	return IsIndexSignature(m) && m.Optional == ModAdd
 }
 
-// IndexSignature returns the object's index signature and whether it has one. An object carries at
-// most one, since a second would be a second mapped member over the same infinite key set.
-func (o *ObjectType) IndexSignature() (*MappedElem, bool) {
+// IndexSignatures returns the object's index signatures in source order. An object may carry more
+// than one, each over a different key set, as `{[K: string]?: number, [J: number]?: boolean}` does.
+// Which one describes a given key is an assignability question, so the caller picks by probing each
+// signature's key set rather than taking the first.
+func (o *ObjectType) IndexSignatures() []*MappedElem {
+	var sigs []*MappedElem
 	for _, e := range o.Elems {
 		if m, ok := e.(*MappedElem); ok && MappedElemSettled(m) {
-			return m, true
+			sigs = append(sigs, m)
 		}
 	}
-	return nil, false
+	return sigs
 }
 
 // AsMapped returns the mapped member of an element list and whether one is present. A caller that

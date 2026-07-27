@@ -3352,6 +3352,31 @@ func TestInferIndexAccessThroughIndexSignature(t *testing.T) {
 				val v: Obj["a" | "b"] = 1
 			`,
 		},
+		{
+			// An object may carry several signatures over different key sets. The key picks which
+			// one describes it, rather than the first one winning.
+			name: "StringKeyPicksTheStringSignature",
+			src: `
+				type Two = {[K: string]?: number, [J: number]?: boolean}
+				val v: Two["a"] = 1
+			`,
+		},
+		{
+			name: "NumberKeyPicksTheNumberSignature",
+			src: `
+				type Two = {[K: string]?: number, [J: number]?: boolean}
+				val v: Two[0] = true
+			`,
+		},
+		{
+			// The message names every key set the access could have matched.
+			name: "KeyOutsideEverySetNamesThemAll",
+			src: `
+				type Two = {[K: string]?: number, [J: number]?: boolean}
+				val v: Two[true] = 1
+			`,
+			wantErr: `index signature of {[K: string]?: number, [J: number]?: boolean} accepts a key of type string or number, not true`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -3505,6 +3530,56 @@ func TestInferIndexSignatureConstraint(t *testing.T) {
 				val c: Config = {name: "app", debug: 1}
 			`,
 			wantErr: `cannot constrain 1 <: boolean`,
+		},
+		{
+			// A signature reached through a `mut` wrapper is writable, so the keys it covers are
+			// invariant. A literal-typed source field would be widened by a write through the
+			// signature, the same reason a `mut` property target pins its field.
+			name: "MutableSignaturePinsASourceField",
+			src: `
+				fn f(d: mut {[K: string]?: number}) -> number { return 1 }
+				declare fn g() -> mut {a: 1}
+				val y = f(g())
+			`,
+			wantErr: `cannot constrain number <: 1`,
+		},
+		{
+			// A readonly source member cannot fill a writable signature, matching the property rule.
+			name: "ReadonlySourceFieldCannotFillAWritableSignature",
+			src: `
+				fn f(d: mut {[K: string]?: number}) -> number { return 1 }
+				declare fn g() -> mut {readonly a: number}
+				val y = f(g())
+			`,
+			wantErr: `readonly field a cannot satisfy a writable field requirement`,
+		},
+		{
+			// Outside a `mut` wrapper the signature is read-only, so the key stays covariant.
+			name: "ImmutableSignatureStaysCovariant",
+			src: `
+				fn f(d: {[K: string]?: number}) -> number { return 1 }
+				declare fn g() -> {a: 1}
+				val y = f(g())
+			`,
+		},
+		{
+			// A property only one signature's key set accepts is checked against that one. `debug`
+			// is a string key, so the number signature never sees it and never demands `1 <: boolean`.
+			name: "PropertyCheckedAgainstTheSignatureThatAcceptsIt",
+			src: `
+				type Two = {[K: string]?: number, [J: number]?: boolean}
+				val v: Two = {debug: 1}
+			`,
+		},
+		{
+			// A property no signature accepts is still an excess property against an exact target.
+			// A name is not coerced to a number, so `a` is outside a number-keyed signature's set.
+			name: "PropertyNoSignatureAcceptsIsExtra",
+			src: `
+				type ByIndex = {[J: number]?: boolean}
+				val v: ByIndex = {a: true}
+			`,
+			wantErr: `object has extra property: a`,
 		},
 		{
 			name: "IndexSignatureIntoIndexSignature",

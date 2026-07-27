@@ -377,6 +377,28 @@ func (c *Context) condExtends(check, extends soltype.Type, seen set.Set[constrai
 // operator is abstract, so the `Check <: Extends` probe cannot decide a branch over it and the
 // conditional stays symbolic. containsFreeVar catches the variable and skolem cases;
 // containsResidualOp catches a residual such as a `keyof T` the reduction left symbolic.
+// indexSignatureFor returns the object's index signature that describes the given key, and whether
+// one does. An object may carry several over different key sets, so the match is by assignability:
+// the first signature whose key set accepts the key wins, using the same probe a conditional's
+// branch selection uses. `{[K: string]?: number, [J: number]?: boolean}` therefore reads `"a"`
+// through the string signature and `0` through the number one.
+//
+// A key that no signature accepts reports false, which the caller turns into its own diagnostic.
+func (c *Context) indexSignatureFor(obj *soltype.ObjectType, key soltype.Type, seen set.Set[constraintKey]) (*soltype.MappedElem, bool) {
+	for _, sig := range obj.IndexSignatures() {
+		if c.condExtends(key, sig.Keys, seen) {
+			return sig, true
+		}
+	}
+	return nil, false
+}
+
+// strLitKey builds the string-literal type that names a property, so a lookup keyed by a property
+// name can be probed against an index signature's key set the same way a written key is.
+func strLitKey(name string) soltype.Type {
+	return &soltype.LitType{Lit: &soltype.StrLit{Value: name}}
+}
+
 func condOperandGround(t soltype.Type) bool {
 	return !containsFreeVar(t) && !containsResidualOp(t)
 }
@@ -1327,11 +1349,11 @@ func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Ty
 // never name a member, so it records a NoIndexSignatureError. A key that has not grounded may still
 // reduce to a literal, so the access stays symbolic instead.
 func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type, inexact bool) soltype.Type {
-	idx, hasIdx := obj.IndexSignature()
+	hasIdx := len(obj.IndexSignatures()) > 0
 	name, ok := strLitName(index)
 	if !ok {
 		if hasIdx {
-			return e.indexSignatureRead(obj, idx, index, inexact)
+			return e.indexSignatureRead(obj, index, inexact)
 		}
 		if condOperandGround(index) {
 			e.errs = append(e.errs, &NoIndexSignatureError{Object: obj, Index: index})
@@ -1341,7 +1363,7 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 	}
 	if _, found := obj.Member(name); !found {
 		if hasIdx {
-			return e.indexSignatureRead(obj, idx, index, inexact)
+			return e.indexSignatureRead(obj, index, inexact)
 		}
 		e.errs = append(e.errs, &UnknownObjectKeyError{Object: obj, Key: name})
 		return &soltype.ErrorType{}
@@ -1355,11 +1377,11 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 	return read
 }
 
-// indexSignatureRead reduces `obj[key]` through obj's index signature. The key must be assignable to
-// the signature's key set, decided by the same assignability probe a conditional's branch selection
-// uses. A key outside the set reads nothing the signature describes, so it records an
-// IndexSignatureKeyError. `{[K: number]?: V}` indexed by a string takes that error, with no coercion
-// of the key to the set's type.
+// indexSignatureRead reduces `obj[key]` through whichever of obj's index signatures describes the
+// key, which indexSignatureFor picks by probing each signature's key set. A key no signature accepts
+// reads nothing any of them describes, so it records an IndexSignatureKeyError.
+// `{[K: number]?: V}` indexed by a string takes that error, with no coercion of the key to the set's
+// type.
 //
 // The result unions `undefined` onto the signature's value type. The signature adds `?`, which is
 // the only legal form over an uncountable key set, and that marker says the key may be absent. So
@@ -1368,12 +1390,13 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 //
 // A key that has not grounded leaves the access symbolic rather than probing an abstract key against
 // the set, so a read off a generic key resumes once the key grounds.
-func (e *typeEvaluator) indexSignatureRead(obj *soltype.ObjectType, idx *soltype.MappedElem, index soltype.Type, inexact bool) soltype.Type {
+func (e *typeEvaluator) indexSignatureRead(obj *soltype.ObjectType, index soltype.Type, inexact bool) soltype.Type {
 	if !condOperandGround(index) {
 		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
 	}
-	if !e.ctx.condExtends(index, idx.Keys, e.seen) {
-		e.errs = append(e.errs, &IndexSignatureKeyError{Object: obj, Keys: idx.Keys, Index: index})
+	idx, ok := e.ctx.indexSignatureFor(obj, index, e.seen)
+	if !ok {
+		e.errs = append(e.errs, &IndexSignatureKeyError{Object: obj, Index: index})
 		return &soltype.ErrorType{}
 	}
 	return newUnion(nil, []soltype.Type{idx.Value, &soltype.UndefinedType{}}, false)
