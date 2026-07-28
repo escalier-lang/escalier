@@ -177,7 +177,7 @@ func (t *KeyofType) Accept(v TypeVisitor, pol Polarity) Type {
 	operand := cur.Operand.Accept(v, pol)
 	out := cur
 	if operand != cur.Operand {
-		out = &KeyofType{Operand: operand, Exact: cur.Exact}
+		out = &KeyofType{Operand: operand, Inexact: cur.Inexact}
 	}
 	return v.ExitType(out, pol)
 }
@@ -196,7 +196,7 @@ func (t *IndexType) Accept(v TypeVisitor, pol Polarity) Type {
 	index := cur.Index.Accept(v, pol)
 	out := cur
 	if target != cur.Target || index != cur.Index {
-		out = &IndexType{Target: target, Index: index, Exact: cur.Exact}
+		out = &IndexType{Target: target, Index: index, Inexact: cur.Inexact}
 	}
 	return v.ExitType(out, pol)
 }

@@ -93,9 +93,9 @@ func newTypeEvaluator(ctx *Context, seen set.Set[constraintKey]) *typeEvaluator 
 func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.KeyofType:
-		return e.reduceKeyof(t.Operand, t.Exact)
+		return e.reduceKeyof(t.Operand, t.Inexact)
 	case *soltype.IndexType:
-		return e.reduceIndex(t.Target, t.Index, t.Exact)
+		return e.reduceIndex(t.Target, t.Index, t.Inexact)
 	case *soltype.TypeofType:
 		// A `typeof x` query reduces to the value's resolved type. constrain unwraps it directly
 		// in its pre-switch, so this arm serves a `typeof` reached through another operator.
@@ -841,7 +841,8 @@ func (s *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Ty
 //
 //   - an object projects its property, getter, and setter names as string-literal types;
 //   - a tuple yields only its own numeric indices, omitting the inherited "length"; see keyofTuple;
-//   - `keyof` distributes over a union or intersection, unioning each member's keys;
+//   - `keyof` distributes over a union or intersection, intersecting each member's keys for a
+//     union and unioning them for an intersection;
 //   - `keyof` of a primitive, literal, `never`, or `unknown` is `never`, since none has
 //     enumerable keys;
 //   - an alias expands to its body and a class projects its instance body, and `keyof` reduces
@@ -850,7 +851,7 @@ func (s *mappedKeySubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Ty
 //
 // A type variable, a skolem, or a named reference the evaluator does not expand keeps the
 // operator symbolic, rebuilt around the operand.
-func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Type {
+func (e *typeEvaluator) reduceKeyof(operand soltype.Type, inexact bool) soltype.Type {
 	switch op := operand.(type) {
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType:
 		// The operand is itself an operator — a `keyof`, an indexed access, or a conditional. Reduce
@@ -861,25 +862,25 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 		// it: grounding the object emits the member's fields and `keyof` projects their names.
 		inner := e.reduce(op)
 		if isResidualOp(inner) {
-			return &soltype.KeyofType{Operand: inner, Exact: exact}
+			return &soltype.KeyofType{Operand: inner, Inexact: inexact}
 		}
-		return e.reduceKeyof(inner, exact)
+		return e.reduceKeyof(inner, inexact)
 	case *soltype.AliasType:
-		return e.reduceKeyofAlias(op, exact)
+		return e.reduceKeyofAlias(op, inexact)
 	case *soltype.TypeofType:
 		// `keyof typeof x` resolves the query to the value's type, then projects that type's keys.
-		return e.reduceKeyof(op.Ty, exact)
+		return e.reduceKeyof(op.Ty, inexact)
 	case *soltype.ObjectType:
 		// An object carrying an unreduced `...A` spread has no ground key set, so `keyof` over it
 		// stays symbolic until the spread grounds, mirroring the TupleType arm below.
 		if obj, ok := e.groundToObject(op); ok {
 			return e.keyofObject(obj)
 		}
-		return &soltype.KeyofType{Operand: operand, Exact: exact}
+		return &soltype.KeyofType{Operand: operand, Inexact: inexact}
 	case *soltype.ClassType:
 		obj, ok := e.ctx.projectClassBody(op)
 		if !ok {
-			return &soltype.KeyofType{Operand: operand, Exact: exact}
+			return &soltype.KeyofType{Operand: operand, Inexact: inexact}
 		}
 		return e.keyofObject(obj)
 	case *soltype.TupleType:
@@ -888,28 +889,27 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, exact bool) soltype.Ty
 		if tup, ok := e.groundTuple(op); ok {
 			return e.keyofTuple(tup)
 		}
-		return &soltype.KeyofType{Operand: operand, Exact: exact}
+		return &soltype.KeyofType{Operand: operand, Inexact: inexact}
 	case *soltype.UnionType:
-		// TODO(#928): a key is readable from a union only when every member carries it, so this
-		// should intersect the operands' key sets. Unioning them lets `keyof (A | B)` name a key
-		// that only A has, and `(A | B)[K]` then reads it off a value that is a B.
-		return e.keyofDistribute(op.Types, exact)
+		// A value of a union type is one of its members, so only a key every member carries can
+		// be read from it. Its key sets therefore intersect.
+		return e.keyofUnion(op, inexact)
 	case *soltype.IntersectionType:
 		// An intersection carries every operand's members, so its key sets union.
-		return e.keyofDistribute(op.Types, exact)
+		return e.keyofIntersection(op.Types, inexact)
 	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType:
 		return &soltype.NeverType{}
 	default:
-		return &soltype.KeyofType{Operand: operand, Exact: exact}
+		return &soltype.KeyofType{Operand: operand, Inexact: inexact}
 	}
 }
 
 // reduceKeyofAlias reduces `keyof Alias` by expanding the alias and reducing `keyof` over its
 // body under the termination guard, leaving the alias symbolic when the guard blocks expansion.
-func (e *typeEvaluator) reduceKeyofAlias(op *soltype.AliasType, exact bool) soltype.Type {
-	symbolic := &soltype.KeyofType{Operand: op, Exact: exact}
+func (e *typeEvaluator) reduceKeyofAlias(op *soltype.AliasType, inexact bool) soltype.Type {
+	symbolic := &soltype.KeyofType{Operand: op, Inexact: inexact}
 	return e.expandAliasGuarded(op, symbolic, func(body soltype.Type) soltype.Type {
-		return e.reduceKeyof(body, exact)
+		return e.reduceKeyof(body, inexact)
 	})
 }
 
@@ -980,13 +980,110 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 	return newUnion(nil, keys, false)
 }
 
-// keyofDistribute unions the keys of each member of a union or intersection operand, the
-// shared body of both distribution arms: `keyof (A | B)` and `keyof (A & B)` both reduce to
-// `keyof A | keyof B`, since an intersection carries the keys of all its members.
-func (e *typeEvaluator) keyofDistribute(members []soltype.Type, exact bool) soltype.Type {
+// keyofUnion intersects the keys of a union operand's members. A value typed `A | B` is either
+// an A or a B, so only a key both carry can be read from it. `keyof ({a: number, shared: string}
+// | {b: boolean, shared: string})` reduces to `"shared"`. This is the mirror of the
+// IntersectionType arm, which unions its members' keys through keyofIntersection.
+//
+// An inexact key set is open, so it can carry keys its written members do not name. That makes
+// the result inexact whenever the operand union is inexact or any member's key set is. Take
+// `keyof ({a: number, shared: string} | {b: boolean, shared: string, ...})`, which reduces to
+// `"shared" | ...`. Only "shared" is written on both members, so only "shared" is definitely a
+// key, but the second member's open tail may carry "a" too. Intersecting the written keys keeps
+// every key the result names one that every member definitely carries, and the trailing `...`
+// records that the true key set may be larger.
+//
+// Some members have no key set to intersect. A type parameter is one, and so is an operator
+// whose own operands are not ground. Such a member can only shrink the intersection, never grow
+// it, so the fold skips it and keeps going. If the members it can read intersect to nothing, the
+// whole intersection is empty whatever the skipped member's keys turn out to be, and the result
+// is never. Otherwise the intersection is uncomputable and the whole operator stays symbolic,
+// rendering `keyof (T | {a: number})`. Skipping rather than bailing out on the first such member
+// keeps the result independent of the order the operand lists its members.
+func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.Type {
+	var shared []soltype.Type
+	seeded := false
+	unreadable := false
+	sharedInexact := op.Inexact
+	for _, m := range op.Types {
+		keys, memberInexact, ok := literalKeys(e.reduceKeyof(m, inexact))
+		if !ok {
+			unreadable = true
+			continue
+		}
+		if memberInexact {
+			sharedInexact = true
+		}
+		if seeded {
+			shared = intersectTypes(shared, keys)
+		} else {
+			// literalKeys hands back the reduced member's own member slice, and newUnion sorts
+			// its input in place, so seed the accumulator with a copy. Every later round
+			// allocates a fresh slice in intersectTypes.
+			shared = append([]soltype.Type(nil), keys...)
+			seeded = true
+		}
+		if len(shared) == 0 {
+			// No later member can put a key back into an empty intersection, so stop here rather
+			// than reducing the rest. This holds for an unreadable member too, which is why the
+			// answer is never even when one has already been skipped.
+			return &soltype.NeverType{}
+		}
+	}
+	if unreadable {
+		return &soltype.KeyofType{Operand: op, Inexact: inexact}
+	}
+	return newUnion(nil, shared, sharedInexact)
+}
+
+// literalKeys decomposes a reduced `keyof` result into the literal keys it names and whether its
+// key set is inexact. It reports false for a result that names no enumerable key set, such as the
+// `keyof T` residual over a type parameter, so a caller that needs the keys can fall back to
+// leaving its own operator symbolic.
+//
+// `never` decomposes to an empty exact set, a lone literal to that one key, and a union to its
+// members with the union's own exactness. A union carrying a non-literal member is not a key set
+// the reduction produced, so it reports false rather than silently dropping that member.
+func literalKeys(reduced soltype.Type) (keys []soltype.Type, inexact bool, ok bool) {
+	switch t := reduced.(type) {
+	case *soltype.NeverType:
+		return nil, false, true
+	case *soltype.LitType:
+		return []soltype.Type{t}, false, true
+	case *soltype.UnionType:
+		for _, m := range t.Types {
+			if _, isLit := m.(*soltype.LitType); !isLit {
+				return nil, false, false
+			}
+		}
+		return t.Types, t.Inexact, true
+	default:
+		return nil, false, false
+	}
+}
+
+// intersectTypes returns the members of a that equalType-match a member of b, preserving a's
+// order. Both inputs are small key sets, so the quadratic scan costs less than building a set
+// keyed on a canonical form.
+func intersectTypes(a, b []soltype.Type) []soltype.Type {
+	both := make([]soltype.Type, 0, len(a))
+	for _, x := range a {
+		for _, y := range b {
+			if equalType(x, y) {
+				both = append(both, x)
+				break
+			}
+		}
+	}
+	return both
+}
+
+// keyofIntersection unions the keys of each member of an intersection operand: `keyof (A & B)`
+// reduces to `keyof A | keyof B`, since an intersection carries the members of all its operands.
+func (e *typeEvaluator) keyofIntersection(members []soltype.Type, inexact bool) soltype.Type {
 	parts := make([]soltype.Type, len(members))
 	for i, m := range members {
-		parts[i] = e.reduceKeyof(m, exact)
+		parts[i] = e.reduceKeyof(m, inexact)
 	}
 	return newUnion(nil, parts, false)
 }
@@ -1010,23 +1107,23 @@ func (e *typeEvaluator) keyofDistribute(members []soltype.Type, exact bool) solt
 //
 // A type-variable target or index, or any operand the evaluator does not ground, keeps the
 // access symbolic, rebuilt around the reduced operands.
-func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) soltype.Type {
+func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) soltype.Type {
 	idx := e.reduce(index)
 	// A union index distributes member-wise. `T[keyof T]` rides this once `keyof T` reduces to
 	// its `"a" | "b"` key union, so the access yields the union of the members' value types.
 	if u, ok := idx.(*soltype.UnionType); ok {
 		parts := make([]soltype.Type, len(u.Types))
 		for i, m := range u.Types {
-			parts[i] = e.reduceIndex(target, m, exact)
+			parts[i] = e.reduceIndex(target, m, inexact)
 		}
 		return newUnion(nil, parts, false)
 	}
 	switch tgt := target.(type) {
 	case *soltype.AliasType:
-		return e.reduceIndexAlias(tgt, idx, exact)
+		return e.reduceIndexAlias(tgt, idx, inexact)
 	case *soltype.TypeofType:
 		// `(typeof x)[K]` resolves the query to the value's type, then indexes that type.
-		return e.reduceIndex(tgt.Ty, idx, exact)
+		return e.reduceIndex(tgt.Ty, idx, inexact)
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType:
 		// The target is itself an operator — a `keyof`, an indexed access, or a conditional. Reduce
 		// it first, then index its value, so a ground conditional target selects its branch and the
@@ -1036,29 +1133,29 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) solt
 		// object path before the access reads one of its emitted fields.
 		inner := e.reduce(target)
 		if isResidualOp(inner) {
-			return &soltype.IndexType{Target: inner, Index: idx, Exact: exact}
+			return &soltype.IndexType{Target: inner, Index: idx, Inexact: inexact}
 		}
-		return e.reduceIndex(inner, idx, exact)
+		return e.reduceIndex(inner, idx, inexact)
 	case *soltype.ObjectType:
 		// An object carrying an unreduced `...A` spread has no ground fields, so indexing it stays
 		// symbolic until the spread grounds, mirroring the TupleType arm below.
 		if obj, ok := e.groundToObject(tgt); ok {
-			return e.indexObject(obj, idx, exact)
+			return e.indexObject(obj, idx, inexact)
 		}
-		return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
+		return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
 	case *soltype.ClassType:
 		obj, ok := e.ctx.projectClassBody(tgt)
 		if !ok {
-			return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
+			return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
 		}
-		return e.indexObject(obj, idx, exact)
+		return e.indexObject(obj, idx, inexact)
 	case *soltype.TupleType:
 		// A tuple carrying an unreduced `...P` spread has no ground positions, so indexing it stays
 		// symbolic until the spread grounds to a concrete tuple.
 		if tup, ok := e.groundTuple(tgt); ok {
-			return e.indexTuple(tup, idx, exact)
+			return e.indexTuple(tup, idx, inexact)
 		}
-		return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
+		return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
 	case *soltype.UnionType:
 		// A union target distributes member-wise: `(A | B)[K]` ⇒ `A[K] | B[K]`, the other-axis
 		// twin of the union-index distribution above, matching how keyof distributes over a union
@@ -1067,13 +1164,13 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) solt
 		// with the same reduced key.
 		parts := make([]soltype.Type, len(tgt.Types))
 		for i, m := range tgt.Types {
-			parts[i] = e.reduceIndex(m, idx, exact)
+			parts[i] = e.reduceIndex(m, idx, inexact)
 		}
 		return newUnion(nil, parts, false)
 	case *soltype.IntersectionType:
-		return e.reduceIndexIntersection(tgt, idx, exact)
+		return e.reduceIndexIntersection(tgt, idx, inexact)
 	default:
-		return &soltype.IndexType{Target: target, Index: idx, Exact: exact}
+		return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
 	}
 }
 
@@ -1083,13 +1180,13 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, exact bool) solt
 // member must carry K. A member lacking K contributes nothing rather than erroring, so its own
 // absence diagnostic is rolled back and kept aside. The access stays symbolic when a member is not
 // ground enough to decide whether it carries K, and reports absence only when no member carries it.
-func (e *typeEvaluator) reduceIndexIntersection(tgt *soltype.IntersectionType, idx soltype.Type, exact bool) soltype.Type {
+func (e *typeEvaluator) reduceIndexIntersection(tgt *soltype.IntersectionType, idx soltype.Type, inexact bool) soltype.Type {
 	var resolved []soltype.Type
 	var absentErrs []SolverError
 	anySymbolic := false
 	for _, m := range tgt.Types {
 		before := len(e.errs)
-		r := e.reduceIndex(m, idx, exact)
+		r := e.reduceIndex(m, idx, inexact)
 		if produced := e.errs[before:]; len(produced) > 0 {
 			// A ground member lacking K recorded its own absence diagnostic. A sibling may still
 			// carry K, so roll the diagnostic back and keep it aside in case none does.
@@ -1106,7 +1203,7 @@ func (e *typeEvaluator) reduceIndexIntersection(tgt *soltype.IntersectionType, i
 	// A member the evaluator could not ground might carry K with an unknown type, so the meet is
 	// undecided. Stay symbolic rather than committing to the members that did resolve.
 	if anySymbolic {
-		return &soltype.IndexType{Target: tgt, Index: idx, Exact: exact}
+		return &soltype.IndexType{Target: tgt, Index: idx, Inexact: inexact}
 	}
 	if len(resolved) > 0 {
 		return newIntersection(nil, resolved)
@@ -1124,8 +1221,8 @@ func (e *typeEvaluator) reduceIndexIntersection(tgt *soltype.IntersectionType, i
 // path for the whole reduction of its body, so a member that re-references it stops. A recurring
 // instantiation state, an exhausted budget, or an unresolved body each leaves the access
 // unexpanded and symbolic.
-func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Type, exact bool) soltype.Type {
-	symbolic := &soltype.IndexType{Target: op, Index: index, Exact: exact}
+func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Type, inexact bool) soltype.Type {
+	symbolic := &soltype.IndexType{Target: op, Index: index, Inexact: inexact}
 	key := soltype.PrintQualified(op)
 	if e.active.Contains(key) || e.depth <= 0 {
 		return symbolic
@@ -1136,7 +1233,7 @@ func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Ty
 	}
 	e.active.Add(key)
 	e.depth--
-	result := e.reduceIndex(body, index, exact)
+	result := e.reduceIndex(body, index, inexact)
 	e.active.Remove(key)
 	e.depth++
 	return result
@@ -1148,10 +1245,10 @@ func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Ty
 // sentinel. A non-string-literal index, such as a bare `string` primitive, selects no single
 // member yet. An index signature reads it once mapped types land (M9 PR4), so the access stays
 // symbolic until then.
-func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type, exact bool) soltype.Type {
+func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type, inexact bool) soltype.Type {
 	name, ok := strLitName(index)
 	if !ok {
-		return &soltype.IndexType{Target: obj, Index: index, Exact: exact}
+		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
 	}
 	if _, found := obj.Member(name); !found {
 		e.errs = append(e.errs, &UnknownObjectKeyError{Object: obj, Key: name})
@@ -1161,7 +1258,7 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 	if !hasValue {
 		// The member is a write-only setter, which exposes no readable value. Leave the access
 		// symbolic rather than resolving a write slot to a read type.
-		return &soltype.IndexType{Target: obj, Index: index, Exact: exact}
+		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
 	}
 	return read
 }
@@ -1170,14 +1267,14 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 // that position. An index outside `[0, len)`, or a non-integer or negative literal, records a
 // TupleIndexOutOfRangeError and reduces to the error sentinel. A non-numeric-literal index has no
 // positional slot to select, so the access stays symbolic.
-func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, exact bool) soltype.Type {
+func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, inexact bool) soltype.Type {
 	lit, ok := index.(*soltype.LitType)
 	if !ok {
-		return &soltype.IndexType{Target: tup, Index: index, Exact: exact}
+		return &soltype.IndexType{Target: tup, Index: index, Inexact: inexact}
 	}
 	num, ok := lit.Lit.(*soltype.NumLit)
 	if !ok {
-		return &soltype.IndexType{Target: tup, Index: index, Exact: exact}
+		return &soltype.IndexType{Target: tup, Index: index, Inexact: inexact}
 	}
 	i := int(num.Value)
 	if float64(i) != num.Value || i < 0 || i >= len(tup.Elems) {

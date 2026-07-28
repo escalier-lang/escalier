@@ -108,14 +108,113 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"only" | ...`,
 		},
 		{
-			// keyof distributes over a union operand, so each member's keys union together.
+			// A key is readable from a union only when every member carries it, so the members'
+			// key sets intersect. These two share no key, so the intersection is empty.
 			name: "Union",
 			src: `
 				type U = {a: number} | {b: number}
 				type Result = keyof U
 			`,
 			wantSymbolic: "keyof U",
+			wantExpanded: "never",
+		},
+		{
+			// The shared key survives the intersection and the per-member keys drop out.
+			name: "UnionSharedKey",
+			src: `
+				type U = {a: number, shared: string} | {b: boolean, shared: string}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"shared"`,
+		},
+		{
+			// Every shared key survives, not just one: "x" and "y" are on both members, while "a"
+			// and "b" each appear on one and drop out.
+			name: "UnionSharedKeys",
+			src: `
+				type U = {a: number, x: string, y: boolean} | {b: number, x: string, y: boolean}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"x" | "y"`,
+		},
+		{
+			// One member's keys are a subset of the other's, so the intersection is that subset
+			// and only the key the wider member adds on its own drops out.
+			name: "UnionSubsetKeys",
+			src: `
+				type U = {a: number, b: string} | {a: number, b: string, c: boolean}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
 			wantExpanded: `"a" | "b"`,
+		},
+		{
+			// Three members intersect pairwise down to the one key all three carry.
+			name: "UnionThreeMembers",
+			src: `
+				type U = {a: number, x: string} | {b: number, x: string} | {a: number, b: number, x: string}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"x"`,
+		},
+		{
+			// An intersection carries both operands' members, so its key sets union. This is the
+			// case that keeps every key, in contrast to the union arm above.
+			name: "Intersection",
+			src: `
+				type I = {a: number, shared: string} & {b: boolean, shared: string}
+				type Result = keyof I
+			`,
+			wantSymbolic: "keyof I",
+			wantExpanded: `"a" | "b" | "shared"`,
+		},
+		{
+			// An inexact member's open key set may carry "a" as well, so the intersection cannot
+			// rule "a" out. The written keys intersect to "shared" and the result stays open.
+			name: "UnionInexactMember",
+			src: `
+				type U = {a: number, shared: string} | {b: boolean, shared: string, ...}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"shared" | ...`,
+		},
+		{
+			// An inexact union has an unlisted member whose keys are unknown, so it cannot close
+			// the key set either. The written members still intersect to "shared", left open.
+			name: "InexactUnion",
+			src: `
+				type U = {a: number, shared: string} | {b: boolean, shared: string} | ...
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: `"shared" | ...`,
+		},
+		{
+			// An empty intersection is never even when a member was inexact. The open tail marks
+			// a key set that may be larger than its written keys, but a union with no member is
+			// never whatever its exactness, so nothing survives to carry the tail.
+			name: "UnionInexactMemberDisjoint",
+			src: `
+				type U = {a: number, ...} | {b: boolean}
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: "never",
+		},
+		{
+			// A primitive member has no keys, so the intersection with it is empty however many
+			// keys the object member carries.
+			name: "UnionWithPrimitive",
+			src: `
+				type U = {a: number} | number
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: "never",
 		},
 		{
 			// A tuple yields only its own numeric indices, the keys Object.keys returns. It omits
@@ -217,6 +316,14 @@ func TestInferKeyofSignatureStaysSymbolic(t *testing.T) {
 			name: "TypeParam",
 			src:  `fn f<T>(k: keyof T) -> keyof T { return k }`,
 			want: map[string]string{"f": "fn <T>(k: keyof T) -> keyof T"},
+		},
+		{
+			// A union operand with a type-parameter member has no enumerable key set to
+			// intersect, so the whole operator stays symbolic rather than reducing to the object
+			// member's keys.
+			name: "UnionWithTypeParam",
+			src:  `fn f<T>(k: keyof (T | {a: number})) -> keyof (T | {a: number}) { return k }`,
+			want: map[string]string{"f": "fn <T>(k: keyof (T | {a: number})) -> keyof (T | {a: number})"},
 		},
 		{
 			name: "Class",
@@ -325,6 +432,72 @@ func TestInferKeyofAliasConstraint(t *testing.T) {
 				require.Empty(t, errs)
 				return
 			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A union operand whose members include a type parameter has one member whose keys the evaluator
+// cannot read. That member can only shrink the intersection, so the reduction folds the members it
+// can read first and consults the unreadable one only for what remains. When the readable members
+// already intersect to nothing, the result is never, since no key the type parameter turns out to
+// carry can be put back. When they still share a key, the intersection is uncomputable and the
+// whole operator stays symbolic.
+//
+// Each case checks an argument against the parameter, so the diagnostic names what `keyof`
+// reduced to. The first three write the type parameter in a different position of the same
+// operand and reduce alike, since skipping an unreadable member rather than bailing out on it
+// keeps the result independent of member order.
+func TestInferKeyofUnionWithUnreadableMember(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{
+			// The two readable members share no key, so the intersection is empty before the
+			// type parameter is even consulted.
+			name: "DisjointReadableMembersLast",
+			src: `
+				fn f<T>(k: keyof ({a: number} | {b: number} | T)) {}
+				val r = f("a")
+			`,
+			wantErr: `cannot constrain "a" <: never`,
+		},
+		{
+			// The same operand with the type parameter written first reduces the same way.
+			name: "DisjointReadableMembersFirst",
+			src: `
+				fn f<T>(k: keyof (T | {a: number} | {b: number})) {}
+				val r = f("a")
+			`,
+			wantErr: `cannot constrain "a" <: never`,
+		},
+		{
+			// And with a readable member on each side of it.
+			name: "DisjointReadableMembersAround",
+			src: `
+				fn f<T>(k: keyof ({a: number} | {b: number} | T | {c: number})) {}
+				val r = f("a")
+			`,
+			wantErr: `cannot constrain "a" <: never`,
+		},
+		{
+			// The readable members both carry "x", so the type parameter decides whether "x"
+			// survives and the operator stays symbolic. The union renders its members in
+			// canonical order, so the type variable leads.
+			name: "OverlappingReadableMembers",
+			src: `
+				fn f<T>(k: keyof ({a: number, x: string} | {b: number, x: string} | T)) {}
+				val r = f("a")
+			`,
+			wantErr: `cannot constrain "a" <: keyof t10 | object | object`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
 			require.Equal(t, tt.wantErr, errs[0].Message())
 		})
