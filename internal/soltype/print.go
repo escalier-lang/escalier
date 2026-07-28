@@ -113,6 +113,31 @@ func PrintQualified(t Type) string {
 	return (&namedPrinter{qualify: true}).printType(t)
 }
 
+// ElisionMark stands for the subtree PrintElided dropped. It is U+2026, distinct from the `...`
+// that marks an inexact object or tuple, so a reader can tell an elided branch from an open one.
+const ElisionMark = "…"
+
+// PrintElided renders a type like Print but replaces every subtree nested deeper than maxDepth
+// with ElisionMark, so `Grow<{a: {a: {a: number}}}>` at maxDepth 3 reads `Grow<{a: {a: …}}>`. The
+// root sits at depth 0, so maxDepth 1 renders only the root's immediate children.
+//
+// An alias reference marked Truncated elides its whole argument list instead, `Grow<…>`, however
+// shallow the argument is. The evaluator sets that marker on a reference it gave up expanding, so
+// none of what the argument holds came from the source and rendering levels of it names nothing a
+// reader can act on.
+//
+// A type reduction can build a type far larger than any the source wrote. An alias whose argument
+// grows every lap doubles that argument until the evaluator's budget stops it — see
+// maxExpandKeyChars in internal/solver. Print renders that in full, which is right for an identity
+// key but useless in a diagnostic, where it buries the one line a reader needs under tens of
+// thousands of characters. The depth limit bounds the same growth reached through a type that
+// carries no marker.
+//
+// maxDepth <= 0 elides nothing, so the zero value renders exactly as Print does, marker or not.
+func PrintElided(t Type, maxDepth int) string {
+	return (&namedPrinter{maxDepth: maxDepth}).printType(t)
+}
+
 // PrintAsScheme renders a coalesced GENERALIZED type (M3): it collects the type's
 // free variables into a <T0, T1, …> quantifier prefix and renders each as its
 // assigned name. A type with no free variables renders exactly as Print would (no
@@ -496,6 +521,11 @@ type namedPrinter struct {
 	// name across namespaces stay distinct. PrintQualified sets it for identity-key use;
 	// plain Print leaves it false so user-facing output stays unqualified.
 	qualify bool
+	// maxDepth bounds how deep printType descends before it renders ElisionMark in place of a
+	// subtree. Zero, the value Print and PrintQualified leave, descends without limit. depth is
+	// the nesting of the node being rendered, counted from 0 at the root.
+	maxDepth int
+	depth    int
 }
 
 // printLifetime renders a lifetime in Escalier surface syntax: 'static for the
@@ -553,11 +583,35 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 	return result
 }
 
+// isPrintLeaf reports whether printType renders t without descending into another type. A leaf
+// costs nothing to render in full, so PrintElided keeps it at the depth boundary rather than
+// replacing a bare `number` with an ellipsis that tells the reader less than the type itself would.
+//
+// An InferType renders as a name in both forms, `infer U` at the binder and a bare `U` at a
+// reference, and a TypeofType renders as the identifier it names rather than the value's type, so
+// both are leaves. An alias or class reference is not, even though one with no type arguments
+// renders as a bare name: its argument list is exactly what a diagnostic needs bounded.
+func isPrintLeaf(t Type) bool {
+	switch t.(type) {
+	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
+		*Void, *NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType:
+		return true
+	}
+	return false
+}
+
 // printType renders a coalesced type. Under the lazy deep-mut form (PR 14) the
 // stored type already matches the surface annotation the user wrote, so the
 // printer needs no special elision pass — `mut {a: {x}}` is stored and printed
 // verbatim.
 func (p *namedPrinter) printType(t Type) string {
+	if p.maxDepth > 0 {
+		if p.depth >= p.maxDepth && !isPrintLeaf(t) {
+			return ElisionMark
+		}
+		p.depth++
+		defer func() { p.depth-- }()
+	}
 	switch t := t.(type) {
 	case *TypeVarType:
 		// A retained type parameter renders under its assigned name; otherwise a
@@ -673,6 +727,13 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		if len(t.TypeArgs) == 0 && len(t.LifetimeArgs) == 0 {
 			return name
+		}
+		if p.maxDepth > 0 && t.Truncated {
+			// The evaluator gave up expanding this reference, so its arguments are what its own
+			// recursion had grown rather than what the source wrote. Rendering four levels of that
+			// ends in an ellipsis anyway and names nothing a reader can act on, so the whole
+			// argument list collapses to one. See AliasType.Truncated.
+			return name + "<" + ElisionMark + ">"
 		}
 		parts := make([]string, 0, len(t.LifetimeArgs)+len(t.TypeArgs))
 		for _, la := range t.LifetimeArgs {

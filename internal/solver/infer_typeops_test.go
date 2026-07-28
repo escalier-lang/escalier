@@ -583,6 +583,152 @@ func TestInferKeyofExpandingAliasTerminates(t *testing.T) {
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 }
 
+// Checking a value against a mapped type whose value expression reaches an expanding recursive
+// alias terminates instead of looping. A mapped type reduces that expression once per key, so the
+// alias expands once per key, and maxExpandDepth is restored between the two — each key would
+// otherwise restart from the full remaining depth and make the walk a search tree exponential in
+// the budget. maxExpandKeyChars is monotonic, so the keys spend one shared pool.
+//
+// Each field reduces to a residual the evaluator gave up expanding, and the diagnostic names it
+// `Grow<…>` rather than spelling out the argument. That argument is whatever the recursion had
+// grown by the time the budget ran out, so its levels say nothing about the source; spelling them
+// out ran past a hundred thousand characters. Eliding also makes the messages independent of where
+// the shared pool happened to run out, which is why they can be asserted at all.
+func TestInferMappedExpandingAliasTerminates(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// Two keys per lap. Each key reduces `Grow<{a: T, b: T}>[K]`, so the walk branches
+			// twice per lap and the alias argument doubles along every branch.
+			name: "TwoKeysPerLap",
+			src: `
+				type Grow<T> = {[K]: Grow<{a: T, b: T}>[K] for K in keyof T}
+				val x: Grow<{a: number, b: number}> = {a: 1, b: 2}
+			`,
+			want: []string{
+				`3:47-3:48: cannot constrain 1 <: Grow<…>["a"]`,
+				`3:53-3:54: cannot constrain 2 <: Grow<…>["b"]`,
+			},
+		},
+		{
+			// One key per lap. The walk does not branch and the argument gains one wrapper a lap,
+			// so maxExpandDepth is what stops it and the shared pool never binds.
+			name: "OneKeyPerLap",
+			src: `
+				type Grow<T> = {[K]: Grow<{a: T}>[K] for K in keyof T}
+				val x: Grow<{a: number}> = {a: 1}
+			`,
+			want: []string{`3:36-3:37: cannot constrain 1 <: Grow<…>["a"]`},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Len(t, errs, len(test.want))
+			for i, errVal := range errs {
+				require.IsType(t, &CannotConstrainError{}, errVal)
+				require.Equal(t, test.want[i], msgWithSpan(errVal))
+			}
+		})
+	}
+}
+
+// Checking a value against an alias whose argument doubles each lap terminates instead of looping.
+// The instantiation key the guard renders doubles with the argument, so a walk of a few dozen laps
+// would render a key of astronomical length even though it never branches. maxExpandDepth counts
+// laps rather than the size of what each lap expands, so it does not bound that on its own;
+// charging maxExpandKeyChars by the rendered key length stops the walk after a logarithmic number
+// of laps.
+//
+// Neither case involves a mapped type, so the hazard the shared pool closes is in the guard rather
+// than in one operator's reduction.
+func TestInferDoublingAliasArgumentTerminates(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// The recursion sits in an object spread's operand, which grounds the alias each lap.
+			name: "UnderObjectSpread",
+			src: `
+				type Grow<T> = {...Grow<{a: T, b: T}>}
+				val v: Grow<{a: number, b: number}> = 1
+			`,
+			want: `3:43-3:44: cannot constrain 1 <: {...Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>}`,
+		},
+		{
+			// The recursion sits in an indexed access's target, which expands it each lap too.
+			name: "UnderIndexedAccess",
+			src: `
+				type Grow<T> = Grow<{a: T, b: T}>["a"]
+				val v: Grow<{a: number, b: number}> = 1
+			`,
+			want: `3:43-3:44: cannot constrain 1 <: Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>["a"]`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Len(t, errs, 1)
+			require.IsType(t, &CannotConstrainError{}, errs[0])
+			require.Equal(t, test.want, msgWithSpan(errs[0]))
+		})
+	}
+}
+
+// `keyof keyof X` reduces to `never` for every X. What the inner `keyof` projects is a key set —
+// string literals for an object, number literals for a tuple — and `keyof` over a literal is
+// already `never`, so the outer operator has no keys to name whatever the inner operand turns out
+// to be. Each case names an operand shape the inner `keyof` treats differently and asserts the
+// same answer.
+func TestInferKeyofKeyofIsNever(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		// The inner `keyof` grounds to `"a" | "b"`, whose members are string literals.
+		{"Object", `type Result = keyof keyof {a: number, b: string}`},
+		// The inner `keyof` grounds to `0 | 1`, whose members are number literals.
+		{"Tuple", `type Result = keyof keyof [number, string]`},
+		// The inner `keyof` grounds to `never`, the empty key set.
+		{"Never", `type Result = keyof keyof never`},
+		// The inner `keyof` stays symbolic over a type parameter. The rule still holds, since
+		// `keyof T` names a key set for every T.
+		{"TypeParam", `type Result<T> = keyof keyof T`},
+		// The operand is an alias, which the inner `keyof` would expand.
+		{"Alias", `
+			type Obj = {a: number}
+			type Result = keyof keyof Obj
+		`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			types, ctx, errs := inferTypeNodes(t, test.src)
+			require.Empty(t, errs)
+			require.Contains(t, types, "Result")
+			require.Equal(t, "never", soltype.Print(expandResidual(ctx, types["Result"])))
+		})
+	}
+}
+
+// An expanding recursive alias under `keyof` reduces to `never` on the `keyof keyof` rule rather
+// than running until maxExpandKeyChars stops it. The alias body is `keyof Grow<…>`, so one
+// expansion puts a `keyof` directly under a `keyof` and the rule answers without reducing the
+// operand that would have grown.
+func TestInferKeyofExpandingAliasIsNever(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type Grow<T> = keyof Grow<{a: T, b: T}>
+		val k: Grow<{a: number, b: number}> = "x"
+	`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, `3:41-3:44: cannot constrain "x" <: never`, msgWithSpan(errs[0]))
+}
+
 // A `typeof v` query is stored as a residual behind the value reference, so an annotation prints
 // `typeof v` the way the source wrote it rather than the resolved type. It resolves a bare name
 // and a member chain; reducing the residual yields the referenced value's type. The value's

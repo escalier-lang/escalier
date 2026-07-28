@@ -693,3 +693,84 @@ func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
 	got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 }, nil)
 	require.Equal(t, "fn <T0>(x: T0) -> [T0, t99]", got)
 }
+
+// PrintElided renders a type like Print but stops at maxDepth, standing in ElisionMark for every
+// subtree below it. A type reduction can leave a residual whose argument is far larger than
+// anything the source wrote, and a diagnostic naming it needs a bound; see describeMaxDepth in
+// internal/solver.
+//
+// The cases walk one nesting chain at each depth so the boundary is visible, then cover the two
+// rules that are not "cut everything below the line": a leaf at the boundary renders itself rather
+// than an ellipsis, since the ellipsis would tell the reader less than `number` does, and a
+// maxDepth of zero elides nothing so the zero value matches Print.
+func TestPrintElided(t *testing.T) {
+	// nest builds `{a: {a: … {a: number}}}` with depth levels of object wrapping.
+	nest := func(depth int) Type {
+		var ty Type = numP()
+		for range depth {
+			ty = &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: ty}}}
+		}
+		return ty
+	}
+	alias := func(arg Type) Type { return &AliasType{Name: "Grow", TypeArgs: []Type{arg}} }
+	truncated := func(arg Type) Type {
+		return &AliasType{Name: "Grow", TypeArgs: []Type{arg}, Truncated: true}
+	}
+
+	tests := []struct {
+		name     string
+		in       Type
+		maxDepth int
+		want     string
+	}{
+		{"AliasArgCutAtOne", alias(nest(3)), 1, "Grow<…>"},
+		{"AliasArgCutAtTwo", alias(nest(3)), 2, "Grow<{a: …}>"},
+		{"AliasArgCutAtFour", alias(nest(4)), 4, "Grow<{a: {a: {a: …}}}>"},
+		// The argument is shallower than the cut, so nothing elides.
+		{"ShallowerThanCut", alias(nest(1)), 4, "Grow<{a: number}>"},
+		// `number` sits exactly at the boundary. A leaf renders itself there.
+		{"LeafAtBoundary", alias(nest(2)), 3, "Grow<{a: {a: number}}>"},
+		// Every branch of a wide type is cut at the same depth.
+		{
+			name: "BranchesCutAlike",
+			in: alias(&ObjectType{Elems: []ObjTypeElem{
+				&PropertyElem{Name: "a", Type: nest(2)},
+				&PropertyElem{Name: "b", Type: nest(2)},
+			}}),
+			maxDepth: 3,
+			want:     "Grow<{a: {a: …}, b: {a: …}}>",
+		},
+		{"ZeroElidesNothing", alias(nest(3)), 0, "Grow<{a: {a: {a: number}}}>"},
+		// A reference the evaluator gave up expanding elides its whole argument list, however
+		// shallow the argument happens to be, since none of it came from the source.
+		{"TruncatedElidesArgs", truncated(nest(3)), 4, "Grow<…>"},
+		{"TruncatedElidesShallowArgs", truncated(numP()), 4, "Grow<…>"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, PrintElided(test.in, test.maxDepth))
+		})
+	}
+}
+
+// PrintElided with no limit renders exactly what Print does, so a caller that opts out of eliding
+// is not quietly getting a second rendering of the same type.
+func TestPrintElidedZeroMatchesPrint(t *testing.T) {
+	ty := &UnionType{Types: []Type{
+		&FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()},
+		&TupleType{Elems: []Type{strP(), boolP()}},
+	}}
+	require.Equal(t, Print(ty), PrintElided(ty, 0))
+}
+
+// Print and PrintQualified ignore the Truncated marker and render the arguments in full. Only a
+// diagnostic elides them. PrintQualified forms the identity key the recursion guard compares, and
+// collapsing every truncated reference to one `Grow<…>` would close a cycle between instantiations
+// that differ.
+func TestPrintTruncatedAliasRendersArgsInFull(t *testing.T) {
+	ty := &AliasType{Name: "Grow", TypeArgs: []Type{
+		&ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "a", Type: numP()}}},
+	}, Truncated: true}
+	require.Equal(t, "Grow<{a: number}>", Print(ty))
+	require.Equal(t, "Grow<{a: number}>", PrintQualified(ty))
+}
