@@ -675,12 +675,13 @@ type AliasType struct {
 // untouched — the "adds no new mutable solver state" invariant it shares with the
 // spike's ResidualOp. An evaluator reduces it once its operand is ground (M9 PR1b);
 // until then a `keyof T` over a type parameter stays symbolic and renders `keyof T`.
-// Exact records whether the operand's key set is complete, the seed for exactness
-// propagation through reduction (M9 PR8). It is carried through the visitor and left
-// unread until that work lands.
+// Inexact records whether the operand's key set is open, the seed for exactness
+// propagation through reduction (M9 PR8). The flag is Inexact rather than Exact so the
+// zero value is exact, matching the ObjectType, TupleType, FuncType, and UnionType
+// convention. It is carried through the visitor and left unread until that work lands.
 type KeyofType struct {
 	Operand Type
-	Exact   bool
+	Inexact bool
 }
 
 // IndexType is the residual `Target[Index]` indexed-access type operator (M9 PR2), the
@@ -689,13 +690,13 @@ type KeyofType struct {
 // An evaluator reduces it once its operands are ground — `{x: number}["x"]` ⇒ `number`, a
 // tuple `[a, b][0]` ⇒ `a`, and a union index distributes so `T["a" | "b"]` ⇒ `T["a"] |
 // T["b"]`. Until then a `T[K]` over a type parameter stays symbolic and renders `T[K]`.
-// Exact records whether the target's member set is complete, the seed for exactness
-// propagation through reduction (M9 PR8). It is carried through the visitor and left unread
-// until that work lands.
+// Inexact records whether the target's member set is open, the seed for exactness
+// propagation through reduction (M9 PR8). It follows KeyofType's convention, so the zero
+// value is exact. It is carried through the visitor and left unread until that work lands.
 type IndexType struct {
-	Target Type
-	Index  Type
-	Exact  bool
+	Target  Type
+	Index   Type
+	Inexact bool
 }
 
 // TypeofType is the residual `typeof x` type query. Like KeyofType it is inert: it carries no
