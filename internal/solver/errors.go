@@ -966,6 +966,7 @@ func (*ExtractorPatternArityError) isSolverError()          {}
 func (*AliasArityMismatchError) isSolverError()             {}
 func (*AliasLifetimeArityMismatchError) isSolverError()     {}
 func (*ReservedTypeNameError) isSolverError()               {}
+func (*NotRegularAliasError) isSolverError()                {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -1107,6 +1108,30 @@ func (e *ReservedTypeNameError) Span() ast.Span      { return e.Decl.Name.Span()
 func (e *ReservedTypeNameError) Related() []ast.Span { return nil }
 func (e *ReservedTypeNameError) Message() string {
 	return fmt.Sprintf("%q is a built-in type operator and cannot be redefined", e.Decl.Name.Name)
+}
+
+// NotRegularAliasError fires when a recursive type alias wraps one of its own type parameters in a
+// type constructor on the way around its recursion cycle, as `type Grow<T> = Grow<{a: T}>` does.
+// Every lap builds a strictly larger argument, so the alias expands to infinitely many distinct
+// instantiations and no expansion of it ever settles. Name is the alias's qualified name and Param
+// the parameter that grows.
+//
+// The message points at the two ways out. Breaking the cycle with a nominal type stops the
+// expansion, since a class or enum reference is not expanded the way an alias body is. Dropping the
+// wrapper leaves the parameter passed through, which is the regular recursion `List` uses.
+type NotRegularAliasError struct {
+	Decl  *ast.TypeDecl
+	Name  string
+	Param string
+}
+
+func (e *NotRegularAliasError) Span() ast.Span      { return e.Decl.Name.Span() }
+func (e *NotRegularAliasError) Related() []ast.Span { return nil }
+func (e *NotRegularAliasError) Message() string {
+	return fmt.Sprintf(
+		"recursive type alias `%s` grows type parameter `%s` under a type constructor, so its "+
+			"expansion is unbounded; break the recursion with a nominal type or pass `%s` through unwrapped",
+		e.Name, e.Param, e.Param)
 }
 
 // MultipleConstructorsError fires on the second and any later `constructor` block in

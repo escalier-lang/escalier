@@ -55,6 +55,10 @@ type aliasShell struct {
 	decl *ast.TypeDecl
 	ns   string
 	lvl  int
+	// qname is the alias's dep_graph-qualified name. It is the key its AliasDef is
+	// registered under, and the Name every AliasType handle pointing at it carries.
+	// checkRegular matches a body's references against it to find the recursion cycles.
+	qname string
 	// declScope is scope, or a child holding a generic alias's type parameters. The body
 	// resolves here so it reads each `T` as the one shared var the def stores.
 	declScope *Scope
@@ -129,7 +133,7 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 	})
 	c.recordType(decl.Name, t)
 
-	return &aliasShell{decl: decl, ns: ns, lvl: lvl, declScope: declScope, namedLts: aliasNamedLts, def: def}
+	return &aliasShell{decl: decl, ns: ns, lvl: lvl, qname: qname, declScope: declScope, namedLts: aliasNamedLts, def: def}
 }
 
 // resolveAliasLifetimeParams mints one lifetime variable per `<'a, ...>` parameter through
