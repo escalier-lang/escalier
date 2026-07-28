@@ -27,6 +27,18 @@ type AliasDef struct {
 	// in the body and are substituted at expansion, so the level is recorded but not
 	// otherwise consulted.
 	Level int
+
+	// NotRegular marks an alias checkRegular rejected for expanding recursion. Expanding one
+	// lap of such an alias hands the next lap a strictly larger argument, so the evaluator
+	// refuses to expand it at all and leaves the operator over it symbolic. That keeps a
+	// diagnostic naming the alias showing the arguments the source wrote, and it stops the
+	// rejection from cascading into a reduction that would run until a budget cut it off.
+	//
+	// checkRegular sets it once every body in the alias's dep_graph component is resolved.
+	// Reduction is driven from constrain, which reaches an alias only through a reference an
+	// annotation resolved, and such a reference resolves only after the alias is bound, so a
+	// reduction always sees the finished flag.
+	NotRegular bool
 }
 
 // expandAlias unfolds an alias reference to its registered AliasDef Body, the shared

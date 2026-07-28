@@ -410,12 +410,7 @@ func (t *AliasType) Accept(v TypeVisitor, pol Polarity) Type {
 		// LifetimeArgs are lifetimes, not Types, so Accept never walks them; a
 		// lifetime-aware visitor freshens them in its EnterType, replacing the whole
 		// AliasType before this rebuild, so cur already holds the freshened lifetimes.
-		out = &AliasType{
-			Name: cur.Name, TypeArgs: args, LifetimeArgs: cur.LifetimeArgs,
-			// Truncated rides along so a substitution over a residual keeps the marker the
-			// evaluator set, and a diagnostic naming the result still elides its arguments.
-			Truncated: cur.Truncated,
-		}
+		out = &AliasType{Name: cur.Name, TypeArgs: args, LifetimeArgs: cur.LifetimeArgs}
 	}
 	return v.ExitType(out, pol)
 }

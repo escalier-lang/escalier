@@ -1810,7 +1810,8 @@ func describeMapped(t *soltype.MappedElem) string {
 // describeMaxDepth bounds how deep describe renders a nominal reference's type arguments before
 // PrintElided replaces the rest with an ellipsis. A reduction can leave a residual whose alias
 // argument is far larger than any type the source wrote, and rendering that in full buries the
-// diagnostic. See maxExpandKeyChars for how such an argument grows.
+// diagnostic. Grounding a chain of aliases that each spread the one below them twice is the shape
+// that reaches that size; see maxExpandKeyChars.
 //
 // Three levels render every message the test suite asserts in full, so four leaves one level of
 // headroom over what a hand-written annotation reaches. An ordinary diagnostic is therefore

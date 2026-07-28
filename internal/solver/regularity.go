@@ -45,6 +45,13 @@ func (c *checker) checkRegular(shells []*aliasShell) {
 			continue
 		}
 		growing := growingParams(sh.def, group)
+		if growing.Len() == 0 {
+			continue
+		}
+		// Mark the alias so the evaluator declines to expand it. Every cycle that grows this
+		// alias's parameters runs through this alias, so refusing it alone breaks all of them, and
+		// a sibling in the same component that recurses regularly still expands.
+		sh.def.NotRegular = true
 		// Report in declaration order rather than by name, so a two-parameter alias blames its
 		// parameters the way the source lists them.
 		for _, p := range sh.def.TypeParams {
