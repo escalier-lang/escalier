@@ -34,10 +34,11 @@ type AliasDef struct {
 	// diagnostic naming the alias showing the arguments the source wrote, and it stops the
 	// rejection from cascading into a reduction that would run until a budget cut it off.
 	//
-	// checkRegular sets it once every body in the alias's dep_graph component is resolved.
-	// Reduction is driven from constrain, which reaches an alias only through a reference an
-	// annotation resolved, and such a reference resolves only after the alias is bound, so a
-	// reduction always sees the finished flag.
+	// checkRegular sets it in the loop that immediately follows body resolution for the
+	// alias's dep_graph component, with no inference in between. That ordering is what makes
+	// the flag safe to read: until a body is filled, expandAlias yields ErrorType for the
+	// alias and expandAliasGuarded declines to expand it, so no reduction can reach a
+	// resolved body before the flag is set.
 	NotRegular bool
 }
 
