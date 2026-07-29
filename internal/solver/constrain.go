@@ -1133,35 +1133,11 @@ func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.
 	return nil, false, true
 }
 
-// constrainIntoIndexSignature checks an object against an index-signature requirement such as
-// `{[K: string]?: number}`. The requirement names no single key, so satisfying it means every key
-// the sub can carry holds a value of the signature's type.
-//
-// Two things on the sub can carry a key. Each declared property contributes its own value type,
-// checked covariantly, which is what makes `{a: 1, b: 2}` satisfy `{[K: string]?: number}`. The
-// sub's own index signature, when it has one, contributes the type of every other key and is checked
-// the same way.
-//
-// A sub with neither declared properties nor an index signature satisfies the requirement trivially,
-// since it carries no key that could hold a wrong value.
-//
-// A key the super also declares as a named property is skipped, because that property states the
-// type at that one key and the depth loop already checked the sub against it. So
-// `{name: "x", debug: true}` satisfies `{name: string, [K: string]?: boolean}`: `name` is checked
-// against `string` and `debug` against `boolean`. Without the skip the signature would demand
-// `"x" <: boolean` and reject a value the super's own declaration accepts.
-//
-// A key this signature's key set does not accept is skipped too. The super may carry another
-// signature over a different key set that covers it, and the caller runs this once per signature, so
-// each key is checked against the one that describes it.
-//
-// Inside a mutable wrapper the signature is writable, so each key it covers is invariant rather than
-// covariant, matching how the depth loop pins a named field. A readonly source member cannot fill a
-// writable signature for the same reason a readonly field cannot fill a writable one.
-//
-// A method, getter, setter, or constructor member is skipped. Whether a callable member satisfies a
-// value-typed index signature is the same open question as unifying properties with methods and
-// accessors, escalier-lang/escalier#864.
+// constrainIntoIndexSignature checks an object against a requirement like `{[K: string]?: number}`:
+// every key the sub carries must hold the signature's type, covariantly. Two keys are skipped — one
+// the super declares as a property, already checked by the depth loop, and one this key set rejects,
+// which a sibling signature covers. Inside a `mut` wrapper the keys are invariant and a readonly
+// source cannot fill them. A callable member is skipped, escalier-lang/escalier#864.
 func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, superIdx *soltype.MappedElem, seen set.Set[constraintKey], mutCtx bool) []SolverError {
 	writable := mutCtx && superIdx.Readonly != soltype.ModAdd
 	var errs []SolverError

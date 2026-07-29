@@ -423,15 +423,8 @@ func HasUnsettledMapped(elems []ObjTypeElem) bool {
 	return false
 }
 
-// MappedElemSettled reports whether a mapped member has reached its final form, so that reducing it
-// again would change nothing and constrain can read it where it sits. Only an index signature that
-// adds `?` qualifies. `{[K: string]?: number}` has no keys to enumerate, so there is no field list
-// for reduction to produce and the member is the shape itself.
-//
-// Every other mapped member still needs reduction. One over a countable key set expands to the
-// fields its keys name. One whose key set has not grounded resumes when it does. The required form
-// over an uncountable key set is uninhabited, and reduction is where that is reported, so leaving it
-// unsettled is what lets the diagnostic fire.
+// MappedElemSettled reports whether reducing a mapped member again would change nothing. Only an
+// index signature that adds `?` qualifies; everything else, the required form included, still reduces.
 func MappedElemSettled(m *MappedElem) bool {
 	return IsIndexSignature(m) && m.Optional == ModAdd
 }
@@ -461,19 +454,8 @@ func AsMapped(elems []ObjTypeElem) (*MappedElem, bool) {
 	return nil, false
 }
 
-// UncountableKeys reports whether a mapped type's key set names infinitely many keys. A primitive
-// such as `string` or `number` does, since every string is one of its members. A union is
-// uncountable when any member is. A union mixing a literal with its own primitive rarely reaches
-// here, because subsumption already reduced `"a" | string` to `string`. A union of string literals,
-// a `keyof T` over a ground T, and `never` are all countable.
-//
-// The caller must have grounded the key set first. An abstract operand such as a bare type parameter
-// reaches the default arm and reads as countable, which keeps a symbolic mapped type from being
-// judged before its key set is known.
-//
-// Two rules turn on this. A mapped type over an uncountable key set is an index signature, so it
-// renders in the `[K: Keys]?: V` shorthand. It is also uninhabited unless it adds `?`, since no
-// object carries a field at every key of an infinite set.
+// UncountableKeys reports whether a key set names infinitely many keys: a `string`/`number` prim or
+// a union holding one. The caller must ground it first, since an abstract operand reads as countable.
 func UncountableKeys(t Type) bool {
 	switch t := t.(type) {
 	case *PrimType:
@@ -490,24 +472,14 @@ func UncountableKeys(t Type) bool {
 	}
 }
 
-// MappedShorthandForm reports whether a mapped member is spelled in the `[Key: Keys]` shorthand,
-// which names the key variable and its constraint inside the brackets rather than in a trailing
-// `for Key in Keys`. A member qualifies unless it remaps its keys, since the remapping expression
-// occupies the brackets the constraint would go in. An `if Check : Extends` filter trails the value
-// in either form, so it does not rule the shorthand out.
-//
-// Both spellings lower to the same member, so this decides rendering only. It is not a fact about
-// what the source wrote.
+// MappedShorthandForm reports whether a mapped member renders as `[Key: Keys]` rather than with a
+// trailing `for Key in Keys`. Only a key remapping rules it out, since it occupies the brackets.
 func MappedShorthandForm(m *MappedElem) bool {
 	return m.Name == nil
 }
 
-// IsIndexSignature reports whether a mapped member is an index signature, the form written
-// `{[K: string]?: number}`. Its key set must be uncountable, which is what makes it an index
-// signature rather than a field list. It must also carry neither a key remapping nor an `if C : E`
-// filter, since a key set with infinitely many members has no enumerable keys for either to run over.
-//
-// The caller must have grounded the key set first, the same precondition UncountableKeys carries.
+// IsIndexSignature reports whether a mapped member is one, as in `{[K: string]?: number}`: an
+// uncountable key set with no remapping or filter. Carries UncountableKeys' grounding precondition.
 func IsIndexSignature(m *MappedElem) bool {
 	return m.Name == nil && m.Check == nil && m.Extends == nil && UncountableKeys(m.Keys)
 }

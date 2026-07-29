@@ -1377,19 +1377,10 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 	return read
 }
 
-// indexSignatureRead reduces `obj[key]` through whichever of obj's index signatures describes the
-// key, which indexSignatureFor picks by probing each signature's key set. A key no signature accepts
-// reads nothing any of them describes, so it records an IndexSignatureKeyError.
-// `{[K: number]?: V}` indexed by a string takes that error, with no coercion of the key to the set's
-// type.
-//
-// The result unions `undefined` onto the signature's value type. The signature adds `?`, which is
-// the only legal form over an uncountable key set, and that marker says the key may be absent. So
-// reading `{[K: string]?: number}` at any key is `number | undefined`, the sound answer TypeScript
-// reaches only under noUncheckedIndexedAccess.
-//
-// A key that has not grounded leaves the access symbolic rather than probing an abstract key against
-// the set, so a read off a generic key resumes once the key grounds.
+// indexSignatureRead reduces `obj[key]` through the signature indexSignatureFor matches to the key.
+// A key none accepts records an IndexSignatureKeyError, with no coercion. The result unions
+// `undefined` onto the value type, since the `?` every legal signature carries says the key may be
+// absent, so `{[K: string]?: number}` reads as `number | undefined`. An ungrounded key stays symbolic.
 func (e *typeEvaluator) indexSignatureRead(obj *soltype.ObjectType, index soltype.Type, inexact bool) soltype.Type {
 	if !condOperandGround(index) {
 		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
@@ -1601,14 +1592,9 @@ func strLitName(t soltype.Type) (string, bool) {
 	return "", false
 }
 
-// mappedKeyName returns the field name a mapped type's key emits, and false for a key that names no
-// field. A string literal names the field directly. A number literal names the field its digits
-// spell, the same coercion JavaScript applies when `{0: v}` stores under the key "0" and the same one
-// objKeyName applies to a numeric key in an object literal. So `{[K]: boolean for K in "a" | 1}`
-// emits the fields `a` and `1`.
-//
-// It is separate from strLitName because an indexed access is not a mapped key. `T[0]` reads a
-// tuple's first element positionally, so a number there must not be coerced to a field name.
+// mappedKeyName returns the field name a mapped type's key emits. A string literal names one
+// directly; a number literal names the digits it spells, as `{0: v}` stores under "0". Separate from
+// strLitName because `T[0]` reads a tuple positionally, so that number must not be coerced.
 func mappedKeyName(t soltype.Type) (string, bool) {
 	if lit, ok := t.(*soltype.LitType); ok {
 		if n, ok := lit.Lit.(*soltype.NumLit); ok {

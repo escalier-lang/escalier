@@ -866,13 +866,8 @@ func (p *namedPrinter) printMapped(t *MappedElem) string {
 	return out
 }
 
-// ShorthandOptionalMarker renders a mapped member's `?` marker as the shorthand spells it. The
-// shorthand writes `?` where the long form writes `+?`, because `[K: Keys]?: V` is what the parser
-// reads and so what a rendered type should round-trip to. The three modifiers still render
-// distinctly as `?`, `-?`, and nothing, so no two members print identically.
-//
-// It is exported so the solver's mid-constrain renderer spells the marker the same way this printer
-// does, without a second copy of the mapping to keep in step.
+// ShorthandOptionalMarker renders a mapped member's `?` marker as the shorthand spells it, `?` where
+// the long form writes `+?`. Exported so the solver's renderer shares it rather than copying it.
 func ShorthandOptionalMarker(mod MappedModifier) string {
 	switch mod {
 	case ModAdd:
