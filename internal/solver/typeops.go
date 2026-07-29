@@ -11,12 +11,12 @@ import (
 )
 
 // maxExpandDepth caps how many times an alias may expand along one reduction path. The
-// active-state guard already stops a regular recursive alias, whose instantiation state repeats,
-// and checkRegular rejects a declared alias whose argument grows every lap so its state never
-// repeats. This budget is the backstop for growing recursion that reaches the evaluator without
-// passing that check, which is how an alias ingested from a library rather than declared in source
-// arrives. No finite analytical bound exists for that fragment, so the budget stops the walk and
-// the operator over the unexpanded alias stays symbolic.
+// active-state guard already stops a regular recursive alias, whose instantiation state repeats.
+// This budget is the backstop for an alias whose state never repeats, which checkProductive lets
+// through whenever each lap emits structure. `type Deep<T> = {a: Deep<{b: T}>}` is that shape. It is
+// productive, so the check accepts it, and its payload grows every lap, so a reduction that walks
+// into it never meets a state it has already seen. No finite analytical bound exists for that
+// fragment, so the budget stops the walk and the operator over the unexpanded alias stays symbolic.
 const maxExpandDepth = 200
 
 // maxExpandKeyChars caps the total cost of alias expansion across a whole reduction, counted in the
@@ -29,8 +29,8 @@ const maxExpandDepth = 200
 //	…
 //
 // Grounding `A40<number>` expands two references per lap over forty laps, so a full walk is 2^41
-// expansions. Every alias here passes its parameter through unwrapped, so checkRegular accepts them
-// all, and the reduction path is only forty deep, so maxExpandDepth never binds. maxExpandDepth is
+// expansions. No alias here recurses at all, so checkProductive accepts them all, and the reduction
+// path is only forty deep, so maxExpandDepth never binds. maxExpandDepth is
 // also restored when a branch finishes, which is right for a sequential walk but leaves each of the
 // two sibling references restarting from the full remaining depth.
 //
@@ -69,17 +69,17 @@ const maxTemplateLitCombinations = 10_000
 //
 // An alias reached through an operand is made safe by a four-part termination strategy:
 //
-//   - checkRegular rejects an alias whose recursion grows one of its own parameters every lap and
-//     marks its AliasDef NotRegular. The evaluator declines to expand such an alias at all, so the
-//     one shape with no finite analytical bound never starts unfolding. See
-//     internal/solver/regularity.go.
+//   - checkProductive rejects an alias whose recursion emits no structure and marks its AliasDef
+//     NotProductive. Such an alias names no type, so the evaluator declines to expand it at all
+//     rather than unfolding a definition already reported as an error. See
+//     internal/solver/productivity.go.
 //   - active holds the alias instantiations currently being expanded, each keyed by the alias
 //     name together with its rendered arguments. When one recurs with the identical key, the
 //     evaluator leaves that reference as the unexpanded alias node rather than expanding it again.
 //     A recursive alias such as `type List<T> = {head: T, tail?: List<T>}` therefore reduces to a
 //     finite type whose recursive position points back to the alias instead of unfolding forever.
-//   - depth caps expansions along one path, the backstop for growing recursion that reaches the
-//     evaluator without passing checkRegular.
+//   - depth caps expansions along one path, the backstop for a productive recursion whose
+//     instantiation state never repeats, so the active-state guard never fires.
 //   - keyChars caps the total cost of expansion across the whole reduction, so sibling branches
 //     that each restart from the full depth cannot turn that per-path cap into an exponential
 //     walk. See maxExpandKeyChars.
@@ -966,7 +966,7 @@ func (e *typeEvaluator) reduceKeyofAlias(op *soltype.AliasType, inexact bool) so
 // termination guard that makes reduction safe over a recursive alias. The alias stays on the
 // active path for the whole reduction of its body, so a member that re-references it, directly
 // or through a chain, sees it active and stops. Four conditions leave the alias unexpanded, so the
-// operator over it stays symbolic: a definition checkRegular rejected, a recurring instantiation
+// operator over it stays symbolic: a definition checkProductive rejected, a recurring instantiation
 // state, an exhausted budget, and an unresolved body.
 //
 // fallback builds that symbolic result around op, the alias reference as the source wrote it. A
@@ -975,11 +975,11 @@ func (e *typeEvaluator) reduceKeyofAlias(op *soltype.AliasType, inexact bool) so
 // Every reduction that expands an alias routes through here, so one guard covers `keyof`, indexed
 // access, and the operand-grounding both spread forms use, and the budgets are shared across them.
 func (e *typeEvaluator) expandAliasGuarded(op *soltype.AliasType, fallback func(*soltype.AliasType) soltype.Type, cont func(body soltype.Type) soltype.Type) soltype.Type {
-	if def, ok := e.ctx.aliasDef(op.Name); ok && def.NotRegular {
-		// checkRegular rejected this alias at its declaration because one lap of its recursion
-		// hands the next a strictly larger argument. Expanding even one lap would start growing
-		// that argument, and the walk would run until a budget cut it off, so decline outright.
-		// The reference keeps the arguments the source wrote, which is what a diagnostic names.
+	if e.ctx.notProductive(op) {
+		// checkProductive rejected this alias at its declaration because a lap of its recursion
+		// returns to it emitting nothing, so it names no type to reduce toward. Expanding even one
+		// lap would hand the next lap another such state, so decline outright. The reference keeps
+		// the arguments the source wrote, which is what a diagnostic names.
 		return fallback(op)
 	}
 	if e.depth <= 0 || e.keyChars <= 0 {

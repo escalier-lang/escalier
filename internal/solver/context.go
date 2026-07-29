@@ -67,6 +67,12 @@ type Context struct {
 	// so a stale entry cannot make a constraint wrong.
 	aliasInterns map[string]*soltype.AliasType
 
+	// unwrapDepth counts the type operators constrain has evaluated along the constraint path it
+	// is currently on, so an unwrap that never bottoms out is cut off at maxUnwrapDepth. constrain
+	// increments it around each recursive call it makes on an evaluated operator and restores it
+	// when that call returns, so the value always names the current path rather than the whole run.
+	unwrapDepth int
+
 	// unionCommits maps an inference var that a union-super trial pinned by committing a bare
 	// type-variable member to the super union it was chosen from, so `"hi" <: (T | number)`
 	// records T → (T | number). A later constraint that forces an incompatible bound onto the
@@ -119,6 +125,18 @@ func (c *Context) internAlias(at *soltype.AliasType) *soltype.AliasType {
 func (c *Context) aliasDef(name string) (*AliasDef, bool) {
 	def, ok := c.aliases[name]
 	return def, ok
+}
+
+// notProductive reports whether t is a reference to an alias checkProductive rejected. Both the
+// evaluator and constrain consult it to leave such a reference alone, since the alias names no type
+// to unfold toward and its diagnostic is already reported.
+func (c *Context) notProductive(t soltype.Type) bool {
+	ref, ok := t.(*soltype.AliasType)
+	if !ok {
+		return false
+	}
+	def, registered := c.aliasDef(ref.Name)
+	return registered && def.NotProductive
 }
 
 // registerAlias inserts def under a qualified alias name, allocating the registry

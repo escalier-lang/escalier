@@ -11,13 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// notRegularMsg renders the full definition-time rejection checkRegular reports when alias grows
-// param, prefixed with span. Several cases below declare an expanding alias and differ only in
-// those three values. TestCheckRegularRejects spells the wording out literally.
-func notRegularMsg(span, alias, param string) string {
-	return fmt.Sprintf("%s: recursive type alias `%s` grows type parameter `%s` under a type "+
-		"constructor, so its expansion is unbounded; break the recursion with a nominal type or "+
-		"pass `%s` through unwrapped", span, alias, param, param)
+// notProductiveMsg renders the full definition-time rejection checkProductive reports when alias
+// reaches itself with no type constructor in between, prefixed with span. Several cases below
+// declare such an alias and differ only in those two values. TestCheckProductiveRejects spells the
+// wording out literally.
+func notProductiveMsg(span, alias string) string {
+	return fmt.Sprintf("%s: recursive type alias `%s` reaches itself without passing under a type "+
+		"constructor, so no lap of the recursion emits any structure and the alias names no type; "+
+		"wrap the recursive reference in an object, tuple, or function type", span, alias)
 }
 
 // inferTypeNodes infers src and returns the raw soltype.Type of each top-level type binding
@@ -579,54 +580,51 @@ func TestInferKeyofResidualErrorMessage(t *testing.T) {
 	require.Equal(t, "1:12-1:19: cannot constrain keyof t1 <: number", msgWithSpan(errs[0]))
 }
 
-// Checking a value against `keyof` of an expanding recursive alias terminates instead of looping.
-// checkRegular rejects the alias at its declaration, and the annotation naming it still reduces, so
-// the second error is the value check against what that reduction produced. The reduction is
-// budget-truncated and yields a residual constrain does not recurse on, since re-expanding would
-// grow the operand without bound, so the residual stays inert and conservatively rejects the value.
-// The rejection blames the annotation as the source wrote it, `keyof A<number>`, rather than the
-// grown argument the walk gave up on. The point of the test is termination; the precise rejection
-// is a consequence of the truncation.
-func TestInferKeyofExpandingAliasTerminates(t *testing.T) {
+// Checking a value against `keyof` of a non-productive recursive alias terminates instead of
+// looping. checkProductive rejects the alias at its declaration and the evaluator declines to
+// expand it, so `keyof` has no ground operand to project keys from and stays a residual. constrain
+// treats a residual inert, so the second error is the value conservatively rejected against it. The
+// rejection blames the annotation as the source wrote it, `keyof A<number>`. The alias itself
+// absorbs at a constraint site; the `keyof` around it does not, which is why this case still reports
+// two errors where TestInferNotProductiveAliasAbsorbs reports one.
+func TestInferKeyofNotProductiveAliasTerminates(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type A<T> = {x: T} | A<{y: T}>
 		val k: keyof A<number> = "x"
 	`)
 	require.Equal(t, []string{
-		notRegularMsg("2:8-2:9", "A", "T"),
+		notProductiveMsg("2:8-2:9", "A"),
 		`3:28-3:31: cannot constrain "x" <: keyof A<number>`,
 	}, messagesWithSpan(errs))
 }
 
-// Checking a value against a mapped type whose value expression reaches an expanding recursive
-// alias terminates instead of looping. checkRegular rejects the alias at its declaration and marks
-// it NotRegular, so the evaluator declines to expand it and the mapped type's value expression
-// reduces to a residual over the unexpanded reference. That is what stops the walk here — a mapped
-// type reduces its value expression once per key, so an alias free to expand would branch by the
-// key count every lap.
+// Checking a value against a mapped type whose value expression grows its own argument terminates
+// instead of looping, and here only the two expansion budgets stop it. The alias emits an object
+// every lap, so checkProductive accepts it. Its argument is strictly larger every lap, so the
+// active-state guard never meets a state it has seen. What reduction chases is `Grow<…>["a"]`, an
+// indexed access whose target is another `Grow<…>["a"]`, so the chase never bottoms out. A mapped
+// type reduces its value expression once per key, so each lap also branches by the key count.
 //
-// The rejection is what each field's diagnostic names, and it names the argument the source wrote.
-// One substitution shows through, because constrain expands a transparent alias once itself before
-// handing the body to the evaluator: `Grow<{a: number, b: number}>` renders with `T` already
-// replaced. That single lap is bounded by the size of the alias body, so the message stays short
-// whatever the recursion would have grown to.
-func TestInferMappedExpandingAliasTerminates(t *testing.T) {
+// maxExpandKeyChars is the budget that binds, since it is one monotonic pool shared across the whole
+// reduction. Each field's diagnostic names the truncated target the walk gave up on, and the printer
+// elides the deepest levels of it as `…`. The two keys of the first case give up at different
+// depths for that reason: reducing the value for `"a"` spends most of the pool, leaving the `"b"`
+// reduction to stop after one lap.
+func TestInferMappedGrowingAliasTerminates(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
 		want []string
 	}{
 		{
-			// Two keys, so the mapped type reduces its value expression twice. Each reduction meets
-			// the same unexpanded reference.
+			// Two keys, so the mapped type reduces its value expression twice.
 			name: "TwoKeys",
 			src: `
 				type Grow<T> = {[K]: Grow<{a: T, b: T}>[K] for K in keyof T}
 				val x: Grow<{a: number, b: number}> = {a: 1, b: 2}
 			`,
 			want: []string{
-				notRegularMsg("2:10-2:14", "Grow", "T"),
-				`3:47-3:48: cannot constrain 1 <: Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>["a"]`,
+				`3:47-3:48: cannot constrain 1 <: Grow<{a: {a: {a: …, b: …}, b: {a: …, b: …}}, b: {a: {a: …, b: …}, b: {a: …, b: …}}}>["a"]`,
 				`3:53-3:54: cannot constrain 2 <: Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>["b"]`,
 			},
 		},
@@ -638,8 +636,7 @@ func TestInferMappedExpandingAliasTerminates(t *testing.T) {
 				val x: Grow<{a: number}> = {a: 1}
 			`,
 			want: []string{
-				notRegularMsg("2:10-2:14", "Grow", "T"),
-				`3:36-3:37: cannot constrain 1 <: Grow<{a: {a: number}}>["a"]`,
+				`3:36-3:37: cannot constrain 1 <: Grow<{a: {a: {a: …}}}>["a"]`,
 			},
 		},
 	}
@@ -653,16 +650,18 @@ func TestInferMappedExpandingAliasTerminates(t *testing.T) {
 
 // Checking a value against an alias whose argument doubles each lap terminates instead of looping.
 // Left free to expand, each lap of these aliases would double the rendered instantiation key, so a
-// few dozen laps would render a key of astronomical length without ever branching. checkRegular
-// rejects both at their declarations, so the evaluator declines the first expansion and the walk
-// never starts.
+// few dozen laps would render a key of astronomical length without ever branching. Neither alias is
+// productive — an object spread merges its operand in rather than nesting it, and an indexed access
+// reads a component out of its target — so checkProductive rejects both at their declarations and
+// the evaluator declines the first expansion. The walk never starts.
 //
 // Each case reaches the alias through a different operator, an object spread's operand and an
 // indexed access's target, so the refusal is shown to cover every reduction that grounds an operand
 // rather than one operator's path through expandAliasGuarded. Neither involves a mapped type.
 //
-// The value check names the argument the source wrote, with the one substitution constrain performs
-// itself when it expands a transparent alias before handing the body to the evaluator.
+// The definition-time rejection is the only diagnostic. A non-productive alias absorbs at a
+// constraint site, so the value check that would otherwise report a second, derived failure reports
+// nothing.
 func TestInferDoublingAliasArgumentTerminates(t *testing.T) {
 	tests := []struct {
 		name string
@@ -676,10 +675,7 @@ func TestInferDoublingAliasArgumentTerminates(t *testing.T) {
 				type Grow<T> = {...Grow<{a: T, b: T}>}
 				val v: Grow<{a: number, b: number}> = 1
 			`,
-			want: []string{
-				notRegularMsg("2:10-2:14", "Grow", "T"),
-				`3:43-3:44: cannot constrain 1 <: {...Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>}`,
-			},
+			want: []string{notProductiveMsg("2:10-2:14", "Grow")},
 		},
 		{
 			// The recursion sits in an indexed access's target, which expands it each lap too.
@@ -688,10 +684,7 @@ func TestInferDoublingAliasArgumentTerminates(t *testing.T) {
 				type Grow<T> = Grow<{a: T, b: T}>["a"]
 				val v: Grow<{a: number, b: number}> = 1
 			`,
-			want: []string{
-				notRegularMsg("2:10-2:14", "Grow", "T"),
-				`3:43-3:44: cannot constrain 1 <: Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>["a"]`,
-			},
+			want: []string{notProductiveMsg("2:10-2:14", "Grow")},
 		},
 	}
 	for _, test := range tests {
@@ -704,9 +697,8 @@ func TestInferDoublingAliasArgumentTerminates(t *testing.T) {
 
 // spreadChainSrc builds a chain of aliases, each spreading the one below it `fanOut` times, and a
 // value annotated with the top one so checking it has to ground the whole chain. No alias here
-// recurses, so checkRegular accepts every one, and none has a type parameter to grow. Grounding the
-// top alias costs fanOut^levels expansions, which is what makes these the shapes the two expansion
-// budgets exist for.
+// recurses, so checkProductive accepts every one. Grounding the top alias costs fanOut^levels
+// expansions, which is what makes these the shapes the two expansion budgets exist for.
 func spreadChainSrc(levels, fanOut int) string {
 	var b strings.Builder
 	b.WriteString("type A0 = {a: number}\n")
@@ -722,7 +714,7 @@ func spreadChainSrc(levels, fanOut int) string {
 }
 
 // The two expansion budgets each stop a shape the other does not, and neither shape involves
-// recursion, so checkRegular has nothing to say about either. Without the budgets both hang.
+// recursion, so checkProductive has nothing to say about either. Without the budgets both hang.
 //
 // Both cases reject the value, because the annotation never grounds to an object the number could
 // satisfy. The point is that inference finishes at all, and that it blames the top alias's
@@ -798,21 +790,26 @@ func TestInferKeyofKeyofIsNever(t *testing.T) {
 	}
 }
 
-// `keyof` over an expanding recursive alias stays symbolic. checkRegular rejects the alias, so the
-// evaluator declines to expand it and the `keyof` has no ground operand to project keys from.
+// `keyof` over a non-productive recursive alias stays symbolic. A lap of this alias's recursion
+// passes only under `keyof`, which reads a key set out of its operand rather than wrapping it, so
+// checkProductive rejects the alias and the evaluator declines to expand it. The `keyof` then has no
+// ground operand to project keys from.
 //
 // The `keyof keyof T` ⇒ `never` rule does not fire here, even though this alias body is
 // `keyof Grow<…>` and one expansion would put a `keyof` directly under a `keyof`. Seeing that
 // requires expanding the rejected alias, which is exactly what the marker forbids. The rule still
 // answers for every operand the evaluator will expand — see TestInferKeyofKeyofIsNever.
-func TestInferKeyofExpandingAliasStaysSymbolic(t *testing.T) {
+//
+// The alias absorbs at a constraint site, but the `keyof` the annotation wraps around it does not,
+// so the value check still reports its own rejection, and it names the argument the source wrote.
+func TestInferKeyofNotProductiveAliasStaysSymbolic(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type Grow<T> = keyof Grow<{a: T, b: T}>
-		val k: Grow<{a: number, b: number}> = "x"
+		val k: keyof Grow<{a: number, b: number}> = "x"
 	`)
 	require.Equal(t, []string{
-		notRegularMsg("2:8-2:12", "Grow", "T"),
-		`3:41-3:44: cannot constrain "x" <: keyof Grow<{a: {a: number, b: number}, b: {a: number, b: number}}>`,
+		notProductiveMsg("2:8-2:12", "Grow"),
+		`3:47-3:50: cannot constrain "x" <: keyof Grow<{a: number, b: number}>`,
 	}, messagesWithSpan(errs))
 }
 
@@ -1461,20 +1458,19 @@ func TestInferTupleSpreadMutOperandRejected(t *testing.T) {
 	require.Equal(t, "owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability", errs[0].Message())
 }
 
-// Checking a value against a tuple spread of an expanding recursive alias terminates instead of
-// looping. checkRegular rejects the alias at its declaration, and the annotation naming it still
-// reduces, so the second error is the value check against what that reduction produced. The
-// reduction is budget-truncated and leaves a `[...A<…>, …]` residual, so constrain does not recurse
-// on it — re-expanding would grow the operand without bound — and the residual stays inert,
-// conservatively rejecting the value. The point is termination; the precise rejection is a
-// consequence of the truncation.
-func TestInferTupleSpreadExpandingAliasTerminates(t *testing.T) {
+// Checking a value against a tuple spread of a non-productive recursive alias terminates instead of
+// looping. The recursive reference is a `...P` element, which splices its operand's elements into
+// the tuple rather than nesting them under one, so no lap emits a level and checkProductive rejects
+// the alias. The evaluator then declines to expand it, the annotation keeps its `[...A<number>, …]`
+// residual, and constrain treats that residual inert, conservatively rejecting the value. The alias
+// itself absorbs at a constraint site; the tuple wrapped around it does not.
+func TestInferTupleSpreadNotProductiveAliasTerminates(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type A<T> = [T, ...A<[T]>]
 		val r: [...A<number>, boolean] = [1, 2]
 	`)
 	require.Equal(t, []string{
-		notRegularMsg("2:8-2:9", "A", "T"),
+		notProductiveMsg("2:8-2:9", "A"),
 		"3:36-3:42: cannot constrain tuple <: [...A<number>, boolean]",
 	}, messagesWithSpan(errs))
 }
@@ -1732,19 +1728,17 @@ func TestInferOutsideExtendsUnsupported(t *testing.T) {
 	}
 }
 
-// Checking a value against a self-referential conditional alias terminates instead of looping. A
-// conditional decides its branch by re-entering constrain to probe `Check <: Extends`, and constrain
-// expands an alias Check back into the same conditional, so `type Bad = if Bad : number { … }` would
-// recurse without bound if the probe started a fresh cycle-detection set. The probe reuses the
-// caller's set, so the repeated `Bad <: number` state closes the cycle. The point of the test is
-// termination; the branch the truncated cycle selects is a consequence, which CheckRegular will
-// reject at definition time in a later milestone.
-func TestInferCondRecursiveAliasTerminates(t *testing.T) {
+// A self-referential conditional alias is rejected at its declaration and reports nothing further.
+// A conditional guards its two branches, since reaching one means a later instantiation can take
+// the other and stop, but its Check is evaluated on every lap and so guards nothing. `type Bad = if
+// Bad : number { … }` therefore reaches itself emitting nothing, and checkProductive rejects it.
+// The value checked against it absorbs, so the definition-time diagnostic is the only one.
+func TestInferCondSelfReferentialAliasRejected(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type Bad = if Bad : number { number } else { string }
 		val x: Bad = 5
 	`)
-	require.Empty(t, errs)
+	require.Equal(t, []string{notProductiveMsg("2:8-2:11", "Bad")}, messagesWithSpan(errs))
 }
 
 // `keyof` and indexed access compose over a ground conditional: the conditional selects its branch
@@ -2089,7 +2083,8 @@ func TestInferCondRecursiveCaptureAlias(t *testing.T) {
 			// set instead: an alias operand is compared under an interned canonical representative,
 			// so the repeated `5 <: Same<[number]>` state closes the cycle and the constraint is
 			// accepted. The point of the case is termination, not the type the closed cycle admits.
-			// CheckRegular will reject the definition itself in a later milestone.
+			// The definition passes checkProductive, since the recursive reference sits in a
+			// conditional branch.
 			name: "SameSizeRecursionTerminates",
 			src: `
 				type Same<T> = if T : [infer U] { Same<[U]> } else { T }

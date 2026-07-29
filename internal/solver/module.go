@@ -400,9 +400,9 @@ func (c *checker) inferComponent(
 	for _, sh := range aliasShells {
 		c.inferAliasBody(sh)
 	}
-	// Every body in the component is resolved, so the alias reference graph the regularity check
-	// reads is complete.
-	c.checkRegular(aliasShells)
+	// Every body in the component is resolved, so the alias reference graph the productivity
+	// check reads is complete.
+	c.checkProductive(aliasShells)
 
 	// Report any remaining non-value decl as unsupported. A class was pre-bound above and
 	// is completed at its value key, so skip it rather than mis-reporting it.
