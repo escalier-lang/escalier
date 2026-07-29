@@ -89,11 +89,13 @@ spike work rather than inventing it:
   it adds **no new mutable solver state**.
 - **CheckRegular** — [regularity.go](../../internal/simplesub/regularity.go): the
   optional level-2 static check that rejects *expanding* recursion at definition
-  time, accepting `List` / `Json` / `DeepPartial` and rejecting `Grow`.
+  time, accepting `List` / `Json` / `DeepPartial` and rejecting `Grow`. PR9 lands
+  it, and PR9b replaces its condition with productivity.
 - **The lazy/coinductive alternative** — [lazy.go](../../internal/simplesub/lazy.go):
   an Amadio–Cardelli seen-set that decides regular recursive subtyping with no
   budget. M9 keeps the eager evaluator as the backbone and borrows the
-  coinductive seen-set only where recursive-vs-recursive comparison needs it.
+  coinductive seen-set only where recursive-vs-recursive comparison needs it,
+  which is PR9b.
 
 ## What M9 adds (the delta)
 
@@ -116,7 +118,10 @@ spike work rather than inventing it:
 5. **Exactness propagation through reduction** — the first milestone where
    exactness is *computed by* an operator, not merely checked — plus the
    `Exact<T>` / `Inexact<T>` intrinsics.
-6. **`CheckRegular`** as a definition-time diagnostic for expanding recursion.
+6. **A definition-time recursion check.** `CheckRegular` first, rejecting an alias
+   whose recursion grows one of its own parameters, then the productivity condition
+   that supersedes it and the coinductive comparison the types it newly accepts
+   require.
 7. **`FuncType.Throws` and `FuncType.Yields` fields** with parallel arms in
    `constrain` / `extrude` / `LevelOf` / the printer, plus per-body inference
    variables that accumulate lowers from `throw e` / `yield e`.
@@ -128,7 +133,7 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Fifteen PRs across five tracks. Track A builds the evaluator and the core
+Sixteen PRs across five tracks. Track A builds the evaluator and the core
 operators in dependency order. Track B adds spread and template-literal
 operators, which hang off the backbone but are independent of each other. Track C
 adds exactness propagation and the recursion static-check. Track D is the two
@@ -431,6 +436,70 @@ are complementary: a precise early error where decidable, safe termination alway
 **Depends on** PR1b (evaluator + cycle cache) and PR3b (conditionals recursing on
 an `infer` binding are an accept case). Independent of PR4–PR8.
 
+### PR9b — Productivity check + coinductive comparison
+
+PR9's condition is sound but rejects a family of types that are well defined and
+that TypeScript accepts. This PR replaces it with the condition that actually
+decides whether a recursive alias denotes a type, and adds the comparison
+machinery the newly accepted types need.
+
+Two terms do the work here. Recursion is **productive** when every cycle through an
+alias passes under a type constructor in its body, so each lap emits one level of
+structure. Recursion is **regular** when the type has finitely many distinct
+subtrees, so a finite μ-knot represents it. PR9 checks a proxy for regularity. This
+PR checks productivity instead.
+
+The two conditions come apart on exactly the cases that motivate the PR:
+
+- `type Deep<T> = {a: Deep<{b: T}>}` is productive and non-regular. It emits
+  `{a: …}` every lap, so `Deep<number>` is a well-defined infinite tree, but its
+  payloads are `{b: number}`, `{b: {b: number}}`, and so on, all distinct. PR9
+  rejects it. TypeScript accepts it.
+- `type Grow<T> = Grow<{a: T}>` is non-productive. No lap emits a constructor, so
+  the equation `G(T) = G({a: T})` is satisfied by every constant function and
+  pins down no type at all. PR9 rejects it for the wrong reason; this PR rejects
+  it for the right one.
+
+**Data structures.** No new `soltype` node. `AliasDef.NotRegular` is renamed
+`NotProductive` and keeps its meaning, a marker the evaluator reads to decline
+expansion. `NotRegularAliasError` is replaced by a productivity diagnostic that
+names the cycle rather than a growing parameter. `constrain` gains the seen-set of
+`(sub, super)` pairs described below, threaded the way its existing alias-cycle set
+already is.
+
+**Algorithms.**
+- **Productivity replaces regularity.** The SCC machinery from PR9 stays as is.
+  The nesting walk moves from the arguments of a recursive reference to the
+  reference's own position in the alias body: an alias is rejected when some cycle
+  returns to it without passing under a type constructor. This accepts `List`,
+  `DeepPartial`, the self-referential `type SelfA = {a: SelfA}`, and `Deep`, and
+  rejects `Grow` and `type Bad = Bad`. It is the guard condition from coinductive
+  type theory.
+- **Coinductive comparison.** A non-regular type has no finite normal form, so the
+  eager evaluator cannot materialize `Deep<number>` and productivity alone would
+  accept a type nothing can use. Promote the Amadio–Cardelli seen-set from
+  [lazy.go](../../internal/simplesub/lazy.go): `constrain` records the
+  `(sub, super)` pair it is deciding and succeeds when that pair recurs, so
+  `Deep<number> <: Deep<number>` closes with no unfolding at all. The eager
+  evaluator stays the backbone. The seen-set covers recursive-against-recursive
+  comparison, which is the one case with no normal form to compare.
+- **Refusing to expand a rejected alias carries over.** PR9 marks a rejected alias
+  so the evaluator never expands it, which keeps a diagnostic naming the arguments
+  the source wrote rather than ones the expansion had grown. A non-productive alias
+  is refused the same way, for the same reason.
+- **The expansion budgets stay.** Neither condition bounds a reduction that is wide
+  rather than deep. A chain of non-recursive aliases that each spread the one below
+  them twice is exponential in the chain length, and no recursion check sees it, so
+  `maxExpandDepth` and `maxExpandKeyChars` remain as the backstop.
+
+**Accept.** `type Deep<T> = {a: Deep<{b: T}>}` is accepted and a value checks
+against `Deep<number>`. `type Grow<T> = Grow<{a: T}>` and `type Bad = Bad` are
+rejected with a productivity diagnostic. Every alias PR9 accepted still passes,
+including the DOM-shaped `type Node = {parent?: Node, children: [Node]}`, which
+keeps reducing under `keyof`, indexed access, and mapped types.
+
+**Depends on** PR9. Independent of PR4–PR8 and PR10–PR13.
+
 ### PR10 — `throws T` clause on functions
 
 Orthogonal to the evaluator. Touches only `FuncType` and the function-inference
@@ -544,6 +613,15 @@ no operator-track review burden. PR13 is verification-heavy but low-risk; if the
 utility corpus balloons it splits cleanly by category (mapped-based,
 conditional-based, template-based).
 
+PR9b is the one PR that carries both a condition change and new comparison
+machinery, and the two cannot land apart: relaxing the check without the
+coinductive seen-set accepts types the eager evaluator cannot materialize, and
+adding the seen-set without relaxing the check leaves nothing for it to decide. It
+stays within the band because the condition change reuses PR9's SCC walk and the
+seen-set is promoted from the spike rather than designed here. If it does need
+splitting, the seam is to land the seen-set first as a no-op fast path for
+comparisons the evaluator already settles, then flip the condition.
+
 ## Dependency graph
 
 ```
@@ -557,6 +635,7 @@ PR1a (residual-node representation + inert plumbing)
       ├─► PR3a (conditional types: branch selection)
       │    └─► PR3b (infer clauses + distribution)   ── also needs PR2
       │         ├─► PR9 (CheckRegular)          ── also needs PR1b
+      │         │    └─► PR9b (productivity check + coinductive comparison)
       │         └─► PR12 (Awaited<T>)           ── also needs PR1b, M7.5
       ├─► PR5 (object spread types)
       ├─► PR6 (tuple spread types)
@@ -588,6 +667,7 @@ graph TD
     PR7["PR7 (template literal types + intrinsics)"]
     PR8["PR8 (exactness propagation + Exact/Inexact)"]
     PR9["PR9 (CheckRegular static check)"]
+    PR9b["PR9b (productivity + coinductive comparison)"]
     PR10["PR10 (throws clause)"]
     PR11["PR11 (generators)"]
     PR12["PR12 (Awaited<T>)"]
@@ -611,6 +691,7 @@ graph TD
     PR3a --> PR4
     PR3b --> PR9
     PR1b --> PR9
+    PR9 --> PR9b
     PR3b --> PR12
     PR1b --> PR12
     PR3b --> PR13
@@ -639,7 +720,8 @@ graph TD
   off PR1b) is the operator core. PR5, PR6, and PR7 are mutually independent and can
   be built concurrently once PR1b lands.
 - **Track C** — PR8 (exactness) is a barrier that waits for all operators; PR9
-  (CheckRegular) needs only PR1b + PR3b and runs alongside PR4–PR8.
+  (CheckRegular) needs only PR1b + PR3b and runs alongside PR4–PR8. PR9b follows
+  PR9 and depends on nothing else, so it can land at any point after it.
 - **Track D** — PR10 (throws) has no operator dependency and can start on day one
   alongside PR1a; PR11 (generators) follows PR10.
 - **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12.
