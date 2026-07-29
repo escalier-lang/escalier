@@ -27,6 +27,19 @@ type AliasDef struct {
 	// in the body and are substituted at expansion, so the level is recorded but not
 	// otherwise consulted.
 	Level int
+
+	// NotRegular marks an alias checkRegular rejected for expanding recursion. Expanding one
+	// lap of such an alias hands the next lap a strictly larger argument, so the evaluator
+	// refuses to expand it at all and leaves the operator over it symbolic. That keeps a
+	// diagnostic naming the alias showing the arguments the source wrote, and it stops the
+	// rejection from cascading into a reduction that would run until a budget cut it off.
+	//
+	// checkRegular sets it in the loop that immediately follows body resolution for the
+	// alias's dep_graph component, with no inference in between. That ordering is what makes
+	// the flag safe to read: until a body is filled, expandAlias yields ErrorType for the
+	// alias and expandAliasGuarded declines to expand it, so no reduction can reach a
+	// resolved body before the flag is set.
+	NotRegular bool
 }
 
 // expandAlias unfolds an alias reference to its registered AliasDef Body, the shared
@@ -55,6 +68,10 @@ type aliasShell struct {
 	decl *ast.TypeDecl
 	ns   string
 	lvl  int
+	// qname is the alias's dep_graph-qualified name. It is the key its AliasDef is
+	// registered under, and the Name every AliasType handle pointing at it carries.
+	// checkRegular matches a body's references against it to find the recursion cycles.
+	qname string
 	// declScope is scope, or a child holding a generic alias's type parameters. The body
 	// resolves here so it reads each `T` as the one shared var the def stores.
 	declScope *Scope
@@ -129,7 +146,7 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 	})
 	c.recordType(decl.Name, t)
 
-	return &aliasShell{decl: decl, ns: ns, lvl: lvl, declScope: declScope, namedLts: aliasNamedLts, def: def}
+	return &aliasShell{decl: decl, ns: ns, lvl: lvl, qname: qname, declScope: declScope, namedLts: aliasNamedLts, def: def}
 }
 
 // resolveAliasLifetimeParams mints one lifetime variable per `<'a, ...>` parameter through
