@@ -245,8 +245,8 @@ type TemplateLitTooComplexError struct {
 // The error carries the offending member so a consumer can render the form the source wrote.
 type RequiredUncountableKeysError struct {
 	Mapped *soltype.MappedElem
-	prov   NodeResolver // M2.5: type→node index (§3.5)
-	site   ast.Node     // M2.5: constraint node fallback
+	prov   NodeResolver
+	site   ast.Node
 }
 
 // IndexSignatureKeyError fires when an indexed access reads an object with a key that none of its
@@ -261,8 +261,8 @@ type RequiredUncountableKeysError struct {
 type IndexSignatureKeyError struct {
 	Object *soltype.ObjectType
 	Index  soltype.Type
-	prov   NodeResolver // M2.5: type→node index (§3.5)
-	site   ast.Node     // M2.5: constraint node fallback
+	prov   NodeResolver
+	site   ast.Node
 }
 
 // NoIndexSignatureError fires when an indexed access reads an object with a ground key that names no
@@ -276,8 +276,8 @@ type IndexSignatureKeyError struct {
 type NoIndexSignatureError struct {
 	Object *soltype.ObjectType
 	Index  soltype.Type
-	prov   NodeResolver // M2.5: type→node index (§3.5)
-	site   ast.Node     // M2.5: constraint node fallback
+	prov   NodeResolver
+	site   ast.Node
 }
 
 // MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
