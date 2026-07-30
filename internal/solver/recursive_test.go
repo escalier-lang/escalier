@@ -233,9 +233,17 @@ func TestConstrainRecursiveUnfolds(t *testing.T) {
 	}
 
 	t.Run("two alpha-equivalent knots are mutual subtypes", func(t *testing.T) {
-		c := &Context{}
-		require.Empty(t, Messages(c.Constrain(selfNext(), selfNext())))
-		require.Empty(t, Messages(c.Constrain(selfNext(), selfNext())))
+		// The two knots number their binders differently, so a comparison that only succeeded on
+		// identical operands would not settle either direction. Each direction runs on its own
+		// Context, so neither can be decided by state the other left behind.
+		left := muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
+			return exactObj(propElem("next", ref))
+		})
+		right := muKnot(4, "X1", func(ref *soltype.RecursiveVarType) soltype.Type {
+			return exactObj(propElem("next", ref))
+		})
+		require.Empty(t, Messages((&Context{}).Constrain(left, right)))
+		require.Empty(t, Messages((&Context{}).Constrain(right, left)))
 	})
 
 	t.Run("a knot satisfies its own unfolding and the reverse", func(t *testing.T) {
