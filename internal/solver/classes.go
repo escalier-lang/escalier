@@ -295,11 +295,11 @@ type classPair struct{ sub, super string }
 // A (subName, supName) seen-set bounds the walk on a cyclic hierarchy. Until C2 infers
 // real variance, every ClassDef.Variance entry is Invariant, so every argument is
 // constrained in both directions — the conservative choice a sound rule falls back to.
-func (c *Context) constrainNominal(sub, super *soltype.ClassType, seen set.Set[constraintKey]) []SolverError {
+func (c *Context) constrainNominal(sub, super *soltype.ClassType, seen *seenPairs) []SolverError {
 	return c.constrainNominalWalk(sub, super, seen, set.NewSet[classPair]())
 }
 
-func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen set.Set[constraintKey], walked set.Set[classPair]) []SolverError {
+func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seenPairs, walked set.Set[classPair]) []SolverError {
 	key := classPair{sub.Name, super.Name}
 	if walked.Contains(key) {
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
@@ -338,7 +338,12 @@ func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen set.S
 	if def, ok := c.classDef(sub.Name); ok {
 		for _, superType := range def.Supers {
 			s := substituteSuperArgs(def, sub, superType)
-			if len(c.constrainNominalWalk(s, super, seen, walked)) == 0 {
+			// A candidate whose walk fails has its errors discarded so the next candidate can be
+			// tried, so it walks over a clone of the seen-set. That is the discipline every arm
+			// swallowing a failure follows, the union-super and intersection-sub trials included.
+			// Nothing a discarded walk settled is then read by a later candidate, nor by the
+			// caller when a later candidate accepts and the walk reports no error at all.
+			if len(c.constrainNominalWalk(s, super, seen.Clone(), walked)) == 0 {
 				return nil
 			}
 		}

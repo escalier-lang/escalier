@@ -73,6 +73,15 @@ type Context struct {
 	// when that call returns, so the value always names the current path rather than the whole run.
 	unwrapDepth int
 
+	// shallowestAssumed is the depth of the shallowest goal the constraint derivation currently
+	// running has closed a coinductive assumption on, or math.MaxInt when it has closed on none.
+	// Each constrain frame takes the field over for its own derivation and folds the result back
+	// into the enclosing frame's on the way out, so the value a frame reads covers its own
+	// subtree. Comparing it against the frame's own depth is what decides whether the frame's
+	// verdict may be memoized — see seenPairs. Outside any derivation the field holds whatever the
+	// last one left, which nothing reads.
+	shallowestAssumed int
+
 	// unionCommits maps an inference var that a union-super trial pinned by committing a bare
 	// type-variable member to the super union it was chosen from, so `"hi" <: (T | number)`
 	// records T → (T | number). A later constraint that forces an incompatible bound onto the

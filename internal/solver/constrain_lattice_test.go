@@ -3,7 +3,6 @@ package solver
 import (
 	"testing"
 
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -234,7 +233,7 @@ func TestConstrainUnionCommitDiagnostics(t *testing.T) {
 
 		p := newProbe(c.probe)
 		c.probe = p
-		require.Empty(t, c.constrain(strLit("hi"), super, set.NewSet[constraintKey](), false))
+		require.Empty(t, c.constrain(strLit("hi"), super, newSeenPairs(), false))
 		c.probe = p.parent
 		require.Contains(t, c.unionCommits, tv)
 		require.Len(t, tv.LowerBounds, 1)

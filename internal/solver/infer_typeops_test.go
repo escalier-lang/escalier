@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/dep_graph"
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +48,7 @@ func inferTypeNodes(t *testing.T, src string) (map[string]soltype.Type, *Context
 // keeps a named residual symbolic at annotation and display time, so this test-only helper lets a
 // test assert what a residual expands to without routing through a constraint.
 func expandResidual(ctx *Context, ty soltype.Type) soltype.Type {
-	return newTypeEvaluator(ctx, set.NewSet[constraintKey]()).reduce(ty)
+	return newTypeEvaluator(ctx, newSeenPairs()).reduce(ty)
 }
 
 // expandAliasResidual substitutes a generic alias instance's arguments into the alias body and then

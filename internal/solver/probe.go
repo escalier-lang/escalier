@@ -304,7 +304,7 @@ func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError)
 
 // trialMutatesBounds trials sub <: super under a throwaway probe, reporting whether it succeeded
 // and whether it recorded a bound, so `5 <: T` gives (true, true) and `5 <: number` (true, false).
-func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (ok, mutated bool) {
+func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen *seenPairs, mutCtx bool) (ok, mutated bool) {
 	p := newProbe(c.probe)
 	c.probe = p
 	errs := c.constrain(sub, super, seen.Clone(), mutCtx)
@@ -323,7 +323,7 @@ func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen set.Set[const
 // The bounds are read after constrain returns and before the probe rolls them back, the window
 // trialMutatesBounds reads p.mutatedBounds() in. The trial is discarded either way, so no bound
 // survives on any type the caller handed in.
-func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVarType, seen set.Set[constraintKey]) ([]soltype.Type, bool) {
+func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVarType, seen *seenPairs) ([]soltype.Type, bool) {
 	p := newProbe(c.probe)
 	c.probe = p
 	errs := c.constrain(sub, super, seen, false)
@@ -365,14 +365,15 @@ func capturedBound(v *soltype.TypeVarType) soltype.Type {
 // succeeded. The seen-set starts fresh and the mut context at false, so the
 // trial is a self-contained covariant read check.
 func (c *Context) trialUnderProbe(sub, super soltype.Type) []SolverError {
-	return c.trialUnderProbeSeen(sub, super, set.NewSet[constraintKey]())
+	return c.trialUnderProbeSeen(sub, super, newSeenPairs())
 }
 
 // trialUnderProbeSeen is trialUnderProbe over a caller-supplied cycle-detection set rather than a
 // fresh one, so a conditional's `Check <: Extends` branch probe closes a recursive alias through the
-// same seen-set the enclosing constraint built up. The caller clones the set when it must keep the
-// trial's keys out of its own.
-func (c *Context) trialUnderProbeSeen(sub, super soltype.Type, seen set.Set[constraintKey]) []SolverError {
+// same seen-set the enclosing constraint built up. A caller that discards the trial's failure must
+// pass a Clone instead. The probe rolls the trial's bounds back, so the verdicts the trial memoized
+// have to go with them.
+func (c *Context) trialUnderProbeSeen(sub, super soltype.Type, seen *seenPairs) []SolverError {
 	p := newProbe(c.probe)
 	c.probe = p
 	errs := c.constrain(sub, super, seen, false)
