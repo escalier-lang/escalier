@@ -31,9 +31,10 @@ import (
 // `type Deep<T> = {a: Deep<{b: T}>}` is productive and not regular. It emits `{a: …}` every lap, so
 // `Deep<number>` is a well-defined infinite tree, but its payloads are `{b: number}`, then
 // `{b: {b: number}}`, and so on, all distinct. No finite normal form exists for it, so the
-// evaluator cannot materialize it. constrain compares two such aliases by their names and
-// arguments instead of unfolding them, which is what makes accepting them useful rather than only
-// permissive.
+// evaluator cannot materialize it. constrain compares two such aliases by their canonical identity
+// instead of unfolding them, which is what makes accepting them useful rather than only permissive.
+// That identity keeps only the arguments the denoted type depends on — see markPhantomParams —
+// which is why `Deep<number>` and `Deep<string>` compare equal rather than diverging.
 //
 // Mutual recursion goes through the alias reference graph. A recursive reference means a reference
 // to any alias in the same strongly connected component, so `type A = B` paired with `type B = A`

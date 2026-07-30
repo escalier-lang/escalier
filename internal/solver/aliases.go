@@ -43,6 +43,16 @@ type AliasDef struct {
 	// alias and expandAliasGuarded declines to expand it, so no reduction can reach a
 	// resolved body before the flag is set.
 	NotProductive bool
+
+	// PhantomParams holds one entry per TypeParam, true when no argument passed to that
+	// parameter can appear in the type an instantiation denotes. markPhantomParams computes it,
+	// and internAlias drops a phantom parameter's argument when it renders an alias reference's
+	// canonical identity, so two references differing only in those arguments intern to one
+	// representative. See phantom.go for what makes a parameter phantom.
+	//
+	// It is nil for an alias no fixed point ran over, which is an enum's synthesized alias. A
+	// nil slice marks nothing phantom, so every argument stays in the identity key.
+	PhantomParams []bool
 }
 
 // expandAlias unfolds an alias reference to its registered AliasDef Body, the shared

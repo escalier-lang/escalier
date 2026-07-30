@@ -249,18 +249,21 @@ func TestInferNonRegularAliasChecks(t *testing.T) {
 	}
 }
 
-// Comparing two different instantiations of a non-regular alias has no finite answer. Every lap
-// reaches a pair of instantiations no earlier lap did, so neither the reflexive shortcut nor the
-// coinductive seen-set closes it. maxUnwrapDepth stops the walk, and the diagnostic names the alias
-// rather than the arguments the walk had grown by then.
+// Comparing two instantiations of a non-regular alias whose parameter reaches the type it denotes
+// has no finite answer. Every lap reaches a pair of instantiations no earlier lap did, so neither
+// the reflexive shortcut nor the coinductive seen-set closes it. The walk reports the mismatch it
+// finds at the first `here` field, then runs on until maxUnwrapDepth stops it, and that diagnostic
+// names the alias rather than the arguments the walk had grown by then. `Deep`, whose parameter never
+// reaches the type it denotes, settles instead — see TestInferPhantomArgumentsCompareEqual.
 func TestInferNonRegularAliasComparisonDoesNotSettle(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		type Deep<T> = {a: Deep<{b: T}>}
-		declare fn make() -> Deep<number>
-		val d: Deep<string> = make()
+		type Nest<T> = {here: T, deeper: Nest<{b: T}>}
+		declare fn make() -> Nest<number>
+		val d: Nest<string> = make()
 	`)
 	require.Equal(t, []string{
-		"4:25-4:31: comparing two instantiations of `Deep` reached the limit of 200 type-operator " +
+		"4:25-4:31: cannot constrain number <: string",
+		"4:25-4:31: comparing two instantiations of `Nest` reached the limit of 200 type-operator " +
 			"expansions and was cut off; either the two sides recurse without ever repeating a pair " +
 			"the check can close on, or their alias chains run deeper than the limit unfolds",
 	}, messagesWithSpan(errs))
