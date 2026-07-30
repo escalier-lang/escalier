@@ -1286,7 +1286,7 @@ func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.
 // Inside a `mut` wrapper the keys are invariant and a readonly source cannot fill them. A method,
 // getter, or setter is passed over: whether a callable member satisfies a value-typed signature is
 // escalier-lang/escalier#864.
-func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, superIdx *soltype.MappedElem, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, superIdx *soltype.MappedElem, seen *seenPairs, mutCtx bool) []SolverError {
 	writable := mutCtx && superIdx.Readonly != soltype.ModAdd
 	var errs []SolverError
 	for _, subElem := range sub.Elems {

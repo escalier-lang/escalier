@@ -2246,7 +2246,7 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 func (c *checker) dynamicIndexRead(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
 	key := c.inferExpr(scope, lvl, e.Index)
 	access := &soltype.IndexType{Target: recv, Index: key}
-	reduced, reduceErrs, ok := c.ctx.reduceResidual(access, set.NewSet[constraintKey]())
+	reduced, reduceErrs, ok := c.ctx.reduceResidual(access, newSeenPairs())
 	if len(reduceErrs) > 0 {
 		c.blameConstraintErrors(e, reduceErrs)
 		return pathResult{err: true}

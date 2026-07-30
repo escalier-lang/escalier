@@ -384,7 +384,7 @@ func (c *Context) condExtends(check, extends soltype.Type, seen *seenPairs) bool
 // through the string signature and `0` through the number one.
 //
 // A key that no signature accepts reports false, which the caller turns into its own diagnostic.
-func (c *Context) indexSignatureFor(obj *soltype.ObjectType, key soltype.Type, seen set.Set[constraintKey]) (*soltype.MappedElem, bool) {
+func (c *Context) indexSignatureFor(obj *soltype.ObjectType, key soltype.Type, seen *seenPairs) (*soltype.MappedElem, bool) {
 	for _, sig := range obj.IndexSignatures() {
 		if c.condExtends(key, sig.Keys, seen) {
 			return sig, true
