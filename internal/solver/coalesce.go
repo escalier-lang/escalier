@@ -61,9 +61,9 @@ func coalesceKeeping(t soltype.Type, pol soltype.Polarity, keep set.Set[*soltype
 // that rule lives in one place.
 //
 // A binder is OPEN while the walk is inlining the variable it stands for. Re-entering that variable
-// is the cycle the knot represents: ref hands back a μ-variable so the body names itself there
+// is the cycle the knot represents. ref hands back a μ-variable so the body names itself there
 // rather than degenerating to never or unknown, and tie wraps the finished body in a RecursiveType.
-// A binder no cycle reached names nothing, so tie leaves such a body alone.
+// A binder that no cycle reached names nothing, so tie returns such a body unwrapped.
 type muBinders struct {
 	// open holds the binder for each variable currently on the walk's path. Both coalescers guard
 	// re-entry with a seen-set keyed by the variable alone, so a variable has at most one open
@@ -74,10 +74,9 @@ type muBinders struct {
 	count int
 }
 
-// muBinder is one open μ-binder: the walk that opened it, the polarity its origin variable was
-// entered at, and the μ-variable a cycle back to that origin renders as.
+// muBinder is one open μ-binder: the polarity its origin variable was entered at, and the
+// μ-variable a cycle back to that origin renders as.
 type muBinder struct {
-	m   *muBinders
 	pol soltype.Polarity
 	// v is minted on the first cycle that reaches this binder and stays nil otherwise, which is
 	// both the signal tie reads and the reason the ids count knots rather than path entries.
@@ -90,7 +89,7 @@ func (m *muBinders) push(v *soltype.TypeVarType, pol soltype.Polarity) *muBinder
 	if m.open == nil {
 		m.open = map[*soltype.TypeVarType]*muBinder{}
 	}
-	b := &muBinder{m: m, pol: pol}
+	b := &muBinder{pol: pol}
 	m.open[v] = b
 	return b
 }
@@ -101,8 +100,8 @@ func (m *muBinders) pop(v *soltype.TypeVarType) {
 
 // ref returns the μ-variable to stand in for a cycle back to v at pol, or nil when no knot can be
 // tied there. The polarity must match the one v's open binder was pushed at. A cycle reached at the
-// opposite polarity would name a body built from v's other bound direction — its lower bounds where
-// the position needs its uppers — so the caller falls back to the polarity identity.
+// opposite polarity would name a body built from v's other bound direction, its lower bounds where
+// the position needs its uppers. The caller falls back to the polarity identity there.
 func (m *muBinders) ref(v *soltype.TypeVarType, pol soltype.Polarity) soltype.Type {
 	b, ok := m.open[v]
 	if !ok || b.pol != pol {
@@ -115,11 +114,11 @@ func (m *muBinders) ref(v *soltype.TypeVarType, pol soltype.Polarity) soltype.Ty
 	return b.v
 }
 
-// tie closes a knot over body, or returns body unchanged when no cycle named the binder. A body
+// tie closes a knot over body, or returns body unchanged when no cycle named this binder. A body
 // that is nothing but the bare μ-variable pins no type at all, since `μX0.X0` has no unfolding that
-// mentions a type, so it collapses to the polarity identity — the value an empty-bounds position
-// takes.
-func (m *muBinders) tie(b *muBinder, pol soltype.Polarity, body soltype.Type) soltype.Type {
+// mentions a type. It collapses to the polarity identity instead, the value an empty-bounds
+// position takes.
+func (b *muBinder) tie(pol soltype.Polarity, body soltype.Type) soltype.Type {
 	if b.v == nil {
 		return body
 	}
@@ -147,7 +146,9 @@ func muBinderName(i int) string {
 // the path is a genuine cycle.
 type coalescer struct {
 	seen set.Set[*soltype.TypeVarType]
-	mu   muBinders
+	// mu holds the μ-binder open for each variable on that same path, so a cycle back to one
+	// renders as a reference the finished body closes over as a knot.
+	mu muBinders
 	// keep holds variables retained symbolically rather than inlined to their bounds —
 	// a generic class's own type-parameter vars, set only by coalesceKeeping. It is nil
 	// for a plain coalesce, and a nil Set reads as empty, so the check below is inert on
@@ -175,8 +176,9 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	// loops back on itself with no concrete type breaking the cycle. It renders as a reference to
 	// the μ-binder minted for that variable, so the finished body closes over the loop as a knot
 	// and `fn f() { return {next: f()} }` reads `fn () -> {next: μX0.{next: X0}}`. A cycle the
-	// binder cannot cover — one reached at the opposite polarity, see muBinders.ref — collapses to
-	// the polarity identity instead, the same value the position takes when its bounds are empty.
+	// binder cannot cover, meaning one reached at the opposite polarity, collapses to the polarity
+	// identity instead. See muBinders.ref. That is the same value the position takes when its
+	// bounds are empty.
 	if c.seen.Contains(v) {
 		if ref := c.mu.ref(v, pol); ref != nil {
 			return soltype.EnterResult{Type: ref, SkipChildren: true}
@@ -207,7 +209,7 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
 	inlined := widenVar(v, pol, combine(pol, dedup(bounds), v.Open))
-	return soltype.EnterResult{Type: c.mu.tie(binder, pol, inlined), SkipChildren: true}
+	return soltype.EnterResult{Type: binder.tie(pol, inlined), SkipChildren: true}
 }
 
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
@@ -441,7 +443,8 @@ type schemeCoalescer struct {
 	// A binder with no such bound is absent here and keeps its original pointer.
 	cleaned map[*soltype.TypeVarType]*soltype.TypeVarType
 	seen    set.Set[*soltype.TypeVarType]
-	mu      muBinders
+	// mu is coalescer.mu's twin, keyed by the co-occurrence representative the seen-set uses.
+	mu muBinders
 }
 
 func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -465,12 +468,12 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	// parameter rather than a second name for the same type.
 	rep = c.displayBinder(rep)
 	if c.seen.Contains(rep) {
-		// A cycle back to a variable already on the path. A retained type parameter keeps its
-		// name: the quantifier already binds it, so the name IS the recursive reference and no
-		// separate binder is needed. An inlined variable has no name to come back to, so the cycle
-		// renders as a reference to the μ-binder minted for it and the finished body closes over
-		// the loop as a knot. A cycle the binder cannot cover — one reached at the opposite
-		// polarity, see muBinders.ref — collapses to the polarity identity.
+		// A cycle back to a variable already on the path. A retained type parameter keeps its name.
+		// The quantifier already binds it, so the name IS the recursive reference and no separate
+		// binder is needed. An inlined variable has no name to come back to, so the cycle renders
+		// as a reference to the μ-binder minted for it and the finished body closes over the loop
+		// as a knot. A cycle the binder cannot cover, meaning one reached at the opposite polarity,
+		// collapses to the polarity identity. See muBinders.ref.
 		if retain {
 			return soltype.EnterResult{Type: rep, SkipChildren: true}
 		}
@@ -515,7 +518,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
 	inlined := widenVar(v, pol, combine(pol, dedup(parts), v.Open))
-	return soltype.EnterResult{Type: c.mu.tie(binder, pol, inlined), SkipChildren: true}
+	return soltype.EnterResult{Type: binder.tie(pol, inlined), SkipChildren: true}
 }
 
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
@@ -1352,9 +1355,9 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		return ok && ctx.sameMappedKey(a, b)
 	case *soltype.RecursiveType:
 		// Two μ-knots are equal when their bodies are equal under a pairing of their binders, so
-		// `μX0.{next: X0}` equals `μX1.{next: X1}` — the alpha-equivalence a generic function's
-		// positional type parameters compare under. Pairing the binders before descending is what
-		// lets each side's references to its own binder match the other's.
+		// `μX0.{next: X0}` equals `μX1.{next: X1}`. That is the alpha-equivalence a generic
+		// function's positional type parameters compare under. Pairing the binders before
+		// descending is what lets each side's references to its own binder match the other's.
 		b, ok := b.(*soltype.RecursiveType)
 		if !ok {
 			return false

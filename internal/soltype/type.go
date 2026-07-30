@@ -1,6 +1,9 @@
 package soltype
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // Type is the sealed interface for all soltype nodes. (Production name for the
 // spike's SimpleType; marker renamed isSimpleType -> isType.)
@@ -893,45 +896,6 @@ func (k StringIntrinsicKind) String() string {
 	panic(fmt.Sprintf("StringIntrinsicKind.String: unhandled kind %d", int(k)))
 }
 
-// RecursiveType is the μ-knot, the finite form of a type whose unfolding never ends. Body is one
-// level of that unfolding and Binder is the variable Body names itself through, so
-// `μX0.{next: X0}` is the type of a value whose `next` field holds another value of the same type.
-// Unfolding it substitutes the whole knot for its binder in Body, which is how constrain compares a
-// knot against a structural type.
-//
-// coalesce mints one when its walk re-enters an inference variable already on the current path, so
-// a recursive position renders as the shape it stands for rather than collapsing to never or
-// unknown. `fn f() { return {next: f()} }` infers `fn () -> {next: μX0.{next: X0}}`.
-type RecursiveType struct {
-	Binder *RecursiveVarType
-	Body   Type
-}
-
-// RecursiveVarType is the variable a RecursiveType binds, the `X0` of `μX0.{next: X0}`. It is a
-// leaf that carries no bounds, and nothing constrains against it: unfolding the enclosing knot
-// replaces it with that knot before any comparison reaches it.
-//
-// ID is the binding this node stands for. The binder and every reference to it carry one id, so
-// unfolding reaches exactly the positions that binding stands at. A nested knot draws a distinct
-// id, which is what makes its own binding shadow the enclosing one. Name is the display name its
-// producer assigned, `X0`, `X1`, and so on; DisplayName falls back to a raw `r{ID}` form when a
-// producer left it empty.
-type RecursiveVarType struct {
-	ID   int
-	Name string
-}
-
-// DisplayName is the name a μ-binder renders under: the name its producer assigned, else the raw
-// `r{ID}` debug form. The fallback mirrors printType's `t{ID}` for an unnamed inference variable,
-// so a hand-built knot still renders legibly. It is exported because the solver's describe renders
-// raw mid-constrain types through the same name.
-func (v *RecursiveVarType) DisplayName() string {
-	if v.Name != "" {
-		return v.Name
-	}
-	return "r" + fmt.Sprint(v.ID)
-}
-
 // StringIntrinsicType is the residual intrinsic string operator `Uppercase<T>` and its three
 // siblings. Like KeyofType it is inert: it carries no bounds, constrain never records
 // one against it, and it flows through the solver's structural machinery untouched, rendering
@@ -943,9 +907,46 @@ type StringIntrinsicType struct {
 	Operand Type
 }
 
+// RecursiveType is the μ-knot, the finite form of a type whose unfolding never ends. Body is one
+// level of that unfolding and Binder is the variable Body names itself through, so `μX0.{next: X0}`
+// is the type of a value whose `next` field holds another value of the same type. Unfolding it
+// substitutes the whole knot for its binder in Body, which is how constrain compares a knot against
+// a structural type.
+//
+// coalesce mints one when its walk re-enters an inference variable already on the current path, so a
+// recursive position renders as the shape it stands for rather than collapsing to never or unknown.
+// `fn f() { return {next: f()} }` infers `fn () -> {next: μX0.{next: X0}}`.
+type RecursiveType struct {
+	Binder *RecursiveVarType
+	Body   Type
+}
+
+// RecursiveVarType is the variable a RecursiveType binds, the `X0` of `μX0.{next: X0}`. It is a leaf
+// that carries no bounds, and nothing constrains against it. Unfolding the enclosing knot replaces
+// it with that knot before any comparison reaches it.
+//
+// ID is the binding this node stands for. The binder and every reference to it carry one id, so
+// unfolding reaches exactly the positions that binding stands at. A nested knot draws a distinct id,
+// which is what makes its own binding shadow the enclosing one. Name is the display name its
+// producer assigned, `X0`, `X1`, and so on; DisplayName supplies a fallback when a producer left it
+// empty.
+type RecursiveVarType struct {
+	ID   int
+	Name string
+}
+
+// DisplayName is the name a μ-binder renders under: the name its producer assigned, else the raw
+// `r{ID}` debug form, mirroring printType's `t{ID}` for an unnamed inference variable. It is
+// exported so the solver's describe, the second per-node renderer beside printType, names a binder
+// the same way.
+func (v *RecursiveVarType) DisplayName() string {
+	if v.Name != "" {
+		return v.Name
+	}
+	return "r" + strconv.Itoa(v.ID)
+}
+
 func (*TypeVarType) isType()         {}
-func (*RecursiveType) isType()       {}
-func (*RecursiveVarType) isType()    {}
 func (*KeyofType) isType()           {}
 func (*IndexType) isType()           {}
 func (*TypeofType) isType()          {}
@@ -955,6 +956,8 @@ func (*MappedKeyType) isType()       {}
 func (*RestSpreadType) isType()      {}
 func (*TemplateLitType) isType()     {}
 func (*StringIntrinsicType) isType() {}
+func (*RecursiveType) isType()       {}
+func (*RecursiveVarType) isType()    {}
 func (*PrimType) isType()            {}
 func (*LitType) isType()             {}
 func (*FuncType) isType()            {}

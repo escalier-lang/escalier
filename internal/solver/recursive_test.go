@@ -16,52 +16,104 @@ func muKnot(id int, name string, body func(ref *soltype.RecursiveVarType) soltyp
 	return &soltype.RecursiveType{Binder: binder, Body: body(binder)}
 }
 
-// TestInferRecursiveRendersMuKnot is PR9e's headline: a cyclic bound graph coalesces to a μ-knot,
-// so a recursive position names the shape it stands for rather than collapsing to the polarity
-// identity — never in covariant position, unknown in contravariant.
+// TestInferRecursiveRendersMuKnot is the milestone's headline case. A cyclic bound graph coalesces
+// to a μ-knot, so a recursive position names the shape it stands for rather than collapsing to the
+// polarity identity, which is never in covariant position and unknown in contravariant.
 //
-// Each source builds the cycle a different way. The recursive call inside an object literal makes
-// the return variable's own lower bound mention it; the tuple case does the same through a
-// positional element; the two-field case shows the knot carrying a retained type parameter beside
-// the recursive field, so the knot and the quantifier coexist. The one unrolled level in front of
-// each knot is a monomorphic-recursion artifact: each call site instantiates its own return
-// variable, so the outer shape comes from the call and the knot from the variable the body's
-// recursive call flows through.
+// Each source builds the cycle a different way:
+//
+//   - the recursive call inside an object literal makes the return variable's own lower bound
+//     mention it;
+//   - the tuple case does the same through a positional element;
+//   - the two-field case carries a retained type parameter beside the recursive field, so the knot
+//     and the quantifier coexist;
+//   - the mutual pair runs the cycle through a second binding.
+//
+// The one unrolled level in front of each knot is a monomorphic-recursion artifact. Each call site
+// instantiates its own return variable, so the outer shape comes from the call and the knot from the
+// variable the body's recursive call flows through.
 func TestInferRecursiveRendersMuKnot(t *testing.T) {
 	tests := []struct {
-		name string
-		src  string
-		want string
+		name    string
+		src     string
+		binding string
+		want    string
 	}{
 		{
-			name: "recursion through an object property",
-			src:  `fn f() { return {next: f()} }`,
-			want: "fn () -> {next: μX0.{next: X0}}",
+			name:    "recursion through an object property",
+			src:     `fn f() { return {next: f()} }`,
+			binding: "f",
+			want:    "fn () -> {next: μX0.{next: X0}}",
 		},
 		{
-			name: "recursion through a tuple element",
-			src:  `fn f() { return [f()] }`,
-			want: "fn () -> [μX0.[X0]]",
+			name:    "recursion through a tuple element",
+			src:     `fn f() { return [f()] }`,
+			binding: "f",
+			want:    "fn () -> [μX0.[X0]]",
 		},
 		{
-			name: "knot beside a retained type parameter",
-			src:  `fn f(x) { return {next: f(x), value: x} }`,
-			want: "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}",
+			name:    "knot beside a retained type parameter",
+			src:     `fn f(x) { return {next: f(x), value: x} }`,
+			binding: "f",
+			want:    "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}",
 		},
 		{
-			name: "mutual recursion closes on whichever binding is rendered",
+			// Mutual recursion runs the same cycle through two bindings, so the knot closes one lap
+			// out at whichever binding is being rendered.
+			name: "mutual recursion closes the knot one lap out",
 			src: `
 				fn ping() { return {p: pong()} }
 				fn pong() { return {q: ping()} }
 			`,
-			want: "fn () -> {p: μX0.{q: {p: X0}}}",
+			binding: "ping",
+			want:    "fn () -> {p: μX0.{q: {p: X0}}}",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
-			require.Empty(t, errs)
-			require.Equal(t, tt.want, values["f"]+values["ping"])
+			require.Empty(t, Messages(errs))
+			require.Equal(t, tt.want, values[tt.binding])
+		})
+	}
+}
+
+// TestInferRecursiveThroughConstrain covers the path that feeds a coalesced knot back into the
+// solver, so the constrain arm is exercised from source rather than only unit-tested. A reassignable
+// binding's stored type is its coalesced display type. inferAssign copies that with freshenAll and
+// constrains the new value against the copy, so `a = f()` compares one knot against another. A
+// member read walks through the knot the same way, since reading `next` off it unfolds it first.
+func TestInferRecursiveThroughConstrain(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		binding string
+		want    string
+	}{
+		{
+			name:    "reassigning a recursive binding keeps the knot",
+			src:     "fn f() { return {next: f()} }\nfn h() { var a = f()\n a = f()\n return a }",
+			binding: "h",
+			want:    "fn () -> {next: μX0.{next: X0}}",
+		},
+		{
+			name:    "reading through a knot unfolds it",
+			src:     "fn f() { return {next: f()} }\nval c = f().next.next",
+			binding: "c",
+			want:    "μX0.{next: X0}",
+		},
+		{
+			name:    "a knot flows through a generic function's type parameter",
+			src:     "fn f() { return {next: f()} }\nfn id(x) { return x }\nval d = id(f())",
+			binding: "d",
+			want:    "{next: μX0.{next: X0}}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, Messages(errs))
+			require.Equal(t, tt.want, values[tt.binding])
 		})
 	}
 }
@@ -70,7 +122,7 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 // bound graph, without the extra variable layer a real call site introduces.
 //
 // A variable whose bound mentions itself in the SAME polarity it was entered at ties a knot. One
-// that only comes back at the OPPOSITE polarity cannot: the body was built from the variable's
+// that only comes back at the OPPOSITE polarity cannot. The body was built from the variable's
 // bounds in one direction, and naming it from a position that needs the other direction would claim
 // the wrong type. That case keeps the polarity identity.
 func TestCoalesceRecursiveVarPolarities(t *testing.T) {
@@ -169,9 +221,9 @@ func TestEqualTypeRecursive(t *testing.T) {
 	}
 }
 
-// TestConstrainRecursiveUnfolds pins the constrain arm: a knot is transparent, so a constraint on
+// TestConstrainRecursiveUnfolds pins the constrain arm. A knot is transparent, so a constraint on
 // one runs against its one-level unfolding. Two knots compared against each other close
-// coinductively through the seen-set — unfolding substitutes the knot's own pointer, so the pair the
+// coinductively through the seen-set. Unfolding substitutes the knot's own pointer, so the pair the
 // recursion returns to is the pair the seen-set already holds.
 func TestConstrainRecursiveUnfolds(t *testing.T) {
 	selfNext := func() soltype.Type {

@@ -134,9 +134,9 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 
 // evalTypeOperator evaluates the outermost transparent type operator of t to the type it stands
 // for, so constrain can check a constraint against that while the stored residual keeps its name.
-// An alias expands to its body, a μ-knot unfolds one level, a `typeof` query resolves to the
-// value's type, a `keyof` reduces
-// to its key set, an indexed access `T[K]` reduces to the type at that key, a conditional selects
+// An alias expands to its body, a μ-knot unfolds one level, a `typeof` query resolves to the value's
+// type, a `keyof` reduces to its key set, an indexed access `T[K]` reduces to the type at that key,
+// a conditional selects
 // its Then or Else branch, a mapped type emits one field per key, a template literal reduces to the
 // union of string literals its interpolations produce, an intrinsic string operator such as
 // `Uppercase<T>` reduces over its string-literal operand, and a tuple carrying a `...P` spread
@@ -1374,8 +1374,8 @@ func (c *Context) extrudeOuterAsLower(lt soltype.Lifetime, v *soltype.LifetimeVa
 
 // unfoldRecursive unfolds a μ-knot one level: it returns the knot's body with the whole knot
 // substituted for every reference to its binder, so `μX0.{next: X0}` unfolds to
-// `{next: μX0.{next: X0}}`. That is how constrain compares a knot against a structural type —
-// the pre-switch treats it as a transparent operator and recurses on the unfolding.
+// `{next: μX0.{next: X0}}`. That is how a knot is compared against a structural type. The
+// pre-switch treats it as a transparent operator and recurses on the unfolding.
 //
 // The substituted node is the knot itself rather than a copy, which is what makes a recursive
 // comparison terminate. Unfolding both sides of `knot <: knot` reaches the same pair of pointers
@@ -1389,7 +1389,7 @@ func unfoldRecursive(t *soltype.RecursiveType) soltype.Type {
 // recursiveUnfolder replaces every reference to one μ-binder with the knot that binds it. A nested
 // knot rebinding the same id shadows the outer binding, so its subtree is skipped and its own
 // references stay bound to it. That guard is what keeps the substitution correct without relying on
-// globally unique ids: coalescing numbers binders per walk, so two walks whose display types are
+// globally unique ids. Coalescing numbers binders per walk, so two walks whose display types are
 // later composed into one type can each contribute a knot bound to id 0.
 type recursiveUnfolder struct {
 	id   int

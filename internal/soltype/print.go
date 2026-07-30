@@ -15,10 +15,8 @@ import (
 // prefix forms — the `mut`/lifetime borrow prefix (RefType) and the `keyof` operator
 // (KeyofType); the `...T` spread prefix lands with tuple/object spread types.
 const (
-	precFunc = 2 // fn (...) -> T — return type is greedy, needs parens in union/intersection
-	// precRecursive is μX0.T. The body is greedy the same way a function's return type is, so a
-	// knot inside a union or intersection needs the same parens, and it shares precFunc's level.
-	precRecursive    = 2
+	precFunc         = 2 // fn (...) -> T — return type is greedy, needs parens in union/intersection
+	precRecursive    = 2 // μX0.T — the body is greedy too, so a knot parenthesizes where a fn does
 	precUnion        = 3 // A | B
 	precIntersection = 4 // A & B
 	precPrefix       = 5 // mut T, 'a T, keyof T — a prefix binds looser than an atom
@@ -60,6 +58,9 @@ func typePrec(t Type) int {
 		// A mapped type's key variable renders as its bare name, an atom.
 		return precAtom
 	case *RecursiveType:
+		// A μ-knot's body runs to the end of the enclosing form, so `μX0.A | X0 | number` would read
+		// as one knot over the whole union. Ranking it below precUnion puts the parens on the knot:
+		// `(μX0.A | X0) | number`.
 		return precRecursive
 	case *RecursiveVarType:
 		// A μ-knot's bound variable renders as its bare name, an atom.
@@ -779,9 +780,9 @@ func (p *namedPrinter) printType(t Type) string {
 	case *RecursiveType:
 		// `μX0.<body>`, the μ form for a recursive type. Escalier has no surface syntax for one, so
 		// this is the standard notation rather than a mirror of a parser form. The body prints with
-		// no minimum precedence: nothing follows the knot inside its own rendering, so the greedy
-		// body needs no parens, and precRecursive puts the parens on the knot when it sits inside a
-		// union or intersection.
+		// no minimum precedence, because nothing follows the knot inside its own rendering and so
+		// the greedy body needs no parens. precRecursive is what puts the parens on the knot when it
+		// sits inside a union or intersection.
 		return "μ" + t.Binder.DisplayName() + "." + p.printType(t.Body)
 	case *RecursiveVarType:
 		// A reference to the enclosing knot's binder renders as that binder's bare name, so

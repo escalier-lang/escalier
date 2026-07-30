@@ -15,8 +15,8 @@ func knot(id int, name string, body func(ref *RecursiveVarType) Type) *Recursive
 }
 
 // TestPrintRecursive covers the μ form's rendering: the binder's name, the reference inside the
-// body, the unnamed binder's debug fallback, and the parenthesization a knot needs when it sits
-// inside a union or intersection, since its body is greedy the way a function's return type is.
+// body, the unnamed binder's debug fallback, and the parens a knot needs inside a union or
+// intersection. It needs them because its body is greedy the way a function's return type is.
 func TestPrintRecursive(t *testing.T) {
 	selfNext := knot(0, "X0", func(ref *RecursiveVarType) Type {
 		return &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "next", Type: ref}}}
@@ -75,9 +75,9 @@ func TestPrintRecursive(t *testing.T) {
 	}
 }
 
-// TestLevelOfRecursive pins the split that lets a knot cross a level boundary: the body's
-// variables lift the level so the freshener and extruder prune descends into them, while the binder
-// and its references contribute nothing.
+// TestLevelOfRecursive pins the split that lets a knot cross a level boundary. The body's variables
+// lift the level so the freshener and extruder prune descends into them, while the binder and its
+// references contribute nothing.
 func TestLevelOfRecursive(t *testing.T) {
 	inner := &TypeVarType{ID: 0, Level: 3}
 	tests := []struct {
