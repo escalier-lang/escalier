@@ -343,9 +343,13 @@ func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seen
 			// swallowing a failure follows, the union-super and intersection-sub trials included.
 			// Nothing a discarded walk settled is then read by a later candidate, nor by the
 			// caller when a later candidate accepts and the walk reports no error at all.
+			enclosingShallowest := c.shallowestAssumed
 			if len(c.constrainNominalWalk(s, super, seen.Clone(), walked)) == 0 {
+				// The accepting candidate is the derivation the caller keeps, so what it closed
+				// coinductive assumptions on stays folded in.
 				return nil
 			}
+			c.shallowestAssumed = enclosingShallowest // a rejected candidate informs nothing
 		}
 	}
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}

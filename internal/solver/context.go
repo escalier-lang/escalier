@@ -80,6 +80,14 @@ type Context struct {
 	// subtree. Comparing it against the frame's own depth is what decides whether the frame's
 	// verdict may be memoized — see seenPairs. Outside any derivation the field holds whatever the
 	// last one left, which nothing reads.
+	//
+	// A branch whose failure the caller discards must not inform that caller's comparison, so
+	// every arm that rejects a branch restores the field alongside rolling the branch's bounds
+	// back: the losing trials in trialAndCommit, the throwaway-probe helpers beside it, and
+	// constrainNominalWalk's rejected superclass candidates. An accepted branch keeps its
+	// contribution, since the caller keeps that derivation. Folding a rejected branch in would
+	// only ever suppress a memo entry the caller could have kept, never admit one it could not,
+	// so the restore buys precision rather than soundness.
 	shallowestAssumed int
 
 	// unionCommits maps an inference var that a union-super trial pinned by committing a bare

@@ -290,13 +290,19 @@ func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError)
 	for _, idx := range order {
 		p := newProbe(c.probe)
 		c.probe = p
+		enclosingShallowest := c.shallowestAssumed
 		errs := trial(idx)
 		c.probe = p.parent
 		if !hasHardError(errs) {
+			// The winning trial is part of the derivation the caller keeps, so what it closed
+			// coinductive assumptions on stays folded into the caller's running minimum.
 			p.Commit()
 			return true, idx, errs, nil
 		}
 		p.Discard()
+		// A rejected trial informs nothing. Restoring the minimum keeps its closes out of the
+		// caller's promotion check, the shallowestAssumed twin of rolling its bounds back.
+		c.shallowestAssumed = enclosingShallowest
 		trialErrs = append(trialErrs, errs)
 	}
 	return false, -1, nil, trialErrs
@@ -307,10 +313,12 @@ func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError)
 func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen *seenPairs, mutCtx bool) (ok, mutated bool) {
 	p := newProbe(c.probe)
 	c.probe = p
+	enclosingShallowest := c.shallowestAssumed
 	errs := c.constrain(sub, super, seen.Clone(), mutCtx)
 	mutated = p.mutatedBounds()
 	c.probe = p.parent
 	p.Discard()
+	c.shallowestAssumed = enclosingShallowest // the trial is discarded, so it informs nothing
 	return !hasHardError(errs), mutated
 }
 
@@ -326,6 +334,7 @@ func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen *seenPairs, m
 func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVarType, seen *seenPairs) ([]soltype.Type, bool) {
 	p := newProbe(c.probe)
 	c.probe = p
+	enclosingShallowest := c.shallowestAssumed
 	errs := c.constrain(sub, super, seen, false)
 	ok := !hasHardError(errs)
 	var captured []soltype.Type
@@ -337,6 +346,7 @@ func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVar
 	}
 	c.probe = p.parent
 	p.Discard()
+	c.shallowestAssumed = enclosingShallowest // the trial is discarded, so it informs nothing
 	return captured, ok
 }
 
@@ -376,9 +386,11 @@ func (c *Context) trialUnderProbe(sub, super soltype.Type) []SolverError {
 func (c *Context) trialUnderProbeSeen(sub, super soltype.Type, seen *seenPairs) []SolverError {
 	p := newProbe(c.probe)
 	c.probe = p
+	enclosingShallowest := c.shallowestAssumed
 	errs := c.constrain(sub, super, seen, false)
 	c.probe = p.parent
 	p.Discard()
+	c.shallowestAssumed = enclosingShallowest // the trial is discarded, so it informs nothing
 	return errs
 }
 

@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -1204,4 +1205,22 @@ func TestInferDoublyReferencedAliasChainStaysLinear(t *testing.T) {
 	src += fmt.Sprintf("declare fn make() -> A%d\nval v: B%d = make()\n", depth, depth)
 	_, _, errs := inferSource(t, src)
 	require.Empty(t, messagesWithSpan(errs))
+}
+
+// A trial the caller discards must leave shallowestAssumed as it found it, so what the trial
+// closed coinductive assumptions on never reaches the caller's promotion check. The seen-set here
+// stands in for an enclosing frame holding the outer pair open at depth 0, and the trial re-asks
+// that pair through `q`, closing on it. Without the restore the field would come back holding 0,
+// and every frame above would decline to memoize a verdict it had settled on its own.
+func TestTrialUnderProbeRestoresShallowestAssumed(t *testing.T) {
+	c := &Context{shallowestAssumed: math.MaxInt}
+	subP, superP := num(), num()
+	subOuter, subInner := nestedRecursiveObj(subP)
+	superOuter, superInner := nestedRecursiveObj(superP)
+
+	seen := newSeenPairs()
+	seen.assumed[constraintKey{subOuter, superOuter, false}] = 0
+
+	require.Empty(t, Messages(c.trialUnderProbeSeen(subInner, superInner, seen.Clone())))
+	require.Equal(t, math.MaxInt, c.shallowestAssumed)
 }
