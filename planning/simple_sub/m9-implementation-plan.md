@@ -133,7 +133,7 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Sixteen PRs across five tracks. Track A builds the evaluator and the core
+Twenty PRs across five tracks. Track A builds the evaluator and the core
 operators in dependency order. Track B adds spread and template-literal
 operators, which hang off the backbone but are independent of each other. Track C
 adds exactness propagation and the recursion static-check. Track D is the two
@@ -143,6 +143,11 @@ so it runs fully in parallel with A–C. Track E is the capstone verification.
 The two heaviest concerns — the evaluator backbone and the conditional/`infer`
 matcher — are each split in two so no single PR carries both a new representation
 and a new algorithm: PR1a/PR1b and PR3a/PR3b below.
+
+Sixteen of the twenty were planned up front. PR9c through PR9f were added to Track C
+after PR9b's review, which turned up one soundness question, one wrong answer, and one
+representation the milestone assumed exists. They are described together in "the
+recursion-safety follow-on group" below.
 
 ### PR1a — Residual-node representation + inert plumbing
 
@@ -500,6 +505,153 @@ keeps reducing under `keyof`, indexed access, and mapped types.
 
 **Depends on** PR9. Independent of PR4–PR8 and PR10–PR13.
 
+### The recursion-safety follow-on group (PR9c–PR9f)
+
+These four came out of PR9b's review rather than the original plan. PR9b left the
+recursion story working but not finished. It inherited one soundness question, introduced
+one wrong answer, and assumed a representation that nothing has built. A fourth PR
+extends coverage once that representation exists.
+
+The target architecture is already written down, in
+[03-references.md](03-references.md) §"Beyond a plain lattice (for context)":
+
+> **Recursive types** are not lattice elements per se; they are handled
+> coinductively (Amadio-Cardelli seen-set) with a finite μ-knot representation,
+> plus a depth budget for the genuinely non-regular (Turing-complete) residue.
+
+That sentence names three pieces. PR9b landed the coinductive seen-set and the depth
+budget. The finite μ-knot representation has no implementation anywhere in `soltype`, so
+this group is what closes the gap between the reference design and the code.
+
+Read the group's ordering off the dependency list on each PR rather than off the
+numbering. PR9c and PR9d are independent of each other and of PR9e, and PR9f is the only
+one that waits on anything in the group.
+
+### PR9c — Path-scoped coinductive seen-set in `constrain`
+
+`constrain`'s seen-set of `(sub, super, mutCtx)` pairs is add-only. The spike's
+Amadio–Cardelli port scopes an entry to the current derivation path
+([lazy.go](../../internal/simplesub/lazy.go): `s.seen[key] = true` followed by
+`defer delete(s.seen, key)`), and so does `coalesce`'s recursion guard
+([coalesce.go:102](../../internal/solver/coalesce.go), commented "path-scoped: pop
+on the way back up"). `constrain` is the outlier within its own package.
+
+The distinction matters because succeeding by hitting the seen-set is a *conditional*
+success: the pair held because the derivation assumed an enclosing goal. If that goal
+later fails, the assumption was never discharged and the entry is stale. The union-super
+and intersection-sub trial arms already defend against exactly this with `seen.Clone()`,
+so the hazard is recognized; the ordinary structural recursion over object properties,
+tuple elements, and function parameters shares one `seen` unclone.
+
+**Data structures.** None. `set.Set` already has `Remove`.
+
+**Algorithms.** Either scope entries to the path the way `coalesce` does, or establish
+that persistence is sound here — the likely argument being that the relation is a
+greatest fixed point, so membership is context-independent — and record it at the
+`seen.Add` site so the deviation reads as deliberate.
+
+**Accept.** A constraint where a failed subtree's assumed pair is re-asked by a later
+sibling decides the same way whether or not the failed subtree ran.
+
+**Depends on** nothing. The seen-set and its canonical alias-identity keying landed in
+M7 PR3, so this is independent of the whole operator track and can go first. Tracked as
+[#942](https://github.com/escalier-lang/escalier/issues/942).
+
+### PR9d — Phantom type-parameter erasure
+
+PR9b reports an `ExpansionLimitError` for `Deep<number> <: Deep<string>` over
+`type Deep<T> = {a: Deep<{b: T}>}`. That is a wrong answer, not a slow path: `T` occurs
+only inside the argument of the recursive reference, so it is always one level further
+away and never reaches the tree. Both sides are the same infinite type `{a: {a: …}}`,
+and TypeScript accepts the assignment in both directions.
+
+A parameter that cannot reach the tree is called *phantom* here. Erasing phantom
+arguments from an alias's canonical identity makes `Deep<number>` and `Deep<string>`
+intern to one representative, so PR9b's reflexive rule settles the comparison in one
+step with no unfolding and no budget.
+
+**Data structures.** A per-parameter relevance marker on `AliasDef`
+([aliases.go](../../internal/solver/aliases.go)), computed once per dep_graph component
+beside `checkProductive`.
+
+**Algorithms.** A greatest fixed point over the alias reference graph. Start with every
+parameter phantom. Mark a parameter relevant when it occurs anywhere other than an
+argument of a reference into its own strongly connected component, or when it occurs in
+such an argument at a slot whose own parameter is already relevant. Iterate to a fixed
+point. Then drop the phantom arguments when `internAlias` renders an identity key.
+
+**Accept.** `Deep<number>` and `Deep<string>` are interchangeable, matching TypeScript.
+`type Nest<T> = {here: T, deeper: Nest<{b: T}>}` keeps `T` relevant, so
+`Nest<number> <: Nest<string>` still reports the `number` against `string` mismatch it
+reports today.
+
+**Depends on** PR9b for the reflexive rule the erasure feeds and the SCC walk it reuses.
+Independent of PR9c, PR9e, and the operator track.
+
+### PR9e — μ-knot representation
+
+The representation [03-references.md](03-references.md) names and that `soltype` has
+never had. It is owed from M3 rather than new: `coalesce` collapses a cyclic inference
+variable to the polarity identity and says so —
+[coalesce.go:96](../../internal/solver/coalesce.go), "A precise μ-bound rendering of
+such recursion is M3" — and a retained type parameter's cycle renders as a bare
+variable, [coalesce.go:380](../../internal/solver/coalesce.go), "a rough μ-reference,
+refined in M3's precise μ-rendering". M3 landed; neither rendering did. So an inferred
+recursive type has no faithful form today.
+
+An alias's recursive position gets away without one, because the alias name serves as
+the μ-variable and expansion ties the knot. That only works when the knot lands on an
+instantiation the source wrote, which is the assumption PR9f breaks.
+
+**Data structures.** A recursive-type node in `soltype` carrying a binder and a body,
+with the PR1a inert-node contract — `isType()`, a visitor arm, a printer arm, `LevelOf`.
+
+**Algorithms.** Unlike PR1a's residuals the node is not inert, so it needs real arms:
+`coalesce` emits it when a path cycle closes rather than degenerating the position,
+`constrain` unfolds it, `extrude` handles the binder crossing a level boundary, and
+`equalType` compares two knots up to a consistent renaming of their binders, reusing the
+`alphaCtx` bijection that already does this for a generic function's type parameters.
+
+**Accept.** An inferred recursive type renders as a μ form instead of `never` or
+`unknown`, and two alpha-equivalent knots compare equal.
+
+**Depends on** M3, which has landed. Independent of the whole operator track — it touches
+`coalesce`, `constrain`, `extrude`, and the printer, and no evaluator arm.
+
+### PR9f — Regular-tree normalization
+
+The evaluator's active-state guard keys on the rendered instantiation, so it ties a knot
+only when an instantiation repeats. An alias can have a regular tree — finitely many
+distinct subtrees — while its instantiations never repeat, and the guard misses every
+such case. `type H<T> = {a: keyof T, b: H<{c: T}>}` emits `keyof T` at the root and
+`"c"` at every level below it, since `keyof {c: X}` is `"c"` whatever `X` is. Two
+distinct subtrees, and an instantiation that grows forever.
+
+Keying the guard on the *emitted* node instead of the instantiation ties the knot where
+it actually is. That is the normalization Amadio–Cardelli presupposes: their algorithm
+decides subtyping for types already presented as finite μ-terms, and nothing in the
+compiler currently produces one for this shape.
+
+**Data structures.** None new. PR9e's node is where a found knot goes.
+
+**Algorithms.** Expand one level, abstract the recursive positions to placeholders, and
+look for an earlier emitted node with the same abstracted shape. A candidate must be
+confirmed by partition refinement rather than by a structural hash, since a hash
+collapses `{a: X}` and `{a: Y}` for unrelated `X` and `Y`.
+
+**Accept.** `H<number>` reduces to a finite μ form, and a value checks against it.
+
+The walk converges only when the tree really is regular, so `maxExpandDepth`,
+`maxExpandKeyChars`, and `maxUnwrapDepth` all stay as the backstop for the non-regular
+residue — the same reservation [03-references.md](03-references.md) makes. PR9d already
+covers the phantom-parameter shapes, so this PR's marginal class is aliases whose
+parameter genuinely reaches the tree at a bounded depth. Those exist but are contrived,
+which is why it sits last: worth building when a real library type demands it, not
+before.
+
+**Depends on** PR9e for the knot representation and PR9b for the productivity condition
+that lets a non-regular alias through in the first place.
+
 ### PR10 — `throws T` clause on functions
 
 Orthogonal to the evaluator. Touches only `FuncType` and the function-inference
@@ -622,6 +774,16 @@ seen-set is promoted from the spike rather than designed here. If it does need
 splitting, the seam is to land the seen-set first as a no-op fast path for
 comparisons the evaluator already settles, then flip the condition.
 
+The follow-on group spans a wider size range than the rest. PR9c and PR9d are the two
+smallest PRs in the milestone: PR9c is a scoping decision plus the `Remove` that
+implements it or the comment that declines to, and PR9d is one fixed point over the
+alias graph feeding one existing identity key. PR9e is the largest of the four, because
+its node is the first recursive former in `soltype` and, unlike PR1a's residuals, it is
+not inert — `constrain`, `coalesce`, `extrude`, and `equalType` each need a real arm, so
+PR1a's inert-plumbing cost is its floor rather than its estimate. PR9f is a graph
+algorithm in one new file, sized like PR4, and it is the one PR here worth deferring
+until a real library type motivates it.
+
 ## Dependency graph
 
 ```
@@ -636,11 +798,17 @@ PR1a (residual-node representation + inert plumbing)
       │    └─► PR3b (infer clauses + distribution)   ── also needs PR2
       │         ├─► PR9 (CheckRegular)          ── also needs PR1b
       │         │    └─► PR9b (productivity check + coinductive comparison)
+      │         │         └─► PR9d (phantom type-parameter erasure)
       │         └─► PR12 (Awaited<T>)           ── also needs PR1b, M7.5
       ├─► PR5 (object spread types)
       ├─► PR6 (tuple spread types)
       ├─► PR7 (template literal types + intrinsics)
       └─► PR8 (exactness propagation + Exact/Inexact)  ── needs PR1b–PR7
+
+PR9c (path-scoped seen-set, #942)         ── needs nothing; the seen-set landed in M7 PR3
+
+PR9e (μ-knot representation)              ── needs M3 only; owed from M3, not new
+ └─► PR9f (regular-tree normalization)    ── also needs PR9b
 
 PR10 (throws clause)                      ── needs M3 only; parallel to everything
  └─► PR11 (generators)                    ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
@@ -668,6 +836,11 @@ graph TD
     PR8["PR8 (exactness propagation + Exact/Inexact)"]
     PR9["PR9 (CheckRegular static check)"]
     PR9b["PR9b (productivity + coinductive comparison)"]
+    PR9c["PR9c (path-scoped seen-set, #942)"]
+    PR9d["PR9d (phantom type-parameter erasure)"]
+    PR9e["PR9e (μ-knot representation)"]
+    PR9f["PR9f (regular-tree normalization)"]
+    M3["M3 (let-generalization + coalescing)"]
     PR10["PR10 (throws clause)"]
     PR11["PR11 (generators)"]
     PR12["PR12 (Awaited<T>)"]
@@ -676,6 +849,7 @@ graph TD
     M7 -.-> PR1a
     M75 -.-> PR11
     M75 -.-> PR12
+    M3 -.-> PR9e
 
     PR1a --> PR1b
     PR1b --> PR2
@@ -692,6 +866,9 @@ graph TD
     PR3b --> PR9
     PR1b --> PR9
     PR9 --> PR9b
+    PR9b --> PR9d
+    PR9b --> PR9f
+    PR9e --> PR9f
     PR3b --> PR12
     PR1b --> PR12
     PR3b --> PR13
@@ -722,9 +899,16 @@ graph TD
 - **Track C** — PR8 (exactness) is a barrier that waits for all operators; PR9
   (CheckRegular) needs only PR1b + PR3b and runs alongside PR4–PR8. PR9b follows
   PR9 and depends on nothing else, so it can land at any point after it.
+- **Track C, follow-on group** — PR9c and PR9e depend on nothing in this milestone and
+  can be built alongside PR1a. PR9d needs only PR9b. PR9f is the group's only join,
+  waiting on PR9e and PR9b. Suggested order by value rather than by dependency: PR9c
+  first, since it is the one soundness question; then PR9e, which pays off an M3 debt
+  and unblocks PR9f; then PR9d, which fixes a wrong answer PR9b introduced; PR9f last,
+  and only if a real library type needs it.
 - **Track D** — PR10 (throws) has no operator dependency and can start on day one
   alongside PR1a; PR11 (generators) follows PR10.
 - **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12.
 
 The critical path is `M7 → PR1a → PR1b → PR3a → PR3b → PR4 → PR8`, and — for the
-async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13`.
+async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13`. The follow-on
+group sits off both: nothing in PR1a–PR13 waits on PR9c–PR9f.
