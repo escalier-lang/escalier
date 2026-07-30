@@ -78,12 +78,21 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 	}
 }
 
-// TestInferRecursiveThroughConstrain covers the path that feeds a coalesced knot back into the
-// solver, so the constrain arm is exercised from source rather than only unit-tested. A reassignable
-// binding's stored type is its coalesced display type. inferAssign copies that with freshenAll and
-// constrains the new value against the copy, so `a = f()` compares one knot against another. A
-// member read walks through the knot the same way, since reading `next` off it unfolds it first.
-func TestInferRecursiveThroughConstrain(t *testing.T) {
+// TestInferRecursiveThroughSourcePaths runs a recursive type through the value paths a program
+// actually uses. The cases split into two groups, which reach the knot differently.
+//
+// Reassignment is the one path that feeds a COALESCED knot back into the solver. A reassignable
+// binding's stored type is its display type, so inferAssign copies that with freshenAll and
+// constrains the new value against the copy, and `a = f()` compares one knot against another through
+// constrain's unfolding. Removing the RecursiveType arm from evalTypeOperator fails exactly these
+// two cases, with `cannot constrain object <: μX0.object` and its tuple twin. Both carriers are
+// covered because constrain decomposes objects and tuples in separate arms.
+//
+// A read and a generic call run on the RAW bound graph instead. instantiate freshens a scheme's
+// Body, not its coalesced display, so no knot exists while the member chain, the destructuring
+// pattern, or the type parameter is being solved. Those cases pin that the recursive shape survives
+// the round trip and still renders as a knot once the resulting binding is displayed.
+func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 	tests := []struct {
 		name    string
 		src     string
@@ -91,22 +100,38 @@ func TestInferRecursiveThroughConstrain(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "reassigning a recursive binding keeps the knot",
+			name:    "reassigning a recursive binding compares two knots",
 			src:     "fn f() { return {next: f()} }\nfn h() { var a = f()\n a = f()\n return a }",
 			binding: "h",
 			want:    "fn () -> {next: μX0.{next: X0}}",
 		},
 		{
-			name:    "reading through a knot unfolds it",
+			name:    "a member chain over a recursive result still renders a knot",
 			src:     "fn f() { return {next: f()} }\nval c = f().next.next",
 			binding: "c",
 			want:    "μX0.{next: X0}",
 		},
 		{
-			name:    "a knot flows through a generic function's type parameter",
+			name:    "a recursive result through a type parameter still renders a knot",
 			src:     "fn f() { return {next: f()} }\nfn id(x) { return x }\nval d = id(f())",
 			binding: "d",
 			want:    "{next: μX0.{next: X0}}",
+		},
+		{
+			// The tuple shape reaches the same reassignment path, so a coalesced knot over a tuple
+			// unfolds and closes the way one over an object does, through constrain's tuple arm.
+			name:    "reassigning a recursive tuple binding compares two knots",
+			src:     "fn f() { return [f()] }\nfn h() { var a = f()\n a = f()\n return a }",
+			binding: "h",
+			want:    "fn () -> [μX0.[X0]]",
+		},
+		{
+			// Destructuring is how a recursive tuple is read apart, since a value-level index
+			// expression is unsupported for any tuple, recursive or not.
+			name:    "destructuring a recursive tuple still renders a knot",
+			src:     "fn f() { return [f()] }\nval [inner] = f()",
+			binding: "inner",
+			want:    "μX0.[X0]",
 		},
 	}
 	for _, tt := range tests {
