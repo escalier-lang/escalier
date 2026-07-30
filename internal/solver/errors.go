@@ -966,7 +966,8 @@ func (*ExtractorPatternArityError) isSolverError()          {}
 func (*AliasArityMismatchError) isSolverError()             {}
 func (*AliasLifetimeArityMismatchError) isSolverError()     {}
 func (*ReservedTypeNameError) isSolverError()               {}
-func (*NotRegularAliasError) isSolverError()                {}
+func (*NotProductiveAliasError) isSolverError()             {}
+func (*ExpansionLimitError) isSolverError()                 {}
 
 // MissingSelfReceiverError fires when a non-static instance method, getter, or
 // setter omits its `self` receiver. Such a member cannot read the instance, so the
@@ -1110,28 +1111,75 @@ func (e *ReservedTypeNameError) Message() string {
 	return fmt.Sprintf("%q is a built-in type operator and cannot be redefined", e.Decl.Name.Name)
 }
 
-// NotRegularAliasError fires when a recursive type alias wraps one of its own type parameters in a
-// type constructor on the way around its recursion cycle, as `type Grow<T> = Grow<{a: T}>` does.
-// Every lap builds a strictly larger argument, so the alias expands to infinitely many distinct
-// instantiations and no expansion of it ever settles. Name is the alias's qualified name and Param
-// the parameter that grows.
+// NotProductiveAliasError fires when a recursive type alias reaches itself with no type constructor
+// in between, as `type Grow<T> = Grow<{a: T}>` and `type Bad = Bad` both do. Such a lap emits no
+// structure, so the alias satisfies its own equation without naming any type. Name is the alias's
+// qualified name, and Through names the other aliases on the cycle for mutual recursion, empty when
+// the body names the alias itself.
 //
-// The message points at the two ways out. Breaking the cycle with a nominal type stops the
-// expansion, since a class or enum reference is not expanded the way an alias body is. Dropping the
-// wrapper leaves the parameter passed through, which is the regular recursion `List` uses.
-type NotRegularAliasError struct {
-	Decl  *ast.TypeDecl
-	Name  string
-	Param string
+// The message points at the way out. Wrapping the recursive reference in an object, a tuple, or a
+// function type makes each lap emit one level, which is what `type List<T> = {head: T, tail?:
+// List<T>}` does.
+type NotProductiveAliasError struct {
+	Decl    *ast.TypeDecl
+	Name    string
+	Through []string
 }
 
-func (e *NotRegularAliasError) Span() ast.Span      { return e.Decl.Name.Span() }
-func (e *NotRegularAliasError) Related() []ast.Span { return nil }
-func (e *NotRegularAliasError) Message() string {
+func (e *NotProductiveAliasError) Span() ast.Span      { return e.Decl.Name.Span() }
+func (e *NotProductiveAliasError) Related() []ast.Span { return nil }
+func (e *NotProductiveAliasError) Message() string {
+	through := ""
+	if len(e.Through) > 0 {
+		through = " through " + quoteJoin(e.Through, "`")
+	}
 	return fmt.Sprintf(
-		"recursive type alias `%s` grows type parameter `%s` under a type constructor, so its "+
-			"expansion is unbounded; break the recursion with a nominal type or pass `%s` through unwrapped",
-		e.Name, e.Param, e.Param)
+		"recursive type alias `%s` reaches itself%s without passing under a type constructor, so no "+
+			"lap of the recursion emits any structure and the alias names no type; wrap the recursive "+
+			"reference in an object, tuple, or function type",
+		e.Name, through)
+}
+
+// ExpansionLimitError fires when constrain evaluates more than maxUnwrapDepth type operators along
+// one constraint path. Two shapes reach it. One is a comparison between two different
+// instantiations of a productive but non-regular alias, `Deep<number> <: Deep<string>` for
+// `type Deep<T> = {a: Deep<{b: T}>}`, where every lap reaches a pair of instantiations no earlier
+// lap did, so the coinductive seen-set never closes and there is no finite answer to give. The other
+// is an alias chain longer than the limit, such as two hundred aliases that each name the one below
+// them. That one does settle, just not within the budget, so the message names both possibilities.
+//
+// Sub and Super are the operands the limit was reached on, kept for span resolution. The message
+// names only the aliases at their heads, since by then the operands carry arguments the expansion
+// has grown far past anything the source wrote.
+type ExpansionLimitError struct {
+	Sub, Super soltype.Type
+	prov       NodeResolver // M2.5: type→node index (§3.5)
+	site       ast.Node     // M2.5: constraint node fallback when no operand resolves
+}
+
+func (e *ExpansionLimitError) Span() ast.Span      { return spanOf(e.prov, e.Sub, e.site) }
+func (e *ExpansionLimitError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
+func (e *ExpansionLimitError) Message() string {
+	sub, super := expansionHeadName(e.Sub), expansionHeadName(e.Super)
+	subject := fmt.Sprintf("%s with %s", sub, super)
+	if _, subIsAlias := e.Sub.(*soltype.AliasType); subIsAlias && sub == super {
+		subject = fmt.Sprintf("two instantiations of `%s`", sub)
+	}
+	return fmt.Sprintf(
+		"comparing %s reached the limit of %d type-operator expansions and was cut off; either the "+
+			"two sides recurse without ever repeating a pair the check can close on, or their alias "+
+			"chains run deeper than the limit unfolds",
+		subject, maxUnwrapDepth)
+}
+
+// expansionHeadName names the alias an operand refers to, falling back to the operand's rendered
+// form when it is not an alias reference. Naming the head is what keeps the message short, since an
+// alias reached through two hundred expansions carries an argument far larger than the source wrote.
+func expansionHeadName(t soltype.Type) string {
+	if at, ok := t.(*soltype.AliasType); ok {
+		return at.Name
+	}
+	return describe(t)
 }
 
 // MultipleConstructorsError fires on the second and any later `constructor` block in
@@ -1221,7 +1269,7 @@ func (e *FieldNotInitializedError) Message() string {
 	if len(e.FieldNames) == 1 {
 		return "Field '" + e.FieldNames[0] + "' is not initialized on every path through the constructor."
 	}
-	return "Fields " + quoteJoin(e.FieldNames) + " are not initialized on every path through the constructor."
+	return "Fields " + quoteJoin(e.FieldNames, "'") + " are not initialized on every path through the constructor."
 }
 
 // ReadBeforeInitError fires when a constructor reads `self.f` on a path where field
@@ -1249,15 +1297,16 @@ type MethodCallBeforeInitError struct {
 func (e *MethodCallBeforeInitError) Span() ast.Span      { return e.Call.Span() }
 func (e *MethodCallBeforeInitError) Related() []ast.Span { return nil }
 func (e *MethodCallBeforeInitError) Message() string {
-	return "Cannot call a method on `self` before all required fields are initialized; missing " + quoteJoin(e.MissingFields) + "."
+	return "Cannot call a method on `self` before all required fields are initialized; missing " + quoteJoin(e.MissingFields, "'") + "."
 }
 
-// quoteJoin renders names as a comma-separated list, each single-quoted, for a
-// multi-field diagnostic.
-func quoteJoin(names []string) string {
+// quoteJoin renders names as a comma-separated list, each wrapped in quote, for a diagnostic that
+// has several names to report. Callers pass the quote the rest of their message uses for that sort
+// of name: a single quote for a field and a backtick for a type.
+func quoteJoin(names []string, quote string) string {
 	quoted := make([]string, len(names))
 	for i, n := range names {
-		quoted[i] = "'" + n + "'"
+		quoted[i] = quote + n + quote
 	}
 	return strings.Join(quoted, ", ")
 }

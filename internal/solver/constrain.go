@@ -198,6 +198,36 @@ func (c *Context) reduceResidual(t soltype.Type, seen set.Set[constraintKey]) (s
 	return reduced, e.errs, true
 }
 
+// maxUnwrapDepth caps how many type operators constrain may evaluate along one constraint path.
+// Almost every unwrap chain is a handful of steps and settles on its own. Two rules already close
+// the recursive ones: the reflexive shortcut settles a comparison between the same alias
+// instantiation, and the seen-set settles one whose pairs repeat, which is every regular recursive
+// alias. What is left is a comparison between two different instantiations of a productive but
+// non-regular alias, `Deep<number> <: Deep<string>` for `type Deep<T> = {a: Deep<{b: T}>}`. That
+// one reaches a pair no earlier lap reached on every lap, so nothing closes it and the walk has no
+// finite answer to find. This budget stops it with an ExpansionLimitError.
+//
+// It is the constrain-side twin of the evaluator's maxExpandDepth and carries the same value, since
+// both bound expansion along a single path. It shares that budget's one false rejection too. An
+// alias chain longer than the limit does settle, and is cut off anyway. Such a chain is
+// pathological, and raising the limit to admit it would make every non-regular comparison that much
+// more expensive to cut off, so ExpansionLimitError names the chain as one of the two shapes that
+// reach it. The deepest unwrap chain across the test suite that is neither divergent nor a
+// deliberately long chain is a few dozen.
+const maxUnwrapDepth = 200
+
+// constrainUnwrapped recurses on a constraint after evalTypeOperator replaced one side with the
+// type its outermost operator stands for, counting the step against the caller's unwrap budget. The
+// count is restored when the call returns, so it measures the current path rather than the run.
+// A caller checks the budget itself before calling, while it still holds the pair a budget error
+// should name.
+func (c *Context) constrainUnwrapped(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+	c.unwrapDepth++
+	errs := c.constrain(sub, super, seen, mutCtx)
+	c.unwrapDepth--
+	return errs
+}
+
 // constrain asserts sub <: super. mutCtx (PR 14) is the deep-mut context flag: true
 // inside a mutable borrow's inner, where the object/tuple arms treat each named
 // field as invariant rather than covariant. The RefType arm sets it from the target
@@ -210,6 +240,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	// node each unfold, so a raw pointer key would see a new List<number> every lap and
 	// diverge. Every other operand is its own key.
 	key := constraintKey{c.aliasKey(sub), c.aliasKey(super), mutCtx}
+	// Two references to one alias instantiation denote one type, and subtyping is reflexive, so the
+	// constraint holds with no expansion at all. This is the rule that decides a comparison between
+	// recursive aliases with no finite normal form. Each lap of `type Deep<T> = {a: Deep<{b: T}>}`
+	// carries a payload no earlier lap did, first `{b: number}` and then `{b: {b: number}}`. So
+	// unfolding `Deep<number> <: Deep<number>` reaches a fresh pair every lap and the seen-set below
+	// never closes it, while the canonical identity aliasKey builds settles it in one step. Only an
+	// alias operand takes the shortcut. Any other type reaching here as both operands is decided by
+	// the arms below without unfolding anything, so the shortcut would save nothing.
+	if _, subIsAlias := sub.(*soltype.AliasType); subIsAlias && key.sub == key.super {
+		return nil
+	}
 	if seen.Contains(key) {
 		return nil
 	}
@@ -227,6 +268,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 		return nil
 	}
 	if _, ok := super.(*soltype.ErrorType); ok {
+		return nil
+	}
+
+	// A non-productive alias absorbs the same way, and for the same reason. checkProductive already
+	// reported that the alias names no type, so unfolding it here could only add a second failure
+	// derived from the first. Absorbing before the pre-switch also keeps the walk out of a body
+	// whose every lap hands the next another state to expand.
+	if c.notProductive(sub) || c.notProductive(super) {
 		return nil
 	}
 
@@ -272,7 +321,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if len(reduceErrs) > 0 {
 				return reduceErrs
 			}
-			return c.constrain(evaluated, super, seen, mutCtx)
+			if c.unwrapDepth >= maxUnwrapDepth {
+				return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}
+			}
+			return c.constrainUnwrapped(evaluated, super, seen, mutCtx)
 		}
 	}
 	if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
@@ -280,7 +332,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 			if len(reduceErrs) > 0 {
 				return reduceErrs
 			}
-			return c.constrain(sub, evaluated, seen, mutCtx)
+			if c.unwrapDepth >= maxUnwrapDepth {
+				return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}
+			}
+			return c.constrainUnwrapped(sub, evaluated, seen, mutCtx)
 		}
 	}
 
