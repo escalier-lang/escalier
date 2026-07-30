@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -14,12 +13,10 @@ import (
 // case must thread the path-scoped `seen` set (like the FuncType/TupleType cases)
 // or the cycle is never detected and coalescing never terminates.
 //
-// The assertion is intentionally loose: the test's real contract is that
-// inference TERMINATES (reaching the assertions at all proves that) and produces
-// a sane shape — a function returning an object bottoming out in `never`. The
-// exact unrolling depth (`{x: {x: never}}`) is a monomorphic-recursion artifact
-// that later coalesce/printer changes may legitimately alter; pinning it would
-// conflate "terminates" with "renders this exact shape".
+// The cycle closes as a μ-knot, so the recursive position names the shape it stands for. The one
+// unrolled level in front of it is a monomorphic-recursion artifact: each call site instantiates
+// its own return variable, so the outer object comes from the call and the knot from the variable
+// the body's recursive call flows through.
 //
 // NOTE: a regression that bypasses the `seen` guard stack-overflows here, which
 // is a fatal (uncatchable) crash that takes down the whole package test binary
@@ -29,11 +26,7 @@ import (
 func TestInferModuleRecursiveRecordTerminates(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() { return {x: f()} }`)
 	require.Empty(t, errs, "unexpected inference errors")
-	got := values["f"]
-	require.True(t, strings.HasPrefix(got, "fn () -> {x:"),
-		"want a function returning a record with field x, got %q", got)
-	require.Contains(t, got, "never",
-		"ungrounded recursion should bottom out in never, got %q", got)
+	require.Equal(t, "fn () -> {x: μX0.{x: X0}}", values["f"])
 }
 
 // A top-level FuncDecl's inferred type must be recorded in the Info side table on

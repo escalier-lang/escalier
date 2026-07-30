@@ -2003,6 +2003,14 @@ func describe(t soltype.Type) string {
 		// An intrinsic string-operator residual renders `Uppercase<operand>` structurally, recursing
 		// like the keyof arm. The operand renders in describe's raw mid-constrain form.
 		return t.Kind.String() + "<" + describe(t.Operand) + ">"
+	case *soltype.RecursiveType:
+		// A μ-knot renders `μX0.<body>` structurally, recursing like the keyof arm, so a rejected
+		// constraint over a recursive type names the shape it stands for. The body renders in
+		// describe's raw mid-constrain form.
+		return "μ" + t.Binder.DisplayName() + "." + describe(t.Body)
+	case *soltype.RecursiveVarType:
+		// A reference to the enclosing knot's binder renders as that binder's name.
+		return t.DisplayName()
 	case *soltype.RefType:
 		// A borrow renders with its `mut` prefix over the nominal inner (`mut object`),
 		// recursing like the Promise arm. The lifetime is deliberately NOT rendered: D2

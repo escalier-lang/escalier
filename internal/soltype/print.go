@@ -15,7 +15,10 @@ import (
 // prefix forms — the `mut`/lifetime borrow prefix (RefType) and the `keyof` operator
 // (KeyofType); the `...T` spread prefix lands with tuple/object spread types.
 const (
-	precFunc         = 2 // fn (...) -> T — return type is greedy, needs parens in union/intersection
+	precFunc = 2 // fn (...) -> T — return type is greedy, needs parens in union/intersection
+	// precRecursive is μX0.T. The body is greedy the same way a function's return type is, so a
+	// knot inside a union or intersection needs the same parens, and it shares precFunc's level.
+	precRecursive    = 2
 	precUnion        = 3 // A | B
 	precIntersection = 4 // A & B
 	precPrefix       = 5 // mut T, 'a T, keyof T — a prefix binds looser than an atom
@@ -55,6 +58,11 @@ func typePrec(t Type) int {
 		return precAtom
 	case *MappedKeyType:
 		// A mapped type's key variable renders as its bare name, an atom.
+		return precAtom
+	case *RecursiveType:
+		return precRecursive
+	case *RecursiveVarType:
+		// A μ-knot's bound variable renders as its bare name, an atom.
 		return precAtom
 	case *RestSpreadType:
 		// A `...P` spread element only appears inside a tuple's bracket list, which prints each
@@ -482,6 +490,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *StringIntrinsicType:
 			walk(t.Operand)
+		case *RecursiveType:
+			walk(t.Body)
 		case *PromiseType:
 			walk(t.Inner)
 		case *RefType:
@@ -583,12 +593,14 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 //
 // An InferType renders as a name in both forms, `infer U` at the binder and a bare `U` at a
 // reference, and a TypeofType renders as the identifier it names rather than the value's type, so
-// both are leaves. An alias or class reference is not, even though one with no type arguments
-// renders as a bare name: its argument list is exactly what a diagnostic needs bounded.
+// both are leaves. A RecursiveVarType renders as its binder's name, so it is one too. An alias or
+// class reference is not, even though one with no type arguments renders as a bare name: its
+// argument list is exactly what a diagnostic needs bounded.
 func isPrintLeaf(t Type) bool {
 	switch t.(type) {
 	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
-		*Void, *NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType:
+		*Void, *NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
+		*RecursiveVarType:
 		return true
 	}
 	return false
@@ -764,6 +776,17 @@ func (p *namedPrinter) printType(t Type) string {
 		// A mapped type's key variable renders as the bare name the source bound it under, so a
 		// stored mapped type round-trips to `{[K]: T[K] for K in keyof T}`.
 		return t.Name
+	case *RecursiveType:
+		// `μX0.<body>`, the μ form for a recursive type. Escalier has no surface syntax for one, so
+		// this is the standard notation rather than a mirror of a parser form. The body prints with
+		// no minimum precedence: nothing follows the knot inside its own rendering, so the greedy
+		// body needs no parens, and precRecursive puts the parens on the knot when it sits inside a
+		// union or intersection.
+		return "μ" + t.Binder.DisplayName() + "." + p.printType(t.Body)
+	case *RecursiveVarType:
+		// A reference to the enclosing knot's binder renders as that binder's bare name, so
+		// `μX0.{next: X0}` names one binding twice.
+		return t.DisplayName()
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:
