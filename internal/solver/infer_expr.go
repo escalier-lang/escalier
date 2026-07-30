@@ -2211,8 +2211,8 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 // dynamic key (Foo[k]) is rejected. A value object indexed by a constant string
 // key is the bracket form of property access — obj["foo-bar"] reads the same
 // property as obj.foo would, and lets the source name a property whose key is not
-// a valid identifier. A dynamic key over a value (array element / index-signature
-// read) needs Array and index types from M7, so it stays unsupported here.
+// a valid identifier. A dynamic key reads through the receiver's index signature,
+// which dynamicIndexRead resolves.
 func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objPos bool) pathResult {
 	if e.OptChain {
 		c.reportUnsupportedFeature(e, "OptionalChain")
@@ -2236,11 +2236,30 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 		}
 		return c.valueProp(lvl, e, e.Index, name, obj.value)
 	}
-	// A dynamic key over a value (array element / index-signature read) needs Array
-	// and index types, which land in M7; until then it is outside the supported
-	// subset.
-	c.reportUnsupported(e)
-	return pathResult{err: true}
+	return c.dynamicIndexRead(scope, lvl, e, obj.value, objPos)
+}
+
+// dynamicIndexRead resolves `recv[k]` for a non-constant key by typing it as the indexed access
+// `Recv[Kt]` and reducing it with the evaluator type-level `T[K]` uses, so `d[k]` agrees with `d.foo`.
+// That reduction reads the index signature and mints both rejections. An ungrounded receiver stays
+// unsupported, since the access would leave no type; reaching it needs an array or usage-inferred one.
+func (c *checker) dynamicIndexRead(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
+	key := c.inferExpr(scope, lvl, e.Index)
+	access := &soltype.IndexType{Target: recv, Index: key}
+	reduced, reduceErrs, ok := c.ctx.reduceResidual(access, set.NewSet[constraintKey]())
+	if len(reduceErrs) > 0 {
+		c.blameConstraintErrors(e, reduceErrs)
+		return pathResult{err: true}
+	}
+	if !ok {
+		c.reportUnsupported(e)
+		return pathResult{err: true}
+	}
+	if !objPos {
+		c.recordMemberUse(e)
+	}
+	c.recordType(e, reduced)
+	return pathResult{value: reduced}
 }
 
 // resolveNamespaceMember looks name up in ns directly and non-lexically — a

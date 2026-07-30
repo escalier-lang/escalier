@@ -377,6 +377,28 @@ func (c *Context) condExtends(check, extends soltype.Type, seen set.Set[constrai
 // operator is abstract, so the `Check <: Extends` probe cannot decide a branch over it and the
 // conditional stays symbolic. containsFreeVar catches the variable and skolem cases;
 // containsResidualOp catches a residual such as a `keyof T` the reduction left symbolic.
+// indexSignatureFor returns the object's index signature that describes the given key, and whether
+// one does. An object may carry several over different key sets, so the match is by assignability:
+// the first signature whose key set accepts the key wins, using the same probe a conditional's
+// branch selection uses. `{[K: string]?: number, [J: number]?: boolean}` therefore reads `"a"`
+// through the string signature and `0` through the number one.
+//
+// A key that no signature accepts reports false, which the caller turns into its own diagnostic.
+func (c *Context) indexSignatureFor(obj *soltype.ObjectType, key soltype.Type, seen set.Set[constraintKey]) (*soltype.MappedElem, bool) {
+	for _, sig := range obj.IndexSignatures() {
+		if c.condExtends(key, sig.Keys, seen) {
+			return sig, true
+		}
+	}
+	return nil, false
+}
+
+// strLitKey builds the string-literal type that names a property, so a lookup keyed by a property
+// name can be probed against an index signature's key set the same way a written key is.
+func strLitKey(name string) soltype.Type {
+	return &soltype.LitType{Lit: &soltype.StrLit{Value: name}}
+}
+
 func condOperandGround(t soltype.Type) bool {
 	return !containsFreeVar(t) && !containsResidualOp(t)
 }
@@ -645,18 +667,11 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 // member inert, so `{[K]: T[K] for K in keyof T}` over an abstract T renders the way the source
 // wrote it and expands later once T grounds.
 //
-// A key set the evaluator cannot enumerate leaves the member unexpanded too. A primitive key
-// constraint such as `{[K]?: T for K in string}` names infinitely many keys, which an object with
-// named fields cannot express. TypeScript writes that as the index signature `{[k: string]: T}`.
-// soltype has no index-signature element, so such a member stays inert rather than expanding to a
-// wrong shape. The same holds for a key that is a number literal, which names no object field.
-//
-// TODO(#930): expand a primitive key constraint to an index-signature element once soltype carries
-// one, and give a number-literal key a field to name.
-//
-// TODO(#934): reject the required form over a primitive key. `{[K]: T for K in string}` asks for a
-// field at every key of an infinite set, which no object has, so it is uninhabited. Only the
-// `?`-adding form is meaningful there, and it is the one that becomes an index signature.
+// An uncountable key set leaves the member unexpanded, and that unexpanded member is the index
+// signature. `{[K: string]?: T}` names infinitely many keys, so there is no field list to expand it
+// into. constrain and member access read the member where it sits instead. The required form over
+// such a key set demands a field at every one of infinitely many keys, which no object has, so it
+// reports a RequiredUncountableKeysError.
 //
 // Two keys that remap to one name merge into a single field whose type is their union, so no key's
 // contribution is lost. See mergeMappedField.
@@ -674,6 +689,16 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 		Optional: t.Optional, Readonly: t.Readonly,
 	}
 	if !condOperandGround(keys) {
+		return reduced, nil, false, false
+	}
+	if soltype.UncountableKeys(keys) {
+		// An uncountable key set has no keys to enumerate, so the member stays unexpanded and is
+		// itself the index signature. The required form over such a key set is uninhabited and is
+		// rejected. A rename or filter over one has no enumerable keys to run over, so it stays
+		// symbolic with no diagnostic. That gap is #930.
+		if soltype.IsIndexSignature(reduced) && reduced.Optional != soltype.ModAdd {
+			e.errs = append(e.errs, &RequiredUncountableKeysError{Mapped: reduced})
+		}
 		return reduced, nil, false, false
 	}
 	source, homomorphic := e.homomorphicSource(t.Keys)
@@ -734,8 +759,9 @@ func mergeMappedField(earlier, later *soltype.PropertyElem) *soltype.PropertyEle
 // The steps, each reading the original key rather than a remapped one, so the filter and the
 // remapping are independent and their order is not observable:
 //
-//  1. The key must be a string literal, since an object field is named by a string. A key that is a
-//     primitive, a number literal, or an unreduced operator has no field name to emit.
+//  1. The key must name a field, which mappedKeyName decides. A string literal names one directly
+//     and a number literal names the field its digits spell. A primitive or an unreduced operator
+//     names none.
 //  2. The `if Check : Extends` filter, when the source wrote one, decides `Check <: Extends` with
 //     the same assignability probe a conditional's branch selection uses. A key that fails the test
 //     is dropped, which is how `Omit` and `Pick` narrow a key set. Both operands are arbitrary type
@@ -748,7 +774,7 @@ func mergeMappedField(earlier, later *soltype.PropertyElem) *soltype.PropertyEle
 //
 // Each emitted field takes its `readonly` and `?` markers from mappedMarkers.
 func (e *typeEvaluator) mappedFields(t *soltype.MappedElem, key soltype.Type, source *soltype.ObjectType, homomorphic bool) ([]*soltype.PropertyElem, bool) {
-	name, ok := strLitName(key)
+	name, ok := mappedKeyName(key)
 	if !ok {
 		return nil, false
 	}
@@ -790,7 +816,7 @@ func (e *typeEvaluator) remappedNames(t *soltype.MappedElem, key soltype.Type) (
 		if _, dropped := member.(*soltype.NeverType); dropped {
 			continue
 		}
-		name, ok := strLitName(member)
+		name, ok := mappedKeyName(member)
 		if !ok {
 			return nil, false
 		}
@@ -1303,17 +1329,35 @@ func (e *typeEvaluator) reduceIndexAlias(op *soltype.AliasType, index soltype.Ty
 }
 
 // indexObject reduces `obj[key]` for a ground object. A string-literal key selects the named
-// member's read type — a property's or getter's declared type, a method's callable value — and a
-// key the object carries no member for records an UnknownObjectKeyError and reduces to the error
-// sentinel. A non-string-literal index, such as a bare `string` primitive, selects no single
-// member yet. An index signature reads it once mapped types land (M9 PR4), so the access stays
-// symbolic until then.
+// member's read type, which is a property's or getter's declared type or a method's callable value.
+// A declared member always holds a value, so that read carries no `undefined`.
+//
+// A key that names no declared member falls to the object's index signature, which covers every key
+// of its key set. That read is `Value | undefined`, since the signature says the key may be present
+// rather than that it is. An object with no index signature instead records an UnknownObjectKeyError
+// and reduces to the error sentinel.
+//
+// A key that is not a string literal, such as the bare `string` primitive, names no single member.
+// It reads through the index signature the same way. Without one, a ground key of that shape can
+// never name a member, so it records a NoIndexSignatureError. A key that has not grounded may still
+// reduce to a literal, so the access stays symbolic instead.
 func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type, inexact bool) soltype.Type {
+	hasIdx := len(obj.IndexSignatures()) > 0
 	name, ok := strLitName(index)
 	if !ok {
+		if hasIdx {
+			return e.indexSignatureRead(obj, index, inexact)
+		}
+		if condOperandGround(index) {
+			e.errs = append(e.errs, &NoIndexSignatureError{Object: obj, Index: index})
+			return &soltype.ErrorType{}
+		}
 		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
 	}
 	if _, found := obj.Member(name); !found {
+		if hasIdx {
+			return e.indexSignatureRead(obj, index, inexact)
+		}
 		e.errs = append(e.errs, &UnknownObjectKeyError{Object: obj, Key: name})
 		return &soltype.ErrorType{}
 	}
@@ -1324,6 +1368,22 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
 	}
 	return read
+}
+
+// indexSignatureRead reduces `obj[key]` through the signature indexSignatureFor matches to the key.
+// A key none accepts records an IndexSignatureKeyError, with no coercion. The result unions
+// `undefined` onto the value type, since the `?` every legal signature carries says the key may be
+// absent, so `{[K: string]?: number}` reads as `number | undefined`. An ungrounded key stays symbolic.
+func (e *typeEvaluator) indexSignatureRead(obj *soltype.ObjectType, index soltype.Type, inexact bool) soltype.Type {
+	if !condOperandGround(index) {
+		return &soltype.IndexType{Target: obj, Index: index, Inexact: inexact}
+	}
+	idx, ok := e.ctx.indexSignatureFor(obj, index, e.seen)
+	if !ok {
+		e.errs = append(e.errs, &IndexSignatureKeyError{Object: obj, Index: index})
+		return &soltype.ErrorType{}
+	}
+	return newUnion(nil, []soltype.Type{idx.Value, &soltype.UndefinedType{}}, false)
 }
 
 // indexTuple reduces `tup[n]` for a ground tuple. A numeric-literal key selects the element at
@@ -1525,6 +1585,18 @@ func strLitName(t soltype.Type) (string, bool) {
 	return "", false
 }
 
+// mappedKeyName returns the field name a mapped type's key emits. A string literal names one
+// directly; a number literal names the digits it spells, as `{0: v}` stores under "0". Separate from
+// strLitName because `T[0]` reads a tuple positionally, so that number must not be coerced.
+func mappedKeyName(t soltype.Type) (string, bool) {
+	if lit, ok := t.(*soltype.LitType); ok {
+		if n, ok := lit.Lit.(*soltype.NumLit); ok {
+			return strconv.FormatFloat(n.Value, 'f', -1, 64), true
+		}
+	}
+	return strLitName(t)
+}
+
 // isResidualOp reports whether t is an unreduced type-level operator at its top level. That is a
 // `keyof`, an indexed access, a conditional, a `...P` tuple-spread element, a template literal whose
 // interpolation stayed abstract, an intrinsic string operator over an abstract operand, or an object
@@ -1540,10 +1612,11 @@ func isResidualOp(t soltype.Type) bool {
 }
 
 // objectHasMapped reports whether t is an object whose member list still carries an unreduced
-// `[K]: V for K in Keys` member, the mapped twin of objectHasSpread.
+// `[K]: V for K in Keys` member, the mapped twin of objectHasSpread. An index signature does not
+// count: it is the final form of its member, so an object carrying one is ground.
 func objectHasMapped(t soltype.Type) bool {
 	obj, ok := t.(*soltype.ObjectType)
-	return ok && soltype.HasMappedElem(obj.Elems)
+	return ok && soltype.HasUnsettledMapped(obj.Elems)
 }
 
 // objectIsResidual reports whether t is an object carrying either unreduced member kind, the type-

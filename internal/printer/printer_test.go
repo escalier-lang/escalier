@@ -1654,6 +1654,17 @@ func TestPrintObjectTypeElements(t *testing.T) {
 			"{\n    [K]+?: T[K] for K in keyof T\n}",
 		},
 		{
+			"mapped type shorthand",
+			"{[K: keyof T]: T[K]}",
+			"{\n    [K: keyof T]: T[K]\n}",
+		},
+		{
+			// The shorthand spells the adding form `?`, where the long form spells it `+?`.
+			"mapped type shorthand with optional add",
+			"{[K: string]?: number}",
+			"{\n    [K: string]?: number\n}",
+		},
+		{
 			"rest spread",
 			"{...BaseType}",
 			"{\n    ...BaseType\n}",
@@ -1670,12 +1681,8 @@ func TestPrintObjectTypeElements(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			typeAnn := parseTypeAnn(t, tt.input)
 			result, err := Print(typeAnn, opts)
-			if err != nil {
-				t.Fatalf("Print error: %v", err)
-			}
-			if result != tt.expected {
-				t.Errorf("Expected:\n%s\n\nGot:\n%s", tt.expected, result)
-			}
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
 		})
 	}
 }

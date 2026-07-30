@@ -2474,9 +2474,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "IdentityOverKeyof",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {[K]: Point[K] for K in keyof Point}
+				type Result = {[K: keyof Point]: Point[K]}
 			`,
-			wantSymbolic: "{[K]: Point[K] for K in keyof Point}",
+			wantSymbolic: "{[K: keyof Point]: Point[K]}",
 			wantExpanded: "{x: number, y: string}",
 		},
 		{
@@ -2485,10 +2485,32 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "ValueIgnoresKey",
 			src: `
 				type Names = "a" | "b"
-				type Result = {[K]: boolean for K in Names}
+				type Result = {[K: Names]: boolean}
 			`,
-			wantSymbolic: "{[K]: boolean for K in Names}",
+			wantSymbolic: "{[K: Names]: boolean}",
 			wantExpanded: "{a: boolean, b: boolean}",
+		},
+		{
+			// A number-literal key names the field its digits spell, the coercion JavaScript applies
+			// when `{1: v}` stores under the key "1".
+			name: "NumberLiteralKeys",
+			src: `
+				type Keys = "a" | 1
+				type Result = {[K: Keys]: boolean}
+			`,
+			wantSymbolic: "{[K: Keys]: boolean}",
+			wantExpanded: `{"1": boolean, a: boolean}`,
+		},
+		{
+			// A tuple's keys are number literals, so a homomorphic map over one emits a field per
+			// index. The value expression still indexes the tuple positionally.
+			name: "TupleKeys",
+			src: `
+				type Pair = [number, string]
+				type Result = {[K: keyof Pair]: Pair[K]}
+			`,
+			wantSymbolic: "{[K: keyof Pair]: Pair[K]}",
+			wantExpanded: `{"0": number, "1": string}`,
 		},
 		{
 			// A single-key operand emits a single-field object; `keyof` collapsed its union to the
@@ -2496,9 +2518,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "SingleKey",
 			src: `
 				type One = {only: number}
-				type Result = {[K]: One[K] for K in keyof One}
+				type Result = {[K: keyof One]: One[K]}
 			`,
-			wantSymbolic: "{[K]: One[K] for K in keyof One}",
+			wantSymbolic: "{[K: keyof One]: One[K]}",
 			wantExpanded: "{only: number}",
 		},
 		{
@@ -2506,9 +2528,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "EmptyKeySet",
 			src: `
 				type Empty = {}
-				type Result = {[K]: Empty[K] for K in keyof Empty}
+				type Result = {[K: keyof Empty]: Empty[K]}
 			`,
-			wantSymbolic: "{[K]: Empty[K] for K in keyof Empty}",
+			wantSymbolic: "{[K: keyof Empty]: Empty[K]}",
 			wantExpanded: "{}",
 		},
 		{
@@ -2518,7 +2540,7 @@ func TestInferMappedTypeReduction(t *testing.T) {
 				type Point = {x: number, y: string}
 				type Result = {[K]?: Point[K] for K in keyof Point}
 			`,
-			wantSymbolic: "{[K]+?: Point[K] for K in keyof Point}",
+			wantSymbolic: "{[K: keyof Point]?: Point[K]}",
 			wantExpanded: "{x?: number, y?: string}",
 		},
 		{
@@ -2526,9 +2548,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "AddReadonly",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {readonly [K]: Point[K] for K in keyof Point}
+				type Result = {readonly [K: keyof Point]: Point[K]}
 			`,
-			wantSymbolic: "{readonly [K]: Point[K] for K in keyof Point}",
+			wantSymbolic: "{readonly [K: keyof Point]: Point[K]}",
 			wantExpanded: "{readonly x: number, readonly y: string}",
 		},
 		{
@@ -2537,9 +2559,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "FilterKeepsMatchingKeys",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {[K]: Point[K] for K in keyof Point if K : "x"}
+				type Result = {[K: keyof Point]: Point[K] if K : "x"}
 			`,
-			wantSymbolic: `{[K]: Point[K] for K in keyof Point if K : "x"}`,
+			wantSymbolic: `{[K: keyof Point]: Point[K] if K : "x"}`,
 			wantExpanded: "{x: number}",
 		},
 		{
@@ -2548,9 +2570,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "FilterOnValueType",
 			src: `
 				type Mixed = {n: number, s: string}
-				type Result = {[K]: Mixed[K] for K in keyof Mixed if Mixed[K] : number}
+				type Result = {[K: keyof Mixed]: Mixed[K] if Mixed[K] : number}
 			`,
-			wantSymbolic: "{[K]: Mixed[K] for K in keyof Mixed if Mixed[K] : number}",
+			wantSymbolic: "{[K: keyof Mixed]: Mixed[K] if Mixed[K] : number}",
 			wantExpanded: "{n: number}",
 		},
 		{
@@ -2558,9 +2580,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "FilterDropsEveryKey",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {[K]: Point[K] for K in keyof Point if K : "z"}
+				type Result = {[K: keyof Point]: Point[K] if K : "z"}
 			`,
-			wantSymbolic: `{[K]: Point[K] for K in keyof Point if K : "z"}`,
+			wantSymbolic: `{[K: keyof Point]: Point[K] if K : "z"}`,
 			wantExpanded: "{}",
 		},
 		{
@@ -2628,9 +2650,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "HomomorphicPreservesMarkers",
 			src: `
 				type Src = {a?: number, readonly b: string, c: boolean}
-				type Result = {[K]: Src[K] for K in keyof Src}
+				type Result = {[K: keyof Src]: Src[K]}
 			`,
-			wantSymbolic: "{[K]: Src[K] for K in keyof Src}",
+			wantSymbolic: "{[K: keyof Src]: Src[K]}",
 			wantExpanded: "{a?: number, readonly b: string, c: boolean}",
 		},
 		{
@@ -2639,9 +2661,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "RemoveOptionalClearsInherited",
 			src: `
 				type Src = {a?: number, b: string}
-				type Result = {[K]-?: Src[K] for K in keyof Src}
+				type Result = {[K: keyof Src]-?: Src[K]}
 			`,
-			wantSymbolic: "{[K]-?: Src[K] for K in keyof Src}",
+			wantSymbolic: "{[K: keyof Src]-?: Src[K]}",
 			wantExpanded: "{a: number, b: string}",
 		},
 		{
@@ -2649,9 +2671,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "RemoveReadonlyClearsInherited",
 			src: `
 				type Src = {readonly a: number, b: string}
-				type Result = {-readonly [K]: Src[K] for K in keyof Src}
+				type Result = {-readonly [K: keyof Src]: Src[K]}
 			`,
-			wantSymbolic: "{-readonly [K]: Src[K] for K in keyof Src}",
+			wantSymbolic: "{-readonly [K: keyof Src]: Src[K]}",
 			wantExpanded: "{a: number, b: string}",
 		},
 		{
@@ -2660,9 +2682,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "NonHomomorphicEmitsUnmarkedFields",
 			src: `
 				type Names = "a" | "b"
-				type Result = {[K]: boolean for K in Names}
+				type Result = {[K: Names]: boolean}
 			`,
-			wantSymbolic: "{[K]: boolean for K in Names}",
+			wantSymbolic: "{[K: Names]: boolean}",
 			wantExpanded: "{a: boolean, b: boolean}",
 		},
 		{
@@ -2671,9 +2693,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "Nested",
 			src: `
 				type Point = {x: number}
-				type Result = {[K]: {[J]: Point[K] for J in keyof Point} for K in keyof Point}
+				type Result = {[K: keyof Point]: {[J: keyof Point]: Point[K]}}
 			`,
-			wantSymbolic: "{[K]: {[J]: Point[K] for J in keyof Point} for K in keyof Point}",
+			wantSymbolic: "{[K: keyof Point]: {[J: keyof Point]: Point[K]}}",
 			wantExpanded: "{x: {x: number}}",
 		},
 		{
@@ -2682,9 +2704,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "InexactOperandYieldsInexactObject",
 			src: `
 				type Point = {x: number, ...}
-				type Result = {[K]: Point[K] for K in keyof Point}
+				type Result = {[K: keyof Point]: Point[K]}
 			`,
-			wantSymbolic: "{[K]: Point[K] for K in keyof Point}",
+			wantSymbolic: "{[K: keyof Point]: Point[K]}",
 			wantExpanded: "{x: number, ...}",
 		},
 		{
@@ -2693,9 +2715,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "InexactMarkerOnMappedType",
 			src: `
 				type Point = {x: number}
-				type Result = {[K]: Point[K] for K in keyof Point, ...}
+				type Result = {[K: keyof Point]: Point[K], ...}
 			`,
-			wantSymbolic: "{[K]: Point[K] for K in keyof Point, ...}",
+			wantSymbolic: "{[K: keyof Point]: Point[K], ...}",
 			wantExpanded: "{x: number, ...}",
 		},
 		{
@@ -2704,9 +2726,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "KeyofOverMappedType",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = keyof {[K]: Point[K] for K in keyof Point}
+				type Result = keyof {[K: keyof Point]: Point[K]}
 			`,
-			wantSymbolic: "keyof {[K]: Point[K] for K in keyof Point}",
+			wantSymbolic: "keyof {[K: keyof Point]: Point[K]}",
 			wantExpanded: `"x" | "y"`,
 		},
 		{
@@ -2715,9 +2737,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "IndexIntoMappedType",
 			src: `
 				type Point = {x: number, y: string}
-				type Result = {[K]: Point[K] for K in keyof Point}["y"]
+				type Result = {[K: keyof Point]: Point[K]}["y"]
 			`,
-			wantSymbolic: `{[K]: Point[K] for K in keyof Point}["y"]`,
+			wantSymbolic: `{[K: keyof Point]: Point[K]}["y"]`,
 			wantExpanded: "string",
 		},
 		{
@@ -2725,9 +2747,9 @@ func TestInferMappedTypeReduction(t *testing.T) {
 			name: "SpreadOfMappedType",
 			src: `
 				type Point = {x: number}
-				type Result = {...{[K]: Point[K] for K in keyof Point}, y: string}
+				type Result = {...{[K: keyof Point]: Point[K]}, y: string}
 			`,
-			wantSymbolic: "{...{[K]: Point[K] for K in keyof Point}, y: string}",
+			wantSymbolic: "{...{[K: keyof Point]: Point[K]}, y: string}",
 			wantExpanded: "{x: number, y: string}",
 		},
 	}
@@ -2999,7 +3021,7 @@ func TestInferTwoMappedMembersBindIndependently(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t,
-		"fn <T, U>(x: {[K]: T[K] for K in keyof T, [K]: U[K] for K in keyof U}) -> number",
+		"fn <T, U>(x: {[K: keyof T]: T[K], [K: keyof U]: U[K]}) -> number",
 		values["f"])
 
 	_, _, errs = inferSource(t, `
@@ -3012,7 +3034,7 @@ func TestInferTwoMappedMembersBindIndependently(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"cannot constrain {[K]: t1[K] for K in keyof t1, [K]: t2[K] for K in keyof t2} <: {[K]: t2[K] for K in keyof t2, [K]: t1[K] for K in keyof t1}",
+		"cannot constrain {[K: keyof t1]: t1[K], [K: keyof t2]: t2[K]} <: {[K: keyof t2]: t2[K], [K: keyof t1]: t1[K]}",
 		errs[0].Message())
 }
 
@@ -3024,7 +3046,7 @@ func TestInferMappedMemberMixedConstraint(t *testing.T) {
 		fn f<T>(x: {id: number, [K]: T[K] for K in keyof T}) -> number { return 1 }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T>(x: {id: number, [K]: T[K] for K in keyof T}) -> number", values["f"])
+	require.Equal(t, "fn <T>(x: {id: number, [K: keyof T]: T[K]}) -> number", values["f"])
 
 	_, _, errs = inferSource(t, `
 		type Keys = "a" | "b"
@@ -3079,17 +3101,17 @@ func TestInferMappedTypeErrorNamesModifiers(t *testing.T) {
 		{
 			name: "AddOptional",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]?: T[K] for K in keyof T} { return x }`,
-			want: "cannot constrain {[K]: t1[K] for K in keyof t1} <: {[K]+?: t1[K] for K in keyof t1}",
+			want: "cannot constrain {[K: keyof t1]: t1[K]} <: {[K: keyof t1]?: t1[K]}",
 		},
 		{
 			name: "RemoveOptional",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]-?: T[K] for K in keyof T} { return x }`,
-			want: "cannot constrain {[K]: t1[K] for K in keyof t1} <: {[K]-?: t1[K] for K in keyof t1}",
+			want: "cannot constrain {[K: keyof t1]: t1[K]} <: {[K: keyof t1]-?: t1[K]}",
 		},
 		{
 			name: "AddReadonly",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {readonly [K]: T[K] for K in keyof T} { return x }`,
-			want: "cannot constrain {[K]: t1[K] for K in keyof t1} <: {readonly [K]: t1[K] for K in keyof t1}",
+			want: "cannot constrain {[K: keyof t1]: t1[K]} <: {readonly [K: keyof t1]: t1[K]}",
 		},
 	}
 	for _, tt := range tests {
@@ -3244,25 +3266,31 @@ func TestInferMappedTypeStaysSymbolic(t *testing.T) {
 			// form every generic utility alias is written in.
 			name: "TypeParameterOperand",
 			src:  `fn f<T>(x: {[K]: T[K] for K in keyof T}) -> number { return 1 }`,
-			want: "fn <T>(x: {[K]: T[K] for K in keyof T}) -> number",
+			want: "fn <T>(x: {[K: keyof T]: T[K]}) -> number",
 		},
 		{
-			// A primitive key constraint names infinitely many keys, which an object with named
-			// fields cannot express. TypeScript writes it as the index signature `{[k: string]: T}`;
-			// soltype has no index-signature element yet, so the mapped type stays inert.
-			name: "PrimitiveKeyConstraint",
-			src:  `fn f(x: {[K]: number for K in string}) -> number { return 1 }`,
-			want: "fn (x: {[K]: number for K in string}) -> number",
+			// An uncountable key set names infinitely many keys, so there is no field list to expand
+			// the member into. The unexpanded member is itself the index signature, and it renders in
+			// the `[K: Keys]?: V` shorthand whichever of the two spellings the source wrote.
+			name: "IndexSignature",
+			src:  `fn f(x: {[K: string]?: number}) -> number { return 1 }`,
+			want: "fn (x: {[K: string]?: number}) -> number",
 		},
 		{
-			// A tuple's keys are number literals, which name no object field, so the mapped type
-			// stays inert rather than emitting fields under stringified indices.
-			name: "TupleKeys",
+			name: "IndexSignatureWrittenLongForm",
+			src:  `fn f(x: {[K]?: number for K in string}) -> number { return 1 }`,
+			want: "fn (x: {[K: string]?: number}) -> number",
+		},
+		{
+			// An annotation is stored unreduced, so a mapped type over a key set that does ground
+			// still renders the way the source wrote it until a constraint reduces it. See
+			// TestInferMappedTypeReduction for the fields this one emits.
+			name: "GroundKeySetIsStoredUnreduced",
 			src: `
 				type Pair = [number, string]
-				fn f(x: {[K]: Pair[K] for K in keyof Pair}) -> number { return 1 }
+				fn f(x: {[K: keyof Pair]: Pair[K]}) -> number { return 1 }
 			`,
-			want: "fn (x: {[K]: Pair[K] for K in keyof Pair}) -> number",
+			want: "fn (x: {[K: keyof Pair]: Pair[K]}) -> number",
 		},
 	}
 	for _, tt := range tests {
@@ -3272,6 +3300,483 @@ func TestInferMappedTypeStaysSymbolic(t *testing.T) {
 			require.Equal(t, tt.want, values["f"])
 		})
 	}
+}
+
+// A mapped type over an uncountable key set is uninhabited unless it adds `?`, since no object
+// carries a field at every key of an infinite set. Reduction rejects the required form and names the
+// `?`-adding form as the fix. Like every other reduction diagnostic it fires where the type is
+// reduced, which is the constraint site.
+func TestInferRequiredUncountableKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name:    "ShorthandNoMarker",
+			src:     `val p: {[K: string]: number} = {a: 1}`,
+			wantErr: "no object has a field at every key of string, so [K: string]: number is uninhabited; write [K: string]?: number instead",
+		},
+		{
+			name:    "LongFormNoMarker",
+			src:     `val p: {[K]: number for K in string} = {a: 1}`,
+			wantErr: "no object has a field at every key of string, so [K: string]: number is uninhabited; write [K: string]?: number instead",
+		},
+		{
+			// `-?` strips the marker, which is the required form again.
+			name:    "RemovesMarker",
+			src:     `val p: {[K: string]-?: number} = {a: 1}`,
+			wantErr: "no object has a field at every key of string, so [K: string]-?: number is uninhabited; write [K: string]?: number instead",
+		},
+		{
+			// A number key set is uncountable for the same reason a string one is.
+			name:    "NumberKeys",
+			src:     `val p: {[K: number]: boolean} = {a: true}`,
+			wantErr: "no object has a field at every key of number, so [K: number]: boolean is uninhabited; write [K: number]?: boolean instead",
+		},
+		{
+			// A union is uncountable when any member is. Union normalization orders the members, so
+			// the rendered key set reads `number | string` whichever order the source wrote.
+			name:    "UnionWithPrimitiveMember",
+			src:     `val p: {[K: string | number]: boolean} = {a: true}`,
+			wantErr: "no object has a field at every key of number | string, so [K: number | string]: boolean is uninhabited; write [K: number | string]?: boolean instead",
+		},
+		{
+			// A `readonly` marker is orthogonal to `?` and carries into the suggested fix.
+			name:    "ReadonlyCarriesIntoTheFix",
+			src:     `val p: {readonly [K: string]: number} = {a: 1}`,
+			wantErr: "no object has a field at every key of string, so readonly [K: string]: number is uninhabited; write readonly [K: string]?: number instead",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.IsType(t, &RequiredUncountableKeysError{}, errs[0])
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// An indexed access reads an object through its index signature when the key names no declared
+// member. Each case asserts the type the access reduces to, rather than checking a value against it:
+// `1` satisfies both `number` and `number | undefined`, so a constraint would not pin which one the
+// read produced.
+func TestInferIndexAccessThroughIndexSignature(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			name: "StringLiteralKeyReadsAsValueOrUndefined",
+			src: `
+				type Dict = {[K: string]?: number}
+				type Result = Dict["anything"]
+			`,
+			wantExpanded: "number | undefined",
+		},
+		{
+			// The key set itself is a legal key, and reads the same way.
+			name: "PrimitiveKeyReadsAsValueOrUndefined",
+			src: `
+				type Dict = {[K: string]?: number}
+				type Result = Dict[string]
+			`,
+			wantExpanded: "number | undefined",
+		},
+		{
+			// A declared member wins over the signature and is always present, so no `undefined`.
+			name: "DeclaredMemberReadsWithoutUndefined",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				type Result = Config["name"]
+			`,
+			wantExpanded: "string",
+		},
+		{
+			name: "UndeclaredKeyFallsToTheSignature",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				type Result = Config["other"]
+			`,
+			wantExpanded: "boolean | undefined",
+		},
+		{
+			// A key set narrower than the object's own keys needs no signature, since every key in
+			// it is declared. This is the existing union-index distribution, and it adds no
+			// `undefined` because every key it names is present.
+			name: "KeySubsetNeedsNoSignature",
+			src: `
+				type Obj = {a: number, b: string}
+				type Result = Obj["a" | "b"]
+			`,
+			wantExpanded: "number | string",
+		},
+		{
+			// An object may carry several signatures over different key sets. The key picks which
+			// one describes it, rather than the first one winning.
+			name: "StringKeyPicksTheStringSignature",
+			src: `
+				type Two = {[K: string]?: number, [J: number]?: boolean}
+				type Result = Two["a"]
+			`,
+			wantExpanded: "number | undefined",
+		},
+		{
+			name: "NumberKeyPicksTheNumberSignature",
+			src: `
+				type Two = {[K: string]?: number, [J: number]?: boolean}
+				type Result = Two[0]
+			`,
+			wantExpanded: "boolean | undefined",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// An indexed access the index signatures cannot describe is rejected. The diagnostic is minted
+// during reduction, which is what a constraint runs, so each case checks a value against the access
+// rather than reducing it directly.
+func TestInferIndexAccessRejected(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{
+			// The key is not coerced to the key set's type, so a string key on a number signature
+			// is rejected rather than read as its digits.
+			name: "KeyOutsideTheKeySet",
+			src: `
+				type ByIndex = {[K: number]?: string}
+				val v: ByIndex["a"] = "x"
+			`,
+			wantErr: `index signature of {[K: number]?: string} accepts a key of type number, not "a"`,
+		},
+		{
+			// The message names every key set the access could have matched.
+			name: "KeyOutsideEverySetNamesThemAll",
+			src: `
+				type Two = {[K: string]?: number, [J: number]?: boolean}
+				val v: Two[true] = 1
+			`,
+			wantErr: `index signature of {[K: string]?: number, [J: number]?: boolean} accepts a key of type string or number, not true`,
+		},
+		{
+			// Without a signature the object says nothing about keys it does not declare.
+			name: "NoIndexSignature",
+			src: `
+				type Obj = {a: number}
+				val v: Obj[string] = 1
+			`,
+			wantErr: `object {a: number} has no index signature to read a key of type string`,
+		},
+		{
+			// The `undefined` arm is not cosmetic: a target that cannot hold it rejects.
+			name: "UndefinedArmIsEnforced",
+			src: `
+				type Dict = {[K: string]?: number}
+				fn f(x: Dict["anything"]) -> number { return x }
+			`,
+			wantErr: `cannot constrain undefined <: number`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A dynamic key `recv[k]` is typed as the indexed access `Recv[Kt]`, so it resolves by the same
+// rules the type-level `T[K]` does. A read off an index signature therefore agrees with the constant
+// and dot forms, all three yielding `Value | undefined`.
+func TestInferDynamicIndexRead(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantFn  string // "" ⇒ don't check the inferred signature
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name:   "DynamicKeyOffAnIndexSignature",
+			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict, k: string) { return d[k] }",
+			wantFn: "fn (d: Dict, k: string) -> number | undefined",
+		},
+		{
+			// The constant-key and dot forms already resolved this way, and the dynamic form agrees.
+			name:   "ConstantKeyAgreesWithTheDynamicForm",
+			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict) { return d[\"a\"] }",
+			wantFn: "fn (d: Dict) -> number | undefined",
+		},
+		{
+			name:   "DotFormAgreesWithTheDynamicForm",
+			src:    "type Dict = {[K: string]?: number}\nfn f(d: Dict) { return d.a }",
+			wantFn: "fn (d: Dict) -> number | undefined",
+		},
+		{
+			// A dynamic key cannot be shown to name the declared member, so it reads through the
+			// signature rather than through `name`.
+			name:   "DynamicKeyOnAMixedObjectReadsTheSignature",
+			src:    "type Config = {name: string, [K: string]?: boolean}\nfn f(c: Config, k: string) { return c[k] }",
+			wantFn: "fn (c: Config, k: string) -> boolean | undefined",
+		},
+		{
+			// A key set narrower than the object's keys resolves without a signature, and carries no
+			// `undefined` because every key in it is declared.
+			name:   "KeySubsetOfADeclaredObject",
+			src:    "fn f(o: {a: number, b: string}, k: \"a\" | \"b\") { return o[k] }",
+			wantFn: `fn (o: {a: number, b: string}, k: "a" | "b") -> number | string`,
+		},
+		{
+			name:    "NoIndexSignatureRejected",
+			src:     "fn f(o: {a: number}, k: string) { return o[k] }",
+			wantErr: `object {a: number} has no index signature to read a key of type string`,
+		},
+		{
+			name:    "KeyOutsideTheKeySetRejected",
+			src:     "type ByIndex = {[K: number]?: string}\nfn f(d: ByIndex, k: string) { return d[k] }",
+			wantErr: `index signature of {[K: number]?: string} accepts a key of type number, not string`,
+		},
+		{
+			// A receiver that has not grounded has no index signature to read yet. Resolving it needs
+			// a receiver inferred from use, which this does not do.
+			name:    "AbstractReceiverUnsupported",
+			src:     "fn f<T>(o: T, k: string) { return o[k] }",
+			wantErr: "Unsupported: IndexExpr",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+			} else {
+				require.Len(t, errs, 1)
+				require.Equal(t, tt.wantErr, errs[0].Message())
+			}
+			if tt.wantFn != "" {
+				require.Equal(t, tt.wantFn, values["f"])
+			}
+		})
+	}
+}
+
+// An index signature names no single key, so satisfying it means every key the source can carry
+// holds a value of the signature's type. It also absorbs width, so a source with extra keys is not
+// rejected for carrying them.
+func TestInferIndexSignatureConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "EveryPropertyMatchesTheValueType",
+			src:  `val p: {[K: string]?: number} = {a: 1, b: 2}`,
+		},
+		{
+			name:    "WrongPropertyTypeRejected",
+			src:     `val p: {[K: string]?: number} = {a: 1, b: "two"}`,
+			wantErr: `cannot constrain "two" <: number`,
+		},
+		{
+			name: "EmptyObjectAccepted",
+			src:  `val p: {[K: string]?: number} = {}`,
+		},
+		{
+			// The signature is written without a trailing `...`, but it absorbs every key, so no
+			// property counts as excess against it.
+			name: "ExtraPropertiesAbsorbed",
+			src:  `val p: {[K: string]?: number} = {a: 1, b: 2, c: 3}`,
+		},
+		{
+			// An index signature is a settled form, not a reduction still in progress, so an object
+			// carrying one is ground. A conditional over it therefore selects a branch instead of
+			// staying symbolic.
+			name: "ConditionalOverAnIndexSignatureSelectsABranch",
+			src: `
+				type Dict = {[K: string]?: number}
+				type Fits = if Dict : {a?: number} { "yes" } else { "no" }
+				type Misses = if Dict : {a: number} { "yes" } else { "no" }
+				val fits: Fits = "yes"
+				val misses: Misses = "no"
+			`,
+		},
+		{
+			// A named property on the target states the type at its own key, so the signature covers
+			// only the other keys.
+			name: "NamedPropertyBesideTheSignature",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				val c: Config = {name: "app", debug: true}
+			`,
+		},
+		{
+			name: "NamedPropertyBesideTheSignatureStillChecked",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				val c: Config = {name: 1, debug: true}
+			`,
+			wantErr: `cannot constrain 1 <: string`,
+		},
+		{
+			name: "OtherKeysStillCheckedAgainstTheSignature",
+			src: `
+				type Config = {name: string, [K: string]?: boolean}
+				val c: Config = {name: "app", debug: 1}
+			`,
+			wantErr: `cannot constrain 1 <: boolean`,
+		},
+		{
+			// A signature reached through a `mut` wrapper is writable, so the keys it covers are
+			// invariant. A literal-typed source field would be widened by a write through the
+			// signature, the same reason a `mut` property target pins its field.
+			name: "MutableSignaturePinsASourceField",
+			src: `
+				fn f(d: mut {[K: string]?: number}) -> number { return 1 }
+				declare fn g() -> mut {a: 1}
+				val y = f(g())
+			`,
+			wantErr: `cannot constrain number <: 1`,
+		},
+		{
+			// A readonly source member cannot fill a writable signature, matching the property rule.
+			name: "ReadonlySourceFieldCannotFillAWritableSignature",
+			src: `
+				fn f(d: mut {[K: string]?: number}) -> number { return 1 }
+				declare fn g() -> mut {readonly a: number}
+				val y = f(g())
+			`,
+			wantErr: `readonly field a cannot satisfy a writable field requirement`,
+		},
+		{
+			// Outside a `mut` wrapper the signature is read-only, so the key stays covariant.
+			name: "ImmutableSignatureStaysCovariant",
+			src: `
+				fn f(d: {[K: string]?: number}) -> number { return 1 }
+				declare fn g() -> {a: 1}
+				val y = f(g())
+			`,
+		},
+		{
+			// A property only one signature's key set accepts is checked against that one. `debug`
+			// is a string key, so the number signature never sees it and never demands `1 <: boolean`.
+			name: "PropertyCheckedAgainstTheSignatureThatAcceptsIt",
+			src: `
+				type Two = {[K: string]?: number, [J: number]?: boolean}
+				val v: Two = {debug: 1}
+			`,
+		},
+		{
+			// A property no signature accepts is still an excess property against an exact target.
+			// A name is not coerced to a number, so `a` is outside a number-keyed signature's set.
+			name: "PropertyNoSignatureAcceptsIsExtra",
+			src: `
+				type ByIndex = {[J: number]?: boolean}
+				val v: ByIndex = {a: true}
+			`,
+			wantErr: `object has extra property: a`,
+		},
+		{
+			name: "IndexSignatureIntoIndexSignature",
+			src: `
+				val p: {[K: string]?: number} = {a: 1}
+				val q: {[K: string]?: number} = p
+			`,
+		},
+		{
+			// The value types are checked covariantly, so a wider one cannot fill a narrower target.
+			name: "IndexSignatureValueTypeCovariant",
+			src: `
+				val p: {[K: string]?: number} = {a: 1}
+				val q: {[K: string]?: string} = p
+			`,
+			wantErr: `cannot constrain number <: string`,
+		},
+		{
+			// An index signature cannot guarantee any particular key is present, so it does not
+			// satisfy a target that requires one.
+			name: "DoesNotSatisfyARequiredProperty",
+			src: `
+				val p: {[K: string]?: number} = {a: 1}
+				val q: {a: number} = p
+			`,
+			wantErr: `object property is optional but required: a`,
+		},
+		{
+			// An optional target property tolerates the key being absent, so the signature fills it.
+			name: "SatisfiesAnOptionalProperty",
+			src: `
+				val p: {[K: string]?: number} = {a: 1}
+				val q: {a?: number} = p
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A mapped type whose key set has not grounded is expected to stay symbolic, so the uncountable-key
+// rule must not reach it. A key set that is a bare type parameter grounds only at instantiation, and
+// the parameter's own constraint does not make the key set uncountable on its own.
+func TestInferUncountableKeysNotReportedWhileAbstract(t *testing.T) {
+	tests := []struct {
+		name   string
+		src    string
+		wantFn string
+	}{
+		{
+			// The member must still be there unexpanded. Asserting only that no error fired would
+			// pass just as well if the mapped type had wrongly reduced to some concrete object.
+			name:   "KeySetIsTypeParameter",
+			src:    `fn f<T>(x: {[K]: number for K in keyof T}) -> number { return 1 }`,
+			wantFn: "fn <T>(x: {[K: keyof T]: number}) -> number",
+		},
+		{
+			name:   "ShorthandOverTypeParameter",
+			src:    `fn f<T>(x: {[K: keyof T]: number}) -> number { return 1 }`,
+			wantFn: "fn <T>(x: {[K: keyof T]: number}) -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantFn, values["f"])
+		})
+	}
+}
+
+// `keyof T` over a ground T is a countable key set even though it is written as an operator, so the
+// required form over it is legal. It expands to the fields the keys name rather than reporting a
+// RequiredUncountableKeysError, which the expanded form pins and an empty error list would not.
+func TestInferGroundKeyofIsCountable(t *testing.T) {
+	src := `
+		type Point = {x: number, y: string}
+		type Result = {[K: keyof Point]: Point[K]}
+	`
+	nodes, ctx, errs := inferTypeNodes(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "{x: number, y: string}", soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 }
 
 // constrain reduces a mapped type to check satisfaction, while the stored type keeps the form the
@@ -3287,14 +3792,14 @@ func TestInferMappedTypeConstraint(t *testing.T) {
 			name: "MatchingValueAccepted",
 			src: `
 				type Point = {x: number, y: string}
-				val p: {[K]: Point[K] for K in keyof Point} = {x: 1, y: "hi"}
+				val p: {[K: keyof Point]: Point[K]} = {x: 1, y: "hi"}
 			`,
 		},
 		{
 			name: "WrongFieldTypeRejected",
 			src: `
 				type Point = {x: number, y: string}
-				val p: {[K]: Point[K] for K in keyof Point} = {x: 1, y: 2}
+				val p: {[K: keyof Point]: Point[K]} = {x: 1, y: 2}
 			`,
 			wantErr: `cannot constrain 2 <: string`,
 		},
@@ -3312,7 +3817,7 @@ func TestInferMappedTypeConstraint(t *testing.T) {
 			name: "FilteredFieldRejected",
 			src: `
 				type Point = {x: number, y: string}
-				val p: {[K]: Point[K] for K in keyof Point if K : "x"} = {x: 1, y: "hi"}
+				val p: {[K: keyof Point]: Point[K] if K : "x"} = {x: 1, y: "hi"}
 			`,
 			wantErr: `object has extra property: y`,
 		},
@@ -3322,7 +3827,7 @@ func TestInferMappedTypeConstraint(t *testing.T) {
 			name: "FieldReadThroughMappedParam",
 			src: `
 				type Point = {x: number, y: string}
-				fn f(p: {[K]: Point[K] for K in keyof Point}) -> number { return p.x }
+				fn f(p: {[K: keyof Point]: Point[K]}) -> number { return p.x }
 				val n = f({x: 1, y: "hi"})
 			`,
 		},
@@ -3362,5 +3867,5 @@ func TestInferMappedTypeSignatureRoundTrips(t *testing.T) {
 		fn f<T>(x: {[K]: T[K] for K in keyof T}) -> {[K]: T[K] for K in keyof T} { return x }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T>(x: {[K]: T[K] for K in keyof T}) -> {[K]: T[K] for K in keyof T}", values["f"])
+	require.Equal(t, "fn <T>(x: {[K: keyof T]: T[K]}) -> {[K: keyof T]: T[K]}", values["f"])
 }

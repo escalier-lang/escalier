@@ -1,0 +1,22 @@
+// An index signature is a mapped type over an uncountable key set, written with the
+// `[K: Keys]` shorthand. It must add `?`, since no object has a field at every key of
+// an infinite set, and the `?` is what makes a read off it `number | undefined`.
+type Dict = {[K: string]?: number}
+
+// The long form spells the same type.
+type LongDict = {[K]?: number for K in string}
+
+// The shorthand also covers a countable key set, where it needs no `?`. This one is
+// the identity on Obj.
+type Obj = {a: number, b: string}
+type Copy = {[K: keyof Obj]: Obj[K]}
+
+declare val copy: Copy
+val a = copy.a
+val b = copy.b
+
+// The shorthand composes with `readonly` and with ordinary members.
+type Config = {
+    name: string,
+    readonly [K: string]?: boolean,
+}

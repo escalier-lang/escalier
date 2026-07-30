@@ -568,6 +568,26 @@ loop:
 	return typeAnn
 }
 
+// simpleTypeRefName reports the identifier a type annotation names when it is a bare reference such
+// as `K`, with no qualifier, no type arguments, and no lifetime. A mapped type's key variable is
+// spelled that way, so the bracket contents of `[K: Keys]` reach here to be read back as the name
+// `K`. ok=false for any other annotation, which is not a name a key variable can take.
+//
+// The lifetime checks matter because a key variable has no lifetime to carry. Accepting `'a K` or
+// `K<'a>` here would read the name back and drop the lifetime silently, so both are rejected and the
+// annotation falls through to the parser's other bracket forms.
+func simpleTypeRefName(t ast.TypeAnn) (string, bool) {
+	ref, ok := t.(*ast.TypeRefTypeAnn)
+	if !ok || len(ref.TypeArgs) > 0 || len(ref.LifetimeArgs) > 0 || ref.Lifetime != nil {
+		return "", false
+	}
+	ident, ok := ref.Name.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	return ident.Name, true
+}
+
 func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 	// Parse readonly modifiers: readonly, +readonly, or -readonly
 	var readonly *ast.MappedModifier
@@ -635,6 +655,25 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 			return nil
 		}
 
+		// `[K: Keys]` is the index-signature shorthand, which names the key variable and its
+		// constraint in the brackets instead of in a trailing `for K in Keys`. The bracket position
+		// otherwise holds a key-remapping expression, and a `:` cannot continue one, so the token
+		// after the parsed type annotation decides between the two forms on its own.
+		var shorthandKey string
+		var shorthandConstraint ast.TypeAnn
+		shorthand := p.lexer.peek().Type == Colon
+		if shorthand {
+			ident, isIdent := simpleTypeRefName(name)
+			if !isIdent {
+				p.reportError(name.Span(), "expected identifier for mapped type key")
+				p.restoreState(savedState)
+				return nil
+			}
+			shorthandKey = ident
+			p.lexer.consume() // consume ':'
+			shorthandConstraint = p.typeAnnRequired()
+		}
+
 		p.expect(CloseBracket, AlwaysConsume)
 
 		// Parse optional modifiers: ?, +?, or -?
@@ -674,19 +713,21 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 
 		value := p.typeAnnRequired()
 
-		p.expect(For, AlwaysConsume)
-		token = p.lexer.peek()
-		var key string
-		if token.Type == Identifier {
-			p.lexer.consume() // consume identifier
-			key = token.Value
-		} else {
-			p.reportError(token.Span, "expected identifier for mapped type key")
-			p.restoreState(savedState)
-			return nil
+		key, constraint := shorthandKey, shorthandConstraint
+		if !shorthand {
+			p.expect(For, AlwaysConsume)
+			token = p.lexer.peek()
+			if token.Type == Identifier {
+				p.lexer.consume() // consume identifier
+				key = token.Value
+			} else {
+				p.reportError(token.Span, "expected identifier for mapped type key")
+				p.restoreState(savedState)
+				return nil
+			}
+			p.expect(In, AlwaysConsume)
+			constraint = p.typeAnnRequired()
 		}
-		p.expect(In, AlwaysConsume)
-		constraint := p.typeAnnRequired()
 
 		// Parse optional if clause for filtering
 		var check ast.TypeAnn
@@ -724,12 +765,13 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 				Name:       key,
 				Constraint: constraint,
 			},
-			Name:     mappedName,
-			Value:    value,
-			Optional: optional,
-			ReadOnly: readonly,
-			Check:    check,
-			Extends:  extends,
+			Name:      mappedName,
+			Value:     value,
+			Optional:  optional,
+			ReadOnly:  readonly,
+			Check:     check,
+			Extends:   extends,
+			Shorthand: shorthand,
 		}
 	}
 

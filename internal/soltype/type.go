@@ -408,7 +408,39 @@ func HasMappedElem(elems []ObjTypeElem) bool {
 // set may still ground. Such an object is never decomposed structurally, since its final member list
 // is not yet known; the evaluator reduces it first and constrain compares it inertly until then.
 func HasResidualElem(elems []ObjTypeElem) bool {
-	return HasObjectSpread(elems) || HasMappedElem(elems)
+	return HasObjectSpread(elems) || HasUnsettledMapped(elems)
+}
+
+// HasUnsettledMapped reports whether an element list carries a mapped member that reduction has not
+// finished with. It is the mapped half of HasResidualElem. It also decides whether an object counts
+// as ground, since an object whose every mapped member is settled has no reduction left to do.
+func HasUnsettledMapped(elems []ObjTypeElem) bool {
+	for _, e := range elems {
+		if m, ok := e.(*MappedElem); ok && !MappedElemSettled(m) {
+			return true
+		}
+	}
+	return false
+}
+
+// MappedElemSettled reports whether reducing a mapped member again would change nothing. Only an
+// index signature that adds `?` qualifies; everything else, the required form included, still reduces.
+func MappedElemSettled(m *MappedElem) bool {
+	return IsIndexSignature(m) && m.Optional == ModAdd
+}
+
+// IndexSignatures returns the object's index signatures in source order. An object may carry more
+// than one, each over a different key set, as `{[K: string]?: number, [J: number]?: boolean}` does.
+// Which one describes a given key is an assignability question, so the caller picks by probing each
+// signature's key set rather than taking the first.
+func (o *ObjectType) IndexSignatures() []*MappedElem {
+	var sigs []*MappedElem
+	for _, e := range o.Elems {
+		if m, ok := e.(*MappedElem); ok && MappedElemSettled(m) {
+			sigs = append(sigs, m)
+		}
+	}
+	return sigs
 }
 
 // AsMapped returns the mapped member of an element list and whether one is present. A caller that
@@ -420,6 +452,36 @@ func AsMapped(elems []ObjTypeElem) (*MappedElem, bool) {
 		}
 	}
 	return nil, false
+}
+
+// UncountableKeys reports whether a key set names infinitely many keys: a `string`/`number` prim or
+// a union holding one. The caller must ground it first, since an abstract operand reads as countable.
+func UncountableKeys(t Type) bool {
+	switch t := t.(type) {
+	case *PrimType:
+		return t.Prim == StrPrim || t.Prim == NumPrim
+	case *UnionType:
+		for _, member := range t.Types {
+			if UncountableKeys(member) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+// MappedShorthandForm reports whether a mapped member renders as `[Key: Keys]` rather than with a
+// trailing `for Key in Keys`. Only a key remapping rules it out, since it occupies the brackets.
+func MappedShorthandForm(m *MappedElem) bool {
+	return m.Name == nil
+}
+
+// IsIndexSignature reports whether a mapped member is one, as in `{[K: string]?: number}`: an
+// uncountable key set with no remapping or filter. Carries UncountableKeys' grounding precondition.
+func IsIndexSignature(m *MappedElem) bool {
+	return m.Name == nil && m.Check == nil && m.Extends == nil && UncountableKeys(m.Keys)
 }
 
 // MappedOptionalOperands returns the operands a mapped member carries only when the source wrote

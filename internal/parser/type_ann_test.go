@@ -153,6 +153,24 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"MappedObjectTypeWithFiltering": {
 			input: "{[K]: T[K] for K in keyof T if T[K] : string}",
 		},
+		"MappedObjectTypeShorthand": {
+			input: "{[K: keyof T]: T[K]}",
+		},
+		"MappedObjectTypeShorthandOptional": {
+			input: "{[K: string]?: number}",
+		},
+		"MappedObjectTypeShorthandReadonly": {
+			input: "{readonly [K: keyof T]: T[K]}",
+		},
+		"MappedObjectTypeShorthandWithFiltering": {
+			input: "{[K: keyof T]: T[K] if T[K] : string}",
+		},
+		"MappedObjectTypeShorthandAlongsideProperty": {
+			input: "{id: number, [K: string]?: number}",
+		},
+		"MappedObjectTypeTwoShorthandsOverDifferentKeySets": {
+			input: "{[K: string]?: number, [J: number]?: boolean}",
+		},
 		"ObjectTypeWithRestSpread": {
 			input: "{x: string, ...T}",
 		},
@@ -248,6 +266,15 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 	tests := map[string]struct {
 		input string
 	}{
+		// A key variable carries no lifetime, so a lifetime-decorated reference in the brackets is
+		// not the index-signature shorthand. It falls through to the computed-key form, which
+		// rejects the lifetime, rather than reading the name back and dropping the lifetime.
+		"LifetimeQualifiedBracketIsNotTheShorthand": {
+			input: "{['a K: string]?: number}",
+		},
+		"LifetimeArgBracketIsNotTheShorthand": {
+			input: "{[K<'a>: string]?: number}",
+		},
 		"IncompleteUnion": {
 			input: "number |",
 		},
