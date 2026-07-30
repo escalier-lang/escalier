@@ -1134,15 +1134,16 @@ func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.
 }
 
 // constrainIntoIndexSignature checks an object against a requirement like `{[K: string]?: number}`:
-// every key the sub carries must hold the signature's type, covariantly. Two kinds of key are
-// skipped:
+// every key the sub carries must hold the signature's type, covariantly. Two kinds of key are left
+// to something else and skipped here:
 //
-//   - one the super also declares as a property, since the depth loop already checked it against
+//   - a key the super also declares as a property, which the depth loop has already checked against
 //     that declaration;
-//   - one this signature's key set rejects, since a sibling signature over another key set covers it.
+//   - a key outside this signature's key set, which a sibling signature over another key set covers.
 //
-// Inside a `mut` wrapper the keys are invariant and a readonly source cannot fill them. A callable
-// member is skipped, escalier-lang/escalier#864.
+// Inside a `mut` wrapper the keys are invariant and a readonly source cannot fill them. A method,
+// getter, or setter is passed over: whether a callable member satisfies a value-typed signature is
+// escalier-lang/escalier#864.
 func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, superIdx *soltype.MappedElem, seen set.Set[constraintKey], mutCtx bool) []SolverError {
 	writable := mutCtx && superIdx.Readonly != soltype.ModAdd
 	var errs []SolverError
