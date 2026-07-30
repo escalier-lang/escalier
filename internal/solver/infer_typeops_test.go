@@ -3656,33 +3656,43 @@ func TestInferIndexSignatureConstraint(t *testing.T) {
 // the parameter's own constraint does not make the key set uncountable on its own.
 func TestInferUncountableKeysNotReportedWhileAbstract(t *testing.T) {
 	tests := []struct {
-		name string
-		src  string
+		name   string
+		src    string
+		wantFn string
 	}{
 		{
-			name: "KeySetIsTypeParameter",
-			src:  `fn f<T>(x: {[K]: number for K in keyof T}) -> number { return 1 }`,
+			// The member must still be there unexpanded. Asserting only that no error fired would
+			// pass just as well if the mapped type had wrongly reduced to some concrete object.
+			name:   "KeySetIsTypeParameter",
+			src:    `fn f<T>(x: {[K]: number for K in keyof T}) -> number { return 1 }`,
+			wantFn: "fn <T>(x: {[K: keyof T]: number}) -> number",
 		},
 		{
-			name: "ShorthandOverTypeParameter",
-			src:  `fn f<T>(x: {[K: keyof T]: number}) -> number { return 1 }`,
-		},
-		{
-			// `keyof T` over a ground T is a countable key set even though it is written as an
-			// operator, so the required form over it is legal and expands.
-			name: "GroundKeyofIsCountable",
-			src: `
-				type Point = {x: number, y: string}
-				val p: {[K: keyof Point]: Point[K]} = {x: 1, y: "hi"}
-			`,
+			name:   "ShorthandOverTypeParameter",
+			src:    `fn f<T>(x: {[K: keyof T]: number}) -> number { return 1 }`,
+			wantFn: "fn <T>(x: {[K: keyof T]: number}) -> number",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, errs := inferSource(t, tt.src)
+			values, _, errs := inferSource(t, tt.src)
 			require.Empty(t, errs)
+			require.Equal(t, tt.wantFn, values["f"])
 		})
 	}
+}
+
+// `keyof T` over a ground T is a countable key set even though it is written as an operator, so the
+// required form over it is legal. It expands to the fields the keys name rather than reporting a
+// RequiredUncountableKeysError, which the expanded form pins and an empty error list would not.
+func TestInferGroundKeyofIsCountable(t *testing.T) {
+	src := `
+		type Point = {x: number, y: string}
+		type Result = {[K: keyof Point]: Point[K]}
+	`
+	nodes, ctx, errs := inferTypeNodes(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "{x: number, y: string}", soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 }
 
 // constrain reduces a mapped type to check satisfaction, while the stored type keeps the form the
