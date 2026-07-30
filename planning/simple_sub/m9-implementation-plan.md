@@ -133,19 +133,20 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Twenty-five PRs across five tracks. Track A builds the evaluator and the core
+Twenty-eight PRs across six tracks. Track A builds the evaluator and the core
 operators in dependency order. Track B adds spread and template-literal
 operators, which hang off the backbone but are independent of each other. Track C
 adds exactness propagation and the recursion static-check. Track D is the
 function-signature effects and the exception machinery around them, which touch
 `FuncType` and not the evaluator at all, so it runs fully in parallel with A–C.
-Track E is the capstone verification and the follow-ons it turned up.
+Track E is the capstone verification and the follow-ons it turned up. Track F brings a
+class reference's type arguments up to the checking an alias reference already gets.
 
 The two heaviest concerns — the evaluator backbone and the conditional/`infer`
 matcher — are each split in two so no single PR carries both a new representation
 and a new algorithm: PR1a/PR1b and PR3a/PR3b below.
 
-Sixteen of the twenty-five were planned up front. PR9c through PR9f were added to Track C
+Sixteen of the twenty-eight were planned up front. PR9c through PR9f were added to Track C
 after PR9b's review, which turned up one soundness question, one wrong answer, and one
 representation the milestone assumed exists. They are described together in "the
 recursion-safety follow-on group" below. PR14 through PR16 were added to Track E after
@@ -158,6 +159,11 @@ its own signature and into the promise it returns, which is where a rejection be
 which needs PR10b's `try` to be catchable. Both were assumed by
 [01-milestones.md](01-milestones.md) — its M9 accept list calls for "a `try`/`catch` test
 for the body-narrowing rule" — without a PR to build them.
+
+PR17 through PR19 were added as Track F after PR9d's review, which found that a written
+type argument is never checked against its parameter's declared bound. #956 has since
+closed that for aliases, and for enums with it, since an enum registers as a transparent
+alias. What the review turned up beyond it stays open, and Track F is that remainder.
 
 ### PR1a — Residual-node representation + inert plumbing
 
@@ -1279,6 +1285,138 @@ disabled test it re-enables. Independent of PR14 and PR15.
 
 **Completes the suite.** With this PR every utility PR13 lists reduces.
 
+### The generic-parameter checking group (PR17–PR19)
+
+These three came out of PR9d's review. That PR's accept criteria assumed a type parameter's
+declared bound is checked against the argument a reference writes, and at the time nothing
+checked it anywhere. #956 closed the alias half, and enums came with it, since
+`inferEnumDecl` registers an enum as a transparent alias and a reference to one resolves
+through `buildAliasInstance`. A **class** reference resolves through `buildClassInstance`
+([infer_class.go](../../internal/solver/infer_class.go)) instead, which resolves exactly the
+arguments the source wrote and checks nothing about them. Pulling on that turned up a third
+gap, in how a parameter's default is resolved, that neither path handles.
+
+Two terms carry the group. A **type parameter's bound** is the `T: number` of
+`type Hold<T: number> = …`, the upper bound an argument must satisfy. A **default** is the
+`= number` of `type Hold<T = number> = …`, the argument a reference may omit.
+[resolveTypeParams](../../internal/solver/type_params.go) resolves both, and #956 added the
+`TypeParam.Constraint` field that keeps the declared bound where later solving cannot
+overwrite it — a class's constructor body writes inferred upper bounds onto the same
+parameter var, so the var's bound list is not what the source declared.
+
+Why the function and constructor positions already work is worth stating, since it explains
+why only a written type argument is left. A parameter's var carries its bound, so calling
+`fn f<T: number>(x: T)` as `f("hi")` records `"hi"` against it and `constrain` reports the
+mismatch, and `class Box<T: A>` renders its constructor `fn <T>(value: T & A)` so
+`Box(Other())` does the same. Both work because a **value** flows into the parameter. A
+written type argument flows nowhere on the class path: `buildClassInstance` substitutes it
+into the body and the bound goes with the var it was attached to.
+
+The three land in dependency order. PR17 is independent and fixes the worst answer of the
+group. PR18 needs it, so the class path does not start filling defaults while a default can
+still leak a declaration var. PR19 needs PR18's helper, which is the one place that pairs a
+written argument with the parameter it fills.
+
+### PR17 — A default may name only an earlier parameter
+
+`resolveTypeParams` resolves a default in a second pass, after every sibling name is
+declared, so `type Pair<T = U, U = number>` resolves `T`'s default to `U`'s **parameter
+var**. Instantiation cannot fill that: `buildAliasInstance` substitutes only the parameters
+before the one it is filling, so the var survives into the instance and behaves as a live
+inference variable.
+
+The result is worse than a bad rendering. The var belongs to the declaration, so every
+reference to the alias shares it. Given `type Pair<T = U, U = number> = {a: T, b: U}`,
+`val p: Pair = {a: 1, b: 2}` alongside `val q: Pair = {a: "s", b: 3}` infers `p` as
+`Pair<1 | "s", number>` — `q`'s value widened the type of `p`. A self-referential default
+`type Loop<T = T> = {v: T}` leaks the same way.
+
+**Data structures.** A `TypeParamDefaultForwardRefError` naming the parameter, the parameter
+its default reaches, and the declaration node.
+
+**Algorithms.** In `resolveTypeParams`' second pass, resolve parameter `i`'s default against
+a scope holding only parameters `0..i-1`. A later or self reference then finds the name
+undeclared and is reported, instead of silently resolving to the sibling's var.
+
+The restriction applies to the default position alone. Pass one declares every parameter
+name before any bound or default is read, and a bound needs that: `<T: U, U: T>` is a legal
+mutual F-bound, and an F-bound `<T: Foo<T>>` names the parameter being declared. Only a
+default has to be substitutable positionally, so only a default is restricted.
+
+Recover by dropping the default, which leaves the parameter required and lets the existing
+arity diagnostic name the omission. TypeScript draws the same line, rejecting a default that
+names a later parameter.
+
+**Accept.** `type Pair<T = U, U = number>` and `type Loop<T = T>` are rejected with a
+full-message error. `type Pair<T = number, U = T>` still resolves, since `U`'s default names
+an earlier parameter. `<T: U, U: T>` still resolves, since the restriction does not touch
+bounds. No declaration var reaches an instance, so two references to one alias no longer
+share an argument.
+
+**Depends on** M7, landed. Independent of the operator track.
+
+### PR18 — Class type-parameter defaults and arity at a type reference
+
+`buildAliasInstance` checks a reference's argument count against the alias's parameters and
+fills a trailing omitted argument from its default. `buildClassInstance` does neither. It
+resolves exactly the arguments the reference wrote and returns them, so
+`class Box<T = number>` referenced bare as `Box` yields the declaration handle, whose
+unconstrained parameter var coalesces to `never` and renders `Box<never>` rather than
+`Box<number>`. A reference that supplies too many arguments, `Box<number, string>` on a
+one-parameter class, carries the extra one with no diagnostic. An enum needs neither fix:
+`enum Opt<T = number>` referenced bare already infers `Opt<number>` through the alias path.
+
+**Data structures.** A `ClassArityMismatchError`, the nominal twin of
+`AliasArityMismatchError`, carrying the same required/total/got triple so the two render
+alike.
+
+**Algorithms.** Factor the arity check and the default filling out of `buildAliasInstance`
+into one helper over a `[]*soltype.TypeParam` and a reference's written arguments, returning
+one argument per parameter. Both instance builders call it, so an alias and a class resolve a
+defaulted or miscounted reference the same way. The helper is also the one place that pairs a
+written argument with the parameter it fills, which is what PR19 needs.
+
+**Accept.** `class Box<T = number>` referenced bare infers `Box<number>`.
+`Box<number, string>` on a one-parameter class reports a full-message arity error. Every
+alias and enum arity and default case that passes today still passes, since the shared helper
+is `buildAliasInstance`'s existing logic moved rather than rewritten.
+
+**Depends on** PR17, so the class path does not inherit the forward-reference leak the moment
+it starts filling defaults. Independent of the operator track.
+
+### PR19 — Class type-argument bound checking
+
+`class Box<T: A>` accepts `Box<Other>` in an annotation with no diagnostic. #956 built the
+alias-side answer — `checkAliasArgBounds`, its deferral through `deferredAliasBounds` for a
+sibling whose body is not yet filled, and the live rather than discarded comparison that
+leaves a bound on a caller's variable — so this PR is that machinery reaching a second
+caller, not a second design.
+
+**Algorithms.**
+- Check each argument `buildClassInstance` resolves against its parameter's
+  `TypeParam.Constraint`, substituting the reference's own arguments into the bound first so
+  a bound naming a sibling parameter, `<T, K: keyof T>`, reaches the argument that filled it.
+  PR18's helper is where the pairing happens.
+- **Reuse #956's comparison rather than reimplementing it.** It is live, not a discarded
+  trial, which is what makes a type-variable argument defer to the caller's instantiation
+  instead of silently passing. Factoring the alias check's body into a shared routine over a
+  parameter list and an argument list keeps one answer to that question.
+- **A class in a dep_graph component with an unfilled sibling defers the same way.** A class
+  body resolves after its own pre-binding, so a bound naming a sibling class can reach a
+  registered-but-empty `ClassDef`. Route through the same deferral list #956 added, replayed
+  once the component's bodies are filled.
+- An argument that fails its bound is reported and then kept rather than replaced with a
+  recovery var, so a later diagnostic names the type the source wrote.
+
+**Accept.** `Box<Other>` against `class Box<T: A>` reports a full-message bound error, and
+`Box<B>` for a subclass `B` of `A` passes. `Box(Other())` keeps reporting the
+`cannot constrain Other <: A` it reports today, so the inference path and the check path do
+not double-report one mismatch. A forwarding declaration `fn g<U>(u: U) -> Box<U>` defers to
+its call site, matching what #956 settled for the alias position.
+
+**Depends on** PR18 for the helper and #956 for the comparison. Independent of the operator
+track.
+
 ---
 
 ## Sizing note
@@ -1338,6 +1476,11 @@ sites that turn a written `null` into one. What earns it a PR of its own is that
 sites span the annotation, expression, and pattern walks, and that the shared
 `litTypeOf` they read cannot return an atom as it stands.
 
+Track F is small, and shrank when #956 landed: PR17 is a scope restriction in one pass of
+`resolveTypeParams` plus its diagnostic, PR18 moves `buildAliasInstance`'s arity-and-default
+logic into a helper the class path also calls, so most of its diff is a move, and PR19 routes
+#956's existing comparison to that helper. None of the three designs anything new.
+
 ## Dependency graph
 
 A PR marked ✅ has merged, and the number after it is the merged pull request. An
@@ -1376,6 +1519,10 @@ PR13 (TS utility-type suite)               ── needs PR2, PR3b, PR4, PR7, PR1
  ├─► PR14 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
  │    └─► PR15 (new (…) members in obj type anns + ConstructorParameters<C>)
  └─► PR16 (null + undefined + NonNullable<T>)            ── also needs PR3b
+
+PR17 (default names only an earlier param) ── needs M7 only
+ └─► PR18 (class type-param defaults + arity at a type reference)
+      └─► PR19 (class type-argument bound checking)  ── also needs #956
 ```
 
 PR9b replaced PR9's regularity condition with the productivity condition, so PR9's
@@ -1386,9 +1533,9 @@ monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand 
 PR4's mapped types.
 
 Everything still open is PR8, PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR13, PR14, PR15,
-and PR16. PR8 is partly
-seeded — #922 threads an object's exactness through `keyof` — but the rest of the
-operators and the `Exact` / `Inexact` intrinsics are untouched.
+PR16, and Track F's PR17 through PR19. PR8 is partly seeded — #922 threads an object's
+exactness through `keyof` — but the rest of the operators and the `Exact` / `Inexact`
+intrinsics are untouched.
 
 The same graph in mermaid, with the operator-track critical path
 (PR1a → PR1b → PR3a → PR3b → PR4 → PR8) highlighted, merged PRs outlined in green,
@@ -1425,6 +1572,9 @@ graph TD
     PR14["PR14 (rest params in fn type anns + Parameters<F>)"]
     PR15["PR15 (new (…) in obj type anns + ConstructorParameters<C>)"]
     PR16["PR16 (null + undefined + NonNullable<T>)"]
+    PR17["PR17 (default names only an earlier param)"]
+    PR18["PR18 (class type-param defaults + arity at a type reference)"]
+    PR19["PR19 (class type-argument bound checking)"]
 
     M7 -.-> PR1a
     M75 -.-> PR10c
@@ -1470,6 +1620,8 @@ graph TD
     PR14 --> PR15
     PR13 --> PR16
     PR3b --> PR16
+    PR17 --> PR18
+    PR18 --> PR19
 
     linkStyle default stroke:#888
     style PR1a fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
@@ -1514,7 +1666,12 @@ graph TD
   close on its own. PR15's `InstanceType<C>` half is separable from PR14 and could run
   alongside it if the two are sequenced apart. PR16 hangs off PR13 directly and shares
   nothing with either, so it runs concurrently with both.
+- **Track F** — a chain, PR17 → PR18 → PR19, and nothing outside it waits on any of the
+  three, so it can run start to finish alongside any other track. The order is both the
+  dependency order and the value order: PR17 fixes a wrong answer, PR18 fixes a second one
+  and builds the helper, PR19 routes #956's comparison to it.
 
 The critical path is `M7 → PR1a → PR1b → PR3a → PR3b → PR4 → PR8`, and — for the
 async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13 → PR14 → PR15`.
-The follow-on group sits off both: nothing in PR1a–PR16 waits on PR9c–PR9f.
+The follow-on group sits off both: nothing in PR1a–PR16 waits on PR9c–PR9f, and nothing
+waits on Track F.
