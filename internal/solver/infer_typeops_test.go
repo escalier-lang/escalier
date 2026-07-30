@@ -3275,82 +3275,59 @@ func TestInferRequiredUncountableKeys(t *testing.T) {
 }
 
 // An indexed access reads an object through its index signature when the key names no declared
-// member. The result unions `undefined` onto the signature's value type, since the `?` the signature
-// must carry says the key may be absent. A declared member is always present, so reading one by name
-// carries no `undefined` even on an object that also has a signature.
+// member. Each case asserts the type the access reduces to, rather than checking a value against it:
+// `1` satisfies both `number` and `number | undefined`, so a constraint would not pin which one the
+// read produced.
 func TestInferIndexAccessThroughIndexSignature(t *testing.T) {
 	tests := []struct {
-		name    string
-		src     string
-		wantErr string // "" ⇒ expect no error
+		name         string
+		src          string
+		wantExpanded string
 	}{
 		{
 			name: "StringLiteralKeyReadsAsValueOrUndefined",
 			src: `
 				type Dict = {[K: string]?: number}
-				val v: Dict["anything"] = 1
+				type Result = Dict["anything"]
 			`,
+			wantExpanded: "number | undefined",
 		},
 		{
 			// The key set itself is a legal key, and reads the same way.
 			name: "PrimitiveKeyReadsAsValueOrUndefined",
 			src: `
 				type Dict = {[K: string]?: number}
-				val v: Dict[string] = 1
+				type Result = Dict[string]
 			`,
+			wantExpanded: "number | undefined",
 		},
 		{
-			// The `undefined` arm is real, so a target that cannot hold it rejects.
-			name: "UndefinedArmIsEnforced",
-			src: `
-				type Dict = {[K: string]?: number}
-				type Read = Dict["anything"]
-				fn f(x: Read) -> number { return x }
-			`,
-			wantErr: `cannot constrain undefined <: number`,
-		},
-		{
-			// A declared member wins over the signature and is always present.
+			// A declared member wins over the signature and is always present, so no `undefined`.
 			name: "DeclaredMemberReadsWithoutUndefined",
 			src: `
 				type Config = {name: string, [K: string]?: boolean}
-				fn f(x: Config["name"]) -> string { return x }
+				type Result = Config["name"]
 			`,
+			wantExpanded: "string",
 		},
 		{
 			name: "UndeclaredKeyFallsToTheSignature",
 			src: `
 				type Config = {name: string, [K: string]?: boolean}
-				val v: Config["other"] = true
+				type Result = Config["other"]
 			`,
-		},
-		{
-			// The key is not coerced to the key set's type, so a string key on a number signature
-			// is rejected rather than read as its digits.
-			name: "KeyOutsideTheKeySetRejected",
-			src: `
-				type ByIndex = {[K: number]?: string}
-				val v: ByIndex["a"] = "x"
-			`,
-			wantErr: `index signature of {[K: number]?: string} accepts a key of type number, not "a"`,
-		},
-		{
-			// Without a signature the object says nothing about keys it does not declare.
-			name: "NoIndexSignatureRejected",
-			src: `
-				type Obj = {a: number}
-				val v: Obj[string] = 1
-			`,
-			wantErr: `object {a: number} has no index signature to read a key of type string`,
+			wantExpanded: "boolean | undefined",
 		},
 		{
 			// A key set narrower than the object's own keys needs no signature, since every key in
-			// it is declared. This is the existing union-index distribution.
+			// it is declared. This is the existing union-index distribution, and it adds no
+			// `undefined` because every key it names is present.
 			name: "KeySubsetNeedsNoSignature",
 			src: `
 				type Obj = {a: number, b: string}
-				val v: Obj["a" | "b"] = 1
+				type Result = Obj["a" | "b"]
 			`,
+			wantExpanded: "number | string",
 		},
 		{
 			// An object may carry several signatures over different key sets. The key picks which
@@ -3358,15 +3335,46 @@ func TestInferIndexAccessThroughIndexSignature(t *testing.T) {
 			name: "StringKeyPicksTheStringSignature",
 			src: `
 				type Two = {[K: string]?: number, [J: number]?: boolean}
-				val v: Two["a"] = 1
+				type Result = Two["a"]
 			`,
+			wantExpanded: "number | undefined",
 		},
 		{
 			name: "NumberKeyPicksTheNumberSignature",
 			src: `
 				type Two = {[K: string]?: number, [J: number]?: boolean}
-				val v: Two[0] = true
+				type Result = Two[0]
 			`,
+			wantExpanded: "boolean | undefined",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// An indexed access the index signatures cannot describe is rejected. The diagnostic is minted
+// during reduction, which is what a constraint runs, so each case checks a value against the access
+// rather than reducing it directly.
+func TestInferIndexAccessRejected(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{
+			// The key is not coerced to the key set's type, so a string key on a number signature
+			// is rejected rather than read as its digits.
+			name: "KeyOutsideTheKeySet",
+			src: `
+				type ByIndex = {[K: number]?: string}
+				val v: ByIndex["a"] = "x"
+			`,
+			wantErr: `index signature of {[K: number]?: string} accepts a key of type number, not "a"`,
 		},
 		{
 			// The message names every key set the access could have matched.
@@ -3377,14 +3385,28 @@ func TestInferIndexAccessThroughIndexSignature(t *testing.T) {
 			`,
 			wantErr: `index signature of {[K: string]?: number, [J: number]?: boolean} accepts a key of type string or number, not true`,
 		},
+		{
+			// Without a signature the object says nothing about keys it does not declare.
+			name: "NoIndexSignature",
+			src: `
+				type Obj = {a: number}
+				val v: Obj[string] = 1
+			`,
+			wantErr: `object {a: number} has no index signature to read a key of type string`,
+		},
+		{
+			// The `undefined` arm is not cosmetic: a target that cannot hold it rejects.
+			name: "UndefinedArmIsEnforced",
+			src: `
+				type Dict = {[K: string]?: number}
+				fn f(x: Dict["anything"]) -> number { return x }
+			`,
+			wantErr: `cannot constrain undefined <: number`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			if tt.wantErr == "" {
-				require.Empty(t, errs)
-				return
-			}
 			require.Len(t, errs, 1)
 			require.Equal(t, tt.wantErr, errs[0].Message())
 		})
