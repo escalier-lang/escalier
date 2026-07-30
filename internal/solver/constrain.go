@@ -228,7 +228,14 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 		// containsResidualOp: a reduced object grounds even when a field value is itself a residual,
 		// which reduces at its own site.
 		if obj, ok := reduced.(*soltype.ObjectType); ok && soltype.HasResidualElem(obj.Elems) {
-			return nil, nil, false
+			// A diagnostic still surfaces from an object that stayed residual. An index signature
+			// demanding a field at every key of an infinite set is uninhabited whichever way the
+			// constraint would have gone, so reporting it does not depend on the object grounding.
+			// The caller returns on a non-empty errs without reading the reduced type.
+			if len(e.errs) == 0 {
+				return nil, nil, false
+			}
+			return reduced, e.errs, true
 		}
 		return reduced, e.errs, true
 	default:
@@ -748,6 +755,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					}
 					continue
 				}
+				// An index-signature requirement names no single key, so it is checked against every
+				// property the sub carries rather than against one member.
+				if superIdx, ok := superElem.(*soltype.MappedElem); ok {
+					errs = append(errs, c.constrainIntoIndexSignature(sub, sup, superIdx, seen, mutCtx)...)
+					continue
+				}
 				// A method, getter, or setter requirement, carried only by a class value,
 				// checks against the sub's member by variance instead of panicking in AsProperty.
 				if _, isProp := superElem.(*soltype.PropertyElem); !isProp {
@@ -757,6 +770,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				superProp := soltype.AsProperty(superElem) // every remaining elem is a property
 				subProp, ok := sub.Prop(superProp.Name)
 				if !ok {
+					if subIdx, has := c.indexSignatureFor(sub, strLitKey(superProp.Name), seen); has {
+						// The sub declares no field under this name, but an index signature whose
+						// key set accepts the name supplies it. The key may still be absent at
+						// runtime, which makes the signature's contribution optional and puts this
+						// on the same three branches as an optional sub property below.
+						if fieldRead {
+							errs = append(errs, c.constrain(subIdx.Value, superProp.Type, seen, mutCtx)...)
+							errs = append(errs, c.constrain(&soltype.UndefinedType{}, superProp.Type, seen, mutCtx)...)
+							continue
+						}
+						if !superProp.Optional {
+							errs = append(errs, &OptionalPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
+							continue
+						}
+						errs = append(errs, c.constrain(subIdx.Value, superProp.Type, seen, mutCtx)...)
+						continue
+					}
 					if !superProp.Optional {
 						errs = append(errs, &MissingPropertyError{Sub: sub, Super: sup, Name: superProp.Name})
 					}
@@ -794,8 +824,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// When the super is inexact, width tolerance is the complete rule and the
 			// depth loop above is all there is. When the super is exact, the sub may
 			// carry no extra properties and may not itself be inexact.
+			//
+			// An index signature on the super absorbs the keys of its own key set, so a property
+			// one of them accepts is not extra. A property no signature accepts still is, which is
+			// why `{a: 1}` stays an excess property against `{[J: number]?: boolean}`. An object
+			// carrying a signature over `string` absorbs every property name and so tolerates width
+			// the way inexactness does.
 			if !sup.Inexact {
-				if sub.Inexact {
+				if sub.Inexact && len(sup.IndexSignatures()) == 0 {
 					errs = append(errs, &InexactIntoExactError{Sub: sub, Super: sup})
 				}
 				for _, subElem := range sub.Elems {
@@ -807,9 +843,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					if !ok {
 						continue
 					}
-					if _, ok := sup.Prop(subProp.Name); !ok {
-						errs = append(errs, &ExtraPropertyError{Sub: sub, Super: sup, Name: subProp.Name})
+					if _, ok := sup.Prop(subProp.Name); ok {
+						continue
 					}
+					if _, absorbed := c.indexSignatureFor(sup, strLitKey(subProp.Name), seen); absorbed {
+						continue
+					}
+					errs = append(errs, &ExtraPropertyError{Sub: sub, Super: sup, Name: subProp.Name})
 				}
 			}
 			return errs
@@ -1233,6 +1273,51 @@ func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.
 		return nil, false, true
 	}
 	return nil, false, true
+}
+
+// constrainIntoIndexSignature checks an object against a requirement like `{[K: string]?: number}`:
+// every key the sub carries must hold the signature's type, covariantly. Two kinds of key are left
+// to something else and skipped here:
+//
+//   - a key the super also declares as a property, which the depth loop has already checked against
+//     that declaration;
+//   - a key outside this signature's key set, which a sibling signature over another key set covers.
+//
+// Inside a `mut` wrapper the keys are invariant and a readonly source cannot fill them. A method,
+// getter, or setter is passed over: whether a callable member satisfies a value-typed signature is
+// escalier-lang/escalier#864.
+func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, superIdx *soltype.MappedElem, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+	writable := mutCtx && superIdx.Readonly != soltype.ModAdd
+	var errs []SolverError
+	for _, subElem := range sub.Elems {
+		switch subElem := subElem.(type) {
+		case *soltype.PropertyElem:
+			if _, declared := sup.Prop(subElem.Name); declared {
+				continue
+			}
+			if !c.condExtends(strLitKey(subElem.Name), superIdx.Keys, seen) {
+				continue
+			}
+			errs = append(errs, c.constrain(subElem.Type, superIdx.Value, seen, mutCtx)...) // covariant read view
+			if writable {
+				if subElem.Readonly {
+					errs = append(errs, &ReadonlyFieldSubtypeError{Field: subElem.Name})
+					continue
+				}
+				errs = append(errs, c.constrain(superIdx.Value, subElem.Type, seen, mutCtx)...) // contravariant write view
+			}
+		case *soltype.MappedElem:
+			errs = append(errs, c.constrain(subElem.Value, superIdx.Value, seen, mutCtx)...)
+			if writable {
+				if subElem.Readonly == soltype.ModAdd {
+					errs = append(errs, &ReadonlyFieldSubtypeError{Field: subElem.Key.Name})
+					continue
+				}
+				errs = append(errs, c.constrain(superIdx.Value, subElem.Value, seen, mutCtx)...)
+			}
+		}
+	}
+	return errs
 }
 
 // constrainObjMember checks a method, getter, or setter requirement on an object super

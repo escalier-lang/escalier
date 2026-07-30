@@ -235,6 +235,51 @@ type TemplateLitTooComplexError struct {
 	site     ast.Node     // M2.5: constraint node fallback
 }
 
+// RequiredUncountableKeysError fires when a mapped type demands a field at every key of a key set
+// that names infinitely many keys, as in `{[K: string]: number}`. No object carries infinitely many
+// fields, so the type is uninhabited and nothing can ever satisfy it. Only the `?`-adding form is
+// meaningful over such a key set, and that form is the index signature.
+//
+// It is minted during reduction, once the key set has grounded. A mapped type whose key set is still
+// abstract, such as one over a bare type parameter, is expected to stay symbolic and reports nothing.
+// The error carries the offending member so a consumer can render the form the source wrote.
+type RequiredUncountableKeysError struct {
+	Mapped *soltype.MappedElem
+	prov   NodeResolver
+	site   ast.Node
+}
+
+// IndexSignatureKeyError fires when an indexed access reads an object with a key that none of its
+// index signatures accepts, as in `{[K: number]?: V}["a"]`. A signature describes the value at every
+// key of its own key set and says nothing about a key outside it, so the access resolves to nothing.
+// The key is not coerced to a set's type, so a string key on a number signature takes this error
+// rather than reading through as the number it spells.
+//
+// An object may carry several signatures over different key sets, so the message names each set it
+// could have matched. Like UnknownObjectKeyError it is minted during the reduction constrain
+// performs, and carries the indexed object and the offending key.
+type IndexSignatureKeyError struct {
+	Object *soltype.ObjectType
+	Index  soltype.Type
+	prov   NodeResolver
+	site   ast.Node
+}
+
+// NoIndexSignatureError fires when an indexed access reads an object with a ground key that names no
+// declared member and is not a string literal, as in `{a: number}[string]`. Such a key selects no
+// single member, and without an index signature the object says nothing about the keys it does not
+// declare, so the access resolves to nothing. The fix is an index signature, which is what gives an
+// object a type at every key of a set.
+//
+// A key that has not grounded may still reduce to a literal naming a declared member, so it leaves
+// the access symbolic rather than reaching here.
+type NoIndexSignatureError struct {
+	Object *soltype.ObjectType
+	Index  soltype.Type
+	prov   NodeResolver
+	site   ast.Node
+}
+
 // MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
 // borrow but the super is mutable: writing through the mutable target would mutate a
 // value the source only lent out as read-only, so an immutable reference cannot fill
@@ -405,33 +450,36 @@ type TypeParamNotProducibleError struct {
 	Node  ast.Node
 }
 
-func (*CannotConstrainError) isSolverError()        {}
-func (*MutFieldError) isSolverError()               {}
-func (*ReadonlyFieldError) isSolverError()          {}
-func (*ReadonlyFieldSubtypeError) isSolverError()   {}
-func (*FuncArityMismatchError) isSolverError()      {}
-func (*TupleLengthMismatchError) isSolverError()    {}
-func (*SpreadNotTupleError) isSolverError()         {}
-func (*InexactTupleSpreadError) isSolverError()     {}
-func (*SpreadNotObjectError) isSolverError()        {}
-func (*MissingPropertyError) isSolverError()        {}
-func (*InexactIntoExactError) isSolverError()       {}
-func (*InexactTupleIntoExactError) isSolverError()  {}
-func (*InexactUnionIntoExactError) isSolverError()  {}
-func (*ExtraPropertyError) isSolverError()          {}
-func (*ExtraElementError) isSolverError()           {}
-func (*OptionalPropertyError) isSolverError()       {}
-func (*UnknownObjectKeyError) isSolverError()       {}
-func (*TupleIndexOutOfRangeError) isSolverError()   {}
-func (*TemplateLitTooComplexError) isSolverError()  {}
-func (*MutabilityMismatchError) isSolverError()     {}
-func (*BorrowEscapeError) isSolverError()           {}
-func (*ClassIntoExactObjectError) isSolverError()   {}
-func (*StructuralIntoClassError) isSolverError()    {}
-func (*NonClassSuperError) isSolverError()          {}
-func (*CannotExtendFinalClassError) isSolverError() {}
-func (*VarianceMismatchError) isSolverError()       {}
-func (*TypeParamNotProducibleError) isSolverError() {}
+func (*CannotConstrainError) isSolverError()         {}
+func (*MutFieldError) isSolverError()                {}
+func (*ReadonlyFieldError) isSolverError()           {}
+func (*ReadonlyFieldSubtypeError) isSolverError()    {}
+func (*FuncArityMismatchError) isSolverError()       {}
+func (*TupleLengthMismatchError) isSolverError()     {}
+func (*SpreadNotTupleError) isSolverError()          {}
+func (*InexactTupleSpreadError) isSolverError()      {}
+func (*SpreadNotObjectError) isSolverError()         {}
+func (*MissingPropertyError) isSolverError()         {}
+func (*InexactIntoExactError) isSolverError()        {}
+func (*InexactTupleIntoExactError) isSolverError()   {}
+func (*InexactUnionIntoExactError) isSolverError()   {}
+func (*ExtraPropertyError) isSolverError()           {}
+func (*ExtraElementError) isSolverError()            {}
+func (*OptionalPropertyError) isSolverError()        {}
+func (*UnknownObjectKeyError) isSolverError()        {}
+func (*TupleIndexOutOfRangeError) isSolverError()    {}
+func (*TemplateLitTooComplexError) isSolverError()   {}
+func (*RequiredUncountableKeysError) isSolverError() {}
+func (*IndexSignatureKeyError) isSolverError()       {}
+func (*NoIndexSignatureError) isSolverError()        {}
+func (*MutabilityMismatchError) isSolverError()      {}
+func (*BorrowEscapeError) isSolverError()            {}
+func (*ClassIntoExactObjectError) isSolverError()    {}
+func (*StructuralIntoClassError) isSolverError()     {}
+func (*NonClassSuperError) isSolverError()           {}
+func (*CannotExtendFinalClassError) isSolverError()  {}
+func (*VarianceMismatchError) isSolverError()        {}
+func (*TypeParamNotProducibleError) isSolverError()  {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -532,6 +580,28 @@ func (e *TemplateLitTooComplexError) Span() ast.Span {
 	return spanOf(e.prov, e.Template, e.site)
 }
 func (e *TemplateLitTooComplexError) Related() []ast.Span { return nil }
+
+func (e *RequiredUncountableKeysError) Span() ast.Span {
+	// The key set is what makes the mapped type uninhabited, and it is the operand the source wrote
+	// a span for. Blame it, else the constraint site. The mapped member itself is not a Type, so it
+	// resolves through no node of its own.
+	return spanOf(e.prov, e.Mapped.Keys, e.site)
+}
+func (e *RequiredUncountableKeysError) Related() []ast.Span { return nil }
+
+func (e *IndexSignatureKeyError) Span() ast.Span {
+	// The indexed object is the offending value, matching UnknownObjectKeyError's blame; else the
+	// constraint site.
+	return spanOf(e.prov, e.Object, e.site)
+}
+func (e *IndexSignatureKeyError) Related() []ast.Span { return nil }
+
+func (e *NoIndexSignatureError) Span() ast.Span {
+	// The indexed object is the offending value, matching UnknownObjectKeyError's blame; else the
+	// constraint site.
+	return spanOf(e.prov, e.Object, e.site)
+}
+func (e *NoIndexSignatureError) Related() []ast.Span { return nil }
 
 func (e *MutabilityMismatchError) Span() ast.Span {
 	// The immutable source borrow is the actual value; blame it, degrade to the
@@ -1723,6 +1793,31 @@ func (e *TupleIndexOutOfRangeError) Message() string {
 		strconv.FormatFloat(e.Index, 'f', -1, 64), soltype.Print(e.Tuple))
 }
 
+func (e *RequiredUncountableKeysError) Message() string {
+	keys := describe(e.Mapped.Keys)
+	fixed := &soltype.MappedElem{
+		Key: e.Mapped.Key, Keys: e.Mapped.Keys, Value: e.Mapped.Value,
+		Optional: soltype.ModAdd, Readonly: e.Mapped.Readonly,
+	}
+	return fmt.Sprintf("no object has a field at every key of %s, so %s is uninhabited; write %s instead",
+		keys, describeMapped(e.Mapped), describeMapped(fixed))
+}
+
+func (e *IndexSignatureKeyError) Message() string {
+	sigs := e.Object.IndexSignatures()
+	accepted := make([]string, len(sigs))
+	for i, sig := range sigs {
+		accepted[i] = describe(sig.Keys)
+	}
+	return fmt.Sprintf("index signature of %s accepts a key of type %s, not %s",
+		soltype.Print(e.Object), strings.Join(accepted, " or "), describe(e.Index))
+}
+
+func (e *NoIndexSignatureError) Message() string {
+	return fmt.Sprintf("object %s has no index signature to read a key of type %s",
+		soltype.Print(e.Object), describe(e.Index))
+}
+
 func (e *TemplateLitTooComplexError) Message() string {
 	return fmt.Sprintf("template literal type %s is too complex to reduce; it expands to more than %d members",
 		soltype.Print(e.Template), maxTemplateLitCombinations)
@@ -1820,14 +1915,15 @@ func (e *ReadonlyFieldSubtypeError) Message() string {
 // output as user-facing Escalier syntax (see m1-implementation-plan §2.2). It
 // lives in solver because it walks bound-carrying variables, and its wording
 // matches the spike's verbatim so test assertions stay stable.
-// describeMapped renders a `[K]: V for K in Keys` member in describe's raw mid-constrain form, so a
-// rejected constraint over a symbolic mapped type names it in full rather than the default `?`. The
-// enclosing object supplies the braces and any trailing `...`.
+// describeMapped renders a mapped member in describe's raw mid-constrain form, so a rejected
+// constraint over a symbolic mapped type names it in full rather than the default `?`. It picks
+// between the shorthand and the long form on the same rule soltype's printMapped uses, so one member
+// reads the same in a diagnostic as it does in a printed type. The enclosing object supplies the
+// braces and any trailing `...`.
 //
 // The modifiers render too, because equalObjElem reads them when it decides whether two inert mapped
 // members are equal. Omitting one lets a rejection print both sides identically, so
-// `{[K]: T[K] for K in keyof T}` against its `?`-adding twin would read as a type failing to satisfy
-// itself.
+// `{[K: keyof T]: T[K]}` against its `?`-adding twin would read as a type failing to satisfy itself.
 func describeMapped(t *soltype.MappedElem) string {
 	out := ""
 	switch t.Readonly {
@@ -1837,19 +1933,24 @@ func describeMapped(t *soltype.MappedElem) string {
 		out += "-readonly "
 	case soltype.ModNone:
 	}
-	if t.Name != nil {
-		out += "[" + describe(t.Name) + "]"
+	shorthand := soltype.MappedShorthandForm(t)
+	if shorthand {
+		out += "[" + t.Key.Name + ": " + describe(t.Keys) + "]"
+		out += soltype.ShorthandOptionalMarker(t.Optional)
 	} else {
-		out += "[" + t.Key.Name + "]"
+		out += "[" + describe(t.Name) + "]"
+		switch t.Optional {
+		case soltype.ModAdd:
+			out += "+?"
+		case soltype.ModRemove:
+			out += "-?"
+		case soltype.ModNone:
+		}
 	}
-	switch t.Optional {
-	case soltype.ModAdd:
-		out += "+?"
-	case soltype.ModRemove:
-		out += "-?"
-	case soltype.ModNone:
+	out += ": " + describe(t.Value)
+	if !shorthand {
+		out += " for " + t.Key.Name + " in " + describe(t.Keys)
 	}
-	out += ": " + describe(t.Value) + " for " + t.Key.Name + " in " + describe(t.Keys)
 	if t.Check != nil && t.Extends != nil {
 		out += " if " + describe(t.Check) + " : " + describe(t.Extends)
 	}

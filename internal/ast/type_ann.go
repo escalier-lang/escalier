@@ -283,6 +283,10 @@ type MappedTypeAnn struct {
 	ReadOnly *MappedModifier
 	Check    TypeAnn
 	Extends  TypeAnn
+	// Shorthand records that the source wrote the key constraint inside the brackets as
+	// `[K: Keys]: Value` rather than in a trailing `for K in Keys`. The two spellings lower to the
+	// same type, so this only tells the printer which one to write back.
+	Shorthand bool
 }
 type IndexParamTypeAnn struct {
 	Name       string

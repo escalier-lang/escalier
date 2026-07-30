@@ -1375,18 +1375,28 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 				p.writeString("-readonly ")
 			}
 		}
-		// Print [name]
+		// Print [name], or [key: constraint] for the shorthand. This echoes the spelling the
+		// source used rather than normalizing to one, the way a formatter preserves the input.
 		p.writeString("[")
-		if e.Name != nil {
+		switch {
+		case e.Shorthand:
+			p.writeString(e.TypeParam.Name)
+			p.writeString(": ")
+			p.printTypeAnn(e.TypeParam.Constraint)
+		case e.Name != nil:
 			p.printTypeAnn(e.Name)
-		} else {
+		default:
 			p.writeString(e.TypeParam.Name)
 		}
 		p.writeString("]")
-		// Print optional modifier
+		// Print optional modifier. The shorthand spells the adding form `?`, the long form `+?`.
 		if e.Optional != nil {
 			if *e.Optional == ast.MMAdd {
-				p.writeString("+?")
+				if e.Shorthand {
+					p.writeString("?")
+				} else {
+					p.writeString("+?")
+				}
 			} else if *e.Optional == ast.MMRemove {
 				p.writeString("-?")
 			}
@@ -1394,11 +1404,13 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		// Print : value
 		p.writeString(": ")
 		p.printTypeAnn(e.Value)
-		// Print for K in constraint
-		p.writeString(" for ")
-		p.writeString(e.TypeParam.Name)
-		p.writeString(" in ")
-		p.printTypeAnn(e.TypeParam.Constraint)
+		// The shorthand already wrote the key and its constraint inside the brackets
+		if !e.Shorthand {
+			p.writeString(" for ")
+			p.writeString(e.TypeParam.Name)
+			p.writeString(" in ")
+			p.printTypeAnn(e.TypeParam.Constraint)
+		}
 		// Print if clause if present
 		if e.Check != nil && e.Extends != nil {
 			p.writeString(" if ")

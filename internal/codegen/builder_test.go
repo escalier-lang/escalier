@@ -1183,6 +1183,58 @@ func TestBuildTypeAnn_MultiMappedWithOverloadedMethod(t *testing.T) {
 	)
 }
 
+// TestBuildTypeAnn_MappedWithNamedProperty pins that a single mapped member sharing an object with
+// an ordinary property still splits into an intersection. TypeScript requires a mapped type to be
+// the sole member of its type literal, so emitting both into one literal produces the error
+// "A mapped type may not declare properties or methods" (TS7061) and the declaration file does not
+// compile. Escalier has no such restriction, so this shape reaches the emitter from ordinary source.
+//
+// A mapped member on its own is already a valid literal, so it must NOT be wrapped.
+func TestBuildTypeAnn_MappedWithNamedProperty(t *testing.T) {
+	builder := &Builder{tempId: 0, depGraph: nil}
+
+	optional := type_system.MMAdd
+	indexSig := &type_system.MappedElem{
+		TypeParam: &type_system.IndexParam{
+			Name:       "K",
+			Constraint: type_system.NewStrPrimType(nil),
+		},
+		Value:    type_system.NewBoolPrimType(nil),
+		Optional: &optional,
+	}
+	name := type_system.NewPropertyElem(
+		type_system.NewStrKey("name"), type_system.NewStrPrimType(nil))
+
+	tests := []struct {
+		name     string
+		elems    []type_system.ObjTypeElem
+		expected string
+	}{
+		{
+			name:     "MappedAloneStaysOneLiteral",
+			elems:    []type_system.ObjTypeElem{indexSig},
+			expected: `{[K in string]?: boolean}`,
+		},
+		{
+			name:     "MappedBesideAPropertySplits",
+			elems:    []type_system.ObjTypeElem{name, indexSig},
+			expected: `{[K in string]?: boolean} & {name: string}`,
+		},
+		{
+			name:     "PropertyOnlyStaysOneLiteral",
+			elems:    []type_system.ObjTypeElem{name},
+			expected: `{name: string}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			printer := NewPrinter()
+			printer.PrintTypeAnn(builder.buildTypeAnn(type_system.NewObjectType(nil, test.elems)))
+			require.Equal(t, test.expected, printer.Output)
+		})
+	}
+}
+
 // Helper function to parse a declaration from a source string
 func parseDecl(t *testing.T, source string) ast.Decl {
 	astSource := &ast.Source{
