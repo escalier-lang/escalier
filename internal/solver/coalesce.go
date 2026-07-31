@@ -62,7 +62,8 @@ func coalesceKeeping(t soltype.Type, pol soltype.Polarity, keep set.Set[*soltype
 //
 // A binder is OPEN while the walk is inlining the variable it stands for. Re-entering that variable
 // is the cycle the knot represents. ref hands back a μ-variable so the body names itself there
-// rather than degenerating to never or unknown, and tie wraps the finished body in a RecursiveType.
+// rather than degenerating to `never` or `unknown`, and tie wraps the finished body in a
+// RecursiveType.
 // A binder that no cycle reached names nothing, so tie returns such a body unwrapped.
 type muBinders struct {
 	// open holds the binder for each variable currently on the walk's path. Both coalescers guard
@@ -188,7 +189,7 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	c.seen.Add(v)
 	defer c.seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
 	binder := c.mu.push(v, pol)
-	defer c.mu.pop(v) // path-scoped like seen, so a binder is open only while v is on the path
+	defer c.mu.pop(v) // path-scoped like `seen`, so a binder is open only while v is on the path
 	// Uniform inline: drop the variable, keep only its (recursively coalesced)
 	// bounds in the current polarity.
 	bs := v.BoundsAt(pol)
@@ -485,7 +486,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	c.seen.Add(rep)
 	defer c.seen.Remove(rep) // path-scoped: pop on the way back up (panic-safe)
 	binder := c.mu.push(rep, pol)
-	defer c.mu.pop(rep) // path-scoped like seen, so a binder is open only while rep is on the path
+	defer c.mu.pop(rep) // path-scoped like `seen`, so a binder is open only while rep is on the path
 
 	// v's own bounds, not the representative's.
 	bs := v.BoundsAt(pol)

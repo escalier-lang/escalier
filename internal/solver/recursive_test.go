@@ -18,7 +18,7 @@ func muKnot(id int, name string, body func(ref *soltype.RecursiveVarType) soltyp
 
 // TestInferRecursiveRendersMuKnot is the milestone's headline case. A cyclic bound graph coalesces
 // to a μ-knot, so a recursive position names the shape it stands for rather than collapsing to the
-// polarity identity, which is never in covariant position and unknown in contravariant.
+// polarity identity. That identity is `never` in covariant position and `unknown` in contravariant.
 //
 // Each source builds the cycle a different way:
 //
@@ -192,7 +192,7 @@ func TestCoalesceRecursiveVarPolarities(t *testing.T) {
 	t.Run("cycle through a contravariant position keeps the polarity identity", func(t *testing.T) {
 		// v's lower bound is `fn (v) -> number`, so the walk enters v covariantly and comes back to
 		// it contravariantly at the parameter. Inlining there would need v's UPPER bounds, which the
-		// body under construction does not hold, so the parameter renders unknown.
+		// body under construction does not hold, so the parameter renders `unknown`.
 		c := &Context{}
 		v := c.freshVar(0)
 		v.LowerBounds = []soltype.Type{&soltype.FuncType{

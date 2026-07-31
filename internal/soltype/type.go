@@ -914,7 +914,8 @@ type StringIntrinsicType struct {
 // a structural type.
 //
 // coalesce mints one when its walk re-enters an inference variable already on the current path, so a
-// recursive position renders as the shape it stands for rather than collapsing to never or unknown.
+// recursive position renders as the shape it stands for rather than collapsing to `never` or
+// `unknown`.
 // `fn f() { return {next: f()} }` infers `fn () -> {next: μX0.{next: X0}}`.
 type RecursiveType struct {
 	Binder *RecursiveVarType

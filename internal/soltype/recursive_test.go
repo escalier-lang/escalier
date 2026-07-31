@@ -166,8 +166,8 @@ func TestAcceptRecursive(t *testing.T) {
 	})
 }
 
-// primSwapper rewrites every number to a string, so a visit that reaches a knot's body is visible
-// in the rendered result.
+// primSwapper rewrites every `number` to a `string`, so a visit that reaches a knot's body is
+// visible in the rendered result.
 type primSwapper struct{}
 
 func (s *primSwapper) EnterType(t Type, _ Polarity) EnterResult { return EnterResult{} }
