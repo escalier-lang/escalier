@@ -100,36 +100,60 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 		want    string
 	}{
 		{
-			name:    "reassigning a recursive binding compares two knots",
-			src:     "fn f() { return {next: f()} }\nfn h() { var a = f()\n a = f()\n return a }",
+			name: "reassigning a recursive binding compares two knots",
+			src: `
+				fn f() { return {next: f()} }
+				fn h() {
+					var a = f()
+					a = f()
+					return a
+				}
+			`,
 			binding: "h",
 			want:    "fn () -> {next: μX0.{next: X0}}",
 		},
 		{
-			name:    "a member chain over a recursive result still renders a knot",
-			src:     "fn f() { return {next: f()} }\nval c = f().next.next",
+			name: "a member chain over a recursive result still renders a knot",
+			src: `
+				fn f() { return {next: f()} }
+				val c = f().next.next
+			`,
 			binding: "c",
 			want:    "μX0.{next: X0}",
 		},
 		{
-			name:    "a recursive result through a type parameter still renders a knot",
-			src:     "fn f() { return {next: f()} }\nfn id(x) { return x }\nval d = id(f())",
+			name: "a recursive result through a type parameter still renders a knot",
+			src: `
+				fn f() { return {next: f()} }
+				fn id(x) { return x }
+				val d = id(f())
+			`,
 			binding: "d",
 			want:    "{next: μX0.{next: X0}}",
 		},
 		{
 			// The tuple shape reaches the same reassignment path, so a coalesced knot over a tuple
 			// unfolds and closes the way one over an object does, through constrain's tuple arm.
-			name:    "reassigning a recursive tuple binding compares two knots",
-			src:     "fn f() { return [f()] }\nfn h() { var a = f()\n a = f()\n return a }",
+			name: "reassigning a recursive tuple binding compares two knots",
+			src: `
+				fn f() { return [f()] }
+				fn h() {
+					var a = f()
+					a = f()
+					return a
+				}
+			`,
 			binding: "h",
 			want:    "fn () -> [μX0.[X0]]",
 		},
 		{
 			// Destructuring is how a recursive tuple is read apart, since a value-level index
 			// expression is unsupported for any tuple, recursive or not.
-			name:    "destructuring a recursive tuple still renders a knot",
-			src:     "fn f() { return [f()] }\nval [inner] = f()",
+			name: "destructuring a recursive tuple still renders a knot",
+			src: `
+				fn f() { return [f()] }
+				val [inner] = f()
+			`,
 			binding: "inner",
 			want:    "μX0.[X0]",
 		},
