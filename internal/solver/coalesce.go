@@ -911,44 +911,93 @@ func equalType(a, b soltype.Type) bool {
 	return equalTypeWith(a, b, &alphaCtx{})
 }
 
+// bijection is a partial one-to-one correspondence between the bound names of two types
+// being compared, keyed by each name's integer id. It is the storage every kind of binder
+// in alphaCtx shares. aToB maps a left-side id to the right-side id it is bound to and
+// bToA maps back, so a lookup in either direction is a map hit. Both maps start nil and
+// are allocated by the first bind, which is what keeps a comparison over types carrying no
+// binder of that kind allocation-free.
+type bijection struct {
+	aToB map[int]int
+	bToA map[int]int
+}
+
+// bind records that left-side name a corresponds to right-side name b, allocating both
+// directions on the first call. Binding a name that already has a partner replaces that
+// partner.
+func (p *bijection) bind(a, b int) {
+	if p.aToB == nil {
+		p.aToB = map[int]int{}
+		p.bToA = map[int]int{}
+	}
+	p.aToB[a] = b
+	p.bToA[b] = a
+}
+
+// same reports whether a and b denote corresponding names. It applies the three-way rule
+// every binder kind repeats:
+//
+//  1. a is bound, so b must be the partner it was bound to.
+//  2. a is unbound but b is bound, so b already corresponds to some other left-side name
+//     and this pair is a mismatch.
+//  3. neither is bound, so the caller's `unbound` rule decides.
+func (p *bijection) same(a, b int, unbound func() bool) bool {
+	if j, ok := p.aToB[a]; ok {
+		return j == b
+	}
+	if _, ok := p.bToA[b]; ok {
+		return false
+	}
+	return unbound()
+}
+
+// sameByID is `same` with id equality as the `unbound` rule. A pair neither side has bound
+// matches when the two names drew the same id. That case arises when a reference is
+// compared away from the construct that binds it. Every binder kind uses this rule except
+// the type-parameter one, which falls back to pointer identity instead.
+func (p *bijection) sameByID(a, b int) bool {
+	return p.same(a, b, func() bool { return a == b })
+}
+
+// partner returns the right-side name a is bound to, if a is bound at all.
+func (p *bijection) partner(a int) (int, bool) {
+	j, ok := p.aToB[a]
+	return j, ok
+}
+
+// boundRight reports whether right-side name b is bound to some left-side name.
+func (p *bijection) boundRight(b int) bool {
+	_, ok := p.bToA[b]
+	return ok
+}
+
 // alphaCtx carries the bijections equalTypeWith uses to compare two types up to a
-// consistent renaming of their bound variables. tvAToB and tvBToA pair the positional
-// type parameters of two generic FuncTypes, bound at each function boundary so a
-// parameter's identity is its position rather than its variable id. lt pairs borrow
-// lifetimes for alphaEqualTypes. A nil lt selects pointer-identity lifetime equality,
-// the within-coalesce default equalType uses. The type-parameter maps start nil and are
-// allocated on the first binding, so the monomorphic common case allocates nothing.
+// consistent renaming of their bound variables. Each field pairs one kind of bound name.
+// lt pairs borrow lifetimes for alphaEqualTypes. A nil lt selects pointer-identity
+// lifetime equality, the within-coalesce default equalType uses.
 type alphaCtx struct {
-	lt     *ltPairing
-	tvAToB map[int]int
-	tvBToA map[int]int
-	// ltpAToB and ltpBToA pair the positional lifetime parameters of two generic
-	// FuncTypes, the lifetime-sort twin of tvAToB/tvBToA. They are bound at each
-	// function boundary so a lifetime parameter's identity is its position rather than
-	// its variable id. They are separate from lt. lt discovers a bijection over borrow
-	// lifetimes for alphaEqualTypes, while these are declared bindings over a function's
-	// own quantified lifetime params. They start nil and allocate on first binding, so
-	// the common lifetime-param-free case allocates nothing.
-	ltpAToB map[int]int
-	ltpBToA map[int]int
-	// inferAToB and inferBToA pair the `infer` declarations of two conditionals, bound when a pair
-	// of declaring clauses meets rather than at a declaration list, since a clause sits at an
-	// arbitrary depth inside an Extends operand. They start nil and allocate on the first pairing,
-	// so a comparison over types carrying no conditional allocates nothing.
-	inferAToB map[int]int
-	inferBToA map[int]int
-	// keyAToB and keyBToA pair the key bindings of two mapped types, bound when a pair of mapped
-	// types meets, the way bindTypeParams binds a function's parameters. They start nil and
-	// allocate on the first pairing, so a comparison over types carrying no mapped type allocates
-	// nothing.
-	keyAToB map[int]int
-	keyBToA map[int]int
-	// recAToB and recBToA pair the binders of two μ-knots, bound when a pair of knots meets, the
-	// way bindMappedKeys pairs two mapped types' keys. This bijection is what makes two knots
-	// equal up to a consistent renaming of their binders. They start nil and allocate on the first
-	// pairing, so a comparison over types carrying no knot allocates nothing.
-	recAToB map[int]int
-	recBToA map[int]int
+	lt *ltPairing
+	// tv pairs the positional type parameters of two generic FuncTypes, bound at each
+	// function boundary so a parameter's identity is its position rather than its
+	// variable id.
+	tv bijection
+	// ltp pairs the positional lifetime parameters of two generic FuncTypes, the
+	// lifetime-sort twin of tv. It is bound at each function boundary so a lifetime
+	// parameter's identity is its position rather than its variable id. It is separate
+	// from lt. lt discovers a bijection over borrow lifetimes for alphaEqualTypes, while
+	// ltp records declared bindings over a function's own quantified lifetime params.
+	ltp bijection
+	// `infer` pairs the `infer` declarations of two conditionals, bound when a pair of
+	// declaring clauses meets rather than at a declaration list, since a clause sits at
+	// an arbitrary depth inside an Extends operand.
+	infer bijection
+	// `key` pairs the key bindings of two mapped types, bound when a pair of mapped types
+	// meets, the way bindTypeParams binds a function's parameters.
+	key bijection
+	// `rec` pairs the binders of two μ-knots, bound when a pair of knots meets, the way
+	// bindMappedKeys pairs two mapped types' keys. This bijection is what makes two knots
+	// equal up to a consistent renaming of their binders.
+	rec bijection
 }
 
 // bindTypeParams pairs two generic FuncTypes' type parameters positionally, so every
@@ -957,28 +1006,18 @@ type alphaCtx struct {
 // comparison, so a parameter bound here is never confused with one from another
 // function.
 func (ctx *alphaCtx) bindTypeParams(as, bs []*soltype.TypeParam) {
-	if ctx.tvAToB == nil {
-		ctx.tvAToB = map[int]int{}
-		ctx.tvBToA = map[int]int{}
-	}
 	for i := range as {
-		ctx.tvAToB[as[i].Var.ID] = bs[i].Var.ID
-		ctx.tvBToA[bs[i].Var.ID] = as[i].Var.ID
+		ctx.tv.bind(as[i].Var.ID, bs[i].Var.ID)
 	}
 }
 
 // sameTypeVar reports whether two type variables are equal under the type-parameter
 // bijection. A variable bound as one side's parameter must map to the other's partner. A
 // variable bound on neither side is a shared or free variable and compares by pointer
-// identity, the rule the rest of equalType keys variables by.
+// identity, the rule the rest of equalType keys variables by. Pointer identity is why this
+// is the one kind that cannot use sameByID.
 func (ctx *alphaCtx) sameTypeVar(a, b *soltype.TypeVarType) bool {
-	if j, ok := ctx.tvAToB[a.ID]; ok {
-		return j == b.ID
-	}
-	if _, ok := ctx.tvBToA[b.ID]; ok {
-		return false // b is a bound parameter, a is not — mismatch
-	}
-	return a == b
+	return ctx.tv.same(a.ID, b.ID, func() bool { return a == b })
 }
 
 // sameInferDecl reports whether two `infer` nodes stand for corresponding declarations. Meeting a
@@ -990,22 +1029,13 @@ func (ctx *alphaCtx) sameTypeVar(a, b *soltype.TypeVarType) bool {
 // own, away from the conditional that declares its names — falls back to id equality, the rule
 // sameTypeVar applies to a variable bound on neither side.
 func (ctx *alphaCtx) sameInferDecl(a, b *soltype.InferType) bool {
-	if j, ok := ctx.inferAToB[a.ID]; ok {
-		return j == b.ID
-	}
-	if _, ok := ctx.inferBToA[b.ID]; ok {
-		return false // b's declaration corresponds to some other declaration on a's side
-	}
-	if !a.Binder {
-		return a.ID == b.ID
-	}
-	if ctx.inferAToB == nil {
-		ctx.inferAToB = map[int]int{}
-		ctx.inferBToA = map[int]int{}
-	}
-	ctx.inferAToB[a.ID] = b.ID
-	ctx.inferBToA[b.ID] = a.ID
-	return true
+	return ctx.infer.same(a.ID, b.ID, func() bool {
+		if !a.Binder {
+			return a.ID == b.ID
+		}
+		ctx.infer.bind(a.ID, b.ID)
+		return true
+	})
 }
 
 // bindMappedKeys pairs the key bindings of two mapped types, so every later reference to one side's
@@ -1013,12 +1043,7 @@ func (ctx *alphaCtx) sameInferDecl(a, b *soltype.InferType) bool {
 // therefore compare equal even though each drew its own binding id, the same reason
 // sameInferDecl pairs two conditionals' capture declarations.
 func (ctx *alphaCtx) bindMappedKeys(a, b *soltype.MappedKeyType) {
-	if ctx.keyAToB == nil {
-		ctx.keyAToB = map[int]int{}
-		ctx.keyBToA = map[int]int{}
-	}
-	ctx.keyAToB[a.ID] = b.ID
-	ctx.keyBToA[b.ID] = a.ID
+	ctx.key.bind(a.ID, b.ID)
 }
 
 // sameMappedKey reports whether two mapped-type key references stand for corresponding bindings
@@ -1027,13 +1052,7 @@ func (ctx *alphaCtx) bindMappedKeys(a, b *soltype.MappedKeyType) {
 // its key. That case falls back to id equality, the rule sameTypeVar applies to a variable bound on
 // neither side.
 func (ctx *alphaCtx) sameMappedKey(a, b *soltype.MappedKeyType) bool {
-	if j, ok := ctx.keyAToB[a.ID]; ok {
-		return j == b.ID
-	}
-	if _, ok := ctx.keyBToA[b.ID]; ok {
-		return false // b's binding corresponds to some other binding on a's side
-	}
-	return a.ID == b.ID
+	return ctx.key.sameByID(a.ID, b.ID)
 }
 
 // bindRecursiveBinders pairs the binders of two μ-knots, so every later reference to one side's
@@ -1041,12 +1060,7 @@ func (ctx *alphaCtx) sameMappedKey(a, b *soltype.MappedKeyType) bool {
 // compare equal even though each numbered its binders from zero, the same reason bindMappedKeys
 // pairs two mapped types' key bindings.
 func (ctx *alphaCtx) bindRecursiveBinders(a, b *soltype.RecursiveVarType) {
-	if ctx.recAToB == nil {
-		ctx.recAToB = map[int]int{}
-		ctx.recBToA = map[int]int{}
-	}
-	ctx.recAToB[a.ID] = b.ID
-	ctx.recBToA[b.ID] = a.ID
+	ctx.rec.bind(a.ID, b.ID)
 }
 
 // sameRecursiveVar reports whether two μ-variables stand for corresponding binders under the
@@ -1054,13 +1068,7 @@ func (ctx *alphaCtx) bindRecursiveBinders(a, b *soltype.RecursiveVarType) {
 // happens when a knot's body is compared on its own, away from the knot that binds it. That case
 // falls back to id equality, the rule sameMappedKey applies to an unpaired binding.
 func (ctx *alphaCtx) sameRecursiveVar(a, b *soltype.RecursiveVarType) bool {
-	if j, ok := ctx.recAToB[a.ID]; ok {
-		return j == b.ID
-	}
-	if _, ok := ctx.recBToA[b.ID]; ok {
-		return false // b's binder corresponds to some other binder on a's side
-	}
-	return a.ID == b.ID
+	return ctx.rec.sameByID(a.ID, b.ID)
 }
 
 // bindLifetimeParams pairs two generic FuncTypes' lifetime parameters positionally, the
@@ -1069,13 +1077,8 @@ func (ctx *alphaCtx) sameRecursiveVar(a, b *soltype.RecursiveVarType) bool {
 // the walk. Lifetime-variable ids are unique across the comparison, so a parameter bound
 // here is never confused with one from another function.
 func (ctx *alphaCtx) bindLifetimeParams(as, bs []*soltype.LifetimeParam) {
-	if ctx.ltpAToB == nil {
-		ctx.ltpAToB = map[int]int{}
-		ctx.ltpBToA = map[int]int{}
-	}
 	for i := range as {
-		ctx.ltpAToB[as[i].Var.ID] = bs[i].Var.ID
-		ctx.ltpBToA[bs[i].Var.ID] = as[i].Var.ID
+		ctx.ltp.bind(as[i].Var.ID, bs[i].Var.ID)
 	}
 }
 
@@ -1085,16 +1088,22 @@ func (ctx *alphaCtx) bindLifetimeParams(as, bs []*soltype.LifetimeParam) {
 // equal. A lifetime bound on neither side falls back to ltEqualWith, which keys a
 // LifetimeVar by pointer under a nil borrow pairing and by first-appearance index under
 // one.
+//
+// This reads the ltp bijection through partner and boundRight rather than through `same`,
+// because either side may be a lifetime with no variable id at all. 'static, an
+// owned-mutable nil, an anonymous marker, and a union are all such lifetimes. A
+// non-variable side is unbound by construction, and a bound variable facing one is a
+// mismatch.
 func (ctx *alphaCtx) sameLifetime(a, b soltype.Lifetime) bool {
 	av, aok := a.(*soltype.LifetimeVar)
 	bv, bok := b.(*soltype.LifetimeVar)
 	if aok {
-		if j, ok := ctx.ltpAToB[av.ID]; ok {
+		if j, ok := ctx.ltp.partner(av.ID); ok {
 			return bok && j == bv.ID
 		}
 	}
 	if bok {
-		if _, ok := ctx.ltpBToA[bv.ID]; ok {
+		if ctx.ltp.boundRight(bv.ID) {
 			return false // b is a bound lifetime parameter, a is not — mismatch
 		}
 	}
@@ -1104,15 +1113,14 @@ func (ctx *alphaCtx) sameLifetime(a, b soltype.Lifetime) bool {
 // ltPairing is the bijection alphaEqualTypes discovers between the lifetime variables of
 // two types compared up to renaming. equalTypeWith fills it in as it walks: the first
 // time it matches a borrow on each side it binds their lifetime variables together, and
-// every later occurrence must respect that binding. aToB and bToA are the two directions
-// of the bijection, keyed by lifetime-variable ID. aVars and bVars list the bound
-// variables in binding order, so index i on each side names one paired lifetime.
+// every later occurrence must respect that binding. The embedded bijection holds the two
+// directions, keyed by lifetime-variable ID. aVars and bVars list the bound variables in
+// binding order, so index i on each side names one paired lifetime.
 // sameOutlivesUnderPairing compares the outlives relation over those pairs. The pairing
 // sits on alphaCtx.lt. A nil lt selects pointer-identity lifetime equality, the
 // within-coalesce default equalType uses.
 type ltPairing struct {
-	aToB  map[int]int
-	bToA  map[int]int
+	bijection
 	aVars []*soltype.LifetimeVar
 	bVars []*soltype.LifetimeVar
 }
@@ -1122,19 +1130,16 @@ type ltPairing struct {
 // shares one lifetime across two positions from matching a side that uses two distinct
 // lifetimes there. Because the walk matches structure in the same order on both sides,
 // binding a and b together the first time they are matched pairs corresponding lifetimes
-// regardless of the order the two types happen to list their object properties.
+// regardless of the order the two types happen to list their object properties. A pair
+// neither side has bound is recorded, and appending to aVars and bVars keeps the binding
+// order sameOutlivesUnderPairing walks.
 func (p *ltPairing) pair(a, b *soltype.LifetimeVar) bool {
-	if j, ok := p.aToB[a.ID]; ok {
-		return j == b.ID
-	}
-	if _, ok := p.bToA[b.ID]; ok {
-		return false // b is already bound to a different left-side lifetime
-	}
-	p.aToB[a.ID] = b.ID
-	p.bToA[b.ID] = a.ID
-	p.aVars = append(p.aVars, a)
-	p.bVars = append(p.bVars, b)
-	return true
+	return p.same(a.ID, b.ID, func() bool {
+		p.bind(a.ID, b.ID)
+		p.aVars = append(p.aVars, a)
+		p.bVars = append(p.bVars, b)
+		return true
+	})
 }
 
 // equalTypeWith is equalType threading an alphaCtx. Its lt pairing keys a borrow's
