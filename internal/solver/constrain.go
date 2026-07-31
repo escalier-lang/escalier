@@ -102,6 +102,30 @@ type constraintKey struct {
 // than the derivation's own frame leaves the verdict conditional, and that is the comparison
 // constrain makes.
 //
+// Every pair enters assumed while its own derivation runs, so the question a frame answers on the
+// way out is whether to PROMOTE its pair to decided. This pair of recursive aliases produces all
+// three answers in one derivation:
+//
+//	type A = {p: number, next: {q: A}}
+//	type B = {p: number, next: {q: B}}
+//
+// Checking `A <: B` opens these frames, each numbered by how many entries assumed already holds:
+//
+//	A <: B                     opens frame 0
+//	  number <: number         opens frame 1, from the two `p` fields
+//	  {q: A} <: {q: B}         opens frame 1, from the two `next` fields
+//	    A <: B                 already open at depth 0, so it closes there
+//
+// Each frame then lands somewhere different:
+//
+//   - `number <: number` closed on no assumption at all, so nothing about it could depend on what
+//     was open around it. Promoted.
+//   - `{q: A} <: {q: B}` closed on `A <: B`, which sits above it at depth 0. It held only because
+//     that goal was open, so it is promoted to neither record, and a later sibling asking the same
+//     pair derives it again rather than replaying a success that was never discharged.
+//   - `A <: B` closed on itself, at its own depth rather than above it. Its derivation contains
+//     that goal's derivation, so re-running it anywhere reaches the same verdict. Promoted.
+//
 // A settled FAILURE joins decided alongside a settled success, so one mistake is reported once
 // rather than once per position that re-asks the pair. That makes a later ask of a failing pair
 // read as a success. The verdict survives that because the first ask's error propagates to the
