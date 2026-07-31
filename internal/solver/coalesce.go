@@ -923,12 +923,25 @@ type bijection struct {
 }
 
 // bind records that left-side name a corresponds to right-side name b, allocating both
-// directions on the first call. Binding a name that already has a partner replaces that
-// partner.
+// directions on the first call. Binding a name that already has a partner drops the old
+// pairing from both maps first, so neither name is left with a reciprocal entry pointing
+// at a partner it no longer has. Without that removal a stale bToA entry would make same
+// reject a later pair by rule 2, reporting a mismatch against a binding that had already
+// been replaced.
+//
+// The binder kinds alphaCtx pairs today never rebind a name to a different partner, since
+// each function boundary, mapped type, and μ-knot draws ids unique to the comparison. The
+// removal keeps the one-to-one invariant true for a kind that does.
 func (p *bijection) bind(a, b int) {
 	if p.aToB == nil {
 		p.aToB = map[int]int{}
 		p.bToA = map[int]int{}
+	}
+	if oldB, ok := p.aToB[a]; ok {
+		delete(p.bToA, oldB)
+	}
+	if oldA, ok := p.bToA[b]; ok {
+		delete(p.aToB, oldA)
 	}
 	p.aToB[a] = b
 	p.bToA[b] = a

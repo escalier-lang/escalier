@@ -962,3 +962,67 @@ func TestEqualTypeClassLifetimeArgs(t *testing.T) {
 		})
 	}
 }
+
+// TestBijectionRebindKeepsOneToOne pins the invariant bijection's doc comment states. A
+// rebind must drop the old pairing from both directions, so no name is left with a
+// reciprocal entry naming a partner it no longer has. A stale entry would make same
+// report a mismatch by rule 2 against a binding that had already been replaced.
+func TestBijectionRebindKeepsOneToOne(t *testing.T) {
+	idEq := func(a, b int) func() bool { return func() bool { return a == b } }
+
+	tests := []struct {
+		name  string
+		binds [][2]int
+		// probes are (a, b, want) triples checked with id equality as the unbound rule.
+		probes [][3]int
+	}{
+		{
+			name:  "left name rebound to a new partner",
+			binds: [][2]int{{1, 10}, {1, 20}},
+			probes: [][3]int{
+				{1, 20, 1}, // the current pairing holds
+				{1, 10, 0}, // the replaced partner no longer matches
+				{5, 10, 0}, // 10 is unbound now, so id equality decides and 5 != 10
+				{10, 10, 1},
+			},
+		},
+		{
+			name:  "right name rebound to a new left name",
+			binds: [][2]int{{1, 10}, {2, 10}},
+			probes: [][3]int{
+				{2, 10, 1}, // the current pairing holds
+				{1, 10, 0}, // 1 lost its partner and 10 is taken by 2
+				{1, 99, 0}, // 1 is unbound now, so id equality decides and 1 != 99
+				{1, 1, 1},
+			},
+		},
+		{
+			name:  "rebinding a pair to itself is idempotent",
+			binds: [][2]int{{1, 10}, {1, 10}},
+			probes: [][3]int{
+				{1, 10, 1},
+				{1, 11, 0},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var p bijection
+			for _, bind := range tt.binds {
+				p.bind(bind[0], bind[1])
+			}
+
+			require.Equal(t, len(p.aToB), len(p.bToA), "the two directions must stay the same size")
+			for a, b := range p.aToB {
+				require.Contains(t, p.bToA, b)
+				require.Equal(t, a, p.bToA[b], "bToA must name the left side aToB came from")
+			}
+
+			for _, probe := range tt.probes {
+				a, b, want := probe[0], probe[1], probe[2] == 1
+				require.Equal(t, want, p.same(a, b, idEq(a, b)), "same(%d, %d)", a, b)
+			}
+		})
+	}
+}
