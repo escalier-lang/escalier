@@ -1142,10 +1142,10 @@ func TestConstrainExtrusionBothPolarities(t *testing.T) {
 // --- The coinductive seen-set's two records ---
 
 // nestedRecursiveObj builds the cyclic object type `{p: pt, next: {q: <the outer object>}}` and
-// returns the outer object along with the inner `{q: ...}` one. Comparing two of these closes the
-// cycle at `q`. That sits one frame below the pair the two `next` values form, so the outer pair
-// closes on a goal it contains and the `next` pair closes on one above it. The caller supplies pt
-// so it can name the pair the two `p` values form, which closes on nothing at all.
+// returns both the outer object and the inner `{q: ...}` object. Comparing two of these closes the
+// cycle at `q`, one frame below the pair the two `next` values form. The outer pair therefore
+// closes on a goal it contains, and the `next` pair closes on one above it. The caller supplies
+// pt so it can name the pair the two `p` values form, which closes on nothing at all.
 func nestedRecursiveObj(pt soltype.Type) (outer, inner *soltype.ObjectType) {
 	outer = &soltype.ObjectType{}
 	inner = &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("q", outer)}}
@@ -1155,7 +1155,7 @@ func nestedRecursiveObj(pt soltype.Type) (outer, inner *soltype.ObjectType) {
 
 // The memo record admits a derivation's verdict only when that verdict is independent of which
 // goals happened to be open around it. The depth recorded alongside each assumption is what
-// decides that. `assumed` itself holds nothing once the top-level constraint returns, since an
+// decides that. `assumed` itself holds nothing once the top-level constraint returns, because an
 // assumption lives exactly as long as the derivation that made it.
 func TestConstrainSeenPairsMemoizeOnlyContextIndependentVerdicts(t *testing.T) {
 	c := &Context{}
@@ -1178,8 +1178,8 @@ func TestConstrainSeenPairsMemoizeOnlyContextIndependentVerdicts(t *testing.T) {
 }
 
 // A self-recursive alias comparison closes on its own goal and nothing shallower, so its verdict
-// is memoized and a sibling asking the same pair replays it. Both `x` and `y` present `A <: B`
-// here, and the `p` mismatch under it is reported once rather than once per field.
+// is memoized and a sibling asking the same pair replays it. Both `x` and `y` hold `A <: B` here,
+// and the `p` mismatch under it is reported once rather than once per field.
 func TestInferRecursiveMismatchAtSiblingFieldsReportsOnce(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type A = {p: number, next: A}
@@ -1190,11 +1190,11 @@ func TestInferRecursiveMismatchAtSiblingFieldsReportsOnce(t *testing.T) {
 	require.Equal(t, []string{"5:25-5:31: cannot constrain number <: string"}, messagesWithSpan(errs))
 }
 
-// The memo record keeps a derivation that asks one pair from two positions from costing twice.
-// Each `A<n>` here names `A<n-1>` at both of its fields, so the pair at level n-1 is asked twice
-// per level and re-deriving each ask would cost 2^depth constraints. The depth is set high enough
-// that losing the memo takes tens of seconds, which is the signal this test exists to give, and it
-// stays instant while the memo holds.
+// Without the memo record, a derivation that asks one pair from two positions pays for it twice.
+// Each `A<n>` here names `A<n-1>` at both of its fields, so every level asks the pair below it
+// twice. Re-deriving each of those asks doubles the work per level, and the whole comparison costs
+// 2^depth constraints. The depth is set high enough that losing the memo takes tens of seconds,
+// which is the signal this test exists to give. With the memo in place the test is instant.
 func TestInferDoublyReferencedAliasChainStaysLinear(t *testing.T) {
 	const depth = 24
 	src := "type A0 = number\ntype B0 = number\n"
@@ -1207,11 +1207,11 @@ func TestInferDoublyReferencedAliasChainStaysLinear(t *testing.T) {
 	require.Empty(t, messagesWithSpan(errs))
 }
 
-// A trial the caller discards must leave shallowestAssumed as it found it, so what the trial
-// closed coinductive assumptions on never reaches the caller's promotion check. The seen-set here
-// stands in for an enclosing frame holding the outer pair open at depth 0, and the trial re-asks
-// that pair through `q`, closing on it. Without the restore the field would come back holding 0,
-// and every frame above would decline to memoize a verdict it had settled on its own.
+// A trial the caller discards must leave shallowestAssumed as it found it, so the goals the trial
+// closed assumptions on never reach the caller's promotion check. The seen-set here stands in for
+// an enclosing frame holding the outer pair open at depth 0. The trial re-asks that pair through
+// `q` and closes on it. Without the restore the field would come back holding 0, and every frame
+// above would decline to memoize a verdict it had settled on its own.
 func TestTrialUnderProbeRestoresShallowestAssumed(t *testing.T) {
 	c := &Context{shallowestAssumed: math.MaxInt}
 	subP, superP := num(), num()

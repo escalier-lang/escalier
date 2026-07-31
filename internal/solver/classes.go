@@ -339,14 +339,14 @@ func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seen
 		for _, superType := range def.Supers {
 			s := substituteSuperArgs(def, sub, superType)
 			// A candidate whose walk fails has its errors discarded so the next candidate can be
-			// tried, so it walks over a clone of the seen-set. That is the discipline every arm
-			// swallowing a failure follows, the union-super and intersection-sub trials included.
-			// Nothing a discarded walk settled is then read by a later candidate, nor by the
-			// caller when a later candidate accepts and the walk reports no error at all.
+			// tried. It therefore walks over a clone of the seen-set, the discipline every arm
+			// that swallows a failure follows. Nothing a discarded walk settled is read by a
+			// later candidate, nor by the caller in the case where a later candidate accepts
+			// and the walk reports no error.
 			enclosingShallowest := c.shallowestAssumed
 			if len(c.constrainNominalWalk(s, super, seen.Clone(), walked)) == 0 {
-				// The accepting candidate is the derivation the caller keeps, so what it closed
-				// coinductive assumptions on stays folded in.
+				// The accepting candidate is the derivation the caller keeps, so the goals it
+				// closed assumptions on stay folded in.
 				return nil
 			}
 			c.shallowestAssumed = enclosingShallowest // a rejected candidate informs nothing

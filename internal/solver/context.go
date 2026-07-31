@@ -73,21 +73,21 @@ type Context struct {
 	// when that call returns, so the value always names the current path rather than the whole run.
 	unwrapDepth int
 
-	// shallowestAssumed is the depth of the shallowest goal the constraint derivation currently
-	// running has closed a coinductive assumption on, or math.MaxInt when it has closed on none.
-	// Each constrain frame takes the field over for its own derivation and folds the result back
-	// into the enclosing frame's on the way out, so the value a frame reads covers its own
-	// subtree. Comparing it against the frame's own depth is what decides whether the frame's
-	// verdict may be memoized — see seenPairs. Outside any derivation the field holds whatever the
-	// last one left, which nothing reads.
+	// shallowestAssumed is the depth of the shallowest goal that the running constraint derivation
+	// has closed a coinductive assumption on. It holds math.MaxInt when the derivation has closed
+	// on none. Each constrain frame takes the field over for its own derivation, then folds the
+	// result back into the enclosing frame's value on the way out, so what a frame reads covers
+	// its own subtree. Comparing that against the frame's own depth is what decides whether the
+	// frame's verdict may be memoized — see seenPairs. Outside any derivation the field holds
+	// whatever the last one left, which nothing reads.
 	//
-	// A branch whose failure the caller discards must not inform that caller's comparison, so
-	// every arm that rejects a branch restores the field alongside rolling the branch's bounds
-	// back: the losing trials in trialAndCommit, the throwaway-probe helpers beside it, and
-	// constrainNominalWalk's rejected superclass candidates. An accepted branch keeps its
-	// contribution, since the caller keeps that derivation. Folding a rejected branch in would
-	// only ever suppress a memo entry the caller could have kept, never admit one it could not,
-	// so the restore buys precision rather than soundness.
+	// A branch whose failure the caller discards must not inform that caller's comparison. Every
+	// arm that rejects a branch therefore restores the field alongside rolling the branch's bounds
+	// back. Those arms are the losing trials in trialAndCommit, the throwaway-probe helpers beside
+	// it, and constrainNominalWalk's rejected superclass candidates. An accepted branch keeps its
+	// contribution, since the caller keeps that derivation. Folding a rejected branch in could
+	// only ever suppress a memo entry the caller had earned, never admit one it had not, so the
+	// restore buys precision rather than soundness.
 	shallowestAssumed int
 
 	// unionCommits maps an inference var that a union-super trial pinned by committing a bare

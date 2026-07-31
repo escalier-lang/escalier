@@ -294,14 +294,15 @@ func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError)
 		errs := trial(idx)
 		c.probe = p.parent
 		if !hasHardError(errs) {
-			// The winning trial is part of the derivation the caller keeps, so what it closed
-			// coinductive assumptions on stays folded into the caller's running minimum.
+			// The winning trial is part of the derivation the caller keeps, so the goals it
+			// closed assumptions on stay folded into the caller's running minimum.
 			p.Commit()
 			return true, idx, errs, nil
 		}
 		p.Discard()
-		// A rejected trial informs nothing. Restoring the minimum keeps its closes out of the
-		// caller's promotion check, the shallowestAssumed twin of rolling its bounds back.
+		// A rejected trial informs nothing. Restoring the minimum keeps the goals it closed
+		// assumptions on out of the caller's promotion check, the shallowestAssumed twin of
+		// rolling its bounds back.
 		c.shallowestAssumed = enclosingShallowest
 		trialErrs = append(trialErrs, errs)
 	}

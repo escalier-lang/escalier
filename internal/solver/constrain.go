@@ -77,36 +77,38 @@ type constraintKey struct {
 	mutCtx     bool
 }
 
-// seenPairs holds the two records of already-visited constraints that a derivation threads
-// through its recursion. A pair is skipped for two different reasons, and only one of them
-// asserts that the pair holds, so the two records are kept apart.
+// seenPairs holds two records of already-visited constraints, threaded through a derivation's
+// recursion. A pair is skipped for two different reasons, and only one of them asserts that the
+// pair holds, so the two records are kept apart.
 //
-//   - assumed holds every pair whose derivation is OPEN on the path from the top of the constraint
-//     down to here, and records with each one the depth of the frame that opened it. Skipping such
-//     a pair is the coinductive assumption that makes recursive subtyping terminate. It is a
-//     conditional success. The pair holds only if the goal that assumed it goes on to succeed, so
-//     an entry lives exactly as long as its derivation and is popped on the way back up. That is
-//     the Amadio–Cardelli path discipline, and coalesce's recursion guard already follows it.
-//   - decided holds the pairs an earlier derivation SETTLED context-independently, meaning it
-//     used no assumption about a goal outside itself. Skipping such a pair replays a verdict
-//     already reached, so the entry outlives the derivation that made it. This memo table earns
-//     its keep on an alias whose body names the alias below it twice. `type A24 = {a: A23, b: A23}`
-//     over a chain of such aliases asks the pair at level 23 from both fields on every level, so
-//     re-deriving each ask costs 2^depth constraints.
+//   - assumed holds every pair whose derivation is OPEN on the path from the top of the
+//     constraint down to here. Each entry also records the depth of the frame that opened it.
+//     Skipping such a pair is the coinductive assumption that makes recursive subtyping
+//     terminate. It is a conditional success. The pair holds only if the goal that assumed it
+//     goes on to succeed, so an entry lives exactly as long as its derivation and is popped on
+//     the way back up. That is the Amadio–Cardelli path discipline, and coalesce's recursion
+//     guard already follows it.
+//   - decided holds the pairs an earlier derivation settled on its own terms, using no assumption
+//     about a goal outside itself. Skipping such a pair replays a verdict already reached, so the
+//     entry outlives the derivation that made it. This memo table earns its keep on a chain of
+//     aliases where each names the one below it twice, as `type A24 = {a: A23, b: A23}` does.
+//     Comparing two such chains asks the same pair at both fields of every level. Without the
+//     memo each of those asks is derived again, so the work doubles per level and the whole
+//     comparison costs 2^depth constraints.
 //
 // The recorded depths are what separate a conditional success from a settled verdict. A derivation
-// that closed only on goals lying inside itself contains those goals' own derivations. Re-running
-// it anywhere would reproduce every step and reach the same verdict. Only a close on a goal
-// SHALLOWER than the derivation's own frame leaves the verdict conditional, and that is the
-// comparison constrain makes.
+// that closed only on goals inside itself contains those goals' derivations too. Re-running it
+// anywhere would reproduce every step and reach the same verdict. Only a close on a goal SHALLOWER
+// than the derivation's own frame leaves the verdict conditional, and that is the comparison
+// constrain makes.
 //
 // A settled FAILURE joins decided alongside a settled success, so one mistake is reported once
 // rather than once per position that re-asks the pair. That makes a later ask of a failing pair
 // read as a success. The verdict survives that because the first ask's error propagates to the
-// top of the constraint. Three kinds of arm DISCARD a failure rather than propagating it, and all
-// of them hand the recursion a Clone, so no entry a discarded failure left behind is ever read.
-// They are the union-super and intersection-sub trials, constrainNominalWalk's superclass
-// candidates, and every probe. An arm added later that swallows errors has to clone too.
+// top of the constraint. Three kinds of arm DISCARD a failure rather than propagating it: the
+// union-super and intersection-sub trials, constrainNominalWalk's superclass candidates, and every
+// probe. All of them hand the recursion a Clone, so no entry a discarded failure left behind is
+// ever read. An arm added later that swallows errors has to clone too.
 type seenPairs struct {
 	assumed map[constraintKey]int
 	decided set.Set[constraintKey]
@@ -314,10 +316,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	if seen.decided.Contains(key) {
 		return nil
 	}
-	// The pair's own derivation is open further up this path, so closing on the assumption that
-	// it holds is what lets one recursive type be compared against another without unfolding
-	// either forever. Record how shallow the goal being assumed is, so every frame from here up
-	// to it learns that its own verdict depends on a goal it does not itself contain.
+	// The pair's own derivation is open further up this path. Closing on the assumption that it
+	// holds is what lets one recursive type be compared against another without unfolding either
+	// forever. Record how shallow the assumed goal is, so every frame between here and that goal
+	// learns that its own verdict depends on a goal it does not itself contain.
 	if goalDepth, ok := seen.assumed[key]; ok {
 		c.shallowestAssumed = min(c.shallowestAssumed, goalDepth)
 		return nil
@@ -331,18 +333,18 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	c.shallowestAssumed = math.MaxInt
 	defer func() {
 		delete(seen.assumed, key)
-		// Every goal this derivation closed on lies at or below its own frame, so the derivation
-		// contains those goals' derivations too and its verdict does not depend on what was open
-		// around it. A close on a shallower goal leaves the verdict conditional, and the pair is
-		// promoted to neither record.
+		// Every goal this derivation closed on lies at or below its own frame. The derivation
+		// therefore contains those goals' derivations too, and its verdict does not depend on
+		// what was open around it. A close on a shallower goal leaves the verdict conditional,
+		// and the pair is promoted to neither record.
 		if c.shallowestAssumed >= depth {
 			seen.decided.Add(key)
 		}
-		// A frame deeper than the root shares its numbering with the frames above it, so fold what
-		// it closed on into theirs. A frame at depth 0 was handed a fresh seenPairs instead, as a
-		// probe starting its own derivation hands it, so its depths number a different path.
-		// Folding those in would tell the surrounding frames they closed on goals they never saw,
-		// so restore what those frames had.
+		// A frame deeper than the root shares its numbering with the frames above it, so what it
+		// closed on folds into theirs. A frame at depth 0 was handed a fresh seenPairs instead,
+		// which is what a probe starting its own derivation gets. Its depths number a different
+		// path, so folding them in would tell the surrounding frames they closed on goals they
+		// never saw. Those frames get back exactly what they had.
 		if depth > 0 {
 			c.shallowestAssumed = min(enclosingShallowest, c.shallowestAssumed)
 		} else {

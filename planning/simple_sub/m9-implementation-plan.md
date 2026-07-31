@@ -543,18 +543,18 @@ and intersection-sub trial arms already defend against exactly this with `seen.C
 so the hazard is recognized; the ordinary structural recursion over object properties,
 tuple elements, and function parameters shares one `seen` unclone.
 
-Neither of the two options this PR was scoped around survives contact with what the
-add-only set is doing. Scoping every entry to the path, the literal spike discipline,
-costs an exponential blowup: an alias whose body names the alias below it twice, over a
-chain 24 deep, goes from instant to 41 seconds, because each level asks the same pair at
-both fields and nothing memoizes the answer. Declaring the persistence sound leaves a
-memo entry claiming a verdict that only held while some enclosing goal was open. So the
-two roles the one set was playing get split apart.
+Neither option this PR was scoped around survives contact with what the add-only set is
+doing. Scoping every entry to the path, the literal spike discipline, causes an
+exponential blowup. A chain of aliases 24 deep, where each names the one below it twice,
+goes from instant to 41 seconds, because every level asks the same pair at both fields
+and nothing memoizes the answer. Declaring the persistence sound is no better, since it
+leaves a memo entry claiming a verdict that only held while some enclosing goal was open.
+So the two roles the one set was playing get split apart.
 
 **Data structures.** A `seenPairs` carrying two records in place of the single
 `set.Set[constraintKey]` threaded through `constrain`. `assumed` holds the pairs whose
-derivations are open on the current path, each recorded with the depth of the frame that
-opened it, and is popped on the way back up. `decided` holds the pairs an earlier
+derivations are open on the current path, each carrying the depth of the frame that opened
+it, and is popped on the way back up. `decided` holds the pairs an earlier
 derivation settled without assuming anything outside itself, and outlives it as a memo
 table. `Context` gains `shallowestAssumed`, the depth of the shallowest goal the running
 derivation has closed an assumption on.
@@ -564,14 +564,18 @@ derivation made was on a goal at or below its own depth. Such a derivation conta
 goals' own derivations, so re-running it anywhere reproduces every step and reaches the
 same verdict. A close on a shallower goal leaves the verdict conditional and the pair in
 neither record, so a later sibling re-derives it rather than replaying a success that
-rested on an assumption nothing discharged. `constrainNominalWalk`'s superclass-candidate
-loop discards a failed candidate's errors while sharing one `seen`, the last arm in the
-package doing so, and moves to a clone like the union-super and intersection-sub trials.
+rested on an assumption nothing discharged.
+
+`constrainNominalWalk`'s superclass-candidate loop was the last arm in the package to
+discard a failed candidate's errors while sharing one `seen`. It moves to a clone, like
+the union-super and intersection-sub trials. Every arm that rejects a branch also restores
+`shallowestAssumed`, so a branch the caller threw away cannot inform the caller's own
+promotion check.
 
 `decided` records membership rather than the verdict, so a settled *failure* still reads
-as a success when re-asked. That keeps one mistake from being reported once per position
-and is safe because the first ask's error propagates to the top of the constraint, an
-invariant the clone-at-every-discard-site discipline is what upholds. Storing verdicts
+as a success when re-asked. That keeps one mistake from being reported once per position,
+and it is safe because the first ask's error propagates to the top of the constraint. The
+clone-at-every-discard-site discipline is what upholds that invariant. Storing verdicts
 instead would need diagnostic dedup downstream, which is a larger change than this PR.
 
 **Accept.** A pair whose derivation closed on a goal above it is absent from `decided`,
