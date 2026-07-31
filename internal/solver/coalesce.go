@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -56,6 +57,85 @@ func coalesceKeeping(t soltype.Type, pol soltype.Polarity, keep set.Set[*soltype
 	return coalesceLifetimes(c, pol) // D4: resolve borrow lifetimes to their display form
 }
 
+// muBinders turns a cycle in the bound graph into a finite μ-knot. Both coalescers embed it, so
+// that rule lives in one place.
+//
+// A binder is OPEN while the walk is inlining the variable it stands for. Re-entering that variable
+// is the cycle the knot represents. ref hands back a μ-variable so the body names itself there
+// rather than degenerating to `never` or `unknown`, and tie wraps the finished body in a
+// RecursiveType.
+// A binder that no cycle reached names nothing, so tie returns such a body unwrapped.
+type muBinders struct {
+	// open holds the binder for each variable currently on the walk's path. Both coalescers guard
+	// re-entry with a seen-set keyed by the variable alone, so a variable has at most one open
+	// binder and the polarity it was entered at rides on the binder itself.
+	open map[*soltype.TypeVarType]*muBinder
+	// count numbers the μ-variables this walk has minted, so nested knots draw distinct ids and
+	// distinct display names.
+	count int
+}
+
+// muBinder is one open μ-binder: the polarity its origin variable was entered at, and the
+// μ-variable a cycle back to that origin renders as.
+type muBinder struct {
+	pol soltype.Polarity
+	// v is minted on the first cycle that reaches this binder and stays nil otherwise, which is
+	// both the signal tie reads and the reason the ids count knots rather than path entries.
+	v *soltype.RecursiveVarType
+}
+
+// push opens the binder for a variable the walk is about to inline at pol. The caller pops it on
+// the way back up, so a binder is open exactly while its origin sits on the path.
+func (m *muBinders) push(v *soltype.TypeVarType, pol soltype.Polarity) *muBinder {
+	if m.open == nil {
+		m.open = map[*soltype.TypeVarType]*muBinder{}
+	}
+	b := &muBinder{pol: pol}
+	m.open[v] = b
+	return b
+}
+
+func (m *muBinders) pop(v *soltype.TypeVarType) {
+	delete(m.open, v)
+}
+
+// ref returns the μ-variable to stand in for a cycle back to v at pol, or nil when no knot can be
+// tied there. The polarity must match the one v's open binder was pushed at. A cycle reached at the
+// opposite polarity would name a body built from v's other bound direction, its lower bounds where
+// the position needs its uppers. The caller falls back to the polarity identity there.
+func (m *muBinders) ref(v *soltype.TypeVarType, pol soltype.Polarity) soltype.Type {
+	b, ok := m.open[v]
+	if !ok || b.pol != pol {
+		return nil
+	}
+	if b.v == nil {
+		b.v = &soltype.RecursiveVarType{ID: m.count, Name: muBinderName(m.count)}
+		m.count++
+	}
+	return b.v
+}
+
+// tie closes a knot over body, or returns body unchanged when no cycle named this binder. A body
+// that is nothing but the bare μ-variable pins no type at all, since `μX0.X0` has no unfolding that
+// mentions a type. It collapses to the polarity identity instead, the value an empty-bounds
+// position takes.
+func (b *muBinder) tie(pol soltype.Polarity, body soltype.Type) soltype.Type {
+	if b.v == nil {
+		return body
+	}
+	if body == soltype.Type(b.v) {
+		return emptyOf(pol)
+	}
+	return &soltype.RecursiveType{Binder: b.v, Body: body}
+}
+
+// muBinderName is the display name for the i-th μ-variable a walk mints: X0, X1, …, so a recursive
+// type renders `μX0.{next: X0}`. It follows typeParamName's generated-name convention on a
+// different letter, so a knot's binder never reads as a type parameter.
+func muBinderName(i int) string {
+	return "X" + strconv.Itoa(i)
+}
+
 // coalescer is the soltype-visitor form of coalesce. The structural arms and the
 // variance flip come from soltype.Accept (the shared rewriting visitor); the var
 // node — whose bounds are a side graph, not tree children — is the whole content
@@ -67,6 +147,9 @@ func coalesceKeeping(t soltype.Type, pol soltype.Polarity, keep set.Set[*soltype
 // the path is a genuine cycle.
 type coalescer struct {
 	seen set.Set[*soltype.TypeVarType]
+	// mu holds the μ-binder open for each variable on that same path, so a cycle back to one
+	// renders as a reference the finished body closes over as a knot.
+	mu muBinders
 	// keep holds variables retained symbolically rather than inlined to their bounds —
 	// a generic class's own type-parameter vars, set only by coalesceKeeping. It is nil
 	// for a plain coalesce, and a nil Set reads as empty, so the check below is inert on
@@ -90,16 +173,23 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	if c.keep.Contains(v) {
 		return soltype.EnterResult{Type: v, SkipChildren: true}
 	}
-	// Re-entering a variable already on the current path is an ungrounded recursive
-	// position (no concrete type breaks the cycle). It collapses to the polarity
-	// identity — the same value the position degenerates to when its bounds are
-	// empty — which keeps the inline walk total. A precise μ-bound rendering of
-	// such recursion is M3.
+	// Re-entering a variable already on the current path is a recursive position: the bound graph
+	// loops back on itself with no concrete type breaking the cycle. It renders as a reference to
+	// the μ-binder minted for that variable, so the finished body closes over the loop as a knot
+	// and `fn f() { return {next: f()} }` reads `fn () -> {next: μX0.{next: X0}}`. A cycle the
+	// binder cannot cover, meaning one reached at the opposite polarity, collapses to the polarity
+	// identity instead. See muBinders.ref. That is the same value the position takes when its
+	// bounds are empty.
 	if c.seen.Contains(v) {
+		if ref := c.mu.ref(v, pol); ref != nil {
+			return soltype.EnterResult{Type: ref, SkipChildren: true}
+		}
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
 	c.seen.Add(v)
 	defer c.seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
+	binder := c.mu.push(v, pol)
+	defer c.mu.pop(v) // path-scoped like `seen`, so a binder is open only while v is on the path
 	// Uniform inline: drop the variable, keep only its (recursively coalesced)
 	// bounds in the current polarity.
 	bs := v.BoundsAt(pol)
@@ -119,7 +209,8 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	if len(bounds) == 0 {
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	return soltype.EnterResult{Type: widenVar(v, pol, combine(pol, dedup(bounds), v.Open)), SkipChildren: true}
+	inlined := widenVar(v, pol, combine(pol, dedup(bounds), v.Open))
+	return soltype.EnterResult{Type: binder.tie(pol, inlined), SkipChildren: true}
 }
 
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
@@ -353,6 +444,8 @@ type schemeCoalescer struct {
 	// A binder with no such bound is absent here and keeps its original pointer.
 	cleaned map[*soltype.TypeVarType]*soltype.TypeVarType
 	seen    set.Set[*soltype.TypeVarType]
+	// mu is coalescer.mu's twin, keyed by the co-occurrence representative the seen-set uses.
+	mu muBinders
 }
 
 func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -376,16 +469,24 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	// parameter rather than a second name for the same type.
 	rep = c.displayBinder(rep)
 	if c.seen.Contains(rep) {
-		// A cycle back to a variable already on the path: a retained type parameter
-		// keeps its name (a rough μ-reference, refined in M3's precise μ-rendering),
-		// an inlined variable collapses to the polarity identity.
+		// A cycle back to a variable already on the path. A retained type parameter keeps its name.
+		// The quantifier already binds it, so the name IS the recursive reference and no separate
+		// binder is needed. An inlined variable has no name to come back to, so the cycle renders
+		// as a reference to the μ-binder minted for it and the finished body closes over the loop
+		// as a knot. A cycle the binder cannot cover, meaning one reached at the opposite polarity,
+		// collapses to the polarity identity. See muBinders.ref.
 		if retain {
 			return soltype.EnterResult{Type: rep, SkipChildren: true}
+		}
+		if ref := c.mu.ref(rep, pol); ref != nil {
+			return soltype.EnterResult{Type: ref, SkipChildren: true}
 		}
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
 	c.seen.Add(rep)
 	defer c.seen.Remove(rep) // path-scoped: pop on the way back up (panic-safe)
+	binder := c.mu.push(rep, pol)
+	defer c.mu.pop(rep) // path-scoped like `seen`, so a binder is open only while rep is on the path
 
 	// v's own bounds, not the representative's.
 	bs := v.BoundsAt(pol)
@@ -417,7 +518,8 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		// already leave parts=[rep]. Collapse to the polarity identity.
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	return soltype.EnterResult{Type: widenVar(v, pol, combine(pol, dedup(parts), v.Open)), SkipChildren: true}
+	inlined := widenVar(v, pol, combine(pol, dedup(parts), v.Open))
+	return soltype.EnterResult{Type: binder.tie(pol, inlined), SkipChildren: true}
 }
 
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
@@ -841,6 +943,12 @@ type alphaCtx struct {
 	// nothing.
 	keyAToB map[int]int
 	keyBToA map[int]int
+	// recAToB and recBToA pair the binders of two μ-knots, bound when a pair of knots meets, the
+	// way bindMappedKeys pairs two mapped types' keys. This bijection is what makes two knots
+	// equal up to a consistent renaming of their binders. They start nil and allocate on the first
+	// pairing, so a comparison over types carrying no knot allocates nothing.
+	recAToB map[int]int
+	recBToA map[int]int
 }
 
 // bindTypeParams pairs two generic FuncTypes' type parameters positionally, so every
@@ -924,6 +1032,33 @@ func (ctx *alphaCtx) sameMappedKey(a, b *soltype.MappedKeyType) bool {
 	}
 	if _, ok := ctx.keyBToA[b.ID]; ok {
 		return false // b's binding corresponds to some other binding on a's side
+	}
+	return a.ID == b.ID
+}
+
+// bindRecursiveBinders pairs the binders of two μ-knots, so every later reference to one side's
+// binder must match the other's partner. Two knots built by separate coalescing walks therefore
+// compare equal even though each numbered its binders from zero, the same reason bindMappedKeys
+// pairs two mapped types' key bindings.
+func (ctx *alphaCtx) bindRecursiveBinders(a, b *soltype.RecursiveVarType) {
+	if ctx.recAToB == nil {
+		ctx.recAToB = map[int]int{}
+		ctx.recBToA = map[int]int{}
+	}
+	ctx.recAToB[a.ID] = b.ID
+	ctx.recBToA[b.ID] = a.ID
+}
+
+// sameRecursiveVar reports whether two μ-variables stand for corresponding binders under the
+// pairing the enclosing pair of knots recorded. A reference may be reached with no pairing, which
+// happens when a knot's body is compared on its own, away from the knot that binds it. That case
+// falls back to id equality, the rule sameMappedKey applies to an unpaired binding.
+func (ctx *alphaCtx) sameRecursiveVar(a, b *soltype.RecursiveVarType) bool {
+	if j, ok := ctx.recAToB[a.ID]; ok {
+		return j == b.ID
+	}
+	if _, ok := ctx.recBToA[b.ID]; ok {
+		return false // b's binder corresponds to some other binder on a's side
 	}
 	return a.ID == b.ID
 }
@@ -1219,6 +1354,23 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// the enclosing pair of mapped types recorded.
 		b, ok := b.(*soltype.MappedKeyType)
 		return ok && ctx.sameMappedKey(a, b)
+	case *soltype.RecursiveType:
+		// Two μ-knots are equal when their bodies are equal under a pairing of their binders, so
+		// `μX0.{next: X0}` equals `μX1.{next: X1}`. That is the alpha-equivalence a generic
+		// function's positional type parameters compare under. Pairing the binders before
+		// descending is what lets each side's references to its own binder match the other's.
+		b, ok := b.(*soltype.RecursiveType)
+		if !ok {
+			return false
+		}
+		ctx.bindRecursiveBinders(a.Binder, b.Binder)
+		return equalTypeWith(a.Body, b.Body, ctx)
+	case *soltype.RecursiveVarType:
+		// Two references to a μ-binder are equal when their binders correspond under the pairing
+		// the enclosing pair of knots recorded. The binder names are not compared, the same way two
+		// functions' type parameters compare by position rather than by name.
+		b, ok := b.(*soltype.RecursiveVarType)
+		return ok && ctx.sameRecursiveVar(a, b)
 	case *soltype.RestSpreadType:
 		// Two `...P` spread elements are equal when their operands are, compared structurally
 		// without reducing. The enclosing TupleType arm compares element lists positionally, so a

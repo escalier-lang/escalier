@@ -134,8 +134,9 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 
 // evalTypeOperator evaluates the outermost transparent type operator of t to the type it stands
 // for, so constrain can check a constraint against that while the stored residual keeps its name.
-// An alias expands to its body, a `typeof` query resolves to the value's type, a `keyof` reduces
-// to its key set, an indexed access `T[K]` reduces to the type at that key, a conditional selects
+// An alias expands to its body, a μ-knot unfolds one level, a `typeof` query resolves to the value's
+// type, a `keyof` reduces to its key set, an indexed access `T[K]` reduces to the type at that key,
+// a conditional selects
 // its Then or Else branch, a mapped type emits one field per key, a template literal reduces to the
 // union of string literals its interpolations produce, an intrinsic string operator such as
 // `Uppercase<T>` reduces over its string-literal operand, and a tuple carrying a `...P` spread
@@ -152,6 +153,8 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) 
 		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
 		return t.Ty, nil, true
+	case *soltype.RecursiveType:
+		return unfoldRecursive(t), nil, true
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType,
 		*soltype.TemplateLitType, *soltype.StringIntrinsicType:
 		return c.reduceResidual(t, seen)
@@ -1453,6 +1456,46 @@ func (c *Context) extrudeOuterAsLower(lt soltype.Lifetime, v *soltype.LifetimeVa
 	}
 	return c.extrudeLt(lt, soltype.Positive, v.Level, map[ltExtrudeKey]*soltype.LifetimeVar{})
 }
+
+// unfoldRecursive unfolds a μ-knot one level: it returns the knot's body with the whole knot
+// substituted for every reference to its binder, so `μX0.{next: X0}` unfolds to
+// `{next: μX0.{next: X0}}`. That is how a knot is compared against a structural type. The
+// pre-switch treats it as a transparent operator and recurses on the unfolding.
+//
+// The substituted node is the knot itself rather than a copy, which is what makes a recursive
+// comparison terminate. Unfolding both sides of `knot <: knot` reaches the same pair of pointers
+// one level down, and constrain's seen-set already holds it, so the derivation closes
+// coinductively instead of unfolding forever.
+func unfoldRecursive(t *soltype.RecursiveType) soltype.Type {
+	// Substitution is polarity-blind, so the root polarity handed to Accept is arbitrary.
+	return t.Body.Accept(&recursiveUnfolder{id: t.Binder.ID, knot: t}, soltype.Positive)
+}
+
+// recursiveUnfolder replaces every reference to one μ-binder with the knot that binds it. A nested
+// knot rebinding the same id shadows the outer binding, so its subtree is skipped and its own
+// references stay bound to it. That guard is what keeps the substitution correct without relying on
+// globally unique ids. Coalescing numbers binders per walk, so two walks whose display types are
+// later composed into one type can each contribute a knot bound to id 0.
+type recursiveUnfolder struct {
+	id   int
+	knot *soltype.RecursiveType
+}
+
+func (u *recursiveUnfolder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	switch t := t.(type) {
+	case *soltype.RecursiveVarType:
+		if t.ID == u.id {
+			return soltype.EnterResult{Type: u.knot, SkipChildren: true}
+		}
+	case *soltype.RecursiveType:
+		if t.Binder.ID == u.id {
+			return soltype.EnterResult{Type: t, SkipChildren: true}
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (u *recursiveUnfolder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // extrude copies t so that variables inner to lvl are replaced by fresh variables
 // at lvl, wired to the originals through the polarity-appropriate bound
