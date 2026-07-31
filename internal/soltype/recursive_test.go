@@ -15,11 +15,17 @@ func knot(id int, name string, body func(ref *RecursiveVarType) Type) *Recursive
 }
 
 // TestPrintRecursive covers the μ form's rendering: the binder's name, the reference inside the
-// body, the unnamed binder's debug fallback, and the parens a knot needs inside a union or
-// intersection. It needs them because its body is greedy the way a function's return type is.
+// body, the unnamed binder's debug fallback, and where the parens fall.
+//
+// A μ binder is greedy, so the parens go on the BODY, and only when the body is not already
+// self-delimiting. That keeps the common object-bodied knot bare and leaves the knot itself an atom,
+// so it needs no parens at any use site.
 func TestPrintRecursive(t *testing.T) {
 	selfNext := knot(0, "X0", func(ref *RecursiveVarType) Type {
 		return &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "next", Type: ref}}}
+	})
+	looseBody := knot(0, "X0", func(ref *RecursiveVarType) Type {
+		return &UnionType{Types: []Type{numP(), ref}}
 	})
 	tests := []struct {
 		name string
@@ -51,15 +57,37 @@ func TestPrintRecursive(t *testing.T) {
 			want: "μX0.{up: X0, down: μX1.[X0, X1]}",
 		},
 		{
-			// The knot's body would swallow the `| number` tail, so a union member parenthesizes it.
-			name: "knot inside a union is parenthesized",
+			// A body that carries its own delimiter cannot run on, so nothing is parenthesized: not
+			// the body, and not the knot at the use site.
+			name: "self-delimiting body needs no parens in a union",
 			in:   &UnionType{Types: []Type{selfNext, numP()}},
-			want: "(μX0.{next: X0}) | number",
+			want: "μX0.{next: X0} | number",
 		},
 		{
-			name: "knot inside an intersection is parenthesized",
+			name: "self-delimiting body needs no parens in an intersection",
 			in:   &IntersectionType{Types: []Type{selfNext, numP()}},
-			want: "(μX0.{next: X0}) & number",
+			want: "μX0.{next: X0} & number",
+		},
+		{
+			// A union body would swallow anything following the knot, so the body is bounded. The
+			// knot itself stays bare, which is the whole point of bounding the body.
+			name: "union body is parenthesized",
+			in:   looseBody,
+			want: "μX0.(number | X0)",
+		},
+		{
+			name: "a bounded body lets the knot sit bare in a union",
+			in:   &UnionType{Types: []Type{looseBody, strP()}},
+			want: "μX0.(number | X0) | string",
+		},
+		{
+			// Every non-atom body is bounded for the same reason a union one is, since a μ binder
+			// runs to the end of the enclosing form.
+			name: "prefix body is parenthesized",
+			in: knot(0, "X0", func(ref *RecursiveVarType) Type {
+				return &KeyofType{Operand: ref}
+			}),
+			want: "μX0.(keyof X0)",
 		},
 		{
 			// A knot nested in a property is delimited by the braces, so it needs no parens.

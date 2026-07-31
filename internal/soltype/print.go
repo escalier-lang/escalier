@@ -16,7 +16,6 @@ import (
 // (KeyofType); the `...T` spread prefix lands with tuple/object spread types.
 const (
 	precFunc         = 2 // fn (...) -> T — return type is greedy, needs parens in union/intersection
-	precRecursive    = 2 // μX0.T — the body is greedy too, so a knot parenthesizes where a fn does
 	precUnion        = 3 // A | B
 	precIntersection = 4 // A & B
 	precPrefix       = 5 // mut T, 'a T, keyof T — a prefix binds looser than an atom
@@ -58,10 +57,10 @@ func typePrec(t Type) int {
 		// A mapped type's key variable renders as its bare name, an atom.
 		return precAtom
 	case *RecursiveType:
-		// A μ-knot's body runs to the end of the enclosing form, so `μX0.A | X0 | number` would read
-		// as one knot over the whole union. Ranking it below precUnion puts the parens on the knot:
-		// `(μX0.A | X0) | number`.
-		return precRecursive
+		// A μ-knot is self-delimiting, because printType parenthesizes any body that is not itself
+		// an atom, so it never needs outer parens. `μX0.{next: X0} | number` and
+		// `μX0.(number | X0) | number` both read correctly with no wrapper.
+		return precAtom
 	case *RecursiveVarType:
 		// A μ-knot's bound variable renders as its bare name, an atom.
 		return precAtom
@@ -779,11 +778,16 @@ func (p *namedPrinter) printType(t Type) string {
 		return t.Name
 	case *RecursiveType:
 		// `μX0.<body>`, the μ form for a recursive type. Escalier has no surface syntax for one, so
-		// this is the standard notation rather than a mirror of a parser form. The body prints with
-		// no minimum precedence, because nothing follows the knot inside its own rendering and so
-		// the greedy body needs no parens. precRecursive is what puts the parens on the knot when it
-		// sits inside a union or intersection.
-		return "μ" + t.Binder.DisplayName() + "." + p.printType(t.Body)
+		// this is the standard notation rather than a mirror of a parser form.
+		//
+		// The body prints at precAtom, so it is parenthesized unless it is already self-delimiting.
+		// A μ binder is greedy, meaning it extends to the end of the enclosing form, so a body that
+		// could run on has to be bounded here or it would swallow whatever follows the knot:
+		// `μX0.number | X0` beside a `| string` would read as one three-member union. An object,
+		// tuple, or bare name carries its own delimiter and needs nothing, which is why the common
+		// `μX0.{next: X0}` stays bare. Bounding the body here is also what makes the knot an atom,
+		// so it never needs parens of its own at the use site.
+		return "μ" + t.Binder.DisplayName() + "." + p.printTypeMinPrec(t.Body, precAtom)
 	case *RecursiveVarType:
 		// A reference to the enclosing knot's binder renders as that binder's bare name, so
 		// `μX0.{next: X0}` names one binding twice.
