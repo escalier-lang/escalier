@@ -1808,8 +1808,8 @@ func TestInferMethodOverloadUniformMutReceiverAccepted(t *testing.T) {
 // A declared bound rides on the binder, so gating the binder gates the bound with it: the
 // call below passes 1 to a parameter written `T: string` and no mismatch is reported. The
 // class's own `<U: number>` binder is a separate mechanism and still enforces, which the
-// last case shows. Lifting the gate should flip this test and enable
-// TestInferClassMethodTypeParamBounds below.
+// last case shows. Lifting the gate, tracked by issue #957, should flip this test and
+// enable TestInferClassMethodTypeParamBounds below.
 func TestInferClassMethodTypeParamsGated(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1868,10 +1868,10 @@ func TestInferClassMethodTypeParamsGated(t *testing.T) {
 	}
 }
 
-// DISABLED until a method's own type parameters are supported — the per-instance
-// projection inferMemberFunc names, which lets two calls to one generic method instantiate
-// independently. Today the binder is reported as unsupported and the member infers
-// monomorphically, which TestInferClassMethodTypeParamsGated pins.
+// DISABLED until issue #957 lands support for a method's own type parameters — the
+// per-instance projection inferMemberFunc names, which lets two calls to one generic method
+// instantiate independently. Today the binder is reported as unsupported and the member
+// infers monomorphically, which TestInferClassMethodTypeParamsGated pins.
 //
 // Once the gate lifts, a method's `<T: string>` should enforce its bound at the call the
 // same way a generic function's does, since both route their binder through
