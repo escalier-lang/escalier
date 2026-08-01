@@ -3,7 +3,6 @@ package solver
 import (
 	"testing"
 
-	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -392,6 +391,6 @@ func TestConstrainRecursiveSeenSetCloses(t *testing.T) {
 	right := muKnot(1, "X1", func(ref *soltype.RecursiveVarType) soltype.Type {
 		return exactObj(propElem("next", ref), propElem("value", num()))
 	})
-	require.Empty(t, Messages(c.constrain(left, right, set.NewSet[constraintKey](), false)))
+	require.Empty(t, Messages(c.constrain(left, right, newSeenPairs(), false)))
 	require.Equal(t, 0, c.unwrapDepth, "the unwrap budget must unwind to zero")
 }
