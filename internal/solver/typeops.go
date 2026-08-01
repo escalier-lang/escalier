@@ -198,30 +198,10 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 }
 
 // reduceBranch reduces the branch a conditional selected. It is reduce plus one rule: a branch that
-// names an alias whose body is itself an unreduced operator expands, and that body reduces in turn.
-// The rule is what lets a conditional recurse to a value.
-//
-//	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
-//
-// `Awaited<Promise<Promise<number>>>` selects Then and lands on `Awaited<Promise<number>>`. An alias
-// is not an operator, so reduce alone hands that reference back unchanged and the answer keeps one
-// promise the source asked to strip. Expanding it reaches the inner conditional, which selects Then
-// again on `Awaited<number>`. That conditional selects Else and yields `number`.
-//
-// A branch naming an alias whose body is ordinary structure keeps the name the source wrote, so
-// `if T : number { List<T> } else { boolean }` reduces to `List<number>` rather than to the object
-// `List` stands for. Every other reduction treats a named type the same way. It expands an alias to
-// read through it, never to replace it.
-//
-// expandAliasGuarded supplies the termination guard, so a branch that recurses without ever selecting
-// Else leaves the alias reference symbolic. A recursion whose instantiation state repeats stops at
-// the repeat, and the depth and character budgets stop one whose state never repeats.
-//
-// Each lap spends exactly one expansion. The body reduces through reduce, and the conditional in that
-// body is what reaches the next lap. A second expansion per lap would re-expand the reference a
-// truncated inner lap handed back, and the walk would keep growing after the budget that truncated it
-// had already run out. Reading the alias off the branch as written, rather than off what reduce
-// returned for it, keeps that second expansion out of a branch that nests another conditional.
+// names an alias whose body is an unreduced operator expands and reduces. That lets a recursive
+// conditional like `Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }` reach a value.
+// An alias body of ordinary structure keeps its name, so a branch naming `List<T>` still yields
+// `List<number>`. expandAliasGuarded terminates a recursion with no base case, one expansion a lap.
 func (e *typeEvaluator) reduceBranch(branch soltype.Type) soltype.Type {
 	alias, ok := branch.(*soltype.AliasType)
 	if !ok {
