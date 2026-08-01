@@ -343,6 +343,10 @@ func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seen
 			// that swallows a failure follows. Nothing a discarded walk settled is read by a
 			// later candidate, nor by the caller in the case where a later candidate accepts
 			// and the walk reports no error.
+			//
+			// This walk is the one rejecting arm that opens no probe, so it restores
+			// shallowestAssumed by hand where every other arm inherits the restore from
+			// Probe.Discard.
 			enclosingShallowest := c.shallowestAssumed
 			if len(c.constrainNominalWalk(s, super, seen.Clone(), walked)) == 0 {
 				// The accepting candidate is the derivation the caller keeps, so the goals it

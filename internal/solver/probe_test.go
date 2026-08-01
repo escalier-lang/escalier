@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"math"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -209,7 +210,7 @@ func TestProbeOutcomeIsIdempotent(t *testing.T) {
 	require.Len(t, a.LowerBounds, 1, "Discard after Commit does not revert")
 
 	q := c.freshAt(0)
-	p2 := newProbe(nil)
+	p2 := newProbe(nil, nil)
 	c.ctx.probe = p2
 	require.Empty(t, c.ctx.Constrain(num(), q))
 	p2.Discard()
@@ -293,4 +294,50 @@ func TestProbeBareLiteralIsNilMapSafe(t *testing.T) {
 
 	c.ctx.probe.Discard()
 	require.Empty(t, v.LowerBounds, "the bare-literal probe still rolls back")
+}
+
+// newProbe snapshots the Context's memo-promotion state and Discard puts it back, while Commit
+// leaves it alone. A committed trial is part of the derivation the caller keeps, so the goals it
+// closed coinductive assumptions on stay folded into the caller's running minimum. A discarded one
+// is not, so they must not reach the caller's promotion check.
+func TestProbeRestoresShallowestAssumedOnDiscardOnly(t *testing.T) {
+	t.Run("discard restores", func(t *testing.T) {
+		c := &Context{shallowestAssumed: math.MaxInt}
+		p := newProbe(c, c.probe)
+		c.shallowestAssumed = 3
+		p.Discard()
+		require.Equal(t, math.MaxInt, c.shallowestAssumed)
+	})
+
+	t.Run("commit keeps", func(t *testing.T) {
+		c := &Context{shallowestAssumed: math.MaxInt}
+		p := newProbe(c, c.probe)
+		c.shallowestAssumed = 3
+		p.Commit()
+		require.Equal(t, 3, c.shallowestAssumed)
+	})
+
+	// The nesting case Discard's doc rests on: a parent's snapshot predates its child entirely,
+	// so a parent discard puts back the value from before both without any handoff at commit.
+	t.Run("committed child unwinds when its parent discards", func(t *testing.T) {
+		c := &Context{shallowestAssumed: math.MaxInt}
+		parent := newProbe(c, c.probe)
+		c.shallowestAssumed = 5
+		child := newProbe(c, parent)
+		c.shallowestAssumed = 2
+		child.Commit()
+		require.Equal(t, 2, c.shallowestAssumed, "a commit keeps what the child closed on")
+		parent.Discard()
+		require.Equal(t, math.MaxInt, c.shallowestAssumed)
+	})
+
+	// A bare &Probe{} carries no Context, so it skips the restore rather than panicking, the same
+	// way it lazily creates its touched sets.
+	t.Run("bare probe skips the restore", func(t *testing.T) {
+		c := &Context{shallowestAssumed: math.MaxInt}
+		p := &Probe{}
+		c.shallowestAssumed = 3
+		p.Discard()
+		require.Equal(t, 3, c.shallowestAssumed)
+	})
 }

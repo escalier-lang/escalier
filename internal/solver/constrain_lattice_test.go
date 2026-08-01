@@ -231,7 +231,7 @@ func TestConstrainUnionCommitDiagnostics(t *testing.T) {
 		tv := c.freshVar(0)
 		super := newUnion(nil, []soltype.Type{tv, num()}, false)
 
-		p := newProbe(c.probe)
+		p := newProbe(c, c.probe)
 		c.probe = p
 		require.Empty(t, c.constrain(strLit("hi"), super, newSeenPairs(), false))
 		c.probe = p.parent
