@@ -67,7 +67,9 @@ const maxTemplateLitCombinations = 10_000
 // alias itself gets under constrain. A `keyof T` over a type parameter has no ground key set, so
 // it stays the symbolic KeyofType.
 //
-// An alias reached through an operand is made safe by a four-part termination strategy:
+// An alias is reached two ways: through an operand, and through the branch a conditional selected,
+// which reduceBranch expands so a recursive conditional such as `Awaited<T>` reaches a value. Both
+// are made safe by a four-part termination strategy:
 //
 //   - checkProductive rejects an alias whose recursion emits no structure and marks its AliasDef
 //     NotProductive. Such an alias names no type, so the evaluator declines to expand it at all
@@ -190,9 +192,47 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 		return e.reduceCondInfer(t, check, extends)
 	}
 	if e.ctx.condExtends(check, extends, e.seen) {
-		return e.reduce(t.Then)
+		return e.reduceBranch(t.Then)
 	}
-	return e.reduce(t.Else)
+	return e.reduceBranch(t.Else)
+}
+
+// reduceBranch reduces the branch a conditional selected. It is reduce plus one rule: a branch that
+// names an alias whose body is itself an unreduced operator expands, and that body reduces in turn.
+// The rule is what lets a conditional recurse to a value.
+//
+//	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
+//
+// `Awaited<Promise<Promise<number>>>` selects Then and lands on `Awaited<Promise<number>>`. An alias
+// is not an operator, so reduce alone hands that reference back unchanged and the answer keeps one
+// promise the source asked to strip. Expanding it reaches the inner conditional, which selects Then
+// again on `Awaited<number>`. That conditional selects Else and yields `number`.
+//
+// A branch naming an alias whose body is ordinary structure keeps the name the source wrote, so
+// `if T : number { List<T> } else { boolean }` reduces to `List<number>` rather than to the object
+// `List` stands for. Every other reduction treats a named type the same way. It expands an alias to
+// read through it, never to replace it.
+//
+// expandAliasGuarded supplies the termination guard, so a branch that recurses without ever selecting
+// Else leaves the alias reference symbolic. A recursion whose instantiation state repeats stops at
+// the repeat, and the depth and character budgets stop one whose state never repeats.
+//
+// Each lap spends exactly one expansion. The body reduces through reduce, and the conditional in that
+// body is what reaches the next lap. A second expansion per lap would re-expand the reference a
+// truncated inner lap handed back, and the walk would keep growing after the budget that truncated it
+// had already run out. Reading the alias off the branch as written, rather than off what reduce
+// returned for it, keeps that second expansion out of a branch that nests another conditional.
+func (e *typeEvaluator) reduceBranch(branch soltype.Type) soltype.Type {
+	alias, ok := branch.(*soltype.AliasType)
+	if !ok {
+		return e.reduce(branch)
+	}
+	return e.expandAliasGuarded(alias, aliasItself, func(body soltype.Type) soltype.Type {
+		if !isResidualOp(body) {
+			return alias
+		}
+		return e.reduce(body)
+	})
 }
 
 // distributeCond decides a distributive conditional one union member at a time and unions the
@@ -277,13 +317,13 @@ func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check, extends solt
 	}
 	captured, ok := e.ctx.trialCaptures(check, substituteInfer(extends, holes), vars, e.seen.Clone())
 	if !ok {
-		return e.reduce(t.Else)
+		return e.reduceBranch(t.Else)
 	}
 	captures := make(map[int]soltype.Type, len(decls))
 	for i, id := range decls {
 		captures[id] = captured[i]
 	}
-	return e.reduce(substituteInfer(t.Then, captures))
+	return e.reduceBranch(substituteInfer(t.Then, captures))
 }
 
 // inferDeclIDs returns the ids of the `infer` declarations t holds, in first-appearance order with
