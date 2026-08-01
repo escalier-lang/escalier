@@ -210,7 +210,7 @@ func TestProbeOutcomeIsIdempotent(t *testing.T) {
 	require.Len(t, a.LowerBounds, 1, "Discard after Commit does not revert")
 
 	q := c.freshAt(0)
-	p2 := newProbe(nil, nil)
+	p2 := newProbe(c.ctx, nil) // no parent, but a real Context: this probe is installed and used
 	c.ctx.probe = p2
 	require.Empty(t, c.ctx.Constrain(num(), q))
 	p2.Discard()
