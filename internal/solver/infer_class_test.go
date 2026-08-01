@@ -2331,7 +2331,7 @@ func TestInferClassTypeArgArityAcrossRefForms(t *testing.T) {
 	for name, src := range srcs {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, src)
-			require.NotEmpty(t, errs)
+			require.Len(t, errs, 1)
 			require.Equal(t, "class `Box` expects 1 type arguments but got 0", errs[0].Message())
 		})
 	}

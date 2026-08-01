@@ -226,13 +226,7 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 		ltParams = def.LifetimeParams
 	}
 	ltArgs := c.resolveAliasLifetimeArgs(ref, ltParams, lvl)
-	total := len(params)
-	required := 0
-	for _, p := range params {
-		if p.Default == nil {
-			required++
-		}
-	}
+	required, total := typeArgRange(params)
 	got := len(ref.TypeArgs)
 	if got < required || got > total {
 		c.report(&AliasArityMismatchError{
@@ -252,27 +246,7 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 		}
 		return &soltype.AliasType{Name: at.Name, LifetimeArgs: ltArgs}
 	}
-	args := make([]soltype.Type, total)
-	for i := range total {
-		if i < got {
-			if resolved, ok := c.resolveTypeAnn(scope, ref.TypeArgs[i], lvl); ok {
-				args[i] = resolved
-			} else {
-				args[i] = c.freshAt(lvl)
-			}
-			continue
-		}
-		if params[i].Default != nil {
-			// The default may reference an earlier parameter, as `U = T` does, so substitute
-			// the arguments already resolved for parameters before this one.
-			subst := newTypeSubst(params[:i], args[:i], nil, nil)
-			args[i] = params[i].Default.Accept(subst, soltype.Positive)
-		} else {
-			// A required argument was omitted, already reported as an arity mismatch. Recover
-			// to a fresh var so expansion has one argument per parameter.
-			args[i] = c.freshAt(lvl)
-		}
-	}
+	args := c.resolveTypeArgsWithDefaults(scope, params, ref, lvl)
 	c.checkAliasArgBounds(params, args, ltParams, ltArgs, ref)
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
 }

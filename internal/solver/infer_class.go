@@ -281,29 +281,21 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 	return c.buildClassInstance(scope, ct, ref, lvl)
 }
 
-// buildClassInstance returns the handle a class reference resolves to, carrying one type
-// argument per declared type parameter. A trailing parameter with a default may be omitted,
-// so its argument is filled from the default with the earlier arguments already substituted,
-// letting `class Pair<T, U = T>` resolve `Pair<number>` to `Pair<number, number>`. A count
-// outside that range reports and recovers with fresh arguments, so a downstream reference
-// still resolves. An unresolved argument annotation likewise recovers to a fresh var.
+// buildClassInstance resolves a use-site class reference into a ClassType carrying one type
+// argument per declared type parameter. A trailing parameter with a default may be omitted, so
+// the accepted argument count runs from the number of parameters with no default up to the
+// total. A count outside that range reports and recovers with fresh arguments, so a downstream
+// reference still resolves.
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
 	def, ok := c.ctx.classDef(ct.Name)
 	if !ok || !def.TypeParamsResolved {
-		// The class's parameter list is not resolved yet, which happens for a reference to a
-		// sibling in the same mutually-recursive group. Build one argument per written
-		// argument and skip validation, so the reference still resolves and no arity error is
-		// blamed on a parameter list that has not been read.
+		// The class's parameter list is not resolved yet, which is what a reference to a
+		// sibling in the same mutually-recursive group reaches. Resolve the written arguments
+		// and skip validation, so no arity error is blamed on a list that has not been read.
 		return c.classInstanceFromWrittenArgs(scope, ct, ref, lvl)
 	}
 	params := def.TypeParams
-	total := len(params)
-	required := 0
-	for _, p := range params {
-		if p.Default == nil {
-			required++
-		}
-	}
+	required, total := typeArgRange(params)
 	got := len(ref.TypeArgs)
 	if got < required || got > total {
 		c.report(&ClassArityMismatchError{
@@ -319,34 +311,15 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 		// above. Return the bare handle so the class still resolves under its name.
 		return ct
 	}
-	args := make([]soltype.Type, total)
-	for i := range total {
-		if i < got {
-			if at, ok := c.resolveTypeAnn(scope, ref.TypeArgs[i], lvl); ok {
-				args[i] = at
-			} else {
-				args[i] = c.freshAt(lvl)
-			}
-			continue
-		}
-		if params[i].Default != nil {
-			// The default may reference an earlier parameter, as `U = T` does, so substitute
-			// the arguments already resolved for parameters before this one.
-			subst := newTypeSubst(params[:i], args[:i], nil, nil)
-			args[i] = params[i].Default.Accept(subst, soltype.Positive)
-		} else {
-			// A required argument was omitted, already reported as an arity mismatch. Recover
-			// to a fresh var so the instance carries one argument per parameter.
-			args[i] = c.freshAt(lvl)
-		}
-	}
+	args := c.resolveTypeArgsWithDefaults(scope, params, ref, lvl)
 	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final, Variant: ct.Variant}
 }
 
 // classInstanceFromWrittenArgs resolves exactly the type arguments a reference wrote, with no
-// comparison against the class's declared parameters. It is the recovery path for a class
-// whose parameter list is not resolved yet. An unresolved argument becomes a fresh var, which
-// keeps the instance cascade-safe.
+// comparison against the class's declared parameters. It is the recovery path for a class whose
+// parameter list is not resolved yet. An argument annotation that does not resolve becomes a
+// fresh var, so the instance still carries one argument per written position and nothing
+// cascades from the failure.
 func (c *checker) classInstanceFromWrittenArgs(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
 	if len(ref.TypeArgs) == 0 {
 		return ct
@@ -393,7 +366,7 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 
 // resolveScopedTypeRef resolves a type reference through lookupClassBinding, covering a
 // bare `Point` or `T`, a generic class instance `Box<number>`, and a generic alias
-// instance `List<number>`. An alias binding always resolves here, with its own arity
+// instance `List<number>`. A class or alias binding always resolves here, with its own arity
 // diagnostic. It returns ok=false only when the name is unbound, or has arguments but is
 // neither a class nor an alias. It never routes back through resolveTypeAnn, so
 // resolveTypeAnn's TypeRef arm can fall back to it without recursing.

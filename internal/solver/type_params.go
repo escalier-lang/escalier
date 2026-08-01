@@ -54,10 +54,12 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 		if out[i].Default == nil || out[i].Constraint == nil {
 			continue
 		}
-		// Trial the comparison rather than running it live. The default is a fully resolved
-		// type with nothing left to infer, and a bound naming a sibling parameter would
-		// otherwise gain a lower bound from it — `<T, U: T = number>` would leave T recording
-		// that it must accept number, which the source never wrote.
+		// Trial the comparison under a probe rather than running it live, so any bound it
+		// appends is rolled back. A default is a fully resolved type with nothing left to
+		// infer, so a live comparison would gain it nothing. It would cost something when the
+		// bound names a sibling parameter. Running `<T, U: T = number>` live compares number
+		// against T's var and leaves T carrying number as a lower bound, a claim that T must
+		// accept number that the source never wrote.
 		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].Constraint))
 	}
 	return out
@@ -167,4 +169,55 @@ func (v *typeParamRefScan) shadowed(name string) bool {
 		}
 	}
 	return false
+}
+
+// typeArgRange returns the type-argument counts a reference to a generic class or alias may
+// supply. required counts the parameters with no default, total counts them all, and any count
+// between the two is accepted because each omitted trailing parameter is filled from its
+// default. A count outside the range is an arity mismatch, which each caller reports under its
+// own error type.
+func typeArgRange(params []*soltype.TypeParam) (required, total int) {
+	for _, p := range params {
+		if p.Default == nil {
+			required++
+		}
+	}
+	return required, len(params)
+}
+
+// resolveTypeArgsWithDefaults produces one type argument per declared parameter, so a class or
+// alias instance always carries a full argument list for substitution to zip against. Each
+// parameter draws its argument from one of three sources:
+//
+//  1. The annotation the reference wrote at that position, resolved in scope.
+//  2. The parameter's own default, for a parameter past the last written argument. The
+//     arguments already resolved for earlier parameters are substituted into the default
+//     first, so `<T, U = T>` referenced as `<number>` fills U with number.
+//  3. A fresh var, when the written annotation does not resolve or the reference omitted a
+//     parameter that has no default. Recovering keeps the argument list full. The omission
+//     itself is reported by the caller's arity check.
+func (c *checker) resolveTypeArgsWithDefaults(
+	scope *Scope,
+	params []*soltype.TypeParam,
+	ref *ast.TypeRefTypeAnn,
+	lvl int,
+) []soltype.Type {
+	got := len(ref.TypeArgs)
+	args := make([]soltype.Type, len(params))
+	for i := range params {
+		switch {
+		case i < got:
+			if resolved, ok := c.resolveTypeAnn(scope, ref.TypeArgs[i], lvl); ok {
+				args[i] = resolved
+			} else {
+				args[i] = c.freshAt(lvl)
+			}
+		case params[i].Default != nil:
+			subst := newTypeSubst(params[:i], args[:i], nil, nil)
+			args[i] = params[i].Default.Accept(subst, soltype.Positive)
+		default:
+			args[i] = c.freshAt(lvl)
+		}
+	}
+	return args
 }

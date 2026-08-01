@@ -23,10 +23,11 @@ type ClassDef struct {
 
 	// TypeParamsResolved marks TypeParams as final. The SCC pre-pass registers a class's
 	// nominal identity with an empty def so a mutually-recursive sibling can name it, and
-	// inferClassDecl fills TypeParams later. Until then an empty TypeParams means "not yet
-	// known", not "non-generic", so use-site type-argument arity reads this flag first and
-	// skips validation rather than blaming a reference for a parameter list that has not
-	// been resolved.
+	// inferClassDecl fills TypeParams later. Until it does, an empty TypeParams means the
+	// parameters have not been read yet rather than that the class is non-generic. The
+	// use-site type-argument arity check reads this flag first and validates nothing while it
+	// is false, so a reference to a half-built sibling is never blamed for a mismatch against
+	// a parameter list that does not exist yet.
 	TypeParamsResolved bool
 
 	// LifetimeParams are the class's quantified lifetime parameters (A3), the lifetime
