@@ -121,6 +121,13 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		return &soltype.WildcardPat{}
 
 	case *ast.LitPat:
+		if atom, atomPat, isAtom := atomLitOf(p.Lit); isAtom {
+			// A `null` or `undefined` arm asserts the atom is an admissible value of the
+			// scrutinee, the same direction as the literal case below, and binds nothing.
+			c.constrain(p, atom, scrutinee)
+			c.recordType(p, atom)
+			return atomPat
+		}
 		lt, ok := c.litTypeOf(p.Lit)
 		if !ok {
 			c.reportUnsupported(p.Lit)
@@ -686,8 +693,33 @@ func propReq(name string, t soltype.Type, optional bool) *soltype.ObjectType {
 	}
 }
 
+// atomLitOf lowers `null` and `undefined` to the soltype type each one names and to the
+// pattern that matches it. They are the two literals whose type is not a LitType, since
+// soltype.Lit has no member for either. litTypeOf below therefore cannot return them, and
+// every site that turns a written literal into a type asks this function first. ok=false
+// for every other literal kind, which litTypeOf covers.
+//
+// The caller must not record provenance against the returned type. soltype.NullType and
+// soltype.UndefinedType are empty structs, so Go gives every instance of one the same
+// address, and the Prov side table is keyed by pointer identity. Recording against one
+// would file every `null` in the module under a single entry, so each would report the
+// last one's span, and the debugProv guard would panic on the second. The NeverTypeAnn
+// and UnknownTypeAnn arms in resolveTypeAnn skip recording for the same reason.
+func atomLitOf(lit ast.Lit) (soltype.Type, soltype.Pat, bool) {
+	switch lit.(type) {
+	case *ast.NullLit:
+		return &soltype.NullType{}, &soltype.NullPat{}, true
+	case *ast.UndefinedLit:
+		return &soltype.UndefinedType{}, &soltype.UndefinedPat{}, true
+	}
+	return nil, nil, false
+}
+
 // litTypeOf lowers an ast literal to its soltype LitType, mirroring inferLiteral.
 // ok=false for a literal kind outside the M-subset (the caller reports it).
+// `null` and `undefined` also return ok=false here even though each has a soltype
+// form, since neither form is a LitType. A caller that accepts them asks atomLitOf
+// above first.
 func (c *checker) litTypeOf(lit ast.Lit) (*soltype.LitType, bool) {
 	switch l := lit.(type) {
 	case *ast.NumLit:

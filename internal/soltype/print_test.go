@@ -560,6 +560,16 @@ func TestPrintDestructuringParamPatterns(t *testing.T) {
 			want: "5",
 		},
 		{
+			name: "null",
+			pat:  &NullPat{},
+			want: "null",
+		},
+		{
+			name: "undefined",
+			pat:  &UndefinedPat{},
+			want: "undefined",
+		},
+		{
 			name: "nested object in tuple",
 			pat: &TuplePat{Elems: []Pat{
 				&ObjectPat{Fields: []*ObjectPatField{{Name: "x", Value: &IdentPat{Name: "x"}}}},

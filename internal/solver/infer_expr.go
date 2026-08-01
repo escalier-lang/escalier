@@ -12,12 +12,16 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// inferLiteral types a literal expression as its singleton soltype.LitType and
-// records it in Info. M1's soltype.Lit set is num/str/bool only; the remaining
-// ast literal kinds (regex, bigint, null, undefined) fall through to the M2
-// subset guard until later milestones extend soltype.Lit (§ soltype/type.go
-// Prim/Lit note).
+// inferLiteral types a literal expression and records it in Info. A number, string, or
+// boolean literal types as its singleton soltype.LitType. `null` and `undefined` type as
+// the atoms atomLitOf returns. Neither carries provenance, for the reason atomLitOf gives.
+// The remaining ast literal kinds, regex and bigint, fall through to the subset guard
+// until soltype.Lit grows a member for each (§ soltype/type.go Prim/Lit note).
 func (c *checker) inferLiteral(e *ast.LiteralExpr) soltype.Type {
+	if atom, _, isAtom := atomLitOf(e.Lit); isAtom {
+		c.recordType(e, atom)
+		return atom
+	}
 	var lit soltype.Lit
 	switch l := e.Lit.(type) {
 	case *ast.NumLit:
@@ -2658,13 +2662,16 @@ func (c *checker) unionMatchExhaustive(scope *Scope, e *ast.MatchExpr, u *soltyp
 
 // unionMemberCovered reports whether some unguarded arm covers a single union member,
 // dispatching on the member's kind. A literal member needs an equal literal pattern, a
-// nominal member an instance or extractor pattern naming its class, and a structural
-// object or tuple member an irrefutable pattern of its shape. Any other member kind has
-// no covering pattern short of a catch-all, which the caller has already checked.
+// `null` or `undefined` member an arm spelling that same word, a nominal member an
+// instance or extractor pattern naming its class, and a structural object or tuple
+// member an irrefutable pattern of its shape. Any other member kind has no covering
+// pattern short of a catch-all, which the caller has already checked.
 func (c *checker) unionMemberCovered(scope *Scope, member soltype.Type, arms []*ast.MatchCase) bool {
 	switch m := member.(type) {
 	case *soltype.LitType:
 		return c.litMemberCovered(m, arms)
+	case *soltype.NullType, *soltype.UndefinedType:
+		return atomMemberCovered(member, arms)
 	case *soltype.ClassType:
 		return c.nominalMemberCovered(scope, m, arms)
 	case *soltype.ObjectType, *soltype.TupleType:
@@ -2870,6 +2877,26 @@ func (c *checker) litMemberCovered(member *soltype.LitType, arms []*ast.MatchCas
 			continue
 		}
 		if lt, ok := c.litTypeOf(armLit.Lit); ok && member.Equal(lt) {
+			return true
+		}
+	}
+	return false
+}
+
+// atomMemberCovered reports whether some unguarded arm is a `null` or `undefined` pattern
+// matching the given union member, which is one of those two atoms. It is the atom twin of
+// litMemberCovered, and the caller has likewise already excluded an unguarded catch-all.
+// equalType decides the match, since neither atom carries a value to compare.
+func atomMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
+	for _, arm := range arms {
+		if arm.Guard != nil {
+			continue
+		}
+		armLit, ok := arm.Pattern.(*ast.LitPat)
+		if !ok {
+			continue
+		}
+		if atom, _, isAtom := atomLitOf(armLit.Lit); isAtom && equalType(atom, member) {
 			return true
 		}
 	}

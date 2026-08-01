@@ -148,6 +148,19 @@ type LitPat struct{ Lit Lit }
 
 func (*LitPat) isPat() {}
 
+// NullPat matches the value `null` and binds nothing. Its type is NullType, an
+// atom rather than a member of Lit, so LitPat has no field that can carry it and
+// `null` needs a pattern of its own.
+type NullPat struct{}
+
+func (*NullPat) isPat() {}
+
+// UndefinedPat matches the value `undefined` and binds nothing, the twin of
+// NullPat for the UndefinedType atom.
+type UndefinedPat struct{}
+
+func (*UndefinedPat) isPat() {}
+
 // WildcardPat (`_`) matches anything and binds nothing (M4 E1).
 type WildcardPat struct{}
 

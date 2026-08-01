@@ -999,6 +999,16 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if _, ok := super.(*soltype.UndefinedType); ok {
 			return nil
 		}
+	case *soltype.NullType:
+		// `null` relates only to itself, the twin of the UndefinedType arm above. It is
+		// unrelated to `undefined`, to `void`, and to every data type, matching TypeScript
+		// under strict null checks. It still reaches the top of the lattice through the
+		// `_ <: unknown` rule. `NonNullable<T>` reduces through this arm. Its probe asks
+		// whether `null <: null | undefined`, which walks the union-super arm, and that arm
+		// needs one member the sub satisfies.
+		if _, ok := super.(*soltype.NullType); ok {
+			return nil
+		}
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.TemplateLitType, *soltype.StringIntrinsicType,
 		*soltype.ExactnessType:
 		// A residual type-level operator the pre-switch could not ground reaches here: a `keyof T`,
