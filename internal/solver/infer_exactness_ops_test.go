@@ -271,6 +271,17 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 			wantExpanded: "fn (a: number) -> string",
 		},
 		{
+			// A generic function's `<T>` binder is part of its type, so rewriting the marker leaves
+			// the binder and every position naming it in place.
+			name: "InexactGenericFunc",
+			src: `
+				type G = fn <T>(x: T) -> T
+				type Result = Inexact<G>
+			`,
+			wantSymbolic: "Inexact<G>",
+			wantExpanded: "fn <T>(x: T, ...) -> T",
+		},
+		{
 			name: "InexactUnion",
 			src: `
 				type Color = "red" | "green" | "blue"
@@ -441,6 +452,91 @@ func TestInferExactnessIntrinsicChecksConstraints(t *testing.T) {
 			val r = f({x: 1})
 		`)
 		require.Empty(t, errs)
+	})
+}
+
+// Function exactness inverts the asymmetry objects have. An object grows toward its inexact form, so
+// exact `<:` inexact. A function's accept-set shrinks, so an exact function tolerates fewer calls
+// than its inexact counterpart and inexact `<:` exact instead (exact-types §4.2.1.1). A conditional
+// decides its branch with the same subtype check, so the operators move a function type across that
+// boundary in the direction the marker names.
+//
+// This is the behavior `Inexact<F>` exists for. Subtyping alone never widens an exact function into
+// an inexact one, so the operator is the only way to write that step (§6.2).
+func TestInferExactnessIntrinsicOnFuncSubtyping(t *testing.T) {
+	tests := []struct {
+		name string
+		cond string
+		want string
+	}{
+		{
+			// An exact function does not satisfy an inexact one: its accept-set refuses the extra
+			// arguments the inexact type's callers may pass.
+			name: "ExactAgainstInexactFails",
+			cond: "if ExactF : LooseF { \"yes\" } else { \"no\" }",
+			want: `"no"`,
+		},
+		{
+			// The reverse holds. An inexact function already tolerates every call the exact type
+			// admits, so it satisfies the narrower one.
+			name: "InexactAgainstExactHolds",
+			cond: "if LooseF : ExactF { \"yes\" } else { \"no\" }",
+			want: `"yes"`,
+		},
+		{
+			// `Inexact` moves the exact operand across that boundary, flipping the first case. This
+			// is the widening subtyping cannot give you.
+			name: "InexactOperandFlipsTheCheck",
+			cond: "if Inexact<ExactF> : LooseF { \"yes\" } else { \"no\" }",
+			want: `"yes"`,
+		},
+		{
+			// `Exact` moves the inexact operand the other way, so it stops satisfying the inexact
+			// pattern that the bare `LooseF` satisfied.
+			name: "ExactOperandFlipsTheCheck",
+			cond: "if Exact<LooseF> : LooseF { \"yes\" } else { \"no\" }",
+			want: `"no"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, `
+				type ExactF = fn (a: number) -> string
+				type LooseF = fn (a: number, ...) -> string
+				type Result = `+tt.cond+`
+			`)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// `Inexact<F>` rewrites a type, not a value. An exact function value still fails to fill a slot the
+// operator widened, since the reduced annotation is an ordinary inexact function type and the
+// exact-does-not-satisfy-inexact rule applies to it unchanged. Converting a value is what
+// exact-types §6.6's separate `exact<T>(v)` operator is for, which this milestone does not add.
+func TestInferInexactFuncAnnotationDoesNotWidenAValue(t *testing.T) {
+	t.Run("exact function fills the exact slot", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			type F = fn (a: number) -> string
+			fn exactFn(a: number) -> string { return "x" }
+			fn take(cb: F) -> number { return 1 }
+			val r = take(exactFn)
+		`)
+		require.Empty(t, errs)
+	})
+
+	t.Run("the same value fails the widened slot", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			type F = fn (a: number) -> string
+			fn exactFn(a: number) -> string { return "x" }
+			fn take(cb: Inexact<F>) -> number { return 1 }
+			val r = take(exactFn)
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t,
+			"3:4-3:50: cannot constrain function of arity 1 <: function of arity 1",
+			msgWithSpan(errs[0]))
 	})
 }
 
