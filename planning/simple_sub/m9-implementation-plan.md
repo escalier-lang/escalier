@@ -133,7 +133,7 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Twenty-two PRs across five tracks. Track A builds the evaluator and the core
+Twenty-three PRs across five tracks. Track A builds the evaluator and the core
 operators in dependency order. Track B adds spread and template-literal
 operators, which hang off the backbone but are independent of each other. Track C
 adds exactness propagation and the recursion static-check. Track D is the two
@@ -145,11 +145,11 @@ The two heaviest concerns — the evaluator backbone and the conditional/`infer`
 matcher — are each split in two so no single PR carries both a new representation
 and a new algorithm: PR1a/PR1b and PR3a/PR3b below.
 
-Sixteen of the twenty-two were planned up front. PR9c through PR9f were added to Track C
+Sixteen of the twenty-three were planned up front. PR9c through PR9f were added to Track C
 after PR9b's review, which turned up one soundness question, one wrong answer, and one
 representation the milestone assumed exists. They are described together in "the
-recursion-safety follow-on group" below. PR14 and PR15 were added to Track E after PR13,
-which found four utilities inexpressible and identified what each waits on.
+recursion-safety follow-on group" below. PR14 through PR16 were added to Track E after
+PR13, which found four utilities inexpressible and identified what each waits on.
 
 ### PR1a — Residual-node representation + inert plumbing
 
@@ -778,8 +778,8 @@ them expressible at all under import-only resolution.
 [utility_types_test.go](../../internal/solver/utility_types_test.go) naming its blocker.
 
 - `NonNullable<T>` tests its argument against `null | undefined`, and neither spelling
-  resolves. `soltype`'s literal set carries no `NullLit` or `UndefinedLit`, an extension
-  owed from M2, so `resolveLitTypeAnn` reports both as unsupported.
+  resolves. The two atoms exist in `soltype`, but no annotation reaches them, so
+  `resolveLitTypeAnn` reports both as unsupported. PR16 below covers it.
 - `Parameters<F>` binds one `infer` name to a whole parameter list, which the pattern
   writes as a rest parameter. Neither the annotation surface nor the tuple capture exists.
   PR14 below covers both.
@@ -980,8 +980,97 @@ written at a fixed arity, so that half could land without PR14 if the two are
 sequenced apart.
 
 **Leaves one utility disabled.** After this PR `NonNullable<T>` is the only member of
-the suite still unexpressible, waiting on `null` and `undefined` in `soltype`'s
-literal set.
+the suite still unexpressible. PR16 covers it.
+
+### PR16 — `null` and `undefined` + `NonNullable<T>`
+
+The last utility the suite cannot express, and the one gap that touches neither
+function parameters nor constructor signatures. Both atoms already exist in `soltype`
+and one of them is already inferred. What is missing is the surface that writes them
+down and the `constrain` arm that compares them.
+
+The asymmetry is concrete. Given `val o: {a?: number} = {}`, reading `o.a` infers
+`number | undefined`, because the optional-property arm constrains an
+`UndefinedType` into the read
+([constrain.go:809](../../internal/solver/constrain.go)). No annotation can name that
+type, so the checker infers a type the source cannot write.
+
+**Data structures.** No new node.
+
+- `soltype.NullType` and `soltype.UndefinedType` are atoms already
+  ([soltype/type.go:641](../../internal/soltype/type.go)), with leaf `Accept` arms
+  ([soltype/visitor.go:81-82](../../internal/soltype/visitor.go)), printing
+  ([soltype/print.go:648-650](../../internal/soltype/print.go)), `equalType`
+  ([coalesce.go:1187-1191](../../internal/solver/coalesce.go)), a canonical union
+  order that places them after the data members
+  ([lattice.go:612-648](../../internal/solver/lattice.go)), and error rendering
+  ([errors.go:2131-2133](../../internal/solver/errors.go)).
+- `ast.NullLit` and `ast.UndefinedLit` exist and parse
+  ([ast/expr.go:188-189](../../internal/ast/expr.go)).
+- Neither atom is a member of `soltype.Lit`. Nothing about them routes through
+  `LitType`, which is what makes the surface work below a signature change rather than
+  two new switch cases.
+
+**Algorithms.**
+
+1. **The missing `constrain` arm.** `UndefinedType` has a reflexive arm
+   ([constrain.go:998](../../internal/solver/constrain.go)) and `NullType` has none,
+   so even a hand-built `null <: null` fails. Add the twin. Both stay unrelated to
+   `Void` and to every data type, matching TypeScript under strict null checks, and
+   both reach the top through the existing `_ <: unknown` rule. This arm is what lets
+   `NonNullable<T>`'s probe decide `null <: null | undefined` through the union-super
+   arm.
+2. **The annotation, expression, and pattern surface.** Three sites read `litTypeOf`
+   ([pattern.go:691](../../internal/solver/pattern.go)), which returns a
+   `*soltype.LitType` and covers only number, string, and boolean. `resolveLitTypeAnn`
+   reports `Unsupported: LitTypeAnn` ([type_ann.go:420](../../internal/solver/type_ann.go)),
+   the literal-pattern arm rejects a `null` match arm
+   ([pattern.go:124](../../internal/solver/pattern.go)), and the exhaustiveness
+   comparison cannot match one
+   ([infer_expr.go:2872](../../internal/solver/infer_expr.go)). `inferLiteral` rejects
+   both separately, so `val n = null` reports `Unsupported: NullLit`
+   ([infer_expr.go:20-36](../../internal/solver/infer_expr.go)). Since the two are
+   atoms, `litTypeOf`'s return type does not fit them. Either widen it to
+   `soltype.Type` or add a sibling that returns an atom and have each caller consult
+   both. Either way all four sites gain the two cases together, so writing `null` as a
+   type, as a value, and as a match arm lands as one behavior rather than three.
+3. **The provenance hazard.** `NullType` and `UndefinedType` are empty structs, so Go
+   gives every `&soltype.NullType{}` the same address, and `Prov` is keyed by pointer
+   identity. Recording provenance against one would file every `null` in a module under
+   a single entry, so each would report the last one's span, and the `debugProv` guard
+   would panic on the second. Skip `recordProv` for both, the way the `NeverTypeAnn`
+   arm already does and documents
+   ([type_ann.go:22-32](../../internal/solver/type_ann.go)). This is the one trap here.
+   `resolveLitTypeAnn` records unconditionally today, so the new cases must return
+   before that line rather than fall through it.
+4. **Keep them out of widening.** `widen`
+   ([widen.go:26-36](../../internal/solver/widen.go)) widens a literal to its
+   primitive. `null` and `undefined` are already their own widest form with no
+   primitive above them. Its switch is over `*soltype.LitType`, so an atom falls
+   through untouched. Confirm and pin that rather than assume it.
+5. **`NonNullable<T>`.** Written `if T : null | undefined { never } else { T }`. `T` is
+   a naked type parameter, so the conditional distributes over a union and decides each
+   member alone, which is PR3b machinery. The evaluator needs nothing new.
+
+**Wiring.** Re-enable `TestUtilityTypeNonNullable`
+([utility_types_test.go](../../internal/solver/utility_types_test.go)) and move the
+definition into `utilityTypeDecls`.
+
+**Accept.** `NonNullable<string | null | undefined>` ⇒ `string`;
+`NonNullable<null | undefined>` ⇒ `never`; `NonNullable<string | number>` unchanged.
+`val x: number | undefined = o.a` for `o: {a?: number}` is accepted, closing the gap
+above. `val n: null = null` round-trips, and a `null` match arm binds. A union renders
+in the documented canonical order, which `lattice.go:612-614` describes as
+`T0 | number | null | void | undefined` and which no annotation could write before.
+
+**Out of scope.** Narrowing `null` out of a union through a test such as `if x != null`,
+which is flow-sensitive rather than representational. Optional chaining. Codegen, which
+is M10.
+
+**Depends on** PR3b for the distributive conditional and PR13 for the corpus and the
+disabled test it re-enables. Independent of PR14 and PR15.
+
+**Completes the suite.** With this PR every utility PR13 lists reduces.
 
 ---
 
@@ -1032,6 +1121,12 @@ resolver, and `constrain` each need one arm and none of them needs a new node. I
 judgment call is how a statics-free class value matches a `new (…)` pattern, and the
 recommended answer keeps the diff to a single arm.
 
+PR16 is comparable, and its cost is spread the same way. The atoms and their comparison,
+ordering, and rendering already exist, so the work is one `constrain` arm plus the four
+sites that turn a written `null` into one. What earns it a PR of its own is that those
+sites span the annotation, expression, and pattern walks, and that the shared
+`litTypeOf` they read cannot return an atom as it stands.
+
 ## Dependency graph
 
 A PR marked ✅ has merged, and the number after it is the merged pull request. An
@@ -1065,8 +1160,9 @@ PR10 (throws clause)                       ── needs M3 only; parallel to eve
  └─► PR11 (generators)                     ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
 
 PR13 (TS utility-type suite)               ── needs PR2, PR3b, PR4, PR7, PR12
- └─► PR14 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
-      └─► PR15 (new (…) members in obj type anns + ConstructorParameters<C>)
+ ├─► PR14 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
+ │    └─► PR15 (new (…) members in obj type anns + ConstructorParameters<C>)
+ └─► PR16 (null + undefined + NonNullable<T>)            ── also needs PR3b
 ```
 
 PR9b replaced PR9's regularity condition with the productivity condition, so PR9's
@@ -1076,7 +1172,7 @@ to intersect the members' key sets, and #937 capped total alias expansion with a
 monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
 PR4's mapped types.
 
-Everything still open is PR8, PR9d, PR9f, PR10, PR11, PR13, PR14, and PR15. PR8 is partly
+Everything still open is PR8, PR9d, PR9f, PR10, PR11, PR13, PR14, PR15, and PR16. PR8 is partly
 seeded — #922 threads an object's exactness through `keyof` — but the rest of the
 operators and the `Exact` / `Inexact` intrinsics are untouched.
 
@@ -1111,6 +1207,7 @@ graph TD
     PR13["PR13 (TS utility-type suite)"]
     PR14["PR14 (rest params in fn type anns + Parameters<F>)"]
     PR15["PR15 (new (…) in obj type anns + ConstructorParameters<C>)"]
+    PR16["PR16 (null + undefined + NonNullable<T>)"]
 
     M7 -.-> PR1a
     M75 -.-> PR11
@@ -1150,6 +1247,8 @@ graph TD
     PR13 --> PR14
     PR3b --> PR14
     PR14 --> PR15
+    PR13 --> PR16
+    PR3b --> PR16
 
     linkStyle default stroke:#888
     style PR1a fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
@@ -1188,8 +1287,9 @@ graph TD
 - **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12. PR14 and
   PR15 follow it in that order, closing the gaps PR13 found that the operator track can
   close on its own. PR15's `InstanceType<C>` half is separable from PR14 and could run
-  alongside it if the two are sequenced apart.
+  alongside it if the two are sequenced apart. PR16 hangs off PR13 directly and shares
+  nothing with either, so it runs concurrently with both.
 
 The critical path is `M7 → PR1a → PR1b → PR3a → PR3b → PR4 → PR8`, and — for the
 async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13 → PR14 → PR15`.
-The follow-on group sits off both: nothing in PR1a–PR15 waits on PR9c–PR9f.
+The follow-on group sits off both: nothing in PR1a–PR16 waits on PR9c–PR9f.

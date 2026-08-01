@@ -580,11 +580,13 @@ func TestUtilityTypeReturnTypeIsAritySpecific(t *testing.T) {
 	})
 }
 
-// DISABLED until the soltype literal set covers `null` and `undefined`. That extension is owed
-// from M2 and has not landed. The Prim/Lit note in internal/soltype/type.go records it.
-// `resolveLitTypeAnn` reports `Unsupported: LitTypeAnn` for both spellings, so the `null |
-// undefined` operand `NonNullable<T>` tests against cannot be written. Re-enable by removing the
-// comment wrapper once the annotation surface and constrain's `NullType` arm exist, and add
+// DISABLED until M9 PR16, which gives `null` and `undefined` a surface. `soltype.NullType` and
+// `soltype.UndefinedType` already exist as atoms and `undefined` is already inferred, since reading
+// an optional property yields `number | undefined`. What no annotation reaches is either atom, so
+// `resolveLitTypeAnn` reports `Unsupported: LitTypeAnn` for both spellings and the `null |
+// undefined` operand `NonNullable<T>` tests against cannot be written. `constrain` also carries a
+// reflexive arm for `UndefinedType` and none for `NullType`. Re-enable by removing the comment
+// wrapper once both exist, and add
 //
 //	type NonNullable<T> = if T : null | undefined { never } else { T }
 //
