@@ -83,6 +83,27 @@ type checker struct {
 	// saved and restored around each operand, so an `infer` in a nested conditional's Then branch is
 	// rejected even though the outer Extends is still being walked.
 	inCondExtends bool
+
+	// deferAliasBounds routes checkAliasArgBounds to deferredAliasBounds instead of
+	// constraining on the spot. inferComponent sets it around the enum and alias body
+	// loops, the window in which a sibling alias in the same dep_graph component is bound
+	// but its Body is still nil. Constraining an argument that names such a sibling would
+	// expand it to ErrorType, which absorbs, so `type A = {b: Box<A>}` would accept A
+	// against Box's `string` bound.
+	deferAliasBounds bool
+
+	// deferredAliasBounds holds the comparisons raised during that window, replayed by
+	// runDeferredAliasBounds once every body in the component is filled.
+	deferredAliasBounds []deferredAliasBound
+}
+
+// deferredAliasBound is one `arg <: bound` comparison checkAliasArgBounds postponed until
+// the enclosing dep_graph component finished resolving its bodies. site is the node the
+// resulting diagnostic blames, the written type argument where there is one.
+type deferredAliasBound struct {
+	arg   soltype.Type
+	bound soltype.Type
+	site  ast.Node
 }
 
 // fieldKey identifies a written field by the receiver variable's ID and the

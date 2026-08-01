@@ -385,3 +385,323 @@ func TestInferGenericTypeAliasArityErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestInferGenericTypeAliasParamBounds covers the bound a generic alias declares on a type
+// parameter, `type Box<T: string>`. A reference supplying an argument outside the bound is
+// rejected at the reference, and one inside it is accepted. A bound may name a sibling
+// parameter, so the reference's own arguments are substituted into the bound before the
+// comparison, and an argument filled from a parameter's default is checked the same way.
+func TestInferGenericTypeAliasParamBounds(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ArgumentOutsideBound",
+			src: `
+				type Box<T: string> = {v: T}
+				val b: Box<number> = {v: 1}
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "ArgumentInsideBound",
+			src: `
+				type Box<T: string> = {v: T}
+				val b: Box<"a"> = {v: "a"}
+			`,
+		},
+		{
+			name: "UnboundedParamAcceptsAnyArgument",
+			src: `
+				type Id<T> = T
+				val a: Id<number> = 1
+				val b: Id<string> = "hi"
+			`,
+		},
+		{
+			name: "IntersectionBound",
+			src: `
+				type Box<T: string & "a"> = {v: T}
+				val b: Box<"b"> = {v: "b"}
+			`,
+			want: []string{`cannot constrain "b" <: "a"`},
+		},
+		{
+			name: "SiblingBoundSatisfied",
+			src: `
+				type P<A, B: A> = [A, B]
+				val p: P<number, 1> = [1, 1]
+			`,
+		},
+		{
+			name: "SiblingBoundViolated",
+			src: `
+				type P<A, B: A> = [A, B]
+				val p: P<string, 1> = ["a", 1]
+			`,
+			want: []string{"cannot constrain 1 <: string"},
+		},
+		{
+			name: "DefaultedArgumentChecked",
+			src: `
+				type Pair<T, U: string = T> = [T, U]
+				val p: Pair<number> = [1, 1]
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "AliasBodyReferenceChecked",
+			src: `
+				type Box<T: string> = {v: T}
+				type Outer = Box<number>
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, tt.want, msgs)
+		})
+	}
+}
+
+// TestInferGenericTypeAliasParamBoundBlamesArgument checks that the mismatch points at the
+// offending type argument in the reference rather than at the alias declaration. In
+// `val b: Box<number>` the reported span covers `number`.
+func TestInferGenericTypeAliasParamBoundBlamesArgument(t *testing.T) {
+	src := "type Box<T: string> = {v: T}\nval b: Box<number> = {v: 1}"
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain number <: string", errs[0].Message())
+	span := errs[0].Span()
+	require.Equal(t, 2, span.Start.Line)
+	require.Equal(t, 12, span.Start.Column)
+	require.Equal(t, 2, span.End.Line)
+	require.Equal(t, 18, span.End.Column)
+}
+
+// TestInferGenericTypeAliasParamBoundReportedOncePerReference checks that the bound is
+// checked where a reference resolves, not where the alias expands. Each of the two bad
+// references reports exactly once, and a recursive alias whose parameter carries a bound
+// reports once for the whole reference rather than once per expansion lap.
+func TestInferGenericTypeAliasParamBoundReportedOncePerReference(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "TwoBadReferences",
+			src: `
+				type Box<T: string> = {v: T}
+				val a: Box<number> = {v: 1}
+				val b: Box<boolean> = {v: true}
+			`,
+			want: []string{
+				"cannot constrain number <: string",
+				"cannot constrain boolean <: string",
+			},
+		},
+		{
+			name: "RecursiveAlias",
+			src: `
+				type List<T: string> = {head: T, tail?: List<T>}
+				val l: List<number> = {head: 1}
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, tt.want, msgs)
+		})
+	}
+}
+
+// TestTypeParamBoundEnforcedInEveryPosition is the regression guard for the three positions
+// that already enforced a type parameter's bound before the alias position joined them: a
+// generic function declaration, a generic function annotation, and a class reference. Each
+// instantiates its parameter at a type the bound rejects and reports the same mismatch.
+func TestTypeParamBoundEnforcedInEveryPosition(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "GenericFunctionDeclaration",
+			src: `
+				fn f<A: string>(a: A) -> A { return a }
+				val x = f(5)
+			`,
+			want: "cannot constrain 5 <: string",
+		},
+		{
+			name: "GenericFunctionAnnotation",
+			src: `
+				val g: fn<A: string>(a: A) -> A = fn (a) { return a }
+				val x = g(5)
+			`,
+			want: "cannot constrain 5 <: string",
+		},
+		{
+			name: "ClassReference",
+			src: `
+				class Box<T: string> { value: T }
+				val b = Box(1)
+			`,
+			want: "cannot constrain 1 <: string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
+}
+
+// TestInferGenericTypeAliasBoundOnVariableArgument covers a type argument that is itself a
+// type variable rather than a concrete type. The comparison is a live constraint, so the
+// alias's bound lands on that variable and the diagnostic surfaces where the variable is
+// instantiated, the same way the generic-function and class positions behave. Nothing is
+// reported at the declaration that forwards the variable.
+func TestInferGenericTypeAliasBoundOnVariableArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ForwardingDeclarationIsQuiet",
+			src: `
+				type Box<T: string> = {v: T}
+				fn g<U>(u: U) -> Box<U> { return {v: u} }
+			`,
+		},
+		{
+			name: "InstantiationReportsThroughReturn",
+			src: `
+				type Box<T: string> = {v: T}
+				fn g<U>(u: U) -> Box<U> { return {v: u} }
+				val x = g(1)
+			`,
+			want: []string{"cannot constrain 1 <: string"},
+		},
+		{
+			name: "InstantiationReportsThroughParameter",
+			src: `
+				type Box<T: string> = {v: T}
+				fn f<U>(b: Box<U>) -> U { return b.v }
+				val x = f({v: 1})
+			`,
+			want: []string{"cannot constrain 1 <: string"},
+		},
+		{
+			name: "InstantiationReportsThroughClassField",
+			src: `
+				type Box<T: string> = {v: T}
+				class C<U> { b: Box<U> }
+				val c = C({v: 1})
+			`,
+			want: []string{"cannot constrain 1 <: string"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, tt.want, msgs)
+		})
+	}
+}
+
+// TestInferGenericTypeAliasBoundOnSiblingAliasArgument covers a type argument naming an
+// alias in the same dep_graph component, whose body is still nil while the reference
+// resolves. The comparison is queued and replayed once every body in the component is
+// filled, so the finished body is what the bound sees. Checking against the half-built
+// sibling instead would expand it to an error type, which absorbs and reports nothing.
+func TestInferGenericTypeAliasBoundOnSiblingAliasArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "SelfRecursiveArgument",
+			src: `
+				type Box<T: string> = {v: T}
+				type A = {b: Box<A>}
+			`,
+			want: []string{"cannot constrain object <: string"},
+		},
+		{
+			name: "MutuallyRecursiveArgument",
+			src: `
+				type Box<T: string> = {v: T}
+				type A = {b: Box<B>}
+				type B = A
+			`,
+			want: []string{"cannot constrain object <: string"},
+		},
+		{
+			name: "NonRecursiveSiblingArgument",
+			src: `
+				type Box<T: string> = {v: T}
+				type B = {x: number}
+				type A = {b: Box<B>}
+			`,
+			want: []string{"cannot constrain object <: string"},
+		},
+		{
+			name: "SatisfiedSiblingArgument",
+			src: `
+				type Box<T: string> = {v: T}
+				type S = "a"
+				type A = {b: Box<S>}
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, tt.want, msgs)
+		})
+	}
+}
+
+// TestInferGenericTypeAliasBoundUnderConditional guards the case that rules out reading a
+// parameter's inferred upper bounds instead of its declared constraint. Resolving the then
+// branch of `if T : string` constrains X's own T against Box's bound, which leaves string on
+// that variable even though X declares T unbounded. `X<number>` selects the else branch and
+// is number, so reading the variable's bounds would reject a well-typed program.
+func TestInferGenericTypeAliasBoundUnderConditional(t *testing.T) {
+	src := `
+		type Box<T: string> = {v: T}
+		type X<T> = if T : string { Box<T> } else { number }
+		val a: X<number> = 1
+		val b: X<"a"> = {v: "a"}
+	`
+	_, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+}

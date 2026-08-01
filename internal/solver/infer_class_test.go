@@ -1797,3 +1797,158 @@ func TestInferMethodOverloadUniformMutReceiverAccepted(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "number", values["r"])
 }
+
+// TestInferClassMethodTypeParamsGated pins the gate on a method's own `<T>` binder.
+// inferMemberFunc calls inferFunc with allowTypeParams=false, because a member's type
+// parameter needs a per-instance projection the class-body freeze does not apply, so
+// resolving it would collapse two calls onto one shared var. The binder is reported as an
+// unsupported feature and the member infers monomorphically, which leaves each `T` in the
+// signature an unbound name.
+//
+// A declared bound rides on the binder, so gating the binder gates the bound with it: the
+// call below passes 1 to a parameter written `T: string` and no mismatch is reported. The
+// class's own `<U: number>` binder is a separate mechanism and still enforces, which the
+// last case shows. Lifting the gate, tracked by issue #957, should flip this test and
+// enable TestInferClassMethodTypeParamBounds below.
+func TestInferClassMethodTypeParamsGated(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "InstanceMethodBinderIsGated",
+			src: `
+				class C {
+					pick<T: string>(self, x: T) -> T { return x },
+				}
+				val c = C()
+				val r = c.pick(1)
+			`,
+			want: []string{
+				"Unsupported: TypeParam",
+				"Unsupported: TypeRefTypeAnn",
+				"Unsupported: TypeRefTypeAnn",
+			},
+		},
+		{
+			name: "StaticMethodBinderIsGated",
+			src: `
+				class C {
+					static pick<T: string>(x: T) -> T { return x },
+				}
+				val r = C.pick(1)
+			`,
+			want: []string{
+				"Unsupported: TypeParam",
+				"Unsupported: TypeRefTypeAnn",
+				"Unsupported: TypeRefTypeAnn",
+			},
+		},
+		{
+			name: "ClassBinderStillEnforcesItsBound",
+			src: `
+				class C<U: number> {
+					v: U,
+				}
+				val c = C("z")
+			`,
+			want: []string{`cannot constrain "z" <: number`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, tt.want, msgs)
+		})
+	}
+}
+
+// DISABLED until issue #957 lands support for a method's own type parameters — the
+// per-instance projection inferMemberFunc names, which lets two calls to one generic method
+// instantiate independently. Today the binder is reported as unsupported and the member
+// infers monomorphically, which TestInferClassMethodTypeParamsGated pins.
+//
+// Once the gate lifts, a method's `<T: string>` should enforce its bound at the call the
+// same way a generic function's does, since both route their binder through
+// resolveTypeParams. These cases carry that intended behavior: a satisfying argument is
+// accepted, a violating one reports the mismatch, an unbounded binder accepts anything, a
+// bound naming a sibling parameter resolves, and two calls to one method instantiate
+// independently rather than sharing a var. Re-enable by removing the comment wrapper.
+func TestInferClassMethodTypeParamBounds(t *testing.T) {
+	/*
+		tests := []struct {
+			name string
+			src  string
+			want []string
+		}{
+			{
+				name: "ArgumentInsideBound",
+				src: `
+					class C {
+						pick<T: string>(self, x: T) -> T { return x },
+					}
+					val c = C()
+					val r = c.pick("a")
+				`,
+			},
+			{
+				name: "ArgumentOutsideBound",
+				src: `
+					class C {
+						pick<T: string>(self, x: T) -> T { return x },
+					}
+					val c = C()
+					val r = c.pick(1)
+				`,
+				want: []string{"cannot constrain 1 <: string"},
+			},
+			{
+				name: "UnboundedBinderAcceptsAnyArgument",
+				src: `
+					class C {
+						pick<T>(self, x: T) -> T { return x },
+					}
+					val c = C()
+					val r = c.pick(1)
+				`,
+			},
+			{
+				name: "SiblingBoundViolated",
+				src: `
+					class C {
+						pair<A, B: A>(self, a: A, b: B) -> A { return a },
+					}
+					val c = C()
+					val r = c.pair(1, "y")
+				`,
+				want: []string{`cannot constrain "y" <: 1`},
+			},
+			{
+				name: "TwoCallsInstantiateIndependently",
+				src: `
+					class C {
+						pick<T: string>(self, x: T) -> T { return x },
+					}
+					val c = C()
+					val a = c.pick("a")
+					val b = c.pick("b")
+				`,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, _, errs := inferSource(t, tt.src)
+				var msgs []string
+				for _, e := range errs {
+					msgs = append(msgs, e.Message())
+				}
+				require.Equal(t, tt.want, msgs)
+			})
+		}
+	*/
+}
