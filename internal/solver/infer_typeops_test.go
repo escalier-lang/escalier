@@ -2359,9 +2359,9 @@ func TestInferCondDistributionThroughNesting(t *testing.T) {
 
 // A distributed member reaches an alias reference written in a branch, so each member instantiates
 // that alias with itself. `Branch<"a" | 1>` admits `"y"`, from `IsStr<"a">` on the string member, and
-// `"num"` from the other member, which is what TypeScript reduces the same alias to. reduce leaves an
-// alias in a result position under its own name, so the stored type is checked through constrain,
-// which expands it; a rejected value names the residual form the annotation holds.
+// `"num"` from the other member, which is what TypeScript reduces the same alias to. `IsStr`'s body
+// is a conditional, so the branch reduction expands the reference and decides it, and a rejected
+// value names the branch results rather than the alias that produced one of them.
 func TestInferCondDistributionIntoBranchAlias(t *testing.T) {
 	const aliases = `
 		type IsStr<T> = if T : string { "y" } else { "n" }
@@ -2384,7 +2384,7 @@ func TestInferCondDistributionIntoBranchAlias(t *testing.T) {
 			// "n" is what IsStr yields for a non-string argument, which no member produces here.
 			name:    "UnreachableBranchRejected",
 			src:     aliases + `val x: Branch<"a" | 1> = "n"`,
-			wantErr: `cannot constrain "n" <: "num" | IsStr<"a">`,
+			wantErr: `cannot constrain "n" <: "num" | "y"`,
 		},
 	}
 	for _, tt := range tests {
@@ -2453,6 +2453,238 @@ func TestInferCondCaptureFromConstraint(t *testing.T) {
 			nodes, ctx, errs := inferTypeNodes(t, tt.src)
 			require.Empty(t, errs)
 			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// awaitedAlias is `Awaited<T>` written in Escalier, the recursive conditional that strips every layer
+// of `Promise` off a type. Every case below prepends this one definition, since what they assert is
+// that it reduces the way TypeScript's `Awaited<T>` does.
+const awaitedAlias = `
+	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
+`
+
+// `Awaited<T>` strips promises to any depth. Each lap captures the payload of one `Promise` and hands
+// it back to the alias. The lap whose argument is not a promise selects Else and returns it, so the
+// recursion ends on the first non-promise. Every expectation matches TypeScript's reduction of the
+// same argument.
+//
+// Recursion is what sets these cases apart from a conditional whose branches name only written types.
+// The Then branch names the alias being defined, so deciding the conditional once is not enough.
+// reduceBranch expands that reference, decides the conditional in its body, and repeats until a lap
+// selects Else.
+func TestInferAwaited(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// One layer. The capture is the payload, and the next lap returns it unchanged.
+			name:         "OneLayer",
+			src:          `type Result = Awaited<Promise<number>>`,
+			wantExpanded: "number",
+		},
+		{
+			// A nested promise, the shape `await` does not flatten on its own. Each lap strips one
+			// layer, so two laps reach the payload.
+			name:         "TwoLayers",
+			src:          `type Result = Awaited<Promise<Promise<string>>>`,
+			wantExpanded: "string",
+		},
+		{
+			// Depth is not fixed, so four layers reduce the same way one does.
+			name:         "FourLayers",
+			src:          `type Result = Awaited<Promise<Promise<Promise<Promise<number>>>>>`,
+			wantExpanded: "number",
+		},
+		{
+			// A non-promise argument selects Else on the first lap and comes back unchanged.
+			name:         "NonPromise",
+			src:          `type Result = Awaited<number>`,
+			wantExpanded: "number",
+		},
+		{
+			// A promise payload that is itself structural is returned whole.
+			name:         "ObjectPayload",
+			src:          `type Result = Awaited<Promise<{a: number}>>`,
+			wantExpanded: "{a: number}",
+		},
+		{
+			// The Check is a naked type parameter, so a union argument distributes and each member
+			// unwraps on its own.
+			name:         "UnionDistributes",
+			src:          `type Result = Awaited<Promise<number> | string>`,
+			wantExpanded: "number | string",
+		},
+		{
+			// Each member recurses to its own depth before the results union.
+			name:         "UnionOfPromisesAtDifferentDepths",
+			src:          `type Result = Awaited<Promise<number> | Promise<Promise<string>>>`,
+			wantExpanded: "number | string",
+		},
+		{
+			// The argument is another operator's result rather than a written type. The alias
+			// reference is ground, so the `Check <: Extends` probe expands it, and `Awaited` unwraps
+			// the promise the function returns. `Awaited<ReturnType<F>>` is how a caller names the
+			// value an async function resolves to.
+			name: "OverReturnType",
+			src: `
+				type ReturnType<F> = if F : fn () -> infer R { R } else { never }
+				type Fetch = fn () -> Promise<number>
+				type Result = Awaited<ReturnType<Fetch>>
+			`,
+			wantExpanded: "number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, awaitedAlias+tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// `Awaited<T>` over an unfilled type parameter stays symbolic, the same as any other conditional
+// whose Check has not grounded. Reducing it yields the alias body with the recursive reference
+// intact, so the recursion runs once an instantiation supplies the argument.
+func TestInferAwaitedStaysSymbolic(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, awaitedAlias+`type Wrapper<T> = Awaited<T>`)
+	require.Empty(t, errs)
+	require.Equal(t, "Awaited<t3>", soltype.Print(nodes["Wrapper"]))
+	require.Equal(t,
+		"if t3 : Promise<infer U> { Awaited<U> } else { t3 }",
+		soltype.Print(expandAliasResidual(ctx, nodes["Wrapper"])))
+}
+
+// constrain reduces an `Awaited<…>` annotation to check a value against it, while the stored type
+// keeps the name the source wrote. A value of the unwrapped type is accepted and a mismatch is
+// rejected against that unwrapped type, so the diagnostic names what the recursion arrived at
+// rather than the annotation.
+func TestInferAwaitedConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "UnwrappedValueAccepted",
+			src:  `val x: Awaited<Promise<Promise<number>>> = 5`,
+		},
+		{
+			name:    "MismatchNamesUnwrappedType",
+			src:     `val x: Awaited<Promise<Promise<number>>> = "hi"`,
+			wantErr: `cannot constrain "hi" <: number`,
+		},
+		{
+			name: "ArgumentChecksThroughParameterType",
+			src: `
+				fn take(v: Awaited<Promise<string>>) -> number { return 1 }
+				val r = take(5)
+			`,
+			wantErr: "cannot constrain 5 <: string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, awaitedAlias+tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// A branch that names an alias expands only when that alias's body is itself an unreduced operator,
+// which is what a recursive conditional needs to reach a value. A branch naming an alias whose body
+// is ordinary structure keeps the name the source wrote, matching how every other reduction treats a
+// named type. Both cases reduce the same conditional shape and differ only in what the branch alias
+// stands for.
+func TestInferCondBranchAliasExpandsOnlyOperators(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantExpanded string
+	}{
+		{
+			// The branch alias's body is a conditional, so it expands and decides.
+			name: "OperatorBodyReduces",
+			src: `
+				type IsStr<T> = if T : string { "y" } else { "n" }
+				type Pick<T> = if T : string { IsStr<T> } else { "num" }
+				type Result = Pick<"a">
+			`,
+			wantExpanded: `"y"`,
+		},
+		{
+			// The branch alias's body is an object, so the reference stands as written.
+			name: "StructuralBodyKeepsTheName",
+			src: `
+				type List<T> = {head: T, tail: List<T>}
+				type Pick<T> = if T : number { List<T> } else { boolean }
+				type Result = Pick<number>
+			`,
+			wantExpanded: "List<number>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A recursive conditional whose branch never stops recursing terminates anyway, leaving the alias
+// reference symbolic. `Awaited<T>` stops because a lap eventually selects Else. An alias whose Then
+// branch always wins has no such lap, so what ends the walk is one of the guards expandAliasGuarded
+// applies. A conditional guards its branches, so checkProductive accepts every alias written here and
+// the stop has to come from reduction.
+func TestInferAwaitedShapeWithoutBaseCaseTerminates(t *testing.T) {
+	// `Loop` calls itself with the argument it was given, so the second lap repeats the first's
+	// instantiation state and the active-state guard stops it there. The result is the reference the
+	// source wrote.
+	t.Run("RepeatingStateStopsAtTheRepeat", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type Loop<T> = if T : T { Loop<T> } else { T }
+			type Result = Loop<number>
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "Loop<number>", soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+	})
+
+	// `Grow` wraps its argument in a tuple every lap, so no instantiation state ever repeats and
+	// maxExpandDepth is the guard that runs out. The nested case puts a second conditional between the
+	// alias and its recursive reference, so the branch reduction reaches that reference through
+	// another reduction rather than directly. Both must spend one expansion per lap. A branch that
+	// expanded twice would keep growing past the exhausted budget, which is why each case asserts the
+	// exact layer count rather than only that reduction finished.
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "DirectBranch", body: `if T : T { Grow<[T]> } else { T }`},
+		{name: "BranchNestsAnotherConditional", body: `if T : T { if T : T { Grow<[T]> } else { T } } else { T }`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+"StopsOnTheDepthBudget", func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, `
+				type Grow<T> = `+tt.body+`
+				type Result = Grow<number>
+			`)
+			require.Empty(t, errs)
+			reduced := soltype.Print(expandAliasResidual(ctx, nodes["Result"]))
+			require.True(t, strings.HasPrefix(reduced, "Grow<[["),
+				"expected a truncated Grow reference, got %s", reduced)
+			// Each lap adds one tuple layer and spends one unit of depth. The reference left behind is
+			// the argument built for the lap the exhausted budget stopped, so it carries one layer more
+			// than the budget allowed laps.
+			require.Equal(t, maxExpandDepth+1, strings.Count(reduced, "["))
 		})
 	}
 }

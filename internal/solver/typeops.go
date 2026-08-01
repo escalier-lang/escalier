@@ -67,7 +67,9 @@ const maxTemplateLitCombinations = 10_000
 // alias itself gets under constrain. A `keyof T` over a type parameter has no ground key set, so
 // it stays the symbolic KeyofType.
 //
-// An alias reached through an operand is made safe by a four-part termination strategy:
+// An alias is reached two ways: through an operand, and through the branch a conditional selected,
+// which reduceBranch expands so a recursive conditional such as `Awaited<T>` reaches a value. Both
+// are made safe by a four-part termination strategy:
 //
 //   - checkProductive rejects an alias whose recursion emits no structure and marks its AliasDef
 //     NotProductive. Such an alias names no type, so the evaluator declines to expand it at all
@@ -190,9 +192,27 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 		return e.reduceCondInfer(t, check, extends)
 	}
 	if e.ctx.condExtends(check, extends, e.seen) {
-		return e.reduce(t.Then)
+		return e.reduceBranch(t.Then)
 	}
-	return e.reduce(t.Else)
+	return e.reduceBranch(t.Else)
+}
+
+// reduceBranch reduces the branch a conditional selected. It is reduce plus one rule: a branch that
+// names an alias whose body is an unreduced operator expands and reduces. That lets a recursive
+// conditional like `Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }` reach a value.
+// An alias body of ordinary structure keeps its name, so a branch naming `List<T>` still yields
+// `List<number>`. expandAliasGuarded terminates a recursion with no base case, one expansion a lap.
+func (e *typeEvaluator) reduceBranch(branch soltype.Type) soltype.Type {
+	alias, ok := branch.(*soltype.AliasType)
+	if !ok {
+		return e.reduce(branch)
+	}
+	return e.expandAliasGuarded(alias, aliasItself, func(body soltype.Type) soltype.Type {
+		if !isResidualOp(body) {
+			return alias
+		}
+		return e.reduce(body)
+	})
 }
 
 // distributeCond decides a distributive conditional one union member at a time and unions the
@@ -277,13 +297,13 @@ func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check, extends solt
 	}
 	captured, ok := e.ctx.trialCaptures(check, substituteInfer(extends, holes), vars, e.seen.Clone())
 	if !ok {
-		return e.reduce(t.Else)
+		return e.reduceBranch(t.Else)
 	}
 	captures := make(map[int]soltype.Type, len(decls))
 	for i, id := range decls {
 		captures[id] = captured[i]
 	}
-	return e.reduce(substituteInfer(t.Then, captures))
+	return e.reduceBranch(substituteInfer(t.Then, captures))
 }
 
 // inferDeclIDs returns the ids of the `infer` declarations t holds, in first-appearance order with
