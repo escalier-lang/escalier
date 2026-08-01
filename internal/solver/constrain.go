@@ -21,18 +21,75 @@ func hasRest(f *soltype.FuncType) bool {
 	return n > 0 && f.Params[n-1].Rest
 }
 
+// restIndex is the position of f's typed rest param, or -1 when it has none. Because a
+// rest param is always last, resolveFuncTypeAnn rejects any other position, the index is
+// len(f.Params)-1 whenever there is one.
+func restIndex(f *soltype.FuncType) int {
+	if hasRest(f) {
+		return len(f.Params) - 1
+	}
+	return -1
+}
+
+// restTuple reads the tuple a rest param's type slot holds, if it holds one. Two shapes
+// carry it. A written `...args: [number, string]` stores the tuple directly. An `infer`
+// clause written in that slot, `fn (...args: infer P) -> R`, stores an inference variable
+// that constrain's gather rule has recorded the gathered tuple against as an upper bound,
+// so the tuple is read back off the variable. Anything else, including an array-typed rest
+// param and a variable no gather has bounded, has no tuple.
+func restTuple(t soltype.Type) (*soltype.TupleType, bool) {
+	switch t := t.(type) {
+	case *soltype.TupleType:
+		return t, true
+	case *soltype.TypeVarType:
+		for _, ub := range t.UpperBounds {
+			if tup, ok := ub.(*soltype.TupleType); ok {
+				return tup, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// restArity is the inclusive range of argument counts a rest param of type t binds. A
+// tuple-typed rest binds exactly one argument per element, so both ends are the tuple's
+// length, and an inexact tuple such as `[number, ...]` has an open tail so its ceiling is
+// ∞. Every other shape, an array-typed `...xs: T[]` among them, binds zero or more, so it
+// contributes nothing to the floor and lifts the ceiling to ∞.
+func restArity(t soltype.Type) (lo, hi int) {
+	tup, ok := restTuple(t)
+	if !ok {
+		return 0, unboundedArity
+	}
+	if tup.Inexact {
+		return len(tup.Elems), unboundedArity
+	}
+	return len(tup.Elems), len(tup.Elems)
+}
+
 // requiredCount is the number of arguments a positional call must supply — the
 // LOWER bound of f's accept-set. Because arguments bind positionally, a parameter
-// only lowers the requirement when it is TRAILING: a trailing rest param (zero or
-// more) and trailing optionals (`x?`) may be omitted, but in fn(a?, b) you cannot
-// omit a while still supplying b, so a is effectively required. So required = the
-// position after the last non-optional, non-rest param — NOT the count of all
-// non-optional params, which would wrongly treat a leading optional (or the rest
+// only lowers the requirement when it is TRAILING: a trailing rest param binding
+// zero or more args and trailing optionals (`x?`) may be omitted, but in fn(a?, b)
+// you cannot omit a while still supplying b, so a is effectively required. So
+// required = the position after the last non-optional, non-rest param — NOT the count
+// of all non-optional params, which would wrongly treat a leading optional (or the rest
 // param) as droppable and let a call leave a required param unbound.
+//
+// A tuple-typed rest param binds a fixed number of args rather than zero or more, so it
+// adds that many to the requirement. It also pins every param before it: supplying the
+// rest's args means filling the positions they sit behind, so a preceding `x?` can no
+// longer be dropped. That is why the trailing-optional loop runs only when the rest binds
+// nothing.
 func requiredCount(f *soltype.FuncType) int {
 	n := len(f.Params)
-	if n > 0 && f.Params[n-1].Rest {
-		n-- // a trailing rest param binds zero-or-more args, so it is never required
+	restLo := 0
+	if k := restIndex(f); k >= 0 {
+		n = k
+		restLo, _ = restArity(f.Params[k].Type)
+	}
+	if restLo > 0 {
+		return n + restLo
 	}
 	for n > 0 && f.Params[n-1].Optional {
 		n--
@@ -43,17 +100,78 @@ func requiredCount(f *soltype.FuncType) int {
 // acceptSet is the inclusive range [lo, hi] of argument counts f tolerates when
 // invoked (#677 §4.2.1): lo = requiredCount(f); hi = len(f.Params) when f has a
 // finite arity, and unboundedArity when its upper bound is open — either because it
-// is inexact (the `...` marker) OR because its last param is a typed rest (§4.2.3).
+// is inexact (the `...` marker) OR because its last param is a rest param binding an
+// unbounded number of args (§4.2.3). A tuple-typed rest param binds a fixed number
+// instead, so it keeps the ceiling finite at the fixed params plus the tuple's length.
 // Read a supertype callback parameter's accept-set as "the argument counts whoever
 // holds this parameter may invoke the supplied function with."
 func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	lo = requiredCount(f)
-	if f.Inexact || hasRest(f) {
-		hi = unboundedArity
-	} else {
-		hi = len(f.Params)
+	if f.Inexact {
+		return lo, unboundedArity
 	}
-	return lo, hi
+	if k := restIndex(f); k >= 0 {
+		_, restHi := restArity(f.Params[k].Type)
+		if restHi == unboundedArity {
+			return lo, unboundedArity
+		}
+		return lo, k + restHi
+	}
+	return lo, len(f.Params)
+}
+
+// canGatherRest reports whether constrain's gather rule applies, given a sub function, the
+// type in the super's rest slot, and the slot's index k. It applies when both sides describe
+// a fixed-length group of arguments at that position.
+//
+// The sub side is fixed when it declares its parameters and stops there. An inexact sub
+// tolerates arguments past its declared list and a sub with its own rest param binds an
+// unbounded group, so in neither case do the declared params from k on say how many
+// arguments there are. A sub with fewer than k params cannot fill the super's fixed
+// positions at all, which is the genuine arity failure the accept-set gate reports.
+//
+// The super side is fixed for two slot types. An exact tuple, written `...args: [number,
+// string]`, names its length outright. An inference variable is the `infer P` of a
+// conditional's pattern, which is what the gather exists to bind. Every other slot type,
+// an array-typed `...xs: T[]` among them, stands for zero or more arguments of one element
+// type, so no tuple describes it and the shared-position walk keeps its today's behavior.
+func canGatherRest(sub *soltype.FuncType, restSlot soltype.Type, k int) bool {
+	if sub.Inexact || hasRest(sub) || len(sub.Params) < k {
+		return false
+	}
+	switch restSlot := restSlot.(type) {
+	case *soltype.TupleType:
+		return !restSlot.Inexact
+	case *soltype.TypeVarType:
+		return true
+	}
+	return false
+}
+
+// gatherRestParams turns the sub params a super's rest param stands for into the element
+// types of the tuple the gather rule checks against.
+//
+// An optional param widens with `undefined`, because a tuple element carries no
+// optionality marker of its own — soltype.TupleType.Elems is a plain []Type. So matching
+// `fn (x: number, y?: string) -> boolean` against `fn (...args: infer P) -> unknown`
+// captures `[number, string | undefined]`. Widening keeps the two facts the slot carries,
+// its type and the fact that it may go unsupplied, where dropping the param or rejecting
+// the match would lose one of them. TypeScript writes the same capture `[x: number, y?:
+// string]` using a tuple with per-element optionality, which soltype has no counterpart
+// for.
+//
+// The union is built with a nil Context so its subsumption never calls constrain, the
+// reason capturedBound gives for the same choice: the gather runs inside a constraint and
+// often inside a probe trial.
+func gatherRestParams(params []*soltype.FuncParam) []soltype.Type {
+	elems := make([]soltype.Type, len(params))
+	for i, p := range params {
+		elems[i] = p.Type
+		if p.Optional {
+			elems[i] = newUnion(nil, []soltype.Type{p.Type, &soltype.UndefinedType{}}, false)
+		}
+	}
+	return elems
 }
 
 // constraintKey keys both of seenPairs' records by pointer identity (Go's
@@ -623,6 +741,31 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if len(sub.TypeParams) > 0 {
 				return c.constrain(c.instantiateFuncBinder(sub, sub.TypeParams[0].Var.Level), sup, seen, mutCtx)
 			}
+			// The gather rule for a super rest param. Let k be the super's rest index. The
+			// super binds its first k arguments to its fixed params and every argument past
+			// them to the rest param as one group, so the sub params from k on are what the
+			// rest param's type stands for. Collect them into a tuple and check the rest
+			// param's type against it in the same contravariant orientation the fixed
+			// positions use.
+			//
+			// This is what lets `Parameters<F>` capture a parameter list. Matching
+			// `fn (x: number, y: string) -> boolean` against the pattern
+			// `fn (...args: infer P) -> unknown` records `[number, string]` as an upper bound
+			// on the variable standing for P, and capturedBound reads the meet of the uppers,
+			// which is that tuple. Without the gather the shared-position walk below would
+			// pair the rest slot with the sub's first param alone and capture `number`.
+			//
+			// The gather runs before the accept-set gate so the gate reads the rest param's
+			// arity off a tuple rather than off an unbounded variable.
+			gatherAt := -1
+			if k := restIndex(sup); k >= 0 && canGatherRest(sub, sup.Params[k].Type, k) {
+				gatherAt = k
+			}
+			var errs []SolverError
+			if gatherAt >= 0 {
+				gathered := &soltype.TupleType{Elems: gatherRestParams(sub.Params[gatherAt:])}
+				errs = append(errs, c.constrain(sup.Params[gatherAt].Type, gathered, seen, false)...) // contravariant
+			}
 			// Accept-set subtyping (#677 §4.2.1): read super as a callback parameter.
 			// sub <: super iff accept(sub) ⊇ accept(super) — sub must tolerate every
 			// argument count a holder of super may invoke it with. With
@@ -634,6 +777,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// clause is the `required` part (a typed-rest/optional lowers it). This
 			// subsumes M2's exact-same-arity rule: two EXACT functions have accept
 			// [r, n], so ⊇ forces equal upper bounds, i.e. the old same-arity check.
+			//
+			// An arity failure discards the gather's errors and reports itself alone, so a
+			// written `fn (...args: [number, string]) -> string` slot rejects a one-parameter
+			// function with one message rather than with both an arity mismatch and a tuple
+			// length mismatch saying the same thing.
 			loSub, hiSub := acceptSet(sub)
 			loSup, hiSup := acceptSet(sup)
 			if loSub > loSup || hiSub < hiSup {
@@ -656,12 +804,16 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// arity-only, because checking its trailing arguments against the element
 			// type needs Array<T>, which lands in M7. A function is its own annotation
 			// context, so the deep-mut flag resets.
-			var errs []SolverError
 			n := min(len(sub.Params), len(sup.Params))
+			if gatherAt >= 0 {
+				n = gatherAt // the gather already covered the positions from gatherAt on
+			}
 			for i := 0; i < n; i++ {
 				errs = append(errs, c.constrain(sup.Params[i].Type, sub.Params[i].Type, seen, false)...) // contravariant
 			}
-			if sup.Inexact {
+			// A gathered super has no surplus sub param, since the rest param already stood for
+			// every position from gatherAt on.
+			if sup.Inexact && gatherAt < 0 {
 				unknownT := &soltype.UnknownType{}
 				for i := n; i < len(sub.Params); i++ {
 					if sub.Params[i].Rest {
@@ -674,6 +826,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// The throws clause is covariant like the return. A non-throwing sub carries
 			// `never`, which constrain short-circuits, so no clause satisfies every super.
 			return append(errs, c.constrain(sub.ThrowsOrNever(), sup.ThrowsOrNever(), seen, false)...)
+		}
+		if _, ok := super.(*soltype.FunctionType); ok {
+			// Every function type is below the function top type, whatever its signature.
+			// FunctionType names no params and no return, so there is nothing further to check.
+			return nil
+		}
+	case *soltype.FunctionType:
+		if _, ok := super.(*soltype.FunctionType); ok {
+			return nil // reflexive; the atom has no structure to recurse into
 		}
 	case *soltype.TupleType:
 		if tupleHasSpread(sub) || tupleHasSpread(super) {

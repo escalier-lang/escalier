@@ -79,7 +79,8 @@ func typePrec(t Type) int {
 		return precAtom
 	default:
 		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
-		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType and
+		// UndefinedType, NeverType, UnknownType, FunctionType — atoms. FunctionType renders as the bare
+		// name `Function`. ObjectType is brace-delimited, and ClassType and
 		// AliasType each render as a bare name or `Name<args>`, so none needs parens. A raw TypeVarType
 		// appears only when printing an un-coalesced type, see printType; it is also an
 		// atom rendered as `t{ID}`, so it lands here. A `mut 'a Point` borrow wraps the
@@ -603,9 +604,9 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 // argument list is exactly what a diagnostic needs bounded.
 func isPrintLeaf(t Type) bool {
 	switch t.(type) {
-	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
-		*Void, *NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
-		*RecursiveVarType:
+	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *FunctionType,
+		*ErrorType, *Void, *NullType, *UndefinedType, *MappedKeyType, *InferType,
+		*TypeofType, *RecursiveVarType:
 		return true
 	}
 	return false
@@ -646,6 +647,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return "never"
 	case *UnknownType:
 		return "unknown"
+	case *FunctionType:
+		return "Function"
 	case *ErrorType:
 		return "error"
 	case *Void:

@@ -617,7 +617,8 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 // NullType, Void, and UndefinedType. A union renders its parameters and data
 // members before its absence markers. NullType precedes Void, which precedes
 // UndefinedType, so `T0 | number | null | void | undefined` is the canonical
-// render.
+// render. FunctionType follows FuncType, so a union holding both renders the
+// signature before the function top type.
 func typeKindOrder(t soltype.Type) int {
 	switch t.(type) {
 	case *soltype.NeverType:
@@ -642,16 +643,18 @@ func typeKindOrder(t soltype.Type) int {
 		return 9
 	case *soltype.FuncType:
 		return 10
-	case *soltype.UnionType:
+	case *soltype.FunctionType:
 		return 11
-	case *soltype.IntersectionType:
+	case *soltype.UnionType:
 		return 12
-	case *soltype.NullType:
+	case *soltype.IntersectionType:
 		return 13
-	case *soltype.Void:
+	case *soltype.NullType:
 		return 14
-	case *soltype.UndefinedType:
+	case *soltype.Void:
 		return 15
+	case *soltype.UndefinedType:
+		return 16
 	}
-	return 16
+	return 17
 }

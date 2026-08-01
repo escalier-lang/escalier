@@ -376,16 +376,57 @@ func TestInferFuncAnnotationPreservesDestructuringPattern(t *testing.T) {
 	require.Equal(t, "fn ({x, y}: {x: number, y: number}, [a, b]: [number, string]) -> number", values["f"])
 }
 
-// A rest parameter reports the documented unsupported feature and recovers as a
-// normal positional param, so it never sets FuncParam.Rest. acceptSet / hasRest /
-// requiredCount assume a rest param is last, and the parser does not enforce that
-// for a non-last `...x`, so a silently-set Rest could corrupt the accept-set.
-func TestInferRestParamFuncAnnotationReportsUnsupported(t *testing.T) {
-	values, _, errs := inferSource(t, `val f: fn(...xs: number) -> number = fn (x) { return x }`)
+// A `...xs: T` parameter in a function type annotation sets FuncParam.Rest, so it
+// round-trips through the printer as written. A tuple in the slot names the arguments the
+// rest param binds one per element, so the annotation fixes the arity at two and a
+// two-parameter function fills it.
+func TestInferRestParamFuncAnnotation(t *testing.T) {
+	values, _, errs := inferSource(t, `val f: fn(...xs: [number, string]) -> number = fn (x, y) { return 1 }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (...xs: [number, string]) -> number", values["f"])
+}
+
+// acceptSet reads the Rest flag off the last parameter only, so a rest parameter written
+// anywhere else is rejected at resolution. The parser accepts it in any position.
+func TestInferRestParamFuncAnnotationRejectsNonFinalPosition(t *testing.T) {
+	_, _, errs := inferSource(t, `val f: fn(...xs: [number], y: string) -> number = fn (x, y) { return 1 }`)
 	require.Len(t, errs, 1)
-	require.IsType(t, &UnsupportedFeatureError{}, errs[0])
-	require.Equal(t, "1:11-1:16: Unsupported: rest parameter in function type annotation", msgWithSpan(errs[0]))
-	require.Equal(t, "fn (xs: number) -> number", values["f"])
+	require.IsType(t, &RestParamNotLastError{}, errs[0])
+	require.Equal(t, "1:11-1:16: a rest parameter must be the last parameter of a function type", msgWithSpan(errs[0]))
+}
+
+// A tuple-typed rest slot fixes the arity at the tuple's length, so the relaxation the
+// gather rule introduces reaches only a conditional's pattern match. At value level both
+// sides are written types, so an exact function of the wrong arity is still rejected.
+func TestInferRestParamFuncAnnotationRejectsWrongArityValue(t *testing.T) {
+	src := `fn one(x: number) -> string { return "a" }
+val slot: fn(...args: [number, string]) -> string = one`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.IsType(t, &FuncArityMismatchError{}, errs[0])
+	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 1", errs[0].Message())
+}
+
+// The tuple's elements are the argument types the rest param binds, one per position, so a
+// mismatched element is rejected contravariantly the way a fixed parameter would be.
+func TestInferRestParamFuncAnnotationChecksTupleElements(t *testing.T) {
+	src := `fn two(x: number, y: number) -> string { return "a" }
+val slot: fn(...args: [number, string]) -> string = two`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+}
+
+// A rest parameter whose slot is not a tuple binds zero or more arguments, so the
+// annotation's accept-set is [0, ∞) and an exact function of any fixed arity fails to
+// contain it. This is the arity effect the accept-set rule has always given a rest
+// parameter; the annotation surface is what is new.
+func TestInferUnboundedRestParamFuncAnnotationRejectsFixedArity(t *testing.T) {
+	_, _, errs := inferSource(t, `val f: fn(...xs: number) -> number = fn (x) { return x }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &FuncArityMismatchError{}, errs[0])
+	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 1", errs[0].Message())
 }
 
 // The Variation-B check fires end-to-end through inexact function annotations.
@@ -402,4 +443,62 @@ val slot: fn(x: number, ...) -> number = wide`
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 	require.Equal(t, "2:42-2:46: cannot constrain unknown <: number", msgWithSpan(errs[0]))
+}
+
+// `Function` is the supertype of every function type. It names no signature, so it accepts
+// a function of any arity and rejects everything that is not a function. Each case renders
+// the binding named `f` when it type-checks and reports one error when it does not.
+func TestInferFunctionTopType(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		want    string // the rendered `f` binding; checked when wantErr is ""
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "AcceptsNullary",
+			src:  `val f: Function = fn () { return 1 }`,
+			want: "Function",
+		},
+		{
+			name: "AcceptsBinary",
+			src:  `val f: Function = fn (x: number, y: string) { return 1 }`,
+			want: "Function",
+		},
+		{
+			// A written function type flows in the same way a function expression does.
+			name: "AcceptsFunctionTypedBinding",
+			src:  `val g: fn(x: number) -> number = fn (x) { return x }` + "\n" + `val f: Function = g`,
+			want: "Function",
+		},
+		{
+			name:    "RejectsNumber",
+			src:     `val f: Function = 5`,
+			wantErr: "cannot constrain 5 <: Function",
+		},
+		{
+			name:    "RejectsObject",
+			src:     `val f: Function = {a: 1}`,
+			wantErr: "cannot constrain object <: Function",
+		},
+		{
+			// A user-defined `Function` shadows the built-in, the same precedence the
+			// built-in Promise stub has.
+			name:    "UserDefinitionTakesPrecedence",
+			src:     `type Function = number` + "\n" + `val f: Function = "a"`,
+			wantErr: `cannot constrain "a" <: number`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				require.Equal(t, tt.want, values["f"])
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
 }

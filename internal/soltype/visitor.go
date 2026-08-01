@@ -82,6 +82,7 @@ func (t *NullType) Accept(v TypeVisitor, pol Polarity) Type      { return accept
 func (t *UndefinedType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 func (t *NeverType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *UnknownType) Accept(v TypeVisitor, pol Polarity) Type   { return acceptLeaf(t, v, pol) }
+func (t *FunctionType) Accept(v TypeVisitor, pol Polarity) Type  { return acceptLeaf(t, v, pol) }
 func (t *ErrorType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *SkolemType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
 func (t *InferType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }

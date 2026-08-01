@@ -682,6 +682,17 @@ type NullType struct{}
 // minted internally by that join and renders as `undefined`.
 type UndefinedType struct{}
 
+// FunctionType is the top of the function part of the lattice: every FuncType is a
+// subtype of it and nothing else is. It names no parameter list and no return, so it
+// imposes no arity, which is what a type parameter's bound needs. `F: Function` admits
+// `fn () -> string` and `fn (x: number, y: string) -> boolean` alike, where the closest
+// writable signature bound, `fn () -> unknown`, would admit only the nullary one.
+//
+// It is an atom rather than a FuncType with wildcard parts, so no rule may decompose it
+// and read a parameter or return type off it. Source writes it as the type reference
+// `Function`, matching the name TypeScript gives the same type.
+type FunctionType struct{}
+
 // NeverType (⊥) and UnknownType (⊤) are the bottom/top of the subtype lattice —
 // the coalesced output of an empty-bounds single-polarity variable (positive ⇒
 // never, negative ⇒ unknown). The spike emits these via type_system; M1 carries
@@ -1095,6 +1106,7 @@ func (*RecursiveVarType) isType()    {}
 func (*PrimType) isType()            {}
 func (*LitType) isType()             {}
 func (*FuncType) isType()            {}
+func (*FunctionType) isType()        {}
 func (*TupleType) isType()           {}
 func (*ObjectType) isType()          {}
 func (*RefType) isType()             {}
@@ -1248,7 +1260,7 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	default:
 		// PrimType, LitType, Void, NullType, UndefinedType, NeverType, UnknownType,
-		// ErrorType, InferType, MappedKeyType, RecursiveVarType: childless leaves. ErrorType is a
+		// FunctionType, ErrorType, InferType, MappedKeyType, RecursiveVarType: childless leaves. ErrorType is a
 		// sentinel at level 0. An InferType names a capture, a MappedKeyType names a mapped type's key,
 		// and a RecursiveVarType names an enclosing μ-knot's binder; each is substituted by the
 		// evaluator or by unfolding rather than generalized by the solver, so none lifts the level.

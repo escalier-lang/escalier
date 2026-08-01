@@ -1058,6 +1058,7 @@ func (*ExtractorPatternArityError) isSolverError()          {}
 func (*AliasArityMismatchError) isSolverError()             {}
 func (*AliasLifetimeArityMismatchError) isSolverError()     {}
 func (*ReservedTypeNameError) isSolverError()               {}
+func (*RestParamNotLastError) isSolverError()               {}
 func (*NotProductiveAliasError) isSolverError()             {}
 func (*ExpansionLimitError) isSolverError()                 {}
 
@@ -1201,6 +1202,21 @@ func (e *ReservedTypeNameError) Span() ast.Span      { return e.Decl.Name.Span()
 func (e *ReservedTypeNameError) Related() []ast.Span { return nil }
 func (e *ReservedTypeNameError) Message() string {
 	return fmt.Sprintf("%q is a built-in type operator and cannot be redefined", e.Decl.Name.Name)
+}
+
+// RestParamNotLastError fires when a function type annotation writes a `...xs: T` parameter
+// somewhere other than the final position, as `fn (...xs: [number], y: string) -> void` does.
+// A rest parameter binds the arguments left over after the fixed ones, so it has a meaning
+// only at the end. The parser accepts it anywhere, and acceptSet reads the last parameter's
+// Rest flag, so resolution is where the position is enforced.
+type RestParamNotLastError struct {
+	Param *ast.RestPat
+}
+
+func (e *RestParamNotLastError) Span() ast.Span      { return e.Param.Span() }
+func (e *RestParamNotLastError) Related() []ast.Span { return nil }
+func (e *RestParamNotLastError) Message() string {
+	return "a rest parameter must be the last parameter of a function type"
 }
 
 // NotProductiveAliasError fires when a recursive type alias reaches itself with no type constructor
@@ -2214,6 +2230,8 @@ func describe(t soltype.Type) string {
 		return "never"
 	case *soltype.UnknownType:
 		return "unknown"
+	case *soltype.FunctionType:
+		return "Function"
 	case *soltype.ErrorType:
 		return "error"
 	case *soltype.UnionType:

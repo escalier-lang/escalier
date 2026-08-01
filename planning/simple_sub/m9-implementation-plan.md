@@ -1076,9 +1076,13 @@ it. This PR is its first producer. A tuple-typed rest parameter reuses `TupleTyp
    nothing and is what the corpus does today, but it forgoes a diagnostic TypeScript
    reports.
 
-**Open detail.** A surplus *optional* parameter has no faithful tuple counterpart —
-`TupleType.Elems` is a plain `[]Type` with no per-element optionality. Decide between
-widening such an element with `undefined` and rejecting the match, and record which.
+**Resolved detail.** A surplus *optional* parameter has no faithful tuple counterpart —
+`TupleType.Elems` is a plain `[]Type` with no per-element optionality. Such an element
+widens with `undefined` rather than rejecting the match, so
+`Parameters<fn (x: number, y?: string) -> boolean>` captures `[number, string | undefined]`.
+Widening keeps both facts the slot carries, its type and that it may go unsupplied, where
+rejecting would lose the whole match over one parameter. TypeScript writes the same capture
+`[x: number, y?: string]` using a tuple with per-element optionality.
 
 **Wiring.** Re-enable `TestUtilityTypeParameters`'s `Parameters<F>` cases in
 [utility_types_test.go](../../internal/solver/utility_types_test.go) and move the
@@ -1591,7 +1595,7 @@ PR10 (throws clause)                       ── needs M3 only; parallel to eve
  │    └─► PR10c (Promise<T, E> + async rejection)  ── also needs M7.5
  └─► PR11 (generators)                     ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
 
-PR13 (TS utility-type suite)               ── needs PR2, PR3b, PR4, PR7, PR12
+PR13 ✅ #954 (TS utility-type suite)        ── needs PR2, PR3b, PR4, PR7, PR12
  ├─► PR14 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
  │    └─► PR15 (new (…) members in obj type anns + ConstructorParameters<C>)
  └─► PR16 (null + undefined + NonNullable<T>)            ── also needs PR3b
@@ -1610,7 +1614,7 @@ to intersect the members' key sets, and #937 capped total alias expansion with a
 monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
 PR4's mapped types.
 
-Everything still open is PR8, PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR13, PR14, PR15,
+Everything still open is PR8, PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR14, PR15,
 PR16, and Track F's PR17 through PR20. PR8 is partly seeded — #922 threads an object's
 exactness through `keyof` — but the rest of the operators and the `Exact` / `Inexact`
 intrinsics are untouched.
@@ -1646,7 +1650,7 @@ graph TD
     M4E2["M4 E2 (pattern matching)"]
     PR11["PR11 (generators)"]
     PR12["PR12 ✅ #952 (Awaited<T>)"]
-    PR13["PR13 (TS utility-type suite)"]
+    PR13["PR13 ✅ #954 (TS utility-type suite)"]
     PR14["PR14 (rest params in fn type anns + Parameters<F>)"]
     PR15["PR15 (new (…) in obj type anns + ConstructorParameters<C>)"]
     PR16["PR16 (null + undefined + NonNullable<T>)"]
@@ -1719,6 +1723,7 @@ graph TD
     style PR9c stroke:#2e7d32,stroke-width:4px
     style PR9e stroke:#2e7d32,stroke-width:4px
     style PR12 stroke:#2e7d32,stroke-width:4px
+    style PR13 stroke:#2e7d32,stroke-width:4px
 ```
 
 ### Parallelism

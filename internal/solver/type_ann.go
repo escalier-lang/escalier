@@ -95,6 +95,18 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		if t, ok := c.resolveExactnessIntrinsic(scope, ta, lvl); ok {
 			return t, true
 		}
+		// The built-in `Function`, the supertype of every function type. It takes no type
+		// arguments and no lifetime, since it names no signature. Resolution reaches here only
+		// after resolveScopedTypeRef found nothing, so a user-defined `Function` wins, the same
+		// precedence the Promise stub above has.
+		//
+		// No provenance is recorded, for the reason the NeverTypeAnn arm gives: soltype.FunctionType
+		// has no fields, so every `&soltype.FunctionType{}` shares one address and the pointer-keyed
+		// Prov table cannot tell two of them apart.
+		if ast.QualIdentToString(ta.Name) == "Function" && len(ta.TypeArgs) == 0 &&
+			len(ta.LifetimeArgs) == 0 && ta.Lifetime == nil {
+			return &soltype.FunctionType{}, true
+		}
 		return c.reportUnsupported(ta), false
 	case *ast.ObjectTypeAnn:
 		return c.resolveObjectTypeAnn(scope, ta, lvl)
@@ -780,10 +792,19 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 	params := make([]*soltype.FuncParam, len(ta.Params))
 	for i, p := range ta.Params {
 		pat := p.Pattern
-		// A rest param recovers to a normal positional param. acceptSet/hasRest assume
-		// a rest param is last, which the parser does not enforce, so Rest is unset.
+		// A `...xs: T` parameter sets Rest, which is what lifts the function's accept-set
+		// ceiling and what an `infer` clause in that slot captures the surplus arguments
+		// into. acceptSet reads the flag off the last parameter only, so a rest parameter
+		// written anywhere else is rejected here — the parser does not enforce the
+		// position. The rejected parameter still recovers to a positional one so the
+		// function keeps its arity.
+		rest := false
 		if rp, ok := pat.(*ast.RestPat); ok {
-			c.reportUnsupportedFeature(rp, "rest parameter in function type annotation")
+			if i == len(ta.Params)-1 {
+				rest = true
+			} else {
+				c.report(&RestParamNotLastError{Param: rp})
+			}
 			pat = rp.Pattern
 		}
 		// A missing or unsupported parameter annotation recovers to a fresh var so
@@ -800,7 +821,7 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 		// body instantiates `T` per call. constrain's FuncType arm performs both steps.
 		// The pattern is carried for rendering and round-tripping only, with no scope
 		// binding. mirrorParamPat preserves its full shape.
-		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: p.Optional}
+		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: p.Optional, Rest: rest}
 	}
 
 	// The parser requires `-> R`, so ta.Return is normally non-nil. Guard
