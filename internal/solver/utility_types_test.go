@@ -20,8 +20,13 @@ import (
 //   - `{[K]?: T[K] for K in keyof T}` is the mapped type TypeScript writes
 //     `{[K in keyof T]?: T[K]}`.
 //   - `if C : E { A } else { B }` is the conditional TypeScript writes `C extends E ? A : B`.
-//   - The bracketed expression in `{[if K : Ks { never } else { K }]: T[K] for K in keyof T}` is
-//     the key remapping TypeScript writes with an `as` clause.
+//   - The trailing `if K : Ks` clause on a mapped type filters its key set, dropping every key
+//     that fails the test. TypeScript has no filter clause and expresses the same thing as an `as`
+//     remapping to `never`. Escalier has that bracketed form too, which `Getters<T>` in
+//     TestUtilityTypeComposition uses to rename rather than to drop.
+//
+// `Omit<T, Ks>` reads `Exclude`, so the two definitions are coupled. Order in this source does not
+// matter, since the dependency graph orders the declarations.
 //
 // `ReturnType<F>` matches a nullary function only. TestUtilityTypeReturnTypeIsAritySpecific
 // records why the arity-agnostic TypeScript definition has no Escalier equivalent.
@@ -38,7 +43,7 @@ const utilityTypeDecls = `
 	type Required<T> = {[K]-?: T[K] for K in keyof T}
 	type Readonly<T> = {readonly [K]: T[K] for K in keyof T}
 	type Pick<T, Ks> = {[K]: T[K] for K in keyof T if K : Ks}
-	type Omit<T, Ks> = {[if K : Ks { never } else { K }]: T[K] for K in keyof T}
+	type Omit<T, Ks> = {[K]: T[K] for K in keyof T if K : Exclude<K, Ks>}
 	type Record<Ks, V> = {[K: Ks]: V}
 	type Exclude<U, V> = if U : V { never } else { U }
 	type Extract<U, V> = if U : V { U } else { never }
@@ -145,8 +150,10 @@ func TestUtilityTypeReductions(t *testing.T) {
 			src:          `type Result = Pick<{a: number}, never>`,
 			wantExpanded: "{}",
 		},
-		// `Omit<T, Ks>` is `Pick`'s complement. The bracketed expression remaps a named key to
-		// `never`, which drops the field.
+		// `Omit<T, Ks>` is `Pick`'s complement, and the same filter clause expresses it. `Exclude`
+		// sends a key named by `Ks` to `never` and every other key to itself, so `K : Exclude<K,
+		// Ks>` reads as "keep `K` when it survives the exclusion". A dropped key tests `"b" <:
+		// never`, which fails.
 		{
 			name:         "Omit",
 			src:          `type Result = Omit<{a: number, b: string, c: boolean}, "b">`,
@@ -578,6 +585,68 @@ func TestUtilityTypeReturnTypeIsAritySpecific(t *testing.T) {
 			wantExpanded: "string",
 		},
 	})
+}
+
+// DISABLED until alias instantiation checks its arguments against its parameters' bounds. No
+// milestone owns that yet.
+//
+// `ReturnType<F>` would read better with `F` bounded to a function type, so `ReturnType<number>`
+// were rejected at the reference rather than reduced to `never` through the Else branch. Writing
+// the bound is not the obstacle. `resolveTypeParams` resolves a `<F: …>` clause into an upper bound
+// on the parameter's var, and `type ReturnType<F: fn () -> never> = …` parses and lowers today.
+//
+// The obstacle is that nothing consults that bound. `expandAlias` instantiates through
+// `newTypeSubst`, which replaces each parameter with its argument and never constrains the argument
+// against the parameter's var, so `type Box<T: string> = {v: T}` accepts `Box<number>` with no
+// diagnostic. A generic *function* does enforce its bound, because the call site constrains each
+// argument against the instantiated var, which is why `fn f<A: string>(a: A)` rejects `f(5)` with
+// `cannot constrain 5 <: string`.
+//
+// A second obstacle is specific to this bound. A function type's return is covariant, so the bound
+// that admits every function has to be `fn () -> unknown`, and `unknown` has no annotation surface.
+// A bound written `fn () -> never` instead says `F` returns `never`, which is not what it looks
+// like it says.
+//
+// The expected message below assumes the check reports through `constrain`, matching the generic
+// function case. An implementation that reports at the reference instead would word it differently.
+func TestUtilityTypeAliasParameterConstraint(t *testing.T) {
+	/*
+		tests := []struct {
+			name    string
+			src     string
+			wantErr string // "" ⇒ expect no error
+		}{
+			{
+				// The bound admits every function, so a function argument passes.
+				name: "FunctionArgumentPasses",
+				src:  `type Result = ReturnType<fn () -> string>`,
+			},
+			{
+				// A non-function is rejected at the reference rather than reduced through Else.
+				name:    "NonFunctionArgumentRejected",
+				src:     `type Result = ReturnType<number>`,
+				wantErr: "cannot constrain number <: fn () -> unknown",
+			},
+			{
+				// The same gap on the simplest possible alias, so a failure here is about the
+				// bound check rather than about anything the operator track added.
+				name:    "BoundOnPlainAlias",
+				src:     `type Box<T: string> = {v: T}` + "\n" + `type Result = Box<number>`,
+				wantErr: "cannot constrain number <: string",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, _, errs := inferSource(t, utilityTypeDecls+tt.src)
+				if tt.wantErr == "" {
+					require.Empty(t, errs)
+					return
+				}
+				require.Len(t, errs, 1)
+				require.Equal(t, tt.wantErr, errs[0].Message())
+			})
+		}
+	*/
 }
 
 // DISABLED until M9 PR16, which gives `null` and `undefined` a surface. `soltype.NullType` and
