@@ -1059,6 +1059,8 @@ func (*AliasArityMismatchError) isSolverError()             {}
 func (*AliasLifetimeArityMismatchError) isSolverError()     {}
 func (*ReservedTypeNameError) isSolverError()               {}
 func (*RestParamNotLastError) isSolverError()               {}
+func (*RestParamNeedsTypeError) isSolverError()             {}
+func (*OptionalRestParamError) isSolverError()              {}
 func (*NotProductiveAliasError) isSolverError()             {}
 func (*ExpansionLimitError) isSolverError()                 {}
 
@@ -1217,6 +1219,35 @@ func (e *RestParamNotLastError) Span() ast.Span      { return e.Param.Span() }
 func (e *RestParamNotLastError) Related() []ast.Span { return nil }
 func (e *RestParamNotLastError) Message() string {
 	return "a rest parameter must be the last parameter of a function type"
+}
+
+// RestParamNeedsTypeError fires when a function type annotation writes a rest parameter with
+// no type annotation, as `fn (...xs) -> void` does. The slot's type is what says how many
+// arguments the parameter binds. A tuple binds one per element and an array binds zero or
+// more, so a rest parameter with no type declares no arity at all.
+type RestParamNeedsTypeError struct {
+	Param *ast.RestPat
+}
+
+func (e *RestParamNeedsTypeError) Span() ast.Span      { return e.Param.Span() }
+func (e *RestParamNeedsTypeError) Related() []ast.Span { return nil }
+func (e *RestParamNeedsTypeError) Message() string {
+	return "a rest parameter in a function type must have a type annotation"
+}
+
+// OptionalRestParamError fires when a function type annotation marks a rest parameter `?`,
+// as `fn (...xs?: [number]) -> void` does. The marker says a parameter may go unsupplied,
+// which a rest parameter already settles through its type: an array-typed slot binds zero or
+// more arguments and is omittable on its own, and a tuple-typed slot fixes how many
+// arguments it binds. So the marker would change nothing on either shape.
+type OptionalRestParamError struct {
+	Param *ast.RestPat
+}
+
+func (e *OptionalRestParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *OptionalRestParamError) Related() []ast.Span { return nil }
+func (e *OptionalRestParamError) Message() string {
+	return "a rest parameter cannot be marked optional"
 }
 
 // NotProductiveAliasError fires when a recursive type alias reaches itself with no type constructor

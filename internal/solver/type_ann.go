@@ -794,16 +794,33 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 		pat := p.Pattern
 		// A `...xs: T` parameter sets Rest. That flag is what raises the function's
 		// accept-set ceiling and what an `infer` clause in the slot captures the surplus
-		// arguments into. acceptSet reads it off the last parameter only, and the parser
-		// enforces no position, so a rest parameter written anywhere else is rejected here.
-		// The rejected parameter still recovers to a positional one so the function keeps
-		// its arity.
+		// arguments into. Three things the parser accepts are rejected here, and each
+		// recovers the parameter to a positional one so the function keeps its arity.
+		//
+		//  1. A rest parameter written anywhere but last, since acceptSet reads the flag off
+		//     the last parameter only.
+		//  2. A rest parameter with no type annotation. The slot's type is what says how many
+		//     arguments the parameter binds, and the fresh var an unannotated parameter
+		//     recovers to says nothing, so keeping Rest would let the initializer decide the
+		//     declared type's arity.
+		//  3. A rest parameter marked `?`. A slot binding zero or more arguments is already
+		//     omittable and a tuple slot fixes its count, so the marker changes nothing.
 		rest := false
+		optional := p.Optional
 		if rp, ok := pat.(*ast.RestPat); ok {
-			if i == len(ta.Params)-1 {
-				rest = true
-			} else {
+			switch {
+			case i != len(ta.Params)-1:
 				c.report(&RestParamNotLastError{Param: rp})
+			case p.TypeAnn == nil:
+				c.report(&RestParamNeedsTypeError{Param: rp})
+			case p.Optional:
+				// The recovery drops the marker along with Rest. Keeping it would give the
+				// parameter an accept-set the source never asked for and cascade a second
+				// error out of the one just reported.
+				c.report(&OptionalRestParamError{Param: rp})
+				optional = false
+			default:
+				rest = true
 			}
 			pat = rp.Pattern
 		}
@@ -821,7 +838,7 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 		// body instantiates `T` per call. constrain's FuncType arm performs both steps.
 		// The pattern is carried for rendering and round-tripping only, with no scope
 		// binding. mirrorParamPat preserves its full shape.
-		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: p.Optional, Rest: rest}
+		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: optional, Rest: rest}
 	}
 
 	// The parser requires `-> R`, so ta.Return is normally non-nil. Guard

@@ -12,13 +12,56 @@ import (
 // an inexact function tolerates any number of trailing arguments as a callback.
 const unboundedArity = math.MaxInt
 
-// hasRest reports whether f's LAST parameter is a typed rest param (`...xs: T[]`).
-// A rest param binds zero or more trailing arguments, so it never counts toward the
-// required floor and lifts the accept-set upper bound to ∞ (#677 §4.2.3) — the same
-// upper-bound effect as the inexact `...` marker, reached a different way.
+// hasRest reports whether f's LAST parameter is a rest param, written `...xs: T`. How many
+// arguments it binds is decided by its type rather than by the flag, so restArity is what
+// an arity rule consults. A rest param whose type is an array binds zero or more, which
+// never counts toward the required floor and lifts the accept-set upper bound to ∞
+// (#677 §4.2.3) — the same upper-bound effect as the inexact `...` marker, reached a
+// different way. A tuple-typed rest binds one argument per element instead.
 func hasRest(f *soltype.FuncType) bool {
 	n := len(f.Params)
 	return n > 0 && f.Params[n-1].Rest
+}
+
+// expandTupleRest returns f with a tuple-typed rest param replaced by one positional param
+// per tuple element, and f unchanged when it has no such param. `fn (...xs: [number,
+// string]) -> R` becomes `fn (xs: number, xs: string) -> R`. That is the same function for
+// every arity and pairing rule, since the rest param binds exactly those two arguments, one
+// per element, at exactly those positions.
+//
+// Expanding is what lets the rules that walk a parameter list read a tuple rest's elements
+// as ordinary positions instead of each growing a rest case of its own. Four such rules
+// exist: constrain's shared-position pairing, the call-site arity lints, the owned-mutable
+// argument upgrade, and consumeCallArgs.
+//
+// The expanded form is never stored on a binding and never printed. A diagnostic reports
+// the written type, so a rejected call still names `fn (...xs: [number, string]) -> R`. That
+// is what makes the duplicated pattern harmless: it is carried so the expanded params are
+// well-formed, not so it can be read back.
+//
+// Two rest shapes are left alone. An inexact tuple such as `[number, ...]` has an open tail
+// with no last position, so it keeps its unbounded ceiling. An inference variable is a
+// conditional pattern's `infer P`, and the gather rule binds it, so it has to still be a
+// rest param when the gather runs. That is why the tuple is read by a direct type assertion
+// here. restTuple also unwraps a variable's bounds, which would expand the hole the gather
+// is meant to fill.
+func expandTupleRest(f *soltype.FuncType) *soltype.FuncType {
+	k := restIndex(f)
+	if k < 0 {
+		return f
+	}
+	tup, ok := f.Params[k].Type.(*soltype.TupleType)
+	if !ok || tup.Inexact {
+		return f
+	}
+	params := make([]*soltype.FuncParam, 0, k+len(tup.Elems))
+	params = append(params, f.Params[:k]...)
+	for _, elem := range tup.Elems {
+		params = append(params, &soltype.FuncParam{Pattern: f.Params[k].Pattern, Type: elem})
+	}
+	expanded := *f
+	expanded.Params = params
+	return &expanded
 }
 
 // restIndex is the position of f's typed rest param, or -1 when it has none. A rest param
@@ -125,32 +168,25 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 }
 
 // canGatherRest reports whether constrain's gather rule applies, given a sub function, the
-// type in the super's rest slot, and the slot's index k. It applies when both sides describe
-// a fixed-length group of arguments at that position.
+// type in the super's rest slot, and the slot's index k. It applies when the slot is an
+// unbound hole and the sub's params from k on are a fixed-length group that can fill it.
 //
-// The sub side is fixed when it declares its parameters and stops there. An inexact sub
-// tolerates arguments past its declared list and a sub with its own rest param binds an
+// The slot qualifies only when it holds an inference variable, which is the `infer P` of a
+// conditional's pattern. Every other slot type already says how many arguments it binds. A
+// written tuple was expanded to positional params by expandTupleRest, and an array-typed
+// `...xs: T[]` stands for zero or more arguments of one element type, which no tuple
+// describes.
+//
+// The sub side is a fixed group when it declares its parameters and stops there. An inexact
+// sub tolerates arguments past its declared list and a sub with its own rest param binds an
 // unbounded group, so in neither case do the declared params from k on say how many
 // arguments there are. A sub with fewer than k params cannot fill the super's fixed
 // positions at all, which is the genuine arity failure the accept-set gate reports.
-//
-// The super side is fixed for two slot types. An exact tuple, written `...args: [number,
-// string]`, names its length outright. An inference variable is the `infer P` of a
-// conditional's pattern, which is what the gather exists to bind. Every other slot type,
-// an array-typed `...xs: T[]` among them, stands for zero or more arguments of one element
-// type. No tuple describes such a slot, so the accept-set gate and the shared-position walk
-// decide it alone.
 func canGatherRest(sub *soltype.FuncType, restSlot soltype.Type, k int) bool {
-	if sub.Inexact || hasRest(sub) || len(sub.Params) < k {
+	if _, isHole := restSlot.(*soltype.TypeVarType); !isHole {
 		return false
 	}
-	switch restSlot := restSlot.(type) {
-	case *soltype.TupleType:
-		return !restSlot.Inexact
-	case *soltype.TypeVarType:
-		return true
-	}
-	return false
+	return !sub.Inexact && !hasRest(sub) && len(sub.Params) >= k
 }
 
 // gatherRestParams turns the sub params a super's rest param stands for into the element
@@ -745,6 +781,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if len(sub.TypeParams) > 0 {
 				return c.constrain(c.instantiateFuncBinder(sub, sub.TypeParams[0].Var.Level), sup, seen, mutCtx)
 			}
+			// A tuple-typed rest param on either side is expanded to one positional param per
+			// element, which leaves the same function and lets every rule below read plain
+			// positions. Both sides are expanded, so a written rest param works as a value-level
+			// type and not only as a conditional's pattern. The unexpanded sub and sup are what
+			// a diagnostic reports, so a rejected constraint still names the written type.
+			subX, supX := expandTupleRest(sub), expandTupleRest(sup)
 			// The gather rule for a super rest param. Let k be the super's rest index. The
 			// super binds its first k arguments to its fixed params and every argument past
 			// them to the rest param as one group, so the sub params from k on are what the
@@ -759,16 +801,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// which is that tuple. Without the gather the shared-position walk below would
 			// pair the rest slot with the sub's first param alone and capture `number`.
 			//
-			// The gather runs before the accept-set gate so the gate reads the rest param's
-			// arity off a tuple rather than off an unbounded variable.
+			// Only an `infer` hole reaches the gather, since expandTupleRest already turned a
+			// written tuple into positions. The gather runs before the accept-set gate so the
+			// gate reads the hole's arity off the tuple it just recorded.
 			gatherAt := -1
-			if k := restIndex(sup); k >= 0 && canGatherRest(sub, sup.Params[k].Type, k) {
+			if k := restIndex(supX); k >= 0 && canGatherRest(subX, supX.Params[k].Type, k) {
 				gatherAt = k
 			}
 			var errs []SolverError
 			if gatherAt >= 0 {
-				gathered := &soltype.TupleType{Elems: gatherRestParams(sub.Params[gatherAt:])}
-				errs = append(errs, c.constrain(sup.Params[gatherAt].Type, gathered, seen, false)...) // contravariant
+				gathered := &soltype.TupleType{Elems: gatherRestParams(subX.Params[gatherAt:])}
+				errs = append(errs, c.constrain(supX.Params[gatherAt].Type, gathered, seen, false)...) // contravariant
 			}
 			// Accept-set subtyping (#677 §4.2.1): read super as a callback parameter.
 			// sub <: super iff accept(sub) ⊇ accept(super) — sub must tolerate every
@@ -786,8 +829,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// written `fn (...args: [number, string]) -> string` slot rejects a one-parameter
 			// function with one message rather than with both an arity mismatch and a tuple
 			// length mismatch saying the same thing.
-			loSub, hiSub := acceptSet(sub)
-			loSup, hiSup := acceptSet(sup)
+			loSub, hiSub := acceptSet(subX)
+			loSup, hiSup := acceptSet(supX)
 			if loSub > loSup || hiSub < hiSup {
 				return []SolverError{&FuncArityMismatchError{Sub: sub, Super: sup}}
 			}
@@ -808,22 +851,22 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// arity-only, because checking its trailing arguments against the element
 			// type needs Array<T>, which lands in M7. A function is its own annotation
 			// context, so the deep-mut flag resets.
-			n := min(len(sub.Params), len(sup.Params))
+			n := min(len(subX.Params), len(supX.Params))
 			if gatherAt >= 0 {
 				n = gatherAt // the gather already covered the positions from gatherAt on
 			}
 			for i := 0; i < n; i++ {
-				errs = append(errs, c.constrain(sup.Params[i].Type, sub.Params[i].Type, seen, false)...) // contravariant
+				errs = append(errs, c.constrain(supX.Params[i].Type, subX.Params[i].Type, seen, false)...) // contravariant
 			}
 			// A gathered super has no surplus sub param, since the rest param already stood for
 			// every position from gatherAt on.
-			if sup.Inexact && gatherAt < 0 {
+			if supX.Inexact && gatherAt < 0 {
 				unknownT := &soltype.UnknownType{}
-				for i := n; i < len(sub.Params); i++ {
-					if sub.Params[i].Rest {
+				for i := n; i < len(subX.Params); i++ {
+					if subX.Params[i].Rest {
 						continue // rest-param element checking against Array<T> is M7
 					}
-					errs = append(errs, c.constrain(unknownT, sub.Params[i].Type, seen, false)...)
+					errs = append(errs, c.constrain(unknownT, subX.Params[i].Type, seen, false)...)
 				}
 			}
 			errs = append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant

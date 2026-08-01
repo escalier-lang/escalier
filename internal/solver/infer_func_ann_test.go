@@ -386,13 +386,119 @@ func TestInferRestParamFuncAnnotation(t *testing.T) {
 	require.Equal(t, "fn (...xs: [number, string]) -> number", values["f"])
 }
 
-// acceptSet reads the Rest flag off the last parameter only, so a rest parameter written
-// anywhere else is rejected at resolution. The parser accepts it in any position.
-func TestInferRestParamFuncAnnotationRejectsNonFinalPosition(t *testing.T) {
-	_, _, errs := inferSource(t, `val f: fn(...xs: [number], y: string) -> number = fn (x, y) { return 1 }`)
-	require.Len(t, errs, 1)
-	require.IsType(t, &RestParamNotLastError{}, errs[0])
-	require.Equal(t, "1:11-1:16: a rest parameter must be the last parameter of a function type", msgWithSpan(errs[0]))
+// The parser accepts a rest parameter in any position, without a type, and marked `?`.
+// Resolution rejects all three and recovers the parameter to a positional one, so each case
+// reports exactly the one message and nothing cascades from the recovery.
+func TestInferRestParamFuncAnnotationRejections(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// acceptSet reads the Rest flag off the last parameter only.
+			name: "NonFinalPosition",
+			src:  `val f: fn(...xs: [number], y: string) -> number = fn (x, y) { return 1 }`,
+			want: "1:11-1:16: a rest parameter must be the last parameter of a function type",
+		},
+		{
+			// Without a type the slot says nothing about how many arguments it binds, so
+			// keeping Rest would let the initializer decide the declared type's arity.
+			name: "NoTypeAnnotation",
+			src:  `val f: fn(...xs) -> number = fn (x) { return 1 }`,
+			want: "1:11-1:16: a rest parameter in a function type must have a type annotation",
+		},
+		{
+			// The `?` marker has no meaning on a rest parameter, whose slot type already
+			// settles how many arguments it binds.
+			name: "MarkedOptional",
+			src:  `val f: fn(...xs?: [number]) -> number = fn (x) { return 1 }`,
+			want: "1:11-1:16: a rest parameter cannot be marked optional",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
+}
+
+// A tuple-typed rest parameter is a value-level type, not only a conditional's pattern. It
+// names its arguments one per element, so a function whose parameters line up with those
+// elements fills the slot, and a value read out of the slot is callable, assignable, and
+// passable wherever the expanded signature is. Each case reports no error.
+func TestInferTupleRestParamFuncAnnotationAcceptsMatchingFunction(t *testing.T) {
+	const two = "fn two(x: number, y: string) -> number { return 1 }\n"
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			// A direct call through the slot binds each argument to its element.
+			name: "DirectCall",
+			src: two + `val g: fn(...args: [number, string]) -> number = two
+val r = g(1, "a")`,
+		},
+		{
+			// The slot's expansion is the fixed-arity signature, so the two are interchangeable.
+			name: "IntoFixedAritySlot",
+			src: two + `val g: fn(...args: [number, string]) -> number = two
+val h: fn(x: number, y: string) -> number = g`,
+		},
+		{
+			name: "CallbackParameter",
+			src:  two + `fn take(cb: fn(...args: [number, string]) -> number) -> number { return cb(1, "a") }` + "\n" + `val r = take(two)`,
+		},
+		{
+			name: "ObjectTypeMethod",
+			src:  two + `val o: {m: fn(...args: [number, string]) -> number} = {m: two}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+		})
+	}
+}
+
+// The call-site arity lints read a tuple-typed rest parameter's real ceiling and floor, so
+// each reports one message naming the count the tuple's elements add up to. An argument of
+// the wrong type is still rejected against the element it lines up with.
+func TestInferTupleRestParamCallDiagnostics(t *testing.T) {
+	const decls = `fn two(x: number, y: string) -> number { return 1 }
+val g: fn(...args: [number, string]) -> number = two
+`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "TooFew",
+			src:  decls + `val r = g(1)`,
+			want: "Not enough arguments: expected at least 2, but got 1",
+		},
+		{
+			name: "TooMany",
+			src:  decls + `val r = g(1, "a", true)`,
+			want: "Too many arguments: expected at most 2, but got 3",
+		},
+		{
+			name: "WrongElementType",
+			src:  decls + `val r = g(1, 2)`,
+			want: "cannot constrain 2 <: string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
 }
 
 // A tuple-typed rest slot fixes the arity at the tuple's length, so the relaxation the

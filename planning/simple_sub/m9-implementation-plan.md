@@ -1019,6 +1019,16 @@ it. This PR is its first producer. A tuple-typed rest parameter reuses `TupleTyp
    again. Only the tuple branch is exercisable in this PR, since writing an
    array-typed rest parameter needs the `Array<T>` M7.5 supplies. The array branch is
    the existing behavior, kept and given a name.
+
+   Every rule that walks a parameter list needs that arity contribution, not just
+   `acceptSet`: `constrain`'s shared-position pairing, the call-site arity lints, the
+   owned-mutable argument upgrade, and `consumeCallArgs`. Rather than grow a rest case in
+   each, a tuple-typed rest parameter expands to one positional parameter per element
+   before any of them run, so `fn (...xs: [number, string]) -> R` is walked as a
+   two-parameter function. That is the same function for every arity and pairing rule,
+   since the rest parameter binds exactly those two arguments at exactly those positions.
+   The expanded form is never stored or printed, so a diagnostic still names the written
+   type.
 3. **The gather rule in `constrain`'s function arm.** The arm pairs the positions the
    two sides share and never collects the surplus ones, so an `infer` variable in a
    rest slot captures the first parameter's type rather than a tuple. Let `k` be the
@@ -1029,6 +1039,10 @@ it. This PR is its first producer. A tuple-typed rest parameter reuses `TupleTyp
    ([probe.go:387](../../internal/solver/probe.go)) returns the meet of the uppers,
    which is the tuple itself. A sub with fewer than `k` parameters is the genuine
    arity failure and still reports one.
+
+   The gather covers the `infer` hole alone. A written tuple rest parameter is already
+   positions by the time the arm runs, courtesy of step 2's expansion, which is what makes
+   a written one work as a value-level type rather than only as a pattern.
 4. **Ordering against the accept-set gate.** The gate rejects the match today. A
    pattern `fn (...args: P) -> R` has accept-set [0, ∞) and a `fn (x: number) ->
    string` argument has [1, 1], so both clauses of `loSub <= loSup && hiSub >= hiSup`
@@ -1075,6 +1089,14 @@ it. This PR is its first producer. A tuple-typed rest parameter reuses `TupleTyp
    would make it a wart rather than a type. Leaving `ReturnType<F>` unbounded costs
    nothing and is what the corpus does today, but it forgoes a diagnostic TypeScript
    reports.
+
+**Rejected shapes.** The parser accepts a rest parameter in any position, with no type, and
+marked `?`. Resolution rejects all three with a full message and recovers the parameter to a
+positional one. A rest parameter with no type is rejected because the slot's type is what
+says how many arguments it binds, so leaving it as the fresh var an unannotated parameter
+recovers to would let the initializer decide the declared type's arity. A `?` marker is
+rejected because a slot binding zero or more arguments is already omittable and a tuple slot
+fixes its count, so the marker changes nothing either way.
 
 **Resolved detail.** A surplus *optional* parameter has no faithful tuple counterpart —
 `TupleType.Elems` is a plain `[]Type` with no per-element optionality. Such an element

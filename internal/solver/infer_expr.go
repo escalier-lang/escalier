@@ -1232,12 +1232,24 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// arity (the lint owns the single, uniform message; the constraint does pure
 	// type-flow on the supplied args). Too-many truncates to the prefix; too-few pads
 	// the missing parameters with fresh vars, which impose no constraint on absent args.
+	// Reshaping to len(fn.Params) lands inside the callee's accept-set. The expansion
+	// below gives every declared position a parameter of its own, so requiredCount(fn)
+	// never exceeds len(fn.Params).
 	fn, resolved := resolveFunc(callee)
+	if resolved {
+		// A tuple-typed rest param names its arguments one per element, so expanding it to
+		// that many positional params lets the lints, the owned-mutable upgrade, and
+		// consumeCallArgs below read plain positions. `fn (...xs: [number, string]) -> R`
+		// reports "expected at most 2" rather than the 1 its unexpanded param list counts,
+		// and its second argument lines up with `string` rather than with the whole tuple.
+		fn = expandTupleRest(fn)
+	}
 	demand := args
 	switch {
 	case resolved && !hasRest(fn) && len(args) > len(fn.Params):
-		// A typed rest param (hasRest) absorbs any number of trailing args, so it is
-		// never "too many" — only a fixed-arity (non-rest) callee trips this lint.
+		// A rest param survives expansion only when it binds an unbounded number of args,
+		// so it absorbs any number of trailing ones and is never "too many". Only a
+		// fixed-arity callee trips this lint.
 		c.errs = append(c.errs, &TooManyArgsError{Call: e, Fn: fn})
 		demand = args[:len(fn.Params)]
 	case resolved && len(args) < requiredCount(fn):
