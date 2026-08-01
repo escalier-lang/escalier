@@ -104,6 +104,14 @@ func TestUtilityTypeReductions(t *testing.T) {
 			src:          `type Result = Partial<{}>`,
 			wantExpanded: "{}",
 		},
+		{
+			// `null` carries no readable member, so `keyof null` is the empty key set too and the
+			// map emits no fields. Mapping over an atom is degenerate rather than an error, which
+			// is how a primitive argument behaves as well.
+			name:         "PartialOfNull",
+			src:          `type Result = Partial<null>`,
+			wantExpanded: "{}",
+		},
 		// `Required<T>` clears `?` from every field, the `-?` modifier's job. A field that was
 		// already required is unaffected.
 		{

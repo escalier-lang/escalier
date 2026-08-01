@@ -3,6 +3,8 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,16 +59,50 @@ func TestInferNullUndefinedAnnotationRoundTrip(t *testing.T) {
 	}
 }
 
-// Two `null` annotations in one module each resolve without tripping the provenance table.
-// soltype.NullType has no fields, so Go gives every instance one address, and Prov is keyed by
-// pointer identity — recording against it would file both under a single entry and panic the
-// debugProv guard on the second. resolveLitTypeAnn returns the atom before its recordProv call
-// for that reason, the same as the `never` and `unknown` arms.
-func TestInferNullAnnotationTwiceInOneModule(t *testing.T) {
+// One module can name both atoms without either binding disturbing the other.
+func TestInferNullAndUndefinedAnnotationsInOneModule(t *testing.T) {
 	values, _, errs := inferSource(t, "val n: null = null\nval u: undefined = undefined")
 	require.Empty(t, errs)
 	require.Equal(t, "null", values["n"])
 	require.Equal(t, "undefined", values["u"])
+}
+
+// resolveLitTypeAnn returns each atom before its recordProv call, so no `null` or `undefined`
+// annotation ever reaches the Prov side table. soltype.NullType has no fields, so Go gives
+// every instance one address, and Prov is keyed by pointer identity. Recording against it
+// would file every `null` in the module under a single entry, and each would then report the
+// last one's span.
+//
+// The guard that catches such a write is checker.debugProv, which panics when one type pointer
+// is recorded against two different nodes. inferSource leaves it off, so this test drives the
+// resolver directly with the guard on. Two separately constructed annotations are enough to
+// trip it, since they are distinct ast nodes carrying one shared soltype pointer.
+func TestResolveAtomAnnotationRecordsNoProvenance(t *testing.T) {
+	tests := []struct {
+		name string
+		lit  ast.Lit
+	}{
+		{"null", ast.NewNull(testSpan())},
+		{"undefined", ast.NewUndefined(testSpan())},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newChecker()
+			c.debugProv = true
+			scope := NewScope()
+			first := ast.NewLitTypeAnn(tt.lit, testSpan())
+			second := ast.NewLitTypeAnn(tt.lit, testSpan())
+
+			firstType, ok := c.resolveTypeAnn(scope, first, 0)
+			require.True(t, ok)
+			require.NotPanics(t, func() { c.resolveTypeAnn(scope, second, 0) })
+			require.Empty(t, c.errs)
+			require.Empty(t, c.prov, "an atom annotation must record no provenance")
+			// The two annotations resolve to the same atom, which is what makes a Prov entry
+			// unsafe in the first place.
+			require.Equal(t, tt.name, soltype.Print(firstType))
+		})
+	}
 }
 
 // Each atom relates only to itself. It is unrelated to the other atom, to `void`, and to every
