@@ -49,8 +49,6 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"unknown", &UnknownType{}, "unknown"},
 		{"void", &Void{}, "void"},
 		{"error", &ErrorType{}, "error"}, // PR8 recovery sentinel
-		// The function top type renders under the name source writes it with.
-		{"function top type", &FunctionType{}, "Function"},
 
 		// Tuples.
 		{"empty tuple", &TupleType{}, "[]"},

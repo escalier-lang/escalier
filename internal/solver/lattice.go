@@ -423,6 +423,8 @@ func compareSameKind(a, b soltype.Type) int {
 		return compareObjectFields(a, b)
 	case *soltype.PromiseType:
 		return compareType(a.Inner, b.(*soltype.PromiseType).Inner)
+	case *soltype.ArrayType:
+		return compareType(a.Elem, b.(*soltype.ArrayType).Elem)
 	case *soltype.FuncType:
 		b := b.(*soltype.FuncType)
 		if a.Inexact != b.Inexact {
@@ -617,8 +619,7 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 // NullType, Void, and UndefinedType. A union renders its parameters and data
 // members before its absence markers. NullType precedes Void, which precedes
 // UndefinedType, so `T0 | number | null | void | undefined` is the canonical
-// render. FunctionType follows FuncType, so a union holding both renders the
-// signature before the function top type.
+// render.
 func typeKindOrder(t soltype.Type) int {
 	switch t.(type) {
 	case *soltype.NeverType:
@@ -641,9 +642,9 @@ func typeKindOrder(t soltype.Type) int {
 		return 8
 	case *soltype.PromiseType:
 		return 9
-	case *soltype.FuncType:
+	case *soltype.ArrayType:
 		return 10
-	case *soltype.FunctionType:
+	case *soltype.FuncType:
 		return 11
 	case *soltype.UnionType:
 		return 12

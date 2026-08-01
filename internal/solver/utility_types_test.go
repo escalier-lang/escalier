@@ -30,11 +30,13 @@ import (
 //
 // `ReturnType<F>` and `Parameters<F>` each write their pattern's parameter list as one rest
 // parameter, `fn (...args: infer P) -> …`, so the pattern matches a function of any arity and the
-// capture is the whole parameter list as a tuple. Both bound `F` by `Function`, the supertype of
-// every function type. `Function` names no signature, so it imposes no arity, where the closest
-// writable signature bound, `fn () -> unknown`, would admit only nullary functions. The bound is
-// checked at the reference, so `ReturnType<number>` is rejected there rather than reducing through
-// the Else branch to `never`.
+// capture is the whole parameter list as a tuple.
+//
+// Both bound `F` by `fn (...args: Array<_>) -> _`, the written top of the function lattice. Its
+// rest parameter absorbs whatever parameter list the argument declares, and the `Array<_>` element
+// and the `_` return are inference placeholders, so neither constrains the argument further. The
+// bound is checked at the reference, so `ReturnType<number>` is rejected there rather than reducing
+// through the Else branch to `never`.
 //
 // `NonNullable<T>` is a conditional here, where TypeScript writes the intersection `T & {}`. That
 // intersection is not translatable, for two independent reasons.
@@ -67,8 +69,8 @@ const utilityTypeDecls = `
 	type Record<Ks, V> = {[K: Ks]: V}
 	type Exclude<U, V> = if U : V { never } else { U }
 	type Extract<U, V> = if U : V { U } else { never }
-	type ReturnType<F: Function> = if F : fn (...args: infer P) -> infer R { R } else { never }
-	type Parameters<F: Function> = if F : fn (...args: infer P) -> unknown { P } else { never }
+	type ReturnType<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> infer R { R } else { never }
+	type Parameters<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> unknown { P } else { never }
 	type NonNullable<T> = if T : null | undefined { never } else { T }
 	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
 	type EventName<K> = ` + "`on${Capitalize<K>}`" + `
@@ -707,8 +709,8 @@ func TestUtilityTypeRestParameterPatternMatchesAnyArity(t *testing.T) {
 	})
 }
 
-// The `Function` bound rejects a non-function argument at the reference, so the utility never
-// reaches its Else branch for one. TypeScript reports the same error for the same reason, since its
+// The `fn (...args: Array<_>) -> _` bound rejects a non-function argument at the reference, so the
+// utility never reaches its Else branch for one. TypeScript reports the same error for the same reason, since its
 // `ReturnType` constrains its parameter to a function type too.
 func TestUtilityTypeFunctionBoundRejectsNonFunction(t *testing.T) {
 	tests := []struct {
@@ -719,17 +721,17 @@ func TestUtilityTypeFunctionBoundRejectsNonFunction(t *testing.T) {
 		{
 			name:    "ReturnTypeOfNonFunction",
 			src:     `type Result = ReturnType<number>`,
-			wantErr: "cannot constrain number <: Function",
+			wantErr: "cannot constrain number <: function",
 		},
 		{
 			name:    "ParametersOfNonFunction",
 			src:     `type Result = Parameters<number>`,
-			wantErr: "cannot constrain number <: Function",
+			wantErr: "cannot constrain number <: function",
 		},
 		{
 			name:    "ReturnTypeOfObject",
 			src:     `type Result = ReturnType<{a: number}>`,
-			wantErr: "cannot constrain object <: Function",
+			wantErr: "cannot constrain object <: function",
 		},
 	}
 	for _, tt := range tests {
@@ -744,7 +746,7 @@ func TestUtilityTypeFunctionBoundRejectsNonFunction(t *testing.T) {
 // A bound on an alias's type parameter is checked at the reference, so an argument that fails it is
 // rejected there rather than substituted into the body. These cases pin that on the simplest alias
 // that can carry a bound. TestUtilityTypeFunctionBoundRejectsNonFunction covers the one bound the
-// corpus itself carries, `F: Function`.
+// corpus itself carries, `F: fn (...args: Array<_>) -> _`.
 func TestUtilityTypeAliasParameterConstraint(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -501,6 +501,72 @@ val g: fn(...args: [number, string]) -> number = two
 	}
 }
 
+// An `Array<E>` rest parameter binds zero or more trailing arguments and checks each against
+// E, which is the arity-and-element pair a tuple-typed rest cannot express. Each case reports
+// exactly the listed messages.
+func TestInferArrayRestParamFuncAnnotation(t *testing.T) {
+	const decl = "val g: fn(...xs: Array<number>) -> number = fn (...) { return 1 }\n"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "RoundTripsThroughThePrinter",
+			src:  `val f: fn(...xs: Array<number>) -> number = fn (...) { return 1 }`,
+		},
+		{
+			// Zero or more, so no argument count is an arity error.
+			name: "CallWithNoArguments",
+			src:  decl + `val r = g()`,
+		},
+		{
+			name: "CallWithSeveralArguments",
+			src:  decl + `val r = g(1, 2, 3)`,
+		},
+		{
+			// The element type is what each trailing argument is checked against. This is the
+			// per-argument checking FuncParam.Rest deferred until an element type existed.
+			name: "CallRejectsAWrongElement",
+			src:  decl + `val r = g(1, "a")`,
+			want: []string{`cannot constrain "a" <: number`},
+		},
+		{
+			// A fixed-arity function fills the slot, since the rest parameter absorbs its
+			// parameter list and checks each position against the element.
+			name: "AcceptsAFixedArityFunction",
+			src:  `fn two(x: number, y: number) -> number { return 1 }` + "\n" + `val h: fn(...xs: Array<number>) -> number = two`,
+		},
+		{
+			name: "RejectsAFixedArityFunctionOnTheElement",
+			src:  `fn two(x: number, y: string) -> number { return 1 }` + "\n" + `val h: fn(...xs: Array<number>) -> number = two`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			// Two array rest parameters pair as ordinary positions and compare element to
+			// element. The pairing is contravariant and the array is covariant in its element,
+			// so the super's `string` is checked against the sub's `number`.
+			name: "ArrayRestAgainstArrayRest",
+			src:  `val a: fn(...xs: Array<number>) -> number = fn (...) { return 1 }` + "\n" + `val b: fn(...ys: Array<string>) -> number = a`,
+			want: []string{"cannot constrain string <: number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errs)
+				return
+			}
+			got := make([]string, len(errs))
+			for i, e := range errs {
+				got[i] = e.Message()
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 // A tuple-typed rest slot fixes the arity at the tuple's length, so the relaxation the
 // gather rule introduces reaches only a conditional's pattern match. At value level both
 // sides are written types, so an exact function of the wrong arity is still rejected.
@@ -551,10 +617,17 @@ val slot: fn(x: number, ...) -> number = wide`
 	require.Equal(t, "2:42-2:46: cannot constrain unknown <: number", msgWithSpan(errs[0]))
 }
 
-// `Function` is the supertype of every function type. It names no signature, so it accepts
-// a function of any arity and rejects everything that is not a function. Each case renders
-// the binding named `f` when it type-checks and reports one error when it does not.
+// `fn (...args: Array<_>) -> _` is the written top of the function lattice. Its rest parameter
+// absorbs whatever parameter list the argument declares, and the `Array<_>` element and the `_`
+// return are inference placeholders, so neither constrains the argument further. It accepts a
+// function of any arity and rejects everything that is not a function.
+//
+// In a type-parameter bound that is all it does, since nothing reads the solved placeholders. In a
+// value annotation, which these cases use, `_` keeps its ordinary meaning of "infer this here", so
+// the rendered binding shows what each placeholder was solved to. Each case renders the binding
+// named `f` when it type-checks and reports one error when it does not.
 func TestInferFunctionTopType(t *testing.T) {
+	const top = "fn(...args: Array<_>) -> _"
 	tests := []struct {
 		name    string
 		src     string
@@ -562,50 +635,34 @@ func TestInferFunctionTopType(t *testing.T) {
 		wantErr string // "" ⇒ expect no error
 	}{
 		{
+			// Nothing constrains the element, so it coalesces to the negative-position identity.
 			name: "AcceptsNullary",
-			src:  `val f: Function = fn () { return 1 }`,
-			want: "Function",
+			src:  `val f: ` + top + ` = fn () { return 1 }`,
+			want: "fn (...args: Array<unknown>) -> 1",
 		},
 		{
+			// The rest parameter absorbs both declared params, so the arity is no obstacle. Each
+			// absorbed position bounds the element variable from above, and a parameter is
+			// contravariant, so the element coalesces to their meet.
 			name: "AcceptsBinary",
-			src:  `val f: Function = fn (x: number, y: string) { return 1 }`,
-			want: "Function",
+			src:  `val f: ` + top + ` = fn (x: number, y: string) { return 1 }`,
+			want: "fn (...args: Array<number & string>) -> 1",
 		},
 		{
 			// A written function type flows in the same way a function expression does.
 			name: "AcceptsFunctionTypedBinding",
-			src:  `val g: fn(x: number) -> number = fn (x) { return x }` + "\n" + `val f: Function = g`,
-			want: "Function",
-		},
-		{
-			// `Function` is reflexive, so one `Function`-typed binding flows into another.
-			name: "AcceptsFunction",
-			src:  `val g: Function = fn () { return 1 }` + "\n" + `val f: Function = g`,
-			want: "Function",
+			src:  `val g: fn(x: number) -> number = fn (x) { return x }` + "\n" + `val f: ` + top + ` = g`,
+			want: "fn (...args: Array<number>) -> number",
 		},
 		{
 			name:    "RejectsNumber",
-			src:     `val f: Function = 5`,
-			wantErr: "cannot constrain 5 <: Function",
-		},
-		{
-			// The atom names no signature, so nothing reads a parameter or return off it and
-			// it fills no function-typed slot.
-			name:    "DoesNotFillAFunctionSlot",
-			src:     `val g: Function = fn () { return 1 }` + "\n" + `val f: fn() -> number = g`,
-			wantErr: "cannot constrain Function <: function",
+			src:     `val f: ` + top + ` = 5`,
+			wantErr: "cannot constrain 5 <: function",
 		},
 		{
 			name:    "RejectsObject",
-			src:     `val f: Function = {a: 1}`,
-			wantErr: "cannot constrain object <: Function",
-		},
-		{
-			// A user-defined `Function` shadows the built-in, the same precedence the
-			// built-in Promise stub has.
-			name:    "UserDefinitionTakesPrecedence",
-			src:     `type Function = number` + "\n" + `val f: Function = "a"`,
-			wantErr: `cannot constrain "a" <: number`,
+			src:     `val f: ` + top + ` = {a: 1}`,
+			wantErr: "cannot constrain object <: function",
 		},
 	}
 	for _, tt := range tests {

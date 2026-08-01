@@ -89,23 +89,31 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
+		// The built-in Array<T>, the element-typed sequence a rest parameter binds its
+		// trailing arguments into. It is minimal by design: it carries the element type and
+		// nothing else, so `xs.length` and `xs[0]` do not resolve. Library ingestion supplies
+		// the members. Resolution reaches here only after resolveScopedTypeRef found nothing,
+		// so a user-defined `Array` wins, the same precedence the Promise stub above has.
+		if ast.QualIdentToString(ta.Name) == "Array" && len(ta.TypeArgs) == 1 {
+			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
+				return c.reportUnsupportedFeature(ta, "lifetime annotation on Array"), false
+			}
+			elem, ok := c.resolveTypeAnn(scope, ta.TypeArgs[0], lvl)
+			if !ok {
+				// Recover the element to a fresh var and keep the Array wrapper, for the reason
+				// the Promise arm above gives: the wrapper itself is supported, and a fresh var
+				// is cascade-safe where `never` or `unknown` would provoke a second failure.
+				elem = c.freshAt(lvl)
+			}
+			t := &soltype.ArrayType{Elem: elem}
+			c.recordProv(t, ta, AnnotationType)
+			return t, true
+		}
 		if t, ok := c.resolveStringIntrinsic(scope, ta, lvl); ok {
 			return t, true
 		}
 		if t, ok := c.resolveExactnessIntrinsic(scope, ta, lvl); ok {
 			return t, true
-		}
-		// The built-in `Function`, the supertype of every function type. It takes no type
-		// arguments and no lifetime, since it names no signature. Resolution reaches here only
-		// after resolveScopedTypeRef found nothing, so a user-defined `Function` wins, the same
-		// precedence the Promise stub above has.
-		//
-		// No provenance is recorded, for the reason the NeverTypeAnn arm gives: soltype.FunctionType
-		// has no fields, so every `&soltype.FunctionType{}` shares one address and the pointer-keyed
-		// Prov table cannot tell two of them apart.
-		if ast.QualIdentToString(ta.Name) == "Function" && len(ta.TypeArgs) == 0 &&
-			len(ta.LifetimeArgs) == 0 && ta.Lifetime == nil {
-			return &soltype.FunctionType{}, true
 		}
 		return c.reportUnsupported(ta), false
 	case *ast.ObjectTypeAnn:

@@ -79,9 +79,8 @@ func typePrec(t Type) int {
 		return precAtom
 	default:
 		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
-		// UndefinedType, NeverType, UnknownType, FunctionType — atoms. FunctionType renders as the bare
-		// name `Function`. ObjectType is brace-delimited, and ClassType and
-		// AliasType each render as a bare name or `Name<args>`, so none needs parens. A raw TypeVarType
+		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType,
+		// ArrayType, and AliasType each render as a bare name or `Name<args>`, so none needs parens. A raw TypeVarType
 		// appears only when printing an un-coalesced type, see printType; it is also an
 		// atom rendered as `t{ID}`, so it lands here. A `mut 'a Point` borrow wraps the
 		// ClassType in a RefType, which carries the looser precPrefix precedence.
@@ -500,6 +499,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Body)
 		case *PromiseType:
 			walk(t.Inner)
+		case *ArrayType:
+			walk(t.Elem)
 		case *RefType:
 			walk(t.Inner)
 		case *UnionType:
@@ -604,9 +605,9 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 // argument list is exactly what a diagnostic needs bounded.
 func isPrintLeaf(t Type) bool {
 	switch t.(type) {
-	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *FunctionType,
-		*ErrorType, *Void, *NullType, *UndefinedType, *MappedKeyType, *InferType,
-		*TypeofType, *RecursiveVarType:
+	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
+		*Void, *NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
+		*RecursiveVarType:
 		return true
 	}
 	return false
@@ -647,8 +648,6 @@ func (p *namedPrinter) printType(t Type) string {
 		return "never"
 	case *UnknownType:
 		return "unknown"
-	case *FunctionType:
-		return "Function"
 	case *ErrorType:
 		return "error"
 	case *Void:
@@ -807,6 +806,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return t.DisplayName()
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
+	case *ArrayType:
+		return "Array<" + p.printType(t.Elem) + ">"
 	case *RefType:
 		// Ownership and the borrow `&` split on Lt. An owned value has Lt nil and
 		// renders bare. NewRef collapses the owned-immutable cell, so a surviving owned

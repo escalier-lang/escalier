@@ -665,6 +665,23 @@ func (*RecursiveType) isRefInner()    {}
 // no-auto-flatten contract — flattening is `Awaited<T>`, M9).
 type PromiseType struct{ Inner Type }
 
+// ArrayType is a homogeneous sequence of Elem, written `Array<T>`. It is carried as a
+// dedicated concrete for the same reason PromiseType is: one stdlib generic the current
+// milestone needs typed, ahead of the alias-driven `Array<T>` library ingestion brings.
+//
+// It exists to give a rest parameter an element type. `fn (...xs: Array<number>) -> R`
+// binds zero or more trailing arguments and checks each against `number`, which is the
+// arity-and-element pair a tuple-typed rest cannot express, since a tuple fixes its length.
+//
+// Elem is covariant under subtyping, so `Array<L> <: Array<R>` iff `L <: R`. That is the
+// read-only reading, which is what a rest parameter needs: the arguments flow in and the
+// callee only reads them. A mutable array would have to be invariant, and `mut Array<T>` is
+// not expressible, since ArrayType is not a RefInner.
+//
+// The minimal form carries no members, so `xs.length` and `xs[0]` do not resolve. Library
+// ingestion supplies those.
+type ArrayType struct{ Elem Type }
+
 // Void is the result type of a statement block with no value.
 type Void struct{}
 
@@ -681,20 +698,6 @@ type NullType struct{}
 // resolves to `T | undefined` (M5 D4). No source syntax produces it yet; it is
 // minted internally by that join and renders as `undefined`.
 type UndefinedType struct{}
-
-// FunctionType is the top of the function part of the lattice. Every FuncType is a
-// subtype of it and nothing else is.
-//
-// It names no parameter list and no return, so it imposes no arity. That is what a type
-// parameter's bound needs: `F: Function` admits `fn () -> string` and
-// `fn (x: number, y: string) -> boolean` alike. The closest bound that names a signature
-// is `fn () -> unknown`, and it admits only nullary functions, since a function type's
-// return is covariant but its arity is fixed.
-//
-// It is an atom rather than a FuncType with wildcard parts, so no rule may decompose it
-// and read a parameter or return type off it. Source writes it as the type reference
-// `Function`, matching the name TypeScript gives the same type.
-type FunctionType struct{}
 
 // NeverType (⊥) and UnknownType (⊤) are the bottom/top of the subtype lattice —
 // the coalesced output of an empty-bounds single-polarity variable (positive ⇒
@@ -1109,11 +1112,11 @@ func (*RecursiveVarType) isType()    {}
 func (*PrimType) isType()            {}
 func (*LitType) isType()             {}
 func (*FuncType) isType()            {}
-func (*FunctionType) isType()        {}
 func (*TupleType) isType()           {}
 func (*ObjectType) isType()          {}
 func (*RefType) isType()             {}
 func (*PromiseType) isType()         {}
+func (*ArrayType) isType()           {}
 func (*Void) isType()                {}
 func (*NullType) isType()            {}
 func (*UndefinedType) isType()       {}
@@ -1236,6 +1239,9 @@ func LevelOf(t Type) int {
 		return LevelOf(t.Body)
 	case *PromiseType:
 		return LevelOf(t.Inner)
+	case *ArrayType:
+		// An array's level is its element's, the same single-child rule PromiseType follows.
+		return LevelOf(t.Elem)
 	case *RefType:
 		// A borrow's level is the max of its inner content's and its lifetime's (M4
 		// D2.5). The lifetime is a SECOND quantifiable variable on the wrapper: a
@@ -1263,7 +1269,7 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	default:
 		// PrimType, LitType, Void, NullType, UndefinedType, NeverType, UnknownType,
-		// FunctionType, ErrorType, InferType, MappedKeyType, RecursiveVarType: childless leaves. ErrorType is a
+		// ErrorType, InferType, MappedKeyType, RecursiveVarType: childless leaves. ErrorType is a
 		// sentinel at level 0. An InferType names a capture, a MappedKeyType names a mapped type's key,
 		// and a RecursiveVarType names an enclosing μ-knot's binder; each is substituted by the
 		// evaluator or by unfolding rather than generalized by the solver, so none lifts the level.

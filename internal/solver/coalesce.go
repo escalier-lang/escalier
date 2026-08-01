@@ -1196,9 +1196,6 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.UnknownType:
 		_, ok := b.(*soltype.UnknownType)
 		return ok
-	case *soltype.FunctionType:
-		_, ok := b.(*soltype.FunctionType)
-		return ok
 	case *soltype.ErrorType:
 		_, ok := b.(*soltype.ErrorType)
 		return ok
@@ -1330,6 +1327,9 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			return false
 		}
 		return equalTypeSliceWith(a.TypeArgs, b.TypeArgs, ctx)
+	case *soltype.ArrayType:
+		b, ok := b.(*soltype.ArrayType)
+		return ok && equalTypeWith(a.Elem, b.Elem, ctx)
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
 		return ok && equalTypeWith(a.Inner, b.Inner, ctx)

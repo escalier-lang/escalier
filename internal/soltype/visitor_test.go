@@ -66,7 +66,6 @@ func TestAcceptAtomPassThrough(t *testing.T) {
 		&Void{},
 		&NeverType{},
 		&UnknownType{},
-		&FunctionType{},
 		&TypeVarType{ID: 1},
 	}
 	for _, a := range atoms {

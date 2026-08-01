@@ -82,7 +82,6 @@ func (t *NullType) Accept(v TypeVisitor, pol Polarity) Type      { return accept
 func (t *UndefinedType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 func (t *NeverType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *UnknownType) Accept(v TypeVisitor, pol Polarity) Type   { return acceptLeaf(t, v, pol) }
-func (t *FunctionType) Accept(v TypeVisitor, pol Polarity) Type  { return acceptLeaf(t, v, pol) }
 func (t *ErrorType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *SkolemType) Accept(v TypeVisitor, pol Polarity) Type    { return acceptLeaf(t, v, pol) }
 func (t *InferType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
@@ -155,6 +154,20 @@ func (t *ObjectType) Accept(v TypeVisitor, pol Polarity) Type {
 	out := cur
 	if changed {
 		out = &ObjectType{Elems: elems, Inexact: cur.Inexact}
+	}
+	return v.ExitType(out, pol)
+}
+
+func (t *ArrayType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	elem := cur.Elem.Accept(v, pol) // covariant, the read-only reading
+	out := cur
+	if elem != cur.Elem {
+		out = &ArrayType{Elem: elem}
 	}
 	return v.ExitType(out, pol)
 }
