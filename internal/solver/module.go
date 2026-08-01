@@ -390,11 +390,9 @@ func (c *checker) inferComponent(
 			}
 		}
 	}
-	// The two loops below fill bodies that are still nil, so a generic alias reference's bound
-	// check is queued rather than run against a half-built sibling. Plain assignment is safe
-	// because inferComponent never nests and has no early return, and phases 1 and 2 already
-	// resolved every value declaration. Do not convert this to a defer, because a check queued
-	// after runDeferredAliasBounds would never be replayed.
+	// The two loops below fill bodies that are still nil, so a bound check inside them is queued
+	// rather than run against a half-built sibling. Do not convert this to a defer, because a
+	// check queued after runDeferredAliasBounds would never be replayed.
 	c.deferAliasBounds = true
 	// Every enum body resolves its variant parameters against the fully pre-bound
 	// identities above, so a parameter naming a sibling enum or class resolves.
