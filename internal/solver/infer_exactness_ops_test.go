@@ -282,6 +282,27 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 			wantExpanded: "fn <T>(x: T, ...) -> T",
 		},
 		{
+			// The round trip holds for a function too, so widening an exact function and tightening
+			// the result recovers the operand.
+			name: "RoundTripFuncFromExact",
+			src: `
+				type F = fn (a: number) -> string
+				type Result = Exact<Inexact<F>>
+			`,
+			wantSymbolic: "Exact<Inexact<F>>",
+			wantExpanded: "fn (a: number) -> string",
+		},
+		{
+			// And from the other end, tightening an inexact function and widening the result.
+			name: "RoundTripFuncFromInexact",
+			src: `
+				type F = fn (a: number, ...) -> string
+				type Result = Inexact<Exact<F>>
+			`,
+			wantSymbolic: "Inexact<Exact<F>>",
+			wantExpanded: "fn (a: number, ...) -> string",
+		},
+		{
 			name: "InexactUnion",
 			src: `
 				type Color = "red" | "green" | "blue"
@@ -450,6 +471,29 @@ func TestInferExactnessIntrinsicChecksConstraints(t *testing.T) {
 			type Open = {x: number, ...}
 			fn f(p: Exact<Open>) -> number { return 1 }
 			val r = f({x: 1})
+		`)
+		require.Empty(t, errs)
+	})
+
+	// The converted function type is usable as the form the operator named, not merely rendered as
+	// it. Each case passes the argument only the converted form admits, so the check would fail
+	// against the operand the source wrote.
+	t.Run("tightened parameter accepts an exact function", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			type LooseF = fn (a: number, ...) -> string
+			fn exactFn(a: number) -> string { return "x" }
+			fn take(cb: Exact<LooseF>) -> number { return 1 }
+			val r = take(exactFn)
+		`)
+		require.Empty(t, errs)
+	})
+
+	t.Run("widened parameter accepts an inexact function", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			type ExactF = fn (a: number) -> string
+			declare fn looseFn(a: number, ...) -> string
+			fn take(cb: Inexact<ExactF>) -> number { return 1 }
+			val r = take(looseFn)
 		`)
 		require.Empty(t, errs)
 	})
