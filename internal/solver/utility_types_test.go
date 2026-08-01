@@ -35,6 +35,22 @@ import (
 // nullary alongside it. M9 PR14 settles what the bound becomes once the pattern matches any arity.
 // TestUtilityTypeReturnTypeIsAritySpecific records the arity restriction itself.
 //
+// `NonNullable<T>` is a conditional here, where TypeScript writes the intersection `T & {}`. That
+// intersection is not translatable, for two independent reasons.
+//
+// The first is what the empty object type means. TypeScript's `{}` is the non-nullish top, the
+// type of every value except `null` and `undefined`, so `string <: {}` holds and `string & {}`
+// stays `string`. Escalier's `{...}` is the inexact OBJECT type, so it admits an object of any
+// shape and nothing else. `val a: {...} = 5` is rejected with "cannot constrain 5 <: object".
+// Writing `T & {...}` would therefore leave `NonNullable<string>` uninhabited instead of `string`,
+// and it would strip `void` alongside the two absence markers.
+//
+// The second is that an intersection does not reduce. Nothing distributes one over a union or
+// detects an empty one, so `NonNullable<string | null>` would stall as the residual
+// `(string | null) & {...}` rather than grounding. The conditional needs neither piece. `T` is a
+// naked type parameter, so it distributes over the argument and decides each member alone, which
+// is machinery the conditional evaluator already carries.
+//
 // `Parameters<F>`, `ConstructorParameters<C>`, and `InstanceType<C>` are the three utilities the
 // suite cannot express yet. Each has a disabled test at the end of this file naming what it waits
 // on.
