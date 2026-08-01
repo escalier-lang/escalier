@@ -56,6 +56,14 @@ func typePrec(t Type) int {
 	case *MappedKeyType:
 		// A mapped type's key variable renders as its bare name, an atom.
 		return precAtom
+	case *RecursiveType:
+		// A μ-knot is self-delimiting, because printType parenthesizes any body that is not itself
+		// an atom, so it never needs outer parens. `μX0.{next: X0} | number` and
+		// `μX0.(number | X0) | number` both read correctly with no wrapper.
+		return precAtom
+	case *RecursiveVarType:
+		// A μ-knot's bound variable renders as its bare name, an atom.
+		return precAtom
 	case *RestSpreadType:
 		// A `...P` spread element only appears inside a tuple's bracket list, which prints each
 		// element unparenthesized, so its precedence is consulted only if it is rendered on its
@@ -482,6 +490,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *StringIntrinsicType:
 			walk(t.Operand)
+		case *RecursiveType:
+			walk(t.Body)
 		case *PromiseType:
 			walk(t.Inner)
 		case *RefType:
@@ -583,12 +593,14 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 //
 // An InferType renders as a name in both forms, `infer U` at the binder and a bare `U` at a
 // reference, and a TypeofType renders as the identifier it names rather than the value's type, so
-// both are leaves. An alias or class reference is not, even though one with no type arguments
-// renders as a bare name: its argument list is exactly what a diagnostic needs bounded.
+// both are leaves. A RecursiveVarType renders as its binder's name, so it is one too. An alias or
+// class reference is not, even though one with no type arguments renders as a bare name: its
+// argument list is exactly what a diagnostic needs bounded.
 func isPrintLeaf(t Type) bool {
 	switch t.(type) {
 	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
-		*Void, *NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType:
+		*Void, *NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
+		*RecursiveVarType:
 		return true
 	}
 	return false
@@ -764,6 +776,22 @@ func (p *namedPrinter) printType(t Type) string {
 		// A mapped type's key variable renders as the bare name the source bound it under, so a
 		// stored mapped type round-trips to `{[K]: T[K] for K in keyof T}`.
 		return t.Name
+	case *RecursiveType:
+		// `μX0.<body>`, the μ form for a recursive type. Escalier has no surface syntax for one, so
+		// this is the standard notation rather than a mirror of a parser form.
+		//
+		// The body prints at precAtom, so it is parenthesized unless it is already self-delimiting.
+		// A μ binder is greedy, meaning it extends to the end of the enclosing form, so a body that
+		// could run on has to be bounded here or it would swallow whatever follows the knot:
+		// `μX0.number | X0` beside a `| string` would read as one three-member union. An object,
+		// tuple, or bare name carries its own delimiter and needs nothing, which is why the common
+		// `μX0.{next: X0}` stays bare. Bounding the body here is also what makes the knot an atom,
+		// so it never needs parens of its own at the use site.
+		return "μ" + t.Binder.DisplayName() + "." + p.printTypeMinPrec(t.Body, precAtom)
+	case *RecursiveVarType:
+		// A reference to the enclosing knot's binder renders as that binder's bare name, so
+		// `μX0.{next: X0}` names one binding twice.
+		return t.DisplayName()
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *RefType:

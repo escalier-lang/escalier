@@ -110,6 +110,17 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 - Name the value, not the technique that produced it. Don't write "union-find"
   when you mean the merge classes it computed, or "the visitor" when you mean
   the walk's result. Refer to the thing the code hands around.
+- Backtick a word that carries both an ordinary meaning and a specialized one,
+  whenever the specialized one is intended. Without the backticks a reader
+  parses the sentence as plain prose and has to start over on reaching the code.
+  "collapsing to never or unknown" reads as a claim about frequency.
+  "collapsing to `never` or `unknown`" names the two lattice bounds. This covers
+  type and keyword names such as `never`, `unknown`, `error`, `void`, `null`,
+  `undefined`, `number`, `string`, and `object`, and it covers any identifier
+  whose name is itself a common word, such as the `open` parameter marker or the
+  `seen` set. Backtick only the specialized sense. "it never needs parens" and
+  "an unknown key" stay bare, because there the ordinary meaning is the intended
+  one. Apply this when reviewing a comment as well as when writing one.
 - Treat a comment as draft-then-revise, not one-shot. After writing any comment
   longer than a sentence or two, reread it as someone with no prior context.
   Fix every unexplained term and every sentence that needs a second pass.

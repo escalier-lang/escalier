@@ -87,6 +87,8 @@ func (t *SkolemType) Accept(v TypeVisitor, pol Polarity) Type    { return accept
 func (t *InferType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *MappedKeyType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 
+func (t *RecursiveVarType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
+
 func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {
@@ -300,6 +302,26 @@ func (t *StringIntrinsicType) Accept(v TypeVisitor, pol Polarity) Type {
 	out := cur
 	if operand != cur.Operand {
 		out = &StringIntrinsicType{Kind: cur.Kind, Operand: operand}
+	}
+	return v.ExitType(out, pol)
+}
+
+func (t *RecursiveType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The body walks in the current polarity, the same single-child covariant visit PromiseType
+	// uses. A knot stands for the type its body unfolds to, and unfolding introduces no variance
+	// flip. Binder is the binding this node owns rather than a type to rewrite, so it carries
+	// through and every reference to it inside the rewritten body stays bound to it. That split is
+	// how a knot crosses a level boundary intact. extrude freshens the body's inference variables
+	// and leaves the binder alone.
+	body := cur.Body.Accept(v, pol)
+	out := cur
+	if body != cur.Body {
+		out = &RecursiveType{Binder: cur.Binder, Body: body}
 	}
 	return v.ExitType(out, pol)
 }

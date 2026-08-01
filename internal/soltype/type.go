@@ -1,6 +1,9 @@
 package soltype
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // Type is the sealed interface for all soltype nodes. (Production name for the
 // spike's SimpleType; marker renamed isSimpleType -> isType.)
@@ -596,7 +599,9 @@ type RefType struct {
 // verdict and is rejected at the inference join where it forms. ClassType is a
 // RefInner too, so a `mut 'a Point` borrows a class instance. AliasType is a
 // RefInner as well, so a `mut 'a Point` over a type alias borrows through the same
-// machinery.
+// machinery. RecursiveType joins them for the same reason an AliasType does: a μ-knot over an
+// object is a borrowable value, and admitting it keeps RefType.Accept from peeling the `mut`
+// wrapper off a borrow whose inner coalesced to a knot.
 type RefInner interface {
 	Type
 	isRefInner()
@@ -609,6 +614,7 @@ func (*UnionType) isRefInner()        {}
 func (*IntersectionType) isRefInner() {}
 func (*ClassType) isRefInner()        {}
 func (*AliasType) isRefInner()        {}
+func (*RecursiveType) isRefInner()    {}
 
 // PromiseType is the result of an `async fn` and the requirement of an `await`.
 // M3 carries it as a dedicated concrete (not a generic TypeRefType), keeping the
@@ -963,6 +969,46 @@ type StringIntrinsicType struct {
 	Operand Type
 }
 
+// RecursiveType is the μ-knot, the finite form of a type whose unfolding never ends. Body is one
+// level of that unfolding and Binder is the variable Body names itself through, so `μX0.{next: X0}`
+// is the type of a value whose `next` field holds another value of the same type. Unfolding it
+// substitutes the whole knot for its binder in Body, which is how constrain compares a knot against
+// a structural type.
+//
+// coalesce mints one when its walk re-enters an inference variable already on the current path, so a
+// recursive position renders as the shape it stands for rather than collapsing to `never` or
+// `unknown`.
+// `fn f() { return {next: f()} }` infers `fn () -> {next: μX0.{next: X0}}`.
+type RecursiveType struct {
+	Binder *RecursiveVarType
+	Body   Type
+}
+
+// RecursiveVarType is the variable a RecursiveType binds, the `X0` of `μX0.{next: X0}`. It is a leaf
+// that carries no bounds, and nothing constrains against it. Unfolding the enclosing knot replaces
+// it with that knot before any comparison reaches it.
+//
+// ID is the binding this node stands for. The binder and every reference to it carry one id, so
+// unfolding reaches exactly the positions that binding stands at. A nested knot draws a distinct id,
+// which is what makes its own binding shadow the enclosing one. Name is the display name its
+// producer assigned, `X0`, `X1`, and so on; DisplayName supplies a fallback when a producer left it
+// empty.
+type RecursiveVarType struct {
+	ID   int
+	Name string
+}
+
+// DisplayName is the name a μ-binder renders under: the name its producer assigned, else the raw
+// `r{ID}` debug form, mirroring printType's `t{ID}` for an unnamed inference variable. It is
+// exported so the solver's describe, the second per-node renderer beside printType, names a binder
+// the same way.
+func (v *RecursiveVarType) DisplayName() string {
+	if v.Name != "" {
+		return v.Name
+	}
+	return "r" + strconv.Itoa(v.ID)
+}
+
 func (*TypeVarType) isType()         {}
 func (*KeyofType) isType()           {}
 func (*IndexType) isType()           {}
@@ -973,6 +1019,8 @@ func (*MappedKeyType) isType()       {}
 func (*RestSpreadType) isType()      {}
 func (*TemplateLitType) isType()     {}
 func (*StringIntrinsicType) isType() {}
+func (*RecursiveType) isType()       {}
+func (*RecursiveVarType) isType()    {}
 func (*PrimType) isType()            {}
 func (*LitType) isType()             {}
 func (*FuncType) isType()            {}
@@ -1085,6 +1133,13 @@ func LevelOf(t Type) int {
 		// A string-intrinsic residual's level is its operand's, the same single-child rule the
 		// KeyofType arm follows.
 		return LevelOf(t.Operand)
+	case *RecursiveType:
+		// A μ-knot's level is its body's, the same single-child rule the KeyofType arm follows, so a
+		// knot whose body holds an out-of-level variable lifts the level and the freshener/extruder
+		// prune descends into the body. Binder is a binding this node owns rather than a variable the
+		// solver generalizes, so it contributes nothing. That split is what carries a knot across a
+		// level boundary intact: the body's variables are freshened and the binder is left alone.
+		return LevelOf(t.Body)
 	case *PromiseType:
 		return LevelOf(t.Inner)
 	case *RefType:
@@ -1114,9 +1169,10 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	default:
 		// PrimType, LitType, Void, NullType, UndefinedType, NeverType, UnknownType,
-		// ErrorType, InferType, MappedKeyType: childless leaves. ErrorType is a sentinel at level 0.
-		// An InferType names a capture and a MappedKeyType names a mapped type's key, both of which
-		// the evaluator substitutes rather than the solver generalizing, so none lifts the level.
+		// ErrorType, InferType, MappedKeyType, RecursiveVarType: childless leaves. ErrorType is a
+		// sentinel at level 0. An InferType names a capture, a MappedKeyType names a mapped type's key,
+		// and a RecursiveVarType names an enclosing μ-knot's binder; each is substituted by the
+		// evaluator or by unfolding rather than generalized by the solver, so none lifts the level.
 		return 0
 	}
 }

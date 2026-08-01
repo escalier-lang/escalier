@@ -385,7 +385,7 @@ func (s *ltBoundSet) subsumes(other *ltBoundSet) bool {
 // borrow's lifetime is erased at codegen, which dispatches on parameter shape, so two arms
 // whose parameters are alpha-equal are indistinguishable however their lifetimes relate.
 func alphaEqualTypes(a, b soltype.Type) bool {
-	lt := &ltPairing{aToB: map[int]int{}, bToA: map[int]int{}}
+	lt := &ltPairing{}
 	if !equalTypeWith(a, b, &alphaCtx{lt: lt}) {
 		return false
 	}
