@@ -772,6 +772,28 @@ corpus *and* the source of those shipped declarations; the operators PR1b–PR12
 land are what make them reduce. So M9 does not just verify the utilities, it makes
 them expressible at all under import-only resolution.
 
+**Four utilities the landed operators cannot express.** Each has a disabled test in
+[utility_types_test.go](../../internal/solver/utility_types_test.go) naming its blocker.
+
+- `NonNullable<T>` tests its argument against `null | undefined`, and neither spelling
+  resolves. `soltype`'s literal set carries no `NullLit` or `UndefinedLit`, an extension
+  owed from M2, so `resolveLitTypeAnn` reports both as unsupported.
+- `Parameters<F>` binds one `infer` name to a whole parameter list, which the pattern
+  writes as a rest parameter. `resolveFuncTypeAnn` reports a rest parameter unsupported,
+  since checking its trailing arguments needs the real `Array<T>` from M7.5.
+- `ConstructorParameters<C>` and `InstanceType<C>` match a `new (…)` member, which
+  `objTypeAnnElemInner` does not parse. The printer already renders the form on a class's
+  static side, so the gap is the annotation surface rather than the representation.
+
+**`ReturnType<F>` reduces for one arity at a time.** TypeScript's definition matches a
+function of any arity through a rest parameter. Escalier's accept-set rule decides `sub <:
+super` by containment over the argument counts each side tolerates, and two exact function
+types have single-point accept-sets, so containment forces equal arity. Widening the pattern
+does not help, because a rest parameter or the inexact `fn (...)` marker lifts its upper
+bound to infinity, which a fixed-arity argument then fails to contain. So the arity-agnostic
+definition needs a decision about how a conditional's `Check <: Extends` probe treats arity,
+beyond the rest-parameter surface M7.5 adds.
+
 **Depends on** PR2, PR3b, PR4, PR7, PR12. Verifies the whole operator suite
 composes.
 
@@ -831,7 +853,7 @@ PR1a ✅ #914 (residual-node representation + inert plumbing)
       │         ├─► PR9 ✅ #940 (CheckRegular)      ── also needs PR1b
       │         │    └─► PR9b ✅ #941 (productivity check + coinductive comparison)
       │         │         └─► PR9d (phantom type-parameter erasure)
-      │         └─► PR12 (Awaited<T>)              ── also needs PR1b, M7.5
+      │         └─► PR12 ✅ #952 (Awaited<T>)       ── also needs PR1b, M7.5
       ├─► PR5 ✅ #920 (object spread types)
       ├─► PR6 ✅ #918 (tuple spread types)
       ├─► PR7 ✅ #924 (template literal types + intrinsics)
@@ -855,7 +877,7 @@ to intersect the members' key sets, and #937 capped total alias expansion with a
 monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
 PR4's mapped types.
 
-Everything still open is PR8, PR9d, PR9f, PR10, PR11, PR12, and PR13. PR8 is partly
+Everything still open is PR8, PR9d, PR9f, PR10, PR11, and PR13. PR8 is partly
 seeded — #922 threads an object's exactness through `keyof` — but the rest of the
 operators and the `Exact` / `Inexact` intrinsics are untouched.
 
@@ -886,7 +908,7 @@ graph TD
     M3["M3 (let-generalization + coalescing)"]
     PR10["PR10 (throws clause)"]
     PR11["PR11 (generators)"]
-    PR12["PR12 (Awaited<T>)"]
+    PR12["PR12 ✅ #952 (Awaited<T>)"]
     PR13["PR13 (TS utility-type suite)"]
 
     M7 -.-> PR1a
@@ -940,6 +962,7 @@ graph TD
     style PR9b stroke:#2e7d32,stroke-width:4px
     style PR9c stroke:#2e7d32,stroke-width:4px
     style PR9e stroke:#2e7d32,stroke-width:4px
+    style PR12 stroke:#2e7d32,stroke-width:4px
 ```
 
 ### Parallelism
