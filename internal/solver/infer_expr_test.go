@@ -25,6 +25,10 @@ func TestInferLiteral(t *testing.T) {
 		{"number", ast.NewNumber(5, testSpan()), "5"},
 		{"string", ast.NewString("hello", testSpan()), `"hello"`},
 		{"boolean", ast.NewBoolean(true, testSpan()), "true"},
+		// `null` and `undefined` type as soltype atoms rather than singleton LitTypes,
+		// so they take the atomLitOf path through inferLiteral.
+		{"null", ast.NewNull(testSpan()), "null"},
+		{"undefined", ast.NewUndefined(testSpan()), "undefined"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -39,15 +43,15 @@ func TestInferLiteral(t *testing.T) {
 	}
 }
 
-// A literal kind outside M1's soltype.Lit set (regex, bigint, null, undefined)
-// is an M2 subset miss, not a crash.
+// A literal kind with no soltype form, regex or bigint, is a subset miss rather than a
+// crash. Both wait on a soltype.Lit member of their own.
 func TestInferLiteralUnsupported(t *testing.T) {
 	c := newChecker()
-	e := ast.NewLitExpr(ast.NewNull(testSpan()))
+	e := ast.NewLitExpr(ast.NewRegex("/a/", testSpan()))
 	got := c.inferExpr(NewScope(), 0, e)
 	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
 	require.Len(t, c.errs, 1)
-	require.Equal(t, "Unsupported: NullLit", c.errs[0].Message())
+	require.Equal(t, "Unsupported: RegexLit", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())
 }
 

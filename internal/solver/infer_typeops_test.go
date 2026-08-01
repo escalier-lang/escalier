@@ -249,6 +249,27 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: "never",
 		},
 		{
+			// `null` and `undefined` have no members either, so each projects the empty key set
+			// the same way a primitive does. A mapped type over one reduces to `{}` rather than
+			// stalling on an unreduced `keyof null`.
+			name: "NullAtom",
+			src: `
+				type N = null
+				type Result = keyof N
+			`,
+			wantSymbolic: "keyof N",
+			wantExpanded: "never",
+		},
+		{
+			name: "UndefinedAtom",
+			src: `
+				type U = undefined
+				type Result = keyof U
+			`,
+			wantSymbolic: "keyof U",
+			wantExpanded: "never",
+		},
+		{
 			// A recursive alias terminates: projecting its keys never descends into the recursive
 			// `children` field value.
 			name: "RecursiveAlias",

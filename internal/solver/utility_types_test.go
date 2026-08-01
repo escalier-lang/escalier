@@ -35,9 +35,25 @@ import (
 // nullary alongside it. M9 PR14 settles what the bound becomes once the pattern matches any arity.
 // TestUtilityTypeReturnTypeIsAritySpecific records the arity restriction itself.
 //
-// `NonNullable<T>`, `Parameters<F>`, `ConstructorParameters<C>`, and `InstanceType<C>` are the
-// four utilities the suite cannot express yet. Each has a disabled test at the end of this file
-// naming what it waits on.
+// `NonNullable<T>` is a conditional here, where TypeScript writes the intersection `T & {}`. That
+// intersection is not translatable, for two independent reasons.
+//
+// The first is what the empty object type means. TypeScript's `{}` is the non-nullish top, the
+// type of every value except `null` and `undefined`, so `string <: {}` holds and `string & {}`
+// stays `string`. Escalier's `{...}` is the inexact OBJECT type, so it admits an object of any
+// shape and nothing else. `val a: {...} = 5` is rejected with "cannot constrain 5 <: object".
+// Writing `T & {...}` would therefore leave `NonNullable<string>` uninhabited instead of `string`,
+// and it would strip `void` alongside the two absence markers.
+//
+// The second is that an intersection does not reduce. Nothing distributes one over a union or
+// detects an empty one, so `NonNullable<string | null>` would stall as the residual
+// `(string | null) & {...}` rather than grounding. The conditional needs neither piece. `T` is a
+// naked type parameter, so it distributes over the argument and decides each member alone, which
+// is machinery the conditional evaluator already carries.
+//
+// `Parameters<F>`, `ConstructorParameters<C>`, and `InstanceType<C>` are the three utilities the
+// suite cannot express yet. Each has a disabled test at the end of this file naming what it waits
+// on.
 //
 // Two declarations at the end are not TypeScript utilities. `EventName<K>` is a template-literal
 // type that builds a handler name from an event name. `Point` is the sample object several tests
@@ -52,6 +68,7 @@ const utilityTypeDecls = `
 	type Exclude<U, V> = if U : V { never } else { U }
 	type Extract<U, V> = if U : V { U } else { never }
 	type ReturnType<F> = if F : fn () -> infer R { R } else { never }
+	type NonNullable<T> = if T : null | undefined { never } else { T }
 	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
 	type EventName<K> = ` + "`on${Capitalize<K>}`" + `
 	type Point = {x: number, y: string}
@@ -101,6 +118,14 @@ func TestUtilityTypeReductions(t *testing.T) {
 			// `keyof {}` is `never`, the empty key set, so the map emits no fields.
 			name:         "PartialOfEmptyObject",
 			src:          `type Result = Partial<{}>`,
+			wantExpanded: "{}",
+		},
+		{
+			// `null` carries no readable member, so `keyof null` is the empty key set too and the
+			// map emits no fields. Mapping over an atom is degenerate rather than an error, which
+			// is how a primitive argument behaves as well.
+			name:         "PartialOfNull",
+			src:          `type Result = Partial<null>`,
 			wantExpanded: "{}",
 		},
 		// `Required<T>` clears `?` from every field, the `-?` modifier's job. A field that was
@@ -804,39 +829,28 @@ func TestUtilityTypeDistributesOverUnionAlias(t *testing.T) {
 	*/
 }
 
-// DISABLED until M9 PR16, which gives `null` and `undefined` a surface. `soltype.NullType` and
-// `soltype.UndefinedType` already exist as atoms and `undefined` is already inferred, since reading
-// an optional property yields `number | undefined`. What no annotation reaches is either atom, so
-// `resolveLitTypeAnn` reports `Unsupported: LitTypeAnn` for both spellings and the `null |
-// undefined` operand `NonNullable<T>` tests against cannot be written. `constrain` also carries a
-// reflexive arm for `UndefinedType` and none for `NullType`. Re-enable by removing the comment
-// wrapper once both exist, and add
-//
-//	type NonNullable<T> = if T : null | undefined { never } else { T }
-//
-// to utilityTypeDecls, which is where runUtilityReductions reads each utility's definition from.
+// `NonNullable<T>` strips the two absence markers from a union. `T` is a naked type parameter, so
+// the conditional distributes over the argument and decides each member alone.
 func TestUtilityTypeNonNullable(t *testing.T) {
-	/*
-		runUtilityReductions(t, []utilityReduction{
-			{
-				// The naked type parameter distributes, so each member is decided alone and the two
-				// absence markers drop out.
-				name:         "StripsBothMarkers",
-				src:          `type Result = NonNullable<string | null | undefined>`,
-				wantExpanded: "string",
-			},
-			{
-				name:         "LeavesOtherMembers",
-				src:          `type Result = NonNullable<string | number>`,
-				wantExpanded: "string | number",
-			},
-			{
-				name:         "EveryMemberStripped",
-				src:          `type Result = NonNullable<null | undefined>`,
-				wantExpanded: "never",
-			},
-		})
-	*/
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name:         "StripsBothMarkers",
+			src:          `type Result = NonNullable<string | null | undefined>`,
+			wantExpanded: "string",
+		},
+		{
+			// Distributing rebuilds the union, so the result comes back in the canonical
+			// order lattice.go documents rather than the source order.
+			name:         "LeavesOtherMembers",
+			src:          `type Result = NonNullable<string | number>`,
+			wantExpanded: "number | string",
+		},
+		{
+			name:         "EveryMemberStripped",
+			src:          `type Result = NonNullable<null | undefined>`,
+			wantExpanded: "never",
+		},
+	})
 }
 
 // DISABLED until a rest parameter can be written in a function type annotation and an `infer`

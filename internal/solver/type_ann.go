@@ -425,11 +425,21 @@ func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl in
 	return t, true
 }
 
-// resolveLitTypeAnn lowers a string, number, or boolean literal type annotation to its LitType,
-// reusing litTypeOf. It is the annotation home for a literal type, which an indexed access needs
-// for its key, so `Point["x"]` carries `"x"` as a LitTypeAnn index. A literal with no soltype
-// form, such as a regex, a bigint, null, or undefined, reports unsupported and recovers.
+// resolveLitTypeAnn lowers a literal type annotation to the type it names. A string, number, or
+// boolean literal becomes its LitType through litTypeOf. This is the annotation home for a literal
+// type, which an indexed access needs for its key, so `Point["x"]` carries `"x"` as a LitTypeAnn
+// index.
+//
+// `null` and `undefined` become the atoms atomLitOf returns. That makes both writable in an
+// annotation, so a binding can be declared `val n: null = null` and `NonNullable<T>` can test
+// its argument against `null | undefined`. The atom returns above the recordProv call below,
+// since neither atom can carry provenance. atomLitOf explains why.
+//
+// A literal with no soltype form, such as a regex or a bigint, reports unsupported and recovers.
 func (c *checker) resolveLitTypeAnn(ta *ast.LitTypeAnn) (soltype.Type, bool) {
+	if atom, _, isAtom := atomLitOf(ta.Lit); isAtom {
+		return atom, true
+	}
 	lit, ok := c.litTypeOf(ta.Lit)
 	if !ok {
 		return c.reportUnsupported(ta), false
@@ -820,6 +830,9 @@ func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {
 	case *ast.WildcardPat:
 		return &soltype.WildcardPat{}
 	case *ast.LitPat:
+		if _, atomPat, isAtom := atomLitOf(p.Lit); isAtom {
+			return atomPat
+		}
 		if lt, ok := c.litTypeOf(p.Lit); ok {
 			return &soltype.LitPat{Lit: lt.Lit}
 		}

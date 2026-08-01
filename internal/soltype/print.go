@@ -1172,6 +1172,10 @@ func printPat(pat Pat) (string, bool) {
 		return "_", true
 	case *LitPat:
 		return printLit(p.Lit), true
+	case *NullPat:
+		return "null", true
+	case *UndefinedPat:
+		return "undefined", true
 	case *TuplePat:
 		parts := make([]string, len(p.Elems))
 		for i, e := range p.Elems {
