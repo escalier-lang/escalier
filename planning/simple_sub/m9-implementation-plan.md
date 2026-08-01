@@ -815,59 +815,73 @@ until a real library type motivates it.
 
 ## Dependency graph
 
+A PR marked ✅ has merged, and the number after it is the merged pull request. An
+unmarked PR has not been built yet.
+
 ```
 M7   (type aliases: alias node + generics + scope-driven TypeRef)  ──► PR1a
 M7.5 (library type resolution: real stdlib types, import-only)     ──► PR11, PR12
 
-PR1a (residual-node representation + inert plumbing)
- └─► PR1b (evaluator backbone + keyof reduction)
-      ├─► PR2 (indexed access T[K] + union-key distribution)
-      │    └─► PR4 (mapped types)              ── also needs PR1b, PR3a
-      ├─► PR3a (conditional types: branch selection)
-      │    └─► PR3b (infer clauses + distribution)   ── also needs PR2
-      │         ├─► PR9 (CheckRegular)          ── also needs PR1b
-      │         │    └─► PR9b (productivity check + coinductive comparison)
+PR1a ✅ #914 (residual-node representation + inert plumbing)
+ └─► PR1b ✅ #915 (evaluator backbone + keyof reduction)
+      ├─► PR2 ✅ #919 (indexed access T[K] + union-key distribution)
+      │    └─► PR4 ✅ #931 (mapped types)          ── also needs PR1b, PR3a
+      ├─► PR3a ✅ #923 (conditional types: branch selection)
+      │    └─► PR3b ✅ #925 (infer clauses + distribution)  ── also needs PR2
+      │         ├─► PR9 ✅ #940 (CheckRegular)      ── also needs PR1b
+      │         │    └─► PR9b ✅ #941 (productivity check + coinductive comparison)
       │         │         └─► PR9d (phantom type-parameter erasure)
-      │         └─► PR12 (Awaited<T>)           ── also needs PR1b, M7.5
-      ├─► PR5 (object spread types)
-      ├─► PR6 (tuple spread types)
-      ├─► PR7 (template literal types + intrinsics)
+      │         └─► PR12 (Awaited<T>)              ── also needs PR1b, M7.5
+      ├─► PR5 ✅ #920 (object spread types)
+      ├─► PR6 ✅ #918 (tuple spread types)
+      ├─► PR7 ✅ #924 (template literal types + intrinsics)
       └─► PR8 (exactness propagation + Exact/Inexact)  ── needs PR1b–PR7
 
-PR9c (path-scoped seen-set, #942)         ── needs nothing; the seen-set landed in M7 PR3
+PR9c ✅ #944 (path-scoped seen-set, #942)  ── needs nothing; the seen-set landed in M7 PR3
 
-PR9e (μ-knot representation)              ── needs M3 only; owed from M3, not new
- └─► PR9f (regular-tree normalization)    ── also needs PR9b
+PR9e ✅ #943 (μ-knot representation)       ── needs M3 only; owed from M3, not new
+ └─► PR9f (regular-tree normalization)     ── also needs PR9b
 
-PR10 (throws clause)                      ── needs M3 only; parallel to everything
- └─► PR11 (generators)                    ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
+PR10 (throws clause)                       ── needs M3 only; parallel to everything
+ └─► PR11 (generators)                     ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
 
-PR13 (TS utility-type suite)              ── needs PR2, PR3b, PR4, PR7, PR12
+PR13 (TS utility-type suite)               ── needs PR2, PR3b, PR4, PR7, PR12
 ```
 
+PR9b replaced PR9's regularity condition with the productivity condition, so PR9's
+check no longer runs even though the PR merged. Two follow-ups landed on top of the
+operator track without a plan entry of their own: #935 corrected `keyof` over a union
+to intersect the members' key sets, and #937 capped total alias expansion with a
+monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
+PR4's mapped types.
+
+Everything still open is PR8, PR9d, PR9f, PR10, PR11, PR12, and PR13. PR8 is partly
+seeded — #922 threads an object's exactness through `keyof` — but the rest of the
+operators and the `Exact` / `Inexact` intrinsics are untouched.
+
 The same graph in mermaid, with the operator-track critical path
-(PR1a → PR1b → PR3a → PR3b → PR4 → PR8) highlighted and the landed `M7` / `M7.5`
-prerequisites dashed:
+(PR1a → PR1b → PR3a → PR3b → PR4 → PR8) highlighted, merged PRs outlined in green,
+and the landed `M7` / `M7.5` prerequisites dashed:
 
 ```mermaid
 graph TD
     M7["M7 (type aliases)"]
     M75["M7.5 (library type resolution: real stdlib, import-only)"]
-    PR1a["PR1a (residual node + inert plumbing)"]
-    PR1b["PR1b (evaluator backbone + keyof)"]
-    PR2["PR2 (indexed access T[K] + distribution)"]
-    PR3a["PR3a (conditional types: branch selection)"]
-    PR3b["PR3b (infer clauses + distribution)"]
-    PR4["PR4 (mapped types)"]
-    PR5["PR5 (object spread types)"]
-    PR6["PR6 (tuple spread types)"]
-    PR7["PR7 (template literal types + intrinsics)"]
+    PR1a["PR1a ✅ #914 (residual node + inert plumbing)"]
+    PR1b["PR1b ✅ #915 (evaluator backbone + keyof)"]
+    PR2["PR2 ✅ #919 (indexed access T[K] + distribution)"]
+    PR3a["PR3a ✅ #923 (conditional types: branch selection)"]
+    PR3b["PR3b ✅ #925 (infer clauses + distribution)"]
+    PR4["PR4 ✅ #931 (mapped types)"]
+    PR5["PR5 ✅ #920 (object spread types)"]
+    PR6["PR6 ✅ #918 (tuple spread types)"]
+    PR7["PR7 ✅ #924 (template literal types + intrinsics)"]
     PR8["PR8 (exactness propagation + Exact/Inexact)"]
-    PR9["PR9 (CheckRegular static check)"]
-    PR9b["PR9b (productivity + coinductive comparison)"]
-    PR9c["PR9c (path-scoped seen-set, #942)"]
+    PR9["PR9 ✅ #940 (CheckRegular static check)"]
+    PR9b["PR9b ✅ #941 (productivity + coinductive comparison)"]
+    PR9c["PR9c ✅ #944 (path-scoped seen-set, #942)"]
     PR9d["PR9d (phantom type-parameter erasure)"]
-    PR9e["PR9e (μ-knot representation)"]
+    PR9e["PR9e ✅ #943 (μ-knot representation)"]
     PR9f["PR9f (regular-tree normalization)"]
     M3["M3 (let-generalization + coalescing)"]
     PR10["PR10 (throws clause)"]
@@ -912,12 +926,20 @@ graph TD
     PR12 --> PR13
 
     linkStyle default stroke:#888
-    style PR1a fill:#e06666,stroke:#333,color:#fff
-    style PR1b fill:#e06666,stroke:#333,color:#fff
-    style PR3a fill:#e06666,stroke:#333,color:#fff
-    style PR3b fill:#e06666,stroke:#333,color:#fff
-    style PR4 fill:#e06666,stroke:#333,color:#fff
+    style PR1a fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
+    style PR1b fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
+    style PR3a fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
+    style PR3b fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
+    style PR4 fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
     style PR8 fill:#e06666,stroke:#333,color:#fff
+    style PR2 stroke:#2e7d32,stroke-width:4px
+    style PR5 stroke:#2e7d32,stroke-width:4px
+    style PR6 stroke:#2e7d32,stroke-width:4px
+    style PR7 stroke:#2e7d32,stroke-width:4px
+    style PR9 stroke:#2e7d32,stroke-width:4px
+    style PR9b stroke:#2e7d32,stroke-width:4px
+    style PR9c stroke:#2e7d32,stroke-width:4px
+    style PR9e stroke:#2e7d32,stroke-width:4px
 ```
 
 ### Parallelism
