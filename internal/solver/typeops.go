@@ -1585,27 +1585,10 @@ func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, 
 }
 
 // reduceExactness reduces `Exact<T>` and `Inexact<T>` by rewriting the trailing `...` marker on the
-// grounded operand. `Exact` clears the marker and `Inexact` sets it, so `Inexact<{x: number}>`
-// reduces to `{x: number, ...}` and `Exact<{x: number, ...}>` back to `{x: number}` (exact-types
-// §6.1, §6.2). The operand is grounded first, so a named alias expands to its body.
-//
-// Four kinds of type carry the marker and take it from the operator: an object, a tuple, a function,
-// and a union. Two more pass the operator inward rather than answering themselves. An intersection
-// rewrites each of its members, since its exactness is its members' (§7.7). A borrow rewrites its
-// pointee, since mutability is orthogonal to exactness and `mut T` carries T's (§7.11).
-//
-// A type with no exactness notion reduces to itself. A primitive, a literal, `never`, `unknown`,
-// `void`, `null`, `undefined`, and a promise each name a single kind of value with no member list to
-// close, so neither operator has anything to change (§7.13).
-//
-// `Exact<C>` over a class C that is not declared `final` is an error, since a subclass instance
-// carries members C does not declare and Escalier has no use-site form that closes an open instance
-// type (§2.6.2). Every other class case leaves the class unchanged: a final class is already exact,
-// and `Inexact<C>` would need the same absent use-site form to open one.
-//
-// Any other operand keeps the operator symbolic as an `ExactnessType` rebuilt around the grounded
-// operand. A type parameter, an unexpanded alias, and an operator whose own operands are not ground
-// each land there.
+// grounded operand, so `Inexact<{x: number}>` reduces to `{x: number, ...}` and
+// `Exact<{x: number, ...}>` back to `{x: number}` (exact-types §6.1, §6.2). Grounding first expands
+// a named alias to its body. A type with no marker to rewrite reduces to itself, and an operand
+// that never grounds keeps the operator symbolic.
 func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand soltype.Type) soltype.Type {
 	reduced := e.groundOperand(operand)
 	inexact := kind == soltype.MakeInexact
@@ -1632,12 +1615,15 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 		// collapses it to that member: `Exact<"only" | ...>` reduces to `"only"`.
 		return newUnion(nil, op.Types, inexact)
 	case *soltype.IntersectionType:
+		// An intersection's exactness is its members', so the operator reaches each of them (§7.7).
 		parts := make([]soltype.Type, len(op.Types))
 		for i, m := range op.Types {
 			parts[i] = e.reduceExactness(kind, m)
 		}
 		return newIntersection(nil, parts)
 	case *soltype.RefType:
+		// Mutability is orthogonal to exactness and `mut T` carries T's, so the operator reaches the
+		// pointee (§7.11).
 		reducedInner := e.reduceExactness(kind, op.Inner)
 		if _, errored := reducedInner.(*soltype.ErrorType); errored {
 			// The pointee's own reduction reported a diagnostic and returned the error sentinel, as
