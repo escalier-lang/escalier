@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -268,31 +270,38 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 // checkAliasArgBounds reports each type argument of a generic alias reference that does not
 // satisfy its parameter's declared bound. Given `type Box<T: string> = {v: T}`, the
 // reference `Box<number>` is rejected here and `Box<"a">` is accepted. A parameter written
-// without a `:` clause has no bound recorded, so it keeps accepting every argument.
+// without a `:` clause records no upper bound, so it keeps accepting every argument.
 //
 // A bound may name any sibling parameter, as the `B: A` of `type P<A, B: A> = [A, B]` does,
 // so the reference's own arguments are substituted into the bound before the comparison.
 // `P<number, 1>` therefore compares 1 against number rather than against the symbolic A.
 //
-// The comparison runs as a discard-only trial. Its purpose is to report, and the bounds it
-// would otherwise record land on the declaration's parameter vars, which every reference to
-// the alias shares. Rolling them back keeps one reference's argument out of the next one's
-// comparison.
+// Each comparison is a trial whose recorded bounds are thrown away. A live constraint would
+// instead bound whatever variables the argument contains, and an argument is often another
+// declaration's own parameter variable — the `T` of `type Outer<T: string> = Box<T>` is one.
+// Throwing the trial's bounds away leaves every parameter variable holding exactly the
+// constraint its `<…>` clause wrote.
 //
 // buildAliasInstance runs once per written reference, so a bad argument reports once no
 // matter how many times expansion later unfolds the alias.
 func (c *checker) checkAliasArgBounds(params []*soltype.TypeParam, args []soltype.Type, ref *ast.TypeRefTypeAnn) {
+	bounded := func(p *soltype.TypeParam) bool { return len(p.Var.UpperBounds) > 0 }
+	if !slices.ContainsFunc(params, bounded) {
+		// Every parameter is unbounded, so there is nothing to compare and no substitution to
+		// build. This is the common shape for a generic alias.
+		return
+	}
 	subst := newTypeSubst(params, args, nil, nil)
 	for i, p := range params {
-		// resolveTypeParams records at most one upper bound per parameter, itself an
-		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
-		// constraint. A parameter with no bound has an empty list.
-		if len(p.Var.UpperBounds) == 0 {
+		if !bounded(p) {
 			continue
 		}
+		// resolveTypeParams records at most one upper bound per parameter, itself an
+		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
+		// constraint.
 		bound := p.Var.UpperBounds[0].Accept(subst, soltype.Positive)
 		// Blame the written argument. A trailing argument filled from its parameter's default
-		// has no node of its own, so it falls back to the whole reference.
+		// has no node of its own, so the blame falls back to the whole reference.
 		var site ast.Node = ref
 		if i < len(ref.TypeArgs) {
 			site = ref.TypeArgs[i]
