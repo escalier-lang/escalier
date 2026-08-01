@@ -394,6 +394,15 @@ func (c *checker) inferComponent(
 	// below fill it, so a generic alias reference's bound check is queued rather than run
 	// against a half-built sibling. runDeferredAliasBounds replays the queue once the
 	// bodies are in place.
+	//
+	// The flag is set and cleared by plain assignment rather than saved and restored under
+	// a defer, which holds on three properties of this function. inferDepGraph calls
+	// inferComponent in a flat loop and nothing the two loops reach re-enters it, so the
+	// flag is never already set on entry. inferComponent has no early return, so the clear
+	// below is always reached. Phases 1 and 2 above already resolved every value
+	// declaration and its annotations, so the only bound checks inside the window are the
+	// ones these loops raise. Clearing before the replay is what keeps the window that
+	// narrow: a check queued after runDeferredAliasBounds would never be replayed.
 	c.deferAliasBounds = true
 	// Every enum body resolves its variant parameters against the fully pre-bound
 	// identities above, so a parameter naming a sibling enum or class resolves.
