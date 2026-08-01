@@ -243,12 +243,19 @@ func (c *checker) resolveTypeArgsWithDefaults(
 // holding U's raw var. Substituting repeatedly resolves the chain instead. len(params)-1 passes
 // covers the longest chain a list of that size can hold.
 func (c *checker) fillOmittedFromDefaults(params []*soltype.TypeParam, args []soltype.Type, got, lvl int) {
+	defaulted := false
 	for i := got; i < len(params); i++ {
 		if params[i].Default != nil {
 			args[i] = params[i].Default
+			defaulted = true
 		} else {
 			args[i] = c.freshAt(lvl)
 		}
+	}
+	if !defaulted {
+		// Every omitted parameter was required, so the arity check has reported the reference
+		// and each argument is already a fresh var. There is no default to substitute into.
+		return
 	}
 	for range len(params) - 1 {
 		subst := newTypeSubst(params, args, nil, nil)

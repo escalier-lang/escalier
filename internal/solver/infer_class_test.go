@@ -2338,10 +2338,10 @@ func TestInferClassTypeArgArityAcrossRefForms(t *testing.T) {
 }
 
 // TestInferMutuallyRecursiveGenericClasses guards the arity check against the SCC pre-pass. A
-// class is pre-bound to an empty ClassDef so a sibling can name it, and its type parameters are
-// resolved only when its own body is inferred. Each class below names the other with a full
-// argument list, so a check that read the still-empty parameter list would report a spurious
-// mismatch.
+// class is pre-bound to an empty ClassDef so a sibling can name it, and preBindClassTypeParams
+// fills in its type parameters afterwards, during the module SCC type-key pass and before any
+// class body is inferred. Each class below names the other with a full argument list, so a check
+// that ran while a parameter list was still empty would report a spurious mismatch.
 func TestInferMutuallyRecursiveGenericClasses(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Node<T> { value: T, tail: Tail<T> }
