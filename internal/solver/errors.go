@@ -1102,6 +1102,7 @@ func (*ExtractorPatternNotCtorError) isSolverError()        {}
 func (*ExtractorPatternArityError) isSolverError()          {}
 func (*AliasArityMismatchError) isSolverError()             {}
 func (*AliasLifetimeArityMismatchError) isSolverError()     {}
+func (*ClassArityMismatchError) isSolverError()             {}
 func (*ReservedTypeNameError) isSolverError()               {}
 func (*RestParamNotLastError) isSolverError()               {}
 func (*RestParamNeedsTypeError) isSolverError()             {}
@@ -1251,6 +1252,28 @@ func (e *AliasLifetimeArityMismatchError) Span() ast.Span      { return e.Ref.Sp
 func (e *AliasLifetimeArityMismatchError) Related() []ast.Span { return nil }
 func (e *AliasLifetimeArityMismatchError) Message() string {
 	return fmt.Sprintf("type alias `%s` expects %d lifetime arguments but got %d", e.Name, e.Expected, e.Got)
+}
+
+// ClassArityMismatchError fires when a class reference `Name<…>` supplies fewer than the
+// required number of type arguments or more than the total parameter count. A trailing
+// parameter with a default is optional, so the valid count is the range from Required to
+// Total, where Required counts the parameters with no default. The message states a single
+// count when every parameter is required and a range when a default makes one optional.
+type ClassArityMismatchError struct {
+	Ref      *ast.TypeRefTypeAnn
+	Name     string
+	Required int
+	Total    int
+	Got      int
+}
+
+func (e *ClassArityMismatchError) Span() ast.Span      { return e.Ref.Span() }
+func (e *ClassArityMismatchError) Related() []ast.Span { return nil }
+func (e *ClassArityMismatchError) Message() string {
+	if e.Required == e.Total {
+		return fmt.Sprintf("class `%s` expects %d type arguments but got %d", e.Name, e.Total, e.Got)
+	}
+	return fmt.Sprintf("class `%s` expects between %d and %d type arguments but got %d", e.Name, e.Required, e.Total, e.Got)
 }
 
 // ReservedTypeNameError fires when a `type` declaration uses the name of a built-in intrinsic

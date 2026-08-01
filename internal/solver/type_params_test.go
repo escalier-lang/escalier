@@ -188,3 +188,57 @@ func TestTypeParamDefaultIsPerReference(t *testing.T) {
 	require.Equal(t, "Pair<number, number>", values["p"])
 	require.Equal(t, "Pair<string, string>", values["q"])
 }
+
+// TestTypeParamDefaultAgainstBound covers the declaration-site check that a type parameter's
+// default satisfies its own bound. The default fills the argument at every use site that omits
+// it, so a default outside the bound would supply an argument the bound forbids. The check is
+// shared by every `<…>` clause, so a class, an alias, and a function each report it, and a bound
+// naming a sibling parameter is compared the same way.
+func TestTypeParamDefaultAgainstBound(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ClassDefaultOutsideBound",
+			src:  `class Box<T: string = number> { value: T }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "ClassDefaultInsideBound",
+			src:  `class Box<T: string = "hi"> { value: T }`,
+			want: nil,
+		},
+		{
+			name: "AliasDefaultOutsideBound",
+			src:  `type Box<T: string = number> = {value: T}`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "FuncDefaultOutsideBound",
+			src:  `fn id<T: string = number>(x: T) -> T { return x }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "DefaultNamesSiblingWithBound",
+			src:  `class Box<U: string, T: U = number> { value: T }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "DefaultNamesLaterSiblingBound",
+			src:  `class Box<T: U = number, U: string> { value: T }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, test.want, msgs)
+		})
+	}
+}

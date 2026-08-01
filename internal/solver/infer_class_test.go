@@ -2173,3 +2173,180 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 		}
 	*/
 }
+
+// TestInferClassTypeArgArity covers the use-site type-argument count a class reference must
+// supply. A trailing parameter with a default is optional, so the accepted range runs from the
+// count of parameters with no default up to the total. A count outside that range reports a
+// ClassArityMismatchError, whose message states a range when a default makes a parameter
+// optional and a single count when every parameter is required.
+func TestInferClassTypeArgArity(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "TooManyAllRequired",
+			src: `
+				class Box<T> { value: T }
+				val b: Box<number, string> = Box(1)
+			`,
+			want: "class `Box` expects 1 type arguments but got 2",
+		},
+		{
+			name: "TooFewAllRequired",
+			src: `
+				class Pair<T, U> { first: T, second: U }
+				val p: Pair<number> = Pair(1, 2)
+			`,
+			want: "class `Pair` expects 2 type arguments but got 1",
+		},
+		{
+			name: "BareReferenceToGenericClass",
+			src: `
+				class Box<T> { value: T }
+				val b: Box = Box(1)
+			`,
+			want: "class `Box` expects 1 type arguments but got 0",
+		},
+		{
+			name: "TooManyWithDefault",
+			src: `
+				class Pair<T, U = T> { first: T, second: U }
+				val p: Pair<number, number, number> = Pair(1, 2)
+			`,
+			want: "class `Pair` expects between 1 and 2 type arguments but got 3",
+		},
+		{
+			name: "TooFewWithDefault",
+			src: `
+				class Pair<T, U = T> { first: T, second: U }
+				val p: Pair = Pair(1, 2)
+			`,
+			want: "class `Pair` expects between 1 and 2 type arguments but got 0",
+		},
+		{
+			name: "ArgumentsOnNonGenericClass",
+			src: `
+				class Point { x: number }
+				val p: Point<number> = Point(1)
+			`,
+			want: "class `Point` expects 0 type arguments but got 1",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, test.want, errs[0].Message())
+		})
+	}
+}
+
+// TestInferClassTypeArgDefaults covers a reference that omits a trailing parameter carrying a
+// default. The omitted argument is filled from the default, and a default naming an earlier
+// parameter reads that parameter's supplied argument, so `class Pair<K, V = K>` resolves
+// `Pair<string>` to `Pair<string, string>`. A reference supplying every argument is the
+// regression guard that the fill only applies to omitted positions.
+func TestInferClassTypeArgDefaults(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "OmittedFilledFromDefault",
+			src: `
+				class Box<T = number> { value: T }
+				val p: Box = Box(1)
+			`,
+			want: "Box<number>",
+		},
+		{
+			name: "DefaultNamesEarlierParam",
+			src: `
+				class Pair<K, V = K> { first: K, second: V }
+				val p: Pair<string> = Pair("a", "b")
+			`,
+			want: "Pair<string, string>",
+		},
+		{
+			name: "AllArgumentsSupplied",
+			src: `
+				class Pair<K, V = K> { first: K, second: V }
+				val p: Pair<string, number> = Pair("a", 1)
+			`,
+			want: "Pair<string, number>",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, test.src)
+			require.Empty(t, errs)
+			require.Equal(t, test.want, values["p"])
+		})
+	}
+}
+
+// TestInferClassTypeArgArityAcrossRefForms confirms one shared check covers every form a class
+// reference takes, since they all resolve through buildClassInstance. Each source names the
+// generic class `Box<T>` with no argument in a different position — an `extends` edge, an
+// `implements` edge, a field annotation, a type-parameter bound, a constructor parameter, and a
+// method return — and each reports the same too-few diagnostic.
+func TestInferClassTypeArgArityAcrossRefForms(t *testing.T) {
+	srcs := map[string]string{
+		"Extends": `
+			class Box<T> { value: T }
+			class Wrapper extends Box {
+				constructor(mut self) {},
+			}
+		`,
+		"Implements": `
+			class Box<T> { value: T }
+			class Wrapper implements Box { value: number }
+		`,
+		"FieldAnnotation": `
+			class Box<T> { value: T }
+			class Holder { boxed: Box }
+		`,
+		"TypeParamBound": `
+			class Box<T> { value: T }
+			class Holder<U: Box> { value: U }
+		`,
+		"ConstructorParam": `
+			class Box<T> { value: T }
+			class Holder {
+				boxed: Box<number>,
+				constructor(mut self, boxed: Box) { self.boxed = boxed },
+			}
+		`,
+		"MethodReturn": `
+			class Box<T> { value: T }
+			class Holder {
+				boxed: Box<number>,
+				unwrap(self) -> Box { return self.boxed },
+			}
+		`,
+	}
+	for name, src := range srcs {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.NotEmpty(t, errs)
+			require.Equal(t, "class `Box` expects 1 type arguments but got 0", errs[0].Message())
+		})
+	}
+}
+
+// TestInferMutuallyRecursiveGenericClasses guards the arity check against the SCC pre-pass. A
+// class is pre-bound to an empty ClassDef so a sibling can name it, and its type parameters are
+// resolved only when its own body is inferred. Each class below names the other with a full
+// argument list, so a check that read the still-empty parameter list would report a spurious
+// mismatch.
+func TestInferMutuallyRecursiveGenericClasses(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Node<T> { value: T, tail: Tail<T> }
+		class Tail<T> { node: Node<T> }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "<T0> {new (value: T0, tail: Tail<T0>) -> Node<T0>}", values["Node"])
+}

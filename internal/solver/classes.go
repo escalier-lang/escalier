@@ -21,6 +21,14 @@ type ClassDef struct {
 	// nil for a non-generic class.
 	TypeParams []*soltype.TypeParam
 
+	// TypeParamsResolved marks TypeParams as final. The SCC pre-pass registers a class's
+	// nominal identity with an empty def so a mutually-recursive sibling can name it, and
+	// inferClassDecl fills TypeParams later. Until then an empty TypeParams means "not yet
+	// known", not "non-generic", so use-site type-argument arity reads this flag first and
+	// skips validation rather than blaming a reference for a parameter list that has not
+	// been resolved.
+	TypeParamsResolved bool
+
 	// LifetimeParams are the class's quantified lifetime parameters (A3), the lifetime
 	// twin of TypeParams. nil for a class that holds no borrowed data.
 	LifetimeParams []*soltype.LifetimeParam
