@@ -231,16 +231,25 @@ type FuncType struct {
 // describe their generics the same way. Var is the quantified inference variable that
 // stands for the parameter. It is minted one level deeper than the enclosing binding
 // and freshened per use by freshenAbove, rather than a named parameter resolved by a
-// substitution pass. The declared constraint is Var's upper bound. `<U extends T>` sets
+// substitution pass. The declared constraint is seeded as Var's upper bound. `<U: T>` sets
 // Var.UpperBounds to [T], so constrain and freshenAbove enforce and copy it with no new
 // machinery. Default is the type filled in when a type argument is omitted. It is nil
 // when the parameter is required. Type-argument resolution reads it, and constraint
 // solving ignores it. Name is the source name kept for display, since TypeVarType
 // carries none.
+//
+// Constraint is that same declared constraint kept where solving cannot overwrite it. A
+// variable's upper-bound list grows whenever a constraint flows into the variable, so
+// Var.UpperBounds[0] is the declared constraint only for a parameter that solving has not
+// touched. `fn g<U>(u: U) { f(u) }` calling `fn f<A: string>(a: A)` appends string to the
+// unbounded U, which puts an inferred bound at index 0. Constraint stays nil for that U,
+// because a parameter written with no `:` clause declares nothing. Read Constraint, not
+// Var.UpperBounds, to answer what the source wrote.
 type TypeParam struct {
-	Name    string
-	Var     *TypeVarType
-	Default Type // nil ⇒ required
+	Name       string
+	Var        *TypeVarType
+	Default    Type // nil ⇒ required
+	Constraint Type // nil ⇒ unbounded
 }
 
 // LifetimeParam is one quantified lifetime parameter, the lifetime-sort analogue of TypeParam,

@@ -390,6 +390,11 @@ func (c *checker) inferComponent(
 			}
 		}
 	}
+	// An identity in this component is bound but its Body is still nil until the two loops
+	// below fill it, so a generic alias reference's bound check is queued rather than run
+	// against a half-built sibling. runDeferredAliasBounds replays the queue once the
+	// bodies are in place.
+	c.deferAliasBounds = true
 	// Every enum body resolves its variant parameters against the fully pre-bound
 	// identities above, so a parameter naming a sibling enum or class resolves.
 	for _, sh := range enumShells {
@@ -400,9 +405,11 @@ func (c *checker) inferComponent(
 	for _, sh := range aliasShells {
 		c.inferAliasBody(sh)
 	}
+	c.deferAliasBounds = false
 	// Every body in the component is resolved, so the alias reference graph the productivity
 	// check reads is complete.
 	c.checkProductive(aliasShells)
+	c.runDeferredAliasBounds()
 
 	// Report any remaining non-value decl as unsupported. A class was pre-bound above and
 	// is completed at its value key, so skip it rather than mis-reporting it.

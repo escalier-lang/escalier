@@ -263,50 +263,80 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 			args[i] = c.freshAt(lvl)
 		}
 	}
-	c.checkAliasArgBounds(params, args, ref)
+	c.checkAliasArgBounds(params, args, ltParams, ltArgs, ref)
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
 }
 
 // checkAliasArgBounds reports each type argument of a generic alias reference that does not
 // satisfy its parameter's declared bound. Given `type Box<T: string> = {v: T}`, the
 // reference `Box<number>` is rejected here and `Box<"a">` is accepted. A parameter written
-// without a `:` clause records no upper bound, so it keeps accepting every argument.
+// without a `:` clause declares no constraint, so it keeps accepting every argument.
 //
 // A bound may name any sibling parameter, as the `B: A` of `type P<A, B: A> = [A, B]` does,
-// so the reference's own arguments are substituted into the bound before the comparison.
-// `P<number, 1>` therefore compares 1 against number rather than against the symbolic A.
+// so the reference's own arguments and lifetime arguments are substituted into the bound
+// before the comparison, the same substitution expandAlias applies to the body. `P<number,
+// 1>` therefore compares 1 against number rather than against the symbolic A.
 //
-// Each comparison is a trial whose recorded bounds are thrown away. A live constraint would
-// instead bound whatever variables the argument contains, and an argument is often another
-// declaration's own parameter variable — the `T` of `type Outer<T: string> = Box<T>` is one.
-// Throwing the trial's bounds away leaves every parameter variable holding exactly the
-// constraint its `<…>` clause wrote.
+// The comparison is a live constraint rather than a discarded trial, which is what makes an
+// argument that is itself a type variable behave the way the generic-function and class
+// positions do. `fn g<U>(u: U) -> Box<U>` records string on U and reports nothing at the
+// declaration, and the later `g(1)` is what fails. Discarding the constraint instead would
+// drop that bound and let `g(1)` through.
+//
+// While a dep_graph component is still resolving bodies, an argument may name a sibling
+// alias whose own Body is nil, which expands to ErrorType and absorbs. Each comparison is
+// queued during that window and replayed by runDeferredAliasBounds once every body is
+// filled, so `type A = {b: Box<A>}` compares the finished A against string.
 //
 // buildAliasInstance runs once per written reference, so a bad argument reports once no
 // matter how many times expansion later unfolds the alias.
-func (c *checker) checkAliasArgBounds(params []*soltype.TypeParam, args []soltype.Type, ref *ast.TypeRefTypeAnn) {
-	bounded := func(p *soltype.TypeParam) bool { return len(p.Var.UpperBounds) > 0 }
+func (c *checker) checkAliasArgBounds(
+	params []*soltype.TypeParam,
+	args []soltype.Type,
+	ltParams []*soltype.LifetimeParam,
+	ltArgs []soltype.Lifetime,
+	ref *ast.TypeRefTypeAnn,
+) {
+	bounded := func(p *soltype.TypeParam) bool { return p.Constraint != nil }
 	if !slices.ContainsFunc(params, bounded) {
 		// Every parameter is unbounded, so there is nothing to compare and no substitution to
 		// build. This is the common shape for a generic alias.
 		return
 	}
-	subst := newTypeSubst(params, args, nil, nil)
+	subst := newTypeSubst(params, args, ltParams, ltArgs)
 	for i, p := range params {
 		if !bounded(p) {
 			continue
 		}
-		// resolveTypeParams records at most one upper bound per parameter, itself an
-		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
-		// constraint.
-		bound := p.Var.UpperBounds[0].Accept(subst, soltype.Positive)
+		// Read the declared constraint from the parameter rather than from its var's upper
+		// bounds. A `<T: A & B>` bound resolves to one IntersectionType, so this is the whole
+		// of what the source wrote, and it cannot be displaced by a bound solving inferred.
+		bound := p.Constraint.Accept(subst, soltype.Positive)
 		// Blame the written argument. A trailing argument filled from its parameter's default
 		// has no node of its own, so the blame falls back to the whole reference.
 		var site ast.Node = ref
 		if i < len(ref.TypeArgs) {
 			site = ref.TypeArgs[i]
 		}
-		c.blameConstraintErrors(site, c.ctx.trialUnderProbe(args[i], bound))
+		if c.deferAliasBounds {
+			c.deferredAliasBounds = append(c.deferredAliasBounds, deferredAliasBound{
+				arg: args[i], bound: bound, site: site,
+			})
+			continue
+		}
+		c.constrain(site, args[i], bound)
+	}
+}
+
+// runDeferredAliasBounds replays and clears the comparisons checkAliasArgBounds queued while
+// the component's bodies were still resolving. It runs after checkProductive, so an argument
+// naming a sibling alias reaches that alias's finished Body, and an alias the productivity
+// check rejected is already marked so its reference absorbs instead of expanding forever.
+func (c *checker) runDeferredAliasBounds() {
+	pending := c.deferredAliasBounds
+	c.deferredAliasBounds = nil
+	for _, p := range pending {
+		c.constrain(p.site, p.arg, p.bound)
 	}
 }
 

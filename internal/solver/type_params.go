@@ -37,6 +37,10 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 		if p.Constraint != nil {
 			if ct, ok := c.resolveTypeAnn(scope, p.Constraint, lvl); ok {
 				c.ctx.addUpperBound(out[i].Var, ct)
+				// Keep the declared constraint where later solving cannot overwrite it. The
+				// var's upper-bound list grows as constraints flow in, so a reader that wants
+				// what the source wrote reads this field instead.
+				out[i].Constraint = ct
 			}
 		}
 		if p.Default != nil {
