@@ -172,14 +172,20 @@ func (v *typeParamRefScan) shadowed(name string) bool {
 }
 
 // typeArgRange returns the type-argument counts a reference to a generic class or alias may
-// supply. required counts the parameters with no default, total counts them all, and any count
-// between the two is accepted because each omitted trailing parameter is filled from its
-// default. A count outside the range is an arity mismatch, which each caller reports under its
-// own error type.
+// supply. total is the parameter count. required is the position just past the last parameter
+// with no default, so a reference may omit a trailing run of defaulted parameters and nothing
+// else. Any count between the two is accepted, and a count outside the range is an arity
+// mismatch each caller reports under its own error type.
+//
+// Reading required as a position rather than as a count of defaultless parameters is what makes
+// a default followed by a required parameter behave. `<T = number, U>` cannot fill T from its
+// default without leaving U unsupplied, so required is 2 and `Pair<string>` is rejected instead
+// of silently binding U to a fresh var. This matches how a default function parameter followed
+// by a required one behaves at a call site.
 func typeArgRange(params []*soltype.TypeParam) (required, total int) {
-	for _, p := range params {
+	for i, p := range params {
 		if p.Default == nil {
-			required++
+			required = i + 1
 		}
 	}
 	return required, len(params)
@@ -190,34 +196,81 @@ func typeArgRange(params []*soltype.TypeParam) (required, total int) {
 // parameter draws its argument from one of three sources:
 //
 //  1. The annotation the reference wrote at that position, resolved in scope.
-//  2. The parameter's own default, for a parameter past the last written argument. The
-//     arguments already resolved for earlier parameters are substituted into the default
-//     first, so `<T, U = T>` referenced as `<number>` fills U with number.
+//  2. The parameter's own default, for a parameter past the last written argument, with the
+//     sibling arguments substituted in by fillOmittedFromDefaults.
 //  3. A fresh var, when the written annotation does not resolve or the reference omitted a
 //     parameter that has no default. Recovering keeps the argument list full. The omission
 //     itself is reported by the caller's arity check.
+//
+// Every written annotation is resolved, including any past the last declared parameter. A
+// surplus argument is dropped from the result, but resolving it first is what lets an error
+// inside it surface: `Point<Nope>` on a non-generic Point reports the unresolvable `Nope`
+// alongside the arity mismatch, rather than only the count.
 func (c *checker) resolveTypeArgsWithDefaults(
 	scope *Scope,
 	params []*soltype.TypeParam,
 	ref *ast.TypeRefTypeAnn,
 	lvl int,
 ) []soltype.Type {
-	got := len(ref.TypeArgs)
+	written := make([]soltype.Type, len(ref.TypeArgs))
+	for i, arg := range ref.TypeArgs {
+		if resolved, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
+			written[i] = resolved
+		} else {
+			written[i] = c.freshAt(lvl)
+		}
+	}
 	args := make([]soltype.Type, len(params))
-	for i := range params {
-		switch {
-		case i < got:
-			if resolved, ok := c.resolveTypeAnn(scope, ref.TypeArgs[i], lvl); ok {
-				args[i] = resolved
-			} else {
-				args[i] = c.freshAt(lvl)
-			}
-		case params[i].Default != nil:
-			subst := newTypeSubst(params[:i], args[:i], nil, nil)
-			args[i] = params[i].Default.Accept(subst, soltype.Positive)
-		default:
+	copy(args, written)
+	if len(written) < len(params) {
+		c.fillOmittedFromDefaults(params, args, len(written), lvl)
+	}
+	return args
+}
+
+// fillOmittedFromDefaults fills the positions a reference left out, in place. args[:got] already
+// holds the written arguments, and args[got:] is what this writes. A parameter with no default
+// there gets a fresh var, since the caller's arity check has reported the omission.
+//
+// A default may name a sibling parameter, so the raw default cannot stand as the argument. The
+// declaration-site var it names is one shared object. Two references that both fall back to the
+// default would land on that same var, and each would then constrain what the other reads.
+// Substituting the sibling arguments over the default is what keeps the two references
+// independent.
+//
+// A default may also name a sibling declared after it, as the `U` of `<T = U, U = number>` does,
+// and that sibling may itself be filled from a default. One substitution pass would leave T
+// holding U's raw var. Substituting repeatedly resolves the chain instead. len(params)-1 passes
+// covers the longest chain a list of that size can hold.
+func (c *checker) fillOmittedFromDefaults(params []*soltype.TypeParam, args []soltype.Type, got, lvl int) {
+	for i := got; i < len(params); i++ {
+		if params[i].Default != nil {
+			args[i] = params[i].Default
+		} else {
 			args[i] = c.freshAt(lvl)
 		}
 	}
-	return args
+	for range len(params) - 1 {
+		subst := newTypeSubst(params, args, nil, nil)
+		for i := got; i < len(params); i++ {
+			if params[i].Default != nil {
+				args[i] = args[i].Accept(subst, soltype.Positive)
+			}
+		}
+	}
+	// A cycle such as `<T = U, U = T>` names no type, so the passes above leave a
+	// declaration-site var standing. Substituting a fresh var for each parameter clears any
+	// that remain, which stops one reference's arguments from reaching another through the
+	// shared var. A default the passes did resolve holds no parameter var, so this leaves it
+	// alone.
+	escape := make([]soltype.Type, len(params))
+	for i := range escape {
+		escape[i] = c.freshAt(lvl)
+	}
+	subst := newTypeSubst(params, escape, nil, nil)
+	for i := got; i < len(params); i++ {
+		if params[i].Default != nil {
+			args[i] = args[i].Accept(subst, soltype.Positive)
+		}
+	}
 }

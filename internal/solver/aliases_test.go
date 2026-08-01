@@ -705,3 +705,89 @@ func TestInferGenericTypeAliasBoundUnderConditional(t *testing.T) {
 	_, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 }
+
+// TestInferGenericTypeAliasRequiredParamAfterDefault covers a required parameter written after a
+// defaulted one. Filling T from its default would leave U with no argument, so the accepted
+// count runs up to and past the last parameter with no default and `Pair<string>` is rejected
+// rather than silently binding U to a fresh var.
+func TestInferGenericTypeAliasRequiredParamAfterDefault(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type Pair<T = number, U> = [T, U]
+		val p: Pair<string> = ["a", 1]
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "type alias `Pair` expects 2 type arguments but got 1", errs[0].Message())
+}
+
+// TestInferGenericTypeAliasSurplusTypeArgStillResolved checks that a type argument past the last
+// declared parameter is still resolved even though it is dropped from the instance, so an error
+// inside it is reported rather than swallowed by the arity diagnostic.
+func TestInferGenericTypeAliasSurplusTypeArgStillResolved(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type Id = number
+		val a: Id<DoesNotExist> = 1
+	`)
+	var msgs []string
+	for _, e := range errs {
+		msgs = append(msgs, e.Message())
+	}
+	require.Equal(t, []string{
+		"type alias `Id` expects 0 type arguments but got 1",
+		"Unsupported: TypeRefTypeAnn",
+	}, msgs)
+}
+
+// TestInferTypeParamDefaultOutsideBoundReportedOnce checks that a default outside its bound is
+// reported at the declaration and not again at each reference. The declaration-site check in
+// resolveTypeParams already compared the two, so a reference that omits the argument skips the
+// use-site comparison when substitution moved neither the bound nor the default. A reference
+// whose arguments do move one of them is still checked, since only the reference knows what the
+// comparison is between.
+func TestInferTypeParamDefaultOutsideBoundReportedOnce(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "NoUseSite",
+			src:  `type Box<T: string = number> = {v: T}`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "TwoUseSitesOmitTheArgument",
+			src: `
+				type Box<T: string = number> = {v: T}
+				val a: Box = {v: 1}
+				val b: Box = {v: 2}
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "BoundNamesSiblingSoUseSiteStillChecks",
+			src: `
+				type P<A, B: A = number> = [A, B]
+				val p: P<string> = ["a", 1]
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "DefaultNamesSiblingSoUseSiteStillChecks",
+			src: `
+				type Pair<T, U: string = T> = [T, U]
+				val p: Pair<number> = [1, 1]
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, tt.want, msgs)
+		})
+	}
+}

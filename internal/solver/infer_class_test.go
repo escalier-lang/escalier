@@ -2350,3 +2350,106 @@ func TestInferMutuallyRecursiveGenericClasses(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "<T0> {new (value: T0, tail: Tail<T0>) -> Node<T0>}", values["Node"])
 }
+
+// TestInferClassTypeArgArityIsOrderIndependent checks that the arity check reads a final
+// parameter list no matter which class is declared first. A class body resolves at its value
+// key, while a reference to another class depends only on that class's type key, so resolving
+// type parameters at the value key would leave the referenced class's list empty whenever the
+// referring class happened to be inferred first. The type-key pre-pass resolves every class's
+// parameters before any body runs, so both orderings report.
+func TestInferClassTypeArgArityIsOrderIndependent(t *testing.T) {
+	t.Run("GenericClassDeclaredFirst", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Alpha<T> { v: T }
+			class Zeta { t: Alpha }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "class `Alpha` expects 1 type arguments but got 0", errs[0].Message())
+		require.Equal(t, "{new (t: Alpha<unknown>) -> Zeta}", values["Zeta"])
+	})
+	t.Run("GenericClassDeclaredSecond", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Zeta<T> { v: T }
+			class Alpha { t: Zeta }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "class `Zeta` expects 1 type arguments but got 0", errs[0].Message())
+		// The recovery is a fresh var, so the omitted argument stays local to the reference.
+		// Reusing the referenced class's own parameter var would instead give the non-generic
+		// Alpha a phantom type parameter, `fn <T0>(t: Zeta<T0>) -> Alpha`.
+		require.Equal(t, "{new (t: Zeta<unknown>) -> Alpha}", values["Alpha"])
+	})
+	t.Run("MutuallyRecursiveGroup", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Node<T> { tail: Tail }
+			class Tail<T> { node: Node<T> }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "class `Tail` expects 1 type arguments but got 0", errs[0].Message())
+	})
+	t.Run("BoundNamesLaterSiblingClass", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Holder<U: Later> { v: U }
+			class Later<T> { v: T }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "class `Later` expects 1 type arguments but got 0", errs[0].Message())
+	})
+}
+
+// TestInferClassRequiredTypeParamAfterDefault covers a required parameter written after a
+// defaulted one. Filling T from its default would leave U with no argument, so the accepted
+// count runs up to and past the last parameter with no default and `Pair<string>` is rejected.
+func TestInferClassRequiredTypeParamAfterDefault(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class Pair<T = number, U> { first: T, second: U }
+		val p: Pair<string> = Pair("a", 1)
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "class `Pair` expects 2 type arguments but got 1", errs[0].Message())
+}
+
+// TestInferClassSurplusTypeArgStillResolved checks that a type argument past the last declared
+// parameter is still resolved even though it is dropped from the instance, so an error inside
+// it is reported rather than swallowed by the arity diagnostic.
+func TestInferClassSurplusTypeArgStillResolved(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "NonGenericClass",
+			src: `
+				class Point { x: number }
+				val p: Point<DoesNotExist> = Point(1)
+			`,
+			want: []string{
+				"class `Point` expects 0 type arguments but got 1",
+				"Unsupported: TypeRefTypeAnn",
+			},
+		},
+		{
+			name: "GenericClass",
+			src: `
+				class Box<T> { v: T }
+				val b: Box<number, DoesNotExist> = Box(1)
+			`,
+			want: []string{
+				"class `Box` expects 1 type arguments but got 2",
+				"Unsupported: TypeRefTypeAnn",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, test.want, msgs)
+		})
+	}
+}
+

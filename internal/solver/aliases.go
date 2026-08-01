@@ -237,16 +237,17 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 			Got:      got,
 		})
 	}
+	args := c.resolveTypeArgsWithDefaults(scope, params, ref, lvl)
 	if total == 0 {
 		// A non-generic alias carries no type arguments; any that were supplied are reported
-		// above. Return a handle carrying only the lifetime arguments, or the bare handle when
-		// there are none, so the alias still resolves under its name.
+		// above, and resolving them has surfaced whatever else is wrong inside them. Return a
+		// handle carrying only the lifetime arguments, or the bare handle when there are none, so
+		// the alias still resolves under its name.
 		if len(ltArgs) == 0 {
 			return at
 		}
 		return &soltype.AliasType{Name: at.Name, LifetimeArgs: ltArgs}
 	}
-	args := c.resolveTypeArgsWithDefaults(scope, params, ref, lvl)
 	c.checkAliasArgBounds(params, args, ltParams, ltArgs, ref)
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
 }
@@ -278,6 +279,16 @@ func (c *checker) checkAliasArgBounds(
 		// bounds. A `<T: A & B>` bound resolves to one IntersectionType, so this is the whole
 		// of what the source wrote, and it cannot be displaced by a bound solving inferred.
 		bound := p.Constraint.Accept(subst, soltype.Positive)
+		if i >= len(ref.TypeArgs) && bound == p.Constraint && args[i] == p.Default {
+			// This argument came from the parameter's default rather than from the reference, and
+			// substitution changed neither the bound nor the default. Both therefore read here
+			// exactly as they do at the declaration, where resolveTypeParams already compared
+			// them. Repeating the comparison would file one copy of the same diagnostic per
+			// reference. The check still runs whenever substitution moved either side, since then
+			// only the reference knows what the comparison is really between. `<A, B: A = number>`
+			// is the moved-bound case and `<T, U: string = T>` the moved-default case.
+			continue
+		}
 		// Blame the written argument. A trailing argument filled from its parameter's default
 		// has no node of its own, so the blame falls back to the whole reference.
 		var site ast.Node = ref

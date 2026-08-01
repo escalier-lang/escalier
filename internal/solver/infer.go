@@ -107,6 +107,23 @@ type checker struct {
 	// deferredAliasBounds holds the comparisons raised during that window, replayed by
 	// runDeferredAliasBounds once every body in the component is filled.
 	deferredAliasBounds []deferredAliasBound
+
+	// classShells holds the type parameters and declaration scope preBindClassTypeParams
+	// resolved for a class, keyed by the declaration inferClassDecl later walks. The module
+	// SCC pre-pass fills it so a class's parameter list is final before any class body
+	// resolves a reference to it; inferClassDecl reuses the entry rather than minting a
+	// second, unrelated set of parameter vars. A script has no pre-pass, so its classes are
+	// absent here and inferClassDecl resolves their parameters itself.
+	classShells map[*ast.ClassDecl]*classShell
+}
+
+// classShell carries the state preBindClassTypeParams resolved for one class declaration.
+// declScope is the enclosing scope, or a child holding a generic class's type parameters, and
+// is the scope the class body resolves in so a `T` in a field reads the same var the def
+// stores. typeParams is nil for a non-generic class, whose declScope is the enclosing scope.
+type classShell struct {
+	declScope  *Scope
+	typeParams []*soltype.TypeParam
 }
 
 // deferredAliasBound is one `arg <: bound` comparison checkAliasArgBounds postponed until

@@ -21,13 +21,17 @@ type ClassDef struct {
 	// nil for a non-generic class.
 	TypeParams []*soltype.TypeParam
 
-	// TypeParamsResolved marks TypeParams as final. The SCC pre-pass registers a class's
-	// nominal identity with an empty def so a mutually-recursive sibling can name it, and
-	// inferClassDecl fills TypeParams later. Until it does, an empty TypeParams means the
-	// parameters have not been read yet rather than that the class is non-generic. The
-	// use-site type-argument arity check reads this flag first and validates nothing while it
-	// is false, so a reference to a half-built sibling is never blamed for a mismatch against
-	// a parameter list that does not exist yet.
+	// TypeParamsResolved marks TypeParams as final. A class's nominal identity is registered
+	// with an empty def before its parameters are read, so that a sibling can name it, which
+	// leaves a window where an empty TypeParams means the parameters have not been read yet
+	// rather than that the class is non-generic. The use-site type-argument arity check reads
+	// this flag first and validates nothing while it is false, so a reference is never blamed
+	// for a mismatch against a parameter list that does not exist yet.
+	//
+	// For a module class the window closes in the SCC type-key pass, before any class body
+	// runs. For a script class it closes when inferClassDecl reaches the declaration, since a
+	// script is inferred in source order with no pre-pass. A script reference that lands in the
+	// window is a reference to a class declared later, which is an unknown name anyway.
 	TypeParamsResolved bool
 
 	// LifetimeParams are the class's quantified lifetime parameters (A3), the lifetime

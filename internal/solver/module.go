@@ -355,6 +355,8 @@ func (c *checker) inferComponent(
 	//     no-op whose pre-bound value var is retracted in phase 3.
 	var enumShells []*enumShell
 	var aliasShells []*aliasShell
+	var classDecls []*ast.ClassDecl
+	var classNamespaces []string
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
@@ -372,8 +374,12 @@ func (c *checker) inferComponent(
 				// so registering every class's type binding and empty ClassDef here lets a
 				// sibling resolve a forward reference — `class A { b: B }` / `class B { a: A }`.
 				// The returned handle and def are discarded here; inferClassDecl reuses them,
-				// keyed by the same qualified name the shared namespace reconstructs.
+				// keyed by the same qualified name the shared namespace reconstructs. The
+				// class's type parameters are resolved in the loop below, once every sibling
+				// identity in the component is registered.
 				c.getOrCreateClass(scope, decl, g.GetNamespace(key))
+				classDecls = append(classDecls, decl)
+				classNamespaces = append(classNamespaces, g.GetNamespace(key))
 			case *ast.TypeDecl:
 				// A `type X = Body` alias infers at its type key and is marked handled, so its
 				// value key is a no-op. preBindAlias registers the alias identity and binds its
@@ -389,6 +395,14 @@ func (c *checker) inferComponent(
 				handled.Add(d)
 			}
 		}
+	}
+	// Resolve each class's type parameters now that every class, enum, and alias identity in
+	// the component is registered, so a bound naming a sibling resolves. A class body waits for
+	// the class's value key, but the parameter list a use-site type-argument arity check reads
+	// is final from here on. Splitting this out of the loop above is what lets `class A<T: B>` /
+	// `class B { a: A<number> }` resolve regardless of which is declared first.
+	for i, decl := range classDecls {
+		c.preBindClassTypeParams(scope, inner, decl, classNamespaces[i])
 	}
 	// The two loops below fill bodies that are still nil, so a bound check inside them is queued
 	// rather than run against a half-built sibling. Do not convert this to a defer, because a

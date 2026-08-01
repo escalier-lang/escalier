@@ -42,15 +42,12 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
-	// Resolve the class's type parameters into a child scope so the body resolves the
-	// class's T to one shared var, quantified at the class boundary and freshened per
-	// construction. A non-generic class reuses the enclosing scope.
-	declScope := scope
-	var typeParams []*soltype.TypeParam
-	if len(decl.TypeParams) > 0 {
-		declScope = scope.Child()
-		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
-	}
+	// The class's type parameters and the scope its body resolves in. The module SCC pre-pass
+	// resolves these for every class in a type-key component before any body runs, so a
+	// reference from one class to another finds a final parameter list to check its type
+	// arguments against. Reuse that entry when there is one. A script class has no pre-pass,
+	// so it resolves its own here.
+	declScope, typeParams := c.classDeclScope(scope, lvl, decl)
 
 	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
 	// the pair the SCC pre-pass registered for this class — an empty shell it minted
@@ -61,11 +58,10 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// qualified name, so two sibling `class Point` declarations in different namespaces
 	// stay distinct.
 	self, def := c.getOrCreateClass(scope, decl, ns)
-	// Populate the type-param-derived fields the pre-pass left empty. This is the second
-	// phase: the pre-pass registers a bare identity so forward references resolve, and
-	// this call — running once every sibling is registered, so a bound like `<T: Sibling>`
-	// resolves — fills in the resolved type params. The handle carries the class's own
-	// type-parameter vars as its arguments.
+	// Populate the fields derived from the type parameters. The handle carries the class's own
+	// type-parameter vars as its arguments. Writing TypeParams again is a no-op when the
+	// pre-pass already stored the same slice, and is what fills it for a script class that had
+	// no pre-pass.
 	self.TypeArgs = typeParamVars(typeParams)
 	def.Level = lvl - 1
 	def.TypeParams = typeParams
@@ -201,6 +197,54 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string)
 	return self, def
 }
 
+// classDeclScope returns the scope a class body resolves in and the class's resolved type
+// parameters, reusing whatever preBindClassTypeParams already produced for this declaration. A
+// generic class resolves its parameters into a child scope so the body reads each `T` as the
+// one shared var the ClassDef stores. A non-generic class reuses the enclosing scope.
+func (c *checker) classDeclScope(scope *Scope, lvl int, decl *ast.ClassDecl) (*Scope, []*soltype.TypeParam) {
+	if sh, ok := c.classShells[decl]; ok {
+		return sh.declScope, sh.typeParams
+	}
+	if len(decl.TypeParams) == 0 {
+		return scope, nil
+	}
+	declScope := scope.Child()
+	return declScope, c.resolveTypeParams(declScope, lvl, decl.TypeParams)
+}
+
+// preBindClassTypeParams resolves a pre-bound class's type parameters and stores them on its
+// ClassDef, marking the list final. The module SCC pre-pass runs it over every class in a
+// type-key component after every class identity in that component is registered, so a bound
+// naming a sibling class resolves. inferClassDecl then reuses the recorded parameters and scope
+// instead of minting a second set.
+//
+// Resolving here rather than at the class's value key is what makes the use-site type-argument
+// arity check reliable. A class body resolves at its value key, while a reference to another
+// class only depends on that class's type key, so at value-key time a referenced class's
+// parameters may not be read yet. Every class in the module has its parameters resolved by the
+// end of the type-key pass, before the first body runs.
+func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassDecl, ns string) {
+	prevNS := c.classNamespace
+	c.classNamespace = ns
+	defer func() { c.classNamespace = prevNS }()
+
+	declScope := scope
+	var typeParams []*soltype.TypeParam
+	if len(decl.TypeParams) > 0 {
+		declScope = scope.Child()
+		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
+	}
+	if c.classShells == nil {
+		c.classShells = map[*ast.ClassDecl]*classShell{}
+	}
+	c.classShells[decl] = &classShell{declScope: declScope, typeParams: typeParams}
+
+	if def, ok := c.ctx.classDef(qualifyClassName(ns, decl)); ok {
+		def.TypeParams = typeParams
+		def.TypeParamsResolved = true
+	}
+}
+
 // qualifyClassName returns a class's dep_graph-qualified name — the namespace joined
 // to the local name with a dot, or the bare local name at the root namespace. This is
 // the same `CurrentNamespace + "." + name` rule dep_graph forms binding keys with, so
@@ -289,9 +333,9 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
 	def, ok := c.ctx.classDef(ct.Name)
 	if !ok || !def.TypeParamsResolved {
-		// The class's parameter list is not resolved yet, which is what a reference to a
-		// sibling in the same mutually-recursive group reaches. Resolve the written arguments
-		// and skip validation, so no arity error is blamed on a list that has not been read.
+		// The class's parameter list is not resolved yet. Resolve the written arguments and
+		// skip validation, so no arity error is blamed on a list that has not been read. See
+		// ClassDef.TypeParamsResolved for when this window is open.
 		return c.classInstanceFromWrittenArgs(scope, ct, ref, lvl)
 	}
 	params := def.TypeParams
@@ -306,12 +350,13 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 			Got:      got,
 		})
 	}
+	args := c.resolveTypeArgsWithDefaults(scope, params, ref, lvl)
 	if total == 0 {
 		// A non-generic class carries no type arguments; any that were supplied are reported
-		// above. Return the bare handle so the class still resolves under its name.
+		// above, and resolving them has surfaced whatever else is wrong inside them. Return the
+		// bare handle so the class still resolves under its name.
 		return ct
 	}
-	args := c.resolveTypeArgsWithDefaults(scope, params, ref, lvl)
 	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final, Variant: ct.Variant}
 }
 
