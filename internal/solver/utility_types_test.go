@@ -28,15 +28,12 @@ import (
 // `Omit<T, Ks>` reads `Exclude`, so the two definitions are coupled. Order in this source does not
 // matter, since the dependency graph orders the declarations.
 //
-// `ReturnType<F>` bounds `F` to `fn () -> unknown`, so an argument that is not a nullary function
-// is rejected at the reference. `unknown` is the top of the lattice and a function type's return is
-// covariant, so that bound admits every nullary function and no other type. The bound is enforced,
-// which TestUtilityTypeAliasParameterConstraint pins directly.
-//
-// Nullary is not a choice; it is the arity the pattern can match.
-// TestUtilityTypeReturnTypeIsAritySpecific records why the arity-agnostic TypeScript definition has
-// no Escalier equivalent, and the bound turns what was a silent reduction to `never` for every
-// other arity into a diagnostic.
+// `ReturnType<F>` carries no bound on `F`, so an argument that is not a nullary function reduces
+// through the Else branch to `never` rather than being rejected. A bound would read better, and
+// alias bounds are enforced since #956, but no writable bound admits every function: a function
+// type's return is covariant, so the bound has to be `fn () -> unknown`, and that pins the arity to
+// nullary alongside it. M9 PR14 settles what the bound becomes once the pattern matches any arity.
+// TestUtilityTypeReturnTypeIsAritySpecific records the arity restriction itself.
 //
 // `NonNullable<T>`, `Parameters<F>`, `ConstructorParameters<C>`, and `InstanceType<C>` are the
 // four utilities the suite cannot express yet. Each has a disabled test at the end of this file
@@ -54,7 +51,7 @@ const utilityTypeDecls = `
 	type Record<Ks, V> = {[K: Ks]: V}
 	type Exclude<U, V> = if U : V { never } else { U }
 	type Extract<U, V> = if U : V { U } else { never }
-	type ReturnType<F: fn () -> unknown> = if F : fn () -> infer R { R } else { never }
+	type ReturnType<F> = if F : fn () -> infer R { R } else { never }
 	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
 	type EventName<K> = ` + "`on${Capitalize<K>}`" + `
 	type Point = {x: number, y: string}
@@ -255,8 +252,14 @@ func TestUtilityTypeReductions(t *testing.T) {
 			src:          `type Result = ReturnType<fn () -> string>`,
 			wantExpanded: "string",
 		},
-		// A non-function argument is rejected by the bound rather than reduced, so it lives in
-		// TestUtilityTypeAliasParameterConstraint with the other rejections.
+		{
+			// A non-function argument matches no function pattern, so the conditional selects Else.
+			// TypeScript rejects the same reference, because its `ReturnType` constrains `T` to a
+			// function type. M9 PR14 settles the bound that would do the same here.
+			name:         "ReturnTypeOfNonFunction",
+			src:          `type Result = ReturnType<number>`,
+			wantExpanded: "never",
+		},
 		// `Awaited<T>` strips every layer of `Promise`, recursing on its own capture.
 		{
 			name:         "Awaited",
@@ -549,7 +552,7 @@ func TestUtilityTypeStaysSymbolicOverTypeParameter(t *testing.T) {
 
 // TypeScript writes `ReturnType<F>` as `F extends (...args: any) => infer R ? R : never`, one
 // definition that reads the return off a function of any arity. Escalier has no equivalent, so
-// `ReturnType<F>` above matches a nullary function and rejects every other arity at the bound.
+// `ReturnType<F>` above matches a nullary function and reduces to `never` for every other arity.
 //
 // The blocker is the accept-set rule, which constrain uses to decide function subtyping. A
 // function type's accept-set is the range of argument counts it tolerates, and `sub <: super`
@@ -570,6 +573,13 @@ func TestUtilityTypeReturnTypeIsAritySpecific(t *testing.T) {
 			wantExpanded: "string",
 		},
 		{
+			// One parameter, so the accept-sets are [1, 1] against [0, 0] and the pattern does not
+			// match. TypeScript reduces this to `string`.
+			name:         "UnaryDoesNotMatch",
+			src:          `type Result = ReturnType<fn (x: number) -> string>`,
+			wantExpanded: "never",
+		},
+		{
 			// A pattern written for the argument's arity does match, so the `infer` capture itself
 			// is not what is missing. The parameter position is `never` because parameters are
 			// contravariant, so the bottom type is the one every argument type accepts.
@@ -581,23 +591,12 @@ func TestUtilityTypeReturnTypeIsAritySpecific(t *testing.T) {
 			wantExpanded: "string",
 		},
 	})
-
-	// A one-parameter argument is where the restriction bites. Its accept-set is [1, 1] against the
-	// bound's [0, 0], so the bound rejects it and the diagnostic names the two arities. TypeScript
-	// reduces the same reference to `string`.
-	_, _, errs := inferSource(t, utilityTypeDecls+`type Result = ReturnType<fn (x: number) -> string>`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 0", errs[0].Message())
 }
 
-// A bound on an alias's type parameter is checked at the reference, so `ReturnType<F>` rejects an
-// argument that is not a nullary function instead of reducing it through the Else branch. The last
-// two cases pin the same check on the simplest alias that can carry a bound, so a failure there is
-// about the check rather than about anything the operator track added.
-//
-// The bound is written `fn () -> unknown` because a function type's return is covariant, so only
-// the top of the lattice admits every nullary function. A bound written `fn () -> never` would
-// instead say `F` returns `never` and would reject `fn () -> string`.
+// A bound on an alias's type parameter is checked at the reference, so an argument that fails it is
+// rejected there rather than substituted into the body. These cases pin that on the simplest alias
+// that can carry a bound, since the corpus itself carries none — see `ReturnType<F>` in
+// utilityTypeDecls for why.
 func TestUtilityTypeAliasParameterConstraint(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -605,30 +604,11 @@ func TestUtilityTypeAliasParameterConstraint(t *testing.T) {
 		wantErr string // "" ⇒ expect no error
 	}{
 		{
-			// The bound admits every nullary function, whatever it returns.
-			name: "FunctionArgumentPasses",
-			src:  `type Result = ReturnType<fn () -> string>`,
-		},
-		{
-			// A structural return is still a return, so the bound is about the shape of `F` alone.
-			name: "ObjectReturningFunctionPasses",
-			src:  `type Result = ReturnType<fn () -> {a: number}>`,
-		},
-		{
-			// A non-function is rejected at the reference. The message names `function` rather than
-			// the written bound, since that is how the mismatch renders once the argument is not a
-			// function at all.
-			name:    "NonFunctionArgumentRejected",
-			src:     `type Result = ReturnType<number>`,
-			wantErr: "cannot constrain number <: function",
-		},
-		{
-			// The bound admits every type at the simplest alias that can carry one.
-			name: "PlainAliasAcceptsBoundedArgument",
+			name: "AcceptsBoundedArgument",
 			src:  `type Box<T: string> = {v: T}` + "\n" + `type Result = Box<"a">`,
 		},
 		{
-			name:    "PlainAliasRejectsUnboundedArgument",
+			name:    "RejectsUnboundedArgument",
 			src:     `type Box<T: string> = {v: T}` + "\n" + `type Result = Box<number>`,
 			wantErr: "cannot constrain number <: string",
 		},

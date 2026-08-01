@@ -797,27 +797,30 @@ bound to infinity, which a fixed-arity argument then fails to contain. So the ar
 definition needs a decision about how a conditional's `Check <: Extends` probe treats arity.
 PR14 makes that decision and unlocks both utilities together.
 
-The corpus bounds the parameter, `type ReturnType<F: fn () -> unknown> = …`, so an argument
-of any other shape is rejected at the reference rather than reduced through the Else branch.
-`unknown` is the only bound that admits every nullary function, since a function type's
-return is covariant, and it reaches annotation position through the `UnknownTypeAnn` arm this
-PR adds. Bound enforcement on alias arguments landed in #956.
+The corpus leaves `F` unbounded, so `ReturnType<number>` reduces to `never` where
+TypeScript reports an error. Alias bounds are enforced since #956, so the bound is the only
+missing half, but no writable bound admits every function. A function type's return is
+covariant, so the bound would have to be `fn () -> unknown`, and that pins the arity to
+nullary alongside it. PR14 step 5 adds the `Function` top type the bound needs. This PR does
+add the `UnknownTypeAnn` arm `resolveTypeAnn` was missing, since `unknown` is the lattice top
+and had no annotation surface.
 
 **Depends on** PR2, PR3b, PR4, PR7, PR12. Verifies the whole operator suite
 composes.
 
 ### PR14 — Rest parameters in function type annotations + `Parameters<F>` / `ReturnType<F>`
 
-PR13 left `Parameters<F>` disabled and `ReturnType<F>` matching one arity. Both wait
-on the same three pieces, so this PR lands them together. None of the three is the
-`Array<T>` M7.5 lands. That `Array<T>` supplies the element type a typed rest
+PR13 left `Parameters<F>` disabled and `ReturnType<F>` matching one arity with no bound
+on `F`. Both wait on the same rest-parameter work, so this PR lands them together, plus
+the top type a bound on `F` needs. None of the pieces is the `Array<T>` M7.5 lands. That `Array<T>` supplies the element type a typed rest
 parameter checks its trailing *arguments* against at a call site, which is the
 deferral recorded on `FuncParam.Rest`
 ([soltype/type.go:191-193](../../internal/soltype/type.go)). A pattern match over a
 written function type reads no element type, so no definition of `Array` — minimal,
 full, or opaque — moves this PR forward.
 
-**Data structures.** No new node. `soltype.FuncParam.Rest` already exists and is
+**Data structures.** One new atom, `soltype.FunctionType`, described in step 5. The
+rest-parameter half needs no new node. `soltype.FuncParam.Rest` already exists and is
 already plumbed end to end: the visitor carries it through a rewrite
 ([soltype/visitor.go](../../internal/soltype/visitor.go)), `equalType` compares it
 ([coalesce.go:1245](../../internal/solver/coalesce.go)), the canonical ordering ranks
@@ -874,22 +877,54 @@ it. This PR is its first producer. A tuple-typed rest parameter reuses `TupleTyp
    being lax everywhere. This keeps the strict rule for values and relaxes only the
    match.
 
+5. **A bound that admits every function.** `ReturnType<F>` should reject
+   `ReturnType<number>` at the reference rather than reduce it through the Else branch.
+   TypeScript reports that error, because its `ReturnType` constrains `T` to a function
+   type. Alias bounds are enforced since #956, so the bound itself is the only missing
+   half, and the arity-agnostic pattern makes one harder to find rather than easier.
+
+   Every writable bound pins an arity. `fn () -> unknown` admits only nullary functions,
+   since a function type's return is covariant and `unknown` is the only type above every
+   return. A rest-parameter bound carries the [0, ∞) accept-set that a fixed-arity
+   argument fails to contain. Step 4's relaxation does not rescue either one, because a
+   bound is a real constraint at the reference rather than a `reduceCondInfer` trial.
+
+   Add a `Function` top type, the supertype of every `FuncType`, matching the type
+   TypeScript spells the same way. It names no signature, so it imposes no arity, which
+   makes `F: Function` an ordinary sound constraint. The cost is one `soltype` atom with
+   the usual leaf plumbing, meaning `isType()`, a visitor arm, printing, `equalType`, and
+   canonical ordering, plus one `constrain` arm admitting any `FuncType`. That is PR16's
+   `NullType` shape. It is separable from the rest-parameter work and can land on either
+   side of it.
+
+   Two alternatives were weighed and rejected. Giving an `unknown`-typed rest slot the
+   meaning "any arity" needs no new node, but it is unsound at value level. A binding
+   `val g: fn (...args: unknown) -> string = f` would accept a one-parameter `f`, and a
+   holder of `g` may then call it with none. Confining that shape to bounds and patterns
+   would make it a wart rather than a type. Leaving `ReturnType<F>` unbounded costs
+   nothing and is what the corpus does today, but it forgoes a diagnostic TypeScript
+   reports.
+
 **Open detail.** A surplus *optional* parameter has no faithful tuple counterpart —
 `TupleType.Elems` is a plain `[]Type` with no per-element optionality. Decide between
 widening such an element with `undefined` and rejecting the match, and record which.
 
 **Wiring.** Re-enable `TestUtilityTypeParameters`'s `Parameters<F>` cases in
 [utility_types_test.go](../../internal/solver/utility_types_test.go) and move the
-definition into `utilityTypeDecls`. Rewrite `ReturnType<F>` there to the
-arity-agnostic `if F : fn (...args: infer P) -> infer R { R } else { never }`, widen its
-bound from `fn () -> unknown` to whatever shape the arity decision settles on, and replace
-`TestUtilityTypeReturnTypeIsAritySpecific` with the cases it currently records as rejected.
+definition into `utilityTypeDecls`. Rewrite `ReturnType<F>` there to the arity-agnostic
+`type ReturnType<F: Function> = if F : fn (...args: infer P) -> infer R { R } else { never }`
+and drop `TestUtilityTypeReturnTypeIsAritySpecific`, whose cases all reduce once the
+pattern matches any arity. Move its `ReturnTypeOfNonFunction` case from
+`TestUtilityTypeReductions` to the bound-rejection table, since the bound catches it before
+the Else branch does.
 
 **Accept.** `Parameters<fn (x: number, y: string) -> boolean>` ⇒ `[number, string]`;
-`Parameters<fn () -> boolean>` ⇒ `[]`; `Parameters<number>` ⇒ `never`.
-`ReturnType<fn (x: number) -> string>` ⇒ `string`, matching TypeScript, and the same
-for every other arity. A rest parameter written anywhere but last reports a
-full-message error. A function type carrying one round-trips through the printer as
+`Parameters<fn () -> boolean>` ⇒ `[]`. `ReturnType<fn (x: number) -> string>` ⇒ `string`,
+matching TypeScript, and the same for every other arity. `ReturnType<number>` and
+`Parameters<number>` are each rejected at the reference by the `Function` bound, with a
+full message, rather than reducing to `never`. A `Function` annotation accepts a function
+of any arity and rejects every non-function. A rest parameter written anywhere but last
+reports a full-message error. A function type carrying one round-trips through the printer as
 `fn (...xs: T) -> R`. A value-level `fn (x: number) -> string` is still rejected
 against a `fn (...args: [number, string]) -> string` slot, so the relaxation reaches
 only the match.
@@ -900,7 +935,9 @@ which pulls in the value-level element checking M7.5 owns. `ConstructorParameter
 needs all of the above plus the `new (…)` member PR15 adds, so it stays disabled here.
 
 **Depends on** PR3b for the `infer` matcher the capture runs through, and PR13 for
-the corpus and the disabled test it re-enables. Independent of PR4–PR12.
+the corpus and the disabled test it re-enables. Independent of PR4–PR12. The `Function`
+top type in step 5 depends on nothing here and splits off cleanly if the PR needs
+dividing.
 
 ### PR15 — `new (…)` members in object type annotations + `ConstructorParameters<C>` / `InstanceType<C>`
 
@@ -1116,11 +1153,13 @@ PR1a's inert-plumbing cost is its floor rather than its estimate. PR9f is a grap
 algorithm in one new file, sized like PR4, and it is the one PR here worth deferring
 until a real library type motivates it.
 
-PR14 sits below the M4/M6 band on volume and above it on care. The representation is
-already built and plumbed, so the diff is one resolver arm, one `acceptSet` refinement,
-and one gather in `constrain`'s function arm. What makes it worth its own PR is that
-the gather changes how the hottest arm in the package pairs positions, and the arity
-ordering it forces is a semantic decision rather than a mechanical one.
+PR14 sits below the M4/M6 band on volume and above it on care. The rest-parameter
+representation is already built and plumbed, so that half is one resolver arm, one
+`acceptSet` refinement, and one gather in `constrain`'s function arm. What makes it worth
+its own PR is that the gather changes how the hottest arm in the package pairs positions,
+and the arity ordering it forces is a semantic decision rather than a mechanical one. The
+`Function` top type in step 5 adds one atom with leaf plumbing, and splits off cleanly if
+the PR grows past the band.
 
 PR15 is the smallest PR in Track E and spans the most layers, since the parser, the
 resolver, and `constrain` each need one arm and none of them needs a new node. Its one
