@@ -549,7 +549,8 @@ func TestUtilityTypeStaysSymbolicOverTypeParameter(t *testing.T) {
 // infinity, which a fixed-arity argument then fails to contain.
 //
 // So the arity-agnostic definition needs a decision about how a conditional's `Check <: Extends`
-// probe treats arity, not just the rest-parameter annotation surface M7.5 adds.
+// probe treats arity, not just a rest parameter in the annotation. M9 PR14 makes that decision and
+// replaces these cases.
 func TestUtilityTypeReturnTypeIsAritySpecific(t *testing.T) {
 	runUtilityReductions(t, []utilityReduction{
 		{
@@ -631,11 +632,11 @@ func TestUtilityTypeNonNullable(t *testing.T) {
 // on `FuncParam.Rest` in internal/soltype/type.go. A pattern match over a written function type
 // reads no element type, so it needs no `Array`.
 //
-// `ConstructorParameters<C>` waits on both pieces plus a `new (…)` member in an object type
-// annotation, which `objTypeAnnElemInner` does not parse.
-//
-// Both also need the arity decision TestUtilityTypeReturnTypeIsAritySpecific describes, since a
-// rest parameter in the pattern widens its accept-set the same way the inexact marker does.
+// Both pieces also need the arity decision TestUtilityTypeReturnTypeIsAritySpecific describes,
+// since a rest parameter in the pattern widens its accept-set the same way the inexact marker does.
+// M9 PR14 covers all three. `ConstructorParameters<C>` waits on PR14 plus a `new (…)` member in an
+// object type annotation, which `objTypeAnnElemInner` does not parse, so it stays disabled after
+// PR14 lands.
 //
 // Re-enable by removing the comment wrapper and adding both definitions to utilityTypeDecls:
 //

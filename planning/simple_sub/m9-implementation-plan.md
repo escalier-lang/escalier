@@ -133,21 +133,23 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Twenty PRs across five tracks. Track A builds the evaluator and the core
+Twenty-one PRs across five tracks. Track A builds the evaluator and the core
 operators in dependency order. Track B adds spread and template-literal
 operators, which hang off the backbone but are independent of each other. Track C
 adds exactness propagation and the recursion static-check. Track D is the two
 function-signature effects, which touch `FuncType` and not the evaluator at all,
-so it runs fully in parallel with A–C. Track E is the capstone verification.
+so it runs fully in parallel with A–C. Track E is the capstone verification and the
+one follow-on it turned up.
 
 The two heaviest concerns — the evaluator backbone and the conditional/`infer`
 matcher — are each split in two so no single PR carries both a new representation
 and a new algorithm: PR1a/PR1b and PR3a/PR3b below.
 
-Sixteen of the twenty were planned up front. PR9c through PR9f were added to Track C
+Sixteen of the twenty-one were planned up front. PR9c through PR9f were added to Track C
 after PR9b's review, which turned up one soundness question, one wrong answer, and one
 representation the milestone assumed exists. They are described together in "the
-recursion-safety follow-on group" below.
+recursion-safety follow-on group" below. PR14 was added to Track E after PR13, which
+found `Parameters<F>` inexpressible and identified what it waits on.
 
 ### PR1a — Residual-node representation + inert plumbing
 
@@ -779,14 +781,8 @@ them expressible at all under import-only resolution.
   resolves. `soltype`'s literal set carries no `NullLit` or `UndefinedLit`, an extension
   owed from M2, so `resolveLitTypeAnn` reports both as unsupported.
 - `Parameters<F>` binds one `infer` name to a whole parameter list, which the pattern
-  writes as a rest parameter. `resolveFuncTypeAnn` reports a rest parameter unsupported,
-  because `acceptSet` and `hasRest` assume it is last and the parser does not enforce that.
-  Lifting the rejection is not enough on its own. The match must gather the argument's
-  parameters into a tuple, and constrain's function arm walks only the positions the two
-  sides share. TypeScript reaches the tuple through a variadic-tuple inference rule with no
-  counterpart here. The `Array<T>` M7.5 lands is a different concern — it supplies the
-  element type a rest parameter checks its trailing *arguments* against at a call site, and
-  a pattern match over a written function type reads no element type.
+  writes as a rest parameter. Neither the annotation surface nor the tuple capture exists.
+  PR14 below covers both.
 - `ConstructorParameters<C>` and `InstanceType<C>` match a `new (…)` member, which
   `objTypeAnnElemInner` does not parse. The printer already renders the form on a class's
   static side, so the gap is the annotation surface rather than the representation.
@@ -797,11 +793,108 @@ super` by containment over the argument counts each side tolerates, and two exac
 types have single-point accept-sets, so containment forces equal arity. Widening the pattern
 does not help, because a rest parameter or the inexact `fn (...)` marker lifts its upper
 bound to infinity, which a fixed-arity argument then fails to contain. So the arity-agnostic
-definition needs a decision about how a conditional's `Check <: Extends` probe treats arity,
-beyond the rest-parameter surface M7.5 adds.
+definition needs a decision about how a conditional's `Check <: Extends` probe treats arity.
+PR14 makes that decision and unlocks both utilities together.
 
 **Depends on** PR2, PR3b, PR4, PR7, PR12. Verifies the whole operator suite
 composes.
+
+### PR14 — Rest parameters in function type annotations + `Parameters<F>` / `ReturnType<F>`
+
+PR13 left `Parameters<F>` disabled and `ReturnType<F>` matching one arity. Both wait
+on the same three pieces, so this PR lands them together. None of the three is the
+`Array<T>` M7.5 lands. That `Array<T>` supplies the element type a typed rest
+parameter checks its trailing *arguments* against at a call site, which is the
+deferral recorded on `FuncParam.Rest`
+([soltype/type.go:191-193](../../internal/soltype/type.go)). A pattern match over a
+written function type reads no element type, so no definition of `Array` — minimal,
+full, or opaque — moves this PR forward.
+
+**Data structures.** No new node. `soltype.FuncParam.Rest` already exists and is
+already plumbed end to end: the visitor carries it through a rewrite
+([soltype/visitor.go](../../internal/soltype/visitor.go)), `equalType` compares it
+([coalesce.go:1245](../../internal/solver/coalesce.go)), the canonical ordering ranks
+it ([lattice.go:473](../../internal/solver/lattice.go)), and the printer renders
+`...xs: T` ([soltype/print.go:1043](../../internal/soltype/print.go)). Nothing sets
+it. This PR is its first producer. A tuple-typed rest parameter reuses `TupleType`.
+
+**Algorithms.**
+
+1. **The annotation surface.** `resolveFuncTypeAnn`
+   ([type_ann.go:721-725](../../internal/solver/type_ann.go)) reports a `RestPat`
+   unsupported and recovers it to a positional parameter, because `acceptSet` and
+   `hasRest` assume a rest parameter is last and the parser does not enforce that.
+   Enforce it at resolution instead. A `RestPat` in the final position sets `Rest`,
+   and one written anywhere else reports a full-message error. The parameter keeps
+   the inner `IdentPat`, so `mirrorParamPat` needs no new arm and the printer's
+   existing `Rest` case renders the round trip.
+2. **A tuple in the rest parameter's type slot.** The note on `FuncParam.Rest` reads
+   `...xs: T[]`, an array. TypeScript's `Parameters` works because a rest parameter
+   may instead be tuple-typed, and that is what lets `infer P` bind a tuple. Give
+   each shape its own arity contribution. An array-typed rest binds zero or more
+   arguments, so it adds nothing to the accept-set floor and lifts the ceiling to ∞,
+   which is what `acceptSet` does today. A tuple-typed rest binds exactly its length,
+   so it adds that length to both ends, and an inexact tuple lifts the ceiling to ∞
+   again. Only the tuple branch is exercisable in this PR, since writing an
+   array-typed rest parameter needs the `Array<T>` M7.5 supplies. The array branch is
+   the existing behavior, kept and given a name.
+3. **The gather rule in `constrain`'s function arm.** The arm pairs the positions the
+   two sides share and never collects the surplus ones, so an `infer` variable in a
+   rest slot captures the first parameter's type rather than a tuple. Let `k` be the
+   super's rest index. Pair positions `[0, k)` contravariantly as today, build a
+   `TupleType` from `sub.Params[k:]`, and constrain the rest parameter's type against
+   it in the same contravariant orientation. The trial then records that tuple as an
+   upper bound on the `infer` variable, and `capturedBound`
+   ([probe.go:387](../../internal/solver/probe.go)) returns the meet of the uppers,
+   which is the tuple itself. A sub with fewer than `k` parameters is the genuine
+   arity failure and still reports one.
+4. **Ordering against the accept-set gate.** The gate rejects the match today. A
+   pattern `fn (...args: P) -> R` has accept-set [0, ∞) and a `fn (x: number) ->
+   string` argument has [1, 1], so both clauses of `loSub <= loSup && hiSub >= hiSup`
+   fail. Once the rest slot's type is a tuple its arity is known, but at the moment
+   the gate runs that type is still an unsolved inference variable. Run the gather
+   first, so the variable is fixed before the gate evaluates. The gather assigns every
+   sub parameter a position, which is what the gate exists to verify, so for this
+   shape it is satisfied by construction. The alternative is to exempt a
+   variable-typed rest slot from the gate outright, which is a smaller change and a
+   weaker invariant.
+
+   The laxity this introduces stays confined to pattern matching, which is what makes
+   it safe. A rest slot holds an unsolved inference variable only inside a
+   `reduceCondInfer` trial. In an ordinary value-level constraint both sides are
+   written types, so a `...args: [number, string]` slot keeps its [2, 2] accept-set
+   and still rejects a one-parameter function. TypeScript reaches the same place by
+   being lax everywhere. This keeps the strict rule for values and relaxes only the
+   match.
+
+**Open detail.** A surplus *optional* parameter has no faithful tuple counterpart —
+`TupleType.Elems` is a plain `[]Type` with no per-element optionality. Decide between
+widening such an element with `undefined` and rejecting the match, and record which.
+
+**Wiring.** Re-enable `TestUtilityTypeParameters`'s `Parameters<F>` cases in
+[utility_types_test.go](../../internal/solver/utility_types_test.go) and move the
+definition into `utilityTypeDecls`. Rewrite `ReturnType<F>` there to the
+arity-agnostic `if F : fn (...args: infer P) -> infer R { R } else { never }`, and
+replace `TestUtilityTypeReturnTypeIsAritySpecific` with the cases it currently
+records as not reducing.
+
+**Accept.** `Parameters<fn (x: number, y: string) -> boolean>` ⇒ `[number, string]`;
+`Parameters<fn () -> boolean>` ⇒ `[]`; `Parameters<number>` ⇒ `never`.
+`ReturnType<fn (x: number) -> string>` ⇒ `string`, matching TypeScript, and the same
+for every other arity. A rest parameter written anywhere but last reports a
+full-message error. A function type carrying one round-trips through the printer as
+`fn (...xs: T) -> R`. A value-level `fn (x: number) -> string` is still rejected
+against a `fn (...args: [number, string]) -> string` slot, so the relaxation reaches
+only the match.
+
+**Out of scope.** Rest parameters in a function *declaration*, which `bindPat`
+reports unsupported ([pattern.go:240-244](../../internal/solver/pattern.go)) and
+which pulls in the value-level element checking M7.5 owns. `ConstructorParameters<C>`
+needs all of the above plus a `new (…)` member in an object type annotation, which
+`objTypeAnnElemInner` does not parse, so it stays disabled here.
+
+**Depends on** PR3b for the `infer` matcher the capture runs through, and PR13 for
+the corpus and the disabled test it re-enables. Independent of PR4–PR12.
 
 ---
 
@@ -841,6 +934,12 @@ PR1a's inert-plumbing cost is its floor rather than its estimate. PR9f is a grap
 algorithm in one new file, sized like PR4, and it is the one PR here worth deferring
 until a real library type motivates it.
 
+PR14 sits below the M4/M6 band on volume and above it on care. The representation is
+already built and plumbed, so the diff is one resolver arm, one `acceptSet` refinement,
+and one gather in `constrain`'s function arm. What makes it worth its own PR is that
+the gather changes how the hottest arm in the package pairs positions, and the arity
+ordering it forces is a semantic decision rather than a mechanical one.
+
 ## Dependency graph
 
 A PR marked ✅ has merged, and the number after it is the merged pull request. An
@@ -874,6 +973,7 @@ PR10 (throws clause)                       ── needs M3 only; parallel to eve
  └─► PR11 (generators)                     ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
 
 PR13 (TS utility-type suite)               ── needs PR2, PR3b, PR4, PR7, PR12
+ └─► PR14 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
 ```
 
 PR9b replaced PR9's regularity condition with the productivity condition, so PR9's
@@ -883,7 +983,7 @@ to intersect the members' key sets, and #937 capped total alias expansion with a
 monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
 PR4's mapped types.
 
-Everything still open is PR8, PR9d, PR9f, PR10, PR11, and PR13. PR8 is partly
+Everything still open is PR8, PR9d, PR9f, PR10, PR11, PR13, and PR14. PR8 is partly
 seeded — #922 threads an object's exactness through `keyof` — but the rest of the
 operators and the `Exact` / `Inexact` intrinsics are untouched.
 
@@ -916,6 +1016,7 @@ graph TD
     PR11["PR11 (generators)"]
     PR12["PR12 ✅ #952 (Awaited<T>)"]
     PR13["PR13 (TS utility-type suite)"]
+    PR14["PR14 (rest params in fn type anns + Parameters<F>)"]
 
     M7 -.-> PR1a
     M75 -.-> PR11
@@ -952,6 +1053,8 @@ graph TD
     PR10 --> PR11
     PR11 --> PR13
     PR12 --> PR13
+    PR13 --> PR14
+    PR3b --> PR14
 
     linkStyle default stroke:#888
     style PR1a fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
@@ -987,8 +1090,10 @@ graph TD
   and only if a real library type needs it.
 - **Track D** — PR10 (throws) has no operator dependency and can start on day one
   alongside PR1a; PR11 (generators) follows PR10.
-- **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12.
+- **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12. PR14
+  follows it and is the milestone's last PR, since it is the one gap PR13 found that
+  the operator track can close on its own.
 
 The critical path is `M7 → PR1a → PR1b → PR3a → PR3b → PR4 → PR8`, and — for the
-async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13`. The follow-on
-group sits off both: nothing in PR1a–PR13 waits on PR9c–PR9f.
+async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13 → PR14`. The
+follow-on group sits off both: nothing in PR1a–PR14 waits on PR9c–PR9f.
