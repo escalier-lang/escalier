@@ -21,8 +21,8 @@ func hasRest(f *soltype.FuncType) bool {
 	return n > 0 && f.Params[n-1].Rest
 }
 
-// restIndex is the position of f's typed rest param, or -1 when it has none. Because a
-// rest param is always last, resolveFuncTypeAnn rejects any other position, the index is
+// restIndex is the position of f's typed rest param, or -1 when it has none. A rest param
+// is always last, since resolveFuncTypeAnn rejects any other position, so the index is
 // len(f.Params)-1 whenever there is one.
 func restIndex(f *soltype.FuncType) int {
 	if hasRest(f) {
@@ -32,11 +32,15 @@ func restIndex(f *soltype.FuncType) int {
 }
 
 // restTuple reads the tuple a rest param's type slot holds, if it holds one. Two shapes
-// carry it. A written `...args: [number, string]` stores the tuple directly. An `infer`
-// clause written in that slot, `fn (...args: infer P) -> R`, stores an inference variable
-// that constrain's gather rule has recorded the gathered tuple against as an upper bound,
-// so the tuple is read back off the variable. Anything else, including an array-typed rest
-// param and a variable no gather has bounded, has no tuple.
+// carry one.
+//
+// A written `...args: [number, string]` stores the tuple directly. An `infer` clause in
+// that slot, `fn (...args: infer P) -> R`, stores an inference variable instead, and
+// constrain's gather rule records the gathered tuple against that variable as an upper
+// bound, so the tuple is read back off the variable's bounds.
+//
+// Every other slot type has no tuple, an array-typed rest param and a variable no gather
+// has bounded among them.
 func restTuple(t soltype.Type) (*soltype.TupleType, bool) {
 	switch t := t.(type) {
 	case *soltype.TupleType:
@@ -53,8 +57,8 @@ func restTuple(t soltype.Type) (*soltype.TupleType, bool) {
 
 // restArity is the inclusive range of argument counts a rest param of type t binds. A
 // tuple-typed rest binds exactly one argument per element, so both ends are the tuple's
-// length, and an inexact tuple such as `[number, ...]` has an open tail so its ceiling is
-// ∞. Every other shape, an array-typed `...xs: T[]` among them, binds zero or more, so it
+// length. An inexact tuple such as `[number, ...]` has an open tail, so its ceiling is ∞.
+// Every other shape, an array-typed `...xs: T[]` among them, binds zero or more, so it
 // contributes nothing to the floor and lifts the ceiling to ∞.
 func restArity(t soltype.Type) (lo, hi int) {
 	tup, ok := restTuple(t)
@@ -77,9 +81,9 @@ func restArity(t soltype.Type) (lo, hi int) {
 // param) as droppable and let a call leave a required param unbound.
 //
 // A tuple-typed rest param binds a fixed number of args rather than zero or more, so it
-// adds that many to the requirement. It also pins every param before it: supplying the
-// rest's args means filling the positions they sit behind, so a preceding `x?` can no
-// longer be dropped. That is why the trailing-optional loop runs only when the rest binds
+// adds that many to the requirement. It also pins every param before it. Supplying the
+// rest's args means filling the positions they sit behind, so a preceding `x?` is not
+// droppable either. That is why the trailing-optional loop runs only when the rest binds
 // nothing.
 func requiredCount(f *soltype.FuncType) int {
 	n := len(f.Params)
@@ -134,7 +138,8 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 // string]`, names its length outright. An inference variable is the `infer P` of a
 // conditional's pattern, which is what the gather exists to bind. Every other slot type,
 // an array-typed `...xs: T[]` among them, stands for zero or more arguments of one element
-// type, so no tuple describes it and the shared-position walk keeps its today's behavior.
+// type. No tuple describes such a slot, so the accept-set gate and the shared-position walk
+// decide it alone.
 func canGatherRest(sub *soltype.FuncType, restSlot soltype.Type, k int) bool {
 	if sub.Inexact || hasRest(sub) || len(sub.Params) < k {
 		return false
@@ -151,18 +156,17 @@ func canGatherRest(sub *soltype.FuncType, restSlot soltype.Type, k int) bool {
 // gatherRestParams turns the sub params a super's rest param stands for into the element
 // types of the tuple the gather rule checks against.
 //
-// An optional param widens with `undefined`, because a tuple element carries no
-// optionality marker of its own — soltype.TupleType.Elems is a plain []Type. So matching
+// An optional param widens with `undefined`. A tuple element carries no optionality
+// marker of its own, since soltype.TupleType.Elems is a plain []Type, so matching
 // `fn (x: number, y?: string) -> boolean` against `fn (...args: infer P) -> unknown`
-// captures `[number, string | undefined]`. Widening keeps the two facts the slot carries,
-// its type and the fact that it may go unsupplied, where dropping the param or rejecting
-// the match would lose one of them. TypeScript writes the same capture `[x: number, y?:
-// string]` using a tuple with per-element optionality, which soltype has no counterpart
-// for.
+// captures `[number, string | undefined]`. Widening keeps both facts the slot carries,
+// its type and that it may go unsupplied. Dropping the param or rejecting the match
+// would lose one of them. TypeScript writes the same capture as `[x: number, y?: string]`,
+// a tuple with per-element optionality that soltype has no counterpart for.
 //
-// The union is built with a nil Context so its subsumption never calls constrain, the
-// reason capturedBound gives for the same choice: the gather runs inside a constraint and
-// often inside a probe trial.
+// The union is built with a nil Context so its subsumption never calls constrain. That is
+// the choice capturedBound makes for the same reason, since the gather runs inside a
+// constraint and often inside a probe trial.
 func gatherRestParams(params []*soltype.FuncParam) []soltype.Type {
 	elems := make([]soltype.Type, len(params))
 	for i, p := range params {

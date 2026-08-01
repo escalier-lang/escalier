@@ -1206,9 +1206,9 @@ func (e *ReservedTypeNameError) Message() string {
 
 // RestParamNotLastError fires when a function type annotation writes a `...xs: T` parameter
 // somewhere other than the final position, as `fn (...xs: [number], y: string) -> void` does.
-// A rest parameter binds the arguments left over after the fixed ones, so it has a meaning
-// only at the end. The parser accepts it anywhere, and acceptSet reads the last parameter's
-// Rest flag, so resolution is where the position is enforced.
+// A rest parameter binds the arguments left over after the fixed ones, so it means something
+// only at the end. The parser accepts one in any position and acceptSet reads the Rest flag
+// off the last parameter only, so resolution is where the position is enforced.
 type RestParamNotLastError struct {
 	Param *ast.RestPat
 }

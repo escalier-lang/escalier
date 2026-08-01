@@ -472,9 +472,22 @@ func TestInferFunctionTopType(t *testing.T) {
 			want: "Function",
 		},
 		{
+			// `Function` is reflexive, so one `Function`-typed binding flows into another.
+			name: "AcceptsFunction",
+			src:  `val g: Function = fn () { return 1 }` + "\n" + `val f: Function = g`,
+			want: "Function",
+		},
+		{
 			name:    "RejectsNumber",
 			src:     `val f: Function = 5`,
 			wantErr: "cannot constrain 5 <: Function",
+		},
+		{
+			// The atom names no signature, so nothing reads a parameter or return off it and
+			// it fills no function-typed slot.
+			name:    "DoesNotFillAFunctionSlot",
+			src:     `val g: Function = fn () { return 1 }` + "\n" + `val f: fn() -> number = g`,
+			wantErr: "cannot constrain Function <: function",
 		},
 		{
 			name:    "RejectsObject",

@@ -270,6 +270,17 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: "never",
 		},
 		{
+			// The function top type names no signature and carries no members, so its key set is
+			// empty the way a primitive's is.
+			name: "FunctionTopType",
+			src: `
+				type Fns = Function
+				type Result = keyof Fns
+			`,
+			wantSymbolic: "keyof Fns",
+			wantExpanded: "never",
+		},
+		{
 			// A recursive alias terminates: projecting its keys never descends into the recursive
 			// `children` field value.
 			name: "RecursiveAlias",

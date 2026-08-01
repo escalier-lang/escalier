@@ -1001,10 +1001,12 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, inexact bool) soltype.
 		// An intersection carries every operand's members, so its key sets union.
 		return e.keyofIntersection(op.Types, inexact)
 	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType,
-		*soltype.NullType, *soltype.UndefinedType:
-		// None of these carries a readable member, so its key set is empty. `null` and
-		// `undefined` reach this arm once an annotation can name them, and a mapped type
-		// over either needs the ground `never` to build its empty result. Without it,
+		*soltype.NullType, *soltype.UndefinedType, *soltype.FunctionType:
+		// None of these carries a readable member, so its key set is empty. FunctionType names
+		// no signature either, so `keyof Function` lands here alongside `keyof number`.
+		//
+		// `null` and `undefined` reach this arm once an annotation can name them, and a mapped
+		// type over either needs the ground `never` to build its empty result. Without it,
 		// `Partial<null>` stays the residual `{[K: keyof null]?: null[K]}` and rejects the
 		// `{}` that should satisfy it.
 		return &soltype.NeverType{}

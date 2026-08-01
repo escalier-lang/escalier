@@ -792,12 +792,12 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 	params := make([]*soltype.FuncParam, len(ta.Params))
 	for i, p := range ta.Params {
 		pat := p.Pattern
-		// A `...xs: T` parameter sets Rest, which is what lifts the function's accept-set
-		// ceiling and what an `infer` clause in that slot captures the surplus arguments
-		// into. acceptSet reads the flag off the last parameter only, so a rest parameter
-		// written anywhere else is rejected here — the parser does not enforce the
-		// position. The rejected parameter still recovers to a positional one so the
-		// function keeps its arity.
+		// A `...xs: T` parameter sets Rest. That flag is what raises the function's
+		// accept-set ceiling and what an `infer` clause in the slot captures the surplus
+		// arguments into. acceptSet reads it off the last parameter only, and the parser
+		// enforces no position, so a rest parameter written anywhere else is rejected here.
+		// The rejected parameter still recovers to a positional one so the function keeps
+		// its arity.
 		rest := false
 		if rp, ok := pat.(*ast.RestPat); ok {
 			if i == len(ta.Params)-1 {

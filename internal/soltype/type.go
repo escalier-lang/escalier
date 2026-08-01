@@ -682,11 +682,14 @@ type NullType struct{}
 // minted internally by that join and renders as `undefined`.
 type UndefinedType struct{}
 
-// FunctionType is the top of the function part of the lattice: every FuncType is a
-// subtype of it and nothing else is. It names no parameter list and no return, so it
-// imposes no arity, which is what a type parameter's bound needs. `F: Function` admits
-// `fn () -> string` and `fn (x: number, y: string) -> boolean` alike, where the closest
-// writable signature bound, `fn () -> unknown`, would admit only the nullary one.
+// FunctionType is the top of the function part of the lattice. Every FuncType is a
+// subtype of it and nothing else is.
+//
+// It names no parameter list and no return, so it imposes no arity. That is what a type
+// parameter's bound needs: `F: Function` admits `fn () -> string` and
+// `fn (x: number, y: string) -> boolean` alike. The closest bound that names a signature
+// is `fn () -> unknown`, and it admits only nullary functions, since a function type's
+// return is covariant but its arity is fixed.
 //
 // It is an atom rather than a FuncType with wildcard parts, so no rule may decompose it
 // and read a parameter or return type off it. Source writes it as the type reference
