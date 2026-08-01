@@ -261,7 +261,44 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 			args[i] = c.freshAt(lvl)
 		}
 	}
+	c.checkAliasArgBounds(params, args, ref)
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
+}
+
+// checkAliasArgBounds reports each type argument of a generic alias reference that does not
+// satisfy its parameter's declared bound. Given `type Box<T: string> = {v: T}`, the
+// reference `Box<number>` is rejected here and `Box<"a">` is accepted. A parameter written
+// without a `:` clause has no bound recorded, so it keeps accepting every argument.
+//
+// A bound may name any sibling parameter, as the `B: A` of `type P<A, B: A> = [A, B]` does,
+// so the reference's own arguments are substituted into the bound before the comparison.
+// `P<number, 1>` therefore compares 1 against number rather than against the symbolic A.
+//
+// The comparison runs as a discard-only trial. Its purpose is to report, and the bounds it
+// would otherwise record land on the declaration's parameter vars, which every reference to
+// the alias shares. Rolling them back keeps one reference's argument out of the next one's
+// comparison.
+//
+// buildAliasInstance runs once per written reference, so a bad argument reports once no
+// matter how many times expansion later unfolds the alias.
+func (c *checker) checkAliasArgBounds(params []*soltype.TypeParam, args []soltype.Type, ref *ast.TypeRefTypeAnn) {
+	subst := newTypeSubst(params, args, nil, nil)
+	for i, p := range params {
+		// resolveTypeParams records at most one upper bound per parameter, itself an
+		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
+		// constraint. A parameter with no bound has an empty list.
+		if len(p.Var.UpperBounds) == 0 {
+			continue
+		}
+		bound := p.Var.UpperBounds[0].Accept(subst, soltype.Positive)
+		// Blame the written argument. A trailing argument filled from its parameter's default
+		// has no node of its own, so it falls back to the whole reference.
+		var site ast.Node = ref
+		if i < len(ref.TypeArgs) {
+			site = ref.TypeArgs[i]
+		}
+		c.blameConstraintErrors(site, c.ctx.trialUnderProbe(args[i], bound))
+	}
 }
 
 // resolveAliasLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments and checks
