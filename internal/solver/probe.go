@@ -6,8 +6,8 @@ import (
 )
 
 // Probe is the M3 (PR5) speculation journal: it records the mutations a
-// tentative inference does so a *discarded* trial leaves no trace. Two kinds of
-// mutation are journaled:
+// tentative inference does so a *discarded* trial leaves no trace. Three kinds of
+// mutation are undone:
 //
 //  1. Bound appends. Every TypeVarType the trial appends a bound to (via
 //     addLowerBound/addUpperBound) is recorded once, with its bound-list lengths
@@ -25,9 +25,14 @@ import (
 //     recordType/recordProv and openProbe's errs snapshot). A discard runs them
 //     so no stray node→type / type→origin entry or accumulated diagnostic
 //     survives a losing trial.
+//  3. The Context's coinductive memo-promotion state. newProbe snapshots
+//     Context.shallowestAssumed and Discard puts it back, so the goals a losing trial
+//     closed assumptions on never reach the enclosing derivation's promotion check.
+//     Unlike the first two this one is a plain snapshot rather than a journal, because
+//     the field is a single scalar with no per-entry structure to record.
 //
-// "Leaves no trace" is scoped to those two: bound mutations and the carrier's
-// Info/Prov/errs state. The fresh-var counter (Context.varCounter) is
+// "Leaves no trace" is scoped to those three: bound mutations, the carrier's
+// Info/Prov/errs state, and shallowestAssumed. The fresh-var counter (Context.varCounter) is
 // deliberately NOT rewound — IDs are monotonic and never reused, so a discarded
 // trial's vars simply leave a gap. Rewinding it would risk handing a live var an
 // ID a discarded var still holds; the only visible effect of the gap is raw
@@ -59,6 +64,13 @@ type Probe struct {
 	cleanups  []func()                      // Info / Prov rollback closures, registration order
 	parent    *Probe                        // enclosing probe (nil at top level)
 	done      bool                          // Commit/Discard are idempotent and mutually exclusive
+
+	// ctx is the Context whose speculation state a discard restores, and
+	// prevShallowestAssumed is that Context's shallowestAssumed at the moment this probe
+	// opened. A bare &Probe{} leaves ctx nil and simply skips the restore, the same way it
+	// lazily creates its touched sets.
+	ctx                   *Context
+	prevShallowestAssumed int
 }
 
 // probeEntry snapshots one variable's bound-list lengths at the moment the probe
@@ -79,11 +91,19 @@ type ltProbeEntry struct {
 	prevUpper int
 }
 
-// newProbe returns a probe whose parent is the currently-active probe (or nil).
+// newProbe returns a probe over ctx whose parent is the currently-active probe (or nil).
 // touched is lazily created on first use (markTouched), so a probe is usable even
 // if built directly as &Probe{} rather than through here.
-func newProbe(parent *Probe) *Probe {
-	return &Probe{parent: parent}
+//
+// It snapshots ctx.shallowestAssumed so a discard can put it back — see Discard. Taking the
+// snapshot here rather than at each trial site is what makes the restore automatic for every
+// trial that runs under a probe.
+func newProbe(ctx *Context, parent *Probe) *Probe {
+	p := &Probe{ctx: ctx, parent: parent}
+	if ctx != nil {
+		p.prevShallowestAssumed = ctx.shallowestAssumed
+	}
+	return p
 }
 
 // markTouched adds v to the dedup set, lazily creating the set so a probe built
@@ -192,13 +212,23 @@ func (p *Probe) mutatedBounds() bool {
 	return false
 }
 
-// Discard rolls back every mutation journaled under this probe. Idempotent: a
-// second Discard (or a Discard after Commit) is a no-op.
+// Discard rolls back every mutation journaled under this probe, then restores the
+// shallowestAssumed the Context held when the probe opened. A discarded trial is no part of
+// the derivation the caller keeps, so the goals it closed coinductive assumptions on must not
+// reach the caller's memo-promotion check — see Context.shallowestAssumed. Commit deliberately
+// does not restore, since a committed trial IS part of that derivation. A nested commit needs
+// no handoff either: this probe's snapshot predates the child entirely, so a later discard here
+// still puts back the value from before both.
+//
+// Idempotent: a second Discard (or a Discard after Commit) is a no-op.
 func (p *Probe) Discard() {
 	if p.done {
 		return
 	}
 	p.rollback()
+	if p.ctx != nil {
+		p.ctx.shallowestAssumed = p.prevShallowestAssumed
+	}
 	p.done = true
 }
 
@@ -263,7 +293,7 @@ func (p *Probe) Commit() {
 // phase conflict. Journal len(c.fn.pendingTransitions) here and truncate it on rollback
 // at that point, mirroring the errs snapshot.
 func (c *checker) openProbe() *Probe {
-	p := newProbe(c.ctx.probe)
+	p := newProbe(c.ctx, c.ctx.probe)
 	c.ctx.probe = p
 	errsLen := len(c.errs)
 	p.onRollback(func() { c.errs = c.errs[:errsLen] })
@@ -288,14 +318,18 @@ func (c *checker) openProbe() *Probe {
 // owns its own coinductive seen clone, since only the caller holds the constraint key.
 func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError) (committed bool, winIdx int, winErrs []SolverError, trialErrs [][]SolverError) {
 	for _, idx := range order {
-		p := newProbe(c.probe)
+		p := newProbe(c, c.probe)
 		c.probe = p
 		errs := trial(idx)
 		c.probe = p.parent
 		if !hasHardError(errs) {
+			// Commit keeps the winning trial's bounds, and with them the goals it closed
+			// coinductive assumptions on, since the caller keeps that derivation.
 			p.Commit()
 			return true, idx, errs, nil
 		}
+		// Discard rolls the losing trial's bounds back and restores shallowestAssumed with them,
+		// so a rejected trial informs neither the caller's bounds nor its promotion check.
 		p.Discard()
 		trialErrs = append(trialErrs, errs)
 	}
@@ -304,8 +338,8 @@ func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError)
 
 // trialMutatesBounds trials sub <: super under a throwaway probe, reporting whether it succeeded
 // and whether it recorded a bound, so `5 <: T` gives (true, true) and `5 <: number` (true, false).
-func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (ok, mutated bool) {
-	p := newProbe(c.probe)
+func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen *seenPairs, mutCtx bool) (ok, mutated bool) {
+	p := newProbe(c, c.probe)
 	c.probe = p
 	errs := c.constrain(sub, super, seen.Clone(), mutCtx)
 	mutated = p.mutatedBounds()
@@ -323,8 +357,8 @@ func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen set.Set[const
 // The bounds are read after constrain returns and before the probe rolls them back, the window
 // trialMutatesBounds reads p.mutatedBounds() in. The trial is discarded either way, so no bound
 // survives on any type the caller handed in.
-func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVarType, seen set.Set[constraintKey]) ([]soltype.Type, bool) {
-	p := newProbe(c.probe)
+func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVarType, seen *seenPairs) ([]soltype.Type, bool) {
+	p := newProbe(c, c.probe)
 	c.probe = p
 	errs := c.constrain(sub, super, seen, false)
 	ok := !hasHardError(errs)
@@ -365,15 +399,16 @@ func capturedBound(v *soltype.TypeVarType) soltype.Type {
 // succeeded. The seen-set starts fresh and the mut context at false, so the
 // trial is a self-contained covariant read check.
 func (c *Context) trialUnderProbe(sub, super soltype.Type) []SolverError {
-	return c.trialUnderProbeSeen(sub, super, set.NewSet[constraintKey]())
+	return c.trialUnderProbeSeen(sub, super, newSeenPairs())
 }
 
 // trialUnderProbeSeen is trialUnderProbe over a caller-supplied cycle-detection set rather than a
 // fresh one, so a conditional's `Check <: Extends` branch probe closes a recursive alias through the
-// same seen-set the enclosing constraint built up. The caller clones the set when it must keep the
-// trial's keys out of its own.
-func (c *Context) trialUnderProbeSeen(sub, super soltype.Type, seen set.Set[constraintKey]) []SolverError {
-	p := newProbe(c.probe)
+// same seen-set the enclosing constraint built up. A caller that discards the trial's failure must
+// pass a Clone instead. The probe rolls the trial's bounds back, so the verdicts the trial memoized
+// have to go with them.
+func (c *Context) trialUnderProbeSeen(sub, super soltype.Type, seen *seenPairs) []SolverError {
+	p := newProbe(c, c.probe)
 	c.probe = p
 	errs := c.constrain(sub, super, seen, false)
 	c.probe = p.parent

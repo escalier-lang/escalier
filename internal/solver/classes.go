@@ -295,11 +295,11 @@ type classPair struct{ sub, super string }
 // A (subName, supName) seen-set bounds the walk on a cyclic hierarchy. Until C2 infers
 // real variance, every ClassDef.Variance entry is Invariant, so every argument is
 // constrained in both directions — the conservative choice a sound rule falls back to.
-func (c *Context) constrainNominal(sub, super *soltype.ClassType, seen set.Set[constraintKey]) []SolverError {
+func (c *Context) constrainNominal(sub, super *soltype.ClassType, seen *seenPairs) []SolverError {
 	return c.constrainNominalWalk(sub, super, seen, set.NewSet[classPair]())
 }
 
-func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen set.Set[constraintKey], walked set.Set[classPair]) []SolverError {
+func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seenPairs, walked set.Set[classPair]) []SolverError {
 	key := classPair{sub.Name, super.Name}
 	if walked.Contains(key) {
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
@@ -338,9 +338,22 @@ func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen set.S
 	if def, ok := c.classDef(sub.Name); ok {
 		for _, superType := range def.Supers {
 			s := substituteSuperArgs(def, sub, superType)
-			if len(c.constrainNominalWalk(s, super, seen, walked)) == 0 {
+			// A candidate whose walk fails has its errors discarded so the next candidate can be
+			// tried. It therefore walks over a clone of the seen-set, the discipline every arm
+			// that swallows a failure follows. Nothing a discarded walk settled is read by a
+			// later candidate, nor by the caller in the case where a later candidate accepts
+			// and the walk reports no error.
+			//
+			// This walk is the one rejecting arm that opens no probe, so it restores
+			// shallowestAssumed by hand where every other arm inherits the restore from
+			// Probe.Discard.
+			enclosingShallowest := c.shallowestAssumed
+			if len(c.constrainNominalWalk(s, super, seen.Clone(), walked)) == 0 {
+				// The accepting candidate is the derivation the caller keeps, so the goals it
+				// closed assumptions on stay folded in.
 				return nil
 			}
+			c.shallowestAssumed = enclosingShallowest // a rejected candidate informs nothing
 		}
 	}
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}

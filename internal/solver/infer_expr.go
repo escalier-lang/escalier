@@ -1893,7 +1893,7 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 				// SpreadNotObjectError on the recovery sentinel, the object twin of the array arm.
 				continue
 			}
-			obj, ground := newTypeEvaluator(c.ctx, set.NewSet[constraintKey]()).groundToObject(op)
+			obj, ground := newTypeEvaluator(c.ctx, newSeenPairs()).groundToObject(op)
 			if !ground {
 				// A spread whose operand has no ground object shape — a type variable, a
 				// primitive — cannot merge its fields. Report it and keep the rest of the object.
@@ -2246,7 +2246,7 @@ func (c *checker) resolveIndexPath(scope *Scope, lvl int, e *ast.IndexExpr, objP
 func (c *checker) dynamicIndexRead(scope *Scope, lvl int, e *ast.IndexExpr, recv soltype.Type, objPos bool) pathResult {
 	key := c.inferExpr(scope, lvl, e.Index)
 	access := &soltype.IndexType{Target: recv, Index: key}
-	reduced, reduceErrs, ok := c.ctx.reduceResidual(access, set.NewSet[constraintKey]())
+	reduced, reduceErrs, ok := c.ctx.reduceResidual(access, newSeenPairs())
 	if len(reduceErrs) > 0 {
 		c.blameConstraintErrors(e, reduceErrs)
 		return pathResult{err: true}

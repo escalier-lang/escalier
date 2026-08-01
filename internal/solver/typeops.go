@@ -108,7 +108,7 @@ type typeEvaluator struct {
 	// probe started a fresh set. Reusing the caller's set closes that cycle the same way two
 	// structurally-equal instances of a recursive alias close through constrain's seen-set. The
 	// value solve seeds it fresh at each constraint site, and the test expander passes an empty set.
-	seen set.Set[constraintKey]
+	seen *seenPairs
 	// errs collects the diagnostics a reduction produces. `keyof` reduction is total and adds
 	// none; indexed-access reduction records an UnknownObjectKeyError or a
 	// TupleIndexOutOfRangeError when a ground access resolves to no member. constrain reads
@@ -118,7 +118,7 @@ type typeEvaluator struct {
 	errs []SolverError
 }
 
-func newTypeEvaluator(ctx *Context, seen set.Set[constraintKey]) *typeEvaluator {
+func newTypeEvaluator(ctx *Context, seen *seenPairs) *typeEvaluator {
 	return &typeEvaluator{
 		ctx:      ctx,
 		active:   set.NewSet[string](),
@@ -368,7 +368,7 @@ func (f *inferFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Typ
 // clone of the caller's cycle-detection set, so a recursive alias reached through the probe closes
 // through the same seen-set the caller built up, while the clone keeps the probe's own keys out of
 // the caller's set. An empty result means the subtype check held, selecting the Then branch.
-func (c *Context) condExtends(check, extends soltype.Type, seen set.Set[constraintKey]) bool {
+func (c *Context) condExtends(check, extends soltype.Type, seen *seenPairs) bool {
 	return !hasHardError(c.trialUnderProbeSeen(check, extends, seen.Clone()))
 }
 
@@ -384,7 +384,7 @@ func (c *Context) condExtends(check, extends soltype.Type, seen set.Set[constrai
 // through the string signature and `0` through the number one.
 //
 // A key that no signature accepts reports false, which the caller turns into its own diagnostic.
-func (c *Context) indexSignatureFor(obj *soltype.ObjectType, key soltype.Type, seen set.Set[constraintKey]) (*soltype.MappedElem, bool) {
+func (c *Context) indexSignatureFor(obj *soltype.ObjectType, key soltype.Type, seen *seenPairs) (*soltype.MappedElem, bool) {
 	for _, sig := range obj.IndexSignatures() {
 		if c.condExtends(key, sig.Keys, seen) {
 			return sig, true

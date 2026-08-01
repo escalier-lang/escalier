@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"maps"
 	"math"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -55,7 +56,7 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	return lo, hi
 }
 
-// constraintKey keys the coinductive seen-set by pointer identity (Go's
+// constraintKey keys both of seenPairs' records by pointer identity (Go's
 // interface == on pointer-backed soltype concretes). Sufficient for M1: cycles
 // in subtype-checking can only form via TypeVarTypes, and TypeVarType pointers
 // are stable throughout inference (extrude allocates fresh vars, but those are
@@ -74,6 +75,83 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 type constraintKey struct {
 	sub, super soltype.Type
 	mutCtx     bool
+}
+
+// seenPairs holds two records of already-visited constraints, threaded through a derivation's
+// recursion. A pair is skipped for two different reasons, and only one of them asserts that the
+// pair holds, so the two records are kept apart.
+//
+//   - assumed holds every pair whose derivation is OPEN on the path from the top of the
+//     constraint down to here. Each entry also records the depth of the frame that opened it.
+//     Skipping such a pair is the coinductive assumption that makes recursive subtyping
+//     terminate. It is a conditional success. The pair holds only if the goal that assumed it
+//     goes on to succeed, so an entry lives exactly as long as its derivation and is popped on
+//     the way back up. That is the Amadio–Cardelli path discipline, and coalesce's recursion
+//     guard already follows it.
+//   - decided holds the pairs an earlier derivation settled on its own terms, using no assumption
+//     about a goal outside itself. Skipping such a pair replays a verdict already reached, so the
+//     entry outlives the derivation that made it. This memo table earns its keep on a chain of
+//     aliases where each names the one below it twice, as `type A24 = {a: A23, b: A23}` does.
+//     Comparing two such chains asks the same pair at both fields of every level. Without the
+//     memo each of those asks is derived again, so the work doubles per level and the whole
+//     comparison costs 2^depth constraints.
+//
+// The recorded depths are what separate a conditional success from a settled verdict. A derivation
+// that closed only on goals inside itself contains those goals' derivations too. Re-running it
+// anywhere would reproduce every step and reach the same verdict. Only a close on a goal SHALLOWER
+// than the derivation's own frame leaves the verdict conditional, and that is the comparison
+// constrain makes.
+//
+// Every pair enters assumed while its own derivation runs, so the question a frame answers on the
+// way out is whether to PROMOTE its pair to decided. This pair of recursive aliases produces all
+// three answers in one derivation:
+//
+//	type A = {p: number, next: {q: A}}
+//	type B = {p: number, next: {q: B}}
+//
+// Checking `A <: B` opens these frames, each numbered by how many entries assumed already holds:
+//
+//	A <: B                     opens frame 0
+//	  number <: number         opens frame 1, from the two `p` fields
+//	  {q: A} <: {q: B}         opens frame 1, from the two `next` fields
+//	    A <: B                 already open at depth 0, so it closes there
+//
+// Each frame then lands somewhere different:
+//
+//   - `number <: number` closed on no assumption at all, so nothing about it could depend on what
+//     was open around it. Promoted.
+//   - `{q: A} <: {q: B}` closed on `A <: B`, which sits above it at depth 0. It held only because
+//     that goal was open, so it is promoted to neither record, and a later sibling asking the same
+//     pair derives it again rather than replaying a success that was never discharged.
+//   - `A <: B` closed on itself, at its own depth rather than above it. Its derivation contains
+//     that goal's derivation, so re-running it anywhere reaches the same verdict. Promoted.
+//
+// A settled FAILURE joins decided alongside a settled success, so one mistake is reported once
+// rather than once per position that re-asks the pair. That makes a later ask of a failing pair
+// read as a success. The verdict survives that because the first ask's error propagates to the
+// top of the constraint. Three kinds of arm DISCARD a failure rather than propagating it: the
+// union-super and intersection-sub trials, constrainNominalWalk's superclass candidates, and every
+// probe. All of them hand the recursion a Clone, so no entry a discarded failure left behind is
+// ever read. An arm added later that swallows errors has to clone too.
+type seenPairs struct {
+	assumed map[constraintKey]int
+	decided set.Set[constraintKey]
+}
+
+func newSeenPairs() *seenPairs {
+	return &seenPairs{
+		assumed: map[constraintKey]int{},
+		decided: set.NewSet[constraintKey](),
+	}
+}
+
+// Clone returns an independent copy for a caller about to run a constraint whose failure it will
+// discard. Both records are copied, for different reasons. The clone's assumptions have to
+// include the path the caller is already on, or the trial would re-derive a recursion the caller
+// had closed. The clone's verdicts have to be dropped when the trial ends, because a discarded
+// trial's bound mutations are rolled back with it.
+func (s *seenPairs) Clone() *seenPairs {
+	return &seenPairs{assumed: maps.Clone(s.assumed), decided: s.decided.Clone()}
 }
 
 // aliasKey returns the seen-set key operand for one side of a constraint: an AliasType's
@@ -112,7 +190,7 @@ type ltExtrudeKey struct {
 // target `x` is the super. The checker-level wrapper (checker.constrain) names
 // these source/target, which map to sub/super here.
 func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
-	return c.constrain(sub, super, set.NewSet[constraintKey](), false)
+	return c.constrain(sub, super, newSeenPairs(), false)
 }
 
 // needsResidualWriteBack reports whether a mutable borrow's inner needs an explicit
@@ -147,7 +225,7 @@ func needsResidualWriteBack(sub, sup soltype.Type) bool {
 // reduced operator that does not fully ground — a `keyof T`, `T[K]`, `{[K]: V for K in Keys}`, or
 // `[...T, x]` over a type parameter, or an expanding alias whose reduction is truncated to a
 // residual that would re-expand without bound — which stays inert.
-func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) (soltype.Type, []SolverError, bool) {
+func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Type, []SolverError, bool) {
 	switch t := t.(type) {
 	case *soltype.AliasType:
 		return c.expandAlias(t), nil, true
@@ -199,7 +277,7 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen set.Set[constraintKey]) 
 // that would re-expand without bound. The errs carry any diagnostic the reduction produced. seen is
 // the enclosing constraint's cycle-detection set, handed to the evaluator so a conditional's branch
 // probe closes a recursive alias through the same guard.
-func (c *Context) reduceResidual(t soltype.Type, seen set.Set[constraintKey]) (soltype.Type, []SolverError, bool) {
+func (c *Context) reduceResidual(t soltype.Type, seen *seenPairs) (soltype.Type, []SolverError, bool) {
 	e := newTypeEvaluator(c, seen)
 	reduced := e.reduce(t)
 	if containsResidualOp(reduced) {
@@ -231,7 +309,7 @@ const maxUnwrapDepth = 200
 // count is restored when the call returns, so it measures the current path rather than the run.
 // A caller checks the budget itself before calling, while it still holds the pair a budget error
 // should name.
-func (c *Context) constrainUnwrapped(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+func (c *Context) constrainUnwrapped(sub, super soltype.Type, seen *seenPairs, mutCtx bool) []SolverError {
 	c.unwrapDepth++
 	errs := c.constrain(sub, super, seen, mutCtx)
 	c.unwrapDepth--
@@ -243,7 +321,7 @@ func (c *Context) constrainUnwrapped(sub, super soltype.Type, seen set.Set[const
 // field as invariant rather than covariant. The RefType arm sets it from the target
 // borrow's mutability, the object/tuple arms propagate it, and the function and
 // promise arms reset it since each carries its own annotation context.
-func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx bool) []SolverError {
 	// An AliasType operand keys on the canonical identity formed from the alias and its
 	// arguments rather than on its raw pointer, so two structurally-equal instances of a
 	// generic recursive alias close the cycle. expandAlias substitutes arguments into a fresh
@@ -261,10 +339,45 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 	if _, subIsAlias := sub.(*soltype.AliasType); subIsAlias && key.sub == key.super {
 		return nil
 	}
-	if seen.Contains(key) {
+	// An earlier derivation already settled this pair outright, so replay that verdict.
+	if seen.decided.Contains(key) {
 		return nil
 	}
-	seen.Add(key)
+	// The pair's own derivation is open further up this path. Closing on the assumption that it
+	// holds is what lets one recursive type be compared against another without unfolding either
+	// forever. Record how shallow the assumed goal is, so every frame between here and that goal
+	// learns that its own verdict depends on a goal it does not itself contain.
+	if goalDepth, ok := seen.assumed[key]; ok {
+		c.shallowestAssumed = min(c.shallowestAssumed, goalDepth)
+		return nil
+	}
+	// Frames add one entry each and pop it on the way back up, so the entry count is this
+	// frame's depth on the derivation path.
+	depth := len(seen.assumed)
+	seen.assumed[key] = depth
+	// Take over the running minimum so it measures this derivation alone.
+	enclosingShallowest := c.shallowestAssumed
+	c.shallowestAssumed = math.MaxInt
+	defer func() {
+		delete(seen.assumed, key)
+		// Every goal this derivation closed on lies at or below its own frame. The derivation
+		// therefore contains those goals' derivations too, and its verdict does not depend on
+		// what was open around it. A close on a shallower goal leaves the verdict conditional,
+		// and the pair is promoted to neither record.
+		if c.shallowestAssumed >= depth {
+			seen.decided.Add(key)
+		}
+		// A frame deeper than the root shares its numbering with the frames above it, so what it
+		// closed on folds into theirs. A frame at depth 0 was handed a fresh seenPairs instead,
+		// which is what a probe starting its own derivation gets. Its depths number a different
+		// path, so folding them in would tell the surrounding frames they closed on goals they
+		// never saw. Those frames get back exactly what they had.
+		if depth > 0 {
+			c.shallowestAssumed = min(enclosingShallowest, c.shallowestAssumed)
+		} else {
+			c.shallowestAssumed = enclosingShallowest
+		}
+	}()
 
 	// Error-recovery sentinel (PR8): an ErrorType operand carries an
 	// already-reported diagnostic, so it ABSORBS in both directions — the
@@ -1005,7 +1118,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen set.Set[constraintKey]
 // trialled under a throwaway probe, so the peek records no bound. A union with no bare
 // type-variable member cannot bind ambiguously, so the scan is skipped, sparing the common
 // all-concrete union super such as an enum value flowing into its variant union.
-func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, order []int, winIdx int, seen set.Set[constraintKey], mutCtx bool) soltype.Type {
+func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, order []int, winIdx int, seen *seenPairs, mutCtx bool) soltype.Type {
 	hasVar := false
 	for _, m := range u.Types {
 		if _, ok := m.(*soltype.TypeVarType); ok {
@@ -1091,7 +1204,7 @@ func isFieldReadReq(o *soltype.ObjectType) bool {
 // ok is false unless the shapes fit — an inexact object super of fresh-var properties over a
 // union whose every member is an object or a class instance — so a genuine subtyping demand
 // keeps the strict every-member rule.
-func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.Type, seen set.Set[constraintKey], mutCtx bool) (errs []SolverError, ok bool) {
+func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.Type, seen *seenPairs, mutCtx bool) (errs []SolverError, ok bool) {
 	req, isObj := super.(*soltype.ObjectType)
 	if !isObj || !isFieldReadReq(req) {
 		return nil, false
@@ -1202,7 +1315,7 @@ func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.
 // Inside a `mut` wrapper the keys are invariant and a readonly source cannot fill them. A method,
 // getter, or setter is passed over: whether a callable member satisfies a value-typed signature is
 // escalier-lang/escalier#864.
-func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, superIdx *soltype.MappedElem, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, superIdx *soltype.MappedElem, seen *seenPairs, mutCtx bool) []SolverError {
 	writable := mutCtx && superIdx.Readonly != soltype.ModAdd
 	var errs []SolverError
 	for _, subElem := range sub.Elems {
@@ -1240,7 +1353,7 @@ func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, supe
 // against the sub's same-named member by variance: a method by its receiver-stripped
 // callable signature (first arm; overload dispatch is E1), a getter covariantly, a setter
 // contravariantly. A missing or wrong-kind member fails.
-func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *soltype.ObjectType, seen set.Set[constraintKey], mutCtx bool) []SolverError {
+func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *soltype.ObjectType, seen *seenPairs, mutCtx bool) []SolverError {
 	name := soltype.ObjElemName(superElem)
 	subElem, ok := sub.Member(name)
 	if !ok {
