@@ -925,7 +925,7 @@ type bijection struct {
 // bind records that left-side name a corresponds to right-side name b, allocating both
 // directions on the first call. Binding a name that already has a partner drops the old
 // pairing from both maps first, so neither name is left with a reciprocal entry pointing
-// at a partner it no longer has. Without that removal a stale bToA entry would make same
+// at a partner it no longer has. Without that removal a stale bToA entry would make decide
 // reject a later pair by rule 2, reporting a mismatch against a binding that had already
 // been replaced.
 //
@@ -947,29 +947,33 @@ func (p *bijection) bind(a, b int) {
 	p.bToA[b] = a
 }
 
-// same reports whether a and b denote corresponding names. It applies the three-way rule
-// every binder kind repeats:
+// decide reports the bijection's verdict on whether a and b denote corresponding names. It
+// applies the two rules every binder kind repeats, and reports decided false for the case
+// only the caller can settle:
 //
 //  1. a is bound, so b must be the partner it was bound to.
 //  2. a is unbound but b is bound, so b already corresponds to some other left-side name
 //     and this pair is a mismatch.
-//  3. neither is bound, so the caller's `unbound` rule decides.
-func (p *bijection) same(a, b int, unbound func() bool) bool {
+//  3. neither is bound, so decided is false and the caller applies its own rule.
+func (p *bijection) decide(a, b int) (same, decided bool) {
 	if j, ok := p.aToB[a]; ok {
-		return j == b
+		return j == b, true
 	}
 	if _, ok := p.bToA[b]; ok {
-		return false
+		return false, true
 	}
-	return unbound()
+	return false, false
 }
 
-// sameByID is `same` with id equality as the `unbound` rule. A pair neither side has bound
+// sameByID is decide with id equality as the caller's rule. A pair neither side has bound
 // matches when the two names drew the same id. That case arises when a reference is
 // compared away from the construct that binds it. Every binder kind uses this rule except
 // the type-parameter one, which falls back to pointer identity instead.
 func (p *bijection) sameByID(a, b int) bool {
-	return p.same(a, b, func() bool { return a == b })
+	if same, decided := p.decide(a, b); decided {
+		return same
+	}
+	return a == b
 }
 
 // partner returns the right-side name a is bound to, if a is bound at all.
@@ -1030,7 +1034,10 @@ func (ctx *alphaCtx) bindTypeParams(as, bs []*soltype.TypeParam) {
 // identity, the rule the rest of equalType keys variables by. Pointer identity is why this
 // is the one kind that cannot use sameByID.
 func (ctx *alphaCtx) sameTypeVar(a, b *soltype.TypeVarType) bool {
-	return ctx.tv.same(a.ID, b.ID, func() bool { return a == b })
+	if same, decided := ctx.tv.decide(a.ID, b.ID); decided {
+		return same
+	}
+	return a == b
 }
 
 // sameInferDecl reports whether two `infer` nodes stand for corresponding declarations. Meeting a
@@ -1042,13 +1049,14 @@ func (ctx *alphaCtx) sameTypeVar(a, b *soltype.TypeVarType) bool {
 // own, away from the conditional that declares its names — falls back to id equality, the rule
 // sameTypeVar applies to a variable bound on neither side.
 func (ctx *alphaCtx) sameInferDecl(a, b *soltype.InferType) bool {
-	return ctx.infer.same(a.ID, b.ID, func() bool {
-		if !a.Binder {
-			return a.ID == b.ID
-		}
-		ctx.infer.bind(a.ID, b.ID)
-		return true
-	})
+	if same, decided := ctx.infer.decide(a.ID, b.ID); decided {
+		return same
+	}
+	if !a.Binder {
+		return a.ID == b.ID
+	}
+	ctx.infer.bind(a.ID, b.ID)
+	return true
 }
 
 // bindMappedKeys pairs the key bindings of two mapped types, so every later reference to one side's
@@ -1102,7 +1110,7 @@ func (ctx *alphaCtx) bindLifetimeParams(as, bs []*soltype.LifetimeParam) {
 // LifetimeVar by pointer under a nil borrow pairing and by first-appearance index under
 // one.
 //
-// This reads the ltp bijection through partner and boundRight rather than through `same`,
+// This reads the ltp bijection through partner and boundRight rather than through decide,
 // because either side may be a lifetime with no variable id at all. 'static, an
 // owned-mutable nil, an anonymous marker, and a union are all such lifetimes. A
 // non-variable side is unbound by construction, and a bound variable facing one is a
@@ -1147,12 +1155,13 @@ type ltPairing struct {
 // neither side has bound is recorded, and appending to aVars and bVars keeps the binding
 // order sameOutlivesUnderPairing walks.
 func (p *ltPairing) pair(a, b *soltype.LifetimeVar) bool {
-	return p.same(a.ID, b.ID, func() bool {
-		p.bind(a.ID, b.ID)
-		p.aVars = append(p.aVars, a)
-		p.bVars = append(p.bVars, b)
-		return true
-	})
+	if same, decided := p.decide(a.ID, b.ID); decided {
+		return same
+	}
+	p.bind(a.ID, b.ID)
+	p.aVars = append(p.aVars, a)
+	p.bVars = append(p.bVars, b)
+	return true
 }
 
 // equalTypeWith is equalType threading an alphaCtx. Its lt pairing keys a borrow's

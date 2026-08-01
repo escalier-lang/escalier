@@ -965,13 +965,12 @@ func TestEqualTypeClassLifetimeArgs(t *testing.T) {
 
 // TestBijectionRebindKeepsOneToOne pins the invariant bijection's doc comment states. A
 // rebind must drop the old pairing from both directions, so no name is left with a
-// reciprocal entry naming a partner it no longer has. A stale entry would make same
+// reciprocal entry naming a partner it no longer has. A stale entry would make decide
 // report a mismatch by rule 2 against a binding that had already been replaced.
 func TestBijectionRebindKeepsOneToOne(t *testing.T) {
-	idEq := func(a, b int) func() bool { return func() bool { return a == b } }
-
-	// probe asks whether same reports left-side name a and right-side name b as
-	// corresponding, with id equality as the unbound rule.
+	// probe asks whether sameByID reports left-side name a and right-side name b as
+	// corresponding. It goes through sameByID rather than decide so a pair decide leaves
+	// unsettled is resolved by id equality, the rule four of the five binder kinds use.
 	type probe struct {
 		a, b int
 		want bool
@@ -1026,7 +1025,7 @@ func TestBijectionRebindKeepsOneToOne(t *testing.T) {
 			}
 
 			for _, pr := range tt.probes {
-				require.Equal(t, pr.want, p.same(pr.a, pr.b, idEq(pr.a, pr.b)), "same(%d, %d)", pr.a, pr.b)
+				require.Equal(t, pr.want, p.sameByID(pr.a, pr.b), "sameByID(%d, %d)", pr.a, pr.b)
 			}
 		})
 	}
