@@ -267,29 +267,11 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
 }
 
-// checkAliasArgBounds reports each type argument of a generic alias reference that does not
-// satisfy its parameter's declared bound. Given `type Box<T: string> = {v: T}`, the
-// reference `Box<number>` is rejected here and `Box<"a">` is accepted. A parameter written
-// without a `:` clause declares no constraint, so it keeps accepting every argument.
-//
-// A bound may name any sibling parameter, as the `B: A` of `type P<A, B: A> = [A, B]` does,
-// so the reference's own arguments and lifetime arguments are substituted into the bound
-// before the comparison, the same substitution expandAlias applies to the body. `P<number,
-// 1>` therefore compares 1 against number rather than against the symbolic A.
-//
-// The comparison is a live constraint rather than a discarded trial, which is what makes an
-// argument that is itself a type variable behave the way the generic-function and class
-// positions do. `fn g<U>(u: U) -> Box<U>` records string on U and reports nothing at the
-// declaration, and the later `g(1)` is what fails. Discarding the constraint instead would
-// drop that bound and let `g(1)` through.
-//
-// While a dep_graph component is still resolving bodies, an argument may name a sibling
-// alias whose own Body is nil, which expands to ErrorType and absorbs. Each comparison is
-// queued during that window and replayed by runDeferredAliasBounds once every body is
-// filled, so `type A = {b: Box<A>}` compares the finished A against string.
-//
-// buildAliasInstance runs once per written reference, so a bad argument reports once no
-// matter how many times expansion later unfolds the alias.
+// checkAliasArgBounds reports a type argument that does not satisfy its parameter's declared
+// bound, so `type Box<T: string>` rejects `Box<number>`. Arguments are substituted into the
+// bound first, which lets a bound name a sibling as the `B: A` of `type P<A, B: A>` does. The
+// comparison is live rather than a discarded trial, so an argument that is itself a variable
+// carries the bound to its instantiation the way the function and class positions do.
 func (c *checker) checkAliasArgBounds(
 	params []*soltype.TypeParam,
 	args []soltype.Type,
@@ -328,10 +310,8 @@ func (c *checker) checkAliasArgBounds(
 	}
 }
 
-// runDeferredAliasBounds replays and clears the comparisons checkAliasArgBounds queued while
-// the component's bodies were still resolving. It runs after checkProductive, so an argument
-// naming a sibling alias reaches that alias's finished Body, and an alias the productivity
-// check rejected is already marked so its reference absorbs instead of expanding forever.
+// runDeferredAliasBounds replays and clears the checks checkAliasArgBounds queued while the
+// component's bodies were nil, since an unfilled alias argument expands to ErrorType and absorbs.
 func (c *checker) runDeferredAliasBounds() {
 	pending := c.deferredAliasBounds
 	c.deferredAliasBounds = nil
