@@ -467,12 +467,8 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
+			c.reportAccessorThrows(elem.Fn, elem, "getter")
 			stub := c.memberSigStub(lvl, elem.Fn)
-			// A getter projects to the type its read yields, so `soltype.GetterElem` holds a
-			// bare Type and has nowhere to record a `throws` clause the source wrote. A
-			// throwing getter therefore reads as non-throwing. Recording it would first
-			// require deciding what a property read that can raise means at the access site,
-			// which no milestone has designed. A setter's write has the same gap.
 			getter := &soltype.GetterElem{Name: name, SelfParam: c.selfParam(elem.Receiver, elem.Static, self), Type: stub.Ret}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, getter)
@@ -486,6 +482,7 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
+			c.reportAccessorThrows(elem.Fn, elem, "setter")
 			// A well-formed setter declares exactly one value parameter beyond `self` — the
 			// value being assigned. Report a paramless or multi-parameter setter, then still
 			// build the elem from the first value parameter, or `unknown` when there is none,
@@ -534,6 +531,19 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
 	}
 	c.constrain(node, callable(bodyFt), callable(stub))
+}
+
+// reportAccessorThrows rejects a `throws` clause on a getter or setter. An accessor
+// projects to the type its read yields or its write accepts, so `soltype.GetterElem` and
+// `soltype.SetterElem` hold a bare Type with nowhere to put the clause. Accepting it and
+// dropping it would let a raising accessor read as non-throwing, which is worse than
+// refusing it, so the clause is reported here rather than silently discarded. Supporting
+// it means first deciding what a property read or write that can raise means at the
+// access site, which no milestone has designed. kind names the accessor in the message.
+func (c *checker) reportAccessorThrows(fn *ast.FuncExpr, blame ast.Node, kind string) {
+	if fn.Throws != nil {
+		c.reportUnsupportedFeature(blame, "throws clause on a "+kind)
+	}
 }
 
 // memberSigStub builds a member's signature stub: one fresh var per value parameter,

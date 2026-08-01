@@ -883,8 +883,12 @@ modifiers_done:
 			// param, if there isn't exactly one value param after it
 			// (instance), or if there isn't exactly one param (static).
 			p.expect(CloseParen, AlwaysConsume)
-			next = p.lexer.peek()
 		}
+
+		// A setter has no return type to write, but it can still declare what it raises,
+		// so the clause is read here as it is on a getter or a method.
+		throwsType := p.throwsClause()
+		next = p.lexer.peek()
 
 		// Optionally parse block
 		if next.Type == OpenBrace {
@@ -895,7 +899,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.SetterElem{
 			Name:     name,
-			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, nil, false, body, span),
+			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, throwsType, false, body, span),
 			Receiver: receiver,
 			Static:   isStatic,
 			Private:  isPrivate,

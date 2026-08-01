@@ -44,12 +44,21 @@ func (p *Parser) typeAnnRequired() ast.TypeAnn {
 // that lets its return type be inferred can still declare what it raises, as in
 // `fn f() throws string { … }`. A `throws` with no type after it is reported and yields
 // nil, so the caller keeps the rest of the signature.
+//
+// An `{` after `throws` is the function's body, not the start of an object type, so the
+// clause ends before it. Handing the block to typeAnn instead would parse `fn f() throws
+// { return 1 }` as a function raising the object type `{ return 1 }`, consuming the body
+// and leaving the caller to fail on whatever follows.
 func (p *Parser) throwsClause() ast.TypeAnn {
 	token := p.lexer.peek()
 	if token.Type != Throws {
 		return nil
 	}
 	p.lexer.consume()
+	if p.lexer.peek().Type == OpenBrace {
+		p.reportError(token.Span, "Expected type annotation after 'throws'")
+		return nil
+	}
 	throwsType := p.typeAnn()
 	if throwsType == nil {
 		p.reportError(token.Span, "Expected type annotation after 'throws'")

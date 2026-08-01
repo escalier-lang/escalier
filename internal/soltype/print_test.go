@@ -140,6 +140,25 @@ func TestPrintRoundTrips(t *testing.T) {
 		},
 		{"fn with never throws renders no clause", &FuncType{Ret: numP(), Throws: &NeverType{}}, "fn () -> number"},
 		{
+			// `-> R` is greedy, so a function-typed return is parenthesized once a clause
+			// follows it. Without the parens this and the next case would render alike and
+			// re-read as the next one.
+			"fn-typed return with throws parenthesizes the return",
+			&FuncType{Ret: &FuncType{Ret: numP()}, Throws: strP()},
+			"fn () -> (fn () -> number) throws string",
+		},
+		{
+			"fn-typed return whose own throws is the clause needs no parens",
+			&FuncType{Ret: &FuncType{Ret: numP(), Throws: strP()}},
+			"fn () -> fn () -> number throws string",
+		},
+		{
+			// `throws` terminates the return type, so a union return needs no parens.
+			"union return with throws stays bare",
+			&FuncType{Ret: &UnionType{Types: []Type{numP(), strP()}}, Throws: strP()},
+			"fn () -> number | string throws string",
+		},
+		{
 			// A throwing function nested in a union is parenthesized by its own precedence,
 			// so the clause cannot run on into the sibling member.
 			"throwing fn inside a union",

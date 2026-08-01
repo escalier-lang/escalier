@@ -440,10 +440,24 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 		p.writeString(" -> ")
 		p.printTypeAnn(sig.Return)
 	}
-	if sig.Throws != nil {
-		p.writeString(" throws ")
-		p.printTypeAnn(sig.Throws)
+	p.printThrowsClause(sig.Throws)
+}
+
+// printThrowsClause emits ` throws T` after a signature's return type, or nothing when
+// the function raises nothing. Both spellings of that count: an absent clause, and an
+// explicit `throws never`, which names the empty set of raised values and carries no more
+// information than writing no clause at all. Every signature form routes through here so
+// a method, getter, setter, function, and function type annotation all render the clause
+// the same way.
+func (p *Printer) printThrowsClause(throws ast.TypeAnn) {
+	if throws == nil {
+		return
 	}
+	if _, isNever := throws.(*ast.NeverTypeAnn); isNever {
+		return
+	}
+	p.writeString(" throws ")
+	p.printTypeAnn(throws)
 }
 
 // printDecorators emits each decorator on its own line, preserving
@@ -1046,10 +1060,7 @@ func (p *Printer) printFuncSig(sig *ast.FuncSig) {
 		p.printTypeAnn(sig.Return)
 	}
 
-	if sig.Throws != nil {
-		p.writeString(" throws ")
-		p.printTypeAnn(sig.Throws)
-	}
+	p.printThrowsClause(sig.Throws)
 }
 
 func (p *Printer) printBlock(block *ast.Block) {
@@ -1332,15 +1343,13 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		p.writeString(")")
 		p.writeString(" -> ")
 		p.printTypeAnn(e.Fn.Return)
-		if e.Fn.Throws != nil {
-			p.writeString(" throws ")
-			p.printTypeAnn(e.Fn.Throws)
-		}
+		p.printThrowsClause(e.Fn.Throws)
 	case *ast.GetterTypeAnn:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
 		p.writeString("(self) -> ")
 		p.printTypeAnn(e.Fn.Return)
+		p.printThrowsClause(e.Fn.Throws)
 	case *ast.SetterTypeAnn:
 		p.writeString("set ")
 		p.printObjKey(e.Name)
@@ -1356,6 +1365,7 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		// Setters require -> void in Escalier syntax
 		p.writeString(" -> ")
 		p.printTypeAnn(e.Fn.Return)
+		p.printThrowsClause(e.Fn.Throws)
 	case *ast.PropertyTypeAnn:
 		if e.Readonly {
 			p.writeString("readonly ")
@@ -1562,12 +1572,7 @@ func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
 	p.writeString(" -> ")
 	p.printTypeAnn(typ.Return)
 
-	if typ.Throws != nil {
-		if _, isNever := typ.Throws.(*ast.NeverTypeAnn); !isNever {
-			p.writeString(" throws ")
-			p.printTypeAnn(typ.Throws)
-		}
-	}
+	p.printThrowsClause(typ.Throws)
 }
 
 func (p *Printer) printTemplateLitTypeAnn(typ *ast.TemplateLitTypeAnn) {

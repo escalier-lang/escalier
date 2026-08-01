@@ -1062,20 +1062,27 @@ func (p *namedPrinter) printFuncBody(t *FuncType) string {
 	if t.Inexact {
 		ps = append(ps, "...")
 	}
-	tail := "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
 	// A `throws T` clause renders after the return type, matching the surface syntax. A
 	// function that raises nothing resolves to `never` and renders no clause, so
 	// `fn () -> number` stays the common form. That covers a coalesced throws variable
 	// nothing reached as well as a FuncType minted with no clause at all.
-	//
-	// The clause is last, and the enclosing form supplies whatever delimiter follows it,
-	// so the thrown type prints with no minimum precedence. This matches the return type,
-	// which is greedy for the same reason. A whole function nested in a union is already
-	// parenthesized by typePrec's precFunc.
-	if throws := t.ThrowsOrNever(); !isNever(throws) {
-		tail += " throws " + p.printType(throws)
+	throws := t.ThrowsOrNever()
+	if isNever(throws) {
+		return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
 	}
-	return tail
+	// `-> R` is greedy, so a function-typed return has to be parenthesized once a clause
+	// follows it, or the clause reads as the INNER function's. A function that returns a
+	// non-throwing function and itself raises `string` renders
+	// `fn () -> (fn () -> number) throws string`. Drop those parens and it is
+	// indistinguishable from a function that returns one raising `string`, which re-reads
+	// as the second type. precUnion is the minimum that bounds a function type and nothing
+	// else, since precFunc is the only precedence below it.
+	//
+	// The thrown type itself needs no minimum. The clause is last, and the enclosing form
+	// supplies whatever delimiter follows it, so nothing can bind across its right edge.
+	// A whole function nested in a union is already parenthesized by typePrec's precFunc.
+	return "(" + strings.Join(ps, ", ") + ") -> " + p.printTypeMinPrec(t.Ret, precUnion) +
+		" throws " + p.printType(throws)
 }
 
 // isNever reports whether t is the `never` type.

@@ -271,3 +271,29 @@ func TestInferThrowsOnMethods(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: Parser) -> number throws string", values["run"])
 }
+
+// An unsupported `throws` annotation recovers to a fresh variable, matching the parameter
+// and return positions. Recovering to nil would read as `never`, so every value flowing
+// into the annotation would be re-reported for raising something on top of the one real
+// error. `void` stands in here for any annotation resolveTypeAnn does not support.
+func TestInferThrowsUnsupportedAnnotationDoesNotCascade(t *testing.T) {
+	_, _, errs := inferSource(t, `val f: fn() -> number throws void = fn () -> number { throw "x" }`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "1:30-1:34: Unsupported: VoidTypeAnn", msgWithSpan(errs[0]))
+}
+
+// A getter or setter projects to the type its read yields or its write accepts, and
+// neither element has anywhere to record a `throws` clause. The clause is rejected rather
+// than dropped, so a raising accessor cannot read as non-throwing.
+func TestInferThrowsOnAccessorIsRejected(t *testing.T) {
+	t.Run("Getter", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class C { v: number, get x(self) -> number throws string { return self.v } }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "1:22-1:75: Unsupported: throws clause on a getter", msgWithSpan(errs[0]))
+	})
+	t.Run("Setter", func(t *testing.T) {
+		_, _, errs := inferSource(t, `class C { v: number, set x(mut self, v: number) throws string { self.v = v } }`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "1:22-1:77: Unsupported: throws clause on a setter", msgWithSpan(errs[0]))
+	})
+}

@@ -1861,3 +1861,35 @@ func TestPrintImportStmt(t *testing.T) {
 // 		})
 // 	}
 // }
+
+// A `throws` clause round-trips on every signature form that can carry one. The object
+// getter and setter forms print it through the same helper the method form uses, so a
+// type annotation that declares a raising accessor reprints with its clause intact.
+func TestPrintThrowsClause(t *testing.T) {
+	opts := DefaultOptions()
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"function type", "fn(x: number) -> number throws string"},
+		{"object method", "{m(self) -> number throws SyntaxError}"},
+		{"object getter", "{get g(self) -> number throws string}"},
+		{"object setter", "{set s(mut self, v: number) -> undefined throws string}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Print(parseTypeAnn(t, tt.input), opts)
+			require.NoError(t, err)
+			require.Contains(t, result, "throws")
+		})
+	}
+
+	// An explicit `throws never` names the empty set of raised values, so it carries no
+	// more information than writing no clause at all and prints as no clause.
+	t.Run("throws never prints nothing", func(t *testing.T) {
+		result, err := Print(parseTypeAnn(t, "fn(x: number) -> number throws never"), opts)
+		require.NoError(t, err)
+		require.Equal(t, "fn (x: number) -> number", result)
+	})
+}
