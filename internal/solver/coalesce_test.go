@@ -962,3 +962,71 @@ func TestEqualTypeClassLifetimeArgs(t *testing.T) {
 		})
 	}
 }
+
+// TestBijectionRebindKeepsOneToOne pins the invariant bijection's doc comment states. A
+// rebind must drop the old pairing from both directions, so no name is left with a
+// reciprocal entry naming a partner it no longer has. A stale entry would make decide
+// report a mismatch by rule 2 against a binding that had already been replaced.
+func TestBijectionRebindKeepsOneToOne(t *testing.T) {
+	// probe asks whether sameByID reports left-side name a and right-side name b as
+	// corresponding. It goes through sameByID rather than decide so a pair decide leaves
+	// unsettled is resolved by id equality, the rule four of the five binder kinds use.
+	type probe struct {
+		a, b int
+		want bool
+	}
+
+	tests := []struct {
+		name   string
+		binds  [][2]int
+		probes []probe
+	}{
+		{
+			name:  "left name rebound to a new partner",
+			binds: [][2]int{{1, 10}, {1, 20}},
+			probes: []probe{
+				{1, 20, true},  // the current pairing holds
+				{1, 10, false}, // the replaced partner no longer matches
+				{5, 10, false}, // 10 is unbound now, so id equality decides and 5 != 10
+				{10, 10, true}, // the replaced partner is free again, so ids alone match it
+			},
+		},
+		{
+			name:  "right name rebound to a new left name",
+			binds: [][2]int{{1, 10}, {2, 10}},
+			probes: []probe{
+				{2, 10, true},  // the current pairing holds
+				{1, 10, false}, // 1 lost its partner and 10 is taken by 2
+				{1, 99, false}, // 1 is unbound now, so id equality decides and 1 != 99
+				{1, 1, true},   // 1 is free again, so ids alone match it
+			},
+		},
+		{
+			name:  "rebinding a pair to itself is idempotent",
+			binds: [][2]int{{1, 10}, {1, 10}},
+			probes: []probe{
+				{1, 10, true},  // the pairing survives being rebound to itself
+				{1, 11, false}, // and still rejects a different partner
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var p bijection
+			for _, bind := range tt.binds {
+				p.bind(bind[0], bind[1])
+			}
+
+			require.Equal(t, len(p.aToB), len(p.bToA), "the two directions must stay the same size")
+			for a, b := range p.aToB {
+				require.Contains(t, p.bToA, b)
+				require.Equal(t, a, p.bToA[b], "bToA must name the left side aToB came from")
+			}
+
+			for _, pr := range tt.probes {
+				require.Equal(t, pr.want, p.sameByID(pr.a, pr.b), "sameByID(%d, %d)", pr.a, pr.b)
+			}
+		})
+	}
+}
