@@ -780,7 +780,13 @@ them expressible at all under import-only resolution.
   owed from M2, so `resolveLitTypeAnn` reports both as unsupported.
 - `Parameters<F>` binds one `infer` name to a whole parameter list, which the pattern
   writes as a rest parameter. `resolveFuncTypeAnn` reports a rest parameter unsupported,
-  since checking its trailing arguments needs the real `Array<T>` from M7.5.
+  because `acceptSet` and `hasRest` assume it is last and the parser does not enforce that.
+  Lifting the rejection is not enough on its own. The match must gather the argument's
+  parameters into a tuple, and constrain's function arm walks only the positions the two
+  sides share. TypeScript reaches the tuple through a variadic-tuple inference rule with no
+  counterpart here. The `Array<T>` M7.5 lands is a different concern — it supplies the
+  element type a rest parameter checks its trailing *arguments* against at a call site, and
+  a pattern match over a written function type reads no element type.
 - `ConstructorParameters<C>` and `InstanceType<C>` match a `new (…)` member, which
   `objTypeAnnElemInner` does not parse. The printer already renders the form on a class's
   static side, so the gap is the annotation surface rather than the representation.

@@ -612,12 +612,27 @@ func TestUtilityTypeNonNullable(t *testing.T) {
 	*/
 }
 
-// DISABLED until M7.5. `Parameters<F>` binds one `infer` name to a function's whole parameter list,
-// which needs a rest parameter in the pattern. `resolveFuncTypeAnn` reports `Unsupported: rest
-// parameter in function type annotation` and recovers the parameter to a positional one, because
-// checking a rest parameter's trailing arguments needs `Array<T>` and M7.5 is where the real
-// `Array` lands. `ConstructorParameters<C>` waits on that plus a `new (…)` member in an object
-// type annotation, which `objTypeAnnElemInner` does not parse.
+// DISABLED until a rest parameter can be written in a function type annotation and an `infer`
+// clause in that position captures a tuple. Two separate pieces are missing.
+//
+// The annotation surface is the first. `resolveFuncTypeAnn` reports `Unsupported: rest parameter in
+// function type annotation` and recovers the parameter to a positional one, because `acceptSet` and
+// `hasRest` assume a rest parameter is last and the parser does not enforce that.
+//
+// The capture rule is the second, and lifting the rejection does not supply it. `Parameters<F>`
+// binds one `infer` name to the whole parameter list, so matching `fn (x: number, y: string) ->
+// boolean` has to gather both parameters into `[number, string]`. constrain's function arm walks
+// only the positions the two sides share and never collects the surplus ones, so the capture would
+// come out as a variable bounded by `number` rather than as a tuple. TypeScript reaches the tuple
+// through a variadic-tuple inference rule that has no counterpart here.
+//
+// The `Array<T>` that M7.5 lands is a different concern. It supplies the element type a typed rest
+// parameter checks its trailing *arguments* against at a call site, which is the deferral recorded
+// on `FuncParam.Rest` in internal/soltype/type.go. A pattern match over a written function type
+// reads no element type, so it needs no `Array`.
+//
+// `ConstructorParameters<C>` waits on both pieces plus a `new (…)` member in an object type
+// annotation, which `objTypeAnnElemInner` does not parse.
 //
 // Both also need the arity decision TestUtilityTypeReturnTypeIsAritySpecific describes, since a
 // rest parameter in the pattern widens its accept-set the same way the inexact marker does.
