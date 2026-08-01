@@ -970,38 +970,44 @@ func TestEqualTypeClassLifetimeArgs(t *testing.T) {
 func TestBijectionRebindKeepsOneToOne(t *testing.T) {
 	idEq := func(a, b int) func() bool { return func() bool { return a == b } }
 
+	// probe asks whether same reports left-side name a and right-side name b as
+	// corresponding, with id equality as the unbound rule.
+	type probe struct {
+		a, b int
+		want bool
+	}
+
 	tests := []struct {
-		name  string
-		binds [][2]int
-		// probes are (a, b, want) triples checked with id equality as the unbound rule.
-		probes [][3]int
+		name   string
+		binds  [][2]int
+		probes []probe
 	}{
 		{
 			name:  "left name rebound to a new partner",
 			binds: [][2]int{{1, 10}, {1, 20}},
-			probes: [][3]int{
-				{1, 20, 1}, // the current pairing holds
-				{1, 10, 0}, // the replaced partner no longer matches
-				{5, 10, 0}, // 10 is unbound now, so id equality decides and 5 != 10
-				{10, 10, 1},
+			probes: []probe{
+				{1, 20, true},  // the current pairing holds
+				{1, 10, false}, // the replaced partner no longer matches
+				{5, 10, false}, // 10 is unbound now, so id equality decides and 5 != 10
+				{10, 10, true}, // the replaced partner is free again, so ids alone match it
 			},
 		},
 		{
 			name:  "right name rebound to a new left name",
 			binds: [][2]int{{1, 10}, {2, 10}},
-			probes: [][3]int{
-				{2, 10, 1}, // the current pairing holds
-				{1, 10, 0}, // 1 lost its partner and 10 is taken by 2
-				{1, 99, 0}, // 1 is unbound now, so id equality decides and 1 != 99
-				{1, 1, 1},
+			probes: []probe{
+				{2, 10, true},  // the current pairing holds
+				{1, 10, false}, // 1 lost its partner and 10 is taken by 2
+				{1, 99, false}, // 1 is unbound now, so id equality decides and 1 != 99
+				{1, 1, true},   // 1 is free again, so ids alone match it
 			},
 		},
 		{
 			name:  "rebinding a pair to itself is idempotent",
 			binds: [][2]int{{1, 10}, {1, 10}},
-			probes: [][3]int{
-				{1, 10, 1},
-				{1, 11, 0},
+			probes: []probe{
+				{1, 10, true},  // the pairing survives being rebound to itself
+				{1, 11, false}, // and still rejects a different partner
 			},
 		},
 	}
@@ -1019,9 +1025,8 @@ func TestBijectionRebindKeepsOneToOne(t *testing.T) {
 				require.Equal(t, a, p.bToA[b], "bToA must name the left side aToB came from")
 			}
 
-			for _, probe := range tt.probes {
-				a, b, want := probe[0], probe[1], probe[2] == 1
-				require.Equal(t, want, p.same(a, b, idEq(a, b)), "same(%d, %d)", a, b)
+			for _, pr := range tt.probes {
+				require.Equal(t, pr.want, p.same(pr.a, pr.b, idEq(pr.a, pr.b)), "same(%d, %d)", pr.a, pr.b)
 			}
 		})
 	}
