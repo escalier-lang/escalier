@@ -99,13 +99,19 @@ func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {
 	self, selfChanged := acceptSelfParam(cur.SelfParam, v, pol) // receiver contravariant
 	params, changed := acceptParams(cur.Params, v, pol)         // params contravariant
 	ret := cur.Ret.Accept(v, pol)                               // return covariant
+	// The throws type is the exceptional exit, so it walks at the same polarity as the
+	// return. A nil Throws is the `never` shorthand and has nothing to walk.
+	throws := cur.Throws
+	if throws != nil {
+		throws = throws.Accept(v, pol)
+	}
 	out := cur
-	if tpChanged || selfChanged || changed || ret != cur.Ret {
+	if tpChanged || selfChanged || changed || ret != cur.Ret || throws != cur.Throws {
 		// LifetimeParams carry through unchanged here, because Accept never walks a
 		// lifetime. A lifetime-aware visitor freshens them in its EnterType, replacing
 		// the whole FuncType before this rebuild, so cur already holds the freshened
 		// params.
-		out = &FuncType{SelfParam: self, Params: params, Ret: ret, Inexact: cur.Inexact, TypeParams: tparams, LifetimeParams: cur.LifetimeParams}
+		out = &FuncType{SelfParam: self, Params: params, Ret: ret, Throws: throws, Inexact: cur.Inexact, TypeParams: tparams, LifetimeParams: cur.LifetimeParams}
 	}
 	return v.ExitType(out, pol)
 }

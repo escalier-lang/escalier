@@ -579,6 +579,7 @@ func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
 	return &soltype.FuncType{
 		Params:         sig.Params,
 		Ret:            sig.Ret,
+		Throws:         sig.Throws,
 		Inexact:        sig.Inexact,
 		TypeParams:     sig.TypeParams,
 		LifetimeParams: sig.LifetimeParams,

@@ -666,7 +666,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					errs = append(errs, c.constrain(unknownT, sub.Params[i].Type, seen, false)...)
 				}
 			}
-			return append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant
+			errs = append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant
+			// The throws clause is the exceptional exit, covariant like the return: a
+			// function that raises a narrower set may stand in for one that raises a wider
+			// set. A non-throwing sub carries `never`, which constrain short-circuits, so a
+			// function with no clause satisfies every super.
+			return append(errs, c.constrain(throwsOf(sub), throwsOf(sup), seen, false)...)
 		}
 	case *soltype.TupleType:
 		if tupleHasSpread(sub) || tupleHasSpread(super) {
@@ -1399,10 +1404,22 @@ func callableView(ft *soltype.FuncType) *soltype.FuncType {
 	return &soltype.FuncType{
 		Params:         ft.Params,
 		Ret:            ft.Ret,
+		Throws:         ft.Throws,
 		Inexact:        ft.Inexact,
 		TypeParams:     ft.TypeParams,
 		LifetimeParams: ft.LifetimeParams,
 	}
+}
+
+// throwsOf returns the type ft raises, collapsing the nil shorthand to the `never` it
+// stands for so a comparison never has to test for nil. constrain, equalType, and
+// compareType all read a function's throws through it, so a function written with no
+// clause and one written `throws never` behave identically everywhere.
+func throwsOf(ft *soltype.FuncType) soltype.Type {
+	if ft.Throws == nil {
+		return &soltype.NeverType{}
+	}
+	return ft.Throws
 }
 
 // skolemizeFuncBinder replaces ft's own type parameters with fresh skolems, so a term checked
@@ -1460,6 +1477,13 @@ func substFuncBinder(ft *soltype.FuncType, sub *typeSubst) *soltype.FuncType {
 		cp.Params[i] = &np
 	}
 	cp.Ret = ft.Ret.Accept(sub, soltype.Positive)
+	// The throws type is substituted at the same polarity as the return, so a `throws E`
+	// clause binds to the same fresh variable or skolem the parameter positions got. Miss
+	// this and `fn <E>(g: fn () -> R throws E) -> R throws E` would leave its own clause
+	// naming the unsubstituted binder, disconnected from the argument's throws.
+	if ft.Throws != nil {
+		cp.Throws = ft.Throws.Accept(sub, soltype.Positive)
+	}
 	if ft.SelfParam != nil {
 		ns := *ft.SelfParam
 		ns.Type = ft.SelfParam.Type.Accept(sub, soltype.Negative)

@@ -957,14 +957,25 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		p.expect(Arrow, ConsumeOnMatch)
 
 		retType := p.typeAnnRequired()
+		endSpan := retType.Span()
+
+		// A method, getter, or setter signature inside an object type declares what it
+		// raises the same way a standalone function type does: `{run(): number throws
+		// string}`.
+		var throwsType ast.TypeAnn
+		if p.lexer.peek().Type == Throws {
+			p.lexer.consume()
+			throwsType = p.typeAnnRequired()
+			endSpan = throwsType.Span()
+		}
 
 		fnTypeAnn := ast.NewFuncTypeAnn(
 			lifetimeParams,
 			typeParams,
 			params,
 			retType,
-			nil, // TODO: support throws clause
-			ast.MergeSpans(token.Span, retType.Span()),
+			throwsType,
+			ast.MergeSpans(token.Span, endSpan),
 		)
 
 		// nolint: exhaustive

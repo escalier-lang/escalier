@@ -123,6 +123,35 @@ func TestAcceptCopyOnWrite(t *testing.T) {
 	require.True(t, got.Inexact, "the FuncType keeps its Inexact marker")
 }
 
+// The throws type walks at the same polarity as the return, since both describe an exit
+// the function produces, and a rewrite of it forces a fresh parent the same way a
+// rewritten return does. A nil Throws is the `never` shorthand with nothing to walk.
+func TestAcceptFuncThrows(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	str := &PrimType{Prim: StrPrim}
+	a := &TypeVarType{ID: 1}
+	b := &TypeVarType{ID: 2}
+
+	// fn (x: a) -> num throws b, walked from Positive.
+	fn := &FuncType{
+		Params: []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: a}},
+		Ret:    num,
+		Throws: b,
+	}
+	r := &recorder{seen: map[Type]Polarity{}}
+	fn.Accept(r, Positive)
+	require.Equal(t, Negative, r.seen[a], "a parameter is contravariant")
+	require.Equal(t, Positive, r.seen[b], "the throws type is covariant, like the return")
+
+	got := fn.Accept(&replaceVar{target: b, repl: str}, Positive).(*FuncType)
+	require.NotSame(t, fn, got, "a changed throws forces a new parent")
+	require.Same(t, str, got.Throws, "the changed throws took the replacement")
+	require.Same(t, num, got.Ret, "the unchanged return keeps its pointer")
+
+	noThrows := &FuncType{Ret: num}
+	require.Same(t, noThrows, noThrows.Accept(identityVisitor{}, Positive), "a nil throws walks nothing")
+}
+
 // recordEntered logs every node EnterType reaches, replacing target with repl and
 // SKIPPING its children — so a skipped subtree is never entered.
 type recordEntered struct {

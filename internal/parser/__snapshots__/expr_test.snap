@@ -3799,3 +3799,52 @@
     span: 1:1-1:8,
 }
 ---
+
+[TestParseExprNoErrors/FuncExprWithThrowsAndNoReturnType - 1]
+&ast.FuncExpr{
+    FuncSig: ast.FuncSig{
+        Params: []*ast.Param{
+            &ast.Param{
+                Pattern: &ast.IdentPat{
+                    Name: "a",
+                    span: 1:5-1:6,
+                },
+            },
+            &ast.Param{
+                Pattern: &ast.IdentPat{
+                    Name: "b",
+                    span: 1:8-1:9,
+                },
+            },
+        },
+        Throws: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Error",
+                span: 1:18-1:23,
+            },
+            span: 1:18-1:23,
+        },
+    },
+    Body: &ast.Block{
+        Stmts: []ast.Stmt{
+            &ast.ExprStmt{
+                Expr: &ast.BinaryExpr{
+                    Left: &ast.IdentExpr{
+                        Name: "a",
+                        span: 1:26-1:27,
+                    },
+                    Op: "+",
+                    Right: &ast.IdentExpr{
+                        Name: "b",
+                        span: 1:30-1:31,
+                    },
+                    span: 1:26-1:31,
+                },
+                span: 1:26-1:31,
+            },
+        },
+        Span: 1:24-1:33,
+    },
+    span: 1:1-1:33,
+}
+---

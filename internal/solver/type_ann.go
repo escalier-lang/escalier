@@ -753,9 +753,6 @@ func (c *checker) typeofMember(recv soltype.Type, name string) (soltype.Type, bo
 // `<T>` list resolves through resolveTypeParams into a child scope, so a parameter, return,
 // or union member that names `T` reads the annotation's own quantified var.
 func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
-	if ta.Throws != nil {
-		c.reportUnsupportedFeature(ta, "throws clause in function type annotation")
-	}
 	// A function type annotation is its own quantifier scope, so give it its own
 	// named-lifetime map the way inferFunc does for a function body. Without this a
 	// nested `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing
@@ -816,7 +813,17 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 		}
 	}
 
-	t := &soltype.FuncType{Params: params, Ret: ret, Inexact: ta.Inexact, TypeParams: typeParams}
+	// An absent `throws` clause leaves Throws nil, which reads as `never`: the annotation
+	// promises the function raises nothing. An unsupported clause recovers the same way,
+	// after resolveTypeAnn has reported it.
+	var throws soltype.Type
+	if ta.Throws != nil {
+		if t, ok := c.resolveTypeAnn(annScope, ta.Throws, lvl); ok {
+			throws = t
+		}
+	}
+
+	t := &soltype.FuncType{Params: params, Ret: ret, Throws: throws, Inexact: ta.Inexact, TypeParams: typeParams}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }

@@ -114,6 +114,9 @@ func TestParseExprNoErrors(t *testing.T) {
 		"FuncExprWithThrows": {
 			input: "fn (a, b) -> number throws Error { a + b }",
 		},
+		"FuncExprWithThrowsAndNoReturnType": {
+			input: "fn (a, b) throws Error { a + b }",
+		},
 		"FuncExprReturnIfElse": {
 			input: `fn (value: string) { return if value != "" { value } else { "value is empty" } }`,
 		},

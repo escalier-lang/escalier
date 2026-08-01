@@ -427,6 +427,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 				walk(p.Type)
 			}
 			walk(t.Ret)
+			if t.Throws != nil {
+				walk(t.Throws)
+			}
 		case *TupleType:
 			for _, e := range t.Elems {
 				walk(e)
@@ -1059,7 +1062,30 @@ func (p *namedPrinter) printFuncBody(t *FuncType) string {
 	if t.Inexact {
 		ps = append(ps, "...")
 	}
-	return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
+	tail := "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
+	// A `throws T` clause renders after the return type, matching the surface syntax.
+	// A function that raises nothing carries either a nil Throws or `never`, and neither
+	// renders a clause, so `fn () -> number` stays the common form.
+	if !isNeverThrows(t.Throws) {
+		// The clause is last, and the enclosing form supplies whatever delimiter follows it,
+		// so the thrown type prints with no minimum precedence. This matches the return
+		// type, which is greedy for the same reason. A whole function nested in a union is
+		// already parenthesized by typePrec's precFunc.
+		tail += " throws " + p.printType(t.Throws)
+	}
+	return tail
+}
+
+// isNeverThrows reports whether t names the empty set of raised values, so a function
+// carrying it needs no `throws` clause. Both spellings count: nil is the shorthand a
+// FuncType minted without a clause carries, and NeverType is what an explicit `throws
+// never` and a coalesced throws variable with no lower bounds produce.
+func isNeverThrows(t Type) bool {
+	if t == nil {
+		return true
+	}
+	_, never := t.(*NeverType)
+	return never
 }
 
 // nameTypeParams registers each type parameter's binding variable under its source name

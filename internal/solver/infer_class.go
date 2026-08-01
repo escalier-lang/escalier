@@ -526,13 +526,15 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 // stub); SelfParam lives on the element and is not compared here.
 func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
-		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Inexact: ft.Inexact}
+		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
 	}
 	c.constrain(node, callable(bodyFt), callable(stub))
 }
 
 // memberSigStub builds a member's signature stub: one fresh var per value parameter,
-// preserving arity, parameter names, and optionality, plus a fresh return var.
+// preserving arity, parameter names, and optionality, plus a fresh return var and a
+// fresh throws var. A sibling call reads the stub before the body pass runs, so the
+// throws var is what lets a method that raises reach its callers within the same class.
 func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
@@ -549,7 +551,12 @@ func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 			Optional: p.Optional,
 		}
 	}
-	return &soltype.FuncType{Params: params, Ret: c.freshAt(lvl), Inexact: fn.FuncSig.Inexact}
+	return &soltype.FuncType{
+		Params:  params,
+		Ret:     c.freshAt(lvl),
+		Throws:  c.freshAt(lvl),
+		Inexact: fn.FuncSig.Inexact,
+	}
 }
 
 // targetBody selects the static or instance body for a member.

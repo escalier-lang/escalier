@@ -2333,3 +2333,60 @@
     },
 }
 ---
+
+[TestParseTypeAnnNoErrors/ObjectMethodWithThrows - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.MethodTypeAnn{
+            Name: &ast.IdentExpr{
+                Name: "parse",
+                span: 1:2-1:7,
+            },
+            Fn: &ast.FuncTypeAnn{
+                Return: &ast.NumberTypeAnn{
+                    span: 1:17-1:23,
+                },
+                Throws: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "SyntaxError",
+                        span: 1:31-1:42,
+                    },
+                    span: 1:31-1:42,
+                },
+                span: 1:7-1:42,
+            },
+            Receiver: &ast.MethodReceiver{
+                Span_: 1:8-1:12,
+            },
+        },
+    },
+    span: 1:1-1:43,
+}
+---
+
+[TestParseTypeAnnNoErrors/FuncWithThrows - 1]
+&ast.FuncTypeAnn{
+    Params: []*ast.Param{
+        &ast.Param{
+            Pattern: &ast.IdentPat{
+                Name: "x",
+                span: 1:4-1:5,
+            },
+            TypeAnn: &ast.NumberTypeAnn{
+                span: 1:7-1:13,
+            },
+        },
+    },
+    Return: &ast.BooleanTypeAnn{
+        span: 1:18-1:25,
+    },
+    Throws: &ast.TypeRefTypeAnn{
+        Name: &ast.Ident{
+            Name: "Error",
+            span: 1:33-1:38,
+        },
+        span: 1:33-1:38,
+    },
+    span: 1:1-1:38,
+}
+---

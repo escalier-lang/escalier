@@ -1246,7 +1246,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 				return false
 			}
 		}
-		return equalTypeWith(a.Ret, b.Ret, ctx)
+		if !equalTypeWith(a.Ret, b.Ret, ctx) {
+			return false
+		}
+		// throwsOf reads both sides through the nil-is-never collapse, so a function
+		// written with no clause equals one written `throws never`.
+		return equalTypeWith(throwsOf(a), throwsOf(b), ctx)
 	case *soltype.TupleType:
 		b, ok := b.(*soltype.TupleType)
 		// Inexact flags must be equal — an open tuple never equals a closed one,

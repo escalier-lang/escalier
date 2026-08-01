@@ -226,10 +226,17 @@ type FuncParam struct {
 // is `&mut Self`. The printer reads that shape back to the shorthand, and the
 // receiver's borrow and lifetime flow through the visitor the same way a
 // parameter's do. Pattern names the receiver, always the `self` identifier.
+// Throws is the type a call to the function may raise, the twin of Ret for the
+// exceptional exit. It is covariant, so a function that throws less is a subtype of one
+// that throws more. A nil Throws means the function raises nothing and reads as `never`,
+// the bottom of the lattice, so the zero value is non-throwing and every FuncType minted
+// without thinking about exceptions is correct. `never` written out explicitly means the
+// same thing, and the solver's throwsOf collapses the two before comparing them.
 type FuncType struct {
 	SelfParam *FuncParam // nil ⇒ static method or plain function; non-nil ⇒ instance method
 	Params    []*FuncParam
 	Ret       Type
+	Throws    Type // nil ⇒ raises nothing, equivalent to `never`
 	Inexact   bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
 	// TypeParams are the function's own quantified type parameters; nil is monomorphic and
 	// a class-level parameter is captured, not listed. LevelOf skips them, being minted deeper.
@@ -1112,7 +1119,11 @@ func LevelOf(t Type) int {
 		for _, p := range t.Params {
 			m = max(m, LevelOf(p.Type))
 		}
-		return max(m, LevelOf(t.Ret))
+		m = max(m, LevelOf(t.Ret))
+		if t.Throws != nil {
+			m = max(m, LevelOf(t.Throws))
+		}
+		return m
 	case *TupleType:
 		m := 0
 		for _, e := range t.Elems {

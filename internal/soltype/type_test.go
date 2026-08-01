@@ -56,6 +56,23 @@ func TestLevelOf(t *testing.T) {
 			want: 0,
 		},
 		{
+			name: "function: the throws type counts too",
+			ty: &FuncType{
+				Params: []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: num}},
+				Ret:    num,
+				Throws: v5,
+			},
+			want: 5,
+		},
+		{
+			name: "function: a nil throws contributes nothing",
+			ty: &FuncType{
+				Params: []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: v2}},
+				Ret:    num,
+			},
+			want: 2,
+		},
+		{
 			name: "tuple: max over elements",
 			ty:   &TupleType{Elems: []Type{num, v2, v5}},
 			want: 5,
