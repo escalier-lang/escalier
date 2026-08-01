@@ -154,6 +154,8 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		return e.reduceTemplateLit(t)
 	case *soltype.StringIntrinsicType:
 		return e.reduceStringIntrinsic(t.Kind, t.Operand)
+	case *soltype.ExactnessType:
+		return e.reduceExactness(t.Kind, t.Operand)
 	default:
 		return t
 	}
@@ -234,6 +236,13 @@ func (e *typeEvaluator) reduceBranch(branch soltype.Type) soltype.Type {
 //
 // Each member reduces through a copy of the conditional with Distribute cleared: the member is no
 // longer a union, and clearing it states that this pass already applied the rule.
+//
+// An inexact Check union names only some of its members. The rest sit in a tail of unknown type.
+// `unknown : Extends` is undecidable for every Extends other than `unknown` itself, so which branch
+// those members select cannot be worked out. The result union keeps the tail, which stands for
+// whatever those undecided members contribute. Over `"a" | "b" | ...`, the alias
+// `type Wrap<T> = if T : string { "yes" } else { "no" }` therefore reduces to `"yes" | ...`
+// (exact-types §7.4.3).
 func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.UnionType) soltype.Type {
 	parts := make([]soltype.Type, len(check.Types))
 	for i, member := range check.Types {
@@ -244,7 +253,7 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 			Else:    substituteOccurrences(t.Else, t.Check, member),
 		})
 	}
-	return newUnion(nil, parts, false)
+	return newUnion(nil, parts, check.Inexact)
 }
 
 // substituteOccurrences rewrites every occurrence of the from type inside in to the to type,
@@ -946,10 +955,11 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, inexact bool) soltype.
 		// would raise goes unreported, as in `keyof keyof {a: number}["z"]`, where the unknown key
 		// is never reached. The result is `never` either way.
 		return &soltype.NeverType{}
-	case *soltype.IndexType, *soltype.CondType:
-		// The operand is itself an operator — an indexed access or a conditional. Reduce it first,
-		// then take keyof its value, so a ground conditional operand selects its branch and
-		// `keyof` projects that branch's keys. If the inner operator stays symbolic because its own
+	case *soltype.IndexType, *soltype.CondType, *soltype.ExactnessType:
+		// The operand is itself an operator — an indexed access, a conditional, or an
+		// `Exact`/`Inexact`. Reduce it first, then take keyof its value, so a ground conditional
+		// operand selects its branch and `keyof` projects that branch's keys, and a ground
+		// `Exact<T>` closes T's key set. If the inner operator stays symbolic because its own
 		// operands are not ground, wrap it as `keyof <inner>` rather than re-reducing the same shape
 		// forever. A mapped member arrives inside an ObjectType, so the ObjectType arm below covers
 		// it: grounding the object emits the member's fields and `keyof` projects their names.
@@ -1090,12 +1100,16 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 // deviates from TypeScript, whose keyof of a tuple also includes "length" and the other
 // Array.prototype members. Those are inherited rather than own keys, so Escalier omits them.
 // TODO: decide how keyof should account for inherited prototype members once interop is designed.
+//
+// An inexact tuple has unknown trailing positions, so its index set is open the same way an inexact
+// object's key set is. `keyof [number, string, ...]` reduces to `0 | 1 | ...`, where the tail stands
+// for the indices those unknown positions occupy (exact-types §7.1).
 func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 	keys := make([]soltype.Type, 0, len(tup.Elems))
 	for i := range tup.Elems {
 		keys = append(keys, &soltype.LitType{Lit: &soltype.NumLit{Value: float64(i)}})
 	}
-	return newUnion(nil, keys, false)
+	return newUnion(nil, keys, tup.Inexact)
 }
 
 // keyofUnion intersects the keys of a union operand's members. A value typed `A | B` is either
@@ -1198,6 +1212,10 @@ func intersectTypes(a, b []soltype.Type) []soltype.Type {
 
 // keyofIntersection unions the keys of each member of an intersection operand: `keyof (A & B)`
 // reduces to `keyof A | keyof B`, since an intersection carries the members of all its operands.
+//
+// Exactness needs no seed here. An inexact member reduces to an inexact key union, and newUnion
+// carries a member union's marker out to the union it splices that member into. So
+// `keyof ({a: number} & {b: string, ...})` reduces to `"a" | "b" | ...` on its own.
 func (e *typeEvaluator) keyofIntersection(members []soltype.Type, inexact bool) soltype.Type {
 	parts := make([]soltype.Type, len(members))
 	for i, m := range members {
@@ -1229,12 +1247,17 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 	idx := e.reduce(index)
 	// A union index distributes member-wise. `T[keyof T]` rides this once `keyof T` reduces to
 	// its `"a" | "b"` key union, so the access yields the union of the members' value types.
+	//
+	// An inexact key union names keys the access cannot enumerate. Each key it does not name holds
+	// a value the result does not list, so the result union is open too (exact-types §7.3). This is
+	// what carries an inexact object's openness into `T[keyof T]`. Over `type Obj = {a: number, ...}`,
+	// `keyof Obj` reduces to `"a" | ...` and `Obj[keyof Obj]` to `number | ...`.
 	if u, ok := idx.(*soltype.UnionType); ok {
 		parts := make([]soltype.Type, len(u.Types))
 		for i, m := range u.Types {
 			parts[i] = e.reduceIndex(target, m, inexact)
 		}
-		return newUnion(nil, parts, false)
+		return newUnion(nil, parts, u.Inexact)
 	}
 	switch tgt := target.(type) {
 	case *soltype.AliasType:
@@ -1242,13 +1265,14 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 	case *soltype.TypeofType:
 		// `(typeof x)[K]` resolves the query to the value's type, then indexes that type.
 		return e.reduceIndex(tgt.Ty, idx, inexact)
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType:
-		// The target is itself an operator — a `keyof`, an indexed access, or a conditional. Reduce
-		// it first, then index its value, so a ground conditional target selects its branch and the
-		// access reduces over that. When the target stays symbolic because its own operands are not
-		// ground, keep the access wrapped around the reduced target rather than re-reducing the same
-		// shape forever. A mapped member arrives inside an ObjectType, which grounds through the
-		// object path before the access reads one of its emitted fields.
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType, *soltype.ExactnessType:
+		// The target is itself an operator — a `keyof`, an indexed access, a conditional, or an
+		// `Exact`/`Inexact`. Reduce it first, then index its value, so a ground conditional target
+		// selects its branch and the access reduces over that. When the target stays symbolic
+		// because its own operands are not ground, keep the access wrapped around the reduced
+		// target rather than re-reducing the same shape forever. A mapped member arrives inside an
+		// ObjectType, which grounds through the object path before the access reads one of its
+		// emitted fields.
 		inner := e.reduce(target)
 		if isResidualOp(inner) {
 			return &soltype.IndexType{Target: inner, Index: idx, Inexact: inexact}
@@ -1280,11 +1304,14 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 		// operand. A union value is one of its members, so every member must carry K — a member
 		// lacking it records its own absence diagnostic through reduceIndex. Each member indexes
 		// with the same reduced key.
+		//
+		// An inexact target union has unlisted members, and the value each holds at K is not among
+		// the ones the access read, so the result union is open too (exact-types §7.6).
 		parts := make([]soltype.Type, len(tgt.Types))
 		for i, m := range tgt.Types {
 			parts[i] = e.reduceIndex(m, idx, inexact)
 		}
-		return newUnion(nil, parts, false)
+		return newUnion(nil, parts, tgt.Inexact)
 	case *soltype.IntersectionType:
 		return e.reduceIndexIntersection(tgt, idx, inexact)
 	default:
@@ -1437,12 +1464,18 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 // operator the evaluator could not ground — keeps that interpolation and stays a `TemplateLitType`,
 // so the whole template reduces later once the interpolation grounds. A product that would exceed
 // maxTemplateLitCombinations is rejected with a diagnostic rather than materialized.
+//
+// The result is exact only when every interpolation is, since an interpolation that names an open
+// set of choices produces an open set of strings (exact-types §5.6). `on${"a" | "b"}` reduces to
+// the exact `"ona" | "onb"`, while `on${"a" | "b" | ...}` reduces to `"ona" | "onb" | ...`.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
 	interpChoices := make([][]soltype.Type, len(t.Interps))
 	combinations := 1
+	openChoices := false
 	for i, interp := range t.Interps {
 		reduced := e.groundOperand(interp)
 		if u, ok := reduced.(*soltype.UnionType); ok {
+			openChoices = openChoices || u.Inexact
 			// Ground each union member too, so a reducible member — an alias to a literal, or a
 			// nested operator such as `keyof O` — collapses to its string literal before the product
 			// rather than surviving as a residual interpolation.
@@ -1467,7 +1500,7 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 	for _, combo := range combos {
 		parts = append(parts, foldTemplatePart(t.Quasis, combo))
 	}
-	return newUnion(nil, parts, false)
+	return newUnion(nil, parts, openChoices)
 }
 
 // foldTemplatePart folds one cartesian-product combination into a single template result. It
@@ -1551,6 +1584,9 @@ func stringifyLit(t soltype.Type) (string, bool) {
 // first grounded, so a named alias expands to its body. An operand that is not a string literal,
 // such as a type parameter, keeps the operator symbolic as a `StringIntrinsicType` rebuilt around the
 // grounded operand.
+//
+// An inexact operand union names strings the transform never sees, so the result union is open too:
+// `Uppercase<"a" | "b" | ...>` reduces to `"A" | "B" | ...`.
 func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, operand soltype.Type) soltype.Type {
 	reduced := e.groundOperand(operand)
 	switch op := reduced.(type) {
@@ -1559,13 +1595,83 @@ func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, 
 		for i, m := range op.Types {
 			parts[i] = e.reduceStringIntrinsic(kind, m)
 		}
-		return newUnion(nil, parts, false)
+		return newUnion(nil, parts, op.Inexact)
 	case *soltype.LitType:
 		if s, ok := op.Lit.(*soltype.StrLit); ok {
 			return strLitType(applyStringIntrinsic(kind, s.Value))
 		}
 	}
 	return &soltype.StringIntrinsicType{Kind: kind, Operand: reduced}
+}
+
+// reduceExactness reduces `Exact<T>` and `Inexact<T>` by rewriting the trailing `...` marker on the
+// grounded operand, so `Inexact<{x: number}>` reduces to `{x: number, ...}` and
+// `Exact<{x: number, ...}>` back to `{x: number}` (exact-types §6.1, §6.2). Grounding first expands
+// a named alias to its body. A type with no marker to rewrite reduces to itself, and an operand
+// that never grounds keeps the operator symbolic.
+func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand soltype.Type) soltype.Type {
+	reduced := e.groundOperand(operand)
+	inexact := kind == soltype.MakeInexact
+	switch op := reduced.(type) {
+	case *soltype.ObjectType:
+		// An object still carrying a `...A` spread or a `[K]: V for K in Keys` member has no final
+		// member list, so its own exactness is not settled yet and the operator stays symbolic.
+		if soltype.HasResidualElem(op.Elems) {
+			break
+		}
+		return &soltype.ObjectType{Elems: op.Elems, Inexact: inexact}
+	case *soltype.TupleType:
+		// A tuple still carrying a `...P` spread has no final element list, mirroring the object arm.
+		if hasRestSpread(op.Elems) {
+			break
+		}
+		return &soltype.TupleType{Elems: op.Elems, Inexact: inexact}
+	case *soltype.FuncType:
+		rewritten := *op
+		rewritten.Inexact = inexact
+		return &rewritten
+	case *soltype.UnionType:
+		// newUnion rather than a direct rebuild, so clearing the marker on a one-member union
+		// collapses it to that member: `Exact<"only" | ...>` reduces to `"only"`.
+		return newUnion(nil, op.Types, inexact)
+	case *soltype.IntersectionType:
+		// An intersection's exactness is its members', so the operator reaches each of them (§7.7).
+		parts := make([]soltype.Type, len(op.Types))
+		for i, m := range op.Types {
+			parts[i] = e.reduceExactness(kind, m)
+		}
+		return newIntersection(nil, parts)
+	case *soltype.RefType:
+		// Mutability is orthogonal to exactness and `mut T` carries T's, so the operator reaches the
+		// pointee (§7.11).
+		reducedInner := e.reduceExactness(kind, op.Inner)
+		if _, errored := reducedInner.(*soltype.ErrorType); errored {
+			// The pointee's own reduction reported a diagnostic and returned the error sentinel, as
+			// `Exact<&mut C>` over a non-final C does. A borrow of an errored pointee is errored too.
+			// The sentinel absorbs in both directions under constrain, so the pointee's diagnostic is
+			// the only one a constraint site sees. Staying symbolic here would drop that diagnostic,
+			// since a reduction that ends on a residual reports none, and the site would blame the
+			// residual instead of naming the class that is not final.
+			return reducedInner
+		}
+		pointee, ok := reducedInner.(soltype.RefInner)
+		if !ok {
+			// The pointee stayed symbolic, so the operator over the borrow has no answer either.
+			break
+		}
+		return &soltype.RefType{Mut: op.Mut, Lt: op.Lt, Inner: pointee}
+	case *soltype.ClassType:
+		if kind == soltype.MakeExact && !op.Final {
+			e.errs = append(e.errs, &ExactNonFinalClassError{Class: op})
+			return &soltype.ErrorType{}
+		}
+		return op
+	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType,
+		*soltype.Void, *soltype.NullType, *soltype.UndefinedType, *soltype.PromiseType,
+		*soltype.ErrorType:
+		return reduced
+	}
+	return &soltype.ExactnessType{Kind: kind, Operand: reduced}
 }
 
 // applyStringIntrinsic transforms one string by the named intrinsic operator. Uppercase and Lowercase
@@ -1619,13 +1725,15 @@ func mappedKeyName(t soltype.Type) (string, bool) {
 
 // isResidualOp reports whether t is an unreduced type-level operator at its top level. That is a
 // `keyof`, an indexed access, a conditional, a `...P` tuple-spread element, a template literal whose
-// interpolation stayed abstract, an intrinsic string operator over an abstract operand, or an object
-// carrying a mapped member whose key set never ground. The evaluator consults it to stop re-reducing
-// an operand whose reduction stayed symbolic.
+// interpolation stayed abstract, an intrinsic string operator over an abstract operand, an
+// `Exact`/`Inexact` operator over an abstract operand, or an object carrying a mapped member whose
+// key set never ground. The evaluator consults it to stop re-reducing an operand whose reduction
+// stayed symbolic.
 func isResidualOp(t soltype.Type) bool {
 	switch t.(type) {
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType,
-		*soltype.RestSpreadType, *soltype.TemplateLitType, *soltype.StringIntrinsicType:
+		*soltype.RestSpreadType, *soltype.TemplateLitType, *soltype.StringIntrinsicType,
+		*soltype.ExactnessType:
 		return true
 	}
 	return objectHasMapped(t)

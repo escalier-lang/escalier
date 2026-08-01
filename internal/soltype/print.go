@@ -73,9 +73,9 @@ func typePrec(t Type) int {
 		// A template literal is backtick-delimited, so like an object or a `Name<args>` reference
 		// it is an atom that never needs outer parens.
 		return precAtom
-	case *StringIntrinsicType:
-		// `Uppercase<T>` renders as a name with an argument list, the same atom shape a class or
-		// alias reference takes, so it never needs outer parens.
+	case *StringIntrinsicType, *ExactnessType:
+		// `Uppercase<T>` and `Exact<T>` render as a name with an argument list, the same atom shape
+		// a class or alias reference takes, so neither needs outer parens.
 		return precAtom
 	default:
 		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
@@ -490,6 +490,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			}
 		case *StringIntrinsicType:
 			walk(t.Operand)
+		case *ExactnessType:
+			walk(t.Operand)
 		case *RecursiveType:
 			walk(t.Body)
 		case *PromiseType:
@@ -683,6 +685,11 @@ func (p *namedPrinter) printType(t Type) string {
 		// `Uppercase<T>` and its three siblings render under the operator's name with the operand as
 		// the sole argument, so `Capitalize<K>` round-trips. The operand prints with no minimum since
 		// the `<…>` brackets stop anything from binding across it.
+		return t.Kind.String() + "<" + p.printType(t.Operand) + ">"
+	case *ExactnessType:
+		// `Exact<T>` and `Inexact<T>` render under the operator's name with the operand as the sole
+		// argument, so the annotation round-trips. The operand prints with no minimum since the
+		// `<…>` brackets stop anything from binding across it.
 		return t.Kind.String() + "<" + p.printType(t.Operand) + ">"
 	case *ObjectType:
 		elems := make([]string, 0, len(t.Elems)+1)
