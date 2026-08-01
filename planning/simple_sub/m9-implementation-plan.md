@@ -1605,7 +1605,7 @@ PR1a ✅ #914 (residual-node representation + inert plumbing)
       ├─► PR5 ✅ #920 (object spread types)
       ├─► PR6 ✅ #918 (tuple spread types)
       ├─► PR7 ✅ #924 (template literal types + intrinsics)
-      └─► PR8 (exactness propagation + Exact/Inexact)  ── needs PR1b–PR7
+      └─► PR8 ✅ #953 (exactness propagation + Exact/Inexact)  ── needs PR1b–PR7
 
 PR9c ✅ #944 (path-scoped seen-set, #942)  ── needs nothing; the seen-set landed in M7 PR3
 
@@ -1636,10 +1636,10 @@ to intersect the members' key sets, and #937 capped total alias expansion with a
 monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
 PR4's mapped types.
 
-Everything still open is PR8, PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR14, PR15,
-PR16, and Track F's PR17 through PR20. PR8 is partly seeded — #922 threads an object's
-exactness through `keyof` — but the rest of the operators and the `Exact` / `Inexact`
-intrinsics are untouched.
+Everything still open is PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR14, PR15, PR16, and
+Track F's PR17 through PR20. PR8 landed in two steps: #922 threaded an object's exactness
+through `keyof`, and #953 carried it through the remaining operators and added the
+`Exact` / `Inexact` intrinsics.
 
 The same graph in mermaid, with the operator-track critical path
 (PR1a → PR1b → PR3a → PR3b → PR4 → PR8) highlighted, merged PRs outlined in green,
@@ -1658,7 +1658,7 @@ graph TD
     PR5["PR5 ✅ #920 (object spread types)"]
     PR6["PR6 ✅ #918 (tuple spread types)"]
     PR7["PR7 ✅ #924 (template literal types + intrinsics)"]
-    PR8["PR8 (exactness propagation + Exact/Inexact)"]
+    PR8["PR8 ✅ #953 (exactness propagation + Exact/Inexact)"]
     PR9["PR9 ✅ #940 (CheckRegular static check)"]
     PR9b["PR9b ✅ #941 (productivity + coinductive comparison)"]
     PR9c["PR9c ✅ #944 (path-scoped seen-set, #942)"]
@@ -1735,7 +1735,7 @@ graph TD
     style PR3a fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
     style PR3b fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
     style PR4 fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
-    style PR8 fill:#e06666,stroke:#333,color:#fff
+    style PR8 fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
     style PR2 stroke:#2e7d32,stroke-width:4px
     style PR5 stroke:#2e7d32,stroke-width:4px
     style PR6 stroke:#2e7d32,stroke-width:4px
