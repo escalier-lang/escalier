@@ -1244,8 +1244,9 @@ tests it re-enables. `InstanceType<C>` needs only steps 1 and 3 when its pattern
 written at a fixed arity, so that half could land without PR14 if the two are
 sequenced apart.
 
-**Leaves one utility disabled.** After this PR `NonNullable<T>` is the only member of
-the suite still unexpressible. PR16 covers it.
+**Completes the suite.** `NonNullable<T>` landed with PR16 and `Parameters<F>` with PR14,
+so `ConstructorParameters<C>` and `InstanceType<C>` are the last two disabled and this PR
+enables both.
 
 ### PR16 — `null` and `undefined` + `NonNullable<T>`
 
@@ -1335,7 +1336,8 @@ is M10.
 **Depends on** PR3b for the distributive conditional and PR13 for the corpus and the
 disabled test it re-enables. Independent of PR14 and PR15.
 
-**Completes the suite.** With this PR every utility PR13 lists reduces.
+**Leaves two utilities disabled.** `ConstructorParameters<C>` and `InstanceType<C>` both
+match a `new (…)` member, which PR15 adds. Every other utility PR13 lists reduces.
 
 ### The generic-parameter checking group (PR17–PR20)
 
@@ -1645,7 +1647,7 @@ PR10 (throws clause)                       ── needs M3 only; parallel to eve
 PR13 ✅ #954 (TS utility-type suite)        ── needs PR2, PR3b, PR4, PR7, PR12
  ├─► PR14 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
  │    └─► PR15 (new (…) members in obj type anns + ConstructorParameters<C>)
- └─► PR16 (null + undefined + NonNullable<T>)            ── also needs PR3b
+ └─► PR16 ✅ #960 (null + undefined + NonNullable<T>)     ── also needs PR3b
 
 PR17 (default names only an earlier param) ── needs M7 only
  └─► PR18 (class type-param defaults + arity at a type reference)
@@ -1661,9 +1663,9 @@ to intersect the members' key sets, and #937 capped total alias expansion with a
 monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
 PR4's mapped types.
 
-Everything still open is PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR14, PR15, PR16, and
-Track F's PR17 through PR20. PR8 landed in two steps: #922 threaded an object's exactness
-through `keyof`, and #953 carried it through the remaining operators and added the
+Everything still open is PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR14, PR15, and Track F's
+PR17 through PR20. PR8 landed in two steps: #922 threaded an object's exactness through
+`keyof`, and #953 carried it through the remaining operators and added the
 `Exact` / `Inexact` intrinsics.
 
 The same graph in mermaid, with the operator-track critical path
@@ -1700,7 +1702,7 @@ graph TD
     PR13["PR13 ✅ #954 (TS utility-type suite)"]
     PR14["PR14 (rest params in fn type anns + Parameters<F>)"]
     PR15["PR15 (new (…) in obj type anns + ConstructorParameters<C>)"]
-    PR16["PR16 (null + undefined + NonNullable<T>)"]
+    PR16["PR16 ✅ #960 (null + undefined + NonNullable<T>)"]
     PR17["PR17 (default names only an earlier param)"]
     PR18["PR18 (class type-param defaults + arity at a type reference)"]
     PR19["PR19 (class type-argument bound checking)"]
@@ -1771,6 +1773,7 @@ graph TD
     style PR9e stroke:#2e7d32,stroke-width:4px
     style PR12 stroke:#2e7d32,stroke-width:4px
     style PR13 stroke:#2e7d32,stroke-width:4px
+    style PR16 stroke:#2e7d32,stroke-width:4px
 ```
 
 ### Parallelism
