@@ -788,7 +788,7 @@ them expressible at all under import-only resolution.
   static side, so the gap is the annotation surface rather than the representation. PR15
   below covers it.
 
-**`ReturnType<F>` reduces for one arity at a time.** TypeScript's definition matches a
+**`ReturnType<F>` matches one arity at a time.** TypeScript's definition matches a
 function of any arity through a rest parameter. Escalier's accept-set rule decides `sub <:
 super` by containment over the argument counts each side tolerates, and two exact function
 types have single-point accept-sets, so containment forces equal arity. Widening the pattern
@@ -796,6 +796,12 @@ does not help, because a rest parameter or the inexact `fn (...)` marker lifts i
 bound to infinity, which a fixed-arity argument then fails to contain. So the arity-agnostic
 definition needs a decision about how a conditional's `Check <: Extends` probe treats arity.
 PR14 makes that decision and unlocks both utilities together.
+
+The corpus bounds the parameter, `type ReturnType<F: fn () -> unknown> = …`, so an argument
+of any other shape is rejected at the reference rather than reduced through the Else branch.
+`unknown` is the only bound that admits every nullary function, since a function type's
+return is covariant, and it reaches annotation position through the `UnknownTypeAnn` arm this
+PR adds. Bound enforcement on alias arguments landed in #956.
 
 **Depends on** PR2, PR3b, PR4, PR7, PR12. Verifies the whole operator suite
 composes.
@@ -875,9 +881,9 @@ widening such an element with `undefined` and rejecting the match, and record wh
 **Wiring.** Re-enable `TestUtilityTypeParameters`'s `Parameters<F>` cases in
 [utility_types_test.go](../../internal/solver/utility_types_test.go) and move the
 definition into `utilityTypeDecls`. Rewrite `ReturnType<F>` there to the
-arity-agnostic `if F : fn (...args: infer P) -> infer R { R } else { never }`, and
-replace `TestUtilityTypeReturnTypeIsAritySpecific` with the cases it currently
-records as not reducing.
+arity-agnostic `if F : fn (...args: infer P) -> infer R { R } else { never }`, widen its
+bound from `fn () -> unknown` to whatever shape the arity decision settles on, and replace
+`TestUtilityTypeReturnTypeIsAritySpecific` with the cases it currently records as rejected.
 
 **Accept.** `Parameters<fn (x: number, y: string) -> boolean>` ⇒ `[number, string]`;
 `Parameters<fn () -> boolean>` ⇒ `[]`; `Parameters<number>` ⇒ `never`.

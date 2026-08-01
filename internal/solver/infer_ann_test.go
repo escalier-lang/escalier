@@ -438,3 +438,56 @@ func TestInferMutObjectAnnotation(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: mut {x: number}) -> number", values["f"])
 }
+
+// `unknown` in annotation position resolves to the top of the lattice. Every type is a subtype of
+// it through constrain's `_ <: unknown` rule, so an annotated binding accepts any initializer and
+// renders as `unknown`. It is the counterpart of the `never` annotation at the other end of the
+// lattice, and the bound that admits every type at a position whose value is never read.
+func TestInferUnknownAnnotation(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AcceptsPrimitive",
+			src:  `val u: unknown = 5`,
+			want: "unknown",
+		},
+		{
+			name: "AcceptsObject",
+			src:  `val u: unknown = {a: 1}`,
+			want: "unknown",
+		},
+		{
+			name: "AcceptsFunction",
+			src:  `val u: unknown = fn () { return 1 }`,
+			want: "unknown",
+		},
+		{
+			// A nested position resolves the same way, so `unknown` composes rather than being
+			// special-cased at the top of an annotation.
+			name: "NestedInObject",
+			src:  `val u: {a: unknown} = {a: "s"}`,
+			want: "{a: unknown}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["u"])
+		})
+	}
+}
+
+// Two `unknown` annotations in one module each resolve without tripping the provenance table.
+// soltype.UnknownType has no fields, so Go gives every instance one address, and Prov is keyed by
+// pointer identity — recording against it would file both under a single entry and panic the
+// debugProv guard on the second. The arm skips recording for that reason, the same as `never`.
+func TestInferUnknownAnnotationTwiceInOneModule(t *testing.T) {
+	values, _, errs := inferSource(t, "val u: unknown = 1\nval v: unknown = \"s\"")
+	require.Empty(t, errs)
+	require.Equal(t, "unknown", values["u"])
+	require.Equal(t, "unknown", values["v"])
+}

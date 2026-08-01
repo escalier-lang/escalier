@@ -31,6 +31,16 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		// panic on the second. A caller that needs a span for a rejected `never` falls back to the
 		// constraint site.
 		return &soltype.NeverType{}, true
+	case *ast.UnknownTypeAnn:
+		// `unknown` is the top of the lattice. Every type is a subtype of it through
+		// constrain's `_ <: unknown` rule, so it is the bound that admits any type at a
+		// position whose value is never read, as `fn () -> unknown` does in a type
+		// parameter's constraint.
+		//
+		// No provenance is recorded, for the reason the NeverTypeAnn arm above gives:
+		// soltype.UnknownType has no fields, so every `&soltype.UnknownType{}` shares one
+		// address and the pointer-keyed Prov table cannot tell two of them apart.
+		return &soltype.UnknownType{}, true
 	case *ast.LitTypeAnn:
 		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:
