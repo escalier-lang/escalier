@@ -280,6 +280,20 @@ type NoIndexSignatureError struct {
 	site   ast.Node
 }
 
+// ExactNonFinalClassError fires when `Exact<C>` names a class that is not declared `final`. A
+// non-final class can be subclassed. A subclass instance carries members the class does not declare,
+// so the class's instance type admits keys nothing at the use site can rule out. Escalier fixes a
+// class's exactness where the class is declared, so no use-site form closes an open instance type
+// (exact-types §2.6.2). The fix is to declare the class `final`.
+//
+// It is minted during reduction, once the operand has grounded to a class. `Exact<T>` over a type
+// parameter stays symbolic and reports nothing.
+type ExactNonFinalClassError struct {
+	Class *soltype.ClassType
+	prov  NodeResolver
+	site  ast.Node
+}
+
 // MutabilityMismatchError fires on RefType <: RefType when the sub is an immutable
 // borrow but the super is mutable: writing through the mutable target would mutate a
 // value the source only lent out as read-only, so an immutable reference cannot fill
@@ -472,6 +486,7 @@ func (*TemplateLitTooComplexError) isSolverError()   {}
 func (*RequiredUncountableKeysError) isSolverError() {}
 func (*IndexSignatureKeyError) isSolverError()       {}
 func (*NoIndexSignatureError) isSolverError()        {}
+func (*ExactNonFinalClassError) isSolverError()      {}
 func (*MutabilityMismatchError) isSolverError()      {}
 func (*BorrowEscapeError) isSolverError()            {}
 func (*ClassIntoExactObjectError) isSolverError()    {}
@@ -602,6 +617,13 @@ func (e *NoIndexSignatureError) Span() ast.Span {
 	return spanOf(e.prov, e.Object, e.site)
 }
 func (e *NoIndexSignatureError) Related() []ast.Span { return nil }
+
+func (e *ExactNonFinalClassError) Span() ast.Span {
+	// The class reference is the operand the source wrote a span for. Blame it, else the
+	// constraint site.
+	return spanOf(e.prov, e.Class, e.site)
+}
+func (e *ExactNonFinalClassError) Related() []ast.Span { return nil }
 
 func (e *MutabilityMismatchError) Span() ast.Span {
 	// The immutable source borrow is the actual value; blame it, degrade to the
@@ -1818,6 +1840,13 @@ func (e *NoIndexSignatureError) Message() string {
 		soltype.Print(e.Object), describe(e.Index))
 }
 
+func (e *ExactNonFinalClassError) Message() string {
+	name := soltype.Print(e.Class)
+	return fmt.Sprintf("class %s is not final, so a subclass instance may carry members %s does not "+
+		"declare and Exact<%s> cannot close it; declare %s as `final` instead",
+		name, name, name, name)
+}
+
 func (e *TemplateLitTooComplexError) Message() string {
 	return fmt.Sprintf("template literal type %s is too complex to reduce; it expands to more than %d members",
 		soltype.Print(e.Template), maxTemplateLitCombinations)
@@ -2103,6 +2132,10 @@ func describe(t soltype.Type) string {
 	case *soltype.StringIntrinsicType:
 		// An intrinsic string-operator residual renders `Uppercase<operand>` structurally, recursing
 		// like the keyof arm. The operand renders in describe's raw mid-constrain form.
+		return t.Kind.String() + "<" + describe(t.Operand) + ">"
+	case *soltype.ExactnessType:
+		// An exactness residual renders `Exact<operand>` structurally, recursing like the keyof arm.
+		// The operand renders in describe's raw mid-constrain form.
 		return t.Kind.String() + "<" + describe(t.Operand) + ">"
 	case *soltype.RecursiveType:
 		// A μ-knot renders `μX0.<body>`, recursing like the keyof arm, so a rejected constraint over

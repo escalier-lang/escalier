@@ -969,6 +969,41 @@ type StringIntrinsicType struct {
 	Operand Type
 }
 
+// ExactnessKind names the two exactness intrinsics. `Exact<T>` closes a type's trailing `...` marker
+// and `Inexact<T>` opens it. exact-types §6.1 and §6.2 specify the pair.
+type ExactnessKind int
+
+const (
+	MakeExact ExactnessKind = iota
+	MakeInexact
+)
+
+// String renders the operator's surface name, used by the printer to render `Exact<T>` and by the
+// resolver to register the two intrinsics under their reference names.
+func (k ExactnessKind) String() string {
+	switch k {
+	case MakeExact:
+		return "Exact"
+	case MakeInexact:
+		return "Inexact"
+	}
+	panic(fmt.Sprintf("ExactnessKind.String: unhandled kind %d", int(k)))
+}
+
+// ExactnessType is the residual `Exact<T>` or `Inexact<T>` operator. Like KeyofType it is inert: it
+// carries no bounds, constrain never records one against it, and it flows through the solver's
+// structural machinery untouched, rendering `Exact<T>` the way the source wrote it.
+//
+// An evaluator reduces it once its operand grounds to a type carrying a trailing `...` marker. An
+// object, a tuple, a function, and a union each carry one. `Inexact` sets that marker and `Exact`
+// clears it, so `Inexact<{x: number}>` reduces to `{x: number, ...}`. An operand with no such
+// marker, a primitive or a literal, reduces to itself. An abstract operand such as a type parameter
+// stays symbolic.
+type ExactnessType struct {
+	Kind    ExactnessKind
+	Operand Type
+}
+
 // RecursiveType is the μ-knot, the finite form of a type whose unfolding never ends. Body is one
 // level of that unfolding and Binder is the variable Body names itself through, so `μX0.{next: X0}`
 // is the type of a value whose `next` field holds another value of the same type. Unfolding it
@@ -1019,6 +1054,7 @@ func (*MappedKeyType) isType()       {}
 func (*RestSpreadType) isType()      {}
 func (*TemplateLitType) isType()     {}
 func (*StringIntrinsicType) isType() {}
+func (*ExactnessType) isType()       {}
 func (*RecursiveType) isType()       {}
 func (*RecursiveVarType) isType()    {}
 func (*PrimType) isType()            {}
@@ -1132,6 +1168,10 @@ func LevelOf(t Type) int {
 	case *StringIntrinsicType:
 		// A string-intrinsic residual's level is its operand's, the same single-child rule the
 		// KeyofType arm follows.
+		return LevelOf(t.Operand)
+	case *ExactnessType:
+		// An `Exact<T>` residual's level is its operand's, the same single-child rule the KeyofType
+		// arm follows.
 		return LevelOf(t.Operand)
 	case *RecursiveType:
 		// A μ-knot's level is its body's, the same single-child rule the KeyofType arm follows, so a

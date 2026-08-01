@@ -82,6 +82,9 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		if t, ok := c.resolveStringIntrinsic(scope, ta, lvl); ok {
 			return t, true
 		}
+		if t, ok := c.resolveExactnessIntrinsic(scope, ta, lvl); ok {
+			return t, true
+		}
 		return c.reportUnsupported(ta), false
 	case *ast.ObjectTypeAnn:
 		return c.resolveObjectTypeAnn(scope, ta, lvl)
@@ -625,15 +628,57 @@ var stringIntrinsics = map[string]soltype.StringIntrinsicKind{
 // name or arity reports ok=false so the caller falls through to its unsupported-feature recovery. An
 // unsupported operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
 func (c *checker) resolveStringIntrinsic(scope *Scope, ta *ast.TypeRefTypeAnn, lvl int) (soltype.Type, bool) {
-	kind, ok := stringIntrinsics[ast.QualIdentToString(ta.Name)]
-	if !ok || len(ta.TypeArgs) != 1 || len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
+	kind, named := stringIntrinsics[ast.QualIdentToString(ta.Name)]
+	if !named {
+		return nil, false
+	}
+	operand, ok := c.unaryIntrinsicOperand(scope, ta, lvl)
+	if !ok {
+		return nil, false
+	}
+	t := &soltype.StringIntrinsicType{Kind: kind, Operand: operand}
+	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// unaryIntrinsicOperand resolves the sole type argument of a one-argument intrinsic reference such
+// as `Uppercase<T>` or `Exact<T>`. ok=false means the reference is not the one-argument form those
+// intrinsics take, because its arity is not one or it carries a lifetime argument. The caller then
+// reports no match, and its own caller falls through to the unsupported-feature recovery. An
+// unsupported operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
+func (c *checker) unaryIntrinsicOperand(scope *Scope, ta *ast.TypeRefTypeAnn, lvl int) (soltype.Type, bool) {
+	if len(ta.TypeArgs) != 1 || len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
 		return nil, false
 	}
 	operand, ok := c.resolveTypeAnn(scope, ta.TypeArgs[0], lvl)
 	if !ok {
 		operand = c.freshAt(lvl)
 	}
-	t := &soltype.StringIntrinsicType{Kind: kind, Operand: operand}
+	return operand, true
+}
+
+// exactnessIntrinsics maps each exactness operator's reference name to its kind, so an `Exact<T>`
+// reference resolves to an ExactnessType residual. A user-defined type of the same name takes
+// precedence, since resolveScopedTypeRef runs first.
+var exactnessIntrinsics = map[string]soltype.ExactnessKind{
+	"Exact":   soltype.MakeExact,
+	"Inexact": soltype.MakeInexact,
+}
+
+// resolveExactnessIntrinsic lowers an `Exact<T>` or `Inexact<T>` reference to an ExactnessType
+// residual, stored unreduced so the annotation prints the way the source wrote it. It matches only a
+// single-argument reference with no lifetime arguments; any other name or arity reports ok=false so
+// the caller falls through to its unsupported-feature recovery.
+func (c *checker) resolveExactnessIntrinsic(scope *Scope, ta *ast.TypeRefTypeAnn, lvl int) (soltype.Type, bool) {
+	kind, named := exactnessIntrinsics[ast.QualIdentToString(ta.Name)]
+	if !named {
+		return nil, false
+	}
+	operand, ok := c.unaryIntrinsicOperand(scope, ta, lvl)
+	if !ok {
+		return nil, false
+	}
+	t := &soltype.ExactnessType{Kind: kind, Operand: operand}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }

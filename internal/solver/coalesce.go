@@ -1415,6 +1415,11 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// KeyofType arm.
 		b, ok := b.(*soltype.StringIntrinsicType)
 		return ok && a.Kind == b.Kind && equalTypeWith(a.Operand, b.Operand, ctx)
+	case *soltype.ExactnessType:
+		// Two exactness residuals are equal when they name the same operator over equal operands,
+		// compared structurally without reducing, the single-child analogue of the KeyofType arm.
+		b, ok := b.(*soltype.ExactnessType)
+		return ok && a.Kind == b.Kind && equalTypeWith(a.Operand, b.Operand, ctx)
 	}
 	return false
 }

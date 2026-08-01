@@ -234,7 +234,7 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 	case *soltype.RecursiveType:
 		return unfoldRecursive(t), nil, true
 	case *soltype.KeyofType, *soltype.IndexType, *soltype.CondType,
-		*soltype.TemplateLitType, *soltype.StringIntrinsicType:
+		*soltype.TemplateLitType, *soltype.StringIntrinsicType, *soltype.ExactnessType:
 		return c.reduceResidual(t, seen)
 	case *soltype.TupleType:
 		if !tupleHasSpread(t) {
@@ -999,12 +999,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if _, ok := super.(*soltype.UndefinedType); ok {
 			return nil
 		}
-	case *soltype.KeyofType, *soltype.IndexType, *soltype.TemplateLitType, *soltype.StringIntrinsicType:
+	case *soltype.KeyofType, *soltype.IndexType, *soltype.TemplateLitType, *soltype.StringIntrinsicType,
+		*soltype.ExactnessType:
 		// A residual type-level operator the pre-switch could not ground reaches here: a `keyof T`,
-		// `T[K]`, `on${T}`, or `Uppercase<T>` over a type parameter, or an expanding recursive
-		// alias. constrain treats every such operator inert, neither decomposing nor reducing it, so
-		// two residuals are compatible only when structurally identical. A reflexive `keyof T <: keyof
-		// T` succeeds without recording any bound, and a residual against any other concrete fails.
+		// `T[K]`, `on${T}`, `Uppercase<T>`, or `Exact<T>` over a type parameter, or an expanding
+		// recursive alias. constrain treats every such operator inert, neither decomposing nor
+		// reducing it, so two residuals are compatible only when structurally identical. A reflexive
+		// `keyof T <: keyof T` succeeds without recording any bound, and a residual against any
+		// other concrete fails.
 		// When super is a variable the case falls through to the superVar arm below, which records the
 		// whole residual as one lower bound, keeping the operator symbolic on the coalesced binding. A
 		// tuple carrying a `...P` spread is handled inertly in the TupleType arm above, the spread
