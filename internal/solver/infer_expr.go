@@ -297,11 +297,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 
 	// A `throws T` clause is resolved before the body is walked, because it is the sink
 	// every `throw` and every call in the body checks against. Resolving it up front is
-	// what makes a mismatch blame the throw or the call rather than the whole function,
-	// and it is why the declared type reaches the function's Throws whether or not the
-	// body raises anything. `throws _` puts a fresh variable there instead, so the clause
-	// asks for inference rather than fixing a type. An unsupported clause was already
-	// reported by resolveTypeAnn and recovers as no clause at all.
+	// what makes a mismatch blame the throw or the call rather than the whole function.
+	// It is also why the declared type reaches the function's Throws whether or not the
+	// body raises anything. Writing `throws _` puts a fresh variable there instead, so
+	// the clause asks for inference rather than fixing a type. An unsupported clause was
+	// already reported by resolveTypeAnn and recovers as no clause at all.
 	var declaredThrows soltype.Type
 	if sig.Throws != nil {
 		if annT, ok := c.resolveTypeAnn(declScope, sig.Throws, lvl); ok {
@@ -311,9 +311,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 
 	var ret soltype.Type = &soltype.Void{}
 	var retExprs []ast.Expr
-	// throws is what a caller sees on the exceptional edge: the declared type when the
-	// signature has a clause, otherwise whatever the body's exits reached. Nil means the
-	// function raises nothing.
+	// throws is what a caller sees on the exceptional edge. A bodyless `declare fn` has
+	// only its clause. A body-carrying function reads the sink back once the body is
+	// walked, which is the declared type when there was a clause and the inferred variable
+	// when there was not. Nil means the function raises nothing.
 	throws := declaredThrows
 	hasBody := body != nil
 	if hasBody {
@@ -343,9 +344,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// it reads this body's move and use state off c.fn.
 		c.checkUseAfterMoves()
 		retExprs = c.fn.returnExprs
-		if throws == nil {
-			throws = c.inferredThrows()
-		}
+		throws = c.fn.throws
 		collected := c.popFuncCtx(saved)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `void` a fall-through body
@@ -377,7 +376,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	//
 	// Throws is untouched by either arm. An `async fn` that throws really rejects its
 	// promise rather than raising to its caller, so the thrown type belongs in the
-	// promise's rejection slot, and `soltype.PromiseType` carries only a fulfilment type.
+	// promise's rejection slot. `soltype.PromiseType` carries only a fulfilment type.
 	// Until it carries a rejection type too, an async function keeps what it raises on
 	// its own Throws, which is the information the body supplied.
 	if sig.Async {
@@ -1264,11 +1263,11 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// required(callee) <= N <= upper(callee). If callShape were INEXACT instead,
 	// its accept-set would widen to [N, ∞), demanding upper(callee) = ∞ and thus
 	// rejecting every call to a fixed-arity (exact) function.
-	// The shape's Throws slot is the enclosing body's throws variable, so constrain's
-	// covariant throws rule records whatever the callee raises as a lower bound of it and
-	// the exception propagates to this body's own `throws` clause. A non-throwing callee
+	// The shape's Throws slot is the enclosing body's throws sink, so constrain's
+	// covariant throws rule records whatever the callee raises into that sink and the
+	// exception propagates to this body's own `throws` clause. A non-throwing callee
 	// carries `never`, which constrain short-circuits, so an ordinary call records
-	// nothing and the variable stays empty.
+	// nothing.
 	callShape := &soltype.FuncType{Params: demand, Ret: res, Throws: c.throwsSink(lvl)}
 	// Record the synthesized call-shape against the CallExpr so a FuncArityMismatchError
 	// — now only from a DEFERRED callee's too-few (or a callback-arity failure), since
@@ -2414,9 +2413,9 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 
 // inferThrow types `throw e`. The thrown value's type is constrained into the enclosing
 // body's throws sink, so it reaches the function's `throws` clause the way a `return`
-// reaches its return type. The expression itself is `never`: control
-// leaves along the exceptional edge, so `throw` yields no value and composes anywhere a
-// value is expected, as in `return if ok { v } else { throw Error("no value") }`.
+// reaches its return type. The expression itself is `never`, because control leaves
+// along the exceptional edge and no value is produced. That lets a `throw` sit anywhere
+// a value is expected, as in `return if ok { v } else { throw Error("no value") }`.
 func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Type {
 	arg := c.inferExpr(scope, lvl, e.Arg)
 	c.constrain(e, arg, c.throwsSink(lvl))
@@ -2431,12 +2430,12 @@ func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Ty
 // branch as a lower bound, so the result coalesces to the union of the branches
 // that can actually produce a value.
 //
-// Diverging branches contribute `never`: a branch that always exits before its tail,
+// Diverging branches contribute `never`. A branch that always exits before its tail,
 // through a trailing `return` or `throw`, can never be the path that yields the if's
-// value, so it drops out of the branch union entirely rather than leaking its
-// operand. `val x = if c { return 1 } else { "y" }` is `"y"`, not `1 | "y"`, and
-// when both branches diverge the if's value coalesces to `never`. blockDiverges
-// decides which branches those are.
+// value, so it drops out of the branch union rather than leaking its operand.
+// `val x = if c { return 1 } else { "y" }` is `"y"`, not `1 | "y"`, and when both
+// branches diverge the if's value coalesces to `never`. blockDiverges decides which
+// branches those are.
 //
 // Block return-point interaction: any ReturnStmt inside either branch is still
 // collected on the enclosing function's funcCtx by inferStmt — independent of the

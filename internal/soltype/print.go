@@ -1063,27 +1063,23 @@ func (p *namedPrinter) printFuncBody(t *FuncType) string {
 		ps = append(ps, "...")
 	}
 	tail := "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
-	// A `throws T` clause renders after the return type, matching the surface syntax.
-	// A function that raises nothing carries either a nil Throws or `never`, and neither
-	// renders a clause, so `fn () -> number` stays the common form.
-	if !isNeverThrows(t.Throws) {
-		// The clause is last, and the enclosing form supplies whatever delimiter follows it,
-		// so the thrown type prints with no minimum precedence. This matches the return
-		// type, which is greedy for the same reason. A whole function nested in a union is
-		// already parenthesized by typePrec's precFunc.
-		tail += " throws " + p.printType(t.Throws)
+	// A `throws T` clause renders after the return type, matching the surface syntax. A
+	// function that raises nothing resolves to `never` and renders no clause, so
+	// `fn () -> number` stays the common form. That covers a coalesced throws variable
+	// nothing reached as well as a FuncType minted with no clause at all.
+	//
+	// The clause is last, and the enclosing form supplies whatever delimiter follows it,
+	// so the thrown type prints with no minimum precedence. This matches the return type,
+	// which is greedy for the same reason. A whole function nested in a union is already
+	// parenthesized by typePrec's precFunc.
+	if throws := t.ThrowsOrNever(); !isNever(throws) {
+		tail += " throws " + p.printType(throws)
 	}
 	return tail
 }
 
-// isNeverThrows reports whether t names the empty set of raised values, so a function
-// carrying it needs no `throws` clause. Both spellings count: nil is the shorthand a
-// FuncType minted without a clause carries, and NeverType is what an explicit `throws
-// never` and a coalesced throws variable with no lower bounds produce.
-func isNeverThrows(t Type) bool {
-	if t == nil {
-		return true
-	}
+// isNever reports whether t is the `never` type.
+func isNever(t Type) bool {
 	_, never := t.(*NeverType)
 	return never
 }

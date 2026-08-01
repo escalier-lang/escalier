@@ -671,7 +671,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// function that raises a narrower set may stand in for one that raises a wider
 			// set. A non-throwing sub carries `never`, which constrain short-circuits, so a
 			// function with no clause satisfies every super.
-			return append(errs, c.constrain(throwsOf(sub), throwsOf(sup), seen, false)...)
+			return append(errs, c.constrain(sub.ThrowsOrNever(), sup.ThrowsOrNever(), seen, false)...)
 		}
 	case *soltype.TupleType:
 		if tupleHasSpread(sub) || tupleHasSpread(super) {
@@ -1409,17 +1409,6 @@ func callableView(ft *soltype.FuncType) *soltype.FuncType {
 		TypeParams:     ft.TypeParams,
 		LifetimeParams: ft.LifetimeParams,
 	}
-}
-
-// throwsOf returns the type ft raises, collapsing the nil shorthand to the `never` it
-// stands for so a comparison never has to test for nil. constrain, equalType, and
-// compareType all read a function's throws through it, so a function written with no
-// clause and one written `throws never` behave identically everywhere.
-func throwsOf(ft *soltype.FuncType) soltype.Type {
-	if ft.Throws == nil {
-		return &soltype.NeverType{}
-	}
-	return ft.Throws
 }
 
 // skolemizeFuncBinder replaces ft's own type parameters with fresh skolems, so a term checked

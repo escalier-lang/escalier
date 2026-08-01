@@ -691,24 +691,18 @@ func (p *Parser) parseConstructorElem(
 	// `throws` may appear in either order relative to `->` (the arrow form
 	// is itself an error). Accept whichever comes first; if both appear we
 	// keep the first one and discard the second.
+	throwsType := p.throwsClause()
 	next = p.lexer.peek()
-	var throwsType ast.TypeAnn
-	if next.Type == Throws {
-		p.lexer.consume()
-		throwsType = p.typeAnn()
-		next = p.lexer.peek()
-	}
 	if next.Type == Arrow {
 		p.reportError(next.Span, "constructors cannot declare a return type")
 		p.lexer.consume()
 		_ = p.typeAnn()
-		next = p.lexer.peek()
-		// A `throws` after `->` is also tolerated, but we already errored.
-		if next.Type == Throws && throwsType == nil {
-			p.lexer.consume()
-			throwsType = p.typeAnn()
-			next = p.lexer.peek()
+		// A `throws` after `->` is also tolerated, but we already errored. A second one
+		// after a clause we already read is left unconsumed, so the first wins.
+		if throwsType == nil {
+			throwsType = p.throwsClause()
 		}
+		next = p.lexer.peek()
 	}
 
 	var body *ast.Block
@@ -840,11 +834,8 @@ modifiers_done:
 			next = p.lexer.peek()
 		}
 
-		if next.Type == Throws {
-			p.lexer.consume()
-			throwsType = p.typeAnn()
-			next = p.lexer.peek()
-		}
+		throwsType = p.throwsClause()
+		next = p.lexer.peek()
 
 		// Optionally parse block
 		if next.Type == OpenBrace {
@@ -948,12 +939,7 @@ modifiers_done:
 			returnType = p.typeAnn()
 		}
 
-		var throwsType ast.TypeAnn
-		next = p.lexer.peek()
-		if next.Type == Throws {
-			p.lexer.consume()
-			throwsType = p.typeAnn()
-		}
+		throwsType := p.throwsClause()
 
 		// Optionally parse block
 		var body *ast.Block
@@ -1161,7 +1147,6 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 	end := token.Span.End
 
 	var returnType ast.TypeAnn
-	var throwsType ast.TypeAnn
 	token = p.lexer.peek()
 	if token.Type == Arrow {
 		p.lexer.consume()
@@ -1175,19 +1160,9 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		}
 	}
 
-	// The throws clause is parsed outside the arrow branch, so a function that lets its
-	// return type be inferred can still declare what it raises: `fn f() throws string
-	// { … }`. Methods, getters, and constructors already parse the two independently.
-	token = p.lexer.peek()
-	if token.Type == Throws {
-		p.lexer.consume()
-		throwsTypeAnn := p.typeAnn()
-		if throwsTypeAnn == nil {
-			p.reportError(token.Span, "Expected type annotation after 'throws'")
-		} else {
-			throwsType = throwsTypeAnn
-			end = throwsType.Span().End
-		}
+	throwsType := p.throwsClause()
+	if throwsType != nil {
+		end = throwsType.Span().End
 	}
 
 	// A `declare fn` has no body, so leave it nil. Only a non-declare function parses a

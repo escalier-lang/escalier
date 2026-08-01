@@ -468,6 +468,11 @@ func (c *checker) buildMemberSigs(
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			stub := c.memberSigStub(lvl, elem.Fn)
+			// A getter projects to the type its read yields, so `soltype.GetterElem` holds a
+			// bare Type and has nowhere to record a `throws` clause the source wrote. A
+			// throwing getter therefore reads as non-throwing. Recording it would first
+			// require deciding what a property read that can raise means at the access site,
+			// which no milestone has designed. A setter's write has the same gap.
 			getter := &soltype.GetterElem{Name: name, SelfParam: c.selfParam(elem.Receiver, elem.Static, self), Type: stub.Ret}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, getter)
@@ -532,9 +537,10 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 }
 
 // memberSigStub builds a member's signature stub: one fresh var per value parameter,
-// preserving arity, parameter names, and optionality, plus a fresh return var and a
-// fresh throws var. A sibling call reads the stub before the body pass runs, so the
-// throws var is what lets a method that raises reach its callers within the same class.
+// preserving arity, parameter names, and optionality, plus a fresh return var and a fresh
+// throws var. A sibling call reads the stub before the body pass installs the real
+// signature, so the throws var is what carries a raising method's throws to a caller
+// inside the same class.
 func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {

@@ -39,6 +39,24 @@ func (p *Parser) typeAnnRequired() ast.TypeAnn {
 	return typeAnn
 }
 
+// throwsClause parses an optional `throws T` clause and returns T, or nil when the next
+// token is not `throws`. It is independent of the `-> R` return annotation, so a function
+// that lets its return type be inferred can still declare what it raises, as in
+// `fn f() throws string { … }`. A `throws` with no type after it is reported and yields
+// nil, so the caller keeps the rest of the signature.
+func (p *Parser) throwsClause() ast.TypeAnn {
+	token := p.lexer.peek()
+	if token.Type != Throws {
+		return nil
+	}
+	p.lexer.consume()
+	throwsType := p.typeAnn()
+	if throwsType == nil {
+		p.reportError(token.Span, "Expected type annotation after 'throws'")
+	}
+	return throwsType
+}
+
 func (p *Parser) typeAnn() ast.TypeAnn {
 	typeAnns := NewStack[ast.TypeAnn]()
 	ops := NewStack[*TypeAnnOp]()
@@ -960,12 +978,10 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		endSpan := retType.Span()
 
 		// A method, getter, or setter signature inside an object type declares what it
-		// raises the same way a standalone function type does: `{run(): number throws
-		// string}`.
-		var throwsType ast.TypeAnn
-		if p.lexer.peek().Type == Throws {
-			p.lexer.consume()
-			throwsType = p.typeAnnRequired()
+		// raises the same way a standalone function type does, as in
+		// `{parse(self) -> number throws SyntaxError}`.
+		throwsType := p.throwsClause()
+		if throwsType != nil {
 			endSpan = throwsType.Span()
 		}
 

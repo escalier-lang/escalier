@@ -439,9 +439,9 @@ func compareSameKind(a, b soltype.Type) int {
 		if c := compareType(a.Ret, b.Ret); c != 0 {
 			return c
 		}
-		// throwsOf reads both sides through the nil-is-never collapse, so two functions
+		// ThrowsOrNever reads both sides through the nil-is-never collapse, so two functions
 		// differing only in whether the clause was written compare equal here.
-		return compareType(throwsOf(a), throwsOf(b))
+		return compareType(a.ThrowsOrNever(), b.ThrowsOrNever())
 	case *soltype.UnionType:
 		b := b.(*soltype.UnionType)
 		if a.Inexact != b.Inexact {

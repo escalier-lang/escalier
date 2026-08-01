@@ -557,7 +557,6 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	p.expect(CloseParen, ConsumeOnMatch)
 
 	var returnType ast.TypeAnn
-	var throwsType ast.TypeAnn
 	token := p.lexer.peek()
 	if token.Type == Arrow {
 		p.lexer.consume()
@@ -569,19 +568,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 		returnType = typeAnn
 	}
 
-	// The throws clause is parsed outside the arrow branch, so a function that lets its
-	// return type be inferred can still declare what it raises: `fn () throws string
-	// { … }`. Methods, getters, and constructors already parse the two independently.
-	token = p.lexer.peek()
-	if token.Type == Throws {
-		p.lexer.consume()
-		throwsTypeAnn := p.typeAnn()
-		if throwsTypeAnn == nil {
-			p.reportError(token.Span, "Expected type annotation after 'throws'")
-		} else {
-			throwsType = throwsTypeAnn
-		}
-	}
+	throwsType := p.throwsClause()
 
 	body := p.block()
 	end := body.Span.End

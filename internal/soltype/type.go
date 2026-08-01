@@ -231,7 +231,7 @@ type FuncParam struct {
 // that throws more. A nil Throws means the function raises nothing and reads as `never`,
 // the bottom of the lattice, so the zero value is non-throwing and every FuncType minted
 // without thinking about exceptions is correct. `never` written out explicitly means the
-// same thing, and the solver's throwsOf collapses the two before comparing them.
+// same thing, and ThrowsOrNever collapses the two so no reader has to tell them apart.
 type FuncType struct {
 	SelfParam *FuncParam // nil ⇒ static method or plain function; non-nil ⇒ instance method
 	Params    []*FuncParam
@@ -244,6 +244,17 @@ type FuncType struct {
 	// LifetimeParams are the function's quantified lifetime parameters, the twin of TypeParams;
 	// LevelOf skips them too, though a body lifetime still counts through its RefType.
 	LifetimeParams []*LifetimeParam
+}
+
+// ThrowsOrNever returns the type a call to t may raise, resolving the nil shorthand to
+// the `never` it stands for. Every reader of the throws position goes through it, so a
+// function written with no clause and one written `throws never` behave identically in
+// subtyping, equality, ordering, and printing, and no caller has to test for nil.
+func (t *FuncType) ThrowsOrNever() Type {
+	if t.Throws == nil {
+		return &NeverType{}
+	}
+	return t.Throws
 }
 
 // TypeParam is one quantified type parameter, shared by FuncType.TypeParams for

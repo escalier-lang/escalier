@@ -146,6 +146,60 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 		require.Empty(t, errs)
 		require.Equal(t, "fn (cb: fn () -> number throws string) -> number throws string", values["f"])
 	})
+	t.Run("ThrowsPropagateThroughACallChain", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			fn a() throws string { throw "boom" }
+			fn b() { a() }
+			fn c() { b() }
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn () -> void throws string", values["c"])
+	})
+	t.Run("ClosureKeepsItsOwnThrows", func(t *testing.T) {
+		// `inner` raises, but `outer` only builds and returns it, so `outer` raises nothing.
+		values, _, errs := inferSource(t, `
+			fn a() throws string { throw "boom" }
+			fn outer() {
+				val inner = fn () { a() }
+				return inner
+			}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn () -> fn () -> void throws string", values["outer"])
+	})
+	t.Run("BodylessDeclareFnDeclaresThrows", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			declare fn a() -> number throws string
+			fn f() { return a() }
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn () -> number throws string", values["f"])
+	})
+}
+
+// Overload resolution picks one arm, so only that arm's throws reaches the caller. A set
+// whose other arms raise contributes nothing to a call that matched a non-throwing one.
+func TestInferThrowsThroughOverloadResolution(t *testing.T) {
+	src := `
+		fn a(x: number) -> number throws string { throw "boom" }
+		fn a(x: string) -> string { return x }
+		fn callsThrowingArm() { return a(1) }
+		fn callsQuietArm() { return a("s") }
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> number throws string", values["callsThrowingArm"])
+	require.Equal(t, "fn () -> string", values["callsQuietArm"])
+}
+
+// A `throws E` clause is an output position, so a body that pins `E` to a concrete type
+// over-promises exactly as a body pinning a declared return type does.
+func TestInferThrowsTypeParamMustBeProducible(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f<E>() throws E { throw "boom" }`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		"1:1-1:36: the body forces type parameter `E` to `\"boom\"`, so it cannot stand for an arbitrary type",
+		msgWithSpan(errs[0]))
 }
 
 // Throws is covariant, so a function that raises a narrower set stands in for one that
