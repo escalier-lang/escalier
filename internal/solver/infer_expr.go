@@ -321,7 +321,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// PR3: open a fresh function context so every ReturnStmt encountered while
 		// walking the body lands in our own returns list (a nested fn inside this
 		// body opens its own context, so its returns never leak out here).
-		saved := c.pushFuncCtx(sig.Async, node)
+		saved := c.pushFuncCtx(sig.Async, node, lvl)
 		c.fn.throws = declaredThrows
 		// M4 G1: run the liveness pre-pass before walking the body so mutability
 		// transitions are checked. It renames the body's variable nodes (writing the

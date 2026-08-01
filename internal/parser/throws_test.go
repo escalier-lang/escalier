@@ -64,3 +64,12 @@ func TestParseThrowsClauseMissingType(t *testing.T) {
 		require.Equal(t, "1:18-1:24: Expected type annotation after 'throws'", errs[0])
 	})
 }
+
+// A constructor accepts `throws` on either side of the `->` it may not declare. Writing
+// one on each side is a single error, the return type, and the body still parses: the
+// second clause is consumed and discarded, and the first is the one that survives.
+func TestParseThrowsClauseOnBothSidesOfConstructorArrow(t *testing.T) {
+	require.Equal(t,
+		[]string{"1:47-1:49: constructors cannot declare a return type"},
+		parseThrowsSrc(t, `class C { constructor(mut self) throws string -> number throws boolean { } }`))
+}

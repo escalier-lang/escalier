@@ -436,28 +436,44 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 		}
 	}
 	p.writeString(")")
-	if sig.Return != nil {
-		p.writeString(" -> ")
-		p.printTypeAnn(sig.Return)
-	}
-	p.printThrowsClause(sig.Throws)
+	p.printReturnAndThrows(sig.Return, sig.Throws)
 }
 
-// printThrowsClause emits ` throws T` after a signature's return type, or nothing when
-// the function raises nothing. Both spellings of that count: an absent clause, and an
+// printReturnAndThrows emits ` -> R` followed by any `throws T` clause. Every signature
+// form routes through it, so a function, method, getter, setter, and function type
+// annotation all render the pair the same way. A nil ret emits no arrow, which is the
+// `fn f() throws string { … }` form that lets its return type be inferred.
+//
+// A clause is emitted for neither spelling of "raises nothing": an absent clause, and an
 // explicit `throws never`, which names the empty set of raised values and carries no more
-// information than writing no clause at all. Every signature form routes through here so
-// a method, getter, setter, function, and function type annotation all render the clause
-// the same way.
-func (p *Printer) printThrowsClause(throws ast.TypeAnn) {
-	if throws == nil {
-		return
-	}
+// information than writing no clause at all.
+//
+// `-> R` is greedy, so a function-typed return is parenthesized once a clause follows it,
+// or the clause reads as the INNER function's. A function that returns a non-throwing
+// function and itself raises `string` prints `fn () -> (fn () -> number) throws string`.
+// Drop those parens and it is indistinguishable from a function that returns one raising
+// `string`, which is what re-reading it would give. soltype's printFuncBody parenthesizes
+// the coalesced form for the same reason.
+func (p *Printer) printReturnAndThrows(ret ast.TypeAnn, throws ast.TypeAnn) {
+	clause := throws
 	if _, isNever := throws.(*ast.NeverTypeAnn); isNever {
-		return
+		clause = nil
 	}
-	p.writeString(" throws ")
-	p.printTypeAnn(throws)
+	if ret != nil {
+		p.writeString(" -> ")
+		_, retIsFunc := ret.(*ast.FuncTypeAnn)
+		if retIsFunc && clause != nil {
+			p.writeString("(")
+			p.printTypeAnn(ret)
+			p.writeString(")")
+		} else {
+			p.printTypeAnn(ret)
+		}
+	}
+	if clause != nil {
+		p.writeString(" throws ")
+		p.printTypeAnn(clause)
+	}
 }
 
 // printDecorators emits each decorator on its own line, preserving
@@ -1055,12 +1071,7 @@ func (p *Printer) printFuncSig(sig *ast.FuncSig) {
 	}
 	p.writeString(")")
 
-	if sig.Return != nil {
-		p.writeString(" -> ")
-		p.printTypeAnn(sig.Return)
-	}
-
-	p.printThrowsClause(sig.Throws)
+	p.printReturnAndThrows(sig.Return, sig.Throws)
 }
 
 func (p *Printer) printBlock(block *ast.Block) {
@@ -1341,15 +1352,12 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 			}
 		}
 		p.writeString(")")
-		p.writeString(" -> ")
-		p.printTypeAnn(e.Fn.Return)
-		p.printThrowsClause(e.Fn.Throws)
+		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.GetterTypeAnn:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
-		p.writeString("(self) -> ")
-		p.printTypeAnn(e.Fn.Return)
-		p.printThrowsClause(e.Fn.Throws)
+		p.writeString("(self)")
+		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.SetterTypeAnn:
 		p.writeString("set ")
 		p.printObjKey(e.Name)
@@ -1363,9 +1371,7 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		}
 		p.writeString(")")
 		// Setters require -> void in Escalier syntax
-		p.writeString(" -> ")
-		p.printTypeAnn(e.Fn.Return)
-		p.printThrowsClause(e.Fn.Throws)
+		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.PropertyTypeAnn:
 		if e.Readonly {
 			p.writeString("readonly ")
@@ -1569,10 +1575,7 @@ func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
 	}
 	p.writeString(")")
 
-	p.writeString(" -> ")
-	p.printTypeAnn(typ.Return)
-
-	p.printThrowsClause(typ.Throws)
+	p.printReturnAndThrows(typ.Return, typ.Throws)
 }
 
 func (p *Printer) printTemplateLitTypeAnn(typ *ast.TemplateLitTypeAnn) {

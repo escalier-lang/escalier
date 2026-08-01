@@ -697,10 +697,11 @@ func (p *Parser) parseConstructorElem(
 		p.reportError(next.Span, "constructors cannot declare a return type")
 		p.lexer.consume()
 		_ = p.typeAnn()
-		// A `throws` after `->` is also tolerated, but we already errored. A second one
-		// after a clause we already read is left unconsumed, so the first wins.
-		if throwsType == nil {
-			throwsType = p.throwsClause()
+		// A `throws` after `->` is also tolerated, but we already errored. It is consumed
+		// either way, so the body still parses when the source wrote a clause on both
+		// sides of the arrow; the first clause is the one that survives.
+		if second := p.throwsClause(); throwsType == nil {
+			throwsType = second
 		}
 		next = p.lexer.peek()
 	}

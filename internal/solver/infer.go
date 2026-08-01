@@ -168,6 +168,15 @@ type funcCtx struct {
 	// probe: the mint itself is not journaled, but the bounds a trial appends to it are,
 	// so a discarded trial leaves a sink indistinguishable from none.
 	throws soltype.Type
+	// lvl is the level this body is walked at, recorded so throwsSink mints the sink
+	// there rather than wherever the first exceptional exit happens to sit. A `val`
+	// initializer is typed one level deeper, so a sink minted at the first exit's own
+	// level would land inner to the body when that exit is a call inside an
+	// initializer. A later exit at the body's own level would then extrude it, wiring
+	// the extruded proxy back to the original in both directions, and the cycle renders
+	// the function's throws as a μ-knot: `fn g() { val x = a()  a()  return x }`
+	// reports `throws μX0.(string | X0)` instead of `throws string`.
+	lvl int
 
 	// written records the widened type stored into a receiver variable's field by a
 	// field-write `recv.prop = source` (M4 C3), keyed by the receiver var's ID and
@@ -316,9 +325,9 @@ type funcCtx struct {
 // after walking the body. Push/pop is straight-line, not deferred: the caller needs
 // popFuncCtx's returned return-points as a value, and the walk reports errors rather
 // than panicking, so there is no unwind to guard against.
-func (c *checker) pushFuncCtx(async bool, node ast.Node) *funcCtx {
+func (c *checker) pushFuncCtx(async bool, node ast.Node, lvl int) *funcCtx {
 	saved := c.fn
-	c.fn = &funcCtx{async: async, node: node, written: map[fieldKey]soltype.Type{}}
+	c.fn = &funcCtx{async: async, node: node, lvl: lvl, written: map[fieldKey]soltype.Type{}}
 	return saved
 }
 
@@ -344,7 +353,7 @@ func (c *checker) throwsSink(lvl int) soltype.Type {
 		return c.freshAt(lvl)
 	}
 	if c.fn.throws == nil {
-		c.fn.throws = c.freshAt(lvl)
+		c.fn.throws = c.freshAt(c.fn.lvl)
 	}
 	return c.fn.throws
 }

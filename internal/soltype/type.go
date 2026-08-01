@@ -226,18 +226,19 @@ type FuncParam struct {
 // is `&mut Self`. The printer reads that shape back to the shorthand, and the
 // receiver's borrow and lifetime flow through the visitor the same way a
 // parameter's do. Pattern names the receiver, always the `self` identifier.
-// Throws is the type a call to the function may raise, the twin of Ret for the
-// exceptional exit. It is covariant, so a function that throws less is a subtype of one
-// that throws more. A nil Throws means the function raises nothing and reads as `never`,
-// the bottom of the lattice, so the zero value is non-throwing and every FuncType minted
-// without thinking about exceptions is correct. `never` written out explicitly means the
-// same thing, and ThrowsOrNever collapses the two so no reader has to tell them apart.
 type FuncType struct {
 	SelfParam *FuncParam // nil ⇒ static method or plain function; non-nil ⇒ instance method
 	Params    []*FuncParam
 	Ret       Type
-	Throws    Type // nil ⇒ raises nothing, equivalent to `never`
-	Inexact   bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
+	// Throws is the type a call to the function may raise, the twin of Ret for the
+	// exceptional exit. It is covariant, so a function that raises a narrower set is a
+	// subtype of one that raises a wider set. Nil means the function raises nothing and
+	// reads as `never`, the bottom of the lattice, so the zero value is non-throwing and
+	// a FuncType minted without thinking about exceptions is correct. An explicit
+	// `never` means the same thing, and ThrowsOrNever collapses the two so no reader
+	// has to tell them apart.
+	Throws  Type
+	Inexact bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
 	// TypeParams are the function's own quantified type parameters; nil is monomorphic and
 	// a class-level parameter is captured, not listed. LevelOf skips them, being minted deeper.
 	TypeParams []*TypeParam
