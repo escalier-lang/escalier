@@ -587,8 +587,8 @@ func TestUtilityTypeReturnTypeIsAritySpecific(t *testing.T) {
 	})
 }
 
-// DISABLED until alias instantiation checks its arguments against its parameters' bounds. No
-// milestone owns that yet.
+// DISABLED until alias instantiation checks its arguments against its parameters' bounds, tracked
+// as escalier-lang/escalier#955.
 //
 // `ReturnType<F>` would read better with `F` bounded to a function type, so `ReturnType<number>`
 // were rejected at the reference rather than reduced to `never` through the Else branch. Writing
