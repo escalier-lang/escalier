@@ -230,6 +230,58 @@ func TestUtilityTypeReductions(t *testing.T) {
 			src:          `type Result = Exclude<keyof Point, "x">`,
 			wantExpanded: `"y"`,
 		},
+		// A union of objects narrows the same way a union of literals does. Each member is decided
+		// by an ordinary subtype test, so the whole object shape takes part rather than just a
+		// name.
+		{
+			name:         "ExcludeFromObjectUnion",
+			src:          `type Result = Exclude<{a: number} | {b: string}, {a: number}>`,
+			wantExpanded: "{b: string}",
+		},
+		{
+			// Dropping one arm of a discriminated union by naming only its tag. The `...` marker is
+			// what makes the target match a member that carries fields beyond `kind`, so an exact
+			// `{kind: "a"}` would drop nothing. The union is written inline because a union reached
+			// through an alias does not distribute — see TestUtilityTypeDistributesOverUnionAlias.
+			name:         "ExcludeDiscriminatedArm",
+			src:          `type Result = Exclude<{kind: "a", x: number} | {kind: "b", y: string}, {kind: "a", ...}>`,
+			wantExpanded: `{kind: "b", y: string}`,
+		},
+		{
+			name:         "ExcludeEveryObjectMember",
+			src:          `type Result = Exclude<{a: number} | {b: string}, {a: number} | {b: string}>`,
+			wantExpanded: "never",
+		},
+		{
+			// An object member is decided by the same rule as a primitive one, so the two mix in
+			// one union. The survivors render in canonical order rather than source order.
+			name:         "ExcludeFromMixedUnion",
+			src:          `type Result = Exclude<{a: number} | string | number, {a: number}>`,
+			wantExpanded: "number | string",
+		},
+		{
+			// `{...}` is the object with no declared fields and an open tail, so every object is a
+			// subtype of it and only the non-object member survives.
+			name:         "ExcludeEveryObjectViaOpenTarget",
+			src:          `type Result = Exclude<{a: number} | {b: string} | number, {...}>`,
+			wantExpanded: "number",
+		},
+		{
+			// Exactness diverges from TypeScript here. `{a: number}` is exact, so a member carrying
+			// `b` as well is not a subtype of it and is kept. TypeScript's object types are
+			// width-tolerant, so it drops `{a: number, b: string}` and reduces this to
+			// `{c: boolean}`. ExcludeWiderMemberViaOpenTarget below is the spelling that agrees.
+			name:         "ExcludeExactTargetKeepsWiderMember",
+			src:          `type Result = Exclude<{a: number, b: string} | {c: boolean}, {a: number}>`,
+			wantExpanded: "{c: boolean} | {a: number, b: string}",
+		},
+		{
+			// The `...` marker restores width tolerance, so the wider member is dropped and the
+			// result matches TypeScript's reduction of the exact-target spelling above.
+			name:         "ExcludeWiderMemberViaOpenTarget",
+			src:          `type Result = Exclude<{a: number, b: string} | {c: boolean}, {a: number, ...}>`,
+			wantExpanded: "{c: boolean}",
+		},
 		// `Extract<U, V>` is `Exclude`'s complement, keeping the members `Exclude` drops.
 		{
 			name:         "Extract",
@@ -245,6 +297,45 @@ func TestUtilityTypeReductions(t *testing.T) {
 			name:         "ExtractOverPrimitives",
 			src:          `type Result = Extract<string | number | boolean, string | boolean>`,
 			wantExpanded: "string | boolean",
+		},
+		{
+			name:         "ExtractFromObjectUnion",
+			src:          `type Result = Extract<{a: number} | {b: string}, {a: number}>`,
+			wantExpanded: "{a: number}",
+		},
+		{
+			// Selecting one arm of a discriminated union by its tag, the complement of
+			// ExcludeDiscriminatedArm and the way a caller narrows to a single case.
+			name:         "ExtractDiscriminatedArm",
+			src:          `type Result = Extract<{kind: "a", x: number} | {kind: "b", y: string}, {kind: "a", ...}>`,
+			wantExpanded: `{kind: "a", x: number}`,
+		},
+		{
+			// The subtype test is structural all the way down, so two members differing only
+			// inside a nested object are told apart.
+			name:         "ExtractNestedObject",
+			src:          `type Result = Extract<{a: {b: number}} | {a: {b: string}}, {a: {b: number}}>`,
+			wantExpanded: "{a: {b: number}}",
+		},
+		{
+			// Every object is a subtype of the open empty object, so nothing is dropped.
+			name:         "ExtractEveryObjectViaOpenTarget",
+			src:          `type Result = Extract<{a: number} | {b: string}, {...}>`,
+			wantExpanded: "{a: number} | {b: string}",
+		},
+		{
+			// The exactness divergence again, seen from the keeping side. `{a: number}` is exact, so
+			// it matches no member and the result is empty. TypeScript keeps `{a: number, b: string}`
+			// here, and ExtractWiderMembersViaOpenTarget below is the spelling that agrees.
+			name:         "ExtractExactTargetMatchesNoWiderMember",
+			src:          `type Result = Extract<{a: number, b: string} | {c: boolean}, {a: number}>`,
+			wantExpanded: "never",
+		},
+		{
+			// With the `...` marker both members carrying `a` are kept, matching TypeScript.
+			name:         "ExtractWiderMembersViaOpenTarget",
+			src:          `type Result = Extract<{a: number, b: string} | {a: number}, {a: number, ...}>`,
+			wantExpanded: "{a: number} | {a: number, b: string}",
 		},
 		// `ReturnType<F>` reads the return type off a function through an `infer` capture.
 		{
@@ -641,6 +732,76 @@ func TestUtilityTypeAliasParameterConstraint(t *testing.T) {
 			require.Equal(t, tt.wantErr, errs[0].Message())
 		})
 	}
+}
+
+// DISABLED until a conditional distributes over a union reached through an alias. Not tracked by an
+// issue yet.
+//
+// A distributive conditional decides each member of its Check alone, which is what makes
+// `Exclude` and `Extract` narrow a union rather than test it whole. Distribution fires only when
+// the Check reduces to a `UnionType`. `reduce` returns an alias reference unchanged, since an alias
+// is not an operator, so an argument that names its union through an alias never reaches that test
+// and the conditional decides the whole alias in one step.
+//
+// The effect is that the same union behaves differently depending on how it was written.
+// `Exclude<"a" | "b", "a">` reduces to `"b"`, while `type Names = "a" | "b"` followed by
+// `Exclude<Names, "a">` reduces to `Names`, because `Names <: "a"` fails and Else returns the
+// argument untouched. `Extract` reduces to `never` for the same reason. A `keyof P` argument does
+// distribute, since `keyof` reduction produces a real union before the test runs.
+//
+// This reaches every distributive utility and it hits the shape most likely to be written, since a
+// discriminated union is normally given a name. The fix is for the distribution test to ground an
+// alias Check the way `groundOperand` does elsewhere, rather than reading `reduce`'s output
+// directly.
+func TestUtilityTypeDistributesOverUnionAlias(t *testing.T) {
+	/*
+		runUtilityReductions(t, []utilityReduction{
+			{
+				// The literal-union case, which reduces to `"b"` when the union is written inline.
+				name: "ExcludeOverAliasedLiteralUnion",
+				src: `
+					type Names = "a" | "b"
+					type Result = Exclude<Names, "a">
+				`,
+				wantExpanded: `"b"`,
+			},
+			{
+				name: "ExtractOverAliasedLiteralUnion",
+				src: `
+					type Names = "a" | "b"
+					type Result = Extract<Names, "a">
+				`,
+				wantExpanded: `"a"`,
+			},
+			{
+				// The shape that motivates it: a named discriminated union narrowed by its tag.
+				name: "ExcludeArmOfAliasedDiscriminatedUnion",
+				src: `
+					type Event = {kind: "a", x: number} | {kind: "b", y: string}
+					type Result = Exclude<Event, {kind: "a", ...}>
+				`,
+				wantExpanded: `{kind: "b", y: string}`,
+			},
+			{
+				name: "ExtractArmOfAliasedDiscriminatedUnion",
+				src: `
+					type Event = {kind: "a", x: number} | {kind: "b", y: string}
+					type Result = Extract<Event, {kind: "a", ...}>
+				`,
+				wantExpanded: `{kind: "a", x: number}`,
+			},
+			{
+				// An alias naming another alias resolves to the same union, so it distributes too.
+				name: "ExcludeOverIndirectAlias",
+				src: `
+					type Names = "a" | "b"
+					type Mid = Names
+					type Result = Exclude<Mid, "a">
+				`,
+				wantExpanded: `"b"`,
+			},
+		})
+	*/
 }
 
 // DISABLED until M9 PR16, which gives `null` and `undefined` a surface. `soltype.NullType` and
