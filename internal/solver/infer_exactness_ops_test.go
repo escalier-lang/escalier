@@ -170,6 +170,29 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			wantSymbolic: "keyof I",
 			wantExpanded: `"a" | "b" | ...`,
 		},
+		{
+			// `Exact` and `Inexact` are the two operators that run the other way. Every case above
+			// reads a marker off its operand and carries it to the result; these two write the
+			// marker the operator names onto whatever their operand carried. A function's marker is
+			// its trailing `...`, so widening an exact function adds one.
+			name: "InexactOverExactFunc",
+			src: `
+				type ExactF = fn (a: number) -> string
+				type Result = Inexact<ExactF>
+			`,
+			wantSymbolic: "Inexact<ExactF>",
+			wantExpanded: "fn (a: number, ...) -> string",
+		},
+		{
+			// The dual, tightening an inexact function by clearing that marker.
+			name: "ExactOverInexactFunc",
+			src: `
+				type InexactF = fn (a: number, ...) -> string
+				type Result = Exact<InexactF>
+			`,
+			wantSymbolic: "Exact<InexactF>",
+			wantExpanded: "fn (a: number) -> string",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
