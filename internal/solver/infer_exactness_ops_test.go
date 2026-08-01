@@ -342,6 +342,33 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 			wantExpanded: "Point",
 		},
 		{
+			// A class's exactness is fixed where the class is declared, so `Inexact` has no use-site
+			// form to open a final class's instance type with and leaves the class unchanged.
+			name: "InexactFinalClass",
+			src: `
+				final class Point {
+					x: number,
+				}
+				type Result = Inexact<Point>
+			`,
+			wantSymbolic: "Inexact<Point>",
+			wantExpanded: "Point",
+		},
+		{
+			// A non-final class instance type is already open, so `Inexact` has nothing to change.
+			// The `Exact` direction over the same class is the one that is rejected, in
+			// TestInferExactOnNonFinalClassErrors.
+			name: "InexactNonFinalClass",
+			src: `
+				class Point {
+					x: number,
+				}
+				type Result = Inexact<Point>
+			`,
+			wantSymbolic: "Inexact<Point>",
+			wantExpanded: "Point",
+		},
+		{
 			// The operator composes with the rest of the suite: closing an object's key set closes
 			// the key union `keyof` projects from it.
 			name: "KeyofOverExactOperand",
