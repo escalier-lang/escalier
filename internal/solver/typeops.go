@@ -1638,7 +1638,17 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 		}
 		return newIntersection(nil, parts)
 	case *soltype.RefType:
-		pointee, ok := e.reduceExactness(kind, op.Inner).(soltype.RefInner)
+		reducedInner := e.reduceExactness(kind, op.Inner)
+		if _, errored := reducedInner.(*soltype.ErrorType); errored {
+			// The pointee's own reduction reported a diagnostic and returned the error sentinel, as
+			// `Exact<&mut C>` over a non-final C does. A borrow of an errored pointee is errored too.
+			// The sentinel absorbs in both directions under constrain, so the pointee's diagnostic is
+			// the only one a constraint site sees. Staying symbolic here would drop that diagnostic,
+			// since a reduction that ends on a residual reports none, and the site would blame the
+			// residual instead of naming the class that is not final.
+			return reducedInner
+		}
+		pointee, ok := reducedInner.(soltype.RefInner)
 		if !ok {
 			// The pointee stayed symbolic, so the operator over the borrow has no answer either.
 			break

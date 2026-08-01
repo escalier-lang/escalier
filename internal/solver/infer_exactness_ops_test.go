@@ -476,3 +476,36 @@ func TestInferExactOnNonFinalClassErrors(t *testing.T) {
 			"and Exact<Point> cannot close it; declare Point as `final` instead",
 		e.errs[0].Message())
 }
+
+// A borrow of an errored pointee is errored too, so the diagnostic the pointee's reduction reported
+// is the one a constraint site names. Reducing the borrow to the error sentinel is what carries it
+// there. A reduction that ends on a residual reports no diagnostic at all, so the site would
+// otherwise blame that residual and never say which class is not final.
+//
+// The bare and borrowed spellings therefore report the same message. Each case pairs a parameter the
+// operator annotates with an argument, since the reduction only surfaces at a constraint site.
+func TestInferExactOnBorrowedNonFinalClassErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		ann  string
+	}{
+		{"Bare", "Exact<Point>"},
+		{"OwnedMut", "Exact<mut Point>"},
+		{"MutBorrow", "Exact<&mut Point>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, `
+				class Point {
+					x: number,
+				}
+				fn f(p: `+tt.ann+`) -> number { return 1 }
+				fn g(q: Point) -> number { return f(q) }
+			`)
+			require.Len(t, errs, 1)
+			require.Contains(t, errs[0].Message(),
+				"class Point is not final, so a subclass instance may carry members Point does not "+
+					"declare and Exact<Point> cannot close it; declare Point as `final` instead")
+		})
+	}
+}
