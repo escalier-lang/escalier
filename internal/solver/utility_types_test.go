@@ -634,9 +634,8 @@ func TestUtilityTypeNonNullable(t *testing.T) {
 //
 // Both pieces also need the arity decision TestUtilityTypeReturnTypeIsAritySpecific describes,
 // since a rest parameter in the pattern widens its accept-set the same way the inexact marker does.
-// M9 PR14 covers all three. `ConstructorParameters<C>` waits on PR14 plus a `new (…)` member in an
-// object type annotation, which `objTypeAnnElemInner` does not parse, so it stays disabled after
-// PR14 lands.
+// M9 PR14 covers all three. `ConstructorParameters<C>` waits on PR14 plus the `new (…)` member M9
+// PR15 adds, so it stays disabled until both land.
 //
 // Re-enable by removing the comment wrapper and adding both definitions to utilityTypeDecls:
 //
@@ -670,11 +669,11 @@ func TestUtilityTypeParameters(t *testing.T) {
 	*/
 }
 
-// DISABLED until an object type annotation accepts a `new (…)` member. `InstanceType<C>` reads the
-// return type off a constructor signature, and `objTypeAnnElemInner` has no arm for `new`, so
-// `{new (…) -> infer R}` fails to parse. The representation is not what is missing. The printer
-// already renders the form, as internal/solver/infer_class_test.go shows a class's static side
-// printing `{new (x: number, y: number) -> Vec, …}`.
+// DISABLED until M9 PR15, which adds a `new (…)` member to object type annotations.
+// `InstanceType<C>` reads the return type off a constructor signature, and `objTypeAnnElemInner`
+// has no arm for `new`, so `{new (…) -> infer R}` fails to parse. The representation is not what is
+// missing. The printer already renders the form, as internal/solver/infer_class_test.go shows a
+// class's static side printing `{new (x: number, y: number) -> Vec, …}`.
 //
 // Re-enable by removing the comment wrapper and adding
 //

@@ -133,7 +133,7 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Twenty-one PRs across five tracks. Track A builds the evaluator and the core
+Twenty-two PRs across five tracks. Track A builds the evaluator and the core
 operators in dependency order. Track B adds spread and template-literal
 operators, which hang off the backbone but are independent of each other. Track C
 adds exactness propagation and the recursion static-check. Track D is the two
@@ -145,11 +145,11 @@ The two heaviest concerns — the evaluator backbone and the conditional/`infer`
 matcher — are each split in two so no single PR carries both a new representation
 and a new algorithm: PR1a/PR1b and PR3a/PR3b below.
 
-Sixteen of the twenty-one were planned up front. PR9c through PR9f were added to Track C
+Sixteen of the twenty-two were planned up front. PR9c through PR9f were added to Track C
 after PR9b's review, which turned up one soundness question, one wrong answer, and one
 representation the milestone assumed exists. They are described together in "the
-recursion-safety follow-on group" below. PR14 was added to Track E after PR13, which
-found `Parameters<F>` inexpressible and identified what it waits on.
+recursion-safety follow-on group" below. PR14 and PR15 were added to Track E after PR13,
+which found four utilities inexpressible and identified what each waits on.
 
 ### PR1a — Residual-node representation + inert plumbing
 
@@ -785,7 +785,8 @@ them expressible at all under import-only resolution.
   PR14 below covers both.
 - `ConstructorParameters<C>` and `InstanceType<C>` match a `new (…)` member, which
   `objTypeAnnElemInner` does not parse. The printer already renders the form on a class's
-  static side, so the gap is the annotation surface rather than the representation.
+  static side, so the gap is the annotation surface rather than the representation. PR15
+  below covers it.
 
 **`ReturnType<F>` reduces for one arity at a time.** TypeScript's definition matches a
 function of any arity through a rest parameter. Escalier's accept-set rule decides `sub <:
@@ -890,11 +891,97 @@ only the match.
 **Out of scope.** Rest parameters in a function *declaration*, which `bindPat`
 reports unsupported ([pattern.go:240-244](../../internal/solver/pattern.go)) and
 which pulls in the value-level element checking M7.5 owns. `ConstructorParameters<C>`
-needs all of the above plus a `new (…)` member in an object type annotation, which
-`objTypeAnnElemInner` does not parse, so it stays disabled here.
+needs all of the above plus the `new (…)` member PR15 adds, so it stays disabled here.
 
 **Depends on** PR3b for the `infer` matcher the capture runs through, and PR13 for
 the corpus and the disabled test it re-enables. Independent of PR4–PR12.
+
+### PR15 — `new (…)` members in object type annotations + `ConstructorParameters<C>` / `InstanceType<C>`
+
+The last two utilities PR13 disabled. Both match a constructor signature, and every
+layer but two already carries one, so this PR is mostly connecting parts that exist.
+
+**Data structures.** No new node in either `ast` or `soltype`.
+
+- `ast.ConstructorTypeAnn{Fn *FuncTypeAnn}` is already an `ObjTypeAnnElem`
+  ([ast/type_ann.go:219](../../internal/ast/type_ann.go)). The `.d.ts` interop bridge
+  builds one ([interop/helper.go:176](../../internal/interop/helper.go)), the AST
+  printer renders it ([printer/printer.go:1312](../../internal/printer/printer.go)),
+  and the old checker resolves it
+  ([checker/infer_type_ann.go:402](../../internal/checker/infer_type_ann.go)). The
+  parser is the only layer that never produces one.
+- `soltype.ConstructorElem{Fn *FuncType}` exists
+  ([soltype/type.go:335](../../internal/soltype/type.go)) and is plumbed end to end:
+  `ObjectType.Constructor()` looks one up, the printer renders `new (params) -> ret`
+  ([soltype/print.go:945](../../internal/soltype/print.go)), `equalType` compares it
+  ([coalesce.go:1479](../../internal/solver/coalesce.go)), and `constrain` already
+  checks one as a super requirement
+  ([constrain.go:779](../../internal/solver/constrain.go)). Class inference is its
+  only producer ([infer_class.go:157](../../internal/solver/infer_class.go)).
+
+**Algorithms.**
+
+1. **Parse the member.** `objTypeAnnElemInner`
+   ([parser/type_ann.go:804](../../internal/parser/type_ann.go)) has no `new` arm, so
+   `{new (x: number) -> T}` fails with `Expected a property name`. `new` is already a
+   keyword token ([parser/lexer.go:79](../../internal/parser/lexer.go)). Add the arm
+   ahead of the `objExprKey` call and parse the signature through the existing
+   function-type-annotation path, so type parameters and the `-> R` return need no new
+   parsing.
+2. **Resolve it.** `resolveObjectTypeAnn`
+   ([type_ann.go](../../internal/solver/type_ann.go)) reports every member that is not
+   a property, spread, or mapped type as `object type member other than a property or
+   spread`. Add a `*ast.ConstructorTypeAnn` arm on both of its paths that lowers the
+   signature through `resolveFuncTypeAnn` and emits a `ConstructorElem`. The
+   residual-free path routes members through `newObjElemBuilder`, which dedups by
+   name, and a `ConstructorElem` is unnamed, so it is appended outside the builder. A
+   second `new` signature in one annotation reports a full-message error, since
+   `ObjectType.Constructor()` returns exactly one.
+3. **Decide how a statics-free class value matches.** `classValue`
+   ([infer_class.go:145-159](../../internal/solver/infer_class.go)) binds a class with
+   no static members to its bare constructor `FuncType` and one with statics to an
+   object carrying a `ConstructorElem`. So `typeof Point` renders `fn (x: number) ->
+   Point` for the first and `{new (x: number) -> Point, origin: number}` for the
+   second, while TypeScript's `InstanceType<typeof C>` matches the `new` form for
+   both. `constrain` checks a constructor requirement only in its object-sub against
+   object-super arm, so the statics-free shape would take the Else branch and reduce
+   to `never`. Two ways out:
+   - Let a constructor-only object super be satisfied by a bare `FuncType` sub, a
+     targeted rule beside the existing `ConstructorElem` arm. Rendering is unchanged
+     and the diff is one arm.
+   - Drop `classValue`'s no-statics shortcut so every class value is an object.
+     Uniform, but it rewrites every rendered class-value type and moves the path a
+     `Point(…)` call resolves through, so it churns snapshots broadly.
+
+   The first is recommended. Record whichever is chosen, because a reader who meets
+   `fn (x: number) -> Point` will otherwise not see why `InstanceType` matches it.
+4. **Check `keyof` over a constructor-carrying object.** `keyofObject`
+   ([typeops.go:1053](../../internal/solver/typeops.go)) projects property, getter, and
+   setter names. A `ConstructorElem` is unnamed, so confirm it is skipped rather than
+   projected as an empty-string key, and pin the case.
+
+**Wiring.** Re-enable `TestUtilityTypeInstanceType` and the `ConstructorParameters<C>`
+cases in `TestUtilityTypeParameters`
+([utility_types_test.go](../../internal/solver/utility_types_test.go)), moving both
+definitions into `utilityTypeDecls`. Add parser and printer round-trip coverage for
+the new member.
+
+**Accept.** `{new (x: number) -> {a: number}}` parses, resolves, and round-trips
+through both printers. `ConstructorParameters<{new (x: number, y: string) -> T}>` ⇒
+`[number, string]`; `InstanceType<{new (x: number) -> {a: number}}>` ⇒ `{a: number}`;
+both over a non-constructor argument ⇒ `never`. `InstanceType<typeof Point>` ⇒ `Point`
+for a class with statics and for one without, which is what step 3 settles. A second
+`new` signature in one annotation reports a full-message error.
+
+**Depends on** PR14 for the rest parameter and the tuple capture
+`ConstructorParameters<C>` binds through, and PR13 for the corpus and the disabled
+tests it re-enables. `InstanceType<C>` needs only steps 1 and 3 when its pattern is
+written at a fixed arity, so that half could land without PR14 if the two are
+sequenced apart.
+
+**Leaves one utility disabled.** After this PR `NonNullable<T>` is the only member of
+the suite still unexpressible, waiting on `null` and `undefined` in `soltype`'s
+literal set.
 
 ---
 
@@ -940,6 +1027,11 @@ and one gather in `constrain`'s function arm. What makes it worth its own PR is 
 the gather changes how the hottest arm in the package pairs positions, and the arity
 ordering it forces is a semantic decision rather than a mechanical one.
 
+PR15 is the smallest PR in Track E and spans the most layers, since the parser, the
+resolver, and `constrain` each need one arm and none of them needs a new node. Its one
+judgment call is how a statics-free class value matches a `new (…)` pattern, and the
+recommended answer keeps the diff to a single arm.
+
 ## Dependency graph
 
 A PR marked ✅ has merged, and the number after it is the merged pull request. An
@@ -974,6 +1066,7 @@ PR10 (throws clause)                       ── needs M3 only; parallel to eve
 
 PR13 (TS utility-type suite)               ── needs PR2, PR3b, PR4, PR7, PR12
  └─► PR14 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
+      └─► PR15 (new (…) members in obj type anns + ConstructorParameters<C>)
 ```
 
 PR9b replaced PR9's regularity condition with the productivity condition, so PR9's
@@ -983,7 +1076,7 @@ to intersect the members' key sets, and #937 capped total alias expansion with a
 monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
 PR4's mapped types.
 
-Everything still open is PR8, PR9d, PR9f, PR10, PR11, PR13, and PR14. PR8 is partly
+Everything still open is PR8, PR9d, PR9f, PR10, PR11, PR13, PR14, and PR15. PR8 is partly
 seeded — #922 threads an object's exactness through `keyof` — but the rest of the
 operators and the `Exact` / `Inexact` intrinsics are untouched.
 
@@ -1017,6 +1110,7 @@ graph TD
     PR12["PR12 ✅ #952 (Awaited<T>)"]
     PR13["PR13 (TS utility-type suite)"]
     PR14["PR14 (rest params in fn type anns + Parameters<F>)"]
+    PR15["PR15 (new (…) in obj type anns + ConstructorParameters<C>)"]
 
     M7 -.-> PR1a
     M75 -.-> PR11
@@ -1055,6 +1149,7 @@ graph TD
     PR12 --> PR13
     PR13 --> PR14
     PR3b --> PR14
+    PR14 --> PR15
 
     linkStyle default stroke:#888
     style PR1a fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
@@ -1090,10 +1185,11 @@ graph TD
   and only if a real library type needs it.
 - **Track D** — PR10 (throws) has no operator dependency and can start on day one
   alongside PR1a; PR11 (generators) follows PR10.
-- **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12. PR14
-  follows it and is the milestone's last PR, since it is the one gap PR13 found that
-  the operator track can close on its own.
+- **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12. PR14 and
+  PR15 follow it in that order, closing the gaps PR13 found that the operator track can
+  close on its own. PR15's `InstanceType<C>` half is separable from PR14 and could run
+  alongside it if the two are sequenced apart.
 
 The critical path is `M7 → PR1a → PR1b → PR3a → PR3b → PR4 → PR8`, and — for the
-async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13 → PR14`. The
-follow-on group sits off both: nothing in PR1a–PR14 waits on PR9c–PR9f.
+async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13 → PR14 → PR15`.
+The follow-on group sits off both: nothing in PR1a–PR15 waits on PR9c–PR9f.
