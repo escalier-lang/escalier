@@ -1629,8 +1629,8 @@ rather than the code.
 
 ## Dependency graph
 
-A PR marked ✅ has merged, and the number after it is the merged pull request. An
-unmarked PR has not been built yet.
+A PR marked ✅ has merged, and the number after it is the merged pull request. A PR
+marked 🔄 has an open pull request. An unmarked PR has not been built yet.
 
 ```
 M7   (type aliases: alias node + generics + scope-driven TypeRef)  ──► PR1a
@@ -1644,7 +1644,7 @@ PR1a ✅ #914 (residual-node representation + inert plumbing)
       │    └─► PR3b ✅ #925 (infer clauses + distribution)  ── also needs PR2
       │         ├─► PR9 ✅ #940 (CheckRegular)      ── also needs PR1b
       │         │    └─► PR9b ✅ #941 (productivity check + coinductive comparison)
-      │         │         └─► PR9d (phantom type-parameter erasure)
+      │         │         └─► PR9d ✅ #945 (phantom type-parameter erasure)
       │         └─► PR12 ✅ #952 (Awaited<T>)       ── also needs PR1b, M7.5
       ├─► PR5 ✅ #920 (object spread types)
       ├─► PR6 ✅ #918 (tuple spread types)
@@ -1662,32 +1662,32 @@ PR10 ✅ #963 (throws clause)                ── needs M3 only; parallel to e
  └─► PR11 (generators)                     ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
 
 PR13 ✅ #954 (TS utility-type suite)        ── needs PR2, PR3b, PR4, PR7, PR12
- ├─► PR14 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
+ ├─► PR14 ✅ #961 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
  │    └─► PR15 (new (…) members in obj type anns + ConstructorParameters<C>)
  └─► PR16 ✅ #960 (null + undefined + NonNullable<T>)     ── also needs PR3b
 
 PR17 (default names only an earlier param) ── needs M7 only
- └─► PR18 (class type-param defaults + arity at a type reference)
+ └─► PR18 🔄 #962 (class type-param defaults + arity at a type reference)
       └─► PR19 (class type-argument bound checking)  ── also needs #956
 
 PR20 (warn on a phantom type parameter)    ── needs PR9d only
 ```
 
 PR9b replaced PR9's regularity condition with the productivity condition, so PR9's
-check no longer runs even though the PR merged. Two follow-ups landed on top of the
-operator track without a plan entry of their own: #935 corrected `keyof` over a union
-to intersect the members' key sets, and #937 capped total alias expansion with a
-monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
-PR4's mapped types.
+check no longer runs even though the PR merged. Several follow-ups landed without a plan
+entry of their own: #935 corrected `keyof` over a union to intersect the members' key
+sets, #937 capped total alias expansion with a monotonic budget, #938 added the
+`{[K: Keys]: Value}` index-signature shorthand to PR4's mapped types, and #949 factored
+out the `alphaCtx` bijection that PR9e's knot comparison reuses.
 
-Everything still open is PR9d, PR9f, PR10b, PR10c, PR11, PR14, PR15, and Track F's PR17
-through PR20. PR8 landed in two steps: #922 threaded an object's exactness through `keyof`,
-and #953 carried it through the remaining operators and added the `Exact` / `Inexact`
-intrinsics.
+Everything still open is PR9f, PR10b, PR10c, PR11, PR15, and Track F's PR17 through PR20,
+with PR18 already up for review as #962. PR8 landed in two steps: #922 threaded an object's
+exactness through `keyof`, and #953 carried it through the remaining operators and added the
+`Exact` / `Inexact` intrinsics.
 
 The same graph in mermaid, with the operator-track critical path
-(PR1a → PR1b → PR3a → PR3b → PR4 → PR8) highlighted, merged PRs outlined in green,
-and the landed `M7` / `M7.5` prerequisites dashed:
+(PR1a → PR1b → PR3a → PR3b → PR4 → PR8) highlighted, merged PRs outlined in green, the
+open pull request outlined in dashed amber, and the `M7` / `M7.5` prerequisites dashed:
 
 ```mermaid
 graph TD
@@ -1706,7 +1706,7 @@ graph TD
     PR9["PR9 ✅ #940 (CheckRegular static check)"]
     PR9b["PR9b ✅ #941 (productivity + coinductive comparison)"]
     PR9c["PR9c ✅ #944 (path-scoped seen-set, #942)"]
-    PR9d["PR9d (phantom type-parameter erasure)"]
+    PR9d["PR9d ✅ #945 (phantom type-parameter erasure)"]
     PR9e["PR9e ✅ #943 (μ-knot representation)"]
     PR9f["PR9f (regular-tree normalization)"]
     M3["M3 (let-generalization + coalescing)"]
@@ -1717,11 +1717,11 @@ graph TD
     PR11["PR11 (generators)"]
     PR12["PR12 ✅ #952 (Awaited<T>)"]
     PR13["PR13 ✅ #954 (TS utility-type suite)"]
-    PR14["PR14 (rest params in fn type anns + Parameters<F>)"]
+    PR14["PR14 ✅ #961 (rest params in fn type anns + Parameters<F>)"]
     PR15["PR15 (new (…) in obj type anns + ConstructorParameters<C>)"]
     PR16["PR16 ✅ #960 (null + undefined + NonNullable<T>)"]
     PR17["PR17 (default names only an earlier param)"]
-    PR18["PR18 (class type-param defaults + arity at a type reference)"]
+    PR18["PR18 🔄 #962 (class type-param defaults + arity at a type reference)"]
     PR19["PR19 (class type-argument bound checking)"]
     PR20["PR20 (warn on a phantom type parameter)"]
 
@@ -1792,6 +1792,9 @@ graph TD
     style PR13 stroke:#2e7d32,stroke-width:4px
     style PR16 stroke:#2e7d32,stroke-width:4px
     style PR10 stroke:#2e7d32,stroke-width:4px
+    style PR9d stroke:#2e7d32,stroke-width:4px
+    style PR14 stroke:#2e7d32,stroke-width:4px
+    style PR18 stroke:#ef6c00,stroke-width:4px,stroke-dasharray:5 3
 ```
 
 ### Parallelism
@@ -1804,10 +1807,10 @@ graph TD
   PR9 and depends on nothing else, so it can land at any point after it.
 - **Track C, follow-on group** — PR9c and PR9e depend on nothing in this milestone and
   can be built alongside PR1a. PR9d needs only PR9b. PR9f is the group's only join,
-  waiting on PR9e and PR9b. Suggested order by value rather than by dependency: PR9c
-  first, since it is the one soundness question; then PR9e, which pays off an M3 debt
-  and unblocks PR9f; then PR9d, which fixes a wrong answer PR9b introduced; PR9f last,
-  and only if a real library type needs it.
+  waiting on PR9e and PR9b. Those three have landed in that order, so PR9f is all that
+  remains of the group and both of its prerequisites are in. It stays last by value: build
+  it when a real library type needs a finite μ form for a regular tree whose
+  instantiations never repeat, not before.
 - **Track D** — PR10 (throws) has no operator dependency and can start on day one
   alongside PR1a. PR10b (try/catch) and PR11 (generators) both follow PR10 and are
   independent of each other, so they can be built concurrently. PR10c (Promise<T, E>)
@@ -1816,16 +1819,23 @@ graph TD
   PR10c as M7.5 allows.
 - **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12. PR14 and
   PR15 follow it in that order, closing the gaps PR13 found that the operator track can
-  close on its own. PR15's `InstanceType<C>` half is separable from PR14 and could run
-  alongside it if the two are sequenced apart. PR16 hangs off PR13 directly and shares
-  nothing with either, so it runs concurrently with both.
+  close on its own. PR13, PR14, and PR16 have landed, so PR15 is the track's remainder and
+  its one prerequisite is in.
 - **Track F** — a chain, PR17 → PR18 → PR19, and nothing outside it waits on any of the
   three, so it can run start to finish alongside any other track. The order is both the
   dependency order and the value order: PR17 fixes a wrong answer, PR18 fixes a second one
-  and builds the helper, PR19 routes #956's comparison to it. PR20 is off the chain, waiting
-  only on PR9d, so it can land as soon as the marks exist.
+  and builds the helper, PR19 routes #956's comparison to it. #962 opened PR18 ahead of
+  PR17, so the forward-reference restriction PR17 adds still has to land for the class path
+  to stop filling a default that can leak a declaration var. PR20 is off the chain, waiting
+  only on PR9d, so it can land now that the marks exist.
 
 The critical path is `M7 → PR1a → PR1b → PR3a → PR3b → PR4 → PR8`, and — for the
 async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13 → PR14 → PR15`.
-The follow-on group sits off both: nothing in PR1a–PR16 waits on PR9c–PR9f, and nothing
-waits on Track F.
+Both are now down to their tails: the first has landed end to end, and only PR15 is left
+on the second. The follow-on group sits off both: nothing in PR1a–PR16 waits on PR9c–PR9f,
+and nothing waits on Track F.
+
+What is left divides by what it waits on. PR9f, PR10b, PR15, PR17, and PR20 have every
+prerequisite in and can each start now. PR10c and PR11 wait on M7.5, which has not been
+built, and PR10c waits on PR10b besides. PR18 and PR19 are the Track F chain, so PR19 waits
+on #962 landing and PR18 waits on PR17.
