@@ -29,12 +29,21 @@ import (
 // matter, since the dependency graph orders the declarations.
 //
 // `ReturnType<F>` and `Parameters<F>` each write their pattern's parameter list as one rest
-// parameter, `fn (...args: infer P) -> …`, so the pattern matches a function of any arity and the
-// capture is the whole parameter list as a tuple.
+// parameter, so the pattern matches a function of any arity. Each names only the position it
+// captures and fills the other with the type that admits everything there. `Parameters` captures
+// the parameter list into `infer P` and takes any return, which is `unknown` because a return is
+// covariant. `ReturnType` captures the return and takes any parameter list, which is
+// `Array<never>` because a parameter is contravariant, so the bottom type is the one every
+// argument type accepts.
+//
+// Neither position can be written `_`. A conditional reduces only when both of its operands are
+// ground, and `_` resolves to an inference variable, so a pattern carrying one never grounds and
+// the conditional stays symbolic. See condOperandGround in internal/solver/typeops.go.
 //
 // Both bound `F` by `fn (...args: Array<_>) -> _`, the written top of the function lattice. Its
 // rest parameter absorbs whatever parameter list the argument declares, and the `Array<_>` element
-// and the `_` return are inference placeholders, so neither constrains the argument further. The
+// and the `_` return are inference placeholders, so neither constrains the argument further. A
+// bound is an ordinary constraint rather than a conditional's operand, so `_` is fine here. The
 // bound is checked at the reference, so `ReturnType<number>` is rejected there rather than reducing
 // through the Else branch to `never`.
 //
@@ -69,7 +78,7 @@ const utilityTypeDecls = `
 	type Record<Ks, V> = {[K: Ks]: V}
 	type Exclude<U, V> = if U : V { never } else { U }
 	type Extract<U, V> = if U : V { U } else { never }
-	type ReturnType<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> infer R { R } else { never }
+	type ReturnType<F: fn (...args: Array<_>) -> _> = if F : fn (...args: Array<never>) -> infer R { R } else { never }
 	type Parameters<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> unknown { P } else { never }
 	type NonNullable<T> = if T : null | undefined { never } else { T }
 	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
