@@ -126,7 +126,11 @@ func (c *Context) internAlias(at *soltype.AliasType) *soltype.AliasType {
 	// class, so two aliases sharing a local name across namespaces never collide on one key,
 	// and a nested recursive alias such as List<List<number>> serializes finitely because an
 	// argument renders under its own name without expanding.
-	k := soltype.PrintQualified(at)
+	//
+	// An argument a phantom parameter receives is erased first, since no instantiation's type
+	// depends on it. `type Deep<T> = {a: Deep<{b: T}>}` denotes `{a: {a: …}}` whatever T is, so
+	// Deep<number> and Deep<string> both key on "Deep" and share a representative.
+	k := soltype.PrintQualified(c.erasePhantomArgs(at))
 	if c.aliasInterns == nil {
 		c.aliasInterns = map[string]*soltype.AliasType{}
 	}

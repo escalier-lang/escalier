@@ -31,9 +31,10 @@ import (
 // `type Deep<T> = {a: Deep<{b: T}>}` is productive and not regular. It emits `{a: …}` every lap, so
 // `Deep<number>` is a well-defined infinite tree, but its payloads are `{b: number}`, then
 // `{b: {b: number}}`, and so on, all distinct. No finite normal form exists for it, so the
-// evaluator cannot materialize it. constrain compares two such aliases by their names and
-// arguments instead of unfolding them, which is what makes accepting them useful rather than only
-// permissive.
+// evaluator cannot materialize it. constrain compares two such aliases by their canonical identity
+// instead of unfolding them, which is what makes accepting them useful rather than only permissive.
+// That identity keeps only the arguments the denoted type depends on — see markPhantomParams —
+// which is why `Deep<number>` and `Deep<string>` compare equal rather than diverging.
 //
 // Mutual recursion goes through the alias reference graph. A recursive reference means a reference
 // to any alias in the same strongly connected component, so `type A = B` paired with `type B = A`
@@ -73,6 +74,11 @@ func (c *checker) checkProductive(shells []*aliasShell) {
 // the dep_graph component and whose edges are the unguarded alias references in their bodies. A
 // component of two or more aliases is a cycle. A component of one is a cycle only when that alias's
 // body names itself unguarded.
+//
+// Everything below but the collector repeats aliasComponents in phantom.go, and #965 tracks lifting
+// it into a shared helper. The two graphs stay distinct: that one records a reference at any depth,
+// which would make a guarded recursion look unguarded and reject an alias that emits structure every
+// lap.
 func unguardedCycles(shells []*aliasShell) map[string]set.Set[string] {
 	names := make([]string, 0, len(shells))
 	for _, sh := range shells {

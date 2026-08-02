@@ -406,8 +406,16 @@ func (c *checker) inferComponent(
 	}
 	c.deferAliasBounds = false
 	// Every body in the component is resolved, so the alias reference graph the productivity
-	// check reads is complete.
+	// check and the phantom-parameter fixed point read is complete. Both run before any
+	// constraint reaches an alias in the component, which is what lets constrain trust the marks
+	// they leave on each AliasDef.
 	c.checkProductive(aliasShells)
+	markPhantomParams(aliasShells)
+	// The deferred bound comparisons run last, after the marks are in place. Each one goes
+	// through constrain, which interns an alias operand's canonical identity, and internAlias
+	// drops the arguments of phantom parameters when it renders that key. Interning a reference
+	// before its alias is marked would key it under its full arguments and keep that
+	// representative for the rest of the run, so the same type could hold two identities.
 	c.runDeferredAliasBounds()
 
 	// Report any remaining non-value decl as unsupported. A class was pre-bound above and

@@ -287,12 +287,14 @@ func (c *Context) reduceResidual(t soltype.Type, seen *seenPairs) (soltype.Type,
 }
 
 // maxUnwrapDepth caps how many type operators constrain may evaluate along one constraint path.
-// Almost every unwrap chain is a handful of steps and settles on its own. Two rules already close
+// Almost every unwrap chain is a handful of steps and settles on its own. Three rules already close
 // the recursive ones: the reflexive shortcut settles a comparison between the same alias
-// instantiation, and the seen-set settles one whose pairs repeat, which is every regular recursive
-// alias. What is left is a comparison between two different instantiations of a productive but
-// non-regular alias, `Deep<number> <: Deep<string>` for `type Deep<T> = {a: Deep<{b: T}>}`. That
-// one reaches a pair no earlier lap reached on every lap, so nothing closes it and the walk has no
+// instantiation, erasing the arguments of phantom parameters brings two instantiations that denote
+// one type under that shortcut, and the seen-set settles a comparison whose pairs repeat, which is
+// every regular recursive alias. What is left is a comparison between two instantiations of a
+// productive but non-regular alias whose parameter does reach the type it denotes,
+// `Nest<number> <: Nest<string>` for `type Nest<T> = {here: T, deeper: Nest<{b: T}>}`. That one
+// reaches a pair no earlier lap reached on every lap, so nothing closes it and the walk has no
 // finite answer to find. This budget stops it with an ExpansionLimitError.
 //
 // It is the constrain-side twin of the evaluator's maxExpandDepth and carries the same value, since
@@ -333,9 +335,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// recursive aliases with no finite normal form. Each lap of `type Deep<T> = {a: Deep<{b: T}>}`
 	// carries a payload no earlier lap did, first `{b: number}` and then `{b: {b: number}}`. So
 	// unfolding `Deep<number> <: Deep<number>` reaches a fresh pair every lap and the seen-set below
-	// never closes it, while the canonical identity aliasKey builds settles it in one step. Only an
-	// alias operand takes the shortcut. Any other type reaching here as both operands is decided by
-	// the arms below without unfolding anything, so the shortcut would save nothing.
+	// never closes it, while the canonical identity aliasKey builds settles it in one step. That
+	// identity erases the arguments of parameters no instantiation's type depends on, so it also
+	// settles `Deep<number> <: Deep<string>`, where the two sides are the same infinite tree. Only
+	// an alias operand takes the shortcut. Any other type reaching here as both operands is decided
+	// by the arms below without unfolding anything, so the shortcut would save nothing.
 	if _, subIsAlias := sub.(*soltype.AliasType); subIsAlias && key.sub == key.super {
 		return nil
 	}
