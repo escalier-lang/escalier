@@ -52,47 +52,98 @@ func runThrowsErrCases(t *testing.T, tests []throwsErrCase) {
 	}
 }
 
-// A function's `throws` type is inferred from its body when the signature declares no
-// clause, the way its return type is inferred from its `return` statements.
-func TestInferThrowsFromBody(t *testing.T) {
+// Omitting the `throws` clause declares that a function raises nothing, so a body that
+// does raise is rejected at the site that raises rather than at the whole function. This
+// mirrors the old checker, where inferFuncSig gives a clause-less signature `never`.
+// Writing `throws never` is not how a non-throwing function is spelled; omitting the
+// clause is.
+func TestInferThrowsRequiresAClause(t *testing.T) {
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			name:     "ThrowInAClauselessFunction",
+			src:      `fn f() { throw "boom" }`,
+			wantErrs: []string{`1:16-1:22: cannot constrain "boom" <: never`},
+		},
+		{
+			name: "CallToAThrowingCalleeFromAClauselessCaller",
+			src: `
+				fn a() throws string { throw "boom" }
+				fn f() { a() }
+			`,
+			wantErrs: []string{"3:14-3:17: cannot constrain string <: never"},
+		},
+		{
+			name:     "ThrowInAClauselessFunctionExpression",
+			src:      `val f = fn () { throw "x" }`,
+			wantErrs: []string{`1:23-1:26: cannot constrain "x" <: never`},
+		},
+		{
+			name:     "ThrowInAClauselessMethod",
+			src:      `class C { m(self) { throw "x" } }`,
+			wantErrs: []string{`1:27-1:30: cannot constrain "x" <: never`},
+		},
+		{
+			// A clause on the ANNOTATION does not reach an un-annotated function
+			// expression: the lambda's own signature has no clause, so its sink is
+			// `never` and its throw is rejected before the annotation is consulted. The
+			// old checker behaves the same way, since inferFuncSig reads only the
+			// signature. Writing `fn () throws _ { … }` is how the lambda opts in.
+			name:     "AnnotationClauseDoesNotReachAnUnannotatedLambda",
+			src:      `val f: fn() -> never throws string = fn () { throw "x" }`,
+			wantErrs: []string{`1:52-1:55: cannot constrain "x" <: never`},
+		},
+	})
+}
+
+// `throws _` opts into inference: the clause mints a fresh variable that the body's
+// exceptional exits flow into, so the function's throws is read off the body the way its
+// return type is read off its `return` statements.
+func TestInferThrowsFromBodyUnderAWildcardClause(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
 			name: "SingleThrow",
-			src:  `fn f() { throw "boom" }`,
+			src:  `fn f() throws _ { throw "boom" }`,
 			want: `fn () -> never throws "boom"`,
 		},
 		{
 			// Two throws on different paths union, the same join the return points take.
 			name: "ThrowsOnBothBranches",
-			src:  `fn f(c: boolean) { if c { throw "a" } else { throw 5 } }`,
+			src:  `fn f(c: boolean) throws _ { if c { throw "a" } else { throw 5 } }`,
 			want: `fn (c: boolean) -> never throws 5 | "a"`,
 		},
 		{
 			// The `else` branch diverges, so it drops out of the value union and only the
 			// `then` branch reaches the return.
 			name: "ThrowOnOnePathOnly",
-			src:  `fn f(c: boolean) { if c { return 1 } else { throw "x" } }`,
+			src:  `fn f(c: boolean) throws _ { if c { return 1 } else { throw "x" } }`,
 			want: `fn (c: boolean) -> 1 throws "x"`,
 		},
 		{
 			// `throw` is `never`, so it composes where a value is expected and contributes
 			// nothing to the union of the branches.
 			name: "ThrowInValuePosition",
-			src:  `fn f(c: boolean) { return if c { 1 } else { throw "x" } }`,
+			src:  `fn f(c: boolean) throws _ { return if c { 1 } else { throw "x" } }`,
 			want: `fn (c: boolean) -> 1 throws "x"`,
 		},
 		{
-			// A body with no exceptional exit renders no clause at all.
+			// A body with no exceptional exit renders no clause at all, clause or no.
 			name: "NoThrowRendersNoClause",
 			src:  `fn f() { return 1 }`,
 			want: `fn () -> 1`,
 		},
 		{
-			// A nested function owns its own throws sink, so `g`'s throw stays on `g`.
+			// A wildcard clause nothing reached is still no clause.
+			name: "UnreachedWildcardRendersNoClause",
+			src:  `fn f() throws _ { return 1 }`,
+			want: `fn () -> 1`,
+		},
+		{
+			// A nested function owns its own throws sink, so `g`'s throw stays on `g` and
+			// the enclosing `f` needs no clause of its own.
 			name: "NestedFunctionThrowsDoNotLeak",
 			src: `
 				fn f() {
-					val g = fn () { throw "inner" }
+					val g = fn () throws _ { throw "inner" }
 					return 1
 				}
 			`,
@@ -103,7 +154,7 @@ func TestInferThrowsFromBody(t *testing.T) {
 			// reaches no normal exit, so its return type is `never` and it satisfies any
 			// return annotation.
 			name: "DivergingBodyReturnsNever",
-			src:  `fn f() -> number { throw "x" }`,
+			src:  `fn f() -> number throws _ { throw "x" }`,
 			want: `fn () -> number throws "x"`,
 		},
 	})
@@ -161,7 +212,7 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 			name: "CallerInheritsCalleeThrows",
 			src: `
 				fn f() throws string { throw "boom" }
-				fn g() { f() }
+				fn g() throws _ { f() }
 			`,
 			binding: "g",
 			want:    "fn () -> void throws string",
@@ -177,7 +228,7 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 		},
 		{
 			name:    "CallThroughAParameter",
-			src:     `fn f(cb: fn() -> number throws string) { return cb() }`,
+			src:     `fn f(cb: fn() -> number throws string) throws _ { return cb() }`,
 			binding: "f",
 			want:    "fn (cb: fn () -> number throws string) -> number throws string",
 		},
@@ -185,8 +236,8 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 			name: "ThrowsPropagateThroughACallChain",
 			src: `
 				fn a() throws string { throw "boom" }
-				fn b() { a() }
-				fn c() { b() }
+				fn b() throws _ { a() }
+				fn c() throws _ { b() }
 			`,
 			binding: "c",
 			want:    "fn () -> void throws string",
@@ -198,7 +249,7 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 			src: `
 				fn a() throws string { throw "boom" }
 				fn outer() {
-					val inner = fn () { a() }
+					val inner = fn () throws _ { a() }
 					return inner
 				}
 			`,
@@ -209,7 +260,7 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 			name: "BodylessDeclareFnDeclaresThrows",
 			src: `
 				declare fn a() -> number throws string
-				fn f() { return a() }
+				fn f() throws _ { return a() }
 			`,
 			want: "fn () -> number throws string",
 		},
@@ -222,7 +273,7 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 			name: "SinkMintedInAValInitializerStaysAtTheBodyLevel",
 			src: `
 				fn a() throws string { throw "boom" }
-				fn f() {
+				fn f() throws _ {
 					val x = a()
 					a()
 					return x
@@ -250,7 +301,7 @@ func TestInferThrowsThroughOverloadResolution(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn a(x: number) -> number throws string { throw "boom" }
 		fn a(x: string) -> string { return x }
-		fn callsThrowingArm() { return a(1) }
+		fn callsThrowingArm() throws _ { return a(1) }
 		fn callsQuietArm() { return a("s") }
 	`)
 	require.Empty(t, errs)
@@ -312,7 +363,7 @@ func TestInferThrowsPolymorphism(t *testing.T) {
 			name: "CallBindsTheThrowsParameter",
 			src: `
 				fn f<E>(g: fn() -> number throws E) -> number throws E { return g() }
-				fn h() { return f(fn () -> number throws string { throw "x" }) }
+				fn h() throws _ { return f(fn () -> number throws string { throw "x" }) }
 			`,
 			binding: "h",
 			want:    "fn () -> number throws string",
@@ -345,7 +396,7 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 					constructor(mut self, text: string) { self.text = text },
 					parse(self) -> number throws string { throw "bad input" },
 				}
-				fn f(p: Parser) { return p.parse() }
+				fn f(p: Parser) throws _ { return p.parse() }
 			`,
 			want: "fn (p: Parser) -> number throws string",
 		},
@@ -356,7 +407,7 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 					n: number,
 					constructor(mut self, n: number) throws string { throw "bad count" },
 				}
-				fn f(n: number) { return Counter(n) }
+				fn f(n: number) throws _ { return Counter(n) }
 			`,
 			want: "fn (n: number) -> Counter throws string",
 		},
@@ -376,7 +427,7 @@ func TestInferThrowsAnnotationRecovery(t *testing.T) {
 		{
 			// `void` stands in for any annotation resolveTypeAnn does not support.
 			name:     "UnsupportedAnnotationDoesNotCascade",
-			src:      `val f: fn() -> number throws void = fn () -> number { throw "x" }`,
+			src:      `val f: fn() -> number throws void = fn () -> number throws _ { throw "x" }`,
 			wantErrs: []string{"1:30-1:34: Unsupported: VoidTypeAnn"},
 		},
 		{

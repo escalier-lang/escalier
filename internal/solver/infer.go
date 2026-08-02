@@ -143,30 +143,29 @@ type funcCtx struct {
 	// types is what lets a call contribute without the walk having to resolve the callee
 	// first.
 	//
-	// When the signature declares `throws T`, inferFunc seeds the sink with T before the
-	// body is walked, so each throw and each call checks against the declared type at its
-	// own site and blames it there. Seeding also keeps a declared type parameter from
-	// picking up a vacuous bound. The alternative is to constrain the body into a separate
-	// variable and that variable into `T`, which leaves the two bounding each other, so
+	// inferFunc seeds the sink from the signature before the body is walked, so each throw
+	// and each call is checked against it at its own site and blamed there. A signature
+	// with no clause seeds `never`, which is how omitting the clause declares that the
+	// function raises nothing; `throws T` seeds T, and `throws _` seeds a fresh variable
+	// the body's exits flow into.
+	//
+	// Seeding also keeps a declared type parameter from picking up a vacuous bound. The
+	// alternative is to constrain the body into a separate variable and that variable into
+	// `T`, which leaves the two bounding each other, so
 	// `fn <E>(g: fn () -> number throws E) -> number throws E` would render its own sink
 	// as a second quantifier.
 	//
-	// With no clause the sink is a variable throwsSink mints on first use, so a body that
-	// neither throws nor calls anything leaves this nil and the function raises nothing.
-	// inferFunc reads it back as the function's Throws once the body is walked, which
-	// mirrors the return type: the join variable becomes FuncType.Ret whether or not
-	// anything flowed into it. A sink nothing reached coalesces to `never` and renders no
-	// clause.
+	// inferFunc reads the sink back as the function's Throws once the body is walked,
+	// which mirrors the return type: the join variable becomes FuncType.Ret whether or not
+	// anything flowed into it. A `throws _` sink nothing reached coalesces to `never` and
+	// renders no clause.
 	//
-	// Emptiness is deliberately not tested by looking at the sink's own lower bounds.
-	// constrain records a variable-to-variable edge on one endpoint only, so a generic
-	// callee's `throws E` leaves the sink's lower bounds empty while E carries the sink as
-	// an upper bound. Coalescing reads that edge back through its mirrored view, and a
-	// lower-bounds test would not, so it would drop the throws the caller inherits.
+	// A body with no signature to seed from leaves this nil until throwsSink mints a
+	// variable on first use. Only a script's top level is in that position, since it has
+	// nowhere to write a clause.
 	//
-	// A minted-but-unreached sink is also what makes minting safe under a discardable
-	// probe: the mint itself is not journaled, but the bounds a trial appends to it are,
-	// so a discarded trial leaves a sink indistinguishable from none.
+	// Minting is safe under a discardable probe: the mint itself is not journaled, but the
+	// bounds a trial appends to it are, so a discarded trial leaves a sink nothing reached.
 	throws soltype.Type
 	// lvl is the level this body is walked at, recorded so throwsSink mints the sink
 	// there rather than wherever the first exceptional exit happens to sit. A `val`
@@ -340,14 +339,16 @@ func (c *checker) inScript() bool {
 	return c.fn != nil && c.fn.node == nil
 }
 
-// throwsSink returns the type this body's exceptional exits are constrained against,
-// minting a fresh variable at lvl when the signature declared no `throws` clause and
-// nothing has needed the sink yet.
+// throwsSink returns the type this body's exceptional exits are constrained against.
+// inferFunc seeds it from the signature, so a function body always has one before its
+// first exceptional exit is walked, and the mint below fires only for a body with no
+// signature: a script's top level, which has nowhere to write a clause and so infers
+// what it raises rather than being held to `never`.
 //
-// A `throw` or a call at module top level has no enclosing function to raise out of, so
-// it gets a fresh variable that nothing reads. The thrown type is still checked there;
-// it simply propagates nowhere. Recording a module initializer's throws needs somewhere
-// on the module to put them, which no milestone has designed yet.
+// A `throw` or a call at module top level has no enclosing function to raise out of at
+// all, so it gets a fresh variable that nothing reads. The thrown type is still checked
+// there; it simply propagates nowhere. Recording a module initializer's throws needs
+// somewhere on the module to put them, which no milestone has designed yet.
 func (c *checker) throwsSink(lvl int) soltype.Type {
 	if c.fn == nil {
 		return c.freshAt(lvl)

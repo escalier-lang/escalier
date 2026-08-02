@@ -295,15 +295,24 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
-	// A `throws T` clause is resolved before the body is walked, because it is the sink
-	// every `throw` and every call in the body checks against. Resolving it up front is
-	// what makes a mismatch blame the throw or the call rather than the whole function.
-	// It is also why the declared type reaches the function's Throws whether or not the
-	// body raises anything. Writing `throws _` puts a fresh variable there instead, so
-	// the clause asks for inference rather than fixing a type. An unsupported clause was
-	// already reported by resolveTypeAnn and recovers as no clause at all.
-	var declaredThrows soltype.Type
+	// The `throws` clause is resolved before the body is walked, because it is the sink
+	// every `throw` and every call in the body is checked against. Resolving it up front
+	// is what makes a mismatch blame the throw or the call rather than the whole
+	// function, and it is why the declared type reaches the function's Throws whether or
+	// not the body raises anything.
+	//
+	// Writing NO clause is itself a declaration: the function raises nothing. The sink is
+	// `never`, so a `throw` in the body or a call to a throwing callee is rejected at its
+	// own site, and a function is non-throwing only by omitting the clause rather than by
+	// writing `throws never`. Writing `throws _` opts back into inference by putting a
+	// fresh variable there for the body's exits to flow into.
+	//
+	// An unsupported clause recovers to a fresh variable rather than to `never`, after
+	// resolveTypeAnn has reported it. Recovering to the strictest type would re-report
+	// every exceptional exit on top of the one real diagnostic.
+	var declaredThrows soltype.Type = &soltype.NeverType{}
 	if sig.Throws != nil {
+		declaredThrows = c.freshAt(lvl)
 		if annT, ok := c.resolveTypeAnn(declScope, sig.Throws, lvl); ok {
 			declaredThrows = annT
 		}

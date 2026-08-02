@@ -691,10 +691,18 @@ walk.
 **Data structures.** `soltype.FuncType` gains a `Throws Type` field
 ([soltype/type.go:201](../../internal/soltype/type.go)), parallel to `Ret`. A nil
 Throws reads as `never` (⊥), so a FuncType minted without thinking about exceptions
-raises nothing. A source function with no `throws` clause infers its throws from its
-body rather than being pinned to `never`, matching
-[06_error_handling.md](../../docs/06_error_handling.md), where `fn foo() { throw
-FooError() }` is "inferred as `fn() -> undefined throws FooError | ...`".
+raises nothing.
+
+Omitting the clause is how a source function declares that it raises nothing, matching
+the old checker's `inferFuncSig`, which gives a clause-less signature `never`. A body
+that raises anyway is rejected at the `throw` or the call, so `throws never` is never
+the way to spell a non-throwing function. `throws _` opts into inference and is what a
+function whose raised type should come from its body writes.
+
+This contradicts [06_error_handling.md](../../docs/06_error_handling.md), which shows
+`fn foo() { throw FooError() }` as "inferred as `fn() -> undefined throws FooError |
+...`" and whose `try`/`catch` examples call clause-less functions that raise. The doc
+needs revising to match, which is tracked separately from this PR.
 
 **Algorithms.**
 - **Constraint engine, parallel arms** — the function arm in `constrain` recurses
@@ -707,14 +715,18 @@ FooError() }` is "inferred as `fn() -> undefined throws FooError | ...`".
   handling — `E` in `<E>(f: () -> T throws E) -> T throws E` is just another
   quantified variable.
 - **How `try`/`catch` narrows the body's throws — settled.** The body carries one
-  **throws sink**, the type every `throw` and every call is constrained into. A
-  signature that writes `throws T` makes `T` the sink directly, so each exceptional
-  exit is checked at its own site; a signature with no clause gets a fresh variable
-  and the coalesced sink becomes the inferred clause. A `try` block then needs no new
-  lattice machinery: it pushes a nested sink, and the enclosing sink receives only the
-  part the `catch` arms leave unhandled. That is the two-variable encoding
-  `body_throws <: surrounding_throws ∪ caught_throws` with the union realized by the
-  arms' patterns rather than by a second variable.
+  **throws sink**, the type every `throw` and every call is constrained into. The
+  signature seeds it: `throws T` makes `T` the sink directly, no clause makes it
+  `never`, and `throws _` makes it a fresh variable whose coalesced value becomes the
+  inferred clause. Each exceptional exit is therefore checked at its own site. A `try`
+  block then needs no new lattice machinery: it pushes a nested sink, and the enclosing
+  sink receives only the part the `catch` arms leave unhandled. That is the
+  two-variable encoding `body_throws <: surrounding_throws ∪ caught_throws` with the
+  union realized by the arms' patterns rather than by a second variable.
+
+  The nested sink is also what makes a clause-less function usable once `try`/`catch`
+  lands: a call wrapped in a `try` whose arms are exhaustive contributes nothing to the
+  enclosing `never` sink, so the caller needs no clause of its own.
 
   The nested sink is not built here, because the solver has no `try`/`catch` walk to
   push it: `TryCatchExpr` reaches `inferExpr`'s default arm and reports the node
