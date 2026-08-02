@@ -635,19 +635,34 @@ func mergeSpreadOperands(operandElems [][]soltype.ObjTypeElem) []soltype.ObjType
 		total += len(elems)
 	}
 	out := make([]soltype.ObjTypeElem, 0, total)
-	pos := make(map[string]int, total)
+	pos := make(map[mergeKey]int, total)
 	for _, elems := range operandElems {
 		for _, elem := range elems {
-			name := soltype.ObjElemName(elem)
-			if i, seen := pos[name]; seen {
+			key := mergeKeyOf(elem)
+			if i, seen := pos[key]; seen {
 				out[i] = mergeSpreadElem(out[i], elem)
 				continue
 			}
-			pos[name] = len(out)
+			pos[key] = len(out)
 			out = append(out, elem)
 		}
 	}
 	return out
+}
+
+// mergeKey identifies the member two spread operands overlap on. A construct signature is
+// unnamed, so keying the merge on ObjElemName alone would fold it together with a property
+// literally named `""`, dropping whichever the merge visited first. ctor separates the two, so
+// `{new () -> number, "": string, ...B}` keeps both members, and two construct signatures still
+// collapse to the rightmost one.
+type mergeKey struct {
+	name string
+	ctor bool
+}
+
+func mergeKeyOf(elem soltype.ObjTypeElem) mergeKey {
+	_, isCtor := elem.(*soltype.ConstructorElem)
+	return mergeKey{name: soltype.ObjElemName(elem), ctor: isCtor}
 }
 
 // mergeSpreadElem combines an earlier object member with a later one of the same name under Flow's

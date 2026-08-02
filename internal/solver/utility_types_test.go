@@ -946,6 +946,27 @@ func TestUtilityTypeInstanceType(t *testing.T) {
 	})
 }
 
+// An ordinary function matches both constructor patterns, where TypeScript reduces each
+// application to `never`. This is the cost of the rule that lets a bare function fill a
+// constructor-only object target, which is itself what makes `InstanceType<typeof C>` work for a
+// class with no statics — classValue binds such a class to its bare constructor function, so
+// nothing distinguishes it from a function that is not a constructor. These cases pin the
+// divergence so a later change that separates the two shows up here.
+func TestUtilityTypeConstructorUtilitiesAcceptOrdinaryFunction(t *testing.T) {
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name:         "InstanceTypeReadsTheReturn",
+			src:          `type Result = InstanceType<fn (x: number) -> {a: number}>`,
+			wantExpanded: "{a: number}",
+		},
+		{
+			name:         "ConstructorParametersReadsTheParams",
+			src:          `type Result = ConstructorParameters<fn (x: number) -> {a: number}>`,
+			wantExpanded: "[number]",
+		},
+	})
+}
+
 // A class value is what `typeof C` names, and `InstanceType<typeof C>` reads its instance off
 // the construct signature. classValue gives a class with no statics its bare constructor
 // FuncType and one with statics an object carrying a ConstructorElem, so the two render

@@ -816,9 +816,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		// `typeof Point` renders `fn (x: number) -> Point`, while the same class with a
 		// `static origin: Point` renders `{new (x: number) -> Point, origin: Point}`. This rule
 		// is what lets one `{new (…) -> R, ...}` target accept both, which is how
-		// `InstanceType<typeof C>` reads either class's instance. Its cost is that an ordinary
-		// function satisfies such a target too, since nothing in a FuncType says whether the
-		// value behind it is constructible.
+		// `InstanceType<typeof C>` reads either class's instance.
+		//
+		// Its cost is that an ordinary function satisfies such a target too, since nothing in a
+		// FuncType records whether the value behind it is constructible. So
+		// `InstanceType<fn (x: number) -> {a: number}>` reduces to `{a: number}` where
+		// TypeScript reduces the same application to `never`. Separating the two needs either a
+		// constructor marker on FuncType or a class value that is always an object, and the
+		// second rewrites every rendered class-value type.
 		//
 		// A target carrying another member alongside the signature demands something a bare
 		// function cannot supply. It stays on the object-against-object arm and fails there.

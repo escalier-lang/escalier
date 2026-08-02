@@ -100,6 +100,36 @@ func TestInferConstructorTypeAnnWithSpread(t *testing.T) {
 		soltype.Print(expandResidual(ctx, nodes["Result"])))
 }
 
+// The spread merge folds two operands together under the member they overlap on. A construct
+// signature is unnamed and a property key may itself be the empty string, so both would answer
+// `""` if the merge keyed on the name alone. They are distinct members, so an object carrying
+// both keeps both, in either written order.
+func TestInferConstructorTypeAnnAndEmptyStringKeyBothSurvive(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			"SignatureFirst",
+			`type Result = {new () -> number, "": string, ...Base}`,
+			`{new () -> number, "": string, q: number}`,
+		},
+		{
+			"PropertyFirst",
+			`type Result = {"": string, new () -> number, ...Base}`,
+			`{"": string, new () -> number, q: number}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, "type Base = {q: number}\n"+tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
 // keyofObject projects property, getter, and setter names. A construct signature is unnamed, so it
 // contributes no key at all rather than an empty-string one, and `keyof {new (…) -> T, origin: N}`
 // is just `"origin"`. A signature-only object has an empty key set, which is `never`.
