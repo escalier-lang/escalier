@@ -602,7 +602,7 @@ func TestInferInexactFuncAnnotationDoesNotWidenAValue(t *testing.T) {
 		`)
 		require.Len(t, errs, 1)
 		require.Equal(t,
-			"3:4-3:50: cannot constrain function of arity 1 <: function of arity 1",
+			"3:4-3:50: cannot constrain function of arity 1 <: function of arity 1 or more",
 			msgWithSpan(errs[0]))
 	})
 }

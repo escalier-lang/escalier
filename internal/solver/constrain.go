@@ -832,16 +832,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// An absorbing super runs the narrowed gate instead. Its rest param covers every
 			// position from absorbAt on, whatever the sub declares there, so only the fixed
 			// prefix has an arity to check. See prefixRequiredCount for what that gives up.
+			// The reported accept-sets are read off the EXPANDED forms, since those are the
+			// counts the rule compared. sub and sup stay the written forms, which is what
+			// blame resolution and the "defined here" span need.
+			loSub, hiSub := acceptSet(subX)
+			loSup, hiSup := acceptSet(supX)
+			arityErr := func() []SolverError {
+				return []SolverError{&FuncArityMismatchError{
+					Sub: sub, Super: sup,
+					SubLo: loSub, SubHi: hiSub, SuperLo: loSup, SuperHi: hiSup,
+				}}
+			}
 			if absorbAt >= 0 {
 				if prefixRequiredCount(subX, absorbAt) > prefixRequiredCount(supX, absorbAt) {
-					return []SolverError{&FuncArityMismatchError{Sub: sub, Super: sup}}
+					return arityErr()
 				}
-			} else {
-				loSub, hiSub := acceptSet(subX)
-				loSup, hiSup := acceptSet(supX)
-				if loSub > loSup || hiSub < hiSup {
-					return []SolverError{&FuncArityMismatchError{Sub: sub, Super: sup}}
-				}
+			} else if loSub > loSup || hiSub < hiSup {
+				return arityErr()
 			}
 			// Shared positions are contravariant in the params and covariant in the
 			// return. An exact super passes no argument beyond its declared params, so

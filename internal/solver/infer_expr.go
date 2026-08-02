@@ -1254,9 +1254,17 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		demand = args[:len(fn.Params)]
 	case resolved && len(args) < requiredCount(fn):
 		c.errs = append(c.errs, &NotEnoughArgsError{Call: e, Fn: fn})
-		demand = make([]*soltype.FuncParam, len(fn.Params))
+		// Pad to whichever is larger, the declared parameter count or the required count.
+		// The expansion above makes them equal for a callee whose rest parameter is an exact
+		// tuple, but an INEXACT tuple rest is left unexpanded and can require more arguments
+		// than it declares parameters: `fn (a: number, ...args: [string, boolean, ...]) -> R`
+		// declares two and requires three. Padding to the parameter count alone would leave
+		// the demand below the accept-set floor, so the gate would report an arity mismatch
+		// on top of the lint that just fired.
+		want := max(len(fn.Params), requiredCount(fn))
+		demand = make([]*soltype.FuncParam, want)
 		copy(demand, args)
-		for i := len(args); i < len(fn.Params); i++ {
+		for i := len(args); i < want; i++ {
 			demand[i] = &soltype.FuncParam{Type: c.freshAt(lvl)}
 		}
 	}

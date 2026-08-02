@@ -491,6 +491,16 @@ val g: fn(...args: [number, string]) -> number = two
 			src:  decls + `val r = g(1, 2)`,
 			want: "cannot constrain 2 <: string",
 		},
+		{
+			// An INEXACT tuple rest is left unexpanded, so it can require more arguments than
+			// it declares parameters: this one declares two and requires three. The lint's
+			// reshaped demand is padded to the required count rather than the parameter count,
+			// so the accept-set gate does not report a second, redundant arity mismatch.
+			name: "TooFewThroughAnInexactTupleRest",
+			src: `val h: fn(a: number, ...args: [string, boolean, ...]) -> number = fn (...) { return 1 }` + "\n" +
+				`val r = h(1)`,
+			want: "Not enough arguments: expected at least 3, but got 1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -576,7 +586,7 @@ val slot: fn(...args: [number, string]) -> string = one`
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.IsType(t, &FuncArityMismatchError{}, errs[0])
-	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 1", errs[0].Message())
+	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 2", errs[0].Message())
 }
 
 // The tuple's elements are the argument types the rest param binds, one per position, so a
@@ -598,7 +608,7 @@ func TestInferUnboundedRestParamFuncAnnotationRejectsFixedArity(t *testing.T) {
 	_, _, errs := inferSource(t, `val f: fn(...xs: number) -> number = fn (x) { return x }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &FuncArityMismatchError{}, errs[0])
-	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 1", errs[0].Message())
+	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 0 or more", errs[0].Message())
 }
 
 // The Variation-B check fires end-to-end through inexact function annotations.

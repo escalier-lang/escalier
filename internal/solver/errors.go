@@ -85,8 +85,15 @@ type CannotConstrainError struct {
 // call-shape) so blame never degrades to the zero span.
 type FuncArityMismatchError struct {
 	Sub, Super *soltype.FuncType
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: constraint node fallback when no operand resolves
+	// The two accept-sets the rule compared, each an inclusive range of argument counts.
+	// They are carried separately from Sub and Super because a rest parameter takes its
+	// arity from its type rather than from the parameter count: `fn (...args: [number,
+	// string]) -> R` declares one parameter and accepts exactly two arguments, so counting
+	// Params would report "arity 1" for both sides of a mismatch and name neither.
+	SubLo, SubHi     int
+	SuperLo, SuperHi int
+	prov             NodeResolver // M2.5: type→node index (§3.5)
+	site             ast.Node     // M2.5: constraint node fallback when no operand resolves
 }
 
 // TupleLengthMismatchError fires on TupleType <: TupleType with different
@@ -1843,8 +1850,21 @@ func (e *CannotConstrainError) Message() string {
 }
 
 func (e *FuncArityMismatchError) Message() string {
-	return fmt.Sprintf("cannot constrain function of arity %d <: function of arity %d",
-		len(e.Sub.Params), len(e.Super.Params))
+	return fmt.Sprintf("cannot constrain function of %s <: function of %s",
+		describeArity(e.SubLo, e.SubHi), describeArity(e.SuperLo, e.SuperHi))
+}
+
+// describeArity renders one accept-set as prose. A single-point range is "arity 2", an open
+// one is "arity 1 or more", and a proper range is "arity 1 to 3".
+func describeArity(lo, hi int) string {
+	switch {
+	case hi == unboundedArity:
+		return fmt.Sprintf("arity %d or more", lo)
+	case lo == hi:
+		return fmt.Sprintf("arity %d", lo)
+	default:
+		return fmt.Sprintf("arity %d to %d", lo, hi)
+	}
 }
 
 func (e *TupleLengthMismatchError) Message() string {
