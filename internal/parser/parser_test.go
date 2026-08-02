@@ -43,6 +43,13 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
+		"FuncDeclWithThrowsAndNoReturnType": {
+			input: `
+				fn divide(a, b) throws DivisionByZeroError {
+					return a / b
+				}
+			`,
+		},
 		"AsyncFuncDecls": {
 			input: `
 				async fn fetchData(url: string) -> Promise<string> {

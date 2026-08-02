@@ -47,7 +47,7 @@ func InferScript(script *ast.Script) (*Scope, *Info, []SolverError) {
 	// child is the outer scope the pre-pass resolves names against. There is no
 	// enclosing context to restore, so the returned previous one is discarded.
 	scriptBody := &ast.Block{Stmts: script.Stmts, Span: script.Span()}
-	c.pushFuncCtx(false, nil)
+	c.pushFuncCtx(false, nil, 0)
 	c.runLivenessPrePass(scope, nil, nil, scriptBody)
 
 	// Walk the body through inferBlock, the same source-order statement walker a

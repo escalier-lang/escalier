@@ -125,6 +125,47 @@ func TestPrintRoundTrips(t *testing.T) {
 			"fn (a: number, ...rest: string) -> boolean",
 		},
 
+		// A throws clause renders after the return type. A function that raises nothing
+		// spells that either as a nil Throws or as `never`, and neither renders a clause.
+		{"fn with throws", &FuncType{Ret: numP(), Throws: strP()}, "fn () -> number throws string"},
+		{
+			"fn with throws and params",
+			&FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: numP(), Throws: strP()},
+			"fn (x: number) -> number throws string",
+		},
+		{
+			"fn throwing a union",
+			&FuncType{Ret: numP(), Throws: &UnionType{Types: []Type{numP(), strP()}}},
+			"fn () -> number throws number | string",
+		},
+		{"fn with never throws renders no clause", &FuncType{Ret: numP(), Throws: &NeverType{}}, "fn () -> number"},
+		{
+			// `-> R` is greedy, so a function-typed return is parenthesized once a clause
+			// follows it. Without the parens this and the next case would render alike and
+			// re-read as the next one.
+			"fn-typed return with throws parenthesizes the return",
+			&FuncType{Ret: &FuncType{Ret: numP()}, Throws: strP()},
+			"fn () -> (fn () -> number) throws string",
+		},
+		{
+			"fn-typed return whose own throws is the clause needs no parens",
+			&FuncType{Ret: &FuncType{Ret: numP(), Throws: strP()}},
+			"fn () -> fn () -> number throws string",
+		},
+		{
+			// `throws` terminates the return type, so a union return needs no parens.
+			"union return with throws stays bare",
+			&FuncType{Ret: &UnionType{Types: []Type{numP(), strP()}}, Throws: strP()},
+			"fn () -> number | string throws string",
+		},
+		{
+			// A throwing function nested in a union is parenthesized by its own precedence,
+			// so the clause cannot run on into the sibling member.
+			"throwing fn inside a union",
+			&UnionType{Types: []Type{&FuncType{Ret: numP(), Throws: strP()}, boolP()}},
+			"(fn () -> number throws string) | boolean",
+		},
+
 		// Unions and intersections.
 		{"union pair", &UnionType{Types: []Type{numP(), strP()}}, "number | string"},
 		{"union triple", &UnionType{Types: []Type{numP(), strP(), boolP()}}, "number | string | boolean"},

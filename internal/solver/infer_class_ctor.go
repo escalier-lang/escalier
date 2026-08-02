@@ -74,7 +74,7 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	c.checkConstructorInit(body, ctor)
 	// A constructor returns a fresh instance, not the void its statement body falls off
 	// to, so override the inferred return with the instance type.
-	return &soltype.FuncType{Params: ft.Params, Ret: self, Inexact: ft.Inexact}
+	return &soltype.FuncType{Params: ft.Params, Ret: self, Throws: ft.Throws, Inexact: ft.Inexact}
 }
 
 // checkConstructorInit runs definite-assignment analysis over an explicit

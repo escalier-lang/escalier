@@ -39,6 +39,33 @@ func (p *Parser) typeAnnRequired() ast.TypeAnn {
 	return typeAnn
 }
 
+// throwsClause parses an optional `throws T` clause and returns T, or nil when the next
+// token is not `throws`. It is independent of the `-> R` return annotation, so a function
+// that lets its return type be inferred can still declare what it raises, as in
+// `fn f() throws string { … }`. A `throws` with no type after it is reported and yields
+// nil, so the caller keeps the rest of the signature.
+//
+// An `{` after `throws` is the function's body, not the start of an object type, so the
+// clause ends before it. Handing the block to typeAnn instead would parse `fn f() throws
+// { return 1 }` as a function raising the object type `{ return 1 }`, consuming the body
+// and leaving the caller to fail on whatever follows.
+func (p *Parser) throwsClause() ast.TypeAnn {
+	token := p.lexer.peek()
+	if token.Type != Throws {
+		return nil
+	}
+	p.lexer.consume()
+	if p.lexer.peek().Type == OpenBrace {
+		p.reportError(token.Span, "Expected type annotation after 'throws'")
+		return nil
+	}
+	throwsType := p.typeAnn()
+	if throwsType == nil {
+		p.reportError(token.Span, "Expected type annotation after 'throws'")
+	}
+	return throwsType
+}
+
 func (p *Parser) typeAnn() ast.TypeAnn {
 	typeAnns := NewStack[ast.TypeAnn]()
 	ops := NewStack[*TypeAnnOp]()
@@ -957,14 +984,23 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		p.expect(Arrow, ConsumeOnMatch)
 
 		retType := p.typeAnnRequired()
+		endSpan := retType.Span()
+
+		// A method, getter, or setter signature inside an object type declares what it
+		// raises the same way a standalone function type does, as in
+		// `{parse(self) -> number throws SyntaxError}`.
+		throwsType := p.throwsClause()
+		if throwsType != nil {
+			endSpan = throwsType.Span()
+		}
 
 		fnTypeAnn := ast.NewFuncTypeAnn(
 			lifetimeParams,
 			typeParams,
 			params,
 			retType,
-			nil, // TODO: support throws clause
-			ast.MergeSpans(token.Span, retType.Span()),
+			throwsType,
+			ast.MergeSpans(token.Span, endSpan),
 		)
 
 		// nolint: exhaustive

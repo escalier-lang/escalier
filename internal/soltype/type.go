@@ -230,13 +230,26 @@ type FuncType struct {
 	SelfParam *FuncParam // nil ⇒ static method or plain function; non-nil ⇒ instance method
 	Params    []*FuncParam
 	Ret       Type
-	Inexact   bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
+	// Throws is the type a call may raise, the twin of Ret for the exceptional exit and
+	// covariant like it. Nil reads as `never`, so the zero value is non-throwing;
+	// ThrowsOrNever collapses nil and an explicit `never` so no reader tells them apart.
+	Throws  Type
+	Inexact bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
 	// TypeParams are the function's own quantified type parameters; nil is monomorphic and
 	// a class-level parameter is captured, not listed. LevelOf skips them, being minted deeper.
 	TypeParams []*TypeParam
 	// LifetimeParams are the function's quantified lifetime parameters, the twin of TypeParams;
 	// LevelOf skips them too, though a body lifetime still counts through its RefType.
 	LifetimeParams []*LifetimeParam
+}
+
+// ThrowsOrNever returns the type a call to t may raise, resolving the nil shorthand to the
+// `never` it stands for, so no reader of the throws position has to test for nil.
+func (t *FuncType) ThrowsOrNever() Type {
+	if t.Throws == nil {
+		return &NeverType{}
+	}
+	return t.Throws
 }
 
 // TypeParam is one quantified type parameter, shared by FuncType.TypeParams for
@@ -1112,7 +1125,11 @@ func LevelOf(t Type) int {
 		for _, p := range t.Params {
 			m = max(m, LevelOf(p.Type))
 		}
-		return max(m, LevelOf(t.Ret))
+		m = max(m, LevelOf(t.Ret))
+		if t.Throws != nil {
+			m = max(m, LevelOf(t.Throws))
+		}
+		return m
 	case *TupleType:
 		m := 0
 		for _, e := range t.Elems {

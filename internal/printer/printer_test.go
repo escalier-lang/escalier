@@ -1861,3 +1861,79 @@ func TestPrintImportStmt(t *testing.T) {
 // 		})
 // 	}
 // }
+
+// A `throws` clause round-trips on every signature form that can carry one. Each form
+// prints the return type and the clause through one helper, so a type annotation that
+// declares a raising method or accessor reprints with its clause intact.
+//
+// A function-typed return is parenthesized when a clause follows it. `-> R` is greedy, so
+// the last two cases below are distinct types that would print alike without the parens,
+// and both would re-read as the inner-throws one.
+func TestPrintThrowsClause(t *testing.T) {
+	opts := DefaultOptions()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "function type",
+			input: "fn(x: number) -> number throws string",
+			want:  "fn (x: number) -> number throws string",
+		},
+		{
+			name:  "object method",
+			input: "{m(self) -> number throws SyntaxError}",
+			want:  "{\n    m() -> number throws SyntaxError\n}",
+		},
+		{
+			name:  "object getter",
+			input: "{get g(self) -> number throws string}",
+			want:  "{\n    get g(self) -> number throws string\n}",
+		},
+		{
+			name:  "object setter",
+			input: "{set s(mut self, v: number) -> undefined throws string}",
+			want:  "{\n    set s(mut self, v: number) -> undefined throws string\n}",
+		},
+		{
+			// An explicit `throws never` names the empty set of raised values, so it
+			// carries no more information than writing no clause at all.
+			name:  "throws never prints no clause",
+			input: "fn(x: number) -> number throws never",
+			want:  "fn (x: number) -> number",
+		},
+		{
+			// The OUTER function raises `string` and returns a non-throwing function.
+			name:  "fn-typed return with an outer clause is parenthesized",
+			input: "fn(x: number) -> (fn() -> number) throws string",
+			want:  "fn (x: number) -> (fn () -> number) throws string",
+		},
+		{
+			// The INNER function raises `string`, so the return needs no parens.
+			name:  "fn-typed return whose own clause it is stays bare",
+			input: "fn(x: number) -> fn() -> number throws string",
+			want:  "fn (x: number) -> fn () -> number throws string",
+		},
+		{
+			// With no clause to bound, a function-typed return is never parenthesized.
+			name:  "fn-typed return with no clause stays bare",
+			input: "fn(x: number) -> fn() -> number",
+			want:  "fn (x: number) -> fn () -> number",
+		},
+		{
+			// `throws` terminates the return type, so a union return needs no parens.
+			name:  "union return with a clause stays bare",
+			input: "fn(x: number) -> number | string throws string",
+			want:  "fn (x: number) -> number | string throws string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Print(parseTypeAnn(t, tt.input), opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, result)
+		})
+	}
+}

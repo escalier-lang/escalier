@@ -753,9 +753,6 @@ func (c *checker) typeofMember(recv soltype.Type, name string) (soltype.Type, bo
 // `<T>` list resolves through resolveTypeParams into a child scope, so a parameter, return,
 // or union member that names `T` reads the annotation's own quantified var.
 func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) (soltype.Type, bool) {
-	if ta.Throws != nil {
-		c.reportUnsupportedFeature(ta, "throws clause in function type annotation")
-	}
 	// A function type annotation is its own quantifier scope, so give it its own
 	// named-lifetime map the way inferFunc does for a function body. Without this a
 	// nested `fn<'a: 'static>(…)` annotation would resolve `'a` to the enclosing
@@ -816,9 +813,28 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 		}
 	}
 
-	t := &soltype.FuncType{Params: params, Ret: ret, Inexact: ta.Inexact, TypeParams: typeParams}
+	// An absent clause leaves Throws nil, which reads as `never`: the annotation promises
+	// the function raises nothing. An unsupported clause recovers to a fresh var instead,
+	// matching the parameter and return positions, so it is not re-reported at every use.
+	var throws soltype.Type
+	if ta.Throws != nil {
+		throws = c.freshAt(lvl)
+		if t, ok := c.resolveTypeAnn(annScope, ta.Throws, lvl); ok {
+			throws = t
+		}
+	}
+
+	t := &soltype.FuncType{Params: params, Ret: ret, Throws: throws, Inexact: ta.Inexact, TypeParams: typeParams}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// isWildcardAnn reports whether ta is the `_` inference placeholder. A signature position
+// written `_` asks to be inferred rather than declaring a type, so a check that faults an
+// over-declared signature has nothing to fault there.
+func isWildcardAnn(ta ast.TypeAnn) bool {
+	_, wildcard := ta.(*ast.WildcardTypeAnn)
+	return wildcard
 }
 
 // mirrorParamPat structurally mirrors a function-type-annotation parameter pattern

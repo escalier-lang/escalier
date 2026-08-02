@@ -51,6 +51,12 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"FuncWithTypeParams": {
 			input: "fn<T: number, U: string>(x: T, y: U) -> boolean",
 		},
+		"FuncWithThrows": {
+			input: "fn(x: number) -> boolean throws Error",
+		},
+		"ObjectMethodWithThrows": {
+			input: "{parse(self) -> number throws SyntaxError}",
+		},
 		"UnionType": {
 			input: "A | B | C",
 		},

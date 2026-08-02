@@ -427,6 +427,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 				walk(p.Type)
 			}
 			walk(t.Ret)
+			if t.Throws != nil {
+				walk(t.Throws)
+			}
 		case *TupleType:
 			for _, e := range t.Elems {
 				walk(e)
@@ -1059,7 +1062,27 @@ func (p *namedPrinter) printFuncBody(t *FuncType) string {
 	if t.Inexact {
 		ps = append(ps, "...")
 	}
-	return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
+	// A `throws T` clause renders after the return type, matching the surface syntax. A
+	// function that raises nothing resolves to `never` and renders no clause, so
+	// `fn () -> number` stays the common form. That covers a coalesced throws variable
+	// nothing reached as well as a FuncType minted with no clause at all.
+	throws := t.ThrowsOrNever()
+	if isNever(throws) {
+		return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
+	}
+	// `-> R` is greedy, so a function-typed return is parenthesized once a clause follows
+	// it — `fn () -> (fn () -> number) throws string` — or the clause re-reads as the inner
+	// function's. precUnion bounds a function type and nothing else, precFunc being the
+	// only precedence below it. The clause itself needs no minimum: it is last, so nothing
+	// can bind across its right edge.
+	return "(" + strings.Join(ps, ", ") + ") -> " + p.printTypeMinPrec(t.Ret, precUnion) +
+		" throws " + p.printType(throws)
+}
+
+// isNever reports whether t is the `never` type.
+func isNever(t Type) bool {
+	_, never := t.(*NeverType)
+	return never
 }
 
 // nameTypeParams registers each type parameter's binding variable under its source name

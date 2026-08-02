@@ -467,6 +467,7 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
+			c.reportAccessorThrows(elem.Fn, elem, "getter")
 			stub := c.memberSigStub(lvl, elem.Fn)
 			getter := &soltype.GetterElem{Name: name, SelfParam: c.selfParam(elem.Receiver, elem.Static, self), Type: stub.Ret}
 			target := targetBody(body, static, elem.Static)
@@ -481,6 +482,7 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
+			c.reportAccessorThrows(elem.Fn, elem, "setter")
 			// A well-formed setter declares exactly one value parameter beyond `self` — the
 			// value being assigned. Report a paramless or multi-parameter setter, then still
 			// build the elem from the first value parameter, or `unknown` when there is none,
@@ -526,13 +528,25 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 // stub); SelfParam lives on the element and is not compared here.
 func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
-		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Inexact: ft.Inexact}
+		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
 	}
 	c.constrain(node, callable(bodyFt), callable(stub))
 }
 
+// reportAccessorThrows rejects a `throws` clause on a getter or setter. Neither element
+// holds more than a bare Type, and dropping the clause would let a raising accessor read
+// as non-throwing. kind names the accessor in the message.
+func (c *checker) reportAccessorThrows(fn *ast.FuncExpr, blame ast.Node, kind string) {
+	if fn.Throws != nil {
+		c.reportUnsupportedFeature(blame, "throws clause on a "+kind)
+	}
+}
+
 // memberSigStub builds a member's signature stub: one fresh var per value parameter,
-// preserving arity, parameter names, and optionality, plus a fresh return var.
+// preserving arity, parameter names, and optionality, plus a fresh return var and a fresh
+// throws var. A sibling call reads the stub before the body pass installs the real
+// signature, so the throws var is what carries a raising method's throws to a caller
+// inside the same class.
 func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
@@ -549,7 +563,12 @@ func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 			Optional: p.Optional,
 		}
 	}
-	return &soltype.FuncType{Params: params, Ret: c.freshAt(lvl), Inexact: fn.FuncSig.Inexact}
+	return &soltype.FuncType{
+		Params:  params,
+		Ret:     c.freshAt(lvl),
+		Throws:  c.freshAt(lvl),
+		Inexact: fn.FuncSig.Inexact,
+	}
 }
 
 // targetBody selects the static or instance body for a member.

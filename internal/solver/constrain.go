@@ -666,7 +666,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					errs = append(errs, c.constrain(unknownT, sub.Params[i].Type, seen, false)...)
 				}
 			}
-			return append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant
+			errs = append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant
+			// The throws clause is covariant like the return. A non-throwing sub carries
+			// `never`, which constrain short-circuits, so no clause satisfies every super.
+			return append(errs, c.constrain(sub.ThrowsOrNever(), sup.ThrowsOrNever(), seen, false)...)
 		}
 	case *soltype.TupleType:
 		if tupleHasSpread(sub) || tupleHasSpread(super) {
@@ -1399,10 +1402,17 @@ func callableView(ft *soltype.FuncType) *soltype.FuncType {
 	return &soltype.FuncType{
 		Params:         ft.Params,
 		Ret:            ft.Ret,
+		Throws:         ft.Throws,
 		Inexact:        ft.Inexact,
 		TypeParams:     ft.TypeParams,
 		LifetimeParams: ft.LifetimeParams,
 	}
+}
+
+// isNeverType reports whether t is `never`, the bottom of the subtype lattice.
+func isNeverType(t soltype.Type) bool {
+	_, never := t.(*soltype.NeverType)
+	return never
 }
 
 // skolemizeFuncBinder replaces ft's own type parameters with fresh skolems, so a term checked
@@ -1460,6 +1470,11 @@ func substFuncBinder(ft *soltype.FuncType, sub *typeSubst) *soltype.FuncType {
 		cp.Params[i] = &np
 	}
 	cp.Ret = ft.Ret.Accept(sub, soltype.Positive)
+	// Substituted at the return's polarity, so a `throws E` clause binds to the same fresh
+	// variable or skolem the parameters got rather than naming the unsubstituted binder.
+	if ft.Throws != nil {
+		cp.Throws = ft.Throws.Accept(sub, soltype.Positive)
+	}
 	if ft.SelfParam != nil {
 		ns := *ft.SelfParam
 		ns.Type = ft.SelfParam.Type.Accept(sub, soltype.Negative)

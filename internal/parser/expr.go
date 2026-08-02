@@ -557,7 +557,6 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 	p.expect(CloseParen, ConsumeOnMatch)
 
 	var returnType ast.TypeAnn
-	var throwsType ast.TypeAnn
 	token := p.lexer.peek()
 	if token.Type == Arrow {
 		p.lexer.consume()
@@ -567,19 +566,9 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 			return nil
 		}
 		returnType = typeAnn
-
-		// Check for throws clause after return type
-		token = p.lexer.peek()
-		if token.Type == Throws {
-			p.lexer.consume()
-			throwsTypeAnn := p.typeAnn()
-			if throwsTypeAnn == nil {
-				p.reportError(token.Span, "Expected type annotation after 'throws'")
-			} else {
-				throwsType = throwsTypeAnn
-			}
-		}
 	}
+
+	throwsType := p.throwsClause()
 
 	body := p.block()
 	end := body.Span.End

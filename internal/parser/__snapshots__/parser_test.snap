@@ -5833,3 +5833,59 @@
     span: 2:5-3:18,
 }
 ---
+
+[TestParseModuleNoErrors/FuncDeclWithThrowsAndNoReturnType - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "divide",
+            span: 2:8-2:14,
+        },
+        FuncSig: ast.FuncSig{
+            Params: []*ast.Param{
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name: "a",
+                        span: 2:15-2:16,
+                    },
+                },
+                &ast.Param{
+                    Pattern: &ast.IdentPat{
+                        Name: "b",
+                        span: 2:18-2:19,
+                    },
+                },
+            },
+            Throws: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "DivisionByZeroError",
+                    span: 2:28-2:47,
+                },
+                span: 2:28-2:47,
+            },
+        },
+        Body: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ReturnStmt{
+                    Expr: &ast.BinaryExpr{
+                        Left: &ast.IdentExpr{
+                            Name: "a",
+                            span: 3:13-3:14,
+                        },
+                        Op: "/",
+                        Right: &ast.IdentExpr{
+                            Name: "b",
+                            span: 3:17-3:18,
+                        },
+                        span: 3:13-3:18,
+                    },
+                    span: 3:6-3:18,
+                },
+            },
+            Span: 2:48-4:6,
+        },
+        span: 2:5-4:6,
+    },
+    span: 2:5-4:6,
+}
+---

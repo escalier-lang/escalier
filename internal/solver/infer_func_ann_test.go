@@ -280,14 +280,14 @@ func TestInferGenericFuncAnnotationChecksBoundedParam(t *testing.T) {
 	})
 }
 
-// A throws clause reports the documented unsupported feature and recovers
-// function-shaped.
-func TestInferThrowsFuncAnnotationReportsUnsupported(t *testing.T) {
+// A throws clause in a function type annotation resolves to the declared type and
+// renders back after the return type. The annotated function raises nothing, and a
+// non-throwing body satisfies a throwing annotation because throws is covariant and the
+// body's `never` is the bottom of the lattice.
+func TestInferThrowsFuncAnnotation(t *testing.T) {
 	values, _, errs := inferSource(t, `val f: fn(x: number) -> number throws boolean = fn (x) { return x }`)
-	require.Len(t, errs, 1)
-	require.IsType(t, &UnsupportedFeatureError{}, errs[0])
-	require.Equal(t, "1:8-1:46: Unsupported: throws clause in function type annotation", msgWithSpan(errs[0]))
-	require.Equal(t, "fn (x: number) -> number", values["f"])
+	require.Empty(t, errs)
+	require.Equal(t, "fn (x: number) -> number throws boolean", values["f"])
 }
 
 // A lifetime parameter in a function type annotation resolves against its declared

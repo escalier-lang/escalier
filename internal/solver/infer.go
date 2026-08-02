@@ -135,6 +135,21 @@ type funcCtx struct {
 	// every returned value is uniquely owned, so the join of the returns is too.
 	returnExprs []ast.Expr
 
+	// throws is this body's exceptional SINK: the single type every `throw` and every call
+	// is constrained against, the twin of the joined return type. inferFunc seeds it from
+	// the signature before the body is walked — `never` for no clause, T for `throws T`, a
+	// fresh variable for `throws _` — so each exit is blamed at its own site, and reads it
+	// back as the function's Throws. Only a script's top level has no signature to seed it.
+	throws soltype.Type
+	// raised records whether any exceptional exit can actually raise, which a concrete
+	// declared sink cannot answer since constraining into it leaves no trace. A `throw`
+	// sets it; a call sets it unless the callee is resolved and provably non-throwing.
+	raised bool
+	// lvl is the level this body is walked at, so throwsSink mints the sink there rather
+	// than inside a `val` initializer, which is typed one level deeper. A sink minted deep
+	// gets extruded by a later exit, and the resulting cycle renders as a μ-knot.
+	lvl int
+
 	// written records the widened type stored into a receiver variable's field by a
 	// field-write `recv.prop = source` (M4 C3), keyed by the receiver var's ID and
 	// the property name. A later read of the same field returns this concrete type
@@ -282,9 +297,9 @@ type funcCtx struct {
 // after walking the body. Push/pop is straight-line, not deferred: the caller needs
 // popFuncCtx's returned return-points as a value, and the walk reports errors rather
 // than panicking, so there is no unwind to guard against.
-func (c *checker) pushFuncCtx(async bool, node ast.Node) *funcCtx {
+func (c *checker) pushFuncCtx(async bool, node ast.Node, lvl int) *funcCtx {
 	saved := c.fn
-	c.fn = &funcCtx{async: async, node: node, written: map[fieldKey]soltype.Type{}}
+	c.fn = &funcCtx{async: async, node: node, lvl: lvl, written: map[fieldKey]soltype.Type{}}
 	return saved
 }
 
@@ -295,6 +310,28 @@ func (c *checker) pushFuncCtx(async bool, node ast.Node) *funcCtx {
 // such as a local enum declaration.
 func (c *checker) inScript() bool {
 	return c.fn != nil && c.fn.node == nil
+}
+
+// throwsSink returns the type this body's exceptional exits are constrained against.
+// inferFunc seeds it from the signature, so the mint below fires only where there is no
+// signature to seed from: a script's top level, and a `throw` or call at module top level.
+func (c *checker) throwsSink(lvl int) soltype.Type {
+	if c.fn == nil {
+		return c.freshAt(lvl)
+	}
+	if c.fn.throws == nil {
+		c.fn.throws = c.freshAt(c.fn.lvl)
+	}
+	return c.fn.throws
+}
+
+// markRaised records that the body being walked has an exceptional exit that can raise.
+// inferFunc reads the flag to warn about a `throws` clause the body never uses. It is a
+// no-op at module top level, where there is no clause to be unused.
+func (c *checker) markRaised() {
+	if c.fn != nil {
+		c.fn.raised = true
+	}
 }
 
 // popFuncCtx restores the previous function context (the pointer pushFuncCtx
@@ -480,6 +517,8 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferMatch(scope, lvl, e)
 	case *ast.BorrowExpr:
 		return c.inferBorrow(scope, lvl, e)
+	case *ast.ThrowExpr:
+		return c.inferThrow(scope, lvl, e)
 	case *ast.BinaryExpr:
 		// PR8 handles the ASSIGNMENT op only (`a = expr`); every other binary
 		// operator (+, ==, &&, ++, …) needs the operator-scheme walk over the prelude

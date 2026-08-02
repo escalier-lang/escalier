@@ -436,13 +436,33 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 		}
 	}
 	p.writeString(")")
-	if sig.Return != nil {
-		p.writeString(" -> ")
-		p.printTypeAnn(sig.Return)
+	p.printReturnAndThrows(sig.Return, sig.Throws)
+}
+
+// printReturnAndThrows emits ` -> R` followed by any `throws T` clause, so every signature
+// form renders the pair alike. A nil ret emits no arrow, and neither a nil nor a `never`
+// throws emits a clause. `-> R` is greedy, so a function-typed return is parenthesized
+// once a clause follows it — `fn () -> (fn () -> number) throws string` — or the clause
+// re-reads as the inner function's. soltype's printFuncBody does the same.
+func (p *Printer) printReturnAndThrows(ret ast.TypeAnn, throws ast.TypeAnn) {
+	clause := throws
+	if _, isNever := throws.(*ast.NeverTypeAnn); isNever {
+		clause = nil
 	}
-	if sig.Throws != nil {
+	if ret != nil {
+		p.writeString(" -> ")
+		_, retIsFunc := ret.(*ast.FuncTypeAnn)
+		if retIsFunc && clause != nil {
+			p.writeString("(")
+			p.printTypeAnn(ret)
+			p.writeString(")")
+		} else {
+			p.printTypeAnn(ret)
+		}
+	}
+	if clause != nil {
 		p.writeString(" throws ")
-		p.printTypeAnn(sig.Throws)
+		p.printTypeAnn(clause)
 	}
 }
 
@@ -1041,15 +1061,7 @@ func (p *Printer) printFuncSig(sig *ast.FuncSig) {
 	}
 	p.writeString(")")
 
-	if sig.Return != nil {
-		p.writeString(" -> ")
-		p.printTypeAnn(sig.Return)
-	}
-
-	if sig.Throws != nil {
-		p.writeString(" throws ")
-		p.printTypeAnn(sig.Throws)
-	}
+	p.printReturnAndThrows(sig.Return, sig.Throws)
 }
 
 func (p *Printer) printBlock(block *ast.Block) {
@@ -1330,17 +1342,12 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 			}
 		}
 		p.writeString(")")
-		p.writeString(" -> ")
-		p.printTypeAnn(e.Fn.Return)
-		if e.Fn.Throws != nil {
-			p.writeString(" throws ")
-			p.printTypeAnn(e.Fn.Throws)
-		}
+		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.GetterTypeAnn:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
-		p.writeString("(self) -> ")
-		p.printTypeAnn(e.Fn.Return)
+		p.writeString("(self)")
+		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.SetterTypeAnn:
 		p.writeString("set ")
 		p.printObjKey(e.Name)
@@ -1354,8 +1361,7 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		}
 		p.writeString(")")
 		// Setters require -> void in Escalier syntax
-		p.writeString(" -> ")
-		p.printTypeAnn(e.Fn.Return)
+		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.PropertyTypeAnn:
 		if e.Readonly {
 			p.writeString("readonly ")
@@ -1559,15 +1565,7 @@ func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
 	}
 	p.writeString(")")
 
-	p.writeString(" -> ")
-	p.printTypeAnn(typ.Return)
-
-	if typ.Throws != nil {
-		if _, isNever := typ.Throws.(*ast.NeverTypeAnn); !isNever {
-			p.writeString(" throws ")
-			p.printTypeAnn(typ.Throws)
-		}
-	}
+	p.printReturnAndThrows(typ.Return, typ.Throws)
 }
 
 func (p *Printer) printTemplateLitTypeAnn(typ *ast.TemplateLitTypeAnn) {

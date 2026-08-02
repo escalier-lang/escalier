@@ -35,11 +35,17 @@ func (c *checker) checkTypeParamsProducible(node ast.Node, ft *soltype.FuncType)
 }
 
 // outputTypeVars collects the inference vars in an OUTPUT position of a signature, walking
-// the return covariantly and each parameter contravariantly. It skips the TypeParams
-// binder list, which FuncType.Accept would otherwise visit at the call polarity.
+// the return and the throws covariantly and each parameter contravariantly. A `throws E`
+// clause is an output the same way the return is, since the function hands the caller an E
+// along the exceptional edge. So `fn f<E>() throws E { throw "x" }` over-promises exactly
+// as `fn make<T>() -> T { return 5 }` does. It skips the TypeParams binder list, which
+// FuncType.Accept would otherwise visit at the call polarity.
 func outputTypeVars(ft *soltype.FuncType) set.Set[*soltype.TypeVarType] {
 	pv := &polarityVarVisitor{out: set.NewSet[*soltype.TypeVarType]()}
 	ft.Ret.Accept(pv, soltype.Positive)
+	if ft.Throws != nil {
+		ft.Throws.Accept(pv, soltype.Positive)
+	}
 	if ft.SelfParam != nil {
 		ft.SelfParam.Type.Accept(pv, soltype.Negative)
 	}

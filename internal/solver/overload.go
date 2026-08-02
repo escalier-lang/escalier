@@ -61,6 +61,13 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			// tryOverloadArm runs the error-returning engine, so a warning the winning arm
 			// accepted with never reached c.errs. Blame it at the call so the winner's survive.
 			c.blameConstraintErrors(call, diags)
+			// Only the winning arm's throws reaches the caller, so a set whose other arms
+			// raise contributes nothing here. Resolution never builds a call shape for
+			// constrain to read, so the exceptional edge is wired by hand instead, the way
+			// inferCall's shape wires it.
+			if inst.Throws != nil {
+				c.constrain(call, inst.Throws, c.throwsSink(lvl))
+			}
 			return inst.Ret
 		}
 	}

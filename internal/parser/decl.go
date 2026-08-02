@@ -691,24 +691,19 @@ func (p *Parser) parseConstructorElem(
 	// `throws` may appear in either order relative to `->` (the arrow form
 	// is itself an error). Accept whichever comes first; if both appear we
 	// keep the first one and discard the second.
+	throwsType := p.throwsClause()
 	next = p.lexer.peek()
-	var throwsType ast.TypeAnn
-	if next.Type == Throws {
-		p.lexer.consume()
-		throwsType = p.typeAnn()
-		next = p.lexer.peek()
-	}
 	if next.Type == Arrow {
 		p.reportError(next.Span, "constructors cannot declare a return type")
 		p.lexer.consume()
 		_ = p.typeAnn()
-		next = p.lexer.peek()
-		// A `throws` after `->` is also tolerated, but we already errored.
-		if next.Type == Throws && throwsType == nil {
-			p.lexer.consume()
-			throwsType = p.typeAnn()
-			next = p.lexer.peek()
+		// A `throws` after `->` is also tolerated, but we already errored. It is consumed
+		// either way, so the body still parses when the source wrote a clause on both
+		// sides of the arrow; the first clause is the one that survives.
+		if second := p.throwsClause(); throwsType == nil {
+			throwsType = second
 		}
+		next = p.lexer.peek()
 	}
 
 	var body *ast.Block
@@ -840,11 +835,8 @@ modifiers_done:
 			next = p.lexer.peek()
 		}
 
-		if next.Type == Throws {
-			p.lexer.consume()
-			throwsType = p.typeAnn()
-			next = p.lexer.peek()
-		}
+		throwsType = p.throwsClause()
+		next = p.lexer.peek()
 
 		// Optionally parse block
 		if next.Type == OpenBrace {
@@ -892,8 +884,12 @@ modifiers_done:
 			// param, if there isn't exactly one value param after it
 			// (instance), or if there isn't exactly one param (static).
 			p.expect(CloseParen, AlwaysConsume)
-			next = p.lexer.peek()
 		}
+
+		// A setter has no return type to write, but it can still declare what it raises,
+		// so the clause is read here as it is on a getter or a method.
+		throwsType := p.throwsClause()
+		next = p.lexer.peek()
 
 		// Optionally parse block
 		if next.Type == OpenBrace {
@@ -904,7 +900,7 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
 		return &ast.SetterElem{
 			Name:     name,
-			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, nil, false, body, span),
+			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, throwsType, false, body, span),
 			Receiver: receiver,
 			Static:   isStatic,
 			Private:  isPrivate,
@@ -948,12 +944,7 @@ modifiers_done:
 			returnType = p.typeAnn()
 		}
 
-		var throwsType ast.TypeAnn
-		next = p.lexer.peek()
-		if next.Type == Throws {
-			p.lexer.consume()
-			throwsType = p.typeAnn()
-		}
+		throwsType := p.throwsClause()
 
 		// Optionally parse block
 		var body *ast.Block
@@ -1161,7 +1152,6 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 	end := token.Span.End
 
 	var returnType ast.TypeAnn
-	var throwsType ast.TypeAnn
 	token = p.lexer.peek()
 	if token.Type == Arrow {
 		p.lexer.consume()
@@ -1173,19 +1163,11 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 			end = typeAnn.Span().End
 			returnType = typeAnn
 		}
+	}
 
-		// Check for throws clause after return type
-		token = p.lexer.peek()
-		if token.Type == Throws {
-			p.lexer.consume()
-			throwsTypeAnn := p.typeAnn()
-			if throwsTypeAnn == nil {
-				p.reportError(token.Span, "Expected type annotation after 'throws'")
-			} else {
-				throwsType = throwsTypeAnn
-				end = throwsType.Span().End
-			}
-		}
+	throwsType := p.throwsClause()
+	if throwsType != nil {
+		end = throwsType.Span().End
 	}
 
 	// A `declare fn` has no body, so leave it nil. Only a non-declare function parses a
