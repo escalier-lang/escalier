@@ -67,6 +67,24 @@ type Context struct {
 	// so a stale entry cannot make a constraint wrong.
 	aliasInterns map[string]*soltype.AliasType
 
+	// uniformKnots memoizes, per alias name, the μ-knot the regular-tree check proves for the
+	// instantiations one level into that alias's recursion, or a zero entry when it proves none.
+	// Nearly every alias memoizes the zero entry, so a reference pays one map lookup and nothing
+	// more. The map lives for the whole run: the check reads only an alias's registered definition,
+	// which no constraint and no discarded probe changes. See regular.go.
+	uniformKnots map[string]*uniformKnot
+
+	// knotting is true while a level of some alias's unfolding is being walked for the regular-tree
+	// check. That walk reduces the level's residual operators, and a reduction can re-enter
+	// constrain, which would ask for a knot again and start a second walk inside the first. The flag
+	// makes the inner ask fall back to the plain expansion instead. See regular.go.
+	knotting bool
+
+	// muBinderCount numbers the μ-variables the regular-tree check has minted, so two aliases whose
+	// knots are composed into one type carry distinct binders. coalesce numbers its own binders per
+	// walk instead, since the knots one walk produces are numbered together.
+	muBinderCount int
+
 	// unwrapDepth counts the type operators constrain has evaluated along the constraint path it
 	// is currently on, so an unwrap that never bottoms out is cut off at maxUnwrapDepth. constrain
 	// increments it around each recursive call it makes on an evaluated operator and restores it
@@ -200,6 +218,14 @@ func (c *Context) freshSkolem(name string) *soltype.SkolemType {
 	s := &soltype.SkolemType{ID: c.varCounter, Name: name}
 	c.varCounter++
 	return s
+}
+
+// freshMuBinder mints the next μ-variable for a knot the regular-tree check proves, naming it under
+// the same X0, X1, … convention coalesce's binders follow.
+func (c *Context) freshMuBinder() *soltype.RecursiveVarType {
+	v := &soltype.RecursiveVarType{ID: c.muBinderCount, Name: muBinderName(c.muBinderCount)}
+	c.muBinderCount++
+	return v
 }
 
 // freshInferDecl mints the declaration one `infer U` clause introduces, carrying the source name for

@@ -678,18 +678,54 @@ it actually is. That is the normalization Amadio–Cardelli presupposes: their a
 decides subtyping for types already presented as finite μ-terms, and nothing in the
 compiler currently produces one for this shape.
 
-**Data structures.** None new. PR9e's node is where a found knot goes.
+**Data structures.** None new in `soltype`; PR9e's node is where a found knot goes. The
+`Context` gains a per-alias memo of the knot the check proves, keyed by alias name.
 
-**Algorithms.** Expand one level, abstract the recursive positions to placeholders, and
-look for an earlier emitted node with the same abstracted shape. A candidate must be
-confirmed by partition refinement rather than by a structural hash, since a hash
-collapses `{a: X}` and `{a: Y}` for unrelated `X` and `Y`.
+**Algorithms.** The PR was scoped around finding a candidate by abstracted shape and
+confirming it by partition refinement over the nodes emitted so far. That confirmation
+does not survive contact with the problem. Partition refinement decides bisimilarity on a
+*finite* state set, and the states here are instantiations, of which a growing alias has
+infinitely many. Refining over the finite prefix already emitted means treating the
+unexpanded frontier optimistically, which merges two levels that a later level would have
+split, so a knot could be tied for a type that is not regular at all.
+
+What replaces it is a proof, not a search. Expand the alias with a rigid skolem in place
+of its argument and reduce. If the skolem is nowhere in the result, the reduction never
+read the argument, so it produces that one body for *every* argument. Write `A<T>` for the
+alias and `g` for the argument its recursive reference passes, so `H`'s `g` maps `T` to
+`{c: T}`. The check expands `A<g(S)>` for a fresh skolem `S` and asks two things of it:
+
+1. its shape — the body with every reference back to `A` abstracted to the μ-binder —
+   holds no skolem, so every `A<g(σ)>` has that one shape;
+2. its recursive reference passes `g(g(S))`, so the state below `A<g(σ)>` is again of the
+   form `A<g(·)>`.
+
+Together those close the family `{A<g(σ)> : σ}` under the successor relation and give
+every member one shape Σ, so all of them are the same tree and that tree is `μX.Σ`. The
+answer is memoized per alias, and a reference is admitted as that knot when its own level
+renders the same Σ. `H<number>` is not admitted, since its own level emits
+`{a: never, …}`; the `H<{c: number}>` its expansion yields is.
+
+An alias with several recursive references, or several type parameters, runs the same
+check with `g` ranging over one argument pattern per reference.
+
+The abstracted shape is still what candidates are compared by, so the "structural hash"
+half of the original scoping survives. It is the confirmation that changed, from a
+fixed point over a partial graph to a single argument-independence proof.
 
 **Accept.** `H<number>` reduces to a finite μ form, and a value checks against it.
+`Chain<{c: number}> <: Chain<{c: string}>` succeeds for
+`type Chain<T> = {a: keyof T, b: Chain<{c: T}>}`, since neither argument appears anywhere
+in the tree either side denotes, where before it was cut off at `maxUnwrapDepth`.
 
-The walk converges only when the tree really is regular, so `maxExpandDepth`,
-`maxExpandKeyChars`, and `maxUnwrapDepth` all stay as the backstop for the non-regular
-residue — the same reservation [03-references.md](03-references.md) makes. PR9d already
+The check is sound and incomplete: it proves a knot for an alias whose argument stops
+mattering at a bounded depth, and nothing for one whose argument keeps mattering forever.
+`type Nest<T> = {here: T, deeper: Nest<{b: T}>}` reads `T` at every level, so its probe
+shape holds the skolem. That alias denotes a genuinely non-regular tree, and
+`maxExpandDepth`, `maxExpandKeyChars`, and `maxUnwrapDepth` all stay as the backstop for
+it — the same reservation [03-references.md](03-references.md) makes. A level whose own
+reduction one of those budgets cut off is not the node the alias emits, so the check
+declines it rather than reading a shape off a truncation. PR9d already
 covers the phantom-parameter shapes, so this PR's marginal class is aliases whose
 parameter genuinely reaches the tree at a bounded depth. Those exist but are contrived,
 which is why it sits last: worth building when a real library type demands it, not

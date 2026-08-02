@@ -112,6 +112,12 @@ type typeEvaluator struct {
 	// structurally-equal instances of a recursive alias close through constrain's seen-set. The
 	// value solve seeds it fresh at each constraint site, and the test expander passes an empty set.
 	seen *seenPairs
+	// truncated records that a budget stopped an expansion, so the result is the operator over an
+	// unexpanded alias rather than the value it stands for. Reduction is designed to leave such a
+	// result symbolic and carry on, which is why nothing on the checking path reads this. The
+	// regular-tree check does: a level whose reduction was cut off is not the node the alias emits,
+	// so no knot can be read off it. See regular.go.
+	truncated bool
 	// errs collects the diagnostics a reduction produces. `keyof` reduction is total and adds
 	// none; indexed-access reduction records an UnknownObjectKeyError or a
 	// TupleIndexOutOfRangeError when a ground access resolves to no member. constrain reads
@@ -1104,6 +1110,7 @@ func (e *typeEvaluator) expandAliasGuarded(op *soltype.AliasType, fallback func(
 		return fallback(op)
 	}
 	if e.depth <= 0 || e.keyChars <= 0 {
+		e.truncated = true
 		return fallback(op)
 	}
 	key := soltype.PrintQualified(op)

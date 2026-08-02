@@ -351,6 +351,13 @@ func (c *Context) peelTransparent(t soltype.Type) soltype.Type {
 func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Type, []SolverError, bool) {
 	switch t := t.(type) {
 	case *soltype.AliasType:
+		// An alias whose recursion grows its own argument reaches a fresh instantiation every lap, so
+		// unfolding it hands the seen-set a pair no earlier lap reached and nothing closes the
+		// comparison. When the tree it denotes is regular all the same, muKnotFor names that tree as a
+		// finite μ-knot and the comparison closes on the knot instead. See regular.go.
+		if knot := c.muKnotFor(t, seen); knot != nil {
+			return knot, nil, true
+		}
 		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
 		return t.Ty, nil, true
