@@ -231,3 +231,139 @@ func TestInferPhantomArgumentSurvivesInTheRenderedType(t *testing.T) {
 	require.Equal(t, "Deep<string>", values["d"])
 	require.Equal(t, "fn (p: Deep<number>) -> Deep<number>", values["f"])
 }
+
+// The unused tier reaches a class and an enum as well as an alias, since a parameter no
+// position of the declaration writes is dead weight whatever sort declares it.
+//
+// The unreachable tier stays with aliases. A class and an enum variant are nominal, so
+// constrain compares a handle's arguments position by position and an argument to a
+// parameter the body does write stays observable. `class Nest<T> {deeper: Nest<{b: T}>}`
+// reports a mismatch between `Nest<number>` and `Nest<string>` where the alias of that
+// shape settles them as one type.
+func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// No member, no super, and no constructor parameter writes T.
+			name: "ClassParameterOccursNowhere",
+			src:  `class Box<T> { x: number }`,
+			want: []string{"1:11-1:12: type parameter T is declared but never used"},
+		},
+		{
+			// One parameter of several. U is the field's type, so only T is reported.
+			name: "ClassOneParameterOfSeveralOccursNowhere",
+			src:  `class Two<T, U> { x: U }`,
+			want: []string{"1:11-1:12: type parameter T is declared but never used"},
+		},
+		{
+			// No variant carries a parameter at all.
+			name: "EnumParameterOccursNowhere",
+			src:  `enum Opt<T> { A }`,
+			want: []string{"1:10-1:11: type parameter T is declared but never used"},
+		},
+		{
+			// A variant writes U, so only T is reported.
+			name: "EnumOneParameterOfSeveralOccursNowhere",
+			src:  `enum Two<T, U> { A(v: U) }`,
+			want: []string{"1:10-1:11: type parameter T is declared but never used"},
+		},
+		{
+			// A field's type is a use.
+			name: "ClassFieldWritesTheParameter",
+			src:  `class Box<T> { x: T }`,
+		},
+		{
+			// So is a method parameter, which the `self` receiver alone would not be.
+			name: "ClassMethodWritesTheParameter",
+			src:  `class Hold<T> { put(self, v: T) -> number { return 1 } }`,
+		},
+		{
+			// So is a superclass type argument.
+			name: "ClassSuperWritesTheParameter",
+			src: `
+				class Base<T> { x: T }
+				class Sub<T> extends Base<T> { constructor(mut self) {} }
+			`,
+		},
+		{
+			// A sibling's bound is a use, the same exemption the alias tier makes.
+			name: "ClassParameterBoundsASibling",
+			src:  `class Pair<T, U: T> { x: U }`,
+		},
+		{
+			// As is a sibling's default.
+			name: "ClassParameterSuppliesASiblingsDefault",
+			src:  `class Def<T, U = T> { x: U }`,
+		},
+		{
+			// A variant parameter is a use.
+			name: "EnumVariantWritesTheParameter",
+			src:  `enum Opt<T> { A(v: T) }`,
+		},
+		{
+			name: "ClassParameterIsUnderscored",
+			src:  `class Box<_T> { x: number }`,
+		},
+		{
+			name: "EnumParameterIsUnderscored",
+			src:  `enum Opt<_T> { A }`,
+		},
+		{
+			// The class body drove the recursion, so T is written and the nominal comparison
+			// keeps every argument to it observable. Nothing is reported.
+			name: "ClassRecursionThroughAGrowingArgument",
+			src:  `class Nest<T> { deeper: Nest<{b: T}> }`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Equal(t, test.want, messagesWithSpan(errs))
+		})
+	}
+}
+
+// A declaration that already drew a diagnostic reports no unused warning. Recovery drops
+// the subtree it could not resolve, so a parameter written only there leaves no occurrence
+// behind and would read as unused. Each case writes its parameter exactly once, inside the
+// part that is dropped.
+func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// The method is not a supported object-type member, so the whole body is dropped.
+			name: "AliasBodyWithAnUnsupportedMember",
+			src:  `type M<T> = {f(x: T) -> T}`,
+			want: []string{
+				"1:13-1:27: Unsupported: object type member other than a property or spread",
+			},
+		},
+		{
+			// The union member fails to resolve, so the annotation reports and recovers.
+			name: "AliasBodyWithAnUnresolvableReference",
+			src:  `type Foo<T> = number | Nope<T>`,
+			want: []string{"1:24-1:31: Unsupported: TypeRefTypeAnn"},
+		},
+		{
+			// A type parameter does not name a class, so the extends edge is dropped and the
+			// only occurrence of T goes with it.
+			name: "ClassExtendingATypeParameter",
+			src:  `class B<T> extends T { constructor(mut self) {} }`,
+			want: []string{
+				"1:20-1:21: `T` does not name a class and cannot be extended or implemented.",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			require.Equal(t, test.want, messagesWithSpan(errs))
+		})
+	}
+}

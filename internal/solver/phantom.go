@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/graph"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -203,43 +204,20 @@ func (w *phantomWalker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Typ
 // sibling-mention rule is what excludes them.
 func (c *checker) reportPhantomParams(shells []*aliasShell) {
 	for _, sh := range shells {
-		if !sh.bodyResolved || sh.def.NotProductive {
-			// Two shapes report nothing. A recovered body is a fresh var that mentions no
-			// parameter, so every parameter would read as unused. An alias checkProductive
-			// rejected denotes no type at all, so no parameter can be unreachable in it. Both
-			// already carry a diagnostic that a warning would only pile onto.
+		if !sh.bodyClean || sh.def.NotProductive {
+			// Two shapes report nothing. A body that drew a diagnostic is a partial record of
+			// what the source wrote, so a parameter it dropped would read as unused. An alias
+			// checkProductive rejected denotes no type at all, so no parameter can be
+			// unreachable in it. Both already carry a diagnostic to act on.
 			continue
 		}
 		params := sh.def.TypeParams
 		if len(params) == 0 {
 			continue
 		}
-		slots := map[*soltype.TypeVarType]int{}
-		for i, p := range params {
-			if p.Var != nil {
-				slots[p.Var] = i
-			}
-		}
-		inBody := make([]bool, len(params))
-		markOccurrences(slots, sh.def.Body, inBody)
-
-		inSibling := make([]bool, len(params))
-		mentions := make([]bool, len(params))
-		for j, p := range params {
-			clear(mentions)
-			for _, t := range []soltype.Type{p.Constraint, p.Default} {
-				if t != nil {
-					markOccurrences(slots, t, mentions)
-				}
-			}
-			// An F-bound `<T: Foo<T>>` finds T on its own binder. A parameter does not use
-			// itself, so drop that occurrence before folding the rest in.
-			mentions[j] = false
-			for i, occurs := range mentions {
-				inSibling[i] = inSibling[i] || occurs
-			}
-		}
-
+		inBody, inSibling := typeParamMentions(params, func(v soltype.TypeVisitor) {
+			sh.def.Body.Accept(v, soltype.Positive)
+		})
 		for i, p := range params {
 			if strings.HasPrefix(p.Name, "_") || inSibling[i] {
 				continue
@@ -265,10 +243,74 @@ func (c *checker) reportPhantomParams(shells []*aliasShell) {
 	}
 }
 
-// markOccurrences sets found[i] for each of the alias's own type parameters whose var occurs
-// anywhere in t, leaving the entries it does not reach alone so a caller may fold several
-// types into one slice. slots maps each parameter's var to its position, and found is one
-// entry per parameter. The stored body and bounds hold those vars symbolically, so an
+// reportUnusedTypeParams warns about each type parameter of a class or enum that the
+// declaration never mentions, the unused tier of the alias warning applied to the two
+// nominal sorts. walkBody visits every type the declaration writes, and decls are the
+// binders the warnings blame, one per entry of params.
+//
+// Only the unused tier extends here. A nominal handle carries its arguments into its
+// identity and constrain compares them position by position, so an argument to a parameter
+// the body does write is observable however deep the recursion drives it. `class Nest<T>
+// {deeper: Nest<{b: T}>}` reports a mismatch between `Nest<number>` and `Nest<string>`
+// where the alias of the same shape settles them as one type. Unreachability is a property
+// of a transparent alias, and there is no nominal counterpart to warn about.
+func (c *checker) reportUnusedTypeParams(
+	params []*soltype.TypeParam,
+	decls []*ast.TypeParam,
+	walkBody func(soltype.TypeVisitor),
+) {
+	if len(params) == 0 || len(decls) < len(params) {
+		return
+	}
+	mentioned, inSibling := typeParamMentions(params, walkBody)
+	for i, p := range params {
+		if strings.HasPrefix(p.Name, "_") || mentioned[i] || inSibling[i] {
+			continue
+		}
+		c.report(&UnusedTypeParamError{Name: p.Name, Param: decls[i]})
+	}
+}
+
+// typeParamMentions reports where each of a declaration's type parameters occurs. inBody is
+// true for a parameter whose var walkBody reaches, and inSibling is true for one that occurs
+// in another parameter's bound or default. A parameter's own binder does not count, so the T
+// an F-bound `<T: Foo<T>>` writes in its own bound is not a use of T.
+//
+// The two answers stay separate because they carry different weight. A parameter no body
+// mentions is unused whatever its bound says, while a parameter a sibling's bound or default
+// mentions is doing work the body cannot show. `type Foo<T, U: T> = {x: U}` writes T nowhere
+// in its body, and T still decides which arguments U accepts.
+func typeParamMentions(params []*soltype.TypeParam, walkBody func(soltype.TypeVisitor)) (inBody, inSibling []bool) {
+	slots := map[*soltype.TypeVarType]int{}
+	for i, p := range params {
+		if p.Var != nil {
+			slots[p.Var] = i
+		}
+	}
+	inBody = make([]bool, len(params))
+	walkBody(&paramOccurrenceWalker{slots: slots, found: inBody})
+
+	inSibling = make([]bool, len(params))
+	onBinder := make([]bool, len(params))
+	for j, p := range params {
+		clear(onBinder)
+		for _, t := range []soltype.Type{p.Constraint, p.Default} {
+			if t != nil {
+				markOccurrences(slots, t, onBinder)
+			}
+		}
+		onBinder[j] = false
+		for i, occurs := range onBinder {
+			inSibling[i] = inSibling[i] || occurs
+		}
+	}
+	return inBody, inSibling
+}
+
+// markOccurrences sets found[i] for each of the declaration's own type parameters whose var
+// occurs anywhere in t, leaving the entries it does not reach alone so a caller may fold
+// several types into one slice. slots maps each parameter's var to its position, and found is
+// one entry per parameter. A stored body and bound hold those vars symbolically, so an
 // occurrence is found by pointer identity.
 //
 // Position and reachability play no part, unlike in the phantom marks. `type Deep<T> =

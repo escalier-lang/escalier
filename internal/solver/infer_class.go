@@ -42,6 +42,10 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
+	// The window opens before the parameters resolve, so a diagnostic drawn by a bound or a
+	// default suppresses the unused warning the same way one drawn by the body does.
+	quiet := c.errorWindow()
+
 	// The class's type parameters and the scope its body resolves in, taken from the module
 	// SCC pre-pass when there was one and resolved here when there was not.
 	declScope, typeParams := c.classDeclScope(scope, lvl, decl)
@@ -115,7 +119,47 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// sits under.
 	def.Variance, def.MutVariance = c.inferVariance(def, decl)
 
+	if quiet() {
+		c.reportUnusedTypeParams(typeParams, decl.TypeParams, func(v soltype.TypeVisitor) {
+			classDeclOccurrences(def, ctorType, v)
+		})
+	}
+
 	return c.classValue(ctorType, static), &ast.NodeProvenance{Node: decl}, true
+}
+
+// classDeclOccurrences visits every type a class declaration writes, so a walker over it
+// sees each position that could name one of the class's type parameters. That is the
+// instance and static members, the constructor's signature, and the `extends` and
+// `implements` targets.
+//
+// A method's `self` receiver is dropped, since every method names the class in it and
+// counting that would make each parameter look used. stripSelfReceiver is the same helper
+// variance inference uses for the same reason.
+func classDeclOccurrences(def *ClassDef, ctor soltype.Type, v soltype.TypeVisitor) {
+	for _, obj := range []*soltype.ObjectType{def.Body, def.Static} {
+		if obj == nil {
+			continue
+		}
+		for _, elem := range obj.Elems {
+			soltype.AcceptObjElem(stripSelfReceiver(elem), v, soltype.Positive)
+		}
+	}
+	// The constructor is the class's value binding rather than a Static member, so a
+	// parameter written only in `constructor(v: T)` is reached here and nowhere else. Only
+	// its parameters are walked. Its return is the class's own handle, minted with every
+	// type-parameter var as an argument, so walking that would mark them all.
+	if fn, ok := ctor.(*soltype.FuncType); ok {
+		for _, param := range fn.Params {
+			param.Type.Accept(v, soltype.Positive)
+		}
+	}
+	for _, super := range def.Supers {
+		super.Accept(v, soltype.Positive)
+	}
+	for _, iface := range def.Implements {
+		iface.Accept(v, soltype.Positive)
+	}
 }
 
 // bindScriptClass infers a class declared at a script's top level (bin/) and binds its

@@ -511,6 +511,20 @@ func (c *checker) report(e SolverError) soltype.Type {
 	return &soltype.ErrorType{}
 }
 
+// errorWindow records how many diagnostics have been reported and returns a predicate
+// answering whether any more arrived since. A caller warns only when it holds.
+//
+// The warnings about a declaration's type parameters read it. Recovery drops the subtree it
+// could not resolve, so a parameter written only there leaves no occurrence in what is
+// stored. `class B<T> extends T {}` reports that T does not name a class and then keeps no
+// super, which would leave T reading as declared and never used. A declaration that already
+// carries a diagnostic is left alone rather than given a second one derived from the gap the
+// first one left.
+func (c *checker) errorWindow() func() bool {
+	before := len(c.errs)
+	return func() bool { return len(c.errs) == before }
+}
+
 // reportUnsupported records an UnsupportedNodeError for an AST node whose kind is
 // outside the M2 subset. The node self-blames: both the span and the rendered kind
 // (astKind) come from it. When the unsupported thing is a child carried by its

@@ -1602,17 +1602,33 @@ left is a parameter left unused mid-edit, which a warning should not obstruct. A
 underscore, `type Ignore<_T> = number`, is the cheap convention and the recommended answer.
 Settle it in this PR rather than shipping the warning with no way to quiet it.
 
-**Scope.** Aliases only, since `PhantomParams` exists only for them, and an enum comes along
-free because it registers as a transparent alias. A class declares type parameters through
-the same `resolveTypeParams` and would warn the same way, but nothing computes reachability
-for a class body. The unused tier needs no reachability and extends to classes cheaply; the
-unreachable tier does not, and is deliberately left out rather than half-built.
+**Scope.** The unreachable tier is aliases only, since `PhantomParams` exists only for them.
+That is not a gap in what a class or an enum gets checked, it is a property those sorts do
+not have. A nominal handle carries its arguments into its identity and `constrain` compares
+them position by position, so an argument to a parameter the body does write stays
+observable however deep the recursion drives it. `class Nest<T> {deeper: Nest<{b: T}>}`
+reports a mismatch between `Nest<number>` and `Nest<string>` where the alias of that shape
+settles them as one type. Unreachability is a property of a transparent alias.
 
-**Accept.** `type Ignore<T> = number` warns that T is never used. `type Deep<T> =
-{a: Deep<{b: T}>}` warns that no argument to T can appear in the type, and the message names
-`Deep<number>` and `Deep<string>` as the same type. `type Foo<T, U: T> = {x: U}`,
-`type Pair<T, U = T> = {b: U}`, and `type List<T> = {head: T}` warn about nothing. Both
-diagnostics are warnings, so no program that checks today stops checking.
+The unused tier needs no reachability and covers all three sorts. A class reports from
+`inferClassDecl` over its members, its constructor's parameters, and its `extends` and
+`implements` targets, with a method's `self` receiver dropped the way variance inference
+drops it. An enum reports from `inferEnumBody` over its variants' parameters, which is the
+only place an enum's own parameter can be written — the variant handles and the constructor
+returns carry every parameter var mechanically.
+
+A declaration that already drew a diagnostic reports nothing. Recovery drops the subtree it
+could not resolve, so a parameter written only there leaves no occurrence behind and would
+read as unused. `type M<T> = {f(x: T) -> T}` drops the unsupported method, and
+`class B<T> extends T {}` drops the super it rejected. A `checker.errorWindow` around each
+declaration's inference is what each of the three sorts consults.
+
+**Accept.** `type Ignore<T> = number`, `class Box<T> {x: number}`, and `enum Opt<T> {A}` warn
+that T is never used. `type Deep<T> = {a: Deep<{b: T}>}` warns that no argument to T can
+appear in the type, and the message names `Deep<number>` and `Deep<string>` as the same type.
+`type Foo<T, U: T> = {x: U}`, `type Pair<T, U = T> = {b: U}`, `type List<T> = {head: T}`, and
+`class Nest<T> {deeper: Nest<{b: T}>}` warn about nothing. Both diagnostics are warnings, so
+no program that checks today stops checking.
 
 **Depends on** PR9d for the marks and for `phantom.go`, where the pass belongs. Independent of
 PR17–PR19 and of the operator track.

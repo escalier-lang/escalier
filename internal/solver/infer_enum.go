@@ -51,8 +51,16 @@ type enumShell struct {
 	// scope is the scope the enum is declared in — where its type binding and namespace
 	// live. declScope is scope, or a child holding a generic enum's type parameters, and
 	// is where variant parameters resolve.
-	scope        *Scope
-	declScope    *Scope
+	scope     *Scope
+	declScope *Scope
+	// typeParams are the enum's own `<T>` binders, resolved by preBindEnum. inferEnumBody
+	// reads them to warn about one no variant mentions.
+	typeParams []*soltype.TypeParam
+	// preBindClean is false when preBindEnum dropped an element it could not read, which is
+	// an enum spread. inferEnumBody reads it alongside its own errorWindow, since a dropped
+	// element takes any type parameter it wrote with it.
+	preBindClean bool
+
 	variants     []*ast.EnumVariant
 	variantTypes []soltype.Type
 	enumType     soltype.Type
@@ -64,6 +72,8 @@ type enumShell struct {
 // front is what lets a sibling enum, or the enum itself, resolve this name while its own
 // body is still being walked.
 func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns string) *enumShell {
+	quiet := c.errorWindow()
+
 	// An enum-body type reference resolves against the enum's own namespace first, the
 	// same qualified-first resolution a class body uses. Save and restore around the walk.
 	prevNS := c.classNamespace
@@ -142,6 +152,8 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 		lvl:          lvl,
 		scope:        scope,
 		declScope:    declScope,
+		typeParams:   typeParams,
+		preBindClean: quiet(),
 		variants:     variants,
 		variantTypes: variantTypes,
 		enumType:     enumType,
@@ -153,14 +165,24 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 // binds the constructor namespace. It runs after every enum in the recursive group is
 // pre-bound, so a cross-enum parameter reference resolves.
 func (c *checker) inferEnumBody(sh *enumShell) {
+	quiet := c.errorWindow()
+
 	prevNS := c.classNamespace
 	c.classNamespace = sh.ns
 	defer func() { c.classNamespace = prevNS }()
 
 	nsValues := map[string]ValueBinding{}
 	nsTypes := map[string]TypeBinding{}
+	// Each variant's resolved parameter types, which are the only place an enum's own type
+	// parameter can be written. A constructor's return is the enum handle carrying every
+	// type-parameter var, and each variant handle carries them too, so neither says
+	// anything about which ones a variant actually names.
+	var declared []soltype.Type
 	for i, variant := range sh.variants {
 		ctor := c.variantConstructor(sh.declScope, sh.lvl, variant, sh.enumType)
+		for _, param := range ctor.Params {
+			declared = append(declared, param.Type)
+		}
 		nsValues[variant.Name.Name] = ValueBinding{
 			Schemes: []TypeScheme{c.generalize(ctor, sh.lvl-1)},
 			Sources: []provenance.Provenance{&ast.NodeProvenance{Node: variant}},
@@ -175,6 +197,15 @@ func (c *checker) inferEnumBody(sh *enumShell) {
 		Values: nsValues,
 		Types:  nsTypes,
 		Nested: map[string]*Namespace{},
+	})
+
+	if !sh.preBindClean || !quiet() {
+		return
+	}
+	c.reportUnusedTypeParams(sh.typeParams, sh.decl.TypeParams, func(v soltype.TypeVisitor) {
+		for _, t := range declared {
+			t.Accept(v, soltype.Positive)
+		}
 	})
 }
 

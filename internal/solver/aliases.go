@@ -100,10 +100,11 @@ type aliasShell struct {
 	// def is the registered AliasDef preBindAlias inserted with a nil Body; inferAliasBody
 	// fills its Body once every sibling identity in the component is bound.
 	def *AliasDef
-	// bodyResolved is false when inferAliasBody recovered from a missing or unsupported
-	// annotation, which leaves the def's Body a fresh var that mentions no type parameter.
-	// reportPhantomParams reads it so a recovered body does not warn about every parameter.
-	bodyResolved bool
+	// bodyClean is true when inferAliasBody resolved the whole annotation with no
+	// diagnostic, the errorWindow rule applied to an alias. `type M<T> = {f(x: T) -> T}`
+	// drops the unsupported method and with it every occurrence of T, so reportPhantomParams
+	// reads this before warning that T is unused.
+	bodyClean bool
 }
 
 // preBindAlias resolves an alias's type parameters, registers a shell AliasDef whose Body
@@ -206,17 +207,18 @@ func (c *checker) inferAliasBody(sh *aliasShell) {
 
 	// A nil TypeAnn is parser error recovery for `type Foo =`, already reported. Bind a
 	// fresh var and skip resolveTypeAnn, since a nil annotation has no span to report on.
+	quiet := c.errorWindow()
 	var body soltype.Type = c.freshAt(sh.lvl)
 	if sh.decl.TypeAnn != nil {
 		if resolved, ok := c.resolveTypeAnn(sh.declScope, sh.decl.TypeAnn, sh.lvl); ok {
 			body = resolved
-			sh.bodyResolved = true
 		}
 		// An unsupported body reported its own error. Keep the fresh var so a reference
 		// resolves rather than cascading an unbound-name error, matching the Promise-wrapper
 		// recovery in resolveTypeAnn.
 	}
 	sh.def.Body = body
+	sh.bodyClean = sh.decl.TypeAnn != nil && quiet()
 }
 
 // buildAliasInstance resolves a use-site reference to a registered alias into an AliasType
