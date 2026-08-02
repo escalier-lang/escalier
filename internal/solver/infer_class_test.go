@@ -2453,3 +2453,41 @@ func TestInferClassSurplusTypeArgStillResolved(t *testing.T) {
 	}
 }
 
+// TestInferClassTypeArgArityAcrossMixedComponent covers a dep_graph component holding both
+// sorts of key. A class member body creates a value dependency, so `class A<T>` whose method
+// calls `B` and `class B` whose field names `A` put A's type key and B's value key in one SCC.
+// Binding every non-value key before the value walk is what lets B's annotation find A
+// registered with its parameters resolved. Inferring B's body first would leave `A` an unbound
+// name, reported as an unresolved reference instead of the arity mismatch it is.
+func TestInferClassTypeArgArityAcrossMixedComponent(t *testing.T) {
+	srcs := map[string]string{
+		"GenericClassFirst": `
+			class A<T> {
+				v: T,
+				make(self) -> number { return B(1, A(2)).x },
+			}
+			class B {
+				x: number,
+				a: A,
+			}
+		`,
+		"GenericClassSecond": `
+			class B {
+				x: number,
+				a: A,
+			}
+			class A<T> {
+				v: T,
+				make(self) -> number { return B(1, A(2)).x },
+			}
+		`,
+	}
+	for name, src := range srcs {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, src)
+			require.Len(t, errs, 1)
+			require.Equal(t, "class `A` expects 1 type arguments but got 0", errs[0].Message())
+			require.Equal(t, "{new (x: number, a: A<unknown>) -> B}", values["B"])
+		})
+	}
+}

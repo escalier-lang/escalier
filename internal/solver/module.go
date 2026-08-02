@@ -137,8 +137,16 @@ type componentBinding struct {
 //  1. give every VALUE binding in the component a fresh var at lvl+1 and define
 //     it in scope BEFORE any body is inferred, so a mutually-recursive reference
 //     resolves through the var;
-//  2. infer each declaration's definition at lvl+1 and constrain it <: its var;
-//  3. rebind each name to the coalesced MONOMORPHIC type of its var.
+//  2. bind every non-value key in the component — each class and enum identity, each
+//     class's type parameters, and each enum and alias body — so a body inferred in
+//     step 3 resolves any type name the component declares;
+//  3. infer each declaration's definition at lvl+1 and constrain it <: its var;
+//  4. rebind each name to the coalesced MONOMORPHIC type of its var.
+//
+// Step 2 runs before step 3 because a component can mix the two sorts. A class member
+// body creates a value dependency, so `type:A` and `value:B` land in one component when
+// A's body calls B and B's field names `A<T>`. Inferring B's body first would leave the
+// name A unbound at the point B reads it.
 //
 // M2 does NOT generalize (M1 ships no schemes): step 3 freezes each binding at
 // its coalesced monomorphic type rather than wrapping it in a PolyScheme. The
@@ -205,126 +213,13 @@ func (c *checker) inferComponent(
 		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{monoScheme(v)}})
 	}
 
-	// Phase 2: infer each declaration's definition and constrain it <: its var.
-	for _, key := range component {
-		// Each top-level binding is its own named-lifetime scope, mirroring inferFunc.
-		// Two declarations that both write `&'a` get independent lifetimes rather than
-		// sharing one through a stale map. A function decl re-clears this inside inferFunc.
-		c.namedLifetimes = nil
-		b, isValue := bindings[key]
-		if !isValue {
-			continue // non-value keys handled below
-		}
-		if b.signatureBound {
-			// The schemes are already bound in scope from phase 1, so phase 2 does not
-			// re-bind them; it re-infers each arm with its body. inferFunc re-derives the
-			// signature and checks the body against the return annotation. Phase 1 discarded
-			// its signature errors under a probe, so this pass is the single reporter of BOTH
-			// the signature and the body errors. The body sees the whole overload set, so a
-			// recursive call resolves through resolveOverload against every arm.
-			for _, arm := range b.arms {
-				handled.Add(arm.decl)
-				b.sources = append(b.sources, &ast.NodeProvenance{Node: arm.decl})
-				c.inferFunc(scope, inner, arm.decl.FuncSig, arm.decl.Body, arm.decl, true)
-			}
-			continue
-		}
-		for _, d := range g.GetDecls(key) {
-			// M4 E3: a top-level destructuring `val [a, b] = …` / `val {x, y} = …`
-			// registers one decl under one leaf key per bound name. Bind it per key it
-			// appears under, before the handled-dedup that gates ordinary decls, so a
-			// destructuring decl sharing a name with another decl still binds its other
-			// leaves and the collision reports as a duplicate rather than as an
-			// unsupported pattern.
-			if vd := asDestructureDecl(d); vd != nil {
-				c.bindModuleDestructureLeaf(scope, inner, vd, g, key, b, handled, destructured)
-				continue
-			}
-			if handled.Contains(d) {
-				// Already inferred under another key this decl registers under, e.g. a
-				// class contributing both a value and a type key. Skipping avoids
-				// re-inferring and re-reporting it.
-				continue
-			}
-			handled.Add(d)
-			// A class decl is keyed by its dep_graph-qualified name, so pass the key's
-			// namespace down for inferClassDecl to reconstruct it. Every other decl
-			// kind ignores it.
-			t, src, ok := c.inferDeclDef(scope, inner, d, g.GetNamespace(key))
-			if !ok {
-				continue
-			}
-			// Accumulate every contributing decl's provenance in encounter order: the
-			// primary, every overload arm, and every decl later rejected as a duplicate.
-			// This append is unconditional, so a duplicate lands here even though it is NOT
-			// added to arms. b.sources can therefore DESYNC from arms when a duplicate
-			// interleaves: `fn f; val f; fn f` yields sources [fn, val, fn] against arms
-			// [fn, fn]. So do NOT index b.sources by arm position. Today only Sources[0],
-			// the primary decl, is ever read, by bindingDecl; phase 3's overload branch
-			// rebuilds its per-scheme sources from arms rather than from this list. The full
-			// list is kept only for a future multi-target go-to-definition that wants to
-			// reach every contributing decl, duplicates included.
-			b.sources = append(b.sources, src)
-			// PR8: a definition that is wholly the ErrorType recovery sentinel leaves no
-			// bound on the binding var (ErrorType absorbs in constrain). Remember it so
-			// phase 3 can recover the binding as ErrorType instead of `never`.
-			if _, isErr := t.(*soltype.ErrorType); isErr {
-				b.recovered = true
-			}
-			fd, isFunc := d.(*ast.FuncDecl)
-			if !b.bound {
-				c.constrain(d, t, b.v)
-				b.primary = d
-				b.bound = true
-				vd, isVarDecl := d.(*ast.VarDecl)
-				b.isVarDecl = isVarDecl
-				// Record where phase 3 stamps the display type: a `val`/`var` on its
-				// pattern, a `fn` on its name. A destructuring leaf overrides this with its
-				// own leaf node in bindModuleDestructureLeaf.
-				if isVarDecl {
-					b.infoNode = vd.Pattern
-				} else if isFunc {
-					b.infoNode = fd.Name
-				}
-				// PR8: carry the decl's kind so phase 3 can gate reassignment — a top-level
-				// `var` is reassignable (e.g. from a function body that closes over it);
-				// a `val`/`fn` is not. A FuncDecl leaves kind at its ValKind zero value.
-				if isVarDecl {
-					b.kind = vd.Kind
-					// M4 B3: an un-annotated `var` widens at coalesce time, so its literal
-					// initializer reads back as the primitive (`var a = 5` ⇒ number) and a
-					// later reassignment of the same primitive checks. An annotated `var`
-					// adopts its annotation, which needs no widening.
-					if vd.Kind == ast.VarKind && vd.TypeAnn == nil {
-						b.v.Widenable = true
-					}
-				}
-				// PR6: when the primary decl is a function, record it as the first arm. If
-				// more FuncDecls follow under this name it becomes an overload set; otherwise
-				// it stays a lone function.
-				if isFunc {
-					b.arms = append(b.arms, overloadArm{decl: fd, t: t, annotated: isFullyAnnotated(fd.FuncSig)})
-				}
-				continue
-			}
-			// Past the first decl, the binding already has its primary definition. PR6
-			// treats a repeated FuncDecl as another overload arm. It was already inferred
-			// independently above, so collect it and let phase 3 bind the full set as a
-			// multi-scheme overload binding. Every other repeat keeps the first decl and
-			// reports a duplicate — a second `val`/`var`, or a FuncDecl colliding with a
-			// variable binding, since a value cannot be overloaded.
-			if isFunc && !b.isVarDecl {
-				b.arms = append(b.arms, overloadArm{decl: fd, t: t, annotated: isFullyAnnotated(fd.FuncSig)})
-				continue
-			}
-			c.report(&DuplicateDeclarationError{
-				Decl:     d,
-				Previous: b.primary,
-				Name:     key.Name(),
-			})
-		}
-	}
-
+	// Every non-value key in the component is bound here, ahead of the value walk below, so
+	// a class or function body inferred there resolves any type name this component declares.
+	// A class member body creates a value dependency, which is what lets a type key and a
+	// value key share one component: `class A<T> { make(self) { B(1).x } }` alongside `class B
+	// { a: A }` puts `type:A` and `value:B` in the same SCC. Binding first means B's field
+	// annotation finds A registered with its type parameters resolved.
+	//
 	// Non-value keys such as type aliases are outside the M2 subset. Report each
 	// contributing decl once, skipping any already handled by a value key. A class or
 	// enum contributes both a value and a type key for the same decl, so one of the two
@@ -447,6 +342,126 @@ func (c *checker) inferComponent(
 			}
 			handled.Add(d)
 			c.reportUnsupported(d)
+		}
+	}
+
+	// Phase 2: infer each declaration's definition and constrain it <: its var.
+	for _, key := range component {
+		// Each top-level binding is its own named-lifetime scope, mirroring inferFunc.
+		// Two declarations that both write `&'a` get independent lifetimes rather than
+		// sharing one through a stale map. A function decl re-clears this inside inferFunc.
+		c.namedLifetimes = nil
+		b, isValue := bindings[key]
+		if !isValue {
+			continue // non-value keys handled above
+		}
+		if b.signatureBound {
+			// The schemes are already bound in scope from phase 1, so phase 2 does not
+			// re-bind them; it re-infers each arm with its body. inferFunc re-derives the
+			// signature and checks the body against the return annotation. Phase 1 discarded
+			// its signature errors under a probe, so this pass is the single reporter of BOTH
+			// the signature and the body errors. The body sees the whole overload set, so a
+			// recursive call resolves through resolveOverload against every arm.
+			for _, arm := range b.arms {
+				handled.Add(arm.decl)
+				b.sources = append(b.sources, &ast.NodeProvenance{Node: arm.decl})
+				c.inferFunc(scope, inner, arm.decl.FuncSig, arm.decl.Body, arm.decl, true)
+			}
+			continue
+		}
+		for _, d := range g.GetDecls(key) {
+			// M4 E3: a top-level destructuring `val [a, b] = …` / `val {x, y} = …`
+			// registers one decl under one leaf key per bound name. Bind it per key it
+			// appears under, before the handled-dedup that gates ordinary decls, so a
+			// destructuring decl sharing a name with another decl still binds its other
+			// leaves and the collision reports as a duplicate rather than as an
+			// unsupported pattern.
+			if vd := asDestructureDecl(d); vd != nil {
+				c.bindModuleDestructureLeaf(scope, inner, vd, g, key, b, handled, destructured)
+				continue
+			}
+			if handled.Contains(d) {
+				// Already inferred under another key this decl registers under, e.g. a
+				// class contributing both a value and a type key. Skipping avoids
+				// re-inferring and re-reporting it.
+				continue
+			}
+			handled.Add(d)
+			// A class decl is keyed by its dep_graph-qualified name, so pass the key's
+			// namespace down for inferClassDecl to reconstruct it. Every other decl
+			// kind ignores it.
+			t, src, ok := c.inferDeclDef(scope, inner, d, g.GetNamespace(key))
+			if !ok {
+				continue
+			}
+			// Accumulate every contributing decl's provenance in encounter order: the
+			// primary, every overload arm, and every decl later rejected as a duplicate.
+			// This append is unconditional, so a duplicate lands here even though it is NOT
+			// added to arms. b.sources can therefore DESYNC from arms when a duplicate
+			// interleaves: `fn f; val f; fn f` yields sources [fn, val, fn] against arms
+			// [fn, fn]. So do NOT index b.sources by arm position. Today only Sources[0],
+			// the primary decl, is ever read, by bindingDecl; phase 3's overload branch
+			// rebuilds its per-scheme sources from arms rather than from this list. The full
+			// list is kept only for a future multi-target go-to-definition that wants to
+			// reach every contributing decl, duplicates included.
+			b.sources = append(b.sources, src)
+			// PR8: a definition that is wholly the ErrorType recovery sentinel leaves no
+			// bound on the binding var (ErrorType absorbs in constrain). Remember it so
+			// phase 3 can recover the binding as ErrorType instead of `never`.
+			if _, isErr := t.(*soltype.ErrorType); isErr {
+				b.recovered = true
+			}
+			fd, isFunc := d.(*ast.FuncDecl)
+			if !b.bound {
+				c.constrain(d, t, b.v)
+				b.primary = d
+				b.bound = true
+				vd, isVarDecl := d.(*ast.VarDecl)
+				b.isVarDecl = isVarDecl
+				// Record where phase 3 stamps the display type: a `val`/`var` on its
+				// pattern, a `fn` on its name. A destructuring leaf overrides this with its
+				// own leaf node in bindModuleDestructureLeaf.
+				if isVarDecl {
+					b.infoNode = vd.Pattern
+				} else if isFunc {
+					b.infoNode = fd.Name
+				}
+				// PR8: carry the decl's kind so phase 3 can gate reassignment — a top-level
+				// `var` is reassignable (e.g. from a function body that closes over it);
+				// a `val`/`fn` is not. A FuncDecl leaves kind at its ValKind zero value.
+				if isVarDecl {
+					b.kind = vd.Kind
+					// M4 B3: an un-annotated `var` widens at coalesce time, so its literal
+					// initializer reads back as the primitive (`var a = 5` ⇒ number) and a
+					// later reassignment of the same primitive checks. An annotated `var`
+					// adopts its annotation, which needs no widening.
+					if vd.Kind == ast.VarKind && vd.TypeAnn == nil {
+						b.v.Widenable = true
+					}
+				}
+				// PR6: when the primary decl is a function, record it as the first arm. If
+				// more FuncDecls follow under this name it becomes an overload set; otherwise
+				// it stays a lone function.
+				if isFunc {
+					b.arms = append(b.arms, overloadArm{decl: fd, t: t, annotated: isFullyAnnotated(fd.FuncSig)})
+				}
+				continue
+			}
+			// Past the first decl, the binding already has its primary definition. PR6
+			// treats a repeated FuncDecl as another overload arm. It was already inferred
+			// independently above, so collect it and let phase 3 bind the full set as a
+			// multi-scheme overload binding. Every other repeat keeps the first decl and
+			// reports a duplicate — a second `val`/`var`, or a FuncDecl colliding with a
+			// variable binding, since a value cannot be overloaded.
+			if isFunc && !b.isVarDecl {
+				b.arms = append(b.arms, overloadArm{decl: fd, t: t, annotated: isFullyAnnotated(fd.FuncSig)})
+				continue
+			}
+			c.report(&DuplicateDeclarationError{
+				Decl:     d,
+				Previous: b.primary,
+				Name:     key.Name(),
+			})
 		}
 	}
 
