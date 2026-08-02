@@ -325,6 +325,18 @@ func (c *checker) throwsSink(lvl int) soltype.Type {
 	return c.fn.throws
 }
 
+// freshThrowsSink mints a sink at the level throwsSink mints at, the enclosing body's own
+// level rather than the level the current expression is typed at. inferTryCatch installs
+// the result for the duration of a try block. A sink minted one level deeper, inside a
+// `val` initializer, gets extruded by a later exceptional exit, and the resulting cycle
+// renders as a μ-knot. lvl is the fallback where there is no body to read a level from.
+func (c *checker) freshThrowsSink(lvl int) *soltype.TypeVarType {
+	if c.fn != nil {
+		return c.freshAt(c.fn.lvl)
+	}
+	return c.freshAt(lvl)
+}
+
 // markRaised records that the body being walked has an exceptional exit that can raise.
 // inferFunc reads the flag to warn about a `throws` clause the body never uses. It is a
 // no-op at module top level, where there is no clause to be unused.
@@ -519,6 +531,8 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferBorrow(scope, lvl, e)
 	case *ast.ThrowExpr:
 		return c.inferThrow(scope, lvl, e)
+	case *ast.TryCatchExpr:
+		return c.inferTryCatch(scope, lvl, e)
 	case *ast.BinaryExpr:
 		// PR8 handles the ASSIGNMENT op only (`a = expr`); every other binary
 		// operator (+, ==, &&, ++, …) needs the operator-scheme walk over the prelude
