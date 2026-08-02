@@ -1343,9 +1343,9 @@ func (e *MultipleConstructorsError) Message() string {
 
 // DuplicateConstructorSignatureError fires on the second and any later `new (…) -> T` member
 // in one object type annotation. soltype.ObjectType.Constructor() returns at most one
-// construct signature and constrain checks a constructor requirement against that one, so a
-// second signature has nowhere to live and would be dropped without a diagnostic. The extra
-// member carries the blame span.
+// construct signature, and constrain checks a constructor requirement against that one. A
+// second signature therefore has nowhere to live, and reporting it is what keeps it from
+// being dropped in silence. The extra member carries the blame span.
 type DuplicateConstructorSignatureError struct {
 	Ctor *ast.ConstructorTypeAnn
 }

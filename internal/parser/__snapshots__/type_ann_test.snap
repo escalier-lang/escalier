@@ -2556,3 +2556,47 @@
     span: 1:1-1:43,
 }
 ---
+
+[TestParseTypeAnnErrorHandling/ConstructorSignatureMissingReturnType - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.ConstructorTypeAnn{
+            Fn: &ast.FuncTypeAnn{
+                Params: []*ast.Param{
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name: "x",
+                            span: 1:7-1:8,
+                        },
+                        TypeAnn: &ast.NumberTypeAnn{
+                            span: 1:10-1:16,
+                        },
+                    },
+                },
+                Return: &ast.ErrorTypeAnn{
+                    span: 1:18-1:18,
+                },
+                span: 1:2-1:18,
+            },
+        },
+    },
+    span: 1:1-1:18,
+}
+---
+
+[TestParseTypeAnnErrorHandling/ConstructorSignatureMissingReturnType - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: 1:17-1:18,
+        Message: "Expected -> but got }",
+    },
+    &parser.Error{
+        Span: 1:18-1:18,
+        Message: "expected a type annotation",
+    },
+    &parser.Error{
+        Span: 1:18-1:18,
+        Message: "Expected } but got ",
+    },
+}
+---

@@ -202,24 +202,21 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	}
 	unsupported := false
 	sawCtor := false
-	// resolveCtor lowers one `new (…) -> T` member, reporting a second one in the same
-	// annotation rather than emitting it. soltype.ObjectType.Constructor() returns at most one
-	// construct signature and constrain checks a requirement against that one, so a second
-	// would be dropped without a diagnostic.
+	// resolveCtor lowers one `new (…) -> T` member to a ConstructorElem. An object type carries
+	// at most one construct signature, so a second is reported through
+	// DuplicateConstructorSignatureError instead of being emitted.
 	resolveCtor := func(ctor *ast.ConstructorTypeAnn) soltype.ObjTypeElem {
 		if sawCtor {
 			c.report(&DuplicateConstructorSignatureError{Ctor: ctor})
 			return nil
 		}
 		sawCtor = true
-		fn, ok := c.resolveFuncTypeAnn(scope, ctor.Fn, lvl)
-		if !ok {
-			return nil
-		}
-		// resolveFuncTypeAnn returns a FuncType for every signature it resolves, so anything
-		// else is a wiring bug rather than a source error.
-		fnType, ok := fn.(*soltype.FuncType)
-		if !ok {
+		// resolveFuncTypeAnn recovers every unsupported part of a signature to a fresh var, so
+		// it always yields a FuncType and its ok result is always true. Anything else is a
+		// wiring bug rather than a source error, so fail loudly instead of dropping the member.
+		fn, _ := c.resolveFuncTypeAnn(scope, ctor.Fn, lvl)
+		fnType, isFunc := fn.(*soltype.FuncType)
+		if !isFunc {
 			panic(fmt.Sprintf("resolveObjectTypeAnn: `new` signature resolved to %T, not *soltype.FuncType", fn))
 		}
 		return &soltype.ConstructorElem{Fn: fnType}
@@ -233,9 +230,10 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 		b := newObjElemBuilder(len(ta.Elems))
 		var ctors []soltype.ObjTypeElem
 		for _, elem := range ta.Elems {
-			// A construct signature is unnamed, so it has no key for the builder to dedup on
-			// and is collected separately. Its position among the properties carries no
-			// meaning, so appending the two groups keeps the member set the source wrote.
+			// A construct signature is unnamed, so the key-dedup builder has no key to file it
+			// under. Collect it separately and append it after the properties. Its position
+			// among them carries no meaning, since every reader reaches it through
+			// ObjectType.Constructor() rather than by index.
 			if ctor, ok := elem.(*ast.ConstructorTypeAnn); ok {
 				if resolved := resolveCtor(ctor); resolved != nil {
 					ctors = append(ctors, resolved)
@@ -281,7 +279,7 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 		}
 	}
 	if unsupported {
-		c.reportUnsupportedFeature(ta, "object type member other than a property or spread")
+		c.reportUnsupportedFeature(ta, "object type member other than a property, spread, mapped member, or `new` signature")
 	}
 	t := &soltype.ObjectType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)

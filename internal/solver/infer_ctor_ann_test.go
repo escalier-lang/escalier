@@ -9,9 +9,10 @@ import (
 
 // --- M9 PR15: `new (…) -> T` members in object type annotations ---
 
-// A `new (…) -> T` member resolves to the same ConstructorElem a class value carries, so the
-// annotation round-trips through the soltype printer as the source wrote it. The signature accepts
-// everything a `fn` annotation does, since both parse and resolve through the same path.
+// A `new (…) -> T` member resolves to the same ConstructorElem a class value carries, and the
+// soltype printer renders it back as `new (…) -> T`. The signature accepts everything a `fn`
+// annotation does, since both parse and resolve through the same path. The BesideProperty case
+// shows the one way the rendering departs from the source, which the next test explains.
 func TestInferConstructorTypeAnnRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string
@@ -58,6 +59,19 @@ func TestInferConstructorTypeAnnGeneric(t *testing.T) {
 	nodes, _, errs := inferTypeNodes(t, `type Result = {new <T>(x: T) -> {a: T}}`)
 	require.Empty(t, errs)
 	require.Equal(t, "{new <T>(x: T) -> {a: T}}", soltype.Print(nodes["Result"]))
+}
+
+// A type named inside a construct signature is a dependency of the enclosing alias, so the
+// declaration order in the source does not matter. ObjectTypeAnn.Accept already walks a
+// ConstructorTypeAnn's signature, which is what puts the reference in the dependency graph.
+func TestInferConstructorTypeAnnForwardReference(t *testing.T) {
+	nodes, _, errs := inferTypeNodes(t, `
+		type Result = {new (x: Arg) -> Made}
+		type Arg = number
+		type Made = {a: number}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "{new (x: Arg) -> Made}", soltype.Print(nodes["Result"]))
 }
 
 // soltype.ObjectType.Constructor() returns at most one construct signature and constrain checks a

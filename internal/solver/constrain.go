@@ -808,15 +808,20 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return append(errs, c.constrain(sub.ThrowsOrNever(), sup.ThrowsOrNever(), seen, false)...)
 		}
 		// A bare function fills an object target whose only member is a construct signature.
-		// classValue binds a class with no statics to its constructor FuncType and one with
-		// statics to an object carrying a ConstructorElem, so `typeof Point` renders
-		// `fn (x: number) -> Point` for the first and `{new (x: number) -> Point, origin: number}`
-		// for the second. This rule is what makes `InstanceType<typeof Point>` match either
-		// shape. Its cost is that an ordinary function also satisfies the target, since nothing
-		// in a FuncType says whether the value behind it is constructible.
+		// classValue gives a class with no statics its bare constructor FuncType and one with
+		// statics an object carrying a ConstructorElem. So for
 		//
-		// A target carrying anything besides the signature demands statics the bare function
-		// cannot supply, so it stays on the object-against-object arm and fails there.
+		//	class Point { x: number, constructor(mut self, x: number) { self.x = x } }
+		//
+		// `typeof Point` renders `fn (x: number) -> Point`, while the same class with a
+		// `static origin: Point` renders `{new (x: number) -> Point, origin: Point}`. This rule
+		// is what lets one `{new (…) -> R, ...}` target accept both, which is how
+		// `InstanceType<typeof C>` reads either class's instance. Its cost is that an ordinary
+		// function satisfies such a target too, since nothing in a FuncType says whether the
+		// value behind it is constructible.
+		//
+		// A target carrying another member alongside the signature demands something a bare
+		// function cannot supply. It stays on the object-against-object arm and fails there.
 		if sup, ok := super.(*soltype.ObjectType); ok && len(sup.Elems) == 1 {
 			if supCtor, has := sup.Constructor(); has {
 				return c.constrain(sub, supCtor.Fn, seen, mutCtx)

@@ -308,6 +308,9 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 		"PropertyMissingType": {
 			input: "{x: }",
 		},
+		"ConstructorSignatureMissingReturnType": {
+			input: "{new (x: number)}",
+		},
 		"ConditionalTypeMissingElse": {
 			input: "if A : B { C } else {",
 		},
