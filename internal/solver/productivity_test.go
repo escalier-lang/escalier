@@ -235,8 +235,8 @@ func TestCheckProductiveRejects(t *testing.T) {
 // one type, and subtyping is reflexive, so the canonical identity settles it with no unfolding at
 // all. Each case reaches that identity by a different route: one directly, one through the object
 // the alias emits.
-// The unreachable-parameter warning `Deep` draws is what makes the identity settle, so it is the
-// only diagnostic either case expects.
+// `Deep`'s parameter is unreachable, which is what lets the canonical identity settle the
+// constraint, so the warning it draws is the only diagnostic either case expects.
 func TestInferNonRegularAliasChecks(t *testing.T) {
 	deepIsPhantom := []string{
 		"2:15-2:16: no argument passed to type parameter T can appear in the type, so " +

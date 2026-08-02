@@ -1769,8 +1769,8 @@ func (e *UnusedLifetimeParamError) Message() string {
 // UnusedLifetimeParamError and is likewise always a warning. Name is the declared name,
 // and Param is the binder, which carries the blame span.
 //
-// A leading underscore quiets it, so `type Ignore<_T> = number` reports nothing. That is
-// the way to keep a binder a work in progress means to fill in.
+// A leading underscore quiets it, so `type Ignore<_T> = number` reports nothing. Write a
+// binder that way to keep one the source has not filled in yet.
 type UnusedTypeParamError struct {
 	Name  string
 	Param *ast.TypeParam
@@ -1814,9 +1814,9 @@ func (e *UnreachableTypeParamError) Message() string {
 }
 
 // instantiation renders a reference to the alias with the unreachable parameter filled by
-// arg and every other parameter left under its own name, which is what makes the two
-// renderings differ in exactly the one position the warning is about. `type Pair<T, U>`
-// with U unreachable gives `Pair<T, number>`.
+// arg and every other parameter left under its own name. The two renderings the message
+// pairs then differ in exactly the position the warning is about. `type Pair<T, U>` with U
+// unreachable gives `Pair<T, number>`.
 func (e *UnreachableTypeParamError) instantiation(arg string) string {
 	args := slices.Clone(e.Params)
 	args[e.Index] = arg
