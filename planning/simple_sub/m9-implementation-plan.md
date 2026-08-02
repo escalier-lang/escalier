@@ -133,23 +133,31 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Twenty-three PRs across five tracks. Track A builds the evaluator and the core
+Twenty-five PRs across five tracks. Track A builds the evaluator and the core
 operators in dependency order. Track B adds spread and template-literal
 operators, which hang off the backbone but are independent of each other. Track C
-adds exactness propagation and the recursion static-check. Track D is the two
-function-signature effects, which touch `FuncType` and not the evaluator at all,
-so it runs fully in parallel with A–C. Track E is the capstone verification and the
-one follow-on it turned up.
+adds exactness propagation and the recursion static-check. Track D is the
+function-signature effects and the exception machinery around them, which touch
+`FuncType` and not the evaluator at all, so it runs fully in parallel with A–C.
+Track E is the capstone verification and the follow-ons it turned up.
 
 The two heaviest concerns — the evaluator backbone and the conditional/`infer`
 matcher — are each split in two so no single PR carries both a new representation
 and a new algorithm: PR1a/PR1b and PR3a/PR3b below.
 
-Sixteen of the twenty-three were planned up front. PR9c through PR9f were added to Track C
+Sixteen of the twenty-five were planned up front. PR9c through PR9f were added to Track C
 after PR9b's review, which turned up one soundness question, one wrong answer, and one
 representation the milestone assumed exists. They are described together in "the
 recursion-safety follow-on group" below. PR14 through PR16 were added to Track E after
 PR13, which found four utilities inexpressible and identified what each waits on.
+
+PR10b and PR10c were added to Track D after PR10, which settled how `try`/`catch` narrows
+a body's throws but could not build it: the solver has no `try`/`catch` walk at all, so
+the design had no caller. PR10b is that walk. PR10c then moves an `async fn`'s throws off
+its own signature and into the promise it returns, which is where a rejection belongs and
+which needs PR10b's `try` to be catchable. Both were assumed by
+[01-milestones.md](01-milestones.md) — its M9 accept list calls for "a `try`/`catch` test
+for the body-narrowing rule" — without a PR to build them.
 
 ### PR1a — Residual-node representation + inert plumbing
 
@@ -737,11 +745,135 @@ is the exceptional twin of `UnusedLifetimeParamError`.
 
   The nested sink is not built here, because the solver has no `try`/`catch` walk to
   push it: `TryCatchExpr` reaches `inferExpr`'s default arm and reports the node
-  unsupported. Building the sink with no caller would be dead code, so it lands with
-  the walk. The `funcCtx.throws` field is the single place that walk pushes and pops.
+  unsupported. Building the sink with no caller would be dead code, so it lands in
+  PR10b. The `funcCtx.throws` field is the single place that walk pushes and pops.
 
 **Depends on** M3 only (the function machinery, landed). Independent of the whole
 operator track — can start immediately.
+
+### PR10b — `try`/`catch`
+
+The walk PR10's design was written against. It is what lets a caller HANDLE an
+exception rather than re-declare it, so it is the other half of the checked-exception
+story: with no clause meaning `never`, a `try` is the only way a clause-less function
+can call a throwing one.
+
+`ast.TryCatchExpr` ([ast/expr.go](../../internal/ast/expr.go)) is already parsed and
+visitable, carrying a `Try` block and a `Catch []*MatchCase`. The solver never walks
+it — `inferExpr`'s default arm reports the node unsupported — so nothing about
+try/catch exists below the AST.
+
+**Data structures.** None new in `soltype`. The nested sink is a save/restore of
+`funcCtx.throws` around the try block, the same shape `pushFuncCtx` uses for a whole
+body, so a `try` inside a `try` nests for free.
+
+**Algorithms.**
+- **The nested sink.** Save `funcCtx.throws`, install a fresh variable, walk the `Try`
+  block, then restore. What the fresh variable collected is the union the catch arms
+  match against, and it is the value the docs render as the caught binding's type.
+- **Catch arms reuse the match machinery.** The arms are `[]*ast.MatchCase`, so
+  `inferMatch` ([infer_expr.go](../../internal/solver/infer_expr.go)) is the template
+  arm for arm: a child scope per arm, `bindPattern` over the caught union,
+  `narrowMatchArm` to drop members a structural pattern cannot destructure, a boolean
+  guard, and `inferBlockOrExpr` for the body. The try/catch's own value is the join of
+  the try block's tail value and each non-diverging arm body, exactly as `inferMatch`
+  joins its arms.
+- **Automatic rethrow rather than an exhaustiveness error.** The arms need not cover
+  the caught union. Per [06_error_handling.md](../../docs/06_error_handling.md), "if
+  there is no catch-all, the compiler will automatically re-throw the unhandled error",
+  so an uncovered member is constrained into the ENCLOSING sink instead of being
+  reported. `unionMemberCovered` and `isCatchAll`
+  ([infer_expr.go](../../internal/solver/infer_expr.go)) already decide coverage per
+  member for `checkMatchExhaustive`; this reads the same relation the other way, keeping
+  one definition of "this pattern covers this member". A catch-all therefore
+  contributes nothing to the enclosing sink, which is what makes a clause-less caller
+  legal.
+- **The caught union is inexact.** The docs are explicit that a caught error is always
+  an open union — `FooError | ...` — because any function can throw something the type
+  system did not predict. `soltype.UnionType` already carries `Inexact`, so the caught
+  binding sets it. The open tail is itself an uncovered remainder, so a `try` without a
+  catch-all always rethrows something, however many members its arms name. Only a
+  catch-all closes the union, which is the same rule `checkMatchExhaustive` applies to
+  an inexact scrutinee, reached here through the rethrow instead of a diagnostic.
+- **A diverging try/catch.** `exprDiverges` ([infer_expr.go](../../internal/solver/infer_expr.go))
+  gains an arm: the form diverges when the try block and every arm body do, the same
+  AND-fold `MatchExpr` uses.
+
+**Wiring.** An `inferExpr` arm for `*ast.TryCatchExpr`.
+
+**Not in scope: `finally`.** The parser's grammar comment reads `'try' block ('catch'
+matchCase (',' matchCase)*)? ('finally' block)?`, but `tryExpr`
+([parser/expr.go](../../internal/parser/expr.go)) never parses the clause and
+`ast.TryCatchExpr` has no field to hold it. `finally` affects control flow rather than
+the throws lattice, so it is a parser/AST addition first; it belongs with whatever
+milestone adds the field, not here.
+
+**Accept.** A `try` with a catch-all lets a clause-less caller call a throwing function
+with no diagnostic. A `try` with no catch-all propagates the uncovered members, plus the
+inexact tail, to the enclosing clause. The caught binding renders as an inexact union.
+A `try` nested in another `try`'s block sends its own uncovered remainder to the outer
+arms rather than to the function's clause.
+
+**Depends on** PR10 (the sink it pushes and pops) and M4 E2 (the pattern and
+exhaustiveness machinery, landed). Independent of the whole operator track.
+
+### PR10c — `Promise<T, E>` and async rejection
+
+An `async fn` that throws rejects its promise; it does not raise to its caller. PR10
+records what such a function raises on its own `FuncType.Throws` because
+`soltype.PromiseType` is `struct{ Inner Type }`
+([soltype/type.go:650](../../internal/soltype/type.go)) with nowhere else to put it.
+That is the wrong place: a caller that never awaits the promise cannot observe the
+rejection, and one that does should be the site that has to handle it.
+
+The two-parameter promise is not new to Escalier. `internal/interop` already augments
+TypeScript's `Promise<T>` to `Promise<T, E>` through `PromiseVisitor`
+([interop/decl.go](../../internal/interop/decl.go)) and emits it back as `Promise<T>`
+for `.d.ts` compatibility, and
+[stdlib_types/requirements.md](../stdlib_types/requirements.md) §"Promise<T, E> Usage"
+specifies the surface. This PR is the `soltype` half of that existing design.
+
+**Data structures.** `soltype.PromiseType` gains an `Err Type` field, nil reading as
+`never` exactly as `FuncType.Throws` does, so a promise that cannot reject is the zero
+value and `Promise<T>` stays the rendered form. It is covariant, like `Inner`. The
+visitor, `LevelOf`, the printer, `equalType`, and `compareType` each grow the arm
+`Throws` grew in PR10.
+
+**Algorithms.**
+- **An async body's throws becomes the promise's rejection type.** `inferFunc`'s async
+  arm ([infer_expr.go](../../internal/solver/infer_expr.go)) moves the body's sink into
+  the wrapped `PromiseType.Err` and leaves the function's own `Throws` at `never`,
+  since calling an async function raises nothing — it returns a promise.
+- **A clause on an `async fn` names the rejection, not what a call raises.** The
+  signature is still where the body's exits are checked, so PR10's rules carry over
+  unchanged: no clause means the body may not throw at all, `throws E` fixes the
+  rejection type, and `throws _` infers it. Only the destination moves, from the
+  function's own `Throws` to the promise's `Err`. So `async fn f() throws string { … }`
+  reads `fn () -> Promise<T, string>`, and an async body that throws with no clause is
+  rejected exactly as a sync one is.
+- **`await` is an exceptional exit.** `inferAwait` constrains the awaited promise's
+  `Err` into the enclosing body's throws sink, so awaiting a rejecting promise needs a
+  clause or a `try` the same way a throwing call does. This is the join with PR10b: a
+  `try` around an `await` catches the rejection, which is the pattern
+  [06_error_handling.md](../../docs/06_error_handling.md)'s `fetchJSON` example is
+  built on.
+- **The annotation surface.** `resolveTypeAnn`'s Promise arm reads a second type
+  argument when written, so `Promise<number, FetchError>` resolves, and a
+  single-argument `Promise<T>` leaves `Err` nil.
+- **Async generators.** `AsyncGenerator<…>` is the same question one level out and
+  rides on whatever PR11 lands for `Generator`.
+
+**Accept.** `async fn f() throws _ { throw "x" }` renders `fn () -> Promise<never, "x">`
+with no `throws` clause of its own, and the same body without the clause is rejected at
+the `throw`. A caller that only holds the promise needs no clause. A caller that awaits
+it needs `throws "x"` or a `try` around the `await`. The `fetchJSON` example from
+[06_error_handling.md](../../docs/06_error_handling.md) type-checks, including its catch
+arms narrowing the rejection union.
+
+**Depends on** PR10 (the covariant-effect arms this copies), PR10b (the `try` that
+catches an awaited rejection), and M7.5 (the real `Promise` from the stdlib, which is
+where the second parameter has to survive ingestion). Relates to PR11 for
+`AsyncGenerator` and PR12 for `Awaited<T>`, neither of which it blocks.
 
 ### PR11 — Generators (`gen fn` / `yield e` / `yield from g`)
 
@@ -1161,8 +1293,10 @@ or a single function-signature effect, sized comparably to a typical M4/M6 PR.
 Mapped types (PR4) and object spread (PR5) are the next-largest — the fiddly
 modifier/`as`-remapping semantics and the Flow optional-field union rule
 respectively — but each is one self-contained operator and stays within the M4/M6
-band. PR10 and PR11 touch only `FuncType` and never the evaluator, so they carry
-no operator-track review burden. PR13 is verification-heavy but low-risk; if the
+band. PR10, PR10c, and PR11 touch only `FuncType` and `PromiseType`, never the
+evaluator, so they carry no operator-track review burden. PR10b is the largest of
+Track D: it is a new expression walk rather than a field plus parallel arms, sized
+like `inferMatch`, whose arm loop it reuses. PR13 is verification-heavy but low-risk; if the
 utility corpus balloons it splits cleanly by category (mapped-based,
 conditional-based, template-based).
 
@@ -1211,7 +1345,7 @@ unmarked PR has not been built yet.
 
 ```
 M7   (type aliases: alias node + generics + scope-driven TypeRef)  ──► PR1a
-M7.5 (library type resolution: real stdlib types, import-only)     ──► PR11, PR12
+M7.5 (library type resolution: real stdlib types, import-only)     ──► PR10c, PR11, PR12
 
 PR1a ✅ #914 (residual-node representation + inert plumbing)
  └─► PR1b ✅ #915 (evaluator backbone + keyof reduction)
@@ -1234,6 +1368,8 @@ PR9e ✅ #943 (μ-knot representation)       ── needs M3 only; owed from M3,
  └─► PR9f (regular-tree normalization)     ── also needs PR9b
 
 PR10 (throws clause)                       ── needs M3 only; parallel to everything
+ ├─► PR10b (try/catch)                     ── also needs M4 E2 (pattern machinery)
+ │    └─► PR10c (Promise<T, E> + async rejection)  ── also needs M7.5
  └─► PR11 (generators)                     ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
 
 PR13 (TS utility-type suite)               ── needs PR2, PR3b, PR4, PR7, PR12
@@ -1249,7 +1385,8 @@ to intersect the members' key sets, and #937 capped total alias expansion with a
 monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
 PR4's mapped types.
 
-Everything still open is PR8, PR9d, PR9f, PR10, PR11, PR13, PR14, PR15, and PR16. PR8 is partly
+Everything still open is PR8, PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR13, PR14, PR15,
+and PR16. PR8 is partly
 seeded — #922 threads an object's exactness through `keyof` — but the rest of the
 operators and the `Exact` / `Inexact` intrinsics are untouched.
 
@@ -1279,6 +1416,9 @@ graph TD
     PR9f["PR9f (regular-tree normalization)"]
     M3["M3 (let-generalization + coalescing)"]
     PR10["PR10 (throws clause)"]
+    PR10b["PR10b (try/catch)"]
+    PR10c["PR10c (Promise<T, E> + async rejection)"]
+    M4E2["M4 E2 (pattern matching)"]
     PR11["PR11 (generators)"]
     PR12["PR12 ✅ #952 (Awaited<T>)"]
     PR13["PR13 (TS utility-type suite)"]
@@ -1287,8 +1427,10 @@ graph TD
     PR16["PR16 (null + undefined + NonNullable<T>)"]
 
     M7 -.-> PR1a
+    M75 -.-> PR10c
     M75 -.-> PR11
     M75 -.-> PR12
+    M4E2 -.-> PR10b
     M3 -.-> PR9e
 
     PR1a --> PR1b
@@ -1318,7 +1460,9 @@ graph TD
     PR6 --> PR8
     PR7 --> PR8
     PR7 --> PR13
+    PR10 --> PR10b
     PR10 --> PR11
+    PR10b --> PR10c
     PR11 --> PR13
     PR12 --> PR13
     PR13 --> PR14
@@ -1360,7 +1504,11 @@ graph TD
   and unblocks PR9f; then PR9d, which fixes a wrong answer PR9b introduced; PR9f last,
   and only if a real library type needs it.
 - **Track D** — PR10 (throws) has no operator dependency and can start on day one
-  alongside PR1a; PR11 (generators) follows PR10.
+  alongside PR1a. PR10b (try/catch) and PR11 (generators) both follow PR10 and are
+  independent of each other, so they can be built concurrently. PR10c (Promise<T, E>)
+  is the track's only join, waiting on PR10b and M7.5. Suggested order: PR10b next,
+  since a clause-less function cannot call a throwing one without it, then PR11 and
+  PR10c as M7.5 allows.
 - **Track E** — PR13 is the final join, waiting on PR2, PR3b, PR4, PR7, PR12. PR14 and
   PR15 follow it in that order, closing the gaps PR13 found that the operator track can
   close on its own. PR15's `InstanceType<C>` half is separable from PR14 and could run
