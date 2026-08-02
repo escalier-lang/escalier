@@ -6,51 +6,62 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeParams resolves a `<…>` type-parameter list to soltype TypeParams in two
-// passes, so a bound may reference any sibling parameter regardless of order. Pass 1 mints
-// one fresh var per parameter and declares its name in scope. Pass 2 resolves each
-// parameter's constraint into its var's upper bound and its default, reading names against
-// the scope that now holds every sibling.
+// resolveTypeParams resolves a `<…>` type-parameter list to soltype TypeParams in three
+// passes. Pass 1 mints one fresh var per parameter. Pass 2 resolves each parameter's default
+// and then declares that parameter's name, so a default reads only the siblings before it.
+// Pass 3 resolves each constraint into its var's upper bound, against the scope that by then
+// holds every sibling.
 //
-// Declaring every parameter before reading any bound is what lets a forward reference
-// `<T: U, U>`, a mutual cycle `<T: U, U: T>`, an F-bound `<T: Foo<T>>`, and a mutual F-bound
-// `<T: Cmp<U>, U: Cmp<T>>` all resolve. A single declare-and-resolve pass leaves a
-// later-declared sibling undeclared when its bound is read, so the reference falls through to
-// general type-ref resolution and reports `Unsupported: TypeRefTypeAnn`. Because every sibling
-// is in scope up front, a true mutual cycle resolves that a topological sort of the parameters
-// cannot order.
+// A default and a bound need opposite visibility, which is why they sit in separate passes.
 //
-// A default is restricted where a bound is not. It may name only an earlier parameter. See
-// reportDefaultForwardRef for why, and for what a rejected default leaves behind.
+// A bound may name any sibling. Declaring every parameter before reading any bound is what
+// lets a forward reference `<T: U, U>`, a mutual cycle `<T: U, U: T>`, an F-bound
+// `<T: Foo<T>>`, and a mutual F-bound `<T: Cmp<U>, U: Cmp<T>>` all resolve. Resolving a bound
+// under a scope that holds only the earlier siblings would leave a later-declared name
+// undeclared, so the reference would fall through to general type-ref resolution and report
+// `Unsupported: TypeRefTypeAnn`. Because every sibling is in scope by pass 3, a true mutual
+// cycle resolves that a topological sort of the parameters cannot order.
+//
+// A default may name only an earlier sibling, since instantiation substitutes a default
+// positionally. reportDefaultForwardRef reports a default that names a later sibling or
+// itself, and the caller then skips resolving it, so that check is what a user sees. Growing
+// the scope one parameter at a time is the backstop underneath it: a later sibling's name is
+// not in scope when the default resolves, so its var cannot reach an instance even if the
+// check's idea of where a binder's region ends ever drifts from resolveTypeAnn's. See
+// reportDefaultForwardRef for the rest of the rule.
 //
 // The result stays in declaration order, so instantiation substitutes type arguments
 // positionally. The class and, once generic-function inference lands, the function and
 // method paths both route their `<…>` lists through here so bound resolution never forks.
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
 	out := make([]*soltype.TypeParam, len(params))
-	// Pass 1: mint each parameter's var and declare its name, so a bound in pass 2 may
-	// reference any sibling — earlier, later, itself, or mutually.
+	// Pass 1: mint each parameter's var. Nothing is declared yet, so pass 2 controls which
+	// siblings each default can see.
 	for i, p := range params {
-		v := c.freshAt(lvl)
-		scope.defineType(p.Name, TypeBinding{Type: v})
-		out[i] = &soltype.TypeParam{Name: p.Name, Var: v}
+		out[i] = &soltype.TypeParam{Name: p.Name, Var: c.freshAt(lvl)}
 	}
-	// Pass 2: resolve each constraint into its var's upper bound and each default, now that
-	// every sibling name is in scope.
+	// Pass 2: resolve each default under the names declared so far, then declare this
+	// parameter. A default naming a later sibling or itself finds the name undeclared.
 	for i, p := range params {
-		if p.Constraint != nil {
-			if ct, ok := c.resolveTypeAnn(scope, p.Constraint, lvl); ok {
-				c.ctx.addUpperBound(out[i].Var, ct)
-				// Keep the declared constraint where later solving cannot overwrite it. The
-				// var's upper-bound list grows as constraints flow in, so a reader that wants
-				// what the source wrote reads this field instead.
-				out[i].Constraint = ct
-			}
-		}
 		if p.Default != nil && !c.reportDefaultForwardRef(params, i) {
 			if dt, ok := c.resolveTypeAnn(scope, p.Default, lvl); ok {
 				out[i].Default = dt
 			}
+		}
+		scope.defineType(p.Name, TypeBinding{Type: out[i].Var})
+	}
+	// Pass 3: resolve each constraint into its var's upper bound, now that every sibling name
+	// is in scope.
+	for i, p := range params {
+		if p.Constraint == nil {
+			continue
+		}
+		if ct, ok := c.resolveTypeAnn(scope, p.Constraint, lvl); ok {
+			c.ctx.addUpperBound(out[i].Var, ct)
+			// Keep the declared constraint where later solving cannot overwrite it. The var's
+			// upper-bound list grows as constraints flow in, so a reader that wants what the
+			// source wrote reads this field instead.
+			out[i].Constraint = ct
 		}
 	}
 	return out
@@ -71,8 +82,16 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 // widen a second `val p: Pair = {a: 1, b: 2}` to `Pair<1 | "s", number>`. Rejecting the default
 // keeps that var out of every instance.
 //
-// The caller drops a rejected default, which leaves the parameter required, so a reference
-// that omits it reports an arity mismatch naming the omission.
+// The caller drops a rejected default rather than replacing it, so the parameter becomes
+// required. Whether omitting that argument then reports a second diagnostic is up to the
+// instance builder, and neither builder reports it in every case today. buildAliasInstance
+// counts its required arguments as the number of parameters carrying no default, with no
+// regard for where those parameters sit. Writing `Tri<string>` against
+// `type Tri<T = number, U = V, V = number>` passes that count, so the omitted `U` becomes a
+// fresh var with only the ordering error reported. An arity mismatch is reported when no
+// defaulted parameter precedes the rejected one. buildClassInstance checks no arity at all.
+// PR18 of planning/simple_sub/m9-implementation-plan.md factors both builders into one
+// helper, which is where a positional count belongs.
 //
 // The restriction covers the default position alone. A bound may name any sibling, since
 // `<T: U, U: T>` is a legal mutual F-bound and `<T: Foo<T>>` names the parameter being
@@ -82,11 +101,11 @@ func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 	for _, p := range params[i:] {
 		forbidden.Add(p.Name)
 	}
-	scan := typeParamRefScan{bound: set.NewSet[string]()}
+	var scan typeParamRefScan
 	params[i].Default.Accept(&scan)
-	for _, ref := range scan.refs {
+	for _, ref := range scan.free {
 		name := ast.QualIdentToString(ref.Name)
-		if !forbidden.Contains(name) || scan.bound.Contains(name) {
+		if !forbidden.Contains(name) {
 			continue
 		}
 		c.report(&TypeParamDefaultForwardRefError{Ref: ref, Param: params[i].Name, Target: name})
@@ -95,44 +114,91 @@ func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 	return false
 }
 
-// typeParamRefScan walks a type annotation and records both the names it reads and the names
-// it binds, so a caller can tell a reference to an enclosing `<…>` parameter from one a nested
-// binder introduced.
+// typeParamRefScan walks a type annotation and collects the references that read a name from
+// outside it, so a caller can tell a reference to an enclosing `<…>` parameter from one a
+// binder written inside the annotation introduces.
 //
-// refs holds every `Name` and `Name<…>` reference in traversal order, so a caller reports the
-// leftmost offending one. bound holds the name each binder inside the annotation introduces.
-// There are three such binders: a nested `fn <U>(…)` quantifier, a mapped type's key binder
-// written `K` in `{[K: Keys]: V}`, and a conditional's `infer U`. A reference to one of those
-// reads the binder's own name rather than an enclosing parameter's.
+// free holds those references in traversal order, so a caller reports the leftmost offending
+// one. A reference whose name an enclosing binder declares is left out, since it reads that
+// binder's name rather than a `<…>` parameter's. Three binders can appear inside an
+// annotation, and the scan tracks the region each one covers:
 //
-// bound covers the whole annotation rather than each binder's own region, which errs toward
-// silence. In `{a: fn <U>(x: U) -> U, b: U}` the `b: U` reads an enclosing `U`, and the scan
-// suppresses it along with the two inside the nested quantifier.
+//   - A `fn <U>(…)` quantifier covers the whole function annotation.
+//   - A mapped type's key binder, the `K` of `{[K: Keys]: V}`, covers the object annotation
+//     that holds it. That is wider than the binder's own region by the key constraint and any
+//     sibling element, so `{[K: Keys]: V, other: K}` reads `other: K` as the key binder.
+//   - An `infer U` clause covers the Extends and Then operands of the conditional whose
+//     Extends declares it, matching where resolveCondTypeAnn declares the name. The same name
+//     in the Else operand is a free reference.
+//
+// scopes holds one name set per region the walk is currently inside, innermost last.
 type typeParamRefScan struct {
 	ast.DefaultVisitor
-	refs  []*ast.TypeRefTypeAnn
-	bound set.Set[string]
+	scopes []set.Set[string]
+	free   []*ast.TypeRefTypeAnn
 }
 
 func (v *typeParamRefScan) EnterTypeAnn(t ast.TypeAnn) bool {
 	switch n := t.(type) {
 	case *ast.TypeRefTypeAnn:
-		v.refs = append(v.refs, n)
-	case *ast.FuncTypeAnn:
-		for _, tp := range n.TypeParams {
-			v.bound.Add(tp.Name)
+		if !v.shadowed(ast.QualIdentToString(n.Name)) {
+			v.free = append(v.free, n)
 		}
+	case *ast.FuncTypeAnn:
+		names := set.NewSet[string]()
+		for _, tp := range n.TypeParams {
+			names.Add(tp.Name)
+		}
+		v.push(names)
 	case *ast.ObjectTypeAnn:
 		// A mapped type is an object element rather than a type annotation of its own, so the
 		// walk reaches its key constraint, name, and value without entering the mapped node.
-		// Read its key binder off the element here.
+		// Read the key binder off the element here and scope it to the object annotation.
+		names := set.NewSet[string]()
 		for _, elem := range n.Elems {
 			if mapped, ok := elem.(*ast.MappedTypeAnn); ok {
-				v.bound.Add(mapped.TypeParam.Name)
+				names.Add(mapped.TypeParam.Name)
 			}
 		}
-	case *ast.InferTypeAnn:
-		v.bound.Add(n.Name)
+		v.push(names)
+	case *ast.CondTypeAnn:
+		// The four operands are walked here rather than by the shared descent, since an
+		// `infer U` clause covers only two of them. Check reads no capture, and a capture
+		// named again in Else is a free reference.
+		n.Check.Accept(v)
+		v.push(set.FromSlice(inferAnnNames(n.Extends)))
+		n.Extends.Accept(v)
+		n.Then.Accept(v)
+		v.pop()
+		n.Else.Accept(v)
+		return false
 	}
 	return true
+}
+
+// ExitTypeAnn closes the region opened on entering a function or object annotation. A
+// conditional pops its own region inside EnterTypeAnn, since it drives its operands itself.
+func (v *typeParamRefScan) ExitTypeAnn(t ast.TypeAnn) {
+	switch t.(type) {
+	case *ast.FuncTypeAnn, *ast.ObjectTypeAnn:
+		v.pop()
+	}
+}
+
+func (v *typeParamRefScan) push(names set.Set[string]) {
+	v.scopes = append(v.scopes, names)
+}
+
+func (v *typeParamRefScan) pop() {
+	v.scopes = v.scopes[:len(v.scopes)-1]
+}
+
+// shadowed reports whether any region the walk is inside declares name.
+func (v *typeParamRefScan) shadowed(name string) bool {
+	for _, names := range v.scopes {
+		if names.Contains(name) {
+			return true
+		}
+	}
+	return false
 }

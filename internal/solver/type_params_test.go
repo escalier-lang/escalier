@@ -105,6 +105,25 @@ func TestTypeParamDefaultForwardRef(t *testing.T) {
 				type Pick<T = if [number] : [infer U] { U } else { never }, U = string> = {a: T, b: U}
 			`,
 		},
+		// A binder covers its own region and no more. The mapped key `U` is nested inside the
+		// `m` property, so the `b: U` beside it reads the later sibling parameter and is
+		// reported even though the same name is bound elsewhere in the default.
+		{
+			name: "MappedKeyDoesNotShadowSibling",
+			src: `
+				type Bad<T = {m: {[U: "a"]: number}, b: U}, U = unknown> = {t: T, u: U}
+			`,
+			want: []string{"the default for type parameter `T` cannot reference `U`, which is declared after it"},
+		},
+		// An `infer U` capture does not reach the Else branch, matching where
+		// resolveCondTypeAnn declares the name, so the `U` there reads the later sibling.
+		{
+			name: "InferClauseDoesNotShadowElseBranch",
+			src: `
+				type Bad<T = if [number] : [infer U] { number } else { U }, U = unknown> = {t: T, u: U}
+			`,
+			want: []string{"the default for type parameter `T` cannot reference `U`, which is declared after it"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -119,9 +138,10 @@ func TestTypeParamDefaultForwardRef(t *testing.T) {
 
 // TestTypeParamDefaultForwardRefLeavesParamRequired checks the recovery. A rejected default is
 // dropped rather than replaced, which leaves that parameter required, so a reference that omits
-// it reports the arity mismatch that names the omission alongside the ordering error. `U` keeps
-// its own `= number` default, so the range the arity message states starts at one rather than
-// two.
+// it reports an arity mismatch alongside the ordering error. `T` is the first parameter, so no
+// defaulted parameter sits before it and buildAliasInstance's count catches the omission. `U`
+// keeps its own `= number` default, so the range the arity message states starts at one rather
+// than two.
 func TestTypeParamDefaultForwardRefLeavesParamRequired(t *testing.T) {
 	src := `
 		type Pair<T = U, U = number> = {a: T, b: U}
