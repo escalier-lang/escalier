@@ -813,14 +813,9 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 		}
 	}
 
-	// An absent `throws` clause leaves Throws nil, which reads as `never`: the annotation
-	// promises the function raises nothing.
-	//
-	// An unsupported clause recovers to a fresh var instead, matching the parameter and
-	// return positions above. Recovering to nil would read as `never`, the strictest type
-	// there is, so every value flowing into the annotation would be re-reported for
-	// raising something. A fresh var constrains nothing, leaving the one diagnostic
-	// resolveTypeAnn already recorded.
+	// An absent clause leaves Throws nil, which reads as `never`: the annotation promises
+	// the function raises nothing. An unsupported clause recovers to a fresh var instead,
+	// matching the parameter and return positions, so it is not re-reported at every use.
 	var throws soltype.Type
 	if ta.Throws != nil {
 		throws = c.freshAt(lvl)

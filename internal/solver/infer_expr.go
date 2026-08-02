@@ -295,21 +295,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
-	// The `throws` clause is resolved before the body is walked, because it is the sink
-	// every `throw` and every call in the body is checked against. Resolving it up front
-	// is what makes a mismatch blame the throw or the call rather than the whole
-	// function, and it is why the declared type reaches the function's Throws whether or
-	// not the body raises anything.
-	//
-	// Writing NO clause is itself a declaration: the function raises nothing. The sink is
-	// `never`, so a `throw` in the body or a call to a throwing callee is rejected at its
-	// own site, and a function is non-throwing only by omitting the clause rather than by
-	// writing `throws never`. Writing `throws _` opts back into inference by putting a
-	// fresh variable there for the body's exits to flow into.
-	//
-	// An unsupported clause recovers to a fresh variable rather than to `never`, after
-	// resolveTypeAnn has reported it. Recovering to the strictest type would re-report
-	// every exceptional exit on top of the one real diagnostic.
+	// The clause is the sink every throw and call is checked against, so it resolves
+	// before the body: `never` for no clause, which is how omitting it declares that the
+	// function raises nothing; T for `throws T`; a fresh var for `throws _` or a bad one.
 	var declaredThrows soltype.Type = &soltype.NeverType{}
 	if sig.Throws != nil {
 		declaredThrows = c.freshAt(lvl)
@@ -397,11 +385,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// there is no body, since a synthetic Void would falsely signal "returns
 	// nothing").
 	//
-	// Throws is untouched by either arm. An `async fn` that throws really rejects its
-	// promise rather than raising to its caller, so the thrown type belongs in the
-	// promise's rejection slot. `soltype.PromiseType` carries only a fulfilment type.
-	// Until it carries a rejection type too, an async function keeps what it raises on
-	// its own Throws, which is the information the body supplied.
+	// Throws is untouched by either arm. An `async fn` rejects its promise rather than
+	// raising, so what it throws belongs in a rejection slot `soltype.PromiseType` does not
+	// yet have; until it does, an async function keeps it on its own Throws. See PR10c.
 	if sig.Async {
 		ret = c.asyncReturn(declScope, node, sig.Return, ret, hasBody, lvl)
 	} else if sig.Return != nil {
@@ -1292,11 +1278,8 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// required(callee) <= N <= upper(callee). If callShape were INEXACT instead,
 	// its accept-set would widen to [N, ∞), demanding upper(callee) = ∞ and thus
 	// rejecting every call to a fixed-arity (exact) function.
-	// The shape's Throws slot is the enclosing body's throws sink, so constrain's
-	// covariant throws rule records whatever the callee raises into that sink and the
-	// exception propagates to this body's own `throws` clause. A non-throwing callee
-	// carries `never`, which constrain short-circuits, so an ordinary call records
-	// nothing.
+	// The shape's Throws slot is this body's sink, so constrain's covariant throws rule
+	// records what the callee raises into it. A non-throwing `never` records nothing.
 	callShape := &soltype.FuncType{Params: demand, Ret: res, Throws: c.throwsSink(lvl)}
 	// A resolved callee that declares nothing raises nothing, so it leaves the enclosing
 	// clause unused. Any other callee counts as raising, since its throws may still be an
@@ -2446,11 +2429,9 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 	return res
 }
 
-// inferThrow types `throw e`. The thrown value's type is constrained into the enclosing
-// body's throws sink, so it reaches the function's `throws` clause the way a `return`
-// reaches its return type. The expression itself is `never`, because control leaves
-// along the exceptional edge and no value is produced. That lets a `throw` sit anywhere
-// a value is expected, as in `return if ok { v } else { throw Error("no value") }`.
+// inferThrow types `throw e`. The thrown type is constrained into the enclosing body's
+// throws sink, the way a `return` reaches the return type. The expression is `never`, so
+// a `throw` sits where a value is expected: `return if ok { v } else { throw E("x") }`.
 func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Type {
 	arg := c.inferExpr(scope, lvl, e.Arg)
 	c.constrain(e, arg, c.throwsSink(lvl))

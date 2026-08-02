@@ -667,10 +667,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				}
 			}
 			errs = append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant
-			// The throws clause is the exceptional exit, covariant like the return: a
-			// function that raises a narrower set may stand in for one that raises a wider
-			// set. A non-throwing sub carries `never`, which constrain short-circuits, so a
-			// function with no clause satisfies every super.
+			// The throws clause is covariant like the return. A non-throwing sub carries
+			// `never`, which constrain short-circuits, so no clause satisfies every super.
 			return append(errs, c.constrain(sub.ThrowsOrNever(), sup.ThrowsOrNever(), seen, false)...)
 		}
 	case *soltype.TupleType:
@@ -1472,10 +1470,8 @@ func substFuncBinder(ft *soltype.FuncType, sub *typeSubst) *soltype.FuncType {
 		cp.Params[i] = &np
 	}
 	cp.Ret = ft.Ret.Accept(sub, soltype.Positive)
-	// The throws type is substituted at the same polarity as the return, so a `throws E`
-	// clause binds to the same fresh variable or skolem the parameter positions got. Miss
-	// this and `fn <E>(g: fn () -> R throws E) -> R throws E` would leave its own clause
-	// naming the unsubstituted binder, disconnected from the argument's throws.
+	// Substituted at the return's polarity, so a `throws E` clause binds to the same fresh
+	// variable or skolem the parameters got rather than naming the unsubstituted binder.
 	if ft.Throws != nil {
 		cp.Throws = ft.Throws.Accept(sub, soltype.Positive)
 	}

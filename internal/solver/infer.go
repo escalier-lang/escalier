@@ -135,54 +135,19 @@ type funcCtx struct {
 	// every returned value is uniquely owned, so the join of the returns is too.
 	returnExprs []ast.Expr
 
-	// throws is this body's exceptional SINK: the single type every exceptional exit is
-	// constrained against, the twin of the joined return type. A `throw e` constrains e's
-	// type into it. A call constrains the callee's throws into it by putting it in the
-	// synthesized call shape's own Throws slot, where constrain's covariant throws rule
-	// finds it. Routing both through one sink rather than through a list of collected
-	// types is what lets a call contribute without the walk having to resolve the callee
-	// first.
-	//
-	// inferFunc seeds the sink from the signature before the body is walked, so each throw
-	// and each call is checked against it at its own site and blamed there. A signature
-	// with no clause seeds `never`, which is how omitting the clause declares that the
-	// function raises nothing; `throws T` seeds T, and `throws _` seeds a fresh variable
-	// the body's exits flow into.
-	//
-	// Seeding also keeps a declared type parameter from picking up a vacuous bound. The
-	// alternative is to constrain the body into a separate variable and that variable into
-	// `T`, which leaves the two bounding each other, so
-	// `fn <E>(g: fn () -> number throws E) -> number throws E` would render its own sink
-	// as a second quantifier.
-	//
-	// inferFunc reads the sink back as the function's Throws once the body is walked,
-	// which mirrors the return type: the join variable becomes FuncType.Ret whether or not
-	// anything flowed into it. A `throws _` sink nothing reached coalesces to `never` and
-	// renders no clause.
-	//
-	// A body with no signature to seed from leaves this nil until throwsSink mints a
-	// variable on first use. Only a script's top level is in that position, since it has
-	// nowhere to write a clause.
-	//
-	// Minting is safe under a discardable probe: the mint itself is not journaled, but the
-	// bounds a trial appends to it are, so a discarded trial leaves a sink nothing reached.
+	// throws is this body's exceptional SINK: the single type every `throw` and every call
+	// is constrained against, the twin of the joined return type. inferFunc seeds it from
+	// the signature before the body is walked — `never` for no clause, T for `throws T`, a
+	// fresh variable for `throws _` — so each exit is blamed at its own site, and reads it
+	// back as the function's Throws. Only a script's top level has no signature to seed it.
 	throws soltype.Type
-	// raised records whether any exceptional exit in this body can actually raise, which a
-	// declared sink cannot answer on its own: constraining into a concrete `throws string`
-	// leaves no trace on it. inferFunc reads it to warn about a clause the body never uses.
-	//
-	// A `throw` sets it unconditionally. A call sets it unless the callee is resolved and
-	// provably non-throwing, so a callee whose own throws is still an unsolved variable
-	// counts as raising. Erring that way costs a missed warning rather than a false one.
+	// raised records whether any exceptional exit can actually raise, which a concrete
+	// declared sink cannot answer since constraining into it leaves no trace. A `throw`
+	// sets it; a call sets it unless the callee is resolved and provably non-throwing.
 	raised bool
-	// lvl is the level this body is walked at, recorded so throwsSink mints the sink
-	// there rather than wherever the first exceptional exit happens to sit. A `val`
-	// initializer is typed one level deeper, so a sink minted at the first exit's own
-	// level would land inner to the body when that exit is a call inside an
-	// initializer. A later exit at the body's own level would then extrude it, wiring
-	// the extruded proxy back to the original in both directions, and the cycle renders
-	// the function's throws as a μ-knot: `fn g() { val x = a()  a()  return x }`
-	// reports `throws μX0.(string | X0)` instead of `throws string`.
+	// lvl is the level this body is walked at, so throwsSink mints the sink there rather
+	// than inside a `val` initializer, which is typed one level deeper. A sink minted deep
+	// gets extruded by a later exit, and the resulting cycle renders as a μ-knot.
 	lvl int
 
 	// written records the widened type stored into a receiver variable's field by a
@@ -348,15 +313,8 @@ func (c *checker) inScript() bool {
 }
 
 // throwsSink returns the type this body's exceptional exits are constrained against.
-// inferFunc seeds it from the signature, so a function body always has one before its
-// first exceptional exit is walked, and the mint below fires only for a body with no
-// signature: a script's top level, which has nowhere to write a clause and so infers
-// what it raises rather than being held to `never`.
-//
-// A `throw` or a call at module top level has no enclosing function to raise out of at
-// all, so it gets a fresh variable that nothing reads. The thrown type is still checked
-// there; it simply propagates nowhere. Recording a module initializer's throws needs
-// somewhere on the module to put them, which no milestone has designed yet.
+// inferFunc seeds it from the signature, so the mint below fires only where there is no
+// signature to seed from: a script's top level, and a `throw` or call at module top level.
 func (c *checker) throwsSink(lvl int) soltype.Type {
 	if c.fn == nil {
 		return c.freshAt(lvl)

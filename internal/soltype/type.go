@@ -230,13 +230,9 @@ type FuncType struct {
 	SelfParam *FuncParam // nil ⇒ static method or plain function; non-nil ⇒ instance method
 	Params    []*FuncParam
 	Ret       Type
-	// Throws is the type a call to the function may raise, the twin of Ret for the
-	// exceptional exit. It is covariant, so a function that raises a narrower set is a
-	// subtype of one that raises a wider set. Nil means the function raises nothing and
-	// reads as `never`, the bottom of the lattice, so the zero value is non-throwing and
-	// a FuncType minted without thinking about exceptions is correct. An explicit
-	// `never` means the same thing, and ThrowsOrNever collapses the two so no reader
-	// has to tell them apart.
+	// Throws is the type a call may raise, the twin of Ret for the exceptional exit and
+	// covariant like it. Nil reads as `never`, so the zero value is non-throwing;
+	// ThrowsOrNever collapses nil and an explicit `never` so no reader tells them apart.
 	Throws  Type
 	Inexact bool // PR4: trailing `...` ⇒ true; bare fn(...) ⇒ false (the exact zero value)
 	// TypeParams are the function's own quantified type parameters; nil is monomorphic and
@@ -247,10 +243,8 @@ type FuncType struct {
 	LifetimeParams []*LifetimeParam
 }
 
-// ThrowsOrNever returns the type a call to t may raise, resolving the nil shorthand to
-// the `never` it stands for. Every reader of the throws position goes through it, so a
-// function written with no clause and one written `throws never` behave identically in
-// subtyping, equality, ordering, and printing, and no caller has to test for nil.
+// ThrowsOrNever returns the type a call to t may raise, resolving the nil shorthand to the
+// `never` it stands for, so no reader of the throws position has to test for nil.
 func (t *FuncType) ThrowsOrNever() Type {
 	if t.Throws == nil {
 		return &NeverType{}
