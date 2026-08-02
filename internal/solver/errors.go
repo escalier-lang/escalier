@@ -1068,6 +1068,7 @@ func (*ReservedTypeNameError) isSolverError()               {}
 func (*RestParamNotLastError) isSolverError()               {}
 func (*RestParamNeedsTypeError) isSolverError()             {}
 func (*OptionalRestParamError) isSolverError()              {}
+func (*TypeParamDefaultForwardRefError) isSolverError()     {}
 func (*NotProductiveAliasError) isSolverError()             {}
 func (*ExpansionLimitError) isSolverError()                 {}
 
@@ -1255,6 +1256,27 @@ func (e *OptionalRestParamError) Span() ast.Span      { return e.Param.Span() }
 func (e *OptionalRestParamError) Related() []ast.Span { return nil }
 func (e *OptionalRestParamError) Message() string {
 	return "a rest parameter cannot be marked optional"
+}
+
+// TypeParamDefaultForwardRefError fires when a type parameter's default names the parameter
+// itself or one declared after it, as `type Loop<T = T>` and `type Pair<T = U, U = number>` do.
+// A reference that omits a trailing argument fills it from that parameter's default,
+// substituting the arguments before it. A default is usable only when every parameter it names
+// already has an argument by then, which means only an earlier one. Ref is the offending
+// reference, Param the parameter whose default holds it, and Target the parameter it reaches.
+type TypeParamDefaultForwardRefError struct {
+	Ref    *ast.TypeRefTypeAnn
+	Param  string
+	Target string
+}
+
+func (e *TypeParamDefaultForwardRefError) Span() ast.Span      { return e.Ref.Span() }
+func (e *TypeParamDefaultForwardRefError) Related() []ast.Span { return nil }
+func (e *TypeParamDefaultForwardRefError) Message() string {
+	if e.Param == e.Target {
+		return fmt.Sprintf("the default for type parameter `%s` cannot reference `%s` itself", e.Param, e.Target)
+	}
+	return fmt.Sprintf("the default for type parameter `%s` cannot reference `%s`, which is declared after it", e.Param, e.Target)
 }
 
 // NotProductiveAliasError fires when a recursive type alias reaches itself with no type constructor
