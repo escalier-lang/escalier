@@ -89,11 +89,11 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
-		// The built-in Array<T>, the element-typed sequence a rest parameter binds its
-		// trailing arguments into. It is minimal by design: it carries the element type and
-		// nothing else, so `xs.length` and `xs[0]` do not resolve. Library ingestion supplies
-		// the members. Resolution reaches here only after resolveScopedTypeRef found nothing,
-		// so a user-defined `Array` wins, the same precedence the Promise stub above has.
+		// The built-in Array<T>, the element-typed sequence a rest parameter binds its trailing
+		// arguments into. It is minimal by design: it carries the element type and nothing else, so
+		// `xs.length` and `xs[0]` do not resolve. A local `Array` shadows the stub today, since
+		// resolution reaches here only after resolveScopedTypeRef finds nothing. That ends once
+		// `Array` and `Promise` are imported from the `std:collection` and `std:async` pseudo-packages.
 		if ast.QualIdentToString(ta.Name) == "Array" && len(ta.TypeArgs) == 1 {
 			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
 				return c.reportUnsupportedFeature(ta, "lifetime annotation on Array"), false
