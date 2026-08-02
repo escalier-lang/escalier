@@ -70,6 +70,11 @@ func markPhantomParams(shells []*aliasShell) {
 // Only a reference whose target shares the referring alias's component can close a recursion, and
 // only such a reference gates its arguments behind a parameter. A reference to an alias in another
 // component expands finitely, so an argument reaching it reaches the denoted type.
+//
+// Everything below but the collector repeats unguardedCycles in productivity.go, and #965 tracks
+// lifting it into a shared helper. The two graphs stay distinct: that one records a reference only
+// where no type constructor encloses it, so `type Deep<T> = {a: Deep<{b: T}>}` gives it no edge at
+// all and reading it here would leave every parameter relevant.
 func aliasComponents(shells []*aliasShell) map[string]int {
 	names := make([]string, 0, len(shells))
 	for _, sh := range shells {

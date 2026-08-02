@@ -74,6 +74,11 @@ func (c *checker) checkProductive(shells []*aliasShell) {
 // the dep_graph component and whose edges are the unguarded alias references in their bodies. A
 // component of two or more aliases is a cycle. A component of one is a cycle only when that alias's
 // body names itself unguarded.
+//
+// Everything below but the collector repeats aliasComponents in phantom.go, and #965 tracks lifting
+// it into a shared helper. The two graphs stay distinct: that one records a reference at any depth,
+// which would make a guarded recursion look unguarded and reject an alias that emits structure every
+// lap.
 func unguardedCycles(shells []*aliasShell) map[string]set.Set[string] {
 	names := make([]string, 0, len(shells))
 	for _, sh := range shells {
