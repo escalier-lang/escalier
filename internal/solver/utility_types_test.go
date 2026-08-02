@@ -28,12 +28,19 @@ import (
 // `Omit<T, Ks>` reads `Exclude`, so the two definitions are coupled. Order in this source does not
 // matter, since the dependency graph orders the declarations.
 //
-// `ReturnType<F>` carries no bound on `F`, so an argument that is not a nullary function reduces
-// through the Else branch to `never` rather than being rejected. A bound would read better, and
-// alias bounds are enforced since #956, but no writable bound admits every function: a function
-// type's return is covariant, so the bound has to be `fn () -> unknown`, and that pins the arity to
-// nullary alongside it. M9 PR14 settles what the bound becomes once the pattern matches any arity.
-// TestUtilityTypeReturnTypeIsAritySpecific records the arity restriction itself.
+// `ReturnType<F>` and `Parameters<F>` each write their pattern's parameter list as one rest
+// parameter, so the pattern matches a function of any arity. Each names only the position it
+// captures and writes `_` for the other. In a conditional's pattern `_` is an `infer` clause with
+// no name: the match fills it and the capture is dropped, since no branch can reference a name the
+// source never wrote. So `ReturnType` captures the return past any parameter list and `Parameters`
+// captures the parameter list past any return.
+//
+// Both bound `F` by `fn (...args: Array<_>) -> _`, the written top of the function lattice. Its
+// rest parameter absorbs whatever parameter list the argument declares, and the two `_` are the
+// other form of the marker: a bound is not a conditional's operand, so nothing matches against it
+// and each `_` is an inference variable the argument's own type fills. Either way neither position
+// constrains the argument. The bound is checked at the reference, so `ReturnType<number>` is
+// rejected there rather than reducing through the Else branch to `never`.
 //
 // `NonNullable<T>` is a conditional here, where TypeScript writes the intersection `T & {}`. That
 // intersection is not translatable, for two independent reasons.
@@ -51,9 +58,8 @@ import (
 // naked type parameter, so it distributes over the argument and decides each member alone, which
 // is machinery the conditional evaluator already carries.
 //
-// `Parameters<F>`, `ConstructorParameters<C>`, and `InstanceType<C>` are the three utilities the
-// suite cannot express yet. Each has a disabled test at the end of this file naming what it waits
-// on.
+// `ConstructorParameters<C>` and `InstanceType<C>` are the two utilities the suite cannot express
+// yet. Each has a disabled test at the end of this file naming what it waits on.
 //
 // Two declarations at the end are not TypeScript utilities. `EventName<K>` is a template-literal
 // type that builds a handler name from an event name. `Point` is the sample object several tests
@@ -67,7 +73,8 @@ const utilityTypeDecls = `
 	type Record<Ks, V> = {[K: Ks]: V}
 	type Exclude<U, V> = if U : V { never } else { U }
 	type Extract<U, V> = if U : V { U } else { never }
-	type ReturnType<F> = if F : fn () -> infer R { R } else { never }
+	type ReturnType<F: fn (...args: Array<_>) -> _> = if F : fn (...args: Array<_>) -> infer R { R } else { never }
+	type Parameters<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> _ { P } else { never }
 	type NonNullable<T> = if T : null | undefined { never } else { T }
 	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
 	type EventName<K> = ` + "`on${Capitalize<K>}`" + `
@@ -369,12 +376,10 @@ func TestUtilityTypeReductions(t *testing.T) {
 			wantExpanded: "string",
 		},
 		{
-			// A non-function argument matches no function pattern, so the conditional selects Else.
-			// TypeScript rejects the same reference, because its `ReturnType` constrains `T` to a
-			// function type. M9 PR14 settles the bound that would do the same here.
-			name:         "ReturnTypeOfNonFunction",
-			src:          `type Result = ReturnType<number>`,
-			wantExpanded: "never",
+			// `Parameters<F>` captures the whole parameter list, the same match read the other way.
+			name:         "Parameters",
+			src:          `type Result = Parameters<fn (x: number) -> string>`,
+			wantExpanded: "[number]",
 		},
 		// `Awaited<T>` strips every layer of `Promise`, recursing on its own capture.
 		{
@@ -666,53 +671,86 @@ func TestUtilityTypeStaysSymbolicOverTypeParameter(t *testing.T) {
 	}
 }
 
-// TypeScript writes `ReturnType<F>` as `F extends (...args: any) => infer R ? R : never`, one
-// definition that reads the return off a function of any arity. Escalier has no equivalent, so
-// `ReturnType<F>` above matches a nullary function and reduces to `never` for every other arity.
-//
-// The blocker is the accept-set rule, which constrain uses to decide function subtyping. A
-// function type's accept-set is the range of argument counts it tolerates, and `sub <: super`
-// holds only when accept(sub) contains accept(super). Both sides here are exact, so their
-// accept-sets are single points and containment forces equal arity. Widening the pattern does not
-// help. A rest parameter or the inexact `fn (...)` marker lifts the pattern's upper bound to
-// infinity, which a fixed-arity argument then fails to contain.
-//
-// So the arity-agnostic definition needs a decision about how a conditional's `Check <: Extends`
-// probe treats arity, not just a rest parameter in the annotation. M9 PR14 makes that decision and
-// replaces these cases.
-func TestUtilityTypeReturnTypeIsAritySpecific(t *testing.T) {
+// A pattern whose parameter list is one rest parameter matches a function of any arity, so
+// `ReturnType<F>` and `Parameters<F>` read every function the way TypeScript's do. These cases
+// walk the arities.
+func TestUtilityTypeRestParameterPatternMatchesAnyArity(t *testing.T) {
 	runUtilityReductions(t, []utilityReduction{
 		{
-			// The arity the pattern was written for.
-			name:         "NullaryMatches",
+			name:         "NullaryReturn",
 			src:          `type Result = ReturnType<fn () -> string>`,
 			wantExpanded: "string",
 		},
 		{
-			// One parameter, so the accept-sets are [1, 1] against [0, 0] and the pattern does not
-			// match. TypeScript reduces this to `string`.
-			name:         "UnaryDoesNotMatch",
+			name:         "UnaryReturn",
 			src:          `type Result = ReturnType<fn (x: number) -> string>`,
-			wantExpanded: "never",
+			wantExpanded: "string",
 		},
 		{
-			// A pattern written for the argument's arity does match, so the `infer` capture itself
-			// is not what is missing. The parameter position is `never` because parameters are
-			// contravariant, so the bottom type is the one every argument type accepts.
-			name: "PatternWrittenForTheArityMatches",
-			src: `
-				type ReturnType1<F> = if F : fn (a: never) -> infer R { R } else { never }
-				type Result = ReturnType1<fn (x: number) -> string>
-			`,
+			name:         "TernaryReturn",
+			src:          `type Result = ReturnType<fn (x: number, y: string, z: boolean) -> string>`,
 			wantExpanded: "string",
+		},
+		{
+			// The capture is the parameter list as a tuple, in source order.
+			name:         "ParameterList",
+			src:          `type Result = Parameters<fn (x: number, y: string) -> boolean>`,
+			wantExpanded: "[number, string]",
+		},
+		{
+			// No parameters gathers into the empty tuple rather than failing to match.
+			name:         "NullaryParameterList",
+			src:          `type Result = Parameters<fn () -> boolean>`,
+			wantExpanded: "[]",
+		},
+		{
+			// A tuple element carries no optionality marker, so an optional parameter widens with
+			// `undefined`. TypeScript writes the same capture `[x: number, y?: string]`.
+			name:         "OptionalParameterWidens",
+			src:          `type Result = Parameters<fn (x: number, y?: string) -> boolean>`,
+			wantExpanded: "[number, string | undefined]",
 		},
 	})
 }
 
+// The `fn (...args: Array<_>) -> _` bound rejects a non-function argument at the reference, so the
+// utility never reaches its Else branch for one. TypeScript reports the same error for the same reason, since its
+// `ReturnType` constrains its parameter to a function type too.
+func TestUtilityTypeFunctionBoundRejectsNonFunction(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{
+			name:    "ReturnTypeOfNonFunction",
+			src:     `type Result = ReturnType<number>`,
+			wantErr: "cannot constrain number <: function",
+		},
+		{
+			name:    "ParametersOfNonFunction",
+			src:     `type Result = Parameters<number>`,
+			wantErr: "cannot constrain number <: function",
+		},
+		{
+			name:    "ReturnTypeOfObject",
+			src:     `type Result = ReturnType<{a: number}>`,
+			wantErr: "cannot constrain object <: function",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, utilityTypeDecls+tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
 // A bound on an alias's type parameter is checked at the reference, so an argument that fails it is
 // rejected there rather than substituted into the body. These cases pin that on the simplest alias
-// that can carry a bound, since the corpus itself carries none — see `ReturnType<F>` in
-// utilityTypeDecls for why.
+// that can carry a bound. TestUtilityTypeFunctionBoundRejectsNonFunction covers the one bound the
+// corpus itself carries, `F: fn (...args: Array<_>) -> _`.
 func TestUtilityTypeAliasParameterConstraint(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -853,57 +891,29 @@ func TestUtilityTypeNonNullable(t *testing.T) {
 	})
 }
 
-// DISABLED until a rest parameter can be written in a function type annotation and an `infer`
-// clause in that position captures a tuple. Two separate pieces are missing.
+// DISABLED until M9 PR15, which adds a `new (…)` member to object type annotations.
+// `ConstructorParameters<C>` matches a constructor signature, and `objTypeAnnElemInner` has no arm
+// for `new`, so `{new (...args: infer P) -> unknown}` fails to parse. The rest parameter and the
+// tuple capture the pattern needs are both in place, so the annotation surface is the only piece
+// missing.
 //
-// The annotation surface is the first. `resolveFuncTypeAnn` reports `Unsupported: rest parameter in
-// function type annotation` and recovers the parameter to a positional one, because `acceptSet` and
-// `hasRest` assume a rest parameter is last and the parser does not enforce that.
+// Re-enable by removing the comment wrapper and adding
 //
-// The capture rule is the second, and lifting the rejection does not supply it. `Parameters<F>`
-// binds one `infer` name to the whole parameter list, so matching `fn (x: number, y: string) ->
-// boolean` has to gather both parameters into `[number, string]`. constrain's function arm walks
-// only the positions the two sides share and never collects the surplus ones, so the capture would
-// come out as a variable bounded by `number` rather than as a tuple. TypeScript reaches the tuple
-// through a variadic-tuple inference rule that has no counterpart here.
-//
-// The `Array<T>` that M7.5 lands is a different concern. It supplies the element type a typed rest
-// parameter checks its trailing *arguments* against at a call site, which is the deferral recorded
-// on `FuncParam.Rest` in internal/soltype/type.go. A pattern match over a written function type
-// reads no element type, so it needs no `Array`.
-//
-// Both pieces also need the arity decision TestUtilityTypeReturnTypeIsAritySpecific describes,
-// since a rest parameter in the pattern widens its accept-set the same way the inexact marker does.
-// M9 PR14 covers all three. `ConstructorParameters<C>` waits on PR14 plus the `new (…)` member M9
-// PR15 adds, so it stays disabled until both land.
-//
-// Re-enable by removing the comment wrapper and adding both definitions to utilityTypeDecls:
-//
-//	type Parameters<F> = if F : fn (...args: infer P) -> unknown { P } else { never }
 //	type ConstructorParameters<C> = if C : {new (...args: infer P) -> unknown} { P } else { never }
-func TestUtilityTypeParameters(t *testing.T) {
+//
+// to utilityTypeDecls.
+func TestUtilityTypeConstructorParameters(t *testing.T) {
 	/*
 		runUtilityReductions(t, []utilityReduction{
-			{
-				// The capture is the parameter list as a tuple, in source order.
-				name:         "ParameterList",
-				src:          `type Result = Parameters<fn (x: number, y: string) -> boolean>`,
-				wantExpanded: "[number, string]",
-			},
-			{
-				name:         "NullaryParameterList",
-				src:          `type Result = Parameters<fn () -> boolean>`,
-				wantExpanded: "[]",
-			},
-			{
-				name:         "NonFunction",
-				src:          `type Result = Parameters<number>`,
-				wantExpanded: "never",
-			},
 			{
 				name:         "ConstructorParameterList",
 				src:          `type Result = ConstructorParameters<{new (x: number) -> {a: number}}>`,
 				wantExpanded: "[number]",
+			},
+			{
+				name:         "NonConstructor",
+				src:          `type Result = ConstructorParameters<number>`,
+				wantExpanded: "never",
 			},
 		})
 	*/
@@ -919,8 +929,9 @@ func TestUtilityTypeParameters(t *testing.T) {
 //
 //	type InstanceType<C> = if C : {new (a: never) -> infer R} { R } else { never }
 //
-// to utilityTypeDecls. The pattern is written for a one-parameter constructor, since it inherits
-// the arity restriction TestUtilityTypeReturnTypeIsAritySpecific describes.
+// to utilityTypeDecls. The pattern is written for a one-parameter constructor because a `new (…)`
+// member has no annotation surface at all; once it has one, a rest parameter in that position reads
+// any arity the way `ReturnType<F>` does.
 func TestUtilityTypeInstanceType(t *testing.T) {
 	/*
 		runUtilityReductions(t, []utilityReduction{

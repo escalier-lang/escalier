@@ -1220,31 +1220,39 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, Application)
 
-	// Arity lints (#677 §4.2.3): a DIRECT call rejects too-many AND too-few arguments
-	// — for exact AND inexact callees alike. These are call-site checks the subtype
-	// lattice does not model uniformly (an inexact callee tolerates extras as a
-	// *callback*, accept-set [required, ∞), but supplying extras to a call you can see
-	// is a mistake). They fire only when the callee is concrete; for a deferred (var)
-	// callee they are best-effort skipped while too-few still surfaces from the gate.
-	//
-	// When a lint fires, the demand is reshaped to the callee's declared arity
-	// (len(fn.Params)) so the EXACT synth's accept-set gate does NOT also report
-	// arity (the lint owns the single, uniform message; the constraint does pure
-	// type-flow on the supplied args). Too-many truncates to the prefix; too-few pads
-	// the missing parameters with fresh vars, which impose no constraint on absent args.
+	// Arity lints (#677 §4.2.3): a DIRECT call rejects too-many AND too-few arguments, for exact
+	// and inexact callees alike, since supplying extras to a call you can see is a mistake even
+	// where the lattice tolerates them. They fire only for a concrete callee. When one fires the
+	// demand is reshaped into the callee's accept-set so the synth's gate does not also report
+	// arity: too-many truncates, too-few pads with fresh vars that constrain nothing.
 	fn, resolved := resolveFunc(callee)
+	if resolved {
+		// A tuple-typed rest param expands to one positional param per element, so the lints, the
+		// owned-mutable upgrade, and consumeCallArgs below read plain positions rather than
+		// comparing an argument against the whole tuple.
+		fn = expandTupleRest(fn)
+	}
 	demand := args
 	switch {
 	case resolved && !hasRest(fn) && len(args) > len(fn.Params):
-		// A typed rest param (hasRest) absorbs any number of trailing args, so it is
-		// never "too many" — only a fixed-arity (non-rest) callee trips this lint.
+		// A rest param survives expansion only when it binds an unbounded number of args,
+		// so it absorbs any number of trailing ones and is never "too many". Only a
+		// fixed-arity callee trips this lint.
 		c.errs = append(c.errs, &TooManyArgsError{Call: e, Fn: fn})
 		demand = args[:len(fn.Params)]
 	case resolved && len(args) < requiredCount(fn):
 		c.errs = append(c.errs, &NotEnoughArgsError{Call: e, Fn: fn})
-		demand = make([]*soltype.FuncParam, len(fn.Params))
+		// Pad to whichever is larger, the declared parameter count or the required count.
+		// The expansion above makes them equal for a callee whose rest parameter is an exact
+		// tuple, but an INEXACT tuple rest is left unexpanded and can require more arguments
+		// than it declares parameters: `fn (a: number, ...args: [string, boolean, ...]) -> R`
+		// declares two and requires three. Padding to the parameter count alone would leave
+		// the demand below the accept-set floor, so the gate would report an arity mismatch
+		// on top of the lint that just fired.
+		want := max(len(fn.Params), requiredCount(fn))
+		demand = make([]*soltype.FuncParam, want)
 		copy(demand, args)
-		for i := len(args); i < len(fn.Params); i++ {
+		for i := len(args); i < want; i++ {
 			demand[i] = &soltype.FuncParam{Type: c.freshAt(lvl)}
 		}
 	}

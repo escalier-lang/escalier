@@ -241,7 +241,7 @@ func TestConstrainFunctionAcceptSet(t *testing.T) {
 	t.Run("exact fn(x) rejected by inexact fn(x, ...) callback parameter", func(t *testing.T) {
 		c := &Context{}
 		require.Equal(t,
-			[]string{"cannot constrain function of arity 1 <: function of arity 1"},
+			[]string{"cannot constrain function of arity 1 <: function of arity 1 or more"},
 			Messages(c.Constrain(exactFn(num(), identParam("x", num())), inexactFn(num(), identParam("x", num())))))
 	})
 
@@ -329,7 +329,7 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 		g := exactFn(num(), identParam("a", num()), identParam("b", num()))
 		f := restFn(num(), restParam("rest", num()))
 		require.Equal(t,
-			[]string{"cannot constrain function of arity 2 <: function of arity 1"},
+			[]string{"cannot constrain function of arity 2 <: function of arity 0 or more"},
 			Messages(c.Constrain(g, f)))
 	})
 }

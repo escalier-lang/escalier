@@ -12,27 +12,73 @@ import (
 // an inexact function tolerates any number of trailing arguments as a callback.
 const unboundedArity = math.MaxInt
 
-// hasRest reports whether f's LAST parameter is a typed rest param (`...xs: T[]`).
-// A rest param binds zero or more trailing arguments, so it never counts toward the
-// required floor and lifts the accept-set upper bound to ∞ (#677 §4.2.3) — the same
-// upper-bound effect as the inexact `...` marker, reached a different way.
+// hasRest reports whether f's LAST parameter is a rest param, written `...xs: T`. Its type
+// rather than the flag decides how many arguments it binds, which restArity computes.
 func hasRest(f *soltype.FuncType) bool {
 	n := len(f.Params)
 	return n > 0 && f.Params[n-1].Rest
 }
 
-// requiredCount is the number of arguments a positional call must supply — the
-// LOWER bound of f's accept-set. Because arguments bind positionally, a parameter
-// only lowers the requirement when it is TRAILING: a trailing rest param (zero or
-// more) and trailing optionals (`x?`) may be omitted, but in fn(a?, b) you cannot
-// omit a while still supplying b, so a is effectively required. So required = the
-// position after the last non-optional, non-rest param — NOT the count of all
-// non-optional params, which would wrongly treat a leading optional (or the rest
-// param) as droppable and let a call leave a required param unbound.
+// expandTupleRest returns f with a tuple-typed rest param replaced by one positional param per
+// tuple element, so the rules that walk a parameter list read ordinary positions instead of each
+// growing a rest case. The expanded form is never stored or printed, so a diagnostic still names
+// the written type. An inexact tuple keeps its unbounded ceiling, and an inference variable stays
+// a rest param for the gather rule to bind, which is why the tuple is read by a direct assertion.
+func expandTupleRest(f *soltype.FuncType) *soltype.FuncType {
+	k := restIndex(f)
+	if k < 0 {
+		return f
+	}
+	tup, ok := f.Params[k].Type.(*soltype.TupleType)
+	if !ok || tup.Inexact {
+		return f
+	}
+	params := make([]*soltype.FuncParam, 0, k+len(tup.Elems))
+	params = append(params, f.Params[:k]...)
+	for _, elem := range tup.Elems {
+		params = append(params, &soltype.FuncParam{Pattern: f.Params[k].Pattern, Type: elem})
+	}
+	expanded := *f
+	expanded.Params = params
+	return &expanded
+}
+
+// restIndex is the position of f's typed rest param, or -1 when it has none. A rest param
+// is always last, since resolveFuncTypeAnn rejects any other position, so the index is
+// len(f.Params)-1 whenever there is one.
+func restIndex(f *soltype.FuncType) int {
+	if hasRest(f) {
+		return len(f.Params) - 1
+	}
+	return -1
+}
+
+// restArity is the inclusive range of argument counts a rest param of type t binds: a tuple's
+// length at both ends, an inexact tuple's ceiling at ∞, and [0, ∞) for every other shape. This
+// is the count a CALL must satisfy; an absorbing rest param is decided by prefixRequiredCount.
+func restArity(t soltype.Type) (lo, hi int) {
+	tup, ok := t.(*soltype.TupleType)
+	if !ok {
+		return 0, unboundedArity
+	}
+	if tup.Inexact {
+		return len(tup.Elems), unboundedArity
+	}
+	return len(tup.Elems), len(tup.Elems)
+}
+
+// requiredCount is the LOWER bound of f's accept-set: the position after the last parameter a
+// call may omit, which is a TRAILING optional or a rest param binding zero args. A tuple-typed
+// rest binds a fixed number instead, so it adds that many and pins every parameter before it.
 func requiredCount(f *soltype.FuncType) int {
 	n := len(f.Params)
-	if n > 0 && f.Params[n-1].Rest {
-		n-- // a trailing rest param binds zero-or-more args, so it is never required
+	restLo := 0
+	if k := restIndex(f); k >= 0 {
+		n = k
+		restLo, _ = restArity(f.Params[k].Type)
+	}
+	if restLo > 0 {
+		return n + restLo
 	}
 	for n > 0 && f.Params[n-1].Optional {
 		n--
@@ -40,20 +86,53 @@ func requiredCount(f *soltype.FuncType) int {
 	return n
 }
 
-// acceptSet is the inclusive range [lo, hi] of argument counts f tolerates when
-// invoked (#677 §4.2.1): lo = requiredCount(f); hi = len(f.Params) when f has a
-// finite arity, and unboundedArity when its upper bound is open — either because it
-// is inexact (the `...` marker) OR because its last param is a typed rest (§4.2.3).
-// Read a supertype callback parameter's accept-set as "the argument counts whoever
-// holds this parameter may invoke the supplied function with."
+// acceptSet is the inclusive range [lo, hi] of argument counts f tolerates when invoked
+// (#677 §4.2.1). hi is unbounded when f is inexact or its rest param binds an unbounded number,
+// and finite otherwise. Read a super callback's accept-set as the counts its holder may call with.
 func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	lo = requiredCount(f)
-	if f.Inexact || hasRest(f) {
-		hi = unboundedArity
-	} else {
-		hi = len(f.Params)
+	if f.Inexact {
+		return lo, unboundedArity
 	}
-	return lo, hi
+	if k := restIndex(f); k >= 0 {
+		_, restHi := restArity(f.Params[k].Type)
+		if restHi == unboundedArity {
+			return lo, unboundedArity
+		}
+		return lo, k + restHi
+	}
+	return lo, len(f.Params)
+}
+
+// canAbsorbRest reports whether the sub's params from k on are a fixed-length group a super
+// rest param can absorb. An inexact sub, one with its own rest, or one shorter than k is not.
+func canAbsorbRest(sub *soltype.FuncType, k int) bool {
+	return !sub.Inexact && !hasRest(sub) && len(sub.Params) >= k
+}
+
+// prefixRequiredCount is requiredCount over f's first k params alone, the arity check that
+// survives when a super rest param absorbs everything from k on. It gives up `hiSub >= hiSup`,
+// so a holder may call with fewer arguments than the function filling the slot declares.
+func prefixRequiredCount(f *soltype.FuncType, k int) int {
+	n := min(k, len(f.Params))
+	for n > 0 && f.Params[n-1].Optional {
+		n--
+	}
+	return n
+}
+
+// gatherRestParams turns the sub params a super's rest param stands for into tuple element
+// types. An optional param widens with `undefined`, since a tuple element carries no optionality
+// marker. The union takes a nil Context so its subsumption never calls constrain from inside one.
+func gatherRestParams(params []*soltype.FuncParam) []soltype.Type {
+	elems := make([]soltype.Type, len(params))
+	for i, p := range params {
+		elems[i] = p.Type
+		if p.Optional {
+			elems[i] = newUnion(nil, []soltype.Type{p.Type, &soltype.UndefinedType{}}, false)
+		}
+	}
+	return elems
 }
 
 // constraintKey keys both of seenPairs' records by pointer identity (Go's
@@ -623,21 +702,50 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if len(sub.TypeParams) > 0 {
 				return c.constrain(c.instantiateFuncBinder(sub, sub.TypeParams[0].Var.Level), sup, seen, mutCtx)
 			}
-			// Accept-set subtyping (#677 §4.2.1): read super as a callback parameter.
-			// sub <: super iff accept(sub) ⊇ accept(super) — sub must tolerate every
-			// argument count a holder of super may invoke it with. With
-			// accept(sub) = [loSub, hiSub] and accept(super) = [loSup, hiSup]:
-			//   - loSub <= loSup — sub must not DEMAND more args than super might supply,
-			//   - hiSub >= hiSup — sub must not REFUSE an arg count super might supply.
-			// The upper-bound clause is what exactness governs (an exact sub caps hiSub
-			// at len(sub.Params), so it can't fill a wider/inexact parameter); the lower-bound
-			// clause is the `required` part (a typed-rest/optional lowers it). This
-			// subsumes M2's exact-same-arity rule: two EXACT functions have accept
-			// [r, n], so ⊇ forces equal upper bounds, i.e. the old same-arity check.
-			loSub, hiSub := acceptSet(sub)
-			loSup, hiSup := acceptSet(sup)
-			if loSub > loSup || hiSub < hiSup {
-				return []SolverError{&FuncArityMismatchError{Sub: sub, Super: sup}}
+			// A tuple-typed rest param on either side expands to one positional param per element,
+			// so a written rest param works as a value-level type and not only as a pattern. The
+			// unexpanded sub and sup are what a diagnostic reports.
+			subX, supX := expandTupleRest(sub), expandTupleRest(sup)
+			// An ABSORBING super rest param at index k stands for the sub params from k on. Two
+			// slot types absorb that group: an `infer` hole binds it as one tuple, which is how
+			// `Parameters<F>` captures a parameter list, and an `Array<E>` checks each absorbed
+			// param against E. Either way the check is contravariant, the orientation the fixed
+			// positions use. A written tuple never reaches here, expandTupleRest having split it.
+			absorbAt, absorbElem := -1, soltype.Type(nil)
+			if k := restIndex(supX); k >= 0 && canAbsorbRest(subX, k) {
+				switch slot := supX.Params[k].Type.(type) {
+				case *soltype.TypeVarType:
+					absorbAt = k
+				case *soltype.ArrayType:
+					absorbAt, absorbElem = k, slot.Elem
+				}
+			}
+			var errs []SolverError
+			if absorbAt >= 0 {
+				if absorbElem != nil {
+					for _, p := range subX.Params[absorbAt:] {
+						errs = append(errs, c.constrain(absorbElem, p.Type, seen, false)...) // contravariant
+					}
+				} else {
+					gathered := &soltype.TupleType{Elems: gatherRestParams(subX.Params[absorbAt:])}
+					errs = append(errs, c.constrain(supX.Params[absorbAt].Type, gathered, seen, false)...) // contravariant
+				}
+			}
+			// Accept-set subtyping (#677 §4.2.1): read super as a callback parameter. sub <: super
+			// iff accept(sub) ⊇ accept(super), so sub must not DEMAND more args than super might
+			// supply nor REFUSE a count super might supply. Two EXACT functions have single-point
+			// accept-sets, so this subsumes M2's same-arity rule. An arity failure reports itself
+			// alone, discarding the absorbed group's errors, and an absorbing super runs the
+			// narrowed gate over its fixed prefix instead. The reported counts come off the
+			// EXPANDED forms; sub and sup stay written, which is what blame resolution needs.
+			loSub, hiSub := acceptSet(subX)
+			loSup, hiSup := acceptSet(supX)
+			if (absorbAt >= 0 && prefixRequiredCount(subX, absorbAt) > prefixRequiredCount(supX, absorbAt)) ||
+				(absorbAt < 0 && (loSub > loSup || hiSub < hiSup)) {
+				return []SolverError{&FuncArityMismatchError{
+					Sub: sub, Super: sup,
+					SubLo: loSub, SubHi: hiSub, SuperLo: loSup, SuperHi: hiSup,
+				}}
 			}
 			// Shared positions are contravariant in the params and covariant in the
 			// return. An exact super passes no argument beyond its declared params, so
@@ -652,22 +760,46 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			//
 			// is rejected, because slot's `...` tail may pass any type at b's position,
 			// which b's number cannot accept. A surplus param typed unknown or an
-			// inference variable is accepted instead. A surplus rest param is left
-			// arity-only, because checking its trailing arguments against the element
-			// type needs Array<T>, which lands in M7. A function is its own annotation
+			// inference variable is accepted instead. A function is its own annotation
 			// context, so the deep-mut flag resets.
-			var errs []SolverError
-			n := min(len(sub.Params), len(sup.Params))
-			for i := 0; i < n; i++ {
-				errs = append(errs, c.constrain(sup.Params[i].Type, sub.Params[i].Type, seen, false)...) // contravariant
+			n := min(len(subX.Params), len(supX.Params))
+			if absorbAt >= 0 {
+				n = absorbAt // the rest param already covered the positions from absorbAt on
 			}
-			if sup.Inexact {
-				unknownT := &soltype.UnknownType{}
-				for i := n; i < len(sub.Params); i++ {
-					if sub.Params[i].Rest {
-						continue // rest-param element checking against Array<T> is M7
+			// A SUB rest param typed `Array<E>` scatters over the super's positions from its index
+			// on, the mirror of the absorb above. The synthesized call-shape is the super, so this
+			// also checks a call: `g(1, "a")` against `fn (...xs: Array<number>) -> R` checks
+			// `"a" <: number`. A super with its own rest param is left to the shared-position walk,
+			// which pairs the two slots and compares their element types directly.
+			scatterAt, scatterElem := -1, soltype.Type(nil)
+			if absorbAt < 0 && !hasRest(supX) {
+				if j := restIndex(subX); j >= 0 {
+					if arr, ok := subX.Params[j].Type.(*soltype.ArrayType); ok {
+						scatterAt, scatterElem = j, arr.Elem
+						n = min(j, len(supX.Params))
 					}
-					errs = append(errs, c.constrain(unknownT, sub.Params[i].Type, seen, false)...)
+				}
+			}
+			for i := 0; i < n; i++ {
+				errs = append(errs, c.constrain(supX.Params[i].Type, subX.Params[i].Type, seen, false)...) // contravariant
+			}
+			if scatterAt >= 0 {
+				for i := scatterAt; i < len(supX.Params); i++ {
+					errs = append(errs, c.constrain(supX.Params[i].Type, scatterElem, seen, false)...) // contravariant
+				}
+			}
+			// An absorbing super has no surplus sub param, since its rest param already stood for
+			// every position from absorbAt on.
+			if supX.Inexact && absorbAt < 0 {
+				unknownT := &soltype.UnknownType{}
+				for i := n; i < len(subX.Params); i++ {
+					if subX.Params[i].Rest {
+						// The scatter above already checked an `Array<E>` rest against every
+						// super position. A rest of any other shape declares no element type to
+						// check the open tail's arguments against, so it stays arity-only.
+						continue
+					}
+					errs = append(errs, c.constrain(unknownT, subX.Params[i].Type, seen, false)...)
 				}
 			}
 			errs = append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...) // covariant
@@ -920,6 +1052,14 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return c.constrain(body, sup, seen, mutCtx)
 		}
 		// A ClassType against any other concrete falls through to the var arms below.
+	case *soltype.ArrayType:
+		if sup, ok := super.(*soltype.ArrayType); ok {
+			// ArrayType is covariant in its Elem: Array<L> <: Array<R> iff L <: R. That is the
+			// read-only reading, which is what a rest parameter needs, since the callee only
+			// reads the arguments it gathers. An array's element is its own annotation context,
+			// so the deep-mut flag resets.
+			return c.constrain(sub.Elem, sup.Elem, seen, false)
+		}
 	case *soltype.PromiseType:
 		if sup, ok := super.(*soltype.PromiseType); ok {
 			// PromiseType is covariant in its Inner: Promise<L> <: Promise<R> iff

@@ -85,8 +85,15 @@ type CannotConstrainError struct {
 // call-shape) so blame never degrades to the zero span.
 type FuncArityMismatchError struct {
 	Sub, Super *soltype.FuncType
-	prov       NodeResolver // M2.5: type→node index (§3.5)
-	site       ast.Node     // M2.5: constraint node fallback when no operand resolves
+	// The two accept-sets the rule compared, each an inclusive range of argument counts.
+	// They are carried separately from Sub and Super because a rest parameter takes its
+	// arity from its type rather than from the parameter count: `fn (...args: [number,
+	// string]) -> R` declares one parameter and accepts exactly two arguments, so counting
+	// Params would report "arity 1" for both sides of a mismatch and name neither.
+	SubLo, SubHi     int
+	SuperLo, SuperHi int
+	prov             NodeResolver // M2.5: type→node index (§3.5)
+	site             ast.Node     // M2.5: constraint node fallback when no operand resolves
 }
 
 // TupleLengthMismatchError fires on TupleType <: TupleType with different
@@ -1058,6 +1065,9 @@ func (*ExtractorPatternArityError) isSolverError()          {}
 func (*AliasArityMismatchError) isSolverError()             {}
 func (*AliasLifetimeArityMismatchError) isSolverError()     {}
 func (*ReservedTypeNameError) isSolverError()               {}
+func (*RestParamNotLastError) isSolverError()               {}
+func (*RestParamNeedsTypeError) isSolverError()             {}
+func (*OptionalRestParamError) isSolverError()              {}
 func (*NotProductiveAliasError) isSolverError()             {}
 func (*ExpansionLimitError) isSolverError()                 {}
 
@@ -1201,6 +1211,50 @@ func (e *ReservedTypeNameError) Span() ast.Span      { return e.Decl.Name.Span()
 func (e *ReservedTypeNameError) Related() []ast.Span { return nil }
 func (e *ReservedTypeNameError) Message() string {
 	return fmt.Sprintf("%q is a built-in type operator and cannot be redefined", e.Decl.Name.Name)
+}
+
+// RestParamNotLastError fires when a function type annotation writes a `...xs: T` parameter
+// somewhere other than the final position, as `fn (...xs: [number], y: string) -> void` does.
+// A rest parameter binds the arguments left over after the fixed ones, so it means something
+// only at the end. The parser accepts one in any position and acceptSet reads the Rest flag
+// off the last parameter only, so resolution is where the position is enforced.
+type RestParamNotLastError struct {
+	Param *ast.RestPat
+}
+
+func (e *RestParamNotLastError) Span() ast.Span      { return e.Param.Span() }
+func (e *RestParamNotLastError) Related() []ast.Span { return nil }
+func (e *RestParamNotLastError) Message() string {
+	return "a rest parameter must be the last parameter of a function type"
+}
+
+// RestParamNeedsTypeError fires when a function type annotation writes a rest parameter with
+// no type annotation, as `fn (...xs) -> void` does. The slot's type is what says how many
+// arguments the parameter binds. A tuple binds one per element and an array binds zero or
+// more, so a rest parameter with no type declares no arity at all.
+type RestParamNeedsTypeError struct {
+	Param *ast.RestPat
+}
+
+func (e *RestParamNeedsTypeError) Span() ast.Span      { return e.Param.Span() }
+func (e *RestParamNeedsTypeError) Related() []ast.Span { return nil }
+func (e *RestParamNeedsTypeError) Message() string {
+	return "a rest parameter in a function type must have a type annotation"
+}
+
+// OptionalRestParamError fires when a function type annotation marks a rest parameter `?`,
+// as `fn (...xs?: [number]) -> void` does. The marker says a parameter may go unsupplied,
+// which a rest parameter already settles through its type: an array-typed slot binds zero or
+// more arguments and is omittable on its own, and a tuple-typed slot fixes how many
+// arguments it binds. So the marker would change nothing on either shape.
+type OptionalRestParamError struct {
+	Param *ast.RestPat
+}
+
+func (e *OptionalRestParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *OptionalRestParamError) Related() []ast.Span { return nil }
+func (e *OptionalRestParamError) Message() string {
+	return "a rest parameter cannot be marked optional"
 }
 
 // NotProductiveAliasError fires when a recursive type alias reaches itself with no type constructor
@@ -1796,8 +1850,21 @@ func (e *CannotConstrainError) Message() string {
 }
 
 func (e *FuncArityMismatchError) Message() string {
-	return fmt.Sprintf("cannot constrain function of arity %d <: function of arity %d",
-		len(e.Sub.Params), len(e.Super.Params))
+	return fmt.Sprintf("cannot constrain function of %s <: function of %s",
+		describeArity(e.SubLo, e.SubHi), describeArity(e.SuperLo, e.SuperHi))
+}
+
+// describeArity renders one accept-set as prose. A single-point range is "arity 2", an open
+// one is "arity 1 or more", and a proper range is "arity 1 to 3".
+func describeArity(lo, hi int) string {
+	switch {
+	case hi == unboundedArity:
+		return fmt.Sprintf("arity %d or more", lo)
+	case lo == hi:
+		return fmt.Sprintf("arity %d", lo)
+	default:
+		return fmt.Sprintf("arity %d to %d", lo, hi)
+	}
 }
 
 func (e *TupleLengthMismatchError) Message() string {
@@ -2112,6 +2179,8 @@ func describe(t soltype.Type) string {
 		// diagnostic naming it matches the printer's surface form rather than the expanded
 		// body the constraint actually compares.
 		return soltype.PrintElided(t, describeMaxDepth)
+	case *soltype.ArrayType:
+		return "Array<" + describe(t.Elem) + ">"
 	case *soltype.PromiseType:
 		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
 		// object above. That is deliberate and consistent with the Union/Intersection

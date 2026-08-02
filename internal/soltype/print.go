@@ -48,8 +48,9 @@ func typePrec(t Type) int {
 		return precAtom
 	case *InferType:
 		// The `infer U` binder leads with a keyword, so it binds like the other prefixes. A
-		// reference to that name renders as the bare `U`, an atom.
-		if t.Binder {
+		// reference to that name renders as the bare `U`, an atom, and so does the anonymous
+		// binder `_`, which leads with no keyword.
+		if t.Binder && !t.IsWildcardInfer() {
 			return precPrefix
 		}
 		return precAtom
@@ -79,8 +80,8 @@ func typePrec(t Type) int {
 		return precAtom
 	default:
 		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
-		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType and
-		// AliasType each render as a bare name or `Name<args>`, so none needs parens. A raw TypeVarType
+		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType,
+		// ArrayType, and AliasType each render as a bare name or `Name<args>`, so none needs parens. A raw TypeVarType
 		// appears only when printing an un-coalesced type, see printType; it is also an
 		// atom rendered as `t{ID}`, so it lands here. A `mut 'a Point` borrow wraps the
 		// ClassType in a RefType, which carries the looser precPrefix precedence.
@@ -499,6 +500,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Body)
 		case *PromiseType:
 			walk(t.Inner)
+		case *ArrayType:
+			walk(t.Elem)
 		case *RefType:
 			walk(t.Inner)
 		case *UnionType:
@@ -778,6 +781,10 @@ func (p *namedPrinter) printType(t Type) string {
 		// The binder renders `infer U`, the clause the source wrote in the Extends operand, and a
 		// reference to that name renders as the bare `U`, so a stored conditional round-trips to
 		// `if T : [infer U] { U } else { boolean }`.
+		if t.IsWildcardInfer() {
+			// An anonymous binder round-trips to the `_` the source wrote.
+			return t.Name
+		}
 		if t.Binder {
 			return "infer " + t.Name
 		}
@@ -804,6 +811,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return t.DisplayName()
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
+	case *ArrayType:
+		return "Array<" + p.printType(t.Elem) + ">"
 	case *RefType:
 		// Ownership and the borrow `&` split on Lt. An owned value has Lt nil and
 		// renders bare. NewRef collapses the owned-immutable cell, so a surviving owned

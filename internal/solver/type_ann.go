@@ -89,6 +89,26 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
+		// The built-in Array<T>, the element-typed sequence a rest parameter binds its trailing
+		// arguments into. It is minimal by design: it carries the element type and nothing else, so
+		// `xs.length` and `xs[0]` do not resolve. A local `Array` shadows the stub today, since
+		// resolution reaches here only after resolveScopedTypeRef finds nothing. That ends once
+		// `Array` and `Promise` are imported from the `std:collection` and `std:async` pseudo-packages.
+		if ast.QualIdentToString(ta.Name) == "Array" && len(ta.TypeArgs) == 1 {
+			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
+				return c.reportUnsupportedFeature(ta, "lifetime annotation on Array"), false
+			}
+			elem, ok := c.resolveTypeAnn(scope, ta.TypeArgs[0], lvl)
+			if !ok {
+				// Recover the element to a fresh var and keep the Array wrapper, for the reason
+				// the Promise arm above gives: the wrapper itself is supported, and a fresh var
+				// is cascade-safe where `never` or `unknown` would provoke a second failure.
+				elem = c.freshAt(lvl)
+			}
+			t := &soltype.ArrayType{Elem: elem}
+			c.recordProv(t, ta, AnnotationType)
+			return t, true
+		}
 		if t, ok := c.resolveStringIntrinsic(scope, ta, lvl); ok {
 			return t, true
 		}
@@ -123,12 +143,21 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	case *ast.TemplateLitTypeAnn:
 		return c.resolveTemplateLitTypeAnn(scope, ta, lvl)
 	case *ast.WildcardTypeAnn:
-		// `_` in type-annotation position is an inference placeholder: mint a fresh
-		// var at the current level for the surrounding annotation to fill in. Today
-		// the only site that uses it is the inner of `Promise<_>` on an async fn's
-		// return, where the body's return flows into the var (asyncReturn), inferring
-		// the inner. Unlike the other arms it reports NO error — `_` is a supported,
-		// user-authored "infer this here" marker, not an unsupported feature.
+		// `_` asks for a hole someone else fills. Which position it sits in decides who fills it,
+		// and that is the only difference between the two forms below. Unlike the other arms it
+		// reports NO error either way — `_` is a supported, user-authored marker.
+		if c.inCondExtends {
+			// In a conditional's pattern the match fills it, which makes `_` an `infer` clause with
+			// no name: reduceCondInfer solves it from the check that decides the branch and drops
+			// the capture, since no branch can reference a name the source never wrote. A plain
+			// variable could not do this, because condOperandGround refuses to decide over one.
+			// Each occurrence mints its own declaration, so two `_` are independent holes.
+			decl := c.ctx.freshInferDecl(soltype.WildcardInferName)
+			return &soltype.InferType{ID: decl.ID, Name: decl.Name, Binder: true}, true
+		}
+		// Everywhere else the value flowing in fills it, so `_` is an inference variable at the
+		// current level. `Promise<_>` on an async fn's return relies on this: the body's return
+		// flows into the variable, inferring the inner (asyncReturn).
 		t := c.freshAt(lvl)
 		c.recordProv(t, ta, WildcardAnnotation)
 		return t, true
@@ -780,10 +809,36 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 	params := make([]*soltype.FuncParam, len(ta.Params))
 	for i, p := range ta.Params {
 		pat := p.Pattern
-		// A rest param recovers to a normal positional param. acceptSet/hasRest assume
-		// a rest param is last, which the parser does not enforce, so Rest is unset.
+		// A `...xs: T` parameter sets Rest. That flag is what raises the function's
+		// accept-set ceiling and what an `infer` clause in the slot captures the surplus
+		// arguments into. Three things the parser accepts are rejected here, and each
+		// recovers the parameter to a positional one so the function keeps its arity.
+		//
+		//  1. A rest parameter written anywhere but last, since acceptSet reads the flag off
+		//     the last parameter only.
+		//  2. A rest parameter with no type annotation. The slot's type is what says how many
+		//     arguments the parameter binds, and the fresh var an unannotated parameter
+		//     recovers to says nothing, so keeping Rest would let the initializer decide the
+		//     declared type's arity.
+		//  3. A rest parameter marked `?`. A slot binding zero or more arguments is already
+		//     omittable and a tuple slot fixes its count, so the marker changes nothing.
+		rest := false
+		optional := p.Optional
 		if rp, ok := pat.(*ast.RestPat); ok {
-			c.reportUnsupportedFeature(rp, "rest parameter in function type annotation")
+			switch {
+			case i != len(ta.Params)-1:
+				c.report(&RestParamNotLastError{Param: rp})
+			case p.TypeAnn == nil:
+				c.report(&RestParamNeedsTypeError{Param: rp})
+			case p.Optional:
+				// The recovery drops the marker along with Rest. Keeping it would give the
+				// parameter an accept-set the source never asked for and cascade a second
+				// error out of the one just reported.
+				c.report(&OptionalRestParamError{Param: rp})
+				optional = false
+			default:
+				rest = true
+			}
 			pat = rp.Pattern
 		}
 		// A missing or unsupported parameter annotation recovers to a fresh var so
@@ -800,7 +855,7 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 		// body instantiates `T` per call. constrain's FuncType arm performs both steps.
 		// The pattern is carried for rendering and round-tripping only, with no scope
 		// binding. mirrorParamPat preserves its full shape.
-		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: p.Optional}
+		params[i] = &soltype.FuncParam{Pattern: c.mirrorParamPat(pat), Type: pt, Optional: optional, Rest: rest}
 	}
 
 	// The parser requires `-> R`, so ta.Return is normally non-nil. Guard

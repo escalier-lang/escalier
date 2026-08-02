@@ -665,6 +665,13 @@ func (*RecursiveType) isRefInner()    {}
 // no-auto-flatten contract — flattening is `Awaited<T>`, M9).
 type PromiseType struct{ Inner Type }
 
+// ArrayType is a homogeneous sequence of Elem, written `Array<T>`. It is a dedicated concrete
+// for the reason PromiseType is: one stdlib generic the milestone needs typed ahead of library
+// ingestion. It exists to give a rest parameter an element type, the arity-and-element pair a
+// tuple-typed rest cannot express. Elem is covariant, the read-only reading a rest parameter
+// needs. The minimal form carries no members, so `xs.length` and `xs[0]` do not resolve.
+type ArrayType struct{ Elem Type }
+
 // Void is the result type of a statement block with no value.
 type Void struct{}
 
@@ -874,6 +881,18 @@ type InferType struct {
 	Name   string
 	Binder bool
 }
+
+// WildcardInferName is the Name an anonymous `infer` binder carries — the one a `_` written in a
+// conditional's Extends operand mints. Such a binder is filled by the match like any other and then
+// discarded, since no branch can reference a name the source never wrote.
+//
+// The name is unreachable from source, which is what makes it safe as a sentinel: the parser
+// requires an Identifier after `infer`, and `_` lexes as its own token, so `infer _` does not parse.
+const WildcardInferName = "_"
+
+// IsWildcardInfer reports whether t is an anonymous `infer` binder, the lowered form of `_` in a
+// pattern. The printer renders one as the bare `_` the source wrote rather than as `infer _`.
+func (t *InferType) IsWildcardInfer() bool { return t.Binder && t.Name == WildcardInferName }
 
 // MappedModifier states how a mapped type adjusts one member marker, `readonly` or `?`, on each
 // field it emits. ModAdd sets the marker and ModRemove clears it. ModNone means the source wrote no
@@ -1099,6 +1118,7 @@ func (*TupleType) isType()           {}
 func (*ObjectType) isType()          {}
 func (*RefType) isType()             {}
 func (*PromiseType) isType()         {}
+func (*ArrayType) isType()           {}
 func (*Void) isType()                {}
 func (*NullType) isType()            {}
 func (*UndefinedType) isType()       {}
@@ -1221,6 +1241,9 @@ func LevelOf(t Type) int {
 		return LevelOf(t.Body)
 	case *PromiseType:
 		return LevelOf(t.Inner)
+	case *ArrayType:
+		// An array's level is its element's, the same single-child rule PromiseType follows.
+		return LevelOf(t.Elem)
 	case *RefType:
 		// A borrow's level is the max of its inner content's and its lifetime's (M4
 		// D2.5). The lifetime is a SECOND quantifiable variable on the wrapper: a

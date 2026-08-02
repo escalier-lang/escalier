@@ -220,7 +220,8 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 		e := &FuncArityMismatchError{
 			Sub:   &soltype.FuncType{Params: make([]*soltype.FuncParam, 2)},
 			Super: &soltype.FuncType{Params: make([]*soltype.FuncParam, 1)},
-			prov:  Prov{}, site: site,
+			SubLo: 2, SubHi: 2, SuperLo: 1, SuperHi: 1,
+			prov: Prov{}, site: site,
 		}
 		require.Equal(t, "cannot constrain function of arity 2 <: function of arity 1", e.Message())
 		require.Equal(t, site.Span(), e.Span())

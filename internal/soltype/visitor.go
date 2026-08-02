@@ -158,6 +158,20 @@ func (t *ObjectType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *ArrayType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	elem := cur.Elem.Accept(v, pol) // covariant, the read-only reading
+	out := cur
+	if elem != cur.Elem {
+		out = &ArrayType{Elem: elem}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *PromiseType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {

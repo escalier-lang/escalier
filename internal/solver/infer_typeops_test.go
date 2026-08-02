@@ -4121,3 +4121,69 @@ func TestInferMappedTypeSignatureRoundTrips(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn <T>(x: {[K: keyof T]: T[K]}) -> {[K: keyof T]: T[K]}", values["f"])
 }
+
+// `_` in a conditional's Extends operand is an `infer` clause with no name: the match fills it and
+// the capture is dropped, so it matches any type at that position without naming it. Each case
+// asserts what `Result` reduces to.
+func TestInferWildcardInConditionalPattern(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantSymbolic string
+		wantExpanded string
+	}{
+		{
+			// One `_` past the position being captured.
+			name: "MatchesAnyElementBesideACapture",
+			src: `
+				type Second<T> = if T : [_, infer B] { B } else { never }
+				type Result = Second<[number, string]>
+			`,
+			wantSymbolic: `Second<[number, string]>`,
+			wantExpanded: "string",
+		},
+		{
+			// Two `_` in one pattern are independent holes. If they shared a declaration the two
+			// tuple positions would have to agree and this would take the Else branch.
+			name: "TwoWildcardsAreIndependent",
+			src: `
+				type Both<T> = if T : [_, _] { true } else { false }
+				type Result = Both<[number, string]>
+			`,
+			wantSymbolic: `Both<[number, string]>`,
+			wantExpanded: "true",
+		},
+		{
+			// A `_` constrains nothing, so the shape around it still decides the branch.
+			name: "SurroundingShapeStillDecides",
+			src: `
+				type Second<T> = if T : [_, infer B] { B } else { never }
+				type Result = Second<[number]>
+			`,
+			wantSymbolic: `Second<[number]>`,
+			wantExpanded: "never",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantSymbolic, soltype.Print(nodes["Result"]))
+			require.Equal(t, tt.wantExpanded, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// A conditional whose Check stays abstract keeps its pattern stored, so the pattern is what the
+// printer renders. An anonymous binder renders as the `_` the source wrote rather than as
+// `infer _`, which is not writable — the parser requires an identifier after `infer`.
+func TestInferWildcardPatternRoundTrips(t *testing.T) {
+	src := `
+		type Second<T> = if T : [_, infer B] { B } else { never }
+		fn f<X>(p: Second<X>) -> Second<X> { return p }
+	`
+	nodes, ctx, errs := inferTypeNodes(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "if t0 : [_, infer B] { B } else { never }",
+		soltype.Print(expandAliasResidual(ctx, nodes["Second"])))
+}

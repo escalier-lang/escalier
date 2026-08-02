@@ -376,16 +376,239 @@ func TestInferFuncAnnotationPreservesDestructuringPattern(t *testing.T) {
 	require.Equal(t, "fn ({x, y}: {x: number, y: number}, [a, b]: [number, string]) -> number", values["f"])
 }
 
-// A rest parameter reports the documented unsupported feature and recovers as a
-// normal positional param, so it never sets FuncParam.Rest. acceptSet / hasRest /
-// requiredCount assume a rest param is last, and the parser does not enforce that
-// for a non-last `...x`, so a silently-set Rest could corrupt the accept-set.
-func TestInferRestParamFuncAnnotationReportsUnsupported(t *testing.T) {
-	values, _, errs := inferSource(t, `val f: fn(...xs: number) -> number = fn (x) { return x }`)
+// A `...xs: T` parameter in a function type annotation sets FuncParam.Rest, so it
+// round-trips through the printer as written. A tuple in the slot names the arguments the
+// rest param binds one per element, so the annotation fixes the arity at two and a
+// two-parameter function fills it.
+func TestInferRestParamFuncAnnotation(t *testing.T) {
+	values, _, errs := inferSource(t, `val f: fn(...xs: [number, string]) -> number = fn (x, y) { return 1 }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (...xs: [number, string]) -> number", values["f"])
+}
+
+// The parser accepts a rest parameter in any position, without a type, and marked `?`.
+// Resolution rejects all three and recovers the parameter to a positional one, so each case
+// reports exactly the one message and nothing cascades from the recovery.
+func TestInferRestParamFuncAnnotationRejections(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// acceptSet reads the Rest flag off the last parameter only.
+			name: "NonFinalPosition",
+			src:  `val f: fn(...xs: [number], y: string) -> number = fn (x, y) { return 1 }`,
+			want: "1:11-1:16: a rest parameter must be the last parameter of a function type",
+		},
+		{
+			// Without a type the slot says nothing about how many arguments it binds, so
+			// keeping Rest would let the initializer decide the declared type's arity.
+			name: "NoTypeAnnotation",
+			src:  `val f: fn(...xs) -> number = fn (x) { return 1 }`,
+			want: "1:11-1:16: a rest parameter in a function type must have a type annotation",
+		},
+		{
+			// The `?` marker has no meaning on a rest parameter, whose slot type already
+			// settles how many arguments it binds.
+			name: "MarkedOptional",
+			src:  `val f: fn(...xs?: [number]) -> number = fn (x) { return 1 }`,
+			want: "1:11-1:16: a rest parameter cannot be marked optional",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
+}
+
+// A tuple-typed rest parameter is a value-level type, not only a conditional's pattern. It
+// names its arguments one per element, so a function whose parameters line up with those
+// elements fills the slot, and a value read out of the slot is callable, assignable, and
+// passable wherever the expanded signature is. Each case reports no error.
+func TestInferTupleRestParamFuncAnnotationAcceptsMatchingFunction(t *testing.T) {
+	const two = "fn two(x: number, y: string) -> number { return 1 }\n"
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			// A direct call through the slot binds each argument to its element.
+			name: "DirectCall",
+			src: two + `val g: fn(...args: [number, string]) -> number = two
+val r = g(1, "a")`,
+		},
+		{
+			// The slot's expansion is the fixed-arity signature, so the two are interchangeable.
+			name: "IntoFixedAritySlot",
+			src: two + `val g: fn(...args: [number, string]) -> number = two
+val h: fn(x: number, y: string) -> number = g`,
+		},
+		{
+			name: "CallbackParameter",
+			src:  two + `fn take(cb: fn(...args: [number, string]) -> number) -> number { return cb(1, "a") }` + "\n" + `val r = take(two)`,
+		},
+		{
+			name: "ObjectTypeMethod",
+			src:  two + `val o: {m: fn(...args: [number, string]) -> number} = {m: two}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+		})
+	}
+}
+
+// The call-site arity lints read a tuple-typed rest parameter's real ceiling and floor, so
+// each reports one message naming the count the tuple's elements add up to. An argument of
+// the wrong type is still rejected against the element it lines up with.
+func TestInferTupleRestParamCallDiagnostics(t *testing.T) {
+	const decls = `fn two(x: number, y: string) -> number { return 1 }
+val g: fn(...args: [number, string]) -> number = two
+`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "TooFew",
+			src:  decls + `val r = g(1)`,
+			want: "Not enough arguments: expected at least 2, but got 1",
+		},
+		{
+			name: "TooMany",
+			src:  decls + `val r = g(1, "a", true)`,
+			want: "Too many arguments: expected at most 2, but got 3",
+		},
+		{
+			name: "WrongElementType",
+			src:  decls + `val r = g(1, 2)`,
+			want: "cannot constrain 2 <: string",
+		},
+		{
+			// An INEXACT tuple rest is left unexpanded, so it can require more arguments than
+			// it declares parameters: this one declares two and requires three. The lint's
+			// reshaped demand is padded to the required count rather than the parameter count,
+			// so the accept-set gate does not report a second, redundant arity mismatch.
+			name: "TooFewThroughAnInexactTupleRest",
+			src: `val h: fn(a: number, ...args: [string, boolean, ...]) -> number = fn (...) { return 1 }` + "\n" +
+				`val r = h(1)`,
+			want: "Not enough arguments: expected at least 3, but got 1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
+}
+
+// An `Array<E>` rest parameter binds zero or more trailing arguments and checks each against
+// E, which is the arity-and-element pair a tuple-typed rest cannot express. Each case reports
+// exactly the listed messages.
+func TestInferArrayRestParamFuncAnnotation(t *testing.T) {
+	const decl = "val g: fn(...xs: Array<number>) -> number = fn (...) { return 1 }\n"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "RoundTripsThroughThePrinter",
+			src:  `val f: fn(...xs: Array<number>) -> number = fn (...) { return 1 }`,
+		},
+		{
+			// Zero or more, so no argument count is an arity error.
+			name: "CallWithNoArguments",
+			src:  decl + `val r = g()`,
+		},
+		{
+			name: "CallWithSeveralArguments",
+			src:  decl + `val r = g(1, 2, 3)`,
+		},
+		{
+			// The element type is what each trailing argument is checked against. This is the
+			// per-argument checking FuncParam.Rest deferred until an element type existed.
+			name: "CallRejectsAWrongElement",
+			src:  decl + `val r = g(1, "a")`,
+			want: []string{`cannot constrain "a" <: number`},
+		},
+		{
+			// A fixed-arity function fills the slot, since the rest parameter absorbs its
+			// parameter list and checks each position against the element.
+			name: "AcceptsAFixedArityFunction",
+			src:  `fn two(x: number, y: number) -> number { return 1 }` + "\n" + `val h: fn(...xs: Array<number>) -> number = two`,
+		},
+		{
+			name: "RejectsAFixedArityFunctionOnTheElement",
+			src:  `fn two(x: number, y: string) -> number { return 1 }` + "\n" + `val h: fn(...xs: Array<number>) -> number = two`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			// Two array rest parameters pair as ordinary positions and compare element to
+			// element. The pairing is contravariant and the array is covariant in its element,
+			// so the super's `string` is checked against the sub's `number`.
+			name: "ArrayRestAgainstArrayRest",
+			src:  `val a: fn(...xs: Array<number>) -> number = fn (...) { return 1 }` + "\n" + `val b: fn(...ys: Array<string>) -> number = a`,
+			want: []string{"cannot constrain string <: number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errs)
+				return
+			}
+			got := make([]string, len(errs))
+			for i, e := range errs {
+				got[i] = e.Message()
+			}
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// A tuple-typed rest slot fixes the arity at the tuple's length, so the relaxation the
+// gather rule introduces reaches only a conditional's pattern match. At value level both
+// sides are written types, so an exact function of the wrong arity is still rejected.
+func TestInferRestParamFuncAnnotationRejectsWrongArityValue(t *testing.T) {
+	src := `fn one(x: number) -> string { return "a" }
+val slot: fn(...args: [number, string]) -> string = one`
+	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.IsType(t, &UnsupportedFeatureError{}, errs[0])
-	require.Equal(t, "1:11-1:16: Unsupported: rest parameter in function type annotation", msgWithSpan(errs[0]))
-	require.Equal(t, "fn (xs: number) -> number", values["f"])
+	require.IsType(t, &FuncArityMismatchError{}, errs[0])
+	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 2", errs[0].Message())
+}
+
+// The tuple's elements are the argument types the rest param binds, one per position, so a
+// mismatched element is rejected contravariantly the way a fixed parameter would be.
+func TestInferRestParamFuncAnnotationChecksTupleElements(t *testing.T) {
+	src := `fn two(x: number, y: number) -> string { return "a" }
+val slot: fn(...args: [number, string]) -> string = two`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.IsType(t, &CannotConstrainError{}, errs[0])
+	require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+}
+
+// A rest parameter whose slot is not a tuple binds zero or more arguments, so the
+// annotation's accept-set is [0, ∞) and an exact function of any fixed arity fails to
+// contain it. This is the arity effect the accept-set rule has always given a rest
+// parameter; the annotation surface is what is new.
+func TestInferUnboundedRestParamFuncAnnotationRejectsFixedArity(t *testing.T) {
+	_, _, errs := inferSource(t, `val f: fn(...xs: number) -> number = fn (x) { return x }`)
+	require.Len(t, errs, 1)
+	require.IsType(t, &FuncArityMismatchError{}, errs[0])
+	require.Equal(t, "cannot constrain function of arity 1 <: function of arity 0 or more", errs[0].Message())
 }
 
 // The Variation-B check fires end-to-end through inexact function annotations.
@@ -402,4 +625,66 @@ val slot: fn(x: number, ...) -> number = wide`
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 	require.Equal(t, "2:42-2:46: cannot constrain unknown <: number", msgWithSpan(errs[0]))
+}
+
+// `fn (...args: Array<_>) -> _` is the written top of the function lattice. Its rest parameter
+// absorbs whatever parameter list the argument declares, and the `Array<_>` element and the `_`
+// return are inference placeholders, so neither constrains the argument further. It accepts a
+// function of any arity and rejects everything that is not a function.
+//
+// In a type-parameter bound that is all it does, since nothing reads the solved placeholders. In a
+// value annotation, which these cases use, `_` keeps its ordinary meaning of "infer this here", so
+// the rendered binding shows what each placeholder was solved to. Each case renders the binding
+// named `f` when it type-checks and reports one error when it does not.
+func TestInferFunctionTopType(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		want    string // the rendered `f` binding; checked when wantErr is ""
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			// Nothing constrains the element, so it coalesces to the negative-position identity.
+			name: "AcceptsNullary",
+			src:  `val f: fn(...args: Array<_>) -> _ = fn () { return 1 }`,
+			want: "fn (...args: Array<unknown>) -> 1",
+		},
+		{
+			// The rest parameter absorbs both declared params, so the arity is no obstacle. Each
+			// absorbed position bounds the element variable from above, and a parameter is
+			// contravariant, so the element coalesces to their meet.
+			name: "AcceptsBinary",
+			src:  `val f: fn(...args: Array<_>) -> _ = fn (x: number, y: string) { return 1 }`,
+			want: "fn (...args: Array<number & string>) -> 1",
+		},
+		{
+			// A written function type flows in the same way a function expression does.
+			name: "AcceptsFunctionTypedBinding",
+			src: `val g: fn(x: number) -> number = fn (x) { return x }
+				val f: fn(...args: Array<_>) -> _ = g`,
+			want: "fn (...args: Array<number>) -> number",
+		},
+		{
+			name:    "RejectsNumber",
+			src:     `val f: fn(...args: Array<_>) -> _ = 5`,
+			wantErr: "cannot constrain 5 <: function",
+		},
+		{
+			name:    "RejectsObject",
+			src:     `val f: fn(...args: Array<_>) -> _ = {a: 1}`,
+			wantErr: "cannot constrain object <: function",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				require.Equal(t, tt.want, values["f"])
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
 }
