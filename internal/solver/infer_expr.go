@@ -2436,6 +2436,8 @@ func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Ty
 	arg := c.inferExpr(scope, lvl, e.Arg)
 	c.constrain(e, arg, c.throwsSink(lvl))
 	c.markRaised()
+	// Recorded but given no provenance: every `&NeverType{}` shares one address, and Prov
+	// is pointer-keyed, so a second throw would trip recordProv's guard. Info is node-keyed.
 	t := &soltype.NeverType{}
 	c.recordType(e, t)
 	return t
