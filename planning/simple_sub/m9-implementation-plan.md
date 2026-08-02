@@ -133,7 +133,7 @@ spike work rather than inventing it:
 
 ## PR-by-PR breakdown
 
-Twenty-eight PRs across six tracks. Track A builds the evaluator and the core
+Twenty-nine PRs across six tracks. Track A builds the evaluator and the core
 operators in dependency order. Track B adds spread and template-literal
 operators, which hang off the backbone but are independent of each other. Track C
 adds exactness propagation and the recursion static-check. Track D is the
@@ -146,7 +146,7 @@ The two heaviest concerns — the evaluator backbone and the conditional/`infer`
 matcher — are each split in two so no single PR carries both a new representation
 and a new algorithm: PR1a/PR1b and PR3a/PR3b below.
 
-Sixteen of the twenty-eight were planned up front. PR9c through PR9f were added to Track C
+Sixteen of the twenty-nine were planned up front. PR9c through PR9f were added to Track C
 after PR9b's review, which turned up one soundness question, one wrong answer, and one
 representation the milestone assumed exists. They are described together in "the
 recursion-safety follow-on group" below. PR14 through PR16 were added to Track E after
@@ -160,10 +160,11 @@ which needs PR10b's `try` to be catchable. Both were assumed by
 [01-milestones.md](01-milestones.md) — its M9 accept list calls for "a `try`/`catch` test
 for the body-narrowing rule" — without a PR to build them.
 
-PR17 through PR19 were added as Track F after PR9d's review, which found that a written
+PR17 through PR20 were added as Track F after PR9d's review, which found that a written
 type argument is never checked against its parameter's declared bound. #956 has since
 closed that for aliases, and for enums with it, since an enum registers as a transparent
-alias. What the review turned up beyond it stays open, and Track F is that remainder.
+alias. What the review turned up beyond it stays open, and Track F is that remainder, plus
+PR20, which surfaces the erasure PR9d performs silently.
 
 ### PR1a — Residual-node representation + inert plumbing
 
@@ -1285,7 +1286,7 @@ disabled test it re-enables. Independent of PR14 and PR15.
 
 **Completes the suite.** With this PR every utility PR13 lists reduces.
 
-### The generic-parameter checking group (PR17–PR19)
+### The generic-parameter checking group (PR17–PR20)
 
 These three came out of PR9d's review. That PR's accept criteria assumed a type parameter's
 declared bound is checked against the argument a reference writes, and at the time nothing
@@ -1312,10 +1313,12 @@ mismatch, and `class Box<T: A>` renders its constructor `fn <T>(value: T & A)` s
 written type argument flows nowhere on the class path: `buildClassInstance` substitutes it
 into the body and the bound goes with the var it was attached to.
 
-The three land in dependency order. PR17 is independent and fixes the worst answer of the
-group. PR18 needs it, so the class path does not start filling defaults while a default can
-still leak a declaration var. PR19 needs PR18's helper, which is the one place that pairs a
-written argument with the parameter it fills.
+The first three land in dependency order. PR17 is independent and fixes the worst answer of
+the group. PR18 needs it, so the class path does not start filling defaults while a default
+can still leak a declaration var. PR19 needs PR18's helper, which is the one place that pairs
+a written argument with the parameter it fills. PR20 sits apart from the chain: it is the
+only one that reports on a declaration rather than a reference, and it hangs off PR9d rather
+than off any of the other three.
 
 ### PR17 — A default may name only an earlier parameter
 
@@ -1417,6 +1420,77 @@ its call site, matching what #956 settled for the alias position.
 **Depends on** PR18 for the helper and #956 for the comparison. Independent of the operator
 track.
 
+### PR20 — Warn on a phantom type parameter
+
+PR9d computes, for every alias parameter, whether an argument passed to it can appear in the
+type the alias denotes, and erases the ones that cannot from the alias's canonical identity.
+That erasure is silent. `type Deep<T> = {a: Deep<{b: T}>}` reads as a type parameterized by
+T, and it is not. `Deep<number>` and `Deep<string>` are one type, so a caller who wrote the
+argument expecting it to mean something gets no signal. `type Ignore<T> = number` is the
+degenerate form of the same thing.
+
+This PR reports both, at warning severity. It is the type-sort twin of
+`UnusedLifetimeParamError` ([errors.go](../../internal/solver/errors.go)), which fires on a
+`<'a>` binder no `&'a` references and is likewise always a warning: the program is
+well-typed, and the binder is dead weight.
+
+**The warning cannot read PR9d's marks directly.** `AliasDef.PhantomParams` answers "can an
+argument reach the denoted type", and it is computed over the alias body alone, which is
+correct for erasure and wrong as a use-check. Two shapes come back phantom while the
+parameter is doing real work:
+
+- `type Foo<T, U: T> = {x: U}` marks T phantom. T constrains U.
+- `type Pair<T, U = T> = {b: U}` marks T phantom. T supplies U's default, and `Pair<number>`
+  still denotes `{b: number}`.
+
+Neither argument reaches the denoted type through T's own slot, so erasing T is right in
+both — `Pair<number>` and `Pair<string>` keep distinct identities through U's slot, which is
+relevant. But warning on either would be a false positive.
+
+**Data structures.** Two diagnostics, both warnings, both blaming the parameter's declaration
+node:
+
+- `UnusedTypeParamError` — the parameter occurs nowhere.
+- `UnreachableTypeParamError` — the parameter occurs, but no argument passed to it can appear
+  in the denoted type. Its message names the consequence rather than the analysis, since that
+  is what a reader can act on: `Deep<number>` and `Deep<string>` are the same type.
+
+**Algorithms.** One occurrence pass over the positions PR9d's body walk skips, joined with
+the marks it already computed. A parameter is *mentioned* when its var occurs in the alias
+body, in a sibling parameter's `Constraint`, or in a sibling parameter's `Default`. Its own
+bound does not count, since `<T: number>` constrains T rather than using it. Then:
+
+- not mentioned anywhere ⇒ `UnusedTypeParamError`;
+- mentioned only in the body, and marked phantom ⇒ `UnreachableTypeParamError`;
+- mentioned in a sibling's bound or default ⇒ no warning, whatever the mark says;
+- not marked phantom ⇒ no warning.
+
+It runs beside `markPhantomParams` in the same per-component pass, which is the point where
+every body in the component is resolved and the marks are final.
+
+**An escape hatch is the open question.** Rust makes the analogous case a hard error and
+supplies `PhantomData` to opt in. Escalier has no such marker and needs none, because a
+parameter that genuinely cannot reach the denoted type cannot brand a type either — the two
+instantiations *are* the same type, so there is no nominal distinction to preserve. What is
+left is a parameter left unused mid-edit, which a warning should not obstruct. A leading
+underscore, `type Ignore<_T> = number`, is the cheap convention and the recommended answer.
+Settle it in this PR rather than shipping the warning with no way to quiet it.
+
+**Scope.** Aliases only, since `PhantomParams` exists only for them, and an enum comes along
+free because it registers as a transparent alias. A class declares type parameters through
+the same `resolveTypeParams` and would warn the same way, but nothing computes reachability
+for a class body. The unused tier needs no reachability and extends to classes cheaply; the
+unreachable tier does not, and is deliberately left out rather than half-built.
+
+**Accept.** `type Ignore<T> = number` warns that T is never used. `type Deep<T> =
+{a: Deep<{b: T}>}` warns that no argument to T can appear in the type, and the message names
+`Deep<number>` and `Deep<string>` as the same type. `type Foo<T, U: T> = {x: U}`,
+`type Pair<T, U = T> = {b: U}`, and `type List<T> = {head: T}` warn about nothing. Both
+diagnostics are warnings, so no program that checks today stops checking.
+
+**Depends on** PR9d for the marks and for `phantom.go`, where the pass belongs. Independent of
+PR17–PR19 and of the operator track.
+
 ---
 
 ## Sizing note
@@ -1479,7 +1553,9 @@ sites span the annotation, expression, and pattern walks, and that the shared
 Track F is small, and shrank when #956 landed: PR17 is a scope restriction in one pass of
 `resolveTypeParams` plus its diagnostic, PR18 moves `buildAliasInstance`'s arity-and-default
 logic into a helper the class path also calls, so most of its diff is a move, and PR19 routes
-#956's existing comparison to that helper. None of the three designs anything new.
+#956's existing comparison to that helper. None of the three designs anything new. PR20 is
+one occurrence pass and two warnings, sized like PR17; its cost is the escape-hatch decision
+rather than the code.
 
 ## Dependency graph
 
@@ -1523,6 +1599,8 @@ PR13 (TS utility-type suite)               ── needs PR2, PR3b, PR4, PR7, PR1
 PR17 (default names only an earlier param) ── needs M7 only
  └─► PR18 (class type-param defaults + arity at a type reference)
       └─► PR19 (class type-argument bound checking)  ── also needs #956
+
+PR20 (warn on a phantom type parameter)    ── needs PR9d only
 ```
 
 PR9b replaced PR9's regularity condition with the productivity condition, so PR9's
@@ -1533,7 +1611,7 @@ monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand 
 PR4's mapped types.
 
 Everything still open is PR8, PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR13, PR14, PR15,
-PR16, and Track F's PR17 through PR19. PR8 is partly seeded — #922 threads an object's
+PR16, and Track F's PR17 through PR20. PR8 is partly seeded — #922 threads an object's
 exactness through `keyof` — but the rest of the operators and the `Exact` / `Inexact`
 intrinsics are untouched.
 
@@ -1575,6 +1653,7 @@ graph TD
     PR17["PR17 (default names only an earlier param)"]
     PR18["PR18 (class type-param defaults + arity at a type reference)"]
     PR19["PR19 (class type-argument bound checking)"]
+    PR20["PR20 (warn on a phantom type parameter)"]
 
     M7 -.-> PR1a
     M75 -.-> PR10c
@@ -1622,6 +1701,7 @@ graph TD
     PR3b --> PR16
     PR17 --> PR18
     PR18 --> PR19
+    PR9d --> PR20
 
     linkStyle default stroke:#888
     style PR1a fill:#e06666,stroke:#2e7d32,stroke-width:4px,color:#fff
@@ -1669,7 +1749,8 @@ graph TD
 - **Track F** — a chain, PR17 → PR18 → PR19, and nothing outside it waits on any of the
   three, so it can run start to finish alongside any other track. The order is both the
   dependency order and the value order: PR17 fixes a wrong answer, PR18 fixes a second one
-  and builds the helper, PR19 routes #956's comparison to it.
+  and builds the helper, PR19 routes #956's comparison to it. PR20 is off the chain, waiting
+  only on PR9d, so it can land as soon as the marks exist.
 
 The critical path is `M7 → PR1a → PR1b → PR3a → PR3b → PR4 → PR8`, and — for the
 async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13 → PR14 → PR15`.
