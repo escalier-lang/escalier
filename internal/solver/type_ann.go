@@ -143,12 +143,29 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	case *ast.TemplateLitTypeAnn:
 		return c.resolveTemplateLitTypeAnn(scope, ta, lvl)
 	case *ast.WildcardTypeAnn:
-		// `_` in type-annotation position is an inference placeholder: mint a fresh
-		// var at the current level for the surrounding annotation to fill in. Today
-		// the only site that uses it is the inner of `Promise<_>` on an async fn's
-		// return, where the body's return flows into the var (asyncReturn), inferring
-		// the inner. Unlike the other arms it reports NO error — `_` is a supported,
-		// user-authored "infer this here" marker, not an unsupported feature.
+		// `_` asks for a hole someone else fills. Which position it sits in decides who fills it,
+		// and that is the only difference between the two forms below. Unlike the other arms it
+		// reports NO error either way — `_` is a supported, user-authored marker.
+		if c.inCondExtends {
+			// In a conditional's pattern the match fills it. That makes `_` an `infer` clause with
+			// no name: reduceCondInfer mints one variable per binder and solves them all from the
+			// single subtype check that decides the branch, and the capture is dropped because no
+			// branch can reference a name the source never wrote. So `fn (...args: Array<_>) -> _`
+			// matches a function of any parameter list and any return without naming either.
+			//
+			// A plain variable could not do this. condOperandGround refuses to decide a branch over
+			// an operand carrying one, since a variable standing for something outside the
+			// conditional would give an answer that changes once that thing is solved. An InferType
+			// is owned by the match, so it is ground for that purpose.
+			//
+			// Each occurrence mints its own declaration, so two `_` in one pattern are independent
+			// holes rather than one shared hole that would force both positions to agree.
+			decl := c.ctx.freshInferDecl(soltype.WildcardInferName)
+			return &soltype.InferType{ID: decl.ID, Name: decl.Name, Binder: true}, true
+		}
+		// Everywhere else the value flowing in fills it, so `_` is an inference variable at the
+		// current level. `Promise<_>` on an async fn's return relies on this: the body's return
+		// flows into the variable, inferring the inner (asyncReturn).
 		t := c.freshAt(lvl)
 		c.recordProv(t, ta, WildcardAnnotation)
 		return t, true

@@ -48,8 +48,9 @@ func typePrec(t Type) int {
 		return precAtom
 	case *InferType:
 		// The `infer U` binder leads with a keyword, so it binds like the other prefixes. A
-		// reference to that name renders as the bare `U`, an atom.
-		if t.Binder {
+		// reference to that name renders as the bare `U`, an atom, and so does the anonymous
+		// binder `_`, which leads with no keyword.
+		if t.Binder && !t.IsWildcardInfer() {
 			return precPrefix
 		}
 		return precAtom
@@ -780,6 +781,10 @@ func (p *namedPrinter) printType(t Type) string {
 		// The binder renders `infer U`, the clause the source wrote in the Extends operand, and a
 		// reference to that name renders as the bare `U`, so a stored conditional round-trips to
 		// `if T : [infer U] { U } else { boolean }`.
+		if t.IsWildcardInfer() {
+			// An anonymous binder round-trips to the `_` the source wrote.
+			return t.Name
+		}
 		if t.Binder {
 			return "infer " + t.Name
 		}

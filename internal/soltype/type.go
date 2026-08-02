@@ -892,6 +892,18 @@ type InferType struct {
 	Binder bool
 }
 
+// WildcardInferName is the Name an anonymous `infer` binder carries — the one a `_` written in a
+// conditional's Extends operand mints. Such a binder is filled by the match like any other and then
+// discarded, since no branch can reference a name the source never wrote.
+//
+// The name is unreachable from source, which is what makes it safe as a sentinel: the parser
+// requires an Identifier after `infer`, and `_` lexes as its own token, so `infer _` does not parse.
+const WildcardInferName = "_"
+
+// IsWildcardInfer reports whether t is an anonymous `infer` binder, the lowered form of `_` in a
+// pattern. The printer renders one as the bare `_` the source wrote rather than as `infer _`.
+func (t *InferType) IsWildcardInfer() bool { return t.Binder && t.Name == WildcardInferName }
+
 // MappedModifier states how a mapped type adjusts one member marker, `readonly` or `?`, on each
 // field it emits. ModAdd sets the marker and ModRemove clears it. ModNone means the source wrote no
 // modifier, which leaves the marker to be inherited from the field's source member when the mapped

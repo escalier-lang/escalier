@@ -30,22 +30,17 @@ import (
 //
 // `ReturnType<F>` and `Parameters<F>` each write their pattern's parameter list as one rest
 // parameter, so the pattern matches a function of any arity. Each names only the position it
-// captures and fills the other with the type that admits everything there. `Parameters` captures
-// the parameter list into `infer P` and takes any return, which is `unknown` because a return is
-// covariant. `ReturnType` captures the return and takes any parameter list, which is
-// `Array<never>` because a parameter is contravariant, so the bottom type is the one every
-// argument type accepts.
-//
-// Neither position can be written `_`. A conditional reduces only when both of its operands are
-// ground, and `_` resolves to an inference variable, so a pattern carrying one never grounds and
-// the conditional stays symbolic. See condOperandGround in internal/solver/typeops.go.
+// captures and writes `_` for the other. In a conditional's pattern `_` is an `infer` clause with
+// no name: the match fills it and the capture is dropped, since no branch can reference a name the
+// source never wrote. So `ReturnType` captures the return past any parameter list and `Parameters`
+// captures the parameter list past any return.
 //
 // Both bound `F` by `fn (...args: Array<_>) -> _`, the written top of the function lattice. Its
-// rest parameter absorbs whatever parameter list the argument declares, and the `Array<_>` element
-// and the `_` return are inference placeholders, so neither constrains the argument further. A
-// bound is an ordinary constraint rather than a conditional's operand, so `_` is fine here. The
-// bound is checked at the reference, so `ReturnType<number>` is rejected there rather than reducing
-// through the Else branch to `never`.
+// rest parameter absorbs whatever parameter list the argument declares, and the two `_` are the
+// other form of the marker: a bound is not a conditional's operand, so nothing matches against it
+// and each `_` is an inference variable the argument's own type fills. Either way neither position
+// constrains the argument. The bound is checked at the reference, so `ReturnType<number>` is
+// rejected there rather than reducing through the Else branch to `never`.
 //
 // `NonNullable<T>` is a conditional here, where TypeScript writes the intersection `T & {}`. That
 // intersection is not translatable, for two independent reasons.
@@ -78,8 +73,8 @@ const utilityTypeDecls = `
 	type Record<Ks, V> = {[K: Ks]: V}
 	type Exclude<U, V> = if U : V { never } else { U }
 	type Extract<U, V> = if U : V { U } else { never }
-	type ReturnType<F: fn (...args: Array<_>) -> _> = if F : fn (...args: Array<never>) -> infer R { R } else { never }
-	type Parameters<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> unknown { P } else { never }
+	type ReturnType<F: fn (...args: Array<_>) -> _> = if F : fn (...args: Array<_>) -> infer R { R } else { never }
+	type Parameters<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> _ { P } else { never }
 	type NonNullable<T> = if T : null | undefined { never } else { T }
 	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
 	type EventName<K> = ` + "`on${Capitalize<K>}`" + `

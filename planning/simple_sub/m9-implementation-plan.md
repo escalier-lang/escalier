@@ -1113,6 +1113,23 @@ it. This PR is its first producer. A tuple-typed rest parameter reuses `TupleTyp
    `ReturnType<F>` unbounded costs nothing and is what PR13 shipped, but it forgoes a
    diagnostic TypeScript reports.
 
+**`_` in a conditional's pattern.** Writing the bound as `fn (...args: Array<_>) -> _` invites
+the same spelling in the pattern the utilities match against, and it did not work at first: a
+conditional reduces only when both operands are ground, and `_` resolved to an inference variable,
+so a pattern carrying one never grounded.
+
+The fix is not a new kind of type. A variable minted by `_` inside the Extends operand is owned by
+the match rather than waiting on anything outside it, which is exactly what an `infer` clause is,
+minus the name. So `_` there lowers to an anonymous `InferType` binder. `reduceCondInfer` mints one
+variable per binder and solves them all from the single subtype check that decides the branch, and
+the capture is dropped because no branch can reference a name the source never wrote. Each
+occurrence mints its own declaration, so two `_` in one pattern are independent holes.
+
+That leaves one marker with two fillers, chosen by position. In a pattern the match fills it; in a
+value annotation the value flowing in does, which is what `Promise<_>` on an async return relies on.
+A `_` in the *Check* operand stays a variable and keeps the conditional symbolic, which is right,
+since the Check is the input to the match rather than a position matched against.
+
 **Rejected shapes.** The parser accepts a rest parameter in any position, with no type, and
 marked `?`. Resolution rejects all three with a full message and recovers the parameter to a
 positional one. A rest parameter with no type is rejected because the slot's type is what
