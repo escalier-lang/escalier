@@ -301,8 +301,8 @@ func (c *checker) inferComponent(
 	}
 	// The two loops below fill bodies that are still nil, so a bound check inside them is queued
 	// rather than run against a half-built sibling. Do not convert this to a defer, because a
-	// check queued after runDeferredAliasBounds would never be replayed.
-	c.deferAliasBounds = true
+	// check queued after runDeferredArgBounds would never be replayed.
+	c.deferArgBounds = true
 	// Every enum body resolves its variant parameters against the fully pre-bound
 	// identities above, so a parameter naming a sibling enum or class resolves.
 	for _, sh := range enumShells {
@@ -313,7 +313,7 @@ func (c *checker) inferComponent(
 	for _, sh := range aliasShells {
 		c.inferAliasBody(sh)
 	}
-	c.deferAliasBounds = false
+	c.deferArgBounds = false
 	// Every body in the component is resolved, so the alias reference graph the productivity
 	// check and the phantom-parameter fixed point read is complete. Both run before any
 	// constraint reaches an alias in the component, which is what lets constrain trust the marks
@@ -325,7 +325,7 @@ func (c *checker) inferComponent(
 	// drops the arguments of phantom parameters when it renders that key. Interning a reference
 	// before its alias is marked would key it under its full arguments and keep that
 	// representative for the rest of the run, so the same type could hold two identities.
-	c.runDeferredAliasBounds()
+	c.runDeferredArgBounds()
 
 	// Report any remaining non-value decl as unsupported. A class was pre-bound above and
 	// is completed at its value key, so skip it rather than mis-reporting it.

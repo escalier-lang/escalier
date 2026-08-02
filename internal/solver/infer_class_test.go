@@ -2491,3 +2491,117 @@ func TestInferClassTypeArgArityAcrossMixedComponent(t *testing.T) {
 		})
 	}
 }
+
+// TestInferClassTypeArgBounds covers the bound a generic class declares on a type parameter,
+// `class Box<T: string>`. A reference supplying an argument outside the bound is rejected at the
+// reference, and one inside it is accepted. Every reference form routes through
+// buildClassInstance, so a self-reference in the class's own body is checked the same way an
+// annotation elsewhere is. A bound may name a sibling parameter, so the reference's own
+// arguments are substituted into the bound before the comparison.
+func TestInferClassTypeArgBounds(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ArgumentOutsideBound",
+			src: `
+				class Box<T: string> { v: T }
+				fn take(b: Box<number>) -> number { return 1 }
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "ArgumentInsideBound",
+			src: `
+				class Box<T: string> { v: T }
+				fn take(b: Box<"a">) -> number { return 1 }
+			`,
+		},
+		{
+			name: "UnboundedParamAcceptsAnyArgument",
+			src: `
+				class Box<T> { v: T }
+				fn take(b: Box<number>) -> number { return 1 }
+			`,
+		},
+		{
+			name: "SelfReferenceInFieldChecked",
+			src:  `class Box<T: string> { v: T, other: Box<number> }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "SelfReferenceInFieldSatisfied",
+			src:  `class Box<T: string> { v: T, other: Box<"a"> }`,
+		},
+		{
+			name: "ExtendsEdgeChecked",
+			src: `
+				class Box<T: string> { v: T }
+				class Sub extends Box<number> {
+					constructor(mut self) {},
+				}
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "MethodParamChecked",
+			src: `
+				class Box<T: string> { v: T }
+				class Holder {
+					x: number,
+					take(self, b: Box<number>) -> number { return self.x },
+				}
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "SiblingBoundViolated",
+			src: `
+				class P<A, B: A> { a: A, b: B }
+				fn take(p: P<string, 1>) -> number { return 1 }
+			`,
+			want: []string{"cannot constrain 1 <: string"},
+		},
+		{
+			name: "SiblingBoundSatisfied",
+			src: `
+				class P<A, B: A> { a: A, b: B }
+				fn take(p: P<number, 1>) -> number { return 1 }
+			`,
+		},
+		{
+			name: "IntersectionBound",
+			src: `
+				class Box<T: string & "a"> { v: T }
+				fn take(b: Box<"b">) -> number { return 1 }
+			`,
+			want: []string{`cannot constrain "b" <: "a"`},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, test.want, msgs)
+		})
+	}
+}
+
+// TestInferClassDefaultOutsideBoundReportedOnce is the class twin of the alias case: a default
+// outside its bound is reported at the declaration, and a reference that omits the argument does
+// not repeat it. resolveTypeParams already compared the two, and substitution moves neither the
+// bound nor the default when the bound names no sibling.
+func TestInferClassDefaultOutsideBoundReportedOnce(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class Box<T: string = number> { v: T }
+		fn one(b: Box) -> number { return 1 }
+		fn two(b: Box) -> number { return 2 }
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain number <: string", errs[0].Message())
+}

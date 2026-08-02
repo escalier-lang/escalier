@@ -357,6 +357,9 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 		// bare handle so the class still resolves under its name.
 		return ct
 	}
+	// A class reference carries no lifetime arguments today, so the substitution the bound check
+	// builds covers the type sort only.
+	c.checkTypeArgBounds(params, args, nil, nil, ref)
 	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final, Variant: ct.Variant}
 }
 
