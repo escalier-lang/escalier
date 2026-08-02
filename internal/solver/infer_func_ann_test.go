@@ -637,7 +637,6 @@ val slot: fn(x: number, ...) -> number = wide`
 // the rendered binding shows what each placeholder was solved to. Each case renders the binding
 // named `f` when it type-checks and reports one error when it does not.
 func TestInferFunctionTopType(t *testing.T) {
-	const top = "fn(...args: Array<_>) -> _"
 	tests := []struct {
 		name    string
 		src     string
@@ -647,7 +646,7 @@ func TestInferFunctionTopType(t *testing.T) {
 		{
 			// Nothing constrains the element, so it coalesces to the negative-position identity.
 			name: "AcceptsNullary",
-			src:  `val f: ` + top + ` = fn () { return 1 }`,
+			src:  `val f: fn(...args: Array<_>) -> _ = fn () { return 1 }`,
 			want: "fn (...args: Array<unknown>) -> 1",
 		},
 		{
@@ -655,23 +654,24 @@ func TestInferFunctionTopType(t *testing.T) {
 			// absorbed position bounds the element variable from above, and a parameter is
 			// contravariant, so the element coalesces to their meet.
 			name: "AcceptsBinary",
-			src:  `val f: ` + top + ` = fn (x: number, y: string) { return 1 }`,
+			src:  `val f: fn(...args: Array<_>) -> _ = fn (x: number, y: string) { return 1 }`,
 			want: "fn (...args: Array<number & string>) -> 1",
 		},
 		{
 			// A written function type flows in the same way a function expression does.
 			name: "AcceptsFunctionTypedBinding",
-			src:  `val g: fn(x: number) -> number = fn (x) { return x }` + "\n" + `val f: ` + top + ` = g`,
+			src: `val g: fn(x: number) -> number = fn (x) { return x }
+				val f: fn(...args: Array<_>) -> _ = g`,
 			want: "fn (...args: Array<number>) -> number",
 		},
 		{
 			name:    "RejectsNumber",
-			src:     `val f: ` + top + ` = 5`,
+			src:     `val f: fn(...args: Array<_>) -> _ = 5`,
 			wantErr: "cannot constrain 5 <: function",
 		},
 		{
 			name:    "RejectsObject",
-			src:     `val f: ` + top + ` = {a: 1}`,
+			src:     `val f: fn(...args: Array<_>) -> _ = {a: 1}`,
 			wantErr: "cannot constrain object <: function",
 		},
 	}
