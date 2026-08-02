@@ -1070,17 +1070,11 @@ func (p *namedPrinter) printFuncBody(t *FuncType) string {
 	if isNever(throws) {
 		return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
 	}
-	// `-> R` is greedy, so a function-typed return has to be parenthesized once a clause
-	// follows it, or the clause reads as the INNER function's. A function that returns a
-	// non-throwing function and itself raises `string` renders
-	// `fn () -> (fn () -> number) throws string`. Drop those parens and it is
-	// indistinguishable from a function that returns one raising `string`, which re-reads
-	// as the second type. precUnion is the minimum that bounds a function type and nothing
-	// else, since precFunc is the only precedence below it.
-	//
-	// The thrown type itself needs no minimum. The clause is last, and the enclosing form
-	// supplies whatever delimiter follows it, so nothing can bind across its right edge.
-	// A whole function nested in a union is already parenthesized by typePrec's precFunc.
+	// `-> R` is greedy, so a function-typed return is parenthesized once a clause follows
+	// it — `fn () -> (fn () -> number) throws string` — or the clause re-reads as the inner
+	// function's. precUnion bounds a function type and nothing else, precFunc being the
+	// only precedence below it. The clause itself needs no minimum: it is last, so nothing
+	// can bind across its right edge.
 	return "(" + strings.Join(ps, ", ") + ") -> " + p.printTypeMinPrec(t.Ret, precUnion) +
 		" throws " + p.printType(throws)
 }

@@ -439,21 +439,11 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 	p.printReturnAndThrows(sig.Return, sig.Throws)
 }
 
-// printReturnAndThrows emits ` -> R` followed by any `throws T` clause. Every signature
-// form routes through it, so a function, method, getter, setter, and function type
-// annotation all render the pair the same way. A nil ret emits no arrow, which is the
-// `fn f() throws string { … }` form that lets its return type be inferred.
-//
-// A clause is emitted for neither spelling of "raises nothing": an absent clause, and an
-// explicit `throws never`, which names the empty set of raised values and carries no more
-// information than writing no clause at all.
-//
-// `-> R` is greedy, so a function-typed return is parenthesized once a clause follows it,
-// or the clause reads as the INNER function's. A function that returns a non-throwing
-// function and itself raises `string` prints `fn () -> (fn () -> number) throws string`.
-// Drop those parens and it is indistinguishable from a function that returns one raising
-// `string`, which is what re-reading it would give. soltype's printFuncBody parenthesizes
-// the coalesced form for the same reason.
+// printReturnAndThrows emits ` -> R` followed by any `throws T` clause, so every signature
+// form renders the pair alike. A nil ret emits no arrow, and neither a nil nor a `never`
+// throws emits a clause. `-> R` is greedy, so a function-typed return is parenthesized
+// once a clause follows it — `fn () -> (fn () -> number) throws string` — or the clause
+// re-reads as the inner function's. soltype's printFuncBody does the same.
 func (p *Printer) printReturnAndThrows(ret ast.TypeAnn, throws ast.TypeAnn) {
 	clause := throws
 	if _, isNever := throws.(*ast.NeverTypeAnn); isNever {
