@@ -2430,8 +2430,8 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 }
 
 // inferThrow types `throw e`. The thrown type is constrained into the enclosing body's
-// throws sink, the way a `return` reaches the return type. The expression is `never`, so
-// a `throw` sits where a value is expected: `return if ok { v } else { throw E("x") }`.
+// throws sink, the way a `return` reaches the return type. It is `never`, so a `throw`
+// sits where a value is expected: `return if ok { v } else { throw Error("no value") }`.
 func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Type {
 	arg := c.inferExpr(scope, lvl, e.Arg)
 	c.constrain(e, arg, c.throwsSink(lvl))
