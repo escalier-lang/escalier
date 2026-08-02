@@ -9,39 +9,14 @@ import (
 )
 
 // A type parameter is phantom when no argument passed to it can appear in the type the alias
-// denotes. The opposite is a relevant parameter, one the denoted type does depend on.
-//
-// `type Deep<T> = {a: Deep<{b: T}>}` has a phantom T. Unfolding it once emits `{a: …}` and hands
-// `{b: T}` to the next unfolding, so the payload is always one unfolding further in than the
-// structure emitted so far and never lands in it. `Deep<number>` and `Deep<string>` are both the
-// infinite type `{a: {a: {a: …}}}`, and TypeScript treats them as interchangeable.
-//
-// A parameter the body never mentions is phantom too. `type Ignore<T> = number` denotes `number`
-// whatever T is.
-//
-// markPhantomParams records the phantom parameters on each AliasDef, and internAlias drops their
-// arguments when it renders an alias reference's canonical identity. Two references that differ only
-// in phantom arguments then intern to one representative, so constrain's reflexive rule settles
-// `Deep<number> <: Deep<string>` in one step. Without the erasure the two sides unfold against each
-// other, reach a pair no earlier unfolding reached every time, and hit maxUnwrapDepth.
-//
-// A relevant parameter keeps its argument, so the comparison still decides on it.
-// `type Nest<T> = {here: T, deeper: Nest<{b: T}>}` writes T at `here`, so
-// `Nest<number> <: Nest<string>` still reports the `number` against `string` mismatch.
-//
-// The erasure reaches no further than that identity key. The reference node keeps every argument the
-// source wrote, so expandAlias substitutes them unchanged and a binding renders under them.
+// denotes. `type Deep<T> = {a: Deep<{b: T}>}` pushes `{b: T}` one unfolding deeper forever, so
+// `Deep<number>` and `Deep<string>` are both the infinite type `{a: {a: …}}`.
 
-// markPhantomParams computes and stores the phantom parameters of every alias in shells, which are
-// the aliases of one dep_graph component. Their bodies must be resolved first, since the walk reads
-// AliasDef.Body.
-//
-// The rule is a fixed point over those bodies. Start with every parameter phantom, and mark one
-// relevant when it occurs at a position the denoted type reaches. Every position in a body reaches
-// it except the arguments of a reference back into the alias's own strongly connected component,
-// which reach it only when the parameter they are passed to is itself relevant. Marking one
-// parameter relevant can therefore open a position that marks another, so the walk repeats until a
-// pass marks nothing new.
+// markPhantomParams marks the aliases of one dep_graph component, whose bodies must already be
+// resolved, so internAlias can drop a phantom argument from a reference's identity key. It is a
+// fixed point: a parameter starts phantom and turns relevant where it occurs, except inside the
+// arguments of a same-component reference, which reach the type only if the parameter they fill
+// does.
 func markPhantomParams(shells []*aliasShell) {
 	if len(shells) == 0 {
 		return
@@ -202,14 +177,9 @@ func (w *phantomWalker) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 
 func (w *phantomWalker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// erasePhantomArgs rewrites t, dropping from every alias reference in it the arguments its alias's
-// phantom parameters would receive. internAlias renders the result to build a canonical identity
-// key, so two references differing only in erased arguments produce the same key. The rewrite
-// reaches nested references too, so `Nest<Deep<number>>` and `Nest<Deep<string>>` both render as
-// `Nest<Deep>` even though Nest's own parameter is relevant.
-//
-// The result is a rendering input, not a type to check or expand. It returns t itself when no
-// reference in it has a phantom argument to drop, which is the common case.
+// erasePhantomArgs drops from every alias reference in t the arguments its phantom parameters
+// receive, nested ones included, so internAlias renders two references differing only there to one
+// key. It is a rendering input, not a type to check or expand, and returns t when nothing drops.
 func (c *Context) erasePhantomArgs(t soltype.Type) soltype.Type {
 	return t.Accept(&phantomEraser{ctx: c}, soltype.Positive)
 }
