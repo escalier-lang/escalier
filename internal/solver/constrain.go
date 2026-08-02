@@ -740,18 +740,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// EXPANDED forms; sub and sup stay written, which is what blame resolution needs.
 			loSub, hiSub := acceptSet(subX)
 			loSup, hiSup := acceptSet(supX)
-			arityErr := func() []SolverError {
+			if (absorbAt >= 0 && prefixRequiredCount(subX, absorbAt) > prefixRequiredCount(supX, absorbAt)) ||
+				(absorbAt < 0 && (loSub > loSup || hiSub < hiSup)) {
 				return []SolverError{&FuncArityMismatchError{
 					Sub: sub, Super: sup,
 					SubLo: loSub, SubHi: hiSub, SuperLo: loSup, SuperHi: hiSup,
 				}}
-			}
-			if absorbAt >= 0 {
-				if prefixRequiredCount(subX, absorbAt) > prefixRequiredCount(supX, absorbAt) {
-					return arityErr()
-				}
-			} else if loSub > loSup || hiSub < hiSup {
-				return arityErr()
 			}
 			// Shared positions are contravariant in the params and covariant in the
 			// return. An exact super passes no argument beyond its declared params, so
