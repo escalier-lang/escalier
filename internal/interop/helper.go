@@ -53,7 +53,7 @@ func convertTypeParam(tp *dts_parser.TypeParam) (*ast.TypeParam, error) {
 		}
 	}
 
-	typeParam := ast.NewTypeParam(tp.Name.Name, constraint, defaultType)
+	typeParam := ast.NewTypeParam(tp.Name.Name, constraint, defaultType, tp.Span())
 	return &typeParam, nil
 }
 

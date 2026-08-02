@@ -2,6 +2,7 @@ package solver
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/graph"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -181,6 +182,118 @@ func (w *phantomWalker) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 }
 
 func (w *phantomWalker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// reportPhantomParams warns about each alias type parameter a caller gains nothing by
+// writing an argument for. It runs beside markPhantomParams, after every body in the
+// dep_graph component is resolved, so the marks it reads are final.
+//
+// A parameter is *mentioned* when its var occurs in the alias body, in a sibling
+// parameter's bound, or in a sibling parameter's default. Its own bound does not count,
+// since the `number` of `<T: number>` constrains T rather than using it. A parameter no
+// position mentions is unused. One the body mentions is unreachable when it is also marked
+// phantom, which means no argument passed to it lands in the type an instantiation denotes.
+//
+// The marks alone cannot answer this. markPhantomParams asks whether an argument reaches
+// the denoted type through the parameter's own slot, and two shapes come back phantom while
+// the parameter is still doing work. `type Foo<T, U: T> = {x: U}` marks T phantom, and T
+// bounds U. `type Pair<T, U = T> = {b: U}` marks T phantom, and `Pair<number>` denotes
+// `{b: number}`. Erasing T is right in both, since the argument reaches the denoted type
+// through U's slot rather than T's, and warning about either would be a false positive. The
+// sibling-mention rule is what excludes them.
+func (c *checker) reportPhantomParams(shells []*aliasShell) {
+	for _, sh := range shells {
+		if !sh.bodyResolved || sh.def.NotProductive {
+			// A recovered body is a fresh var that mentions no parameter, and an alias
+			// checkProductive rejected names no type for a parameter to be unreachable in.
+			// Either way the source already has a diagnostic, and a warning about the
+			// parameters would only pile onto it.
+			continue
+		}
+		params := sh.def.TypeParams
+		if len(params) == 0 {
+			continue
+		}
+		slots := map[*soltype.TypeVarType]int{}
+		for i, p := range params {
+			if p.Var != nil {
+				slots[p.Var] = i
+			}
+		}
+		inBody := paramOccurrences(slots, len(params), sh.def.Body)
+		inSibling := make([]bool, len(params))
+		for j, p := range params {
+			for _, t := range []soltype.Type{p.Constraint, p.Default} {
+				if t == nil {
+					continue
+				}
+				for i, occurs := range paramOccurrences(slots, len(params), t) {
+					// An F-bound `<T: Foo<T>>` finds T in its own bound, which the mentioned
+					// rule does not count.
+					if occurs && i != j {
+						inSibling[i] = true
+					}
+				}
+			}
+		}
+
+		names := make([]string, len(params))
+		for i, p := range params {
+			names[i] = p.Name
+		}
+		for i, p := range params {
+			if strings.HasPrefix(p.Name, "_") || inSibling[i] {
+				continue
+			}
+			decl := sh.decl.TypeParams[i]
+			if !inBody[i] {
+				c.report(&UnusedTypeParamError{Name: p.Name, Param: decl})
+				continue
+			}
+			if i < len(sh.def.PhantomParams) && sh.def.PhantomParams[i] {
+				c.report(&UnreachableTypeParamError{
+					Alias:  sh.qname,
+					Params: names,
+					Index:  i,
+					Param:  decl,
+				})
+			}
+		}
+	}
+}
+
+// paramOccurrences reports, for each of the alias's own type parameters, whether its var
+// occurs anywhere in t. count is the parameter list's length, and slots maps each
+// parameter's var to its position. The stored body and bounds hold those vars symbolically,
+// so an occurrence is found by pointer identity.
+//
+// Position and reachability play no part, unlike in the phantom marks. `type Deep<T> =
+// {a: Deep<{b: T}>}` mentions T, even though no argument passed to T reaches the type Deep
+// denotes.
+func paramOccurrences(slots map[*soltype.TypeVarType]int, count int, t soltype.Type) []bool {
+	w := &paramOccurrenceWalker{slots: slots, found: make([]bool, count)}
+	t.Accept(w, soltype.Positive)
+	return w.found
+}
+
+// paramOccurrenceWalker records which of a fixed set of type variables a type mentions. It
+// rewrites nothing, so every node it visits comes back unchanged. A TypeVarType is a leaf to
+// the visitor, so reaching one records it without descending into the bounds solving has
+// accumulated on it.
+type paramOccurrenceWalker struct {
+	slots map[*soltype.TypeVarType]int
+	found []bool
+}
+
+func (w *paramOccurrenceWalker) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if tv, ok := t.(*soltype.TypeVarType); ok {
+		if i, own := w.slots[tv]; own && i < len(w.found) {
+			w.found[i] = true
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (w *paramOccurrenceWalker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // erasePhantomArgs drops from every alias reference in t the arguments its phantom parameters
 // receive, nested ones included, so internAlias renders two references differing only there to one

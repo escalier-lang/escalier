@@ -357,17 +357,23 @@ const (
 // here means subtyping, not the outliving ':' of a LifetimeParam bound. A
 // binder is a type or a lifetime, never both, so the two never mix on one
 // binder and the checker picks the relation from the binder's sort. Variance is
-// the optional `in`/`out`/`in out` declaration-site modifier.
+// the optional `in`/`out`/`in out` declaration-site modifier. span covers the
+// whole binder, from the variance modifier or the name through the end of a
+// constraint or default, so a diagnostic about the parameter can point at the
+// declaration that introduced it.
 type TypeParam struct {
 	Name       string
 	Constraint TypeAnn
 	Default    TypeAnn
 	Variance   VarianceModifier
+	span       Span
 }
 
-func NewTypeParam(name string, constraint, defaultType TypeAnn) TypeParam {
-	return TypeParam{Name: name, Constraint: constraint, Default: defaultType}
+func NewTypeParam(name string, constraint, defaultType TypeAnn, span Span) TypeParam {
+	return TypeParam{Name: name, Constraint: constraint, Default: defaultType, span: span}
 }
+
+func (t *TypeParam) Span() Span { return t.span }
 
 type FuncSig struct {
 	LifetimeParams []*LifetimeParam // optional, e.g. <'a, 'b: 'a>

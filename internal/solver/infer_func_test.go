@@ -175,7 +175,7 @@ func TestInferFuncExprDestructuringParam(t *testing.T) {
 func TestInferFuncExprGenericResolves(t *testing.T) {
 	c := newChecker()
 	// fn <T>(x: T) -> T { return x }
-	tp := ast.NewTypeParam("T", nil, nil)
+	tp := ast.NewTypeParam("T", nil, nil, testSpan())
 	tRef := func() ast.TypeAnn { return ast.NewRefTypeAnn(ast.NewIdentifier("T", testSpan()), nil, testSpan()) }
 	e := ast.NewFuncExpr(nil, []*ast.TypeParam{&tp}, []*ast.Param{param("x", tRef())}, tRef(),
 		nil, false, block(returnStmt(identExpr("x"))), testSpan())

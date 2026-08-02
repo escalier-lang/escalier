@@ -879,12 +879,14 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:13-1:14,
             },
             &ast.TypeParam{
                 Name: "U",
                 Constraint: &ast.StringTypeAnn{
                     span: 1:19-1:25,
                 },
+                span: 1:16-1:25,
             },
         },
         TypeAnn: &ast.ObjectTypeAnn{
@@ -934,6 +936,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:13-1:14,
             },
         },
         TypeAnn: &ast.TypeRefTypeAnn{
@@ -971,6 +974,7 @@
                 Constraint: &ast.NumberTypeAnn{
                     span: 1:16-1:22,
                 },
+                span: 1:13-1:22,
             },
             &ast.TypeParam{
                 Name: "U",
@@ -980,6 +984,7 @@
                 Default: &ast.StringTypeAnn{
                     span: 1:36-1:42,
                 },
+                span: 1:24-1:42,
             },
         },
         TypeAnn: &ast.UnionTypeAnn{
@@ -1226,6 +1231,7 @@
                         TypeParams: []*ast.TypeParam{
                             &ast.TypeParam{
                                 Name: "T",
+                                span: 1:30-1:31,
                             },
                         },
                         Params: []*ast.Param{
@@ -1285,6 +1291,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:11-1:12,
             },
         },
         Body: []ast.ClassElem{
@@ -1418,6 +1425,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:14-1:15,
             },
         },
         Body: []ast.ClassElem{
@@ -1445,6 +1453,7 @@
                         TypeParams: []*ast.TypeParam{
                             &ast.TypeParam{
                                 Name: "U",
+                                span: 3:9-3:10,
                             },
                         },
                         Params: []*ast.Param{
@@ -1564,6 +1573,7 @@
                 Default: &ast.StringTypeAnn{
                     span: 1:25-1:31,
                 },
+                span: 1:16-1:31,
             },
         },
         Body: []ast.ClassElem{
@@ -1601,12 +1611,14 @@
                 Constraint: &ast.NumberTypeAnn{
                     span: 1:15-1:21,
                 },
+                span: 1:12-1:21,
             },
             &ast.TypeParam{
                 Name: "U",
                 Constraint: &ast.StringTypeAnn{
                     span: 1:26-1:32,
                 },
+                span: 1:23-1:32,
             },
         },
         Body: []ast.ClassElem{
@@ -1663,6 +1675,7 @@
                         TypeParams: []*ast.TypeParam{
                             &ast.TypeParam{
                                 Name: "T",
+                                span: 1:30-1:31,
                             },
                         },
                         Params: []*ast.Param{
@@ -3274,9 +3287,11 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:16-1:17,
             },
             &ast.TypeParam{
                 Name: "U",
+                span: 1:19-1:20,
             },
         },
         TypeAnn: &ast.ObjectTypeAnn{
@@ -3363,6 +3378,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:15-1:16,
             },
         },
         TypeAnn: &ast.ObjectTypeAnn{
@@ -4344,6 +4360,7 @@
             &ast.TypeParam{
                 Name: "T",
                 Variance: 3,
+                span: 1:12-1:20,
             },
         },
         Body: []ast.ClassElem{
@@ -4382,6 +4399,7 @@
                     span: 1:18-1:24,
                 },
                 Variance: 1,
+                span: 1:11-1:24,
             },
         },
         Body: []ast.ClassElem{
@@ -4417,6 +4435,7 @@
             &ast.TypeParam{
                 Name: "T",
                 Variance: 2,
+                span: 1:16-1:20,
             },
         },
         Body: []ast.ClassElem{
@@ -4471,6 +4490,7 @@
             &ast.TypeParam{
                 Name: "T",
                 Variance: 1,
+                span: 1:11-1:16,
             },
         },
         Body: []ast.ClassElem{
@@ -4505,6 +4525,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:8-1:12,
             },
         },
         Elems: []ast.EnumElem{
@@ -4542,6 +4563,7 @@
             TypeParams: []*ast.TypeParam{
                 &ast.TypeParam{
                     Name: "T",
+                    span: 1:6-1:11,
                 },
             },
             Params: []*ast.Param{
@@ -4595,6 +4617,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:10-1:15,
             },
         },
         TypeAnn: &ast.ObjectTypeAnn{

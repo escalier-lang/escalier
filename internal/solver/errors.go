@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -1760,6 +1761,66 @@ func (e *UnusedLifetimeParamError) Related() []ast.Span { return nil }
 func (e *UnusedLifetimeParamError) IsWarning() bool     { return true }
 func (e *UnusedLifetimeParamError) Message() string {
 	return "lifetime parameter '" + e.Name + " is declared but never used"
+}
+
+// UnusedTypeParamError fires when a type alias declares a `<T>` binder that its body does
+// not mention, and that no sibling parameter's bound or default mentions either. The
+// program is well-typed; the binder is dead weight. It is the type-sort twin of
+// UnusedLifetimeParamError and is likewise always a warning. Name is the declared name,
+// and Param is the binder, which carries the blame span.
+//
+// A leading underscore quiets it, so `type Ignore<_T> = number` reports nothing. That is
+// the way to keep a binder a work in progress means to fill in.
+type UnusedTypeParamError struct {
+	Name  string
+	Param *ast.TypeParam
+}
+
+func (*UnusedTypeParamError) isSolverError()        {}
+func (e *UnusedTypeParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *UnusedTypeParamError) Related() []ast.Span { return nil }
+func (e *UnusedTypeParamError) IsWarning() bool     { return true }
+func (e *UnusedTypeParamError) Message() string {
+	return "type parameter " + e.Name + " is declared but never used"
+}
+
+// UnreachableTypeParamError fires when a type alias's body mentions a `<T>` binder, but no
+// argument passed to it can appear in the type an instantiation denotes. Every instantiation
+// of the alias is then one type, so a caller who writes an argument there says nothing by
+// writing it. `type Deep<T> = {a: Deep<{b: T}>}` pushes its payload one unfolding deeper
+// forever, and `Deep<number>` and `Deep<string>` are both `{a: {a: …}}`.
+//
+// It is a warning for the same reason UnusedTypeParamError is. The program checks either
+// way, and a leading underscore quiets it.
+//
+// Alias is the alias's qualified name and Params are its parameter names in declaration
+// order, both used to render the two instantiations the message names. Index is the
+// unreachable parameter's position, and Param is its binder, which carries the blame span.
+type UnreachableTypeParamError struct {
+	Alias  string
+	Params []string
+	Index  int
+	Param  *ast.TypeParam
+}
+
+func (*UnreachableTypeParamError) isSolverError()        {}
+func (e *UnreachableTypeParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *UnreachableTypeParamError) Related() []ast.Span { return nil }
+func (e *UnreachableTypeParamError) IsWarning() bool     { return true }
+func (e *UnreachableTypeParamError) Message() string {
+	return "no argument passed to type parameter " + e.Params[e.Index] +
+		" can appear in the type, so " + e.instantiation("number") + " and " +
+		e.instantiation("string") + " are the same type"
+}
+
+// instantiation renders a reference to the alias with the unreachable parameter filled by
+// arg and every other parameter left under its own name, which is what makes the two
+// renderings differ in exactly the one position the warning is about. `type Pair<T, U>`
+// with U unreachable gives `Pair<T, number>`.
+func (e *UnreachableTypeParamError) instantiation(arg string) string {
+	args := slices.Clone(e.Params)
+	args[e.Index] = arg
+	return e.Alias + "<" + strings.Join(args, ", ") + ">"
 }
 
 // UnusedThrowsClauseError fires when a signature declares `throws T` but no `throw` and no

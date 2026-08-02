@@ -77,12 +77,14 @@
             Constraint: &ast.NumberTypeAnn{
                 span: 1:7-1:13,
             },
+            span: 1:4-1:13,
         },
         &ast.TypeParam{
             Name: "U",
             Constraint: &ast.StringTypeAnn{
                 span: 1:18-1:24,
             },
+            span: 1:15-1:24,
         },
     },
     Params: []*ast.Param{

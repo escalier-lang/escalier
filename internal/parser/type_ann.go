@@ -1060,6 +1060,9 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 
 func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 	variance, varianceSpan := p.parseVarianceModifier()
+	// A written modifier precedes the name, so it is where the binder starts. Record
+	// that before the rejection below drops the modifier.
+	wroteVariance := variance != ast.VarianceNone
 	if variance != ast.VarianceNone && !allowVariance {
 		// A variance modifier is meaningful only on a class or interface type parameter,
 		// where it is checked against the inferred variance. Anywhere else — a function,
@@ -1081,20 +1084,32 @@ func (p *Parser) typeParam(allowVariance bool) *ast.TypeParam {
 	p.lexer.consume() // consume identifier
 	name := token.Value
 
+	start := token.Span.Start
+	if wroteVariance {
+		start = varianceSpan.Start
+	}
+	end := token.Span.End
+
 	var constraint ast.TypeAnn
 	var default_ ast.TypeAnn
 
 	if p.lexer.peek().Type == Colon {
 		p.lexer.consume() // consume ':'
 		constraint = p.typeAnnRequired()
+		if constraint != nil {
+			end = constraint.Span().End
+		}
 	}
 
 	if p.lexer.peek().Type == Equal {
 		p.lexer.consume() // consume '='
 		default_ = p.typeAnnRequired()
+		if default_ != nil {
+			end = default_.Span().End
+		}
 	}
 
-	typeParam := ast.NewTypeParam(name, constraint, default_)
+	typeParam := ast.NewTypeParam(name, constraint, default_, ast.NewSpan(start, end, p.lexer.source.ID))
 	typeParam.Variance = variance
 	return &typeParam
 }

@@ -295,11 +295,10 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 	}
 
 	if di.Name.Name == "PromiseLike" || di.Name.Name == "Promise" {
-		errorTypeParam := ast.NewTypeParam(
-			"E",
-			nil,
-			ast.NewAnyTypeAnn(ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0)),
-		)
+		// The rejection parameter is synthesized rather than read from the `.d.ts`, so it
+		// borrows the declaration's own span.
+		synthSpan := ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0)
+		errorTypeParam := ast.NewTypeParam("E", nil, ast.NewAnyTypeAnn(synthSpan), di.Span())
 		typeParams = append(typeParams, &errorTypeParam)
 		visitor := &PromiseVisitor{
 			ast.DefaultVisitor{},
