@@ -1220,28 +1220,16 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, Application)
 
-	// Arity lints (#677 §4.2.3): a DIRECT call rejects too-many AND too-few arguments
-	// — for exact AND inexact callees alike. These are call-site checks the subtype
-	// lattice does not model uniformly (an inexact callee tolerates extras as a
-	// *callback*, accept-set [required, ∞), but supplying extras to a call you can see
-	// is a mistake). They fire only when the callee is concrete; for a deferred (var)
-	// callee they are best-effort skipped while too-few still surfaces from the gate.
-	//
-	// When a lint fires, the demand is reshaped to the callee's declared arity
-	// (len(fn.Params)) so the EXACT synth's accept-set gate does NOT also report
-	// arity (the lint owns the single, uniform message; the constraint does pure
-	// type-flow on the supplied args). Too-many truncates to the prefix; too-few pads
-	// the missing parameters with fresh vars, which impose no constraint on absent args.
-	// Reshaping to len(fn.Params) lands inside the callee's accept-set. The expansion
-	// below gives every declared position a parameter of its own, so requiredCount(fn)
-	// never exceeds len(fn.Params).
+	// Arity lints (#677 §4.2.3): a DIRECT call rejects too-many AND too-few arguments, for exact
+	// and inexact callees alike, since supplying extras to a call you can see is a mistake even
+	// where the lattice tolerates them. They fire only for a concrete callee. When one fires the
+	// demand is reshaped into the callee's accept-set so the synth's gate does not also report
+	// arity: too-many truncates, too-few pads with fresh vars that constrain nothing.
 	fn, resolved := resolveFunc(callee)
 	if resolved {
-		// A tuple-typed rest param names its arguments one per element, so expanding it to
-		// that many positional params lets the lints, the owned-mutable upgrade, and
-		// consumeCallArgs below read plain positions. `fn (...xs: [number, string]) -> R`
-		// reports "expected at most 2" rather than the 1 its unexpanded param list counts,
-		// and its second argument lines up with `string` rather than with the whole tuple.
+		// A tuple-typed rest param expands to one positional param per element, so the lints, the
+		// owned-mutable upgrade, and consumeCallArgs below read plain positions rather than
+		// comparing an argument against the whole tuple.
 		fn = expandTupleRest(fn)
 	}
 	demand := args

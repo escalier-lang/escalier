@@ -12,39 +12,18 @@ import (
 // an inexact function tolerates any number of trailing arguments as a callback.
 const unboundedArity = math.MaxInt
 
-// hasRest reports whether f's LAST parameter is a rest param, written `...xs: T`. How many
-// arguments it binds is decided by its type rather than by the flag, so restArity is what
-// an arity rule consults. A rest param whose type is an array binds zero or more, which
-// never counts toward the required floor and lifts the accept-set upper bound to ∞
-// (#677 §4.2.3) — the same upper-bound effect as the inexact `...` marker, reached a
-// different way. A tuple-typed rest binds one argument per element instead.
+// hasRest reports whether f's LAST parameter is a rest param, written `...xs: T`. Its type
+// rather than the flag decides how many arguments it binds, which restArity computes.
 func hasRest(f *soltype.FuncType) bool {
 	n := len(f.Params)
 	return n > 0 && f.Params[n-1].Rest
 }
 
-// expandTupleRest returns f with a tuple-typed rest param replaced by one positional param
-// per tuple element, and f unchanged when it has no such param. `fn (...xs: [number,
-// string]) -> R` becomes `fn (xs: number, xs: string) -> R`. That is the same function for
-// every arity and pairing rule, since the rest param binds exactly those two arguments, one
-// per element, at exactly those positions.
-//
-// Expanding is what lets the rules that walk a parameter list read a tuple rest's elements
-// as ordinary positions instead of each growing a rest case of its own. Four such rules
-// exist: constrain's shared-position pairing, the call-site arity lints, the owned-mutable
-// argument upgrade, and consumeCallArgs.
-//
-// The expanded form is never stored on a binding and never printed. A diagnostic reports
-// the written type, so a rejected call still names `fn (...xs: [number, string]) -> R`. That
-// is what makes the duplicated pattern harmless: it is carried so the expanded params are
-// well-formed, not so it can be read back.
-//
-// Two rest shapes are left alone. An inexact tuple such as `[number, ...]` has an open tail
-// with no last position, so it keeps its unbounded ceiling. An inference variable is a
-// conditional pattern's `infer P`, and the gather rule binds it, so it has to still be a
-// rest param when the gather runs. That is why the tuple is read by a direct type assertion
-// here. restTuple also unwraps a variable's bounds, which would expand the hole the gather
-// is meant to fill.
+// expandTupleRest returns f with a tuple-typed rest param replaced by one positional param per
+// tuple element, so the rules that walk a parameter list read ordinary positions instead of each
+// growing a rest case. The expanded form is never stored or printed, so a diagnostic still names
+// the written type. An inexact tuple keeps its unbounded ceiling, and an inference variable stays
+// a rest param for the gather rule to bind, which is why the tuple is read by a direct assertion.
 func expandTupleRest(f *soltype.FuncType) *soltype.FuncType {
 	k := restIndex(f)
 	if k < 0 {
@@ -74,16 +53,9 @@ func restIndex(f *soltype.FuncType) int {
 	return -1
 }
 
-// restArity is the inclusive range of argument counts a rest param of type t binds. A
-// tuple-typed rest binds exactly one argument per element, so both ends are the tuple's
-// length. An inexact tuple such as `[number, ...]` has an open tail, so its ceiling is ∞.
-// Every other shape, an `Array<E>` among them, binds zero or more, so it contributes nothing
-// to the floor and lifts the ceiling to ∞.
-//
-// This is the count a CALL must satisfy, so `fn (...xs: Array<number>) -> R` accepts any
-// number of arguments. It is not what constrain's function arm uses to decide subtyping
-// against an absorbing rest param — that runs the narrowed gate instead, see
-// prefixRequiredCount.
+// restArity is the inclusive range of argument counts a rest param of type t binds: a tuple's
+// length at both ends, an inexact tuple's ceiling at ∞, and [0, ∞) for every other shape. This
+// is the count a CALL must satisfy; an absorbing rest param is decided by prefixRequiredCount.
 func restArity(t soltype.Type) (lo, hi int) {
 	tup, ok := t.(*soltype.TupleType)
 	if !ok {
@@ -95,20 +67,9 @@ func restArity(t soltype.Type) (lo, hi int) {
 	return len(tup.Elems), len(tup.Elems)
 }
 
-// requiredCount is the number of arguments a positional call must supply — the
-// LOWER bound of f's accept-set. Because arguments bind positionally, a parameter
-// only lowers the requirement when it is TRAILING: a trailing rest param binding
-// zero or more args and trailing optionals (`x?`) may be omitted, but in fn(a?, b)
-// you cannot omit a while still supplying b, so a is effectively required. So
-// required = the position after the last non-optional, non-rest param — NOT the count
-// of all non-optional params, which would wrongly treat a leading optional (or the rest
-// param) as droppable and let a call leave a required param unbound.
-//
-// A tuple-typed rest param binds a fixed number of args rather than zero or more, so it
-// adds that many to the requirement. It also pins every param before it. Supplying the
-// rest's args means filling the positions they sit behind, so a preceding `x?` is not
-// droppable either. That is why the trailing-optional loop runs only when the rest binds
-// nothing.
+// requiredCount is the LOWER bound of f's accept-set: the position after the last parameter a
+// call may omit, which is a TRAILING optional or a rest param binding zero args. A tuple-typed
+// rest binds a fixed number instead, so it adds that many and pins every parameter before it.
 func requiredCount(f *soltype.FuncType) int {
 	n := len(f.Params)
 	restLo := 0
@@ -125,14 +86,9 @@ func requiredCount(f *soltype.FuncType) int {
 	return n
 }
 
-// acceptSet is the inclusive range [lo, hi] of argument counts f tolerates when
-// invoked (#677 §4.2.1): lo = requiredCount(f); hi = len(f.Params) when f has a
-// finite arity, and unboundedArity when its upper bound is open — either because it
-// is inexact (the `...` marker) OR because its last param is a rest param binding an
-// unbounded number of args (§4.2.3). A tuple-typed rest param binds a fixed number
-// instead, so it keeps the ceiling finite at the fixed params plus the tuple's length.
-// Read a supertype callback parameter's accept-set as "the argument counts whoever
-// holds this parameter may invoke the supplied function with."
+// acceptSet is the inclusive range [lo, hi] of argument counts f tolerates when invoked
+// (#677 §4.2.1). hi is unbounded when f is inexact or its rest param binds an unbounded number,
+// and finite otherwise. Read a super callback's accept-set as the counts its holder may call with.
 func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	lo = requiredCount(f)
 	if f.Inexact {
@@ -148,27 +104,15 @@ func acceptSet(f *soltype.FuncType) (lo, hi int) {
 	return lo, len(f.Params)
 }
 
-// canAbsorbRest reports whether the sub's params from k on form a group a super rest param
-// at index k can absorb. They do when the sub declares its parameters and stops there. An
-// inexact sub tolerates arguments past its declared list and a sub with its own rest param
-// binds an unbounded group, so in neither case do the declared params from k on say how many
-// arguments there are. A sub with fewer than k params cannot fill the super's fixed positions
-// at all, which is the genuine arity failure the accept-set gate reports.
+// canAbsorbRest reports whether the sub's params from k on are a fixed-length group a super
+// rest param can absorb. An inexact sub, one with its own rest, or one shorter than k is not.
 func canAbsorbRest(sub *soltype.FuncType, k int) bool {
 	return !sub.Inexact && !hasRest(sub) && len(sub.Params) >= k
 }
 
-// prefixRequiredCount is requiredCount over f's first k params alone: the position after the
-// last non-optional one within that prefix. It is the arity check that survives when a super
-// rest param absorbs everything from k on, since the absorbed positions have no count of
-// their own to compare.
-//
-// What the narrowed gate gives up is the upper-bound clause, `hiSub >= hiSup`. An absorbing
-// rest param has ceiling ∞, so that clause rejects every fixed-arity sub, nullary included,
-// and no signature could serve as a bound on an arbitrary function. Dropping it means a
-// holder of `fn (...xs: Array<number>) -> R` may call with zero arguments where the function
-// filling it declares one. The lower-bound clause over the fixed prefix is kept, so a sub
-// that demands more than the super's fixed positions guarantee is still rejected.
+// prefixRequiredCount is requiredCount over f's first k params alone, the arity check that
+// survives when a super rest param absorbs everything from k on. It gives up `hiSub >= hiSup`,
+// so a holder may call with fewer arguments than the function filling the slot declares.
 func prefixRequiredCount(f *soltype.FuncType, k int) int {
 	n := min(k, len(f.Params))
 	for n > 0 && f.Params[n-1].Optional {
@@ -177,20 +121,9 @@ func prefixRequiredCount(f *soltype.FuncType, k int) int {
 	return n
 }
 
-// gatherRestParams turns the sub params a super's rest param stands for into the element
-// types of the tuple the gather rule checks against.
-//
-// An optional param widens with `undefined`. A tuple element carries no optionality
-// marker of its own, since soltype.TupleType.Elems is a plain []Type, so matching
-// `fn (x: number, y?: string) -> boolean` against `fn (...args: infer P) -> unknown`
-// captures `[number, string | undefined]`. Widening keeps both facts the slot carries,
-// its type and that it may go unsupplied. Dropping the param or rejecting the match
-// would lose one of them. TypeScript writes the same capture as `[x: number, y?: string]`,
-// a tuple with per-element optionality that soltype has no counterpart for.
-//
-// The union is built with a nil Context so its subsumption never calls constrain. That is
-// the choice capturedBound makes for the same reason, since the gather runs inside a
-// constraint and often inside a probe trial.
+// gatherRestParams turns the sub params a super's rest param stands for into tuple element
+// types. An optional param widens with `undefined`, since a tuple element carries no optionality
+// marker. The union takes a nil Context so its subsumption never calls constrain from inside one.
 func gatherRestParams(params []*soltype.FuncParam) []soltype.Type {
 	elems := make([]soltype.Type, len(params))
 	for i, p := range params {
@@ -769,29 +702,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if len(sub.TypeParams) > 0 {
 				return c.constrain(c.instantiateFuncBinder(sub, sub.TypeParams[0].Var.Level), sup, seen, mutCtx)
 			}
-			// A tuple-typed rest param on either side is expanded to one positional param per
-			// element, which leaves the same function and lets every rule below read plain
-			// positions. Both sides are expanded, so a written rest param works as a value-level
-			// type and not only as a conditional's pattern. The unexpanded sub and sup are what
-			// a diagnostic reports, so a rejected constraint still names the written type.
+			// A tuple-typed rest param on either side expands to one positional param per element,
+			// so a written rest param works as a value-level type and not only as a pattern. The
+			// unexpanded sub and sup are what a diagnostic reports.
 			subX, supX := expandTupleRest(sub), expandTupleRest(sup)
-			// An ABSORBING super rest param. Let k be the super's rest index. The super
-			// binds its first k arguments to its fixed params and every argument past them
-			// to the rest param as one group, so the sub params from k on are what the rest
-			// param stands for. Two slot types absorb that group, each checking it its own way:
-			//
-			//   - an `infer` hole binds the group as one tuple, which is what lets
-			//     `Parameters<F>` capture a parameter list. Matching
-			//     `fn (x: number, y: string) -> boolean` against
-			//     `fn (...args: infer P) -> unknown` records `[number, string]` as an upper
-			//     bound on P's variable, and capturedBound reads the meet of the uppers.
-			//   - an `Array<E>` checks each absorbed param against E, so
-			//     `fn (x: number) -> R <: fn (...xs: Array<string>) -> R` fails on
-			//     `string <: number` at x's position.
-			//
-			// Either way the group is checked contravariantly, the orientation the fixed
-			// positions use. A written tuple slot never reaches here, since expandTupleRest
-			// already turned it into positions.
+			// An ABSORBING super rest param at index k stands for the sub params from k on. Two
+			// slot types absorb that group: an `infer` hole binds it as one tuple, which is how
+			// `Parameters<F>` captures a parameter list, and an `Array<E>` checks each absorbed
+			// param against E. Either way the check is contravariant, the orientation the fixed
+			// positions use. A written tuple never reaches here, expandTupleRest having split it.
 			absorbAt, absorbElem := -1, soltype.Type(nil)
 			if k := restIndex(supX); k >= 0 && canAbsorbRest(subX, k) {
 				switch slot := supX.Params[k].Type.(type) {
@@ -812,29 +731,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					errs = append(errs, c.constrain(supX.Params[absorbAt].Type, gathered, seen, false)...) // contravariant
 				}
 			}
-			// Accept-set subtyping (#677 §4.2.1): read super as a callback parameter.
-			// sub <: super iff accept(sub) ⊇ accept(super) — sub must tolerate every
-			// argument count a holder of super may invoke it with. With
-			// accept(sub) = [loSub, hiSub] and accept(super) = [loSup, hiSup]:
-			//   - loSub <= loSup — sub must not DEMAND more args than super might supply,
-			//   - hiSub >= hiSup — sub must not REFUSE an arg count super might supply.
-			// The upper-bound clause is what exactness governs (an exact sub caps hiSub
-			// at len(sub.Params), so it can't fill a wider/inexact parameter); the lower-bound
-			// clause is the `required` part (a typed-rest/optional lowers it). This
-			// subsumes M2's exact-same-arity rule: two EXACT functions have accept
-			// [r, n], so ⊇ forces equal upper bounds, i.e. the old same-arity check.
-			//
-			// An arity failure discards the absorbed group's errors and reports itself alone,
-			// so a written `fn (...args: [number, string]) -> string` slot rejects a
-			// one-parameter function with one message rather than with both an arity mismatch
-			// and a tuple length mismatch saying the same thing.
-			//
-			// An absorbing super runs the narrowed gate instead. Its rest param covers every
-			// position from absorbAt on, whatever the sub declares there, so only the fixed
-			// prefix has an arity to check. See prefixRequiredCount for what that gives up.
-			// The reported accept-sets are read off the EXPANDED forms, since those are the
-			// counts the rule compared. sub and sup stay the written forms, which is what
-			// blame resolution and the "defined here" span need.
+			// Accept-set subtyping (#677 §4.2.1): read super as a callback parameter. sub <: super
+			// iff accept(sub) ⊇ accept(super), so sub must not DEMAND more args than super might
+			// supply nor REFUSE a count super might supply. Two EXACT functions have single-point
+			// accept-sets, so this subsumes M2's same-arity rule. An arity failure reports itself
+			// alone, discarding the absorbed group's errors, and an absorbing super runs the
+			// narrowed gate over its fixed prefix instead. The reported counts come off the
+			// EXPANDED forms; sub and sup stay written, which is what blame resolution needs.
 			loSub, hiSub := acceptSet(subX)
 			loSup, hiSup := acceptSet(supX)
 			arityErr := func() []SolverError {
@@ -869,13 +772,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if absorbAt >= 0 {
 				n = absorbAt // the rest param already covered the positions from absorbAt on
 			}
-			// A SUB rest param typed `Array<E>` scatters over the super's positions from its
-			// index on, since the sub's type at each of those positions is E. This is the
-			// mirror of the absorb above and it is what checks a call: the synthesized
-			// call-shape is the super, so `g(1, "a")` against `g: fn (...xs: Array<number>)
-			// -> R` checks `"a" <: number` at the second position. A super carrying its own
-			// rest param is left to the shared-position walk, which pairs the two rest slots
-			// and compares their element types directly.
+			// A SUB rest param typed `Array<E>` scatters over the super's positions from its index
+			// on, the mirror of the absorb above. The synthesized call-shape is the super, so this
+			// also checks a call: `g(1, "a")` against `fn (...xs: Array<number>) -> R` checks
+			// `"a" <: number`. A super with its own rest param is left to the shared-position walk,
+			// which pairs the two slots and compares their element types directly.
 			scatterAt, scatterElem := -1, soltype.Type(nil)
 			if absorbAt < 0 && !hasRest(supX) {
 				if j := restIndex(subX); j >= 0 {

@@ -147,19 +147,11 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		// and that is the only difference between the two forms below. Unlike the other arms it
 		// reports NO error either way — `_` is a supported, user-authored marker.
 		if c.inCondExtends {
-			// In a conditional's pattern the match fills it. That makes `_` an `infer` clause with
-			// no name: reduceCondInfer mints one variable per binder and solves them all from the
-			// single subtype check that decides the branch, and the capture is dropped because no
-			// branch can reference a name the source never wrote. So `fn (...args: Array<_>) -> _`
-			// matches a function of any parameter list and any return without naming either.
-			//
-			// A plain variable could not do this. condOperandGround refuses to decide a branch over
-			// an operand carrying one, since a variable standing for something outside the
-			// conditional would give an answer that changes once that thing is solved. An InferType
-			// is owned by the match, so it is ground for that purpose.
-			//
-			// Each occurrence mints its own declaration, so two `_` in one pattern are independent
-			// holes rather than one shared hole that would force both positions to agree.
+			// In a conditional's pattern the match fills it, which makes `_` an `infer` clause with
+			// no name: reduceCondInfer solves it from the check that decides the branch and drops
+			// the capture, since no branch can reference a name the source never wrote. A plain
+			// variable could not do this, because condOperandGround refuses to decide over one.
+			// Each occurrence mints its own declaration, so two `_` are independent holes.
 			decl := c.ctx.freshInferDecl(soltype.WildcardInferName)
 			return &soltype.InferType{ID: decl.ID, Name: decl.Name, Binder: true}, true
 		}

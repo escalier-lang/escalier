@@ -665,21 +665,11 @@ func (*RecursiveType) isRefInner()    {}
 // no-auto-flatten contract — flattening is `Awaited<T>`, M9).
 type PromiseType struct{ Inner Type }
 
-// ArrayType is a homogeneous sequence of Elem, written `Array<T>`. It is carried as a
-// dedicated concrete for the same reason PromiseType is: one stdlib generic the current
-// milestone needs typed, ahead of the alias-driven `Array<T>` library ingestion brings.
-//
-// It exists to give a rest parameter an element type. `fn (...xs: Array<number>) -> R`
-// binds zero or more trailing arguments and checks each against `number`, which is the
-// arity-and-element pair a tuple-typed rest cannot express, since a tuple fixes its length.
-//
-// Elem is covariant under subtyping, so `Array<L> <: Array<R>` iff `L <: R`. That is the
-// read-only reading, which is what a rest parameter needs: the arguments flow in and the
-// callee only reads them. A mutable array would have to be invariant, and `mut Array<T>` is
-// not expressible, since ArrayType is not a RefInner.
-//
-// The minimal form carries no members, so `xs.length` and `xs[0]` do not resolve. Library
-// ingestion supplies those.
+// ArrayType is a homogeneous sequence of Elem, written `Array<T>`. It is a dedicated concrete
+// for the reason PromiseType is: one stdlib generic the milestone needs typed ahead of library
+// ingestion. It exists to give a rest parameter an element type, the arity-and-element pair a
+// tuple-typed rest cannot express. Elem is covariant, the read-only reading a rest parameter
+// needs. The minimal form carries no members, so `xs.length` and `xs[0]` do not resolve.
 type ArrayType struct{ Elem Type }
 
 // Void is the result type of a statement block with no value.
