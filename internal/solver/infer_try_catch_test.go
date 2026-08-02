@@ -281,8 +281,8 @@ func TestInferTryCatchValue(t *testing.T) {
 }
 
 // A fully handled `try` leaves the enclosing clause unreached, so the unused-clause warning
-// PR10 added still fires. The nested sink is what makes that visible: the body's exceptional
-// exits were all consumed inside the `try`.
+// still fires. The nested sink is what makes that visible: every exceptional exit the body
+// has was consumed inside the `try`.
 func TestInferTryCatchLeavesAnUnusedClauseUnused(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() throws string { try { throw "boom" } catch { e => 0 } }`)
 	require.Len(t, errs, 1)

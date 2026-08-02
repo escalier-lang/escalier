@@ -2680,18 +2680,18 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 }
 
 // inferTryCatch types `try { … } catch { pat => body, … }`. The try block is walked
-// against a nested throws sink, a fresh variable installed in place of the enclosing
-// body's, so every `throw` and every call inside the block records into that variable
-// rather than into the function's own clause. The catch arms then match against what the
-// nested sink collected, the way `match` arms match a scrutinee, and rethrowUnhandled
-// sends whatever they leave over to the enclosing sink.
+// against a nested throws sink, a fresh variable installed over the enclosing body's. Every
+// `throw` and every call inside the block therefore records into that variable rather than
+// into the function's own clause. The catch arms match against what the variable collected,
+// the way `match` arms match a scrutinee. rethrowUnhandled then sends whatever the arms
+// leave over to the enclosing sink.
 //
 // The form's value is the join of the try block's tail value and each non-diverging arm
 // body, the same branch-join inferMatch builds from its arms.
 func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) soltype.Type {
-	// With no `catch` clause nothing inspects the error, so there is no caught binding to
-	// bind and nothing to narrow. Walking the block against the enclosing sink directly
-	// lets its throws reach the function's clause exactly as they would without the `try`.
+	// With no `catch` clause nothing inspects the error, so there is nothing to bind and
+	// nothing to narrow. Walking the block against the enclosing sink directly lets its
+	// throws reach the function's clause exactly as they would without the `try`.
 	if len(e.Catch) == 0 {
 		t, _ := c.inferBlock(scope.Child(), lvl, &e.Try)
 		c.recordType(e, t)
@@ -2706,17 +2706,21 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	collected := c.freshThrowsSink(lvl)
 	c.recordProv(collected, e, CaughtThrows)
 
+	// branches collects every value the form can produce, so the ownership check below sees
+	// the try block's tail alongside the arm bodies. A diverging branch produces no value
+	// and is left out of both the join and the check.
+	var branches []soltype.Type
 	tryT, tryDiverges := c.walkTryBlock(scope, lvl, &e.Try, collected)
 	if !tryDiverges {
 		c.constrain(e, tryT, res)
+		branches = append(branches, tryT)
 	}
 
 	caught := c.caughtType(collected)
-	var armBodies []soltype.Type
 	for _, arm := range e.Catch {
 		// Each arm binds its pattern's leaves in a fresh child scope, and a structural
 		// pattern binds against only the caught members whose shape it matches. Both are
-		// what inferMatch does with a match arm; the caught type is this walk's scrutinee.
+		// what inferMatch does with a match arm. The caught type is this walk's scrutinee.
 		armScope := scope.Child()
 		armScrut := narrowMatchArm(caught, caught, arm.Pattern)
 		c.bindPattern(armScope, lvl, arm.Pattern, armScrut, nil)
@@ -2727,10 +2731,10 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 		bodyT, diverges := c.inferBlockOrExpr(armScope, lvl, &arm.Body)
 		if !diverges {
 			c.constrain(e, bodyT, res)
-			armBodies = append(armBodies, bodyT)
+			branches = append(branches, bodyT)
 		}
 	}
-	c.checkUniformOwnership(e, armBodies)
+	c.checkUniformOwnership(e, branches)
 	c.rethrowUnhandled(scope, e, caught, enclosing)
 	c.recordType(e, res)
 	return res
@@ -2742,9 +2746,10 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 // sends its own leftovers to the outer arms.
 //
 // funcCtx.raised is saved and cleared alongside the sink. The flag records whether the
-// enclosing body has an exceptional exit its own clause has to cover, and an exit the
-// catch arms handle does not. rethrowUnhandled sets it again when something is left over,
-// so a clause reached only through a fully handled `try` still reports as unused.
+// enclosing body has an exceptional exit its own clause must cover. An exit the catch arms
+// handle is not one, so the flag starts clear for the block, and rethrowUnhandled sets it
+// again only when something is left over. That way a clause reached solely through a fully
+// handled `try` still reports as unused.
 //
 // At module top level there is no funcCtx to swap, so the block walks against the
 // throwaway sink throwsSink mints there and nothing is collected.
@@ -2761,10 +2766,12 @@ func (c *checker) walkTryBlock(scope *Scope, lvl int, b *ast.Block, sink soltype
 
 // caughtType returns the type a catch arm's pattern binds against: what the try block
 // raised, reopened with a trailing `...`. The tail is there because any call can raise
-// something no signature predicted, so a caught error is never a closed set — the docs
-// render one as `FooError | ...`. A block with no known exceptional exit yields `unknown`,
-// which is that tail standing on its own, since an inexact union with no members carries
-// no value to bind.
+// something no signature predicted, so a caught error is never a closed set. That is the
+// `FooError | ...` docs/06_error_handling.md renders for a caught binding.
+//
+// A block with no known exceptional exit yields `unknown`, which is the tail standing on
+// its own. An inexact union with no members carries no value, so there would be nothing to
+// bind against.
 func (c *checker) caughtType(collected soltype.Type) soltype.Type {
 	shape := coalesce(collected, soltype.Positive)
 	if isNeverType(shape) {
@@ -2783,9 +2790,8 @@ func (c *checker) caughtType(collected soltype.Type) soltype.Type {
 // checkMatchExhaustive reads, so one definition of "this pattern covers this member" serves
 // both walks. A guarded arm can always fail its guard, so it covers nothing.
 //
-// The caught union's open tail is uncovered as well, and only a catch-all closes it. That
-// is what makes a catch-all the thing that lets a function with no `throws` clause wrap a
-// throwing call.
+// The caught union's open tail is uncovered as well, and only a catch-all closes it. So a
+// catch-all is what lets a function with no `throws` clause wrap a call to a throwing one.
 func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, enclosing soltype.Type) {
 	for _, arm := range e.Catch {
 		if arm.Guard == nil && isCatchAll(arm.Pattern) {
@@ -2802,9 +2808,9 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 		}
 		rethrown = newUnion(c.ctx, uncovered, true)
 		if isNeverType(rethrown) {
-			// Every listed member is covered and only the open tail is left over. It is
-			// spelled `unknown` for the same reason caughtType spells an empty catch that
-			// way: the inexactness flag has no carrier without members.
+			// Every listed member is covered, so only the open tail is left over. `unknown`
+			// is how caughtType spells that same tail-only case, since the inexactness flag
+			// has no carrier once the members are gone.
 			rethrown = &soltype.UnknownType{}
 		}
 	}

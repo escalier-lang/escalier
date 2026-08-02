@@ -328,7 +328,7 @@ func (c *checker) throwsSink(lvl int) soltype.Type {
 // freshThrowsSink mints a sink at the level throwsSink mints at, the enclosing body's own
 // level rather than the level the current expression is typed at. inferTryCatch installs
 // the result for the duration of a try block. A sink minted one level deeper, inside a
-// `val` initializer, gets extruded by a later exceptional exit, and the resulting cycle
+// `val` initializer, gets extruded by a later exceptional exit. The resulting cycle then
 // renders as a μ-knot. lvl is the fallback where there is no body to read a level from.
 func (c *checker) freshThrowsSink(lvl int) *soltype.TypeVarType {
 	if c.fn != nil {
