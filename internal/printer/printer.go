@@ -1323,7 +1323,7 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		p.printFuncTypeAnn(e.Fn)
 	case *ast.ConstructorTypeAnn:
 		p.writeString("new")
-		p.printFuncTypeAnn(e.Fn)
+		p.printFuncTypeAnnTail(e.Fn)
 	case *ast.MethodTypeAnn:
 		p.printObjKey(e.Name)
 		p.printGenericParams(e.Fn.LifetimeParams, e.Fn.TypeParams)
@@ -1542,6 +1542,13 @@ func (p *Printer) printLifetimeAnn(lt ast.LifetimeAnnNode) {
 
 func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
 	p.writeString("fn")
+	p.printFuncTypeAnnTail(typ)
+}
+
+// printFuncTypeAnnTail renders a function signature after its leading keyword: the generic
+// parameters, the parameter list, the return, and any `throws` clause. The `fn` annotation
+// and an object type's `new (…) -> T` member share it, mirroring the parser's split.
+func (p *Printer) printFuncTypeAnnTail(typ *ast.FuncTypeAnn) {
 	p.printGenericParams(typ.LifetimeParams, typ.TypeParams)
 	p.writeString(" (")
 	for i, param := range typ.Params {

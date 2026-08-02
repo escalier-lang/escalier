@@ -781,6 +781,44 @@ func TestPrintTypeAnnotations(t *testing.T) {
 	}
 }
 
+// A `new (…) -> T` member of an object type annotation round-trips through the printer. It shares
+// its signature rendering with the `fn` annotation, so type parameters, an inexact parameter list,
+// and a `throws` clause all come along, and only the leading keyword differs.
+func TestPrintConstructorTypeAnnotations(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"constructor", "{new (x: number) -> Point}", "{\n    new (x: number) -> Point\n}"},
+		{"no params", "{new () -> Point}", "{\n    new () -> Point\n}"},
+		{"type params", "{new <T>(x: T) -> Box<T>}", "{\n    new<T> (x: T) -> Box<T>\n}"},
+		{"rest param", "{new (...args: [number, string]) -> Point}", "{\n    new (...args: [number, string]) -> Point\n}"},
+		{"throws", "{new (x: number) -> Point throws RangeError}", "{\n    new (x: number) -> Point throws RangeError\n}"},
+		{
+			"beside a property",
+			"{new (x: number) -> Point, origin: Point}",
+			"{\n    new (x: number) -> Point,\n    origin: Point\n}",
+		},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn := parseTypeAnn(t, tt.input)
+			result, err := Print(typeAnn, opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+
+			// Re-parsing the rendered form and printing it again must land on the same text,
+			// which is what makes the output a form the source could have been written in.
+			reprinted, err := Print(parseTypeAnn(t, result), opts)
+			require.NoError(t, err)
+			require.Equal(t, result, reprinted)
+		})
+	}
+}
+
 func TestPrintBorrowTypeAnnotations(t *testing.T) {
 	tests := []struct {
 		name     string

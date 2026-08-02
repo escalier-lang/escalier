@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"fmt"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -171,8 +173,10 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 // to a PropertyElem; a `...A` spread resolves to a SpreadElem, so `{...A, x: T}` is an
 // ObjectType carrying a spread element — the object twin of a spread-carrying tuple. The
 // evaluator merges the spread once its operand grounds; until then the object stays a
-// residual that prints the way the source wrote it. Method/getter/setter members (M5) and
-// mapped/index signatures (M9) are not yet part of an object annotation and report an
+// residual that prints the way the source wrote it. A `new (…) -> T` member resolves to a
+// ConstructorElem, the same construct signature a class value carries, which is what lets
+// `InstanceType<C>` and `ConstructorParameters<C>` match a written object type. Method,
+// getter, and setter members are not yet part of an object annotation and report an
 // unsupported feature, with the object still built from the members that do resolve.
 //
 // A spread-free object dedups duplicate keys last-wins-first-position, keeping property
@@ -197,6 +201,29 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 		}
 	}
 	unsupported := false
+	sawCtor := false
+	// resolveCtor lowers one `new (…) -> T` member, reporting a second one in the same
+	// annotation rather than emitting it. soltype.ObjectType.Constructor() returns at most one
+	// construct signature and constrain checks a requirement against that one, so a second
+	// would be dropped without a diagnostic.
+	resolveCtor := func(ctor *ast.ConstructorTypeAnn) soltype.ObjTypeElem {
+		if sawCtor {
+			c.report(&DuplicateConstructorSignatureError{Ctor: ctor})
+			return nil
+		}
+		sawCtor = true
+		fn, ok := c.resolveFuncTypeAnn(scope, ctor.Fn, lvl)
+		if !ok {
+			return nil
+		}
+		// resolveFuncTypeAnn returns a FuncType for every signature it resolves, so anything
+		// else is a wiring bug rather than a source error.
+		fnType, ok := fn.(*soltype.FuncType)
+		if !ok {
+			panic(fmt.Sprintf("resolveObjectTypeAnn: `new` signature resolved to %T, not *soltype.FuncType", fn))
+		}
+		return &soltype.ConstructorElem{Fn: fnType}
+	}
 	var elems []soltype.ObjTypeElem
 	// The two paths differ only in when duplicate keys collapse. A residual-free object is never
 	// reduced later, so its duplicates must collapse here to the unique-key shape Prop and equalType
@@ -204,7 +231,17 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	// once its spreads and mapped members ground.
 	if !hasResidual {
 		b := newObjElemBuilder(len(ta.Elems))
+		var ctors []soltype.ObjTypeElem
 		for _, elem := range ta.Elems {
+			// A construct signature is unnamed, so it has no key for the builder to dedup on
+			// and is collected separately. Its position among the properties carries no
+			// meaning, so appending the two groups keeps the member set the source wrote.
+			if ctor, ok := elem.(*ast.ConstructorTypeAnn); ok {
+				if resolved := resolveCtor(ctor); resolved != nil {
+					ctors = append(ctors, resolved)
+				}
+				continue
+			}
 			prop, ok := elem.(*ast.PropertyTypeAnn)
 			if !ok {
 				unsupported = true
@@ -216,7 +253,7 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 			}
 			b.add(name, ft, prop.Optional, prop.Readonly)
 		}
-		elems = b.elems
+		elems = append(b.elems, ctors...)
 	} else {
 		for _, elem := range ta.Elems {
 			switch elem := elem.(type) {
@@ -234,6 +271,10 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 				elems = append(elems, &soltype.SpreadElem{Type: src})
 			case *ast.MappedTypeAnn:
 				elems = append(elems, c.resolveMappedElem(scope, elem, lvl))
+			case *ast.ConstructorTypeAnn:
+				if resolved := resolveCtor(elem); resolved != nil {
+					elems = append(elems, resolved)
+				}
 			default:
 				unsupported = true
 			}

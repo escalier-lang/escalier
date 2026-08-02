@@ -807,6 +807,21 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// `never`, which constrain short-circuits, so no clause satisfies every super.
 			return append(errs, c.constrain(sub.ThrowsOrNever(), sup.ThrowsOrNever(), seen, false)...)
 		}
+		// A bare function fills an object target whose only member is a construct signature.
+		// classValue binds a class with no statics to its constructor FuncType and one with
+		// statics to an object carrying a ConstructorElem, so `typeof Point` renders
+		// `fn (x: number) -> Point` for the first and `{new (x: number) -> Point, origin: number}`
+		// for the second. This rule is what makes `InstanceType<typeof Point>` match either
+		// shape. Its cost is that an ordinary function also satisfies the target, since nothing
+		// in a FuncType says whether the value behind it is constructible.
+		//
+		// A target carrying anything besides the signature demands statics the bare function
+		// cannot supply, so it stays on the object-against-object arm and fails there.
+		if sup, ok := super.(*soltype.ObjectType); ok && len(sup.Elems) == 1 {
+			if supCtor, has := sup.Constructor(); has {
+				return c.constrain(sub, supCtor.Fn, seen, mutCtx)
+			}
+		}
 	case *soltype.TupleType:
 		if tupleHasSpread(sub) || tupleHasSpread(super) {
 			// One side carries an unreduced `...P` spread the pre-switch could not ground: a spread

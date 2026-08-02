@@ -240,6 +240,18 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"ObjectInexactOnly": {
 			input: "{...}",
 		},
+		"ObjectConstructorSignature": {
+			input: "{new (x: number) -> Point}",
+		},
+		"ObjectConstructorSignatureWithRestParam": {
+			input: "{new (...args: [number, string]) -> Point}",
+		},
+		"ObjectConstructorSignatureWithTypeParams": {
+			input: "{new <T>(x: T) -> Box<T>}",
+		},
+		"ObjectConstructorSignatureBesideProperty": {
+			input: "{new (x: number) -> Point, origin: Point}",
+		},
 		"UnionOfFunctions": {
 			input: "(fn (x: number) -> string) | (fn (x: string) -> number)",
 		},
