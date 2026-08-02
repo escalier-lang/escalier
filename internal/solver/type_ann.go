@@ -834,6 +834,14 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 	return t, true
 }
 
+// isWildcardAnn reports whether ta is the `_` inference placeholder. A signature position
+// written `_` asks to be inferred rather than declaring a type, so a check that faults an
+// over-declared signature has nothing to fault there.
+func isWildcardAnn(ta ast.TypeAnn) bool {
+	_, wildcard := ta.(*ast.WildcardTypeAnn)
+	return wildcard
+}
+
 // mirrorParamPat structurally mirrors a function-type-annotation parameter pattern
 // into its soltype.Pat for rendering. A shape with no soltype counterpart is dropped.
 func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {

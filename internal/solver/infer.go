@@ -167,6 +167,14 @@ type funcCtx struct {
 	// Minting is safe under a discardable probe: the mint itself is not journaled, but the
 	// bounds a trial appends to it are, so a discarded trial leaves a sink nothing reached.
 	throws soltype.Type
+	// raised records whether any exceptional exit in this body can actually raise, which a
+	// declared sink cannot answer on its own: constraining into a concrete `throws string`
+	// leaves no trace on it. inferFunc reads it to warn about a clause the body never uses.
+	//
+	// A `throw` sets it unconditionally. A call sets it unless the callee is resolved and
+	// provably non-throwing, so a callee whose own throws is still an unsolved variable
+	// counts as raising. Erring that way costs a missed warning rather than a false one.
+	raised bool
 	// lvl is the level this body is walked at, recorded so throwsSink mints the sink
 	// there rather than wherever the first exceptional exit happens to sit. A `val`
 	// initializer is typed one level deeper, so a sink minted at the first exit's own
@@ -357,6 +365,15 @@ func (c *checker) throwsSink(lvl int) soltype.Type {
 		c.fn.throws = c.freshAt(c.fn.lvl)
 	}
 	return c.fn.throws
+}
+
+// markRaised records that the body being walked has an exceptional exit that can raise.
+// inferFunc reads the flag to warn about a `throws` clause the body never uses. It is a
+// no-op at module top level, where there is no clause to be unused.
+func (c *checker) markRaised() {
+	if c.fn != nil {
+		c.fn.raised = true
+	}
 }
 
 // popFuncCtx restores the previous function context (the pointer pushFuncCtx

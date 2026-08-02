@@ -704,6 +704,13 @@ This contradicts [06_error_handling.md](../../docs/06_error_handling.md), which 
 ...`" and whose `try`/`catch` examples call clause-less functions that raise. The doc
 needs revising to match, which is tracked separately from this PR.
 
+A signature can also declare more than its body delivers, in either direction, since
+`never` sits below every type. Both are warnings rather than errors, because a
+conservative signature and a not-yet-implemented stub are each written that way:
+`UnusedThrowsClauseError` for a clause no exceptional exit reaches, and
+`UnreachableReturnAnnotationError` for a `-> R` on a body that always throws. The first
+is the exceptional twin of `UnusedLifetimeParamError`.
+
 **Algorithms.**
 - **Constraint engine, parallel arms** — the function arm in `constrain` recurses
   `l.Throws <: r.Throws` (covariant); `extrude` recurses into `Throws` with the

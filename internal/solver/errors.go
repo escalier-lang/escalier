@@ -1527,6 +1527,51 @@ func (e *UnusedLifetimeParamError) Message() string {
 	return "lifetime parameter '" + e.Name + " is declared but never used"
 }
 
+// UnusedThrowsClauseError fires when a signature declares `throws T` but no `throw` and no
+// call in the body can raise anything. The program is well-typed, since the body's `never`
+// is below every declared type, but the clause obliges every caller to handle an exception
+// that cannot occur. Ann is the clause the source wrote, which carries the blame span.
+//
+// It is the exceptional twin of UnusedLifetimeParamError: a declaration the body never
+// uses, reported as a warning because a signature may be deliberately conservative.
+// `throws _` never reaches here, since a wildcard asks for inference rather than declaring
+// anything.
+type UnusedThrowsClauseError struct {
+	Ann      ast.TypeAnn
+	Declared soltype.Type
+}
+
+func (*UnusedThrowsClauseError) isSolverError()        {}
+func (e *UnusedThrowsClauseError) Span() ast.Span      { return e.Ann.Span() }
+func (e *UnusedThrowsClauseError) Related() []ast.Span { return nil }
+func (e *UnusedThrowsClauseError) IsWarning() bool     { return true }
+func (e *UnusedThrowsClauseError) Message() string {
+	return "the body raises nothing, so the declared `throws " + soltype.Print(e.Declared) +
+		"` is unreachable; drop the clause"
+}
+
+// UnreachableReturnAnnotationError fires when a signature declares `-> R` but every path
+// through the body leaves along the exceptional edge, so the body's return type is `never`
+// and no caller can observe an R. The program is well-typed, since `never` is below every
+// declared type. Ann is the annotation the source wrote, which carries the blame span.
+//
+// It is a warning rather than an error because a not-yet-implemented stub is written this
+// way, `fn f() -> number { throw "todo" }`, and because a signature may be dictated by an
+// interface the body cannot narrow.
+type UnreachableReturnAnnotationError struct {
+	Ann      ast.TypeAnn
+	Declared soltype.Type
+}
+
+func (*UnreachableReturnAnnotationError) isSolverError()        {}
+func (e *UnreachableReturnAnnotationError) Span() ast.Span      { return e.Ann.Span() }
+func (e *UnreachableReturnAnnotationError) Related() []ast.Span { return nil }
+func (e *UnreachableReturnAnnotationError) IsWarning() bool     { return true }
+func (e *UnreachableReturnAnnotationError) Message() string {
+	return "every path through the body throws, so the declared return type `" +
+		soltype.Print(e.Declared) + "` is unreachable; the body returns `never`"
+}
+
 // AmbiguousUnionCommitWarning fires when a value matches more than one member of a union-super
 // trial, so the committed choice is not evident from the source. For `5 <: (T | number)` number
 // commits, yet T would also match by pinning to 5. It is a warning rather than an error, since

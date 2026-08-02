@@ -151,11 +151,11 @@ func TestInferThrowsFromBodyUnderAWildcardClause(t *testing.T) {
 		},
 		{
 			// A body with no `return` that always leaves along the exceptional edge
-			// reaches no normal exit, so its return type is `never` and it satisfies any
-			// return annotation.
+			// reaches no normal exit, so its return type is `never`. Annotating it
+			// `-> never` says exactly that, so nothing is over-declared.
 			name: "DivergingBodyReturnsNever",
-			src:  `fn f() -> number throws _ { throw "x" }`,
-			want: `fn () -> number throws "x"`,
+			src:  `fn f() -> never throws _ { throw "x" }`,
+			want: `fn () -> never throws "x"`,
 		},
 	})
 }
@@ -176,9 +176,10 @@ func TestInferThrowsClause(t *testing.T) {
 			want: "fn (x: number) -> never throws string",
 		},
 		{
+			// One path returns and the other throws, so both declarations are delivered.
 			name: "ClauseAfterReturnAnnotation",
-			src:  `fn f() -> number throws string { return 1 }`,
-			want: "fn () -> number throws string",
+			src:  `fn f(c: boolean) -> number throws string { if c { return 1 } else { throw "x" } }`,
+			want: "fn (c: boolean) -> number throws string",
 		},
 		{
 			// `throws _` mints a fresh variable the body's throws flow into, so the clause
@@ -186,13 +187,6 @@ func TestInferThrowsClause(t *testing.T) {
 			name: "WildcardClauseInfers",
 			src:  `fn f() throws _ { throw "boom" }`,
 			want: `fn () -> never throws "boom"`,
-		},
-		{
-			// The declared type is what a caller sees, whether or not the body raises
-			// anything.
-			name: "ClauseWithNoThrowingBodyStillShows",
-			src:  `fn f() -> number throws string { return 1 }`,
-			want: "fn () -> number throws string",
 		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{
@@ -299,13 +293,13 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 // Both callers are asserted from one source, so this stays outside the shared table.
 func TestInferThrowsThroughOverloadResolution(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn a(x: number) -> number throws string { throw "boom" }
+		fn a(x: number) -> never throws string { throw "boom" }
 		fn a(x: string) -> string { return x }
 		fn callsThrowingArm() throws _ { return a(1) }
 		fn callsQuietArm() { return a("s") }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn () -> number throws string", values["callsThrowingArm"])
+	require.Equal(t, "fn () -> never throws string", values["callsThrowingArm"])
 	require.Equal(t, "fn () -> string", values["callsQuietArm"])
 }
 
@@ -363,7 +357,7 @@ func TestInferThrowsPolymorphism(t *testing.T) {
 			name: "CallBindsTheThrowsParameter",
 			src: `
 				fn f<E>(g: fn() -> number throws E) -> number throws E { return g() }
-				fn h() throws _ { return f(fn () -> number throws string { throw "x" }) }
+				fn h() throws _ { return f(fn () -> never throws string { throw "x" }) }
 			`,
 			binding: "h",
 			want:    "fn () -> number throws string",
@@ -394,11 +388,11 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 				class Parser {
 					text: string,
 					constructor(mut self, text: string) { self.text = text },
-					parse(self) -> number throws string { throw "bad input" },
+					parse(self) -> never throws string { throw "bad input" },
 				}
 				fn f(p: Parser) throws _ { return p.parse() }
 			`,
-			want: "fn (p: Parser) -> number throws string",
+			want: "fn (p: Parser) -> never throws string",
 		},
 		{
 			name: "ConstructorThrowsRidesOnTheClassValue",
@@ -427,18 +421,94 @@ func TestInferThrowsAnnotationRecovery(t *testing.T) {
 		{
 			// `void` stands in for any annotation resolveTypeAnn does not support.
 			name:     "UnsupportedAnnotationDoesNotCascade",
-			src:      `val f: fn() -> number throws void = fn () -> number throws _ { throw "x" }`,
+			src:      `val f: fn() -> number throws void = fn () -> never throws _ { throw "x" }`,
 			wantErrs: []string{"1:30-1:34: Unsupported: VoidTypeAnn"},
 		},
 		{
-			name:     "GetterClauseIsRejected",
-			src:      `class C { v: number, get x(self) -> number throws string { return self.v } }`,
-			wantErrs: []string{"1:22-1:75: Unsupported: throws clause on a getter"},
+			// The clause draws two diagnostics: it is unsupported on an accessor at all,
+			// and the body raises nothing so it would read as unused even where it is
+			// supported. Both say to drop it.
+			name: "GetterClauseIsRejected",
+			src:  `class C { v: number, get x(self) -> number throws string { return self.v } }`,
+			wantErrs: []string{
+				"1:22-1:75: Unsupported: throws clause on a getter",
+				"1:51-1:57: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
+			},
 		},
 		{
-			name:     "SetterClauseIsRejected",
-			src:      `class C { v: number, set x(mut self, v: number) throws string { self.v = v } }`,
-			wantErrs: []string{"1:22-1:77: Unsupported: throws clause on a setter"},
+			name: "SetterClauseIsRejected",
+			src:  `class C { v: number, set x(mut self, v: number) throws string { self.v = v } }`,
+			wantErrs: []string{
+				"1:22-1:77: Unsupported: throws clause on a setter",
+				"1:56-1:62: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
+			},
+		},
+	})
+}
+
+// A signature can declare something its body never delivers. Both directions are sound,
+// since `never` sits below every type, so neither is an error — but neither is useful
+// either, and each is reported as a warning naming the declaration to drop.
+func TestInferThrowsOverDeclaredSignature(t *testing.T) {
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			// The body reaches no exceptional exit, so the clause obliges every caller to
+			// handle an exception that cannot occur.
+			name: "ClauseNoExceptionalExitReaches",
+			src:  `fn f() -> number throws string { return 1 }`,
+			wantErrs: []string{
+				"1:25-1:31: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
+			},
+		},
+		{
+			// The body reaches no normal exit, so no caller can observe a `number`.
+			name: "ReturnAnnotationNoNormalExitReaches",
+			src:  `fn f() -> number throws _ { throw "x" }`,
+			wantErrs: []string{
+				"1:11-1:17: every path through the body throws, so the declared return type `number` is unreachable; the body returns `never`",
+			},
+		},
+		{
+			// The two checks are independent. Here the clause IS used, since the body
+			// throws into it, so only the unreachable return is reported.
+			name: "OnlyTheReturnIsOverDeclared",
+			src:  `fn f() -> number throws string { throw "x" }`,
+			wantErrs: []string{
+				"1:11-1:17: every path through the body throws, so the declared return type `number` is unreachable; the body returns `never`",
+			},
+		},
+	})
+
+	// Neither warning fires where the body delivers what the signature declares. These
+	// are the shapes the warnings must stay quiet on, so a correct signature is never
+	// nagged.
+	runThrowsCases(t, []throwsCase{
+		{
+			// `-> never` says what a diverging body actually delivers.
+			name: "NeverAnnotationOnADivergingBody",
+			src:  `fn f() -> never throws _ { throw "x" }`,
+			want: `fn () -> never throws "x"`,
+		},
+		{
+			// One path returns and the other throws, so both declarations are reachable.
+			name: "MixedReturnAndThrowPaths",
+			src:  `fn f(c: boolean) -> number throws string { if c { return 1 } else { throw "x" } }`,
+			want: "fn (c: boolean) -> number throws string",
+		},
+		{
+			// A clause satisfied by a call rather than by a `throw` still counts as used.
+			name: "ClauseUsedByACall",
+			src: `
+				fn a() throws string { throw "boom" }
+				fn f() throws string { a() }
+			`,
+			want: "fn () -> void throws string",
+		},
+		{
+			// A bodyless `declare fn` has no body to measure either declaration against.
+			name: "BodylessDeclareFnIsNotMeasured",
+			src:  `declare fn f() -> number throws string`,
+			want: "fn () -> number throws string",
 		},
 	})
 }

@@ -320,6 +320,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 
 	var ret soltype.Type = &soltype.Void{}
 	var retExprs []ast.Expr
+	// bodyDiverges records that every path through the body left along the exceptional
+	// edge, and raised that some exceptional exit can actually raise. Both are read after
+	// the walk to warn about a signature the body cannot deliver on.
+	bodyDiverges := false
+	raised := false
 	// throws is what a caller sees on the exceptional edge. A bodyless `declare fn` has
 	// only its clause. A body-carrying function reads the sink back once the body is
 	// walked, which is the declared type when there was a clause and the inferred variable
@@ -354,6 +359,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		c.checkUseAfterMoves()
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
+		raised = c.fn.raised
 		collected := c.popFuncCtx(saved)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `void` a fall-through body
@@ -361,9 +367,17 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// `void <: number`.
 		if len(collected) == 0 && blockDiverges(body) {
 			ret = &soltype.NeverType{}
+			bodyDiverges = true
 		} else {
 			ret = c.joinReturnPoints(node, lvl, collected)
 		}
+	}
+	// A declared `throws T` the body never uses obliges every caller to handle an
+	// exception that cannot occur, so warn and point at the clause. `throws _` asks for
+	// inference rather than declaring anything, and a bodyless `declare fn` has no body to
+	// measure against, so neither reaches here.
+	if hasBody && !raised && sig.Throws != nil && !isWildcardAnn(sig.Throws) {
+		c.report(&UnusedThrowsClauseError{Ann: sig.Throws, Declared: throws})
 	}
 	// Return-annotation handling diverges by async-ness.
 	//
@@ -397,6 +411,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// would raise a spurious `void <: T`).
 			if hasBody {
 				c.constrainReturnAgainstAnnotation(node, retExprs, ret, annT) // body <: declared return
+				// No caller can observe an annotated return the body never reaches, so warn
+				// and point at the annotation. A body that diverges into `never` on purpose
+				// writes `-> never`, which is what it delivers and so is not flagged.
+				if bodyDiverges && !isNeverType(annT) {
+					c.report(&UnreachableReturnAnnotationError{Ann: sig.Return, Declared: annT})
+				}
 			}
 			ret = annT
 		} else if !hasBody {
@@ -1278,6 +1298,12 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// carries `never`, which constrain short-circuits, so an ordinary call records
 	// nothing.
 	callShape := &soltype.FuncType{Params: demand, Ret: res, Throws: c.throwsSink(lvl)}
+	// A resolved callee that declares nothing raises nothing, so it leaves the enclosing
+	// clause unused. Any other callee counts as raising, since its throws may still be an
+	// unsolved variable at this point.
+	if fn, ok := resolveFunc(callee); !ok || !isNeverType(fn.ThrowsOrNever()) {
+		c.markRaised()
+	}
 	// Record the synthesized call-shape against the CallExpr so a FuncArityMismatchError
 	// — now only from a DEFERRED callee's too-few (or a callback-arity failure), since
 	// concrete arity faults are owned by the lints above — resolves its blame to the call.
@@ -2428,6 +2454,7 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Type {
 	arg := c.inferExpr(scope, lvl, e.Arg)
 	c.constrain(e, arg, c.throwsSink(lvl))
+	c.markRaised()
 	t := &soltype.NeverType{}
 	c.recordType(e, t)
 	return t

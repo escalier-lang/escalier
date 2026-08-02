@@ -1411,6 +1411,12 @@ func callableView(ft *soltype.FuncType) *soltype.FuncType {
 	}
 }
 
+// isNeverType reports whether t is `never`, the bottom of the subtype lattice.
+func isNeverType(t soltype.Type) bool {
+	_, never := t.(*soltype.NeverType)
+	return never
+}
+
 // skolemizeFuncBinder replaces ft's own type parameters with fresh skolems, so a term checked
 // against ft as a supertype must satisfy it for every instantiation. Each parameter's declared
 // bound becomes its skolem's Upper, seeded first so a bound naming a sibling reaches it. For
