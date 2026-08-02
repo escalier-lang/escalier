@@ -1639,7 +1639,7 @@ PR9c ✅ #944 (path-scoped seen-set, #942)  ── needs nothing; the seen-set l
 PR9e ✅ #943 (μ-knot representation)       ── needs M3 only; owed from M3, not new
  └─► PR9f (regular-tree normalization)     ── also needs PR9b
 
-PR10 (throws clause)                       ── needs M3 only; parallel to everything
+PR10 ✅ #963 (throws clause)                ── needs M3 only; parallel to everything
  ├─► PR10b (try/catch)                     ── also needs M4 E2 (pattern machinery)
  │    └─► PR10c (Promise<T, E> + async rejection)  ── also needs M7.5
  └─► PR11 (generators)                     ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
@@ -1663,10 +1663,10 @@ to intersect the members' key sets, and #937 capped total alias expansion with a
 monotonic budget. #938 added the `{[K: Keys]: Value}` index-signature shorthand to
 PR4's mapped types.
 
-Everything still open is PR9d, PR9f, PR10, PR10b, PR10c, PR11, PR14, PR15, and Track F's
-PR17 through PR20. PR8 landed in two steps: #922 threaded an object's exactness through
-`keyof`, and #953 carried it through the remaining operators and added the
-`Exact` / `Inexact` intrinsics.
+Everything still open is PR9d, PR9f, PR10b, PR10c, PR11, PR14, PR15, and Track F's PR17
+through PR20. PR8 landed in two steps: #922 threaded an object's exactness through `keyof`,
+and #953 carried it through the remaining operators and added the `Exact` / `Inexact`
+intrinsics.
 
 The same graph in mermaid, with the operator-track critical path
 (PR1a → PR1b → PR3a → PR3b → PR4 → PR8) highlighted, merged PRs outlined in green,
@@ -1693,7 +1693,7 @@ graph TD
     PR9e["PR9e ✅ #943 (μ-knot representation)"]
     PR9f["PR9f (regular-tree normalization)"]
     M3["M3 (let-generalization + coalescing)"]
-    PR10["PR10 (throws clause)"]
+    PR10["PR10 ✅ #963 (throws clause)"]
     PR10b["PR10b (try/catch)"]
     PR10c["PR10c (Promise<T, E> + async rejection)"]
     M4E2["M4 E2 (pattern matching)"]
@@ -1774,6 +1774,7 @@ graph TD
     style PR12 stroke:#2e7d32,stroke-width:4px
     style PR13 stroke:#2e7d32,stroke-width:4px
     style PR16 stroke:#2e7d32,stroke-width:4px
+    style PR10 stroke:#2e7d32,stroke-width:4px
 ```
 
 ### Parallelism
