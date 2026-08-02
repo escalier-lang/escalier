@@ -1017,6 +1017,17 @@ type NonExhaustiveMatchError struct {
 	Match *ast.MatchExpr
 }
 
+// MissingCatchClauseError fires when a `try` block carries no `catch` arms. A `try` is
+// the construct that HANDLES an exception, and arms are the only thing that handles one,
+// so a `try` without them changes nothing about the block it wraps. Writing the block on
+// its own says the same thing more directly.
+//
+// It is a bridge error born in inferTryCatch with the try/catch node in hand, so it
+// self-blames the whole form through Span and carries no related node.
+type MissingCatchClauseError struct {
+	Try *ast.TryCatchExpr
+}
+
 // MixedOwnershipError fires when an inferred union or intersection has a borrowed
 // member beside an owned one, such as `{x: number} | &{y: number}`, which has no
 // single owned-or-borrowed verdict. It blames the inference join where it forms.
@@ -1046,6 +1057,7 @@ func (*NotIterableError) isSolverError()                    {}
 func (*ReturnOutsideFunctionError) isSolverError()          {}
 func (*AsyncReturnNotPromiseError) isSolverError()          {}
 func (*NonExhaustiveMatchError) isSolverError()             {}
+func (*MissingCatchClauseError) isSolverError()             {}
 func (*MixedOwnershipError) isSolverError()                 {}
 func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
 func (*MissingSelfReceiverError) isSolverError()            {}
@@ -1467,6 +1479,12 @@ func (e *NonExhaustiveMatchError) Span() ast.Span      { return e.Match.Span() }
 func (e *NonExhaustiveMatchError) Related() []ast.Span { return nil }
 func (e *NonExhaustiveMatchError) Message() string {
 	return "match is not exhaustive; add a catch-all branch"
+}
+
+func (e *MissingCatchClauseError) Span() ast.Span      { return e.Try.Span() }
+func (e *MissingCatchClauseError) Related() []ast.Span { return nil }
+func (e *MissingCatchClauseError) Message() string {
+	return "`try` needs a `catch` clause; without one it handles nothing, so drop the `try` and keep the block"
 }
 
 // MutLeafThroughSharedBorrowError fires when a destructuring pattern marks a leaf

@@ -138,21 +138,29 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 	})
 }
 
-// A `try` with no `catch` clause inspects nothing, so it is transparent: the block's
-// throws reach the enclosing clause unchanged, with no caught binding and no open tail.
-func TestInferTryWithoutCatchIsTransparent(t *testing.T) {
-	runThrowsCases(t, []throwsCase{
-		{
-			name: "ThrowsPassThroughUnwidened",
-			src:  `fn f() throws string { try { throw "boom" } }`,
-			want: "fn () -> never throws string",
-		},
-	})
+// The catch arms are what handle an exception, so a `try` without them handles nothing and
+// is rejected. The block recovers as if written on its own, which keeps the missing clause
+// to a single diagnostic: its throws reach the enclosing sink unchanged, with no caught
+// binding and no open tail added on top.
+func TestInferTryWithoutCatchIsRejected(t *testing.T) {
 	runThrowsErrCases(t, []throwsErrCase{
 		{
-			name:     "AClauselessFunctionIsStillRejected",
-			src:      `fn f() { try { throw "boom" } }`,
-			wantErrs: []string{`1:22-1:28: cannot constrain "boom" <: never`},
+			name: "ArmlessTryIsRejected",
+			src:  `fn f() throws string { try { throw "boom" } }`,
+			wantErrs: []string{
+				"1:24-1:44: `try` needs a `catch` clause; without one it handles nothing, so drop the `try` and keep the block",
+			},
+		},
+		{
+			// The block's `throw` is checked against the enclosing clause exactly as it
+			// would be with no `try` around it, so the missing clause is the only extra
+			// diagnostic.
+			name: "TheBlockStillReachesTheEnclosingClause",
+			src:  `fn f() { try { throw "boom" } }`,
+			wantErrs: []string{
+				"1:10-1:30: `try` needs a `catch` clause; without one it handles nothing, so drop the `try` and keep the block",
+				`1:22-1:28: cannot constrain "boom" <: never`,
+			},
 		},
 	})
 }

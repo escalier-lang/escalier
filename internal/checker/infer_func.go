@@ -567,8 +567,8 @@ func exprAlwaysExits(expr ast.Expr) bool {
 	case *ast.TryCatchExpr:
 		// Control falls out of a try/catch unless every way through it leaves: the
 		// try block must exit, and so must every catch arm body reachable when it
-		// raises. Same AND-fold as MatchExpr above. A `try` with no arms is just
-		// its block.
+		// raises. Same AND-fold as MatchExpr above. An arm-less `try` is just its
+		// block, which is what the empty fold yields.
 		if !blockAlwaysExits(&e.Try) {
 			return false
 		}

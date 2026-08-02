@@ -2689,10 +2689,13 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 // The form's value is the join of the try block's tail value and each non-diverging arm
 // body, the same branch-join inferMatch builds from its arms.
 func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) soltype.Type {
-	// With no `catch` clause nothing inspects the error, so there is nothing to bind and
-	// nothing to narrow. Walking the block against the enclosing sink directly lets its
-	// throws reach the function's clause exactly as they would without the `try`.
+	// A `try` needs arms to be worth writing, since the arms are what handle an exception.
+	// With none there is nothing to bind and nothing to narrow, so the form is rejected and
+	// the block recovers as if it had been written on its own: it walks against the
+	// enclosing sink, and its throws reach the function's clause unchanged. That keeps the
+	// missing clause to one diagnostic instead of cascading a rethrow through it.
 	if len(e.Catch) == 0 {
+		c.report(&MissingCatchClauseError{Try: e})
 		t, _ := c.inferBlock(scope.Child(), lvl, &e.Try)
 		c.recordType(e, t)
 		return t
@@ -2765,9 +2768,10 @@ func (c *checker) walkTryBlock(scope *Scope, lvl int, b *ast.Block, sink soltype
 }
 
 // caughtType returns the type a catch arm's pattern binds against: what the try block
-// raised, reopened with a trailing `...`. The tail is there because any call can raise
-// something no signature predicted, so a caught error is never a closed set. That is the
-// `FooError | ...` docs/06_error_handling.md renders for a caught binding.
+// raised, reopened with a trailing `...`. The tail is there because a `throws` clause is a
+// floor rather than a ceiling. Any call can raise something its signature did not name, so
+// the members collected from the block are the part of a caught error the type system can
+// see, not the whole of it.
 //
 // A block with no known exceptional exit yields `unknown`, which is the tail standing on
 // its own. An inexact union with no members carries no value, so there would be nothing to
@@ -2782,9 +2786,9 @@ func (c *checker) caughtType(collected soltype.Type) soltype.Type {
 
 // rethrowUnhandled constrains the part of the caught union no arm covers into the
 // enclosing throws sink, so a `try` narrows what its function raises rather than swallowing
-// it. This is the automatic rethrow docs/06_error_handling.md specifies in place of an
-// exhaustiveness diagnostic: "if there is no catch-all, the compiler will automatically
-// re-throw the unhandled error".
+// it. A value that matches no arm is re-raised at runtime, so the enclosing clause is where
+// it lands. That is why uncovered members draw a rethrow rather than the non-exhaustiveness
+// diagnostic the equivalent `match` would draw.
 //
 // Coverage is decided by isCatchAll and unionMemberCovered, the same two relations
 // checkMatchExhaustive reads, so one definition of "this pattern covers this member" serves
@@ -3277,8 +3281,9 @@ func exprDiverges(e ast.Expr) bool {
 	case *ast.TryCatchExpr:
 		// Control falls out of a try/catch unless every way through it leaves: the try
 		// block must diverge, and so must every arm body reachable when it raises. The
-		// arms are folded with the same AND that MatchExpr uses. A `try` with no arms is
-		// just its block.
+		// arms are folded with the same AND that MatchExpr uses. An arm-less `try` is
+		// rejected by inferTryCatch and recovers as its block alone, which is what the
+		// empty fold yields here.
 		if !blockDiverges(&e.Try) {
 			return false
 		}
