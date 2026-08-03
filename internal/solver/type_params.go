@@ -6,33 +6,13 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeParams resolves a `<…>` type-parameter list to soltype TypeParams in three
-// passes. Pass 1 mints one fresh var per parameter. Pass 2 resolves each parameter's default
-// and then declares that parameter's name, so a default reads only the siblings before it.
-// Pass 3 resolves each constraint into its var's upper bound, against the scope that by then
-// holds every sibling.
-//
-// A default and a bound need opposite visibility, which is why they sit in separate passes.
-//
-// A bound may name any sibling. Declaring every parameter before reading any bound is what
-// lets a forward reference `<T: U, U>`, a mutual cycle `<T: U, U: T>`, an F-bound
-// `<T: Foo<T>>`, and a mutual F-bound `<T: Cmp<U>, U: Cmp<T>>` all resolve. Resolving a bound
-// under a scope that holds only the earlier siblings would leave a later-declared name
-// undeclared, so the reference would fall through to general type-ref resolution and report
-// `Unsupported: TypeRefTypeAnn`. Because every sibling is in scope by pass 3, a true mutual
-// cycle resolves that a topological sort of the parameters cannot order.
-//
-// A default may name only an earlier sibling, since instantiation substitutes a default
-// positionally. reportDefaultForwardRef reports a default that names a later sibling or
-// itself, and the caller then skips resolving it, so that check is what a user sees. Growing
-// the scope one parameter at a time is the backstop underneath it: a later sibling's name is
-// not in scope when the default resolves, so its var cannot reach an instance even if the
-// check's idea of where a binder's region ends ever drifts from resolveTypeAnn's. See
-// reportDefaultForwardRef for the rest of the rule.
-//
-// The result stays in declaration order, so instantiation substitutes type arguments
-// positionally. The class and, once generic-function inference lands, the function and
-// method paths both route their `<…>` lists through here so bound resolution never forks.
+// resolveTypeParams resolves a `<…>` type-parameter list to soltype TypeParams in three passes,
+// since a default and a bound need opposite visibility. Pass 1 mints one fresh var per parameter.
+// Pass 2 resolves each parameter's default and then declares that parameter, so a default reads
+// only the earlier siblings, the ones instantiation can substitute for it. Pass 3 resolves each
+// constraint into its var's upper bound against the full list, so a forward `<T: U, U>`, a mutual
+// `<T: U, U: T>`, and an F-bound `<T: Foo<T>>` all resolve. The result stays in declaration order,
+// and the alias, class, enum, and function-annotation paths all route through here.
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
 	out := make([]*soltype.TypeParam, len(params))
 	// Pass 1: mint each parameter's var. Nothing is declared yet, so pass 2 controls which
@@ -67,35 +47,13 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	return out
 }
 
-// reportDefaultForwardRef reports the first reference params[i]'s default makes to a parameter
-// it may not name, meaning params[i] itself or one declared after it. It returns whether it
-// reported.
-//
-// A reference that omits a trailing argument fills it from that parameter's default,
-// substituting the arguments before it. buildAliasInstance does exactly that for the `U = T`
-// of `type Pair<T, U = T>`. Only a parameter earlier in the list has an argument by then, so
-// only an earlier one is replaced by that substitution.
-//
-// A later or self reference is left untouched, so it stays the declaration's own var, and
-// every reference to the type shares that one var. In `type Pair<T = U, U = number> = {a: T, b: U}`,
-// `T`'s default resolves to `U`'s var, so admitting it would let `val q: Pair = {a: "s", b: 3}`
-// widen a second `val p: Pair = {a: 1, b: 2}` to `Pair<1 | "s", number>`. Rejecting the default
-// keeps that var out of every instance.
-//
-// The caller drops a rejected default rather than replacing it, so the parameter becomes
-// required. Whether omitting that argument then reports a second diagnostic is up to the
-// instance builder, and neither builder reports it in every case today. buildAliasInstance
-// counts its required arguments as the number of parameters carrying no default, with no
-// regard for where those parameters sit. Writing `Tri<string>` against
-// `type Tri<T = number, U = V, V = number>` passes that count, so the omitted `U` becomes a
-// fresh var with only the ordering error reported. An arity mismatch is reported when no
-// defaulted parameter precedes the rejected one. buildClassInstance checks no arity at all.
-// PR18 of planning/simple_sub/m9-implementation-plan.md factors both builders into one
-// helper, which is where a positional count belongs.
-//
-// The restriction covers the default position alone. A bound may name any sibling, since
-// `<T: U, U: T>` is a legal mutual F-bound and `<T: Foo<T>>` names the parameter being
-// declared. Neither is substituted positionally, so neither needs the ordering a default does.
+// reportDefaultForwardRef reports the first reference params[i]'s default makes to a parameter it
+// may not name, params[i] itself or one declared after it, and returns whether it reported. A
+// reference fills an omitted argument from the default with the earlier arguments substituted in,
+// as buildAliasInstance does for the `U = T` of `type Pair<T, U = T>`. A later or self reference
+// has nothing to substitute, so it stays the declaration's own var, shared by every reference to
+// the type. A rejected default is dropped, which leaves the parameter required. Neither instance
+// builder reports the follow-on arity error in every case, which PR18's shared helper settles.
 func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 	forbidden := set.NewSet[string]()
 	for _, p := range params[i:] {
@@ -114,28 +72,15 @@ func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 	return false
 }
 
-// typeParamRefScan walks a type annotation and collects the references that read a name from
-// outside it, so a caller can tell a reference to an enclosing `<…>` parameter from one a
-// binder written inside the annotation introduces.
-//
-// free holds those references in traversal order, so a caller reports the leftmost offending
-// one. A reference whose name an enclosing binder declares is left out, since it reads that
-// binder's name rather than a `<…>` parameter's. Three binders can appear inside an
-// annotation, and the scan tracks the region each one covers:
-//
-//   - A `fn <U>(…)` quantifier covers the whole function annotation.
-//   - A mapped type's key binder, the `K` of `{[K: Keys]: V}`, covers the object annotation
-//     that holds it. That is wider than the binder's own region by the key constraint and any
-//     sibling element, so `{[K: Keys]: V, other: K}` reads `other: K` as the key binder.
-//   - An `infer U` clause covers the Extends and Then operands of the conditional whose
-//     Extends declares it, matching where resolveCondTypeAnn declares the name. The same name
-//     in the Else operand is a free reference.
-//
-// scopes holds one name set per region the walk is currently inside, innermost last.
+// typeParamRefScan collects a type annotation's free references, the `Name` and `Name<…>`
+// references that no binder written inside the annotation declares. It tracks the region each
+// binder covers: a `fn <U>(…)` quantifier covers its function annotation, a mapped key covers the
+// object annotation holding it, and an `infer U` covers its conditional's Extends and Then
+// operands, matching where resolveCondTypeAnn declares the name.
 type typeParamRefScan struct {
 	ast.DefaultVisitor
-	scopes []set.Set[string]
-	free   []*ast.TypeRefTypeAnn
+	scopes []set.Set[string]     // one name set per region the walk is inside, innermost last
+	free   []*ast.TypeRefTypeAnn // in traversal order, so a caller reports the leftmost
 }
 
 func (v *typeParamRefScan) EnterTypeAnn(t ast.TypeAnn) bool {
