@@ -130,11 +130,13 @@ func TestMuKnotForSettlesRegularAlias(t *testing.T) {
 			want: "",
 		},
 		{
-			// The recursive reference is a spread's operand, so abstracting it would leave `{...X0}`,
-			// a spread of a bare μ-variable, which stands for no object. Reduction cannot merge the
-			// spread either, since grounding its operand is the very expansion the knot abstracts
-			// away. The comparison falls back to the budget, which is where it sat before this check
-			// existed.
+			// The recursive reference is a spread's operand, so abstracting it leaves `{...X0}`. This
+			// alias does have a knot, `μX0.{a: "c", b: X0}`, since spreading one operand into an
+			// otherwise empty object yields that operand. The check declines it anyway, because
+			// reduction has no rule for grounding a spread whose operand is a μ-variable, and the
+			// residual spread would reach constrain and fail a comparison against a real object that
+			// should hold. The comparison falls back to the budget, which is where it sat before this
+			// check existed.
 			name: "recursive reference under an object spread",
 			src: `
 				type Sp<T> = {a: keyof T, b: {...Sp<{c: T}>}}
@@ -143,7 +145,9 @@ func TestMuKnotForSettlesRegularAlias(t *testing.T) {
 			want: "",
 		},
 		{
-			// The positional twin: a rest spread leaves `[...X0]`.
+			// The positional twin, declined for the same reason and with the same knot going begging.
+			// A rest spread leaves `[...X0]`, and `[...X]` over a tuple is X, so `Tp<{c: number}>` is
+			// `μX0.["c", X0]`.
 			name: "recursive reference under a tuple spread",
 			src: `
 				type Tp<T> = [keyof T, [...Tp<{c: T}>]]

@@ -182,7 +182,12 @@ func (c *Context) probeUniformKnot(name string, def *AliasDef) *uniformKnot {
 		if containsUnreducedOp(next) {
 			// An operator survived the reduction with the recursive reference already abstracted away
 			// beneath it. `type Sp<T> = {a: keyof T, b: {...Sp<{c: T}>}}` abstracts to
-			// `{a: "c", b: {...X0}}`, a spread of a bare μ-variable, which stands for no object.
+			// `{a: "c", b: {...X0}}`. A knot does exist for such an alias, since spreading one operand
+			// into an otherwise empty object yields that operand, so declining is incompleteness
+			// rather than a shape no knot fits. What forces it is that reduction has no rule for
+			// grounding a spread whose operand is a μ-variable: the residual spread would reach
+			// constrain and be compared structurally against a real object, failing a comparison that
+			// should hold. Declining leaves the alias on the plain expansion instead.
 			return none
 		}
 		if !sameInstantiations(below, applyPatterns(patterns, skolems, pattern.TypeArgs)) {

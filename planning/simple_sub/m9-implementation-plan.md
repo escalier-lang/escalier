@@ -722,7 +722,8 @@ Three shapes are declined that the argument-independence proof alone would admit
 whose reduction reported a diagnostic is declined, so the plain expansion carries that
 report to the constraint site rather than the knot swallowing it. A shape still carrying an
 operator is declined, since a recursive reference standing as a spread's operand abstracts
-to `{...X0}`, a spread of a bare μ-variable, which stands for no object. And a knot body
+to `{...X0}`, which reduction has no rule for grounding. Such an alias does have a knot, so
+that one is incompleteness rather than a shape no knot fits. And a knot body
 that puts no type constructor between the knot and its own binder is declined, since
 `μX0.X0` unfolds to itself and would close against any super at all — the guard
 `coalesce`'s `tie` already carries for the knots it mints.
