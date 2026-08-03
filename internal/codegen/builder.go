@@ -1871,22 +1871,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					caseBodyStmts = slices.Concat(caseBodyStmts, guardStmts)
 
 					// Create nested guard body
-					var guardBodyStmts []Stmt
-
-					// Add body statements or expression
-					if matchCase.Body.Block != nil {
-						body := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
-						guardBodyStmts = slices.Concat(guardBodyStmts, body)
-					} else if matchCase.Body.Expr != nil {
-						bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr, expr)
-						guardBodyStmts = slices.Concat(guardBodyStmts, bodyStmts)
-						assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
-						guardBodyStmts = append(guardBodyStmts, &ExprStmt{
-							Expr:   assignment,
-							span:   nil,
-							source: matchCase.Body.Expr,
-						})
-					}
+					guardBodyStmts := b.buildArmBody(matchCase.Body, tempVar, expr)
 
 					// A guarded arm keeps its pattern test and its guard in separate
 					// `if`s, so the guard can read the bindings the pattern introduces.
@@ -1985,25 +1970,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 				// No guard - add pattern bindings to case body
 				caseBodyStmts = slices.Concat(caseBodyStmts, bindingStmts)
-
-				// Add body statements or expression
-				if matchCase.Body.Block != nil {
-					// Body is a block
-					body := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
-					caseBodyStmts = slices.Concat(caseBodyStmts, body)
-				} else if matchCase.Body.Expr != nil {
-					// Body is an expression
-					bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr, expr)
-					caseBodyStmts = slices.Concat(caseBodyStmts, bodyStmts)
-
-					// Assign expression result to temp variable
-					assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
-					caseBodyStmts = append(caseBodyStmts, &ExprStmt{
-						Expr:   assignment,
-						span:   nil,
-						source: matchCase.Body.Expr,
-					})
-				}
+				caseBodyStmts = slices.Concat(caseBodyStmts, b.buildArmBody(matchCase.Body, tempVar, expr))
 
 				if isTrueLiteral(condition) {
 					// An unguarded catch-all always runs, so it needs no test and every
@@ -2492,6 +2459,26 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 }
 
 // buildMatchExpr converts a match expression into if-else statements with pattern matching
+// buildArmBody lowers a match or catch arm's body to the statements that run it, ending in
+// the assignment that hands its value to the enclosing expression's temp. A block body
+// assigns the value of its tail statement, an expression body assigns itself, and an arm
+// with neither runs nothing.
+func (b *Builder) buildArmBody(body ast.BlockOrExpr, tempVar Expr, source ast.Expr) []Stmt {
+	if body.Block != nil {
+		return b.buildBlockStmtsWithTempAssignment(body.Block.Stmts, tempVar, source)
+	}
+	if body.Expr == nil {
+		return nil
+	}
+	bodyExpr, stmts := b.buildExpr(body.Expr, source)
+	assignment := &ExprStmt{
+		Expr:   NewBinaryExpr(tempVar, Assign, bodyExpr, body.Expr),
+		span:   nil,
+		source: body.Expr,
+	}
+	return slices.Concat(stmts, []Stmt{assignment})
+}
+
 func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 	// Create a temporary variable to store the match result
 	tempVar, tempDeclStmt := b.createTempVar(expr)
@@ -2534,22 +2521,7 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 			caseStmts = slices.Concat(caseStmts, guardStmts)
 
 			// Create nested guard body
-			var guardBodyStmts []Stmt
-
-			// Add body statements or expression
-			if matchCase.Body.Block != nil {
-				blockStmts := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
-				guardBodyStmts = slices.Concat(guardBodyStmts, blockStmts)
-			} else if matchCase.Body.Expr != nil {
-				bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr, expr)
-				guardBodyStmts = slices.Concat(guardBodyStmts, bodyStmts)
-				assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
-				guardBodyStmts = append(guardBodyStmts, &ExprStmt{
-					Expr:   assignment,
-					span:   nil,
-					source: matchCase.Body.Expr,
-				})
-			}
+			guardBodyStmts := b.buildArmBody(matchCase.Body, tempVar, expr)
 
 			guardBlock := NewBlockStmt(guardBodyStmts, expr)
 			guardIf := NewIfStmt(guardExpr, guardBlock, currentStmt, expr)
@@ -2563,25 +2535,7 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 
 		// No guard - add pattern bindings to case body
 		caseStmts = slices.Concat(caseStmts, patternBindings)
-
-		// Add body statements or expression
-		if matchCase.Body.Block != nil {
-			// Handle block body - assign result of last statement to temp var
-			blockStmts := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
-			caseStmts = slices.Concat(caseStmts, blockStmts)
-		} else if matchCase.Body.Expr != nil {
-			// Handle expression body
-			bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr, expr)
-			caseStmts = slices.Concat(caseStmts, bodyStmts)
-
-			// Assign result to temp variable
-			assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
-			caseStmts = append(caseStmts, &ExprStmt{
-				Expr:   assignment,
-				span:   nil,
-				source: matchCase.Body.Expr,
-			})
-		}
+		caseStmts = slices.Concat(caseStmts, b.buildArmBody(matchCase.Body, tempVar, expr))
 
 		// Create block statement for the case
 		caseBlock := NewBlockStmt(caseStmts, expr)
