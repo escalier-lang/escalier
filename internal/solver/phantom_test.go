@@ -289,6 +289,14 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 			`,
 		},
 		{
+			// So is an `implements` type argument, the only position T occupies here.
+			name: "ClassImplementsWritesTheParameter",
+			src: `
+				class Marker<T> { m: T }
+				class Tag<T> implements Marker<T> { constructor(mut self) {} }
+			`,
+		},
+		{
 			// So is a constructor parameter, which lives on the class's value binding rather
 			// than in either member object.
 			name: "ClassConstructorWritesTheParameter",
@@ -365,6 +373,20 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 			name: "AliasBodyWithAnUnresolvableReference",
 			src:  `type Foo<T> = number | Nope<T>`,
 			want: []string{"1:24-1:31: Unsupported: TypeRefTypeAnn"},
+		},
+		{
+			// A bound that fails to resolve is left nil, so the T it wrote is lost along with
+			// U's own reason to exist. The parameter list resolves before the body, so both
+			// warnings would land had preBindAlias not opened its own window.
+			name: "AliasParameterWithAnUnresolvableBound",
+			src:  `type Foo<T, U: Nope<T>> = number`,
+			want: []string{"1:16-1:23: Unsupported: TypeRefTypeAnn"},
+		},
+		{
+			// The same for a default, which is the other position resolveTypeParams fills.
+			name: "AliasParameterWithAnUnresolvableDefault",
+			src:  `type Bar<T, U = Nope<T>> = {x: U}`,
+			want: []string{"1:17-1:24: Unsupported: TypeRefTypeAnn"},
 		},
 		{
 			// A type parameter does not name a class, so the extends edge is dropped and the

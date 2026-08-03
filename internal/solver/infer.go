@@ -511,8 +511,8 @@ func (c *checker) report(e SolverError) soltype.Type {
 	return &soltype.ErrorType{}
 }
 
-// errorWindow records how many diagnostics have been reported and returns a predicate
-// answering whether any more arrived since. A caller warns only when it holds.
+// errorWindow records how many diagnostics have been reported and returns a predicate that
+// holds while none have been added since. A caller warns only when it still holds.
 //
 // The warnings about a declaration's type parameters read it. Recovery drops the subtree it
 // could not resolve, so a parameter written only there leaves no occurrence in what is

@@ -1763,9 +1763,11 @@ func (e *UnusedLifetimeParamError) Message() string {
 	return "lifetime parameter '" + e.Name + " is declared but never used"
 }
 
-// UnusedTypeParamError fires when a type alias declares a `<T>` binder that its body does
-// not mention, and that no sibling parameter's bound or default mentions either. The
-// program is well-typed; the binder is dead weight. It is the type-sort twin of
+// UnusedTypeParamError fires when a type alias, a class, or an enum declares a `<T>` binder
+// that nothing in the declaration mentions, and that no sibling parameter's bound or default
+// mentions either. What counts as the declaration differs by sort — an alias's body, a
+// class's members and supers, an enum's variant parameters — and the conclusion does not.
+// The program is well-typed; the binder is dead weight. It is the type-sort twin of
 // UnusedLifetimeParamError and is likewise always a warning. Name is the declared name,
 // and Param is the binder, which carries the blame span.
 //

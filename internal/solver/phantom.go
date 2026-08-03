@@ -204,7 +204,7 @@ func (w *phantomWalker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Typ
 // sibling-mention rule is what excludes them.
 func (c *checker) reportPhantomParams(shells []*aliasShell) {
 	for _, sh := range shells {
-		if !sh.bodyClean || sh.def.NotProductive {
+		if !sh.declClean || sh.def.NotProductive {
 			// Two shapes report nothing. A body that drew a diagnostic is a partial record of
 			// what the source wrote, so a parameter it dropped would read as unused. An alias
 			// checkProductive rejected denotes no type at all, so no parameter can be
