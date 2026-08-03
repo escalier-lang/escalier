@@ -240,19 +240,24 @@ func emitsNoStructure(body soltype.Type, binder *soltype.RecursiveVarType) bool 
 // first would hand that operator a bare μ-variable to read a member out of, which is not a type any
 // reduction rule is written for.
 //
-// It reports ok=false in three cases, each one saying that what came back is not the node this level
+// It reports ok=false in two cases, each one saying that what came back is not the node this level
 // emits:
 //
 //   - the reference's definition has no resolved body, so the expansion is the ErrorType sentinel;
 //   - an expansion budget cut the reduction off, so the result is a truncation. Rendering one is
-//     expensive as well as meaningless, since a truncation can be arbitrarily large;
-//   - the reduction reported a diagnostic, such as a member read off a key the object does not
-//     carry. The plain expansion surfaces that diagnostic at the constraint site, and this walk
-//     discards the errors it collects, so declining is what keeps the report from being swallowed.
+//     expensive as well as meaningless, since a truncation can be arbitrarily large.
 //
-// A shape that still carries an operator is not rejected here, since the probe's first walk is over
-// the alias's own parameters and its shape is expected to hold one. Every caller that uses a shape
-// as a knot body screens it with containsUnreducedOp instead.
+// A reduction that reports a diagnostic is not one of them. Such a reduction already substituted the
+// ErrorType sentinel for the member it could not work out, so the level it emits is a real node with
+// `error` at that position, and `error` absorbs at every constraint site. The diagnostic itself is
+// carried by the plain expansion, which every reference runs before this walk is consulted, so the
+// errors collected here are discarded rather than reported twice. `{x: number}["z"]` inside an alias
+// body therefore yields the knot `μX0.{…, e: error, …}` and one report, not a knot-less comparison
+// that runs to the unwrap budget.
+//
+// A shape that still carries an operator is not rejected here either, since the probe's first walk is
+// over the alias's own parameters and its shape is expected to hold one. Every caller that uses a
+// shape as a knot body screens it with containsUnreducedOp instead.
 func (c *Context) knotLevel(ref *soltype.AliasType, binder *soltype.RecursiveVarType) (soltype.Type, []*soltype.AliasType, bool) {
 	expanded := c.expandAlias(ref)
 	if _, unresolved := expanded.(*soltype.ErrorType); unresolved {
@@ -260,7 +265,7 @@ func (c *Context) knotLevel(ref *soltype.AliasType, binder *soltype.RecursiveVar
 	}
 	r := &levelReducer{eval: newTypeEvaluator(c, newSeenPairs()), name: ref.Name}
 	reduced := expanded.Accept(r, soltype.Positive)
-	if r.eval.truncated || len(r.eval.errs) > 0 {
+	if r.eval.truncated {
 		return nil, nil, false
 	}
 	a := &recursiveRefAbstractor{name: ref.Name, binder: binder}

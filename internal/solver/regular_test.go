@@ -303,27 +303,28 @@ func TestConstrainNonRegularAliasStillReachesTheBudget(t *testing.T) {
 	}, messagesWithSpan(errs))
 }
 
-// A reduction diagnostic inside an alias's body still surfaces. The level walk that decides whether
-// a reference is the knot discards the errors it collects, so a level whose reduction reported one
-// is declined outright and the plain expansion carries the report to the constraint site. Declining
-// every level leaves this comparison with no knot at all, so the budget cuts it off the way it did
-// before the check existed. Reporting the malformed member is what matters; the two cut-off
-// diagnostics are the pre-existing outcome for an alias no knot settles.
+// A malformed member inside an alias body reports once and does not stop the alias being normalized.
+// Reduction substitutes the ErrorType sentinel for `{x: number}["z"]`, so the level the alias emits
+// is a real node carrying `error` at that position and the knot is proven over it. The diagnostic
+// comes from the plain expansion, which runs before any knot is substituted, and `error` absorbs
+// everywhere below, so nothing derived from it cascades.
 func TestConstrainRegularAliasKeepsAReductionDiagnostic(t *testing.T) {
+	nodes, ctx, _ := inferTypeNodes(t, `
+		type H<T> = {a: keyof T, e: {x: number}["z"], b: H<{c: T}>}
+		type Probe = H<{c: number}>
+	`)
+	ref, ok := nodes["Probe"].(*soltype.AliasType)
+	require.True(t, ok, "Probe must bind an alias reference, got %T", nodes["Probe"])
+	knot := ctx.muKnotFor(ref)
+	require.NotNil(t, knot)
+	require.Equal(t, `μX0.{a: "c", e: error, b: X0}`, soltype.Print(knot))
+
 	_, _, errs := inferSource(t, `
 		type H<T> = {a: keyof T, e: {x: number}["z"], b: H<{c: T}>}
 		fn node() { return {a: "c", e: 1, b: node()} }
 		fn use() -> H<{c: number}> { return node() }
 	`)
-	require.Equal(t, []string{
-		`4:3-4:47: object {x: number} has no property "z"`,
-		"4:3-4:47: comparing \"c\" with keyof object reached the limit of 200 type-operator " +
-			"expansions and was cut off; either the two sides recurse without ever repeating a pair " +
-			"the check can close on, or their alias chains run deeper than the limit unfolds",
-		"4:3-4:47: comparing object with H reached the limit of 200 type-operator expansions and " +
-			"was cut off; either the two sides recurse without ever repeating a pair the check can " +
-			"close on, or their alias chains run deeper than the limit unfolds",
-	}, messagesWithSpan(errs))
+	require.Equal(t, []string{`4:3-4:47: object {x: number} has no property "z"`}, messagesWithSpan(errs))
 }
 
 // A member read off a regular alias keeps the alias name on the type it yields. evalTypeOperator

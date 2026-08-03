@@ -718,9 +718,8 @@ at least two unfoldings, so waiting for the second keeps the alias name on every
 first produces. The cost is one duplicated diagnostic when a value disagrees with the
 knot's body, once for each of the two unfoldings.
 
-Three shapes are declined that the argument-independence proof alone would admit. A level
-whose reduction reported a diagnostic is declined, so the plain expansion carries that
-report to the constraint site rather than the knot swallowing it. A shape still carrying an
+Two shapes are declined that the argument-independence proof alone would admit. A shape
+still carrying an
 operator is declined, since a recursive reference standing as a spread's operand abstracts
 to `{...X0}`, which reduction has no rule for grounding. Such an alias does have a knot, so
 that one is incompleteness rather than a shape no knot fits. And a knot body
