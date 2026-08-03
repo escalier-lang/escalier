@@ -2800,6 +2800,9 @@ func (c *checker) caughtType(collected soltype.Type) soltype.Type {
 //
 // The caught union's open tail is uncovered as well, and only a catch-all closes it. So a
 // catch-all is what lets a function with no `throws` clause wrap a call to a throwing one.
+//
+// A rethrow the enclosing sink cannot accept is one UnhandledRethrowError blamed on the
+// try/catch, since the re-raise happens there rather than at the `throw` the block caught.
 func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, enclosing soltype.Type) {
 	for _, arm := range e.Catch {
 		if arm.Guard == nil && isCatchAll(arm.Pattern) {
@@ -2822,7 +2825,13 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 			rethrown = &soltype.UnknownType{}
 		}
 	}
-	c.constrain(e, rethrown, enclosing)
+	// The engine runs directly rather than through c.constrain, so its errors are dropped
+	// in favour of one UnhandledRethrowError blamed here. A member's Prov entry is the
+	// `throw` that produced it inside the block, and blaming that `throw` would be wrong:
+	// the `try` caught it. What fails is the re-raise, which happens at this node.
+	if errs := c.ctx.Constrain(rethrown, enclosing); len(errs) > 0 {
+		c.report(&UnhandledRethrowError{Try: e, Rethrown: rethrown, Sink: enclosing})
+	}
 	c.markRaised()
 }
 

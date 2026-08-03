@@ -1032,6 +1032,28 @@ type MissingCatchArmError struct {
 	Try *ast.TryCatchExpr
 }
 
+// UnhandledRethrowError fires when the part of a caught union the catch arms leave
+// uncovered cannot reach the enclosing throws sink. `rethrowUnhandled` returns early on a
+// catch-all, so this error only ever describes a `try` without one.
+//
+// It replaces the errors the constraint engine would raise for the same failure, for two
+// reasons. Blame is the first. An engine error resolves per-operand blame through Prov, and
+// a rethrown member's Prov entry is the `throw` inside the try block — but that `throw` is
+// caught. What fails is the re-raise, which happens at the try/catch.
+//
+// Count is the second. The engine reports the open tail and each uncovered member
+// separately, and the tail fails whenever the sink is closed at all, so a member error
+// never adds an independently actionable fact. Adding a catch-all resolves every one of
+// them together, and naming the members does not change that remedy.
+//
+// It is a bridge error born in `rethrowUnhandled` with the try/catch node in hand, so it
+// self-blames the whole form through `Span` and carries no related node.
+type UnhandledRethrowError struct {
+	Try      *ast.TryCatchExpr
+	Rethrown soltype.Type
+	Sink     soltype.Type
+}
+
 // MixedOwnershipError fires when an inferred union or intersection has a borrowed
 // member beside an owned one, such as `{x: number} | &{y: number}`, which has no
 // single owned-or-borrowed verdict. It blames the inference join where it forms.
@@ -1061,7 +1083,8 @@ func (*NotIterableError) isSolverError()                    {}
 func (*ReturnOutsideFunctionError) isSolverError()          {}
 func (*AsyncReturnNotPromiseError) isSolverError()          {}
 func (*NonExhaustiveMatchError) isSolverError()             {}
-func (*MissingCatchArmError) isSolverError()             {}
+func (*MissingCatchArmError) isSolverError()                {}
+func (*UnhandledRethrowError) isSolverError()               {}
 func (*MixedOwnershipError) isSolverError()                 {}
 func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
 func (*MissingSelfReceiverError) isSolverError()            {}
@@ -1485,8 +1508,15 @@ func (e *NonExhaustiveMatchError) Message() string {
 	return "match is not exhaustive; add a catch-all branch"
 }
 
-func (e *MissingCatchArmError) Span() ast.Span      { return e.Try.Span() }
-func (e *MissingCatchArmError) Related() []ast.Span { return nil }
+func (e *MissingCatchArmError) Span() ast.Span       { return e.Try.Span() }
+func (e *MissingCatchArmError) Related() []ast.Span  { return nil }
+func (e *UnhandledRethrowError) Span() ast.Span      { return e.Try.Span() }
+func (e *UnhandledRethrowError) Related() []ast.Span { return nil }
+func (e *UnhandledRethrowError) Message() string {
+	return "the catch arms leave " + soltype.Print(e.Rethrown) + " uncovered, so it is rethrown, and the enclosing `throws " +
+		soltype.Print(e.Sink) + "` does not admit it. Add a catch-all arm; only a catch-all closes a caught union's open tail"
+}
+
 func (e *MissingCatchArmError) Message() string {
 	return "a `try` with no catch arms catches nothing; drop the `try` and keep its block, or add at least one catch arm"
 }

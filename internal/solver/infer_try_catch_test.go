@@ -121,19 +121,34 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 	})
 	runThrowsErrCases(t, []throwsErrCase{
 		{
-			// A clause-less function raises `never`, which is closed, so both the rethrown
-			// member and the open tail are rejected against it.
+			// A clause-less function raises `never`, which is closed, so the rethrow has
+			// nowhere to land. The blame is the try/catch, not the `throw "boom"` inside the
+			// block: that `throw` IS caught, and what fails is the re-raise past the arms.
+			// One diagnostic covers it, since only a catch-all resolves either half.
 			name: "RethrowNeedsAClause",
 			src:  `fn f() { try { throw "boom" } catch { 5 => 0 } }`,
 			wantErrs: []string{
-				`1:10-1:45: cannot constrain "boom" | ... <: never`,
-				`1:22-1:28: cannot constrain "boom" <: never`,
+				"1:10-1:45: the catch arms leave \"boom\" | ... uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Add a catch-all arm; only a catch-all closes a caught union's open tail",
 			},
 		},
 		{
-			name:     "TheBareTailNeedsAClauseToo",
-			src:      `fn f() { try { throw "boom" } catch { "boom" => 0 } }`,
-			wantErrs: []string{"1:10-1:50: cannot constrain unknown <: never"},
+			// Covering the one named member leaves the open tail, spelled `unknown`, and it
+			// is rethrown on its own.
+			name: "TheBareTailNeedsAClauseToo",
+			src:  `fn f() { try { throw "boom" } catch { "boom" => 0 } }`,
+			wantErrs: []string{
+				"1:10-1:50: the catch arms leave unknown uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Add a catch-all arm; only a catch-all closes a caught union's open tail",
+			},
+		},
+		{
+			// A member the enclosing clause does admit passes through, so only the tail is
+			// left to reject. The clause being narrower than `unknown` is what fails, and a
+			// catch-all is still the remedy.
+			name: "ANarrowClauseStillCannotCarryTheTail",
+			src:  `fn f(c: boolean) throws string { try { if c { throw "a" } else { throw "b" } } catch { "a" => 0 } }`,
+			wantErrs: []string{
+				"1:34-1:96: the catch arms leave \"b\" | ... uncovered, so it is rethrown, and the enclosing `throws string` does not admit it. Add a catch-all arm; only a catch-all closes a caught union's open tail",
+			},
 		},
 	})
 }
