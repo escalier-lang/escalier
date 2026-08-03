@@ -20,103 +20,146 @@ try {
 export const blockBody = temp2;
 let temp3;
 try {
-  temp3 = 42;
+  throw "x";
 } catch (__error) {
   if (true) {
-    temp3 = "error";
+    const e = __error;
+    temp3 = e;
+  } else if (__error == "x") {
+    temp3 = "unreachable";
   }
 }
-export const mixedReturn = temp3;
-let temp4;
+export const catchAllFirst = temp3;
+export function guardedIdent(temp4) {
+  const n = temp4;
+  let temp5;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (true) {
+      const e = __error;
+      if (e == "x" && n > 0) {
+        temp5 = 0;
+      } else {
+        throw __error;
+      }
+    }
+  }
+  return temp5;
+}
+export function guardedWildcard(temp6) {
+  const n = temp6;
+  let temp7;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (true) {
+      if (n > 0) {
+        temp7 = 0;
+      } else {
+        throw __error;
+      }
+    }
+  }
+  return temp7;
+}
+let temp8;
+try {
+  temp8 = 42;
+} catch (__error) {
+  if (true) {
+    temp8 = "error";
+  }
+}
+export const mixedReturn = temp8;
+let temp9;
 try {
   throw Error("fail");
 } catch (__error) {
   if (true) {
     const Error = __error;
-    temp4 = "caught error";
+    temp9 = "caught error";
   } else {
-    temp4 = "unknown";
+    temp9 = "unknown";
   }
 }
-export const multipleCases = temp4;
-let temp5;
+export const multipleCases = temp9;
+let temp10;
 try {
-  let temp6;
+  let temp11;
   try {
-    temp6 = 5;
+    temp11 = 5;
   } catch (__error) {
     if (true) {
-      temp6 = 10;
+      temp11 = 10;
     }
   }
-  temp5 = temp6;
+  temp10 = temp11;
 } catch (__error) {
   if (true) {
-    temp5 = 0;
+    temp10 = 0;
   }
 }
-export const nestedTryCatch = temp5;
-let temp7;
+export const nestedTryCatch = temp10;
+let temp12;
 try {
   throw {message: "fail"};
 } catch (__error) {
   if (__error != null && "message" in __error) {
     const {message: msg} = __error;
-    temp7 = msg;
+    temp12 = msg;
   } else {
-    temp7 = "unknown";
+    temp12 = "unknown";
   }
 }
-export const objectPattern = temp7;
-let temp8;
+export const objectPattern = temp12;
+let temp13;
 try {
   throw "fail";
 } catch (__error) {
   if (true) {
     const msg = __error;
-    temp8 = msg;
+    temp13 = msg;
   } else {
-    temp8 = "unknown";
+    temp13 = "unknown";
   }
 }
-export const patternBinding = temp8;
-export function safeDivide(temp9, temp10) {
-  const a = temp9;
-  const b = temp10;
-  let temp11;
+export const patternBinding = temp13;
+export function safeDivide(temp14, temp15) {
+  const a = temp14;
+  const b = temp15;
+  let temp16;
   try {
-    temp11 = a / b;
+    temp16 = a / b;
   } catch (__error) {
     if (true) {
-      temp11 = 0;
+      temp16 = 0;
     }
   }
-  return temp11;
+  return temp16;
 }
-let temp12;
+let temp17;
 try {
   throw "error";
 } catch (__error) {
   if (true) {
     const msg = __error;
-    temp12 = "caught: " + msg;
-  } else {
-    throw __error;
+    temp17 = "caught: " + msg;
   }
 }
-export const tryCatchWithThrow = temp12;
-let temp13;
+export const tryCatchWithThrow = temp17;
+let temp18;
 try {
   throw "critical";
 } catch (__error) {
   if (true) {
     const err = __error;
     if (err == "critical") {
-      temp13 = "critical error";
+      temp18 = "critical error";
     } else if (true) {
-      temp13 = "other error";
+      temp18 = "other error";
     }
   }
 }
-export const withGuard = temp13;
+export const withGuard = temp18;
 //# sourceMappingURL=./index.js.map

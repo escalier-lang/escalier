@@ -319,6 +319,33 @@ func CollectPatternBindingNames(p Pat, into set.Set[string]) {
 	})
 }
 
+// IsCatchAllPat reports whether a pattern matches every value unconditionally. A wildcard
+// or identifier binds without testing the value. Every other pattern is refutable, so it
+// can fail at runtime.
+func IsCatchAllPat(p Pat) bool {
+	switch p.(type) {
+	case *WildcardPat, *IdentPat:
+		return true
+	default:
+		return false
+	}
+}
+
+// HasUnguardedCatchAll reports whether some arm always runs, which makes the arms cover
+// every value the scrutinee can take. An arm always runs when its pattern is a catch-all
+// and it carries no guard, since a guard can fail and let the value fall through.
+// Position does not matter. An always-running arm makes every later arm unreachable
+// wherever it sits, so a `match` with one needs no exhaustiveness error and a `try` with
+// one needs no rethrow.
+func HasUnguardedCatchAll(arms []*MatchCase) bool {
+	for _, arm := range arms {
+		if arm.Guard == nil && IsCatchAllPat(arm.Pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 // RootObjectVarID walks a member/index expression chain (`a.b.c`, `a[b][c]`) to the
 // root object's VarID as written on the AST node, returning 0 when the root is not a
 // local variable. The result is the raw node VarID; liveness callers wrap it in

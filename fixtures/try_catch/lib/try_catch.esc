@@ -81,3 +81,29 @@ export val mixedReturn = try {
 } catch {
     _ => "error"
 }
+
+// Guarded wildcard: the guard can fail, so the catch rethrows
+export fn guardedWildcard(n: number) -> number throws string {
+    return try {
+        throw "x"
+    } catch {
+        _ if n > 0 => 0
+    }
+}
+
+// Guarded binding: same shape, but the arm names the caught value
+export fn guardedIdent(n: number) -> number throws string {
+    return try {
+        throw "x"
+    } catch {
+        e if e == "x" && n > 0 => 0
+    }
+}
+
+// Catch-all ahead of a literal arm: nothing escapes, so no rethrow
+export val catchAllFirst = try {
+    throw "x"
+} catch {
+    e => e,
+    "x" => "unreachable",
+}

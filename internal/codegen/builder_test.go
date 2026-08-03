@@ -891,6 +891,154 @@ func TestBuildValElse(t *testing.T) {
 	}
 }
 
+// TestBuildTryCatchRethrow pins which catch arms let a caught value escape. A value no arm
+// takes is re-raised, so the emitted catch ends in `throw __error` unless some arm always
+// runs. An arm always runs when its pattern is a wildcard or an identifier and it carries no
+// guard, which is the same rule the solver applies when it decides whether the enclosing
+// `throws` clause records the rethrow.
+func TestBuildTryCatchRethrow(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		expected string
+	}{
+		// A bare `_` always runs, so nothing escapes.
+		"BareWildcard": {
+			src: "fn f() {\n\treturn try { throw \"x\" } catch { _ => 0 }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (true) {
+      temp1 = 0;
+    }
+  }
+  return temp1;
+}`,
+		},
+		// A guard can fail, so `_ if …` does not always run. The rethrow belongs in the
+		// guard's else, since the wildcard's own test is `true` and cannot fail.
+		"GuardedWildcard": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { _ if n > 0 => 0 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (true) {
+      if (n > 0) {
+        temp2 = 0;
+      } else {
+        throw __error;
+      }
+    }
+  }
+  return temp2;
+}`,
+		},
+		// An identifier binds the caught value without testing it, so it always runs and
+		// draws no rethrow.
+		"BareIdent": {
+			src: "fn f() {\n\treturn try { throw \"x\" } catch { e => e }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (true) {
+      const e = __error;
+      temp1 = e;
+    }
+  }
+  return temp1;
+}`,
+		},
+		"GuardedIdent": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { e if n > 0 => e }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (true) {
+      const e = __error;
+      if (n > 0) {
+        temp2 = e;
+      } else {
+        throw __error;
+      }
+    }
+  }
+  return temp2;
+}`,
+		},
+		// An always-running arm makes every later arm unreachable wherever it sits, so a
+		// catch-all ahead of another arm still leaves nothing to re-raise.
+		"CatchAllBeforeAnotherArm": {
+			src: "fn f() {\n\treturn try { throw \"x\" } catch { _ => 0, \"x\" => 1 }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (true) {
+      temp1 = 0;
+    } else if (__error == "x") {
+      temp1 = 1;
+    }
+  }
+  return temp1;
+}`,
+		},
+		// No arm always runs, so a value matching neither literal is re-raised.
+		"LiteralArmsOnly": {
+			src: "fn f() {\n\treturn try { throw \"x\" } catch { \"x\" => 0, \"y\" => 1 }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x") {
+      temp1 = 0;
+    } else if (__error == "y") {
+      temp1 = 1;
+    } else {
+      throw __error;
+    }
+  }
+  return temp1;
+}`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: test.src},
+			})
+			require.Empty(t, errors)
+
+			depGraph := dep_graph.BuildDepGraph(module)
+			builder := &Builder{tempId: 0, depGraph: depGraph}
+			outModule := builder.BuildTopLevelDecls(depGraph)
+
+			printer := NewPrinter()
+			for i, stmt := range outModule.Stmts {
+				if i > 0 {
+					printer.NewLine()
+				}
+				printer.PrintStmt(stmt)
+			}
+			require.Equal(t, test.expected, printer.Output)
+		})
+	}
+}
+
 func TestBuildDecls_WithDependencies(t *testing.T) {
 	tests := map[string]struct {
 		sources  []*ast.Source

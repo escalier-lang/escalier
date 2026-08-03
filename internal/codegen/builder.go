@@ -1828,8 +1828,22 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			errorIdent := NewIdentExpr("__error", "", expr)
 			var catchBodyStmts []Stmt
 
-			// Build the catch cases in reverse order to create if-else chain
-			var currentStmt Stmt
+			// rethrow returns the `throw __error` that runs when an arm declines the
+			// caught value, or nil when the arms cannot decline it. Each call builds a
+			// fresh block so the two fall-through slots a guarded arm opens, its failed
+			// guard and its failed pattern test, do not share one node.
+			alwaysMatches := ast.HasUnguardedCatchAll(expr.Catch)
+			rethrow := func() Stmt {
+				if alwaysMatches {
+					return nil
+				}
+				return NewBlockStmt([]Stmt{NewThrowStmt(errorIdent, expr)}, expr)
+			}
+
+			// Build the catch cases in reverse order to create if-else chain.
+			// currentStmt is what runs when no arm built so far takes the value, so the
+			// chain starts at the rethrow and each arm wraps it.
+			currentStmt := rethrow()
 			for i := len(expr.Catch) - 1; i >= 0; i-- {
 				matchCase := expr.Catch[i]
 
@@ -1870,9 +1884,17 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					guardIf := NewIfStmt(guardExpr, guardBlock, currentStmt, expr)
 					caseBodyStmts = append(caseBodyStmts, guardIf)
 
-					// Wrap in outer pattern condition block
+					// Wrap in outer pattern condition block. A guarded arm keeps its
+					// pattern test and its guard in separate `if`s so the guard can read
+					// the pattern's bindings, so the two can fail independently and each
+					// needs its own rethrow. A catch-all pattern tests `true` and cannot
+					// fail, which would leave the outer rethrow unreachable.
 					caseBlock := NewBlockStmt(caseBodyStmts, expr)
-					currentStmt = NewIfStmt(condition, caseBlock, nil, expr)
+					var patternFailed Stmt
+					if !isTrueLiteral(condition) {
+						patternFailed = rethrow()
+					}
+					currentStmt = NewIfStmt(condition, caseBlock, patternFailed, expr)
 					continue
 				}
 
@@ -1901,47 +1923,13 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 				// Create block statement for the case
 				caseBlock := NewBlockStmt(caseBodyStmts, expr)
 
-				// Create if statement
-				if currentStmt == nil {
-					// Last case, no else clause
-					currentStmt = NewIfStmt(condition, caseBlock, nil, expr)
-				} else {
-					// Previous cases become the else clause
-					currentStmt = NewIfStmt(condition, caseBlock, currentStmt, expr)
-				}
+				// Earlier cases wrap this one, so the chain built so far becomes the
+				// else clause.
+				currentStmt = NewIfStmt(condition, caseBlock, currentStmt, expr)
 			}
 
-			// If we have match cases but the chain might not be exhaustive,
-			// add a final else that re-throws the error
 			if currentStmt != nil {
-				// Check if the last pattern is a wildcard (catches all)
-				lastCase := expr.Catch[len(expr.Catch)-1]
-				_, isWildcard := lastCase.Pattern.(*ast.WildcardPat)
-
-				if !isWildcard {
-					// Not exhaustive, add a re-throw
-					rethrowStmt := NewThrowStmt(errorIdent, expr)
-					rethrowBlock := NewBlockStmt([]Stmt{rethrowStmt}, expr)
-					currentStmt = simplifyTrueLiterals(currentStmt)
-
-					// Find the last if statement and add the re-throw as its else
-					lastIf := currentStmt
-					for {
-						if ifStmt, ok := lastIf.(*IfStmt); ok {
-							if ifStmt.Alt == nil {
-								ifStmt.Alt = rethrowBlock
-								break
-							}
-							lastIf = ifStmt.Alt
-						} else {
-							break
-						}
-					}
-				} else {
-					currentStmt = simplifyTrueLiterals(currentStmt)
-				}
-
-				catchBodyStmts = append(catchBodyStmts, currentStmt)
+				catchBodyStmts = append(catchBodyStmts, simplifyTrueLiterals(currentStmt))
 			}
 
 			catchBlock := NewBlockStmt(catchBodyStmts, expr)
