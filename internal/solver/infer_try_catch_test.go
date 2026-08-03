@@ -139,29 +139,78 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 }
 
 // The catch arms are what handle an exception, so a `try` without them handles nothing and
-// is rejected. The block recovers as if written on its own, which keeps the missing clause
+// is rejected. The block recovers as if written on its own, which keeps the missing arms
 // to a single diagnostic: its throws reach the enclosing sink unchanged, with no caught
 // binding and no open tail added on top.
-func TestInferTryWithoutCatchIsRejected(t *testing.T) {
+func TestInferTryWithoutCatchArmsIsRejected(t *testing.T) {
 	runThrowsErrCases(t, []throwsErrCase{
 		{
-			name: "ArmlessTryIsRejected",
+			name: "OmittedCatchIsRejected",
 			src:  `fn f() throws string { try { throw "boom" } }`,
 			wantErrs: []string{
-				"1:24-1:44: `try` needs a `catch` clause; without one it handles nothing, so drop the `try` and keep the block",
+				"1:24-1:44: `try` needs at least one catch arm; with none it handles nothing, so drop the `try` and keep the block",
+			},
+		},
+		{
+			// A written `catch { }` reaches the same diagnostic, since ast.TryCatchExpr
+			// records only the arms and both forms leave that slice empty. The message asks
+			// for an arm rather than for a `catch` clause, so it stays true here, and the
+			// span covers the empty braces so the blame lands where the arm goes.
+			name: "WrittenButEmptyCatchIsRejected",
+			src:  `fn f() throws string { try { throw "boom" } catch { } }`,
+			wantErrs: []string{
+				"1:24-1:54: `try` needs at least one catch arm; with none it handles nothing, so drop the `try` and keep the block",
 			},
 		},
 		{
 			// The block's `throw` is checked against the enclosing clause exactly as it
-			// would be with no `try` around it, so the missing clause is the only extra
+			// would be with no `try` around it, so the missing arms are the only extra
 			// diagnostic.
 			name: "TheBlockStillReachesTheEnclosingClause",
 			src:  `fn f() { try { throw "boom" } }`,
 			wantErrs: []string{
-				"1:10-1:30: `try` needs a `catch` clause; without one it handles nothing, so drop the `try` and keep the block",
+				"1:10-1:30: `try` needs at least one catch arm; with none it handles nothing, so drop the `try` and keep the block",
 				`1:22-1:28: cannot constrain "boom" <: never`,
 			},
 		},
+	})
+}
+
+// A `try` at module top level has no funcCtx to hold its nested sink, so it installs the
+// checker's module-level one instead. Without that the block collects nothing and every
+// caught binding reads `unknown`.
+func TestInferTryCatchAtModuleTopLevel(t *testing.T) {
+	t.Run("CaughtBindingCollectsTheBlocksThrows", func(t *testing.T) {
+		values, _, errs := inferSource(t, `val caught = try { throw "fail" } catch { msg => msg }`)
+		require.Empty(t, errs)
+		require.Equal(t, `"fail" | ...`, values["caught"])
+	})
+
+	t.Run("TheSinkDoesNotLeakBetweenDecls", func(t *testing.T) {
+		// The install is undone when the block finishes, so a later `try` over a quiet
+		// block collects nothing rather than inheriting the earlier block's throws.
+		values, _, errs := inferSource(t, `
+			val a = try { throw "one" } catch { e => e }
+			val b = try { val q = 1 } catch { e => e }
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, `"one" | ...`, values["a"])
+		require.Equal(t, "unknown", values["b"])
+	})
+
+	t.Run("ANestedFunctionKeepsItsOwnSink", func(t *testing.T) {
+		// throwsSink reads the module-level sink only when there is no funcCtx, so a
+		// function declared inside the block collects into its own signature. The block
+		// diverges, so the binding is the caught type alone, and `"inner"` is absent from
+		// it while the block's own `"outer"` is there.
+		values, _, errs := inferSource(t, `
+			val caught = try {
+				val g = fn () throws _ { throw "inner" }
+				throw "outer"
+			} catch { e => e }
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, `"outer" | ...`, values["caught"])
 	})
 }
 

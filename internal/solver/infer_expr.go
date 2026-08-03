@@ -2693,9 +2693,10 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	// With none there is nothing to bind and nothing to narrow, so the form is rejected and
 	// the block recovers as if it had been written on its own: it walks against the
 	// enclosing sink, and its throws reach the function's clause unchanged. That keeps the
-	// missing clause to one diagnostic instead of cascading a rethrow through it.
+	// missing arms to one diagnostic instead of cascading a rethrow through them. An
+	// omitted `catch` and a written `catch { }` both arrive here with an empty slice.
 	if len(e.Catch) == 0 {
-		c.report(&MissingCatchClauseError{Try: e})
+		c.report(&MissingCatchArmError{Try: e})
 		t, _ := c.inferBlock(scope.Child(), lvl, &e.Try)
 		c.recordType(e, t)
 		return t
@@ -2743,27 +2744,30 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	return res
 }
 
-// walkTryBlock walks a try block with sink installed as the enclosing body's throws sink,
-// then puts the previous sink back. The swap is the save/restore shape pushFuncCtx uses
-// for a whole function body, so a `try` inside another `try`'s block nests for free and
-// sends its own leftovers to the outer arms.
+// walkTryBlock walks a try block with sink installed as the throws sink its exceptional
+// exits reach, then puts the previous sink back. The swap is the save/restore shape
+// pushFuncCtx uses for a whole function body, so a `try` inside another `try`'s block nests
+// for free and sends its own leftovers to the outer arms. installThrowsSink picks the field
+// to swap, so a top-level `try` collects into the checker's module-level sink and one in a
+// body collects into that body's funcCtx.
 //
 // funcCtx.raised is saved and cleared alongside the sink. The flag records whether the
 // enclosing body has an exceptional exit its own clause must cover. An exit the catch arms
 // handle is not one, so the flag starts clear for the block, and rethrowUnhandled sets it
 // again only when something is left over. That way a clause reached solely through a fully
-// handled `try` still reports as unused.
-//
-// At module top level there is no funcCtx to swap, so the block walks against the
-// throwaway sink throwsSink mints there and nothing is collected.
+// handled `try` still reports as unused. Module top level has no clause to measure, so the
+// flag has nothing to track there and markRaised is already a no-op.
 func (c *checker) walkTryBlock(scope *Scope, lvl int, b *ast.Block, sink soltype.Type) (soltype.Type, bool) {
-	if c.fn == nil {
-		return c.inferBlock(scope.Child(), lvl, b)
+	savedThrows := c.installThrowsSink(sink)
+	savedRaised := false
+	if c.fn != nil {
+		savedRaised, c.fn.raised = c.fn.raised, false
 	}
-	savedThrows, savedRaised := c.fn.throws, c.fn.raised
-	c.fn.throws, c.fn.raised = sink, false
 	t, diverges := c.inferBlock(scope.Child(), lvl, b)
-	c.fn.throws, c.fn.raised = savedThrows, savedRaised
+	c.installThrowsSink(savedThrows)
+	if c.fn != nil {
+		c.fn.raised = savedRaised
+	}
 	return t, diverges
 }
 
