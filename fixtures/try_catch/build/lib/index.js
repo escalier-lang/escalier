@@ -43,109 +43,110 @@ export function guardedRefutable(temp6) {
   try {
     throw "x";
   } catch (__error) {
+    let temp8 = false;
     if (__error == "x") {
       if (n > 0) {
         temp7 = 0;
-      } else {
-        temp7 = 1;
+        temp8 = true;
       }
-    } else {
+    }
+    if (!temp8) {
       temp7 = 1;
     }
   }
   return temp7;
 }
-export function guardedWildcard(temp8) {
-  const n = temp8;
-  let temp9;
+export function guardedWildcard(temp9) {
+  const n = temp9;
+  let temp10;
   try {
     throw "x";
   } catch (__error) {
     if (n > 0) {
-      temp9 = 0;
+      temp10 = 0;
     } else {
       throw __error;
     }
   }
-  return temp9;
+  return temp10;
 }
-let temp10;
-try {
-  temp10 = 42;
-} catch (__error) {
-  temp10 = "error";
-}
-export const mixedReturn = temp10;
 let temp11;
+try {
+  temp11 = 42;
+} catch (__error) {
+  temp11 = "error";
+}
+export const mixedReturn = temp11;
+let temp12;
 try {
   throw Error("fail");
 } catch (__error) {
   const Error = __error;
-  temp11 = "caught error";
+  temp12 = "caught error";
 }
-export const multipleCases = temp11;
-let temp12;
+export const multipleCases = temp12;
+let temp13;
 try {
-  let temp13;
+  let temp14;
   try {
-    temp13 = 5;
+    temp14 = 5;
   } catch (__error) {
-    temp13 = 10;
+    temp14 = 10;
   }
-  temp12 = temp13;
+  temp13 = temp14;
 } catch (__error) {
-  temp12 = 0;
+  temp13 = 0;
 }
-export const nestedTryCatch = temp12;
-let temp14;
+export const nestedTryCatch = temp13;
+let temp15;
 try {
   throw {message: "fail"};
 } catch (__error) {
   if (__error != null && "message" in __error) {
     const {message: msg} = __error;
-    temp14 = msg;
+    temp15 = msg;
   } else {
-    temp14 = "unknown";
+    temp15 = "unknown";
   }
 }
-export const objectPattern = temp14;
-let temp15;
+export const objectPattern = temp15;
+let temp16;
 try {
   throw "fail";
 } catch (__error) {
   const msg = __error;
-  temp15 = msg;
+  temp16 = msg;
 }
-export const patternBinding = temp15;
-export function safeDivide(temp16, temp17) {
-  const a = temp16;
-  const b = temp17;
-  let temp18;
+export const patternBinding = temp16;
+export function safeDivide(temp17, temp18) {
+  const a = temp17;
+  const b = temp18;
+  let temp19;
   try {
-    temp18 = a / b;
+    temp19 = a / b;
   } catch (__error) {
-    temp18 = 0;
+    temp19 = 0;
   }
-  return temp18;
+  return temp19;
 }
-let temp19;
+let temp20;
 try {
   throw "error";
 } catch (__error) {
   const msg = __error;
-  temp19 = "caught: " + msg;
+  temp20 = "caught: " + msg;
 }
-export const tryCatchWithThrow = temp19;
-let temp20;
+export const tryCatchWithThrow = temp20;
+let temp21;
 try {
   throw "critical";
 } catch (__error) {
   const err = __error;
   if (err == "critical") {
-    temp20 = "critical error";
+    temp21 = "critical error";
   } else {
-    temp20 = "other error";
+    temp21 = "other error";
   }
 }
-export const withGuard = temp20;
+export const withGuard = temp21;
 //# sourceMappingURL=./index.js.map

@@ -1014,12 +1014,10 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   } catch (__error) {
     if (n > 0) {
       temp2 = 0;
+    } else if (n > 1) {
+      temp2 = 1;
     } else {
-      if (n > 1) {
-        temp2 = 1;
-      } else {
-        temp2 = 2;
-      }
+      temp2 = 2;
     }
   }
   return temp2;
@@ -1037,12 +1035,10 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   } catch (__error) {
     if (__error == "x") {
       temp2 = 0;
+    } else if (n > 0) {
+      temp2 = 1;
     } else {
-      if (n > 0) {
-        temp2 = 1;
-      } else {
-        throw __error;
-      }
+      throw __error;
     }
   }
   return temp2;
@@ -1051,7 +1047,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		// A guarded arm whose pattern is refutable declines the value in two ways, by
 		// failing the pattern test and by failing the guard. Both hand the value to the
 		// later arms, so the arm that always runs still gets its turn on a thrown "y".
-		// Two live fall-through paths mean the later arms are printed twice.
+		// The flag gives those arms one owner, so they are emitted once.
 		"GuardedRefutableThenCatchAll": {
 			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, _ => 1 }\n}",
 			expected: `export function f(temp1) {
@@ -1060,13 +1056,14 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
+    let temp3 = false;
     if (__error == "x") {
       if (n > 0) {
         temp2 = 0;
-      } else {
-        temp2 = 1;
+        temp3 = true;
       }
-    } else {
+    }
+    if (!temp3) {
       temp2 = 1;
     }
   }
@@ -1083,18 +1080,57 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
+    let temp3 = false;
     if (__error == "x") {
       if (n > 0) {
         temp2 = 0;
-      } else if (__error == "y") {
+        temp3 = true;
+      }
+    }
+    if (!temp3) {
+      if (__error == "y") {
         temp2 = 1;
       } else {
         throw __error;
       }
-    } else if (__error == "y") {
-      temp2 = 1;
-    } else {
-      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// Stacked guarded arms with refutable patterns. Each one owns the arms after it
+		// through its own flag, so the "z" arm and the rethrow are emitted once rather
+		// than once per path through the two guards.
+		"TwoGuardedRefutableArms": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, \"y\" if n > 1 => 1, \"z\" => 2 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    let temp4 = false;
+    if (__error == "x") {
+      if (n > 0) {
+        temp2 = 0;
+        temp4 = true;
+      }
+    }
+    if (!temp4) {
+      let temp3 = false;
+      if (__error == "y") {
+        if (n > 1) {
+          temp2 = 1;
+          temp3 = true;
+        }
+      }
+      if (!temp3) {
+        if (__error == "z") {
+          temp2 = 2;
+        } else {
+          throw __error;
+        }
+      }
     }
   }
   return temp2;

@@ -1829,13 +1829,28 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			var catchBodyStmts []Stmt
 
 			// Build the catch cases in reverse order to create if-else chain.
-			// currentStmt is what runs when no arm built so far takes the value, and
-			// each arm wraps it. The chain starts at the `throw __error` that re-raises
-			// a value no arm takes. An arm that always runs leaves nothing to re-raise,
-			// so the chain starts empty instead and the caught value cannot escape.
-			var currentStmt Stmt
+			// fallthroughStmts is what runs when no arm built so far takes the value,
+			// and each arm wraps it. It starts at the `throw __error` that re-raises a
+			// value no arm takes. An arm that always runs leaves nothing to re-raise, so
+			// it starts empty instead and the caught value cannot escape.
+			var fallthroughStmts []Stmt
 			if !ast.HasUnguardedCatchAll(expr.Catch) {
-				currentStmt = NewBlockStmt([]Stmt{NewThrowStmt(errorIdent, expr)}, expr)
+				fallthroughStmts = []Stmt{NewThrowStmt(errorIdent, expr)}
+			}
+
+			// asElse renders the fall-through for an `else` slot. A lone `if` goes in
+			// bare so the arms print as one `else if` chain. Anything else needs braces,
+			// and nothing at all leaves the slot empty.
+			asElse := func() Stmt {
+				if len(fallthroughStmts) == 0 {
+					return nil
+				}
+				if len(fallthroughStmts) == 1 {
+					if ifStmt, isIf := fallthroughStmts[0].(*IfStmt); isIf {
+						return ifStmt
+					}
+				}
+				return NewBlockStmt(fallthroughStmts, expr)
 			}
 			for i := len(expr.Catch) - 1; i >= 0; i-- {
 				matchCase := expr.Catch[i]
@@ -1873,33 +1888,50 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 						})
 					}
 
-					guardBlock := NewBlockStmt(guardBodyStmts, expr)
-					guardIf := NewIfStmt(guardExpr, guardBlock, currentStmt, expr)
-					caseBodyStmts = append(caseBodyStmts, guardIf)
-
 					// A guarded arm keeps its pattern test and its guard in separate
 					// `if`s, so the guard can read the bindings the pattern introduces.
-					caseBlock := NewBlockStmt(caseBodyStmts, expr)
 					if isTrueLiteral(condition) {
 						// A catch-all pattern admits every value, so the bindings and the
-						// guard's `if` need no test around them. The later arms sit in the
-						// guard's else, which is the only way past this arm, so they are
-						// printed once. That covers the common `_ if guard` and
-						// `e if guard` shapes.
-						currentStmt = caseBlock
+						// guard's `if` need no test around them. A failed guard is then
+						// the only way past this arm, so the fall-through goes in the
+						// guard's else and has one owner.
+						guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, expr), asElse(), expr)
+						fallthroughStmts = append(caseBodyStmts, guardIf)
 						continue
 					}
+
 					// A refutable pattern leaves two ways for the arm to decline the
 					// value, a failed pattern test and a failed guard. Both mean the later
-					// arms get their turn and a value none of them takes is re-raised, so
-					// both fall through to currentStmt.
+					// arms get their turn, so both have to reach the fall-through. Putting
+					// it in each `else` would emit it twice, and a chain of N such arms
+					// would emit its tail 2^N times.
 					//
-					// currentStmt lands in the tree twice, so the later arms print twice.
-					// A chain of N guarded arms with refutable patterns emits its tail
-					// 2^N times. Merging the two tests into one `if` would avoid that, but
-					// the guard reads names the pattern binds, and those bindings can only
-					// be declared once the pattern has matched.
-					currentStmt = NewIfStmt(condition, caseBlock, currentStmt, expr)
+					// A flag gives it one owner instead. The arm sets the flag on the one
+					// path that takes the value, and the fall-through runs when the flag
+					// is still unset. Merging the two tests into a single `if` would work
+					// too, but the guard reads names the pattern binds, and those bindings
+					// can only be declared once the pattern has matched.
+					if len(fallthroughStmts) == 0 {
+						// Nothing to fall through to, so neither failure needs recording.
+						guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, expr), nil, expr)
+						caseBodyStmts = append(caseBodyStmts, guardIf)
+						fallthroughStmts = []Stmt{NewIfStmt(condition, NewBlockStmt(caseBodyStmts, expr), nil, expr)}
+						continue
+					}
+					takenVar, takenDecl := b.createTempVarWithInit(NewLitExpr(NewBoolLit(false, expr), expr), expr)
+					guardBodyStmts = append(guardBodyStmts, &ExprStmt{
+						Expr:   NewBinaryExpr(takenVar, Assign, NewLitExpr(NewBoolLit(true, expr), expr), expr),
+						span:   nil,
+						source: expr,
+					})
+					guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, expr), nil, expr)
+					caseBodyStmts = append(caseBodyStmts, guardIf)
+					notTaken := NewUnaryExpr(LogicalNot, takenVar, expr)
+					fallthroughStmts = []Stmt{
+						takenDecl,
+						NewIfStmt(condition, NewBlockStmt(caseBodyStmts, expr), nil, expr),
+						NewIfStmt(notTaken, NewBlockStmt(fallthroughStmts, expr), nil, expr),
+					}
 					continue
 				}
 
@@ -1925,29 +1957,20 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					})
 				}
 
-				// Create block statement for the case
-				caseBlock := NewBlockStmt(caseBodyStmts, expr)
-
 				if isTrueLiteral(condition) {
 					// An unguarded catch-all always runs, so it needs no test and every
-					// later arm is unreachable. Its body replaces the chain built so far.
-					currentStmt = caseBlock
+					// later arm is unreachable. Its body replaces the fall-through.
+					fallthroughStmts = caseBodyStmts
 					continue
 				}
 
-				// Earlier cases wrap this one, so the chain built so far becomes the
-				// else clause.
-				currentStmt = NewIfStmt(condition, caseBlock, currentStmt, expr)
+				// Earlier cases wrap this one, so the fall-through becomes the else.
+				fallthroughStmts = []Stmt{
+					NewIfStmt(condition, NewBlockStmt(caseBodyStmts, expr), asElse(), expr),
+				}
 			}
 
-			// An arm that needs no test leaves a bare block at the top of the chain.
-			// Its statements go straight into the catch body rather than inside a second
-			// pair of braces.
-			if block, isBlock := currentStmt.(*BlockStmt); isBlock {
-				catchBodyStmts = append(catchBodyStmts, block.Stmts...)
-			} else if currentStmt != nil {
-				catchBodyStmts = append(catchBodyStmts, currentStmt)
-			}
+			catchBodyStmts = append(catchBodyStmts, fallthroughStmts...)
 
 			catchBlock := NewBlockStmt(catchBodyStmts, expr)
 			catchClause = &CatchClause{
@@ -1996,6 +2019,15 @@ func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
 
 // createTempVar creates a temporary variable declaration and returns the temp variable
 // expression and the declaration statement.
+// createTempVarWithInit declares a fresh temp already holding init, for a temp whose
+// starting value matters. createTempVar leaves the temp undefined for callers that assign
+// it before every read.
+func (b *Builder) createTempVarWithInit(init Expr, sourceExpr ast.Expr) (Expr, Stmt) {
+	tempVar, declStmt := b.createTempVar(sourceExpr)
+	declStmt.(*DeclStmt).Decl.(*VarDecl).Decls[0].Init = init
+	return tempVar, declStmt
+}
+
 func (b *Builder) createTempVar(sourceExpr ast.Expr) (Expr, Stmt) {
 	tempId := b.NewTempId()
 	tempVar := NewIdentExpr(tempId, "", sourceExpr)
