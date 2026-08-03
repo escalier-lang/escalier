@@ -289,6 +289,22 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 			`,
 		},
 		{
+			// So is a constructor parameter, which lives on the class's value binding rather
+			// than in either member object.
+			name: "ClassConstructorWritesTheParameter",
+			src:  `class Take<T> { x: number, constructor(mut self, v: T) { self.x = 1 } }`,
+		},
+		{
+			// So is a constructor's `throws` clause. Every caller of the constructor has to
+			// handle what it declares, so the parameter naming it is doing work.
+			name: "ClassConstructorThrowsTheParameter",
+			src: `
+				declare fn boom() throws number
+				class Boom<E> { x: number, constructor(mut self) throws E { self.x = 1
+			boom() } }
+			`,
+		},
+		{
 			// A sibling's bound is a use, the same exemption the alias tier makes.
 			name: "ClassParameterBoundsASibling",
 			src:  `class Pair<T, U: T> { x: U }`,

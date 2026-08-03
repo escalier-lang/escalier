@@ -135,7 +135,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 //
 // A method's `self` receiver is dropped, since every method names the class in it and
 // counting that would make each parameter look used. stripSelfReceiver is the same helper
-// variance inference uses for the same reason.
+// variance inference uses for the same reason. Every other position of a member's signature
+// counts, `throws` included, because AcceptObjElem walks the whole of it.
 func classDeclOccurrences(def *ClassDef, ctor soltype.Type, v soltype.TypeVisitor) {
 	for _, obj := range []*soltype.ObjectType{def.Body, def.Static} {
 		if obj == nil {
@@ -146,13 +147,20 @@ func classDeclOccurrences(def *ClassDef, ctor soltype.Type, v soltype.TypeVisito
 		}
 	}
 	// The constructor is the class's value binding rather than a Static member, so a
-	// parameter written only in `constructor(v: T)` is reached here and nowhere else. Only
-	// its parameters are walked. Its return is the class's own handle, minted with every
-	// type-parameter var as an argument, so walking that would mark them all.
+	// parameter written only in `constructor(v: T) throws E` is reached here and nowhere
+	// else. Walking a copy rather than its fields one by one is what keeps every position
+	// FuncType.Accept covers — parameters, `throws`, and the constructor's own type-parameter
+	// bounds — counted the way a method's are.
+	//
+	// Two positions are cleared first. The receiver is dropped for the reason
+	// stripSelfReceiver drops a method's. The return is the class's own handle, minted with
+	// every type-parameter var as an argument, so walking it would mark them all; `never`
+	// stands in because it is a leaf that names nothing.
 	if fn, ok := ctor.(*soltype.FuncType); ok {
-		for _, param := range fn.Params {
-			param.Type.Accept(v, soltype.Positive)
-		}
+		bare := *fn
+		bare.SelfParam = nil
+		bare.Ret = &soltype.NeverType{}
+		bare.Accept(v, soltype.Positive)
 	}
 	for _, super := range def.Supers {
 		super.Accept(v, soltype.Positive)
