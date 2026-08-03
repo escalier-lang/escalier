@@ -355,8 +355,13 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 		// unfolding it hands the seen-set a pair no earlier lap reached and nothing closes the
 		// comparison. When the tree it denotes is regular all the same, muKnotFor names that tree as a
 		// finite μ-knot and the comparison closes on the knot instead. See regular.go.
-		if knot := c.muKnotFor(t, seen); knot != nil {
-			return knot, nil, true
+		//
+		// The knot stands in only once this alias is already being unfolded further up the path, which
+		// is where a cycle can be. constrainUnfoldingAlias explains what waiting buys.
+		if c.unfoldingAliases[t.Name] > 0 {
+			if knot := c.muKnotFor(t); knot != nil {
+				return knot, nil, true
+			}
 		}
 		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
@@ -445,6 +450,33 @@ func (c *Context) constrainUnwrapped(sub, super soltype.Type, seen *seenPairs, m
 	c.unwrapDepth++
 	errs := c.constrain(sub, super, seen, mutCtx)
 	c.unwrapDepth--
+	return errs
+}
+
+// constrainUnfoldingAlias records that an alias operand is being unfolded for the duration of the
+// constraint that unfolding produced, and clears the record on the way back up. Only an alias
+// operand is recorded; every other operand runs body with no bookkeeping at all.
+//
+// evalTypeOperator reads the record to decide whether to hand constrain the alias's μ-knot in place
+// of its expansion. Substituting a knot at the first unfolding would work too, but it would put the
+// knot everywhere the expansion goes, including the value types a member read pulls out and records
+// as a bound. `mk().b` over `type H<T> = {a: keyof T, b: H<{c: T}>}` would then infer
+// `μX0.{a: "c", b: X0}` where it used to infer `H<{c: {c: number}}>`. A knot is only ever needed to
+// close a cycle, and a cycle takes at least two unfoldings, so waiting for the second one keeps the
+// alias name on everything the first one produces.
+func (c *Context) constrainUnfoldingAlias(operand soltype.Type, body func() []SolverError) []SolverError {
+	ref, isAlias := operand.(*soltype.AliasType)
+	if !isAlias {
+		return body()
+	}
+	if c.unfoldingAliases == nil {
+		c.unfoldingAliases = map[string]int{}
+	}
+	c.unfoldingAliases[ref.Name]++
+	errs := body()
+	if c.unfoldingAliases[ref.Name]--; c.unfoldingAliases[ref.Name] == 0 {
+		delete(c.unfoldingAliases, ref.Name)
+	}
 	return errs
 }
 
@@ -581,7 +613,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if c.unwrapDepth >= maxUnwrapDepth {
 				return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}
 			}
-			return c.constrainUnwrapped(evaluated, super, seen, mutCtx)
+			return c.constrainUnfoldingAlias(sub, func() []SolverError {
+				return c.constrainUnwrapped(evaluated, super, seen, mutCtx)
+			})
 		}
 	}
 	if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar {
@@ -592,7 +626,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if c.unwrapDepth >= maxUnwrapDepth {
 				return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}
 			}
-			return c.constrainUnwrapped(sub, evaluated, seen, mutCtx)
+			return c.constrainUnfoldingAlias(super, func() []SolverError {
+				return c.constrainUnwrapped(sub, evaluated, seen, mutCtx)
+			})
 		}
 	}
 

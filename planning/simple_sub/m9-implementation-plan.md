@@ -709,6 +709,24 @@ renders the same Σ. `H<number>` is not admitted, since its own level emits
 An alias with several recursive references, or several type parameters, runs the same
 check with `g` ranging over one argument pattern per reference.
 
+The knot stands in only once the alias is already being unfolded further up the constraint
+path. Substituting at the first unfolding works for termination, but it puts the knot
+everywhere the expansion goes, including the value types a member read pulls out and
+records as a bound, so `mk().b` over `H` would infer `μX0.{a: "c", b: X0}` where it infers
+`H<{c: {c: number}}>` today. A knot is only ever needed to close a cycle, and a cycle takes
+at least two unfoldings, so waiting for the second keeps the alias name on everything the
+first produces. The cost is one duplicated diagnostic when a value disagrees with the
+knot's body, once for each of the two unfoldings.
+
+Three shapes are declined that the argument-independence proof alone would admit. A level
+whose reduction reported a diagnostic is declined, so the plain expansion carries that
+report to the constraint site rather than the knot swallowing it. A shape still carrying an
+operator is declined, since a recursive reference standing as a spread's operand abstracts
+to `{...X0}`, a spread of a bare μ-variable, which stands for no object. And a knot body
+that puts no type constructor between the knot and its own binder is declined, since
+`μX0.X0` unfolds to itself and would close against any super at all — the guard
+`coalesce`'s `tie` already carries for the knots it mints.
+
 The abstracted shape is still what candidates are compared by, so the "structural hash"
 half of the original scoping survives. It is the confirmation that changed, from a
 fixed point over a partial graph to a single argument-independence proof.

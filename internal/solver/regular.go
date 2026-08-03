@@ -79,7 +79,13 @@ type uniformKnot struct {
 // muKnotFor returns the μ-knot a reference denotes, or nil when the reference is not one the
 // regular-tree check settles. evalTypeOperator calls it in place of expandAlias, so a settled
 // reference reaches constrain as a knot to unfold rather than as an alias to expand again.
-func (c *Context) muKnotFor(ref *soltype.AliasType, seen *seenPairs) *soltype.RecursiveType {
+//
+// The level is reduced under a fresh seen-set rather than the enclosing constraint's. A conditional
+// decides its branch by re-entering constrain, which can close on a pair the enclosing derivation
+// assumed, so sharing that set would let the surrounding constraint decide whether this reference
+// is admitted as the knot. The probe that proved the knot also used a fresh set, so this is what
+// makes the two shapes comparable.
+func (c *Context) muKnotFor(ref *soltype.AliasType) *soltype.RecursiveType {
 	if c.knotting {
 		// A level's own reduction re-entered constrain, which asks again for the alias being
 		// expanded. Answering it would start a second level walk inside the first and recur without
@@ -92,8 +98,8 @@ func (c *Context) muKnotFor(ref *soltype.AliasType, seen *seenPairs) *soltype.Re
 	}
 	c.knotting = true
 	defer func() { c.knotting = false }()
-	body, _, ok := c.knotLevel(ref, u.knot.Binder, seen)
-	if !ok || soltype.PrintQualified(body) != u.shape {
+	body, _, ok := c.knotLevel(ref, u.knot.Binder)
+	if !ok || containsUnreducedOp(body) || soltype.PrintQualified(body) != u.shape {
 		// This reference sits above the level at which the argument stopped mattering, so its own
 		// body is not the knot's. Expanding it normally walks one lap closer, and the reference the
 		// lap emits is asked again.
@@ -150,7 +156,7 @@ func (c *Context) probeUniformKnot(name string, def *AliasDef) *uniformKnot {
 	binder := c.freshMuBinder()
 
 	// The references the alias's own body emits are the argument patterns g_1 … g_m.
-	_, patterns, ok := c.knotLevel(probe, binder, newSeenPairs())
+	_, patterns, ok := c.knotLevel(probe, binder)
 	if !ok || len(patterns) == 0 {
 		return none
 	}
@@ -167,10 +173,16 @@ func (c *Context) probeUniformKnot(name string, def *AliasDef) *uniformKnot {
 	var shape string
 	var body soltype.Type
 	for _, pattern := range patterns {
-		next, below, ok := c.knotLevel(pattern, binder, newSeenPairs())
+		next, below, ok := c.knotLevel(pattern, binder)
 		if !ok || mentionsAnySkolem(next, probeIDs) {
 			// Condition 1: the argument still reaches the emitted body, so this alias's instantiations
 			// denote different trees and none of them has a finite knot the probe can name.
+			return none
+		}
+		if containsUnreducedOp(next) {
+			// An operator survived the reduction with the recursive reference already abstracted away
+			// beneath it. `type Sp<T> = {a: keyof T, b: {...Sp<{c: T}>}}` abstracts to
+			// `{a: "c", b: {...X0}}`, a spread of a bare μ-variable, which stands for no object.
 			return none
 		}
 		if !sameInstantiations(below, applyPatterns(patterns, skolems, pattern.TypeArgs)) {
@@ -189,40 +201,70 @@ func (c *Context) probeUniformKnot(name string, def *AliasDef) *uniformKnot {
 			return none
 		}
 	}
+	if emitsNoStructure(body, binder) {
+		return none
+	}
 	return &uniformKnot{knot: &soltype.RecursiveType{Binder: binder, Body: body}, shape: shape}
 }
 
-// knotLevel expands one alias reference and returns the μ-body that level emits, together with the
-// references back to the same alias that the body carried before they were abstracted away. It
-// reports ok=false for a reference whose definition has no resolved body.
+// emitsNoStructure reports whether a candidate knot body puts no type constructor between the knot
+// and its own binder. `μX0.X0` is that shape, and so is `μX0.Id<X0>` over `type Id<X> = X`, since a
+// transparent alias unfolds to whatever it was handed. Such a knot has no unfolding that mentions a
+// type, so constrain would close on it against any super at all and accept vacuously. coalesce's tie
+// carries the same guard for the knots it mints.
 //
-// It runs two walks. The first reduces every residual operator the substitution left behind, so a
+// A bare alias reference is rejected without asking what it expands to. A knot whose whole body is
+// one reference emits nothing of its own either way, and the referenced alias is asked for its own
+// knot at its own reference.
+func emitsNoStructure(body soltype.Type, binder *soltype.RecursiveVarType) bool {
+	if body == soltype.Type(binder) {
+		return true
+	}
+	_, bare := body.(*soltype.AliasType)
+	return bare
+}
+
+// knotLevel expands one alias reference and returns the μ-body that level emits, together with the
+// references back to the same alias that the body carried before they were abstracted away.
+//
+// It runs two walks. The first reduces every operator the substitution left behind, so a
 // `keyof {c: number}` becomes the `"c"` it stands for and two levels that denote one type render
 // alike. The second replaces each remaining reference back to the alias with the knot's binder. The
 // order matters: an operator can have a reference to the alias as its own operand, as the
 // `Grow<{a: T}>[K]` of `type Grow<T> = {[K]: Grow<{a: T}>[K] for K in keyof T}` does. Abstracting
 // first would hand that operator a bare μ-variable to read a member out of, which is not a type any
 // reduction rule is written for.
-func (c *Context) knotLevel(ref *soltype.AliasType, binder *soltype.RecursiveVarType, seen *seenPairs) (soltype.Type, []*soltype.AliasType, bool) {
+//
+// It reports ok=false in three cases, each one saying that what came back is not the node this level
+// emits:
+//
+//   - the reference's definition has no resolved body, so the expansion is the ErrorType sentinel;
+//   - an expansion budget cut the reduction off, so the result is a truncation. Rendering one is
+//     expensive as well as meaningless, since a truncation can be arbitrarily large;
+//   - the reduction reported a diagnostic, such as a member read off a key the object does not
+//     carry. The plain expansion surfaces that diagnostic at the constraint site, and this walk
+//     discards the errors it collects, so declining is what keeps the report from being swallowed.
+//
+// A shape that still carries an operator is not rejected here, since the probe's first walk is over
+// the alias's own parameters and its shape is expected to hold one. Every caller that uses a shape
+// as a knot body screens it with containsUnreducedOp instead.
+func (c *Context) knotLevel(ref *soltype.AliasType, binder *soltype.RecursiveVarType) (soltype.Type, []*soltype.AliasType, bool) {
 	expanded := c.expandAlias(ref)
 	if _, unresolved := expanded.(*soltype.ErrorType); unresolved {
 		return nil, nil, false
 	}
-	r := &levelReducer{eval: newTypeEvaluator(c, seen), name: ref.Name}
+	r := &levelReducer{eval: newTypeEvaluator(c, newSeenPairs()), name: ref.Name}
 	reduced := expanded.Accept(r, soltype.Positive)
-	if r.eval.truncated {
-		// An expansion budget cut the reduction off, so what came back is not the node this level
-		// emits. Reading a shape off it would compare one truncation against another, and a
-		// truncation can be arbitrarily large, so rendering it is expensive as well as meaningless.
+	if r.eval.truncated || len(r.eval.errs) > 0 {
 		return nil, nil, false
 	}
 	a := &recursiveRefAbstractor{name: ref.Name, binder: binder}
 	return reduced.Accept(a, soltype.Positive), a.found, true
 }
 
-// levelReducer reduces every residual operator in one level of an alias's unfolding. It leaves a
-// reference back to the alias itself in place, and does not walk that reference's arguments, since
-// those are the growing payload the knot abstracts away.
+// levelReducer reduces every operator in one level of an alias's unfolding. It leaves a reference
+// back to the alias itself in place, and does not walk that reference's arguments, since those are
+// the growing payload the knot abstracts away.
 type levelReducer struct {
 	eval *typeEvaluator
 	name string
@@ -239,11 +281,42 @@ func (r *levelReducer) EnterType(t soltype.Type, _ soltype.Polarity) soltype.Ent
 // form. The evaluator is shared across the walk, which gives one expansion budget to the whole level
 // rather than one per node.
 func (r *levelReducer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
-	if !isResidualOp(t) {
+	if !unreducedOp(t) {
 		return t
 	}
 	return r.eval.reduce(t)
 }
+
+// unreducedOp reports whether a node still stands for a value reduction has to work out. It is
+// isResidualOp widened by the object-spread case: isResidualOp's object arm counts only an unsettled
+// mapped member, since constrain compares a spread-carrying object structurally rather than as an
+// operator, while a knot's body has to be the object the spread merges to.
+func unreducedOp(t soltype.Type) bool {
+	return isResidualOp(t) || objectIsResidual(t)
+}
+
+// containsUnreducedOp reports whether any node in t is one reduction did not finish with. A shape
+// carrying one is not the node its level emits, so no knot can be read off it.
+func containsUnreducedOp(t soltype.Type) bool {
+	f := &unreducedOpFinder{}
+	t.Accept(f, soltype.Positive)
+	return f.found
+}
+
+type unreducedOpFinder struct{ found bool }
+
+func (f *unreducedOpFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if f.found {
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	if unreducedOp(t) {
+		f.found = true
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *unreducedOpFinder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // recursiveRefAbstractor replaces each reference back to the walked alias with the knot's binder and
 // records the references it replaced, in traversal order. probeUniformKnot reads the alias's

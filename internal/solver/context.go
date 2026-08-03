@@ -74,6 +74,13 @@ type Context struct {
 	// which no constraint and no discarded probe changes. See regular.go.
 	uniformKnots map[string]*uniformKnot
 
+	// unfoldingAliases counts, per alias name, how many constraints on the current path are running
+	// on that alias's expansion. evalTypeOperator reads it to hand constrain an alias's μ-knot only
+	// on the second unfolding, where a cycle can be, rather than on the first. Entries are added and
+	// removed by constrainUnfoldingAlias around the constraint each unfolding produces, so the map
+	// describes the current path rather than the whole run.
+	unfoldingAliases map[string]int
+
 	// knotting is true while a level of some alias's unfolding is being walked for the regular-tree
 	// check. That walk reduces the level's residual operators, and a reduction can re-enter
 	// constrain, which would ask for a knot again and start a second walk inside the first. The flag

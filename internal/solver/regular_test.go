@@ -16,7 +16,7 @@ func probeKnot(t *testing.T, src string) string {
 	require.Empty(t, Messages(errs))
 	ref, ok := nodes["Probe"].(*soltype.AliasType)
 	require.True(t, ok, "Probe must bind an alias reference, got %T", nodes["Probe"])
-	knot := ctx.muKnotFor(ref, newSeenPairs())
+	knot := ctx.muKnotFor(ref)
 	if knot == nil {
 		return ""
 	}
@@ -129,6 +129,48 @@ func TestMuKnotForSettlesRegularAlias(t *testing.T) {
 			`,
 			want: "",
 		},
+		{
+			// The recursive reference is a spread's operand, so abstracting it would leave `{...X0}`,
+			// a spread of a bare μ-variable, which stands for no object. Reduction cannot merge the
+			// spread either, since grounding its operand is the very expansion the knot abstracts
+			// away. The comparison falls back to the budget, which is where it sat before this check
+			// existed.
+			name: "recursive reference under an object spread",
+			src: `
+				type Sp<T> = {a: keyof T, b: {...Sp<{c: T}>}}
+				type Probe = Sp<{c: number}>
+			`,
+			want: "",
+		},
+		{
+			// The positional twin: a rest spread leaves `[...X0]`.
+			name: "recursive reference under a tuple spread",
+			src: `
+				type Tp<T> = [keyof T, [...Tp<{c: T}>]]
+				type Probe = Tp<{c: number}>
+			`,
+			want: "",
+		},
+		{
+			// Nothing stands between the knot and its own binder, so `μX0.X0` would unfold to itself
+			// and close against any super at all. coalesce's tie carries the same guard.
+			name: "knot body would be the bare binder",
+			src: `
+				type Bare<T> = [Bare<{a: T}>][0]
+				type Probe = Bare<number>
+			`,
+			want: "",
+		},
+		{
+			// The same degeneracy behind a transparent alias, which unfolds to whatever it was handed.
+			name: "knot body would be a bare alias reference",
+			src: `
+				type Id<X> = X
+				type Wrapped<T> = Id<Wrapped<{a: T}>>
+				type Probe = Wrapped<number>
+			`,
+			want: "",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,11 +190,12 @@ func TestMuKnotForDeclinesUnproductiveAlias(t *testing.T) {
 	require.Equal(t, []string{notProductiveMsg("2:8-2:12", "Grow")}, messagesWithSpan(errs))
 	ref, ok := nodes["Probe"].(*soltype.AliasType)
 	require.True(t, ok, "Probe must bind an alias reference, got %T", nodes["Probe"])
-	require.Nil(t, ctx.muKnotFor(ref, newSeenPairs()))
+	require.Nil(t, ctx.muKnotFor(ref))
 }
 
 // A value whose own type is a μ-knot checks against a regular alias whose instantiations never
-// repeat. Both sides reach constrain as knots, so its seen-set closes on the second lap. Without the
+// repeat. The first unfolding runs on the alias's expansion, and the second hands constrain the
+// knot, so both sides are knots from there down and the seen-set closes on them. Without the
 // normalization the alias side would grow its argument forever and the comparison would be cut off
 // with an ExpansionLimitError.
 //
@@ -183,22 +226,29 @@ func TestConstrainRegularAliasChecksTheLapAboveTheKnot(t *testing.T) {
 }
 
 // Normalizing does not make the comparison blind: a value that disagrees with the knot's body is
-// still rejected, and once rather than once per level.
+// still rejected. The mismatch is reported twice, once for each unfolding the comparison makes. The
+// first unfolding runs on the alias's expansion and the second on the knot, since evalTypeOperator
+// waits for the second before substituting one. Without the normalization the same source reports
+// the mismatch once per lap until maxUnwrapDepth cuts the walk off, roughly two hundred times, and
+// then adds two ExpansionLimitErrors on top.
 func TestConstrainRegularAliasStillReportsAMismatch(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type H<T> = {a: keyof T, b: H<{c: T}>}
 		fn node() { return {a: "wrong", b: node()} }
 		fn use() -> H<{c: number}> { return node() }
 	`)
-	require.Equal(t, []string{`4:3-4:47: cannot constrain "wrong" <: "c"`}, messagesWithSpan(errs))
+	require.Equal(t, []string{
+		`4:3-4:47: cannot constrain "wrong" <: "c"`,
+		`4:3-4:47: cannot constrain "wrong" <: "c"`,
+	}, messagesWithSpan(errs))
 }
 
 // Two instantiations of a regular alias whose argument stops reaching its emitted body denote one
 // tree, so the comparison between them succeeds. `keyof {c: X}` is `"c"` for both, and neither the
-// `number` nor the `string` appears anywhere in the tree either side denotes. Both normalize to the
-// memoized knot, so the second lap of the comparison asks the pair the first lap already assumed and
-// the seen-set closes on it. Without the normalization neither side would ever repeat an
-// instantiation and the comparison would be cut off at maxUnwrapDepth.
+// `number` nor the `string` appears anywhere in the tree either side denotes. Both sides normalize
+// to the one memoized knot on their second unfolding, so the lap after that asks a pair an earlier
+// lap already assumed and the seen-set closes on it. Without the normalization neither side would
+// ever repeat an instantiation and the comparison would be cut off at maxUnwrapDepth.
 func TestConstrainRegularAliasInstantiationsAgree(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type Chain<T> = {a: keyof T, b: Chain<{c: T}>}
@@ -223,4 +273,40 @@ func TestConstrainNonRegularAliasStillReachesTheBudget(t *testing.T) {
 			"expansions and was cut off; either the two sides recurse without ever repeating a pair " +
 			"the check can close on, or their alias chains run deeper than the limit unfolds",
 	}, messagesWithSpan(errs))
+}
+
+// A reduction diagnostic inside an alias's body still surfaces. The level walk that decides whether
+// a reference is the knot discards the errors it collects, so a level whose reduction reported one
+// is declined outright and the plain expansion carries the report to the constraint site. Declining
+// every level leaves this comparison with no knot at all, so the budget cuts it off the way it did
+// before the check existed. Reporting the malformed member is what matters; the two cut-off
+// diagnostics are the pre-existing outcome for an alias no knot settles.
+func TestConstrainRegularAliasKeepsAReductionDiagnostic(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type H<T> = {a: keyof T, e: {x: number}["z"], b: H<{c: T}>}
+		fn node() { return {a: "c", e: 1, b: node()} }
+		fn use() -> H<{c: number}> { return node() }
+	`)
+	require.Equal(t, []string{
+		`4:3-4:47: object {x: number} has no property "z"`,
+		"4:3-4:47: comparing \"c\" with keyof object reached the limit of 200 type-operator " +
+			"expansions and was cut off; either the two sides recurse without ever repeating a pair " +
+			"the check can close on, or their alias chains run deeper than the limit unfolds",
+		"4:3-4:47: comparing object with H reached the limit of 200 type-operator expansions and " +
+			"was cut off; either the two sides recurse without ever repeating a pair the check can " +
+			"close on, or their alias chains run deeper than the limit unfolds",
+	}, messagesWithSpan(errs))
+}
+
+// A member read off a regular alias keeps the alias name on the type it yields. evalTypeOperator
+// waits for the second unfolding before substituting a knot, and a member read makes only the first,
+// so the value it pulls out is recorded as the alias reference the expansion emitted.
+func TestMemberReadOnRegularAliasKeepsTheAliasName(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		type H<T> = {a: keyof T, b: H<{c: T}>}
+		declare fn mk() -> H<{c: number}>
+		fn field() { return mk().b }
+	`)
+	require.Empty(t, Messages(errs))
+	require.Equal(t, "fn () -> H<{c: {c: number}}>", values["field"])
 }
