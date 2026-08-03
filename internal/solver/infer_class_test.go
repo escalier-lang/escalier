@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -1285,11 +1286,30 @@ func TestInferClassMutVariance(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
 	})
-	t.Run("a mut subclass reference reaches its superclass", func(t *testing.T) {
-		// The nominal walk decides `mut Dog <: mut Animal` on the extends graph alone.
-		// Writing Animal's fields through the widened reference is sound because a
-		// subclass may not narrow an inherited field, so Dog carries `name` at exactly
-		// the type Animal declares.
+	t.Run("a mut subclass reference does not reach its superclass", func(t *testing.T) {
+		// A cross-name pair stays pinned by the RefType arm's residual write-back, so this
+		// widening is rejected even though the immutable one below is accepted. The
+		// nominal walk decides `Dog <: Animal` on the declared extends edge alone, and
+		// nothing checks that Dog's redeclared `pos` keeps the type Animal declares. Were
+		// the widening accepted, `reset` would store a `{x: number}` into a field Dog
+		// declares as `{x: number, y: number}`. Re-examine this once
+		// escalier-lang/escalier#985 checks an inherited member's type.
+		_, _, errs := inferSource(t, `
+			class Animal {
+				pos: {x: number},
+				constructor(mut self, pos: {x: number}) { self.pos = pos },
+			}
+			class Dog extends Animal {
+				pos: {x: number, y: number},
+				constructor(mut self, pos: {x: number, y: number}) { self.pos = pos },
+			}
+			fn reset(a: mut Animal) { a.pos = {x: 0} }
+			fn resetDog(d: mut Dog) { reset(d) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain Animal <: Dog", errs[0].Message())
+	})
+	t.Run("an immutable subclass reference reaches its superclass", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class Animal {
 				name: string,
@@ -1299,8 +1319,39 @@ func TestInferClassMutVariance(t *testing.T) {
 				breed: string,
 				constructor(mut self, name: string, breed: string) { self.breed = breed },
 			}
-			fn rename(a: mut Animal) { a.name = "rex" }
-			fn renameDog(d: mut Dog) { rename(d) }
+			fn describe(a: Animal) -> string { return a.name }
+			fn describeDog(d: Dog) -> string { return describe(d) }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("a readonly field holding a mut borrow is invariant in both views", func(t *testing.T) {
+		// `readonly` rejects `h.inner = …`, but the borrow the field holds still admits
+		// `h.inner.value = …`, so T is reachable for writing through either kind of
+		// reference to a Holder. Both widenings must therefore be rejected. Were the
+		// first accepted, `poke` would store a `number` into a `Box<5>.value`.
+		src := `
+			class Box<T> { value: T }
+			class Holder<T> { readonly inner: mut Box<T> }
+			fn poke(h: %s Holder<number>) { h.inner.value = 42 }
+			fn narrow(h: %s Holder<5>) { poke(h) }
+		`
+		for _, mutability := range []string{"mut", ""} {
+			_, _, errs := inferSource(t, fmt.Sprintf(src, mutability, mutability))
+			require.Len(t, errs, 1, "mutability %q", mutability)
+			require.Equal(t, "cannot constrain number <: 5", errs[0].Message())
+		}
+	})
+	t.Run("a class spelled through an alias behaves as the class it names", func(t *testing.T) {
+		// The residual write-back dispatches on the pointee's kind, so it peels an alias
+		// first. Without that, `mut CNum` would miss the class arm and take the whole
+		// reverse constraint, rejecting a narrowing the bare spelling accepts.
+		_, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			type CNum = Consumer<number>
+			fn narrow(c: mut CNum) { }
+			fn wide(c: mut Consumer<number | string>) { narrow(c) }
 		`)
 		require.Empty(t, errs)
 	})

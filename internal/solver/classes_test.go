@@ -205,6 +205,17 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Invariant},
 		},
 		{
+			// A `mut` borrow is a read-write window on its pointee, so a parameter behind
+			// one is invariant even when the field holding the borrow is `readonly`.
+			name: "readonly field holding a mut borrow is invariant in both views",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				inner := &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{tv}}
+				return exactObj(readonlyProp("inner", mutRef(inner))), nil
+			}),
+			want:    []Variance{Invariant},
+			wantMut: []Variance{Invariant},
+		},
+		{
 			name: "parameter used nowhere is bivariant",
 			def: oneParam(func(_ *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(propElem("n", num())), nil

@@ -303,6 +303,15 @@ func newVarianceVisitor(targets map[*soltype.TypeVarType]int, n int) *varianceVi
 }
 
 func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	// A `mut` borrow is a read-write window on its pointee, so a parameter reached
+	// through one occupies an input position as well as an output position and comes out
+	// invariant. RefType.Accept walks the pointee covariantly alone, so the write view is
+	// recorded here through the helper the occurrence visitors share. This is what keeps
+	// `readonly inner: mut Box<T>` from measuring T covariant: the field itself rejects
+	// `h.inner = …`, but the borrow it holds still admits `h.inner.value = …`.
+	if recordMutWriteView(v, t, pol) {
+		return soltype.EnterResult{} // let Accept do the covariant read-view walk
+	}
 	if tv, ok := t.(*soltype.TypeVarType); ok {
 		if i, found := v.targets[tv]; found {
 			if pol == soltype.Positive {
