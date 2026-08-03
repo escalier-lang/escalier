@@ -1480,6 +1480,70 @@ func TestInferTupleSpreadConstraint(t *testing.T) {
 	}
 }
 
+// A spliced tuple grounds even when one of its elements is still a residual. constrain decides that
+// from the root of the reduced tuple rather than from the whole tree, so an element that reduces at
+// the position it lands in does not make the enclosing tuple inert. An inert tuple would be compared
+// structurally against the value, rejecting a constraint that holds.
+//
+// Each case here reaches a residual through a different route: a `keyof` element the splice carries
+// in, a splice nested inside another splice, and a recursive tuple alias whose own body spreads
+// itself. The last case is why the root check matters most, since such an alias always has a `...L`
+// one level down and would never ground under a whole-tree reading.
+func TestInferTupleSpreadGroundsWithResidualElements(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			// The splice carries in a `keyof` that reduces to `"c"` where it lands.
+			name: "KeyofElement",
+			src: `
+				type P = {c: number}
+				val r: [...[keyof P], boolean] = ["c", true]
+			`,
+		},
+		{
+			// The operand is itself a spliced tuple, so the reduced result holds a nested one.
+			name: "NestedSplice",
+			src: `
+				type Inner = [number]
+				val r: [...[...Inner, string]] = [1, "a"]
+			`,
+		},
+		{
+			// A recursive tuple alias. Its spliced form always names itself one level down, so a
+			// whole-tree check never lets it ground. No finite value inhabits `L`, so the constraint
+			// runs between two types rather than from a literal.
+			name: "RecursiveTupleAlias",
+			src: `
+				type L = [number, [...L]]
+				declare fn mk() -> [...L]
+				fn use() -> [number, [...L]] { return mk() }
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Empty(t, Messages(errs))
+		})
+	}
+}
+
+// A rest element whose operand never grounds keeps the tuple inert, which is what the root check
+// must still report. A type parameter has no tuple to splice, so `[...T, number]` stays residual and
+// the value is rejected against it rather than against some spliced form. The operand renders as the
+// var the call instantiated `T` to rather than as `T` itself, since the rejection happens at the
+// call site.
+func TestInferTupleSpreadOverTypeParamStaysInert(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f<T>(x: [...T, number]) -> number { return 1 }
+		val r = f([1])
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain tuple <: [...t7, number]", errs[0].Message())
+}
+
 // A `mut` spread operand `[...mut P]` is rejected at the annotation site the same way a positional
 // `[mut X]` element is: the enclosing tuple decides mutability, so an owned-mutable operand nested
 // in it is misleading. The annotation reports MutFieldError and recovers to the bare operand, which
