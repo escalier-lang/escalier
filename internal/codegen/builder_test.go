@@ -1111,10 +1111,9 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   return temp2;
 }`,
 		},
-		// A guard that is a top-level `||` cannot join the pattern test. The printer emits
-		// no parentheses, so `__error == "x" && n > 0 || n < 0 - 5` would parse as
-		// `(__error == "x" && n > 0) || n < 0 - 5` and run the arm for a value the pattern
-		// rejects. The tests stay separate and a flag carries the fall-through.
+		// A guard that binds looser than the `&&` joining it to the pattern test still
+		// merges. The printer parenthesizes it, so the arm does not run for a value the
+		// pattern rejects.
 		"GuardIsLogicalOr": {
 			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 || n < 0 - 5 => 0, \"y\" => 1 }\n}",
 			expected: `export function f(temp1) {
@@ -1123,19 +1122,12 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
-    let temp3 = false;
-    if (__error == "x") {
-      if (n > 0 || n < 0 - 5) {
-        temp2 = 0;
-        temp3 = true;
-      }
-    }
-    if (!temp3) {
-      if (__error == "y") {
-        temp2 = 1;
-      } else {
-        throw __error;
-      }
+    if (__error == "x" && (n > 0 || n < 0 - 5)) {
+      temp2 = 0;
+    } else if (__error == "y") {
+      temp2 = 1;
+    } else {
+      throw __error;
     }
   }
   return temp2;

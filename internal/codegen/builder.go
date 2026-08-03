@@ -1905,13 +1905,12 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					// arms get their turn, so both have to reach the fall-through.
 					//
 					// One `if` testing both gives them a single `else` to share. That
-					// needs three things to hold. The pattern must bind nothing, since a
-					// binding can only be declared once the pattern has matched. The guard
-					// must need no hoisted statements, since those would run before the
-					// pattern test rather than after it. And the guard must not be a
-					// top-level `||`, since the printer emits no parentheses and
-					// `cond && a || b` parses as `(cond && a) || b`.
-					if len(bindingStmts) == 0 && len(guardStmts) == 0 && !isLogicalOr(guardExpr) {
+					// needs two things to hold. The pattern must bind nothing, since a
+					// binding can only be declared once the pattern has matched. And the
+					// guard must need no hoisted statements, since those would run before
+					// the pattern test rather than after it. The printer parenthesizes
+					// a guard that binds looser than the `&&` joining the two.
+					if len(bindingStmts) == 0 && len(guardStmts) == 0 {
 						merged := combineConditions([]Expr{condition, guardExpr}, expr)
 						fallthroughStmts = []Stmt{
 							NewIfStmt(merged, NewBlockStmt(guardBodyStmts, expr), asElse(), expr),
@@ -3039,14 +3038,6 @@ func isTrueLiteral(expr Expr) bool {
 		}
 	}
 	return false
-}
-
-// isLogicalOr reports whether an expression is a top-level `||`. Such an expression cannot
-// become the right operand of an emitted `&&`, because the printer writes binary operators
-// without parentheses and `a && b || c` parses as `(a && b) || c`.
-func isLogicalOr(expr Expr) bool {
-	binExpr, isBin := expr.(*BinaryExpr)
-	return isBin && binExpr.Op == LogicalOr
 }
 
 // combineConditions combines multiple conditions with && operators,
