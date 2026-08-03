@@ -891,17 +891,19 @@ func TestBuildValElse(t *testing.T) {
 	}
 }
 
-// TestBuildTryCatchRethrow pins which catch arms let a caught value escape. A value no arm
-// takes is re-raised, so the emitted catch ends in `throw __error` unless some arm always
-// runs. An arm always runs when its pattern is a wildcard or an identifier and it carries no
-// guard, which is the same rule the solver applies when it decides whether the enclosing
-// `throws` clause records the rethrow.
+// TestBuildTryCatchRethrow pins which catch arms let a caught value escape, and pins that
+// an arm which always runs is emitted without a test. A value no arm takes is re-raised, so
+// the emitted catch ends in `throw __error` unless some arm always runs. An arm always runs
+// when its pattern is a wildcard or an identifier and it carries no guard, which is the same
+// rule the solver applies when it decides whether the enclosing `throws` clause records the
+// rethrow. A wildcard or identifier pattern matches every value the same way, so no emitted
+// arm tests it.
 func TestBuildTryCatchRethrow(t *testing.T) {
 	tests := map[string]struct {
 		src      string
 		expected string
 	}{
-		// A bare `_` always runs, so nothing escapes.
+		// A bare `_` always runs, so nothing escapes and the body needs no test.
 		"BareWildcard": {
 			src: "fn f() {\n\treturn try { throw \"x\" } catch { _ => 0 }\n}",
 			expected: `export function f() {
@@ -909,15 +911,13 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
-    if (true) {
-      temp1 = 0;
-    }
+    temp1 = 0;
   }
   return temp1;
 }`,
 		},
-		// A guard can fail, so `_ if …` does not always run. The rethrow belongs in the
-		// guard's else, since the wildcard's own test is `true` and cannot fail.
+		// A guard can fail, so `_ if …` does not always run. The rethrow goes in the
+		// guard's else, since the wildcard itself admits every value.
 		"GuardedWildcard": {
 			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { _ if n > 0 => 0 }\n}",
 			expected: `export function f(temp1) {
@@ -926,12 +926,10 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
-    if (true) {
-      if (n > 0) {
-        temp2 = 0;
-      } else {
-        throw __error;
-      }
+    if (n > 0) {
+      temp2 = 0;
+    } else {
+      throw __error;
     }
   }
   return temp2;
@@ -946,10 +944,8 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
-    if (true) {
-      const e = __error;
-      temp1 = e;
-    }
+    const e = __error;
+    temp1 = e;
   }
   return temp1;
 }`,
@@ -962,20 +958,18 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
-    if (true) {
-      const e = __error;
-      if (n > 0) {
-        temp2 = e;
-      } else {
-        throw __error;
-      }
+    const e = __error;
+    if (n > 0) {
+      temp2 = e;
+    } else {
+      throw __error;
     }
   }
   return temp2;
 }`,
 		},
-		// An always-running arm makes every later arm unreachable wherever it sits, so a
-		// catch-all ahead of another arm still leaves nothing to re-raise.
+		// An always-running arm makes every later arm unreachable wherever it sits, so
+		// nothing escapes and the later arms are not emitted at all.
 		"CatchAllBeforeAnotherArm": {
 			src: "fn f() {\n\treturn try { throw \"x\" } catch { _ => 0, \"x\" => 1 }\n}",
 			expected: `export function f() {
@@ -983,19 +977,13 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
-    if (true) {
-      temp1 = 0;
-    } else if (__error == "x") {
-      temp1 = 1;
-    }
+    temp1 = 0;
   }
   return temp1;
 }`,
 		},
 		// A guarded catch-all ahead of a bare one. The guard's else holds the later arm,
-		// so a failed guard runs it and nothing escapes. The guarded arm's own test is
-		// `true` and cannot fail, so its outer else stays empty and the later arm is
-		// printed once.
+		// so a failed guard runs it and nothing escapes.
 		"GuardedCatchAllThenCatchAll": {
 			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { _ if n > 0 => 0, _ => 1 }\n}",
 			expected: `export function f(temp1) {
@@ -1004,12 +992,10 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
-    if (true) {
-      if (n > 0) {
-        temp2 = 0;
-      } else if (true) {
-        temp2 = 1;
-      }
+    if (n > 0) {
+      temp2 = 0;
+    } else {
+      temp2 = 1;
     }
   }
   return temp2;
@@ -1017,7 +1003,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		},
 		// Guarded catch-alls nest one inside the next, each in the previous guard's else.
 		// Every arm is printed once however many of them there are, since none of their
-		// pattern tests can fail.
+		// patterns is tested.
 		"GuardedCatchAllsThenCatchAll": {
 			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { _ if n > 0 => 0, _ if n > 1 => 1, _ => 2 }\n}",
 			expected: `export function f(temp1) {
@@ -1026,15 +1012,13 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
-    if (true) {
-      if (n > 0) {
-        temp2 = 0;
-      } else if (true) {
-        if (n > 1) {
-          temp2 = 1;
-        } else if (true) {
-          temp2 = 2;
-        }
+    if (n > 0) {
+      temp2 = 0;
+    } else {
+      if (n > 1) {
+        temp2 = 1;
+      } else {
+        temp2 = 2;
       }
     }
   }
@@ -1067,6 +1051,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		// A guarded arm whose pattern is refutable declines the value in two ways, by
 		// failing the pattern test and by failing the guard. Both hand the value to the
 		// later arms, so the arm that always runs still gets its turn on a thrown "y".
+		// Two live fall-through paths mean the later arms are printed twice.
 		"GuardedRefutableThenCatchAll": {
 			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, _ => 1 }\n}",
 			expected: `export function f(temp1) {
@@ -1078,7 +1063,7 @@ func TestBuildTryCatchRethrow(t *testing.T) {
     if (__error == "x") {
       if (n > 0) {
         temp2 = 0;
-      } else if (true) {
+      } else {
         temp2 = 1;
       }
     } else {

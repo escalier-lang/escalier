@@ -1877,28 +1877,29 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					guardIf := NewIfStmt(guardExpr, guardBlock, currentStmt, expr)
 					caseBodyStmts = append(caseBodyStmts, guardIf)
 
-					// Wrap in outer pattern condition block. A guarded arm keeps its
-					// pattern test and its guard in separate `if`s, so the guard can read
-					// the bindings the pattern introduces. Either test can fail, and both
-					// failures mean the same thing: this arm declines the value, so the
-					// later arms get their turn and a value none of them takes is
-					// re-raised. Both therefore fall through to currentStmt.
+					// A guarded arm keeps its pattern test and its guard in separate
+					// `if`s, so the guard can read the bindings the pattern introduces.
+					caseBlock := NewBlockStmt(caseBodyStmts, expr)
+					if isTrueLiteral(condition) {
+						// A catch-all pattern admits every value, so the bindings and the
+						// guard's `if` need no test around them. The later arms sit in the
+						// guard's else, which is the only way past this arm, so they are
+						// printed once. That covers the common `_ if guard` and
+						// `e if guard` shapes.
+						currentStmt = caseBlock
+						continue
+					}
+					// A refutable pattern leaves two ways for the arm to decline the
+					// value, a failed pattern test and a failed guard. Both mean the later
+					// arms get their turn and a value none of them takes is re-raised, so
+					// both fall through to currentStmt.
 					//
 					// currentStmt lands in the tree twice, so the later arms print twice.
 					// A chain of N guarded arms with refutable patterns emits its tail
-					// 2^N times. Merging the two tests into one `if` would avoid that,
-					// but the guard reads names the pattern binds, and those bindings can
-					// only be declared once the pattern has matched.
-					//
-					// A catch-all pattern tests `true` and cannot fail, so its outer
-					// `else` is unreachable and stays empty. That keeps the common
-					// `_ if guard` and `e if guard` shapes free of any duplication.
-					caseBlock := NewBlockStmt(caseBodyStmts, expr)
-					var patternFailed Stmt
-					if !isTrueLiteral(condition) {
-						patternFailed = currentStmt
-					}
-					currentStmt = NewIfStmt(condition, caseBlock, patternFailed, expr)
+					// 2^N times. Merging the two tests into one `if` would avoid that, but
+					// the guard reads names the pattern binds, and those bindings can only
+					// be declared once the pattern has matched.
+					currentStmt = NewIfStmt(condition, caseBlock, currentStmt, expr)
 					continue
 				}
 
@@ -1927,13 +1928,25 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 				// Create block statement for the case
 				caseBlock := NewBlockStmt(caseBodyStmts, expr)
 
+				if isTrueLiteral(condition) {
+					// An unguarded catch-all always runs, so it needs no test and every
+					// later arm is unreachable. Its body replaces the chain built so far.
+					currentStmt = caseBlock
+					continue
+				}
+
 				// Earlier cases wrap this one, so the chain built so far becomes the
 				// else clause.
 				currentStmt = NewIfStmt(condition, caseBlock, currentStmt, expr)
 			}
 
-			if currentStmt != nil {
-				catchBodyStmts = append(catchBodyStmts, simplifyTrueLiterals(currentStmt))
+			// An arm that needs no test leaves a bare block at the top of the chain.
+			// Its statements go straight into the catch body rather than inside a second
+			// pair of braces.
+			if block, isBlock := currentStmt.(*BlockStmt); isBlock {
+				catchBodyStmts = append(catchBodyStmts, block.Stmts...)
+			} else if currentStmt != nil {
+				catchBodyStmts = append(catchBodyStmts, currentStmt)
 			}
 
 			catchBlock := NewBlockStmt(catchBodyStmts, expr)
