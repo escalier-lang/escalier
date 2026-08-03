@@ -699,3 +699,55 @@ func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
 		},
 	})
 }
+
+// A read resolves an accessor pair to its getter whichever half is declared first, and a
+// union receiver raises only where the read actually joins through its members.
+func TestInferThrowsAccessorReadResolution(t *testing.T) {
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			// `set x` precedes `get x`, so a declaration-order lookup would resolve the
+			// read to the setter and report it write-only, dropping the getter's raise.
+			name: "SetterDeclaredBeforeGetterStillReadsTheGetter",
+			src: `
+				class A {
+					v: number,
+					bad: boolean,
+					set x(mut self, n: number) { self.v = n },
+					get x(self) -> number throws string { if self.bad { throw "a" } return self.v },
+				}
+				fn f(c: A) -> number { return c.x }
+			`,
+			wantErrs: []string{"8:35-8:38: cannot constrain string <: never"},
+		},
+		{
+			// The same pair reached through a union, where the read joins per member.
+			name: "SetterDeclaredBeforeGetterUnderAUnionReceiver",
+			src: `
+				class A {
+					v: number,
+					bad: boolean,
+					set x(mut self, n: number) { self.v = n },
+					get x(self) -> number throws string { if self.bad { throw "a" } return self.v },
+				}
+				class B { x: number }
+				fn f(c: A | B) -> number { return c.x }
+			`,
+			wantErrs: []string{"9:39-9:42: cannot constrain string <: never"},
+		},
+		{
+			// `undefined` carries no readable object, so the join abandons the read
+			// entirely and falls back to strict every-member subtyping. No getter runs,
+			// so the two rejections below are the whole story — the getter's `string`
+			// must not be reported as an undeclared raise on top of them.
+			name: "UnionMemberWithNoReadableObjectRaisesNothing",
+			src: `
+				class A { bad: boolean, get x(self) -> number throws string { if self.bad { throw "a" } return 1 } }
+				fn f(c: A | undefined) -> number { return c.x }
+			`,
+			wantErrs: []string{
+				"3:47-3:50: cannot constrain undefined <: object",
+				"3:49-3:50: object is missing property: x",
+			},
+		},
+	})
+}

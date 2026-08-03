@@ -720,27 +720,36 @@ func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Ty
 // raiseUnionAccessorThrows records what reading `name` off a union receiver may raise.
 // constrainUnionFieldRead joins the read's VALUE across the union's members from inside
 // constrain, which holds no throws sink. Only the inference walk holds one, so this walks
-// the same members to reach the getters that join reads through. A member carrying
-// `name` as a plain property, a method, or a setter raises nothing on a read and
-// contributes no constraint. A carrier that is not a union is left alone, as is a union
-// member that is neither an object nor a class instance, matching the shapes join accepts.
+// the same members to reach the getters that join reads through. A carrier that is not a
+// union is left alone. A member carrying `name` as a plain property, a method, or a setter
+// raises nothing on a read and contributes no constraint.
+//
+// The scan collects before it raises so that it accepts exactly the receivers the join
+// accepts. The join abandons the whole read once ANY member carries no readable object,
+// falling back to the strict every-member subtyping rule, and then no member's getter runs.
+// `A | undefined` is such a receiver. Raising per member as the scan went would blame that
+// read for a raise it never performs, on top of the errors the fallback already reports.
 func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string, carrier soltype.Type) {
 	u, isUnion := carrier.(*soltype.UnionType)
 	if !isUnion {
 		return
 	}
+	var throws []soltype.Type
 	for _, member := range u.Types {
 		obj, ok := c.ctx.readCarrierObject(soltype.CarrierOf(member))
 		if !ok {
-			continue
+			return
 		}
-		elem, found := obj.Member(name)
+		elem, found := obj.ReadMember(name)
 		if !found {
 			continue
 		}
 		if getter, isGetter := elem.(*soltype.GetterElem); isGetter {
-			c.raiseAccessorThrows(lvl, blame, getter.ThrowsOrNever())
+			throws = append(throws, getter.ThrowsOrNever())
 		}
+	}
+	for _, t := range throws {
+		c.raiseAccessorThrows(lvl, blame, t)
 	}
 }
 
