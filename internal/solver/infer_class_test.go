@@ -352,32 +352,21 @@ func TestInferClassNominalSubtype(t *testing.T) {
 		class Box<T: A> { value: T }
 	`
 	t.Run("same class satisfies the bound", func(t *testing.T) {
-		// Reflexivity. `A <: A` holds with no argument checking to do, so anything the
-		// bound licenses on a T is licensed on the A that fills it.
 		values, _, errs := inferSource(t, base+`val b = Box(A())`)
 		require.Empty(t, errs)
 		require.Equal(t, "Box<A>", values["b"])
 	})
 	t.Run("subclass satisfies the bound through the graph", func(t *testing.T) {
-		// A declared `extends` edge is a promise that B carries every member A does, so
-		// code written against the bound `T: A` finds each of them on a B.
 		values, _, errs := inferSource(t, base+`val b = Box(B())`)
 		require.Empty(t, errs)
 		require.Equal(t, "Box<B>", values["b"])
 	})
 	t.Run("unrelated class rejects", func(t *testing.T) {
-		// Other declares no `extends A`, so nothing promises it carries A's members. Its
-		// own `y: number` is beside the point — a bound is a nominal claim, and Other
-		// makes none.
 		_, _, errs := inferSource(t, base+`val b = Box(Other())`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "cannot constrain Other <: A", errs[0].Message())
 	})
 	t.Run("structural object rejects against a class bound", func(t *testing.T) {
-		// `{x: 0}` carries every field A declares and still fails, which is the nominal
-		// rule doing its job. Matching fields is not identity: A may gain a method or an
-		// invariant the object knows nothing about, and its constructor is the only thing
-		// that establishes them.
 		_, _, errs := inferSource(t, base+`val b = Box({x: 0})`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "cannot constrain object <: class A", errs[0].Message())
@@ -395,17 +384,10 @@ func TestInferClassIntoObject(t *testing.T) {
 		val p = Point(1, 2)
 	`
 	t.Run("into inexact object succeeds", func(t *testing.T) {
-		// An inexact target asks only that the named fields be present at the right
-		// types. Point's projected body supplies both, and the open tail absorbs whatever
-		// else the instance carries, so no read through `foo` can miss.
 		_, _, errs := inferSource(t, point+`val foo: {x: number, y: number, ...} = p`)
 		require.Empty(t, errs)
 	})
 	t.Run("into exact object rejects", func(t *testing.T) {
-		// An exact target claims the member set is closed, which Point cannot promise: it
-		// is not `final`, so a subclass may add members, and the instance flowing in here
-		// may be one. The fields happen to line up, but exactness is a claim about
-		// absence, and only `final` can back it.
 		_, _, errs := inferSource(t, point+`val foo: {x: number, y: number} = p`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "cannot constrain class Point <: exact object", errs[0].Message())
@@ -422,24 +404,15 @@ func TestInferClassFinal(t *testing.T) {
 		val p = Point(1, 2)
 	`
 	t.Run("into a matching exact object succeeds", func(t *testing.T) {
-		// `final` is what the previous suite's non-final Point lacked. No subclass can
-		// exist, so the member set really is closed and the exactness claim is one the
-		// class can back.
 		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number, y: number} = p`)
 		require.Empty(t, errs)
 	})
 	t.Run("into an exact object missing one of its members rejects", func(t *testing.T) {
-		// `final` earns exactness; it does not waive the width rule that comes with it.
-		// The instance carries a `y` the exact target does not name, and an exact type
-		// asserts nothing else is there, so the mismatch is reported rather than ignored.
 		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number} = p`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "object has extra property: y", errs[0].Message())
 	})
 	t.Run("into an inexact object still succeeds", func(t *testing.T) {
-		// Exactness on the source never narrows what it can fill. An inexact target
-		// tolerates extra members whatever the source is, so `final` neither helps nor
-		// hinders here.
 		_, _, errs := inferSource(t, finalPoint+`val foo: {x: number, y: number, ...} = p`)
 		require.Empty(t, errs)
 	})
@@ -1073,19 +1046,8 @@ func TestInferClassNameInAnnotation(t *testing.T) {
 // annotation, so `Box<5> <: Box<number | string>` — a check C1's conservative invariant
 // rejected — now succeeds; a class using its parameter in a method value parameter is
 // contravariant, so the same widening is rejected.
-//
-// Every case here binds with a plain `val`, so the instance is reachable only through an
-// immutable reference. That is what licenses the covariant reading of a field. Nothing
-// converts such a reference into a mutable one: a `val mut` rebinding, a `mut` borrow, and
-// a pass into a `mut` parameter all report `cannot constrain immutable C <: mutable …`. An
-// instance becomes writable only where a `mut` annotation says so, which is the territory
-// TestInferClassMutVariance covers.
 func TestInferClassVariance(t *testing.T) {
 	t.Run("covariant field parameter widens", func(t *testing.T) {
-		// `b` can only be read, and a read of `value` yields the `5` the instance holds,
-		// which is a `number | string`. No operation on `b` can put a `string` into the
-		// underlying instance, so calling it a `Box<number | string>` claims nothing the
-		// instance cannot back.
 		_, _, errs := inferSource(t, `
 			class Box<T> { value: T }
 			val b: Box<number | string> = Box(5)
@@ -1093,9 +1055,6 @@ func TestInferClassVariance(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("covariant instance widens into a wider instance", func(t *testing.T) {
-		// The same reasoning one step removed. `wide` and `narrow` name one instance, and
-		// neither binding can write to it, so the wider view stays a claim about what a
-		// read yields rather than a permission to store a `string`.
 		_, _, errs := inferSource(t, `
 			class Box<T> { value: T }
 			val narrow: Box<number> = Box(5)
@@ -1104,10 +1063,6 @@ func TestInferClassVariance(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("contravariant method parameter rejects a widening", func(t *testing.T) {
-		// `accept` is the only place T appears, and it appears as an input. Reading `wide`
-		// as a `Consumer<number | string>` would advertise `wide.accept("s")`, but the
-		// instance behind it only knows how to accept a `number`. Immutability does not
-		// help here — the unsound operation is a call, which any reference permits.
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
 				accept(self, x: T) { },
@@ -1126,13 +1081,8 @@ func TestInferClassVariance(t *testing.T) {
 // also shows covariance reached through a function argument and that a field read off the
 // widened instance yields the wider type. Every case is expected clean: covariance never
 // rejects a widening.
-// The shared soundness argument for every case: an output position only ever hands a T
-// out, so widening the parameter widens what the holder may assume about a value it
-// receives. It never widens what the holder may put in. The instance keeps producing the
-// `5` it was built with, and every consumer of the wider view tolerates a `5`.
 func TestInferClassCovariance(t *testing.T) {
 	t.Run("field occurrence widens", func(t *testing.T) {
-		// `wide.value` yields the stored `5`, and `5 <: number | string`.
 		_, _, errs := inferSource(t, `
 			class Box<T> { value: T }
 			val wide: Box<number | string> = Box(5)
@@ -1140,8 +1090,6 @@ func TestInferClassCovariance(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("method return occurrence widens", func(t *testing.T) {
-		// A return is an output position like a field read, so `wide.read()` yields the
-		// stored `5` and the caller's wider expectation is satisfied.
 		_, _, errs := inferSource(t, `
 			class Box<T> {
 				value: T,
@@ -1152,8 +1100,6 @@ func TestInferClassCovariance(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("getter occurrence widens", func(t *testing.T) {
-		// A getter is a read dressed as a member, so it carries the same output polarity a
-		// field read does and admits the same widening.
 		_, _, errs := inferSource(t, `
 			class Box<T> {
 				value: T,
@@ -1164,9 +1110,6 @@ func TestInferClassCovariance(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("each parameter of a multi-parameter class is covariant", func(t *testing.T) {
-		// Variance is measured per parameter, so `A` and `B` are judged independently and
-		// each widens on its own field's output position. Reading `p.first` yields the `5`
-		// and `p.second` the `true`, both of which their widened types admit.
 		values, _, errs := inferSource(t, `
 			class Pair<A, B> { first: A, second: B }
 			val p: Pair<number | string, number | boolean> = Pair(5, true)
@@ -1175,9 +1118,6 @@ func TestInferClassCovariance(t *testing.T) {
 		require.Equal(t, "Pair<number | string, number | boolean>", values["p"])
 	})
 	t.Run("widening flows through a function argument", func(t *testing.T) {
-		// A parameter slot is checked by the same rule an annotation is, so `widen` may be
-		// handed a `Box<5>`. It only reads through `b`, so the wider slot promises nothing
-		// the argument cannot back.
 		values, _, errs := inferSource(t, `
 			class Box<T> { value: T }
 			fn widen(b: Box<number | string>) -> Box<number | string> { return b }
@@ -1187,9 +1127,6 @@ func TestInferClassCovariance(t *testing.T) {
 		require.Equal(t, "Box<number | string>", values["r"])
 	})
 	t.Run("a field read off the widened instance yields the wider type", func(t *testing.T) {
-		// The widening is not erased on the way back out. A read through the wider view
-		// yields the wider type, which is the conservative direction: the caller is told
-		// less than the instance actually holds, never more.
 		values, _, errs := inferSource(t, `
 			class Box<T> { value: T }
 			val wide: Box<number | string> = Box(5)
@@ -1207,16 +1144,8 @@ func TestInferClassCovariance(t *testing.T) {
 // wider type accepts the narrower. It also shows the narrowing reached through a function
 // argument and across each parameter of a multi-parameter class. Every case is expected
 // clean: contravariance accepts a narrowing.
-// The shared soundness argument for every case: an input position only ever takes a T in,
-// so narrowing the parameter narrows what a holder is allowed to supply. The instance
-// behind the narrowed view still accepts the wider type, so every call the narrow view
-// permits is a call the instance already handles. The narrowing throws capability away,
-// which is always safe.
 func TestInferClassContravariance(t *testing.T) {
 	t.Run("method parameter occurrence narrows", func(t *testing.T) {
-		// Through `narrow` the only call available is `accept(<number>)`, and the instance
-		// accepts a `number | string`. The reverse would be unsound, and
-		// TestInferClassVariance pins that rejection.
 		values, _, errs := inferSource(t, `
 			class Consumer<T> {
 				accept(self, x: T) { },
@@ -1228,9 +1157,6 @@ func TestInferClassContravariance(t *testing.T) {
 		require.Equal(t, "Consumer<number>", values["narrow"])
 	})
 	t.Run("setter occurrence narrows", func(t *testing.T) {
-		// A setter's parameter is an input position like a method's, so it narrows for the
-		// same reason: a write through the narrow view supplies a `number`, which the
-		// instance's `number | string` setter accepts.
 		values, _, errs := inferSource(t, `
 			class Sink<T> {
 				set item(mut self, x: T) { },
@@ -1242,9 +1168,6 @@ func TestInferClassContravariance(t *testing.T) {
 		require.Equal(t, "Sink<number>", values["narrow"])
 	})
 	t.Run("each parameter of a multi-parameter class is contravariant", func(t *testing.T) {
-		// Each parameter is measured on its own method's input position, so `A` and `B`
-		// narrow independently. Every call the narrowed view permits — `a(<number>)` and
-		// `b(<boolean>)` — is one the instance's wider signatures already accept.
 		values, _, errs := inferSource(t, `
 			class Sink2<A, B> {
 				a(self, x: A) { },
@@ -1257,8 +1180,6 @@ func TestInferClassContravariance(t *testing.T) {
 		require.Equal(t, "Sink2<number, boolean>", values["narrow"])
 	})
 	t.Run("narrowing flows through a function argument", func(t *testing.T) {
-		// `feed` may only call `c.accept(<number>)`, so handing it the wider consumer
-		// hands it something that accepts strictly more than the slot demands.
 		_, _, errs := inferSource(t, `
 			class Consumer<T> {
 				accept(self, x: T) { },
@@ -1484,42 +1405,22 @@ func TestInferClassMutVariance(t *testing.T) {
 // modifiers (C2): a modifier that matches the inferred variance checks silently, and one
 // that disagrees reports VarianceMismatchError. The measured variance still governs
 // subtyping — the modifier is checked, not trusted.
-//
-// That last point is what keeps a wrong modifier from ever being a soundness problem. A
-// mismatch is a diagnostic about the declaration, not an instruction the constrain rule
-// follows, so an author who writes `in` on a parameter the body uses covariantly gets an
-// error rather than a subtype relation the body cannot back. A modifier states the
-// immutable-view variance, since that is the one a reader of the class sees; the mutable
-// view is measured, never declared.
 func TestInferClassVarianceModifiers(t *testing.T) {
 	t.Run("matching out modifier on a covariant parameter checks", func(t *testing.T) {
-		// The field is an output position, so the measured variance is covariant and the
-		// declaration agrees. Nothing about subtyping changes — the annotation only
-		// documents what the body already implies.
 		_, _, errs := inferSource(t, `class Box<out T> { value: T }`)
 		require.Empty(t, errs)
 	})
 	t.Run("in modifier on a covariant parameter is rejected", func(t *testing.T) {
-		// `in` claims a `Box<number | string>` may stand in for a `Box<number>`, but
-		// reading `value` off it yields a `string` where the narrower type promises a
-		// `number`. The measured covariance governs regardless, so the report is the whole
-		// effect of the disagreement.
 		_, _, errs := inferSource(t, `class Box<in T> { value: T }`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "type parameter `T` is declared contravariant but is actually covariant", errs[0].Message())
 	})
 	t.Run("in out modifier on a covariant parameter is rejected", func(t *testing.T) {
-		// `in out` is stricter than the measured covariance, so it rejects sound programs
-		// rather than admitting unsound ones. It is still reported: a modifier is checked
-		// for agreement, not merely for safety, so the declaration cannot quietly drift
-		// from the body.
 		_, _, errs := inferSource(t, `class Box<in out T> { value: T }`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "type parameter `T` is declared invariant but is actually covariant", errs[0].Message())
 	})
 	t.Run("matching in modifier on a contravariant parameter checks", func(t *testing.T) {
-		// `accept`'s parameter is the only occurrence and it is an input position, so
-		// contravariant is what the body implies and `in` names it correctly.
 		_, _, errs := inferSource(t, `
 			class Consumer<in T> {
 				accept(self, x: T) { },
