@@ -36,6 +36,18 @@ type checker struct {
 	// returns collection (a return inside an inner fn never escapes to the outer).
 	fn *funcCtx
 
+	// topThrows is the throws sink for a `try` block written at module top level, where
+	// there is no funcCtx to hold one. inferTryCatch installs it for the duration of the
+	// block and clears it afterwards, so it is nil everywhere else. throwsSink reads it
+	// only when fn is nil, which keeps a function body's sink on its own funcCtx and a
+	// nested function inside a top-level `try` collecting into its own signature rather
+	// than into the enclosing block's.
+	//
+	// Outside a `try` it stays nil and a top-level `throw` reaches a throwaway variable, so
+	// module top level checks no exceptions of its own. There is no signature there to
+	// declare a clause on and none to check a raise against.
+	topThrows soltype.Type
+
 	// debugProv, when set, makes recordProv panic on a conflicting overwrite (the
 	// same type pointer recorded against a *different* node) — turning the
 	// implicit "every minted type is a unique pointer" invariant into an enforced
@@ -315,14 +327,49 @@ func (c *checker) inScript() bool {
 // throwsSink returns the type this body's exceptional exits are constrained against.
 // inferFunc seeds it from the signature, so the mint below fires only where there is no
 // signature to seed from: a script's top level, and a `throw` or call at module top level.
+//
+// A `try` at module top level installs topThrows, which is the only sink available with no
+// funcCtx to hold one. Outside such a block topThrows is nil and each exit reaches a
+// throwaway variable, so module top level checks no exceptions of its own.
 func (c *checker) throwsSink(lvl int) soltype.Type {
 	if c.fn == nil {
+		if c.topThrows != nil {
+			return c.topThrows
+		}
 		return c.freshAt(lvl)
 	}
 	if c.fn.throws == nil {
 		c.fn.throws = c.freshAt(c.fn.lvl)
 	}
 	return c.fn.throws
+}
+
+// installThrowsSink puts sink in place as the sink throwsSink returns and hands back the
+// one it replaced, so a caller can restore that afterwards. It writes to funcCtx.throws
+// inside a body and to topThrows outside one, matching where throwsSink reads from. A nil
+// sink restores the unminted state, which is what both fields hold before a body's first
+// exceptional exit.
+func (c *checker) installThrowsSink(sink soltype.Type) soltype.Type {
+	if c.fn == nil {
+		saved := c.topThrows
+		c.topThrows = sink
+		return saved
+	}
+	saved := c.fn.throws
+	c.fn.throws = sink
+	return saved
+}
+
+// freshThrowsSink mints a sink at the level throwsSink mints at, the enclosing body's own
+// level rather than the level the current expression is typed at. inferTryCatch installs
+// the result for the duration of a try block. A sink minted one level deeper, inside a
+// `val` initializer, gets extruded by a later exceptional exit. The resulting cycle then
+// renders as a μ-knot. lvl is the fallback where there is no body to read a level from.
+func (c *checker) freshThrowsSink(lvl int) *soltype.TypeVarType {
+	if c.fn != nil {
+		return c.freshAt(c.fn.lvl)
+	}
+	return c.freshAt(lvl)
 }
 
 // markRaised records that the body being walked has an exceptional exit that can raise.
@@ -519,6 +566,8 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferBorrow(scope, lvl, e)
 	case *ast.ThrowExpr:
 		return c.inferThrow(scope, lvl, e)
+	case *ast.TryCatchExpr:
+		return c.inferTryCatch(scope, lvl, e)
 	case *ast.BinaryExpr:
 		// PR8 handles the ASSIGNMENT op only (`a = expr`); every other binary
 		// operator (+, ==, &&, ++, …) needs the operator-scheme walk over the prelude

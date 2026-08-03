@@ -1017,6 +1017,39 @@ type NonExhaustiveMatchError struct {
 	Match *ast.MatchExpr
 }
 
+// MissingCatchArmError fires when a `try` carries no catch arms. The arms are what catch
+// an exception, so a `try` without them changes nothing about the block it wraps. Either
+// resolution is fine. Dropping the `try` keeps the block saying what it already says, and
+// adding an arm makes the `try` do something.
+//
+// An omitted `catch` and a written-but-empty `catch { }` both land here, since
+// `ast.TryCatchExpr` records only the arms and both leave that slice empty. One message
+// covers them, because both ways out apply whichever form was written.
+//
+// It is a bridge error born in `inferTryCatch` with the try/catch node in hand, so it
+// self-blames the whole form through `Span` and carries no related node.
+type MissingCatchArmError struct {
+	Try *ast.TryCatchExpr
+}
+
+// UnhandledRethrowError fires when the part of a caught union the catch arms leave
+// uncovered cannot reach the enclosing throws sink. `rethrowUnhandled` returns early on a
+// catch-all, so this error only ever describes a `try` without one.
+//
+// It replaces the errors the constraint engine would raise for the same failure. An engine
+// error resolves per-operand blame through Prov, and a rethrown member's Prov entry is the
+// `throw` inside the try block. Blaming that `throw` would be wrong, because the `try`
+// caught it. What fails is the re-raise, which happens at the try/catch, so one error
+// blamed there reports the escape once at the site it escapes from.
+//
+// It is a bridge error born in `rethrowUnhandled` with the try/catch node in hand, so it
+// self-blames the whole form through `Span` and carries no related node.
+type UnhandledRethrowError struct {
+	Try      *ast.TryCatchExpr
+	Rethrown soltype.Type
+	Sink     soltype.Type
+}
+
 // MixedOwnershipError fires when an inferred union or intersection has a borrowed
 // member beside an owned one, such as `{x: number} | &{y: number}`, which has no
 // single owned-or-borrowed verdict. It blames the inference join where it forms.
@@ -1046,6 +1079,8 @@ func (*NotIterableError) isSolverError()                    {}
 func (*ReturnOutsideFunctionError) isSolverError()          {}
 func (*AsyncReturnNotPromiseError) isSolverError()          {}
 func (*NonExhaustiveMatchError) isSolverError()             {}
+func (*MissingCatchArmError) isSolverError()                {}
+func (*UnhandledRethrowError) isSolverError()               {}
 func (*MixedOwnershipError) isSolverError()                 {}
 func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
 func (*MissingSelfReceiverError) isSolverError()            {}
@@ -1489,6 +1524,19 @@ func (e *NonExhaustiveMatchError) Span() ast.Span      { return e.Match.Span() }
 func (e *NonExhaustiveMatchError) Related() []ast.Span { return nil }
 func (e *NonExhaustiveMatchError) Message() string {
 	return "match is not exhaustive; add a catch-all branch"
+}
+
+func (e *MissingCatchArmError) Span() ast.Span       { return e.Try.Span() }
+func (e *MissingCatchArmError) Related() []ast.Span  { return nil }
+func (e *UnhandledRethrowError) Span() ast.Span      { return e.Try.Span() }
+func (e *UnhandledRethrowError) Related() []ast.Span { return nil }
+func (e *UnhandledRethrowError) Message() string {
+	return "the catch arms leave " + soltype.Print(e.Rethrown) + " uncovered, so it is rethrown, and the enclosing `throws " +
+		soltype.Print(e.Sink) + "` does not admit it. Cover it with a catch arm, or widen the enclosing clause"
+}
+
+func (e *MissingCatchArmError) Message() string {
+	return "a `try` with no catch arms catches nothing; drop the `try` and keep its block, or add at least one catch arm"
 }
 
 // MutLeafThroughSharedBorrowError fires when a destructuring pattern marks a leaf
