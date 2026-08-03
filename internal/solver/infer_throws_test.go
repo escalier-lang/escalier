@@ -412,10 +412,6 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 // and return positions. Recovering to nil would read as `never`, so every value flowing
 // into the annotation would be re-reported for raising something on top of the one real
 // error.
-//
-// A getter or setter projects to the type its read yields or its write accepts, and
-// neither element has anywhere to record a clause, so the clause is rejected rather than
-// dropped. A raising accessor cannot read as non-throwing.
 func TestInferThrowsAnnotationRecovery(t *testing.T) {
 	runThrowsErrCases(t, []throwsErrCase{
 		{
@@ -423,25 +419,6 @@ func TestInferThrowsAnnotationRecovery(t *testing.T) {
 			name:     "UnsupportedAnnotationDoesNotCascade",
 			src:      `val f: fn() -> number throws void = fn () -> never throws _ { throw "x" }`,
 			wantErrs: []string{"1:30-1:34: Unsupported: VoidTypeAnn"},
-		},
-		{
-			// The clause draws two diagnostics: it is unsupported on an accessor at all,
-			// and the body raises nothing so it would read as unused even where it is
-			// supported. Both say to drop it.
-			name: "GetterClauseIsRejected",
-			src:  `class C { v: number, get x(self) -> number throws string { return self.v } }`,
-			wantErrs: []string{
-				"1:22-1:75: Unsupported: throws clause on a getter",
-				"1:51-1:57: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
-			},
-		},
-		{
-			name: "SetterClauseIsRejected",
-			src:  `class C { v: number, set x(mut self, v: number) throws string { self.v = v } }`,
-			wantErrs: []string{
-				"1:22-1:77: Unsupported: throws clause on a setter",
-				"1:56-1:62: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
-			},
 		},
 	})
 }
@@ -458,6 +435,22 @@ func TestInferThrowsOverDeclaredSignature(t *testing.T) {
 			src:  `fn f() -> number throws string { return 1 }`,
 			wantErrs: []string{
 				"1:25-1:31: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
+			},
+		},
+		{
+			// An accessor reads its clause the way a method does, so a getter that raises
+			// nothing draws the same warning a clause-less-body function draws.
+			name: "GetterClauseNoExceptionalExitReaches",
+			src:  `class C { v: number, get x(self) -> number throws string { return self.v } }`,
+			wantErrs: []string{
+				"1:51-1:57: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
+			},
+		},
+		{
+			name: "SetterClauseNoExceptionalExitReaches",
+			src:  `class C { v: number, set x(mut self, v: number) throws string { self.v = v } }`,
+			wantErrs: []string{
+				"1:56-1:62: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
 			},
 		},
 		{
@@ -509,6 +502,200 @@ func TestInferThrowsOverDeclaredSignature(t *testing.T) {
 			name: "BodylessDeclareFnIsNotMeasured",
 			src:  `declare fn f() -> number throws string`,
 			want: "fn () -> number throws string",
+		},
+	})
+}
+
+// A getter and a setter each declare what they raise, the same way a method does, and a
+// getter's clause reaches whoever reads the property. Reading through a getter runs its
+// body, so the read is an exceptional exit of the enclosing body just as a call is.
+func TestInferThrowsFromAnAccessor(t *testing.T) {
+	// raisingGetter declares `get x` on a class that both returns and raises, so neither
+	// over-declaration warning fires and the cases below measure only the throws flow.
+	const raisingGetter = `
+		class C {
+			v: number,
+			bad: boolean,
+			get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
+		}
+	`
+	runThrowsCases(t, []throwsCase{
+		{
+			// The getter's clause reaches the reader, which redeclares it as its own.
+			name: "GetterClauseReachesTheReader",
+			src:  raisingGetter + `fn f(c: C) -> number throws string { return c.x }`,
+			want: "fn (c: C) -> number throws string",
+		},
+		{
+			// `throws _` on the reader infers from the read, so the getter's declared
+			// `string` is what the reader raises.
+			name: "ReaderInfersTheGetterClause",
+			src:  raisingGetter + `fn f(c: C) -> number throws _ { return c.x }`,
+			want: "fn (c: C) -> number throws string",
+		},
+		{
+			// `throws _` on the GETTER infers from its body, so the reader sees the
+			// literal type the body throws rather than a declared widening of it.
+			name: "GetterInfersItsOwnClauseFromItsBody",
+			src: `
+				class C {
+					v: number,
+					bad: boolean,
+					get x(self) -> number throws _ { if self.bad { throw "boom" } return self.v },
+				}
+				fn f(c: C) -> number throws _ { return c.x }
+			`,
+			want: `fn (c: C) -> number throws "boom"`,
+		},
+		{
+			// A sibling member reads the getter through `self`, which resolves on the
+			// class body rather than on a projected instance, and raises the same.
+			name: "SelfReadInsideASiblingMethod",
+			src: `
+				class C {
+					v: number,
+					bad: boolean,
+					get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
+					m(self) -> number throws string { return self.x },
+				}
+				fn f(c: C) -> number throws string { return c.m() }
+			`,
+			want: "fn (c: C) -> number throws string",
+		},
+		{
+			// A static getter is read off the class VALUE, a third resolution path.
+			name: "StaticGetterRead",
+			src: `
+				class C {
+					bad: boolean,
+					static get x() -> number throws string { if true { throw "boom" } return 1 },
+				}
+				fn f() -> number throws string { return C.x }
+			`,
+			want: "fn () -> number throws string",
+		},
+		{
+			// A class value renders both accessors' clauses, so a raising accessor is
+			// visible in the type rather than reading as non-throwing.
+			name:    "StaticAccessorsRenderTheirClause",
+			binding: "C",
+			src: `
+				class C {
+					static get g() -> number throws string { if true { throw "g" } return 1 },
+					static set s(v: number) throws string { if true { throw "s" } },
+				}
+			`,
+			want: "{new () -> C, get g() -> number throws string, set s(value: number) throws string}",
+		},
+		{
+			// A getter on a generic class projects its return to the instance's argument
+			// while its clause, which names no class parameter, carries through unchanged.
+			name: "GenericClassGetter",
+			src: `
+				class Box<T> {
+					v: T,
+					bad: boolean,
+					get item(self) -> T throws string { if self.bad { throw "boom" } return self.v },
+				}
+				fn f(b: Box<number>) -> number throws string { return b.item }
+			`,
+			want: "fn (b: Box<number>) -> number throws string",
+		},
+		{
+			// A union receiver reads through one getter per member, so the reader raises
+			// the union of what they declare.
+			name: "UnionReceiverJoinsEveryMemberGetter",
+			src: `
+				class A { bad: boolean, get x(self) -> number throws string { if self.bad { throw "a" } return 1 } }
+				class B { bad: boolean, get x(self) -> number throws number { if self.bad { throw 2 } return 1 } }
+				fn f(c: A | B) -> number throws _ { return c.x }
+			`,
+			want: "fn (c: A | B) -> number throws number | string",
+		},
+		{
+			// Reading a METHOD only names the function; its throws stays in the signature
+			// until the method is called, so a clause-less reader is fine.
+			name: "MethodValueReadIsNotAnExceptionalExit",
+			src: `
+				class C { m(self) throws string { throw "boom" } }
+				fn f(c: C) { val g = c.m }
+			`,
+			want: "fn (c: C) -> void",
+		},
+		{
+			// An accessor that handles everything internally raises nothing, so it needs
+			// no clause and its readers need none either.
+			name: "GetterHandlingItsCalleeInternallyRaisesNothing",
+			src: `
+				fn a() throws string { throw "boom" }
+				class C { get x(self) -> number { return try { a() } catch { e => 0 } } }
+				fn f(c: C) -> number { return c.x }
+			`,
+			want: "fn (c: C) -> number",
+		},
+	})
+}
+
+// An accessor with no `throws` clause raises nothing, so every exceptional exit in its
+// body is rejected at its own site, and a read of a raising getter is rejected inside a
+// reader that declares no clause of its own.
+func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			name:     "ThrowInAClauselessGetter",
+			src:      `class C { v: number, get x(self) { throw "boom" } }`,
+			wantErrs: []string{`1:42-1:48: cannot constrain "boom" <: never`},
+		},
+		{
+			name:     "ThrowInAClauselessSetter",
+			src:      `class C { v: number, set x(mut self, v: number) { throw "boom" } }`,
+			wantErrs: []string{`1:57-1:63: cannot constrain "boom" <: never`},
+		},
+		{
+			name: "CallToAThrowingCalleeFromAClauselessGetter",
+			src: `
+				fn a() throws string { throw "boom" }
+				class C { v: number, get x(self) -> number { return a() } }
+			`,
+			wantErrs: []string{"3:57-3:60: cannot constrain string <: never"},
+		},
+		{
+			// The read is the exceptional exit, so the diagnostic blames the access
+			// rather than the getter's own body, which declared its raise correctly.
+			name: "ReadOfARaisingGetterFromAClauselessCaller",
+			src: `
+				class C {
+					v: number,
+					bad: boolean,
+					get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
+				}
+				fn f(c: C) -> number { return c.x }
+			`,
+			wantErrs: []string{"7:35-7:38: cannot constrain string <: never"},
+		},
+		{
+			name: "SelfReadOfARaisingGetterFromAClauselessMethod",
+			src: `
+				class C {
+					v: number,
+					bad: boolean,
+					get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
+					m(self) -> number { return self.x },
+				}
+			`,
+			wantErrs: []string{"6:33-6:39: cannot constrain string <: never"},
+		},
+		{
+			// Only one member of the union reads through a raising getter. The other
+			// carries `x` as a plain field, which raises nothing, so the single raise
+			// still has to be declared.
+			name: "UnionReceiverReadFromAClauselessCaller",
+			src: `
+				class A { bad: boolean, get x(self) -> number throws string { if self.bad { throw "a" } return 1 } }
+				class B { x: number }
+				fn f(c: A | B) -> number { return c.x }
+			`,
+			wantErrs: []string{"4:39-4:42: cannot constrain string <: never"},
 		},
 	})
 }

@@ -623,17 +623,27 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 	case *GetterElem:
 		self, selfChanged := acceptSelfParam(e.SelfParam, v, pol) // receiver contravariant
 		rt := e.Type.Accept(v, pol)                               // covariant read
-		if !selfChanged && rt == e.Type {
+		// A nil Throws is the `never` shorthand and has nothing to walk, the same
+		// collapse FuncType's visit takes over its own throws position.
+		throws := e.Throws
+		if throws != nil {
+			throws = throws.Accept(v, pol) // covariant, like the read
+		}
+		if !selfChanged && rt == e.Type && throws == e.Throws {
 			return e
 		}
-		return &GetterElem{Name: e.Name, SelfParam: self, Type: rt}
+		return &GetterElem{Name: e.Name, SelfParam: self, Type: rt, Throws: throws}
 	case *SetterElem:
 		self, selfChanged := acceptSelfParam(e.SelfParam, v, pol) // receiver contravariant
 		pt := e.Param.Accept(v, pol.Flip())                       // contravariant write
-		if !selfChanged && pt == e.Param {
+		throws := e.Throws
+		if throws != nil {
+			throws = throws.Accept(v, pol) // covariant, unlike the written value
+		}
+		if !selfChanged && pt == e.Param && throws == e.Throws {
 			return e
 		}
-		return &SetterElem{Name: e.Name, SelfParam: self, Param: pt}
+		return &SetterElem{Name: e.Name, SelfParam: self, Param: pt, Throws: throws}
 	case *MethodElem:
 		sigs, changed := acceptSignatures(e.Signatures, v, pol)
 		if !changed {

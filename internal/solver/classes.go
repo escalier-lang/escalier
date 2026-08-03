@@ -278,9 +278,9 @@ func stripSelfReceiver(elem soltype.ObjTypeElem) soltype.ObjTypeElem {
 		}
 		return &soltype.MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
 	case *soltype.GetterElem:
-		return &soltype.GetterElem{Name: e.Name, Type: e.Type}
+		return &soltype.GetterElem{Name: e.Name, Type: e.Type, Throws: e.Throws}
 	case *soltype.SetterElem:
-		return &soltype.SetterElem{Name: e.Name, Param: e.Param}
+		return &soltype.SetterElem{Name: e.Name, Param: e.Param, Throws: e.Throws}
 	default:
 		return elem
 	}
@@ -637,6 +637,10 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 	case *soltype.PropertyElem:
 		out = m.Type
 	case *soltype.GetterElem:
+		// Reading through a getter runs its body, so the read is an exceptional exit of
+		// the enclosing body the way a call is. A method read is not: reading `p.m` only
+		// names the function, and its throws stays in the signature until it is called.
+		c.raiseAccessorThrows(lvl, blame, m.ThrowsOrNever())
 		out = m.Type
 	case *soltype.MethodElem:
 		switch len(m.Signatures) {
@@ -694,6 +698,44 @@ func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTyp
 		return obj.WriteMember(name)
 	}
 	return nil, false
+}
+
+// raiseAccessorThrows records that an accessor access raises `throws` into the enclosing
+// body's throws sink, the same wiring inferCall gives a call. A body with no clause has a
+// `never` sink, so a raising accessor is rejected at the access site rather than reading as
+// non-throwing to the caller. An accessor that raises nothing constrains `never`, which
+// records nothing, and leaves the enclosing `throws` clause counting as unused.
+func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Type) {
+	if isNeverType(throws) {
+		return
+	}
+	c.markRaised()
+	c.constrain(blame, throws, c.throwsSink(lvl))
+}
+
+// raiseUnionAccessorThrows records what reading `name` off a union receiver may raise.
+// constrainUnionFieldRead joins the read's VALUE across the union's members inside
+// constrain; this walks the same members to reach the getters that join contributes, since
+// only the inference walk holds the enclosing throws sink. A member that carries `name` as
+// a plain property, a method, or a setter raises nothing on a read and contributes no
+// constraint. A carrier that is not a union, or a union member that is neither an object
+// nor a class instance, is left alone, matching the shapes that join accepts.
+func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string, carrier soltype.Type) {
+	u, ok := carrier.(*soltype.UnionType)
+	if !ok {
+		return
+	}
+	for _, member := range u.Types {
+		obj, ok := c.ctx.readCarrierObject(soltype.CarrierOf(member))
+		if !ok {
+			continue
+		}
+		if getter, ok := obj.Member(name); ok {
+			if g, isGetter := getter.(*soltype.GetterElem); isGetter {
+				c.raiseAccessorThrows(lvl, blame, g.ThrowsOrNever())
+			}
+		}
+	}
 }
 
 // strippedMethodSig returns a method signature as a plain callable, its SelfParam

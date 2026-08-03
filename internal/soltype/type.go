@@ -350,6 +350,18 @@ type GetterElem struct {
 	Name      string
 	SelfParam *FuncParam // nil ⇒ static getter; non-nil ⇒ instance getter
 	Type      Type
+	// Throws is the type reading this property may raise, the twin of FuncType.Throws
+	// and covariant like it. Nil reads as `never`, so the zero value is non-throwing.
+	Throws Type
+}
+
+// ThrowsOrNever returns the type reading e may raise, resolving the nil shorthand to the
+// `never` it stands for, so no reader of the throws position has to test for nil.
+func (e *GetterElem) ThrowsOrNever() Type {
+	if e.Throws == nil {
+		return &NeverType{}
+	}
+	return e.Throws
 }
 
 // SetterElem is a computed write property `set x(self, v: T)`. Param is the value the
@@ -360,6 +372,19 @@ type SetterElem struct {
 	Name      string
 	SelfParam *FuncParam // nil ⇒ static setter; non-nil ⇒ instance setter
 	Param     Type
+	// Throws is the type writing this property may raise. It is covariant even though
+	// Param is contravariant, since what a write raises flows out to the writer just as
+	// what a getter raises flows out to the reader. Nil reads as `never`.
+	Throws Type
+}
+
+// ThrowsOrNever returns the type writing e may raise, resolving the nil shorthand to the
+// `never` it stands for, so no reader of the throws position has to test for nil.
+func (e *SetterElem) ThrowsOrNever() Type {
+	if e.Throws == nil {
+		return &NeverType{}
+	}
+	return e.Throws
 }
 
 // ConstructorElem is the call signature a class value carries. It is the constructor a
@@ -1354,9 +1379,9 @@ func levelOfElem(e ObjTypeElem) int {
 		}
 		return m
 	case *GetterElem:
-		return max(selfLevel(e.SelfParam), LevelOf(e.Type))
+		return max(selfLevel(e.SelfParam), LevelOf(e.Type), throwsLevel(e.Throws))
 	case *SetterElem:
-		return max(selfLevel(e.SelfParam), LevelOf(e.Param))
+		return max(selfLevel(e.SelfParam), LevelOf(e.Param), throwsLevel(e.Throws))
 	case *ConstructorElem:
 		return LevelOf(e.Fn)
 	case *SpreadElem:
@@ -1385,6 +1410,16 @@ func selfLevel(self *FuncParam) int {
 		return 0
 	}
 	return LevelOf(self.Type)
+}
+
+// throwsLevel returns the level of an accessor's throws position, 0 for the nil shorthand
+// that stands for `never`. `never` is a childless leaf at level 0, so the shorthand and an
+// explicit `never` agree without materializing one.
+func throwsLevel(throws Type) int {
+	if throws == nil {
+		return 0
+	}
+	return LevelOf(throws)
 }
 
 // maxMemberLevel returns the highest LevelOf across a Union/Intersection's members,

@@ -2230,6 +2230,11 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	if res, ok := c.classValueMember(lvl, blame, name, recvCarrier); ok {
 		return res
 	}
+	// A union receiver reaches the structural requirement below, whose result is joined
+	// per member inside constrain by constrainUnionFieldRead. That join runs with no
+	// access to the enclosing throws sink, so the getters it may read through are
+	// collected here instead, where the sink is in scope.
+	c.raiseUnionAccessorThrows(lvl, blame, name, recvCarrier)
 	fieldVar := c.freshAt(lvl)
 	// The member-requirement record {prop: fieldVar} is deliberately NOT recorded —
 	// MissingPropertyError blames this inner fieldVar, so the record would be a dead

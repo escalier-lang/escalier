@@ -1564,7 +1564,8 @@ func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, supe
 // constrainObjMember checks a method, getter, or setter requirement on an object super
 // against the sub's same-named member by variance: a method by its receiver-stripped
 // callable signature (first arm; overload dispatch is E1), a getter covariantly, a setter
-// contravariantly. A missing or wrong-kind member fails.
+// contravariantly. An accessor's throws position is covariant in both cases. A missing or
+// wrong-kind member fails.
 //
 // A setter requirement resolves the sub's setter half and every other requirement its
 // getter half, so a sub carrying an accessor pair satisfies both requirements whichever
@@ -1591,11 +1592,15 @@ func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *so
 		return c.constrain(callableView(sm.Signatures[0]), callableView(se.Signatures[0]), seen, mutCtx)
 	case *soltype.GetterElem:
 		if sg, ok := subElem.(*soltype.GetterElem); ok {
-			return c.constrain(sg.Type, se.Type, seen, mutCtx) // covariant read
+			errs := c.constrain(sg.Type, se.Type, seen, mutCtx) // covariant read
+			// What a read raises flows out to the reader, so the throws position is
+			// covariant like the read: the source may raise no more than the target admits.
+			return append(errs, c.constrain(sg.ThrowsOrNever(), se.ThrowsOrNever(), seen, mutCtx)...)
 		}
 	case *soltype.SetterElem:
 		if ss, ok := subElem.(*soltype.SetterElem); ok {
-			return c.constrain(se.Param, ss.Param, seen, mutCtx) // contravariant write
+			errs := c.constrain(se.Param, ss.Param, seen, mutCtx) // contravariant write
+			return append(errs, c.constrain(ss.ThrowsOrNever(), se.ThrowsOrNever(), seen, mutCtx)...)
 		}
 	}
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
