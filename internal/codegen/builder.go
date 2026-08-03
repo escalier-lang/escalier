@@ -1902,15 +1902,28 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 
 					// A refutable pattern leaves two ways for the arm to decline the
 					// value, a failed pattern test and a failed guard. Both mean the later
-					// arms get their turn, so both have to reach the fall-through. Putting
-					// it in each `else` would emit it twice, and a chain of N such arms
-					// would emit its tail 2^N times.
+					// arms get their turn, so both have to reach the fall-through.
 					//
-					// A flag gives it one owner instead. The arm sets the flag on the one
-					// path that takes the value, and the fall-through runs when the flag
-					// is still unset. Merging the two tests into a single `if` would work
-					// too, but the guard reads names the pattern binds, and those bindings
-					// can only be declared once the pattern has matched.
+					// One `if` testing both gives them a single `else` to share. That
+					// needs three things to hold. The pattern must bind nothing, since a
+					// binding can only be declared once the pattern has matched. The guard
+					// must need no hoisted statements, since those would run before the
+					// pattern test rather than after it. And the guard must not be a
+					// top-level `||`, since the printer emits no parentheses and
+					// `cond && a || b` parses as `(cond && a) || b`.
+					if len(bindingStmts) == 0 && len(guardStmts) == 0 && !isLogicalOr(guardExpr) {
+						merged := combineConditions([]Expr{condition, guardExpr}, expr)
+						fallthroughStmts = []Stmt{
+							NewIfStmt(merged, NewBlockStmt(guardBodyStmts, expr), asElse(), expr),
+						}
+						continue
+					}
+
+					// Otherwise the two tests stay in separate `if`s and a flag gives the
+					// fall-through one owner. Putting it in each `else` would emit it
+					// twice, and a chain of N such arms would emit its tail 2^N times. The
+					// arm sets the flag on the one path that takes the value, and the
+					// fall-through runs when the flag is still unset.
 					if len(fallthroughStmts) == 0 {
 						// Nothing to fall through to, so neither failure needs recording.
 						guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, expr), nil, expr)
@@ -3026,6 +3039,14 @@ func isTrueLiteral(expr Expr) bool {
 		}
 	}
 	return false
+}
+
+// isLogicalOr reports whether an expression is a top-level `||`. Such an expression cannot
+// become the right operand of an emitted `&&`, because the printer writes binary operators
+// without parentheses and `a && b || c` parses as `(a && b) || c`.
+func isLogicalOr(expr Expr) bool {
+	binExpr, isBin := expr.(*BinaryExpr)
+	return isBin && binExpr.Op == LogicalOr
 }
 
 // combineConditions combines multiple conditions with && operators,

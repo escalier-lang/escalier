@@ -1047,7 +1047,8 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 		// A guarded arm whose pattern is refutable declines the value in two ways, by
 		// failing the pattern test and by failing the guard. Both hand the value to the
 		// later arms, so the arm that always runs still gets its turn on a thrown "y".
-		// The flag gives those arms one owner, so they are emitted once.
+		// The literal pattern binds nothing, so one `if` tests both and the two failures
+		// share its else.
 		"GuardedRefutableThenCatchAll": {
 			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, _ => 1 }\n}",
 			expected: `export function f(temp1) {
@@ -1056,14 +1057,9 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
-    let temp3 = false;
-    if (__error == "x") {
-      if (n > 0) {
-        temp2 = 0;
-        temp3 = true;
-      }
-    }
-    if (!temp3) {
+    if (__error == "x" && n > 0) {
+      temp2 = 0;
+    } else {
       temp2 = 1;
     }
   }
@@ -1080,9 +1076,56 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw "x";
   } catch (__error) {
+    if (__error == "x" && n > 0) {
+      temp2 = 0;
+    } else if (__error == "y") {
+      temp2 = 1;
+    } else {
+      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// Stacked guarded arms with refutable patterns. Each merges into one test, so the
+		// arms form a single `else if` chain and the "z" arm and the rethrow are emitted
+		// once rather than once per path through the two guards.
+		"TwoGuardedRefutableArms": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, \"y\" if n > 1 => 1, \"z\" => 2 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x" && n > 0) {
+      temp2 = 0;
+    } else if (__error == "y" && n > 1) {
+      temp2 = 1;
+    } else if (__error == "z") {
+      temp2 = 2;
+    } else {
+      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// A guard that is a top-level `||` cannot join the pattern test. The printer emits
+		// no parentheses, so `__error == "x" && n > 0 || n < 0 - 5` would parse as
+		// `(__error == "x" && n > 0) || n < 0 - 5` and run the arm for a value the pattern
+		// rejects. The tests stay separate and a flag carries the fall-through.
+		"GuardIsLogicalOr": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 || n < 0 - 5 => 0, \"y\" => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
     let temp3 = false;
     if (__error == "x") {
-      if (n > 0) {
+      if (n > 0 || n < 0 - 5) {
         temp2 = 0;
         temp3 = true;
       }
@@ -1098,42 +1141,29 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   return temp2;
 }`,
 		},
-		// Stacked guarded arms with refutable patterns. Each one owns the arms after it
-		// through its own flag, so the "z" arm and the rethrow are emitted once rather
-		// than once per path through the two guards.
-		"TwoGuardedRefutableArms": {
-			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, \"y\" if n > 1 => 1, \"z\" => 2 }\n}",
-			expected: `export function f(temp1) {
-  const n = temp1;
-  let temp2;
+		// A pattern that binds cannot join its test to the guard either, since the guard
+		// reads the binding and the binding can only be declared once the pattern has
+		// matched. The flag carries the fall-through here too.
+		"GuardReadsPatternBinding": {
+			src: "fn f() {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if msg != \"\" => msg, _ => \"other\" }\n}",
+			expected: `export function f() {
+  let temp1;
   try {
-    throw "x";
+    throw {message: "m"};
   } catch (__error) {
-    let temp4 = false;
-    if (__error == "x") {
-      if (n > 0) {
-        temp2 = 0;
-        temp4 = true;
+    let temp2 = false;
+    if (__error != null && "message" in __error) {
+      const {message: msg} = __error;
+      if (msg != "") {
+        temp1 = msg;
+        temp2 = true;
       }
     }
-    if (!temp4) {
-      let temp3 = false;
-      if (__error == "y") {
-        if (n > 1) {
-          temp2 = 1;
-          temp3 = true;
-        }
-      }
-      if (!temp3) {
-        if (__error == "z") {
-          temp2 = 2;
-        } else {
-          throw __error;
-        }
-      }
+    if (!temp2) {
+      temp1 = "other";
     }
   }
-  return temp2;
+  return temp1;
 }`,
 		},
 		// No arm always runs, so a value matching neither literal is re-raised.
