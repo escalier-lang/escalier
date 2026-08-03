@@ -71,6 +71,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	def.Level = lvl - 1
 	def.TypeParams = typeParams
 	def.Variance = make([]Variance, len(typeParams))
+	def.MutVariance = make([]Variance, len(typeParams))
 	body := def.Body
 	static := def.Static
 	c.recordType(decl.Name, self)
@@ -113,11 +114,13 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		c.freezeClassBody(static, keep, flow)
 	}
 
-	// Freeze the per-parameter variance once every member body has refined its
+	// Freeze both per-parameter variance vectors once every member body has refined its
 	// signature, so the walk measures each type parameter at its final occurrences. The
 	// conservative Invariant seeded above governs any constraint raised during body
-	// inference; the nominal rule reads the measured variance from here on (C2).
-	def.Variance = c.inferVariance(def, decl)
+	// inference; the nominal rule reads the measured variance from here on (C2). Which of
+	// the two vectors it reads depends on the mutability of the reference the constraint
+	// sits under.
+	def.Variance, def.MutVariance = c.inferVariance(def, decl)
 
 	return c.classValue(ctorType, static), &ast.NodeProvenance{Node: decl}, true
 }

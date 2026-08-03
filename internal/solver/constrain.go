@@ -273,18 +273,32 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 }
 
 // needsResidualWriteBack reports whether a mutable borrow's inner needs an explicit
-// contravariant write view in the RefType arm (PR 14). The object/tuple arms pin
-// matched object/object and tuple/tuple inners via the mut-context flag, so those
-// need no residual. Any other inner — a type variable, or two mismatched kinds —
-// the flag's structural arm does not reach, so the whole reverse constraint pins it.
+// contravariant write view in the RefType arm (PR 14). An arm that reads the mut-context
+// flag itself already adds whatever write view the inner needs, so those pairs need no
+// residual. Three arms do:
+//
+//   - object/object and tuple/tuple, which pin each named field or element the flag marks
+//     writable;
+//   - class/class, whose nominal walk dispatches each type argument by the class's
+//     mutable-view variance vector;
+//   - class/object, which projects the class body and hands the flag to the object arm.
+//
+// Any other inner — a type variable, or two mismatched kinds — reaches no such arm, so the
+// whole reverse constraint pins it.
 func needsResidualWriteBack(sub, sup soltype.Type) bool {
-	if _, ok := sub.(*soltype.ObjectType); ok {
+	switch sub.(type) {
+	case *soltype.ObjectType:
 		_, ok := sup.(*soltype.ObjectType)
 		return !ok
-	}
-	if _, ok := sub.(*soltype.TupleType); ok {
+	case *soltype.TupleType:
 		_, ok := sup.(*soltype.TupleType)
 		return !ok
+	case *soltype.ClassType:
+		switch sup.(type) {
+		case *soltype.ClassType, *soltype.ObjectType:
+			return false
+		}
+		return true
 	}
 	return true
 }
@@ -1033,8 +1047,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		switch sup := super.(type) {
 		case *soltype.ClassType:
 			// Nominal: identical name with a per-position argument check, or sub reaches
-			// sup transitively through the declared extends graph.
-			return c.constrainNominal(sub, sup, seen)
+			// sup transitively through the declared extends graph. The mut-context flag
+			// selects the variance vector each argument is dispatched by, so a mutable
+			// borrow pins the arguments a write through it can reach and leaves the rest at
+			// their immutable-view variance.
+			return c.constrainNominal(sub, sup, seen, mutCtx)
 		case *soltype.ObjectType:
 			// Target-dispatched (m4 plan forward note): a class instance satisfies a
 			// structural object target when the target is inexact, or when the class is

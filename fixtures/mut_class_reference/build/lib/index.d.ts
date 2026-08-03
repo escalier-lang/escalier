@@ -1,0 +1,11 @@
+declare type Consumer<T> = {log: string, accept(x: T): string};
+declare const Consumer: {new <T>(log: string): Consumer<T>};
+declare type Counter = {count: number};
+declare const Counter: {new (count: number): Counter};
+declare type Frozen<T> = {readonly value: T};
+declare const Frozen: {new <T>(value: T): Frozen<T>};
+declare function bump(c: Counter): void;
+declare function feedNumber(c: Consumer<number>): string;
+declare function feedEither(c: Consumer<number | string>): string;
+declare function readEither(f: Frozen<number | string>): number | string;
+declare function readNumber(f: Frozen<number>): number | string;
