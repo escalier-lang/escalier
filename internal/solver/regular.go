@@ -293,11 +293,12 @@ func (r *levelReducer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type
 }
 
 // unreducedOp reports whether a node still stands for a value reduction has to work out. It is
-// isResidualOp widened by the object-spread case: isResidualOp's object arm counts only an unsettled
-// mapped member, since constrain compares a spread-carrying object structurally rather than as an
-// operator, while a knot's body has to be the object the spread merges to.
+// isResidualOp widened by the two spread cases. isResidualOp's object arm counts only an unsettled
+// mapped member and its tuple arm counts none, since constrain compares a spread-carrying object or
+// tuple structurally rather than as an operator. A knot's body instead has to be the object or tuple
+// the spread merges to, so both are reduced here.
 func unreducedOp(t soltype.Type) bool {
-	return isResidualOp(t) || objectIsResidual(t)
+	return isResidualOp(t) || objectIsResidual(t) || tupleHasSpread(t)
 }
 
 // containsUnreducedOp reports whether any node in t is one reduction did not finish with. A shape

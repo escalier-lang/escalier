@@ -146,14 +146,38 @@ func TestMuKnotForSettlesRegularAlias(t *testing.T) {
 		},
 		{
 			// The positional twin, declined for the same reason and with the same knot going begging.
-			// A rest spread leaves `[...X0]`, and `[...X]` over a tuple is X, so `Tp<{c: number}>` is
-			// `μX0.["c", X0]`.
+			// `[...X]` over a tuple is X, so `Tp<{c: number}>` is `μX0.["c", X0]`. Proving that knot
+			// would buy nothing on its own: `[...Tp<…>]` fails to check against a real tuple whether or
+			// not a knot exists, since the first unfolding runs on the plain expansion and reduction
+			// cannot ground that spread either.
 			name: "recursive reference under a tuple spread",
 			src: `
 				type Tp<T> = [keyof T, [...Tp<{c: T}>]]
 				type Probe = Tp<{c: number}>
 			`,
 			want: "",
+		},
+		{
+			// A spread of a NON-recursive operand does merge, so the level emits the tuple the splice
+			// yields and the knot is proven over that. This is the positional twin of the object shape
+			// above, and it reads its elements through the same widening in unreducedOp.
+			name: "tuple spreads a non-recursive operand",
+			src: `
+				type Pair = [number, string]
+				type WT<T> = [keyof T, ...Pair, WT<{c: T}>]
+				type Probe = WT<{c: number}>
+			`,
+			want: `μX0.["c", number, string, X0]`,
+		},
+		{
+			// The object twin of the case above, for the pair to be read together.
+			name: "object spreads a non-recursive operand",
+			src: `
+				type Base = {tag: string}
+				type WO<T> = {a: keyof T, ...Base, b: WO<{c: T}>}
+				type Probe = WO<{c: number}>
+			`,
+			want: `μX0.{a: "c", tag: string, b: X0}`,
 		},
 		{
 			// Nothing stands between the knot and its own binder, so `μX0.X0` would unfold to itself
@@ -313,4 +337,19 @@ func TestMemberReadOnRegularAliasKeepsTheAliasName(t *testing.T) {
 	`)
 	require.Empty(t, Messages(errs))
 	require.Equal(t, "fn () -> H<{c: {c: number}}>", values["field"])
+}
+
+// A tuple alias that splices a non-recursive operand every lap checks against another of its own
+// instantiations. Both denote one tree, since `keyof {c: X}` is `"c"` whatever X is and the spliced
+// elements are fixed. Reducing the splice is what makes the level a plain tuple the knot can be read
+// off; without it the level keeps a `...Pair` element, no knot is proven, and the comparison is cut
+// off at maxUnwrapDepth.
+func TestConstrainRegularTupleAliasSplicesItsSpread(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type Pair = [number, string]
+		type WT<T> = [keyof T, ...Pair, WT<{c: T}>]
+		declare fn mk() -> WT<{c: number}>
+		fn use() -> WT<{c: {c: number}}> { return mk() }
+	`)
+	require.Empty(t, Messages(errs))
 }
