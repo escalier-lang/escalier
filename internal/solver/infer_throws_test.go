@@ -506,31 +506,32 @@ func TestInferThrowsOverDeclaredSignature(t *testing.T) {
 	})
 }
 
+// raisingGetterClass declares `get x` on a class that both returns and raises, so neither
+// over-declaration warning fires and a case appending to it measures only the throws flow.
+const raisingGetterClass = `
+	class C {
+		v: number,
+		bad: boolean,
+		get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
+	}
+`
+
 // A getter and a setter each declare what they raise, the same way a method does, and a
 // getter's clause reaches whoever reads the property. Reading through a getter runs its
 // body, so the read is an exceptional exit of the enclosing body just as a call is.
 func TestInferThrowsFromAnAccessor(t *testing.T) {
-	// raisingGetter declares `get x` on a class that both returns and raises, so neither
-	// over-declaration warning fires and the cases below measure only the throws flow.
-	const raisingGetter = `
-		class C {
-			v: number,
-			bad: boolean,
-			get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
-		}
-	`
 	runThrowsCases(t, []throwsCase{
 		{
 			// The getter's clause reaches the reader, which redeclares it as its own.
 			name: "GetterClauseReachesTheReader",
-			src:  raisingGetter + `fn f(c: C) -> number throws string { return c.x }`,
+			src:  raisingGetterClass + `fn f(c: C) -> number throws string { return c.x }`,
 			want: "fn (c: C) -> number throws string",
 		},
 		{
 			// `throws _` on the reader infers from the read, so the getter's declared
 			// `string` is what the reader raises.
 			name: "ReaderInfersTheGetterClause",
-			src:  raisingGetter + `fn f(c: C) -> number throws _ { return c.x }`,
+			src:  raisingGetterClass + `fn f(c: C) -> number throws _ { return c.x }`,
 			want: "fn (c: C) -> number throws string",
 		},
 		{
@@ -748,6 +749,146 @@ func TestInferThrowsAccessorReadResolution(t *testing.T) {
 				"3:47-3:50: cannot constrain undefined <: object",
 				"3:49-3:50: object is missing property: x",
 			},
+		},
+	})
+}
+
+// A raise that enters a body through a getter read is an ordinary exceptional exit from
+// there on. It unions with the body's other exits, rides out through the enclosing
+// signature to that function's own callers, and is handled by a `try` the same way a
+// `throw` or a call is. These cases exercise the code that USES a raising accessor rather
+// than the accessor's own declaration.
+func TestInferThrowsThroughAGetterRead(t *testing.T) {
+	runThrowsCases(t, []throwsCase{
+		{
+			// A catch-all covers whatever the block raises, so the read leaves the
+			// enclosing clause untouched and `f` needs none.
+			name: "CatchAllAroundTheReadClearsTheClause",
+			src:  raisingGetterClass + `fn f(c: C) { try { return c.x } catch { e => 0 } }`,
+			want: "fn (c: C) -> number",
+		},
+		{
+			// The arm names the literal the getter's body throws, but the getter DECLARES
+			// `string`, which is what the read raises. `string` outlives the arm, so it is
+			// rethrown and reaches the clause.
+			name: "NamedArmLeavesTheDeclaredRaiseToRethrow",
+			src: raisingGetterClass + `
+				fn f(c: C) throws _ { try { val n = c.x } catch { "boom" => 0 } }
+			`,
+			want: "fn (c: C) -> void throws string",
+		},
+		{
+			// `g` picks the raise up from the read and `f` picks it up from the call to
+			// `g`, so it travels two frames on the ordinary call rule.
+			name: "RaiseTravelsOnThroughTheCallerOfTheReader",
+			src: raisingGetterClass + `
+				fn g(c: C) -> number throws _ { return c.x }
+				fn f(c: C) -> number throws _ { return g(c) }
+			`,
+			want: "fn (c: C) -> number throws string",
+		},
+		{
+			// Two reads on the same path union their raises, the same join two calls take.
+			name: "TwoGetterReadsUnionTheirRaises",
+			src: `
+				class C {
+					bad: boolean,
+					get a(self) -> number throws string { if self.bad { throw "a" } return 1 },
+					get b(self) -> number throws number { if self.bad { throw 2 } return 1 },
+				}
+				fn f(c: C) -> number throws _ {
+					val p = c.a
+					return c.b
+				}
+			`,
+			want: "fn (c: C) -> number throws number | string",
+		},
+		{
+			// A read on one path and a `throw` on the other union, so a getter raise sits
+			// in the same clause as a literal the body throws itself.
+			name: "GetterRaiseJoinsAThrowOnAnotherPath",
+			src:  raisingGetterClass + `fn f(c: C, t: boolean) -> number throws _ { if t { throw 5 } return c.x }`,
+			want: "fn (c: C, t: boolean) -> number throws string | 5",
+		},
+		{
+			// A getter reading another getter is a consumer like any other, so the outer
+			// one has to declare what the inner read raises.
+			name: "GetterReadingAnotherClassGetter",
+			src: raisingGetterClass + `
+				class D {
+					inner: C,
+					get y(self) -> number throws string { return self.inner.x },
+				}
+				fn f(d: D) -> number throws _ { return d.y }
+			`,
+			want: "fn (d: D) -> number throws string",
+		},
+		{
+			// A method reads the getter through `self` and carries the raise into its own
+			// signature, so calling the method raises it at the call site.
+			name: "MethodReadingAGetterCarriesTheRaiseToItsCaller",
+			src: `
+				class C {
+					bad: boolean,
+					get x(self) -> number throws string { if self.bad { throw "boom" } return 1 },
+					m(self) -> number throws _ { return self.x },
+				}
+				fn f(c: C) -> number throws _ { return c.m() }
+			`,
+			want: "fn (c: C) -> number throws string",
+		},
+		{
+			// The constant-string bracket form reads the same getter `c.x` does, so it is
+			// the same exceptional exit.
+			name: "ConstantStringIndexReadRaisesTheSame",
+			src:  raisingGetterClass + `fn f(c: C) -> number throws _ { return c["x"] }`,
+			want: "fn (c: C) -> number throws string",
+		},
+		{
+			// The read sits inside a nested function, which owns its own throws sink, so
+			// the raise stays on the lambda and the enclosing `f` needs no clause.
+			name: "ReadInsideANestedLambdaDoesNotLeakOut",
+			src:  raisingGetterClass + `fn f(c: C) { val g = fn () -> number throws _ { return c.x } }`,
+			want: "fn (c: C) -> void",
+		},
+		{
+			// A setter's clause admits what its own body raises. No write site resolves to
+			// a setter yet, so this is where a setter clause is used today.
+			name:    "SetterBodyRaisesIntoItsOwnClause",
+			binding: "C",
+			src: `
+				class C {
+					v: number,
+					bad: boolean,
+					set x(mut self, n: number) throws string { if self.bad { throw "neg" } self.v = n },
+				}
+			`,
+			want: "fn (v: number, bad: boolean) -> C",
+		},
+	})
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			// The arm covers the literal but not the declared `string`, so the leftover is
+			// rethrown into a clause-less function.
+			name: "PartialCatchAroundTheReadStillNeedsAClause",
+			src: raisingGetterClass + `
+				fn f(c: C) { try { val n = c.x } catch { "boom" => 0 } }
+			`,
+			wantErrs: []string{
+				"8:18-8:57: the catch arms leave string uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
+			},
+		},
+		{
+			// The outer getter reads the inner one and declares nothing, so the read is
+			// rejected at its own site the way it would be in a plain function.
+			name: "OuterGetterReadingARaisingGetterNeedsItsOwnClause",
+			src: raisingGetterClass + `
+				class D {
+					inner: C,
+					get y(self) -> number { return self.inner.x },
+				}
+			`,
+			wantErrs: []string{"10:37-10:49: cannot constrain string <: never"},
 		},
 	})
 }
