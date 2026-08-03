@@ -2653,25 +2653,12 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 }
 
 // inferMatchArms types each arm of a `match` or of a `try`'s catch clause, constrains every
-// non-diverging body into res, and returns those bodies so the caller can check them for
-// uniform ownership. Both forms hold `[]*ast.MatchCase` and join their arms the same way, so
-// the walk is shared rather than restated.
-//
-// shape is the coalesced scrutinee the narrowing reads union members from. scrutinee is what
-// an arm binds against when no narrowing applies, so its var identity and borrow survive
-// there. inferMatch passes a snapshot and the original; inferTryCatch passes its caught type
-// for both, since that is already concrete. node is blamed for each body's join.
-//
-// Each arm binds its pattern's leaves in a fresh child scope, so a name bound by one arm is
-// invisible to the next. bindPattern peels the scrutinee's borrow for the member-lookup
-// requirements but reapplies the binding mode to each leaf, so a leaf of a `&mut` scrutinee
-// binds as a `&mut` borrow, just as `val` destructuring does. A missing field or a wrong
-// tuple arity surfaces there too.
-//
-// A structural pattern over a union scrutinee binds against only the members whose shape it
-// matches, so an arm may destructure one variant and leave the rest to later arms.
-// narrowMatchArm drops the members `arm.Pattern` cannot destructure. Every other pattern
-// binds against the whole scrutinee.
+// non-diverging body into res, and returns those bodies for the caller's ownership check.
+// Each arm binds in a fresh child scope, so a name one arm binds is invisible to the next,
+// and node is blamed for each body's join. shape is the coalesced scrutinee narrowMatchArm
+// reads union members from. scrutinee is what an arm binds against when no narrowing
+// applies, so a var's identity and borrow survive there. inferMatch passes a snapshot and
+// the original, inferTryCatch one already-concrete type for both.
 func (c *checker) inferMatchArms(
 	scope *Scope, lvl int, node ast.Node, arms []*ast.MatchCase, shape, scrutinee, res soltype.Type,
 ) []soltype.Type {
