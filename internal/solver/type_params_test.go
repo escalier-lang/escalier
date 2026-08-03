@@ -105,6 +105,27 @@ func TestTypeParamDefaultForwardRef(t *testing.T) {
 				type Pick<T = if [number] : [infer U] { U } else { never }, U = string> = {a: T, b: U}
 			`,
 		},
+		// A default that reaches two later parameters names both, so one pass over the reported
+		// errors is enough to fix it.
+		{
+			name: "TwoLaterParamsBothReported",
+			src: `
+				type Bad<T = {a: U, b: V}, U = number, V = string> = {t: T, u: U, v: V}
+			`,
+			want: []string{
+				"the default for type parameter `T` cannot reference `U`, which is declared after it",
+				"the default for type parameter `T` cannot reference `V`, which is declared after it",
+			},
+		},
+		// One name written twice needs one fix, so it reports once, blaming its leftmost
+		// reference.
+		{
+			name: "RepeatedLaterParamReportedOnce",
+			src: `
+				type Bad<T = {a: U, b: U}, U = number> = {t: T, u: U}
+			`,
+			want: []string{"the default for type parameter `T` cannot reference `U`, which is declared after it"},
+		},
 		// A binder covers its own region and no more. The mapped key `U` is nested inside the
 		// `m` property, so the `b: U` beside it reads the later sibling parameter and is
 		// reported even though the same name is bound elsewhere in the default.

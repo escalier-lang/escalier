@@ -47,13 +47,17 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	return out
 }
 
-// reportDefaultForwardRef reports the first reference params[i]'s default makes to a parameter it
-// may not name, params[i] itself or one declared after it, and returns whether it reported. A
-// reference fills an omitted argument from the default with the earlier arguments substituted in,
-// as buildAliasInstance does for the `U = T` of `type Pair<T, U = T>`. A later or self reference
-// has nothing to substitute, so it stays the declaration's own var, shared by every reference to
-// the type. A rejected default is dropped, which leaves the parameter required. Neither instance
+// reportDefaultForwardRef reports each parameter params[i]'s default names that it may not,
+// params[i] itself or one declared after it, and returns whether it reported. A reference fills an
+// omitted argument from the default with the earlier arguments substituted in, as
+// buildAliasInstance does for the `U = T` of `type Pair<T, U = T>`. A later or self reference has
+// nothing to substitute, so it stays the declaration's own var, shared by every reference to the
+// type. A rejected default is dropped, which leaves the parameter required. Neither instance
 // builder reports the follow-on arity error in every case, which PR18's shared helper settles.
+//
+// One report per offending name, blaming its leftmost reference. Naming each one lets a default
+// that reaches two later parameters be fixed in a single pass, while a name written twice reports
+// once, since both references need the same fix.
 func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 	forbidden := set.NewSet[string]()
 	for _, p := range params[i:] {
@@ -61,15 +65,16 @@ func (c *checker) reportDefaultForwardRef(params []*ast.TypeParam, i int) bool {
 	}
 	var scan typeParamRefScan
 	params[i].Default.Accept(&scan)
+	reported := set.NewSet[string]()
 	for _, ref := range scan.free {
 		name := ast.QualIdentToString(ref.Name)
-		if !forbidden.Contains(name) {
+		if !forbidden.Contains(name) || reported.Contains(name) {
 			continue
 		}
+		reported.Add(name)
 		c.report(&TypeParamDefaultForwardRefError{Ref: ref, Param: params[i].Name, Target: name})
-		return true
 	}
-	return false
+	return reported.Len() > 0
 }
 
 // typeParamRefScan collects a type annotation's free references, the `Name` and `Name<…>`
