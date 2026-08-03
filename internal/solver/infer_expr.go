@@ -2800,9 +2800,10 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 		rethrown = newUnion(c.ctx, uncovered, false)
 	}
 	if isNeverType(rethrown) {
-		// Every member an arm could name is covered, so nothing known escapes and the
-		// enclosing clause is left alone. This is what lets a caller with no clause wrap a
-		// throwing call once it has handled what that call declares.
+		// Every member an arm could name is covered. Codegen still emits a runtime rethrow
+		// for a value that matches no arm, but such a value came from the open tail, so no
+		// signature named its type. Recording it would mean widening the clause to
+		// `unknown` to state what is already true of every clause.
 		return
 	}
 	// The engine runs directly rather than through c.constrain, so its errors are dropped
