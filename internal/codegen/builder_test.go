@@ -992,6 +992,57 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   return temp1;
 }`,
 		},
+		// A guarded arm whose pattern is refutable declines the value in two ways, by
+		// failing the pattern test and by failing the guard. Both hand the value to the
+		// later arms, so the arm that always runs still gets its turn on a thrown "y".
+		"GuardedRefutableThenCatchAll": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, _ => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x") {
+      if (n > 0) {
+        temp2 = 0;
+      } else if (true) {
+        temp2 = 1;
+      }
+    } else {
+      temp2 = 1;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// The same shape without an arm that always runs. A thrown "y" reaches the "y"
+		// arm rather than the rethrow, and only a value neither arm names is re-raised.
+		"GuardedRefutableThenLiteral": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, \"y\" => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x") {
+      if (n > 0) {
+        temp2 = 0;
+      } else if (__error == "y") {
+        temp2 = 1;
+      } else {
+        throw __error;
+      }
+    } else if (__error == "y") {
+      temp2 = 1;
+    } else {
+      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
 		// No arm always runs, so a value matching neither literal is re-raised.
 		"LiteralArmsOnly": {
 			src: "fn f() {\n\treturn try { throw \"x\" } catch { \"x\" => 0, \"y\" => 1 }\n}",

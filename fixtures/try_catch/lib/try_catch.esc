@@ -107,3 +107,14 @@ export val catchAllFirst = try {
     e => e,
     "x" => "unreachable",
 }
+
+// Guarded refutable arm ahead of a catch-all: a value the pattern rejects and a
+// value the guard rejects both reach the later arm
+export fn guardedRefutable(n: number) -> number {
+    return try {
+        throw "x"
+    } catch {
+        "x" if n > 0 => 0,
+        _ => 1,
+    }
+}

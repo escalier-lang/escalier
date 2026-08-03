@@ -1828,23 +1828,15 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			errorIdent := NewIdentExpr("__error", "", expr)
 			var catchBodyStmts []Stmt
 
-			// rethrow returns the `throw __error` that re-raises a caught value no arm
-			// takes. It returns nil when an arm always runs, since then no value can
-			// reach the end of the chain. A guarded arm opens two fall-through slots,
-			// one for a failed guard and one for a failed pattern test, and each needs
-			// its own statement, so every call builds a fresh block.
-			armAlwaysRuns := ast.HasUnguardedCatchAll(expr.Catch)
-			rethrow := func() Stmt {
-				if armAlwaysRuns {
-					return nil
-				}
-				return NewBlockStmt([]Stmt{NewThrowStmt(errorIdent, expr)}, expr)
-			}
-
 			// Build the catch cases in reverse order to create if-else chain.
-			// currentStmt is what runs when no arm built so far takes the value, so the
-			// chain starts at the rethrow and each arm wraps it.
-			currentStmt := rethrow()
+			// currentStmt is what runs when no arm built so far takes the value, and
+			// each arm wraps it. The chain starts at the `throw __error` that re-raises
+			// a value no arm takes. An arm that always runs leaves nothing to re-raise,
+			// so the chain starts empty instead and the caught value cannot escape.
+			var currentStmt Stmt
+			if !ast.HasUnguardedCatchAll(expr.Catch) {
+				currentStmt = NewBlockStmt([]Stmt{NewThrowStmt(errorIdent, expr)}, expr)
+			}
 			for i := len(expr.Catch) - 1; i >= 0; i-- {
 				matchCase := expr.Catch[i]
 
@@ -1886,15 +1878,25 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					caseBodyStmts = append(caseBodyStmts, guardIf)
 
 					// Wrap in outer pattern condition block. A guarded arm keeps its
-					// pattern test and its guard in separate `if`s, so the guard can
-					// read the bindings the pattern introduces. The two tests fail
-					// independently, so each one needs a rethrow of its own. A catch-all
-					// pattern tests `true` and cannot fail, and a rethrow behind it would
-					// be unreachable.
+					// pattern test and its guard in separate `if`s, so the guard can read
+					// the bindings the pattern introduces. Either test can fail, and both
+					// failures mean the same thing: this arm declines the value, so the
+					// later arms get their turn and a value none of them takes is
+					// re-raised. Both therefore fall through to currentStmt.
+					//
+					// currentStmt lands in the tree twice, so the later arms print twice.
+					// A chain of N guarded arms with refutable patterns emits its tail
+					// 2^N times. Merging the two tests into one `if` would avoid that,
+					// but the guard reads names the pattern binds, and those bindings can
+					// only be declared once the pattern has matched.
+					//
+					// A catch-all pattern tests `true` and cannot fail, so its outer
+					// `else` is unreachable and stays empty. That keeps the common
+					// `_ if guard` and `e if guard` shapes free of any duplication.
 					caseBlock := NewBlockStmt(caseBodyStmts, expr)
 					var patternFailed Stmt
 					if !isTrueLiteral(condition) {
-						patternFailed = rethrow()
+						patternFailed = currentStmt
 					}
 					currentStmt = NewIfStmt(condition, caseBlock, patternFailed, expr)
 					continue

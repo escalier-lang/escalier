@@ -2,6 +2,7 @@ export declare const basicTryCatch: "success" | "error";
 export declare const blockBody: number;
 export declare const catchAllFirst: "x" | "unreachable";
 export declare function guardedIdent(n: number): number;
+export declare function guardedRefutable(n: number): number;
 export declare function guardedWildcard(n: number): number;
 export declare const mixedReturn: 42 | "error";
 export declare const multipleCases: "caught error" | "unknown";
