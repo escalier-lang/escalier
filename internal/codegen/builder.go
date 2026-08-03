@@ -1828,13 +1828,14 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			errorIdent := NewIdentExpr("__error", "", expr)
 			var catchBodyStmts []Stmt
 
-			// rethrow returns the `throw __error` that runs when an arm declines the
-			// caught value, or nil when the arms cannot decline it. Each call builds a
-			// fresh block so the two fall-through slots a guarded arm opens, its failed
-			// guard and its failed pattern test, do not share one node.
-			alwaysMatches := ast.HasUnguardedCatchAll(expr.Catch)
+			// rethrow returns the `throw __error` that re-raises a caught value no arm
+			// takes. It returns nil when an arm always runs, since then no value can
+			// reach the end of the chain. A guarded arm opens two fall-through slots,
+			// one for a failed guard and one for a failed pattern test, and each needs
+			// its own statement, so every call builds a fresh block.
+			armAlwaysRuns := ast.HasUnguardedCatchAll(expr.Catch)
 			rethrow := func() Stmt {
-				if alwaysMatches {
+				if armAlwaysRuns {
 					return nil
 				}
 				return NewBlockStmt([]Stmt{NewThrowStmt(errorIdent, expr)}, expr)
@@ -1885,10 +1886,11 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					caseBodyStmts = append(caseBodyStmts, guardIf)
 
 					// Wrap in outer pattern condition block. A guarded arm keeps its
-					// pattern test and its guard in separate `if`s so the guard can read
-					// the pattern's bindings, so the two can fail independently and each
-					// needs its own rethrow. A catch-all pattern tests `true` and cannot
-					// fail, which would leave the outer rethrow unreachable.
+					// pattern test and its guard in separate `if`s, so the guard can
+					// read the bindings the pattern introduces. The two tests fail
+					// independently, so each one needs a rethrow of its own. A catch-all
+					// pattern tests `true` and cannot fail, and a rethrow behind it would
+					// be unreachable.
 					caseBlock := NewBlockStmt(caseBodyStmts, expr)
 					var patternFailed Stmt
 					if !isTrueLiteral(condition) {

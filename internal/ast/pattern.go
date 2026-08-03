@@ -331,12 +331,14 @@ func IsCatchAllPat(p Pat) bool {
 	}
 }
 
-// HasUnguardedCatchAll reports whether some arm always runs, which makes the arms cover
+// HasUnguardedCatchAll reports whether some arm always runs, so the arms together cover
 // every value the scrutinee can take. An arm always runs when its pattern is a catch-all
-// and it carries no guard, since a guard can fail and let the value fall through.
+// and it carries no guard. A guard can fail and let the value fall through to a later arm,
+// so a guarded arm covers nothing.
+//
 // Position does not matter. An always-running arm makes every later arm unreachable
-// wherever it sits, so a `match` with one needs no exhaustiveness error and a `try` with
-// one needs no rethrow.
+// wherever it sits, so `match` needs no exhaustiveness error when the arms hold one and
+// `try` needs no rethrow.
 func HasUnguardedCatchAll(arms []*MatchCase) bool {
 	for _, arm := range arms {
 		if arm.Guard == nil && IsCatchAllPat(arm.Pattern) {
