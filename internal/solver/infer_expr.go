@@ -2788,8 +2788,15 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 	if u, isUnion := caught.(*soltype.UnionType); isUnion {
 		uncovered := make([]soltype.Type, 0, len(u.Types))
 		for _, m := range u.Types {
-			if !c.unionMemberCovered(scope, m, e.Catch) {
-				uncovered = append(uncovered, m)
+			// A transparent alias member, an enum handle or a `type` reference, carries the
+			// alias rather than the type it stands for. unionMemberCovered has no arm for
+			// one, so an unexpanded alias reads as uncovered however many arms name its
+			// members, and `type Err = "a" | "b"` would behave unlike the union spelled
+			// inline. checkMatchExhaustive expands for the same reason.
+			for _, part := range unionParts(c.expandAliasChain(m)) {
+				if !c.unionMemberCovered(scope, part, e.Catch) {
+					uncovered = append(uncovered, part)
+				}
 			}
 		}
 		rethrown = newUnion(c.ctx, uncovered, false)
@@ -2811,25 +2818,38 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 	c.markRaised()
 }
 
+// expandAliasChain follows a chain of transparent aliases to the type it stands for, so a
+// caller decides against that type rather than against the alias handle. A seen-set of names
+// breaks a degenerate cycle such as `type A = A`. A non-alias is returned unchanged.
+func (c *checker) expandAliasChain(t soltype.Type) soltype.Type {
+	seen := set.NewSet[string]()
+	for {
+		at, ok := t.(*soltype.AliasType)
+		if !ok || seen.Contains(at.Name) {
+			return t
+		}
+		seen.Add(at.Name)
+		t = c.ctx.expandAlias(at)
+	}
+}
+
+// unionParts returns a union's members, or the type itself as a one-element slice. It lets a
+// caller iterate members without branching on whether it holds a union.
+func unionParts(t soltype.Type) []soltype.Type {
+	if u, ok := t.(*soltype.UnionType); ok {
+		return u.Types
+	}
+	return []soltype.Type{t}
+}
+
 // checkMatchExhaustive reports a NonExhaustiveMatchError when no arm covers every
 // value the coalesced scrutinee can take, dispatching on its union or object/tuple shape.
 func (c *checker) checkMatchExhaustive(scope *Scope, e *ast.MatchExpr, scrutinee soltype.Type) {
-	carrier := soltype.CarrierOf(scrutinee)
 	// A transparent alias scrutinee, an enum handle or a user `type` reference, carries the
 	// alias rather than the type it stands for. Expand it to that type before dispatching, the
 	// same unfold constrain performs, so `match c { Color.RGB(..) => .., Color.Hex(..) => .. }`
-	// over `val c: Color` covers the variant union without a default arm. The loop follows a
-	// chain of aliases to the underlying union or shape, and a seen-set of names breaks a
-	// degenerate alias cycle.
-	seenAliases := set.NewSet[string]()
-	for {
-		at, ok := carrier.(*soltype.AliasType)
-		if !ok || seenAliases.Contains(at.Name) {
-			break
-		}
-		seenAliases.Add(at.Name)
-		carrier = c.ctx.expandAlias(at)
-	}
+	// over `val c: Color` covers the variant union without a default arm.
+	carrier := c.expandAliasChain(soltype.CarrierOf(scrutinee))
 	if u, ok := carrier.(*soltype.UnionType); ok {
 		if !c.unionMatchExhaustive(scope, e, u) {
 			c.report(&NonExhaustiveMatchError{Match: e})

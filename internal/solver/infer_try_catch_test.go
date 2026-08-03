@@ -394,3 +394,58 @@ func TestInferTryCatchLeavesAnUnusedClauseUnused(t *testing.T) {
 		msgWithSpan(errs[0]))
 	require.Equal(t, "fn () -> void throws string", values["f"])
 }
+
+// Coverage is decided against the type an alias stands for, not against the alias handle. A
+// transparent alias, an enum handle or a user `type` reference, carries the alias rather than
+// its underlying union, and unionMemberCovered has no arm for one. Without expanding first, an
+// aliased error type would read as uncovered however many arms name its members, so naming a
+// union would behave unlike spelling it inline.
+func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
+	runThrowsCases(t, []throwsCase{
+		{
+			// The control: the same union written inline, which never needed expanding.
+			name: "InlineUnionIsCovered",
+			src: `
+				fn a() throws "a" | "b" { throw "a" }
+				fn f() { try { a() } catch { "a" => 0, "b" => 1 } }
+			`,
+			want: "fn () -> void",
+		},
+		{
+			// The same union behind a name has to reach the same verdict.
+			name: "AliasedUnionIsCovered",
+			src: `
+				type Err = "a" | "b"
+				fn a() throws Err { throw "a" }
+				fn f() { try { a() } catch { "a" => 0, "b" => 1 } }
+			`,
+			want: "fn () -> void",
+		},
+		{
+			// An enum registers as a transparent alias over its variant union, so its
+			// variants are covered by extractor patterns the same way.
+			name: "EnumVariantsAreCovered",
+			src: `
+				enum Color { Red, Green }
+				fn a() throws Color { throw Color.Red() }
+				fn f() { try { a() } catch { Color.Red => 0, Color.Green => 1 } }
+			`,
+			want: "fn () -> void",
+		},
+	})
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			// Expanding does not make coverage lax. A member left unnamed is still rethrown,
+			// and it is named by the type it expands to rather than by the alias.
+			name: "AnUnnamedMemberOfAnAliasIsStillRethrown",
+			src: `
+				type Err = "a" | "b"
+				fn a() throws Err { throw "a" }
+				fn f() { try { a() } catch { "a" => 0 } }
+			`,
+			wantErrs: []string{
+				"4:14-4:42: the catch arms leave \"b\" uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
+			},
+		},
+	})
+}
