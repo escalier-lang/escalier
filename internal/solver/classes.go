@@ -21,6 +21,15 @@ type ClassDef struct {
 	// nil for a non-generic class.
 	TypeParams []*soltype.TypeParam
 
+	// ParamsResolved separates a class whose TypeParams are nil because it declares none
+	// from one whose TypeParams have not been resolved yet. getOrCreateClass registers a
+	// bare ClassDef during the SCC pre-pass so a forward reference from a sibling in the
+	// same dep_graph component resolves, and inferClassDecl fills the parameters and sets
+	// this when that class's own pass runs. A reference reaching the class in between has
+	// no parameter list to check its written type arguments against, so buildClassInstance
+	// reads this before reporting an arity mismatch.
+	ParamsResolved bool
+
 	// LifetimeParams are the class's quantified lifetime parameters (A3), the lifetime
 	// twin of TypeParams. nil for a class that holds no borrowed data.
 	LifetimeParams []*soltype.LifetimeParam

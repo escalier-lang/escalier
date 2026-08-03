@@ -1436,23 +1436,39 @@ resolves exactly the arguments the reference wrote and returns them, so
 `class Box<T = number>` referenced bare as `Box` yields the declaration handle, whose
 unconstrained parameter var coalesces to `never` and renders `Box<never>` rather than
 `Box<number>`. A reference that supplies too many arguments, `Box<number, string>` on a
-one-parameter class, carries the extra one with no diagnostic. An enum needs neither fix:
-`enum Opt<T = number>` referenced bare already infers `Opt<number>` through the alias path.
+one-parameter class, carries the extra one with no diagnostic.
 
-**Data structures.** A `ClassArityMismatchError`, the nominal twin of
-`AliasArityMismatchError`, carrying the same required/total/got triple so the two render
-alike.
+An enum reaches the alias path, since an enum name binds to an alias whose body is the union
+of its variant handles, so `enum Opt<T = number>` referenced bare already infers `Opt<number>`
+and a miscounted `Opt<number, string>` already reports. What it does not get is the right
+noun. The message calls `Opt` a type alias, naming a shell the source never wrote.
+
+**Data structures.** One `TypeArgArityMismatchError` carrying the required/total/got triple
+and a `TypeDeclKind` — `type alias`, `class`, or `enum` — so the three sorts render alike and
+differ only in the noun. `LifetimeArgArityMismatchError` carries the same kind. An `Enum` flag
+on `AliasDef`, set by `preBindEnum`, is what tells an enum's synthesized alias from one a
+`type` declaration wrote. A `ParamsResolved` flag on `ClassDef` separates a class that
+declares no type parameters from one whose parameters have not been resolved yet.
 
 **Algorithms.** Factor the arity check and the default filling out of `buildAliasInstance`
 into one helper over a `[]*soltype.TypeParam` and a reference's written arguments, returning
-one argument per parameter. Both instance builders call it, so an alias and a class resolve a
-defaulted or miscounted reference the same way. The helper is also the one place that pairs a
-written argument with the parameter it fills, which is what PR19 needs.
+one argument per parameter. Both instance builders call it, so an alias, an enum, and a class
+resolve a defaulted or miscounted reference the same way. The helper is also the one place
+that pairs a written argument with the parameter it fills, which is what PR19 needs.
+
+A class reference reaches the helper only once the class's parameters are resolved.
+`getOrCreateClass` registers a bare `ClassDef` during the SCC pre-pass so a forward reference
+from a sibling in the same dep_graph component resolves, and `inferClassDecl` fills the
+parameters when that class's own pass runs. A reference landing in between has no parameter
+list to check against, so it keeps resolving exactly what it wrote and reports nothing. PR19's
+deferral is what closes that window.
 
 **Accept.** `class Box<T = number>` referenced bare infers `Box<number>`.
-`Box<number, string>` on a one-parameter class reports a full-message arity error. Every
-alias and enum arity and default case that passes today still passes, since the shared helper
-is `buildAliasInstance`'s existing logic moved rather than rewritten.
+`Box<number, string>` on a one-parameter class reports a full-message arity error, and so does
+a bare `Box` against `class Box<T>`, matching what an alias reports for the same omission. A
+miscounted enum reference calls its target an enum rather than a type alias. Every alias
+arity and default case that passes today still passes, since the shared helper is
+`buildAliasInstance`'s existing logic moved rather than rewritten.
 
 **Depends on** PR17, so the class path does not inherit the forward-reference leak the moment
 it starts filling defaults. Independent of the operator track.

@@ -69,6 +69,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	self.TypeArgs = typeParamVars(typeParams)
 	def.Level = lvl - 1
 	def.TypeParams = typeParams
+	def.ParamsResolved = true
 	def.Variance = make([]Variance, len(typeParams))
 	def.MutVariance = make([]Variance, len(typeParams))
 	body := def.Body
@@ -280,20 +281,35 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 	return c.buildClassInstance(scope, ct, ref, lvl)
 }
 
-// buildClassInstance returns the handle a class reference resolves to: the bare class with
-// no type arguments, or a fresh instance carrying the resolved arguments for a generic one
-// like `Animal<D>`. An unresolved argument recovers to a fresh var, keeping arity cascade-safe.
+// buildClassInstance returns the handle a class reference resolves to: the bare class for a
+// non-generic one, or a fresh instance carrying one argument per type parameter for a generic
+// one like `Animal<D>`. The pairing runs through resolveTypeArgs, the same helper the alias
+// path uses, so a class checks its argument count and fills a trailing omitted argument from
+// its parameter's default the way an alias does. An unresolved argument recovers to a fresh
+// var, keeping arity cascade-safe.
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
-	if len(ref.TypeArgs) == 0 {
-		return ct
-	}
-	args := make([]soltype.Type, len(ref.TypeArgs))
-	for i, arg := range ref.TypeArgs {
-		if at, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
-			args[i] = at
-		} else {
-			args[i] = c.freshAt(lvl)
+	var args []soltype.Type
+	if def, ok := c.ctx.classDef(ct.Name); ok && def.ParamsResolved {
+		args = c.resolveTypeArgs(scope, ref, ClassDeclKind, def.TypeParams, lvl)
+	} else {
+		// The class's parameters are not resolved yet, which a reference from a sibling in the
+		// same dep_graph component reaches. There is no parameter list to check the written
+		// arguments against and no default to fill an omitted one from, so resolve exactly what
+		// the reference wrote.
+		args = make([]soltype.Type, len(ref.TypeArgs))
+		for i, arg := range ref.TypeArgs {
+			if at, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
+				args[i] = at
+			} else {
+				args[i] = c.freshAt(lvl)
+			}
 		}
+	}
+	if len(args) == 0 {
+		// The class declares no type parameters and the reference wrote no arguments, or it
+		// wrote some against a non-generic class and resolveTypeArgs already reported them.
+		// Either way the handle carries no arguments, so return the declaration's own.
+		return ct
 	}
 	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final, Variant: ct.Variant}
 }
@@ -329,7 +345,7 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 
 // resolveScopedTypeRef resolves a type reference through lookupClassBinding, covering a
 // bare `Point` or `T`, a generic class instance `Box<number>`, and a generic alias
-// instance `List<number>`. An alias binding always resolves here, with its own arity
+// instance `List<number>`. An alias or class binding always resolves here, with its own arity
 // diagnostic. It returns ok=false only when the name is unbound, or has arguments but is
 // neither a class nor an alias. It never routes back through resolveTypeAnn, so
 // resolveTypeAnn's TypeRef arm can fall back to it without recursing.
@@ -345,11 +361,14 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 	if at, ok := b.Type.(*soltype.AliasType); ok {
 		return c.buildAliasInstance(scope, at, ref, lvl), true
 	}
-	if len(ref.TypeArgs) == 0 {
-		return b.Type, true
-	}
+	// A class reference routes through buildClassInstance whether or not it supplies
+	// arguments, so a generic class referenced bare still reports an arity mismatch and a
+	// defaulted parameter is filled from its default.
 	if ct, ok := b.Type.(*soltype.ClassType); ok {
 		return c.buildClassInstance(scope, ct, ref, lvl), true
+	}
+	if len(ref.TypeArgs) == 0 {
+		return b.Type, true
 	}
 	return nil, false
 }

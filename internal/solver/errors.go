@@ -1100,8 +1100,8 @@ func (*MethodCallBeforeInitError) isSolverError()           {}
 func (*InstancePatternNotClassError) isSolverError()        {}
 func (*ExtractorPatternNotCtorError) isSolverError()        {}
 func (*ExtractorPatternArityError) isSolverError()          {}
-func (*AliasArityMismatchError) isSolverError()             {}
-func (*AliasLifetimeArityMismatchError) isSolverError()     {}
+func (*TypeArgArityMismatchError) isSolverError()           {}
+func (*LifetimeArgArityMismatchError) isSolverError()       {}
 func (*ReservedTypeNameError) isSolverError()               {}
 func (*RestParamNotLastError) isSolverError()               {}
 func (*RestParamNeedsTypeError) isSolverError()             {}
@@ -1214,43 +1214,57 @@ func (e *ExtractorPatternArityError) Message() string {
 	return fmt.Sprintf("extractor pattern `%s` expects %d arguments but got %d", e.Name, e.Expected, e.Got)
 }
 
-// AliasArityMismatchError fires when a generic-alias reference `Name<…>` supplies fewer
-// than the required number of type arguments or more than the total parameter count. A
-// trailing parameter with a default is optional, so the valid count is the range from
-// Required to Total, where Required counts the parameters with no default. The message
-// states a single count when every parameter is required and a range when a default makes
-// one optional.
-type AliasArityMismatchError struct {
+// TypeDeclKind names the sort of declaration a type reference resolved to. resolveTypeArgs
+// reports one arity error for all three sorts, and this is the noun that error renders. An
+// enum needs a value of its own because it registers as an alias whose body is the union of
+// its variant handles, so without it a bad `Color<…>` reference would call `Color` a type
+// alias, naming a declaration the source never wrote.
+type TypeDeclKind string
+
+const (
+	AliasDeclKind TypeDeclKind = "type alias"
+	ClassDeclKind TypeDeclKind = "class"
+	EnumDeclKind  TypeDeclKind = "enum"
+)
+
+// TypeArgArityMismatchError fires when a generic reference `Name<…>` supplies fewer than the
+// required number of type arguments or more than the total parameter count. A trailing
+// parameter with a default is optional, so the valid count is the range from Required to
+// Total, where Required counts the parameters with no default. The message states a single
+// count when every parameter is required and a range when a default makes one optional.
+type TypeArgArityMismatchError struct {
 	Ref      *ast.TypeRefTypeAnn
+	Kind     TypeDeclKind
 	Name     string
 	Required int
 	Total    int
 	Got      int
 }
 
-func (e *AliasArityMismatchError) Span() ast.Span      { return e.Ref.Span() }
-func (e *AliasArityMismatchError) Related() []ast.Span { return nil }
-func (e *AliasArityMismatchError) Message() string {
+func (e *TypeArgArityMismatchError) Span() ast.Span      { return e.Ref.Span() }
+func (e *TypeArgArityMismatchError) Related() []ast.Span { return nil }
+func (e *TypeArgArityMismatchError) Message() string {
 	if e.Required == e.Total {
-		return fmt.Sprintf("type alias `%s` expects %d type arguments but got %d", e.Name, e.Total, e.Got)
+		return fmt.Sprintf("%s `%s` expects %d type arguments but got %d", e.Kind, e.Name, e.Total, e.Got)
 	}
-	return fmt.Sprintf("type alias `%s` expects between %d and %d type arguments but got %d", e.Name, e.Required, e.Total, e.Got)
+	return fmt.Sprintf("%s `%s` expects between %d and %d type arguments but got %d", e.Kind, e.Name, e.Required, e.Total, e.Got)
 }
 
-// AliasLifetimeArityMismatchError fires when a generic-alias reference `Name<'a, …>` supplies
-// a number of lifetime arguments that does not match the alias's declared `<'a, …>` clause. A
-// lifetime parameter has no default, so the counts must match exactly.
-type AliasLifetimeArityMismatchError struct {
+// LifetimeArgArityMismatchError fires when a reference `Name<'a, …>` supplies a number of
+// lifetime arguments that does not match the declaration's `<'a, …>` clause. A lifetime
+// parameter has no default, so the counts must match exactly.
+type LifetimeArgArityMismatchError struct {
 	Ref      *ast.TypeRefTypeAnn
+	Kind     TypeDeclKind
 	Name     string
 	Expected int
 	Got      int
 }
 
-func (e *AliasLifetimeArityMismatchError) Span() ast.Span      { return e.Ref.Span() }
-func (e *AliasLifetimeArityMismatchError) Related() []ast.Span { return nil }
-func (e *AliasLifetimeArityMismatchError) Message() string {
-	return fmt.Sprintf("type alias `%s` expects %d lifetime arguments but got %d", e.Name, e.Expected, e.Got)
+func (e *LifetimeArgArityMismatchError) Span() ast.Span      { return e.Ref.Span() }
+func (e *LifetimeArgArityMismatchError) Related() []ast.Span { return nil }
+func (e *LifetimeArgArityMismatchError) Message() string {
+	return fmt.Sprintf("%s `%s` expects %d lifetime arguments but got %d", e.Kind, e.Name, e.Expected, e.Got)
 }
 
 // ReservedTypeNameError fires when a `type` declaration uses the name of a built-in intrinsic
