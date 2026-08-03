@@ -64,6 +64,14 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 - When a PR addresses a specific GitHub issue, say so in the PR body. Put a line such as `Fixes #123` near the top of the summary, before the details of the change. Use `Fixes` when merging the PR resolves the issue and `Refs` when the PR is only part of the work.
 - Name every issue the PR touches on its own line when there is more than one.
 
+## Responding to CodeRabbit
+
+- After addressing a CodeRabbit review comment, reply to that comment saying how it was addressed. Reply in the thread the comment started so the response stays attached to the code it refers to.
+- Name the concrete change: the file, the function, and what it does now. Don't reply with "done" or "fixed".
+- Reply to every finding, including ones you decline. When you disagree or the finding is wrong, say so and explain why instead of leaving the thread unanswered.
+- When a single change resolves several findings, reply to each thread and point at the same change rather than answering only one of them.
+- Post the reply after the change is committed, not before.
+
 ## Git cadence
 
 - While iterating on a PR, commit locally but don't `git push` until I explicitly ask.
