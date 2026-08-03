@@ -992,6 +992,78 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   return temp1;
 }`,
 		},
+		// A guarded catch-all ahead of a bare one. The guard's else holds the later arm,
+		// so a failed guard runs it and nothing escapes. The guarded arm's own test is
+		// `true` and cannot fail, so its outer else stays empty and the later arm is
+		// printed once.
+		"GuardedCatchAllThenCatchAll": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { _ if n > 0 => 0, _ => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (true) {
+      if (n > 0) {
+        temp2 = 0;
+      } else if (true) {
+        temp2 = 1;
+      }
+    }
+  }
+  return temp2;
+}`,
+		},
+		// Guarded catch-alls nest one inside the next, each in the previous guard's else.
+		// Every arm is printed once however many of them there are, since none of their
+		// pattern tests can fail.
+		"GuardedCatchAllsThenCatchAll": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { _ if n > 0 => 0, _ if n > 1 => 1, _ => 2 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (true) {
+      if (n > 0) {
+        temp2 = 0;
+      } else if (true) {
+        if (n > 1) {
+          temp2 = 1;
+        } else if (true) {
+          temp2 = 2;
+        }
+      }
+    }
+  }
+  return temp2;
+}`,
+		},
+		// A guarded catch-all in the final slot leaves no arm that always runs, so a
+		// value the literal arm declines and the guard declines is re-raised.
+		"LiteralThenGuardedCatchAll": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" => 0, _ if n > 0 => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x") {
+      temp2 = 0;
+    } else {
+      if (n > 0) {
+        temp2 = 1;
+      } else {
+        throw __error;
+      }
+    }
+  }
+  return temp2;
+}`,
+		},
 		// A guarded arm whose pattern is refutable declines the value in two ways, by
 		// failing the pattern test and by failing the guard. Both hand the value to the
 		// later arms, so the arm that always runs still gets its turn on a thrown "y".
