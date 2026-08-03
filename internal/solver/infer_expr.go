@@ -2711,6 +2711,9 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 	// the try block's tail alongside the arm bodies. A diverging branch produces no value
 	// and is left out of both the join and the check.
 	var branches []soltype.Type
+	// This call is what fills `collected`. Nothing assigns to it: walkTryBlock installs it as
+	// the sink throwsSink returns, so each `throw` and each call inside the block constrains
+	// into it and records a lower bound.
 	tryT, tryDiverges := c.walkTryBlock(scope, lvl, &e.Try, collected)
 	if !tryDiverges {
 		c.constrain(e, tryT, res)
