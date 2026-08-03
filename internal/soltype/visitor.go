@@ -623,8 +623,8 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 	case *GetterElem:
 		self, selfChanged := acceptSelfParam(e.SelfParam, v, pol) // receiver contravariant
 		rt := e.Type.Accept(v, pol)                               // covariant read
-		// A nil Throws is the `never` shorthand and has nothing to walk, the same
-		// collapse FuncType's visit takes over its own throws position.
+		// A nil Throws is the `never` shorthand and has nothing to walk, the same way
+		// FuncType's visit leaves its own nil throws position alone.
 		throws := e.Throws
 		if throws != nil {
 			throws = throws.Accept(v, pol) // covariant, like the read

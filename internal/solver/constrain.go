@@ -1594,12 +1594,14 @@ func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *so
 		if sg, ok := subElem.(*soltype.GetterElem); ok {
 			errs := c.constrain(sg.Type, se.Type, seen, mutCtx) // covariant read
 			// What a read raises flows out to the reader, so the throws position is
-			// covariant like the read: the source may raise no more than the target admits.
+			// covariant like the read. The source may raise no more than the target admits.
 			return append(errs, c.constrain(sg.ThrowsOrNever(), se.ThrowsOrNever(), seen, mutCtx)...)
 		}
 	case *soltype.SetterElem:
 		if ss, ok := subElem.(*soltype.SetterElem); ok {
 			errs := c.constrain(se.Param, ss.Param, seen, mutCtx) // contravariant write
+			// The written value is contravariant, but what the write raises flows out to
+			// the writer, so the throws position stays covariant.
 			return append(errs, c.constrain(ss.ThrowsOrNever(), se.ThrowsOrNever(), seen, mutCtx)...)
 		}
 	}

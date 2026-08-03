@@ -580,18 +580,18 @@ func (e *typeEvaluator) reduceElem(el soltype.ObjTypeElem) soltype.ObjTypeElem {
 	case *soltype.PropertyElem:
 		return &soltype.PropertyElem{Name: el.Name, Type: e.reduce(el.Type), Optional: el.Optional, Readonly: el.Readonly}
 	case *soltype.GetterElem:
-		return &soltype.GetterElem{Name: el.Name, SelfParam: el.SelfParam, Type: e.reduce(el.Type), Throws: e.reduceOptional(el.Throws)}
+		return &soltype.GetterElem{Name: el.Name, SelfParam: el.SelfParam, Type: e.reduce(el.Type), Throws: e.reduceThrows(el.Throws)}
 	case *soltype.SetterElem:
-		return &soltype.SetterElem{Name: el.Name, SelfParam: el.SelfParam, Param: e.reduce(el.Param), Throws: e.reduceOptional(el.Throws)}
+		return &soltype.SetterElem{Name: el.Name, SelfParam: el.SelfParam, Param: e.reduce(el.Param), Throws: e.reduceThrows(el.Throws)}
 	default:
 		return el
 	}
 }
 
-// reduceOptional reduces a member's throws position, whose nil shorthand stands for `never`.
-// Preserving nil keeps the shorthand rather than materializing a `never` an accessor was
-// never written with.
-func (e *typeEvaluator) reduceOptional(t soltype.Type) soltype.Type {
+// reduceThrows reduces an accessor's throws position, whose nil shorthand stands for
+// `never`. Preserving nil keeps the shorthand rather than materializing a `never` the
+// accessor was never written with.
+func (e *typeEvaluator) reduceThrows(t soltype.Type) soltype.Type {
 	if t == nil {
 		return nil
 	}

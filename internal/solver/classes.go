@@ -638,7 +638,7 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 		out = m.Type
 	case *soltype.GetterElem:
 		// Reading through a getter runs its body, so the read is an exceptional exit of
-		// the enclosing body the way a call is. A method read is not: reading `p.m` only
+		// the enclosing body the way a call is. A method read is not. Reading `p.m` only
 		// names the function, and its throws stays in the signature until it is called.
 		c.raiseAccessorThrows(lvl, blame, m.ThrowsOrNever())
 		out = m.Type
@@ -703,8 +703,12 @@ func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTyp
 // raiseAccessorThrows records that an accessor access raises `throws` into the enclosing
 // body's throws sink, the same wiring inferCall gives a call. A body with no clause has a
 // `never` sink, so a raising accessor is rejected at the access site rather than reading as
-// non-throwing to the caller. An accessor that raises nothing constrains `never`, which
-// records nothing, and leaves the enclosing `throws` clause counting as unused.
+// non-throwing to the caller.
+//
+// An accessor declared to raise nothing hands over `never` and is skipped outright, leaving
+// the enclosing `throws` clause counting as unused. Anything else marks the body as raising.
+// That includes a throws position still holding an unsolved variable, which is how inferCall
+// treats an unresolved callee.
 func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Type) {
 	if isNeverType(throws) {
 		return
@@ -714,15 +718,15 @@ func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Ty
 }
 
 // raiseUnionAccessorThrows records what reading `name` off a union receiver may raise.
-// constrainUnionFieldRead joins the read's VALUE across the union's members inside
-// constrain; this walks the same members to reach the getters that join contributes, since
-// only the inference walk holds the enclosing throws sink. A member that carries `name` as
-// a plain property, a method, or a setter raises nothing on a read and contributes no
-// constraint. A carrier that is not a union, or a union member that is neither an object
-// nor a class instance, is left alone, matching the shapes that join accepts.
+// constrainUnionFieldRead joins the read's VALUE across the union's members from inside
+// constrain, which holds no throws sink. Only the inference walk holds one, so this walks
+// the same members to reach the getters that join reads through. A member carrying
+// `name` as a plain property, a method, or a setter raises nothing on a read and
+// contributes no constraint. A carrier that is not a union is left alone, as is a union
+// member that is neither an object nor a class instance, matching the shapes join accepts.
 func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string, carrier soltype.Type) {
-	u, ok := carrier.(*soltype.UnionType)
-	if !ok {
+	u, isUnion := carrier.(*soltype.UnionType)
+	if !isUnion {
 		return
 	}
 	for _, member := range u.Types {
@@ -730,10 +734,12 @@ func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string,
 		if !ok {
 			continue
 		}
-		if getter, ok := obj.Member(name); ok {
-			if g, isGetter := getter.(*soltype.GetterElem); isGetter {
-				c.raiseAccessorThrows(lvl, blame, g.ThrowsOrNever())
-			}
+		elem, found := obj.Member(name)
+		if !found {
+			continue
+		}
+		if getter, isGetter := elem.(*soltype.GetterElem); isGetter {
+			c.raiseAccessorThrows(lvl, blame, getter.ThrowsOrNever())
 		}
 	}
 }

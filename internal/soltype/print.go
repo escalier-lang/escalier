@@ -958,13 +958,14 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		if e.SelfParam != nil {
 			recv = p.printSelfReceiver(e.SelfParam)
 		}
-		// `-> R` is greedy, so a function-typed return is parenthesized once a clause
-		// follows it, matching how printFuncTail bounds a signature's return.
-		ret := p.printType(e.Type)
-		if clause := p.printThrowsClause(e.ThrowsOrNever()); clause != "" {
-			ret = p.printTypeMinPrec(e.Type, precUnion) + clause
+		clause := p.printThrowsClause(e.ThrowsOrNever())
+		if clause == "" {
+			return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " + p.printType(e.Type)
 		}
-		return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " + ret
+		// `-> R` is greedy, so a function-typed return is parenthesized once a clause
+		// follows it, the same bound printFuncBody puts on a signature's return.
+		return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " +
+			p.printTypeMinPrec(e.Type, precUnion) + clause
 	case *SetterElem:
 		recv := ""
 		if e.SelfParam != nil {

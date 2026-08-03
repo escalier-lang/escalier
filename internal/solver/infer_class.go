@@ -560,9 +560,9 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 
 // memberSigStub builds a member's signature stub: one fresh var per value parameter,
 // preserving arity, parameter names, and optionality, plus a fresh return var and a fresh
-// throws var. A sibling call reads the stub before the body pass installs the real
-// signature, so the throws var is what carries a raising method's throws to a caller
-// inside the same class.
+// throws var. A sibling access reads the stub before the body pass installs the real
+// signature, so the throws var is what carries a raising member's throws to a call or a
+// getter read inside the same class.
 func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
@@ -935,16 +935,16 @@ func (c *checker) freezeClassBody(obj *soltype.ObjectType, keep set.Set[*soltype
 				Name:      e.Name,
 				SelfParam: e.SelfParam,
 				Type:      coalesceKeeping(e.Type, soltype.Positive, keep, flow),
-				// The throws position is covariant, so it coalesces positively even on a
-				// setter, whose written value coalesces negatively.
-				Throws: coalesceThrows(e.Throws, keep, flow),
+				Throws:    coalesceThrows(e.Throws, keep, flow),
 			}
 		case *soltype.SetterElem:
 			obj.Elems[i] = &soltype.SetterElem{
 				Name:      e.Name,
 				SelfParam: e.SelfParam,
 				Param:     coalesceKeeping(e.Param, soltype.Negative, keep, flow),
-				Throws:    coalesceThrows(e.Throws, keep, flow),
+				// A setter's written value coalesces negatively, but what the write raises
+				// flows out to the writer, so its throws position still coalesces positively.
+				Throws: coalesceThrows(e.Throws, keep, flow),
 			}
 		case *soltype.MethodElem:
 			sigs := make([]*soltype.FuncType, len(e.Signatures))

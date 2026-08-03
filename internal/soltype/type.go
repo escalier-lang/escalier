@@ -373,8 +373,8 @@ type SetterElem struct {
 	SelfParam *FuncParam // nil ⇒ static setter; non-nil ⇒ instance setter
 	Param     Type
 	// Throws is the type writing this property may raise. It is covariant even though
-	// Param is contravariant, since what a write raises flows out to the writer just as
-	// what a getter raises flows out to the reader. Nil reads as `never`.
+	// Param is contravariant. What a write raises flows out to the writer, just as what a
+	// getter raises flows out to the reader. Nil reads as `never`.
 	Throws Type
 }
 
