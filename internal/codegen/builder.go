@@ -1911,15 +1911,45 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					// must also need no hoisted statements, since those would run before
 					// the pattern test rather than after it. The printer parenthesizes a
 					// guard that binds looser than the `&&` joining the two.
-					if mergedGuard, canMerge := guardWithoutBindings(
-						matchCase.Pattern, errorIdent, matchCase.Guard, guardExpr,
-					); canMerge && len(guardStmts) == 0 {
-						merged := combineConditions([]Expr{condition, mergedGuard}, expr)
-						// The pattern's declarations move into the body, which is the only
-						// place left that reads them.
+					if len(guardStmts) == 0 {
+						if mergedGuard, canMerge := guardWithoutBindings(
+							matchCase.Pattern, errorIdent, matchCase.Guard, guardExpr,
+						); canMerge {
+							merged := combineConditions([]Expr{condition, mergedGuard}, expr)
+							// The pattern's declarations move into the body, which is the
+							// only place left that reads them.
+							body := slices.Concat(bindingStmts, guardBodyStmts)
+							fallthroughStmts = []Stmt{
+								NewIfStmt(merged, NewBlockStmt(body, expr), asElse(), expr),
+							}
+							continue
+						}
+					}
+
+					// A guard that lowers to statements cannot join the condition, since
+					// those statements would run before the pattern had matched. Computing
+					// it into a flag inside the pattern test keeps that order, and the flag
+					// then answers whether this arm takes the value. The arm body and the
+					// fall-through share one `if`/`else` from there, so the later arms
+					// continue the same chain.
+					//
+					// The guard's statements are emitted as they were built, so this needs
+					// a guard that reads none of the pattern's declarations. Those
+					// declarations do not run until the body.
+					if len(fallthroughStmts) > 0 &&
+						!guardReadsPatternBindings(matchCase.Pattern, matchCase.Guard) {
+						takenVar, takenDecl := b.createTempVarWithInit(
+							NewLitExpr(NewBoolLit(false, expr), expr), expr)
+						computeGuard := append(slices.Clone(guardStmts), &ExprStmt{
+							Expr:   NewBinaryExpr(takenVar, Assign, guardExpr, expr),
+							span:   nil,
+							source: expr,
+						})
 						body := slices.Concat(bindingStmts, guardBodyStmts)
 						fallthroughStmts = []Stmt{
-							NewIfStmt(merged, NewBlockStmt(body, expr), asElse(), expr),
+							takenDecl,
+							NewIfStmt(condition, NewBlockStmt(computeGuard, expr), nil, expr),
+							NewIfStmt(takenVar, NewBlockStmt(body, expr), asElse(), expr),
 						}
 						continue
 					}
@@ -3183,19 +3213,31 @@ func substituteAccessPaths(expr Expr, paths map[string]Expr) (Expr, bool) {
 	}
 }
 
+// guardReadsPatternBindings reports whether a guard mentions any name its arm's pattern
+// binds. Such a guard cannot run before the pattern's declarations unless every reference is
+// rewritten, and a guard that lowers to statements carries references this package does not
+// rewrite, since only the guard's own expression goes through substituteAccessPaths.
+func guardReadsPatternBindings(pat ast.Pat, guard ast.Expr) bool {
+	bound := set.NewSet[string]()
+	ast.CollectPatternBindingNames(pat, bound)
+	if bound.Len() == 0 {
+		return false
+	}
+	refs := &guardRefs{names: set.NewSet[string]()}
+	guard.Accept(refs)
+	return refs.names.Intersection(bound).Len() > 0
+}
+
 // guardWithoutBindings returns a guard that reads nothing the arm's pattern declares, so it
 // can be tested in the same condition as the pattern. A guard naming none of the bindings is
 // already such an expression and is returned unchanged. One that names them is rewritten to
 // read through access paths. The second result is false when neither applies.
+//
+// The caller must have checked that the guard lowers to no statements. Those statements can
+// hold references of their own, and rewriting the expression alone would leave them reading
+// declarations that no longer precede them.
 func guardWithoutBindings(pat ast.Pat, target Expr, guard ast.Expr, guardExpr Expr) (Expr, bool) {
-	bound := set.NewSet[string]()
-	ast.CollectPatternBindingNames(pat, bound)
-	if bound.Len() == 0 {
-		return guardExpr, true
-	}
-	refs := &guardRefs{names: set.NewSet[string]()}
-	guard.Accept(refs)
-	if refs.names.Intersection(bound).Len() == 0 {
+	if !guardReadsPatternBindings(pat, guard) {
 		return guardExpr, true
 	}
 	paths, pathsOK := patternAccessPaths(pat, target)

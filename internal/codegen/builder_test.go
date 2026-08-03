@@ -1194,10 +1194,11 @@ func TestBuildTryCatchRethrow(t *testing.T) {
 }`,
 		},
 		// A guard that lowers to statements cannot join the pattern test, since those
-		// statements would run before the pattern had matched. The two tests stay in
-		// separate `if`s and a flag carries the fall-through.
+		// statements would run before the pattern had matched. Computing it into a flag
+		// inside the pattern test keeps that order, and the flag then carries the arm body
+		// and the fall-through in one `if`/`else` that the later arms continue.
 		"GuardLowersToStatements": {
-			src: "fn f(n: number) {\n\treturn try { throw \"x\" } catch { \"x\" if (if n > 0 { true } else { false }) => 0, _ => 1 }\n}",
+			src: "fn f(n: number) {\n\treturn try { throw \"x\" } catch { \"x\" if (if n > 0 { true } else { false }) => 0, \"y\" => 1, _ => 2 }\n}",
 			expected: `export function f(temp1) {
   const n = temp1;
   let temp2;
@@ -1212,16 +1213,49 @@ func TestBuildTryCatchRethrow(t *testing.T) {
       } else {
         temp3 = false;
       }
-      if (temp3) {
-        temp2 = 0;
-        temp4 = true;
-      }
+      temp4 = temp3;
     }
-    if (!temp4) {
+    if (temp4) {
+      temp2 = 0;
+    } else if (__error == "y") {
       temp2 = 1;
+    } else {
+      temp2 = 2;
     }
   }
   return temp2;
+}`,
+		},
+		// A guard that both lowers to statements and reads a pattern binding keeps the
+		// nested shape. Only the guard's own expression goes through the access-path
+		// rewrite, so its statements still read the declarations and have to run after
+		// them.
+		"StatementGuardReadsBinding": {
+			src: "fn f() {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if (if msg != \"\" { true } else { false }) => 0, _ => 1 }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw {message: "m"};
+  } catch (__error) {
+    let temp3 = false;
+    if (__error != null && "message" in __error) {
+      const {message: msg} = __error;
+      let temp2;
+      if (msg != "") {
+        temp2 = true;
+      } else {
+        temp2 = false;
+      }
+      if (temp2) {
+        temp1 = 0;
+        temp3 = true;
+      }
+    }
+    if (!temp3) {
+      temp1 = 1;
+    }
+  }
+  return temp1;
 }`,
 		},
 		// No arm always runs, so a value matching neither literal is re-raised.
