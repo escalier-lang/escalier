@@ -118,3 +118,14 @@ export fn guardedRefutable(n: number) -> number {
         _ => 1,
     }
 }
+
+// Guarded object pattern where the guard reads the binding: the guard is tested
+// through the property access, so the declaration moves into the body
+export fn guardedBinding(n: number) -> number {
+    return try {
+        throw {code: n}
+    } catch {
+        {code: c} if c > 0 => c,
+        _ => 0,
+    }
+}

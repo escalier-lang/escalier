@@ -1133,9 +1133,11 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   return temp2;
 }`,
 		},
-		// A pattern that binds cannot join its test to the guard either, since the guard
-		// reads the binding and the binding can only be declared once the pattern has
-		// matched. The flag carries the fall-through here too.
+		// A guard reading a name its pattern binds still merges. The guard is rewritten to
+		// read through the access path, `__error.message` for `msg`, so it needs no
+		// declaration ahead of it. The declaration moves into the body, the only place
+		// left that reads it, and short-circuiting keeps the path read behind the checks
+		// that make it safe.
 		"GuardReadsPatternBinding": {
 			src: "fn f() {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if msg != \"\" => msg, _ => \"other\" }\n}",
 			expected: `export function f() {
@@ -1143,19 +1145,83 @@ func TestBuildTryCatchRethrow(t *testing.T) {
   try {
     throw {message: "m"};
   } catch (__error) {
-    let temp2 = false;
-    if (__error != null && "message" in __error) {
+    if (__error != null && "message" in __error && __error.message != "") {
       const {message: msg} = __error;
-      if (msg != "") {
-        temp1 = msg;
-        temp2 = true;
-      }
-    }
-    if (!temp2) {
+      temp1 = msg;
+    } else {
       temp1 = "other";
     }
   }
   return temp1;
+}`,
+		},
+		// A nested pattern reaches through each step of the path, and every existence
+		// check precedes the read that depends on it.
+		"GuardReadsNestedBinding": {
+			src: "fn f() {\n\treturn try { throw {user: {name: \"n\"}} } catch { {user: {name: nm}} if nm != \"\" => nm, _ => \"other\" }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw {user: {name: "n"}};
+  } catch (__error) {
+    if (__error != null && "user" in __error && __error.user != null && "name" in __error.user && __error.user.name != "") {
+      const {user: {name: nm}} = __error;
+      temp1 = nm;
+    } else {
+      temp1 = "other";
+    }
+  }
+  return temp1;
+}`,
+		},
+		// A guard naming none of the bindings needs no rewriting to join the pattern test.
+		"GuardIgnoresPatternBinding": {
+			src: "fn f(n: number) {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if n > 0 => msg, _ => \"other\" }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw {message: "m"};
+  } catch (__error) {
+    if (__error != null && "message" in __error && n > 0) {
+      const {message: msg} = __error;
+      temp2 = msg;
+    } else {
+      temp2 = "other";
+    }
+  }
+  return temp2;
+}`,
+		},
+		// A guard that lowers to statements cannot join the pattern test, since those
+		// statements would run before the pattern had matched. The two tests stay in
+		// separate `if`s and a flag carries the fall-through.
+		"GuardLowersToStatements": {
+			src: "fn f(n: number) {\n\treturn try { throw \"x\" } catch { \"x\" if (if n > 0 { true } else { false }) => 0, _ => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    let temp4 = false;
+    if (__error == "x") {
+      let temp3;
+      if (n > 0) {
+        temp3 = true;
+      } else {
+        temp3 = false;
+      }
+      if (temp3) {
+        temp2 = 0;
+        temp4 = true;
+      }
+    }
+    if (!temp4) {
+      temp2 = 1;
+    }
+  }
+  return temp2;
 }`,
 		},
 		// No arm always runs, so a value matching neither literal is re-raised.

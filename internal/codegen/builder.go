@@ -1904,16 +1904,22 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 					// value, a failed pattern test and a failed guard. Both mean the later
 					// arms get their turn, so both have to reach the fall-through.
 					//
-					// One `if` testing both gives them a single `else` to share. That
-					// needs two things to hold. The pattern must bind nothing, since a
-					// binding can only be declared once the pattern has matched. And the
-					// guard must need no hoisted statements, since those would run before
-					// the pattern test rather than after it. The printer parenthesizes
-					// a guard that binds looser than the `&&` joining the two.
-					if len(bindingStmts) == 0 && len(guardStmts) == 0 {
-						merged := combineConditions([]Expr{condition, guardExpr}, expr)
+					// One `if` testing both gives them a single `else` to share. The guard
+					// has to read nothing the pattern declares, since a declaration can
+					// only run once the pattern has matched, so guardWithoutBindings
+					// rewrites it to read through access paths where it can. The guard
+					// must also need no hoisted statements, since those would run before
+					// the pattern test rather than after it. The printer parenthesizes a
+					// guard that binds looser than the `&&` joining the two.
+					if mergedGuard, canMerge := guardWithoutBindings(
+						matchCase.Pattern, errorIdent, matchCase.Guard, guardExpr,
+					); canMerge && len(guardStmts) == 0 {
+						merged := combineConditions([]Expr{condition, mergedGuard}, expr)
+						// The pattern's declarations move into the body, which is the only
+						// place left that reads them.
+						body := slices.Concat(bindingStmts, guardBodyStmts)
 						fallthroughStmts = []Stmt{
-							NewIfStmt(merged, NewBlockStmt(guardBodyStmts, expr), asElse(), expr),
+							NewIfStmt(merged, NewBlockStmt(body, expr), asElse(), expr),
 						}
 						continue
 					}
@@ -3038,6 +3044,165 @@ func isTrueLiteral(expr Expr) bool {
 		}
 	}
 	return false
+}
+
+// guardRefs collects the identifier names a guard expression mentions, so a caller can ask
+// whether the guard depends on the names its arm's pattern binds.
+type guardRefs struct {
+	ast.DefaultVisitor
+	names set.Set[string]
+}
+
+func (v *guardRefs) EnterExpr(e ast.Expr) bool {
+	if ident, isIdent := e.(*ast.IdentExpr); isIdent {
+		v.names.Add(ident.Name)
+	}
+	return true
+}
+
+// patternAccessPaths maps each name a pattern binds to the expression that reads its value
+// out of target, so `{message: msg}` over `__error` yields msg to `__error.message`. A
+// caller can then write the guard against those paths rather than against declarations the
+// pattern has to make first.
+//
+// The second result is false for a pattern whose bindings are not plain reads. An extractor
+// or instance pattern runs user code to produce them, a rest element gathers what is left
+// rather than one position, and a default supplies a value when the read finds nothing.
+func patternAccessPaths(pat ast.Pat, target Expr) (map[string]Expr, bool) {
+	paths := map[string]Expr{}
+	if !collectAccessPaths(pat, target, paths) {
+		return nil, false
+	}
+	return paths, true
+}
+
+func collectAccessPaths(pat ast.Pat, target Expr, into map[string]Expr) bool {
+	switch p := pat.(type) {
+	case *ast.WildcardPat, *ast.LitPat:
+		return true
+	case *ast.IdentPat:
+		if p.Default != nil {
+			return false
+		}
+		into[p.Name] = target
+		return true
+	case *ast.ObjectPat:
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				prop := NewMemberExpr(target, NewIdentifier(e.Key.Name, e.Key), false, e)
+				if !collectAccessPaths(e.Value, prop, into) {
+					return false
+				}
+			case *ast.ObjShorthandPat:
+				if e.Default != nil {
+					return false
+				}
+				into[e.Key.Name] = NewMemberExpr(target, NewIdentifier(e.Key.Name, e.Key), false, e)
+			default:
+				return false
+			}
+		}
+		return true
+	case *ast.TuplePat:
+		for i, elem := range p.Elems {
+			if _, isRest := elem.(*ast.RestPat); isRest {
+				return false
+			}
+			index := NewIndexExpr(target, NewLitExpr(NewNumLit(float64(i), p), p), false, p)
+			if !collectAccessPaths(elem, index, into) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+// substituteAccessPaths rewrites a guard so each reference to a pattern binding reads
+// through its access path instead, turning `msg != ""` into `__error.message != ""`. The
+// rewritten guard needs no declarations ahead of it, so it can join the pattern test in one
+// condition.
+//
+// The second result is false for an expression kind this does not rewrite. Only the shapes
+// an ordinary guard is built from are covered, which keeps a nested function out of the
+// walk. Such a function could rebind one of the names, and rewriting through it would
+// change which value the guard reads.
+func substituteAccessPaths(expr Expr, paths map[string]Expr) (Expr, bool) {
+	switch e := expr.(type) {
+	case *IdentExpr:
+		if path, isBound := paths[e.Name]; isBound {
+			return path, true
+		}
+		return e, true
+	case *LitExpr, *TemplateLitExpr:
+		return e, true
+	case *BinaryExpr:
+		left, leftOK := substituteAccessPaths(e.Left, paths)
+		right, rightOK := substituteAccessPaths(e.Right, paths)
+		if !leftOK || !rightOK {
+			return nil, false
+		}
+		return NewBinaryExpr(left, e.Op, right, e.Source()), true
+	case *UnaryExpr:
+		arg, argOK := substituteAccessPaths(e.Arg, paths)
+		if !argOK {
+			return nil, false
+		}
+		return NewUnaryExpr(e.Op, arg, e.Source()), true
+	case *MemberExpr:
+		object, objectOK := substituteAccessPaths(e.Object, paths)
+		if !objectOK {
+			return nil, false
+		}
+		return NewMemberExpr(object, e.Prop, e.OptChain, e.Source()), true
+	case *IndexExpr:
+		object, objectOK := substituteAccessPaths(e.Object, paths)
+		index, indexOK := substituteAccessPaths(e.Index, paths)
+		if !objectOK || !indexOK {
+			return nil, false
+		}
+		return NewIndexExpr(object, index, e.OptChain, e.Source()), true
+	case *CallExpr:
+		callee, calleeOK := substituteAccessPaths(e.Callee, paths)
+		if !calleeOK {
+			return nil, false
+		}
+		args := make([]Expr, len(e.Args))
+		for i, arg := range e.Args {
+			substituted, argOK := substituteAccessPaths(arg, paths)
+			if !argOK {
+				return nil, false
+			}
+			args[i] = substituted
+		}
+		return NewCallExpr(callee, args, e.OptChain, e.Source()), true
+	default:
+		return nil, false
+	}
+}
+
+// guardWithoutBindings returns a guard that reads nothing the arm's pattern declares, so it
+// can be tested in the same condition as the pattern. A guard naming none of the bindings is
+// already such an expression and is returned unchanged. One that names them is rewritten to
+// read through access paths. The second result is false when neither applies.
+func guardWithoutBindings(pat ast.Pat, target Expr, guard ast.Expr, guardExpr Expr) (Expr, bool) {
+	bound := set.NewSet[string]()
+	ast.CollectPatternBindingNames(pat, bound)
+	if bound.Len() == 0 {
+		return guardExpr, true
+	}
+	refs := &guardRefs{names: set.NewSet[string]()}
+	guard.Accept(refs)
+	if refs.names.Intersection(bound).Len() == 0 {
+		return guardExpr, true
+	}
+	paths, pathsOK := patternAccessPaths(pat, target)
+	if !pathsOK {
+		return nil, false
+	}
+	return substituteAccessPaths(guardExpr, paths)
 }
 
 // combineConditions combines multiple conditions with && operators,
