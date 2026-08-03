@@ -7,9 +7,10 @@ import (
 )
 
 // A `try` block collects what it raises into a sink of its own, so an exception the catch
-// arms handle never reaches the enclosing function's clause. A catch-all handles the whole
-// caught union, tail included, which is what lets a function with no `throws` clause wrap a
-// call to a throwing one.
+// arms cover never reaches the enclosing function's clause. A catch-all covers every member
+// at once, so it always leaves the clause untouched, whatever the block raises. Naming each
+// member individually does the same job where the block's throws are known, which
+// TestInferTryCatchRethrowsWhatTheArmsLeave covers.
 func TestInferTryCatchHandlesWithACatchAll(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
@@ -46,6 +47,10 @@ func TestInferTryCatchHandlesWithACatchAll(t *testing.T) {
 
 // The caught union is open. Any call can raise something no signature predicted, so the
 // members the try block is known to raise are only the part the type system can name.
+//
+// This is the one place the tail is rendered. A rethrow drops it, since a throws clause is
+// open already and would gain nothing from carrying it, but a catch arm matches an actual
+// value and has to reckon with one the block did not predict.
 func TestInferTryCatchBindsAnInexactUnion(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
@@ -88,7 +93,14 @@ func TestInferTryCatchBindsAnInexactUnion(t *testing.T) {
 
 // Without a catch-all the arms leave part of the caught union unhandled, and the compiler
 // rethrows it rather than reporting the arms non-exhaustive. What reaches the enclosing
-// clause is the members no arm covers, plus the open tail.
+// clause is the members no arm covers.
+//
+// The caught union's open tail is NOT among them, even though no arm short of a catch-all
+// covers it. Every throws type is already open, since any call can raise something its
+// signature did not name, so carrying the tail into the clause would re-state that once per
+// `try` and, since only `unknown` can hold it, erase every named type the clause had. The
+// tail stays where it is observable, on the caught binding, which
+// TestInferTryCatchBindsAnInexactUnion covers.
 func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
@@ -102,52 +114,42 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 					}
 				}
 			`,
-			want: `fn (c: boolean) -> void throws "boom" | ...`,
+			want: `fn (c: boolean) -> void throws "boom"`,
 		},
 		{
-			// Covering every named member leaves only the tail, so the clause is `unknown`.
-			// Nothing short of a catch-all closes an open union.
-			name: "CoveringEveryMemberStillLeavesTheTail",
-			src:  `fn f() throws _ { try { throw "boom" } catch { "boom" => 0 } }`,
-			want: "fn () -> void throws unknown",
+			// Nothing known escapes, so the clause is untouched and a caller with no clause
+			// of its own is legal. This is the point of covering the members a callee
+			// declares: the handling is what removes the obligation.
+			name: "CoveringEveryKnownMemberLeavesNoClause",
+			src:  `fn f() { try { throw "boom" } catch { "boom" => 0 } }`,
+			want: "fn () -> void",
 		},
 		{
 			// A guarded arm can always fail its guard, so it covers nothing and its member
-			// is rethrown alongside the tail.
+			// is rethrown.
 			name: "AGuardedArmCoversNothing",
 			src:  `fn f() throws _ { try { throw "boom" } catch { "boom" if true => 0 } }`,
-			want: `fn () -> void throws "boom" | ...`,
+			want: `fn () -> void throws "boom"`,
 		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{
 		{
-			// A clause-less function raises `never`, which is closed, so the rethrow has
-			// nowhere to land. The blame is the try/catch, not the `throw "boom"` inside the
-			// block: that `throw` IS caught, and what fails is the re-raise past the arms.
-			// One diagnostic covers it, since only a catch-all resolves either half.
+			// A clause-less function raises `never`, so an uncovered member has nowhere to
+			// land. The blame is the try/catch, not the `throw "boom"` inside the block:
+			// that `throw` IS caught, and what fails is the re-raise past the arms.
 			name: "RethrowNeedsAClause",
 			src:  `fn f() { try { throw "boom" } catch { 5 => 0 } }`,
 			wantErrs: []string{
-				"1:10-1:45: the catch arms leave \"boom\" | ... uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Add a catch-all arm; only a catch-all closes a caught union's open tail",
+				"1:10-1:45: the catch arms leave \"boom\" uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
 			},
 		},
 		{
-			// Covering the one named member leaves the open tail, spelled `unknown`, and it
-			// is rethrown on its own.
-			name: "TheBareTailNeedsAClauseToo",
-			src:  `fn f() { try { throw "boom" } catch { "boom" => 0 } }`,
+			// A clause narrower than what escapes fails the same way. Only the uncovered
+			// member is named, so the diagnostic points at the one type to account for.
+			name: "RethrowMustSatisfyANarrowClause",
+			src:  `fn f(c: boolean) throws string { try { if c { throw "a" } else { throw 5 } } catch { "a" => 0 } }`,
 			wantErrs: []string{
-				"1:10-1:50: the catch arms leave unknown uncovered, so it is rethrown, and the enclosing `throws never` does not admit it. Add a catch-all arm; only a catch-all closes a caught union's open tail",
-			},
-		},
-		{
-			// A member the enclosing clause does admit passes through, so only the tail is
-			// left to reject. The clause being narrower than `unknown` is what fails, and a
-			// catch-all is still the remedy.
-			name: "ANarrowClauseStillCannotCarryTheTail",
-			src:  `fn f(c: boolean) throws string { try { if c { throw "a" } else { throw "b" } } catch { "a" => 0 } }`,
-			wantErrs: []string{
-				"1:34-1:96: the catch arms leave \"b\" | ... uncovered, so it is rethrown, and the enclosing `throws string` does not admit it. Add a catch-all arm; only a catch-all closes a caught union's open tail",
+				"1:34-1:94: the catch arms leave 5 uncovered, so it is rethrown, and the enclosing `throws string` does not admit it. Cover it with a catch arm, or widen the enclosing clause",
 			},
 		},
 	})
@@ -322,7 +324,7 @@ func TestInferTryCatchNests(t *testing.T) {
 					return x
 				}
 			`,
-			want: "fn () -> 0 throws string | ...",
+			want: "fn () -> 0 throws string",
 		},
 	})
 }
@@ -340,7 +342,7 @@ func TestInferTryCatchOverClassErrors(t *testing.T) {
 				fn a() throws FooError | BarError { throw FooError("x") }
 				fn f() throws _ { try { a() } catch { FooError{msg} => msg } }
 			`,
-			want: "fn () -> void throws BarError | ...",
+			want: "fn () -> void throws BarError",
 		},
 		{
 			// The arm binds the narrowed member, so `msg` is the named class's field rather

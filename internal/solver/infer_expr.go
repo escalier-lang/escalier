@@ -2798,8 +2798,13 @@ func (c *checker) caughtType(collected soltype.Type) soltype.Type {
 // checkMatchExhaustive reads, so one definition of "this pattern covers this member" serves
 // both walks. A guarded arm can always fail its guard, so it covers nothing.
 //
-// The caught union's open tail is uncovered as well, and only a catch-all closes it. So a
-// catch-all is what lets a function with no `throws` clause wrap a call to a throwing one.
+// Only the uncovered MEMBERS are rethrown. The caught union's open tail is not, even
+// though no arm short of a catch-all covers it, because every throws type is already open.
+// A clause is a floor rather than a ceiling: any call can raise something its signature did
+// not name, whatever that signature says. Carrying the tail into the enclosing clause would
+// re-state that global fact once per `try` and, since only `unknown` can hold it, would
+// erase every named type the clause had. So the tail is left where it is observable, on the
+// caught binding a catch arm matches, and the clause records what is known to escape.
 //
 // A rethrow the enclosing sink cannot accept is one UnhandledRethrowError blamed on the
 // try/catch, since the re-raise happens there rather than at the `throw` the block caught.
@@ -2809,7 +2814,10 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 			return
 		}
 	}
-	rethrown := caught
+	// A non-union `caught` carries no named member to rethrow. It is `unknown`, the bare
+	// open tail caughtType renders for a block that raises nothing known, or the ErrorType
+	// recovery placeholder. Neither leaves anything for the enclosing clause to record.
+	var rethrown soltype.Type = &soltype.NeverType{}
 	if u, isUnion := caught.(*soltype.UnionType); isUnion {
 		uncovered := make([]soltype.Type, 0, len(u.Types))
 		for _, m := range u.Types {
@@ -2817,13 +2825,13 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 				uncovered = append(uncovered, m)
 			}
 		}
-		rethrown = newUnion(c.ctx, uncovered, true)
-		if isNeverType(rethrown) {
-			// Every listed member is covered, so only the open tail is left over. `unknown`
-			// is how caughtType spells that same tail-only case, since the inexactness flag
-			// has no carrier once the members are gone.
-			rethrown = &soltype.UnknownType{}
-		}
+		rethrown = newUnion(c.ctx, uncovered, false)
+	}
+	if isNeverType(rethrown) {
+		// Every member an arm could name is covered, so nothing known escapes and the
+		// enclosing clause is left alone. This is what lets a caller with no clause wrap a
+		// throwing call once it has handled what that call declares.
+		return
 	}
 	// The engine runs directly rather than through c.constrain, so its errors are dropped
 	// in favour of one UnhandledRethrowError blamed here. A member's Prov entry is the

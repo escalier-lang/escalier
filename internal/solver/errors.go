@@ -1036,15 +1036,11 @@ type MissingCatchArmError struct {
 // uncovered cannot reach the enclosing throws sink. `rethrowUnhandled` returns early on a
 // catch-all, so this error only ever describes a `try` without one.
 //
-// It replaces the errors the constraint engine would raise for the same failure, for two
-// reasons. Blame is the first. An engine error resolves per-operand blame through Prov, and
-// a rethrown member's Prov entry is the `throw` inside the try block — but that `throw` is
-// caught. What fails is the re-raise, which happens at the try/catch.
-//
-// Count is the second. The engine reports the open tail and each uncovered member
-// separately, and the tail fails whenever the sink is closed at all, so a member error
-// never adds an independently actionable fact. Adding a catch-all resolves every one of
-// them together, and naming the members does not change that remedy.
+// It replaces the errors the constraint engine would raise for the same failure. An engine
+// error resolves per-operand blame through Prov, and a rethrown member's Prov entry is the
+// `throw` inside the try block. Blaming that `throw` would be wrong, because the `try`
+// caught it. What fails is the re-raise, which happens at the try/catch, so one error
+// blamed there reports the escape once at the site it escapes from.
 //
 // It is a bridge error born in `rethrowUnhandled` with the try/catch node in hand, so it
 // self-blames the whole form through `Span` and carries no related node.
@@ -1514,7 +1510,7 @@ func (e *UnhandledRethrowError) Span() ast.Span      { return e.Try.Span() }
 func (e *UnhandledRethrowError) Related() []ast.Span { return nil }
 func (e *UnhandledRethrowError) Message() string {
 	return "the catch arms leave " + soltype.Print(e.Rethrown) + " uncovered, so it is rethrown, and the enclosing `throws " +
-		soltype.Print(e.Sink) + "` does not admit it. Add a catch-all arm; only a catch-all closes a caught union's open tail"
+		soltype.Print(e.Sink) + "` does not admit it. Cover it with a catch arm, or widen the enclosing clause"
 }
 
 func (e *MissingCatchArmError) Message() string {
