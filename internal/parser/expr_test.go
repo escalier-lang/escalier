@@ -398,6 +398,11 @@ func TestParseExprErrorHandling(t *testing.T) {
 		"TryCatchMissingClosingBrace": {
 			input: "try { operation() } catch { error => error",
 		},
+		// No case supplies a span end and no closing brace was reached, so the node ends at
+		// the try block. This is the recovery path `catchEnd` deliberately leaves nil.
+		"TryCatchEmptyMissingClosingBrace": {
+			input: "try { operation() } catch {",
+		},
 		"TryCatchMissingPattern": {
 			input: "try { operation() } catch { => \"error\" }",
 		},

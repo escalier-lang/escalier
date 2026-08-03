@@ -1142,11 +1142,11 @@ func (p *Parser) tryExpr() ast.Expr {
 	tryBlock := p.block()
 
 	var catchCases []*ast.MatchCase
-	// catchEnd is the end of the catch clause's closing brace, set only when a real brace
+	// `catchEnd` is the end of the catch clause's closing brace, set only when a real brace
 	// closed the clause. It is the span end for a well-formed `catch { }` holding no cases,
 	// so the empty braces fall inside the node rather than outside it. A recovery path that
-	// never reached a brace leaves it nil, which keeps a malformed clause's span on the try
-	// block rather than on wherever recovery happened to stop.
+	// never reached a brace leaves it nil, which keeps a malformed clause's span on the
+	// `try` block rather than on wherever recovery happened to stop.
 	var catchEnd *ast.Location
 
 	token := p.lexer.peek()

@@ -1017,17 +1017,17 @@ type NonExhaustiveMatchError struct {
 	Match *ast.MatchExpr
 }
 
-// MissingCatchArmError fires when a `try` carries no catch arms. The arms are what handle
-// an exception, so a `try` without them changes nothing about the block it wraps. Writing
-// the block on its own says the same thing more directly.
+// MissingCatchArmError fires when a `try` carries no catch arms. The arms are what catch
+// an exception, so a `try` without them changes nothing about the block it wraps. Either
+// resolution is fine. Dropping the `try` keeps the block saying what it already says, and
+// adding an arm makes the `try` do something.
 //
 // An omitted `catch` and a written-but-empty `catch { }` both land here, since
-// ast.TryCatchExpr records only the arms and both leave that slice empty. One message
-// covers them because the fix is the same either way: write an arm. Saying "add a `catch`
-// clause" would tell the author of `catch { }` to add what they already wrote.
+// `ast.TryCatchExpr` records only the arms and both leave that slice empty. One message
+// covers them, because both ways out apply whichever form was written.
 //
-// It is a bridge error born in inferTryCatch with the try/catch node in hand, so it
-// self-blames the whole form through Span and carries no related node.
+// It is a bridge error born in `inferTryCatch` with the try/catch node in hand, so it
+// self-blames the whole form through `Span` and carries no related node.
 type MissingCatchArmError struct {
 	Try *ast.TryCatchExpr
 }
@@ -1488,7 +1488,7 @@ func (e *NonExhaustiveMatchError) Message() string {
 func (e *MissingCatchArmError) Span() ast.Span      { return e.Try.Span() }
 func (e *MissingCatchArmError) Related() []ast.Span { return nil }
 func (e *MissingCatchArmError) Message() string {
-	return "`try` needs at least one catch arm; with none it handles nothing, so drop the `try` and keep the block"
+	return "a `try` with no catch arms catches nothing; drop the `try` and keep its block, or add at least one catch arm"
 }
 
 // MutLeafThroughSharedBorrowError fires when a destructuring pattern marks a leaf
