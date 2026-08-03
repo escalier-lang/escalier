@@ -273,9 +273,10 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 }
 
 // needsResidualWriteBack reports whether a mutable borrow's inner needs an explicit
-// contravariant write view in the RefType arm (PR 14). An arm that reads the mut-context
-// flag itself already adds whatever write view the inner needs, so those pairs need no
-// residual. Three arms do:
+// contravariant write view in the RefType arm. A mutable borrow makes its inner
+// invariant, so both a read view and a write view have to be checked. Some arms derive
+// the write view themselves from the mut-context flag, and those need no residual. Three
+// arms do:
 //
 //   - object/object and tuple/tuple, which pin each named field or element the flag marks
 //     writable;

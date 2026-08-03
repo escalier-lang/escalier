@@ -192,39 +192,54 @@ func TestInferMemberAssignConflictingWritesNoError(t *testing.T) {
 	require.Equal(t, "fn (obj: mut {x: number & string}) -> void", values["foo"])
 }
 
-// A field write through a `mut` reference to a CLASS instance projects the class body
-// and reuses the object arm's per-field pinning, the same path a `mut` object target
-// takes. The write requirement is a synthesized one-property object, which no nominal
-// class satisfies structurally, so the class receiver must reach that arm in the forward
+// A field write through a `mut` reference to a CLASS instance projects the class body and
+// reuses the object arm's per-field pinning, the same path a `mut` object target takes.
+// The write requirement is a synthesized one-property object, which no nominal class
+// satisfies structurally, so the class receiver must reach that arm in the forward
 // direction only (escalier-lang/escalier#870).
-func TestInferMemberAssignMutClassField(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		class C { v: number }
-		fn f(c: mut C) { c.v = 5 }
-	`)
-	require.Empty(t, errs)
-}
-
-// The written field stays invariant through a class receiver exactly as it does through
-// an object receiver: storing a string into a number field is rejected in both the read
-// view and the write-back.
-func TestInferMemberAssignMutClassFieldWrongType(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		class C { v: number }
-		fn f(c: mut C) { c.v = "bad" }
-	`)
-	require.Equal(t, []string{
-		"3:20-3:31: cannot constrain number <: string",
-		"3:20-3:31: cannot constrain string <: number",
-	}, messagesWithSpan(errs))
-}
-
-// A write through an IMMUTABLE reference to a class instance is still rejected: the
-// receiver has no mutable view to lend, so the requirement's `mut` is unsatisfiable.
-func TestInferMemberAssignImmutableClassField(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		class C { v: number }
-		fn f(c: C) { c.v = 5 }
-	`)
-	require.Equal(t, []string{"3:16-3:23: cannot constrain immutable C <: mutable object"}, messagesWithSpan(errs))
+func TestInferMemberAssignClassReceiver(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// The forward direction alone decides this, so the write succeeds.
+			name: "mut receiver accepts a well-typed write",
+			src: `
+				class C { v: number }
+				fn f(c: mut C) { c.v = 5 }
+			`,
+		},
+		{
+			// The written field stays invariant through a class receiver exactly as it
+			// does through an object receiver, so a string into a number field is
+			// rejected in both the read view and the write-back.
+			name: "mut receiver rejects a wrongly-typed write in both directions",
+			src: `
+				class C { v: number }
+				fn f(c: mut C) { c.v = "bad" }
+			`,
+			want: []string{
+				"3:22-3:33: cannot constrain number <: string",
+				"3:22-3:33: cannot constrain string <: number",
+			},
+		},
+		{
+			// An IMMUTABLE receiver has no mutable view to lend, so the requirement's
+			// `mut` is unsatisfiable however well-typed the value is.
+			name: "immutable receiver rejects the write",
+			src: `
+				class C { v: number }
+				fn f(c: C) { c.v = 5 }
+			`,
+			want: []string{"3:18-3:25: cannot constrain immutable C <: mutable object"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(errs))
+		})
+	}
 }
