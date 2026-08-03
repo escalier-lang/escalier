@@ -59,6 +59,11 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 
 - When creating issues with `gh`, do not escape strings or backticks in the Markdown body — `gh` passes the body through as-is, and escaping produces literal backslashes in the rendered issue.
 
+## Pull requests
+
+- When a PR addresses a specific GitHub issue, say so in the PR body. Put a line such as `Fixes #123` near the top of the summary, before the details of the change. Use `Fixes` when merging the PR resolves the issue and `Refs` when the PR is only part of the work.
+- Name every issue the PR touches on its own line when there is more than one.
+
 ## Git cadence
 
 - While iterating on a PR, commit locally but don't `git push` until I explicitly ask.
