@@ -32,11 +32,11 @@ type ClassDef struct {
 	Variance []Variance
 
 	// MutVariance is the same measurement taken through a MUTABLE reference, which also
-	// admits writes to non-`readonly` fields. A parameter reaching such a field is
-	// invariant here and covariant in Variance; every other parameter has the same entry
-	// in both. The nominal constrain rule reads this vector when the constraint sits
-	// inside a mutable borrow. It is nil until variance inference (C2) fills it, and a
-	// missing entry falls back to Invariant.
+	// admits a write to every non-`readonly` field. A parameter that reaches such a field
+	// is Invariant here. Every other parameter carries the same entry it does in Variance.
+	// The nominal constrain rule reads this vector when the constraint sits inside a
+	// mutable borrow. It is nil until variance inference (C2) fills it, and a missing
+	// entry falls back to Invariant.
 	MutVariance []Variance
 
 	// Supers holds the resolved `extends` superclass — the declared nominal
@@ -90,9 +90,10 @@ const (
 
 // varianceAt returns the variance measured for the i'th type parameter, read from
 // MutVariance when the constraint sits inside a mutable borrow and from Variance
-// otherwise. An unregistered class, a def whose vectors variance inference has not filled
-// yet, and an index past the end of the chosen vector all yield Invariant — the
-// conservative default a sound constrain rule can always fall back to.
+// otherwise. It yields Invariant whenever the chosen vector has no entry at i, which
+// covers an unregistered class, a def whose vectors variance inference has not filled in
+// yet, and an index past the parameter list. Invariant is the conservative default a sound
+// constrain rule can always fall back to.
 func (d *ClassDef) varianceAt(i int, mutCtx bool) Variance {
 	if d == nil {
 		return Invariant
@@ -122,10 +123,10 @@ func (v Variance) String() string {
 
 // inferVariance measures each class type parameter's variance from how it occurs in the
 // class body, then checks any declared `in`/`out`/`in out` modifier against the measured
-// variance. It returns the two vectors to store on ClassDef: immut is the immutable-view
-// variance stored as Variance, mut the mutable-view variance stored as MutVariance. The
-// nominal constrain rule dispatches each argument position by whichever the constraint's
-// reference mutability selects.
+// variance. It returns the two vectors to store on ClassDef. immut is the immutable-view
+// variance, stored as Variance, and mut the mutable-view variance, stored as MutVariance.
+// The nominal constrain rule dispatches each argument position by whichever vector the
+// constraint's reference mutability selects.
 //
 // A declared modifier is checked against the immutable view alone, the variance a reader
 // of the class sees. It is checked, not trusted: a mismatch reports VarianceMismatchError
@@ -189,22 +190,25 @@ func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
 // It returns two vectors, one per view a reference to an instance can offer. immut is the
 // variance an immutable reference sees, where every member is readable and none is
 // writable. mut is the variance a mutable reference sees, which additionally admits a
-// write to every non-`readonly` field. The two differ only at those fields. A field's read
-// is an output position in both views, so a parameter reaching one is covariant in immut;
-// its write is an input position that only mut has, so the same parameter is invariant in
-// mut. Given `class Box<T> { value: T }`, immut measures T covariant and mut measures it
-// invariant, which is what makes `mut Box<number>` and `mut Box<number | string>` unrelated
-// while `Box<number> <: Box<number | string>` holds.
+// write to every non-`readonly` field.
 //
-// Every other member position has one variance shared by both views, so it is walked once
-// and folded into both. A method value parameter is contravariant whether or not the holder
-// can mutate the instance, and a method return or getter is covariant either way. That
-// holds even for a member gated on mutability, such as a setter or a `mut self` method: a
-// mutable reference makes such a member REACHABLE, but reaching it writes no type
-// parameter into the instance's own storage, so it contributes the same polarity to both
-// vectors. Folding a gated member into immut as well is the conservative choice — an owned
-// value can later be bound mutably, so a parameter that is inert only while the reference
-// stays immutable is not safe to treat as phantom.
+// The two vectors differ only at those writable fields. A field's read is an output
+// position in both views, so a parameter reaching one is covariant in immut. Its write is
+// an input position only mut has, so the same parameter is invariant in mut. Given `class
+// Box<T> { value: T }`, immut measures T covariant while mut measures it invariant. That
+// is what leaves `mut Box<number>` and `mut Box<number | string>` unrelated even though
+// `Box<number> <: Box<number | string>` holds.
+//
+// Every other member position has one variance both views share, so it is walked once and
+// folded into both. A method value parameter is contravariant whether or not the holder
+// can mutate the instance, and a method return or getter is covariant either way. The same
+// holds for a member only a mutable reference can reach, such as a setter or a `mut self`
+// method. Reaching such a member is a call, and a call's argument and result carry the
+// polarity its signature gives them regardless of what made the member reachable.
+//
+// Folding a mutability-gated member into immut as well is the conservative choice. An
+// owned value can later be bound mutably, so a parameter that is inert only while the
+// reference stays immutable is not safe to treat as a phantom.
 func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 	immut = make([]Variance, len(def.TypeParams))
 	mut = make([]Variance, len(def.TypeParams))
@@ -215,7 +219,7 @@ func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 	for i, tp := range def.TypeParams {
 		targets[tp.Var] = i
 	}
-	// shared records the occurrences both views agree on; write records the field-write
+	// shared records the occurrences both views agree on. write records the field-write
 	// occurrences only a mutable reference adds.
 	shared := newVarianceVisitor(targets, len(def.TypeParams))
 	write := newVarianceVisitor(targets, len(def.TypeParams))
@@ -223,9 +227,9 @@ func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 		for _, elem := range def.Body.Elems {
 			soltype.AcceptObjElem(stripSelfReceiver(elem), shared, soltype.Positive)
 			if prop, ok := elem.(*soltype.PropertyElem); ok && !prop.Readonly {
-				// Walking the same property at the opposite polarity records the write view
-				// `obj.f = …` needs. A `readonly` field rejects that write, so it is skipped
-				// and stays covariant in both vectors.
+				// Walking the same field again at Negative records the input position
+				// `obj.f = …` occupies. A `readonly` field rejects that write, so it is
+				// skipped here and contributes only its output position to both vectors.
 				soltype.AcceptObjElem(prop, write, soltype.Negative)
 			}
 		}
@@ -291,9 +295,9 @@ type varianceVisitor struct {
 	neg     []bool
 }
 
-// newVarianceVisitor returns a visitor that records occurrences of targets' vars, sized
-// for n type parameters. targets is shared across the visitors one class is measured with,
-// since they index the same parameter list.
+// newVarianceVisitor returns a visitor that records occurrences of the vars in targets,
+// sized for n type parameters. The visitors measuring one class share a single targets
+// map, since they index the same parameter list.
 func newVarianceVisitor(targets map[*soltype.TypeVarType]int, n int) *varianceVisitor {
 	return &varianceVisitor{targets: targets, pos: make([]bool, n), neg: make([]bool, n)}
 }
