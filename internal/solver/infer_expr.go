@@ -2645,19 +2645,40 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, MatchBranch)
-	var armBodies []soltype.Type
-	for _, arm := range e.Cases {
-		// Each arm binds its pattern's leaves in a fresh child scope so a name bound
-		// by one arm is invisible to the next. bindPattern peels the scrutinee's borrow
-		// for the member-lookup requirements but reapplies the binding mode to each
-		// leaf, so a leaf of a `&mut` scrutinee binds as a `&mut` borrow, just as `val`
-		// destructuring does. A missing field or wrong tuple arity surfaces here too.
+	armBodies := c.inferMatchArms(scope, lvl, e, e.Cases, matchShape, scrutinee, res)
+	c.checkUniformOwnership(e, armBodies)
+	c.checkMatchExhaustive(scope, e, matchShape)
+	c.recordType(e, res)
+	return res
+}
+
+// inferMatchArms types each arm of a `match` or of a `try`'s catch clause, constrains every
+// non-diverging body into res, and returns those bodies so the caller can check them for
+// uniform ownership. Both forms hold `[]*ast.MatchCase` and join their arms the same way, so
+// the walk is shared rather than restated.
+//
+// shape is the coalesced scrutinee the narrowing reads union members from. scrutinee is what
+// an arm binds against when no narrowing applies, so its var identity and borrow survive
+// there. inferMatch passes a snapshot and the original; inferTryCatch passes its caught type
+// for both, since that is already concrete. node is blamed for each body's join.
+//
+// Each arm binds its pattern's leaves in a fresh child scope, so a name bound by one arm is
+// invisible to the next. bindPattern peels the scrutinee's borrow for the member-lookup
+// requirements but reapplies the binding mode to each leaf, so a leaf of a `&mut` scrutinee
+// binds as a `&mut` borrow, just as `val` destructuring does. A missing field or a wrong
+// tuple arity surfaces there too.
+//
+// A structural pattern over a union scrutinee binds against only the members whose shape it
+// matches, so an arm may destructure one variant and leave the rest to later arms.
+// narrowMatchArm drops the members `arm.Pattern` cannot destructure. Every other pattern
+// binds against the whole scrutinee.
+func (c *checker) inferMatchArms(
+	scope *Scope, lvl int, node ast.Node, arms []*ast.MatchCase, shape, scrutinee, res soltype.Type,
+) []soltype.Type {
+	var bodies []soltype.Type
+	for _, arm := range arms {
 		armScope := scope.Child()
-		// A structural pattern over a union scrutinee binds against only the members
-		// whose shape it matches, so a match arm may destructure one variant while
-		// leaving the rest for later arms. narrowMatchArm drops the members `arm.Pattern`
-		// cannot destructure. Every other pattern binds against the whole scrutinee.
-		armScrut := narrowMatchArm(matchShape, scrutinee, arm.Pattern)
+		armScrut := narrowMatchArm(shape, scrutinee, arm.Pattern)
 		c.bindPattern(armScope, lvl, arm.Pattern, armScrut, nil)
 		if arm.Guard != nil {
 			// A guard is an ordinary boolean condition over the arm's bindings. As in
@@ -2669,14 +2690,11 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 		}
 		bodyT, diverges := c.inferBlockOrExpr(armScope, lvl, &arm.Body)
 		if !diverges {
-			c.constrain(e, bodyT, res)
-			armBodies = append(armBodies, bodyT)
+			c.constrain(node, bodyT, res)
+			bodies = append(bodies, bodyT)
 		}
 	}
-	c.checkUniformOwnership(e, armBodies)
-	c.checkMatchExhaustive(scope, e, matchShape)
-	c.recordType(e, res)
-	return res
+	return bodies
 }
 
 // inferTryCatch types `try { … } catch { pat => body, … }`. The try block is walked
@@ -2720,24 +2738,11 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 		branches = append(branches, tryT)
 	}
 
+	// The caught type is this walk's scrutinee, and the arms are typed exactly as a `match`
+	// expression's are. It is already concrete, so it serves as both the narrowing shape and
+	// the bind target.
 	caught := c.caughtType(collected)
-	for _, arm := range e.Catch {
-		// Each arm binds its pattern's leaves in a fresh child scope, and a structural
-		// pattern binds against only the caught members whose shape it matches. Both are
-		// what inferMatch does with a match arm. The caught type is this walk's scrutinee.
-		armScope := scope.Child()
-		armScrut := narrowMatchArm(caught, caught, arm.Pattern)
-		c.bindPattern(armScope, lvl, arm.Pattern, armScrut, nil)
-		if arm.Guard != nil {
-			guard := c.inferExpr(armScope, lvl, arm.Guard)
-			c.constrain(arm.Guard, guard, &soltype.PrimType{Prim: soltype.BoolPrim})
-		}
-		bodyT, diverges := c.inferBlockOrExpr(armScope, lvl, &arm.Body)
-		if !diverges {
-			c.constrain(e, bodyT, res)
-			branches = append(branches, bodyT)
-		}
-	}
+	branches = append(branches, c.inferMatchArms(scope, lvl, e, e.Catch, caught, caught, res)...)
 	c.checkUniformOwnership(e, branches)
 	c.rethrowUnhandled(scope, e, caught, enclosing)
 	c.recordType(e, res)
