@@ -6,13 +6,14 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// resolveTypeParams resolves a `<…>` type-parameter list to soltype TypeParams in three passes,
+// resolveTypeParams resolves a `<…>` type-parameter list to soltype TypeParams in four passes,
 // since a default and a bound need opposite visibility. Pass 1 mints one fresh var per parameter.
 // Pass 2 resolves each parameter's default and then declares that parameter, so a default reads
 // only the earlier siblings, the ones instantiation can substitute for it. Pass 3 resolves each
 // constraint into its var's upper bound against the full list, so a forward `<T: U, U>`, a mutual
-// `<T: U, U: T>`, and an F-bound `<T: Foo<T>>` all resolve. The result stays in declaration order,
-// and the alias, class, enum, and function-annotation paths all route through here.
+// `<T: U, U: T>`, and an F-bound `<T: Foo<T>>` all resolve. Pass 4 checks each default against
+// its own parameter's constraint. The result stays in declaration order, and the alias, class,
+// enum, and function-annotation paths all route through here.
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
 	c.reportRequiredAfterDefault(params)
 	out := make([]*soltype.TypeParam, len(params))
@@ -44,6 +45,23 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 			// source wrote reads this field instead.
 			out[i].Constraint = ct
 		}
+	}
+	// Pass 4: check each default against its own parameter's bound, so `<T: string = number>`
+	// is rejected at the declaration. A default fills the argument at every use site that
+	// omits it, so a default outside the bound would supply an argument the bound forbids.
+	// This runs as its own pass because a bound is not resolved until pass 3, after the
+	// default it is compared against.
+	for i, p := range params {
+		if out[i].Default == nil || out[i].Constraint == nil {
+			continue
+		}
+		// Trial the comparison under a probe rather than running it live, so any bound it
+		// appends is rolled back. A default is a fully resolved type with nothing left to
+		// infer, so a live comparison would gain it nothing. It would cost something when the
+		// bound names a sibling parameter. Running `<T, U: T = number>` live compares number
+		// against T's var and leaves T carrying number as a lower bound, a claim that T must
+		// accept number that the source never wrote.
+		c.blameConstraintErrors(p.Default, c.ctx.trialUnderProbe(out[i].Default, out[i].Constraint))
 	}
 	return out
 }

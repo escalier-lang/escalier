@@ -188,3 +188,122 @@ func TestTypeParamDefaultIsPerReference(t *testing.T) {
 	require.Equal(t, "Pair<number, number>", values["p"])
 	require.Equal(t, "Pair<string, string>", values["q"])
 }
+
+// TestTypeParamDefaultAgainstBound covers the declaration-site check that a type parameter's
+// default satisfies its own bound. The default fills the argument at every use site that omits
+// it, so a default outside the bound would supply an argument the bound forbids. The check is
+// shared by every `<…>` clause, so a class, an alias, and a function each report it, and a
+// bound naming a sibling parameter is compared through that sibling's var, whose upper bound
+// pass 3 has already seeded.
+func TestTypeParamDefaultAgainstBound(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ClassDefaultOutsideBound",
+			src:  `class Box<T: string = number> { value: T }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "ClassDefaultInsideBound",
+			src:  `class Box<T: string = "hi"> { value: T }`,
+		},
+		{
+			name: "AliasDefaultOutsideBound",
+			src:  `type Box<T: string = number> = {value: T}`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "EnumDefaultOutsideBound",
+			src:  `enum Opt<T: string = number> { Some(value: T), None }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "FuncDefaultOutsideBound",
+			src:  `fn id<T: string = number>(x: T) -> T { return x }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "BoundNamesEarlierSibling",
+			src:  `class Box<U: string, T: U = number> { value: T }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			// The default sits before the required U, so the ordering rule reports it too;
+			// the bound comparison still runs and reports independently.
+			name: "BoundNamesLaterSibling",
+			src:  `class Box<T: U = number, U: string> { value: T }`,
+			want: []string{
+				"the default for type parameter `T` can never be used, since `U` is declared after it and has no default",
+				"cannot constrain number <: string",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, test.want, msgs)
+		})
+	}
+}
+
+// TestTypeParamDefaultOutsideBoundReportedOnce checks that a default outside its bound is
+// reported at the declaration and not again at each reference. The use-site check in
+// checkAliasArgBounds skips an argument filled from a default when substitution moved neither
+// the bound nor the default, since the declaration already compared exactly those two. A
+// reference whose arguments do move one of them is still checked, since only the reference
+// knows what the comparison is between.
+func TestTypeParamDefaultOutsideBoundReportedOnce(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "NoUseSite",
+			src:  `type Box<T: string = number> = {v: T}`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "TwoUseSitesOmitTheArgument",
+			src: `
+				type Box<T: string = number> = {v: T}
+				val a: Box = {v: 1}
+				val b: Box = {v: 2}
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "BoundNamesSiblingSoUseSiteStillChecks",
+			src: `
+				type P<A, B: A = number> = [A, B]
+				val p: P<string> = ["a", 1]
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "DefaultNamesSiblingSoUseSiteStillChecks",
+			src: `
+				type Pair<T, U: string = T> = [T, U]
+				val p: Pair<number> = [1, 1]
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, tt.want, msgs)
+		})
+	}
+}
