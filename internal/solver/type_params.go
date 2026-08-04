@@ -234,53 +234,21 @@ func (c *checker) resolveTypeArgsWithDefaults(
 // holds the written arguments, and args[got:] is what this writes. A parameter with no default
 // there gets a fresh var, since the caller's arity check has reported the omission.
 //
-// A default may name a sibling parameter, so the raw default cannot stand as the argument. The
-// declaration-site var it names is one shared object. Two references that both fall back to the
-// default would land on that same var, and each would then constrain what the other reads.
-// Substituting the sibling arguments over the default is what keeps the two references
-// independent.
-//
-// A default may also name a sibling declared after it, as the `U` of `<T = U, U = number>` does,
-// and that sibling may itself be filled from a default. One substitution pass would leave T
-// holding U's raw var. Substituting repeatedly resolves the chain instead. len(params)-1 passes
-// covers the longest chain a list of that size can hold.
+// A default may name an earlier sibling, as the `U = T` of `<T, U = T>` does, and the var that
+// name resolved to is the declaration's own, one shared object every reference would otherwise
+// constrain through. Substituting the arguments already in place for the earlier parameters
+// keeps each reference independent. Filling left to right makes one substitution per position
+// enough: by the time a default is filled, every argument it can name is final, because
+// resolveTypeParams rejects a default naming a later sibling or itself, so a chain like
+// `<T, U = T, V = U>` resolves position by position.
 func (c *checker) fillOmittedFromDefaults(params []*soltype.TypeParam, args []soltype.Type, got, lvl int) {
-	defaulted := false
 	for i := got; i < len(params); i++ {
-		if params[i].Default != nil {
-			args[i] = params[i].Default
-			defaulted = true
-		} else {
+		if params[i].Default == nil {
 			args[i] = c.freshAt(lvl)
+			continue
 		}
-	}
-	if !defaulted {
-		// Every omitted parameter was required, so the arity check has reported the reference
-		// and each argument is already a fresh var. There is no default to substitute into.
-		return
-	}
-	for range len(params) - 1 {
-		subst := newTypeSubst(params, args, nil, nil)
-		for i := got; i < len(params); i++ {
-			if params[i].Default != nil {
-				args[i] = args[i].Accept(subst, soltype.Positive)
-			}
-		}
-	}
-	// A cycle such as `<T = U, U = T>` names no type, so the passes above leave a
-	// declaration-site var standing. Substituting a fresh var for each parameter clears any
-	// that remain, which stops one reference's arguments from reaching another through the
-	// shared var. A default the passes did resolve holds no parameter var, so this leaves it
-	// alone.
-	escape := make([]soltype.Type, len(params))
-	for i := range escape {
-		escape[i] = c.freshAt(lvl)
-	}
-	subst := newTypeSubst(params, escape, nil, nil)
-	for i := got; i < len(params); i++ {
-		if params[i].Default != nil {
-			args[i] = args[i].Accept(subst, soltype.Positive)
-		}
+		subst := newTypeSubst(params[:i], args[:i], nil, nil)
+		args[i] = params[i].Default.Accept(subst, soltype.Positive)
 	}
 }
 
