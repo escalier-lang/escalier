@@ -819,6 +819,51 @@ func TestPrintConstructorTypeAnnotations(t *testing.T) {
 	}
 }
 
+// A method, getter, or setter member round-trips through the printer: parsing the rendered form
+// and printing it again lands on the same text. A setter writes no return arrow and the printer
+// omits it, and an accessor that writes no receiver still prints one.
+func TestPrintMemberTypeAnnotations(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"method", "{f(x: number) -> string}", "{\n    f(x: number) -> string\n}"},
+		{"method with type params", "{f<T>(x: T) -> T}", "{\n    f<T>(x: T) -> T\n}"},
+		{"method throws", "{parse(x: string) -> number throws SyntaxError}", "{\n    parse(x: string) -> number throws SyntaxError\n}"},
+		{"getter", "{get a(self) -> number}", "{\n    get a(self) -> number\n}"},
+		{"method with receiver", "{f(mut self, x: number) -> string}", "{\n    f(mut self, x: number) -> string\n}"},
+		{"setter", "{set a(mut self, v: number)}", "{\n    set a(mut self, v: number)\n}"},
+		{"setter with plain receiver", "{set a(self, v: number)}", "{\n    set a(self, v: number)\n}"},
+		// An accessor that writes no receiver still prints one, so the rendered form is the
+		// `.d.ts` converter's output rather than a byte-for-byte echo of the source.
+		{"getter without a receiver", "{get a() -> number}", "{\n    get a(self) -> number\n}"},
+		{"getter throws", "{get a(self) -> number throws RangeError}", "{\n    get a(self) -> number throws RangeError\n}"},
+		{"setter throws", "{set a(mut self, v: number) throws RangeError}", "{\n    set a(mut self, v: number) throws RangeError\n}"},
+		{
+			"beside a property",
+			"{f(x: number) -> string, origin: Point}",
+			"{\n    f(x: number) -> string,\n    origin: Point\n}",
+		},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn := parseTypeAnn(t, tt.input)
+			result, err := Print(typeAnn, opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+
+			// Re-parsing the rendered form and printing it again must land on the same text,
+			// which is what makes the output a form the source could have been written in.
+			reprinted, err := Print(parseTypeAnn(t, result), opts)
+			require.NoError(t, err)
+			require.Equal(t, result, reprinted)
+		})
+	}
+}
+
 func TestPrintBorrowTypeAnnotations(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1923,7 +1968,7 @@ func TestPrintThrowsClause(t *testing.T) {
 		{
 			name:  "object method",
 			input: "{m(self) -> number throws SyntaxError}",
-			want:  "{\n    m() -> number throws SyntaxError\n}",
+			want:  "{\n    m(self) -> number throws SyntaxError\n}",
 		},
 		{
 			name:  "object getter",

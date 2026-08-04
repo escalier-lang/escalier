@@ -493,6 +493,57 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 	return c.memberValue(lvl, blame, member), true
 }
 
+// objectMember resolves a read of a method, getter, or setter carried by a plain object type,
+// the members an object type annotation declares. It is the structural twin of
+// projectedMember, which does the same for a class instance.
+//
+// A PropertyElem deliberately does not resolve here, and neither does a miss. Both fall through
+// to the structural `{name: fieldVar}` requirement in valueProp, which is where the
+// read-after-write record, the borrow edges, the inexact tail, the union join, and
+// MissingPropertyError already live. Only the member kinds that requirement cannot express are
+// intercepted, so this adds a path rather than diverting one.
+func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
+	obj, ok := objectCarrier(carrier)
+	if !ok {
+		return pathResult{}, false
+	}
+	member, found := obj.ReadMember(name)
+	if !found {
+		return pathResult{}, false
+	}
+	if _, isProp := member.(*soltype.PropertyElem); isProp {
+		return pathResult{}, false
+	}
+	return c.memberValue(lvl, blame, member), true
+}
+
+// objectCarrier reads the object type a receiver denotes: the type itself, or the single
+// object among an unresolved var's lower bounds. It mirrors classCarrier and
+// classValueCarrier, and like them it declines a var whose bounds disagree, since there is no
+// one member list to read in that case.
+func objectCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		return t, true
+	case *soltype.TypeVarType:
+		var found *soltype.ObjectType
+		for _, lb := range t.LowerBounds {
+			obj, ok := lb.(*soltype.ObjectType)
+			if !ok {
+				continue
+			}
+			if found != nil && !equalType(found, obj) {
+				return nil, false
+			}
+			found = obj
+		}
+		if found != nil {
+			return found, true
+		}
+	}
+	return nil, false
+}
+
 // projectedClassMember looks name up on ct's class body, then walks the declared
 // `extends` chain when the class does not declare the member itself, so a member
 // inherited from a superclass reads through a subclass instance. It returns the member

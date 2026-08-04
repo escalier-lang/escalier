@@ -487,7 +487,11 @@ func (t *FuncTypeAnn) Accept(v Visitor) {
 				param.TypeAnn.Accept(v)
 			}
 		}
-		t.Return.Accept(v)
+		// A setter written in an object type annotation returns nothing and so writes no
+		// `-> R`, which is the one signature form that leaves Return nil.
+		if t.Return != nil {
+			t.Return.Accept(v)
+		}
 		if t.Throws != nil {
 			t.Throws.Accept(v)
 		}

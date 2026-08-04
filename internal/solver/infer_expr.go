@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -2068,34 +2069,122 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 // objElemBuilder accumulates object PropertyElems under JavaScript's last-wins,
 // first-position dedup: a repeated key updates the value in place at the key's
 // original position, so property names stay unique — the invariant ObjectType.Prop
-// and equalType rely on ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). Shared by inferObject
-// (object literals) and resolveObjectTypeAnn (object type annotations) so the dedup
-// rule lives in one place.
+// and equalType rely on ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). resolveObjectTypeAnn
+// collects a residual-free annotation's members through it. An object literal merges
+// its own operands in inferObject instead, since a literal's spread is a value.
 //
-// It is NOT recursive: it accumulates the direct properties of ONE object level.
-// Each property's type arrives already built — inferObject computes it with
-// inferExpr, resolveObjectTypeAnn with resolveTypeAnn — so a nested object is built
-// by that caller's recursion before add stores it.
+// It is NOT recursive: it accumulates the direct members of ONE object level. Each
+// member arrives already built, so a nested object is built by the caller's recursion
+// before addElem files it.
 type objElemBuilder struct {
 	elems []soltype.ObjTypeElem
-	pos   map[string]int // property name → index in elems
+	pos   map[memberSlot]int // occupied access slot → index in elems
+}
+
+// memberSlot is the access a named member occupies: the name plus whether the member answers a
+// read or a write. Two members collide only when they answer the same access, so a getter and a
+// setter of one name coexist while a second getter replaces the first. A property answers both,
+// so it collides with either half of a pair and displaces both.
+type memberSlot struct {
+	name  string
+	write bool
+}
+
+// memberSlots returns the accesses elem answers, the keys it occupies in the builder.
+func memberSlots(elem soltype.ObjTypeElem) []memberSlot {
+	name := soltype.ObjElemName(elem)
+	switch elem.(type) {
+	case *soltype.PropertyElem:
+		return []memberSlot{{name, false}, {name, true}}
+	case *soltype.MethodElem, *soltype.GetterElem:
+		return []memberSlot{{name, false}}
+	case *soltype.SetterElem:
+		return []memberSlot{{name, true}}
+	}
+	return nil
 }
 
 func newObjElemBuilder(capacity int) *objElemBuilder {
 	return &objElemBuilder{
 		elems: make([]soltype.ObjTypeElem, 0, capacity),
-		pos:   make(map[string]int, capacity),
+		pos:   make(map[memberSlot]int, capacity),
 	}
 }
 
-func (b *objElemBuilder) add(name string, t soltype.Type, optional, readonly bool) {
-	pe := &soltype.PropertyElem{Name: name, Type: t, Optional: optional, Readonly: readonly}
-	if i, dup := b.pos[name]; dup {
-		b.elems[i] = pe // last value wins, first position kept
-		return
+// addElem files a named member under every access it answers, replacing whatever held those
+// accesses before. The last member of a name wins and the first one's position is kept, which is
+// the rule `{a: 1, b: 2, a: 3}` follows to yield `{a: 3, b: 2}` and the unique-key shape
+// ObjectType.Prop and equalType rely on.
+//
+// Two methods of one name are the exception. They are the arms of an overload set rather than a
+// redeclaration, so the later signature joins the earlier element instead of replacing it,
+// matching what a class body builds through appendMethodSig.
+//
+// An unnamed member — a construct signature — occupies no slot and is appended as-is.
+//
+// The result reports whether this member displaced an earlier one, which is a redeclaration
+// rather than a first declaration. A caller that treats one as an error reports it and keeps the
+// collapsed list as the recovery. Merging two methods into an overload set is not a
+// displacement, so it reports false.
+func (b *objElemBuilder) addElem(elem soltype.ObjTypeElem) bool {
+	slots := memberSlots(elem)
+	if len(slots) == 0 {
+		b.elems = append(b.elems, elem)
+		return false
 	}
-	b.pos[name] = len(b.elems)
-	b.elems = append(b.elems, pe)
+	// Collect every position this member displaces. A property answers both accesses, so it can
+	// displace two elements at once — the getter and the setter of a pair.
+	displaced := []int{}
+	for _, slot := range slots {
+		i, held := b.pos[slot]
+		if !held {
+			continue
+		}
+		if incoming, isMethod := elem.(*soltype.MethodElem); isMethod {
+			if existing, wasMethod := b.elems[i].(*soltype.MethodElem); wasMethod {
+				existing.Signatures = append(existing.Signatures, incoming.Signatures...)
+				return false
+			}
+		}
+		if !slices.Contains(displaced, i) {
+			displaced = append(displaced, i)
+		}
+	}
+	// The earliest displaced position is the one this member inherits, keeping the first
+	// occurrence's place. Any other displaced element is tombstoned, since removing it here
+	// would shift every index already recorded in pos.
+	at := len(b.elems)
+	if len(displaced) > 0 {
+		at = slices.Min(displaced)
+		for _, i := range displaced {
+			// Release the accesses the displaced member held. One it answered and the
+			// incoming member does not must fall free rather than point at the replacement,
+			// so a getter overriding a property leaves the write open for a later setter.
+			for _, s := range memberSlots(b.elems[i]) {
+				delete(b.pos, s)
+			}
+			b.elems[i] = nil
+		}
+		b.elems[at] = elem
+	} else {
+		b.elems = append(b.elems, elem)
+	}
+	for _, slot := range slots {
+		b.pos[slot] = at
+	}
+	return len(displaced) > 0
+}
+
+// result returns the members in first-occurrence order, dropping the tombstones addElem leaves
+// where a later member displaced an earlier one it did not take the position of.
+func (b *objElemBuilder) result() []soltype.ObjTypeElem {
+	out := make([]soltype.ObjTypeElem, 0, len(b.elems))
+	for _, e := range b.elems {
+		if e != nil {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // inferMember types a field read (recv.prop) in value position: it resolves the
@@ -2234,6 +2323,13 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// A static read `Point.origin` resolves through member lookup here, since the
 	// structural path below reads only properties and misses a static method or accessor.
 	if res, ok := c.classValueMember(lvl, blame, name, recvCarrier); ok {
+		return res
+	}
+	// A method, getter, or setter carried by a plain object type resolves here, since the
+	// structural path below reads only properties. This is the annotation twin of the class
+	// lookups above: an object type annotation is the one source of such an object, an object
+	// literal having no syntax for these members.
+	if res, ok := c.objectMember(lvl, blame, name, recvCarrier); ok {
 		return res
 	}
 	// A union receiver reaches the structural requirement below, whose result is joined

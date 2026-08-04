@@ -998,12 +998,20 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		} else if receiver == nil {
 			params = parseDelimSeq(p, CloseParen, Comma, p.param)
 		}
+		closeParen := p.lexer.peek()
 		p.expect(CloseParen, ConsumeOnMatch)
 
-		p.expect(Arrow, ConsumeOnMatch)
-
-		retType := p.typeAnnRequired()
-		endSpan := retType.Span()
+		// A setter returns nothing, so it writes no `-> R`, matching how a setter is
+		// declared in a class body. A method and a getter both name what they yield and
+		// keep the arrow required. Written anyway, `-> R` still parses on a setter, so a
+		// hand-converted `.d.ts` accessor does not have to drop it.
+		var retType ast.TypeAnn
+		endSpan := closeParen.Span
+		if mod != "set" || p.lexer.peek().Type == Arrow {
+			p.expect(Arrow, ConsumeOnMatch)
+			retType = p.typeAnnRequired()
+			endSpan = retType.Span()
+		}
 
 		// A method, getter, or setter signature inside an object type declares what it
 		// raises the same way a standalone function type does, as in

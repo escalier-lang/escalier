@@ -1086,6 +1086,7 @@ func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
 func (*MissingSelfReceiverError) isSolverError()            {}
 func (*MethodOverloadReceiverMismatchError) isSolverError() {}
 func (*MultipleConstructorsError) isSolverError()           {}
+func (*DuplicateObjectMemberError) isSolverError()          {}
 func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
 func (*SubclassConstructorRequiredError) isSolverError()    {}
@@ -1447,6 +1448,29 @@ func (e *MultipleConstructorsError) Message() string {
 	return "Multiple constructors per class are not yet supported."
 }
 
+// DuplicateObjectMemberError fires on the second member of an object type annotation that
+// answers an access an earlier member already answered: two properties of one name, two getters,
+// a property beside a getter or a method, and so on. The later member wins so the object still
+// carries one member per access, and reporting it is what keeps the earlier one from being
+// dropped in silence. The later member carries the blame span.
+//
+// Two methods of one name are not a redeclaration. They are the arms of an overload set, so they
+// merge and no error is reported. A getter and a setter answer different accesses and likewise
+// coexist.
+//
+// A spread reaches none of this. `{...A, a: number}` overrides rather than redeclares, and
+// reduceObject merges it once the spread grounds, so an object written with one stays silent.
+type DuplicateObjectMemberError struct {
+	Name string
+	Elem spanned
+}
+
+func (e *DuplicateObjectMemberError) Span() ast.Span      { return e.Elem.Span() }
+func (e *DuplicateObjectMemberError) Related() []ast.Span { return nil }
+func (e *DuplicateObjectMemberError) Message() string {
+	return "An object type may declare '" + e.Name + "' only once."
+}
+
 // DuplicateConstructorSignatureError fires on the second and any later `new (…) -> T` member
 // in one object type annotation. soltype.ObjectType.Constructor() returns at most one
 // construct signature, and constrain checks a constructor requirement against that one. A
@@ -1489,12 +1513,19 @@ func (e *SubclassConstructorRequiredError) Message() string {
 	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
 }
 
+// spanned is a node that can carry blame without being a whole ast.Node. An
+// object-type-annotation member is one: it has a span, and no Accept, since the visitor
+// walks the annotation rather than descending into its member list.
+type spanned interface{ Span() ast.Span }
+
 // SetterArityError fires when a setter declares other than exactly one value parameter
 // beyond its `self` receiver. A setter's single parameter is the value being assigned,
-// so `set x(self)` and `set x(self, a, b)` are both malformed.
+// so `set x(self)` and `set x(self, a, b)` are both malformed. The rule is the same for a
+// class member and for a setter written in an object type annotation, so Elem is whichever
+// node the source wrote and carries the blame span.
 type SetterArityError struct {
 	Name  string
-	Elem  *ast.SetterElem
+	Elem  spanned
 	Count int // value parameters declared, excluding `self`
 }
 
