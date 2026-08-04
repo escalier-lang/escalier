@@ -439,6 +439,52 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 	p.printReturnAndThrows(sig.Return, sig.Throws)
 }
 
+// annMemberReceiver returns the receiver text a method, getter, or setter written in an object
+// type annotation prints, or "" for none. The parser peels `self` / `mut self` off into the
+// elem's Receiver, so it never reaches Fn.Params and has to be printed from there. A lifetime on
+// the receiver is not rendered, matching printMethodSig.
+//
+// fallback is what the member prints when the source wrote no receiver. An accessor passes
+// `self` or `mut self`, since it is an instance member and the `.d.ts` converter builds one with
+// the field nil. A method passes "", since a method annotation is commonly written with no
+// receiver at all.
+func annMemberReceiver(recv *ast.MethodReceiver, fallback string) string {
+	if recv == nil {
+		return fallback
+	}
+	if recv.Mut {
+		return "mut self"
+	}
+	return "self"
+}
+
+// printAnnMemberParams emits the parenthesized parameter list of a member annotation, leading
+// with recv when it is non-empty. It is the member-annotation counterpart of printMethodSig,
+// which takes the FuncSig a class member carries rather than the FuncTypeAnn an annotation does.
+func (p *Printer) printAnnMemberParams(recv string, params []*ast.Param) {
+	p.writeString("(")
+	first := true
+	if recv != "" {
+		p.writeString(recv)
+		first = false
+	}
+	for _, param := range params {
+		if !first {
+			p.writeString(", ")
+		}
+		first = false
+		p.printPattern(param.Pattern)
+		if param.Optional {
+			p.writeString("?")
+		}
+		if param.TypeAnn != nil {
+			p.writeString(": ")
+			p.printTypeAnn(param.TypeAnn)
+		}
+	}
+	p.writeString(")")
+}
+
 // printReturnAndThrows emits ` -> R` followed by any `throws T` clause, so every signature
 // form renders the pair alike. A nil ret emits no arrow, and neither a nil nor a `never`
 // throws emits a clause. `-> R` is greedy, so a function-typed return is parenthesized
@@ -1327,40 +1373,17 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 	case *ast.MethodTypeAnn:
 		p.printObjKey(e.Name)
 		p.printGenericParams(e.Fn.LifetimeParams, e.Fn.TypeParams)
-		p.writeString("(")
-		for i, param := range e.Fn.Params {
-			p.printPattern(param.Pattern)
-			if param.Optional {
-				p.writeString("?")
-			}
-			if param.TypeAnn != nil {
-				p.writeString(": ")
-				p.printTypeAnn(param.TypeAnn)
-			}
-			if i < len(e.Fn.Params)-1 {
-				p.writeString(", ")
-			}
-		}
-		p.writeString(")")
+		p.printAnnMemberParams(annMemberReceiver(e.Receiver, ""), e.Fn.Params)
 		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.GetterTypeAnn:
 		p.writeString("get ")
 		p.printObjKey(e.Name)
-		p.writeString("(self)")
+		p.printAnnMemberParams(annMemberReceiver(e.Receiver, "self"), nil)
 		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.SetterTypeAnn:
 		p.writeString("set ")
 		p.printObjKey(e.Name)
-		p.writeString("(mut self, ")
-		if len(e.Fn.Params) > 0 {
-			p.printPattern(e.Fn.Params[0].Pattern)
-			if e.Fn.Params[0].TypeAnn != nil {
-				p.writeString(": ")
-				p.printTypeAnn(e.Fn.Params[0].TypeAnn)
-			}
-		}
-		p.writeString(")")
-		// Setters require -> void in Escalier syntax
+		p.printAnnMemberParams(annMemberReceiver(e.Receiver, "mut self"), e.Fn.Params)
 		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)
 	case *ast.PropertyTypeAnn:
 		if e.Readonly {

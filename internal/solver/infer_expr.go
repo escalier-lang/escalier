@@ -2236,6 +2236,13 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	if res, ok := c.classValueMember(lvl, blame, name, recvCarrier); ok {
 		return res
 	}
+	// A method, getter, or setter carried by a plain object type resolves here, since the
+	// structural path below reads only properties. This is the annotation twin of the class
+	// lookups above: an object type annotation is the one source of such an object, an object
+	// literal having no syntax for these members.
+	if res, ok := c.objectMember(lvl, blame, name, recvCarrier); ok {
+		return res
+	}
 	// A union receiver reaches the structural requirement below, whose result is joined
 	// per member inside constrain by constrainUnionFieldRead. That join runs with no
 	// access to the enclosing throws sink, so the getters it may read through are

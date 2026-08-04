@@ -824,10 +824,9 @@ func TestPrintConstructorTypeAnnotations(t *testing.T) {
 // `throws` clause come along on a method. A setter writes no `-> R`, and the printer omits the
 // arrow rather than inventing a return type for it.
 //
-// A written `self` receiver is not covered. The three arms do not route through printMethodSig,
-// which takes a FuncSig rather than the FuncTypeAnn an annotation member carries, so a method
-// drops its receiver and an accessor prints one whether or not the source wrote it. That is
-// escalier-lang/escalier#635's territory and predates these members resolving at all.
+// A written receiver is rendered from the elem's Receiver, since the parser peels it off the
+// parameter list. An accessor that writes none still prints one, which is the form the `.d.ts`
+// converter's output relies on.
 func TestPrintMemberTypeAnnotations(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -838,7 +837,12 @@ func TestPrintMemberTypeAnnotations(t *testing.T) {
 		{"method with type params", "{f<T>(x: T) -> T}", "{\n    f<T>(x: T) -> T\n}"},
 		{"method throws", "{parse(x: string) -> number throws SyntaxError}", "{\n    parse(x: string) -> number throws SyntaxError\n}"},
 		{"getter", "{get a(self) -> number}", "{\n    get a(self) -> number\n}"},
+		{"method with receiver", "{f(mut self, x: number) -> string}", "{\n    f(mut self, x: number) -> string\n}"},
 		{"setter", "{set a(mut self, v: number)}", "{\n    set a(mut self, v: number)\n}"},
+		{"setter with plain receiver", "{set a(self, v: number)}", "{\n    set a(self, v: number)\n}"},
+		// An accessor that writes no receiver still prints one, so the rendered form is the
+		// `.d.ts` converter's output rather than a byte-for-byte echo of the source.
+		{"getter without a receiver", "{get a() -> number}", "{\n    get a(self) -> number\n}"},
 		{"getter throws", "{get a(self) -> number throws RangeError}", "{\n    get a(self) -> number throws RangeError\n}"},
 		{"setter throws", "{set a(mut self, v: number) throws RangeError}", "{\n    set a(mut self, v: number) throws RangeError\n}"},
 		{
@@ -1969,7 +1973,7 @@ func TestPrintThrowsClause(t *testing.T) {
 		{
 			name:  "object method",
 			input: "{m(self) -> number throws SyntaxError}",
-			want:  "{\n    m() -> number throws SyntaxError\n}",
+			want:  "{\n    m(self) -> number throws SyntaxError\n}",
 		},
 		{
 			name:  "object getter",

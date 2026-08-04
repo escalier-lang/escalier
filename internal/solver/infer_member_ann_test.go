@@ -236,17 +236,13 @@ func TestInferAccessorTypeAnnThrowsIsCovariant(t *testing.T) {
 	}
 }
 
-// A method or accessor written in an annotation describes a shape and is compared structurally,
-// but it cannot yet be read or called through. valueProp reaches a non-property member only via
-// its three class escape hatches — a class instance, a `self` read inside a class body, and a
-// static read off a class value — and every other receiver falls to the structural
-// `{name: fieldVar}` requirement, which matches a PropertyElem alone.
+// A method, getter, or setter written in an annotation can be read and called through, not only
+// compared. valueProp intercepts these member kinds on a plain object receiver, since the
+// structural `{name: fieldVar}` requirement it otherwise builds matches a PropertyElem alone.
 //
-// The gap was unreachable before an annotation could express these members, since an object
-// literal rejects method shorthand and no other producer builds a bare ObjectType carrying one.
-// A plain property on the same receiver reads normally, which is what isolates the cause to the
-// member's kind rather than to the annotation.
-func TestInferAnnMemberReadIsNotResolvedYet(t *testing.T) {
+// An object type annotation is the only source of such an object, an object literal having no
+// syntax for these members, so this path exists for the members this file adds.
+func TestInferAnnMemberRead(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
@@ -256,23 +252,189 @@ func TestInferAnnMemberReadIsNotResolvedYet(t *testing.T) {
 			name: "MethodCall",
 			src: `
 				declare fn make() -> {f(x: number) -> string, ...}
-				val s = make().f(1)
+				val s: string = make().f(1)
 			`,
-			want: []string{"3:20-3:21: object is missing property: f"},
+			want: nil,
+		},
+		{
+			// The receiver is a var holding the object rather than the object itself, which is
+			// the shape objectCarrier reads out of a var's lower bounds.
+			name: "MethodCallThroughABinding",
+			src: `
+				declare fn make() -> {f(x: number) -> string, ...}
+				val o = make()
+				val s: string = o.f(1)
+			`,
+			want: nil,
+		},
+		{
+			name: "MethodArgumentIsChecked",
+			src: `
+				declare fn make() -> {f(x: number) -> string, ...}
+				val s = make().f("nope")
+			`,
+			want: []string{`3:22-3:28: cannot constrain "nope" <: number`},
+		},
+		{
+			name: "MethodReturnIsChecked",
+			src: `
+				declare fn make() -> {f(x: number) -> string, ...}
+				val s: number = make().f(1)
+			`,
+			want: []string{"3:21-3:32: cannot constrain string <: number"},
 		},
 		{
 			name: "GetterRead",
 			src: `
 				declare fn make() -> {get a(self) -> number, ...}
-				val n = make().a
+				val n: number = make().a
 			`,
-			want: []string{"3:20-3:21: object is missing property: a"},
+			want: nil,
 		},
 		{
-			name: "PropertyReadStillWorks",
+			name: "GetterReadIsChecked",
+			src: `
+				declare fn make() -> {get a(self) -> number, ...}
+				val n: string = make().a
+			`,
+			want: []string{"3:21-3:29: cannot constrain number <: string"},
+		},
+		{
+			// A read resolves the getter half of a pair, so the setter does not shadow it.
+			name: "OverloadResolvesPerCall",
+			src: `
+				declare fn make() -> {f(x: number) -> number, f(x: string) -> string, ...}
+				val a: number = make().f(1)
+				val b: string = make().f("s")
+			`,
+			want: nil,
+		},
+		{
+			name: "SetterOnlyNameIsWriteOnly",
+			src: `
+				declare fn make() -> {set a(self, v: number), ...}
+				val n = make().a
+			`,
+			want: []string{"3:13-3:21: Property 'a' is write-only; it has a setter but no getter or field to read."},
+		},
+		{
+			// A name the object does not carry keeps the structural path's diagnostic, since
+			// the interception declines a miss rather than reporting one of its own.
+			name: "MissingNameIsStillReported",
+			src: `
+				declare fn make() -> {f(x: number) -> string}
+				val n = make().nope
+			`,
+			want: []string{"3:20-3:24: object is missing property: nope"},
+		},
+		{
+			// A property keeps the structural path, which is what carries the read-after-write
+			// record, the borrow edges, and the union join.
+			name: "PropertyReadIsUnaffected",
 			src: `
 				declare fn make() -> {a: number, ...}
-				val n = make().a
+				val n: number = make().a
+			`,
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(errs))
+		})
+	}
+}
+
+// Reading through a getter runs its body, so the read is an exceptional exit of the enclosing
+// body the way a call is. Reading a method is not: `o.f` only names the function, and what it
+// raises stays in the signature until it is called. Both rules already held for a class
+// instance, and reach an annotated object once its members resolve.
+func TestInferAnnAccessorReadRaises(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "GetterReadRaisesUndeclared",
+			src: `
+				declare fn make() -> {get a(self) -> number throws string, ...}
+				fn g() -> number { return make().a }
+			`,
+			want: []string{"3:31-3:39: cannot constrain string <: never"},
+		},
+		{
+			name: "GetterReadRaisesDeclared",
+			src: `
+				declare fn make() -> {get a(self) -> number throws string, ...}
+				fn g() -> number throws string { return make().a }
+			`,
+			want: nil,
+		},
+		{
+			name: "MethodReadDoesNotRaise",
+			src: `
+				declare fn make() -> {f() -> number throws string, ...}
+				fn g() -> fn () -> number throws string { return make().f }
+			`,
+			want: nil,
+		},
+		{
+			name: "SetterWriteRaisesUndeclared",
+			src: `
+				declare fn make() -> mut {set a(self, v: number) throws string, ...}
+				fn g() { var o = make() o.a = 5 }
+			`,
+			want: []string{"3:29-3:36: cannot constrain string <: never"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(errs))
+		})
+	}
+}
+
+// A field write resolves the setter half of an annotated object, which writeMember already
+// reached for a plain object type before a read did. The receiver must be mutable, so these bind
+// with `var` through a `mut` return.
+func TestInferAnnSetterWrite(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "Write",
+			src: `
+				declare fn make() -> mut {set a(self, v: number), ...}
+				fn g() { var o = make() o.a = 5 }
+			`,
+			want: nil,
+		},
+		{
+			name: "WrittenValueIsChecked",
+			src: `
+				declare fn make() -> mut {set a(self, v: number), ...}
+				fn g() { var o = make() o.a = "nope" }
+			`,
+			want: []string{`3:35-3:41: cannot constrain "nope" <: number`},
+		},
+		{
+			name: "GetterOnlyNameIsReadOnly",
+			src: `
+				declare fn make() -> mut {get a(self) -> number, ...}
+				fn g() { var o = make() o.a = 5 }
+			`,
+			want: []string{"3:29-3:36: Property 'a' is read-only; it has a getter but no setter or field to write."},
+		},
+		{
+			name: "PairWritesThenReads",
+			src: `
+				declare fn make() -> mut {get a(self) -> number, set a(self, v: number), ...}
+				fn g() -> number { var o = make() o.a = 5 return o.a }
 			`,
 			want: nil,
 		},
