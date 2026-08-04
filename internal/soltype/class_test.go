@@ -532,10 +532,16 @@ func TestObjectMemberGetterSetterSameName(t *testing.T) {
 
 // ReadMember and WriteMember resolve a name by access direction rather than declaration
 // order: a read takes the getter half of an accessor pair and a write takes the setter
-// half, regardless of which half the class body declares first. On a name carried by a
-// single element of any kind, both return that element, so a directional caller never
-// needs Member's declaration-order result. A caller that only asks whether the name is
-// present at all still uses Member.
+// half, regardless of which half the class body declares first. A caller that only asks
+// whether the name is present at all still uses Member.
+//
+// The direction is a tie-break between two elements sharing a name, not a filter on what
+// the access may reach. A name carried by one element resolves to that element in both
+// directions, whatever its kind. So a setter-only name resolves through ReadMember, and a
+// getter-only name through WriteMember. Neither says the access is legal. Both are what
+// let the caller tell an ABSENT name from one that is present but exposes no half in the
+// direction wanted, which is the difference between `object is missing property: x` and
+// the pointed `Property 'x' is write-only` / `is read-only`.
 func TestObjectReadWriteMember(t *testing.T) {
 	getter := &GetterElem{Name: "x", Type: numP()}
 	setter := &SetterElem{Name: "x", Param: strP()}
@@ -564,6 +570,8 @@ func TestObjectReadWriteMember(t *testing.T) {
 			wantWrite: setter,
 		},
 		{
+			// Resolved in both directions. The write direction reaching the getter is what
+			// lets writeAccessor report the pointed read-only error.
 			name:      "getter alone",
 			elems:     []ObjTypeElem{getter},
 			lookup:    "x",
@@ -571,6 +579,8 @@ func TestObjectReadWriteMember(t *testing.T) {
 			wantWrite: getter,
 		},
 		{
+			// The mirror: the read direction reaching the setter is what lets memberValue
+			// report the pointed write-only error.
 			name:      "setter alone",
 			elems:     []ObjTypeElem{setter},
 			lookup:    "x",
@@ -578,6 +588,10 @@ func TestObjectReadWriteMember(t *testing.T) {
 			wantWrite: setter,
 		},
 		{
+			// A name carried by no accessor half at all resolves to its own element in both
+			// directions. Without that fallback the two lookups would return only their
+			// preferred accessor kind, and every ordinary field and method access would
+			// resolve to nothing.
 			name:      "property",
 			elems:     []ObjTypeElem{prop, getter, setter},
 			lookup:    "p",
