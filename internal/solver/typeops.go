@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
@@ -650,19 +651,52 @@ func mergeSpreadOperands(operandElems [][]soltype.ObjTypeElem) []soltype.ObjType
 	return out
 }
 
-// mergeKey identifies the member two spread operands overlap on. A construct signature is
-// unnamed, so keying the merge on ObjElemName alone would fold it together with a property
-// literally named `""`, dropping whichever the merge visited first. ctor separates the two, so
-// `{new () -> number, "": string, ...B}` keeps both members, and two construct signatures still
-// collapse to the rightmost one.
+// mergeKey identifies the member two spread operands overlap on. Two members merge only when
+// their keys are equal.
+//
+// A named member — a property, method, getter, or setter — keys on its name, and they all share
+// one kind so that a getter and a property of the same name still merge with the rightmost
+// winning. A member with no name keys on its kind alone, since it has no name to distinguish it
+// by and no sibling of another kind it could be confused with.
+//
+// The kind is what separates the two groups, not an empty name, because a property key may
+// itself be the literal empty string. Keying every member on ObjElemName alone folded
+// `{new () -> number, "": string}` into one member and dropped whichever the merge reached
+// first, since ObjElemName answers `""` for both.
 type mergeKey struct {
-	name string
-	ctor bool
+	kind objElemKind
+	name string // meaningful only for kindNamed; an unnamed member leaves it empty
 }
 
+// objElemKind is the part of a mergeKey that says which group of members an element belongs to.
+// mergeKeyOf switches over every ObjTypeElem variant and panics on one it does not name, so a
+// new element kind has to state whether it merges by name or stands alone rather than silently
+// sharing another kind's key. The call signature escalier-lang/escalier#992 adds is the next
+// such kind, and it stands alone.
+type objElemKind uint8
+
+const (
+	kindNamed objElemKind = iota
+	kindConstructor
+	kindMapped
+	kindSpread
+)
+
 func mergeKeyOf(elem soltype.ObjTypeElem) mergeKey {
-	_, isCtor := elem.(*soltype.ConstructorElem)
-	return mergeKey{name: soltype.ObjElemName(elem), ctor: isCtor}
+	switch elem.(type) {
+	case *soltype.PropertyElem, *soltype.MethodElem, *soltype.GetterElem, *soltype.SetterElem:
+		return mergeKey{kind: kindNamed, name: soltype.ObjElemName(elem)}
+	case *soltype.ConstructorElem:
+		return mergeKey{kind: kindConstructor}
+	case *soltype.MappedElem:
+		// A mapped member and a spread each stand for a group of members the evaluator has not
+		// computed yet, so neither reaches a merge: reduceObject expands both into field groups
+		// before it merges, and bails out when one cannot ground.
+		return mergeKey{kind: kindMapped}
+	case *soltype.SpreadElem:
+		return mergeKey{kind: kindSpread}
+	}
+	panic(fmt.Sprintf("mergeKeyOf: unhandled ObjTypeElem %T", elem))
 }
 
 // mergeSpreadElem combines an earlier object member with a later one of the same name under Flow's
