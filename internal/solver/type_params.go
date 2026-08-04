@@ -88,24 +88,10 @@ func arityOfParamDecls(params []*ast.TypeParam) typeParamArity {
 }
 
 // resolveTypeArgs pairs the `<…>` type arguments a reference wrote with the parameters of the
-// declaration it names, and returns one argument per parameter. It is the instantiation twin
-// of resolveTypeParams, and the alias, enum, and class reference paths all route through it,
-// so a defaulted or miscounted reference resolves the same way whichever sort it names.
-//
-// Three things happen here. The written count is checked against arity, and an out-of-range
-// count is reported. Every written argument is resolved, so an unresolvable annotation reports
-// even in a position past the parameter count. An argument the reference omitted is filled
-// from its parameter's default, with the arguments already resolved substituted in, so the
-// `U = T` of `type Pair<T, U = T>` resolves `Pair<number>` to `Pair<number, number>`.
-//
-// An omitted argument with no default to fill it recovers to a fresh var, and so does one
-// whose annotation failed to resolve, so a downstream reference always has one argument per
-// parameter to substitute and never picks up a var belonging to the declaration.
-//
-// params may be shorter than arity.Total, which is how a class whose parameters are not
-// resolved yet reaches here. Those positions have no default to read, so each one recovers to
-// a fresh var. The result is nil when arity.Total is zero, and any arguments the reference
-// wrote past the parameter count are resolved, reported, and then dropped.
+// declaration it names, returning one per parameter or nil when there are none. Shared by the
+// alias, enum, and class paths, it reports an out-of-range count, fills an omitted argument
+// from its default, and recovers anything left to a fresh var. A class whose parameters have
+// not resolved yet passes params shorter than arity.Total, so those positions recover too.
 func (c *checker) resolveTypeArgs(
 	scope *Scope,
 	ref *ast.TypeRefTypeAnn,
