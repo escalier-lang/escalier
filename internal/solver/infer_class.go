@@ -488,6 +488,14 @@ func (c *checker) buildMemberSigs(
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
 			c.reportAccessorThrows(elem.Fn, elem, "setter")
+			// An instance setter mutates the instance, so it must hold mutable access to it.
+			// Report a plain `self` or shared `&self` receiver here, then keep the declared
+			// receiver on the elem so a write through it draws only this one diagnostic. An
+			// absent receiver is checkSelfReceiver's to report, and a static setter has no
+			// instance to mutate.
+			if elem.Receiver != nil && !elem.Receiver.Mut {
+				c.report(&SetterReceiverError{Name: name, Elem: elem})
+			}
 			// A well-formed setter declares exactly one value parameter beyond `self` — the
 			// value being assigned. Report a paramless or multi-parameter setter, then still
 			// build the elem from the first value parameter, or `unknown` when there is none,

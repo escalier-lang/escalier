@@ -1107,6 +1107,23 @@ func TestInferIndexNamedTypeStaysSymbolic(t *testing.T) {
 			wantSymbolic: `Point["x"]`,
 			wantExpanded: "number",
 		},
+		{
+			// An indexed access reads the class body, so a key carried by both halves of an
+			// accessor pair selects the getter's type whichever half the body declares first.
+			// Here `set x` comes before `get x`, and the access still reduces to the getter's
+			// `number` rather than reporting the key as write-only.
+			name: "ClassAccessorPair",
+			src: `
+				class C {
+					v: number,
+					set x(mut self, n: number) { self.v = n },
+					get x(self) -> number { return self.v },
+				}
+				type Result = C["x"]
+			`,
+			wantSymbolic: `C["x"]`,
+			wantExpanded: "number",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

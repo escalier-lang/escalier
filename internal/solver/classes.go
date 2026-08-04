@@ -475,7 +475,7 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 	if !ok || def.Body == nil {
 		return pathResult{}, false
 	}
-	member, found := c.projectedClassMember(ct, name, set.NewSet[string]())
+	member, found := c.projectedClassMember(ct, name, (*soltype.ObjectType).ReadMember, set.NewSet[string]())
 	if !found {
 		// The miss is rare, so project the whole body here to render the diagnostic at
 		// the instance's arguments rather than the declared type parameters.
@@ -499,7 +499,10 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 // Animal<T>` accessed at Dog<string> walks Animal<string>, and an inherited member typed
 // `T` projects to `string`. visited holds the class names already on the current chain,
 // bounding the walk on a cyclic hierarchy the same way constrainNominalWalk does.
-func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, visited set.Set[string]) (soltype.ObjTypeElem, bool) {
+//
+// lookup selects which half of a getter/setter pair the access wants. A read passes
+// ObjectType.ReadMember and a write passes ObjectType.WriteMember.
+func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, lookup memberLookup, visited set.Set[string]) (soltype.ObjTypeElem, bool) {
 	def, ok := c.ctx.classDef(ct.Name)
 	if !ok || def.Body == nil {
 		return nil, false
@@ -507,7 +510,7 @@ func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, visit
 	// Member names are invariant under substitution, so look the member up on the
 	// unprojected body and project only the one accessed, rather than rebuilding the
 	// whole body per access.
-	if member, found := def.Body.Member(name); found {
+	if member, found := lookup(def.Body, name); found {
 		return c.projectClassMember(def, ct, member), true
 	}
 	if visited.Contains(ct.Name) {
@@ -516,12 +519,17 @@ func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, visit
 	visited.Add(ct.Name)
 	for _, superType := range def.Supers {
 		superInstance := substituteSuperArgs(def, ct, superType)
-		if member, found := c.projectedClassMember(superInstance, name, visited); found {
+		if member, found := c.projectedClassMember(superInstance, name, lookup, visited); found {
 			return member, true
 		}
 	}
 	return nil, false
 }
+
+// memberLookup selects one named member off a class body. The two implementations are
+// ObjectType.ReadMember and ObjectType.WriteMember, which differ only in which half of a
+// getter/setter pair they return.
+type memberLookup func(*soltype.ObjectType, string) (soltype.ObjTypeElem, bool)
 
 // classBodyMember resolves a method, getter, or setter read off a class-body ObjectType —
 // the object `self` binds to inside a method or constructor body (M5 B3). It returns
@@ -553,14 +561,14 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, ca
 	if !ok {
 		return pathResult{}, false
 	}
-	member, found := obj.Member(name)
+	member, found := obj.ReadMember(name)
 	if !found {
 		return pathResult{}, false
 	}
 	if _, isProp := member.(*soltype.PropertyElem); isProp {
 		return pathResult{}, false
 	}
-	c.checkMethodReceiver(blame, recv, member)
+	c.checkReceiverMut(blame, recv, memberSelfParam(member))
 	return c.memberValue(lvl, blame, member), true
 }
 
@@ -652,6 +660,42 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 	return pathResult{value: out}
 }
 
+// writeAccessor resolves the accessor a field write `recv.prop = …` targets, across the
+// same three receiver shapes valueProp intercepts for a read: a class instance, a class
+// body reached through `self`, and a class value. The returned ok routes the write to
+// inferAccessorAssign. Every other member kind returns ok=false, so a field write keeps the
+// structural path, where the readonly check, the `written` record, and the borrow edges live.
+func (c *checker) writeAccessor(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
+	member, found := c.writeMember(name, carrier)
+	if !found {
+		return nil, false
+	}
+	// A setter is the member the write calls. A getter is routed here too, since it has no
+	// setter to call and only inferAccessorAssign knows to report that. The structural path
+	// matches a PropertyElem, finds none, and would blame a missing property instead.
+	switch member.(type) {
+	case *soltype.SetterElem, *soltype.GetterElem:
+		return member, true
+	}
+	return nil, false
+}
+
+// writeMember looks name up on carrier's class instance, class body, or class value,
+// whichever it resolves as, preferring the setter half of a getter/setter pair. It returns
+// found=false for any other receiver.
+func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
+	if ct, ok := classCarrier(carrier); ok {
+		return c.projectedClassMember(ct, name, (*soltype.ObjectType).WriteMember, set.NewSet[string]())
+	}
+	if obj, ok := carrier.(*soltype.ObjectType); ok {
+		return obj.WriteMember(name)
+	}
+	if obj, ok := classValueCarrier(carrier); ok {
+		return obj.WriteMember(name)
+	}
+	return nil, false
+}
+
 // strippedMethodSig returns a method signature as a plain callable, its SelfParam
 // dropped, since `p.m` binds the receiver and returns a function of the remaining
 // parameters. The receiver's own ownership is checked separately at member access as a
@@ -667,20 +711,20 @@ func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
 	}
 }
 
-// checkMethodReceiver rejects a `mut self` member reached from a plain-`self` body, which
-// holds only a shared borrow to lend. It constrains the enclosing `self` against the accessed
-// member's declared `self`. The four pairings:
+// checkReceiverMut rejects a `mut self` member reached through a receiver that holds only
+// a shared borrow to lend. It constrains the accessing receiver recv against the accessed
+// member's own declared `self`, which the caller passes as self. The four pairings:
 //
-//   - plain `self` body → `mut self` member: rejected, a shared borrow has no mut to lend
-//   - `mut self` body   → `mut self` member: ok
-//   - `mut self` body   → plain `self` member: ok, mutable downgrades to shared
-//   - plain `self` body → plain `self` member: ok
+//   - plain `self` receiver → `mut self` member: rejected, a shared borrow has no mut to lend
+//   - `mut self` receiver   → `mut self` member: ok
+//   - `mut self` receiver   → plain `self` member: ok, mutable downgrades to shared
+//   - plain `self` receiver → plain `self` member: ok
 //
-// It fires only inside a body, where the un-stripped `self` binding recv carries the caller's
-// mutability. The receiver is rebuilt as `Self` in that mutability, so the diagnostic reads
-// `immutable C <: mutable C`. A no-op for a static member, a property, or a non-class receiver.
-func (c *checker) checkMethodReceiver(blame ast.Node, recv soltype.Type, member soltype.ObjTypeElem) {
-	self := memberSelfParam(member)
+// recv is the un-stripped receiver, so it still carries the mutability the access has to
+// lend. The receiver is rebuilt as `Self` in that mutability, so the diagnostic reads
+// `immutable C <: mutable C`. A nil self, which a static member and a property both have,
+// is a no-op, as is a receiver that is not a class instance.
+func (c *checker) checkReceiverMut(blame ast.Node, recv soltype.Type, self *soltype.FuncParam) {
 	if self == nil {
 		return
 	}
@@ -689,10 +733,45 @@ func (c *checker) checkMethodReceiver(blame ast.Node, recv soltype.Type, member 
 		return
 	}
 	recvT := soltype.Type(inner)
-	if r, ok := recv.(*soltype.RefType); ok && r.Mut {
+	if lendsMut(recv) {
 		recvT = soltype.NewRef(true, nil, inner)
 	}
 	c.constrain(blame, recvT, self.Type)
+}
+
+// lendsMut reports whether recv has mutable access to lend: a `mut` borrow directly, or a
+// binding var whose lower bounds are all `mut` borrows. The look-through matches
+// classCarrier's, since a `mut` borrow that reaches a receiver position through a call
+// result or a branch join arrives as a variable with the borrow among its lower bounds
+// rather than as a bare RefType. `g(c).x = 5`, where `g` returns `mut C`, is one such
+// receiver.
+//
+// EVERY lower bound must be mutable, since each is a value the receiver may actually hold
+// at run time. A join of `mut C` and `C` lends no mutable access, because the branch taken
+// may be the immutable one. Reporting mutable off a single bound would accept a `mut self`
+// setter write the structural field-write path rejects on the same receiver.
+func lendsMut(recv soltype.Type) bool {
+	switch recv := recv.(type) {
+	case *soltype.RefType:
+		return recv.Mut
+	case *soltype.TypeVarType:
+		sawBound := false
+		for _, lb := range recv.LowerBounds {
+			if lb == soltype.Type(recv) {
+				// A vacuous `v <: v` self-edge constrains nothing, the same edge readCarrier
+				// drops. It names no value the receiver holds, so it neither grants nor
+				// withholds mutable access.
+				continue
+			}
+			r, ok := lb.(*soltype.RefType)
+			if !ok || !r.Mut {
+				return false
+			}
+			sawBound = true
+		}
+		return sawBound
+	}
+	return false
 }
 
 // memberSelfParam returns the `self` receiver of a readable member, a method or getter, or
@@ -735,7 +814,7 @@ func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier
 	if !ok {
 		return pathResult{}, false
 	}
-	member, found := obj.Member(name)
+	member, found := obj.ReadMember(name)
 	if !found {
 		return pathResult{}, false
 	}

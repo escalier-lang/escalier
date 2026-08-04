@@ -243,3 +243,271 @@ func TestInferMemberAssignClassReceiver(t *testing.T) {
 		})
 	}
 }
+
+// A field write whose receiver carries a setter under the written name is a setter call,
+// not a field store. It never mints the structural one-property requirement, which
+// constrain's object arm resolves with ObjectType.Prop and so cannot match a SetterElem.
+// The source is checked against the setter's declared parameter and the receiver against
+// the setter's own `self`.
+func TestInferMemberAssignSetter(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "self receiver inside a mut self method",
+			src:  `class C { v: number, set x(mut self, n: number) { self.v = n }, m(mut self) { self.x = 5 } }`,
+		},
+		{
+			name: "mut instance receiver",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				fn f(c: mut C) { c.x = 5 }
+			`,
+		},
+		{
+			name: "immutable instance receiver has no mut to lend",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				fn f(c: C) { c.x = 5 }
+			`,
+			want: []string{"3:18-3:21: cannot constrain immutable C <: mutable C"},
+		},
+		{
+			// A setter mutates the instance, so a plain `self` receiver is rejected at the
+			// declaration. The write itself draws nothing further, since the elem keeps the
+			// declared receiver and the diagnostic belongs to the declaration.
+			name: "plain self setter is rejected at its declaration",
+			src: `
+				class C { set x(self, n: number) { } }
+				fn f(c: C) { c.x = 5 }
+			`,
+			want: []string{"2:15-2:41: Setter 'x' must declare a `mut self` receiver; writing through it mutates the instance."},
+		},
+		{
+			name: "mut self setter reached from a plain self body",
+			src:  `class C { v: number, set x(mut self, n: number) { self.v = n }, m(self) { self.x = 5 } }`,
+			want: []string{"1:75-1:81: cannot constrain immutable C <: mutable C"},
+		},
+		{
+			name: "value is checked against the setter parameter",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				fn f(c: mut C) { c.x = "hi" }
+			`,
+			want: []string{`3:28-3:32: cannot constrain "hi" <: number`},
+		},
+		{
+			name: "inherited setter resolves through a subclass instance",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				class D extends C { constructor(mut self) { } }
+				fn f(d: mut D) { d.x = 5 }
+			`,
+		},
+		{
+			name: "setter write inside the class's own constructor",
+			src: `
+				class C {
+					v: number,
+					constructor(mut self) { self.v = 0 self.x = 5 },
+					set x(mut self, n: number) { self.v = n },
+				}
+			`,
+		},
+		{
+			name: "generic setter parameter projects the instance argument",
+			src: `
+				class Box<T> { v: T, set x(mut self, n: T) { self.v = n } }
+				fn f(b: mut Box<number>) { b.x = "hi" }
+			`,
+			want: []string{`3:38-3:42: cannot constrain "hi" <: number`},
+		},
+		{
+			name: "static setter",
+			src: `
+				class C { static set x(n: number) { } }
+				fn f() { C.x = 5 }
+			`,
+		},
+		{
+			name: "static setter rejects a wrongly-typed value",
+			src: `
+				class C { static set x(n: number) { } }
+				fn f() { C.x = "hi" }
+			`,
+			want: []string{`3:20-3:24: cannot constrain "hi" <: number`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(errs))
+		})
+	}
+}
+
+// A getter and a setter that share a name resolve by direction rather than by declaration
+// order: a write takes the setter and a read takes the getter, whichever half comes first
+// in the class body. ObjectType.WriteMember and ObjectType.ReadMember are the two lookups
+// that make that choice.
+func TestInferMemberAssignAccessorPair(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "setter declared first",
+			src: `
+				class C {
+					v: number,
+					set x(mut self, n: number) { self.v = n },
+					get x(self) -> number { return self.v },
+				}
+				fn f(c: mut C) -> number {
+					c.x = 5
+					return c.x
+				}
+			`,
+		},
+		{
+			name: "getter declared first",
+			src: `
+				class C {
+					v: number,
+					get x(self) -> number { return self.v },
+					set x(mut self, n: number) { self.v = n },
+				}
+				fn f(c: mut C) -> number {
+					c.x = 5
+					return c.x
+				}
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Empty(t, messagesWithSpan(errs))
+		})
+	}
+}
+
+// A write to a getter-only member has no setter to call. It reports ReadOnlyPropertyError,
+// the mirror of the WriteOnlyPropertyError a read of a setter-only member reports.
+func TestInferMemberAssignGetterOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "instance receiver",
+			src: `
+				class C { v: number, get x(self) -> number { return self.v } }
+				fn f(c: mut C) { c.x = 5 }
+			`,
+			want: []string{"3:22-3:29: Property 'x' is read-only; it has a getter but no setter or field to write."},
+		},
+		{
+			name: "self receiver",
+			src:  `class C { v: number, get x(self) -> number { return self.v }, m(mut self) { self.x = 5 } }`,
+			want: []string{"1:77-1:87: Property 'x' is read-only; it has a getter but no setter or field to write."},
+		},
+		{
+			name: "static receiver",
+			src: `
+				class C { static get x() -> number { return 1 } }
+				fn f() { C.x = 5 }
+			`,
+			want: []string{"3:14-3:21: Property 'x' is read-only; it has a getter but no setter or field to write."},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(errs))
+		})
+	}
+}
+
+// A setter write evaluates to the value just written, widened the way a field write
+// widens it, so a caller reads `number` whether `x` is a field or a setter. Nothing is
+// recorded in `written`, so a later read of the same name runs the getter rather than
+// returning the value just passed in.
+func TestInferMemberAssignSetterValue(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class C {
+			v: number,
+			get x(self) -> string { return "s" },
+			set x(mut self, n: number) { self.v = n },
+		}
+		fn written(c: mut C) { return (c.x = 5) }
+		fn readBack(c: mut C) { c.x = 5
+			return c.x
+		}
+	`)
+	require.Empty(t, messagesWithSpan(errs))
+	require.Equal(t, "fn (c: mut C) -> number", values["written"])
+	require.Equal(t, "fn (c: mut C) -> string", values["readBack"])
+}
+
+// A `mut` borrow reaches a receiver position through a call result or a branch join as a
+// variable carrying the borrow among its lower bounds, not as a bare RefType. The setter
+// write looks through that variable for the receiver's mutability, so it accepts the same
+// receivers a field write and a `mut self` method call accept. An immutable receiver is
+// still rejected.
+func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "call result",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				declare fn g(c: mut C) -> mut C
+				fn f(c: mut C) { g(c).x = 5 }
+			`,
+		},
+		{
+			name: "branch join",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				fn f(a: mut C, b: mut C, cond: boolean) { val r = if (cond) { a } else { b }
+					r.x = 5
+				}
+			`,
+		},
+		{
+			// Every value the receiver may hold has to lend mutable access. A join with an
+			// immutable branch does not, since that branch may be the one taken, so it is
+			// rejected exactly as the structural field-write path rejects it.
+			name: "branch join with one immutable arm",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				fn f(a: mut C, b: C, cond: boolean) { val r = if (cond) { a } else { b }
+					r.x = 5
+				}
+			`,
+			want: []string{"4:6-4:9: cannot constrain immutable C <: mutable C"},
+		},
+		{
+			name: "immutable call result",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				declare fn g(c: C) -> C
+				fn f(c: C) { g(c).x = 5 }
+			`,
+			want: []string{"4:18-4:24: cannot constrain immutable C <: mutable C"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(errs))
+		})
+	}
+}

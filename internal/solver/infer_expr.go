@@ -1700,6 +1700,12 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		return voidT
 	}
 	recv := c.inferWriteReceiver(scope, lvl, m.Object)
+	// An accessor named prop resolves here rather than through the structural requirement
+	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
+	// with ObjectType.Prop, so an accessor would read there as a missing property.
+	if accessor, ok := c.writeAccessor(m.Prop.Name, readCarrier(recv)); ok {
+		return c.inferAccessorAssign(e, m, recv, source, accessor, assignStmt)
+	}
 	w := widen(source)
 	// An owned-mutable field takes the immutable→mutable upgrade through the same shared
 	// helper as the other value-flow sites, so the field write stays consistent with them:
@@ -1764,6 +1770,49 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	}
 	// The assignment evaluates to the value just stored. recordType overwrites the
 	// `void` recovery type inferAssign recorded on e before dispatching here.
+	c.recordType(e, w)
+	return w
+}
+
+// inferAccessorAssign types a write `recv.prop = source` that resolved to an accessor. A
+// getter-only member is reported, having no setter to call. A setter write is a call, not
+// a store: it checks the source against the setter's parameter and the receiver against
+// its `self`. It records nothing in `written`, since a setter has no cell a later read
+// could shortcut to, and nothing in the throws sink, since a setter cannot raise until #972.
+func (c *checker) inferAccessorAssign(
+	e *ast.BinaryExpr,
+	m *ast.MemberExpr,
+	recv soltype.Type,
+	source soltype.Type,
+	accessor soltype.ObjTypeElem,
+	assignStmt ast.Stmt,
+) soltype.Type {
+	setter, ok := accessor.(*soltype.SetterElem)
+	if !ok {
+		out := c.report(&ReadOnlyPropertyError{Name: m.Prop.Name, Site: e})
+		c.recordType(e, out)
+		return out
+	}
+	errsBefore := len(c.errs)
+	c.checkReceiverMut(e.Left, recv, setter.SelfParam)
+	c.constrain(e.Right, source, setter.Param)
+	// A concretely owned parameter takes the value out of this frame, so the source
+	// binding is consumed and a later use of it is a use-after-move. This mirrors
+	// consumeCallArgs, since a setter write is a call on the argument side. The move
+	// records against the assignment's statement, resolved from assignStmt rather than
+	// c.fn.currentStmt, which inferring the receiver and source may have overwritten with
+	// an inner branch statement. A rejected write records no move.
+	if c.fn != nil && len(c.errs) == errsBefore && isConcreteOwned(setter.Param) {
+		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
+			c.consumeOwned(e.Right, source, e.Right, ref)
+			c.recordEscapeSite(e.Right, ref)
+		}
+	}
+	// The assignment evaluates to the value just written, widened the way a field write
+	// widens it, so `val b = (c.x = 5)` reads `number` whether `x` is a field or a setter.
+	// recordType overwrites the `void` recovery type inferAssign recorded on e before
+	// dispatching here.
+	w := widen(source)
 	c.recordType(e, w)
 	return w
 }

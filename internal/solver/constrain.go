@@ -1488,7 +1488,7 @@ func (c *Context) readCarrierObject(carrier soltype.Type) (*soltype.ObjectType, 
 // as undefined at runtime. An absent or setter-only member has hasValue false, so a property
 // readable on no member surfaces as a missing-property error rather than bare undefined.
 func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.Type, hasValue, mayUndef bool) {
-	member, found := obj.Member(name)
+	member, found := obj.ReadMember(name)
 	if !found {
 		return nil, false, true
 	}
@@ -1565,9 +1565,18 @@ func (c *Context) constrainIntoIndexSignature(sub, sup *soltype.ObjectType, supe
 // against the sub's same-named member by variance: a method by its receiver-stripped
 // callable signature (first arm; overload dispatch is E1), a getter covariantly, a setter
 // contravariantly. A missing or wrong-kind member fails.
+//
+// A setter requirement resolves the sub's setter half and every other requirement its
+// getter half, so a sub carrying an accessor pair satisfies both requirements whichever
+// half it declares first. A method requirement is unaffected, since no name is carried by
+// both a method and an accessor.
 func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *soltype.ObjectType, seen *seenPairs, mutCtx bool) []SolverError {
 	name := soltype.ObjElemName(superElem)
-	subElem, ok := sub.Member(name)
+	var lookup memberLookup = (*soltype.ObjectType).ReadMember
+	if _, isSetter := superElem.(*soltype.SetterElem); isSetter {
+		lookup = (*soltype.ObjectType).WriteMember
+	}
+	subElem, ok := lookup(sub, name)
 	if !ok {
 		return []SolverError{&MissingPropertyError{Sub: sub, Super: sup, Name: name}}
 	}

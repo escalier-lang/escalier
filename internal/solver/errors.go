@@ -1090,7 +1090,9 @@ func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
 func (*SubclassConstructorRequiredError) isSolverError()    {}
 func (*WriteOnlyPropertyError) isSolverError()              {}
+func (*ReadOnlyPropertyError) isSolverError()               {}
 func (*SetterArityError) isSolverError()                    {}
+func (*SetterReceiverError) isSolverError()                 {}
 func (*RecursiveMethodAnnotationError) isSolverError()      {}
 func (*FieldNotInitializedError) isSolverError()            {}
 func (*ReadBeforeInitError) isSolverError()                 {}
@@ -1150,6 +1152,20 @@ func (e *WriteOnlyPropertyError) Span() ast.Span      { return e.Site.Span() }
 func (e *WriteOnlyPropertyError) Related() []ast.Span { return nil }
 func (e *WriteOnlyPropertyError) Message() string {
 	return "Property '" + e.Name + "' is write-only; it has a setter but no getter or field to read."
+}
+
+// ReadOnlyPropertyError fires when a getter-only member is written, as in `c.value = 5`
+// where `value` is declared only with `get value(...)`. A getter defines a read, not a
+// writable location. It is the write-side mirror of WriteOnlyPropertyError.
+type ReadOnlyPropertyError struct {
+	Name string
+	Site ast.Node
+}
+
+func (e *ReadOnlyPropertyError) Span() ast.Span      { return e.Site.Span() }
+func (e *ReadOnlyPropertyError) Related() []ast.Span { return nil }
+func (e *ReadOnlyPropertyError) Message() string {
+	return "Property '" + e.Name + "' is read-only; it has a getter but no setter or field to write."
 }
 
 // InstancePatternNotClassError fires when the name in an instance pattern `Name { ... }`
@@ -1453,6 +1469,21 @@ func (e *SetterArityError) Span() ast.Span      { return e.Elem.Span() }
 func (e *SetterArityError) Related() []ast.Span { return nil }
 func (e *SetterArityError) Message() string {
 	return "Setter '" + e.Name + "' must declare exactly one value parameter; found " + strconv.Itoa(e.Count) + "."
+}
+
+// SetterReceiverError fires when an instance setter declares a receiver other than `mut
+// self`. Writing through a setter mutates the instance, so a plain `self` or a shared
+// `&self` receiver holds no mutable access to do it with. A static setter has no instance
+// to mutate and declares no receiver, so it never reaches this.
+type SetterReceiverError struct {
+	Name string
+	Elem *ast.SetterElem
+}
+
+func (e *SetterReceiverError) Span() ast.Span      { return e.Elem.Span() }
+func (e *SetterReceiverError) Related() []ast.Span { return nil }
+func (e *SetterReceiverError) Message() string {
+	return "Setter '" + e.Name + "' must declare a `mut self` receiver; writing through it mutates the instance."
 }
 
 // RecursiveMethodAnnotationError fires when a group of mutually recursive methods

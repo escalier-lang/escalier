@@ -566,6 +566,65 @@ func (o *ObjectType) Member(name string) (ObjTypeElem, bool) {
 	return nil, false
 }
 
+// ReadMember returns the member a READ of name resolves to. When a getter and a
+// setter share the name, the getter is the half a read wants, so it wins over
+// declaration order. `class C { set x(mut self, n: number) {…}, get x(self) -> number
+// {…} }` read through `c.x` therefore yields the getter's `number` rather than the
+// setter Member would return. Every other member kind resolves the same as Member.
+//
+// A setter-only name still resolves HERE, to the setter. This is not a claim that the
+// member is readable. It is what lets a caller tell a name that is absent from one that
+// is present but exposes no read, so `memberValue` can report `Property 'x' is
+// write-only` instead of the generic missing-property error a not-found would produce.
+func (o *ObjectType) ReadMember(name string) (ObjTypeElem, bool) {
+	return o.preferredMember(name, func(e ObjTypeElem) bool {
+		_, ok := e.(*GetterElem)
+		return ok
+	})
+}
+
+// WriteMember returns the member a WRITE of name resolves to, the mirror of
+// ReadMember. When a getter and a setter share the name, the setter is the half a
+// write wants. `class C { get x(self) -> number {…}, set x(mut self, n: number) {…} }`
+// written through `c.x = 5` therefore checks 5 against the setter's parameter rather
+// than against the getter Member would return.
+//
+// A getter-only name resolves here to the getter, the mirror of ReadMember resolving a
+// setter-only name. That is what lets `writeAccessor` report `Property 'x' is read-only`
+// rather than the generic missing-property error a not-found would produce.
+func (o *ObjectType) WriteMember(name string) (ObjTypeElem, bool) {
+	return o.preferredMember(name, func(e ObjTypeElem) bool {
+		_, ok := e.(*SetterElem)
+		return ok
+	})
+}
+
+// preferredMember returns the first element named name that satisfies preferred, or
+// the first element named name at all when none does. It is the shared scan behind
+// ReadMember and WriteMember, which differ only in which half of a getter/setter pair
+// they prefer.
+//
+// The preference is a tie-break between two elements sharing a name, not a filter. Both
+// callers pass a predicate matching a single accessor kind, so without the fallback
+// ReadMember would return only getters and every property and method read would resolve
+// to nothing. The fallback is therefore what carries the ordinary members, and returning
+// the opposite accessor half for an accessor-only name follows from the same rule.
+func (o *ObjectType) preferredMember(name string, preferred func(ObjTypeElem) bool) (ObjTypeElem, bool) {
+	var first ObjTypeElem
+	for _, e := range o.Elems {
+		if ObjElemName(e) != name {
+			continue
+		}
+		if preferred(e) {
+			return e, true
+		}
+		if first == nil {
+			first = e
+		}
+	}
+	return first, first != nil
+}
+
 // Constructor returns the object's constructor call signature and whether it carries
 // one. A class value carries exactly one ConstructorElem, so this is the lookup a call
 // site and the nominal-value constrain rule use to reach the constructor without a
