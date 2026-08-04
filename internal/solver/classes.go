@@ -668,11 +668,21 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 //  2. a class body, the object `self` binds to inside a method or constructor
 //  3. a class value, the receiver of a static write such as `C.x = 5`
 //
-// Each shape is looked up with the setter half of a getter/setter pair preferred. It
-// returns the resolved element only when it is a getter or a setter, since those are the
-// two kinds the structural write requirement cannot see. A plain field, a method, and a
-// name no receiver carries all return ok=false, leaving the caller on the structural path
-// that already types them.
+// Each shape is looked up with the setter half of a getter/setter pair preferred. The
+// returned ok is a ROUTING answer — whether the write belongs to inferAccessorAssign
+// rather than to the structural requirement — not a claim that the write is legal. The
+// two accessor kinds answer it for different reasons:
+//
+//   - a setter is the member the write actually calls;
+//   - a getter is a write that has no setter to call, and only inferAccessorAssign knows
+//     to say so. Left to the structural path it reads as `object is missing property: x`,
+//     since that path matches a PropertyElem and finds none.
+//
+// A plain field, a method, and a name no receiver carries all return ok=false. A field
+// write in particular MUST fall through, since the structural path is where the readonly
+// check, the owned-mutable upgrade, the `written` record, and the alias and field-store
+// edges live. This is the write-side counterpart of classBodyMember returning ok=false for
+// a PropertyElem.
 func (c *checker) writeAccessor(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
 	member, found := c.writeMember(name, carrier)
 	if !found {
