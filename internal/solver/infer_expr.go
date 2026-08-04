@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -2078,24 +2079,111 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 // by that caller's recursion before add stores it.
 type objElemBuilder struct {
 	elems []soltype.ObjTypeElem
-	pos   map[string]int // property name → index in elems
+	pos   map[memberSlot]int // occupied access slot → index in elems
+}
+
+// memberSlot is the access a named member occupies: the name plus whether the member answers a
+// read or a write. Two members collide only when they answer the same access, so a getter and a
+// setter of one name coexist while a second getter replaces the first. A property answers both,
+// so it collides with either half of a pair and displaces both.
+type memberSlot struct {
+	name  string
+	write bool
+}
+
+// memberSlots returns the accesses elem answers, the keys it occupies in the builder.
+func memberSlots(elem soltype.ObjTypeElem) []memberSlot {
+	name := soltype.ObjElemName(elem)
+	switch elem.(type) {
+	case *soltype.PropertyElem:
+		return []memberSlot{{name, false}, {name, true}}
+	case *soltype.MethodElem, *soltype.GetterElem:
+		return []memberSlot{{name, false}}
+	case *soltype.SetterElem:
+		return []memberSlot{{name, true}}
+	}
+	return nil
 }
 
 func newObjElemBuilder(capacity int) *objElemBuilder {
 	return &objElemBuilder{
 		elems: make([]soltype.ObjTypeElem, 0, capacity),
-		pos:   make(map[string]int, capacity),
+		pos:   make(map[memberSlot]int, capacity),
 	}
 }
 
 func (b *objElemBuilder) add(name string, t soltype.Type, optional, readonly bool) {
-	pe := &soltype.PropertyElem{Name: name, Type: t, Optional: optional, Readonly: readonly}
-	if i, dup := b.pos[name]; dup {
-		b.elems[i] = pe // last value wins, first position kept
+	b.addElem(&soltype.PropertyElem{Name: name, Type: t, Optional: optional, Readonly: readonly})
+}
+
+// addElem files a named member under every access it answers, replacing whatever held those
+// accesses before. The last member of a name wins and the first one's position is kept, which is
+// the rule `{a: 1, b: 2, a: 3}` follows to yield `{a: 3, b: 2}` and the unique-key shape
+// ObjectType.Prop and equalType rely on.
+//
+// Two methods of one name are the exception. They are the arms of an overload set rather than a
+// redeclaration, so the later signature joins the earlier element instead of replacing it,
+// matching what a class body builds through appendMethodSig.
+//
+// An unnamed member — a construct signature — occupies no slot and is appended as-is.
+func (b *objElemBuilder) addElem(elem soltype.ObjTypeElem) {
+	slots := memberSlots(elem)
+	if len(slots) == 0 {
+		b.elems = append(b.elems, elem)
 		return
 	}
-	b.pos[name] = len(b.elems)
-	b.elems = append(b.elems, pe)
+	// Collect every position this member displaces. A property answers both accesses, so it can
+	// displace two elements at once — the getter and the setter of a pair.
+	displaced := []int{}
+	for _, slot := range slots {
+		i, held := b.pos[slot]
+		if !held {
+			continue
+		}
+		if incoming, isMethod := elem.(*soltype.MethodElem); isMethod {
+			if existing, wasMethod := b.elems[i].(*soltype.MethodElem); wasMethod {
+				existing.Signatures = append(existing.Signatures, incoming.Signatures...)
+				return
+			}
+		}
+		if !slices.Contains(displaced, i) {
+			displaced = append(displaced, i)
+		}
+	}
+	// The earliest displaced position is the one this member inherits, keeping the first
+	// occurrence's place. Any other displaced element is tombstoned, since removing it here
+	// would shift every index already recorded in pos.
+	at := len(b.elems)
+	if len(displaced) > 0 {
+		at = slices.Min(displaced)
+		for _, i := range displaced {
+			// Release the accesses the displaced member held. One it answered and the
+			// incoming member does not must fall free rather than point at the replacement,
+			// so a getter overriding a property leaves the write open for a later setter.
+			for _, s := range memberSlots(b.elems[i]) {
+				delete(b.pos, s)
+			}
+			b.elems[i] = nil
+		}
+		b.elems[at] = elem
+	} else {
+		b.elems = append(b.elems, elem)
+	}
+	for _, slot := range slots {
+		b.pos[slot] = at
+	}
+}
+
+// result returns the members in first-occurrence order, dropping the tombstones addElem leaves
+// where a later member displaced an earlier one it did not take the position of.
+func (b *objElemBuilder) result() []soltype.ObjTypeElem {
+	out := make([]soltype.ObjTypeElem, 0, len(b.elems))
+	for _, e := range b.elems {
+		if e != nil {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // inferMember types a field read (recv.prop) in value position: it resolves the

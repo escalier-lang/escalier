@@ -41,7 +41,7 @@ func TestInferMemberTypeAnnRoundTrip(t *testing.T) {
 		{
 			"BesideProperty",
 			`type Result = {f(x: number) -> string, origin: number}`,
-			"{origin: number, f(x: number) -> string}",
+			"{f(x: number) -> string, origin: number}",
 		},
 		{
 			"UnderSpread",
@@ -58,10 +58,9 @@ func TestInferMemberTypeAnnRoundTrip(t *testing.T) {
 	}
 }
 
-// A named member is keyed by kind as well as by name, so it does not file under the property
-// dedup builder and is appended after the properties. That ordering is why BesideProperty above
-// renders the method last while the source wrote it first. A generic method keeps its own type
-// parameters, which the enclosing annotation does not bind.
+// Every member of an annotation goes through one builder, so the object renders in the order the
+// source wrote it whatever kinds it mixes. A generic method keeps its own type parameters, which
+// the enclosing annotation does not bind.
 func TestInferMethodTypeAnnGeneric(t *testing.T) {
 	nodes, _, errs := inferTypeNodes(t, `type Result = {f<T>(x: T) -> T}`)
 	require.Empty(t, messagesWithSpan(errs))
@@ -300,7 +299,7 @@ func TestInferAnnMemberRead(t *testing.T) {
 			want: []string{"3:21-3:29: cannot constrain number <: string"},
 		},
 		{
-			// A read resolves the getter half of a pair, so the setter does not shadow it.
+			// Each call site picks the arm matching its argument type out of the overload set.
 			name: "OverloadResolvesPerCall",
 			src: `
 				declare fn make() -> {f(x: number) -> number, f(x: string) -> string, ...}
@@ -397,9 +396,9 @@ func TestInferAnnAccessorReadRaises(t *testing.T) {
 	}
 }
 
-// A field write resolves the setter half of an annotated object, which writeMember already
-// reached for a plain object type before a read did. The receiver must be mutable, so these bind
-// with `var` through a `mut` return.
+// A field write resolves the setter half of an annotated object through writeMember, which reads
+// a plain object type. The receiver must be mutable, so these bind with `var` through a `mut`
+// return.
 func TestInferAnnSetterWrite(t *testing.T) {
 	tests := []struct {
 		name string
@@ -443,6 +442,68 @@ func TestInferAnnSetterWrite(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Equal(t, tt.want, messagesWithSpan(errs))
+		})
+	}
+}
+
+// Two members that answer the same access under one name collapse, the last one winning at the
+// first one's position. That is the rule a duplicate property already followed, and it applies
+// whatever kinds collide. Two methods are the exception: they are overload arms rather than a
+// redeclaration, so the second joins the first.
+//
+// A getter and a setter answer different accesses, so a pair coexists. A property answers both,
+// so it displaces either half and both at once.
+func TestInferMemberTypeAnnDeduplicates(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"TwoProperties", `type Result = {a: number, a: string}`, "{a: string}"},
+		{"TwoGetters", `type Result = {get a(self) -> number, get a(self) -> string}`, "{get a() -> string}"},
+		{"TwoSetters", `type Result = {set a(self, v: number), set a(self, v: string)}`, "{set a(value: string)}"},
+		{
+			"GetterThenProperty",
+			`type Result = {get a(self) -> number, a: string}`,
+			"{a: string}",
+		},
+		{
+			"PropertyThenMethod",
+			`type Result = {a: number, a(x: number) -> string}`,
+			"{a(x: number) -> string}",
+		},
+		{
+			// The property answers both accesses, so it displaces the getter and the setter
+			// together and lands at the getter's position.
+			"PropertyDisplacesBothHalves",
+			`type Result = {get a(self) -> number, set a(self, v: number), b: boolean, a: string}`,
+			"{a: string, b: boolean}",
+		},
+		{
+			// The getter takes over the property's read, and the property's write falls free
+			// rather than staying pointed at the getter, so the setter still lands beside it.
+			"GetterThenSetterOverAProperty",
+			`type Result = {a: number, get a(self) -> string, set a(self, v: string)}`,
+			"{get a() -> string, set a(value: string)}",
+		},
+		{
+			// A pair survives, since neither half answers the other's access.
+			"AccessorPairCoexists",
+			`type Result = {get a(self) -> number, set a(self, v: number)}`,
+			"{get a() -> number, set a(value: number)}",
+		},
+		{
+			// The later signature joins the earlier element rather than replacing it.
+			"MethodsAreOverloadArms",
+			`type Result = {f(x: number) -> number, f(x: string) -> string}`,
+			"{f(x: number) -> number; f(x: string) -> string}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, _, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, messagesWithSpan(errs))
+			require.Equal(t, tt.want, soltype.Print(nodes["Result"]))
 		})
 	}
 }

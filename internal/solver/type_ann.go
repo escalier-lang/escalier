@@ -211,15 +211,7 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 			return nil
 		}
 		sawCtor = true
-		// resolveFuncTypeAnn recovers every unsupported part of a signature to a fresh var, so
-		// it always yields a FuncType and its ok result is always true. Anything else is a
-		// wiring bug rather than a source error, so fail loudly instead of dropping the member.
-		fn, _ := c.resolveFuncTypeAnn(scope, ctor.Fn, lvl)
-		fnType, isFunc := fn.(*soltype.FuncType)
-		if !isFunc {
-			panic(fmt.Sprintf("resolveObjectTypeAnn: `new` signature resolved to %T, not *soltype.FuncType", fn))
-		}
-		return &soltype.ConstructorElem{Fn: fnType}
+		return &soltype.ConstructorElem{Fn: c.resolveSigTypeAnn(scope, ctor.Fn, lvl)}
 	}
 	var elems []soltype.ObjTypeElem
 	// The two paths differ only in when duplicate keys collapse. A residual-free object is never
@@ -227,22 +219,23 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	// assume. A residual object keeps source order for the override merge and dedups in reduceObject
 	// once its spreads and mapped members ground.
 	if !hasResidual {
+		// Every member goes through the one builder, which keeps source order and collapses
+		// members that answer the same access under one name. A construct signature answers
+		// none, so it is appended in place and never displaces anything.
 		b := newObjElemBuilder(len(ta.Elems))
-		// The builder files properties alone, keyed by name. A construct signature has no name
-		// to file under, and a method, getter, or setter is identified by its kind as well as
-		// its name, so none of them go through it. Collect them in source order and append them
-		// after the properties. Position among them carries no meaning, since a reader reaches
-		// a construct signature through ObjectType.Constructor() and a named member by scanning
-		// for the kind it wants.
-		var nonProperties []soltype.ObjTypeElem
+		var members []soltype.ObjTypeElem
 		for _, elem := range ta.Elems {
 			if ctor, ok := elem.(*ast.ConstructorTypeAnn); ok {
 				if resolved := resolveCtor(ctor); resolved != nil {
-					nonProperties = append(nonProperties, resolved)
+					b.addElem(resolved)
 				}
 				continue
 			}
-			if c.addObjectMember(scope, elem, lvl, &nonProperties) {
+			members = members[:0]
+			if c.addObjectMember(scope, elem, lvl, &members) {
+				for _, m := range members {
+					b.addElem(m)
+				}
 				continue
 			}
 			prop, ok := elem.(*ast.PropertyTypeAnn)
@@ -256,7 +249,7 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 			}
 			b.add(name, ft, prop.Optional, prop.Readonly)
 		}
-		elems = append(b.elems, nonProperties...)
+		elems = b.result()
 	} else {
 		for _, elem := range ta.Elems {
 			switch elem := elem.(type) {
@@ -295,7 +288,8 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 
 // addObjectMember lowers a method, getter, or setter member of an object type annotation onto
 // elems and reports whether it recognized the member's kind. A caller passes every element it
-// has not already handled and treats a false result as an unsupported kind.
+// has not already handled and treats a false result as an unsupported kind. Collapsing two
+// members of one name is the builder's job, so this only ever appends.
 //
 // The written receiver does not reach the lowered element. The parser peels `self` / `mut self`
 // off into the member's Receiver so it never lands in Fn.Params, and subtyping compares a method
@@ -311,15 +305,6 @@ func (c *checker) addObjectMember(scope *Scope, elem ast.ObjTypeAnnElem, lvl int
 			return true
 		}
 		sig := c.resolveSigTypeAnn(scope, elem.Fn, lvl)
-		// Two members of one name are the arms of an overload set, the shape a class body
-		// builds through appendMethodSig. Merging here rather than emitting a second element
-		// keeps one method per name, which is what member lookup and the depth walk expect.
-		for _, existing := range *elems {
-			if m, isMethod := existing.(*soltype.MethodElem); isMethod && m.Name == name {
-				m.Signatures = append(m.Signatures, sig)
-				return true
-			}
-		}
 		*elems = append(*elems, &soltype.MethodElem{Name: name, Signatures: []*soltype.FuncType{sig}})
 	case *ast.GetterTypeAnn:
 		name, ok := objKeyName(elem.Name)

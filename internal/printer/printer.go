@@ -439,15 +439,11 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 	p.printReturnAndThrows(sig.Return, sig.Throws)
 }
 
-// annMemberReceiver returns the receiver text a method, getter, or setter written in an object
-// type annotation prints, or "" for none. The parser peels `self` / `mut self` off into the
-// elem's Receiver, so it never reaches Fn.Params and has to be printed from there. A lifetime on
-// the receiver is not rendered, matching printMethodSig.
-//
-// fallback is what the member prints when the source wrote no receiver. An accessor passes
-// `self` or `mut self`, since it is an instance member and the `.d.ts` converter builds one with
-// the field nil. A method passes "", since a method annotation is commonly written with no
-// receiver at all.
+// annMemberReceiver returns the receiver text a member annotation prints, or "" for none. The
+// parser stores it on the elem rather than in Fn.Params, and a lifetime on it is not rendered,
+// matching printMethodSig. fallback covers a member that wrote no receiver: an accessor passes
+// `self` or `mut self`, which is what the `.d.ts` converter's output relies on, and a method
+// passes "".
 func annMemberReceiver(recv *ast.MethodReceiver, fallback string) string {
 	if recv == nil {
 		return fallback

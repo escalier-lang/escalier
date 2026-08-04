@@ -24,7 +24,7 @@ func TestInferConstructorTypeAnnRoundTrip(t *testing.T) {
 		{
 			"BesideProperty",
 			`type Result = {new (x: number) -> {a: number}, origin: number}`,
-			"{origin: number, new (x: number) -> {a: number}}",
+			"{new (x: number) -> {a: number}, origin: number}",
 		},
 		{
 			"RestParam",
@@ -51,10 +51,10 @@ func TestInferConstructorTypeAnnRoundTrip(t *testing.T) {
 	}
 }
 
-// A construct signature is unnamed, so the dedup builder has no key to file it under and appends
-// it after the properties. That ordering is why BesideProperty above renders the signature last
-// while the source wrote it first. A generic signature keeps its own type parameters, which the
-// enclosing annotation does not bind.
+// A construct signature is unnamed, so it answers no access the dedup builder keys on and never
+// displaces a member or is displaced by one. It keeps the position the source gave it, which is
+// why BesideProperty above renders it first. A generic signature keeps its own type parameters,
+// which the enclosing annotation does not bind.
 func TestInferConstructorTypeAnnGeneric(t *testing.T) {
 	nodes, _, errs := inferTypeNodes(t, `type Result = {new <T>(x: T) -> {a: T}}`)
 	require.Empty(t, errs)

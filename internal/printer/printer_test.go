@@ -819,14 +819,9 @@ func TestPrintConstructorTypeAnnotations(t *testing.T) {
 	}
 }
 
-// A method, getter, or setter member of an object type annotation round-trips through the
-// printer. Each shares its signature rendering with the `fn` annotation, so type parameters and a
-// `throws` clause come along on a method. A setter writes no `-> R`, and the printer omits the
-// arrow rather than inventing a return type for it.
-//
-// A written receiver is rendered from the elem's Receiver, since the parser peels it off the
-// parameter list. An accessor that writes none still prints one, which is the form the `.d.ts`
-// converter's output relies on.
+// A method, getter, or setter member round-trips through the printer: parsing the rendered form
+// and printing it again lands on the same text. A setter writes no return arrow and the printer
+// omits it, and an accessor that writes no receiver still prints one.
 func TestPrintMemberTypeAnnotations(t *testing.T) {
 	tests := []struct {
 		name     string
