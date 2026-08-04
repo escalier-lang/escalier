@@ -1,8 +1,6 @@
 package solver
 
 import (
-	"slices"
-
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -244,71 +242,8 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 		}
 		return &soltype.AliasType{Name: at.Name, LifetimeArgs: ltArgs}
 	}
-	c.checkAliasArgBounds(params, args, ltParams, ltArgs, ref)
+	c.checkTypeArgBounds(params, args, ltParams, ltArgs, ref)
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
-}
-
-// checkAliasArgBounds reports a type argument that does not satisfy its parameter's declared
-// bound, so `type Box<T: string>` rejects `Box<number>`. Arguments are substituted into the
-// bound first, which lets a bound name a sibling as the `B: A` of `type P<A, B: A>` does. The
-// comparison is live rather than a discarded trial, so an argument that is itself a variable
-// carries the bound to its instantiation the way the function and class positions do.
-func (c *checker) checkAliasArgBounds(
-	params []*soltype.TypeParam,
-	args []soltype.Type,
-	ltParams []*soltype.LifetimeParam,
-	ltArgs []soltype.Lifetime,
-	ref *ast.TypeRefTypeAnn,
-) {
-	bounded := func(p *soltype.TypeParam) bool { return p.Constraint != nil }
-	if !slices.ContainsFunc(params, bounded) {
-		// Every parameter is unbounded, so there is nothing to compare and no substitution to
-		// build. This is the common shape for a generic alias.
-		return
-	}
-	subst := newTypeSubst(params, args, ltParams, ltArgs)
-	for i, p := range params {
-		if !bounded(p) {
-			continue
-		}
-		// Read the declared constraint from the parameter rather than from its var's upper
-		// bounds. A `<T: A & B>` bound resolves to one IntersectionType, so this is the whole
-		// of what the source wrote, and it cannot be displaced by a bound solving inferred.
-		bound := p.Constraint.Accept(subst, soltype.Positive)
-		if i >= len(ref.TypeArgs) && bound == p.Constraint && args[i] == p.Default {
-			// This argument came from the parameter's default rather than from the reference, and
-			// substitution changed neither the bound nor the default. Both therefore read here
-			// exactly as they do at the declaration, where resolveTypeParams already compared
-			// them. Repeating the comparison would file one copy of the same diagnostic per
-			// reference. The check still runs whenever substitution moved either side, since then
-			// only the reference knows what the comparison is really between. `<A, B: A = number>`
-			// is the moved-bound case and `<T, U: string = T>` the moved-default case.
-			continue
-		}
-		// Blame the written argument. A trailing argument filled from its parameter's default
-		// has no node of its own, so the blame falls back to the whole reference.
-		var site ast.Node = ref
-		if i < len(ref.TypeArgs) {
-			site = ref.TypeArgs[i]
-		}
-		if c.deferAliasBounds {
-			c.deferredAliasBounds = append(c.deferredAliasBounds, deferredAliasBound{
-				arg: args[i], bound: bound, site: site,
-			})
-			continue
-		}
-		c.constrain(site, args[i], bound)
-	}
-}
-
-// runDeferredAliasBounds replays and clears the checks checkAliasArgBounds queued while the
-// component's bodies were nil, since an unfilled alias argument expands to ErrorType and absorbs.
-func (c *checker) runDeferredAliasBounds() {
-	pending := c.deferredAliasBounds
-	c.deferredAliasBounds = nil
-	for _, p := range pending {
-		c.constrain(p.site, p.arg, p.bound)
-	}
 }
 
 // resolveAliasLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments and checks

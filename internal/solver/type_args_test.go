@@ -439,22 +439,297 @@ func TestClassArityRecoveryKeepsDeclarationVarOut(t *testing.T) {
 	require.Equal(t, "{new (b: B<unknown>) -> A}", values["A"])
 }
 
-// TestClassDefaultUnfilledForUnresolvedSibling pins what the count reaching a reference early
-// does not buy. A class's Arity is registered with its identity, but its resolved TypeParams —
-// and so the defaults hanging off them — land only when that class's own pass runs. `A` is
-// walked before `B`, so the omitted argument has no default to read yet and recovers to a fresh
-// var: `B<unknown>` where the declaration says `B<number>`. No arity error is reported, since
-// omitting an argument for a defaulted parameter is a legal reference.
-//
-// The same reference written in a `fn` annotation does fill the default, which is what
-// TestTypeParamDefaultAtReference covers. Closing the gap needs the check deferred until every
-// class in the component has its parameters, the machinery PR19 adds for bounds.
-func TestClassDefaultUnfilledForUnresolvedSibling(t *testing.T) {
+// TestClassDefaultFilledFromClassBody checks that a reference from one class's body fills an
+// omitted argument from the referenced class's default. The module SCC pre-pass resolves every
+// class's type parameters before any body runs, so `A`'s field annotation reads `B`'s resolved
+// default no matter which declaration the dep graph walks first.
+func TestClassDefaultFilledFromClassBody(t *testing.T) {
 	src := `
 		class B<T = number> { v: T }
 		class A { b: B }
 	`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "{new (b: B<unknown>) -> A}", values["A"])
+	require.Equal(t, "{new (b: B<number>) -> A}", values["A"])
+}
+
+// TestClassArityAcrossRemainingRefForms extends TestClassArityCheckedFromOtherDeclarations to
+// the reference positions it does not cover — an `extends` edge, an `implements` edge, a
+// type-parameter bound, a constructor parameter, and a method return. Every form resolves
+// through buildClassInstance, so each reports the same too-few diagnostic.
+func TestClassArityAcrossRemainingRefForms(t *testing.T) {
+	srcs := map[string]string{
+		"Extends": `
+			class Box<T> { value: T }
+			class Wrapper extends Box {
+				constructor(mut self) {},
+			}
+		`,
+		"Implements": `
+			class Box<T> { value: T }
+			class Wrapper implements Box { value: number }
+		`,
+		"TypeParamBound": `
+			class Box<T> { value: T }
+			class Holder<U: Box> { value: U }
+		`,
+		"ConstructorParam": `
+			class Box<T> { value: T }
+			class Holder {
+				boxed: Box<number>,
+				constructor(mut self, boxed: Box) { self.boxed = boxed },
+			}
+		`,
+		"MethodReturn": `
+			class Box<T> { value: T }
+			class Holder {
+				boxed: Box<number>,
+				unwrap(self) -> Box { return self.boxed },
+			}
+		`,
+	}
+	for name, src := range srcs {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Len(t, errs, 1)
+			require.Equal(t, "class `Box` expects 1 type arguments but got 0", errs[0].Message())
+		})
+	}
+}
+
+// TestClassDefaultFilledDeclarationOrderIndependent is TestClassDefaultFilledFromClassBody with
+// the declarations the other way round, so the fill does not depend on which class the dep
+// graph reaches first. The pre-pass resolves every class's parameters before any body runs,
+// which is what makes both orders read the same default.
+func TestClassDefaultFilledDeclarationOrderIndependent(t *testing.T) {
+	src := `
+		class A { b: B }
+		class B<T = number> { v: T }
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "{new (b: B<number>) -> A}", values["A"])
+}
+
+// TestMutuallyRecursiveGenericClassesResolve guards the pre-pass against a mutually-recursive
+// group. Each class names the other with a full argument list while the group's parameters
+// resolve, so a pre-pass that read a half-registered sibling would report a spurious mismatch
+// or leak one class's parameter var into the other.
+func TestMutuallyRecursiveGenericClassesResolve(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Node<T> { value: T, tail: Tail<T> }
+		class Tail<T> { node: Node<T> }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "<T0> {new (value: T0, tail: Tail<T0>) -> Node<T0>}", values["Node"])
+}
+
+// TestClassArityAcrossMixedComponent covers a dep_graph component holding both sorts of key. A
+// class member body creates a value dependency, so `class A<T>` whose method calls `B` and
+// `class B` whose field names `A` put A's type key and B's value key in one SCC. Binding every
+// non-value key before the value walk is what lets B's annotation find A registered with its
+// parameters resolved. Inferring B's body first would leave `A` an unbound name, reported as an
+// unresolved reference instead of the arity mismatch it is.
+func TestClassArityAcrossMixedComponent(t *testing.T) {
+	srcs := map[string]string{
+		"GenericClassFirst": `
+			class A<T> {
+				v: T,
+				make(self) -> number { return B(1, A(2)).x },
+			}
+			class B {
+				x: number,
+				a: A,
+			}
+		`,
+		"GenericClassSecond": `
+			class B {
+				x: number,
+				a: A,
+			}
+			class A<T> {
+				v: T,
+				make(self) -> number { return B(1, A(2)).x },
+			}
+		`,
+	}
+	for name, src := range srcs {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, src)
+			require.Len(t, errs, 1)
+			require.Equal(t, "class `A` expects 1 type arguments but got 0", errs[0].Message())
+			require.Equal(t, "{new (x: number, a: A<unknown>) -> B}", values["B"])
+		})
+	}
+}
+
+// TestClassTypeArgBounds covers the bound a generic class declares on a type parameter,
+// `class Box<T: string>`. A reference supplying an argument outside the bound is rejected at
+// the reference, and one inside it is accepted. Every reference form routes through
+// buildClassInstance, so a self-reference in the class's own body is checked the same way an
+// annotation elsewhere is. A bound may name a sibling parameter, so the reference's own
+// arguments are substituted into the bound before the comparison.
+func TestClassTypeArgBounds(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ArgumentOutsideBound",
+			src: `
+				class Box<T: string> { v: T }
+				fn take(b: Box<number>) -> number { return 1 }
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "ArgumentInsideBound",
+			src: `
+				class Box<T: string> { v: T }
+				fn take(b: Box<"a">) -> number { return 1 }
+			`,
+		},
+		{
+			name: "UnboundedParamAcceptsAnyArgument",
+			src: `
+				class Box<T> { v: T }
+				fn take(b: Box<number>) -> number { return 1 }
+			`,
+		},
+		{
+			name: "SelfReferenceInFieldChecked",
+			src:  `class Box<T: string> { v: T, other: Box<number> }`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "SelfReferenceInFieldSatisfied",
+			src:  `class Box<T: string> { v: T, other: Box<"a"> }`,
+		},
+		{
+			name: "ExtendsEdgeChecked",
+			src: `
+				class Box<T: string> { v: T }
+				class Sub extends Box<number> {
+					constructor(mut self) {},
+				}
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "MethodParamChecked",
+			src: `
+				class Box<T: string> { v: T }
+				class Holder {
+					x: number,
+					take(self, b: Box<number>) -> number { return self.x },
+				}
+			`,
+			want: []string{"cannot constrain number <: string"},
+		},
+		{
+			name: "SiblingBoundViolated",
+			src: `
+				class P<A, B: A> { a: A, b: B }
+				fn take(p: P<string, 1>) -> number { return 1 }
+			`,
+			want: []string{"cannot constrain 1 <: string"},
+		},
+		{
+			name: "SiblingBoundSatisfied",
+			src: `
+				class P<A, B: A> { a: A, b: B }
+				fn take(p: P<number, 1>) -> number { return 1 }
+			`,
+		},
+		{
+			name: "IntersectionBound",
+			src: `
+				class Box<T: string & "a"> { v: T }
+				fn take(b: Box<"b">) -> number { return 1 }
+			`,
+			want: []string{`cannot constrain "b" <: "a"`},
+		},
+		{
+			name: "CrossClassBoundChecked",
+			src: `
+				class Animal { name: string }
+				class Pen<T: Animal> { pet: T }
+				fn take(p: Pen<number>) -> number { return 1 }
+			`,
+			want: []string{"cannot constrain number <: Animal"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, test.want, msgs)
+		})
+	}
+}
+
+// TestClassBoundDefersForUnfilledAliasSibling checks the deferral a class bound check inherits
+// from the alias path. A class reference inside an alias body resolves while a sibling alias's
+// Body is still nil, and a comparison run at that moment would expand the sibling to ErrorType,
+// which absorbs. The queued comparison replays once every body in the component is filled, so
+// the violation still reports.
+func TestClassBoundDefersForUnfilledAliasSibling(t *testing.T) {
+	src := `
+		class Box<T: string> { v: T }
+		type A = {b: Box<number>, other: Other}
+		type Other = {a?: A}
+	`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain number <: string", errs[0].Message())
+}
+
+// TestClassBoundForwardingFn covers a generic function whose return names the class with the
+// function's own unbounded parameter, `fn g<U>(u: U) -> Box<U>`. The comparison is live rather
+// than a discarded trial, so it leaves Box's bound on U and the call site is where a violation
+// surfaces: the declaration alone is clean, a string call passes, and a number call reports
+// once at the argument.
+func TestClassBoundForwardingFn(t *testing.T) {
+	t.Run("DeclarationAloneClean", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T: string> { v: T }
+			fn g<U>(u: U) -> Box<U> { return Box(u) }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("CallInsideBound", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T: string> { v: T }
+			fn g<U>(u: U) -> Box<U> { return Box(u) }
+			val b = g("a")
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("CallOutsideBound", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box<T: string> { v: T }
+			fn g<U>(u: U) -> Box<U> { return Box(u) }
+			val b = g(1)
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain 1 <: string", errs[0].Message())
+	})
+}
+
+// TestClassBoundConstructionNotDoubleReported guards the seam between the two enforcement
+// paths. A construction's argument flows into the parameter var, whose upper bound is the
+// declared constraint, so `Box(1)` against `class Box<T: string>` reports through inference.
+// The reference check covers annotations only, so a construction with no annotation reports
+// exactly once.
+func TestClassBoundConstructionNotDoubleReported(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class Box<T: string> { v: T }
+		val b = Box(1)
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot constrain 1 <: string", errs[0].Message())
 }
