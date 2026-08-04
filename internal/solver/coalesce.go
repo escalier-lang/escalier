@@ -1484,11 +1484,15 @@ func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 		}
 		return true
 	case *soltype.GetterElem:
+		// ThrowsOrNever reads both sides through the nil-is-never collapse, so two getters
+		// differing only in whether the clause was written compare equal.
 		b, ok := b.(*soltype.GetterElem)
-		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Type, b.Type, ctx)
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Type, b.Type, ctx) &&
+			equalTypeWith(a.ThrowsOrNever(), b.ThrowsOrNever(), ctx)
 	case *soltype.SetterElem:
 		b, ok := b.(*soltype.SetterElem)
-		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Param, b.Param, ctx)
+		return ok && equalSelfParam(a.SelfParam, b.SelfParam, ctx) && equalTypeWith(a.Param, b.Param, ctx) &&
+			equalTypeWith(a.ThrowsOrNever(), b.ThrowsOrNever(), ctx)
 	case *soltype.ConstructorElem:
 		b, ok := b.(*soltype.ConstructorElem)
 		return ok && equalTypeWith(a.Fn, b.Fn, ctx)

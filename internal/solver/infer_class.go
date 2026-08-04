@@ -472,14 +472,21 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
-			c.reportAccessorThrows(elem.Fn, elem, "getter")
 			stub := c.memberSigStub(lvl, elem.Fn)
-			getter := &soltype.GetterElem{Name: name, SelfParam: c.selfParam(elem.Receiver, elem.Static, self), Type: stub.Ret}
+			getter := &soltype.GetterElem{
+				Name:      name,
+				SelfParam: c.selfParam(elem.Receiver, elem.Static, self),
+				Type:      stub.Ret,
+				Throws:    stub.Throws,
+			}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, getter)
 			pending = append(pending, pendingMember{
 				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, stub: stub,
-				apply: func(bodyFt *soltype.FuncType) { getter.Type = bodyFt.Ret },
+				apply: func(bodyFt *soltype.FuncType) {
+					getter.Type = bodyFt.Ret
+					getter.Throws = bodyFt.Throws
+				},
 			})
 		case *ast.SetterElem:
 			name, ok := objKeyName(elem.Name)
@@ -487,7 +494,6 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
-			c.reportAccessorThrows(elem.Fn, elem, "setter")
 			// An instance setter mutates the instance, so it must hold mutable access to it.
 			// Report a plain `self` or shared `&self` receiver here, then keep the declared
 			// receiver on the elem so a write through it draws only this one diagnostic. An
@@ -508,7 +514,12 @@ func (c *checker) buildMemberSigs(
 			if len(stub.Params) > 0 {
 				param = stub.Params[0].Type
 			}
-			setter := &soltype.SetterElem{Name: name, SelfParam: c.selfParam(elem.Receiver, elem.Static, self), Param: param}
+			setter := &soltype.SetterElem{
+				Name:      name,
+				SelfParam: c.selfParam(elem.Receiver, elem.Static, self),
+				Param:     param,
+				Throws:    stub.Throws,
+			}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, setter)
 			pending = append(pending, pendingMember{
@@ -517,6 +528,7 @@ func (c *checker) buildMemberSigs(
 					if len(bodyFt.Params) > 0 {
 						setter.Param = bodyFt.Params[0].Type
 					}
+					setter.Throws = bodyFt.Throws
 				},
 			})
 		}
@@ -546,20 +558,11 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	c.constrain(node, callable(bodyFt), callable(stub))
 }
 
-// reportAccessorThrows rejects a `throws` clause on a getter or setter. Neither element
-// holds more than a bare Type, and dropping the clause would let a raising accessor read
-// as non-throwing. kind names the accessor in the message.
-func (c *checker) reportAccessorThrows(fn *ast.FuncExpr, blame ast.Node, kind string) {
-	if fn.Throws != nil {
-		c.reportUnsupportedFeature(blame, "throws clause on a "+kind)
-	}
-}
-
 // memberSigStub builds a member's signature stub: one fresh var per value parameter,
 // preserving arity, parameter names, and optionality, plus a fresh return var and a fresh
-// throws var. A sibling call reads the stub before the body pass installs the real
-// signature, so the throws var is what carries a raising method's throws to a caller
-// inside the same class.
+// throws var. A sibling access reads the stub before the body pass installs the real
+// signature, so the throws var is what carries a raising member's throws to a call or a
+// getter read inside the same class.
 func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
@@ -901,6 +904,16 @@ func keptFlowMap(keep set.Set[*soltype.TypeVarType]) map[*soltype.TypeVarType][]
 	return flow
 }
 
+// coalesceThrows coalesces an accessor's throws position, keeping the nil shorthand that
+// stands for `never` rather than materializing a `never` the accessor was never written
+// with. The position is covariant, so it always coalesces positively.
+func coalesceThrows(t soltype.Type, keep set.Set[*soltype.TypeVarType], flow map[*soltype.TypeVarType][]*soltype.TypeVarType) soltype.Type {
+	if t == nil {
+		return nil
+	}
+	return coalesceKeeping(t, soltype.Positive, keep, flow)
+}
+
 // freezeClassBody coalesces each member's type in place so member lookup and the
 // class-vs-object rule read concrete member types rather than the fresh vars a field held
 // before a constructor assignment refined it. Each member is coalesced individually rather
@@ -918,9 +931,21 @@ func (c *checker) freezeClassBody(obj *soltype.ObjectType, keep set.Set[*soltype
 		case *soltype.PropertyElem:
 			obj.Elems[i] = &soltype.PropertyElem{Name: e.Name, Type: coalesceKeeping(e.Type, soltype.Positive, keep, flow), Optional: e.Optional, Readonly: e.Readonly}
 		case *soltype.GetterElem:
-			obj.Elems[i] = &soltype.GetterElem{Name: e.Name, SelfParam: e.SelfParam, Type: coalesceKeeping(e.Type, soltype.Positive, keep, flow)}
+			obj.Elems[i] = &soltype.GetterElem{
+				Name:      e.Name,
+				SelfParam: e.SelfParam,
+				Type:      coalesceKeeping(e.Type, soltype.Positive, keep, flow),
+				Throws:    coalesceThrows(e.Throws, keep, flow),
+			}
 		case *soltype.SetterElem:
-			obj.Elems[i] = &soltype.SetterElem{Name: e.Name, SelfParam: e.SelfParam, Param: coalesceKeeping(e.Param, soltype.Negative, keep, flow)}
+			obj.Elems[i] = &soltype.SetterElem{
+				Name:      e.Name,
+				SelfParam: e.SelfParam,
+				Param:     coalesceKeeping(e.Param, soltype.Negative, keep, flow),
+				// A setter's written value coalesces negatively, but what the write raises
+				// flows out to the writer, so its throws position still coalesces positively.
+				Throws: coalesceThrows(e.Throws, keep, flow),
+			}
 		case *soltype.MethodElem:
 			sigs := make([]*soltype.FuncType, len(e.Signatures))
 			for j, sig := range e.Signatures {

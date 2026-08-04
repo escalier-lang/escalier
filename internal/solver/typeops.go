@@ -572,20 +572,30 @@ func (e *typeEvaluator) reduceObject(t *soltype.ObjectType) soltype.Type {
 
 // reduceElem reduces the value types inside one non-spread object member, the object analogue of the
 // `e.reduce(el)` reduceTuple runs on each non-spread tuple element. A property, getter, or setter
-// carries a value type that may itself be an operator such as `keyof X`, so its type is reduced. A
-// method or constructor carries only function types, which reduce leaves untouched, so it passes
-// through unchanged.
+// carries a value type that may itself be an operator such as `keyof X`, so its type is reduced. An
+// accessor's throws position reduces alongside that value type. A method or constructor carries only
+// function types, which reduce leaves untouched, so it passes through unchanged.
 func (e *typeEvaluator) reduceElem(el soltype.ObjTypeElem) soltype.ObjTypeElem {
 	switch el := el.(type) {
 	case *soltype.PropertyElem:
 		return &soltype.PropertyElem{Name: el.Name, Type: e.reduce(el.Type), Optional: el.Optional, Readonly: el.Readonly}
 	case *soltype.GetterElem:
-		return &soltype.GetterElem{Name: el.Name, SelfParam: el.SelfParam, Type: e.reduce(el.Type)}
+		return &soltype.GetterElem{Name: el.Name, SelfParam: el.SelfParam, Type: e.reduce(el.Type), Throws: e.reduceThrows(el.Throws)}
 	case *soltype.SetterElem:
-		return &soltype.SetterElem{Name: el.Name, SelfParam: el.SelfParam, Param: e.reduce(el.Param)}
+		return &soltype.SetterElem{Name: el.Name, SelfParam: el.SelfParam, Param: e.reduce(el.Param), Throws: e.reduceThrows(el.Throws)}
 	default:
 		return el
 	}
+}
+
+// reduceThrows reduces an accessor's throws position, whose nil shorthand stands for
+// `never`. Preserving nil keeps the shorthand rather than materializing a `never` the
+// accessor was never written with.
+func (e *typeEvaluator) reduceThrows(t soltype.Type) soltype.Type {
+	if t == nil {
+		return nil
+	}
+	return e.reduce(t)
 }
 
 // groundObjectOperand reduces a `...A` spread operand toward the concrete object whose fields it

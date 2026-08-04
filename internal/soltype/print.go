@@ -449,11 +449,17 @@ func freeTypeVars(t Type) []*TypeVarType {
 						walk(e.SelfParam.Type)
 					}
 					walk(e.Type)
+					if e.Throws != nil {
+						walk(e.Throws)
+					}
 				case *SetterElem:
 					if e.SelfParam != nil {
 						walk(e.SelfParam.Type)
 					}
 					walk(e.Param)
+					if e.Throws != nil {
+						walk(e.Throws)
+					}
 				case *ConstructorElem:
 					walk(e.Fn)
 				case *SpreadElem:
@@ -952,13 +958,21 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		if e.SelfParam != nil {
 			recv = p.printSelfReceiver(e.SelfParam)
 		}
-		return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " + p.printType(e.Type)
+		clause := p.printThrowsClause(e.ThrowsOrNever())
+		if clause == "" {
+			return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " + p.printType(e.Type)
+		}
+		// `-> R` is greedy, so a function-typed return is parenthesized once a clause
+		// follows it, the same bound printFuncBody puts on a signature's return.
+		return "get " + printObjectKeyName(e.Name) + "(" + recv + ") -> " +
+			p.printTypeMinPrec(e.Type, precUnion) + clause
 	case *SetterElem:
 		recv := ""
 		if e.SelfParam != nil {
 			recv = p.printSelfReceiver(e.SelfParam) + ", "
 		}
-		return "set " + printObjectKeyName(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")"
+		return "set " + printObjectKeyName(e.Name) + "(" + recv + "value: " + p.printType(e.Param) + ")" +
+			p.printThrowsClause(e.ThrowsOrNever())
 	case *ConstructorElem:
 		// A class value's constructor renders as the unnamed call signature
 		// `new (params) -> ret`.
@@ -1071,21 +1085,29 @@ func (p *namedPrinter) printFuncBody(t *FuncType) string {
 	if t.Inexact {
 		ps = append(ps, "...")
 	}
-	// A `throws T` clause renders after the return type, matching the surface syntax. A
-	// function that raises nothing resolves to `never` and renders no clause, so
-	// `fn () -> number` stays the common form. That covers a coalesced throws variable
-	// nothing reached as well as a FuncType minted with no clause at all.
-	throws := t.ThrowsOrNever()
-	if isNever(throws) {
+	// A `throws T` clause renders after the return type, matching the surface syntax.
+	clause := p.printThrowsClause(t.ThrowsOrNever())
+	if clause == "" {
 		return "(" + strings.Join(ps, ", ") + ") -> " + p.printType(t.Ret)
 	}
 	// `-> R` is greedy, so a function-typed return is parenthesized once a clause follows
 	// it — `fn () -> (fn () -> number) throws string` — or the clause re-reads as the inner
 	// function's. precUnion bounds a function type and nothing else, precFunc being the
-	// only precedence below it. The clause itself needs no minimum: it is last, so nothing
-	// can bind across its right edge.
-	return "(" + strings.Join(ps, ", ") + ") -> " + p.printTypeMinPrec(t.Ret, precUnion) +
-		" throws " + p.printType(throws)
+	// only precedence below it.
+	return "(" + strings.Join(ps, ", ") + ") -> " + p.printTypeMinPrec(t.Ret, precUnion) + clause
+}
+
+// printThrowsClause renders a signature's ` throws T` suffix, or the empty string when
+// there is nothing to raise. A member that raises nothing resolves to `never` and renders
+// no clause, so `fn () -> number` and `get x(self) -> number` stay the common forms. That
+// covers a coalesced throws variable nothing reached as well as a signature minted with no
+// clause at all. The clause needs no minimum precedence: it is last, so nothing can bind
+// across its right edge.
+func (p *namedPrinter) printThrowsClause(throws Type) string {
+	if isNever(throws) {
+		return ""
+	}
+	return " throws " + p.printType(throws)
 }
 
 // isNever reports whether t is the `never` type.
