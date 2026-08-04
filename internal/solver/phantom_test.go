@@ -361,7 +361,9 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 		want []string
 	}{
 		{
-			// The method is not a supported object-type member, so the whole body is dropped.
+			// resolveObjectTypeAnn lowers no method member, so it skips this one and returns
+			// the empty object the rest of the annotation amounts to. The body resolves, and
+			// the only occurrence of T is what went missing.
 			name: "AliasBodyWithAnUnsupportedMember",
 			src:  `type M<T> = {f(x: T) -> T}`,
 			want: []string{
@@ -369,7 +371,8 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 			},
 		},
 		{
-			// The union member fails to resolve, so the annotation reports and recovers.
+			// The union member recovers to a fresh var, so the body is `t | number` and the T
+			// that member wrote is gone.
 			name: "AliasBodyWithAnUnresolvableReference",
 			src:  `type Foo<T> = number | Nope<T>`,
 			want: []string{"1:24-1:31: Unsupported: TypeRefTypeAnn"},
