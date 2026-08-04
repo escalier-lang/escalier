@@ -2112,8 +2112,8 @@ func newObjElemBuilder(capacity int) *objElemBuilder {
 	}
 }
 
-func (b *objElemBuilder) add(name string, t soltype.Type, optional, readonly bool) {
-	b.addElem(&soltype.PropertyElem{Name: name, Type: t, Optional: optional, Readonly: readonly})
+func (b *objElemBuilder) add(name string, t soltype.Type, optional, readonly bool) bool {
+	return b.addElem(&soltype.PropertyElem{Name: name, Type: t, Optional: optional, Readonly: readonly})
 }
 
 // addElem files a named member under every access it answers, replacing whatever held those
@@ -2126,11 +2126,16 @@ func (b *objElemBuilder) add(name string, t soltype.Type, optional, readonly boo
 // matching what a class body builds through appendMethodSig.
 //
 // An unnamed member — a construct signature — occupies no slot and is appended as-is.
-func (b *objElemBuilder) addElem(elem soltype.ObjTypeElem) {
+//
+// The result reports whether this member displaced an earlier one, which is a redeclaration
+// rather than a first declaration. A caller that treats one as an error reports it and keeps the
+// collapsed list as the recovery. Merging two methods into an overload set is not a
+// displacement, so it reports false.
+func (b *objElemBuilder) addElem(elem soltype.ObjTypeElem) bool {
 	slots := memberSlots(elem)
 	if len(slots) == 0 {
 		b.elems = append(b.elems, elem)
-		return
+		return false
 	}
 	// Collect every position this member displaces. A property answers both accesses, so it can
 	// displace two elements at once — the getter and the setter of a pair.
@@ -2143,7 +2148,7 @@ func (b *objElemBuilder) addElem(elem soltype.ObjTypeElem) {
 		if incoming, isMethod := elem.(*soltype.MethodElem); isMethod {
 			if existing, wasMethod := b.elems[i].(*soltype.MethodElem); wasMethod {
 				existing.Signatures = append(existing.Signatures, incoming.Signatures...)
-				return
+				return false
 			}
 		}
 		if !slices.Contains(displaced, i) {
@@ -2172,6 +2177,7 @@ func (b *objElemBuilder) addElem(elem soltype.ObjTypeElem) {
 	for _, slot := range slots {
 		b.pos[slot] = at
 	}
+	return len(displaced) > 0
 }
 
 // result returns the members in first-occurrence order, dropping the tombstones addElem leaves

@@ -222,6 +222,11 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 		// Every member goes through the one builder, which keeps source order and collapses
 		// members that answer the same access under one name. A construct signature answers
 		// none, so it is appended in place and never displaces anything.
+		//
+		// A collapse here is a redeclaration the source wrote twice, so it is reported. The
+		// collapsed list is the recovery, which keeps the object at one member per access. The
+		// ordered path below stays silent, since a spread overriding an earlier member is the
+		// point of writing one.
 		b := newObjElemBuilder(len(ta.Elems))
 		var members []soltype.ObjTypeElem
 		for _, elem := range ta.Elems {
@@ -234,7 +239,15 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 			members = members[:0]
 			if c.addObjectMember(scope, elem, lvl, &members) {
 				for _, m := range members {
-					b.addElem(m)
+					if !b.addElem(m) {
+						continue
+					}
+					// Only a method, getter, or setter reaches here, and each carries a
+					// span. ObjTypeAnnElem does not declare Span, since a callable
+					// signature and a mapped member do not have one.
+					if blame, hasSpan := elem.(spanned); hasSpan {
+						c.report(&DuplicateObjectMemberError{Name: soltype.ObjElemName(m), Elem: blame})
+					}
 				}
 				continue
 			}
@@ -247,7 +260,9 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 			if !ok {
 				continue
 			}
-			b.add(name, ft, prop.Optional, prop.Readonly)
+			if b.add(name, ft, prop.Optional, prop.Readonly) {
+				c.report(&DuplicateObjectMemberError{Name: name, Elem: prop})
+			}
 		}
 		elems = b.result()
 	} else {

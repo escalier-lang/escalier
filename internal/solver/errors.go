@@ -1086,6 +1086,7 @@ func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
 func (*MissingSelfReceiverError) isSolverError()            {}
 func (*MethodOverloadReceiverMismatchError) isSolverError() {}
 func (*MultipleConstructorsError) isSolverError()           {}
+func (*DuplicateObjectMemberError) isSolverError()          {}
 func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
 func (*SubclassConstructorRequiredError) isSolverError()    {}
@@ -1412,6 +1413,29 @@ func (e *MultipleConstructorsError) Span() ast.Span      { return e.Ctor.Span() 
 func (e *MultipleConstructorsError) Related() []ast.Span { return nil }
 func (e *MultipleConstructorsError) Message() string {
 	return "Multiple constructors per class are not yet supported."
+}
+
+// DuplicateObjectMemberError fires on the second member of an object type annotation that
+// answers an access an earlier member already answered: two properties of one name, two getters,
+// a property beside a getter or a method, and so on. The later member wins so the object still
+// carries one member per access, and reporting it is what keeps the earlier one from being
+// dropped in silence. The later member carries the blame span.
+//
+// Two methods of one name are not a redeclaration. They are the arms of an overload set, so they
+// merge and no error is reported. A getter and a setter answer different accesses and likewise
+// coexist.
+//
+// A spread reaches none of this. `{...A, a: number}` overrides rather than redeclares, and
+// reduceObject merges it once the spread grounds, so an object written with one stays silent.
+type DuplicateObjectMemberError struct {
+	Name string
+	Elem spanned
+}
+
+func (e *DuplicateObjectMemberError) Span() ast.Span      { return e.Elem.Span() }
+func (e *DuplicateObjectMemberError) Related() []ast.Span { return nil }
+func (e *DuplicateObjectMemberError) Message() string {
+	return "An object type may declare '" + e.Name + "' only once."
 }
 
 // DuplicateConstructorSignatureError fires on the second and any later `new (…) -> T` member

@@ -446,64 +446,99 @@ func TestInferAnnSetterWrite(t *testing.T) {
 	}
 }
 
-// Two members that answer the same access under one name collapse, the last one winning at the
-// first one's position. That is the rule a duplicate property already followed, and it applies
-// whatever kinds collide. Two methods are the exception: they are overload arms rather than a
-// redeclaration, so the second joins the first.
+// Declaring one name twice in an object type annotation is a redeclaration, so the later member
+// is reported. Two members collide when they answer the same access: a property answers a read
+// and a write, a method or getter answers a read, and a setter answers a write. The later one
+// still wins at the first one's position, which keeps the object at one member per access as the
+// recovery.
 //
-// A getter and a setter answer different accesses, so a pair coexists. A property answers both,
-// so it displaces either half and both at once.
+// A getter and a setter answer different accesses, so a pair is not a redeclaration. Two methods
+// are the arms of an overload set, which Escalier supports, so they merge rather than collide.
+// Neither reports.
+//
+// A spread is the other way an earlier member is superseded, and it stays silent — overriding is
+// the point of writing one. The ordered path handles it and reduceObject merges once it grounds.
 func TestInferMemberTypeAnnDeduplicates(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
-		want string
+		want []string
+		obj  string
 	}{
-		{"TwoProperties", `type Result = {a: number, a: string}`, "{a: string}"},
-		{"TwoGetters", `type Result = {get a(self) -> number, get a(self) -> string}`, "{get a() -> string}"},
-		{"TwoSetters", `type Result = {set a(self, v: number), set a(self, v: string)}`, "{set a(value: string)}"},
 		{
-			"GetterThenProperty",
-			`type Result = {get a(self) -> number, a: string}`,
-			"{a: string}",
+			name: "TwoProperties",
+			src:  `type Result = {a: number, a: string}`,
+			want: []string{"1:27-1:28: An object type may declare 'a' only once."},
+			obj:  "{a: string}",
 		},
 		{
-			"PropertyThenMethod",
-			`type Result = {a: number, a(x: number) -> string}`,
-			"{a(x: number) -> string}",
+			name: "TwoGetters",
+			src:  `type Result = {get a(self) -> number, get a(self) -> string}`,
+			want: []string{"1:43-1:44: An object type may declare 'a' only once."},
+			obj:  "{get a() -> string}",
+		},
+		{
+			name: "TwoSetters",
+			src:  `type Result = {set a(self, v: number), set a(self, v: string)}`,
+			want: []string{"1:44-1:45: An object type may declare 'a' only once."},
+			obj:  "{set a(value: string)}",
+		},
+		{
+			name: "GetterThenProperty",
+			src:  `type Result = {get a(self) -> number, a: string}`,
+			want: []string{"1:39-1:40: An object type may declare 'a' only once."},
+			obj:  "{a: string}",
+		},
+		{
+			name: "PropertyThenMethod",
+			src:  `type Result = {a: number, a(x: number) -> string}`,
+			want: []string{"1:27-1:28: An object type may declare 'a' only once."},
+			obj:  "{a(x: number) -> string}",
 		},
 		{
 			// The property answers both accesses, so it displaces the getter and the setter
-			// together and lands at the getter's position.
-			"PropertyDisplacesBothHalves",
-			`type Result = {get a(self) -> number, set a(self, v: number), b: boolean, a: string}`,
-			"{a: string, b: boolean}",
+			// together and lands at the getter's position. One member is written twice, so one
+			// error is reported however many earlier members it supersedes.
+			name: "PropertyDisplacesBothHalves",
+			src:  `type Result = {get a(self) -> number, set a(self, v: number), b: boolean, a: string}`,
+			want: []string{"1:75-1:76: An object type may declare 'a' only once."},
+			obj:  "{a: string, b: boolean}",
 		},
 		{
-			// The getter takes over the property's read, and the property's write falls free
-			// rather than staying pointed at the getter, so the setter still lands beside it.
-			"GetterThenSetterOverAProperty",
-			`type Result = {a: number, get a(self) -> string, set a(self, v: string)}`,
-			"{get a() -> string, set a(value: string)}",
+			// The getter takes over the property's read and is itself a redeclaration. The
+			// property's write falls free rather than staying pointed at the getter, so the
+			// setter lands beside it and adds no second error.
+			name: "GetterThenSetterOverAProperty",
+			src:  `type Result = {a: number, get a(self) -> string, set a(self, v: string)}`,
+			want: []string{"1:31-1:32: An object type may declare 'a' only once."},
+			obj:  "{get a() -> string, set a(value: string)}",
 		},
 		{
-			// A pair survives, since neither half answers the other's access.
-			"AccessorPairCoexists",
-			`type Result = {get a(self) -> number, set a(self, v: number)}`,
-			"{get a() -> number, set a(value: number)}",
+			name: "AccessorPairCoexists",
+			src:  `type Result = {get a(self) -> number, set a(self, v: number)}`,
+			want: nil,
+			obj:  "{get a() -> number, set a(value: number)}",
 		},
 		{
-			// The later signature joins the earlier element rather than replacing it.
-			"MethodsAreOverloadArms",
-			`type Result = {f(x: number) -> number, f(x: string) -> string}`,
-			"{f(x: number) -> number; f(x: string) -> string}",
+			name: "MethodsAreOverloadArms",
+			src:  `type Result = {f(x: number) -> number, f(x: string) -> string}`,
+			want: nil,
+			obj:  "{f(x: number) -> number; f(x: string) -> string}",
+		},
+		{
+			// A spread supersedes the earlier member without a diagnostic, which is what
+			// separates an override from a redeclaration.
+			name: "SpreadOverrideIsSilent",
+			src:  `type Result = {a: number, ...{a: string}}`,
+			want: nil,
+			obj:  "{a: number, ...{a: string}}",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, _, errs := inferTypeNodes(t, tt.src)
-			require.Empty(t, messagesWithSpan(errs))
-			require.Equal(t, tt.want, soltype.Print(nodes["Result"]))
+			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.obj, soltype.Print(nodes["Result"]))
 		})
 	}
 }
