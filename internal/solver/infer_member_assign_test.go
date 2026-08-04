@@ -448,3 +448,49 @@ func TestInferMemberAssignSetterValue(t *testing.T) {
 	require.Equal(t, "fn (c: mut C) -> number", values["written"])
 	require.Equal(t, "fn (c: mut C) -> string", values["readBack"])
 }
+
+// A `mut` borrow reaches a receiver position through a call result or a branch join as a
+// variable carrying the borrow among its lower bounds, not as a bare RefType. The setter
+// write looks through that variable for the receiver's mutability, so it accepts the same
+// receivers a field write and a `mut self` method call accept. An immutable receiver is
+// still rejected.
+func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "call result",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				declare fn g(c: mut C) -> mut C
+				fn f(c: mut C) { g(c).x = 5 }
+			`,
+		},
+		{
+			name: "branch join",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				fn f(a: mut C, b: mut C, cond: boolean) { val r = if (cond) { a } else { b }
+					r.x = 5
+				}
+			`,
+		},
+		{
+			name: "immutable call result",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				declare fn g(c: C) -> C
+				fn f(c: C) { g(c).x = 5 }
+			`,
+			want: []string{"4:18-4:24: cannot constrain immutable C <: mutable C"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(errs))
+		})
+	}
+}

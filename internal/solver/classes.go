@@ -738,10 +738,29 @@ func (c *checker) checkReceiverMut(blame ast.Node, recv soltype.Type, self *solt
 		return
 	}
 	recvT := soltype.Type(inner)
-	if r, ok := recv.(*soltype.RefType); ok && r.Mut {
+	if lendsMut(recv) {
 		recvT = soltype.NewRef(true, nil, inner)
 	}
 	c.constrain(blame, recvT, self.Type)
+}
+
+// lendsMut reports whether recv has mutable access to lend: a `mut` borrow directly, or a
+// binding var carrying one among its lower bounds. The look-through matches classCarrier's,
+// since a `mut` borrow that reaches a receiver position through a call result or a branch
+// join arrives as a variable with the borrow among its lower bounds rather than as a bare
+// RefType. `g(c).x = 5`, where `g` returns `mut C`, is one such receiver.
+func lendsMut(recv soltype.Type) bool {
+	switch recv := recv.(type) {
+	case *soltype.RefType:
+		return recv.Mut
+	case *soltype.TypeVarType:
+		for _, lb := range recv.LowerBounds {
+			if r, ok := lb.(*soltype.RefType); ok && r.Mut {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // memberSelfParam returns the `self` receiver of a readable member, a method or getter, or

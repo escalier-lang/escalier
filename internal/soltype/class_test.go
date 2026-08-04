@@ -533,8 +533,9 @@ func TestObjectMemberGetterSetterSameName(t *testing.T) {
 // ReadMember and WriteMember resolve a name by access direction rather than declaration
 // order: a read takes the getter half of an accessor pair and a write takes the setter
 // half, regardless of which half the class body declares first. On a name carried by a
-// single element of any kind, both return that element, so they stand in for Member
-// everywhere.
+// single element of any kind, both return that element, so a directional caller never
+// needs Member's declaration-order result. A caller that only asks whether the name is
+// present at all still uses Member.
 func TestObjectReadWriteMember(t *testing.T) {
 	getter := &GetterElem{Name: "x", Type: numP()}
 	setter := &SetterElem{Name: "x", Param: strP()}

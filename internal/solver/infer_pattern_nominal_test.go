@@ -771,6 +771,22 @@ func TestInferMemberClassUnionSetterOnlyReadsUndefined(t *testing.T) {
 	require.Equal(t, "fn (p: A | B) -> string | undefined", values["f"])
 }
 
+// A union member carrying both halves of an accessor pair contributes its GETTER to the
+// read join, whichever half the class body declares first. Here `A` declares `set v` before
+// `get v`, so a lookup that took declaration order would treat `v` as write-only on `A` and
+// fold `undefined` into the join.
+func TestInferMemberClassUnionAccessorPairReadsGetter(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class A { _v: number, set v(mut self, x: string) { }, get v(self) -> string { return "a" } }
+		class B { v: string }
+		fn f(p: A | B) {
+			return p.v
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: A | B) -> string", values["f"])
+}
+
 // A setter-only member is not readable, so a member exposed only as a setter across every
 // union member yields no readable value. With no member to read, the access is a
 // missing-property error rather than binding as bare undefined (#886).
