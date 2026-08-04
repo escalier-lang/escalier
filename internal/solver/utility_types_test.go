@@ -1016,3 +1016,66 @@ func TestUtilityTypeInstanceTypeOfClass(t *testing.T) {
 		},
 	})
 }
+
+// `ConstructorParameters<typeof C>` captures a class's constructor parameter list as a tuple,
+// the other half of what a class value's construct signature carries. A synthesized constructor
+// takes one parameter per required instance field in declaration order, so a class with no
+// `constructor` block still has a parameter list to capture, and an optional field is omitted
+// from it. The tuple is what `new`-ing the class through a stored argument list would need.
+func TestUtilityTypeConstructorParametersOfClass(t *testing.T) {
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name: "ExplicitConstructor",
+			src: `
+				class Point {
+					x: number,
+					y: string,
+					constructor(mut self, x: number, y: string) {
+						self.x = x
+						self.y = y
+					},
+				}
+				type Result = ConstructorParameters<typeof Point>
+			`,
+			wantExpanded: "[number, string]",
+		},
+		{
+			// The statics sit beside the signature rather than in it, so they do not reach
+			// the captured list.
+			name: "ClassWithStatics",
+			src: `
+				class Counter {
+					n: number,
+					static zero: number = 0,
+					constructor(mut self, n: number) { self.n = n },
+				}
+				type Result = ConstructorParameters<typeof Counter>
+			`,
+			wantExpanded: "[number]",
+		},
+		{
+			// No `constructor` block, so synthesizeConstructor builds the signature from the
+			// required instance fields in declaration order. `tag` is optional and omitted.
+			name: "SynthesizedConstructor",
+			src: `
+				class Pair {
+					a: number,
+					b: string,
+					tag?: boolean,
+				}
+				type Result = ConstructorParameters<typeof Pair>
+			`,
+			wantExpanded: "[number, string]",
+		},
+		{
+			name: "NoParameters",
+			src: `
+				class Empty {
+					constructor(mut self) {},
+				}
+				type Result = ConstructorParameters<typeof Empty>
+			`,
+			wantExpanded: "[]",
+		},
+	})
+}
