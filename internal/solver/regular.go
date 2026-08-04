@@ -19,11 +19,13 @@ import (
 //
 //	type H<T> = {a: keyof T, b: H<{c: T}>}
 //
-// `H<number>` unfolds to `{a: never, b: H<{c: number}>}`, then to `{a: "c", b: H<{c: {c: number}}>}`,
-// and the argument gains a level every lap, so no pair ever repeats. The tree is regular all the
-// same. `keyof {c: X}` is `"c"` whatever X is, so every lap below the first emits `{a: "c", b: …}`
-// and the whole tree has two distinct subtrees. muKnotFor finds that knot, and evalTypeOperator
-// hands constrain `μX0.{a: "c", b: X0}` in place of the `H<{c: number}>` reference.
+// `H<number>` unfolds to `{a: never, b: H<{c: number}>}`. The reference that leaves behind unfolds
+// in turn to `{a: "c", b: H<{c: {c: number}}>}`, so two unfoldings of `H<number>` reach
+// `{a: never, b: {a: "c", b: H<{c: {c: number}}>}}`. The argument gains a level every lap, so no
+// pair ever repeats. The tree is regular all the same. `keyof {c: X}` is `"c"` whatever X is, so
+// every lap below the first emits `{a: "c", b: …}` and the whole tree has two distinct subtrees.
+// muKnotFor finds that knot, and evalTypeOperator hands constrain `μX0.{a: "c", b: X0}` in place of
+// the `H<{c: number}>` reference.
 //
 // # What proves a knot
 //
