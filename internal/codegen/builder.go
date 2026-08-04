@@ -2441,6 +2441,7 @@ func (b *Builder) buildGuardedArm(
 		caseBodyStmts = append(caseBodyStmts, guardIf)
 		return []Stmt{NewIfStmt(condition, NewBlockStmt(caseBodyStmts, source), nil, source)}
 	}
+
 	takenVar, takenDecl := b.createTempVarWithInit(NewLitExpr(NewBoolLit(false, source), source), source)
 	guardBodyStmts = append(guardBodyStmts, &ExprStmt{
 		Expr:   NewBinaryExpr(takenVar, Assign, NewLitExpr(NewBoolLit(true, source), source), source),
