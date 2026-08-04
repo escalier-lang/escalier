@@ -159,19 +159,11 @@ func (c *checker) resolveTypeArgs(
 	return args
 }
 
-// reportRequiredAfterDefault reports each default that a later parameter with no default makes
-// unusable, the `T = number` of `<T = number, U>`. Arguments bind positionally, so omitting the
-// argument for `T` would leave `U` reading the argument written for `T`. A reference therefore
-// has to write every argument up to the last required parameter, which is what requiredArgCount
-// computes, and a default before that point can never be reached.
-//
-// One report per such default, blaming the `= …` annotation and naming the first required
-// parameter that follows it. Blaming each default rather than each required parameter names
-// exactly the annotations that have to change, and the fix is to drop the default or to give
-// every parameter after it one.
-//
-// The default is kept rather than dropped, so a reference that does write every argument still
-// resolves against a full parameter list.
+// reportRequiredAfterDefault reports each default a later parameter with no default makes
+// unusable, the `T = number` of `<T = number, U>`. One report per such default, blaming the
+// `= …` annotation and naming the first required parameter after it, so the reports name
+// exactly the annotations that have to change. The default is kept rather than dropped, so a
+// reference that does write every argument still resolves against a full parameter list.
 func (c *checker) reportRequiredAfterDefault(params []*ast.TypeParam) {
 	required := requiredArgCount(len(params), func(i int) bool { return params[i].Default != nil })
 	for i, p := range params[:required] {
