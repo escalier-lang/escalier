@@ -1,0 +1,34 @@
+// A field write through a `mut` reference to a class instance.
+class Counter {
+    count: number,
+}
+fn bump(c: mut Counter) {
+    c.count = c.count + 1
+}
+
+// `T` sits in an input position, so it is contravariant through a mutable reference
+// just as it is through an immutable one: a wider consumer fills a narrower slot.
+class Consumer<T> {
+    log: string,
+    accept(self, x: T) {
+        return self.log
+    },
+}
+fn feedNumber(c: mut Consumer<number>) {
+    return c.accept(1)
+}
+fn feedEither(c: mut Consumer<number | string>) {
+    return feedNumber(c)
+}
+
+// A `readonly` field is unwritable through any reference, so `T` stays covariant
+// under `mut` and a narrower frozen box fills a wider slot.
+class Frozen<T> {
+    readonly value: T,
+}
+fn readEither(f: mut Frozen<number | string>) {
+    return f.value
+}
+fn readNumber(f: mut Frozen<number>) {
+    return readEither(f)
+}

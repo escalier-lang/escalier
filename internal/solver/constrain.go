@@ -273,20 +273,64 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 }
 
 // needsResidualWriteBack reports whether a mutable borrow's inner needs an explicit
-// contravariant write view in the RefType arm (PR 14). The object/tuple arms pin
-// matched object/object and tuple/tuple inners via the mut-context flag, so those
-// need no residual. Any other inner — a type variable, or two mismatched kinds —
-// the flag's structural arm does not reach, so the whole reverse constraint pins it.
-func needsResidualWriteBack(sub, sup soltype.Type) bool {
-	if _, ok := sub.(*soltype.ObjectType); ok {
+// contravariant write view in the RefType arm. A mutable borrow makes its inner
+// invariant, so both a read view and a write view have to be checked. Some arms derive
+// the write view themselves from the mut-context flag, and those need no residual. Three
+// arms do:
+//
+//   - object/object and tuple/tuple, which pin each named field or element the flag marks
+//     writable;
+//   - same-name class/class, whose nominal walk dispatches each type argument by the
+//     class's mutable-view variance vector;
+//   - class/object, which projects the class body and hands the flag to the object arm.
+//
+// Any other inner reaches no such arm, so the whole reverse constraint pins it. That
+// covers a type variable, two mismatched kinds, and one case worth naming: two classes
+// with DIFFERENT names, where the nominal walk decides `Sub <: Super` on the declared
+// extends edge alone. Nothing checks that a subclass redeclaring an inherited field keeps
+// it at the superclass's type, so widening `mut Sub` to `mut Super` would otherwise hand
+// out a write permission the subclass's own field may not accept. The reverse constraint
+// stands in for that missing check until escalier-lang/escalier#985 adds it.
+//
+// Both sides are peeled through the transparent wrappers first, so a class or object
+// spelled through an alias dispatches the same way as the bare type it names.
+func (c *Context) needsResidualWriteBack(sub, sup soltype.Type) bool {
+	sub, sup = c.peelTransparent(sub), c.peelTransparent(sup)
+	switch sub := sub.(type) {
+	case *soltype.ObjectType:
 		_, ok := sup.(*soltype.ObjectType)
 		return !ok
-	}
-	if _, ok := sub.(*soltype.TupleType); ok {
+	case *soltype.TupleType:
 		_, ok := sup.(*soltype.TupleType)
 		return !ok
+	case *soltype.ClassType:
+		switch sup := sup.(type) {
+		case *soltype.ClassType:
+			return sub.Name != sup.Name // a cross-name pair rides the extends edge unchecked
+		case *soltype.ObjectType:
+			return false
+		}
+		return true
 	}
 	return true
+}
+
+// peelTransparent resolves t through the wrappers that merely name another type, an alias
+// and a recursive μ-knot, so a caller dispatching on t's kind sees the type the name
+// stands for. The unwrap is bounded by maxUnwrapDepth, since an alias whose body names
+// itself would otherwise spin.
+func (c *Context) peelTransparent(t soltype.Type) soltype.Type {
+	for range maxUnwrapDepth {
+		switch ty := t.(type) {
+		case *soltype.AliasType:
+			t = c.expandAlias(ty)
+		case *soltype.RecursiveType:
+			t = unfoldRecursive(ty)
+		default:
+			return t
+		}
+	}
+	return t
 }
 
 // evalTypeOperator evaluates the outermost transparent type operator of t to the type it stands
@@ -1033,8 +1077,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		switch sup := super.(type) {
 		case *soltype.ClassType:
 			// Nominal: identical name with a per-position argument check, or sub reaches
-			// sup transitively through the declared extends graph.
-			return c.constrainNominal(sub, sup, seen)
+			// sup transitively through the declared extends graph. The mut-context flag
+			// selects the variance vector each argument is dispatched by, so a mutable
+			// borrow pins the arguments a write through it can reach and leaves the rest at
+			// their immutable-view variance.
+			return c.constrainNominal(sub, sup, seen, mutCtx)
 		case *soltype.ObjectType:
 			// Target-dispatched (m4 plan forward note): a class instance satisfies a
 			// structural object target when the target is inexact, or when the class is
@@ -1101,7 +1148,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// The arms above only reach the write view when both inners are the same
 			// object/tuple kind. Any other inner — a type variable, or two mismatched
 			// kinds — needs the whole reverse constraint to stay invariant.
-			if sup.Mut && needsResidualWriteBack(sub.Inner, sup.Inner) {
+			if sup.Mut && c.needsResidualWriteBack(sub.Inner, sup.Inner) {
 				errs = append(errs, c.constrain(sup.Inner, sub.Inner, seen, false)...)
 			}
 			// 3. Lifetime outlives, covariant (M4 D2). Active now that borrows carry

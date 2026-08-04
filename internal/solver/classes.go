@@ -25,10 +25,19 @@ type ClassDef struct {
 	// twin of TypeParams. nil for a class that holds no borrowed data.
 	LifetimeParams []*soltype.LifetimeParam
 
-	// Variance records one entry per TypeParam, dispatched per position by the nominal
-	// constrain rule. B1 leaves every entry Invariant, the conservative default;
-	// variance inference (C2) overwrites it.
+	// Variance records one entry per TypeParam as measured through an IMMUTABLE
+	// reference to an instance, where every member is readable and none is writable. The
+	// nominal constrain rule dispatches each argument position by it. B1 leaves every
+	// entry Invariant, the conservative default; variance inference (C2) overwrites it.
 	Variance []Variance
+
+	// MutVariance is the same measurement taken through a MUTABLE reference, which also
+	// admits a write to every non-`readonly` field. A parameter that reaches such a field
+	// is Invariant here. Every other parameter carries the same entry it does in Variance.
+	// The nominal constrain rule reads this vector when the constraint sits inside a
+	// mutable borrow. It is nil until variance inference (C2) fills it, and a missing
+	// entry falls back to Invariant.
+	MutVariance []Variance
 
 	// Supers holds the resolved `extends` superclass — the declared nominal
 	// subtype-graph edge. A class has at most one, so this holds zero or one element.
@@ -79,6 +88,26 @@ const (
 	Bivariant
 )
 
+// varianceAt returns the variance measured for the i'th type parameter, read from
+// MutVariance when the constraint sits inside a mutable borrow and from Variance
+// otherwise. It yields Invariant whenever the chosen vector has no entry at i, which
+// covers an unregistered class, a def whose vectors variance inference has not filled in
+// yet, and an index past the parameter list. Invariant is the conservative default a sound
+// constrain rule can always fall back to.
+func (d *ClassDef) varianceAt(i int, mutCtx bool) Variance {
+	if d == nil {
+		return Invariant
+	}
+	vec := d.Variance
+	if mutCtx {
+		vec = d.MutVariance
+	}
+	if i >= len(vec) {
+		return Invariant
+	}
+	return vec[i]
+}
+
 func (v Variance) String() string {
 	switch v {
 	case Covariant:
@@ -94,14 +123,19 @@ func (v Variance) String() string {
 
 // inferVariance measures each class type parameter's variance from how it occurs in the
 // class body, then checks any declared `in`/`out`/`in out` modifier against the measured
-// variance. It returns the measured variance to store on ClassDef.Variance, which the
-// nominal constrain rule dispatches each argument position by. A declared modifier is
-// checked, not trusted: a mismatch reports VarianceMismatchError and the measured
-// variance is still stored, since soundness follows the body, not the annotation.
-func (c *checker) inferVariance(def *ClassDef, decl *ast.ClassDecl) []Variance {
-	variance := inferBodyVariance(def)
+// variance. It returns the two vectors to store on ClassDef. immut is the immutable-view
+// variance, stored as Variance, and mut the mutable-view variance, stored as MutVariance.
+// The nominal constrain rule dispatches each argument position by whichever vector the
+// constraint's reference mutability selects.
+//
+// A declared modifier is checked against the immutable view alone, the variance a reader
+// of the class sees. It is checked, not trusted: a mismatch reports VarianceMismatchError
+// and the measured variance is still stored, since soundness follows the body, not the
+// annotation.
+func (c *checker) inferVariance(def *ClassDef, decl *ast.ClassDecl) (immut, mut []Variance) {
+	immut, mut = inferBodyVariance(def)
 	for i, tp := range decl.TypeParams {
-		if i >= len(variance) {
+		if i >= len(immut) {
 			break
 		}
 		declared, ok := modifierVariance(tp.Variance)
@@ -110,19 +144,19 @@ func (c *checker) inferVariance(def *ClassDef, decl *ast.ClassDecl) []Variance {
 		}
 		// A phantom parameter imposes no constraint either way, so any modifier is sound
 		// on it — accept the annotation and keep the measured Bivariant.
-		if variance[i] == Bivariant {
+		if immut[i] == Bivariant {
 			continue
 		}
-		if declared != variance[i] {
+		if declared != immut[i] {
 			c.report(&VarianceMismatchError{
 				Name:     tp.Name,
 				Declared: declared,
-				Inferred: variance[i],
+				Inferred: immut[i],
 				Class:    decl.Name,
 			})
 		}
 	}
-	return variance
+	return immut, mut
 }
 
 // modifierVariance maps a declared variance modifier to the Variance it asserts, or
@@ -152,35 +186,66 @@ func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
 // the polarity visitor treats a nested class's arguments covariantly regardless of that
 // class's own variance, so precise variance through inheritance is deferred rather than
 // measured unsoundly.
-func inferBodyVariance(def *ClassDef) []Variance {
-	variance := make([]Variance, len(def.TypeParams))
+//
+// It returns two vectors, one per view a reference to an instance can offer. immut is the
+// variance an immutable reference sees, where every member is readable and none is
+// writable. mut is the variance a mutable reference sees, which additionally admits a
+// write to every non-`readonly` field.
+//
+// The two vectors differ only at those writable fields. A field's read is an output
+// position in both views, so a parameter reaching one is covariant in immut. Its write is
+// an input position only mut has, so the same parameter is invariant in mut. Given `class
+// Box<T> { value: T }`, immut measures T covariant while mut measures it invariant. That
+// is what leaves `mut Box<number>` and `mut Box<number | string>` unrelated even though
+// `Box<number> <: Box<number | string>` holds.
+//
+// Every other member position has one variance both views share, so it is walked once and
+// folded into both. A method value parameter is contravariant whether or not the holder
+// can mutate the instance, and a method return or getter is covariant either way. The same
+// holds for a member only a mutable reference can reach, such as a setter or a `mut self`
+// method. Reaching such a member is a call, and a call's argument and result carry the
+// polarity its signature gives them regardless of what made the member reachable.
+//
+// Folding a mutability-gated member into immut as well is the conservative choice. An
+// owned value can later be bound mutably, so a parameter that is inert only while the
+// reference stays immutable is not safe to treat as a phantom.
+func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
+	immut = make([]Variance, len(def.TypeParams))
+	mut = make([]Variance, len(def.TypeParams))
 	if len(def.TypeParams) == 0 {
-		return variance
+		return immut, mut
 	}
-	v := &varianceVisitor{
-		targets: make(map[*soltype.TypeVarType]int, len(def.TypeParams)),
-		pos:     make([]bool, len(def.TypeParams)),
-		neg:     make([]bool, len(def.TypeParams)),
-	}
+	targets := make(map[*soltype.TypeVarType]int, len(def.TypeParams))
 	for i, tp := range def.TypeParams {
-		v.targets[tp.Var] = i
+		targets[tp.Var] = i
 	}
+	// shared records the occurrences both views agree on. write records the field-write
+	// occurrences only a mutable reference adds.
+	shared := newVarianceVisitor(targets, len(def.TypeParams))
+	write := newVarianceVisitor(targets, len(def.TypeParams))
 	if def.Body != nil {
 		for _, elem := range def.Body.Elems {
-			soltype.AcceptObjElem(stripSelfReceiver(elem), v, soltype.Positive)
+			soltype.AcceptObjElem(stripSelfReceiver(elem), shared, soltype.Positive)
+			if prop, ok := elem.(*soltype.PropertyElem); ok && !prop.Readonly {
+				// Walking the same field again at Negative records the input position
+				// `obj.f = …` occupies. A `readonly` field rejects that write, so it is
+				// skipped here and contributes only its output position to both vectors.
+				soltype.AcceptObjElem(prop, write, soltype.Negative)
+			}
 		}
 	}
 	// A parameter appearing in a `super` type argument is marked in both directions, so it
 	// collapses to invariant — the sound conservative choice while inheritance variance is
 	// not composed precisely. Walking each super once per polarity records both.
 	for _, super := range def.Supers {
-		super.Accept(v, soltype.Positive)
-		super.Accept(v, soltype.Negative)
+		super.Accept(shared, soltype.Positive)
+		super.Accept(shared, soltype.Negative)
 	}
 	for i := range def.TypeParams {
-		variance[i] = collapseVariance(v.pos[i], v.neg[i])
+		immut[i] = collapseVariance(shared.pos[i], shared.neg[i])
+		mut[i] = collapseVariance(shared.pos[i] || write.pos[i], shared.neg[i] || write.neg[i])
 	}
-	return variance
+	return immut, mut
 }
 
 // collapseVariance turns a parameter's observed occurrence polarities into its variance:
@@ -230,7 +295,23 @@ type varianceVisitor struct {
 	neg     []bool
 }
 
+// newVarianceVisitor returns a visitor that records occurrences of the vars in targets,
+// sized for n type parameters. The visitors measuring one class share a single targets
+// map, since they index the same parameter list.
+func newVarianceVisitor(targets map[*soltype.TypeVarType]int, n int) *varianceVisitor {
+	return &varianceVisitor{targets: targets, pos: make([]bool, n), neg: make([]bool, n)}
+}
+
 func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	// A `mut` borrow is a read-write window on its pointee, so a parameter reached
+	// through one occupies an input position as well as an output position and comes out
+	// invariant. RefType.Accept walks the pointee covariantly alone, so the write view is
+	// recorded here through the helper the occurrence visitors share. This is what keeps
+	// `readonly inner: mut Box<T>` from measuring T covariant: the field itself rejects
+	// `h.inner = …`, but the borrow it holds still admits `h.inner.value = …`.
+	if recordMutWriteView(v, t, pol) {
+		return soltype.EnterResult{} // let Accept do the covariant read-view walk
+	}
 	if tv, ok := t.(*soltype.TypeVarType); ok {
 		if i, found := v.targets[tv]; found {
 			if pol == soltype.Positive {
@@ -292,14 +373,17 @@ type classPair struct{ sub, super string }
 // constrainNominal decides sub <: super between two class instances. It succeeds when
 // they name the same class, checking each type argument by the class's per-position
 // variance, or when sub reaches super transitively through the declared extends graph.
-// A (subName, supName) seen-set bounds the walk on a cyclic hierarchy. Until C2 infers
-// real variance, every ClassDef.Variance entry is Invariant, so every argument is
-// constrained in both directions — the conservative choice a sound rule falls back to.
-func (c *Context) constrainNominal(sub, super *soltype.ClassType, seen *seenPairs) []SolverError {
-	return c.constrainNominalWalk(sub, super, seen, set.NewSet[classPair]())
+// A (subName, supName) seen-set bounds the walk on a cyclic hierarchy.
+//
+// mutCtx is the deep-mut context flag the RefType gate sets, true when the constraint sits
+// inside a mutable borrow. It selects which of the class's two variance vectors each
+// argument is dispatched by, so a `mut` reference tightens only the parameters a write
+// through that reference can reach rather than pinning every argument.
+func (c *Context) constrainNominal(sub, super *soltype.ClassType, seen *seenPairs, mutCtx bool) []SolverError {
+	return c.constrainNominalWalk(sub, super, seen, set.NewSet[classPair](), mutCtx)
 }
 
-func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seenPairs, walked set.Set[classPair]) []SolverError {
+func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seenPairs, walked set.Set[classPair], mutCtx bool) []SolverError {
 	key := classPair{sub.Name, super.Name}
 	if walked.Contains(key) {
 		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
@@ -311,10 +395,7 @@ func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seen
 		var errs []SolverError
 		n := min(len(sub.TypeArgs), len(super.TypeArgs))
 		for i := range n {
-			variance := Invariant
-			if def != nil && i < len(def.Variance) {
-				variance = def.Variance[i]
-			}
+			variance := def.varianceAt(i, mutCtx)
 			argSub, argSup := sub.TypeArgs[i], super.TypeArgs[i]
 			switch variance {
 			case Covariant:
@@ -348,7 +429,7 @@ func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seen
 			// shallowestAssumed by hand where every other arm inherits the restore from
 			// Probe.Discard.
 			enclosingShallowest := c.shallowestAssumed
-			if len(c.constrainNominalWalk(s, super, seen.Clone(), walked)) == 0 {
+			if len(c.constrainNominalWalk(s, super, seen.Clone(), walked, mutCtx)) == 0 {
 				// The accepting candidate is the derivation the caller keeps, so the goals it
 				// closed assumptions on stay folded in.
 				return nil

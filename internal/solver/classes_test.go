@@ -110,6 +110,10 @@ func TestConstrainNominalArgVariance(t *testing.T) {
 // both together are invariant, and a parameter used nowhere is bivariant. The method
 // receiver `self` is excluded, so a method reading `self` does not drag its parameter to
 // invariant.
+//
+// Each case asserts both measured vectors. want is the immutable view and wantMut the
+// mutable view, and they differ only where a non-`readonly` field's write view adds an
+// input position the immutable view does not have.
 func TestInferBodyVariance(t *testing.T) {
 	// selfMethod builds a method whose receiver is the class instance at its own type
 	// parameter, plus one value parameter and a return, so the walk sees a genuine `self`
@@ -135,24 +139,40 @@ func TestInferBodyVariance(t *testing.T) {
 			Supers:     supers,
 		}
 	}
+	// readonlyProp builds a `readonly` field, which no reference can write, so its write
+	// view never reaches the mutable-view vector.
+	readonlyProp := func(name string, t soltype.Type) *soltype.PropertyElem {
+		return &soltype.PropertyElem{Name: name, Type: t, Readonly: true}
+	}
 	tests := []struct {
-		name string
-		def  *ClassDef
-		want []Variance
+		name    string
+		def     *ClassDef
+		want    []Variance
+		wantMut []Variance
 	}{
 		{
-			name: "field only is covariant",
+			name: "field only is covariant, and invariant under mut",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(propElem("value", tv)), nil
 			}),
-			want: []Variance{Covariant},
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Invariant},
 		},
 		{
-			name: "method value parameter only is contravariant",
+			name: "readonly field is covariant in both views",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(readonlyProp("value", tv)), nil
+			}),
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Covariant},
+		},
+		{
+			name: "method value parameter only is contravariant in both views",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(selfMethod("accept", "Consumer", tv, tv, &soltype.Void{})), nil
 			}),
-			want: []Variance{Contravariant},
+			want:    []Variance{Contravariant},
+			wantMut: []Variance{Contravariant},
 		},
 		{
 			name: "field and parameter together are invariant",
@@ -162,21 +182,46 @@ func TestInferBodyVariance(t *testing.T) {
 					selfMethod("accept", "Cell", tv, tv, &soltype.Void{}),
 				), nil
 			}),
-			want: []Variance{Invariant},
+			want:    []Variance{Invariant},
+			wantMut: []Variance{Invariant},
 		},
 		{
 			name: "method returning the parameter is covariant despite the self receiver",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(selfMethod("get", "Box", tv, num(), tv)), nil
 			}),
-			want: []Variance{Covariant},
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Covariant},
+		},
+		{
+			name: "a field write drags a method's covariant return to invariant under mut",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(
+					propElem("value", tv),
+					selfMethod("read", "Box", tv, num(), tv),
+				), nil
+			}),
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Invariant},
+		},
+		{
+			// A `mut` borrow is a read-write window on its pointee, so a parameter behind
+			// one is invariant even when the field holding the borrow is `readonly`.
+			name: "readonly field holding a mut borrow is invariant in both views",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				inner := &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{tv}}
+				return exactObj(readonlyProp("inner", mutRef(inner))), nil
+			}),
+			want:    []Variance{Invariant},
+			wantMut: []Variance{Invariant},
 		},
 		{
 			name: "parameter used nowhere is bivariant",
 			def: oneParam(func(_ *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(propElem("n", num())), nil
 			}),
-			want: []Variance{Bivariant},
+			want:    []Variance{Bivariant},
+			wantMut: []Variance{Bivariant},
 		},
 		{
 			name: "parameter reaching a super is invariant",
@@ -184,36 +229,55 @@ func TestInferBodyVariance(t *testing.T) {
 				return exactObj(propElem("value", tv)),
 					[]*soltype.ClassType{{Name: "Base", TypeArgs: []soltype.Type{tv}}}
 			}),
-			want: []Variance{Invariant},
+			want:    []Variance{Invariant},
+			wantMut: []Variance{Invariant},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, inferBodyVariance(tt.def))
+			immut, mut := inferBodyVariance(tt.def)
+			require.Equal(t, tt.want, immut)
+			require.Equal(t, tt.wantMut, mut)
 		})
 	}
 }
 
-// TestConstrainNominalVarianceDispatch drives the four variance lines the milestone
-// pins Option 2 against `mut` with (§M5 Accept): a covariant Box widens, a contravariant
-// Consumer does not, and either under a `mut` borrow is invariant because the RefType
-// arm's bidirectional sweep forces both argument directions. The ClassDefs carry the
-// variance directly, isolating constrain's per-position dispatch from the inference that
-// TestInferBodyVariance covers.
+// TestConstrainNominalVarianceDispatch drives constrain's per-position variance dispatch
+// against a `mut` borrow. A mutable borrow selects the class's mutable-view vector rather
+// than pinning every argument, so it tightens only the parameters a write through the
+// borrow can reach:
+//
+//   - Box's parameter is a writable field, invariant in the mutable view, so `mut Box`
+//     rejects the widening `Box<number>` accepts;
+//   - Consumer's is a method value parameter, contravariant in both views, so `mut
+//     Consumer` accepts the same narrowing an immutable Consumer does;
+//   - Reader's is a method return, covariant in both views, so `mut Reader` accepts the
+//     same widening an immutable Reader does.
+//
+// The ClassDefs carry both vectors directly, isolating constrain's dispatch from the
+// inference that TestInferBodyVariance covers.
 func TestConstrainNominalVarianceDispatch(t *testing.T) {
 	numOrStr := &soltype.UnionType{Types: []soltype.Type{num(), str()}}
 	newCtx := func() *Context {
 		c := &Context{}
 		boxVar := &soltype.TypeVarType{ID: 100}
 		c.registerClass("Box", &ClassDef{
-			TypeParams: []*soltype.TypeParam{{Name: "T", Var: boxVar}},
-			Variance:   []Variance{Covariant},
-			Body:       exactObj(propElem("value", boxVar)),
+			TypeParams:  []*soltype.TypeParam{{Name: "T", Var: boxVar}},
+			Variance:    []Variance{Covariant},
+			MutVariance: []Variance{Invariant},
+			Body:        exactObj(propElem("value", boxVar)),
 		})
 		consumerVar := &soltype.TypeVarType{ID: 101}
 		c.registerClass("Consumer", &ClassDef{
-			TypeParams: []*soltype.TypeParam{{Name: "T", Var: consumerVar}},
-			Variance:   []Variance{Contravariant},
+			TypeParams:  []*soltype.TypeParam{{Name: "T", Var: consumerVar}},
+			Variance:    []Variance{Contravariant},
+			MutVariance: []Variance{Contravariant},
+		})
+		readerVar := &soltype.TypeVarType{ID: 102}
+		c.registerClass("Reader", &ClassDef{
+			TypeParams:  []*soltype.TypeParam{{Name: "T", Var: readerVar}},
+			Variance:    []Variance{Covariant},
+			MutVariance: []Variance{Covariant},
 		})
 		return c
 	}
@@ -222,6 +286,9 @@ func TestConstrainNominalVarianceDispatch(t *testing.T) {
 	}
 	consumer := func(arg soltype.Type) *soltype.ClassType {
 		return &soltype.ClassType{Name: "Consumer", TypeArgs: []soltype.Type{arg}}
+	}
+	reader := func(arg soltype.Type) *soltype.ClassType {
+		return &soltype.ClassType{Name: "Reader", TypeArgs: []soltype.Type{arg}}
 	}
 
 	t.Run("covariant Box widens", func(t *testing.T) {
@@ -244,11 +311,25 @@ func TestConstrainNominalVarianceDispatch(t *testing.T) {
 		c := newCtx()
 		require.Empty(t, Messages(c.Constrain(consumer(numOrStr), consumer(num()))))
 	})
-	t.Run("mut Consumer is invariant", func(t *testing.T) {
+	t.Run("mut Consumer accepts a narrowing", func(t *testing.T) {
+		c := newCtx()
+		require.Empty(t, Messages(c.Constrain(mutRef(consumer(numOrStr)), mutRef(consumer(num())))))
+	})
+	t.Run("mut Consumer rejects a widening", func(t *testing.T) {
 		c := newCtx()
 		require.Equal(t,
 			[]string{"cannot constrain string <: number"},
-			Messages(c.Constrain(mutRef(consumer(numOrStr)), mutRef(consumer(num())))))
+			Messages(c.Constrain(mutRef(consumer(num())), mutRef(consumer(numOrStr)))))
+	})
+	t.Run("mut Reader accepts a widening", func(t *testing.T) {
+		c := newCtx()
+		require.Empty(t, Messages(c.Constrain(mutRef(reader(num())), mutRef(reader(numOrStr)))))
+	})
+	t.Run("mut Reader rejects a narrowing", func(t *testing.T) {
+		c := newCtx()
+		require.Equal(t,
+			[]string{"cannot constrain string <: number"},
+			Messages(c.Constrain(mutRef(reader(numOrStr)), mutRef(reader(num())))))
 	})
 }
 

@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -1186,6 +1187,215 @@ func TestInferClassContravariance(t *testing.T) {
 			fn feed(c: Consumer<number>) { }
 			val wide: Consumer<number | string> = Consumer()
 			val r = feed(wide)
+		`)
+		require.Empty(t, errs)
+	})
+}
+
+// TestInferClassMutVariance covers the mutable-view variance vector end to end
+// (escalier-lang/escalier#870). A `mut` reference to a class instance tightens only the
+// parameters a write through that reference can reach, rather than pinning every type
+// argument.
+//
+// A non-`readonly` field is writable through a `mut` reference and readable through any
+// reference, so a parameter reaching one is covariant immutably and invariant mutably. A
+// method value parameter and a method return are input and output positions whatever the
+// reference's mutability, so those parameters keep their variance under `mut`.
+func TestInferClassMutVariance(t *testing.T) {
+	t.Run("mut field parameter rejects a widening", func(t *testing.T) {
+		// `wide` may run `b.value = "s"`, so accepting this would let a `string` land in a
+		// field the instance declares as `number`. A writable field is an input position
+		// under `mut`, which is what rejects it.
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			fn wide(b: mut Box<number | string>) { }
+			fn narrow(b: mut Box<number>) { wide(b) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+	t.Run("mut field parameter rejects a narrowing", func(t *testing.T) {
+		// The other direction fails too, which is what invariance means. Here the danger
+		// is on the read side: `narrow` may bind `b.value` as a `number` while the
+		// instance holds a `string`.
+		_, _, errs := inferSource(t, `
+			class Box<T> { value: T }
+			fn narrow(b: mut Box<number>) { }
+			fn wide(b: mut Box<number | string>) { narrow(b) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+	t.Run("mut method parameter accepts a narrowing", func(t *testing.T) {
+		// `T` reaches no storage, only `accept`'s parameter, so a `mut` reference buys no
+		// capability an immutable one lacks. Everything `narrow` can do is call
+		// `accept(<number>)`, and the instance behind it accepts a `number | string`.
+		// Rejecting this was the imprecision escalier-lang/escalier#870 reported.
+		_, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			fn narrow(c: mut Consumer<number>) { }
+			fn wide(c: mut Consumer<number | string>) { narrow(c) }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("mut method parameter rejects a widening", func(t *testing.T) {
+		// Contravariance is a direction, not a licence. `wide` may call
+		// `c.accept("s")`, which the instance's `number`-only `accept` cannot handle, so
+		// the reverse of the case above stays rejected under `mut` just as it is
+		// immutably.
+		_, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			fn wide(c: mut Consumer<number | string>) { }
+			fn narrow(c: mut Consumer<number>) { wide(c) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+	t.Run("mut readonly field accepts a widening", func(t *testing.T) {
+		// `readonly` rejects `f.value = …` through any reference, so the field is an
+		// output position even under `mut` and T stays covariant. `wide` can only read,
+		// and a read yields the `number` the instance holds.
+		_, _, errs := inferSource(t, `
+			class Frozen<T> { readonly value: T }
+			fn wide(f: mut Frozen<number | string>) { }
+			fn narrow(f: mut Frozen<number>) { wide(f) }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("mut readonly field rejects a narrowing", func(t *testing.T) {
+		// Covariance under `mut` is still covariance. Reading `f.value` as a `number` off
+		// an instance that may hold a `string` is the unsound direction, so it is
+		// rejected here as it would be immutably.
+		_, _, errs := inferSource(t, `
+			class Frozen<T> { readonly value: T }
+			fn narrow(f: mut Frozen<number>) { }
+			fn wide(f: mut Frozen<number | string>) { narrow(f) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+	t.Run("mut method return accepts a widening", func(t *testing.T) {
+		// Both of Reader's occurrences of T are output positions, and neither becomes
+		// writable under `mut`. So `wide` can only obtain a T, never supply one, and every
+		// T it obtains is the `number` the instance stores.
+		_, _, errs := inferSource(t, `
+			class Reader<T> {
+				readonly value: T,
+				read(self) -> T { return self.value },
+			}
+			fn wide(r: mut Reader<number | string>) { }
+			fn narrow(r: mut Reader<number>) { wide(r) }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("a writable field pins a parameter a method also returns", func(t *testing.T) {
+		// T is covariant immutably — both the field read and the return are output
+		// positions — but the field write makes it invariant mutably, so the widening the
+		// immutable check below accepts is rejected under `mut`.
+		_, _, errs := inferSource(t, `
+			class Box<T> {
+				value: T,
+				read(self) -> T { return self.value },
+			}
+			fn wide(b: mut Box<number | string>) { }
+			fn narrow(b: mut Box<number>) { wide(b) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+	t.Run("a mut subclass reference does not reach its superclass", func(t *testing.T) {
+		// A cross-name pair stays pinned by the RefType arm's residual write-back, so this
+		// widening is rejected even though the immutable one below is accepted. The
+		// nominal walk decides `Dog <: Animal` on the declared extends edge alone, and
+		// nothing checks that Dog's redeclared `pos` keeps the type Animal declares. Were
+		// the widening accepted, `reset` would store a `{x: number}` into a field Dog
+		// declares as `{x: number, y: number}`. Re-examine this once
+		// escalier-lang/escalier#985 checks an inherited member's type.
+		_, _, errs := inferSource(t, `
+			class Animal {
+				pos: {x: number},
+				constructor(mut self, pos: {x: number}) { self.pos = pos },
+			}
+			class Dog extends Animal {
+				pos: {x: number, y: number},
+				constructor(mut self, pos: {x: number, y: number}) { self.pos = pos },
+			}
+			fn reset(a: mut Animal) { a.pos = {x: 0} }
+			fn resetDog(d: mut Dog) { reset(d) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain Animal <: Dog", errs[0].Message())
+	})
+	t.Run("an immutable subclass reference reaches its superclass", func(t *testing.T) {
+		// The immutable widening is the one the extends edge does license. `describe` can
+		// only read through `a`, and every member Animal declares is one Dog carries, so
+		// no read can miss. The redeclared-member gap that blocks the `mut` case above
+		// cannot bite here, since reaching it needs a write.
+		_, _, errs := inferSource(t, `
+			class Animal {
+				name: string,
+				constructor(mut self, name: string) { self.name = name },
+			}
+			class Dog extends Animal {
+				breed: string,
+				constructor(mut self, name: string, breed: string) { self.breed = breed },
+			}
+			fn describe(a: Animal) -> string { return a.name }
+			fn describeDog(d: Dog) -> string { return describe(d) }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("a readonly field holding a mut borrow is invariant in both views", func(t *testing.T) {
+		// `readonly` rejects `h.inner = …`, but the borrow the field holds still admits
+		// `h.inner.value = …`, so T is reachable for writing through either kind of
+		// reference to a Holder. Both widenings must therefore be rejected. Were the
+		// first accepted, `poke` would store a `number` into a `Box<5>.value`.
+		src := `
+			class Box<T> { value: T }
+			class Holder<T> { readonly inner: mut Box<T> }
+			fn poke(h: %s Holder<number>) { h.inner.value = 42 }
+			fn narrow(h: %s Holder<5>) { poke(h) }
+		`
+		for _, mutability := range []string{"mut", ""} {
+			_, _, errs := inferSource(t, fmt.Sprintf(src, mutability, mutability))
+			require.Len(t, errs, 1, "mutability %q", mutability)
+			require.Equal(t, "cannot constrain number <: 5", errs[0].Message())
+		}
+	})
+	t.Run("a class spelled through an alias behaves as the class it names", func(t *testing.T) {
+		// An alias is transparent, so `mut CNum` must permit exactly what `mut
+		// Consumer<number>` permits — no more, which would be unsound, and no less, which
+		// would reject a sound program. The residual write-back dispatches on the
+		// pointee's kind, so it peels the alias first. Without that, `mut CNum` would miss
+		// the class arm and take the whole reverse constraint, rejecting the narrowing the
+		// bare spelling accepts a few cases above.
+		_, _, errs := inferSource(t, `
+			class Consumer<T> {
+				accept(self, x: T) { },
+			}
+			type CNum = Consumer<number>
+			fn narrow(c: mut CNum) { }
+			fn wide(c: mut Consumer<number | string>) { narrow(c) }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("the same widening is accepted through an immutable reference", func(t *testing.T) {
+		// The immutable counterpart of the writable-field case above, and the pair is the
+		// point: dropping `mut` from both signatures leaves `wide` unable to write, so the
+		// field is an output position again and the widening becomes sound. This is the
+		// precision the mutable-view vector buys — the two views genuinely differ rather
+		// than one being conservatively pinned to the other.
+		_, _, errs := inferSource(t, `
+			class Box<T> {
+				value: T,
+				read(self) -> T { return self.value },
+			}
+			fn wide(b: Box<number | string>) { }
+			fn narrow(b: Box<number>) { wide(b) }
 		`)
 		require.Empty(t, errs)
 	})
