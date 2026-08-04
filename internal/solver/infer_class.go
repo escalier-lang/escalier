@@ -69,7 +69,6 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	self.TypeArgs = typeParamVars(typeParams)
 	def.Level = lvl - 1
 	def.TypeParams = typeParams
-	def.ParamsResolved = true
 	def.Variance = make([]Variance, len(typeParams))
 	def.MutVariance = make([]Variance, len(typeParams))
 	body := def.Body
@@ -188,7 +187,15 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string)
 		}
 	}
 	self := &soltype.ClassType{Name: qname, Final: decl.Final()}
-	def := &ClassDef{Body: &soltype.ObjectType{}, Static: &soltype.ObjectType{}}
+	// Record how many type arguments a reference may write before anything else. The
+	// parameters themselves resolve when this class's own inferClassDecl runs, which is after
+	// some of the references to it, so the count is read off the declaration's `<…>` clause
+	// here where every reference can reach it.
+	def := &ClassDef{
+		Arity:  arityOfParamDecls(decl.TypeParams),
+		Body:   &soltype.ObjectType{},
+		Static: &soltype.ObjectType{},
+	}
 	c.ctx.registerClass(qname, def)
 	// Register the type binding under the qualified name so a cross-namespace reference
 	// resolves it and a self-referential type in the body resolves to this class rather
@@ -287,24 +294,22 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 // path uses, so a class checks its argument count and fills a trailing omitted argument from
 // its parameter's default the way an alias does. An unresolved argument recovers to a fresh
 // var, keeping arity cascade-safe.
+//
+// The count comes from the ClassDef's Arity, which is set when the class's identity is
+// registered, so a reference resolved before that class's own body pass is still checked. The
+// defaults come from its TypeParams, which land in that later pass, so such a reference
+// recovers an omitted argument to a fresh var rather than filling it. That keeps the
+// declaration's own parameter var out of the instance either way.
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
-	var args []soltype.Type
-	if def, ok := c.ctx.classDef(ct.Name); ok && def.ParamsResolved {
-		args = c.resolveTypeArgs(scope, ref, ClassDeclKind, def.TypeParams, lvl)
-	} else {
-		// The class's parameters are not resolved yet, which a reference from a sibling in the
-		// same dep_graph component reaches. There is no parameter list to check the written
-		// arguments against and no default to fill an omitted one from, so resolve exactly what
-		// the reference wrote.
-		args = make([]soltype.Type, len(ref.TypeArgs))
-		for i, arg := range ref.TypeArgs {
-			if at, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
-				args[i] = at
-			} else {
-				args[i] = c.freshAt(lvl)
-			}
-		}
+	var params []*soltype.TypeParam
+	// An unregistered name has no declared count to check against, so take the reference's own
+	// as the expected one and let it through unreported.
+	arity := typeParamArity{Required: len(ref.TypeArgs), Total: len(ref.TypeArgs)}
+	if def, ok := c.ctx.classDef(ct.Name); ok {
+		params = def.TypeParams
+		arity = def.Arity
 	}
+	args := c.resolveTypeArgs(scope, ref, ClassDeclKind, params, arity, lvl)
 	if len(args) == 0 {
 		// The class declares no type parameters and the reference wrote no arguments, or it
 		// wrote some against a non-generic class and resolveTypeArgs already reported them.

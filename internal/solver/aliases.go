@@ -239,7 +239,7 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 		}
 	}
 	ltArgs := c.resolveAliasLifetimeArgs(ref, kind, ltParams, lvl)
-	args := c.resolveTypeArgs(scope, ref, kind, params, lvl)
+	args := c.resolveTypeArgs(scope, ref, kind, params, arityOfParams(params), lvl)
 	if len(args) == 0 {
 		// A non-generic alias carries no type arguments; any that were supplied are reported
 		// by resolveTypeArgs. Return a handle carrying only the lifetime arguments, or the bare

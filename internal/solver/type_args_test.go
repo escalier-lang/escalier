@@ -156,6 +156,72 @@ func TestTypeArgArityAtReference(t *testing.T) {
 	}
 }
 
+// TestSurplusTypeArgIsResolved checks that an argument written past the parameter count is
+// resolved before it is dropped, so a diagnostic inside it still reports. Dropping it unresolved
+// would hide the second problem behind the count, and fixing the count would then surface an
+// error the author had no reason to expect.
+func TestSurplusTypeArgIsResolved(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "OnGenericClass",
+			src: `
+				class Box<T> { v: T }
+				declare fn f() -> Box<number, Nonexistent>
+			`,
+			want: []string{
+				"class `Box` expects 1 type arguments but got 2",
+				"Unsupported: TypeRefTypeAnn",
+			},
+		},
+		{
+			name: "OnNonGenericClass",
+			src: `
+				class Point { x: number }
+				declare fn f() -> Point<Nonexistent>
+			`,
+			want: []string{
+				"class `Point` expects 0 type arguments but got 1",
+				"Unsupported: TypeRefTypeAnn",
+			},
+		},
+		{
+			name: "OnAlias",
+			src: `
+				type Box<T> = {v: T}
+				declare fn f() -> Box<number, Nonexistent>
+			`,
+			want: []string{
+				"type alias `Box` expects 1 type arguments but got 2",
+				"Unsupported: TypeRefTypeAnn",
+			},
+		},
+		{
+			name: "OnEnum",
+			src: `
+				enum Opt<T> { Some(value: T), None }
+				declare fn f() -> Opt<number, Nonexistent>
+			`,
+			want: []string{
+				"enum `Opt` expects 1 type arguments but got 2",
+				"Unsupported: TypeRefTypeAnn",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, len(tt.want))
+			for i, want := range tt.want {
+				require.Equal(t, want, errs[i].Message())
+			}
+		})
+	}
+}
+
 // TestTypeParamDefaultAtReference covers the other half of resolveTypeArgs, filling a trailing
 // omitted argument from its parameter's default. A class and an enum fill theirs the way an
 // alias does, so a bare `Box` against `class Box<T = number>` is `Box<number>` rather than the
@@ -251,18 +317,101 @@ func TestClassTypeParamDefaultIsPerReference(t *testing.T) {
 	require.Equal(t, "fn () -> Pair<string, string>", values["g"])
 }
 
-// TestClassArityUncheckedForUnresolvedSibling pins the one reference the class count does not
-// reach. The SCC pre-pass registers a bare ClassDef for every class in a dep_graph component so
-// a forward reference resolves, and each class's parameters land when its own pass runs. `A` is
-// walked first, so the `B<number, string>` in its body reaches `B` before `B`'s parameter list
-// exists and there is nothing to check the two written arguments against. The reference still
-// resolves, carrying exactly what it wrote.
-func TestClassArityUncheckedForUnresolvedSibling(t *testing.T) {
+// TestClassArityCheckedFromOtherDeclarations checks that the count reaches a reference written
+// anywhere, not only in a `fn` or `val` annotation. A class's members resolve in whatever order
+// the dep graph reaches its declaration, so a class body, an alias body, and an enum variant
+// parameter list all commonly name a class whose own pass has not run yet. The count is read
+// off the declaration's `<…>` clause when the class's identity is registered, which is before
+// any of them, so each reference is checked all the same.
+func TestClassArityCheckedFromOtherDeclarations(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "FromClassBodyOmitted",
+			src: `
+				class B<T> { v: T }
+				class A { b: B }
+			`,
+			want: "class `B` expects 1 type arguments but got 0",
+		},
+		// The declaration order is reversed from the row above, and the diagnostic is the same.
+		{
+			name: "FromClassBodyOmittedReversed",
+			src: `
+				class A { b: B }
+				class B<T> { v: T }
+			`,
+			want: "class `B` expects 1 type arguments but got 0",
+		},
+		{
+			name: "FromClassBodyTooMany",
+			src: `
+				class A { b: B<number, string> }
+				class B<T> { v: T }
+			`,
+			want: "class `B` expects 1 type arguments but got 2",
+		},
+		{
+			name: "FromAliasBody",
+			src: `
+				class B<T> { v: T }
+				type A = {b: B}
+			`,
+			want: "class `B` expects 1 type arguments but got 0",
+		},
+		{
+			name: "FromEnumVariantParam",
+			src: `
+				class B<T> { v: T }
+				enum A { X(b: B) }
+			`,
+			want: "class `B` expects 1 type arguments but got 0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
+}
+
+// TestClassArityRecoveryKeepsDeclarationVarOut checks what an omitted class type argument
+// recovers to. `A` declares no type parameters, so its constructor must not be generic. Filling
+// the omitted argument with `B`'s own parameter var would make it one, since that var is
+// quantified at `B`'s boundary and generalizing `A`'s constructor would capture it. A fresh var
+// keeps `A` monomorphic.
+func TestClassArityRecoveryKeepsDeclarationVarOut(t *testing.T) {
 	src := `
-		class A { b: B<number, string> }
-		class B<T> { a: A, v: T }
+		class B<T> { v: T }
+		class A { b: B }
 	`
-	_, types, errs := inferSource(t, src)
+	values, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, "class `B` expects 1 type arguments but got 0", errs[0].Message())
+	require.Equal(t, "fn (b: B<unknown>) -> A", values["A"])
+}
+
+// TestClassDefaultUnfilledForUnresolvedSibling pins what the count reaching a reference early
+// does not buy. A class's Arity is registered with its identity, but its resolved TypeParams —
+// and so the defaults hanging off them — land only when that class's own pass runs. `A` is
+// walked before `B`, so the omitted argument has no default to read yet and recovers to a fresh
+// var: `B<unknown>` where the declaration says `B<number>`. No arity error is reported, since
+// omitting an argument for a defaulted parameter is a legal reference.
+//
+// The same reference written in a `fn` annotation does fill the default, which is what
+// TestTypeParamDefaultAtReference covers. Closing the gap needs the check deferred until every
+// class in the component has its parameters, the machinery PR19 adds for bounds.
+func TestClassDefaultUnfilledForUnresolvedSibling(t *testing.T) {
+	src := `
+		class B<T = number> { v: T }
+		class A { b: B }
+	`
+	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "A", types["A"])
+	require.Equal(t, "fn (b: B<unknown>) -> A", values["A"])
 }

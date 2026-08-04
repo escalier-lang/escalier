@@ -104,13 +104,13 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 		vname := qname + "." + variant.Name.Name
 		vt := &soltype.ClassType{Name: vname, TypeArgs: typeArgs, Final: true, Variant: true}
 		c.ctx.registerClass(vname, &ClassDef{
-			TypeParams:     typeParams,
-			ParamsResolved: true,
-			Variance:       make([]Variance, len(typeParams)),
-			MutVariance:    make([]Variance, len(typeParams)),
-			Body:           &soltype.ObjectType{},
-			Static:         &soltype.ObjectType{},
-			Level:          lvl - 1,
+			TypeParams:  typeParams,
+			Arity:       arityOfParams(typeParams),
+			Variance:    make([]Variance, len(typeParams)),
+			MutVariance: make([]Variance, len(typeParams)),
+			Body:        &soltype.ObjectType{},
+			Static:      &soltype.ObjectType{},
+			Level:       lvl - 1,
 		})
 		c.recordType(variant.Name, vt)
 		variants = append(variants, variant)
