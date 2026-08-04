@@ -1107,6 +1107,7 @@ func (*RestParamNotLastError) isSolverError()               {}
 func (*RestParamNeedsTypeError) isSolverError()             {}
 func (*OptionalRestParamError) isSolverError()              {}
 func (*TypeParamDefaultForwardRefError) isSolverError()     {}
+func (*TypeParamRequiredAfterDefaultError) isSolverError()  {}
 func (*NotProductiveAliasError) isSolverError()             {}
 func (*ExpansionLimitError) isSolverError()                 {}
 
@@ -1343,6 +1344,24 @@ func (e *TypeParamDefaultForwardRefError) Message() string {
 		return fmt.Sprintf("the default for type parameter `%s` cannot reference `%s` itself", e.Param, e.Target)
 	}
 	return fmt.Sprintf("the default for type parameter `%s` cannot reference `%s`, which is declared after it", e.Param, e.Target)
+}
+
+// TypeParamRequiredAfterDefaultError fires when a type parameter with a default is declared
+// before one without, as `type Pair<T = number, U>` does. Arguments bind positionally, so
+// omitting the argument for `T` would leave `U` reading the argument written for `T`. Every
+// argument up to the last required parameter therefore has to be written, and a default before
+// that point can never be reached. Default is the unusable `= …` annotation, Param the parameter
+// carrying it, and Target the first parameter after it that has none.
+type TypeParamRequiredAfterDefaultError struct {
+	Default ast.TypeAnn
+	Param   string
+	Target  string
+}
+
+func (e *TypeParamRequiredAfterDefaultError) Span() ast.Span      { return e.Default.Span() }
+func (e *TypeParamRequiredAfterDefaultError) Related() []ast.Span { return nil }
+func (e *TypeParamRequiredAfterDefaultError) Message() string {
+	return fmt.Sprintf("the default for type parameter `%s` can never be used, since `%s` is declared after it and has no default", e.Param, e.Target)
 }
 
 // NotProductiveAliasError fires when a recursive type alias reaches itself with no type constructor

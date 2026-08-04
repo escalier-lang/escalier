@@ -14,6 +14,7 @@ import (
 // `<T: U, U: T>`, and an F-bound `<T: Foo<T>>` all resolve. The result stays in declaration order,
 // and the alias, class, enum, and function-annotation paths all route through here.
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
+	c.reportRequiredAfterDefault(params)
 	out := make([]*soltype.TypeParam, len(params))
 	// Pass 1: mint each parameter's var. Nothing is declared yet, so pass 2 controls which
 	// siblings each default can see.
@@ -60,15 +61,30 @@ type typeParamArity struct {
 	Total    int
 }
 
-// arityOfParams reads the argument-count range off a resolved parameter list.
-func arityOfParams(params []*soltype.TypeParam) typeParamArity {
-	arity := typeParamArity{Total: len(params)}
-	for _, p := range params {
-		if p.Default == nil {
-			arity.Required++
+// requiredArgCount returns how many arguments a reference must write for a parameter list of
+// length total, where hasDefault reports whether the parameter at an index carries one.
+//
+// This is one past the last parameter with no default, NOT the number of parameters that lack
+// one. Arguments bind positionally, so an argument can be omitted only when every parameter
+// from that position on has a default to fill it. A default written before a required
+// parameter, the `T = number` of `<T = number, U>`, can therefore never be omitted, and
+// counting it as optional would let `Pair<string>` pass while leaving `U` a fresh variable that
+// coalesces to `never`. resolveTypeParams reports such a declaration.
+func requiredArgCount(total int, hasDefault func(int) bool) int {
+	for i := total - 1; i >= 0; i-- {
+		if !hasDefault(i) {
+			return i + 1
 		}
 	}
-	return arity
+	return 0
+}
+
+// arityOfParams reads the argument-count range off a resolved parameter list.
+func arityOfParams(params []*soltype.TypeParam) typeParamArity {
+	return typeParamArity{
+		Required: requiredArgCount(len(params), func(i int) bool { return params[i].Default != nil }),
+		Total:    len(params),
+	}
 }
 
 // arityOfParamDecls reads the argument-count range straight off a declaration's `<…>` clause,
@@ -76,13 +92,10 @@ func arityOfParams(params []*soltype.TypeParam) typeParamArity {
 // arityOfParams reads off the resolved list, since a parameter's `= …` clause is what makes it
 // optional and resolving the clause does not change whether it is there.
 func arityOfParamDecls(params []*ast.TypeParam) typeParamArity {
-	arity := typeParamArity{Total: len(params)}
-	for _, p := range params {
-		if p.Default == nil {
-			arity.Required++
-		}
+	return typeParamArity{
+		Required: requiredArgCount(len(params), func(i int) bool { return params[i].Default != nil }),
+		Total:    len(params),
 	}
-	return arity
 }
 
 // resolveTypeArgs pairs the `<…>` type arguments a reference wrote with the parameters of the
@@ -155,6 +168,41 @@ func (c *checker) resolveTypeArgs(
 		}
 	}
 	return args
+}
+
+// reportRequiredAfterDefault reports each default that a later parameter with no default makes
+// unusable, the `T = number` of `<T = number, U>`. Arguments bind positionally, so omitting the
+// argument for `T` would leave `U` reading the argument written for `T`. A reference therefore
+// has to write every argument up to the last required parameter, which is what requiredArgCount
+// computes, and a default before that point can never be reached.
+//
+// One report per such default, blaming the `= …` annotation and naming the first required
+// parameter that follows it. Blaming each default rather than each required parameter names
+// exactly the annotations that have to change, and the fix is to drop the default or to give
+// every parameter after it one.
+//
+// The default is kept rather than dropped, so a reference that does write every argument still
+// resolves against a full parameter list.
+func (c *checker) reportRequiredAfterDefault(params []*ast.TypeParam) {
+	required := requiredArgCount(len(params), func(i int) bool { return params[i].Default != nil })
+	for i, p := range params[:required] {
+		if p.Default == nil {
+			continue
+		}
+		// params[required-1] has no default, so a later one always exists to name.
+		target := params[required-1]
+		for _, later := range params[i+1 : required] {
+			if later.Default == nil {
+				target = later
+				break
+			}
+		}
+		c.report(&TypeParamRequiredAfterDefaultError{
+			Default: p.Default,
+			Param:   p.Name,
+			Target:  target.Name,
+		})
+	}
 }
 
 // reportDefaultForwardRef reports each parameter params[i]'s default names that it may not,

@@ -156,6 +156,118 @@ func TestTypeArgArityAtReference(t *testing.T) {
 	}
 }
 
+// TestRequiredTypeParamAfterDefault covers a default declared before a parameter that has none,
+// `<T = number, U>`. Arguments bind positionally, so omitting the argument for `T` would leave
+// `U` reading the one written for `T`. The default can therefore never be reached, and counting
+// it as optional would let `Pair<string>` pass while leaving `U` a fresh var that coalesces to
+// `never`.
+//
+// Two things report. The declaration reports the unreachable default, once per default and on
+// every path that resolves a `<…>` clause. A reference short of the last required parameter
+// reports the count, which runs to that parameter rather than to the first defaulted one.
+func TestRequiredTypeParamAfterDefault(t *testing.T) {
+	const unreachable = "the default for type parameter `T` can never be used, " +
+		"since `U` is declared after it and has no default"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "AliasDeclaration",
+			src:  `type Pair<T = number, U> = {a: T, b: U}`,
+			want: []string{unreachable},
+		},
+		{
+			name: "ClassDeclaration",
+			src:  `class Pair<T = number, U> { a: T, b: U }`,
+			want: []string{unreachable},
+		},
+		{
+			name: "EnumDeclaration",
+			src:  `enum Pair<T = number, U> { Both(a: T, b: U) }`,
+			want: []string{unreachable},
+		},
+		{
+			name: "FuncAnnotationDeclaration",
+			src:  `declare fn f<T = number, U>(a: T, b: U) -> U`,
+			want: []string{unreachable},
+		},
+		// The count runs to `U`, the last required parameter, so one argument is short of the
+		// range rather than inside it. Without that the reference would pass and `U` would be
+		// synthesized from nothing.
+		{
+			name: "ReferenceShortOfLastRequired",
+			src: `
+				type Pair<T = number, U> = {a: T, b: U}
+				declare fn f() -> Pair<string>
+			`,
+			want: []string{unreachable, "type alias `Pair` expects 2 type arguments but got 1"},
+		},
+		{
+			name: "ClassReferenceShortOfLastRequired",
+			src: `
+				class Pair<T = number, U> { a: T, b: U }
+				declare fn f() -> Pair<string>
+			`,
+			want: []string{unreachable, "class `Pair` expects 2 type arguments but got 1"},
+		},
+		{
+			name: "EnumReferenceShortOfLastRequired",
+			src: `
+				enum Pair<T = number, U> { Both(a: T, b: U) }
+				declare fn f() -> Pair<string>
+			`,
+			want: []string{unreachable, "enum `Pair` expects 2 type arguments but got 1"},
+		},
+		// The default is kept rather than dropped, so a reference that writes every argument
+		// still resolves against the full parameter list and reports only the declaration.
+		{
+			name: "ReferenceWritingEveryArgument",
+			src: `
+				type Pair<T = number, U> = {a: T, b: U}
+				declare fn f() -> Pair<string, boolean>
+			`,
+			want: []string{unreachable},
+		},
+		// Each unreachable default is named, so one pass over the reports fixes the clause. Both
+		// name `V`, the first parameter after them with no default.
+		{
+			name: "TwoUnreachableDefaults",
+			src:  `type Trio<T = number, U = string, V> = {a: T, b: U, c: V}`,
+			want: []string{
+				"the default for type parameter `T` can never be used, since `V` is declared after it and has no default",
+				"the default for type parameter `U` can never be used, since `V` is declared after it and has no default",
+			},
+		},
+		// A default reaching the end of the clause is what the rule allows, since every parameter
+		// from it on can be filled.
+		{
+			name: "TrailingDefaultAccepted",
+			src: `
+				type Pair<T, U = number> = {a: T, b: U}
+				declare fn f() -> Pair<string>
+			`,
+		},
+		{
+			name: "EveryParamDefaultedAccepted",
+			src: `
+				type Pair<T = string, U = number> = {a: T, b: U}
+				declare fn f() -> Pair
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, len(tt.want))
+			for i, want := range tt.want {
+				require.Equal(t, want, errs[i].Message())
+			}
+		})
+	}
+}
+
 // TestSurplusTypeArgIsResolved checks that an argument written past the parameter count is
 // resolved before it is dropped, so a diagnostic inside it still reports. Dropping it unresolved
 // would hide the second problem behind the count, and fixing the count would then surface an

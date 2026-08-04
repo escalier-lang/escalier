@@ -1448,7 +1448,8 @@ and a `TypeDeclKind` — `type alias`, `class`, or `enum` — so the three sorts
 differ only in the noun. `LifetimeArgArityMismatchError` carries the same kind. An `Enum` flag
 on `AliasDef`, set by `preBindEnum`, is what tells an enum's synthesized alias from one a
 `type` declaration wrote. An `Arity` field on `ClassDef` holds the class's required and total
-type-parameter counts.
+type-parameter counts. A `TypeParamRequiredAfterDefaultError` reports a default that a later
+parameter without one makes unreachable.
 
 **Algorithms.** Factor the arity check and the default filling out of `buildAliasInstance`
 into one helper over a `[]*soltype.TypeParam` and a reference's written arguments, returning
@@ -1476,14 +1477,24 @@ Every written argument is resolved, including any past the parameter count. A su
 is dropped from the instance, but resolving it first is what reports an unresolvable name
 inside it rather than swallowing that diagnostic along with the argument.
 
+The required count is one past the last parameter with no default, not the number of parameters
+that lack one. Arguments bind positionally, so an argument can be omitted only when every
+parameter from that position on has a default to fill it. Counting `<T = number, U>` as taking
+one argument would let `Pair<string>` pass while leaving `U` a fresh variable that coalesces to
+`never`. `resolveTypeParams` reports the unreachable default at the declaration, on every path
+that resolves a `<…>` clause, and keeps it, so a reference writing every argument still resolves
+against the full list.
+
 **Accept.** `class Box<T = number>` referenced bare infers `Box<number>`.
 `Box<number, string>` on a one-parameter class reports a full-message arity error, and so does
 a bare `Box` against `class Box<T>`, matching what an alias reports for the same omission. The
 same miscount reports from a class body, an alias body, and an enum variant parameter list, not
 only from a `fn` or `val` annotation. A miscounted enum reference calls its target an enum
 rather than a type alias. `Box<number, Nonexistent>` reports the unresolvable name alongside
-the count. Every alias arity and default case that passes today still passes, since the shared
-helper is `buildAliasInstance`'s existing logic moved rather than rewritten.
+the count. `<T = number, U>` reports its unreachable default at the declaration, and a reference
+writing one argument to it reports a count of two rather than passing and synthesizing `U`.
+Every alias arity and default case that passes today still passes, since the shared helper is
+`buildAliasInstance`'s existing logic moved rather than rewritten.
 
 **Depends on** PR17, so the class path does not inherit the forward-reference leak the moment
 it starts filling defaults. Independent of the operator track.
