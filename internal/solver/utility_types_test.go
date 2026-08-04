@@ -946,11 +946,9 @@ func TestUtilityTypeInstanceType(t *testing.T) {
 	})
 }
 
-// A function whose return is not a nominal class instance is not a constructor, so both
-// utilities reduce to `never` over one, matching TypeScript. A bare function can fill a
-// constructor-only target at all only because classValue binds a class with no statics to its
-// bare constructor function; requiring a class return is what keeps that allowance from reaching
-// every function.
+// A function is not a constructor, so both utilities reduce to `never` over one, matching
+// TypeScript. Matching runs through the ConstructorElem a class value carries, and a FuncType
+// has none.
 func TestUtilityTypeConstructorUtilitiesRejectOrdinaryFunction(t *testing.T) {
 	runUtilityReductions(t, []utilityReduction{
 		{
@@ -966,11 +964,10 @@ func TestUtilityTypeConstructorUtilitiesRejectOrdinaryFunction(t *testing.T) {
 	})
 }
 
-// A factory function returning a class instance still matches, where TypeScript gives `never`.
-// The test is the return type, and a factory's return is indistinguishable from a constructor's,
-// so this is what a marker-free rule admits. It is pinned so a later change that carries
-// constructibility on FuncType shows up here.
-func TestUtilityTypeConstructorUtilitiesAcceptClassReturningFactory(t *testing.T) {
+// A factory returning a class instance is not a constructor either, so it reduces to `never`
+// like any other function. Nothing about its return makes it match, since matching goes through
+// the ConstructorElem only a class value carries.
+func TestUtilityTypeConstructorUtilitiesRejectClassReturningFactory(t *testing.T) {
 	runUtilityReductions(t, []utilityReduction{
 		{
 			name: "InstanceTypeOfFactory",
@@ -982,17 +979,16 @@ func TestUtilityTypeConstructorUtilitiesAcceptClassReturningFactory(t *testing.T
 				fn make(x: number) -> Point { return Point(x) }
 				type Result = InstanceType<typeof make>
 			`,
-			wantExpanded: "Point",
+			wantExpanded: "never",
 		},
 	})
 }
 
 // A class value is what `typeof C` names, and `InstanceType<typeof C>` reads its instance off
-// the construct signature. classValue gives a class with no statics its bare constructor
-// FuncType and one with statics an object carrying a ConstructorElem, so the two render
-// differently — `fn (x: number) -> Point` against `{new (x: number) -> Counter, zero: Counter}`.
-// constrain's rule that a bare function fills a constructor-only object target is what makes one
-// pattern match both.
+// the construct signature. Every class value is an object carrying a ConstructorElem, so the two
+// differ only in what sits beside the signature — `{new (x: number) -> Point}` against
+// `{new (n: number) -> Counter, zero: number}`. One pattern matches both because its trailing
+// `...` tolerates the statics.
 func TestUtilityTypeInstanceTypeOfClass(t *testing.T) {
 	runUtilityReductions(t, []utilityReduction{
 		{

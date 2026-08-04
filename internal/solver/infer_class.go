@@ -13,9 +13,8 @@ import (
 
 // inferClassDecl types a class declaration (M5 B1). It returns the class's value type
 // for the SCC driver to constrain into the value binding var and generalize, along with
-// the decl's provenance. The value is the bare constructor FuncType for a class with no
-// statics, or a ctor-plus-static object for one with static members (see classValue). It
-// has two side effects. It registers
+// the decl's provenance. The value is an object carrying the constructor as a ConstructorElem
+// plus any static members (see classValue). It has two side effects. It registers
 // the instance TypeBinding in scope, so the class name resolves as a type. It registers
 // the ClassDef in the nominal registry, so member lookup and the nominal constrain rule
 // can read the projected body.
@@ -140,13 +139,16 @@ func (c *checker) bindScriptClass(scope *Scope, lvl int, decl *ast.ClassDecl) {
 	})
 }
 
-// classValue produces the RAW value type a class name binds to. A class with no statics
-// binds its bare constructor FuncType; one with statics binds an exact object holding a
-// ConstructorElem plus the static members, so `Point(…)` constructs and `Point.origin` reads.
+// classValue produces the RAW value type a class name binds to: an exact object holding a
+// ConstructorElem plus whatever static members the class declares, so `Point(…)` constructs and
+// `Point.origin` reads. A class with no statics binds an object carrying the signature alone, so
+// `typeof Point` is `{new (x: number) -> Point}` rather than the bare `fn (x: number) -> Point`.
+//
+// One shape for every class is what lets a `{new (…) -> R, ...}` target accept any class value
+// through constrain's ordinary object-against-object arm. A statics-free class bound to its bare
+// constructor function would need an arm of its own, and that arm could not tell a constructor
+// from an ordinary function, since a FuncType records nothing about constructibility.
 func (c *checker) classValue(ctorType soltype.Type, static *soltype.ObjectType) soltype.Type {
-	if len(static.Elems) == 0 {
-		return ctorType
-	}
 	// inferConstructor always returns a FuncType, so anything else is a wiring bug.
 	// Fail loudly rather than drop the statics by returning the bare ctorType.
 	ctorFn, ok := ctorType.(*soltype.FuncType)

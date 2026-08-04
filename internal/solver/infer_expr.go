@@ -1419,9 +1419,9 @@ func funcIntersectionArms(t soltype.Type) ([]*soltype.FuncType, bool) {
 // bound yet) — the caller skips return recovery. PR1 bindings have at most one
 // func lower bound; overload sets (PR6) resolve through resolveOverload, not here.
 //
-// A class value with static members is an object carrying its constructor as a
-// ConstructorElem rather than a bare FuncType, so a call `Point(1, 2)` recovers the
-// constructor signature through that element. An inline object callee yields it directly.
+// A class value is an object carrying its constructor as a ConstructorElem rather than a
+// bare FuncType, so a call `Point(1, 2)` recovers the constructor signature through that
+// element. An inline object callee yields it directly.
 // A binding var yields it through an object lower bound, the same look-through the
 // FuncType arm runs for a named function.
 func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {

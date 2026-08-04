@@ -138,7 +138,7 @@ func TestInferEnumClassMutuallyRecursive(t *testing.T) {
 		val treeCtor = Tree.Branch
 		val kids = node.left
 	`, map[string]string{
-		"Node":     "fn (left: Tree, right: Tree) -> Node",
+		"Node":     "{new (left: Tree, right: Tree) -> Node}",
 		"node":     "Node",
 		"branch":   "Tree",
 		"treeCtor": "fn (node: Node) -> Tree",

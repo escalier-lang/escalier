@@ -807,39 +807,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// `never`, which constrain short-circuits, so no clause satisfies every super.
 			return append(errs, c.constrain(sub.ThrowsOrNever(), sup.ThrowsOrNever(), seen, false)...)
 		}
-		// A bare function fills an object target whose only member is a construct signature.
-		// classValue gives a class with no statics its bare constructor FuncType and one with
-		// statics an object carrying a ConstructorElem. So for
-		//
-		//	class Point { x: number, constructor(mut self, x: number) { self.x = x } }
-		//
-		// `typeof Point` renders `fn (x: number) -> Point`, while the same class with a
-		// `static origin: Point` renders `{new (x: number) -> Point, origin: Point}`. This rule
-		// is what lets one `{new (…) -> R, ...}` target accept both, which is how
-		// `InstanceType<typeof C>` reads either class's instance.
-		//
-		// The return has to be a nominal class instance, because a FuncType records nothing
-		// about whether the value behind it is constructible and a bare function would
-		// otherwise fill the target on its signature alone. Both constructor paths set
-		// `Ret: self` — see synthesizeConstructor and walkConstructorBody in
-		// infer_class_ctor.go — so every class value passes and
-		// `InstanceType<fn (x: number) -> {a: number}>` reduces to `never`, matching
-		// TypeScript.
-		//
-		// What the test admits that TypeScript rejects is a factory,
-		// `fn make(x: number) -> Point`, whose return is a class instance it did not
-		// construct. Rejecting that one too needs a constructor marker carried on FuncType,
-		// or a class value that is always an object so this arm goes away entirely.
-		//
-		// A target carrying another member alongside the signature demands something a bare
-		// function cannot supply. It stays on the object-against-object arm and fails there.
-		if sup, ok := super.(*soltype.ObjectType); ok && len(sup.Elems) == 1 {
-			if _, retIsClass := sub.Ret.(*soltype.ClassType); retIsClass {
-				if supCtor, has := sup.Constructor(); has {
-					return c.constrain(sub, supCtor.Fn, seen, mutCtx)
-				}
-			}
-		}
+		// A function never fills an object target that names a construct signature. classValue
+		// binds every class value to an object carrying a ConstructorElem, so a constructor
+		// reaches such a target through the object-against-object arm below and a bare function
+		// has no way in. That is what makes `InstanceType<fn (x: number) -> {a: number}>` reduce
+		// to `never`, matching TypeScript, while `InstanceType<typeof Point>` still reads the
+		// instance off the class value.
 	case *soltype.TupleType:
 		if tupleHasSpread(sub) || tupleHasSpread(super) {
 			// One side carries an unreduced `...P` spread the pre-switch could not ground: a spread

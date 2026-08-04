@@ -39,7 +39,7 @@ func TestInferClassBasic(t *testing.T) {
 					y: number,
 				}
 			`,
-			wantValues: map[string]string{"Point": "fn (x: number, y: number) -> Point"},
+			wantValues: map[string]string{"Point": "{new (x: number, y: number) -> Point}"},
 			wantTypes:  map[string]string{"Point": "Point"},
 		},
 		{
@@ -53,7 +53,7 @@ func TestInferClassBasic(t *testing.T) {
 				val px = p.x
 			`,
 			wantValues: map[string]string{
-				"Point": "fn (x: number, y: number) -> Point",
+				"Point": "{new (x: number, y: number) -> Point}",
 				"p":     "Point",
 				"px":    "number",
 			},
@@ -86,7 +86,7 @@ func TestInferClassBasic(t *testing.T) {
 				val px = p.x
 			`,
 			wantValues: map[string]string{
-				"Point": "fn (x: number, y: number) -> Point",
+				"Point": "{new (x: number, y: number) -> Point}",
 				"p":     "Point",
 				"px":    "number",
 			},
@@ -125,10 +125,10 @@ func TestInferClassBasic(t *testing.T) {
 	}
 }
 
-// TestInferClassStatic covers the callable class value with static members. The value
-// binds a ctor-plus-static object rather than a bare constructor function, so
-// construction still resolves through the constructor call signature, a static field
-// reads its declared type, and a static method reads and calls through the same value.
+// TestInferClassStatic covers the callable class value with static members. The statics sit
+// alongside the construct signature in the same object, so construction still resolves through
+// the signature, a static field reads its declared type, and a static method reads and calls
+// through the same value.
 func TestInferClassStatic(t *testing.T) {
 	src := `
 		class Vec {
@@ -151,10 +151,11 @@ func TestInferClassStatic(t *testing.T) {
 	}, map[string]string{"Vec": "Vec"})
 }
 
-// A class with no static members keeps binding its bare constructor function, so the
-// single-callable-element object is minted only for the class values that need it.
-// Construction and field access are unaffected.
-func TestInferClassNoStaticStaysFunction(t *testing.T) {
+// A class with no static members binds an object carrying its construct signature alone, the
+// same shape a class with statics binds. One shape for every class value is what lets a
+// `{new (…) -> R, ...}` target accept any of them through ordinary object subtyping.
+// Construction and field access read through the signature either way.
+func TestInferClassNoStaticsBindsSignatureOnlyObject(t *testing.T) {
 	src := `
 		class Point {
 			x: number,
@@ -163,7 +164,7 @@ func TestInferClassNoStaticStaysFunction(t *testing.T) {
 		val p = Point(1, 2)
 	`
 	classValues(t, src, map[string]string{
-		"Point": "fn (x: number, y: number) -> Point",
+		"Point": "{new (x: number, y: number) -> Point}",
 		"p":     "Point",
 	}, nil)
 }
@@ -218,7 +219,7 @@ func TestInferClassGeneric(t *testing.T) {
 				val v = b.value
 			`,
 			wantValues: map[string]string{
-				"Box": "fn <T0>(value: T0) -> Box<T0>",
+				"Box": "<T0> {new (value: T0) -> Box<T0>}",
 				"b":   "Box<5>",
 				"v":   "5",
 			},
@@ -522,8 +523,8 @@ func TestInferClassMutualRecursion(t *testing.T) {
 				class B { a: A }
 			`,
 			wantValues: map[string]string{
-				"A": "fn (b: B) -> A",
-				"B": "fn (a: A) -> B",
+				"A": "{new (b: B) -> A}",
+				"B": "{new (a: A) -> B}",
 			},
 			wantTypes: map[string]string{"A": "A", "B": "B"},
 		},
@@ -531,7 +532,7 @@ func TestInferClassMutualRecursion(t *testing.T) {
 			// A self-referential field resolves to the class being declared.
 			name:       "SelfReferentialField",
 			src:        `class Node { next: Node }`,
-			wantValues: map[string]string{"Node": "fn (next: Node) -> Node"},
+			wantValues: map[string]string{"Node": "{new (next: Node) -> Node}"},
 			wantTypes:  map[string]string{"Node": "Node"},
 		},
 		{
@@ -549,8 +550,8 @@ func TestInferClassMutualRecursion(t *testing.T) {
 				}
 			`,
 			wantValues: map[string]string{
-				"A": "fn (b: B) -> A",
-				"B": "fn (a: A) -> B",
+				"A": "{new (b: B) -> A}",
+				"B": "{new (a: A) -> B}",
 			},
 			wantTypes: map[string]string{"A": "A", "B": "B"},
 		},
@@ -564,9 +565,9 @@ func TestInferClassMutualRecursion(t *testing.T) {
 				class C { a: A }
 			`,
 			wantValues: map[string]string{
-				"A": "fn (b: B) -> A",
-				"B": "fn (c: C) -> B",
-				"C": "fn (a: A) -> C",
+				"A": "{new (b: B) -> A}",
+				"B": "{new (c: C) -> B}",
+				"C": "{new (a: A) -> C}",
 			},
 			wantTypes: map[string]string{"A": "A", "B": "B", "C": "C"},
 		},
@@ -630,7 +631,7 @@ func TestInferClassMethodRecursion(t *testing.T) {
 					loop(self, k: number) -> number { return self.loop(k) },
 				}
 			`,
-			wantValues: map[string]string{"C": "fn (n: number) -> C"},
+			wantValues: map[string]string{"C": "{new (n: number) -> C}"},
 		},
 		{
 			// A mutually recursive pair with annotated returns type-checks; each call
@@ -643,7 +644,7 @@ func TestInferClassMethodRecursion(t *testing.T) {
 					pong(self, k: number) -> number { return self.ping(k) },
 				}
 			`,
-			wantValues: map[string]string{"C": "fn (n: number) -> C"},
+			wantValues: map[string]string{"C": "{new (n: number) -> C}"},
 		},
 		{
 			// A method reads a getter of the same class through self; the getter's value
@@ -671,7 +672,7 @@ func TestInferClassMethodRecursion(t *testing.T) {
 					update(mut self) -> number { return self.helper() },
 				}
 			`,
-			wantValues: map[string]string{"C": "fn (n: number) -> C"},
+			wantValues: map[string]string{"C": "{new (n: number) -> C}"},
 		},
 		{
 			// A destructuring method parameter is handled: the stub carries arity only, so
@@ -965,7 +966,7 @@ func TestInferClassGenericSubGenericSuper(t *testing.T) {
 		val g = d.tag
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(tag: T0) -> Dog<T0>", values["Dog"])
+	require.Equal(t, "<T0> {new (tag: T0) -> Dog<T0>}", values["Dog"])
 	require.Equal(t, `Dog<"bone">`, values["d"])
 	require.Equal(t, `"bone"`, values["f"])
 	require.Equal(t, `"bone"`, values["g"])
@@ -1005,7 +1006,7 @@ func TestInferClassGenericMemberParam(t *testing.T) {
 		val b = Box(5)
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(v: T0) -> Box<T0>", values["Box"])
+	require.Equal(t, "<T0> {new (v: T0) -> Box<T0>}", values["Box"])
 	require.Equal(t, "Box<5>", values["b"])
 }
 
@@ -1567,8 +1568,8 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 			// Each constructor is synthesized from its OWN class body, so the two bodies
 			// never merged on a shared "Point" registry entry. Both render bare.
 			wantValues: map[string]string{
-				"geometry.Point": "fn (x: number) -> Point",
-				"shape.Point":    "fn (label: string) -> Point",
+				"geometry.Point": "{new (x: number) -> Point}",
+				"shape.Point":    "{new (label: string) -> Point}",
 			},
 			wantTypes: map[string]string{
 				"geometry.Point": "Point",
@@ -1590,8 +1591,8 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 			// The bare `Point` in Line's field resolves to the sibling geometry.Point
 			// through the class's own namespace, not to any other namespace's Point.
 			wantValues: map[string]string{
-				"geometry.Line":  "fn (start: Point) -> Line",
-				"geometry.Point": "fn (x: number) -> Point",
+				"geometry.Line":  "{new (start: Point) -> Line}",
+				"geometry.Point": "{new (x: number) -> Point}",
 			},
 			wantTypes: map[string]string{
 				"geometry.Line":  "Line",
@@ -1615,8 +1616,8 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 			// The qualified `geometry.Point` reference from the shape namespace resolves
 			// to the geometry class's registered type binding.
 			wantValues: map[string]string{
-				"shape.Line":     "fn (start: Point) -> Line",
-				"geometry.Point": "fn (x: number) -> Point",
+				"shape.Line":     "{new (start: Point) -> Line}",
+				"geometry.Point": "{new (x: number) -> Point}",
 			},
 			wantTypes: map[string]string{
 				"shape.Line":     "Line",
@@ -1634,7 +1635,7 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 			},
 			// A root-namespace class keeps its bare name as the qualified key, so nothing
 			// changes for the common single-namespace case.
-			wantValues: map[string]string{"Point": "fn (x: number) -> Point"},
+			wantValues: map[string]string{"Point": "{new (x: number) -> Point}"},
 			wantTypes:  map[string]string{"Point": "Point"},
 		},
 		{
@@ -1658,8 +1659,8 @@ func TestInferClassNamespaceQualified(t *testing.T) {
 			// resolves through the shared handle with no placeholder leak. Each field
 			// renders the peer under its bare name.
 			wantValues: map[string]string{
-				"foo.A": "fn (peer: B) -> A",
-				"bar.B": "fn (peer: A) -> B",
+				"foo.A": "{new (peer: B) -> A}",
+				"bar.B": "{new (peer: A) -> B}",
 			},
 			wantTypes: map[string]string{
 				"foo.A": "A",

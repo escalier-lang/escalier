@@ -160,10 +160,9 @@ func TestInferKeyofConstructorCarryingObject(t *testing.T) {
 }
 
 // A class value fills an object annotation that names a construct signature, which is what
-// `InstanceType<typeof C>` relies on. classValue gives a class with no statics its bare
-// constructor FuncType, so the sub is a function rather than an object, and constrain's
-// constructor-only rule is what accepts it. A class with statics is already an object carrying a
-// ConstructorElem, and it needs an inexact target since its statics are extra members.
+// `InstanceType<typeof C>` relies on. Both cases go through the same object-against-object arm,
+// since classValue gives every class an object carrying a ConstructorElem. The class with
+// statics needs an inexact target, because its statics are extra members against an exact one.
 func TestInferClassValueSatisfiesConstructorAnnotation(t *testing.T) {
 	tests := []struct {
 		name string
@@ -199,16 +198,27 @@ func TestInferClassValueSatisfiesConstructorAnnotation(t *testing.T) {
 	}
 }
 
-// The constructor-only rule fires only when the signature is the target's whole member list. A
-// target that also names a static demands a member a bare function cannot supply, so it stays on
-// the object-against-object arm and reports the miss there.
-func TestInferBareFunctionMissesConstructorTargetWithStatics(t *testing.T) {
+// A target that names a static the class does not declare reports the missing member, since a
+// class value is an object and this is ordinary object subtyping.
+func TestInferClassValueMissesConstructorTargetWithStatics(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Point {
 			x: number,
 			constructor(mut self, x: number) { self.x = x },
 		}
 		val ctor: {new (x: number) -> Point, origin: Point} = Point
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "object is missing property: origin", errs[0].Message())
+}
+
+// A plain function never fills a target that names a construct signature. Only a class value
+// carries a ConstructorElem, and a FuncType records nothing about constructibility, so accepting
+// one here would make every function a constructor.
+func TestInferPlainFunctionMissesConstructorTarget(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn make(x: number) -> {a: number} { return {a: x} }
+		val ctor: {new (x: number) -> {a: number}} = make
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t, "cannot constrain function <: object", errs[0].Message())
