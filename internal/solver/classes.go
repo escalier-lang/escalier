@@ -703,12 +703,9 @@ func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTyp
 // raiseAccessorThrows records that an accessor access raises `throws` into the enclosing
 // body's throws sink, the same wiring inferCall gives a call. A body with no clause has a
 // `never` sink, so a raising accessor is rejected at the access site rather than reading as
-// non-throwing to the caller.
-//
-// An accessor declared to raise nothing hands over `never` and is skipped outright, leaving
-// the enclosing `throws` clause counting as unused. Anything else marks the body as raising.
-// That includes a throws position still holding an unsolved variable, which is how inferCall
-// treats an unresolved callee.
+// non-throwing to the caller. A `never` throws is skipped outright, leaving the enclosing
+// clause counting as unused; anything else, an unsolved variable included, marks the body
+// as raising, matching how inferCall treats an unresolved callee.
 func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Type) {
 	if isNeverType(throws) {
 		return
@@ -718,17 +715,11 @@ func (c *checker) raiseAccessorThrows(lvl int, blame ast.Node, throws soltype.Ty
 }
 
 // raiseUnionAccessorThrows records what reading `name` off a union receiver may raise.
-// constrainUnionFieldRead joins the read's VALUE across the union's members from inside
-// constrain, which holds no throws sink. Only the inference walk holds one, so this walks
-// the same members to reach the getters that join reads through. A carrier that is not a
-// union is left alone. A member carrying `name` as a plain property, a method, or a setter
-// raises nothing on a read and contributes no constraint.
-//
-// The scan collects before it raises so that it accepts exactly the receivers the join
-// accepts. The join abandons the whole read once ANY member carries no readable object,
-// falling back to the strict every-member subtyping rule, and then no member's getter runs.
-// `A | undefined` is such a receiver. Raising per member as the scan went would blame that
-// read for a raise it never performs, on top of the errors the fallback already reports.
+// constrainUnionFieldRead joins the read's value across the union's members from inside
+// constrain, which holds no throws sink, so this walks the same members to reach the getters
+// that join reads through. Only a getter contributes; a property, method, or setter raises
+// nothing on a read. It collects before it raises because the join abandons the whole read
+// once any member carries no readable object, as `A | undefined` does, and then no getter runs.
 func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string, carrier soltype.Type) {
 	u, isUnion := carrier.(*soltype.UnionType)
 	if !isUnion {
