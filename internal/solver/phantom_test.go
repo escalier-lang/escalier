@@ -361,14 +361,12 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 		want []string
 	}{
 		{
-			// resolveObjectTypeAnn lowers no method member, so it skips this one and returns
-			// the empty object the rest of the annotation amounts to. The body resolves, and
-			// the only occurrence of T is what went missing.
-			name: "AliasBodyWithAnUnsupportedMember",
-			src:  `type M<T> = {f(x: T) -> T}`,
-			want: []string{
-				"1:13-1:27: Unsupported: object type member other than a property or spread",
-			},
+			// resolveObjectTypeAnn recovers a property whose value did not resolve to a fresh
+			// var and keeps the object shape, so the body resolves to `{a: t}` and the only
+			// occurrence of T is what went missing.
+			name: "AliasBodyWithARecoveredPropertyValue",
+			src:  `type M<T> = {a: Nope<T>}`,
+			want: []string{"1:17-1:24: Unsupported: TypeRefTypeAnn"},
 		},
 		{
 			// The union member recovers to a fresh var, so the body is `t | number` and the T
