@@ -275,11 +275,15 @@ func TestInferMemberAssignSetter(t *testing.T) {
 			want: []string{"3:18-3:21: cannot constrain immutable C <: mutable C"},
 		},
 		{
-			name: "plain self setter accepts an immutable receiver",
+			// A setter mutates the instance, so a plain `self` receiver is rejected at the
+			// declaration. The write itself draws nothing further, since the elem keeps the
+			// declared receiver and the diagnostic belongs to the declaration.
+			name: "plain self setter is rejected at its declaration",
 			src: `
 				class C { set x(self, n: number) { } }
 				fn f(c: C) { c.x = 5 }
 			`,
+			want: []string{"2:15-2:41: Setter 'x' must declare a `mut self` receiver; writing through it mutates the instance."},
 		},
 		{
 			name: "mut self setter reached from a plain self body",

@@ -1092,6 +1092,7 @@ func (*SubclassConstructorRequiredError) isSolverError()    {}
 func (*WriteOnlyPropertyError) isSolverError()              {}
 func (*ReadOnlyPropertyError) isSolverError()               {}
 func (*SetterArityError) isSolverError()                    {}
+func (*SetterReceiverError) isSolverError()                 {}
 func (*RecursiveMethodAnnotationError) isSolverError()      {}
 func (*FieldNotInitializedError) isSolverError()            {}
 func (*ReadBeforeInitError) isSolverError()                 {}
@@ -1468,6 +1469,21 @@ func (e *SetterArityError) Span() ast.Span      { return e.Elem.Span() }
 func (e *SetterArityError) Related() []ast.Span { return nil }
 func (e *SetterArityError) Message() string {
 	return "Setter '" + e.Name + "' must declare exactly one value parameter; found " + strconv.Itoa(e.Count) + "."
+}
+
+// SetterReceiverError fires when an instance setter declares a receiver other than `mut
+// self`. Writing through a setter mutates the instance, so a plain `self` or a shared
+// `&self` receiver holds no mutable access to do it with. A static setter has no instance
+// to mutate and declares no receiver, so it never reaches this.
+type SetterReceiverError struct {
+	Name string
+	Elem *ast.SetterElem
+}
+
+func (e *SetterReceiverError) Span() ast.Span      { return e.Elem.Span() }
+func (e *SetterReceiverError) Related() []ast.Span { return nil }
+func (e *SetterReceiverError) Message() string {
+	return "Setter '" + e.Name + "' must declare a `mut self` receiver; writing through it mutates the instance."
 }
 
 // RecursiveMethodAnnotationError fires when a group of mutually recursive methods

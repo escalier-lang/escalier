@@ -1476,6 +1476,16 @@ func TestInferClassErrors(t *testing.T) {
 			want: "Setter 'value' must declare exactly one value parameter; found 2.",
 		},
 		{
+			name: "SetterPlainSelfReceiver",
+			src: `
+				class C {
+					v: number,
+					set value(self, x: number) { },
+				}
+			`,
+			want: "Setter 'value' must declare a `mut self` receiver; writing through it mutates the instance.",
+		},
+		{
 			name: "MultipleConstructors",
 			src: `class C {
 				constructor(mut self) {},
