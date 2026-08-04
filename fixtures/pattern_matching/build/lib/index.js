@@ -67,14 +67,12 @@ export const tuple2 = [3, 3];
 let temp15;
 let temp16;
 temp16 = tuple2;
-if (temp16.length == 2) {
+if (temp16.length == 2 && temp16[0] == temp16[1]) {
   const [a, b] = temp16;
-  if (a == b) {
-    temp15 = "equal";
-  } else if (temp16.length == 2) {
-    const [a, b] = temp16;
-    temp15 = "not equal";
-  }
+  temp15 = "equal";
+} else if (temp16.length == 2) {
+  const [a, b] = temp16;
+  temp15 = "not equal";
 }
 export const guardMatch = temp15;
 export const num1 = 5;
@@ -277,9 +275,7 @@ export const tupleRestMatch = temp55;
 let temp57;
 let temp58;
 temp58 = num2;
-if (true) {
-  const x = temp58;
-  temp57 = x * 2;
-}
+const x = temp58;
+temp57 = x * 2;
 export const variableMatch = temp57;
 //# sourceMappingURL=./index.js.map

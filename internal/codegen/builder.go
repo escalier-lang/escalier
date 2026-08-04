@@ -1824,168 +1824,19 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			// Create a temp variable for the caught error
 			errorVar := NewIdentPat("__error", nil, expr)
 
-			// Build if-else chain for catch cases (similar to match expression)
+			// The caught value is what the arms test.
 			errorIdent := NewIdentExpr("__error", "", expr)
-			var catchBodyStmts []Stmt
 
-			// Build the catch cases in reverse order to create if-else chain.
-			// fallthroughStmts is what runs when no arm built so far takes the value,
-			// and each arm wraps it. It starts at the `throw __error` that re-raises a
-			// value no arm takes. An arm that always runs leaves nothing to re-raise, so
-			// it starts empty instead and the caught value cannot escape.
-			var fallthroughStmts []Stmt
+			// A value no arm takes is re-raised, which is the one thing a catch chain does
+			// that a `match` chain does not. An arm that always runs leaves nothing to
+			// re-raise, so the chain falls through to nothing and the value cannot escape.
+			var rethrow []Stmt
 			if !ast.HasUnguardedCatchAll(expr.Catch) {
-				fallthroughStmts = []Stmt{NewThrowStmt(errorIdent, expr)}
+				rethrow = []Stmt{NewThrowStmt(errorIdent, expr)}
 			}
 
-			// asElse renders the fall-through for an `else` slot. A lone `if` goes in
-			// bare so the arms print as one `else if` chain. Anything else needs braces,
-			// and nothing at all leaves the slot empty.
-			asElse := func() Stmt {
-				if len(fallthroughStmts) == 0 {
-					return nil
-				}
-				if len(fallthroughStmts) == 1 {
-					if ifStmt, isIf := fallthroughStmts[0].(*IfStmt); isIf {
-						return ifStmt
-					}
-				}
-				return NewBlockStmt(fallthroughStmts, expr)
-			}
-			for i := len(expr.Catch) - 1; i >= 0; i-- {
-				matchCase := expr.Catch[i]
-
-				// Build pattern matching condition and bindings
-				condition, bindingStmts := b.buildPatternCondition(matchCase.Pattern, errorIdent)
-
-				// Build the case body statements
-				var caseBodyStmts []Stmt
-
-				// Handle guards - always use nested if structure to ensure bindings are available
-				if matchCase.Guard != nil {
-					// Add bindings before guard evaluation
-					caseBodyStmts = slices.Concat(caseBodyStmts, bindingStmts)
-
-					// Build guard as a nested if
-					guardExpr, guardStmts := b.buildExpr(matchCase.Guard, expr)
-					caseBodyStmts = slices.Concat(caseBodyStmts, guardStmts)
-
-					// Create nested guard body
-					guardBodyStmts := b.buildArmBody(matchCase.Body, tempVar, expr)
-
-					// A guarded arm keeps its pattern test and its guard in separate
-					// `if`s, so the guard can read the bindings the pattern introduces.
-					if isTrueLiteral(condition) {
-						// A catch-all pattern admits every value, so the bindings and the
-						// guard's `if` need no test around them. A failed guard is then
-						// the only way past this arm, so the fall-through goes in the
-						// guard's else and has one owner.
-						guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, expr), asElse(), expr)
-						fallthroughStmts = append(caseBodyStmts, guardIf)
-						continue
-					}
-
-					// A refutable pattern leaves two ways for the arm to decline the
-					// value, a failed pattern test and a failed guard. Both mean the later
-					// arms get their turn, so both have to reach the fall-through.
-					//
-					// One `if` testing both gives them a single `else` to share. The guard
-					// has to read nothing the pattern declares, since a declaration can
-					// only run once the pattern has matched, so guardWithoutBindings
-					// rewrites it to read through access paths where it can. The guard
-					// must also need no hoisted statements, since those would run before
-					// the pattern test rather than after it. The printer parenthesizes a
-					// guard that binds looser than the `&&` joining the two.
-					if len(guardStmts) == 0 {
-						if mergedGuard, canMerge := guardWithoutBindings(
-							matchCase.Pattern, errorIdent, matchCase.Guard, guardExpr,
-						); canMerge {
-							merged := combineConditions([]Expr{condition, mergedGuard}, expr)
-							// The pattern's declarations move into the body, which is the
-							// only place left that reads them.
-							body := slices.Concat(bindingStmts, guardBodyStmts)
-							fallthroughStmts = []Stmt{
-								NewIfStmt(merged, NewBlockStmt(body, expr), asElse(), expr),
-							}
-							continue
-						}
-					}
-
-					// A guard that lowers to statements cannot join the condition, since
-					// those statements would run before the pattern had matched. Computing
-					// it into a flag inside the pattern test keeps that order, and the flag
-					// then answers whether this arm takes the value. The arm body and the
-					// fall-through share one `if`/`else` from there, so the later arms
-					// continue the same chain.
-					//
-					// The guard's statements are emitted as they were built, so this needs
-					// a guard that reads none of the pattern's declarations. Those
-					// declarations do not run until the body.
-					if len(fallthroughStmts) > 0 &&
-						!guardReadsPatternBindings(matchCase.Pattern, matchCase.Guard) {
-						takenVar, takenDecl := b.createTempVarWithInit(
-							NewLitExpr(NewBoolLit(false, expr), expr), expr)
-						computeGuard := append(slices.Clone(guardStmts), &ExprStmt{
-							Expr:   NewBinaryExpr(takenVar, Assign, guardExpr, expr),
-							span:   nil,
-							source: expr,
-						})
-						body := slices.Concat(bindingStmts, guardBodyStmts)
-						fallthroughStmts = []Stmt{
-							takenDecl,
-							NewIfStmt(condition, NewBlockStmt(computeGuard, expr), nil, expr),
-							NewIfStmt(takenVar, NewBlockStmt(body, expr), asElse(), expr),
-						}
-						continue
-					}
-
-					// Otherwise the two tests stay in separate `if`s and a flag gives the
-					// fall-through one owner. Putting it in each `else` would emit it
-					// twice, and a chain of N such arms would emit its tail 2^N times. The
-					// arm sets the flag on the one path that takes the value, and the
-					// fall-through runs when the flag is still unset.
-					if len(fallthroughStmts) == 0 {
-						// Nothing to fall through to, so neither failure needs recording.
-						guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, expr), nil, expr)
-						caseBodyStmts = append(caseBodyStmts, guardIf)
-						fallthroughStmts = []Stmt{NewIfStmt(condition, NewBlockStmt(caseBodyStmts, expr), nil, expr)}
-						continue
-					}
-					takenVar, takenDecl := b.createTempVarWithInit(NewLitExpr(NewBoolLit(false, expr), expr), expr)
-					guardBodyStmts = append(guardBodyStmts, &ExprStmt{
-						Expr:   NewBinaryExpr(takenVar, Assign, NewLitExpr(NewBoolLit(true, expr), expr), expr),
-						span:   nil,
-						source: expr,
-					})
-					guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, expr), nil, expr)
-					caseBodyStmts = append(caseBodyStmts, guardIf)
-					notTaken := NewUnaryExpr(LogicalNot, takenVar, expr)
-					fallthroughStmts = []Stmt{
-						takenDecl,
-						NewIfStmt(condition, NewBlockStmt(caseBodyStmts, expr), nil, expr),
-						NewIfStmt(notTaken, NewBlockStmt(fallthroughStmts, expr), nil, expr),
-					}
-					continue
-				}
-
-				// No guard - add pattern bindings to case body
-				caseBodyStmts = slices.Concat(caseBodyStmts, bindingStmts)
-				caseBodyStmts = slices.Concat(caseBodyStmts, b.buildArmBody(matchCase.Body, tempVar, expr))
-
-				if isTrueLiteral(condition) {
-					// An unguarded catch-all always runs, so it needs no test and every
-					// later arm is unreachable. Its body replaces the fall-through.
-					fallthroughStmts = caseBodyStmts
-					continue
-				}
-
-				// Earlier cases wrap this one, so the fall-through becomes the else.
-				fallthroughStmts = []Stmt{
-					NewIfStmt(condition, NewBlockStmt(caseBodyStmts, expr), asElse(), expr),
-				}
-			}
-
-			catchBodyStmts = append(catchBodyStmts, fallthroughStmts...)
+			ctx := armCtx{scrutinee: errorIdent, tempVar: tempVar, source: expr}
+			catchBodyStmts := b.buildArmChain(ctx, expr.Catch, rethrow)
 
 			catchBlock := NewBlockStmt(catchBodyStmts, expr)
 			catchClause = &CatchClause{
@@ -2459,6 +2310,153 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 }
 
 // buildMatchExpr converts a match expression into if-else statements with pattern matching
+// armCtx carries what every arm in a chain shares: the value the arms test, the temp the
+// chain assigns the winning arm's value to, and the node that generated code is blamed on.
+type armCtx struct {
+	scrutinee Expr
+	tempVar   Expr
+	source    ast.Expr
+}
+
+// asElse renders a chain's fall-through for an `else` slot. A lone `if` goes in bare so the
+// arms print as one `else if` chain. Anything else needs braces, and nothing at all leaves
+// the slot empty.
+func asElse(fallthroughStmts []Stmt, source ast.Node) Stmt {
+	if len(fallthroughStmts) == 0 {
+		return nil
+	}
+	if len(fallthroughStmts) == 1 {
+		if ifStmt, isIf := fallthroughStmts[0].(*IfStmt); isIf {
+			return ifStmt
+		}
+	}
+	return NewBlockStmt(fallthroughStmts, source)
+}
+
+// buildArmChain lowers match or catch arms to the statements that run the first arm taking
+// the value. fallthroughStmts is what runs when no arm takes it, which is nothing for a
+// `match`, whose arms the checker has already found exhaustive, and the `throw` that
+// re-raises a caught value for a `try`.
+//
+// The arms are built in reverse so each one wraps the chain the later arms have already
+// produced, which is the fall-through it hands the value to when it declines.
+func (b *Builder) buildArmChain(ctx armCtx, arms []*ast.MatchCase, fallthroughStmts []Stmt) []Stmt {
+	for i := len(arms) - 1; i >= 0; i-- {
+		arm := arms[i]
+		condition, bindingStmts := b.buildPatternCondition(arm.Pattern, ctx.scrutinee)
+
+		if arm.Guard != nil {
+			fallthroughStmts = b.buildGuardedArm(ctx, arm, condition, bindingStmts, fallthroughStmts)
+			continue
+		}
+
+		body := slices.Concat(bindingStmts, b.buildArmBody(arm.Body, ctx.tempVar, ctx.source))
+		if isTrueLiteral(condition) {
+			// An unguarded catch-all always runs, so it needs no test and every later arm
+			// is unreachable. Its body replaces the fall-through.
+			fallthroughStmts = body
+			continue
+		}
+		fallthroughStmts = []Stmt{NewIfStmt(
+			condition,
+			NewBlockStmt(body, ctx.source),
+			asElse(fallthroughStmts, ctx.source),
+			ctx.source,
+		)}
+	}
+	return fallthroughStmts
+}
+
+// buildGuardedArm lowers one arm that carries a guard, returning what the chain becomes once
+// this arm wraps it. Such an arm declines the value in two ways, by failing its pattern test
+// and by failing its guard, and both have to reach the same fall-through. Which shape does
+// that without emitting the fall-through twice depends on what the guard needs, so this
+// picks between four.
+func (b *Builder) buildGuardedArm(
+	ctx armCtx, arm *ast.MatchCase, condition Expr, bindingStmts, fallthroughStmts []Stmt,
+) []Stmt {
+	source := ctx.source
+	guardExpr, guardStmts := b.buildExpr(arm.Guard, source)
+	guardBodyStmts := b.buildArmBody(arm.Body, ctx.tempVar, source)
+
+	if isTrueLiteral(condition) {
+		// A catch-all pattern admits every value, so the bindings and the guard's `if`
+		// need no test around them. A failed guard is then the only way past this arm, so
+		// the fall-through goes in the guard's else and has one owner.
+		guardIf := NewIfStmt(
+			guardExpr, NewBlockStmt(guardBodyStmts, source), asElse(fallthroughStmts, source), source)
+		return slices.Concat(bindingStmts, guardStmts, []Stmt{guardIf})
+	}
+
+	// One `if` testing the pattern and the guard together gives the two failures a single
+	// `else` to share. The guard has to read nothing the pattern declares, since a
+	// declaration can only run once the pattern has matched, so guardWithoutBindings
+	// rewrites it to read through access paths where it can. The guard must also need no
+	// hoisted statements, since those would run before the pattern test rather than after
+	// it. The printer parenthesizes a guard that binds looser than the `&&` joining the two.
+	if len(guardStmts) == 0 {
+		if mergedGuard, canMerge := guardWithoutBindings(
+			arm.Pattern, ctx.scrutinee, arm.Guard, guardExpr,
+		); canMerge {
+			merged := combineConditions([]Expr{condition, mergedGuard}, source)
+			// The pattern's declarations move into the body, which is the only place left
+			// that reads them.
+			body := slices.Concat(bindingStmts, guardBodyStmts)
+			return []Stmt{NewIfStmt(
+				merged, NewBlockStmt(body, source), asElse(fallthroughStmts, source), source)}
+		}
+	}
+
+	// A guard that lowers to statements cannot join the condition, since those statements
+	// would run before the pattern had matched. Computing it into a flag inside the pattern
+	// test keeps that order, and the flag then answers whether this arm takes the value. The
+	// arm body and the fall-through share one `if`/`else` from there, so the later arms
+	// continue the same chain.
+	//
+	// The guard's statements are emitted as they were built, so this needs a guard that
+	// reads none of the pattern's declarations. Those declarations do not run until the body.
+	if len(fallthroughStmts) > 0 && !guardReadsPatternBindings(arm.Pattern, arm.Guard) {
+		takenVar, takenDecl := b.createTempVarWithInit(NewLitExpr(NewBoolLit(false, source), source), source)
+		computeGuard := append(slices.Clone(guardStmts), &ExprStmt{
+			Expr:   NewBinaryExpr(takenVar, Assign, guardExpr, source),
+			span:   nil,
+			source: source,
+		})
+		body := slices.Concat(bindingStmts, guardBodyStmts)
+		return []Stmt{
+			takenDecl,
+			NewIfStmt(condition, NewBlockStmt(computeGuard, source), nil, source),
+			NewIfStmt(takenVar, NewBlockStmt(body, source), asElse(fallthroughStmts, source), source),
+		}
+	}
+
+	// Otherwise the two tests stay in separate `if`s and a flag gives the fall-through one
+	// owner. Putting it in each `else` would emit it twice, and a chain of N such arms would
+	// emit its tail 2^N times. The arm sets the flag on the one path that takes the value,
+	// and the fall-through runs when the flag is still unset.
+	caseBodyStmts := slices.Concat(bindingStmts, guardStmts)
+	if len(fallthroughStmts) == 0 {
+		// Nothing to fall through to, so neither failure needs recording.
+		guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, source), nil, source)
+		caseBodyStmts = append(caseBodyStmts, guardIf)
+		return []Stmt{NewIfStmt(condition, NewBlockStmt(caseBodyStmts, source), nil, source)}
+	}
+	takenVar, takenDecl := b.createTempVarWithInit(NewLitExpr(NewBoolLit(false, source), source), source)
+	guardBodyStmts = append(guardBodyStmts, &ExprStmt{
+		Expr:   NewBinaryExpr(takenVar, Assign, NewLitExpr(NewBoolLit(true, source), source), source),
+		span:   nil,
+		source: source,
+	})
+	guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, source), nil, source)
+	caseBodyStmts = append(caseBodyStmts, guardIf)
+	notTaken := NewUnaryExpr(LogicalNot, takenVar, source)
+	return []Stmt{
+		takenDecl,
+		NewIfStmt(condition, NewBlockStmt(caseBodyStmts, source), nil, source),
+		NewIfStmt(notTaken, NewBlockStmt(fallthroughStmts, source), nil, source),
+	}
+}
+
 // buildArmBody lowers a match or catch arm's body to the statements that run it, ending in
 // the assignment that hands its value to the enclosing expression's temp. A block body
 // assigns the value of its tail statement, an expression body assigns itself, and an arm
@@ -2500,83 +2498,12 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 		source: expr.Target,
 	})
 
-	// Convert each match case to if-else statements
-	var currentStmt Stmt
-	for i := len(expr.Cases) - 1; i >= 0; i-- {
-		matchCase := expr.Cases[i]
-
-		// Build pattern matching conditions and variable bindings
-		patternCond, patternBindings := b.buildPatternCondition(matchCase.Pattern, targetTempVar)
-
-		// Build the case body statements
-		var caseStmts []Stmt
-
-		// Handle guards - always use nested if structure to ensure bindings are available
-		if matchCase.Guard != nil {
-			// Add bindings before guard evaluation
-			caseStmts = slices.Concat(caseStmts, patternBindings)
-
-			// Build guard as a nested if
-			guardExpr, guardStmts := b.buildExpr(matchCase.Guard, expr)
-			caseStmts = slices.Concat(caseStmts, guardStmts)
-
-			// Create nested guard body
-			guardBodyStmts := b.buildArmBody(matchCase.Body, tempVar, expr)
-
-			guardBlock := NewBlockStmt(guardBodyStmts, expr)
-			guardIf := NewIfStmt(guardExpr, guardBlock, currentStmt, expr)
-			caseStmts = append(caseStmts, guardIf)
-
-			// Wrap in outer pattern condition block
-			caseBlock := NewBlockStmt(caseStmts, expr)
-			currentStmt = NewIfStmt(patternCond, caseBlock, nil, expr)
-			continue
-		}
-
-		// No guard - add pattern bindings to case body
-		caseStmts = slices.Concat(caseStmts, patternBindings)
-		caseStmts = slices.Concat(caseStmts, b.buildArmBody(matchCase.Body, tempVar, expr))
-
-		// Create block statement for the case
-		caseBlock := NewBlockStmt(caseStmts, expr)
-
-		// Create if statement
-		if currentStmt == nil {
-			// Last case (first in reverse order) - no else clause
-			currentStmt = NewIfStmt(patternCond, caseBlock, nil, expr)
-		} else {
-			// Previous cases become the else clause
-			currentStmt = NewIfStmt(patternCond, caseBlock, currentStmt, expr)
-		}
-	}
-
-	if currentStmt != nil {
-		// Post-process to convert "else if (true)" to "else"
-		currentStmt = simplifyTrueLiterals(currentStmt)
-		stmts = append(stmts, currentStmt)
-	}
+	// The arms test the hoisted target. A `match` needs no fall-through, since the checker
+	// has already found the arms exhaustive.
+	ctx := armCtx{scrutinee: targetTempVar, tempVar: tempVar, source: expr}
+	stmts = slices.Concat(stmts, b.buildArmChain(ctx, expr.Cases, nil))
 
 	return tempVar, stmts
-}
-
-// simplifyTrueLiterals recursively converts "else if (true)" to "else" in if-else chains
-func simplifyTrueLiterals(stmt Stmt) Stmt {
-	if ifStmt, ok := stmt.(*IfStmt); ok {
-		if ifStmt.Alt != nil {
-			// Check if the else clause is an "if (true)" that can be simplified
-			if altIfStmt, ok := ifStmt.Alt.(*IfStmt); ok && isTrueLiteral(altIfStmt.Test) {
-				// Replace "else if (true) { ... }" with "else { ... }"
-				simplifiedAlt := simplifyTrueLiterals(altIfStmt.Cons)
-				return NewIfStmt(ifStmt.Test, ifStmt.Cons, simplifiedAlt, ifStmt.Source())
-			} else {
-				// Recursively simplify the else clause
-				simplifiedAlt := simplifyTrueLiterals(ifStmt.Alt)
-				return NewIfStmt(ifStmt.Test, ifStmt.Cons, simplifiedAlt, ifStmt.Source())
-			}
-		}
-		return ifStmt
-	}
-	return stmt
 }
 
 // buildPatternCondition builds the condition expression and binding statements for a pattern
