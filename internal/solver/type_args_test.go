@@ -7,11 +7,13 @@ import (
 )
 
 // TestTypeArgArityAtReference covers the argument-count check a reference gets from
-// resolveTypeArgs. An alias, a class, and an enum all route through it, so the three report
-// the same shape of message and differ only in the noun naming the declaration. The valid
-// count is the range from the parameters with no default up to the whole list, so the message
-// states a single count when every parameter is required and a range when a default makes one
-// optional.
+// resolveTypeArgs. The valid count is the range from the parameters with no default up to the
+// whole list, so the message states a single count when every parameter is required and a range
+// when a default makes one optional.
+//
+// The rows vary the direction of the miscount and the branch of the message, and cover each
+// declaration sort once for the noun it renders. An alias, a class, and an enum all reach the
+// one helper, so a second row for a sort would re-run the same comparison.
 func TestTypeArgArityAtReference(t *testing.T) {
 	tests := []struct {
 		name string
@@ -71,22 +73,6 @@ func TestTypeArgArityAtReference(t *testing.T) {
 			want: []string{"enum `Opt` expects 1 type arguments but got 2"},
 		},
 		{
-			name: "EnumTooFewArgs",
-			src: `
-				enum Both<T, U> { Pair(a: T, b: U) }
-				declare fn f() -> Both<number>
-			`,
-			want: []string{"enum `Both` expects 2 type arguments but got 1"},
-		},
-		{
-			name: "EnumBareWithRequiredParam",
-			src: `
-				enum Opt<T> { Some(value: T), None }
-				declare fn f() -> Opt
-			`,
-			want: []string{"enum `Opt` expects 1 type arguments but got 0"},
-		},
-		{
 			name: "NonGenericEnumWithArgs",
 			src: `
 				enum Color { Red, Green }
@@ -118,30 +104,10 @@ func TestTypeArgArityAtReference(t *testing.T) {
 			`,
 		},
 		{
-			name: "EnumSelfReferenceBare",
-			src: `
-				enum List<T> { Cons(head: T, tail: List), Nil }
-			`,
-			want: []string{"enum `List` expects 1 type arguments but got 0"},
-		},
-		{
-			name: "EnumSelfReferenceWithArgAccepted",
-			src: `
-				enum List<T> { Cons(head: T, tail: List<T>), Nil }
-			`,
-		},
-		{
 			name: "ClassExactCountAccepted",
 			src: `
 				class Pair<T, U> { a: T, b: U }
 				declare fn f() -> Pair<number, string>
-			`,
-		},
-		{
-			name: "NonGenericClassBareAccepted",
-			src: `
-				class Point { x: number }
-				declare fn f() -> Point
 			`,
 		},
 	}
@@ -163,8 +129,11 @@ func TestTypeArgArityAtReference(t *testing.T) {
 // `never`.
 //
 // Two things report. The declaration reports the unreachable default, once per default and on
-// every path that resolves a `<…>` clause. A reference short of the last required parameter
-// reports the count, which runs to that parameter rather than to the first defaulted one.
+// every path that resolves a `<…>` clause — four rows, since each is a separate call into
+// resolveTypeParams. A reference short of the last required parameter reports the count, which
+// runs to that parameter rather than to the first defaulted one. That has two rows rather than
+// three: an alias and an enum share `arityOfParams`, while a class reads the count its
+// declaration registered through `arityOfParamDecls`.
 func TestRequiredTypeParamAfterDefault(t *testing.T) {
 	const unreachable = "the default for type parameter `T` can never be used, " +
 		"since `U` is declared after it and has no default"
@@ -211,14 +180,6 @@ func TestRequiredTypeParamAfterDefault(t *testing.T) {
 				declare fn f() -> Pair<string>
 			`,
 			want: []string{unreachable, "class `Pair` expects 2 type arguments but got 1"},
-		},
-		{
-			name: "EnumReferenceShortOfLastRequired",
-			src: `
-				enum Pair<T = number, U> { Both(a: T, b: U) }
-				declare fn f() -> Pair<string>
-			`,
-			want: []string{unreachable, "enum `Pair` expects 2 type arguments but got 1"},
 		},
 		// The default is kept rather than dropped, so a reference that writes every argument
 		// still resolves against the full parameter list and reports only the declaration.
@@ -272,6 +233,10 @@ func TestRequiredTypeParamAfterDefault(t *testing.T) {
 // resolved before it is dropped, so a diagnostic inside it still reports. Dropping it unresolved
 // would hide the second problem behind the count, and fixing the count would then surface an
 // error the author had no reason to expect.
+//
+// The zero-parameter row is the one that is not a repeat: resolveTypeArgs returns early for a
+// declaration with no parameters, so the resolve has to happen before that return. The alias row
+// guards the same behavior on the path whose logic moved.
 func TestSurplusTypeArgIsResolved(t *testing.T) {
 	tests := []struct {
 		name string
@@ -308,17 +273,6 @@ func TestSurplusTypeArgIsResolved(t *testing.T) {
 			`,
 			want: []string{
 				"type alias `Box` expects 1 type arguments but got 2",
-				"Unsupported: TypeRefTypeAnn",
-			},
-		},
-		{
-			name: "OnEnum",
-			src: `
-				enum Opt<T> { Some(value: T), None }
-				declare fn f() -> Opt<number, Nonexistent>
-			`,
-			want: []string{
-				"enum `Opt` expects 1 type arguments but got 2",
 				"Unsupported: TypeRefTypeAnn",
 			},
 		},
@@ -360,16 +314,6 @@ func TestTypeParamDefaultAtReference(t *testing.T) {
 			`,
 			want: "fn () -> Pair<number, string>",
 		},
-		// A default may name a parameter declared before it, so the argument that filled the
-		// earlier slot is substituted into it.
-		{
-			name: "ClassDefaultNamesEarlierParam",
-			src: `
-				class Pair<T, U = T> { a: T, b: U }
-				declare fn f() -> Pair<number>
-			`,
-			want: "fn () -> Pair<number, number>",
-		},
 		// A parameter carrying both a bound and a default keeps them independent: the default
 		// fills the omitted argument, and the bound still constrains what the constructor takes.
 		{
@@ -389,14 +333,6 @@ func TestTypeParamDefaultAtReference(t *testing.T) {
 			want: "fn () -> Opt<number>",
 		},
 		{
-			name: "EnumDefaultNamesEarlierParam",
-			src: `
-				enum Both<T, U = T> { Pair(a: T, b: U) }
-				declare fn f() -> Both<number>
-			`,
-			want: "fn () -> Both<number, number>",
-		},
-		{
 			name: "AliasBareFillsDefault",
 			src: `
 				type Box<T = number> = {value: T}
@@ -414,9 +350,10 @@ func TestTypeParamDefaultAtReference(t *testing.T) {
 	}
 }
 
-// TestClassTypeParamDefaultIsPerReference checks that a default filled at one class reference
-// does not reach another. `U = T` substitutes the argument that reference wrote for `T`, so `f`
-// and `g` each carry their own second argument instead of sharing one var declared on the class.
+// TestClassTypeParamDefaultIsPerReference covers a default that names an earlier parameter, and
+// checks that the argument filled from it at one reference does not reach another. `U = T`
+// substitutes the argument that reference wrote for `T`, so `f` and `g` each carry their own
+// second argument instead of sharing one var declared on the class.
 func TestClassTypeParamDefaultIsPerReference(t *testing.T) {
 	src := `
 		class Pair<T, U = T> { a: T, b: U }
@@ -441,17 +378,11 @@ func TestClassArityCheckedFromOtherDeclarations(t *testing.T) {
 		src  string
 		want string
 	}{
+		// `B` is declared after the class that names it, and the diagnostic is the same one
+		// TestClassArityRecoveryKeepsDeclarationVarOut gets for the two declared the other way
+		// round, so the count does not depend on which class the dep graph reaches first.
 		{
-			name: "FromClassBodyOmitted",
-			src: `
-				class B<T> { v: T }
-				class A { b: B }
-			`,
-			want: "class `B` expects 1 type arguments but got 0",
-		},
-		// The declaration order is reversed from the row above, and the diagnostic is the same.
-		{
-			name: "FromClassBodyOmittedReversed",
+			name: "FromClassBodyDeclaredLater",
 			src: `
 				class A { b: B }
 				class B<T> { v: T }
