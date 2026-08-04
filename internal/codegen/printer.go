@@ -59,6 +59,127 @@ var unaryOpMap = map[UnaryOp]string{
 	TypeOf:     "typeof ",
 }
 
+// Binding power of a JavaScript operator. A larger number binds tighter, so `a + b * c`
+// groups as `a + (b * c)` because precMultiplicative exceeds precAdditive. The codegen AST
+// records grouping in its tree shape rather than in parenthesis nodes, so the printer
+// consults these to decide when an operand needs parentheses to survive being reparsed.
+const (
+	precAssign         = 2
+	precCond           = 3
+	precNullish        = 4
+	precOr             = 4
+	precAnd            = 5
+	precEquality       = 8
+	precRelational     = 9
+	precAdditive       = 11
+	precMultiplicative = 12
+	precUnary          = 14
+	// precPrimary is for an expression that carries no operator of its own, such as a
+	// call, a member access, or a literal. Nothing can regroup it, so it never needs
+	// parentheses.
+	precPrimary = 20
+)
+
+func binaryPrecedence(op BinaryOp) int {
+	switch op {
+	case Assign:
+		return precAssign
+	case NullishCoalescing:
+		return precNullish
+	case LogicalOr:
+		return precOr
+	case LogicalAnd:
+		return precAnd
+	case EqualEqual, NotEqual, StrictEqual, StrictNotEqual:
+		return precEquality
+	case LessThan, LessThanEqual, GreaterThan, GreaterThanEqual, In, InstanceOf:
+		return precRelational
+	case Plus, Minus, Concatenation:
+		return precAdditive
+	case Times, Divide, Modulo:
+		return precMultiplicative
+	default:
+		return precPrimary
+	}
+}
+
+// exprPrecedence returns the binding power of an expression's top-level operator.
+func exprPrecedence(expr Expr) int {
+	switch e := expr.(type) {
+	case *BinaryExpr:
+		return binaryPrecedence(e.Op)
+	case *UnaryExpr, *AwaitExpr:
+		return precUnary
+	case *CondExpr:
+		return precCond
+	case *YieldExpr:
+		return precAssign
+	default:
+		return precPrimary
+	}
+}
+
+// mixesNullishAndLogical reports whether writing expr as an operand of parentOp would place
+// `??` next to `||` or `&&`. JavaScript rejects that pairing outright instead of choosing a
+// grouping for it, so it needs parentheses whichever side each operator is on.
+func mixesNullishAndLogical(parentOp BinaryOp, expr Expr) bool {
+	binExpr, isBin := expr.(*BinaryExpr)
+	if !isBin {
+		return false
+	}
+	isLogical := func(op BinaryOp) bool { return op == LogicalAnd || op == LogicalOr }
+	if parentOp == NullishCoalescing {
+		return isLogical(binExpr.Op)
+	}
+	if isLogical(parentOp) {
+		return binExpr.Op == NullishCoalescing
+	}
+	return false
+}
+
+// isAssociative reports whether regrouping an operator's own operands leaves the result
+// unchanged, so `a && (b && c)` can drop its parentheses. The short-circuiting operators
+// qualify. Arithmetic does not: `+` over strings and floats depends on its grouping, as
+// `(a + b) + c` and `a + (b + c)` show for a string `c` or for values that round.
+func isAssociative(op BinaryOp) bool {
+	switch op {
+	case LogicalAnd, LogicalOr, NullishCoalescing:
+		return true
+	default:
+		return false
+	}
+}
+
+// printBinaryOperand prints one side of a binary operator, parenthesized when JavaScript
+// would otherwise regroup it. An operand that binds looser than its parent always needs
+// them. One that binds equally needs them on the side the operator does not associate
+// with, which is why `a - (b - c)` keeps its parentheses and `(a - b) - c` does not.
+func (p *Printer) printBinaryOperand(expr Expr, parentOp BinaryOp, isRight bool) {
+	// Assign is the one right-associative operator here, so it is the left operand that
+	// needs parentheses at equal binding power.
+	equalNeedsParens := isRight
+	if parentOp == Assign {
+		equalNeedsParens = !isRight
+	}
+	if isAssociative(parentOp) {
+		equalNeedsParens = false
+	}
+	prec := exprPrecedence(expr)
+	parentPrec := binaryPrecedence(parentOp)
+	needsParens := prec < parentPrec || (prec == parentPrec && equalNeedsParens)
+	p.printMaybeParens(expr, needsParens || mixesNullishAndLogical(parentOp, expr))
+}
+
+func (p *Printer) printMaybeParens(expr Expr, needsParens bool) {
+	if !needsParens {
+		p.PrintExpr(expr)
+		return
+	}
+	p.print("(")
+	p.PrintExpr(expr)
+	p.print(")")
+}
+
 func (p *Printer) print(s string) {
 	p.Output += s
 	p.location.Column += len(s)
@@ -97,9 +218,9 @@ func (p *Printer) PrintExpr(expr Expr) {
 
 	switch e := expr.(type) {
 	case *BinaryExpr:
-		p.PrintExpr(e.Left)
+		p.printBinaryOperand(e.Left, e.Op, false)
 		p.print(" " + binaryOpMap[e.Op] + " ")
-		p.PrintExpr(e.Right)
+		p.printBinaryOperand(e.Right, e.Op, true)
 	case *LitExpr:
 		p.PrintLit(e.Lit)
 	case *IdentExpr:
@@ -117,9 +238,12 @@ func (p *Printer) PrintExpr(expr Expr) {
 		// for terminal expressions that shouldn't be used
 	case *UnaryExpr:
 		p.print(unaryOpMap[e.Op])
-		p.PrintExpr(e.Arg)
+		// A prefix operator takes only an operand that binds at least as tightly as it
+		// does, so `!(a || b)` keeps its parentheses.
+		p.printMaybeParens(e.Arg, exprPrecedence(e.Arg) < precUnary)
 	case *CondExpr:
-		p.PrintExpr(e.Cond)
+		// `?` and `:` delimit the branches, so only the test can be regrouped.
+		p.printMaybeParens(e.Cond, exprPrecedence(e.Cond) <= precCond)
 		p.print(" ? ")
 		p.PrintExpr(e.Cons)
 		p.print(" : ")

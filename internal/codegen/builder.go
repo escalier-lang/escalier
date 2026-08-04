@@ -1824,125 +1824,19 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			// Create a temp variable for the caught error
 			errorVar := NewIdentPat("__error", nil, expr)
 
-			// Build if-else chain for catch cases (similar to match expression)
+			// The caught value is what the arms test.
 			errorIdent := NewIdentExpr("__error", "", expr)
-			var catchBodyStmts []Stmt
 
-			// Build the catch cases in reverse order to create if-else chain
-			var currentStmt Stmt
-			for i := len(expr.Catch) - 1; i >= 0; i-- {
-				matchCase := expr.Catch[i]
-
-				// Build pattern matching condition and bindings
-				condition, bindingStmts := b.buildPatternCondition(matchCase.Pattern, errorIdent)
-
-				// Build the case body statements
-				var caseBodyStmts []Stmt
-
-				// Handle guards - always use nested if structure to ensure bindings are available
-				if matchCase.Guard != nil {
-					// Add bindings before guard evaluation
-					caseBodyStmts = slices.Concat(caseBodyStmts, bindingStmts)
-
-					// Build guard as a nested if
-					guardExpr, guardStmts := b.buildExpr(matchCase.Guard, expr)
-					caseBodyStmts = slices.Concat(caseBodyStmts, guardStmts)
-
-					// Create nested guard body
-					var guardBodyStmts []Stmt
-
-					// Add body statements or expression
-					if matchCase.Body.Block != nil {
-						body := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
-						guardBodyStmts = slices.Concat(guardBodyStmts, body)
-					} else if matchCase.Body.Expr != nil {
-						bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr, expr)
-						guardBodyStmts = slices.Concat(guardBodyStmts, bodyStmts)
-						assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
-						guardBodyStmts = append(guardBodyStmts, &ExprStmt{
-							Expr:   assignment,
-							span:   nil,
-							source: matchCase.Body.Expr,
-						})
-					}
-
-					guardBlock := NewBlockStmt(guardBodyStmts, expr)
-					guardIf := NewIfStmt(guardExpr, guardBlock, currentStmt, expr)
-					caseBodyStmts = append(caseBodyStmts, guardIf)
-
-					// Wrap in outer pattern condition block
-					caseBlock := NewBlockStmt(caseBodyStmts, expr)
-					currentStmt = NewIfStmt(condition, caseBlock, nil, expr)
-					continue
-				}
-
-				// No guard - add pattern bindings to case body
-				caseBodyStmts = slices.Concat(caseBodyStmts, bindingStmts)
-
-				// Add body statements or expression
-				if matchCase.Body.Block != nil {
-					// Body is a block
-					body := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
-					caseBodyStmts = slices.Concat(caseBodyStmts, body)
-				} else if matchCase.Body.Expr != nil {
-					// Body is an expression
-					bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr, expr)
-					caseBodyStmts = slices.Concat(caseBodyStmts, bodyStmts)
-
-					// Assign expression result to temp variable
-					assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
-					caseBodyStmts = append(caseBodyStmts, &ExprStmt{
-						Expr:   assignment,
-						span:   nil,
-						source: matchCase.Body.Expr,
-					})
-				}
-
-				// Create block statement for the case
-				caseBlock := NewBlockStmt(caseBodyStmts, expr)
-
-				// Create if statement
-				if currentStmt == nil {
-					// Last case, no else clause
-					currentStmt = NewIfStmt(condition, caseBlock, nil, expr)
-				} else {
-					// Previous cases become the else clause
-					currentStmt = NewIfStmt(condition, caseBlock, currentStmt, expr)
-				}
+			// A value no arm takes is re-raised, which is the one thing a catch chain does
+			// that a `match` chain does not. An arm that always runs leaves nothing to
+			// re-raise, so the chain falls through to nothing and the value cannot escape.
+			var rethrow []Stmt
+			if !ast.HasUnguardedCatchAll(expr.Catch) {
+				rethrow = []Stmt{NewThrowStmt(errorIdent, expr)}
 			}
 
-			// If we have match cases but the chain might not be exhaustive,
-			// add a final else that re-throws the error
-			if currentStmt != nil {
-				// Check if the last pattern is a wildcard (catches all)
-				lastCase := expr.Catch[len(expr.Catch)-1]
-				_, isWildcard := lastCase.Pattern.(*ast.WildcardPat)
-
-				if !isWildcard {
-					// Not exhaustive, add a re-throw
-					rethrowStmt := NewThrowStmt(errorIdent, expr)
-					rethrowBlock := NewBlockStmt([]Stmt{rethrowStmt}, expr)
-					currentStmt = simplifyTrueLiterals(currentStmt)
-
-					// Find the last if statement and add the re-throw as its else
-					lastIf := currentStmt
-					for {
-						if ifStmt, ok := lastIf.(*IfStmt); ok {
-							if ifStmt.Alt == nil {
-								ifStmt.Alt = rethrowBlock
-								break
-							}
-							lastIf = ifStmt.Alt
-						} else {
-							break
-						}
-					}
-				} else {
-					currentStmt = simplifyTrueLiterals(currentStmt)
-				}
-
-				catchBodyStmts = append(catchBodyStmts, currentStmt)
-			}
+			ctx := armCtx{scrutinee: errorIdent, tempVar: tempVar, source: expr}
+			catchBodyStmts := b.buildArmChain(ctx, expr.Catch, rethrow)
 
 			catchBlock := NewBlockStmt(catchBodyStmts, expr)
 			catchClause = &CatchClause{
@@ -1991,6 +1885,15 @@ func (b *Builder) buildObjKey(key ast.ObjKey) (ObjKey, []Stmt) {
 
 // createTempVar creates a temporary variable declaration and returns the temp variable
 // expression and the declaration statement.
+// createTempVarWithInit declares a fresh temp already holding init, for a temp whose
+// starting value matters. createTempVar leaves the temp undefined for callers that assign
+// it before every read.
+func (b *Builder) createTempVarWithInit(init Expr, sourceExpr ast.Expr) (Expr, Stmt) {
+	tempVar, declStmt := b.createTempVar(sourceExpr)
+	declStmt.(*DeclStmt).Decl.(*VarDecl).Decls[0].Init = init
+	return tempVar, declStmt
+}
+
 func (b *Builder) createTempVar(sourceExpr ast.Expr) (Expr, Stmt) {
 	tempId := b.NewTempId()
 	tempVar := NewIdentExpr(tempId, "", sourceExpr)
@@ -2407,6 +2310,174 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 }
 
 // buildMatchExpr converts a match expression into if-else statements with pattern matching
+// armCtx carries what every arm in a chain shares: the value the arms test, the temp the
+// chain assigns the winning arm's value to, and the node that generated code is blamed on.
+type armCtx struct {
+	scrutinee Expr
+	tempVar   Expr
+	source    ast.Expr
+}
+
+// asElse renders a chain's fall-through for an `else` slot. A lone `if` goes in bare so the
+// arms print as one `else if` chain. Anything else needs braces, and nothing at all leaves
+// the slot empty.
+func asElse(fallthroughStmts []Stmt, source ast.Node) Stmt {
+	if len(fallthroughStmts) == 0 {
+		return nil
+	}
+	if len(fallthroughStmts) == 1 {
+		if ifStmt, isIf := fallthroughStmts[0].(*IfStmt); isIf {
+			return ifStmt
+		}
+	}
+	return NewBlockStmt(fallthroughStmts, source)
+}
+
+// buildArmChain lowers match or catch arms to the statements that run the first arm taking
+// the value. fallthroughStmts is what runs when no arm takes it, which is nothing for a
+// `match`, whose arms the checker has already found exhaustive, and the `throw` that
+// re-raises a caught value for a `try`.
+//
+// The arms are built in reverse so each one wraps the chain the later arms have already
+// produced, which is the fall-through it hands the value to when it declines.
+func (b *Builder) buildArmChain(ctx armCtx, arms []*ast.MatchCase, fallthroughStmts []Stmt) []Stmt {
+	for i := len(arms) - 1; i >= 0; i-- {
+		arm := arms[i]
+		condition, bindingStmts := b.buildPatternCondition(arm.Pattern, ctx.scrutinee)
+
+		if arm.Guard != nil {
+			fallthroughStmts = b.buildGuardedArm(ctx, arm, condition, bindingStmts, fallthroughStmts)
+			continue
+		}
+
+		body := slices.Concat(bindingStmts, b.buildArmBody(arm.Body, ctx.tempVar, ctx.source))
+		if isTrueLiteral(condition) {
+			// An unguarded catch-all always runs, so it needs no test and every later arm
+			// is unreachable. Its body replaces the fall-through.
+			fallthroughStmts = body
+			continue
+		}
+		fallthroughStmts = []Stmt{NewIfStmt(
+			condition,
+			NewBlockStmt(body, ctx.source),
+			asElse(fallthroughStmts, ctx.source),
+			ctx.source,
+		)}
+	}
+	return fallthroughStmts
+}
+
+// buildGuardedArm lowers one arm that carries a guard, returning what the chain becomes once
+// this arm wraps it. Such an arm declines the value in two ways, by failing its pattern test
+// and by failing its guard, and both have to reach the same fall-through. Which shape does
+// that without emitting the fall-through twice depends on what the guard needs, so this
+// picks between four.
+func (b *Builder) buildGuardedArm(
+	ctx armCtx, arm *ast.MatchCase, condition Expr, bindingStmts, fallthroughStmts []Stmt,
+) []Stmt {
+	source := ctx.source
+	guardExpr, guardStmts := b.buildExpr(arm.Guard, source)
+	guardBodyStmts := b.buildArmBody(arm.Body, ctx.tempVar, source)
+
+	if isTrueLiteral(condition) {
+		// A catch-all pattern admits every value, so the bindings and the guard's `if`
+		// need no test around them. A failed guard is then the only way past this arm, so
+		// the fall-through goes in the guard's else and has one owner.
+		guardIf := NewIfStmt(
+			guardExpr, NewBlockStmt(guardBodyStmts, source), asElse(fallthroughStmts, source), source)
+		return slices.Concat(bindingStmts, guardStmts, []Stmt{guardIf})
+	}
+
+	// One `if` testing the pattern and the guard together gives the two failures a single
+	// `else` to share. The guard has to read nothing the pattern declares, since a
+	// declaration can only run once the pattern has matched, so guardWithoutBindings
+	// rewrites it to read through access paths where it can. The guard must also need no
+	// hoisted statements, since those would run before the pattern test rather than after
+	// it. The printer parenthesizes a guard that binds looser than the `&&` joining the two.
+	if len(guardStmts) == 0 {
+		if mergedGuard, canMerge := guardWithoutBindings(
+			arm.Pattern, ctx.scrutinee, arm.Guard, guardExpr,
+		); canMerge {
+			merged := combineConditions([]Expr{condition, mergedGuard}, source)
+			// The pattern's declarations move into the body, which is the only place left
+			// that reads them.
+			body := slices.Concat(bindingStmts, guardBodyStmts)
+			return []Stmt{NewIfStmt(
+				merged, NewBlockStmt(body, source), asElse(fallthroughStmts, source), source)}
+		}
+	}
+
+	// A guard that lowers to statements cannot join the condition, since those statements
+	// would run before the pattern had matched. Computing it into a flag inside the pattern
+	// test keeps that order, and the flag then answers whether this arm takes the value. The
+	// arm body and the fall-through share one `if`/`else` from there, so the later arms
+	// continue the same chain.
+	//
+	// The guard's statements are emitted as they were built, so this needs a guard that
+	// reads none of the pattern's declarations. Those declarations do not run until the body.
+	if len(fallthroughStmts) > 0 && !guardReadsPatternBindings(arm.Pattern, arm.Guard) {
+		takenVar, takenDecl := b.createTempVarWithInit(NewLitExpr(NewBoolLit(false, source), source), source)
+		computeGuard := append(slices.Clone(guardStmts), &ExprStmt{
+			Expr:   NewBinaryExpr(takenVar, Assign, guardExpr, source),
+			span:   nil,
+			source: source,
+		})
+		body := slices.Concat(bindingStmts, guardBodyStmts)
+		return []Stmt{
+			takenDecl,
+			NewIfStmt(condition, NewBlockStmt(computeGuard, source), nil, source),
+			NewIfStmt(takenVar, NewBlockStmt(body, source), asElse(fallthroughStmts, source), source),
+		}
+	}
+
+	// Otherwise the two tests stay in separate `if`s and a flag gives the fall-through one
+	// owner. Putting it in each `else` would emit it twice, and a chain of N such arms would
+	// emit its tail 2^N times. The arm sets the flag on the one path that takes the value,
+	// and the fall-through runs when the flag is still unset.
+	caseBodyStmts := slices.Concat(bindingStmts, guardStmts)
+	if len(fallthroughStmts) == 0 {
+		// Nothing to fall through to, so neither failure needs recording.
+		guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, source), nil, source)
+		caseBodyStmts = append(caseBodyStmts, guardIf)
+		return []Stmt{NewIfStmt(condition, NewBlockStmt(caseBodyStmts, source), nil, source)}
+	}
+
+	takenVar, takenDecl := b.createTempVarWithInit(NewLitExpr(NewBoolLit(false, source), source), source)
+	guardBodyStmts = append(guardBodyStmts, &ExprStmt{
+		Expr:   NewBinaryExpr(takenVar, Assign, NewLitExpr(NewBoolLit(true, source), source), source),
+		span:   nil,
+		source: source,
+	})
+	guardIf := NewIfStmt(guardExpr, NewBlockStmt(guardBodyStmts, source), nil, source)
+	caseBodyStmts = append(caseBodyStmts, guardIf)
+	notTaken := NewUnaryExpr(LogicalNot, takenVar, source)
+	return []Stmt{
+		takenDecl,
+		NewIfStmt(condition, NewBlockStmt(caseBodyStmts, source), nil, source),
+		NewIfStmt(notTaken, NewBlockStmt(fallthroughStmts, source), nil, source),
+	}
+}
+
+// buildArmBody lowers a match or catch arm's body to the statements that run it, ending in
+// the assignment that hands its value to the enclosing expression's temp. A block body
+// assigns the value of its tail statement, an expression body assigns itself, and an arm
+// with neither runs nothing.
+func (b *Builder) buildArmBody(body ast.BlockOrExpr, tempVar Expr, source ast.Expr) []Stmt {
+	if body.Block != nil {
+		return b.buildBlockStmtsWithTempAssignment(body.Block.Stmts, tempVar, source)
+	}
+	if body.Expr == nil {
+		return nil
+	}
+	bodyExpr, stmts := b.buildExpr(body.Expr, source)
+	assignment := &ExprStmt{
+		Expr:   NewBinaryExpr(tempVar, Assign, bodyExpr, body.Expr),
+		span:   nil,
+		source: body.Expr,
+	}
+	return slices.Concat(stmts, []Stmt{assignment})
+}
+
 func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 	// Create a temporary variable to store the match result
 	tempVar, tempDeclStmt := b.createTempVar(expr)
@@ -2428,116 +2499,12 @@ func (b *Builder) buildMatchExpr(expr *ast.MatchExpr) (Expr, []Stmt) {
 		source: expr.Target,
 	})
 
-	// Convert each match case to if-else statements
-	var currentStmt Stmt
-	for i := len(expr.Cases) - 1; i >= 0; i-- {
-		matchCase := expr.Cases[i]
-
-		// Build pattern matching conditions and variable bindings
-		patternCond, patternBindings := b.buildPatternCondition(matchCase.Pattern, targetTempVar)
-
-		// Build the case body statements
-		var caseStmts []Stmt
-
-		// Handle guards - always use nested if structure to ensure bindings are available
-		if matchCase.Guard != nil {
-			// Add bindings before guard evaluation
-			caseStmts = slices.Concat(caseStmts, patternBindings)
-
-			// Build guard as a nested if
-			guardExpr, guardStmts := b.buildExpr(matchCase.Guard, expr)
-			caseStmts = slices.Concat(caseStmts, guardStmts)
-
-			// Create nested guard body
-			var guardBodyStmts []Stmt
-
-			// Add body statements or expression
-			if matchCase.Body.Block != nil {
-				blockStmts := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
-				guardBodyStmts = slices.Concat(guardBodyStmts, blockStmts)
-			} else if matchCase.Body.Expr != nil {
-				bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr, expr)
-				guardBodyStmts = slices.Concat(guardBodyStmts, bodyStmts)
-				assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
-				guardBodyStmts = append(guardBodyStmts, &ExprStmt{
-					Expr:   assignment,
-					span:   nil,
-					source: matchCase.Body.Expr,
-				})
-			}
-
-			guardBlock := NewBlockStmt(guardBodyStmts, expr)
-			guardIf := NewIfStmt(guardExpr, guardBlock, currentStmt, expr)
-			caseStmts = append(caseStmts, guardIf)
-
-			// Wrap in outer pattern condition block
-			caseBlock := NewBlockStmt(caseStmts, expr)
-			currentStmt = NewIfStmt(patternCond, caseBlock, nil, expr)
-			continue
-		}
-
-		// No guard - add pattern bindings to case body
-		caseStmts = slices.Concat(caseStmts, patternBindings)
-
-		// Add body statements or expression
-		if matchCase.Body.Block != nil {
-			// Handle block body - assign result of last statement to temp var
-			blockStmts := b.buildBlockStmtsWithTempAssignment(matchCase.Body.Block.Stmts, tempVar, expr)
-			caseStmts = slices.Concat(caseStmts, blockStmts)
-		} else if matchCase.Body.Expr != nil {
-			// Handle expression body
-			bodyExpr, bodyStmts := b.buildExpr(matchCase.Body.Expr, expr)
-			caseStmts = slices.Concat(caseStmts, bodyStmts)
-
-			// Assign result to temp variable
-			assignment := NewBinaryExpr(tempVar, Assign, bodyExpr, matchCase.Body.Expr)
-			caseStmts = append(caseStmts, &ExprStmt{
-				Expr:   assignment,
-				span:   nil,
-				source: matchCase.Body.Expr,
-			})
-		}
-
-		// Create block statement for the case
-		caseBlock := NewBlockStmt(caseStmts, expr)
-
-		// Create if statement
-		if currentStmt == nil {
-			// Last case (first in reverse order) - no else clause
-			currentStmt = NewIfStmt(patternCond, caseBlock, nil, expr)
-		} else {
-			// Previous cases become the else clause
-			currentStmt = NewIfStmt(patternCond, caseBlock, currentStmt, expr)
-		}
-	}
-
-	if currentStmt != nil {
-		// Post-process to convert "else if (true)" to "else"
-		currentStmt = simplifyTrueLiterals(currentStmt)
-		stmts = append(stmts, currentStmt)
-	}
+	// The arms test the hoisted target. A `match` needs no fall-through, since the checker
+	// has already found the arms exhaustive.
+	ctx := armCtx{scrutinee: targetTempVar, tempVar: tempVar, source: expr}
+	stmts = slices.Concat(stmts, b.buildArmChain(ctx, expr.Cases, nil))
 
 	return tempVar, stmts
-}
-
-// simplifyTrueLiterals recursively converts "else if (true)" to "else" in if-else chains
-func simplifyTrueLiterals(stmt Stmt) Stmt {
-	if ifStmt, ok := stmt.(*IfStmt); ok {
-		if ifStmt.Alt != nil {
-			// Check if the else clause is an "if (true)" that can be simplified
-			if altIfStmt, ok := ifStmt.Alt.(*IfStmt); ok && isTrueLiteral(altIfStmt.Test) {
-				// Replace "else if (true) { ... }" with "else { ... }"
-				simplifiedAlt := simplifyTrueLiterals(altIfStmt.Cons)
-				return NewIfStmt(ifStmt.Test, ifStmt.Cons, simplifiedAlt, ifStmt.Source())
-			} else {
-				// Recursively simplify the else clause
-				simplifiedAlt := simplifyTrueLiterals(ifStmt.Alt)
-				return NewIfStmt(ifStmt.Test, ifStmt.Cons, simplifiedAlt, ifStmt.Source())
-			}
-		}
-		return ifStmt
-	}
-	return stmt
 }
 
 // buildPatternCondition builds the condition expression and binding statements for a pattern
@@ -2989,6 +2956,177 @@ func isTrueLiteral(expr Expr) bool {
 		}
 	}
 	return false
+}
+
+// guardRefs collects the identifier names a guard expression mentions, so a caller can ask
+// whether the guard depends on the names its arm's pattern binds.
+type guardRefs struct {
+	ast.DefaultVisitor
+	names set.Set[string]
+}
+
+func (v *guardRefs) EnterExpr(e ast.Expr) bool {
+	if ident, isIdent := e.(*ast.IdentExpr); isIdent {
+		v.names.Add(ident.Name)
+	}
+	return true
+}
+
+// patternAccessPaths maps each name a pattern binds to the expression that reads its value
+// out of target, so `{message: msg}` over `__error` yields msg to `__error.message`. A
+// caller can then write the guard against those paths rather than against declarations the
+// pattern has to make first.
+//
+// The second result is false for a pattern whose bindings are not plain reads. An extractor
+// or instance pattern runs user code to produce them, a rest element gathers what is left
+// rather than one position, and a default supplies a value when the read finds nothing.
+func patternAccessPaths(pat ast.Pat, target Expr) (map[string]Expr, bool) {
+	paths := map[string]Expr{}
+	if !collectAccessPaths(pat, target, paths) {
+		return nil, false
+	}
+	return paths, true
+}
+
+func collectAccessPaths(pat ast.Pat, target Expr, into map[string]Expr) bool {
+	switch p := pat.(type) {
+	case *ast.WildcardPat, *ast.LitPat:
+		return true
+	case *ast.IdentPat:
+		if p.Default != nil {
+			return false
+		}
+		into[p.Name] = target
+		return true
+	case *ast.ObjectPat:
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				prop := NewMemberExpr(target, NewIdentifier(e.Key.Name, e.Key), false, e)
+				if !collectAccessPaths(e.Value, prop, into) {
+					return false
+				}
+			case *ast.ObjShorthandPat:
+				if e.Default != nil {
+					return false
+				}
+				into[e.Key.Name] = NewMemberExpr(target, NewIdentifier(e.Key.Name, e.Key), false, e)
+			default:
+				return false
+			}
+		}
+		return true
+	case *ast.TuplePat:
+		for i, elem := range p.Elems {
+			if _, isRest := elem.(*ast.RestPat); isRest {
+				return false
+			}
+			index := NewIndexExpr(target, NewLitExpr(NewNumLit(float64(i), p), p), false, p)
+			if !collectAccessPaths(elem, index, into) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+// substituteAccessPaths rewrites a guard so each reference to a pattern binding reads
+// through its access path instead, turning `msg != ""` into `__error.message != ""`. The
+// rewritten guard needs no declarations ahead of it, so it can join the pattern test in one
+// condition.
+//
+// The second result is false for an expression kind this does not rewrite. Only the shapes
+// an ordinary guard is built from are covered, which keeps a nested function out of the
+// walk. Such a function could rebind one of the names, and rewriting through it would
+// change which value the guard reads.
+func substituteAccessPaths(expr Expr, paths map[string]Expr) (Expr, bool) {
+	switch e := expr.(type) {
+	case *IdentExpr:
+		if path, isBound := paths[e.Name]; isBound {
+			return path, true
+		}
+		return e, true
+	case *LitExpr, *TemplateLitExpr:
+		return e, true
+	case *BinaryExpr:
+		left, leftOK := substituteAccessPaths(e.Left, paths)
+		right, rightOK := substituteAccessPaths(e.Right, paths)
+		if !leftOK || !rightOK {
+			return nil, false
+		}
+		return NewBinaryExpr(left, e.Op, right, e.Source()), true
+	case *UnaryExpr:
+		arg, argOK := substituteAccessPaths(e.Arg, paths)
+		if !argOK {
+			return nil, false
+		}
+		return NewUnaryExpr(e.Op, arg, e.Source()), true
+	case *MemberExpr:
+		object, objectOK := substituteAccessPaths(e.Object, paths)
+		if !objectOK {
+			return nil, false
+		}
+		return NewMemberExpr(object, e.Prop, e.OptChain, e.Source()), true
+	case *IndexExpr:
+		object, objectOK := substituteAccessPaths(e.Object, paths)
+		index, indexOK := substituteAccessPaths(e.Index, paths)
+		if !objectOK || !indexOK {
+			return nil, false
+		}
+		return NewIndexExpr(object, index, e.OptChain, e.Source()), true
+	case *CallExpr:
+		callee, calleeOK := substituteAccessPaths(e.Callee, paths)
+		if !calleeOK {
+			return nil, false
+		}
+		args := make([]Expr, len(e.Args))
+		for i, arg := range e.Args {
+			substituted, argOK := substituteAccessPaths(arg, paths)
+			if !argOK {
+				return nil, false
+			}
+			args[i] = substituted
+		}
+		return NewCallExpr(callee, args, e.OptChain, e.Source()), true
+	default:
+		return nil, false
+	}
+}
+
+// guardReadsPatternBindings reports whether a guard mentions any name its arm's pattern
+// binds. Such a guard cannot run before the pattern's declarations unless every reference is
+// rewritten, and a guard that lowers to statements carries references this package does not
+// rewrite, since only the guard's own expression goes through substituteAccessPaths.
+func guardReadsPatternBindings(pat ast.Pat, guard ast.Expr) bool {
+	bound := set.NewSet[string]()
+	ast.CollectPatternBindingNames(pat, bound)
+	if bound.Len() == 0 {
+		return false
+	}
+	refs := &guardRefs{names: set.NewSet[string]()}
+	guard.Accept(refs)
+	return refs.names.Intersection(bound).Len() > 0
+}
+
+// guardWithoutBindings returns a guard that reads nothing the arm's pattern declares, so it
+// can be tested in the same condition as the pattern. A guard naming none of the bindings is
+// already such an expression and is returned unchanged. One that names them is rewritten to
+// read through access paths. The second result is false when neither applies.
+//
+// The caller must have checked that the guard lowers to no statements. Those statements can
+// hold references of their own, and rewriting the expression alone would leave them reading
+// declarations that no longer precede them.
+func guardWithoutBindings(pat ast.Pat, target Expr, guard ast.Expr, guardExpr Expr) (Expr, bool) {
+	if !guardReadsPatternBindings(pat, guard) {
+		return guardExpr, true
+	}
+	paths, pathsOK := patternAccessPaths(pat, target)
+	if !pathsOK {
+		return nil, false
+	}
+	return substituteAccessPaths(guardExpr, paths)
 }
 
 // combineConditions combines multiple conditions with && operators,

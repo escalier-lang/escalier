@@ -891,6 +891,420 @@ func TestBuildValElse(t *testing.T) {
 	}
 }
 
+// TestBuildTryCatchRethrow pins which catch arms let a caught value escape, and pins that
+// an arm which always runs is emitted without a test. A value no arm takes is re-raised, so
+// the emitted catch ends in `throw __error` unless some arm always runs. An arm always runs
+// when its pattern is a wildcard or an identifier and it carries no guard, which is the same
+// rule the solver applies when it decides whether the enclosing `throws` clause records the
+// rethrow. A wildcard or identifier pattern matches every value the same way, so no emitted
+// arm tests it.
+func TestBuildTryCatchRethrow(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		expected string
+	}{
+		// A bare `_` always runs, so nothing escapes and the body needs no test.
+		"BareWildcard": {
+			src: "fn f() {\n\treturn try { throw \"x\" } catch { _ => 0 }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw "x";
+  } catch (__error) {
+    temp1 = 0;
+  }
+  return temp1;
+}`,
+		},
+		// A guard can fail, so `_ if …` does not always run. The rethrow goes in the
+		// guard's else, since the wildcard itself admits every value.
+		"GuardedWildcard": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { _ if n > 0 => 0 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (n > 0) {
+      temp2 = 0;
+    } else {
+      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// An identifier binds the caught value without testing it, so it always runs and
+		// draws no rethrow.
+		"BareIdent": {
+			src: "fn f() {\n\treturn try { throw \"x\" } catch { e => e }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw "x";
+  } catch (__error) {
+    const e = __error;
+    temp1 = e;
+  }
+  return temp1;
+}`,
+		},
+		"GuardedIdent": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { e if n > 0 => e }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    const e = __error;
+    if (n > 0) {
+      temp2 = e;
+    } else {
+      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// An always-running arm makes every later arm unreachable wherever it sits, so
+		// nothing escapes and the later arms are not emitted at all.
+		"CatchAllBeforeAnotherArm": {
+			src: "fn f() {\n\treturn try { throw \"x\" } catch { _ => 0, \"x\" => 1 }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw "x";
+  } catch (__error) {
+    temp1 = 0;
+  }
+  return temp1;
+}`,
+		},
+		// A guarded catch-all ahead of a bare one. The guard's else holds the later arm,
+		// so a failed guard runs it and nothing escapes.
+		"GuardedCatchAllThenCatchAll": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { _ if n > 0 => 0, _ => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (n > 0) {
+      temp2 = 0;
+    } else {
+      temp2 = 1;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// Guarded catch-alls nest one inside the next, each in the previous guard's else.
+		// Every arm is printed once however many of them there are, since none of their
+		// patterns is tested.
+		"GuardedCatchAllsThenCatchAll": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { _ if n > 0 => 0, _ if n > 1 => 1, _ => 2 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (n > 0) {
+      temp2 = 0;
+    } else if (n > 1) {
+      temp2 = 1;
+    } else {
+      temp2 = 2;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// A guarded catch-all in the final slot leaves no arm that always runs, so a
+		// value the literal arm declines and the guard declines is re-raised.
+		"LiteralThenGuardedCatchAll": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" => 0, _ if n > 0 => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x") {
+      temp2 = 0;
+    } else if (n > 0) {
+      temp2 = 1;
+    } else {
+      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// A guarded arm whose pattern is refutable declines the value in two ways, by
+		// failing the pattern test and by failing the guard. Both hand the value to the
+		// later arms, so the arm that always runs still gets its turn on a thrown "y".
+		// The literal pattern binds nothing, so one `if` tests both and the two failures
+		// share its else.
+		"GuardedRefutableThenCatchAll": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, _ => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x" && n > 0) {
+      temp2 = 0;
+    } else {
+      temp2 = 1;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// The same shape without an arm that always runs. A thrown "y" reaches the "y"
+		// arm rather than the rethrow, and only a value neither arm names is re-raised.
+		"GuardedRefutableThenLiteral": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, \"y\" => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x" && n > 0) {
+      temp2 = 0;
+    } else if (__error == "y") {
+      temp2 = 1;
+    } else {
+      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// Stacked guarded arms with refutable patterns. Each merges into one test, so the
+		// arms form a single `else if` chain and the "z" arm and the rethrow are emitted
+		// once rather than once per path through the two guards.
+		"TwoGuardedRefutableArms": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 => 0, \"y\" if n > 1 => 1, \"z\" => 2 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x" && n > 0) {
+      temp2 = 0;
+    } else if (__error == "y" && n > 1) {
+      temp2 = 1;
+    } else if (__error == "z") {
+      temp2 = 2;
+    } else {
+      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// A guard that binds looser than the `&&` joining it to the pattern test still
+		// merges. The printer parenthesizes it, so the arm does not run for a value the
+		// pattern rejects.
+		"GuardIsLogicalOr": {
+			src: "fn f(n) {\n\treturn try { throw \"x\" } catch { \"x\" if n > 0 || n < 0 - 5 => 0, \"y\" => 1 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x" && (n > 0 || n < 0 - 5)) {
+      temp2 = 0;
+    } else if (__error == "y") {
+      temp2 = 1;
+    } else {
+      throw __error;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// A guard reading a name its pattern binds still merges. The guard is rewritten to
+		// read through the access path, `__error.message` for `msg`, so it needs no
+		// declaration ahead of it. The declaration moves into the body, the only place
+		// left that reads it, and short-circuiting keeps the path read behind the checks
+		// that make it safe.
+		"GuardReadsPatternBinding": {
+			src: "fn f() {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if msg != \"\" => msg, _ => \"other\" }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw {message: "m"};
+  } catch (__error) {
+    if (__error != null && "message" in __error && __error.message != "") {
+      const {message: msg} = __error;
+      temp1 = msg;
+    } else {
+      temp1 = "other";
+    }
+  }
+  return temp1;
+}`,
+		},
+		// A nested pattern reaches through each step of the path, and every existence
+		// check precedes the read that depends on it.
+		"GuardReadsNestedBinding": {
+			src: "fn f() {\n\treturn try { throw {user: {name: \"n\"}} } catch { {user: {name: nm}} if nm != \"\" => nm, _ => \"other\" }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw {user: {name: "n"}};
+  } catch (__error) {
+    if (__error != null && "user" in __error && __error.user != null && "name" in __error.user && __error.user.name != "") {
+      const {user: {name: nm}} = __error;
+      temp1 = nm;
+    } else {
+      temp1 = "other";
+    }
+  }
+  return temp1;
+}`,
+		},
+		// A guard naming none of the bindings needs no rewriting to join the pattern test.
+		"GuardIgnoresPatternBinding": {
+			src: "fn f(n: number) {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if n > 0 => msg, _ => \"other\" }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw {message: "m"};
+  } catch (__error) {
+    if (__error != null && "message" in __error && n > 0) {
+      const {message: msg} = __error;
+      temp2 = msg;
+    } else {
+      temp2 = "other";
+    }
+  }
+  return temp2;
+}`,
+		},
+		// A guard that lowers to statements cannot join the pattern test, since those
+		// statements would run before the pattern had matched. Computing it into a flag
+		// inside the pattern test keeps that order, and the flag then carries the arm body
+		// and the fall-through in one `if`/`else` that the later arms continue.
+		"GuardLowersToStatements": {
+			src: "fn f(n: number) {\n\treturn try { throw \"x\" } catch { \"x\" if (if n > 0 { true } else { false }) => 0, \"y\" => 1, _ => 2 }\n}",
+			expected: `export function f(temp1) {
+  const n = temp1;
+  let temp2;
+  try {
+    throw "x";
+  } catch (__error) {
+    let temp4 = false;
+    if (__error == "x") {
+      let temp3;
+      if (n > 0) {
+        temp3 = true;
+      } else {
+        temp3 = false;
+      }
+      temp4 = temp3;
+    }
+    if (temp4) {
+      temp2 = 0;
+    } else if (__error == "y") {
+      temp2 = 1;
+    } else {
+      temp2 = 2;
+    }
+  }
+  return temp2;
+}`,
+		},
+		// A guard that both lowers to statements and reads a pattern binding keeps the
+		// nested shape. Only the guard's own expression goes through the access-path
+		// rewrite, so its statements still read the declarations and have to run after
+		// them.
+		"StatementGuardReadsBinding": {
+			src: "fn f() {\n\treturn try { throw {message: \"m\"} } catch { {message: msg} if (if msg != \"\" { true } else { false }) => 0, _ => 1 }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw {message: "m"};
+  } catch (__error) {
+    let temp3 = false;
+    if (__error != null && "message" in __error) {
+      const {message: msg} = __error;
+      let temp2;
+      if (msg != "") {
+        temp2 = true;
+      } else {
+        temp2 = false;
+      }
+      if (temp2) {
+        temp1 = 0;
+        temp3 = true;
+      }
+    }
+    if (!temp3) {
+      temp1 = 1;
+    }
+  }
+  return temp1;
+}`,
+		},
+		// No arm always runs, so a value matching neither literal is re-raised.
+		"LiteralArmsOnly": {
+			src: "fn f() {\n\treturn try { throw \"x\" } catch { \"x\" => 0, \"y\" => 1 }\n}",
+			expected: `export function f() {
+  let temp1;
+  try {
+    throw "x";
+  } catch (__error) {
+    if (__error == "x") {
+      temp1 = 0;
+    } else if (__error == "y") {
+      temp1 = 1;
+    } else {
+      throw __error;
+    }
+  }
+  return temp1;
+}`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			module, errors := parser.ParseLibFiles(ctx, []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: test.src},
+			})
+			require.Empty(t, errors)
+
+			depGraph := dep_graph.BuildDepGraph(module)
+			builder := &Builder{tempId: 0, depGraph: depGraph}
+			outModule := builder.BuildTopLevelDecls(depGraph)
+
+			printer := NewPrinter()
+			for i, stmt := range outModule.Stmts {
+				if i > 0 {
+					printer.NewLine()
+				}
+				printer.PrintStmt(stmt)
+			}
+			require.Equal(t, test.expected, printer.Output)
+		})
+	}
+}
+
 func TestBuildDecls_WithDependencies(t *testing.T) {
 	tests := map[string]struct {
 		sources  []*ast.Source

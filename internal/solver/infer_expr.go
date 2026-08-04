@@ -2771,15 +2771,13 @@ func (c *checker) caughtType(collected soltype.Type) soltype.Type {
 // rethrowUnhandled sends the part of the caught union no arm covers into the enclosing
 // throws sink. A value matching no arm is re-raised at runtime, so uncovered members draw a
 // rethrow rather than the non-exhaustiveness error the equivalent `match` would draw.
-// Coverage comes from isCatchAll and unionMemberCovered, so it agrees with
+// Coverage comes from ast.HasUnguardedCatchAll and unionMemberCovered, so it agrees with
 // checkMatchExhaustive, and a guarded arm can fail its guard and covers nothing. Only the
 // MEMBERS are rethrown: every throws type is open already, and only `unknown` could carry
 // the tail, so adding it would erase the named types the clause had.
 func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, enclosing soltype.Type) {
-	for _, arm := range e.Catch {
-		if arm.Guard == nil && isCatchAll(arm.Pattern) {
-			return
-		}
+	if ast.HasUnguardedCatchAll(e.Catch) {
+		return
 	}
 	// A non-union `caught` carries no named member to rethrow. It is `unknown`, the bare
 	// open tail caughtType renders for a block that raises nothing known, or the ErrorType
@@ -2877,10 +2875,8 @@ func (c *checker) checkMatchExhaustive(scope *Scope, e *ast.MatchExpr, scrutinee
 // class. A structural object or tuple member is covered by an irrefutable object or tuple
 // pattern of the member's shape. A member no arm covers leaves the match non-exhaustive.
 func (c *checker) unionMatchExhaustive(scope *Scope, e *ast.MatchExpr, u *soltype.UnionType) bool {
-	for _, arm := range e.Cases {
-		if arm.Guard == nil && isCatchAll(arm.Pattern) {
-			return true
-		}
+	if ast.HasUnguardedCatchAll(e.Cases) {
+		return true
 	}
 	if u.Inexact {
 		return false
@@ -3159,24 +3155,12 @@ func structuralInexact(t soltype.Type) (inexact bool, ok bool) {
 // values the pattern cannot see, so it still needs a true catch-all. A literal
 // pattern is refutable and never covers.
 func armCoversShape(p ast.Pat, inexact bool) bool {
-	if isCatchAll(p) {
+	if ast.IsCatchAllPat(p) {
 		return true
 	}
 	switch p.(type) {
 	case *ast.ObjectPat, *ast.TuplePat:
 		return !inexact && irrefutablePat(p)
-	default:
-		return false
-	}
-}
-
-// isCatchAll reports whether a pattern matches every value unconditionally, so an
-// unguarded arm with it alone makes any match exhaustive. A wildcard or
-// identifier binds without testing the value. Every other pattern is refutable.
-func isCatchAll(p ast.Pat) bool {
-	switch p.(type) {
-	case *ast.WildcardPat, *ast.IdentPat:
-		return true
 	default:
 		return false
 	}
