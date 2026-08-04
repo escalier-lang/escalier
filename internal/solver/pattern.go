@@ -459,17 +459,17 @@ func (c *checker) resolveQualClassType(scope *Scope, qi ast.QualIdent) (*soltype
 	return ct, isClass
 }
 
-// ctorSignature resolves a value to its constructor signature in one of three shapes: a bare
-// FuncType, a class value object's ConstructorElem, or either of those reached through a
-// binding var's lower bounds. The var case is the common one, since a class value is a
-// pre-bound var during its own inference component with the constructor recorded as a lower
-// bound.
+// ctorSignature resolves a value to its constructor signature in one of three shapes: a class
+// value object's ConstructorElem, a bare FuncType, or either of those reached through a binding
+// var's lower bounds. The var case is the common one, since a class value is a pre-bound var
+// during its own inference component with the constructor recorded as a lower bound.
 //
-// For `class Point { x: number, y: number }` the value `Point` resolves mid-inference to a
-// var whose lower bound is `fn (x: number, y: number) -> Point`, and ctorSignature looks
-// through the var to that FuncType. A class that also declares static members instead binds
-// an ObjectType carrying a ConstructorElem, so the ObjectType arm returns its Constructor().Fn.
-// A var with two conflicting constructor lower bounds is ambiguous and left unresolved.
+// For `class Point { x: number, y: number }` the value `Point` resolves mid-inference to a var
+// whose lower bound is `{new (x: number, y: number) -> Point}`, and ctorSignature looks through
+// the var to that object, returning its Constructor().Fn. Every class value has that shape,
+// statics or not. The bare-FuncType arm is what an extractor pattern naming a plain function
+// resolves through. A var with two conflicting constructor lower bounds is ambiguous and left
+// unresolved.
 func ctorSignature(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:

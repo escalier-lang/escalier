@@ -851,6 +851,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// `never`, which constrain short-circuits, so no clause satisfies every super.
 			return append(errs, c.constrain(sub.ThrowsOrNever(), sup.ThrowsOrNever(), seen, false)...)
 		}
+		// A function never fills an object target that names a construct signature. classValue
+		// binds every class value to an object carrying a ConstructorElem, so a constructor
+		// reaches such a target through the object-against-object arm below and a bare function
+		// has no way in. That is what makes `InstanceType<fn (x: number) -> {a: number}>` reduce
+		// to `never`, matching TypeScript, while `InstanceType<typeof Point>` still reads the
+		// instance off the class value.
 	case *soltype.TupleType:
 		if tupleHasSpread(sub) || tupleHasSpread(super) {
 			// One side carries an unreduced `...P` spread the pre-switch could not ground: a spread

@@ -2390,3 +2390,213 @@
     span: 1:1-1:38,
 }
 ---
+
+[TestParseTypeAnnNoErrors/ObjectConstructorSignatureWithTypeParams - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.ConstructorTypeAnn{
+            Fn: &ast.FuncTypeAnn{
+                TypeParams: []*ast.TypeParam{
+                    &ast.TypeParam{
+                        Name: "T",
+                    },
+                },
+                Params: []*ast.Param{
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name: "x",
+                            span: 1:10-1:11,
+                        },
+                        TypeAnn: &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "T",
+                                span: 1:13-1:14,
+                            },
+                            span: 1:13-1:14,
+                        },
+                    },
+                },
+                Return: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Box",
+                        span: 1:19-1:22,
+                    },
+                    TypeArgs: []ast.TypeAnn{
+                        &ast.TypeRefTypeAnn{
+                            Name: &ast.Ident{
+                                Name: "T",
+                                span: 1:23-1:24,
+                            },
+                            span: 1:23-1:24,
+                        },
+                    },
+                    span: 1:19-1:25,
+                },
+                span: 1:2-1:25,
+            },
+        },
+    },
+    span: 1:1-1:26,
+}
+---
+
+[TestParseTypeAnnNoErrors/ObjectConstructorSignature - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.ConstructorTypeAnn{
+            Fn: &ast.FuncTypeAnn{
+                Params: []*ast.Param{
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name: "x",
+                            span: 1:7-1:8,
+                        },
+                        TypeAnn: &ast.NumberTypeAnn{
+                            span: 1:10-1:16,
+                        },
+                    },
+                },
+                Return: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Point",
+                        span: 1:21-1:26,
+                    },
+                    span: 1:21-1:26,
+                },
+                span: 1:2-1:26,
+            },
+        },
+    },
+    span: 1:1-1:27,
+}
+---
+
+[TestParseTypeAnnNoErrors/ObjectConstructorSignatureBesideProperty - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.ConstructorTypeAnn{
+            Fn: &ast.FuncTypeAnn{
+                Params: []*ast.Param{
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name: "x",
+                            span: 1:7-1:8,
+                        },
+                        TypeAnn: &ast.NumberTypeAnn{
+                            span: 1:10-1:16,
+                        },
+                    },
+                },
+                Return: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Point",
+                        span: 1:21-1:26,
+                    },
+                    span: 1:21-1:26,
+                },
+                span: 1:2-1:26,
+            },
+        },
+        &ast.PropertyTypeAnn{
+            Name: &ast.IdentExpr{
+                Name: "origin",
+                span: 1:28-1:34,
+            },
+            Value: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Point",
+                    span: 1:36-1:41,
+                },
+                span: 1:36-1:41,
+            },
+        },
+    },
+    span: 1:1-1:42,
+}
+---
+
+[TestParseTypeAnnNoErrors/ObjectConstructorSignatureWithRestParam - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.ConstructorTypeAnn{
+            Fn: &ast.FuncTypeAnn{
+                Params: []*ast.Param{
+                    &ast.Param{
+                        Pattern: &ast.RestPat{
+                            Pattern: &ast.IdentPat{
+                                Name: "args",
+                                span: 1:10-1:14,
+                            },
+                            span: 1:7-1:14,
+                        },
+                        TypeAnn: &ast.TupleTypeAnn{
+                            Elems: []ast.TypeAnn{
+                                &ast.NumberTypeAnn{
+                                    span: 1:17-1:23,
+                                },
+                                &ast.StringTypeAnn{
+                                    span: 1:25-1:31,
+                                },
+                            },
+                            span: 1:16-1:32,
+                        },
+                    },
+                },
+                Return: &ast.TypeRefTypeAnn{
+                    Name: &ast.Ident{
+                        Name: "Point",
+                        span: 1:37-1:42,
+                    },
+                    span: 1:37-1:42,
+                },
+                span: 1:2-1:42,
+            },
+        },
+    },
+    span: 1:1-1:43,
+}
+---
+
+[TestParseTypeAnnErrorHandling/ConstructorSignatureMissingReturnType - 1]
+&ast.ObjectTypeAnn{
+    Elems: []ast.ObjTypeAnnElem{
+        &ast.ConstructorTypeAnn{
+            Fn: &ast.FuncTypeAnn{
+                Params: []*ast.Param{
+                    &ast.Param{
+                        Pattern: &ast.IdentPat{
+                            Name: "x",
+                            span: 1:7-1:8,
+                        },
+                        TypeAnn: &ast.NumberTypeAnn{
+                            span: 1:10-1:16,
+                        },
+                    },
+                },
+                Return: &ast.ErrorTypeAnn{
+                    span: 1:18-1:18,
+                },
+                span: 1:2-1:18,
+            },
+        },
+    },
+    span: 1:1-1:18,
+}
+---
+
+[TestParseTypeAnnErrorHandling/ConstructorSignatureMissingReturnType - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: 1:17-1:18,
+        Message: "Expected -> but got }",
+    },
+    &parser.Error{
+        Span: 1:18-1:18,
+        Message: "expected a type annotation",
+    },
+    &parser.Error{
+        Span: 1:18-1:18,
+        Message: "Expected } but got ",
+    },
+}
+---

@@ -1086,6 +1086,7 @@ func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
 func (*MissingSelfReceiverError) isSolverError()            {}
 func (*MethodOverloadReceiverMismatchError) isSolverError() {}
 func (*MultipleConstructorsError) isSolverError()           {}
+func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
 func (*SubclassConstructorRequiredError) isSolverError()    {}
 func (*WriteOnlyPropertyError) isSolverError()              {}
@@ -1395,6 +1396,21 @@ func (e *MultipleConstructorsError) Span() ast.Span      { return e.Ctor.Span() 
 func (e *MultipleConstructorsError) Related() []ast.Span { return nil }
 func (e *MultipleConstructorsError) Message() string {
 	return "Multiple constructors per class are not yet supported."
+}
+
+// DuplicateConstructorSignatureError fires on the second and any later `new (…) -> T` member
+// in one object type annotation. soltype.ObjectType.Constructor() returns at most one
+// construct signature, and constrain checks a constructor requirement against that one. A
+// second signature therefore has nowhere to live, and reporting it is what keeps it from
+// being dropped in silence. The extra member carries the blame span.
+type DuplicateConstructorSignatureError struct {
+	Ctor *ast.ConstructorTypeAnn
+}
+
+func (e *DuplicateConstructorSignatureError) Span() ast.Span      { return e.Ctor.Fn.Span() }
+func (e *DuplicateConstructorSignatureError) Related() []ast.Span { return nil }
+func (e *DuplicateConstructorSignatureError) Message() string {
+	return "An object type may declare at most one `new` signature."
 }
 
 // FieldInitializerNotAllowedError fires when an instance field declares a `= expr`

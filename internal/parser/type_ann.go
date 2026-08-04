@@ -229,6 +229,47 @@ loop:
 	return result
 }
 
+// funcTypeAnnTail parses a function signature once its leading keyword has been consumed:
+// optional lifetime and type parameters, the parameter list with its `...` inexact marker,
+// the `-> R` return, and an optional `throws` clause. The `fn` type annotation and the
+// `new (…) -> T` member of an object type share it, so a constructor signature accepts
+// everything a function type annotation does. keyword is the token that introduced the
+// signature and anchors the resulting span.
+func (p *Parser) funcTypeAnnTail(keyword *Token) *ast.FuncTypeAnn {
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
+
+	p.expect(OpenParen, AlwaysConsume)
+
+	funcParams, inexact := p.parseFuncParams()
+
+	p.expect(CloseParen, AlwaysConsume)
+
+	p.expect(Arrow, AlwaysConsume)
+
+	retType := p.typeAnnRequired()
+
+	endSpan := retType.Span()
+
+	// Parse optional throws clause
+	var throwsType ast.TypeAnn
+	if p.lexer.peek().Type == Throws {
+		p.lexer.consume() // consume 'throws'
+		throwsType = p.typeAnnRequired()
+		endSpan = throwsType.Span()
+	}
+
+	fnAnn := ast.NewFuncTypeAnn(
+		lifetimeParams,
+		typeParams,
+		funcParams,
+		retType,
+		throwsType,
+		ast.NewSpan(keyword.Span.Start, endSpan.End, p.lexer.source.ID),
+	)
+	fnAnn.Inexact = inexact
+	return fnAnn
+}
+
 func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 	token := p.lexer.peek()
 
@@ -356,38 +397,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			)
 		case Fn:
 			p.lexer.consume()
-			lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
-
-			p.expect(OpenParen, AlwaysConsume)
-
-			funcParams, inexact := p.parseFuncParams()
-
-			p.expect(CloseParen, AlwaysConsume)
-
-			p.expect(Arrow, AlwaysConsume)
-
-			retType := p.typeAnnRequired()
-
-			endSpan := retType.Span()
-
-			// Parse optional throws clause
-			var throwsType ast.TypeAnn
-			if p.lexer.peek().Type == Throws {
-				p.lexer.consume() // consume 'throws'
-				throwsType = p.typeAnnRequired()
-				endSpan = throwsType.Span()
-			}
-
-			fnAnn := ast.NewFuncTypeAnn(
-				lifetimeParams,
-				typeParams,
-				funcParams,
-				retType,
-				throwsType,
-				ast.NewSpan(token.Span.Start, endSpan.End, p.lexer.source.ID),
-			)
-			fnAnn.Inexact = inexact
-			typeAnn = fnAnn
+			typeAnn = p.funcTypeAnnTail(token)
 		case If: // conditional type
 			p.lexer.consume() // consume 'if'
 			checkType := p.typeAnnRequired()
@@ -841,6 +851,15 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		}
 		span := ast.MergeSpans(token.Span, value.Span())
 		return ast.NewRestSpreadTypeAnn(value, span)
+	}
+
+	// A `new (x: number) -> T` construct signature. `new` is a keyword, so it can never be
+	// an object key and the arm needs no lookahead past it. The signature parses through the
+	// same tail the `fn` annotation uses, which gives it type parameters, an inexact marker,
+	// and a `throws` clause for free.
+	if token.Type == New {
+		p.lexer.consume() // consume 'new'
+		return &ast.ConstructorTypeAnn{Fn: p.funcTypeAnnTail(token)}
 	}
 
 	mod := ""

@@ -58,8 +58,11 @@ import (
 // naked type parameter, so it distributes over the argument and decides each member alone, which
 // is machinery the conditional evaluator already carries.
 //
-// `ConstructorParameters<C>` and `InstanceType<C>` are the two utilities the suite cannot express
-// yet. Each has a disabled test at the end of this file naming what it waits on.
+// `ConstructorParameters<C>` and `InstanceType<C>` each match a `new (…) -> T` member, the
+// construct signature TypeScript writes as the standalone type `new (…) => T`. Escalier has no
+// standalone form, so the pattern is an object type carrying one member. Both patterns end in `...`
+// because an object type is exact by default and a class value with static members carries them
+// alongside its signature, so an exact pattern would reject it as extra properties.
 //
 // Two declarations at the end are not TypeScript utilities. `EventName<K>` is a template-literal
 // type that builds a handler name from an event name. `Point` is the sample object several tests
@@ -76,6 +79,8 @@ const utilityTypeDecls = `
 	type ReturnType<F: fn (...args: Array<_>) -> _> = if F : fn (...args: Array<_>) -> infer R { R } else { never }
 	type Parameters<F: fn (...args: Array<_>) -> _> = if F : fn (...args: infer P) -> _ { P } else { never }
 	type NonNullable<T> = if T : null | undefined { never } else { T }
+	type ConstructorParameters<C> = if C : {new (...args: infer P) -> unknown, ...} { P } else { never }
+	type InstanceType<C> = if C : {new (...args: Array<_>) -> infer R, ...} { R } else { never }
 	type Awaited<T> = if T : Promise<infer U> { Awaited<U> } else { T }
 	type EventName<K> = ` + "`on${Capitalize<K>}`" + `
 	type Point = {x: number, y: string}
@@ -891,60 +896,186 @@ func TestUtilityTypeNonNullable(t *testing.T) {
 	})
 }
 
-// DISABLED until M9 PR15, which adds a `new (…)` member to object type annotations.
-// `ConstructorParameters<C>` matches a constructor signature, and `objTypeAnnElemInner` has no arm
-// for `new`, so `{new (...args: infer P) -> unknown}` fails to parse. The rest parameter and the
-// tuple capture the pattern needs are both in place, so the annotation surface is the only piece
-// missing.
-//
-// Re-enable by removing the comment wrapper and adding
-//
-//	type ConstructorParameters<C> = if C : {new (...args: infer P) -> unknown} { P } else { never }
-//
-// to utilityTypeDecls.
+// `ConstructorParameters<C>` captures a construct signature's parameter list as a tuple. Its
+// pattern writes the list as one rest parameter, so it matches a constructor of any arity, the
+// same way `Parameters<F>` matches a function of any arity.
 func TestUtilityTypeConstructorParameters(t *testing.T) {
-	/*
-		runUtilityReductions(t, []utilityReduction{
-			{
-				name:         "ConstructorParameterList",
-				src:          `type Result = ConstructorParameters<{new (x: number) -> {a: number}}>`,
-				wantExpanded: "[number]",
-			},
-			{
-				name:         "NonConstructor",
-				src:          `type Result = ConstructorParameters<number>`,
-				wantExpanded: "never",
-			},
-		})
-	*/
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name:         "ConstructorParameterList",
+			src:          `type Result = ConstructorParameters<{new (x: number) -> {a: number}}>`,
+			wantExpanded: "[number]",
+		},
+		{
+			name:         "TwoParameters",
+			src:          `type Result = ConstructorParameters<{new (x: number, y: string) -> {a: number}}>`,
+			wantExpanded: "[number, string]",
+		},
+		{
+			name:         "NoParameters",
+			src:          `type Result = ConstructorParameters<{new () -> {a: number}}>`,
+			wantExpanded: "[]",
+		},
+		{
+			name:         "NonConstructor",
+			src:          `type Result = ConstructorParameters<number>`,
+			wantExpanded: "never",
+		},
+	})
 }
 
-// DISABLED until M9 PR15, which adds a `new (…)` member to object type annotations.
-// `InstanceType<C>` reads the return type off a constructor signature, and `objTypeAnnElemInner`
-// has no arm for `new`, so `{new (…) -> infer R}` fails to parse. The representation is not what is
-// missing. The printer already renders the form, as internal/solver/infer_class_test.go shows a
-// class's static side printing `{new (x: number, y: number) -> Vec, …}`.
-//
-// Re-enable by removing the comment wrapper and adding
-//
-//	type InstanceType<C> = if C : {new (a: never) -> infer R} { R } else { never }
-//
-// to utilityTypeDecls. The pattern is written for a one-parameter constructor because a `new (…)`
-// member has no annotation surface at all; once it has one, a rest parameter in that position reads
-// any arity the way `ReturnType<F>` does.
+// `InstanceType<C>` reads the return type off a construct signature, which is the instance a
+// `new` call produces.
 func TestUtilityTypeInstanceType(t *testing.T) {
-	/*
-		runUtilityReductions(t, []utilityReduction{
-			{
-				name:         "ConstructorReturn",
-				src:          `type Result = InstanceType<{new (x: number) -> {a: number}}>`,
-				wantExpanded: "{a: number}",
-			},
-			{
-				name:         "NonConstructor",
-				src:          `type Result = InstanceType<number>`,
-				wantExpanded: "never",
-			},
-		})
-	*/
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name:         "ConstructorReturn",
+			src:          `type Result = InstanceType<{new (x: number) -> {a: number}}>`,
+			wantExpanded: "{a: number}",
+		},
+		{
+			name:         "NoParameters",
+			src:          `type Result = InstanceType<{new () -> {a: number}}>`,
+			wantExpanded: "{a: number}",
+		},
+		{
+			name:         "NonConstructor",
+			src:          `type Result = InstanceType<number>`,
+			wantExpanded: "never",
+		},
+	})
+}
+
+// A function is not a constructor, so both utilities reduce to `never` over one, matching
+// TypeScript. Matching runs through the ConstructorElem a class value carries, and a FuncType
+// has none.
+func TestUtilityTypeConstructorUtilitiesRejectOrdinaryFunction(t *testing.T) {
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name:         "InstanceTypeOfPlainFunction",
+			src:          `type Result = InstanceType<fn (x: number) -> {a: number}>`,
+			wantExpanded: "never",
+		},
+		{
+			name:         "ConstructorParametersOfPlainFunction",
+			src:          `type Result = ConstructorParameters<fn (x: number) -> {a: number}>`,
+			wantExpanded: "never",
+		},
+	})
+}
+
+// A factory returning a class instance is not a constructor either, so it reduces to `never`
+// like any other function. Nothing about its return makes it match, since matching goes through
+// the ConstructorElem only a class value carries.
+func TestUtilityTypeConstructorUtilitiesRejectClassReturningFactory(t *testing.T) {
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name: "InstanceTypeOfFactory",
+			src: `
+				class Point {
+					x: number,
+					constructor(mut self, x: number) { self.x = x },
+				}
+				fn make(x: number) -> Point { return Point(x) }
+				type Result = InstanceType<typeof make>
+			`,
+			wantExpanded: "never",
+		},
+	})
+}
+
+// A class value is what `typeof C` names, and `InstanceType<typeof C>` reads its instance off
+// the construct signature. Every class value is an object carrying a ConstructorElem, so the two
+// differ only in what sits beside the signature — `{new (x: number) -> Point}` against
+// `{new (n: number) -> Counter, zero: number}`. One pattern matches both because its trailing
+// `...` tolerates the statics.
+func TestUtilityTypeInstanceTypeOfClass(t *testing.T) {
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name: "ClassWithoutStatics",
+			src: `
+				class Point {
+					x: number,
+					constructor(mut self, x: number) { self.x = x },
+				}
+				type Result = InstanceType<typeof Point>
+			`,
+			wantExpanded: "Point",
+		},
+		{
+			name: "ClassWithStatics",
+			src: `
+				class Counter {
+					n: number,
+					static zero: number = 0,
+					constructor(mut self, n: number) { self.n = n },
+				}
+				type Result = InstanceType<typeof Counter>
+			`,
+			wantExpanded: "Counter",
+		},
+	})
+}
+
+// `ConstructorParameters<typeof C>` captures a class's constructor parameter list as a tuple,
+// the other half of what a class value's construct signature carries. A synthesized constructor
+// takes one parameter per required instance field in declaration order, so a class with no
+// `constructor` block still has a parameter list to capture, and an optional field is omitted
+// from it. The tuple is what `new`-ing the class through a stored argument list would need.
+func TestUtilityTypeConstructorParametersOfClass(t *testing.T) {
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name: "ExplicitConstructor",
+			src: `
+				class Point {
+					x: number,
+					y: string,
+					constructor(mut self, x: number, y: string) {
+						self.x = x
+						self.y = y
+					},
+				}
+				type Result = ConstructorParameters<typeof Point>
+			`,
+			wantExpanded: "[number, string]",
+		},
+		{
+			// The statics sit beside the signature rather than in it, so they do not reach
+			// the captured list.
+			name: "ClassWithStatics",
+			src: `
+				class Counter {
+					n: number,
+					static zero: number = 0,
+					constructor(mut self, n: number) { self.n = n },
+				}
+				type Result = ConstructorParameters<typeof Counter>
+			`,
+			wantExpanded: "[number]",
+		},
+		{
+			// No `constructor` block, so synthesizeConstructor builds the signature from the
+			// required instance fields in declaration order. `tag` is optional and omitted.
+			name: "SynthesizedConstructor",
+			src: `
+				class Pair {
+					a: number,
+					b: string,
+					tag?: boolean,
+				}
+				type Result = ConstructorParameters<typeof Pair>
+			`,
+			wantExpanded: "[number, string]",
+		},
+		{
+			name: "NoParameters",
+			src: `
+				class Empty {
+					constructor(mut self) {},
+				}
+				type Result = ConstructorParameters<typeof Empty>
+			`,
+			wantExpanded: "[]",
+		},
+	})
 }

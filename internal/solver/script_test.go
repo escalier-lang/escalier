@@ -104,7 +104,7 @@ func TestInferScriptClass(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "Point", types["Point"])
-	require.Equal(t, "fn (x: number, y: number) -> Point", values["Point"])
+	require.Equal(t, "{new (x: number, y: number) -> Point}", values["Point"])
 	require.Equal(t, "Point", values["p"])
 	require.Equal(t, "number", values["px"])
 	require.Equal(t, "number", values["d"])
