@@ -218,14 +218,9 @@ func (c *checker) inferAliasBody(sh *aliasShell) {
 
 // buildAliasInstance resolves a use-site reference to a registered alias into an AliasType
 // carrying one type argument per type parameter and one lifetime argument per lifetime
-// parameter. resolveTypeArgs checks the type-argument count and fills a trailing omitted one
-// from its parameter's default. A lifetime parameter has no default, so its count must match
-// exactly. A mismatch on either sort reports and recovers with fresh arguments, so a
-// downstream reference still resolves.
-//
-// An enum reaches this too, since an enum name binds to an alias whose body is the union of
-// its variant handles. The kind the diagnostics render comes off the AliasDef, so a bad
-// `Color<…>` reference calls `Color` an enum rather than a type alias.
+// parameter. A mismatch on either sort reports and recovers with fresh arguments. An enum
+// reaches this too, since an enum name binds to an alias over its variant union, so the kind
+// the diagnostics render comes off the AliasDef rather than being assumed.
 func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.AliasType {
 	def, _ := c.ctx.aliasDef(at.Name)
 	var params []*soltype.TypeParam

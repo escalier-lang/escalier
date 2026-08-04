@@ -288,18 +288,10 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 	return c.buildClassInstance(scope, ct, ref, lvl)
 }
 
-// buildClassInstance returns the handle a class reference resolves to: the bare class for a
-// non-generic one, or a fresh instance carrying one argument per type parameter for a generic
-// one like `Animal<D>`. The pairing runs through resolveTypeArgs, the same helper the alias
-// path uses, so a class checks its argument count and fills a trailing omitted argument from
-// its parameter's default the way an alias does. An unresolved argument recovers to a fresh
-// var, keeping arity cascade-safe.
-//
-// The count comes from the ClassDef's Arity, which is set when the class's identity is
-// registered, so a reference resolved before that class's own body pass is still checked. The
-// defaults come from its TypeParams, which land in that later pass, so such a reference
-// recovers an omitted argument to a fresh var rather than filling it. That keeps the
-// declaration's own parameter var out of the instance either way.
+// buildClassInstance returns the handle a class reference resolves to, one argument per type
+// parameter, paired by resolveTypeArgs the way an alias's are. Arity is registered with the
+// class's identity but TypeParams lands later, so a reference resolved in between is still
+// counted and recovers an omitted argument to a fresh var instead of filling its default.
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
 	var params []*soltype.TypeParam
 	// An unregistered name has no declared count to check against, so take the reference's own

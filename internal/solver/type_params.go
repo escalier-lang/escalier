@@ -48,28 +48,17 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	return out
 }
 
-// typeParamArity is how many type arguments a reference to a declaration may write. Total is
-// the whole parameter list and Required counts the parameters with no default, so a valid
-// reference writes anywhere from Required to Total arguments.
-//
-// It is carried separately from the resolved parameters because the two become available at
-// different times on the class path. A class's identity is registered before its parameters
-// are resolved, and a reference reaching it in that window still has to be counted, so the
-// arity is read off the declaration's `<…>` clause when the identity is registered.
+// typeParamArity is how many type arguments a reference to a declaration may write, anywhere
+// from Required to Total. It is carried separately from the resolved parameters because a
+// class registers its identity, and so its count, before its parameters resolve.
 type typeParamArity struct {
 	Required int
 	Total    int
 }
 
-// requiredArgCount returns how many arguments a reference must write for a parameter list of
-// length total, where hasDefault reports whether the parameter at an index carries one.
-//
-// This is one past the last parameter with no default, NOT the number of parameters that lack
-// one. Arguments bind positionally, so an argument can be omitted only when every parameter
-// from that position on has a default to fill it. A default written before a required
-// parameter, the `T = number` of `<T = number, U>`, can therefore never be omitted, and
-// counting it as optional would let `Pair<string>` pass while leaving `U` a fresh variable that
-// coalesces to `never`. resolveTypeParams reports such a declaration.
+// requiredArgCount returns how many arguments a reference must write: one past the last
+// parameter with no default, not the number lacking one. Arguments bind positionally, so a
+// default before a required parameter can never be omitted, which resolveTypeParams reports.
 func requiredArgCount(total int, hasDefault func(int) bool) int {
 	for i := total - 1; i >= 0; i-- {
 		if !hasDefault(i) {
