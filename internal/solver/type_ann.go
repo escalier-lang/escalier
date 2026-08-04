@@ -200,96 +200,48 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 			hasResidual = true
 		}
 	}
+	// Lowering is uniform across every member kind, so the two paths below differ only in how
+	// they collect what it produces. A residual-free object is never reduced later, so its
+	// members collapse here to the unique-key shape Prop and equalType assume. A residual object
+	// keeps source order for the override merge and collapses in reduceObject once its spreads
+	// and mapped members ground.
+	lowering := &objAnnLowering{c: c, scope: scope, lvl: lvl}
 	unsupported := false
-	sawCtor := false
-	// resolveCtor lowers one `new (…) -> T` member to a ConstructorElem. An object type carries
-	// at most one construct signature, so a second is reported through
-	// DuplicateConstructorSignatureError instead of being emitted.
-	resolveCtor := func(ctor *ast.ConstructorTypeAnn) soltype.ObjTypeElem {
-		if sawCtor {
-			c.report(&DuplicateConstructorSignatureError{Ctor: ctor})
-			return nil
-		}
-		sawCtor = true
-		return &soltype.ConstructorElem{Fn: c.resolveSigTypeAnn(scope, ctor.Fn, lvl)}
-	}
 	var elems []soltype.ObjTypeElem
-	// The two paths differ only in when duplicate keys collapse. A residual-free object is never
-	// reduced later, so its duplicates must collapse here to the unique-key shape Prop and equalType
-	// assume. A residual object keeps source order for the override merge and dedups in reduceObject
-	// once its spreads and mapped members ground.
 	if !hasResidual {
-		// Every member goes through the one builder, which keeps source order and collapses
-		// members that answer the same access under one name. A construct signature answers
-		// none, so it is appended in place and never displaces anything.
-		//
-		// A collapse here is a redeclaration the source wrote twice, so it is reported. The
-		// collapsed list is the recovery, which keeps the object at one member per access. The
-		// ordered path below stays silent, since a spread overriding an earlier member is the
-		// point of writing one.
+		// The builder keeps source order and collapses members that answer the same access
+		// under one name. A collapse is a redeclaration the source wrote twice, so it is
+		// reported, with the collapsed list as the recovery.
 		b := newObjElemBuilder(len(ta.Elems))
-		var members []soltype.ObjTypeElem
 		for _, elem := range ta.Elems {
-			if ctor, ok := elem.(*ast.ConstructorTypeAnn); ok {
-				if resolved := resolveCtor(ctor); resolved != nil {
-					b.addElem(resolved)
-				}
-				continue
-			}
-			members = members[:0]
-			if c.addObjectMember(scope, elem, lvl, &members) {
-				for _, m := range members {
-					if !b.addElem(m) {
-						continue
-					}
-					// Only a method, getter, or setter reaches here, and each carries a
-					// span. ObjTypeAnnElem does not declare Span, since a callable
-					// signature and a mapped member do not have one.
-					if blame, hasSpan := elem.(spanned); hasSpan {
-						c.report(&DuplicateObjectMemberError{Name: soltype.ObjElemName(m), Elem: blame})
-					}
-				}
-				continue
-			}
-			prop, ok := elem.(*ast.PropertyTypeAnn)
+			resolved, ok := lowering.lower(elem)
 			if !ok {
 				unsupported = true
 				continue
 			}
-			name, ft, ok := c.resolveObjectProperty(scope, prop, lvl)
-			if !ok {
+			if resolved == nil || !b.addElem(resolved) {
 				continue
 			}
-			if b.add(name, ft, prop.Optional, prop.Readonly) {
-				c.report(&DuplicateObjectMemberError{Name: name, Elem: prop})
+			// Every member that can displace another carries a span. ObjTypeAnnElem does
+			// not declare Span, since a callable signature and a mapped member have none,
+			// and neither of those reaches the builder.
+			if blame, hasSpan := elem.(spanned); hasSpan {
+				c.report(&DuplicateObjectMemberError{Name: soltype.ObjElemName(resolved), Elem: blame})
 			}
 		}
 		elems = b.result()
 	} else {
+		// Source order is the merge order, so members are appended as written and nothing
+		// collapses here. A spread superseding an earlier member is an override rather than a
+		// redeclaration, which is why this path reports no duplicate.
 		for _, elem := range ta.Elems {
-			switch elem := elem.(type) {
-			case *ast.PropertyTypeAnn:
-				name, ft, ok := c.resolveObjectProperty(scope, elem, lvl)
-				if !ok {
-					continue
-				}
-				elems = append(elems, &soltype.PropertyElem{Name: name, Type: ft, Optional: elem.Optional, Readonly: elem.Readonly})
-			case *ast.RestSpreadTypeAnn:
-				src, ok := c.resolveTypeAnn(scope, elem.Value, lvl)
-				if !ok {
-					src = c.freshAt(lvl)
-				}
-				elems = append(elems, &soltype.SpreadElem{Type: src})
-			case *ast.MappedTypeAnn:
-				elems = append(elems, c.resolveMappedElem(scope, elem, lvl))
-			case *ast.ConstructorTypeAnn:
-				if resolved := resolveCtor(elem); resolved != nil {
-					elems = append(elems, resolved)
-				}
-			default:
-				if !c.addObjectMember(scope, elem, lvl, &elems) {
-					unsupported = true
-				}
+			resolved, ok := lowering.lower(elem)
+			if !ok {
+				unsupported = true
+				continue
+			}
+			if resolved != nil {
+				elems = append(elems, resolved)
 			}
 		}
 	}
@@ -301,60 +253,96 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	return t, true
 }
 
-// addObjectMember lowers a method, getter, or setter member of an object type annotation onto
-// elems and reports whether it recognized the member's kind. A caller passes every element it
-// has not already handled and treats a false result as an unsupported kind. Collapsing two
-// members of one name is the builder's job, so this only ever appends.
+// objAnnLowering lowers the members of one object type annotation. It carries the only state a
+// member needs from its siblings, which is whether a construct signature was already seen: an
+// object type holds at most one, so a second is reported rather than emitted.
+type objAnnLowering struct {
+	c     *checker
+	scope *Scope
+	lvl   int
+	// sawCtor records that a `new (…) -> T` member was already lowered.
+	sawCtor bool
+}
+
+// lower turns one written member into the element it contributes to the object.
 //
-// The written receiver does not reach the lowered element. The parser peels `self` / `mut self`
+// It returns ok=false for a member kind object type annotations do not support, which the caller
+// reports once for the whole annotation rather than once per member. A nil element with ok=true
+// is a supported member contributing nothing, because it already reported an error of its own —
+// a second `new` signature, a key that is not a name, a property whose value did not resolve.
+//
+// Every kind lowers here, including the spread and mapped members that only ever appear on the
+// ordered path. Which path an annotation takes decides how the elements are collected, not how
+// they are built.
+//
+// A written receiver does not reach the lowered element. The parser peels `self` / `mut self`
 // off into the member's Receiver so it never lands in Fn.Params, and subtyping compares a method
 // through callableView, which drops SelfParam. A receiver written here therefore describes the
 // shape without narrowing it, matching how it reads for a class method the annotation is checked
 // against.
-func (c *checker) addObjectMember(scope *Scope, elem ast.ObjTypeAnnElem, lvl int, elems *[]soltype.ObjTypeElem) bool {
+func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bool) {
 	switch elem := elem.(type) {
+	case *ast.PropertyTypeAnn:
+		name, ft, ok := l.c.resolveObjectProperty(l.scope, elem, l.lvl)
+		if !ok {
+			return nil, true
+		}
+		return &soltype.PropertyElem{Name: name, Type: ft, Optional: elem.Optional, Readonly: elem.Readonly}, true
 	case *ast.MethodTypeAnn:
 		name, ok := objKeyName(elem.Name)
 		if !ok {
-			c.reportUnsupported(elem.Name)
-			return true
+			l.c.reportUnsupported(elem.Name)
+			return nil, true
 		}
-		sig := c.resolveSigTypeAnn(scope, elem.Fn, lvl)
-		*elems = append(*elems, &soltype.MethodElem{Name: name, Signatures: []*soltype.FuncType{sig}})
+		sig := l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)
+		return &soltype.MethodElem{Name: name, Signatures: []*soltype.FuncType{sig}}, true
 	case *ast.GetterTypeAnn:
 		name, ok := objKeyName(elem.Name)
 		if !ok {
-			c.reportUnsupported(elem.Name)
-			return true
+			l.c.reportUnsupported(elem.Name)
+			return nil, true
 		}
 		// The value read and what reading it raises both come from the one resolved
 		// signature. An absent `throws` clause leaves the signature's Throws nil, and nil is
 		// the `never` shorthand GetterElem uses too, so it carries over with no special case.
-		sig := c.resolveSigTypeAnn(scope, elem.Fn, lvl)
-		*elems = append(*elems, &soltype.GetterElem{Name: name, Type: sig.Ret, Throws: sig.Throws})
+		sig := l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)
+		return &soltype.GetterElem{Name: name, Type: sig.Ret, Throws: sig.Throws}, true
 	case *ast.SetterTypeAnn:
 		name, ok := objKeyName(elem.Name)
 		if !ok {
-			c.reportUnsupported(elem.Name)
-			return true
+			l.c.reportUnsupported(elem.Name)
+			return nil, true
 		}
-		sig := c.resolveSigTypeAnn(scope, elem.Fn, lvl)
+		sig := l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)
 		// A well-formed setter declares exactly one value parameter beyond the receiver, the
 		// value being assigned. Report any other count and then build the element from the
 		// first parameter, or from `unknown` when there is none, so the object still carries a
 		// member under the name the source wrote. This mirrors the class-member recovery.
 		if len(sig.Params) != 1 {
-			c.report(&SetterArityError{Name: name, Elem: elem, Count: len(sig.Params)})
+			l.c.report(&SetterArityError{Name: name, Elem: elem, Count: len(sig.Params)})
 		}
 		var param soltype.Type = &soltype.UnknownType{}
 		if len(sig.Params) > 0 {
 			param = sig.Params[0].Type
 		}
-		*elems = append(*elems, &soltype.SetterElem{Name: name, Param: param, Throws: sig.Throws})
-	default:
-		return false
+		return &soltype.SetterElem{Name: name, Param: param, Throws: sig.Throws}, true
+	case *ast.ConstructorTypeAnn:
+		if l.sawCtor {
+			l.c.report(&DuplicateConstructorSignatureError{Ctor: elem})
+			return nil, true
+		}
+		l.sawCtor = true
+		return &soltype.ConstructorElem{Fn: l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)}, true
+	case *ast.RestSpreadTypeAnn:
+		src, ok := l.c.resolveTypeAnn(l.scope, elem.Value, l.lvl)
+		if !ok {
+			src = l.c.freshAt(l.lvl)
+		}
+		return &soltype.SpreadElem{Type: src}, true
+	case *ast.MappedTypeAnn:
+		return l.c.resolveMappedElem(l.scope, elem, l.lvl), true
 	}
-	return true
+	return nil, false
 }
 
 // resolveSigTypeAnn lowers the `(…) -> R throws E` tail a method, getter, or setter shares with

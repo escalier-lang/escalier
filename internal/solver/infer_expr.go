@@ -2069,14 +2069,13 @@ func (c *checker) inferObject(scope *Scope, lvl int, e *ast.ObjectExpr) soltype.
 // objElemBuilder accumulates object PropertyElems under JavaScript's last-wins,
 // first-position dedup: a repeated key updates the value in place at the key's
 // original position, so property names stay unique — the invariant ObjectType.Prop
-// and equalType rely on ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). Shared by inferObject
-// (object literals) and resolveObjectTypeAnn (object type annotations) so the dedup
-// rule lives in one place.
+// and equalType rely on ({a: 1, b: 2, a: 3} ⇒ {a: 3, b: 2}). resolveObjectTypeAnn
+// collects a residual-free annotation's members through it. An object literal merges
+// its own operands in inferObject instead, since a literal's spread is a value.
 //
-// It is NOT recursive: it accumulates the direct properties of ONE object level.
-// Each property's type arrives already built — inferObject computes it with
-// inferExpr, resolveObjectTypeAnn with resolveTypeAnn — so a nested object is built
-// by that caller's recursion before add stores it.
+// It is NOT recursive: it accumulates the direct members of ONE object level. Each
+// member arrives already built, so a nested object is built by the caller's recursion
+// before addElem files it.
 type objElemBuilder struct {
 	elems []soltype.ObjTypeElem
 	pos   map[memberSlot]int // occupied access slot → index in elems
@@ -2110,10 +2109,6 @@ func newObjElemBuilder(capacity int) *objElemBuilder {
 		elems: make([]soltype.ObjTypeElem, 0, capacity),
 		pos:   make(map[memberSlot]int, capacity),
 	}
-}
-
-func (b *objElemBuilder) add(name string, t soltype.Type, optional, readonly bool) bool {
-	return b.addElem(&soltype.PropertyElem{Name: name, Type: t, Optional: optional, Readonly: readonly})
 }
 
 // addElem files a named member under every access it answers, replacing whatever held those
