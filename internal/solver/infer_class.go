@@ -187,7 +187,15 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string)
 		}
 	}
 	self := &soltype.ClassType{Name: qname, Final: decl.Final()}
-	def := &ClassDef{Body: &soltype.ObjectType{}, Static: &soltype.ObjectType{}}
+	// Record how many type arguments a reference may write before anything else. The
+	// parameters themselves resolve when this class's own inferClassDecl runs, which is after
+	// some of the references to it, so the count is read off the declaration's `<…>` clause
+	// here where every reference can reach it.
+	def := &ClassDef{
+		Arity:  arityOfParamDecls(decl.TypeParams),
+		Body:   &soltype.ObjectType{},
+		Static: &soltype.ObjectType{},
+	}
 	c.ctx.registerClass(qname, def)
 	// Register the type binding under the qualified name so a cross-namespace reference
 	// resolves it and a self-referential type in the body resolves to this class rather
@@ -280,20 +288,25 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 	return c.buildClassInstance(scope, ct, ref, lvl)
 }
 
-// buildClassInstance returns the handle a class reference resolves to: the bare class with
-// no type arguments, or a fresh instance carrying the resolved arguments for a generic one
-// like `Animal<D>`. An unresolved argument recovers to a fresh var, keeping arity cascade-safe.
+// buildClassInstance returns the handle a class reference resolves to, one argument per type
+// parameter, paired by resolveTypeArgs the way an alias's are. Arity is registered with the
+// class's identity but TypeParams lands later, so a reference resolved in between is still
+// counted and recovers an omitted argument to a fresh var instead of filling its default.
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
-	if len(ref.TypeArgs) == 0 {
-		return ct
+	var params []*soltype.TypeParam
+	// An unregistered name has no declared count to check against, so take the reference's own
+	// as the expected one and let it through unreported.
+	arity := typeParamArity{Required: len(ref.TypeArgs), Total: len(ref.TypeArgs)}
+	if def, ok := c.ctx.classDef(ct.Name); ok {
+		params = def.TypeParams
+		arity = def.Arity
 	}
-	args := make([]soltype.Type, len(ref.TypeArgs))
-	for i, arg := range ref.TypeArgs {
-		if at, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
-			args[i] = at
-		} else {
-			args[i] = c.freshAt(lvl)
-		}
+	args := c.resolveTypeArgs(scope, ref, ClassDeclKind, params, arity, lvl)
+	if len(args) == 0 {
+		// The class declares no type parameters and the reference wrote no arguments, or it
+		// wrote some against a non-generic class and resolveTypeArgs already reported them.
+		// Either way the handle carries no arguments, so return the declaration's own.
+		return ct
 	}
 	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final, Variant: ct.Variant}
 }
@@ -329,7 +342,7 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 
 // resolveScopedTypeRef resolves a type reference through lookupClassBinding, covering a
 // bare `Point` or `T`, a generic class instance `Box<number>`, and a generic alias
-// instance `List<number>`. An alias binding always resolves here, with its own arity
+// instance `List<number>`. An alias or class binding always resolves here, with its own arity
 // diagnostic. It returns ok=false only when the name is unbound, or has arguments but is
 // neither a class nor an alias. It never routes back through resolveTypeAnn, so
 // resolveTypeAnn's TypeRef arm can fall back to it without recursing.
@@ -345,11 +358,14 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 	if at, ok := b.Type.(*soltype.AliasType); ok {
 		return c.buildAliasInstance(scope, at, ref, lvl), true
 	}
-	if len(ref.TypeArgs) == 0 {
-		return b.Type, true
-	}
+	// A class reference routes through buildClassInstance whether or not it supplies
+	// arguments, so a generic class referenced bare still reports an arity mismatch and a
+	// defaulted parameter is filled from its default.
 	if ct, ok := b.Type.(*soltype.ClassType); ok {
 		return c.buildClassInstance(scope, ct, ref, lvl), true
+	}
+	if len(ref.TypeArgs) == 0 {
+		return b.Type, true
 	}
 	return nil, false
 }

@@ -105,6 +105,7 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 		vt := &soltype.ClassType{Name: vname, TypeArgs: typeArgs, Final: true, Variant: true}
 		c.ctx.registerClass(vname, &ClassDef{
 			TypeParams:  typeParams,
+			Arity:       arityOfParams(typeParams),
 			Variance:    make([]Variance, len(typeParams)),
 			MutVariance: make([]Variance, len(typeParams)),
 			Body:        &soltype.ObjectType{},
@@ -125,6 +126,7 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 		TypeParams: typeParams,
 		Body:       &soltype.UnionType{Types: variantTypes},
 		Level:      lvl - 1,
+		Enum:       true,
 	})
 	enumType := soltype.Type(&soltype.AliasType{Name: qname, TypeArgs: typeArgs})
 	scope.defineType(qname, TypeBinding{

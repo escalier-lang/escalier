@@ -131,7 +131,7 @@ func TestInferLifetimeGenericAliasIsTransparent(t *testing.T) {
 
 // TestInferLifetimeGenericAliasArityErrors covers the lifetime-argument arity checks. A
 // lifetime parameter has no default, so supplying too many or too few lifetime arguments each
-// report a single AliasLifetimeArityMismatchError, and supplying a lifetime argument to an
+// report a single LifetimeArgArityMismatchError, and supplying a lifetime argument to an
 // alias that declares none is rejected the same way.
 func TestInferLifetimeGenericAliasArityErrors(t *testing.T) {
 	tests := []struct {

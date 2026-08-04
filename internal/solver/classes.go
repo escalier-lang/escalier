@@ -21,6 +21,11 @@ type ClassDef struct {
 	// nil for a non-generic class.
 	TypeParams []*soltype.TypeParam
 
+	// Arity is how many type arguments a reference may write, read off the declaration's
+	// `<…>` clause when the class's identity is registered. TypeParams lands later, so a
+	// reference resolved in between — a class body naming a sibling — still has a count.
+	Arity typeParamArity
+
 	// LifetimeParams are the class's quantified lifetime parameters (A3), the lifetime
 	// twin of TypeParams. nil for a class that holds no borrowed data.
 	LifetimeParams []*soltype.LifetimeParam

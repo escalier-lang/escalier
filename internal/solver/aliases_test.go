@@ -344,7 +344,7 @@ func TestInferMutuallyRecursiveTypeAliases(t *testing.T) {
 
 // TestInferGenericTypeAliasArityErrors covers the two out-of-range counts. Supplying more
 // than the total parameter count and fewer than the required count each report a single
-// AliasArityMismatchError, whose message states a range when a default makes a parameter
+// TypeArgArityMismatchError, whose message states a range when a default makes a parameter
 // optional and a single count when every parameter is required.
 func TestInferGenericTypeAliasArityErrors(t *testing.T) {
 	tests := []struct {

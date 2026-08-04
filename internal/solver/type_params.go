@@ -14,6 +14,7 @@ import (
 // `<T: U, U: T>`, and an F-bound `<T: Foo<T>>` all resolve. The result stays in declaration order,
 // and the alias, class, enum, and function-annotation paths all route through here.
 func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypeParam) []*soltype.TypeParam {
+	c.reportRequiredAfterDefault(params)
 	out := make([]*soltype.TypeParam, len(params))
 	// Pass 1: mint each parameter's var. Nothing is declared yet, so pass 2 controls which
 	// siblings each default can see.
@@ -47,13 +48,138 @@ func (c *checker) resolveTypeParams(scope *Scope, lvl int, params []*ast.TypePar
 	return out
 }
 
+// typeParamArity is how many type arguments a reference to a declaration may write, anywhere
+// from Required to Total. It is carried separately from the resolved parameters because a
+// class registers its identity, and so its count, before its parameters resolve.
+type typeParamArity struct {
+	Required int
+	Total    int
+}
+
+// requiredArgCount returns how many arguments a reference must write: one past the last
+// parameter with no default, not the number lacking one. Arguments bind positionally, so a
+// default before a required parameter can never be omitted, which resolveTypeParams reports.
+// hasDefault is a callback because a parameter list reaches this as either sort of TypeParam.
+func requiredArgCount(total int, hasDefault func(int) bool) int {
+	for i := total - 1; i >= 0; i-- {
+		if !hasDefault(i) {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// arityOfParams reads the argument-count range off a resolved parameter list.
+func arityOfParams(params []*soltype.TypeParam) typeParamArity {
+	return typeParamArity{
+		Required: requiredArgCount(len(params), func(i int) bool { return params[i].Default != nil }),
+		Total:    len(params),
+	}
+}
+
+// arityOfParamDecls reads the argument-count range straight off a declaration's `<…>` clause,
+// before the parameters themselves are resolved. It counts the same two numbers
+// arityOfParams reads off the resolved list, since a parameter's `= …` clause is what makes it
+// optional and resolving the clause does not change whether it is there.
+func arityOfParamDecls(params []*ast.TypeParam) typeParamArity {
+	return typeParamArity{
+		Required: requiredArgCount(len(params), func(i int) bool { return params[i].Default != nil }),
+		Total:    len(params),
+	}
+}
+
+// resolveTypeArgs pairs the `<…>` type arguments a reference wrote with the parameters of the
+// declaration it names, returning one per parameter or nil when there are none. Shared by the
+// alias, enum, and class paths, it reports an out-of-range count, fills an omitted argument
+// from its default, and recovers anything left to a fresh var. A class whose parameters have
+// not resolved yet passes params shorter than arity.Total, so those positions recover too.
+func (c *checker) resolveTypeArgs(
+	scope *Scope,
+	ref *ast.TypeRefTypeAnn,
+	kind TypeDeclKind,
+	params []*soltype.TypeParam,
+	arity typeParamArity,
+	lvl int,
+) []soltype.Type {
+	got := len(ref.TypeArgs)
+	if got < arity.Required || got > arity.Total {
+		c.report(&TypeArgArityMismatchError{
+			Ref:      ref,
+			Kind:     kind,
+			Name:     ast.QualIdentToString(ref.Name),
+			Required: arity.Required,
+			Total:    arity.Total,
+			Got:      got,
+		})
+	}
+	// Resolve every written argument, including any past the parameter count. A surplus
+	// argument is dropped below, but resolving it first is what reports an unresolvable name
+	// inside it rather than swallowing the diagnostic along with the argument.
+	written := make([]soltype.Type, got)
+	for i, arg := range ref.TypeArgs {
+		if resolved, ok := c.resolveTypeAnn(scope, arg, lvl); ok {
+			written[i] = resolved
+		} else {
+			written[i] = c.freshAt(lvl)
+		}
+	}
+	if arity.Total == 0 {
+		return nil
+	}
+	args := make([]soltype.Type, arity.Total)
+	for i := range arity.Total {
+		switch {
+		case i < got:
+			args[i] = written[i]
+		case i < len(params) && params[i].Default != nil:
+			// The default may reference an earlier parameter, as `U = T` does, so substitute
+			// the arguments already resolved for parameters before this one.
+			subst := newTypeSubst(params[:i], args[:i], nil, nil)
+			args[i] = params[i].Default.Accept(subst, soltype.Positive)
+		default:
+			// A required argument was omitted, already reported as an arity mismatch, or the
+			// parameter list is not resolved yet so there is no default to read. Recover to a
+			// fresh var so every parameter has an argument to substitute.
+			args[i] = c.freshAt(lvl)
+		}
+	}
+	return args
+}
+
+// reportRequiredAfterDefault reports each default a later parameter with no default makes
+// unusable, the `T = number` of `<T = number, U>`. One report per such default, blaming the
+// `= …` annotation and naming the first required parameter after it, so the reports name
+// exactly the annotations that have to change. The default is kept rather than dropped, so a
+// reference that does write every argument still resolves against a full parameter list.
+func (c *checker) reportRequiredAfterDefault(params []*ast.TypeParam) {
+	required := arityOfParamDecls(params).Required
+	for i, p := range params[:required] {
+		if p.Default == nil {
+			continue
+		}
+		// params[required-1] has no default, so a later one always exists to name.
+		target := params[required-1]
+		for _, later := range params[i+1 : required] {
+			if later.Default == nil {
+				target = later
+				break
+			}
+		}
+		c.report(&TypeParamRequiredAfterDefaultError{
+			Default: p.Default,
+			Param:   p.Name,
+			Target:  target.Name,
+		})
+	}
+}
+
 // reportDefaultForwardRef reports each parameter params[i]'s default names that it may not,
 // params[i] itself or one declared after it, and returns whether it reported. A reference fills an
 // omitted argument from the default with the earlier arguments substituted in, as
-// buildAliasInstance does for the `U = T` of `type Pair<T, U = T>`. A later or self reference has
+// resolveTypeArgs does for the `U = T` of `type Pair<T, U = T>`. A later or self reference has
 // nothing to substitute, so it stays the declaration's own var, shared by every reference to the
-// type. A rejected default is dropped, which leaves the parameter required. Neither instance
-// builder reports the follow-on arity error in every case, which PR18's shared helper settles.
+// type. A rejected default is dropped, which leaves the parameter required, so a reference that
+// omits it reports an arity mismatch alongside this error.
 //
 // One report per offending name, blaming its leftmost reference. Naming each one lets a default
 // that reaches two later parameters be fixed in a single pass, while a name written twice reports

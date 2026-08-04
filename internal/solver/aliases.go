@@ -53,6 +53,12 @@ type AliasDef struct {
 	// It is nil for an alias no fixed point ran over, which is an enum's synthesized alias. A
 	// nil slice marks nothing phantom, so every argument stays in the identity key.
 	PhantomParams []bool
+
+	// Enum marks the alias preBindEnum synthesizes for an `enum` declaration, whose body is
+	// the union of the enum's variant handles. A reference to an enum resolves through the
+	// alias path, so this is what lets its arity diagnostics name it an enum. It is false for
+	// an alias a `type` declaration wrote.
+	Enum bool
 }
 
 // expandAlias unfolds an alias reference to its registered AliasDef Body, the shared
@@ -212,66 +218,31 @@ func (c *checker) inferAliasBody(sh *aliasShell) {
 
 // buildAliasInstance resolves a use-site reference to a registered alias into an AliasType
 // carrying one type argument per type parameter and one lifetime argument per lifetime
-// parameter. A trailing type parameter with a default may be omitted, so its argument is
-// filled from the default with the earlier arguments already substituted, letting `type
-// Pair<T, U = T>` resolve `Pair<number>` to `Pair<number, number>`. A lifetime parameter has
-// no default, so its count must match exactly. A mismatch on either sort reports and recovers
-// with fresh arguments, so a downstream reference still resolves.
+// parameter. A mismatch on either sort reports and recovers with fresh arguments. An enum
+// reaches this too, since an enum name binds to an alias over its variant union, so the kind
+// the diagnostics render comes off the AliasDef rather than being assumed.
 func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.AliasType {
 	def, _ := c.ctx.aliasDef(at.Name)
 	var params []*soltype.TypeParam
 	var ltParams []*soltype.LifetimeParam
+	kind := AliasDeclKind
 	if def != nil {
 		params = def.TypeParams
 		ltParams = def.LifetimeParams
-	}
-	ltArgs := c.resolveAliasLifetimeArgs(ref, ltParams, lvl)
-	total := len(params)
-	required := 0
-	for _, p := range params {
-		if p.Default == nil {
-			required++
+		if def.Enum {
+			kind = EnumDeclKind
 		}
 	}
-	got := len(ref.TypeArgs)
-	if got < required || got > total {
-		c.report(&AliasArityMismatchError{
-			Ref:      ref,
-			Name:     ast.QualIdentToString(ref.Name),
-			Required: required,
-			Total:    total,
-			Got:      got,
-		})
-	}
-	if total == 0 {
+	ltArgs := c.resolveAliasLifetimeArgs(ref, kind, ltParams, lvl)
+	args := c.resolveTypeArgs(scope, ref, kind, params, arityOfParams(params), lvl)
+	if len(args) == 0 {
 		// A non-generic alias carries no type arguments; any that were supplied are reported
-		// above. Return a handle carrying only the lifetime arguments, or the bare handle when
-		// there are none, so the alias still resolves under its name.
+		// by resolveTypeArgs. Return a handle carrying only the lifetime arguments, or the bare
+		// handle when there are none, so the alias still resolves under its name.
 		if len(ltArgs) == 0 {
 			return at
 		}
 		return &soltype.AliasType{Name: at.Name, LifetimeArgs: ltArgs}
-	}
-	args := make([]soltype.Type, total)
-	for i := range total {
-		if i < got {
-			if resolved, ok := c.resolveTypeAnn(scope, ref.TypeArgs[i], lvl); ok {
-				args[i] = resolved
-			} else {
-				args[i] = c.freshAt(lvl)
-			}
-			continue
-		}
-		if params[i].Default != nil {
-			// The default may reference an earlier parameter, as `U = T` does, so substitute
-			// the arguments already resolved for parameters before this one.
-			subst := newTypeSubst(params[:i], args[:i], nil, nil)
-			args[i] = params[i].Default.Accept(subst, soltype.Positive)
-		} else {
-			// A required argument was omitted, already reported as an arity mismatch. Recover
-			// to a fresh var so expansion has one argument per parameter.
-			args[i] = c.freshAt(lvl)
-		}
 	}
 	c.checkAliasArgBounds(params, args, ltParams, ltArgs, ref)
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
@@ -332,13 +303,14 @@ func (c *checker) runDeferredAliasBounds() {
 
 // resolveAliasLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments and checks
 // their count against the alias's lifetime parameters, which have no default. A mismatch
-// reports an AliasLifetimeArityMismatchError and recovers with fresh lifetimes.
-func (c *checker) resolveAliasLifetimeArgs(ref *ast.TypeRefTypeAnn, ltParams []*soltype.LifetimeParam, lvl int) []soltype.Lifetime {
+// reports a LifetimeArgArityMismatchError and recovers with fresh lifetimes.
+func (c *checker) resolveAliasLifetimeArgs(ref *ast.TypeRefTypeAnn, kind TypeDeclKind, ltParams []*soltype.LifetimeParam, lvl int) []soltype.Lifetime {
 	total := len(ltParams)
 	got := len(ref.LifetimeArgs)
 	if got != total {
-		c.report(&AliasLifetimeArityMismatchError{
+		c.report(&LifetimeArgArityMismatchError{
 			Ref:      ref,
+			Kind:     kind,
 			Name:     ast.QualIdentToString(ref.Name),
 			Expected: total,
 			Got:      got,

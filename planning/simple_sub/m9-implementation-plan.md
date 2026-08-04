@@ -1436,23 +1436,65 @@ resolves exactly the arguments the reference wrote and returns them, so
 `class Box<T = number>` referenced bare as `Box` yields the declaration handle, whose
 unconstrained parameter var coalesces to `never` and renders `Box<never>` rather than
 `Box<number>`. A reference that supplies too many arguments, `Box<number, string>` on a
-one-parameter class, carries the extra one with no diagnostic. An enum needs neither fix:
-`enum Opt<T = number>` referenced bare already infers `Opt<number>` through the alias path.
+one-parameter class, carries the extra one with no diagnostic.
 
-**Data structures.** A `ClassArityMismatchError`, the nominal twin of
-`AliasArityMismatchError`, carrying the same required/total/got triple so the two render
-alike.
+An enum reaches the alias path, since an enum name binds to an alias whose body is the union
+of its variant handles, so `enum Opt<T = number>` referenced bare already infers `Opt<number>`
+and a miscounted `Opt<number, string>` already reports. What it does not get is the right
+noun. The message calls `Opt` a type alias, naming a shell the source never wrote.
+
+**Data structures.** One `TypeArgArityMismatchError` carrying the required/total/got triple
+and a `TypeDeclKind` — `type alias`, `class`, or `enum` — so the three sorts render alike and
+differ only in the noun. `LifetimeArgArityMismatchError` carries the same kind. An `Enum` flag
+on `AliasDef`, set by `preBindEnum`, is what tells an enum's synthesized alias from one a
+`type` declaration wrote. An `Arity` field on `ClassDef` holds the class's required and total
+type-parameter counts. A `TypeParamRequiredAfterDefaultError` reports a default that a later
+parameter without one makes unreachable.
 
 **Algorithms.** Factor the arity check and the default filling out of `buildAliasInstance`
 into one helper over a `[]*soltype.TypeParam` and a reference's written arguments, returning
-one argument per parameter. Both instance builders call it, so an alias and a class resolve a
-defaulted or miscounted reference the same way. The helper is also the one place that pairs a
-written argument with the parameter it fills, which is what PR19 needs.
+one argument per parameter. Both instance builders call it, so an alias, an enum, and a class
+resolve a defaulted or miscounted reference the same way. The helper is also the one place
+that pairs a written argument with the parameter it fills, which is what PR19 needs.
+
+The class path has to split where the two halves of that come from. A class's members resolve
+in whatever order the dep graph reaches its declaration, and a class body naming a sibling
+class is ordinary, so a reference is regularly resolved before the class it names has run its
+own pass. `getOrCreateClass` therefore reads the counts straight off the declaration's `<…>`
+clause when it registers the identity, which is before any reference can be resolved, and
+`inferClassDecl` fills `TypeParams` later. The count is always available, so every reference is
+checked. The defaults are not, so a reference that omits an argument for a class whose
+parameters have not landed recovers to a fresh var instead of filling the default. That is a
+silent wrong answer — `B<unknown>` where the declaration says `B<number>` — and closing it
+needs the check deferred until every class in the component has its parameters, the machinery
+PR19 adds for bounds.
+
+A fresh var rather than the declaration's own var is what keeps the recovery contained. Filling
+`class A { b: B }` against `class B<T>` with `B`'s parameter var would make `A`'s constructor
+generic, since that var is quantified at `B`'s boundary and generalizing `A` would capture it.
+
+Every written argument is resolved, including any past the parameter count. A surplus argument
+is dropped from the instance, but resolving it first is what reports an unresolvable name
+inside it rather than swallowing that diagnostic along with the argument.
+
+The required count is one past the last parameter with no default, not the number of parameters
+that lack one. Arguments bind positionally, so an argument can be omitted only when every
+parameter from that position on has a default to fill it. Counting `<T = number, U>` as taking
+one argument would let `Pair<string>` pass while leaving `U` a fresh variable that coalesces to
+`never`. `resolveTypeParams` reports the unreachable default at the declaration, on every path
+that resolves a `<…>` clause, and keeps it, so a reference writing every argument still resolves
+against the full list.
 
 **Accept.** `class Box<T = number>` referenced bare infers `Box<number>`.
-`Box<number, string>` on a one-parameter class reports a full-message arity error. Every
-alias and enum arity and default case that passes today still passes, since the shared helper
-is `buildAliasInstance`'s existing logic moved rather than rewritten.
+`Box<number, string>` on a one-parameter class reports a full-message arity error, and so does
+a bare `Box` against `class Box<T>`, matching what an alias reports for the same omission. The
+same miscount reports from a class body, an alias body, and an enum variant parameter list, not
+only from a `fn` or `val` annotation. A miscounted enum reference calls its target an enum
+rather than a type alias. `Box<number, Nonexistent>` reports the unresolvable name alongside
+the count. `<T = number, U>` reports its unreachable default at the declaration, and a reference
+writing one argument to it reports a count of two rather than passing and synthesizing `U`.
+Every alias arity and default case that passes today still passes, since the shared helper is
+`buildAliasInstance`'s existing logic moved rather than rewritten.
 
 **Depends on** PR17, so the class path does not inherit the forward-reference leak the moment
 it starts filling defaults. Independent of the operator track.
