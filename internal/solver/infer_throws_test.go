@@ -851,20 +851,6 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			src:  raisingGetterClass + `fn f(c: C) { val g = fn () -> number throws _ { return c.x } }`,
 			want: "fn (c: C) -> void",
 		},
-		{
-			// A setter's clause admits what its own body raises. No write site resolves to
-			// a setter yet, so this is where a setter clause is used today.
-			name:    "SetterBodyRaisesIntoItsOwnClause",
-			binding: "C",
-			src: `
-				class C {
-					v: number,
-					bad: boolean,
-					set x(mut self, n: number) throws string { if self.bad { throw "neg" } self.v = n },
-				}
-			`,
-			want: "fn (v: number, bad: boolean) -> C",
-		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{
 		{
@@ -889,6 +875,97 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 				}
 			`,
 			wantErrs: []string{"10:37-10:49: cannot constrain string <: never"},
+		},
+	})
+}
+
+// raisingSetterClass declares `set x` on a class whose setter both stores and raises, the
+// write-side twin of raisingGetterClass.
+const raisingSetterClass = `
+	class C {
+		v: number,
+		bad: boolean,
+		set x(mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
+	}
+`
+
+// Writing through a setter runs its body, so the write is an exceptional exit of the
+// enclosing body exactly as a getter read is. A write resolves to a setter as of #982, so
+// the setter half of the throws position is reachable from source.
+func TestInferThrowsThroughASetterWrite(t *testing.T) {
+	runThrowsCases(t, []throwsCase{
+		{
+			// The setter's clause reaches the writer, which redeclares it as its own.
+			name: "SetterClauseReachesTheWriter",
+			src:  raisingSetterClass + `fn f(c: mut C) throws string { c.x = 5 }`,
+			want: "fn (c: mut C) -> void throws string",
+		},
+		{
+			// `throws _` on the writer infers from the write.
+			name: "WriterInfersTheSetterClause",
+			src:  raisingSetterClass + `fn f(c: mut C) throws _ { c.x = 5 }`,
+			want: "fn (c: mut C) -> void throws string",
+		},
+		{
+			// A catch-all around the write covers it, so the writer needs no clause.
+			name: "CatchAllAroundTheWriteClearsTheClause",
+			src:  raisingSetterClass + `fn f(c: mut C) { try { c.x = 5 } catch { e => 0 } }`,
+			want: "fn (c: mut C) -> void",
+		},
+		{
+			// A method writes through `self` and carries the raise into its own signature,
+			// so calling the method raises it at the call site.
+			name: "MethodWritingThroughSelfCarriesTheRaiseToItsCaller",
+			src: `
+				class C {
+					v: number,
+					bad: boolean,
+					set x(mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
+					m(mut self) throws _ { self.x = 5 },
+				}
+				fn f(c: mut C) throws _ { c.m() }
+			`,
+			want: "fn (c: mut C) -> void throws string",
+		},
+		{
+			// A setter that raises nothing leaves the writer's clause untouched, the same
+			// way a non-throwing callee adds nothing at a call site.
+			name: "NonThrowingSetterWriteAddsNothing",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				fn f(c: mut C) { c.x = 5 }
+			`,
+			want: "fn (c: mut C) -> void",
+		},
+		{
+			// A plain field write is not an accessor call and raises nothing.
+			name: "PlainFieldWriteIsNotAnExceptionalExit",
+			src: `
+				class C { v: number }
+				fn f(c: mut C) { c.v = 5 }
+			`,
+			want: "fn (c: mut C) -> void",
+		},
+	})
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			// The write is the exceptional exit, so the diagnostic blames the assignment
+			// rather than the setter's own body, which declared its raise correctly.
+			name:     "WriteThroughARaisingSetterFromAClauselessWriter",
+			src:      raisingSetterClass + `fn f(c: mut C) { c.x = 5 }`,
+			wantErrs: []string{"7:18-7:25: cannot constrain string <: never"},
+		},
+		{
+			name: "SelfWriteThroughARaisingSetterFromAClauselessMethod",
+			src: `
+				class C {
+					v: number,
+					bad: boolean,
+					set x(mut self, n: number) throws string { if self.bad { throw "boom" } self.v = n },
+					m(mut self) { self.x = 5 },
+				}
+			`,
+			wantErrs: []string{"6:20-6:30: cannot constrain string <: never"},
 		},
 	})
 }

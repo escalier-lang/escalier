@@ -1704,7 +1704,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// below, whose element is a PropertyElem. constrain's object arm matches the sub side
 	// with ObjectType.Prop, so an accessor would read there as a missing property.
 	if accessor, ok := c.writeAccessor(m.Prop.Name, readCarrier(recv)); ok {
-		return c.inferAccessorAssign(e, m, recv, source, accessor, assignStmt)
+		return c.inferAccessorAssign(lvl, e, m, recv, source, accessor, assignStmt)
 	}
 	w := widen(source)
 	// An owned-mutable field takes the immutable→mutable upgrade through the same shared
@@ -1777,9 +1777,10 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 // inferAccessorAssign types a write `recv.prop = source` that resolved to an accessor. A
 // getter-only member is reported, having no setter to call. A setter write is a call, not
 // a store: it checks the source against the setter's parameter and the receiver against
-// its `self`. It records nothing in `written`, since a setter has no cell a later read
-// could shortcut to, and nothing in the throws sink, since a setter cannot raise until #972.
+// its `self`, and it raises whatever the setter declares. It records nothing in `written`,
+// since a setter has no cell a later read could shortcut to.
 func (c *checker) inferAccessorAssign(
+	lvl int,
 	e *ast.BinaryExpr,
 	m *ast.MemberExpr,
 	recv soltype.Type,
@@ -1793,6 +1794,11 @@ func (c *checker) inferAccessorAssign(
 		c.recordType(e, out)
 		return out
 	}
+	// Writing through a setter runs its body, so the write is an exceptional exit of the
+	// enclosing body exactly as a getter read is. This runs before errsBefore is captured,
+	// so an undeclared raise does not suppress the move the write records below — the two
+	// checks are independent.
+	c.raiseAccessorThrows(lvl, e, setter.ThrowsOrNever())
 	errsBefore := len(c.errs)
 	c.checkReceiverMut(e.Left, recv, setter.SelfParam)
 	c.constrain(e.Right, source, setter.Param)
