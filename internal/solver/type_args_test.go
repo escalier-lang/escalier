@@ -505,7 +505,7 @@ func TestClassArityRecoveryKeepsDeclarationVarOut(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "class `B` expects 1 type arguments but got 0", errs[0].Message())
-	require.Equal(t, "fn (b: B<unknown>) -> A", values["A"])
+	require.Equal(t, "{new (b: B<unknown>) -> A}", values["A"])
 }
 
 // TestClassDefaultUnfilledForUnresolvedSibling pins what the count reaching a reference early
@@ -525,5 +525,5 @@ func TestClassDefaultUnfilledForUnresolvedSibling(t *testing.T) {
 	`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (b: B<unknown>) -> A", values["A"])
+	require.Equal(t, "{new (b: B<unknown>) -> A}", values["A"])
 }
