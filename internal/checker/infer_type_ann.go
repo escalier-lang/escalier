@@ -342,8 +342,15 @@ func (c *Checker) inferFuncTypeAnn(
 			Optional: param.Optional,
 		}
 	}
-	returnType, returnErrors := c.inferTypeAnn(funcCtx, funcTypeAnn.Return)
-	errors = slices.Concat(errors, returnErrors)
+	// A setter written in an object type annotation returns nothing and so writes no
+	// `-> R`. Every other signature form names its return, so this is the only shape that
+	// reaches here with a nil Return.
+	var returnType type_system.Type = type_system.NewUndefinedType(nil)
+	if funcTypeAnn.Return != nil {
+		var returnErrors []Error
+		returnType, returnErrors = c.inferTypeAnn(funcCtx, funcTypeAnn.Return)
+		errors = slices.Concat(errors, returnErrors)
+	}
 
 	var throwsType type_system.Type
 	if funcTypeAnn.Throws == nil {

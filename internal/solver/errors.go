@@ -1456,12 +1456,19 @@ func (e *SubclassConstructorRequiredError) Message() string {
 	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
 }
 
+// spanned is a node that can carry blame without being a whole ast.Node. An
+// object-type-annotation member is one: it has a span, and no Accept, since the visitor
+// walks the annotation rather than descending into its member list.
+type spanned interface{ Span() ast.Span }
+
 // SetterArityError fires when a setter declares other than exactly one value parameter
 // beyond its `self` receiver. A setter's single parameter is the value being assigned,
-// so `set x(self)` and `set x(self, a, b)` are both malformed.
+// so `set x(self)` and `set x(self, a, b)` are both malformed. The rule is the same for a
+// class member and for a setter written in an object type annotation, so Elem is whichever
+// node the source wrote and carries the blame span.
 type SetterArityError struct {
 	Name  string
-	Elem  *ast.SetterElem
+	Elem  spanned
 	Count int // value parameters declared, excluding `self`
 }
 

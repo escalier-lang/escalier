@@ -252,6 +252,33 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"ObjectConstructorSignatureBesideProperty": {
 			input: "{new (x: number) -> Point, origin: Point}",
 		},
+		"ObjectMethod": {
+			input: "{f(x: number) -> string}",
+		},
+		"ObjectMethodWithReceiver": {
+			input: "{f(mut self, x: number) -> string}",
+		},
+		"ObjectMethodWithTypeParams": {
+			input: "{f<T>(x: T) -> T}",
+		},
+		"ObjectGetter": {
+			input: "{get a(self) -> number}",
+		},
+		// A setter yields nothing, so it writes no `-> R`, the way a class body declares one.
+		"ObjectSetter": {
+			input: "{set a(mut self, v: number)}",
+		},
+		// The arrow still parses on a setter, so a hand-converted `.d.ts` accessor keeps it.
+		"ObjectSetterWithReturnType": {
+			input: "{set a(mut self, v: number) -> undefined}",
+		},
+		"ObjectGetterWithThrows": {
+			input: "{get a(self) -> number throws RangeError}",
+		},
+		// The clause follows the parameter list directly when a setter writes no arrow.
+		"ObjectSetterWithThrows": {
+			input: "{set a(mut self, v: number) throws RangeError}",
+		},
 		"UnionOfFunctions": {
 			input: "(fn (x: number) -> string) | (fn (x: string) -> number)",
 		},

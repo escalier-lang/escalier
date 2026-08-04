@@ -228,16 +228,21 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 	// once its spreads and mapped members ground.
 	if !hasResidual {
 		b := newObjElemBuilder(len(ta.Elems))
-		var ctors []soltype.ObjTypeElem
+		// The builder files properties alone, keyed by name. A construct signature has no name
+		// to file under, and a method, getter, or setter is identified by its kind as well as
+		// its name, so none of them go through it. Collect them in source order and append them
+		// after the properties. Position among them carries no meaning, since a reader reaches
+		// a construct signature through ObjectType.Constructor() and a named member by scanning
+		// for the kind it wants.
+		var nonProperties []soltype.ObjTypeElem
 		for _, elem := range ta.Elems {
-			// A construct signature is unnamed, so the key-dedup builder has no key to file it
-			// under. Collect it separately and append it after the properties. Its position
-			// among them carries no meaning, since every reader reaches it through
-			// ObjectType.Constructor() rather than by index.
 			if ctor, ok := elem.(*ast.ConstructorTypeAnn); ok {
 				if resolved := resolveCtor(ctor); resolved != nil {
-					ctors = append(ctors, resolved)
+					nonProperties = append(nonProperties, resolved)
 				}
+				continue
+			}
+			if c.addObjectMember(scope, elem, lvl, &nonProperties) {
 				continue
 			}
 			prop, ok := elem.(*ast.PropertyTypeAnn)
@@ -251,7 +256,7 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 			}
 			b.add(name, ft, prop.Optional, prop.Readonly)
 		}
-		elems = append(b.elems, ctors...)
+		elems = append(b.elems, nonProperties...)
 	} else {
 		for _, elem := range ta.Elems {
 			switch elem := elem.(type) {
@@ -274,16 +279,95 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 					elems = append(elems, resolved)
 				}
 			default:
-				unsupported = true
+				if !c.addObjectMember(scope, elem, lvl, &elems) {
+					unsupported = true
+				}
 			}
 		}
 	}
 	if unsupported {
-		c.reportUnsupportedFeature(ta, "object type member other than a property, spread, mapped member, or `new` signature")
+		c.reportUnsupportedFeature(ta, "object type member other than a property, spread, mapped member, `new` signature, method, or accessor")
 	}
 	t := &soltype.ObjectType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
+}
+
+// addObjectMember lowers a method, getter, or setter member of an object type annotation onto
+// elems and reports whether it recognized the member's kind. A caller passes every element it
+// has not already handled and treats a false result as an unsupported kind.
+//
+// The written receiver does not reach the lowered element. The parser peels `self` / `mut self`
+// off into the member's Receiver so it never lands in Fn.Params, and subtyping compares a method
+// through callableView, which drops SelfParam. A receiver written here therefore describes the
+// shape without narrowing it, matching how it reads for a class method the annotation is checked
+// against.
+func (c *checker) addObjectMember(scope *Scope, elem ast.ObjTypeAnnElem, lvl int, elems *[]soltype.ObjTypeElem) bool {
+	switch elem := elem.(type) {
+	case *ast.MethodTypeAnn:
+		name, ok := objKeyName(elem.Name)
+		if !ok {
+			c.reportUnsupported(elem.Name)
+			return true
+		}
+		sig := c.resolveSigTypeAnn(scope, elem.Fn, lvl)
+		// Two members of one name are the arms of an overload set, the shape a class body
+		// builds through appendMethodSig. Merging here rather than emitting a second element
+		// keeps one method per name, which is what member lookup and the depth walk expect.
+		for _, existing := range *elems {
+			if m, isMethod := existing.(*soltype.MethodElem); isMethod && m.Name == name {
+				m.Signatures = append(m.Signatures, sig)
+				return true
+			}
+		}
+		*elems = append(*elems, &soltype.MethodElem{Name: name, Signatures: []*soltype.FuncType{sig}})
+	case *ast.GetterTypeAnn:
+		name, ok := objKeyName(elem.Name)
+		if !ok {
+			c.reportUnsupported(elem.Name)
+			return true
+		}
+		// The value read and what reading it raises both come from the one resolved
+		// signature. An absent `throws` clause leaves the signature's Throws nil, and nil is
+		// the `never` shorthand GetterElem uses too, so it carries over with no special case.
+		sig := c.resolveSigTypeAnn(scope, elem.Fn, lvl)
+		*elems = append(*elems, &soltype.GetterElem{Name: name, Type: sig.Ret, Throws: sig.Throws})
+	case *ast.SetterTypeAnn:
+		name, ok := objKeyName(elem.Name)
+		if !ok {
+			c.reportUnsupported(elem.Name)
+			return true
+		}
+		sig := c.resolveSigTypeAnn(scope, elem.Fn, lvl)
+		// A well-formed setter declares exactly one value parameter beyond the receiver, the
+		// value being assigned. Report any other count and then build the element from the
+		// first parameter, or from `unknown` when there is none, so the object still carries a
+		// member under the name the source wrote. This mirrors the class-member recovery.
+		if len(sig.Params) != 1 {
+			c.report(&SetterArityError{Name: name, Elem: elem, Count: len(sig.Params)})
+		}
+		var param soltype.Type = &soltype.UnknownType{}
+		if len(sig.Params) > 0 {
+			param = sig.Params[0].Type
+		}
+		*elems = append(*elems, &soltype.SetterElem{Name: name, Param: param, Throws: sig.Throws})
+	default:
+		return false
+	}
+	return true
+}
+
+// resolveSigTypeAnn lowers the `(…) -> R throws E` tail a method, getter, or setter shares with
+// a `fn` annotation. resolveFuncTypeAnn recovers every unsupported part of a signature to a
+// fresh var, so it always yields a FuncType and its ok result is always true. Anything else is a
+// wiring bug rather than a source error, so fail loudly instead of dropping the member.
+func (c *checker) resolveSigTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) *soltype.FuncType {
+	fn, _ := c.resolveFuncTypeAnn(scope, ta, lvl)
+	sig, isFunc := fn.(*soltype.FuncType)
+	if !isFunc {
+		panic(fmt.Sprintf("resolveSigTypeAnn: signature resolved to %T, not *soltype.FuncType", fn))
+	}
+	return sig
 }
 
 // resolveMappedElem lowers a `[K]: V for K in Keys` member to a MappedElem, stored unreduced so the
