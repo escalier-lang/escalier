@@ -59,6 +59,7 @@ type typeParamArity struct {
 // requiredArgCount returns how many arguments a reference must write: one past the last
 // parameter with no default, not the number lacking one. Arguments bind positionally, so a
 // default before a required parameter can never be omitted, which resolveTypeParams reports.
+// hasDefault is a callback because a parameter list reaches this as either sort of TypeParam.
 func requiredArgCount(total int, hasDefault func(int) bool) int {
 	for i := total - 1; i >= 0; i-- {
 		if !hasDefault(i) {
@@ -151,7 +152,7 @@ func (c *checker) resolveTypeArgs(
 // exactly the annotations that have to change. The default is kept rather than dropped, so a
 // reference that does write every argument still resolves against a full parameter list.
 func (c *checker) reportRequiredAfterDefault(params []*ast.TypeParam) {
-	required := requiredArgCount(len(params), func(i int) bool { return params[i].Default != nil })
+	required := arityOfParamDecls(params).Required
 	for i, p := range params[:required] {
 		if p.Default == nil {
 			continue
