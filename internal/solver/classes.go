@@ -660,34 +660,19 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 	return pathResult{value: out}
 }
 
-// writeAccessor resolves the accessor a field write `recv.prop = …` targets. It is the
-// write-side twin of the three read interceptions valueProp runs, covering the same three
-// receiver shapes:
-//
-//  1. a class instance, whose member is looked up on the projected class body
-//  2. a class body, the object `self` binds to inside a method or constructor
-//  3. a class value, the receiver of a static write such as `C.x = 5`
-//
-// Each shape is looked up with the setter half of a getter/setter pair preferred. The
-// returned ok is a ROUTING answer — whether the write belongs to inferAccessorAssign
-// rather than to the structural requirement — not a claim that the write is legal. The
-// two accessor kinds answer it for different reasons:
-//
-//   - a setter is the member the write actually calls;
-//   - a getter is a write that has no setter to call, and only inferAccessorAssign knows
-//     to say so. Left to the structural path it reads as `object is missing property: x`,
-//     since that path matches a PropertyElem and finds none.
-//
-// A plain field, a method, and a name no receiver carries all return ok=false. A field
-// write in particular MUST fall through, since the structural path is where the readonly
-// check, the owned-mutable upgrade, the `written` record, and the alias and field-store
-// edges live. This is the write-side counterpart of classBodyMember returning ok=false for
-// a PropertyElem.
+// writeAccessor resolves the accessor a field write `recv.prop = …` targets, across the
+// same three receiver shapes valueProp intercepts for a read: a class instance, a class
+// body reached through `self`, and a class value. The returned ok routes the write to
+// inferAccessorAssign. Every other member kind returns ok=false, so a field write keeps the
+// structural path, where the readonly check, the `written` record, and the borrow edges live.
 func (c *checker) writeAccessor(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
 	member, found := c.writeMember(name, carrier)
 	if !found {
 		return nil, false
 	}
+	// A setter is the member the write calls. A getter is routed here too, since it has no
+	// setter to call and only inferAccessorAssign knows to report that. The structural path
+	// matches a PropertyElem, finds none, and would blame a missing property instead.
 	switch member.(type) {
 	case *soltype.SetterElem, *soltype.GetterElem:
 		return member, true
@@ -755,20 +740,36 @@ func (c *checker) checkReceiverMut(blame ast.Node, recv soltype.Type, self *solt
 }
 
 // lendsMut reports whether recv has mutable access to lend: a `mut` borrow directly, or a
-// binding var carrying one among its lower bounds. The look-through matches classCarrier's,
-// since a `mut` borrow that reaches a receiver position through a call result or a branch
-// join arrives as a variable with the borrow among its lower bounds rather than as a bare
-// RefType. `g(c).x = 5`, where `g` returns `mut C`, is one such receiver.
+// binding var whose lower bounds are all `mut` borrows. The look-through matches
+// classCarrier's, since a `mut` borrow that reaches a receiver position through a call
+// result or a branch join arrives as a variable with the borrow among its lower bounds
+// rather than as a bare RefType. `g(c).x = 5`, where `g` returns `mut C`, is one such
+// receiver.
+//
+// EVERY lower bound must be mutable, since each is a value the receiver may actually hold
+// at run time. A join of `mut C` and `C` lends no mutable access, because the branch taken
+// may be the immutable one. Reporting mutable off a single bound would accept a `mut self`
+// setter write the structural field-write path rejects on the same receiver.
 func lendsMut(recv soltype.Type) bool {
 	switch recv := recv.(type) {
 	case *soltype.RefType:
 		return recv.Mut
 	case *soltype.TypeVarType:
+		sawBound := false
 		for _, lb := range recv.LowerBounds {
-			if r, ok := lb.(*soltype.RefType); ok && r.Mut {
-				return true
+			if lb == soltype.Type(recv) {
+				// A vacuous `v <: v` self-edge constrains nothing, the same edge readCarrier
+				// drops. It names no value the receiver holds, so it neither grants nor
+				// withholds mutable access.
+				continue
 			}
+			r, ok := lb.(*soltype.RefType)
+			if !ok || !r.Mut {
+				return false
+			}
+			sawBound = true
 		}
+		return sawBound
 	}
 	return false
 }

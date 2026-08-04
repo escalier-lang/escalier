@@ -482,6 +482,19 @@ func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
 			`,
 		},
 		{
+			// Every value the receiver may hold has to lend mutable access. A join with an
+			// immutable branch does not, since that branch may be the one taken, so it is
+			// rejected exactly as the structural field-write path rejects it.
+			name: "branch join with one immutable arm",
+			src: `
+				class C { v: number, set x(mut self, n: number) { self.v = n } }
+				fn f(a: mut C, b: C, cond: boolean) { val r = if (cond) { a } else { b }
+					r.x = 5
+				}
+			`,
+			want: []string{"4:6-4:9: cannot constrain immutable C <: mutable C"},
+		},
+		{
 			name: "immutable call result",
 			src: `
 				class C { v: number, set x(mut self, n: number) { self.v = n } }
