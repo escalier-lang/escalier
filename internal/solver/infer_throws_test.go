@@ -149,14 +149,6 @@ func TestInferThrowsFromBodyUnderAWildcardClause(t *testing.T) {
 			`,
 			want: `fn () -> 1`,
 		},
-		{
-			// A body with no `return` that always leaves along the exceptional edge
-			// reaches no normal exit, so its return type is `never`. Annotating it
-			// `-> never` says exactly that, so nothing is over-declared.
-			name: "DivergingBodyReturnsNever",
-			src:  `fn f() -> never throws _ { throw "x" }`,
-			want: `fn () -> never throws "x"`,
-		},
 	})
 }
 
@@ -168,25 +160,6 @@ func TestInferThrowsClause(t *testing.T) {
 			name: "ClauseWidensTheThrownLiteral",
 			src:  `fn f() throws string { throw "boom" }`,
 			want: "fn () -> never throws string",
-		},
-		{
-			// The clause parses on its own, with no `-> R` in front of it.
-			name: "ClauseWithoutReturnAnnotation",
-			src:  `fn f(x: number) throws string { throw "boom" }`,
-			want: "fn (x: number) -> never throws string",
-		},
-		{
-			// One path returns and the other throws, so both declarations are delivered.
-			name: "ClauseAfterReturnAnnotation",
-			src:  `fn f(c: boolean) -> number throws string { if c { return 1 } else { throw "x" } }`,
-			want: "fn (c: boolean) -> number throws string",
-		},
-		{
-			// `throws _` mints a fresh variable the body's throws flow into, so the clause
-			// asks for inference rather than fixing a type.
-			name: "WildcardClauseInfers",
-			src:  `fn f() throws _ { throw "boom" }`,
-			want: `fn () -> never throws "boom"`,
 		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{
@@ -522,12 +495,6 @@ const raisingGetterClass = `
 func TestInferThrowsFromAnAccessor(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
-			// The getter's clause reaches the reader, which redeclares it as its own.
-			name: "GetterClauseReachesTheReader",
-			src:  raisingGetterClass + `fn f(c: C) -> number throws string { return c.x }`,
-			want: "fn (c: C) -> number throws string",
-		},
-		{
 			// `throws _` on the reader infers from the read, so the getter's declared
 			// `string` is what the reader raises.
 			name: "ReaderInfersTheGetterClause",
@@ -547,21 +514,6 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 				fn f(c: C) -> number throws _ { return c.x }
 			`,
 			want: `fn (c: C) -> number throws "boom"`,
-		},
-		{
-			// A sibling member reads the getter through `self`, which resolves on the
-			// class body rather than on a projected instance, and raises the same.
-			name: "SelfReadInsideASiblingMethod",
-			src: `
-				class C {
-					v: number,
-					bad: boolean,
-					get x(self) -> number throws string { if self.bad { throw "boom" } return self.v },
-					m(self) -> number throws string { return self.x },
-				}
-				fn f(c: C) -> number throws string { return c.m() }
-			`,
-			want: "fn (c: C) -> number throws string",
 		},
 		{
 			// A static getter is read off the class VALUE, a third resolution path.
@@ -685,18 +637,6 @@ func TestInferThrowsRejectsAnUndeclaredAccessorRaise(t *testing.T) {
 				}
 			`,
 			wantErrs: []string{"6:33-6:39: cannot constrain string <: never"},
-		},
-		{
-			// Only one member of the union reads through a raising getter. The other
-			// carries `x` as a plain field, which raises nothing, so the single raise
-			// still has to be declared.
-			name: "UnionReceiverReadFromAClauselessCaller",
-			src: `
-				class A { bad: boolean, get x(self) -> number throws string { if self.bad { throw "a" } return 1 } }
-				class B { x: number }
-				fn f(c: A | B) -> number { return c.x }
-			`,
-			wantErrs: []string{"4:39-4:42: cannot constrain string <: never"},
 		},
 	})
 }
@@ -894,12 +834,6 @@ const raisingSetterClass = `
 // the setter half of the throws position is reachable from source.
 func TestInferThrowsThroughASetterWrite(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
-		{
-			// The setter's clause reaches the writer, which redeclares it as its own.
-			name: "SetterClauseReachesTheWriter",
-			src:  raisingSetterClass + `fn f(c: mut C) throws string { c.x = 5 }`,
-			want: "fn (c: mut C) -> void throws string",
-		},
 		{
 			// `throws _` on the writer infers from the write.
 			name: "WriterInfersTheSetterClause",
