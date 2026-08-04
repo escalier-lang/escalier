@@ -818,18 +818,26 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		// is what lets one `{new (…) -> R, ...}` target accept both, which is how
 		// `InstanceType<typeof C>` reads either class's instance.
 		//
-		// Its cost is that an ordinary function satisfies such a target too, since nothing in a
-		// FuncType records whether the value behind it is constructible. So
-		// `InstanceType<fn (x: number) -> {a: number}>` reduces to `{a: number}` where
-		// TypeScript reduces the same application to `never`. Separating the two needs either a
-		// constructor marker on FuncType or a class value that is always an object, and the
-		// second rewrites every rendered class-value type.
+		// The return has to be a nominal class instance, because a FuncType records nothing
+		// about whether the value behind it is constructible and a bare function would
+		// otherwise fill the target on its signature alone. Both constructor paths set
+		// `Ret: self` — see synthesizeConstructor and walkConstructorBody in
+		// infer_class_ctor.go — so every class value passes and
+		// `InstanceType<fn (x: number) -> {a: number}>` reduces to `never`, matching
+		// TypeScript.
+		//
+		// What the test admits that TypeScript rejects is a factory,
+		// `fn make(x: number) -> Point`, whose return is a class instance it did not
+		// construct. Rejecting that one too needs a constructor marker carried on FuncType,
+		// or a class value that is always an object so this arm goes away entirely.
 		//
 		// A target carrying another member alongside the signature demands something a bare
 		// function cannot supply. It stays on the object-against-object arm and fails there.
 		if sup, ok := super.(*soltype.ObjectType); ok && len(sup.Elems) == 1 {
-			if supCtor, has := sup.Constructor(); has {
-				return c.constrain(sub, supCtor.Fn, seen, mutCtx)
+			if _, retIsClass := sub.Ret.(*soltype.ClassType); retIsClass {
+				if supCtor, has := sup.Constructor(); has {
+					return c.constrain(sub, supCtor.Fn, seen, mutCtx)
+				}
 			}
 		}
 	case *soltype.TupleType:

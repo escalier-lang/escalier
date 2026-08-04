@@ -946,23 +946,43 @@ func TestUtilityTypeInstanceType(t *testing.T) {
 	})
 }
 
-// An ordinary function matches both constructor patterns, where TypeScript reduces each
-// application to `never`. This is the cost of the rule that lets a bare function fill a
-// constructor-only object target, which is itself what makes `InstanceType<typeof C>` work for a
-// class with no statics — classValue binds such a class to its bare constructor function, so
-// nothing distinguishes it from a function that is not a constructor. These cases pin the
-// divergence so a later change that separates the two shows up here.
-func TestUtilityTypeConstructorUtilitiesAcceptOrdinaryFunction(t *testing.T) {
+// A function whose return is not a nominal class instance is not a constructor, so both
+// utilities reduce to `never` over one, matching TypeScript. A bare function can fill a
+// constructor-only target at all only because classValue binds a class with no statics to its
+// bare constructor function; requiring a class return is what keeps that allowance from reaching
+// every function.
+func TestUtilityTypeConstructorUtilitiesRejectOrdinaryFunction(t *testing.T) {
 	runUtilityReductions(t, []utilityReduction{
 		{
-			name:         "InstanceTypeReadsTheReturn",
+			name:         "InstanceTypeOfPlainFunction",
 			src:          `type Result = InstanceType<fn (x: number) -> {a: number}>`,
-			wantExpanded: "{a: number}",
+			wantExpanded: "never",
 		},
 		{
-			name:         "ConstructorParametersReadsTheParams",
+			name:         "ConstructorParametersOfPlainFunction",
 			src:          `type Result = ConstructorParameters<fn (x: number) -> {a: number}>`,
-			wantExpanded: "[number]",
+			wantExpanded: "never",
+		},
+	})
+}
+
+// A factory function returning a class instance still matches, where TypeScript gives `never`.
+// The test is the return type, and a factory's return is indistinguishable from a constructor's,
+// so this is what a marker-free rule admits. It is pinned so a later change that carries
+// constructibility on FuncType shows up here.
+func TestUtilityTypeConstructorUtilitiesAcceptClassReturningFactory(t *testing.T) {
+	runUtilityReductions(t, []utilityReduction{
+		{
+			name: "InstanceTypeOfFactory",
+			src: `
+				class Point {
+					x: number,
+					constructor(mut self, x: number) { self.x = x },
+				}
+				fn make(x: number) -> Point { return Point(x) }
+				type Result = InstanceType<typeof make>
+			`,
+			wantExpanded: "Point",
 		},
 	})
 }
