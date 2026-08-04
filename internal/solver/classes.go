@@ -475,7 +475,7 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 	if !ok || def.Body == nil {
 		return pathResult{}, false
 	}
-	member, found := c.projectedClassMember(ct, name, readLookup, set.NewSet[string]())
+	member, found := c.projectedClassMember(ct, name, (*soltype.ObjectType).ReadMember, set.NewSet[string]())
 	if !found {
 		// The miss is rare, so project the whole body here to render the diagnostic at
 		// the instance's arguments rather than the declared type parameters.
@@ -501,7 +501,7 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 // bounding the walk on a cyclic hierarchy the same way constrainNominalWalk does.
 //
 // lookup selects which half of a getter/setter pair the access wants. A read passes
-// readLookup and a write passes writeLookup.
+// ObjectType.ReadMember and a write passes ObjectType.WriteMember.
 func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, lookup memberLookup, visited set.Set[string]) (soltype.ObjTypeElem, bool) {
 	def, ok := c.ctx.classDef(ct.Name)
 	if !ok || def.Body == nil {
@@ -526,15 +526,10 @@ func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, looku
 	return nil, false
 }
 
-// memberLookup selects one named member off a class body or class value. The two
-// implementations are readLookup and writeLookup, which differ only in which half of a
+// memberLookup selects one named member off a class body. The two implementations are
+// ObjectType.ReadMember and ObjectType.WriteMember, which differ only in which half of a
 // getter/setter pair they return.
 type memberLookup func(*soltype.ObjectType, string) (soltype.ObjTypeElem, bool)
-
-var (
-	readLookup  memberLookup = (*soltype.ObjectType).ReadMember
-	writeLookup memberLookup = (*soltype.ObjectType).WriteMember
-)
 
 // classBodyMember resolves a method, getter, or setter read off a class-body ObjectType —
 // the object `self` binds to inside a method or constructor body (M5 B3). It returns
@@ -673,10 +668,11 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 //  2. a class body, the object `self` binds to inside a method or constructor
 //  3. a class value, the receiver of a static write such as `C.x = 5`
 //
-// It returns the resolved element only when it is a getter or a setter, since those are
-// the two kinds the structural write requirement cannot see. A plain field, a method, and
-// a name no receiver carries all return ok=false, leaving the caller on the structural
-// path that already types them.
+// Each shape is looked up with the setter half of a getter/setter pair preferred. It
+// returns the resolved element only when it is a getter or a setter, since those are the
+// two kinds the structural write requirement cannot see. A plain field, a method, and a
+// name no receiver carries all return ok=false, leaving the caller on the structural path
+// that already types them.
 func (c *checker) writeAccessor(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
 	member, found := c.writeMember(name, carrier)
 	if !found {
@@ -689,13 +685,12 @@ func (c *checker) writeAccessor(name string, carrier soltype.Type) (soltype.ObjT
 	return nil, false
 }
 
-// writeMember looks name up on carrier with the setter half of a getter/setter pair
-// preferred, trying the class instance, class body, and class value shapes in turn. It
-// returns found=false for any other receiver, so a plain object stays on the structural
-// write-requirement path.
+// writeMember looks name up on carrier's class instance, class body, or class value,
+// whichever it resolves as, preferring the setter half of a getter/setter pair. It returns
+// found=false for any other receiver.
 func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
 	if ct, ok := classCarrier(carrier); ok {
-		return c.projectedClassMember(ct, name, writeLookup, set.NewSet[string]())
+		return c.projectedClassMember(ct, name, (*soltype.ObjectType).WriteMember, set.NewSet[string]())
 	}
 	if obj, ok := carrier.(*soltype.ObjectType); ok {
 		return obj.WriteMember(name)
@@ -730,10 +725,10 @@ func strippedMethodSig(sig *soltype.FuncType) *soltype.FuncType {
 //   - `mut self` receiver   → plain `self` member: ok, mutable downgrades to shared
 //   - plain `self` receiver → plain `self` member: ok
 //
-// recv is the un-stripped receiver, so it carries the accessor's own mutability. The
-// receiver is rebuilt as `Self` in that mutability, so the diagnostic reads `immutable C
-// <: mutable C`. A nil self, which a static member or a property has, is a no-op, as is a
-// receiver that is not a class instance.
+// recv is the un-stripped receiver, so it still carries the mutability the access has to
+// lend. The receiver is rebuilt as `Self` in that mutability, so the diagnostic reads
+// `immutable C <: mutable C`. A nil self, which a static member and a property both have,
+// is a no-op, as is a receiver that is not a class instance.
 func (c *checker) checkReceiverMut(blame ast.Node, recv soltype.Type, self *soltype.FuncParam) {
 	if self == nil {
 		return

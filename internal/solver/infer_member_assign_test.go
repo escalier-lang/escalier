@@ -246,9 +246,9 @@ func TestInferMemberAssignClassReceiver(t *testing.T) {
 
 // A field write whose receiver carries a setter under the written name is a setter call,
 // not a field store. It never mints the structural one-property requirement, which
-// resolves the sub side with ObjectType.Prop and so matches only a PropertyElem. The
-// source is checked against the setter's declared parameter and the receiver against the
-// setter's own `self`.
+// constrain's object arm resolves with ObjectType.Prop and so cannot match a SetterElem.
+// The source is checked against the setter's declared parameter and the receiver against
+// the setter's own `self`.
 func TestInferMemberAssignSetter(t *testing.T) {
 	tests := []struct {
 		name string
@@ -301,6 +301,24 @@ func TestInferMemberAssignSetter(t *testing.T) {
 				class D extends C { constructor(mut self) { } }
 				fn f(d: mut D) { d.x = 5 }
 			`,
+		},
+		{
+			name: "setter write inside the class's own constructor",
+			src: `
+				class C {
+					v: number,
+					constructor(mut self) { self.v = 0 self.x = 5 },
+					set x(mut self, n: number) { self.v = n },
+				}
+			`,
+		},
+		{
+			name: "generic setter parameter projects the instance argument",
+			src: `
+				class Box<T> { v: T, set x(mut self, n: T) { self.v = n } }
+				fn f(b: mut Box<number>) { b.x = "hi" }
+			`,
+			want: []string{`3:38-3:42: cannot constrain "hi" <: number`},
 		},
 		{
 			name: "static setter",
@@ -408,4 +426,25 @@ func TestInferMemberAssignGetterOnly(t *testing.T) {
 			require.Equal(t, tt.want, messagesWithSpan(errs))
 		})
 	}
+}
+
+// A setter write evaluates to the value just written, widened the way a field write
+// widens it, so a caller reads `number` whether `x` is a field or a setter. Nothing is
+// recorded in `written`, so a later read of the same name runs the getter rather than
+// returning the value just passed in.
+func TestInferMemberAssignSetterValue(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class C {
+			v: number,
+			get x(self) -> string { return "s" },
+			set x(mut self, n: number) { self.v = n },
+		}
+		fn written(c: mut C) { return (c.x = 5) }
+		fn readBack(c: mut C) { c.x = 5
+			return c.x
+		}
+	`)
+	require.Empty(t, messagesWithSpan(errs))
+	require.Equal(t, "fn (c: mut C) -> number", values["written"])
+	require.Equal(t, "fn (c: mut C) -> string", values["readBack"])
 }

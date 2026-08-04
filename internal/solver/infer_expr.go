@@ -1700,8 +1700,8 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		return voidT
 	}
 	recv := c.inferWriteReceiver(scope, lvl, m.Object)
-	// A write whose receiver carries an accessor under this name is a setter call, not a
-	// field store, so it never reaches the structural requirement below. The structural
+	// A write whose receiver carries an accessor under this name resolves to that accessor
+	// rather than to a field, so it never reaches the structural requirement below. That
 	// requirement is a one-property object whose element is a PropertyElem, and
 	// constrain's object arm resolves the sub side with ObjectType.Prop, which matches
 	// only a PropertyElem. An accessor of the same name would therefore read as a missing
@@ -1786,19 +1786,18 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 // which rejects a write through an immutable receiver to a `mut self` setter. An owned
 // source passed to an owned parameter is consumed, the same move a call argument makes.
 //
-// Nothing is recorded in `written`. That map is the read-after-write shortcut for a
-// field's storage cell, and a setter has no cell — `self.v = n` inside the setter body
-// stores to whatever field the setter chooses, and a later `recv.prop` must run the getter
-// rather than return the value just passed in.
+// Nothing is recorded in `written`, the read-after-write map that hands a later read of a
+// field the value the last write stored. A setter has no such storage cell. Its body
+// stores to whatever field it chooses, so a later `recv.prop` has to run the getter
+// instead of returning the value just passed in.
 //
-// A write to a getter-only member has no setter to call and is reported. This is the
-// mirror of the WriteOnlyPropertyError memberValue reports for reading a setter-only
-// member.
+// A write to a getter-only member has no setter to call and is reported. This mirrors the
+// WriteOnlyPropertyError memberValue reports for reading a setter-only member.
 //
 // The write is not an exceptional exit, so it constrains nothing into the enclosing body's
-// throws sink. A setter cannot raise: reportAccessorThrows rejects a `throws` clause on an
-// accessor, and SetterElem carries no throws for a raise to flow through. Lifting that
-// restriction is escalier-lang/escalier#972.
+// throws sink. A setter cannot raise at all. reportAccessorThrows rejects a `throws`
+// clause on an accessor, and SetterElem carries no throws slot for a raise to flow
+// through. Lifting that restriction is escalier-lang/escalier#972.
 func (c *checker) inferAccessorAssign(
 	e *ast.BinaryExpr,
 	m *ast.MemberExpr,
@@ -1813,8 +1812,8 @@ func (c *checker) inferAccessorAssign(
 		c.recordType(e, out)
 		return out
 	}
-	c.checkReceiverMut(e.Left, recv, setter.SelfParam)
 	errsBefore := len(c.errs)
+	c.checkReceiverMut(e.Left, recv, setter.SelfParam)
 	c.constrain(e.Right, source, setter.Param)
 	// A concretely owned parameter takes the value out of this frame, so the source
 	// binding is consumed and a later use of it is a use-after-move. This mirrors
