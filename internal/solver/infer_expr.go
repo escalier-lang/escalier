@@ -1700,6 +1700,15 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		return voidT
 	}
 	recv := c.inferWriteReceiver(scope, lvl, m.Object)
+	// A write whose receiver carries an accessor under this name is a setter call, not a
+	// field store, so it never reaches the structural requirement below. The structural
+	// requirement is a one-property object whose element is a PropertyElem, and
+	// constrain's object arm resolves the sub side with ObjectType.Prop, which matches
+	// only a PropertyElem. An accessor of the same name would therefore read as a missing
+	// property.
+	if accessor, ok := c.writeAccessor(m.Prop.Name, readCarrier(recv)); ok {
+		return c.inferAccessorAssign(e, m, recv, source, accessor, assignStmt)
+	}
 	w := widen(source)
 	// An owned-mutable field takes the immutable→mutable upgrade through the same shared
 	// helper as the other value-flow sites, so the field write stays consistent with them:
@@ -1764,6 +1773,66 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	}
 	// The assignment evaluates to the value just stored. recordType overwrites the
 	// `void` recovery type inferAssign recorded on e before dispatching here.
+	c.recordType(e, w)
+	return w
+}
+
+// inferAccessorAssign types a write `recv.prop = source` whose receiver carries an
+// accessor named prop. A setter accepts the write and a getter-only member rejects it.
+//
+// A setter write is a call, not a store, so it checks what a call checks. The source is
+// constrained against the setter's declared parameter, which sits in write position and
+// so is read contravariantly. The receiver is constrained against the setter's own `self`,
+// which rejects a write through an immutable receiver to a `mut self` setter. An owned
+// source passed to an owned parameter is consumed, the same move a call argument makes.
+//
+// Nothing is recorded in `written`. That map is the read-after-write shortcut for a
+// field's storage cell, and a setter has no cell — `self.v = n` inside the setter body
+// stores to whatever field the setter chooses, and a later `recv.prop` must run the getter
+// rather than return the value just passed in.
+//
+// A write to a getter-only member has no setter to call and is reported. This is the
+// mirror of the WriteOnlyPropertyError memberValue reports for reading a setter-only
+// member.
+//
+// The write is not an exceptional exit, so it constrains nothing into the enclosing body's
+// throws sink. A setter cannot raise: reportAccessorThrows rejects a `throws` clause on an
+// accessor, and SetterElem carries no throws for a raise to flow through. Lifting that
+// restriction is escalier-lang/escalier#972.
+func (c *checker) inferAccessorAssign(
+	e *ast.BinaryExpr,
+	m *ast.MemberExpr,
+	recv soltype.Type,
+	source soltype.Type,
+	accessor soltype.ObjTypeElem,
+	assignStmt ast.Stmt,
+) soltype.Type {
+	setter, ok := accessor.(*soltype.SetterElem)
+	if !ok {
+		out := c.report(&ReadOnlyPropertyError{Name: m.Prop.Name, Site: e})
+		c.recordType(e, out)
+		return out
+	}
+	c.checkReceiverMut(e.Left, recv, setter.SelfParam)
+	errsBefore := len(c.errs)
+	c.constrain(e.Right, source, setter.Param)
+	// A concretely owned parameter takes the value out of this frame, so the source
+	// binding is consumed and a later use of it is a use-after-move. This mirrors
+	// consumeCallArgs, since a setter write is a call on the argument side. The move
+	// records against the assignment's statement, resolved from assignStmt rather than
+	// c.fn.currentStmt, which inferring the receiver and source may have overwritten with
+	// an inner branch statement. A rejected write records no move.
+	if c.fn != nil && len(c.errs) == errsBefore && isConcreteOwned(setter.Param) {
+		if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
+			c.consumeOwned(e.Right, source, e.Right, ref)
+			c.recordEscapeSite(e.Right, ref)
+		}
+	}
+	// The assignment evaluates to the value just written, widened the way a field write
+	// widens it, so `val b = (c.x = 5)` reads `number` whether `x` is a field or a setter.
+	// recordType overwrites the `void` recovery type inferAssign recorded on e before
+	// dispatching here.
+	w := widen(source)
 	c.recordType(e, w)
 	return w
 }

@@ -515,8 +515,8 @@ func TestObjectMember(t *testing.T) {
 // A getter and a setter may legitimately share a name. Member returns the first in
 // declaration order and cannot reach the second, so it is insufficient on its own to
 // resolve read-versus-write member access, where obj.x reads the getter and obj.x = v
-// writes the setter. A caller that needs both sides scans Elems by name AND kind
-// rather than relying on Member. This pins the first-declared-wins behavior.
+// writes the setter. ReadMember and WriteMember, covered below, are the two lookups that
+// choose by direction. This pins Member's first-declared-wins behavior.
 func TestObjectMemberGetterSetterSameName(t *testing.T) {
 	getter := &GetterElem{Name: "x", Type: numP()}
 	setter := &SetterElem{Name: "x", Param: strP()}
@@ -528,6 +528,85 @@ func TestObjectMemberGetterSetterSameName(t *testing.T) {
 	got, ok = (&ObjectType{Elems: []ObjTypeElem{setter, getter}}).Member("x")
 	require.True(t, ok)
 	require.Same(t, setter, got, "declaration order decides which of the two Member returns")
+}
+
+// ReadMember and WriteMember resolve a name by access direction rather than declaration
+// order: a read takes the getter half of an accessor pair and a write takes the setter
+// half, whichever comes first. On a name carried by a single element of any kind, both
+// return that element, so they stand in for Member everywhere.
+func TestObjectReadWriteMember(t *testing.T) {
+	getter := &GetterElem{Name: "x", Type: numP()}
+	setter := &SetterElem{Name: "x", Param: strP()}
+	prop := &PropertyElem{Name: "p", Type: numP()}
+	m := method("m", &FuncType{Ret: numP()})
+
+	tests := []struct {
+		name      string
+		elems     []ObjTypeElem
+		lookup    string
+		wantRead  ObjTypeElem
+		wantWrite ObjTypeElem
+	}{
+		{
+			name:      "pair with the getter first",
+			elems:     []ObjTypeElem{getter, setter},
+			lookup:    "x",
+			wantRead:  getter,
+			wantWrite: setter,
+		},
+		{
+			name:      "pair with the setter first",
+			elems:     []ObjTypeElem{setter, getter},
+			lookup:    "x",
+			wantRead:  getter,
+			wantWrite: setter,
+		},
+		{
+			name:      "getter alone",
+			elems:     []ObjTypeElem{getter},
+			lookup:    "x",
+			wantRead:  getter,
+			wantWrite: getter,
+		},
+		{
+			name:      "setter alone",
+			elems:     []ObjTypeElem{setter},
+			lookup:    "x",
+			wantRead:  setter,
+			wantWrite: setter,
+		},
+		{
+			name:      "property",
+			elems:     []ObjTypeElem{prop, getter, setter},
+			lookup:    "p",
+			wantRead:  prop,
+			wantWrite: prop,
+		},
+		{
+			name:      "method",
+			elems:     []ObjTypeElem{m},
+			lookup:    "m",
+			wantRead:  m,
+			wantWrite: m,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj := &ObjectType{Elems: tt.elems}
+			gotRead, ok := obj.ReadMember(tt.lookup)
+			require.True(t, ok)
+			require.Same(t, tt.wantRead, gotRead)
+			gotWrite, ok := obj.WriteMember(tt.lookup)
+			require.True(t, ok)
+			require.Same(t, tt.wantWrite, gotWrite)
+		})
+	}
+
+	obj := &ObjectType{Elems: []ObjTypeElem{getter, setter}}
+	_, ok := obj.ReadMember("missing")
+	require.False(t, ok, "an absent name reports not present to a read")
+	_, ok = obj.WriteMember("missing")
+	require.False(t, ok, "an absent name reports not present to a write")
 }
 
 // ObjElemName reads the name off any element kind.

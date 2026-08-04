@@ -1090,6 +1090,7 @@ func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
 func (*SubclassConstructorRequiredError) isSolverError()    {}
 func (*WriteOnlyPropertyError) isSolverError()              {}
+func (*ReadOnlyPropertyError) isSolverError()               {}
 func (*SetterArityError) isSolverError()                    {}
 func (*RecursiveMethodAnnotationError) isSolverError()      {}
 func (*FieldNotInitializedError) isSolverError()            {}
@@ -1150,6 +1151,20 @@ func (e *WriteOnlyPropertyError) Span() ast.Span      { return e.Site.Span() }
 func (e *WriteOnlyPropertyError) Related() []ast.Span { return nil }
 func (e *WriteOnlyPropertyError) Message() string {
 	return "Property '" + e.Name + "' is write-only; it has a setter but no getter or field to read."
+}
+
+// ReadOnlyPropertyError fires when a getter-only member is written, as in `c.value = 5`
+// where `value` is declared only with `get value(...)`. A getter defines a read, not a
+// writable location. It is the write-side mirror of WriteOnlyPropertyError.
+type ReadOnlyPropertyError struct {
+	Name string
+	Site ast.Node
+}
+
+func (e *ReadOnlyPropertyError) Span() ast.Span      { return e.Site.Span() }
+func (e *ReadOnlyPropertyError) Related() []ast.Span { return nil }
+func (e *ReadOnlyPropertyError) Message() string {
+	return "Property '" + e.Name + "' is read-only; it has a getter but no setter or field to write."
 }
 
 // InstancePatternNotClassError fires when the name in an instance pattern `Name { ... }`
