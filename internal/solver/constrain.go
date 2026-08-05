@@ -1138,6 +1138,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			errs := c.constrain(sub.Yield, sup.Yield, seen, false)
 			errs = append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...)
 			errs = append(errs, c.constrain(sup.Next, sub.Next, seen, false)...)
+			// The raise is covariant, like the return. ThrowsOrNever reads both sides
+			// through the nil-is-never collapse, so a generator that cannot raise
+			// satisfies one that declares a raise type.
+			errs = append(errs, c.constrain(sub.ThrowsOrNever(), sup.ThrowsOrNever(), seen, false)...)
 			return errs
 		}
 	case *soltype.RefType:

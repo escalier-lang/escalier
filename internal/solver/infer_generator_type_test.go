@@ -113,3 +113,69 @@ func TestGeneratorVariance(t *testing.T) {
 		})
 	}
 }
+
+// The optional fourth type argument names what advancing the generator may raise. An
+// unwritten one leaves the slot at `never`, so a generator that cannot raise renders
+// three arguments — the same suppression `Promise<T>` gets when it cannot reject.
+func TestResolveGeneratorRaiseAnnotation(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "RaisingGeneratorKeepsItsFourthArgument",
+			src:  `fn f(g: Generator<number, string, never, boolean>) { return g }`,
+			want: `fn (g: Generator<number, string, never, boolean>) -> Generator<number, string, never, boolean>`,
+		},
+		{
+			// An explicit `never` collapses to the unwritten form, since ThrowsOrNever
+			// reads both through one canonical value.
+			name: "ExplicitNeverRendersAsThreeArguments",
+			src:  `fn f(g: Generator<number, string, never, never>) { return g }`,
+			want: `fn (g: Generator<number, string, never>) -> Generator<number, string, never>`,
+		},
+		{
+			name: "AsyncGeneratorCarriesItToo",
+			src:  `fn f(g: AsyncGenerator<number, string, never, boolean>) { return g }`,
+			want: `fn (g: AsyncGenerator<number, string, never, boolean>) -> AsyncGenerator<number, string, never, boolean>`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, test.src)
+			require.Empty(t, errs)
+			require.Equal(t, test.want, values["f"])
+		})
+	}
+}
+
+// The raise slot is covariant, like Ret: a generator that raises less satisfies one that
+// declares more, and a generator that cannot raise satisfies any declared raise type.
+func TestGeneratorRaiseVariance(t *testing.T) {
+	accepts := []string{
+		`
+			declare fn g() -> Generator<number, string, never, "a">
+			val f: fn () -> Generator<number, string, never, "a" | "b"> = g
+		`,
+		`
+			declare fn g() -> Generator<number, string, never>
+			val f: fn () -> Generator<number, string, never, "a"> = g
+		`,
+	}
+	for i, src := range accepts {
+		t.Run("Accepts"+string(rune('A'+i)), func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Empty(t, errs)
+		})
+	}
+
+	t.Run("RaiseIsNotContravariant", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			declare fn g() -> Generator<number, string, never, "a" | "b">
+			val f: fn () -> Generator<number, string, never, "a"> = g
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, `3:60-3:61: cannot constrain "b" <: "a"`, msgWithSpan(errs[0]))
+	})
+}

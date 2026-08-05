@@ -42,6 +42,10 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 	}
 
 	iterable := c.inferExpr(scope, lvl, s.Iterable)
+	// A loop advances what it iterates, so a generator's raise surfaces here rather than
+	// where the generator was obtained. Constrain it into the enclosing sink, the way a
+	// throwing call does, so iterating one needs a clause or a `try`.
+	c.constrainIterationRaise(s.Iterable, iterable, lvl)
 	elem, ok := c.iterableElemType(s.IsAwait, iterable)
 	if !ok {
 		// An iterable that already failed to infer is the ErrorType recovery
@@ -81,6 +85,49 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 	c.bindPattern(bodyScope, lvl, s.Pattern, elem, nil)
 	c.inferBlock(bodyScope, lvl, &s.Body)
 	return &soltype.Void{}
+}
+
+// constrainIterationRaise sends what advancing t may raise into the enclosing throws
+// sink. Only a generator carries a raise type today, and a union of them raises whatever
+// any branch does, so the walk mirrors the element-type walk. Anything else contributes
+// nothing. It marks the body as raising for the same reason a throwing call does, so an
+// unused-clause warning is not drawn against a clause this loop uses.
+func (c *checker) constrainIterationRaise(site ast.Expr, t soltype.Type, lvl int) {
+	raise, ok := c.iterationRaise(t)
+	if !ok {
+		return
+	}
+	c.constrain(site, raise, c.throwsSink(lvl))
+	c.markRaised()
+}
+
+// iterationRaise returns what advancing t may raise, and whether anything can. A borrow
+// is peeled and an inference variable coalesced first, the same normalization the
+// element-type walk applies.
+func (c *checker) iterationRaise(t soltype.Type) (soltype.Type, bool) {
+	t = soltype.CarrierOf(t)
+	if _, isVar := t.(*soltype.TypeVarType); isVar {
+		t = soltype.CarrierOf(coalesce(t, soltype.Positive))
+	}
+	switch t := t.(type) {
+	case *soltype.GeneratorType:
+		if !t.Raises() {
+			return nil, false
+		}
+		return t.Throws, true
+	case *soltype.UnionType:
+		raises := make([]soltype.Type, 0, len(t.Types))
+		for _, branch := range t.Types {
+			if r, ok := c.iterationRaise(branch); ok {
+				raises = append(raises, r)
+			}
+		}
+		if len(raises) == 0 {
+			return nil, false
+		}
+		return newUnion(c.ctx, raises, false), true
+	}
+	return nil, false
 }
 
 // iterableElemType resolves the element type T yielded by iterating a value of

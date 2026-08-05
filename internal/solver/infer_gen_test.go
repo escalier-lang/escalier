@@ -364,42 +364,86 @@ func TestInferGenReturnAnnotationShape(t *testing.T) {
 	})
 }
 
-// The throws sink is untouched by generator-ness: a clause-less gen fn raises nothing,
-// so a throw in its body is rejected at the throw, exactly as in a plain function, and a
-// declared clause reaches the generator's own type.
-//
-// A generator carries its body's raises on its own signature, which over-approximates:
-// advancing the generator is what raises, so a caller that only obtains it is asked to
-// handle an exception it cannot yet observe. An `async fn` moves its raises into the
-// promise's rejection slot, and a generator has no such slot to move them into. Keeping
-// them on the signature errs in the safe direction — dropping them instead would let the
-// raise escape a clause-less caller that iterates.
-func TestInferGenThrowsStillChecked(t *testing.T) {
-	runGenErrCases(t, []genErrCase{
+// A generator does not raise at the call: obtaining one runs no body code, so what the
+// body raises lands in the generator's Throws slot and the function's own throws stays
+// `never`. Advancing it is what raises, so iterating or delegating reads the slot back
+// into the enclosing sink. This mirrors how an `async fn` moves its raises onto the
+// promise it returns.
+func TestInferGenRaises(t *testing.T) {
+	runGenCases(t, []genCase{
 		{
-			name:     "ThrowInAClauselessGenFn",
-			src:      `gen fn f() { yield 1 throw "boom" }`,
-			wantErrs: []string{`1:28-1:34: cannot constrain "boom" <: never`},
+			// With no annotation the raise is inferred into the slot, the way an
+			// annotation-less `async fn` infers its rejection.
+			name: "RaiseInferredIntoTheSlot",
+			src:  `gen fn f() { yield 1 throw "boom" }`,
+			want: `fn () -> Generator<1, never, never, "boom">`,
 		},
 		{
-			// Iterating a throwing generator is a `.next()` driver, so the raise must
-			// reach the enclosing clause. The over-approximation on the signature is
-			// what carries it there today.
-			name: "IteratingAThrowingGeneratorNeedsAClause",
+			// A written fourth argument seeds the sink, so each `throw` is checked
+			// against it and the annotation is presented as the external type.
+			name: "RaiseDeclaredInTheAnnotation",
+			src:  `gen fn f() -> Generator<1, never, never, "boom"> { yield 1 throw "boom" }`,
+			want: `fn () -> Generator<1, never, never, "boom">`,
+		},
+		{
+			// A generator that cannot raise leaves the slot at `never` and renders three
+			// arguments, the same suppression `Promise<T>` gets.
+			name: "NonRaisingGeneratorRendersThreeArgs",
+			src:  `gen fn f() { yield 1 }`,
+			want: `fn () -> Generator<1, void, never>`,
+		},
+		{
+			// Obtaining a generator runs none of its body, so a clause-less caller needs
+			// no clause of its own.
+			name: "ObtainingAGeneratorRaisesNothing",
 			src: `
-				gen fn g() throws "boom" { yield 1 throw "boom" }
+				gen fn g() { yield 1 throw "boom" }
+				fn f() { val it = g() }
+			`,
+			want: `fn () -> void`,
+		},
+		{
+			// Iterating advances the generator, so the raise reaches the caller's clause.
+			name: "IteratingCarriesTheRaiseToTheCaller",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				fn f() throws _ { for x in g() { } }
+			`,
+			want: `fn () -> void throws "boom"`,
+		},
+		{
+			// Delegating advances the delegate, so it carries the raise the same way.
+			name: "DelegatingCarriesTheRaiseToTheDelegator",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				gen fn f() { yield from g() }
+			`,
+			want: `fn () -> Generator<1, void, never, "boom">`,
+		},
+	})
+	runGenErrCases(t, []genErrCase{
+		{
+			// The raise type belongs in the return annotation, so a `throws` clause on a
+			// generator is rejected the way one on an `async fn` is.
+			name:     "ThrowsClauseRejected",
+			src:      `gen fn f() throws _ { yield 1 throw "boom" }`,
+			wantErrs: []string{"1:19-1:20: generator function cannot have a throws clause; declare the raise type in the return type as Generator<..., E>"},
+		},
+		{
+			// A declared raise slot is the sink each `throw` is checked against, so a
+			// mismatched raise is blamed at its own site.
+			name:     "ThrowAgainstDeclaredRaiseSlot",
+			src:      `gen fn f() -> Generator<1, never, never, "boom"> { yield 1 throw "other" }`,
+			wantErrs: []string{`1:66-1:73: cannot constrain "other" <: "boom"`},
+		},
+		{
+			// A clause-less caller that iterates a raising generator is asked to handle it.
+			name: "IteratingWithoutAClauseRejected",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
 				fn f() { for x in g() { } }
 			`,
 			wantErrs: []string{`3:23-3:26: cannot constrain "boom" <: never`},
-		},
-	})
-	runGenCases(t, []genCase{
-		{
-			// The body always leaves along the exceptional edge, so its normal return —
-			// the Generator's Ret slot — is `never`.
-			name: "GenFnWithThrowsClause",
-			src:  `gen fn f() throws _ { yield 1 throw "boom" }`,
-			want: `fn () -> Generator<1, never, never> throws "boom"`,
 		},
 	})
 }

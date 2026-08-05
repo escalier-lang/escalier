@@ -1923,6 +1923,34 @@ func (e *UnusedThrowsClauseError) Message() string {
 		"` is unreachable; drop the clause"
 }
 
+// GenThrowsClauseError fires when a `gen fn` writes a `throws` clause. A generator does
+// not raise at the call: obtaining one runs no body code, so what the body raises
+// surfaces at `next(v)` and belongs on the generator the function returns. The return
+// annotation's fourth argument is the surface that declares it.
+//
+// It is the generator twin of AsyncThrowsClauseError and a WALK rejection like it: born
+// in inferFunc with the clause and function nodes in hand, so it self-blames from the
+// clause's span and relates the function via Related(). The raise type is still read from
+// the annotation or inferred from the body, so one diagnostic covers the fault.
+type GenThrowsClauseError struct {
+	Throws ast.TypeAnn // the clause's annotation (blame span)
+	Fn     ast.Node    // the enclosing generator function, surfaced via Related()
+}
+
+func (*GenThrowsClauseError) isSolverError() {}
+func (e *GenThrowsClauseError) Span() ast.Span {
+	return e.Throws.Span()
+}
+func (e *GenThrowsClauseError) Related() []ast.Span {
+	if e.Fn == nil {
+		return nil
+	}
+	return []ast.Span{e.Fn.Span()}
+}
+func (e *GenThrowsClauseError) Message() string {
+	return "generator function cannot have a throws clause; declare the raise type in the return type as Generator<..., E>"
+}
+
 // GeneratorWithoutYieldError fires when a `gen fn` body contains no `yield` and no
 // `yield from`. The program is well-typed — the function returns a generator whose Yield
 // slot is `never` — but that generator finishes on the first `next()` without ever
@@ -2590,8 +2618,13 @@ func describe(t soltype.Type) string {
 		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.GeneratorType:
 		// Structural like the Promise arm, so a rejected constraint names the slot
-		// types: `Generator<number, void, never>`.
-		return t.Name() + "<" + describe(t.Yield) + ", " + describe(t.Ret) + ", " + describe(t.Next) + ">"
+		// types: `Generator<number, void, never>`. The raise type joins them only when
+		// the generator can raise, matching the printer.
+		slots := describe(t.Yield) + ", " + describe(t.Ret) + ", " + describe(t.Next)
+		if t.Raises() {
+			slots += ", " + describe(t.Throws)
+		}
+		return t.Name() + "<" + slots + ">"
 	case *soltype.KeyofType:
 		// A `keyof` residual renders structurally, recursing like the Promise arm, so a
 		// rejected constraint names it `keyof <operand>` rather than the default `?`. The

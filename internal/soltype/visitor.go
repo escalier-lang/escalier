@@ -201,9 +201,15 @@ func (t *GeneratorType) Accept(v TypeVisitor, pol Polarity) Type {
 	yield := cur.Yield.Accept(v, pol)      // covariant, what the generator produces
 	ret := cur.Ret.Accept(v, pol)          // covariant, like a function's return
 	next := cur.Next.Accept(v, pol.Flip()) // contravariant, the value `next(v)` sends in
+	// The raise is an exit, so it walks at the same polarity as the return. A nil Throws
+	// is the `never` shorthand and has nothing to walk.
+	throws := cur.Throws
+	if throws != nil {
+		throws = throws.Accept(v, pol)
+	}
 	out := cur
-	if yield != cur.Yield || ret != cur.Ret || next != cur.Next {
-		out = &GeneratorType{Yield: yield, Ret: ret, Next: next, Async: cur.Async}
+	if yield != cur.Yield || ret != cur.Ret || next != cur.Next || throws != cur.Throws {
+		out = &GeneratorType{Yield: yield, Ret: ret, Next: next, Throws: throws, Async: cur.Async}
 	}
 	return v.ExitType(out, pol)
 }

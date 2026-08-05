@@ -513,6 +513,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Yield)
 			walk(t.Ret)
 			walk(t.Next)
+			if t.Throws != nil {
+				walk(t.Throws)
+			}
 		case *ArrayType:
 			walk(t.Elem)
 		case *RefType:
@@ -832,7 +835,14 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *GeneratorType:
-		return t.Name() + "<" + p.printType(t.Yield) + ", " + p.printType(t.Ret) + ", " + p.printType(t.Next) + ">"
+		// A generator that can raise renders its raise type as a fourth argument,
+		// `Generator<Y, R, N, E>`, the same shape `Promise<T, E>` takes. One that cannot
+		// resolves its Throws to `never` and renders three arguments.
+		slots := p.printType(t.Yield) + ", " + p.printType(t.Ret) + ", " + p.printType(t.Next)
+		if t.Raises() {
+			slots += ", " + p.printType(t.Throws)
+		}
+		return t.Name() + "<" + slots + ">"
 	case *ArrayType:
 		return "Array<" + p.printType(t.Elem) + ">"
 	case *RefType:

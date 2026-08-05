@@ -336,9 +336,22 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// A generator's yield sink and `next` resolve before the body for the reason the
 	// throws clause does, so each `yield` is checked at its own site. The return
 	// annotation on a `gen fn` names the external Generator, and its slots seed the sinks.
+	//
+	// A generator cannot raise at the call either: its body's raises surface at `next(v)`,
+	// so the annotation's E is the only surface that declares them and a `throws` clause is
+	// rejected, exactly as on an `async fn`. A written E seeds the sink; otherwise the sink
+	// is left to be inferred and lands in the wrapped generator's Throws.
 	var gen *genSinks
 	if sig.Gen {
 		gen = c.resolveGenSinks(declScope, node, sig, lvl)
+		if sig.Throws != nil && !sig.Async {
+			c.report(&GenThrowsClauseError{Throws: sig.Throws, Fn: node})
+		}
+		if gen.ann != nil && gen.ann.Raises() {
+			declaredThrows = gen.ann.Throws
+		} else {
+			declaredThrows = nil
+		}
 	}
 
 	var ret soltype.Type = &soltype.Void{}
@@ -444,14 +457,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// A generator takes its own arm ahead of the async one: an `async gen fn` faces
 	// callers as an AsyncGenerator, not a Promise, so the async wrap never applies.
 	//
-	// It keeps its body's raises on its own Throws, which over-approximates: advancing
-	// the generator is what raises, so a caller that only obtains one is asked to handle
-	// an exception it cannot yet observe. An `async fn` moves its raises into the
-	// promise's rejection slot just below, and a generator has no such slot. Keeping the
-	// raise here errs safe, since dropping it would let the raise escape a clause-less
-	// caller that iterates. Giving GeneratorType a rejection slot is the real fix.
+	// It also moves the body's raises, the way the async arm moves them into the promise.
+	// Obtaining a generator runs no body code, so what the body raises belongs on the
+	// generator it returns rather than on the signature, and the function's own Throws
+	// stays `never`. Iterating or delegating is what advances it, and those sites read the
+	// slot back into their enclosing sink.
 	if sig.Gen {
-		ret = c.genReturn(node, gen, retExprs, ret, hasBody)
+		ret = c.genReturn(node, gen, retExprs, ret, throws, hasBody)
+		throws = nil
 	} else if sig.Async {
 		// The async arm also moves the body's throws. An `async fn` rejects its promise
 		// rather than raising, so the body's throws become the promise's Err and the
@@ -997,9 +1010,10 @@ func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, 
 // genReturn computes a `gen fn`'s external return type, always a generator, since
 // calling one returns a generator object rather than the body's value. A matching
 // annotation IS that type, with the body's return constrained against its `Ret` slot.
-// Otherwise the inferred pieces are wrapped. A bodyless `declare gen fn` wraps
-// `unknown` rather than the synthetic Void, which would signal that it returns nothing.
-func (c *checker) genReturn(node ast.Node, gs *genSinks, retExprs []ast.Expr, bodyType soltype.Type, hasBody bool) soltype.Type {
+// Otherwise the inferred pieces are wrapped, with what the body raises going in the
+// generator's Throws. A bodyless `declare gen fn` wraps `unknown` rather than the
+// synthetic Void, which would signal that it returns nothing.
+func (c *checker) genReturn(node ast.Node, gs *genSinks, retExprs []ast.Expr, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
 	if gs.ann != nil {
 		if hasBody {
 			c.constrainReturnAgainstAnnotation(node, retExprs, bodyType, gs.ann.Ret) // body <: declared Ret
@@ -1009,13 +1023,16 @@ func (c *checker) genReturn(node ast.Node, gs *genSinks, retExprs []ast.Expr, bo
 	if !hasBody {
 		bodyType = &soltype.UnknownType{}
 	}
-	return c.wrapGenerator(node, gs, bodyType)
+	return c.wrapGenerator(node, gs, bodyType, throws)
 }
 
-// wrapGenerator mints the external `Generator<Y, R, N>` face of a generator function
-// and records its provenance (GeneratorWrap) against the function node.
-func (c *checker) wrapGenerator(node ast.Node, gs *genSinks, bodyType soltype.Type) soltype.Type {
-	wrapped := &soltype.GeneratorType{Yield: gs.yields, Ret: bodyType, Next: gs.next, Async: gs.async}
+// wrapGenerator mints the external generator face of a generator function and records
+// its provenance (GeneratorWrap) against the function node. A nil throws leaves the
+// Throws slot nil, the shorthand for a generator that cannot raise.
+func (c *checker) wrapGenerator(node ast.Node, gs *genSinks, bodyType, throws soltype.Type) soltype.Type {
+	wrapped := &soltype.GeneratorType{
+		Yield: gs.yields, Ret: bodyType, Next: gs.next, Throws: throws, Async: gs.async,
+	}
 	c.recordProv(wrapped, node, GeneratorWrap)
 	return wrapped
 }
@@ -2766,6 +2783,9 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 			return t
 		}
 		arg := c.inferExpr(scope, lvl, e.Value)
+		// Delegating advances the delegate, so what it raises reaches this body's sink
+		// exactly as iterating it would.
+		c.constrainIterationRaise(e.Value, arg, lvl)
 		elem, res, ok := c.delegateElemType(arg)
 		if !ok {
 			// A delegate with no structure is the recursive case: `gen fn f() { yield from
