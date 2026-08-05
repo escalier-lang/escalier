@@ -979,12 +979,13 @@ type ForAwaitOutsideAsyncError struct {
 
 // NotIterableError fires when the operand of `for (x in xs)` or `yield from xs`
 // is not iterable, or the operand of `for await (x in xs)` is not async-iterable.
-// The iteration protocol resolves structurally over the types the solver can
-// represent: a tuple yields the union of its elements, a union of tuples yields
-// the union of their element types, and a generator yields its Yield slot — a
-// sync one under `for` and `yield from`, an AsyncGenerator under `for await`.
-// Array<T> and the `[Symbol.iterator]` protocol land in M7, so every other
-// operand is reported here. Await selects the message.
+// The rules resolve structurally over the types the solver can represent. A tuple
+// is sync-iterable and yields the union of its elements. A union yields the union
+// of what its branches yield, and it fails when any branch is not iterable. `for`
+// and `yield from` read a sync generator's Yield slot and `for await` reads an
+// AsyncGenerator's. `yield from` also accepts an AsyncGenerator delegate inside an
+// `async gen fn` body. Array<T> and the `[Symbol.iterator]` protocol land in M7, so
+// every other operand is reported here. Await selects the message.
 type NotIterableError struct {
 	Iterable ast.Expr
 	Type     soltype.Type

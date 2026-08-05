@@ -2822,16 +2822,39 @@ func (c *checker) delegateIsUnsolved(t soltype.Type) bool {
 // delegateElemType resolves what a `yield from` delegate hands the delegating
 // generator: the element type its iteration yields, and the value the whole
 // expression evaluates to once the delegate is exhausted. A generator delegate
-// forwards its Yield slot and finishes with its Ret slot; an async generator is only
-// iterable from an async generator body. Any other operand resolves structurally
-// through syncElemType — a tuple's iterator carries no return value, so the
-// expression finishes with `undefined`.
+// forwards its Yield slot and finishes with its Ret slot. An async generator is a
+// legal delegate only from an async generator body. A union delegate resolves each
+// branch the same way and unions both results, so
+// `Generator<number, string, never> | Generator<boolean, number, never>` yields
+// `number | boolean` and finishes with `string | number`. Any other operand resolves
+// structurally through syncElemType. A tuple's iterator carries no return value, so
+// the expression finishes with `undefined`.
 func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, bool) {
 	carrier := soltype.CarrierOf(t)
 	// An inference-variable delegate is coalesced to its structural lower-bound shape,
 	// the same snapshot syncElemType takes before inspecting a variable operand.
 	if _, isVar := carrier.(*soltype.TypeVarType); isVar {
 		carrier = soltype.CarrierOf(coalesce(carrier, soltype.Positive))
+	}
+	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
+		// syncElemType walks a union too, but it reports only element types. Recursing
+		// through delegateElemType keeps each branch's Ret slot, which is what the
+		// delegation evaluates to, and it lets an async generator branch through under
+		// the same async-body rule a lone async generator delegate gets. A union is a
+		// legal delegate only when every branch is, matching syncElemType. Inexactness
+		// carries to both results because an inexact union has unlisted branches whose
+		// yields and return value are unknown.
+		elems := make([]soltype.Type, 0, len(u.Types))
+		rets := make([]soltype.Type, 0, len(u.Types))
+		for _, branch := range u.Types {
+			elem, ret, ok := c.delegateElemType(branch)
+			if !ok {
+				return nil, nil, false
+			}
+			elems = append(elems, elem)
+			rets = append(rets, ret)
+		}
+		return newUnion(c.ctx, elems, u.Inexact), newUnion(c.ctx, rets, u.Inexact), true
 	}
 	if g, isGen := carrier.(*soltype.GeneratorType); isGen {
 		if g.Async && (c.fn == nil || !c.fn.async) {

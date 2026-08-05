@@ -143,6 +143,41 @@ func TestInferYieldFrom(t *testing.T) {
 			want: `fn () -> Generator<1 | "a", "r", never>`,
 		},
 		{
+			// A union delegate is resolved branch by branch, so the delegation keeps
+			// both halves of each branch. The yields union to `number | boolean` and the
+			// return types union to `string | number`, which is what `return yield from g`
+			// puts in the delegating generator's Ret slot.
+			name: "DelegateToAUnionOfGenerators",
+			src: `
+				gen fn f(g: Generator<number, string, never> | Generator<boolean, number, never>) {
+					return yield from g
+				}
+			`,
+			want: `fn (g: Generator<number, string, never> | Generator<boolean, number, never>) -> Generator<number | boolean, number | string, never>`,
+		},
+		{
+			// A tuple branch carries no return value, so it contributes `undefined` to
+			// the union the delegation evaluates to.
+			name: "DelegateToAUnionOfAGeneratorAndATuple",
+			src: `
+				gen fn f(g: Generator<number, string, never> | [boolean]) {
+					return yield from g
+				}
+			`,
+			want: `fn (g: [boolean] | Generator<number, string, never>) -> Generator<number | boolean, string | undefined, never>`,
+		},
+		{
+			// An async generator is a legal delegate from an async generator body, and a
+			// union of them is too, one branch at a time.
+			name: "AsyncGenDelegatesToAUnionOfAsyncGenerators",
+			src: `
+				async gen fn f(g: AsyncGenerator<number, string, never> | AsyncGenerator<boolean, number, never>) {
+					return yield from g
+				}
+			`,
+			want: `fn (g: AsyncGenerator<number, string, never> | AsyncGenerator<boolean, number, never>) -> AsyncGenerator<number | boolean, number | string, never>`,
+		},
+		{
 			// Tree-walk delegation is the main use of `yield from`, so a generator
 			// delegating to itself has to work. Its own return type is still unsolved at
 			// the delegation, so the rule states a Generator requirement rather than
@@ -171,6 +206,18 @@ func TestInferYieldFrom(t *testing.T) {
 			name:     "ABrokenDelegateReportsOnlyItsOwnError",
 			src:      `gen fn f() { yield from missing() }`,
 			wantErrs: []string{"1:25-1:32: Unknown identifier: missing"},
+		},
+		{
+			// A union delegate is legal only when every branch is. A sync generator body
+			// cannot drive an async generator, so the async branch rejects the whole
+			// union and the error names the union, not the branch.
+			name: "SyncGenDelegatingToAUnionWithAnAsyncBranchRejected",
+			src: `
+				gen fn f(g: Generator<number, string, never> | AsyncGenerator<boolean, number, never>) {
+					return yield from g
+				}
+			`,
+			wantErrs: []string{"3:24-3:25: Generator<number, string, never> | AsyncGenerator<boolean, number, never> is not iterable"},
 		},
 	})
 }
