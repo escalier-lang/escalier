@@ -1382,9 +1382,9 @@ func LevelOf(t Type) int {
 		// freshen it, the same reason the FuncType arm folds in its Throws.
 		return max(LevelOf(t.Inner), throwsLevel(t.Err))
 	case *GeneratorType:
-		// A generator's level is the max over its three slots, so an out-of-level yield,
-		// return, or next type lifts the level and the freshener/extruder prune descends
-		// into all three, the three-child analogue of the PromiseType arm.
+		// A generator's level is the max over its three slots, so an out-of-level `Yield`,
+		// `Ret`, or `Next` lifts the level and the freshener/extruder prune descends into
+		// all three, the three-child analogue of the PromiseType arm.
 		return max(max(LevelOf(t.Yield), LevelOf(t.Ret)), LevelOf(t.Next))
 	case *ArrayType:
 		// An array's level is its element's, the same single-child rule PromiseType follows.

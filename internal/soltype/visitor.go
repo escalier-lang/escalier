@@ -200,7 +200,7 @@ func (t *GeneratorType) Accept(v TypeVisitor, pol Polarity) Type {
 	cur := descendReplacement(t, e)
 	yield := cur.Yield.Accept(v, pol)      // covariant, what the generator produces
 	ret := cur.Ret.Accept(v, pol)          // covariant, like a function's return
-	next := cur.Next.Accept(v, pol.Flip()) // contravariant, the value next(v) sends in
+	next := cur.Next.Accept(v, pol.Flip()) // contravariant, the value `next(v)` sends in
 	out := cur
 	if yield != cur.Yield || ret != cur.Ret || next != cur.Next {
 		out = &GeneratorType{Yield: yield, Ret: ret, Next: next, Async: cur.Async}

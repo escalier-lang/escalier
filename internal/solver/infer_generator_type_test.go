@@ -42,7 +42,7 @@ func TestResolveGeneratorAnnotation(t *testing.T) {
 }
 
 // Yield and Ret are covariant, being what the generator hands out. Next is
-// contravariant, being the value a caller sends back in through next(v), so a generator
+// contravariant, being the value a caller sends back in through `next(v)`, so a generator
 // accepting a wider input satisfies a requirement for a narrower one.
 func TestGeneratorVariance(t *testing.T) {
 	accepts := []struct {

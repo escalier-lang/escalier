@@ -1129,7 +1129,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	case *soltype.GeneratorType:
 		// Yield and Ret are covariant, what the generator hands out; Next is
-		// contravariant, the value a caller sends back in through next(v), so the
+		// contravariant, the value a caller sends back in through `next(v)`, so the
 		// constraint reverses like a function parameter's. A sync Generator and an
 		// AsyncGenerator are unrelated, so an async mismatch falls through to the
 		// generic CannotConstrainError below, as an unrelated concrete pair does.
