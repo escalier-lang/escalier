@@ -251,6 +251,10 @@ func TestMuKnotForDeclinesUnproductiveAlias(t *testing.T) {
 // `node` returns a knot because its recursive call makes its own return variable's lower bound
 // mention it, which is the shape coalesce renders as a μ form. The one unrolled level in front of the
 // knot is the monomorphic-recursion artifact TestInferRecursiveRendersMuKnot describes.
+//
+// The recursion is unguarded, so calling `node` never returns. That is forced rather than careless:
+// `H` has no base case, so no finite value inhabits `H<{c: number}>` and only an infinite value can
+// be checked against it. TestInferGuardedRecursionRendersMuKnot carries the terminating shapes.
 func TestConstrainRegularAliasClosesOnItsKnot(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		type H<T> = {a: keyof T, b: H<{c: T}>}
