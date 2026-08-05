@@ -2768,13 +2768,11 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 		arg := c.inferExpr(scope, lvl, e.Value)
 		elem, res, ok := c.delegateElemType(arg)
 		if !ok {
-			// A delegate with no structure to read is the recursive case: walking
-			// `gen fn f() { yield from f() }` reaches the delegation while f's own return
-			// is still an unsolved variable, so no structural rule can apply. Synthesize
-			// the requirement instead of reading one, the way inferAwait constrains an
-			// awaited operand against `Promise<U>` rather than looking inside it. Yield is
-			// covariant, so the delegate's yields land in this body's sink, and Ret is the
-			// value the delegation produces once the delegate is exhausted.
+			// A delegate with no structure is the recursive case: `gen fn f() { yield from
+			// f() }` reaches the delegation while f's own return is unsolved. State the
+			// requirement instead of reading one, the way inferAwait constrains against
+			// `Promise<U>`. Yield is covariant, so the delegate's yields land in this
+			// body's sink and Ret is what the delegation produces.
 			if c.delegateIsUnsolved(arg) {
 				res := c.freshAt(lvl)
 				req := &soltype.GeneratorType{Yield: c.fn.yields, Ret: res, Next: c.fn.yieldNext, Async: c.fn.async}
@@ -2810,25 +2808,20 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 }
 
 // delegateIsUnsolved reports whether a `yield from` delegate is an inference variable
-// the solve has not given a shape to. Such a delegate carries no structure for the
-// iteration rules to read, so the delegation states its requirement as a constraint
-// instead. A delegate that already failed to infer is the ErrorType placeholder rather
-// than a variable, so it is excluded and keeps absorbing.
+// the solve has not shaped, so the delegation must state its requirement rather than
+// read one. A failed delegate is the ErrorType placeholder, not a variable, so it is
+// excluded and keeps absorbing.
 func (c *checker) delegateIsUnsolved(t soltype.Type) bool {
 	_, isVar := soltype.CarrierOf(t).(*soltype.TypeVarType)
 	return isVar
 }
 
-// delegateElemType resolves what a `yield from` delegate hands the delegating
-// generator: the element type its iteration yields, and the value the whole
-// expression evaluates to once the delegate is exhausted. A generator delegate
-// forwards its Yield slot and finishes with its Ret slot. An async generator is a
-// legal delegate only from an async generator body. A union delegate resolves each
-// branch the same way and unions both results, so
-// `Generator<number, string, never> | Generator<boolean, number, never>` yields
-// `number | boolean` and finishes with `string | number`. Any other operand resolves
-// structurally through syncElemType. A tuple's iterator carries no return value, so
-// the expression finishes with `undefined`.
+// delegateElemType resolves what a `yield from` delegate hands back: the element type
+// its iteration yields, and the value the delegation evaluates to once the delegate is
+// exhausted. A generator forwards its Yield and Ret slots, and an async one is a legal
+// delegate only from an async generator body. A union resolves each branch the same way
+// and unions both results. Any other operand goes through syncElemType, where a tuple
+// carries no return value and so finishes with `undefined`.
 func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, bool) {
 	carrier := soltype.CarrierOf(t)
 	// An inference-variable delegate is coalesced to its structural lower-bound shape,
@@ -2837,13 +2830,11 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 		carrier = soltype.CarrierOf(coalesce(carrier, soltype.Positive))
 	}
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
-		// syncElemType walks a union too, but it reports only element types. Recursing
-		// through delegateElemType keeps each branch's Ret slot, which is what the
-		// delegation evaluates to, and it lets an async generator branch through under
-		// the same async-body rule a lone async generator delegate gets. A union is a
-		// legal delegate only when every branch is, matching syncElemType. Inexactness
-		// carries to both results because an inexact union has unlisted branches whose
-		// yields and return value are unknown.
+		// syncElemType walks a union too, but reports only element types. Recursing here
+		// keeps each branch's Ret slot and lets an async branch through under the same
+		// async-body rule a lone async delegate gets. A union is a legal delegate only
+		// when every branch is. Inexactness carries to both results, since the unlisted
+		// branches yield and return something unknown.
 		elems := make([]soltype.Type, 0, len(u.Types))
 		rets := make([]soltype.Type, 0, len(u.Types))
 		for _, branch := range u.Types {

@@ -86,11 +86,10 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 // iterableElemType resolves the element type T yielded by iterating a value of
 // type t, returning ok=false when t is not iterable in the current sense.
 //
-// For a `for await`, T must come from an AsyncIterable. The one async iterable the
-// solver can represent is an AsyncGenerator, whose Yield slot is its element type;
-// the real AsyncIterable stdlib type and the symbol-keyed protocol land with library
-// ingestion, so every other operand returns false, which is how a sync iterable is
-// rejected by the type rule.
+// For a `for await`, T must come from an AsyncIterable. The only one the solver can
+// represent is an AsyncGenerator, whose Yield slot is its element type. The real stdlib
+// type and the symbol-keyed protocol land with library ingestion, so every other
+// operand returns false.
 //
 // For a sync `for`, the resolution is structural (see syncElemType): a tuple
 // yields the union of its element types, a union yields the union of its
@@ -104,13 +103,10 @@ func (c *checker) iterableElemType(await bool, t soltype.Type) (soltype.Type, bo
 }
 
 // asyncElemType resolves the element type of an asynchronously-iterable value, the
-// `for await` counterpart of syncElemType and structurally the same walk. A borrow is
-// peeled and an inference variable is coalesced to its lower-bound shape first. An
-// async generator yields its Yield slot, and a union yields the union of its branches'
-// element types, failing if any branch is not async-iterable, so a union of async
-// generators binds the loop variable at the union of what they yield. Inexactness
-// carries through the union for the reason syncElemType gives. A sync generator is not
-// an AsyncIterable, and neither is a tuple, so both are rejected here.
+// `for await` counterpart of syncElemType and structurally the same walk. An async
+// generator yields its Yield slot, and a union yields the union of its branches',
+// failing when any branch is not async-iterable. A sync generator is not an
+// AsyncIterable, and neither is a tuple, so both are rejected here.
 func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 	t = soltype.CarrierOf(t)
 	if _, isVar := t.(*soltype.TypeVarType); isVar {
@@ -159,9 +155,8 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 	}
 	switch t := t.(type) {
 	case *soltype.GeneratorType:
-		// A sync generator iterates its yields, so `for x in range(0, 10)` binds x at
-		// the Yield slot. An async generator needs a `for await`, whose arm lives in
-		// iterableElemType.
+		// A sync generator iterates its yields. An async one needs a `for await`, whose
+		// arm lives in asyncElemType.
 		if t.Async {
 			return nil, false
 		}
