@@ -202,6 +202,15 @@ func (w *phantomWalker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Typ
 // `{b: number}`. Erasing T is right in both, since the argument reaches the denoted type
 // through U's slot rather than T's, and warning about either would be a false positive. The
 // sibling-mention rule is what excludes them.
+//
+// A leading underscore suppresses the unused tier alone. It is the author saying a parameter
+// they never wrote is deliberate, which settles a warning about their own declaration. The
+// unreachable tier warns about something a caller hits instead: two instantiations that look
+// different denote one type. Renaming the parameter does not reach that caller, who never
+// sees the name, and does not make the arguments differ. There is also nothing the rename
+// could be preserving, since a transparent alias erases the parameter outright — that is what
+// makes it unreachable. The nominal sorts, where a phantom parameter would be load-bearing,
+// keep their arguments observable and never reach this tier at all.
 func (c *checker) reportPhantomParams(shells []*aliasShell) {
 	for _, sh := range shells {
 		if !sh.declClean || sh.def.NotProductive {
@@ -219,12 +228,16 @@ func (c *checker) reportPhantomParams(shells []*aliasShell) {
 			sh.def.Body.Accept(v, soltype.Positive)
 		})
 		for i, p := range params {
-			if strings.HasPrefix(p.Name, "_") || inSibling[i] {
+			if inSibling[i] {
 				continue
 			}
 			decl := sh.decl.TypeParams[i]
 			if !inBody[i] {
-				c.report(&UnusedTypeParamError{Name: p.Name, Param: decl})
+				// A leading underscore marks a parameter the author left unused on purpose,
+				// so it suppresses this tier the way `_x` does for an unused binding.
+				if !strings.HasPrefix(p.Name, "_") {
+					c.report(&UnusedTypeParamError{Name: p.Name, Param: decl})
+				}
 				continue
 			}
 			if i < len(sh.def.PhantomParams) && sh.def.PhantomParams[i] {

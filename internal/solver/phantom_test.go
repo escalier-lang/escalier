@@ -137,6 +137,19 @@ func TestInferPhantomParamWarns(t *testing.T) {
 			},
 		},
 		{
+			// A leading underscore does not reach this tier. It says the author meant to leave a
+			// parameter unwritten, which answers the unused warning about their own declaration.
+			// This warning is about a caller who writes two instantiations that denote one type,
+			// and the name the parameter was given is neither visible to them nor able to make
+			// the arguments differ.
+			name: "UnreachableParameterIsStillWarnedWhenUnderscored",
+			src:  `type Deep<_T> = {a: Deep<{b: _T}>}`,
+			want: []string{
+				"1:11-1:13: no argument passed to type parameter _T can appear in the type, so " +
+					"Deep<number> and Deep<string> are the same type",
+			},
+		},
+		{
 			// The rendered instantiations differ in the unreachable slot alone. U is written at
 			// `here`, so it stays under its own name on both sides.
 			name: "OtherParametersStayNamedInTheMessage",
@@ -160,8 +173,8 @@ func TestInferPhantomParamWarns(t *testing.T) {
 // An alias parameter that carries weight draws no warning, whatever the phantom marks say. The
 // marks answer whether an argument reaches the denoted type through the parameter's own slot, so a
 // parameter that bounds a sibling or supplies a sibling's default is marked phantom while still
-// deciding what an instantiation denotes. A leading underscore quiets both tiers, which is how a
-// binder left to fill in later is written.
+// deciding what an instantiation denotes. A leading underscore quiets the unused tier, which is how
+// a binder left to fill in later is written; it does not reach the unreachable tier.
 func TestInferPhantomParamStaysSilent(t *testing.T) {
 	tests := []struct {
 		name string
@@ -188,11 +201,6 @@ func TestInferPhantomParamStaysSilent(t *testing.T) {
 			// The escape hatch on the unused tier.
 			name: "UnusedParameterIsUnderscored",
 			src:  `type Ignore<_T> = number`,
-		},
-		{
-			// The escape hatch on the unreachable tier.
-			name: "UnreachableParameterIsUnderscored",
-			src:  `type Deep<_T> = {a: Deep<{b: _T}>}`,
 		},
 	}
 	for _, test := range tests {
