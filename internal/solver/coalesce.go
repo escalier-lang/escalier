@@ -1332,7 +1332,10 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		return ok && equalTypeWith(a.Elem, b.Elem, ctx)
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
-		return ok && equalTypeWith(a.Inner, b.Inner, ctx)
+		// ErrOrNever reads both sides through the nil-is-never collapse, so two promises
+		// differing only in whether the rejection slot was written compare equal here.
+		return ok && equalTypeWith(a.Inner, b.Inner, ctx) &&
+			equalTypeWith(a.ErrOrNever(), b.ErrOrNever(), ctx)
 	case *soltype.RefType:
 		b, ok := b.(*soltype.RefType)
 		// Mut must match — a mutable borrow never equals an immutable one — and the

@@ -386,11 +386,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// there is no body, since a synthetic Void would falsely signal "returns
 	// nothing").
 	//
-	// Throws is untouched by either arm. An `async fn` rejects its promise rather than
-	// raising, so what it throws belongs in a rejection slot `soltype.PromiseType` does not
-	// yet have; until it does, an async function keeps it on its own Throws. See PR10c.
+	// The async arm also moves the body's throws. An `async fn` rejects its promise
+	// rather than raising, so what the body throws becomes the promise's Err and the
+	// function's own Throws stays `never` — calling it returns a promise and raises
+	// nothing. The clause still governs the body's sink exactly as on a sync
+	// function; only the destination a caller observes moves.
 	if sig.Async {
-		ret = c.asyncReturn(declScope, node, sig.Return, ret, hasBody, lvl)
+		ret = c.asyncReturn(declScope, node, sig.Return, ret, throws, hasBody, lvl)
+		throws = nil
 	} else if sig.Return != nil {
 		if annT, ok := c.resolveTypeAnn(declScope, sig.Return, lvl); ok {
 			// Only constrain the body when there IS one; a bodyless (declare/ambient)
@@ -869,9 +872,16 @@ func sameObjectKeys(a, b *soltype.ObjectType) bool {
 // M3's "wrap an inferred return" model and its no-auto-flatten behavior (a body
 // that already returns a Promise still wraps: `async fn (p: Promise<T>) { return
 // await p }` is `Promise<Promise<T>>`; Awaited<T> is M9).
-func (c *checker) asyncReturn(scope *Scope, node ast.Node, ann ast.TypeAnn, bodyType soltype.Type, hasBody bool, lvl int) soltype.Type {
+//
+// throws is the body's exceptional exit read back from the sink — the declared
+// clause type, or the inferred variable a `throws _` minted — and it becomes the
+// promise's Err. An annotated Promise already carries its own rejection slot, so
+// throws is constrained `<: Err` the way the body's return is constrained against
+// the inner. A one-argument `Promise<T>` annotation reads Err as `never`, so a
+// clause beside it that declares any rejection is rejected against it.
+func (c *checker) asyncReturn(scope *Scope, node ast.Node, ann ast.TypeAnn, bodyType, throws soltype.Type, hasBody bool, lvl int) soltype.Type {
 	if ann == nil {
-		return c.wrapPromise(node, bodyType)
+		return c.wrapPromise(node, bodyType, throws)
 	}
 	annT, ok := c.resolveTypeAnn(scope, ann, lvl)
 	if !ok {
@@ -881,7 +891,7 @@ func (c *checker) asyncReturn(scope *Scope, node ast.Node, ann ast.TypeAnn, body
 		if !hasBody {
 			bodyType = &soltype.UnknownType{}
 		}
-		return c.wrapPromise(node, bodyType)
+		return c.wrapPromise(node, bodyType, throws)
 	}
 	promise, isPromise := annT.(*soltype.PromiseType)
 	if !isPromise {
@@ -892,20 +902,28 @@ func (c *checker) asyncReturn(scope *Scope, node ast.Node, ann ast.TypeAnn, body
 		if !hasBody {
 			bodyType = &soltype.UnknownType{}
 		}
-		return c.wrapPromise(node, bodyType)
+		return c.wrapPromise(node, bodyType, throws)
 	}
 	// Constrain the body's (unwrapped) return against the annotation's inner, and
 	// present the annotation as the external type — it already IS the Promise.
 	if hasBody {
 		c.constrain(node, bodyType, promise.Inner) // body <: declared inner
 	}
+	// The body's throws must fit the annotation's rejection slot whether or not there
+	// is a body: a bodyless declare's clause is a declaration to check the same way.
+	// A clause-less body carries `never`, which constrain short-circuits.
+	c.constrain(node, throws, promise.ErrOrNever())
 	return annT
 }
 
-// wrapPromise mints the external `Promise<inner>` face of an async function and
-// records its provenance (PromiseWrap) against the function node.
-func (c *checker) wrapPromise(node ast.Node, inner soltype.Type) soltype.Type {
-	wrapped := &soltype.PromiseType{Inner: inner}
+// wrapPromise mints the external `Promise<inner, errT>` face of an async function and
+// records its provenance (PromiseWrap) against the function node. A `never` errT is
+// stored as the nil shorthand so a promise that cannot reject stays the zero value.
+func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) soltype.Type {
+	if isNeverType(errT) {
+		errT = nil
+	}
+	wrapped := &soltype.PromiseType{Inner: inner, Err: errT}
 	c.recordProv(wrapped, node, PromiseWrap)
 	return wrapped
 }
@@ -2554,7 +2572,10 @@ func identPatName(pat ast.Pat) (string, bool) {
 // fresh U, and U is the await's value type — exactly the rule M3's milestone
 // pins ("`await e` requires `e <: Promise<U>` for some `U` and produces `U`",
 // 01-milestones.md §M3). No auto-flatten: U may itself be a Promise, so
-// `await Promise<Promise<T>>` yields `Promise<T>` (Awaited<T> is M9). `await`
+// `await Promise<Promise<T>>` yields `Promise<T>` (Awaited<T> is M9). An await is
+// also an exceptional exit: the requirement's rejection slot is the enclosing
+// body's throws sink, so what the promise rejects with reaches the clause the way
+// a throwing call's throws does (M9 PR10c). `await`
 // outside an `async` function is rejected by the WALK (this function), not the
 // type rule — the argument is still walked so its own errors surface, and the
 // await contributes a `never` placeholder so a downstream consumer doesn't see a
@@ -2578,19 +2599,50 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 	arg := c.inferExpr(scope, lvl, e.Arg)
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, AwaitResult)
+	// A resolved operand whose promise declares no rejection leaves the enclosing
+	// clause unused. Any other operand counts as raising, since its Err may still be
+	// an unsolved variable at this point — the same rule inferCall applies to a
+	// callee's throws.
+	if p, ok := resolvePromise(arg); !ok || !isNeverType(p.ErrOrNever()) {
+		c.markRaised()
+	}
 	// Synthesize the Promise<U> requirement at this call site. It isn't given its
 	// own provenance — the operand the user sees blame on is the awaited expression
 	// (`e.Arg`), already recorded by inferExpr; the synthesized Promise wrapper is
 	// internal scaffolding for the constraint, not a user-authored type.
+	//
+	// The requirement's Err slot is this body's throws sink, so constrain's covariant
+	// rejection rule records what the awaited promise rejects with into it — an await
+	// is an exceptional exit the way a throwing call is, and needs a clause or an
+	// enclosing `try` the same way. A non-rejecting promise carries `never` and
+	// records nothing.
 	//
 	// PR8: a failed argument is the ErrorType recovery placeholder, which absorbs in
 	// constrain, so `<unknown> <: Promise<U>` no longer cascades a spurious second
 	// diagnostic — res then stays unbound and coalesces to `never`, the right
 	// recovery for awaiting something broken. The M2-era isRecoveryPlaceholder guard
 	// this site used is gone.
-	c.constrain(e, arg, &soltype.PromiseType{Inner: res})
+	c.constrain(e, arg, &soltype.PromiseType{Inner: res, Err: c.throwsSink(lvl)})
 	c.recordType(e, res)
 	return res
+}
+
+// resolvePromise recovers the concrete PromiseType behind an awaited operand: the
+// promise itself, or a binding var's promise lower bound, the same look-through
+// resolveFunc runs for a callee. It reports false for anything else, in particular a
+// var with no promise bound yet.
+func resolvePromise(t soltype.Type) (*soltype.PromiseType, bool) {
+	switch t := t.(type) {
+	case *soltype.PromiseType:
+		return t, true
+	case *soltype.TypeVarType:
+		for _, lb := range t.LowerBounds {
+			if p, ok := lb.(*soltype.PromiseType); ok {
+				return p, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // inferThrow types `throw e`. The thrown type is constrained into the enclosing body's

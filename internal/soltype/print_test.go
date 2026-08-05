@@ -175,9 +175,13 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"null atom", &NullType{}, "null"},
 		{"intersection pair", &IntersectionType{Types: []Type{numP(), strP()}}, "number & string"},
 
-		// Promises (M3).
+		// Promises (M3). A rejecting promise renders its Err as a second argument
+		// (M9 PR10c); a nil or `never` Err is the non-rejecting shorthand and renders
+		// the one-argument form, the same suppression the throws clause gets.
 		{"promise of prim", &PromiseType{Inner: numP()}, "Promise<number>"},
 		{"nested promise", &PromiseType{Inner: &PromiseType{Inner: strP()}}, "Promise<Promise<string>>"},
+		{"rejecting promise", &PromiseType{Inner: numP(), Err: strP()}, "Promise<number, string>"},
+		{"promise with never err renders one argument", &PromiseType{Inner: numP(), Err: &NeverType{}}, "Promise<number>"},
 
 		// Borrows (M4). Ownership and the borrow `&` split on Lt. An owned value has Lt
 		// nil and renders bare, as owned-mutable `mut {x}`. A borrow has Lt set and leads

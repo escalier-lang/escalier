@@ -422,7 +422,13 @@ func compareSameKind(a, b soltype.Type) int {
 		}
 		return compareObjectFields(a, b)
 	case *soltype.PromiseType:
-		return compareType(a.Inner, b.(*soltype.PromiseType).Inner)
+		b := b.(*soltype.PromiseType)
+		if c := compareType(a.Inner, b.Inner); c != 0 {
+			return c
+		}
+		// ErrOrNever reads both sides through the nil-is-never collapse, so two promises
+		// differing only in whether the rejection slot was written compare equal here.
+		return compareType(a.ErrOrNever(), b.ErrOrNever())
 	case *soltype.ArrayType:
 		return compareType(a.Elem, b.(*soltype.ArrayType).Elem)
 	case *soltype.FuncType:

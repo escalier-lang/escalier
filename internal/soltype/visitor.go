@@ -179,9 +179,15 @@ func (t *PromiseType) Accept(v TypeVisitor, pol Polarity) Type {
 	}
 	cur := descendReplacement(t, e)
 	inner := cur.Inner.Accept(v, pol) // covariant, no auto-flatten
+	// The rejection type is the asynchronous exceptional exit, so it walks at the same
+	// polarity as the payload. A nil Err is the `never` shorthand and has nothing to walk.
+	errT := cur.Err
+	if errT != nil {
+		errT = errT.Accept(v, pol)
+	}
 	out := cur
-	if inner != cur.Inner {
-		out = &PromiseType{Inner: inner}
+	if inner != cur.Inner || errT != cur.Err {
+		out = &PromiseType{Inner: inner, Err: errT}
 	}
 	return v.ExitType(out, pol)
 }

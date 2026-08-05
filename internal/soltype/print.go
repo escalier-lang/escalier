@@ -506,6 +506,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Body)
 		case *PromiseType:
 			walk(t.Inner)
+			if t.Err != nil {
+				walk(t.Err)
+			}
 		case *ArrayType:
 			walk(t.Elem)
 		case *RefType:
@@ -816,6 +819,13 @@ func (p *namedPrinter) printType(t Type) string {
 		// `μX0.{next: X0}` names one binding twice.
 		return t.DisplayName()
 	case *PromiseType:
+		// A promise that can reject renders its rejection type as a second argument,
+		// `Promise<T, E>`. A promise that cannot reject resolves its Err to `never` and
+		// renders the one-argument `Promise<T>`, the same suppression printThrowsClause
+		// applies to a signature that raises nothing.
+		if !isNever(t.ErrOrNever()) {
+			return "Promise<" + p.printType(t.Inner) + ", " + p.printType(t.Err) + ">"
+		}
 		return "Promise<" + p.printType(t.Inner) + ">"
 	case *ArrayType:
 		return "Array<" + p.printType(t.Elem) + ">"

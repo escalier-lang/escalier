@@ -2455,9 +2455,13 @@ func describe(t soltype.Type) string {
 	case *soltype.PromiseType:
 		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
 		// object above. That is deliberate and consistent with the Union/Intersection
-		// arms below, which also recurse: a Promise's single type argument is compact
+		// arms below, which also recurse: a Promise's type arguments are compact
 		// and informative (`Promise<number>`), whereas a function/tuple/record would
-		// be verbose spelled out, so those stay nominal.
+		// be verbose spelled out, so those stay nominal. A promise that can reject
+		// names its rejection type as a second argument, matching soltype.Print.
+		if !isNeverType(t.ErrOrNever()) {
+			return "Promise<" + describe(t.Inner) + ", " + describe(t.Err) + ">"
+		}
 		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.KeyofType:
 		// A `keyof` residual renders structurally, recursing like the Promise arm, so a
