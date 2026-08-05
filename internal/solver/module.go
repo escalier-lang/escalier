@@ -298,6 +298,7 @@ func (c *checker) inferComponent(
 	// they leave on each AliasDef.
 	c.checkProductive(aliasShells)
 	markPhantomParams(aliasShells)
+	c.reportPhantomParams(aliasShells)
 	// The deferred bound comparisons run last, after the marks are in place. Each one goes
 	// through constrain, which interns an alias operand's canonical identity, and internAlias
 	// drops the arguments of phantom parameters when it renders that key. Interning a reference

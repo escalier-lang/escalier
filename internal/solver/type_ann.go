@@ -117,7 +117,19 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		if t, ok := c.resolveExactnessIntrinsic(scope, ta, lvl); ok {
 			return t, true
 		}
-		return c.reportUnsupported(ta), false
+		// Nothing claimed the name. Either it names no declaration at all, or it names one of
+		// the two built-in stubs above with an argument count neither accepts. Those stubs take
+		// exactly one, and a user-defined Promise or Array would have resolved through the scope
+		// before reaching here, so the name here is the built-in.
+		name := ast.QualIdentToString(ta.Name)
+		if name == "Promise" || name == "Array" {
+			c.report(&TypeArgArityMismatchError{
+				Ref: ta, Kind: BuiltinDeclKind, Name: name,
+				Required: 1, Total: 1, Got: len(ta.TypeArgs),
+			})
+			return &soltype.NeverType{}, false
+		}
+		return c.report(&UnknownTypeError{Ref: ta, Name: name}), false
 	case *ast.ObjectTypeAnn:
 		return c.resolveObjectTypeAnn(scope, ta, lvl)
 	case *ast.TupleTypeAnn:
@@ -662,10 +674,10 @@ func (c *checker) resolveCondTypeAnn(scope *Scope, ta *ast.CondTypeAnn, lvl int)
 	}
 
 	t := &soltype.CondType{
-		Check:      check,
-		Extends:    extends,
-		Then:       then,
-		Else:       els,
+		Check:   check,
+		Extends: extends,
+		Then:    then,
+		Else:    els,
 		// A Check the resolver could not resolve recovered to a fresh var, which is the same kind
 		// nakedTypeParamCheck accepts, so the flag is decided only when the written Check actually
 		// resolved. Otherwise a bare unresolvable name would be read as a type parameter.

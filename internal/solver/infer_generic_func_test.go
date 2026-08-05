@@ -198,8 +198,8 @@ func TestInferGenericMethodStillGated(t *testing.T) {
 	// unsupported because the parameter was never declared in scope.
 	require.Equal(t, []string{
 		"Unsupported: TypeParam",
-		"Unsupported: TypeRefTypeAnn",
-		"Unsupported: TypeRefTypeAnn",
+		"cannot find type `T`",
+		"cannot find type `T`",
 	}, msgs)
 }
 

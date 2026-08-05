@@ -120,6 +120,11 @@ type checker struct {
 type classShell struct {
 	declScope  *Scope
 	typeParams []*soltype.TypeParam
+	// paramsClean records that the parameters resolved with no diagnostic. The module SCC
+	// pre-pass resolves them, so a bad bound or default is reported before inferClassDecl
+	// opens its own window and only this carries that news forward. A parameter whose
+	// binder was rejected has lost the occurrences it wrote, so it would read as unused.
+	paramsClean bool
 }
 
 // deferredArgBound is one `arg <: bound` comparison checkTypeArgBounds postponed until
@@ -509,6 +514,20 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 func (c *checker) report(e SolverError) soltype.Type {
 	c.errs = append(c.errs, e)
 	return &soltype.ErrorType{}
+}
+
+// errorWindow records how many diagnostics have been reported and returns a predicate that
+// holds while none have been added since. A caller warns only when it still holds.
+//
+// The warnings about a declaration's type parameters read it. Recovery drops the subtree it
+// could not resolve, so a parameter written only there leaves no occurrence in what is
+// stored. `class B<T> extends T {}` reports that T does not name a class and then keeps no
+// super, which would leave T reading as declared and never used. A declaration that already
+// carries a diagnostic is left alone rather than given a second one derived from the gap the
+// first one left.
+func (c *checker) errorWindow() func() bool {
+	before := len(c.errs)
+	return func() bool { return len(c.errs) == before }
 }
 
 // reportUnsupported records an UnsupportedNodeError for an AST node whose kind is

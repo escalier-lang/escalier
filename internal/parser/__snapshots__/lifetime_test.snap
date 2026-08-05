@@ -192,6 +192,7 @@
             TypeParams: []*ast.TypeParam{
                 &ast.TypeParam{
                     Name: "T",
+                    span: 1:17-1:18,
                 },
             },
             Params: []*ast.Param{
@@ -1614,6 +1615,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:23-1:24,
             },
         },
         TypeAnn: &ast.TupleTypeAnn{
@@ -1671,6 +1673,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:14-1:15,
             },
         },
         TypeAnn: &ast.RefTypeAnn{

@@ -10,10 +10,16 @@ import (
 // checkProductive accepts an alias whose every recursion emits a level of structure. Each case names
 // a shape whose laps build an infinite tree, so the alias denotes a type even when no finite
 // expansion of it exists.
+//
+// want holds the diagnostics the source draws, which for an accepted alias are only the
+// phantom-parameter warnings reportPhantomParams emits. A recursion that hands its parameter
+// straight to the next lap is productive and still leaves that parameter unreachable, so the two
+// checks are independent and a case may trip one without the other.
 func TestCheckProductiveAccepts(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
+		want []string
 	}{
 		{
 			// The canonical productive recursion. Each lap emits one `{head, tail}` object.
@@ -49,6 +55,10 @@ func TestCheckProductiveAccepts(t *testing.T) {
 			// whether the alias denotes a type. TypeScript accepts this shape too.
 			name: "GrowingArgumentUnderObject",
 			src:  `type Deep<T> = {a: Deep<{b: T}>}`,
+			want: []string{
+				"1:11-1:12: no argument passed to type parameter T can appear in the type, so " +
+					"Deep<number> and Deep<string> are the same type",
+			},
 		},
 		{
 			// The recursive reference sits under an object even though a union sits above it, so the
@@ -85,12 +95,18 @@ func TestCheckProductiveAccepts(t *testing.T) {
 				type A<T> = {b?: B<T>}
 				type B<T> = {a?: A<T>}
 			`,
+			want: []string{
+				"3:12-3:13: no argument passed to type parameter T can appear in the type, so " +
+					"B<number> and B<string> are the same type",
+				"2:12-2:13: no argument passed to type parameter T can appear in the type, so " +
+					"A<number> and A<string> are the same type",
+			},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Empty(t, messagesWithSpan(errs))
+			require.Equal(t, test.want, messagesWithSpan(errs))
 		})
 	}
 }
@@ -219,7 +235,13 @@ func TestCheckProductiveRejects(t *testing.T) {
 // one type, and subtyping is reflexive, so the canonical identity settles it with no unfolding at
 // all. Each case reaches that identity by a different route: one directly, one through the object
 // the alias emits.
+// `Deep`'s parameter is unreachable, which is what lets the canonical identity settle the
+// constraint, so the warning it draws is the only diagnostic either case expects.
 func TestInferNonRegularAliasChecks(t *testing.T) {
+	deepIsPhantom := []string{
+		"2:15-2:16: no argument passed to type parameter T can appear in the type, so " +
+			"Deep<number> and Deep<string> are the same type",
+	}
 	tests := []struct {
 		name string
 		src  string
@@ -244,7 +266,7 @@ func TestInferNonRegularAliasChecks(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Empty(t, messagesWithSpan(errs))
+			require.Equal(t, deepIsPhantom, messagesWithSpan(errs))
 		})
 	}
 }

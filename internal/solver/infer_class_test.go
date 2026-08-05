@@ -259,7 +259,7 @@ func TestInferClassGeneric(t *testing.T) {
 
 // TestInferClassCrossParamBounds covers B4: a type-parameter bound may reference any sibling
 // parameter — forward, mutual, or through a generic class. Each case resolves its
-// cross-parameter references without reporting `Unsupported: TypeRefTypeAnn`, because the
+// cross-parameter references without reporting `an unknown-type error`, because the
 // shared resolveTypeParams declares every parameter in scope before resolving any bound, so a
 // bound reading a later-declared sibling finds it already in scope. A default is restricted
 // where a bound is not; TestTypeParamDefaultForwardRef covers that.
@@ -996,7 +996,7 @@ func TestInferClassNonGenericSubGenericSuper(t *testing.T) {
 // TestInferClassGenericMemberParam covers a generic class whose constructor and method both
 // take a parameter typed by the class type parameter. Resolving `v: T` and `next: T`
 // routes through the general resolveTypeAnn path, which now consults the class type scope,
-// so neither reports `Unsupported: TypeRefTypeAnn` and the class infers generic in `T`.
+// so neither reports `an unknown-type error` and the class infers generic in `T`.
 func TestInferClassGenericMemberParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Box<T> {
@@ -1015,7 +1015,7 @@ func TestInferClassGenericMemberParam(t *testing.T) {
 // outside a class body — a top-level `val` type and a function parameter. resolveTypeAnn
 // consults the enclosing scope wherever it runs, so a bare `Point` or a generic instance
 // `Box<number>` resolves through the same path a class body uses, rather than reporting
-// `Unsupported: TypeRefTypeAnn`.
+// `an unknown-type error`.
 func TestInferClassNameInAnnotation(t *testing.T) {
 	t.Run("bare class name in a val annotation", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
@@ -1531,7 +1531,7 @@ func TestInferClassErrors(t *testing.T) {
 					constructor(mut self) {}
 				}
 			`,
-			want: "Unsupported: TypeRefTypeAnn",
+			want: "cannot find type `Bogus`",
 		},
 	}
 
@@ -2048,8 +2048,8 @@ func TestInferClassMethodTypeParamsGated(t *testing.T) {
 			`,
 			want: []string{
 				"Unsupported: TypeParam",
-				"Unsupported: TypeRefTypeAnn",
-				"Unsupported: TypeRefTypeAnn",
+				"cannot find type `T`",
+				"cannot find type `T`",
 			},
 		},
 		{
@@ -2062,8 +2062,8 @@ func TestInferClassMethodTypeParamsGated(t *testing.T) {
 			`,
 			want: []string{
 				"Unsupported: TypeParam",
-				"Unsupported: TypeRefTypeAnn",
-				"Unsupported: TypeRefTypeAnn",
+				"cannot find type `T`",
+				"cannot find type `T`",
 			},
 		},
 		{

@@ -26,7 +26,7 @@ func TestTypeArgArityAtReference(t *testing.T) {
 				class Box<T> { value: T }
 				declare fn f() -> Box<number, string>
 			`,
-			want: []string{"class `Box` expects 1 type arguments but got 2"},
+			want: []string{"class `Box` expects 1 type argument but got 2"},
 		},
 		{
 			name: "ClassTooFewArgs",
@@ -44,7 +44,7 @@ func TestTypeArgArityAtReference(t *testing.T) {
 				class Box<T> { value: T }
 				declare fn f() -> Box
 			`,
-			want: []string{"class `Box` expects 1 type arguments but got 0"},
+			want: []string{"class `Box` expects 1 type argument but got 0"},
 		},
 		{
 			name: "ClassTooManyArgsWithDefault",
@@ -70,7 +70,7 @@ func TestTypeArgArityAtReference(t *testing.T) {
 				enum Opt<T> { Some(value: T), None }
 				declare fn f() -> Opt<number, string>
 			`,
-			want: []string{"enum `Opt` expects 1 type arguments but got 2"},
+			want: []string{"enum `Opt` expects 1 type argument but got 2"},
 		},
 		{
 			name: "NonGenericEnumWithArgs",
@@ -86,7 +86,7 @@ func TestTypeArgArityAtReference(t *testing.T) {
 				type Box<T> = {value: T}
 				declare fn f() -> Box<number, string>
 			`,
-			want: []string{"type alias `Box` expects 1 type arguments but got 2"},
+			want: []string{"type alias `Box` expects 1 type argument but got 2"},
 		},
 		// A reference that names the declaration it sits inside is checked like any other, so
 		// a self-referential class body has to write its own arguments.
@@ -95,7 +95,7 @@ func TestTypeArgArityAtReference(t *testing.T) {
 			src: `
 				class Node<T> { value: T, next: Node }
 			`,
-			want: []string{"class `Node` expects 1 type arguments but got 0"},
+			want: []string{"class `Node` expects 1 type argument but got 0"},
 		},
 		{
 			name: "ClassSelfReferenceWithArgAccepted",
@@ -250,8 +250,8 @@ func TestSurplusTypeArgIsResolved(t *testing.T) {
 				declare fn f() -> Box<number, Nonexistent>
 			`,
 			want: []string{
-				"class `Box` expects 1 type arguments but got 2",
-				"Unsupported: TypeRefTypeAnn",
+				"class `Box` expects 1 type argument but got 2",
+				"cannot find type `Nonexistent`",
 			},
 		},
 		{
@@ -262,7 +262,7 @@ func TestSurplusTypeArgIsResolved(t *testing.T) {
 			`,
 			want: []string{
 				"class `Point` expects 0 type arguments but got 1",
-				"Unsupported: TypeRefTypeAnn",
+				"cannot find type `Nonexistent`",
 			},
 		},
 		{
@@ -272,8 +272,8 @@ func TestSurplusTypeArgIsResolved(t *testing.T) {
 				declare fn f() -> Box<number, Nonexistent>
 			`,
 			want: []string{
-				"type alias `Box` expects 1 type arguments but got 2",
-				"Unsupported: TypeRefTypeAnn",
+				"type alias `Box` expects 1 type argument but got 2",
+				"cannot find type `Nonexistent`",
 			},
 		},
 	}
@@ -387,7 +387,7 @@ func TestClassArityCheckedFromOtherDeclarations(t *testing.T) {
 				class A { b: B }
 				class B<T> { v: T }
 			`,
-			want: "class `B` expects 1 type arguments but got 0",
+			want: "class `B` expects 1 type argument but got 0",
 		},
 		{
 			name: "FromClassBodyTooMany",
@@ -395,7 +395,7 @@ func TestClassArityCheckedFromOtherDeclarations(t *testing.T) {
 				class A { b: B<number, string> }
 				class B<T> { v: T }
 			`,
-			want: "class `B` expects 1 type arguments but got 2",
+			want: "class `B` expects 1 type argument but got 2",
 		},
 		{
 			name: "FromAliasBody",
@@ -403,7 +403,7 @@ func TestClassArityCheckedFromOtherDeclarations(t *testing.T) {
 				class B<T> { v: T }
 				type A = {b: B}
 			`,
-			want: "class `B` expects 1 type arguments but got 0",
+			want: "class `B` expects 1 type argument but got 0",
 		},
 		{
 			name: "FromEnumVariantParam",
@@ -411,7 +411,7 @@ func TestClassArityCheckedFromOtherDeclarations(t *testing.T) {
 				class B<T> { v: T }
 				enum A { X(b: B) }
 			`,
-			want: "class `B` expects 1 type arguments but got 0",
+			want: "class `B` expects 1 type argument but got 0",
 		},
 	}
 	for _, tt := range tests {
@@ -435,7 +435,7 @@ func TestClassArityRecoveryKeepsDeclarationVarOut(t *testing.T) {
 	`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "class `B` expects 1 type arguments but got 0", errs[0].Message())
+	require.Equal(t, "class `B` expects 1 type argument but got 0", errs[0].Message())
 	require.Equal(t, "{new (b: B<unknown>) -> A}", values["A"])
 }
 
@@ -495,7 +495,7 @@ func TestClassArityAcrossRemainingRefForms(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, "class `Box` expects 1 type arguments but got 0", errs[0].Message())
+			require.Equal(t, "class `Box` expects 1 type argument but got 0", errs[0].Message())
 		})
 	}
 }
@@ -563,7 +563,7 @@ func TestClassArityAcrossMixedComponent(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, "class `A` expects 1 type arguments but got 0", errs[0].Message())
+			require.Equal(t, "class `A` expects 1 type argument but got 0", errs[0].Message())
 			require.Equal(t, "{new (x: number, a: A<unknown>) -> B}", values["B"])
 		})
 	}

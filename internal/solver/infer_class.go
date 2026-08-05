@@ -42,8 +42,15 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
+	// This window covers the body. A class in an SCC component resolved its parameters in the
+	// module pre-pass, before this point, so a diagnostic drawn by a bound or a default is
+	// carried on the shell instead and both are consulted before the unused warning is
+	// reported.
+	quiet := c.errorWindow()
+
 	// The class's type parameters and the scope its body resolves in, taken from the module
 	// SCC pre-pass when there was one and resolved here when there was not.
+	paramsClean := c.classParamsClean(decl)
 	declScope, typeParams := c.classDeclScope(scope, lvl, decl)
 
 	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
@@ -115,7 +122,60 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// sits under.
 	def.Variance, def.MutVariance = c.inferVariance(def, decl)
 
+	if quiet() && paramsClean {
+		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorType))
+	}
+
 	return c.classValue(ctorType, static), &ast.NodeProvenance{Node: decl}, true
+}
+
+// classDeclTypes returns every type a class declaration writes, so a walk over them covers each
+// position that could name one of the class's type parameters. That is the instance and static
+// members, the constructor's signature, and the `extends` and `implements` targets.
+//
+// A method's `self` receiver is dropped, since every method names the class in it and counting
+// that would make each parameter look used. stripSelfReceiver is the same helper variance
+// inference uses for the same reason. Every other position of a member's signature counts,
+// `throws` included, since walking the object that holds them descends into the whole of each.
+func classDeclTypes(def *ClassDef, ctor soltype.Type) []soltype.Type {
+	var out []soltype.Type
+	// The stripped members are handed back inside an object rather than one by one, so the
+	// caller walks a type and the visitor's own member traversal reaches each position.
+	for _, obj := range []*soltype.ObjectType{def.Body, def.Static} {
+		if obj == nil {
+			continue
+		}
+		stripped := make([]soltype.ObjTypeElem, len(obj.Elems))
+		for i, elem := range obj.Elems {
+			stripped[i] = stripSelfReceiver(elem)
+		}
+		out = append(out, &soltype.ObjectType{Elems: stripped})
+	}
+	// The constructor is the class's value binding rather than a Static member, so a
+	// parameter written only in `constructor(v: T) throws E` is reached here and nowhere
+	// else. Walking a copy rather than its fields one by one is what keeps every position
+	// FuncType.Accept covers — parameters, `throws`, and the constructor's own type-parameter
+	// bounds — counted the way a method's are.
+	//
+	// Two positions are cleared first. The receiver is dropped for the reason
+	// stripSelfReceiver drops a method's. The return is the class's own handle, minted with
+	// every type-parameter var as an argument, so walking it would mark them all; `never`
+	// stands in because it is a leaf that names nothing.
+	if fn, ok := ctor.(*soltype.FuncType); ok {
+		bare := *fn
+		bare.SelfParam = nil
+		bare.Ret = &soltype.NeverType{}
+		out = append(out, &bare)
+	}
+	// Appended one at a time, since Go does not spread a slice of a concrete type into a
+	// slice of the interface it satisfies.
+	for _, super := range def.Supers {
+		out = append(out, super)
+	}
+	for _, iface := range def.Implements {
+		out = append(out, iface)
+	}
+	return out
 }
 
 // bindScriptClass infers a class declared at a script's top level (bin/) and binds its
@@ -217,6 +277,16 @@ func (c *checker) classDeclScope(scope *Scope, lvl int, decl *ast.ClassDecl) (*S
 	return declScope, c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 }
 
+// classParamsClean reports whether the module pre-pass resolved this class's type parameters
+// with no diagnostic. A class the pre-pass never saw resolves them inside inferClassDecl, where
+// that function's own window covers them, so it counts as clean here.
+func (c *checker) classParamsClean(decl *ast.ClassDecl) bool {
+	if sh, ok := c.classShells[decl]; ok {
+		return sh.paramsClean
+	}
+	return true
+}
+
 // preBindClassTypeParams resolves a class's type parameters and stores them on its ClassDef.
 // The module SCC pre-pass runs it over every class in a type-key component after every
 // identity in that component is registered, so a bound naming a sibling resolves.
@@ -231,6 +301,7 @@ func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassD
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
+	quiet := c.errorWindow()
 	declScope := scope
 	var typeParams []*soltype.TypeParam
 	if len(decl.TypeParams) > 0 {
@@ -240,7 +311,7 @@ func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassD
 	if c.classShells == nil {
 		c.classShells = map[*ast.ClassDecl]*classShell{}
 	}
-	c.classShells[decl] = &classShell{declScope: declScope, typeParams: typeParams}
+	c.classShells[decl] = &classShell{declScope: declScope, typeParams: typeParams, paramsClean: quiet()}
 
 	if def, ok := c.ctx.classDef(qualifyClassName(ns, decl)); ok {
 		def.TypeParams = typeParams

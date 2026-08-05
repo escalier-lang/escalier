@@ -100,6 +100,16 @@ type aliasShell struct {
 	// def is the registered AliasDef preBindAlias inserted with a nil Body; inferAliasBody
 	// fills its Body once every sibling identity in the component is bound.
 	def *AliasDef
+	// paramsClean is true when preBindAlias resolved the alias's `<…>` list with no
+	// diagnostic. A bound or default that fails to resolve is left nil, taking the
+	// occurrences it held with it, so `type Foo<T, U: Nope<T>> = number` keeps no record
+	// that U's bound wrote T.
+	paramsClean bool
+	// declClean is paramsClean and the same answer for the body, the errorWindow rule
+	// applied to an alias. `type M<T> = {f(x: T) -> T}` drops the unsupported method and
+	// with it every occurrence of T, so reportPhantomParams reads this before warning that
+	// T is unused.
+	declClean bool
 }
 
 // preBindAlias resolves an alias's type parameters, registers a shell AliasDef whose Body
@@ -109,6 +119,8 @@ type aliasShell struct {
 // body is still being walked. expandAlias only runs at subtyping time, after every body in
 // the component is filled, so the nil Body is never read during pre-binding.
 func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns string) *aliasShell {
+	quiet := c.errorWindow()
+
 	// The four intrinsic string operators — Uppercase, Lowercase, Capitalize, Uncapitalize — are
 	// built-in type operators, not aliases a user may shadow. Reject a `type Uppercase<T> = …`
 	// declaration and skip binding it, so a `Uppercase<…>` reference resolves to the built-in
@@ -163,7 +175,16 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 	})
 	c.recordType(decl.Name, t)
 
-	return &aliasShell{decl: decl, ns: ns, lvl: lvl, qname: qname, declScope: declScope, namedLts: aliasNamedLts, def: def}
+	return &aliasShell{
+		decl:        decl,
+		ns:          ns,
+		lvl:         lvl,
+		qname:       qname,
+		declScope:   declScope,
+		namedLts:    aliasNamedLts,
+		def:         def,
+		paramsClean: quiet(),
+	}
 }
 
 // resolveAliasLifetimeParams mints one lifetime variable per `<'a, ...>` parameter through
@@ -202,6 +223,7 @@ func (c *checker) inferAliasBody(sh *aliasShell) {
 
 	// A nil TypeAnn is parser error recovery for `type Foo =`, already reported. Bind a
 	// fresh var and skip resolveTypeAnn, since a nil annotation has no span to report on.
+	quiet := c.errorWindow()
 	var body soltype.Type = c.freshAt(sh.lvl)
 	if sh.decl.TypeAnn != nil {
 		if resolved, ok := c.resolveTypeAnn(sh.declScope, sh.decl.TypeAnn, sh.lvl); ok {
@@ -212,6 +234,7 @@ func (c *checker) inferAliasBody(sh *aliasShell) {
 		// recovery in resolveTypeAnn.
 	}
 	sh.def.Body = body
+	sh.declClean = sh.paramsClean && sh.decl.TypeAnn != nil && quiet()
 }
 
 // buildAliasInstance resolves a use-site reference to a registered alias into an AliasType

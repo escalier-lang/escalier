@@ -2,7 +2,9 @@ package solver
 
 import (
 	"slices"
+	"strings"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/graph"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -181,6 +183,136 @@ func (w *phantomWalker) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 }
 
 func (w *phantomWalker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// reportPhantomParams warns about each alias type parameter a caller gains nothing by passing
+// an argument to: one the declaration never mentions, and one it does mention that no argument
+// can reach. It runs after every body in the dep_graph component is resolved, so the phantom
+// marks it reads are final.
+func (c *checker) reportPhantomParams(shells []*aliasShell) {
+	for _, sh := range shells {
+		if !sh.declClean || sh.def.NotProductive {
+			// Two shapes report nothing. A body that drew a diagnostic is a partial record of
+			// what the source wrote, so a parameter it dropped would read as unused. An alias
+			// checkProductive rejected denotes no type at all, so no parameter can be
+			// unreachable in it. Both already carry a diagnostic to act on.
+			continue
+		}
+		params := sh.def.TypeParams
+		if len(params) == 0 {
+			continue
+		}
+		inBody, inSibling := typeParamMentions(params, []soltype.Type{sh.def.Body})
+		for i, p := range params {
+			// A parameter a sibling's bound or default mentions is doing work the body cannot
+			// show, so `type Foo<T, U: T> = {x: U}` warns about neither. markPhantomParams
+			// still marks T phantom, since the argument reaches the denoted type through U's
+			// slot rather than T's.
+			if inSibling[i] {
+				continue
+			}
+			decl := sh.decl.TypeParams[i]
+			if !inBody[i] {
+				// A leading underscore marks a parameter the author left unused on purpose,
+				// so it suppresses this tier the way `_x` does for an unused binding.
+				if !strings.HasPrefix(p.Name, "_") {
+					c.report(&UnusedTypeParamError{Name: p.Name, Param: decl})
+				}
+				continue
+			}
+			if i < len(sh.def.PhantomParams) && sh.def.PhantomParams[i] {
+				names := make([]string, len(params))
+				for k, q := range params {
+					names[k] = q.Name
+				}
+				c.report(&UnreachableTypeParamError{
+					Alias:  sh.qname,
+					Params: names,
+					Index:  i,
+					Param:  decl,
+				})
+			}
+		}
+	}
+}
+
+// reportUnusedTypeParams warns about each type parameter of a class or enum the declaration
+// never mentions. body is every type the declaration writes, and decls are the binders the
+// warnings blame. Only the unused tier applies to the nominal sorts, whose arguments stay
+// observable through recursion, so no parameter of one is ever unreachable.
+func (c *checker) reportUnusedTypeParams(
+	params []*soltype.TypeParam,
+	decls []*ast.TypeParam,
+	body []soltype.Type,
+) {
+	if len(params) == 0 || len(decls) < len(params) {
+		return
+	}
+	mentioned, inSibling := typeParamMentions(params, body)
+	for i, p := range params {
+		if strings.HasPrefix(p.Name, "_") || mentioned[i] || inSibling[i] {
+			continue
+		}
+		c.report(&UnusedTypeParamError{Name: p.Name, Param: decls[i]})
+	}
+}
+
+// typeParamMentions reports where each of a declaration's type parameters occurs: inBody for one
+// the body writes, inSibling for one another parameter's bound or default writes. A parameter's
+// own bound does not count, so the T an F-bound `<T: Foo<T>>` writes is not a use of T.
+func typeParamMentions(params []*soltype.TypeParam, body []soltype.Type) (inBody, inSibling []bool) {
+	slots := map[*soltype.TypeVarType]int{}
+	for i, p := range params {
+		if p.Var != nil {
+			slots[p.Var] = i
+		}
+	}
+	inBody = make([]bool, len(params))
+	occurrences(slots, body, inBody)
+
+	inSibling = make([]bool, len(params))
+	onBinder := make([]bool, len(params))
+	for j, p := range params {
+		clear(onBinder)
+		occurrences(slots, []soltype.Type{p.Constraint, p.Default}, onBinder)
+		onBinder[j] = false
+		for i, occurs := range onBinder {
+			inSibling[i] = inSibling[i] || occurs
+		}
+	}
+	return inBody, inSibling
+}
+
+// occurrences sets found[i] for each type parameter whose var occurs anywhere in types, leaving
+// the entries it does not reach alone so a caller may fold several walks into one slice. slots
+// maps each parameter's var to its position, and a nil type is skipped so a caller can pass an
+// absent bound or default straight through. Position and reachability play no part here, unlike
+// in the phantom marks.
+func occurrences(slots map[*soltype.TypeVarType]int, types []soltype.Type, found []bool) {
+	w := &paramOccurrenceWalker{slots: slots, found: found}
+	for _, t := range types {
+		if t != nil {
+			t.Accept(w, soltype.Positive)
+		}
+	}
+}
+
+// paramOccurrenceWalker records which of a fixed set of type variables a type mentions. It
+// rewrites nothing, so every node it visits comes back unchanged.
+type paramOccurrenceWalker struct {
+	slots map[*soltype.TypeVarType]int
+	found []bool
+}
+
+func (w *paramOccurrenceWalker) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if tv, ok := t.(*soltype.TypeVarType); ok {
+		if i, own := w.slots[tv]; own {
+			w.found[i] = true
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (w *paramOccurrenceWalker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // erasePhantomArgs drops from every alias reference in t the arguments its phantom parameters
 // receive, nested ones included, so internAlias renders two references differing only there to one

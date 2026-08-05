@@ -3197,6 +3197,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 1:5-1:6,
             },
         },
         Params: []*ast.Param{
@@ -3244,9 +3245,11 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "A",
+                span: 1:5-1:6,
             },
             &ast.TypeParam{
                 Name: "B",
+                span: 1:8-1:9,
             },
         },
         Params: []*ast.Param{

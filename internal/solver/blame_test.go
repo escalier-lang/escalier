@@ -334,7 +334,7 @@ func TestUnsupportedAnnotationRecovers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
+			require.Equal(t, "cannot find type `Foo`", errs[0].Message())
 			require.Equal(t, tt.want, values)
 		})
 	}

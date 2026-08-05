@@ -905,6 +905,7 @@
             TypeParams: []*ast.TypeParam{
                 &ast.TypeParam{
                     Name: "T",
+                    span: 2:17-2:18,
                 },
             },
             Params: []*ast.Param{
@@ -1016,6 +1017,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 2:16-2:17,
             },
         },
         Elems: []ast.EnumElem{
@@ -1065,9 +1067,11 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 2:24-2:25,
             },
             &ast.TypeParam{
                 Name: "E",
+                span: 2:27-2:28,
             },
         },
         Elems: []ast.EnumElem{
@@ -2170,6 +2174,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 2:15-2:16,
             },
         },
         Extends: &ast.TypeRefTypeAnn{
@@ -2451,6 +2456,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 2:19-2:20,
             },
         },
         Extends: []*ast.TypeRefTypeAnn{
@@ -2600,9 +2606,11 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 2:19-2:20,
             },
             &ast.TypeParam{
                 Name: "U",
+                span: 2:22-2:23,
             },
         },
         Extends: []*ast.TypeRefTypeAnn{
@@ -3535,6 +3543,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 2:15-2:16,
             },
         },
         Body: []ast.ClassElem{
@@ -3558,6 +3567,7 @@
                         TypeParams: []*ast.TypeParam{
                             &ast.TypeParam{
                                 Name: "U",
+                                span: 4:18-4:19,
                             },
                         },
                         Params: []*ast.Param{
@@ -4273,6 +4283,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 2:22-2:23,
             },
         },
         Extends: &ast.TypeRefTypeAnn{
@@ -4723,6 +4734,7 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
+                span: 2:18-2:19,
             },
         },
         Implements: []*ast.TypeRefTypeAnn{
@@ -5199,6 +5211,7 @@
                 TypeParams: []*ast.TypeParam{
                     &ast.TypeParam{
                         Name: "T",
+                        span: 26:25-26:26,
                     },
                 },
                 Body: []ast.ClassElem{

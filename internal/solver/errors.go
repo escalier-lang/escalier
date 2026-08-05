@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -1224,10 +1225,27 @@ func (e *ExtractorPatternArityError) Message() string {
 type TypeDeclKind string
 
 const (
-	AliasDeclKind TypeDeclKind = "type alias"
-	ClassDeclKind TypeDeclKind = "class"
-	EnumDeclKind  TypeDeclKind = "enum"
+	AliasDeclKind   TypeDeclKind = "type alias"
+	ClassDeclKind   TypeDeclKind = "class"
+	EnumDeclKind    TypeDeclKind = "enum"
+	BuiltinDeclKind TypeDeclKind = "built-in type"
 )
+
+// UnknownTypeError fires on a type reference whose name resolves to no declaration: no alias,
+// class, enum, or type parameter in scope, and none of the built-in names. It names what the
+// source wrote, qualified as written, so `Foo.Bar` reports under that whole path rather than
+// under either half.
+type UnknownTypeError struct {
+	Ref  *ast.TypeRefTypeAnn
+	Name string
+}
+
+func (*UnknownTypeError) isSolverError()        {}
+func (e *UnknownTypeError) Span() ast.Span      { return e.Ref.Span() }
+func (e *UnknownTypeError) Related() []ast.Span { return nil }
+func (e *UnknownTypeError) Message() string {
+	return "cannot find type `" + e.Name + "`"
+}
 
 // TypeArgArityMismatchError fires when a generic reference `Name<…>` supplies fewer than the
 // required number of type arguments or more than the total parameter count. A trailing
@@ -1243,11 +1261,21 @@ type TypeArgArityMismatchError struct {
 	Got      int
 }
 
+// pluralArguments agrees the noun with the count an arity message states, so a declaration
+// taking one parameter reads "1 type argument" rather than "1 type arguments".
+func pluralArguments(n int) string {
+	if n == 1 {
+		return "argument"
+	}
+	return "arguments"
+}
+
 func (e *TypeArgArityMismatchError) Span() ast.Span      { return e.Ref.Span() }
 func (e *TypeArgArityMismatchError) Related() []ast.Span { return nil }
 func (e *TypeArgArityMismatchError) Message() string {
 	if e.Required == e.Total {
-		return fmt.Sprintf("%s `%s` expects %d type arguments but got %d", e.Kind, e.Name, e.Total, e.Got)
+		return fmt.Sprintf("%s `%s` expects %d type %s but got %d",
+			e.Kind, e.Name, e.Total, pluralArguments(e.Total), e.Got)
 	}
 	return fmt.Sprintf("%s `%s` expects between %d and %d type arguments but got %d", e.Kind, e.Name, e.Required, e.Total, e.Got)
 }
@@ -1760,6 +1788,68 @@ func (e *UnusedLifetimeParamError) Related() []ast.Span { return nil }
 func (e *UnusedLifetimeParamError) IsWarning() bool     { return true }
 func (e *UnusedLifetimeParamError) Message() string {
 	return "lifetime parameter '" + e.Name + " is declared but never used"
+}
+
+// UnusedTypeParamError fires when a type alias, a class, or an enum declares a `<T>` binder
+// that nothing in the declaration mentions, and that no sibling parameter's bound or default
+// mentions either. What counts as the declaration differs by sort — an alias's body, a
+// class's members and supers, an enum's variant parameters — and the conclusion does not.
+// The program is well-typed; the binder is dead weight. It is the type-sort twin of
+// UnusedLifetimeParamError and is likewise always a warning. Name is the declared name,
+// and Param is the binder, which carries the blame span.
+//
+// A leading underscore quiets it, so `type Ignore<_T> = number` reports nothing. Write a
+// binder that way to keep one the source has not filled in yet.
+type UnusedTypeParamError struct {
+	Name  string
+	Param *ast.TypeParam
+}
+
+func (*UnusedTypeParamError) isSolverError()        {}
+func (e *UnusedTypeParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *UnusedTypeParamError) Related() []ast.Span { return nil }
+func (e *UnusedTypeParamError) IsWarning() bool     { return true }
+func (e *UnusedTypeParamError) Message() string {
+	return "type parameter " + e.Name + " is declared but never used"
+}
+
+// UnreachableTypeParamError fires when a type alias's body mentions a `<T>` binder, but no
+// argument passed to it can appear in the type an instantiation denotes. Every instantiation
+// of the alias is then one type, so a caller who writes an argument there says nothing by
+// writing it. `type Deep<T> = {a: Deep<{b: T}>}` pushes its payload one unfolding deeper
+// forever, and `Deep<number>` and `Deep<string>` are both `{a: {a: …}}`.
+//
+// It is a warning for the same reason UnusedTypeParamError is. The program checks either
+// way, and a leading underscore quiets it.
+//
+// Alias is the alias's qualified name and Params are its parameter names in declaration
+// order, both used to render the two instantiations the message names. Index is the
+// unreachable parameter's position, and Param is its binder, which carries the blame span.
+type UnreachableTypeParamError struct {
+	Alias  string
+	Params []string
+	Index  int
+	Param  *ast.TypeParam
+}
+
+func (*UnreachableTypeParamError) isSolverError()        {}
+func (e *UnreachableTypeParamError) Span() ast.Span      { return e.Param.Span() }
+func (e *UnreachableTypeParamError) Related() []ast.Span { return nil }
+func (e *UnreachableTypeParamError) IsWarning() bool     { return true }
+func (e *UnreachableTypeParamError) Message() string {
+	return "no argument passed to type parameter " + e.Params[e.Index] +
+		" can appear in the type, so " + e.instantiation("number") + " and " +
+		e.instantiation("string") + " are the same type"
+}
+
+// instantiation renders a reference to the alias with the unreachable parameter filled by
+// arg and every other parameter left under its own name. The two renderings the message
+// pairs then differ in exactly the position the warning is about. `type Pair<T, U>` with U
+// unreachable gives `Pair<T, number>`.
+func (e *UnreachableTypeParamError) instantiation(arg string) string {
+	args := slices.Clone(e.Params)
+	args[e.Index] = arg
+	return e.Alias + "<" + strings.Join(args, ", ") + ">"
 }
 
 // UnusedThrowsClauseError fires when a signature declares `throws T` but no `throw` and no
