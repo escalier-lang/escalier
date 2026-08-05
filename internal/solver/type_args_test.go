@@ -458,39 +458,42 @@ func TestClassDefaultFilledFromClassBody(t *testing.T) {
 // type-parameter bound, a constructor parameter, and a method return. Every form resolves
 // through buildClassInstance, so each reports the same too-few diagnostic.
 func TestClassArityAcrossRemainingRefForms(t *testing.T) {
-	srcs := map[string]string{
-		"Extends": `
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{name: "Extends", src: `
 			class Box<T> { value: T }
 			class Wrapper extends Box {
 				constructor(mut self) {},
 			}
-		`,
-		"Implements": `
+		`},
+		{name: "Implements", src: `
 			class Box<T> { value: T }
 			class Wrapper implements Box { value: number }
-		`,
-		"TypeParamBound": `
+		`},
+		{name: "TypeParamBound", src: `
 			class Box<T> { value: T }
 			class Holder<U: Box> { value: U }
-		`,
-		"ConstructorParam": `
+		`},
+		{name: "ConstructorParam", src: `
 			class Box<T> { value: T }
 			class Holder {
 				boxed: Box<number>,
 				constructor(mut self, boxed: Box) { self.boxed = boxed },
 			}
-		`,
-		"MethodReturn": `
+		`},
+		{name: "MethodReturn", src: `
 			class Box<T> { value: T }
 			class Holder {
 				boxed: Box<number>,
 				unwrap(self) -> Box { return self.boxed },
 			}
-		`,
+		`},
 	}
-	for name, src := range srcs {
-		t.Run(name, func(t *testing.T) {
-			_, _, errs := inferSource(t, src)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, 1)
 			require.Equal(t, "class `Box` expects 1 type arguments but got 0", errs[0].Message())
 		})
@@ -531,8 +534,11 @@ func TestMutuallyRecursiveGenericClassesResolve(t *testing.T) {
 // parameters resolved. Inferring B's body first would leave `A` an unbound name, reported as an
 // unresolved reference instead of the arity mismatch it is.
 func TestClassArityAcrossMixedComponent(t *testing.T) {
-	srcs := map[string]string{
-		"GenericClassFirst": `
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{name: "GenericClassFirst", src: `
 			class A<T> {
 				v: T,
 				make(self) -> number { return B(1, A(2)).x },
@@ -541,8 +547,8 @@ func TestClassArityAcrossMixedComponent(t *testing.T) {
 				x: number,
 				a: A,
 			}
-		`,
-		"GenericClassSecond": `
+		`},
+		{name: "GenericClassSecond", src: `
 			class B {
 				x: number,
 				a: A,
@@ -551,11 +557,11 @@ func TestClassArityAcrossMixedComponent(t *testing.T) {
 				v: T,
 				make(self) -> number { return B(1, A(2)).x },
 			}
-		`,
+		`},
 	}
-	for name, src := range srcs {
-		t.Run(name, func(t *testing.T) {
-			values, _, errs := inferSource(t, src)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, 1)
 			require.Equal(t, "class `A` expects 1 type arguments but got 0", errs[0].Message())
 			require.Equal(t, "{new (x: number, a: A<unknown>) -> B}", values["B"])

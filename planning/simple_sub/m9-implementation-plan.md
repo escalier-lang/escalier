@@ -1463,11 +1463,12 @@ class is ordinary, so a reference is regularly resolved before the class it name
 own pass. `getOrCreateClass` therefore reads the counts straight off the declaration's `<…>`
 clause when it registers the identity, which is before any reference can be resolved, and
 `inferClassDecl` fills `TypeParams` later. The count is always available, so every reference is
-checked. The defaults land with the resolved parameters, which PR19's pre-pass makes final for
-every class in a component before any body runs, so a reference that omits an argument fills
-the default no matter which declaration the dep graph reaches first. As shipped in #993, before
-that pre-pass, a reference resolved ahead of the class's own pass recovered the omitted
-argument to a fresh var — `B<unknown>` where the declaration says `B<number>`.
+checked. The defaults land with the resolved parameters, which the type-key pre-pass makes
+final for every class in a component before any body runs, so no body's reference can reach a
+class whose parameters are unresolved, and a reference that omits an argument fills the
+default no matter which declaration the dep graph reaches first. The one window left open is a
+sibling's own `<…>` clause, which resolves while the pre-pass is still walking the component;
+a reference there recovers an omitted argument to a fresh var.
 
 A fresh var rather than the declaration's own var is what keeps the recovery contained. Filling
 `class A { b: B }` against `class B<T>` with `B`'s parameter var would make `A`'s constructor

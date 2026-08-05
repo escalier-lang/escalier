@@ -213,21 +213,6 @@ func (c *checker) inferComponent(
 		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{monoScheme(v)}})
 	}
 
-	// Non-value keys such as type aliases are outside the M2 subset. Report each
-	// contributing decl once, skipping any already handled by a value key. A class or
-	// enum contributes both a value and a type key for the same decl, so one of the two
-	// keys is handled here and the other elsewhere.
-	//
-	// A class's type key is left to its value key, which infers the class and registers
-	// both the instance type and the constructor together (M5 B1). Its type key here only
-	// pre-binds the nominal identity for recursion; reporting it as unsupported would
-	// mis-report the class and mark the decl handled, blocking the value key. So a class
-	// type key skips without marking handled and the value key does the work.
-	//
-	// An enum inverts the split (M5 D-Enum): its type key here infers the whole enum — the
-	// union type binding and the variant-constructor namespace — and marks the decl
-	// handled, so its value key becomes a no-op. The enum two-pass below runs first for
-	// exactly that reason.
 	// Pre-bind every nominal identity in this component — each class handle and each enum
 	// union type — before any enum body resolves a variant parameter, so a group of
 	// mutually-recursive classes AND enums resolves each other. A class's variant-holding
@@ -320,8 +305,20 @@ func (c *checker) inferComponent(
 	// representative for the rest of the run, so the same type could hold two identities.
 	c.runDeferredArgBounds()
 
-	// Report any remaining non-value decl as unsupported. A class was pre-bound above and
-	// is completed at its value key, so skip it rather than mis-reporting it.
+	// Non-value keys such as type aliases are outside the M2 subset. Report each remaining
+	// contributing decl once as unsupported, skipping any already handled by a value key. A
+	// class or enum contributes both a value and a type key for the same decl, so one of the
+	// two keys is handled here and the other elsewhere.
+	//
+	// A class's type key is left to its value key, which infers the class and registers both
+	// the instance type and the constructor together (M5 B1). Its type key only pre-binds the
+	// nominal identity for recursion; reporting it as unsupported would mis-report the class
+	// and mark the decl handled, blocking the value key. So a class type key skips without
+	// marking handled and the value key does the work.
+	//
+	// An enum inverts the split (M5 D-Enum): its type key infers the whole enum — the union
+	// type binding and the variant-constructor namespace — and marks the decl handled, so its
+	// value key becomes a no-op and nothing of it remains to report here.
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
