@@ -184,33 +184,10 @@ func (w *phantomWalker) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 
 func (w *phantomWalker) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// reportPhantomParams warns about each alias type parameter whose argument a caller gains
-// nothing by writing. It runs beside markPhantomParams, after every body in the dep_graph
-// component is resolved, so the marks it reads are final.
-//
-// A parameter is *mentioned* when its var occurs in the alias body, in a sibling
-// parameter's bound, or in a sibling parameter's default. Its own bound does not count,
-// since the `number` of `<T: number>` constrains T rather than using it. A parameter no
-// position mentions is unused. A parameter the body mentions is unreachable when it is also
-// marked phantom, which means no argument passed to it lands in the type an instantiation
-// denotes.
-//
-// The marks alone cannot answer this. markPhantomParams asks whether an argument reaches
-// the denoted type through the parameter's own slot, and two shapes come back phantom while
-// the parameter is still doing work. `type Foo<T, U: T> = {x: U}` marks T phantom, and T
-// bounds U. `type Pair<T, U = T> = {b: U}` marks T phantom, and `Pair<number>` denotes
-// `{b: number}`. Erasing T is right in both, since the argument reaches the denoted type
-// through U's slot rather than T's, and warning about either would be a false positive. The
-// sibling-mention rule is what excludes them.
-//
-// A leading underscore suppresses the unused tier alone. It is the author saying a parameter
-// they never wrote is deliberate, which settles a warning about their own declaration. The
-// unreachable tier warns about something a caller hits instead: two instantiations that look
-// different denote one type. Renaming the parameter does not reach that caller, who never
-// sees the name, and does not make the arguments differ. There is also nothing the rename
-// could be preserving, since a transparent alias erases the parameter outright — that is what
-// makes it unreachable. The nominal sorts, where a phantom parameter would be load-bearing,
-// keep their arguments observable and never reach this tier at all.
+// reportPhantomParams warns about each alias type parameter a caller gains nothing by passing
+// an argument to: one the declaration never mentions, and one it does mention that no argument
+// can reach. It runs after every body in the dep_graph component is resolved, so the phantom
+// marks it reads are final.
 func (c *checker) reportPhantomParams(shells []*aliasShell) {
 	for _, sh := range shells {
 		if !sh.declClean || sh.def.NotProductive {
@@ -228,6 +205,10 @@ func (c *checker) reportPhantomParams(shells []*aliasShell) {
 			sh.def.Body.Accept(v, soltype.Positive)
 		})
 		for i, p := range params {
+			// A parameter a sibling's bound or default mentions is doing work the body cannot
+			// show, so `type Foo<T, U: T> = {x: U}` warns about neither. markPhantomParams
+			// still marks T phantom, since the argument reaches the denoted type through U's
+			// slot rather than T's.
 			if inSibling[i] {
 				continue
 			}
@@ -256,17 +237,10 @@ func (c *checker) reportPhantomParams(shells []*aliasShell) {
 	}
 }
 
-// reportUnusedTypeParams warns about each type parameter of a class or enum that the
-// declaration never mentions, the unused tier of the alias warning applied to the two
-// nominal sorts. walkBody visits every type the declaration writes, and decls are the
-// binders the warnings blame, one per entry of params.
-//
-// Only the unused tier extends here. A nominal handle carries its arguments into its
-// identity and constrain compares them position by position, so an argument to a parameter
-// the body does write is observable however deep the recursion drives it. `class Nest<T>
-// {deeper: Nest<{b: T}>}` reports a mismatch between `Nest<number>` and `Nest<string>`
-// where the alias of the same shape settles them as one type. Unreachability is a property
-// of a transparent alias, and there is no nominal counterpart to warn about.
+// reportUnusedTypeParams warns about each type parameter of a class or enum the declaration
+// never mentions. walkBody visits every type the declaration writes, and decls are the binders
+// the warnings blame. Only the unused tier applies to the nominal sorts, whose arguments stay
+// observable through recursion, so no parameter of one is ever unreachable.
 func (c *checker) reportUnusedTypeParams(
 	params []*soltype.TypeParam,
 	decls []*ast.TypeParam,
@@ -284,15 +258,9 @@ func (c *checker) reportUnusedTypeParams(
 	}
 }
 
-// typeParamMentions reports where each of a declaration's type parameters occurs. inBody is
-// true for a parameter whose var walkBody reaches, and inSibling is true for one that occurs
-// in another parameter's bound or default. A parameter's own binder does not count, so the T
-// an F-bound `<T: Foo<T>>` writes in its own bound is not a use of T.
-//
-// The two answers stay separate because they carry different weight. A parameter no body
-// mentions is unused whatever its bound says, while a parameter a sibling's bound or default
-// mentions is doing work the body cannot show. `type Foo<T, U: T> = {x: U}` writes T nowhere
-// in its body, and T still decides which arguments U accepts.
+// typeParamMentions reports where each of a declaration's type parameters occurs: inBody for one
+// walkBody reaches, inSibling for one another parameter's bound or default writes. A parameter's
+// own bound does not count, so the T an F-bound `<T: Foo<T>>` writes is not a use of T.
 func typeParamMentions(params []*soltype.TypeParam, walkBody func(soltype.TypeVisitor)) (inBody, inSibling []bool) {
 	slots := map[*soltype.TypeVarType]int{}
 	for i, p := range params {
@@ -320,23 +288,16 @@ func typeParamMentions(params []*soltype.TypeParam, walkBody func(soltype.TypeVi
 	return inBody, inSibling
 }
 
-// markOccurrences sets found[i] for each of the declaration's own type parameters whose var
-// occurs anywhere in t, leaving the entries it does not reach alone so a caller may fold
-// several types into one slice. slots maps each parameter's var to its position, and found is
-// one entry per parameter. A stored body and bound hold those vars symbolically, so an
-// occurrence is found by pointer identity.
-//
-// Position and reachability play no part, unlike in the phantom marks. `type Deep<T> =
-// {a: Deep<{b: T}>}` mentions T, even though no argument passed to T reaches the type Deep
-// denotes.
+// markOccurrences sets found[i] for each type parameter whose var occurs anywhere in t, leaving
+// the entries it does not reach alone so a caller may fold several types into one slice. slots
+// maps each parameter's var to its position. Position and reachability play no part here, unlike
+// in the phantom marks.
 func markOccurrences(slots map[*soltype.TypeVarType]int, t soltype.Type, found []bool) {
 	t.Accept(&paramOccurrenceWalker{slots: slots, found: found}, soltype.Positive)
 }
 
 // paramOccurrenceWalker records which of a fixed set of type variables a type mentions. It
-// rewrites nothing, so every node it visits comes back unchanged. A TypeVarType is a leaf to
-// the visitor, so reaching one records it without descending into the bounds solving has
-// accumulated on it.
+// rewrites nothing, so every node it visits comes back unchanged.
 type paramOccurrenceWalker struct {
 	slots map[*soltype.TypeVarType]int
 	found []bool
