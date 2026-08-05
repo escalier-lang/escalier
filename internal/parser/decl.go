@@ -1013,6 +1013,13 @@ modifiers_done:
 			p.reportError(lp.Span(),
 				"lifetime parameters are not supported in this context")
 		}
+
+		// A field holds a value rather than a body that can suspend and
+		// resume, so it has no generator form. Reject `gen` here the way a
+		// constructor and an accessor reject it.
+		if isGen {
+			p.reportError(token.Span, "fields cannot be generators")
+		}
 		var typeAnn ast.TypeAnn
 		var value ast.Expr
 		isOptional := false
