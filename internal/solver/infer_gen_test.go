@@ -123,6 +123,123 @@ func TestInferAsyncGen(t *testing.T) {
 	})
 }
 
+// `yield from g` forwards the delegate's yields into the enclosing generator and
+// evaluates to the delegate's return type — what the delegating body sees once the
+// delegate is exhausted. A structural iterable like a tuple forwards its element union
+// and finishes with `undefined`.
+func TestInferYieldFrom(t *testing.T) {
+	runGenCases(t, []genCase{
+		{
+			name: "DelegateToTuple",
+			src:  `gen fn f() { yield from [1, 2] }`,
+			want: `fn () -> Generator<1 | 2, void, never>`,
+		},
+		{
+			name: "DelegateToGeneratorForwardsYieldsAndReturns",
+			src: `
+				gen fn g() { yield 1 return "r" }
+				gen fn f() { yield "a" return yield from g() }
+			`,
+			want: `fn () -> Generator<1 | "a", "r", never>`,
+		},
+		{
+			// Tree-walk delegation is the main use of `yield from`, so a generator
+			// delegating to itself has to work. Its own return type is still unsolved at
+			// the delegation, so the rule states a Generator requirement rather than
+			// reading the operand's shape.
+			name: "SelfRecursiveDelegation",
+			src:  `gen fn f() { yield 1 yield from f() }`,
+			want: `fn () -> Generator<1, void, never>`,
+		},
+		{
+			// Two generators delegating to each other reach a fixed point, so both
+			// yield the union across the cycle.
+			name: "MutuallyRecursiveDelegation",
+			src: `
+				gen fn a() { yield 1 yield from b() }
+				gen fn b() { yield "x" yield from a() }
+			`,
+			binding: "a",
+			want:    `fn () -> Generator<1 | "x", void, never>`,
+		},
+	})
+	runGenErrCases(t, []genErrCase{
+		{
+			// The delegate is walked before its shape is read, so an error inside it is
+			// reported at its own site. The ErrorType that walk yields then absorbs, so
+			// the delegation adds no second diagnostic on top.
+			name:     "ABrokenDelegateReportsOnlyItsOwnError",
+			src:      `gen fn f() { yield from missing() }`,
+			wantErrs: []string{"1:25-1:32: Unknown identifier: missing"},
+		},
+	})
+}
+
+// A sync generator is iterable, so a `for` loop binds its variable at the Yield slot;
+// an async generator is iterable only under `for await`.
+func TestInferGenIteration(t *testing.T) {
+	runGenCases(t, []genCase{
+		{
+			name: "ForInOverGenerator",
+			src: `
+				gen fn g() { yield 1 yield 2 }
+				fn f() { for x in g() { return x } }
+			`,
+			want: `fn () -> 1 | 2`,
+		},
+		{
+			name: "ForAwaitOverAsyncGenerator",
+			src: `
+				async gen fn g() { yield 1 }
+				async fn f() { for await x in g() { return x } }
+			`,
+			want: `fn () -> Promise<1>`,
+		},
+		{
+			// A union of async generators is async-iterable, binding the loop variable
+			// at the union of what its branches yield — the same branch-wise walk the
+			// sync path applies to a union of generators.
+			name: "ForAwaitOverAUnionOfAsyncGenerators",
+			src: `
+				async fn f(g: AsyncGenerator<number, undefined, never> | AsyncGenerator<string, undefined, never>) {
+					for await x in g { return x }
+				}
+			`,
+			want: `fn (g: AsyncGenerator<number, undefined, never> | AsyncGenerator<string, undefined, never>) -> Promise<number | string>`,
+		},
+		{
+			name: "ForInOverAUnionOfGenerators",
+			src: `
+				fn f(g: Generator<number, undefined, never> | Generator<string, undefined, never>) {
+					for x in g { return x }
+				}
+			`,
+			want: `fn (g: Generator<number, undefined, never> | Generator<string, undefined, never>) -> number | string`,
+		},
+		{
+			// A class method marked `gen` is a generator the same way a `gen fn` is, so
+			// iterating its result binds at what the body yields.
+			name: "GenMethodOnAClass",
+			src: `
+				class C { gen m(self) { yield 1 } }
+				fn f(c: C) { for x in c.m() { return x } }
+			`,
+			want: `fn (c: C) -> 1`,
+		},
+	})
+	runGenErrCases(t, []genErrCase{
+		{
+			// An async generator has no sync iterator, so a plain `for` rejects it.
+			name: "ForInOverAsyncGeneratorRejected",
+			src: `
+				declare fn g() -> AsyncGenerator<number, undefined, never>
+				fn f(a: AsyncGenerator<number, undefined, never>) { for x in a { } }
+			`,
+			wantErrs: []string{"3:66-3:67: AsyncGenerator<number, undefined, never> is not iterable"},
+		},
+	})
+}
+
 // A yield outside a generator body is rejected by the walk, not the type rule: the
 // operand is still walked, and the enclosing function — the one to mark `gen` — is
 // related. A closure inside a generator is not itself a generator, so a yield inside
@@ -192,6 +309,11 @@ func TestInferGenReturnAnnotationShape(t *testing.T) {
 			src:      `gen fn f() -> Generator<number, string, never> { yield 1 return 2 }`,
 			wantErrs: []string{"1:65-1:66: cannot constrain 2 <: string"},
 		},
+		{
+			name:     "YieldFromNonIterable",
+			src:      `gen fn f() { yield from 5 }`,
+			wantErrs: []string{"1:25-1:26: 5 is not iterable"},
+		},
 	})
 }
 
@@ -211,6 +333,17 @@ func TestInferGenThrowsStillChecked(t *testing.T) {
 			name:     "ThrowInAClauselessGenFn",
 			src:      `gen fn f() { yield 1 throw "boom" }`,
 			wantErrs: []string{`1:28-1:34: cannot constrain "boom" <: never`},
+		},
+		{
+			// Iterating a throwing generator is a `.next()` driver, so the raise must
+			// reach the enclosing clause. The over-approximation on the signature is
+			// what carries it there today.
+			name: "IteratingAThrowingGeneratorNeedsAClause",
+			src: `
+				gen fn g() throws "boom" { yield 1 throw "boom" }
+				fn f() { for x in g() { } }
+			`,
+			wantErrs: []string{`3:23-3:26: cannot constrain "boom" <: never`},
 		},
 	})
 	runGenCases(t, []genCase{
@@ -259,30 +392,6 @@ func TestGeneratorSubtyping(t *testing.T) {
 	})
 }
 
-// `yield from` forwards a delegate's yields rather than yielding the delegate itself,
-// so it needs the iteration rules and is reported until those land. Treating it as a
-// plain yield would put the iterable in the sink instead of its elements.
-//
-// The delegate is still walked before the rejection is reported, so a mistake inside it
-// is diagnosed instead of being swallowed by the rejection.
-func TestInferYieldFromIsUnsupported(t *testing.T) {
-	runGenErrCases(t, []genErrCase{
-		{
-			name:     "DelegationReported",
-			src:      `gen fn f() { yield from [1, 2] }`,
-			wantErrs: []string{"1:14-1:31: Unsupported: yield from"},
-		},
-		{
-			name: "DelegateErrorsStillSurface",
-			src:  `gen fn f() { yield from missing() }`,
-			wantErrs: []string{
-				"1:25-1:32: Unknown identifier: missing",
-				"1:14-1:34: Unsupported: yield from",
-			},
-		},
-	})
-}
-
 // A `gen fn` whose body never yields still returns a generator, but one that finishes on
 // the first `next()` without producing a value, so the marker gives the caller nothing.
 // The warning says so while the function still types as the generator it returns — it is
@@ -320,12 +429,9 @@ func TestInferGenWithoutYieldWarns(t *testing.T) {
 	require.Empty(t, yielding)
 
 	// Delegating counts as yielding, so a body whose only yield is a `yield from` does not
-	// draw this warning. It still draws the staged unsupported report, since delegation
-	// itself lands later, so the assertion is that the warning is absent rather than that
-	// nothing is reported.
+	// draw this warning.
 	_, _, delegating := inferSource(t, `gen fn f() { yield from [1, 2] }`)
-	require.Len(t, delegating, 1)
-	require.Equal(t, "1:14-1:31: Unsupported: yield from", msgWithSpan(delegating[0]))
+	require.Empty(t, delegating)
 
 	// A bodyless `declare gen fn` has no body to measure, so it is never flagged.
 	_, _, declared := inferSource(t, `declare gen fn f() -> Generator<number, undefined, never>`)
