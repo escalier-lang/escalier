@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -295,4 +297,67 @@ func (v *typeParamRefScan) shadowed(name string) bool {
 		}
 	}
 	return false
+}
+
+// checkTypeArgBounds reports a type argument that does not satisfy its parameter's declared
+// bound, so `class Box<T: string>` and `type Box<T: string>` both reject `Box<number>`. Every
+// generic class, enum, and alias reference routes through here. Arguments are substituted into
+// the bound first, which lets a bound name a sibling as the `B: A` of `<A, B: A>` does. The
+// comparison is live rather than a discarded trial, so a variable argument carries the bound to
+// its instantiation.
+func (c *checker) checkTypeArgBounds(
+	params []*soltype.TypeParam,
+	args []soltype.Type,
+	ltParams []*soltype.LifetimeParam,
+	ltArgs []soltype.Lifetime,
+	ref *ast.TypeRefTypeAnn,
+) {
+	bounded := func(p *soltype.TypeParam) bool { return p.Constraint != nil }
+	if !slices.ContainsFunc(params, bounded) {
+		// Every parameter is unbounded, so there is nothing to compare and no substitution to
+		// build. This is the common shape for a generic alias.
+		return
+	}
+	subst := newTypeSubst(params, args, ltParams, ltArgs)
+	for i, p := range params {
+		if !bounded(p) {
+			continue
+		}
+		// Read the declared constraint from the parameter rather than from its var's upper
+		// bounds. A `<T: A & B>` bound resolves to one IntersectionType, so this is the whole
+		// of what the source wrote, and it cannot be displaced by a bound solving inferred.
+		bound := p.Constraint.Accept(subst, soltype.Positive)
+		if i >= len(ref.TypeArgs) && bound == p.Constraint && args[i] == p.Default {
+			// This argument came from the parameter's default, and substitution moved neither the
+			// bound nor the default, so both read here exactly as they do at the declaration where
+			// resolveTypeParams already compared them. Repeating it would file the same diagnostic
+			// once per reference. A moved bound, `<A, B: A = number>`, or a moved default,
+			// `<T, U: string = T>`, is still checked, since only the reference knows what the
+			// comparison is between.
+			continue
+		}
+		// Blame the written argument. A trailing argument filled from its parameter's default
+		// has no node of its own, so the blame falls back to the whole reference.
+		var site ast.Node = ref
+		if i < len(ref.TypeArgs) {
+			site = ref.TypeArgs[i]
+		}
+		if c.deferArgBounds {
+			c.deferredArgBounds = append(c.deferredArgBounds, deferredArgBound{
+				arg: args[i], bound: bound, site: site,
+			})
+			continue
+		}
+		c.constrain(site, args[i], bound)
+	}
+}
+
+// runDeferredArgBounds replays and clears the checks checkTypeArgBounds queued while the
+// component's bodies were nil, since an unfilled alias argument expands to ErrorType and absorbs.
+func (c *checker) runDeferredArgBounds() {
+	pending := c.deferredArgBounds
+	c.deferredArgBounds = nil
+	for _, p := range pending {
+		c.constrain(p.site, p.arg, p.bound)
+	}
 }

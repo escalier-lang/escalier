@@ -1463,11 +1463,12 @@ class is ordinary, so a reference is regularly resolved before the class it name
 own pass. `getOrCreateClass` therefore reads the counts straight off the declaration's `<…>`
 clause when it registers the identity, which is before any reference can be resolved, and
 `inferClassDecl` fills `TypeParams` later. The count is always available, so every reference is
-checked. The defaults are not, so a reference that omits an argument for a class whose
-parameters have not landed recovers to a fresh var instead of filling the default. That is a
-silent wrong answer — `B<unknown>` where the declaration says `B<number>` — and closing it
-needs the check deferred until every class in the component has its parameters, the machinery
-PR19 adds for bounds.
+checked. The defaults land with the resolved parameters, which the type-key pre-pass makes
+final for every class in a component before any body runs, so no body's reference can reach a
+class whose parameters are unresolved, and a reference that omits an argument fills the
+default no matter which declaration the dep graph reaches first. The one window left open is a
+sibling's own `<…>` clause, which resolves while the pre-pass is still walking the component;
+a reference there recovers an omitted argument to a fresh var.
 
 A fresh var rather than the declaration's own var is what keeps the recovery contained. Filling
 `class A { b: B }` against `class B<T>` with `B`'s parameter var would make `A`'s constructor
@@ -1507,27 +1508,40 @@ sibling whose body is not yet filled, and the live rather than discarded compari
 leaves a bound on a caller's variable — so this PR is that machinery reaching a second
 caller, not a second design.
 
-**Algorithms.**
-- Check each argument `buildClassInstance` resolves against its parameter's
-  `TypeParam.Constraint`, substituting the reference's own arguments into the bound first so
-  a bound naming a sibling parameter, `<T, K: keyof T>`, reaches the argument that filled it.
-  PR18's helper is where the pairing happens.
-- **Reuse #956's comparison rather than reimplementing it.** It is live, not a discarded
-  trial, which is what makes a type-variable argument defer to the caller's instantiation
-  instead of silently passing. Factoring the alias check's body into a shared routine over a
-  parameter list and an argument list keeps one answer to that question.
-- **A class in a dep_graph component with an unfilled sibling defers the same way.** A class
-  body resolves after its own pre-binding, so a bound naming a sibling class can reach a
-  registered-but-empty `ClassDef`. Route through the same deferral list #956 added, replayed
-  once the component's bodies are filled.
-- An argument that fails its bound is reported and then kept rather than replaced with a
-  recovery var, so a later diagnostic names the type the source wrote.
+**Data structures.** A `classShell` per class declaration, held on the checker's `classShells`
+map, carrying the resolved type parameters and the scope the class body resolves in.
+`preBindClassTypeParams` fills it during the SCC type-key pass and `inferClassDecl` reuses it
+rather than minting a second set of parameter vars.
 
-**Accept.** `Box<Other>` against `class Box<T: A>` reports a full-message bound error, and
-`Box<B>` for a subclass `B` of `A` passes. `Box(Other())` keeps reporting the
+**Algorithms.**
+- **Resolve every class's type parameters in the SCC type-key pass**, after every identity in
+  the component is registered and before any body runs. A class body resolves at its value
+  key, while a reference to a class depends only on that class's type key, so without the
+  pre-pass a reference regularly reads a def whose `TypeParams` are empty — no defaults to
+  fill and no bounds to check. With it, the parameter list every reference reads is final.
+  This also closes PR18's known gap: an omitted argument fills its default in every
+  declaration order, not only when the referenced class happens to resolve first.
+- **The whole non-value pre-bind block runs before the component's value walk.** A class
+  member body creates a value dependency, so `type:A` and `value:B` share a component when
+  A's body calls B and B's field names `A<T>`; inferring B's body first would read `A` before
+  anything registered it.
+- Check each argument `buildClassInstance` resolves against its parameter's
+  `TypeParam.Constraint` through `checkTypeArgBounds`, #956's alias check moved to
+  type_params.go beside the other shared type-argument helpers and renamed with its deferral
+  plumbing (`deferArgBounds`, `runDeferredArgBounds`), since the queue now holds class
+  comparisons too. The bound is substituted with the reference's own arguments first, so a
+  bound naming a sibling parameter reaches the argument that filled it.
+- The comparison is live, not a discarded trial, which is what makes a type-variable argument
+  defer to the caller's instantiation instead of silently passing.
+- A class reference resolved while a sibling alias's body is still nil routes through the
+  same deferral window the alias check uses, replayed once the component's bodies are filled.
+
+**Accept.** `Box<Other>` against `class Box<T: A>` reports a full-message bound error, and an
+argument inside the bound passes. `Box(Other())` keeps reporting the
 `cannot constrain Other <: A` it reports today, so the inference path and the check path do
 not double-report one mismatch. A forwarding declaration `fn g<U>(u: U) -> Box<U>` defers to
-its call site, matching what #956 settled for the alias position.
+its call site, matching what #956 settled for the alias position. `class B<T = number>`
+referenced bare from a sibling class body infers `B<number>` in either declaration order.
 
 **Depends on** PR18 for the helper and #956 for the comparison. Independent of the operator
 track.
@@ -1708,8 +1722,8 @@ PR13 ✅ #954 (TS utility-type suite)        ── needs PR2, PR3b, PR4, PR7, P
  │    └─► PR15 (new (…) members in obj type anns + ConstructorParameters<C>)
  └─► PR16 ✅ #960 (null + undefined + NonNullable<T>)     ── also needs PR3b
 
-PR17 (default names only an earlier param) ── needs M7 only
- └─► PR18 🔄 #962 (class type-param defaults + arity at a type reference)
+PR17 ✅ #968 (default names only an earlier param) ── needs M7 only
+ └─► PR18 ✅ #993 (class type-param defaults + arity at a type reference)
       └─► PR19 (class type-argument bound checking)  ── also needs #956
 
 PR20 (warn on a phantom type parameter)    ── needs PR9d only
@@ -1722,8 +1736,8 @@ sets, #937 capped total alias expansion with a monotonic budget, #938 added the
 `{[K: Keys]: Value}` index-signature shorthand to PR4's mapped types, and #949 factored
 out the `alphaCtx` bijection that PR9e's knot comparison reuses.
 
-Everything still open is PR9f, PR10b, PR10c, PR11, PR15, and Track F's PR17 through PR20,
-with PR18 already up for review as #962. PR8 landed in two steps: #922 threaded an object's
+Everything still open is PR9f, PR10b, PR10c, PR11, PR15, PR19, and PR20; Track F's PR17
+and PR18 landed as #968 and #993. PR8 landed in two steps: #922 threaded an object's
 exactness through `keyof`, and #953 carried it through the remaining operators and added the
 `Exact` / `Inexact` intrinsics.
 
@@ -1762,8 +1776,8 @@ graph TD
     PR14["PR14 ✅ #961 (rest params in fn type anns + Parameters<F>)"]
     PR15["PR15 (new (…) in obj type anns + ConstructorParameters<C>)"]
     PR16["PR16 ✅ #960 (null + undefined + NonNullable<T>)"]
-    PR17["PR17 (default names only an earlier param)"]
-    PR18["PR18 🔄 #962 (class type-param defaults + arity at a type reference)"]
+    PR17["PR17 ✅ #968 (default names only an earlier param)"]
+    PR18["PR18 ✅ #993 (class type-param defaults + arity at a type reference)"]
     PR19["PR19 (class type-argument bound checking)"]
     PR20["PR20 (warn on a phantom type parameter)"]
 
@@ -1836,7 +1850,8 @@ graph TD
     style PR10 stroke:#2e7d32,stroke-width:4px
     style PR9d stroke:#2e7d32,stroke-width:4px
     style PR14 stroke:#2e7d32,stroke-width:4px
-    style PR18 stroke:#ef6c00,stroke-width:4px,stroke-dasharray:5 3
+    style PR17 stroke:#2e7d32,stroke-width:4px
+    style PR18 stroke:#2e7d32,stroke-width:4px
 ```
 
 ### Parallelism
@@ -1866,10 +1881,9 @@ graph TD
 - **Track F** — a chain, PR17 → PR18 → PR19, and nothing outside it waits on any of the
   three, so it can run start to finish alongside any other track. The order is both the
   dependency order and the value order: PR17 fixes a wrong answer, PR18 fixes a second one
-  and builds the helper, PR19 routes #956's comparison to it. #962 opened PR18 ahead of
-  PR17, so the forward-reference restriction PR17 adds still has to land for the class path
-  to stop filling a default that can leak a declaration var. PR20 is off the chain, waiting
-  only on PR9d, so it can land now that the marks exist.
+  and builds the helper, PR19 routes #956's comparison to it. PR17 landed as #968 and PR18
+  as #993, so PR19 is the chain's remainder with both prerequisites in. PR20 is off the
+  chain, waiting only on PR9d, so it can land now that the marks exist.
 
 The critical path is `M7 → PR1a → PR1b → PR3a → PR3b → PR4 → PR8`, and — for the
 async-generator accept case — `M7 → PR1a → PR1b → PR3b → PR12 → PR13 → PR14 → PR15`.
@@ -1877,7 +1891,6 @@ Both are now down to their tails: the first has landed end to end, and only PR15
 on the second. The follow-on group sits off both: nothing in PR1a–PR16 waits on PR9c–PR9f,
 and nothing waits on Track F.
 
-What is left divides by what it waits on. PR9f, PR10b, PR15, PR17, and PR20 have every
+What is left divides by what it waits on. PR9f, PR10b, PR15, PR19, and PR20 have every
 prerequisite in and can each start now. PR10c and PR11 wait on M7.5, which has not been
-built, and PR10c waits on PR10b besides. PR18 and PR19 are the Track F chain, so PR19 waits
-on #962 landing and PR18 waits on PR17.
+built, and PR10c waits on PR10b besides.

@@ -137,8 +137,16 @@ type componentBinding struct {
 //  1. give every VALUE binding in the component a fresh var at lvl+1 and define
 //     it in scope BEFORE any body is inferred, so a mutually-recursive reference
 //     resolves through the var;
-//  2. infer each declaration's definition at lvl+1 and constrain it <: its var;
-//  3. rebind each name to the coalesced MONOMORPHIC type of its var.
+//  2. bind every non-value key in the component — each class and enum identity, each
+//     class's type parameters, and each enum and alias body — so a body inferred in
+//     step 3 resolves any type name the component declares;
+//  3. infer each declaration's definition at lvl+1 and constrain it <: its var;
+//  4. rebind each name to the coalesced MONOMORPHIC type of its var.
+//
+// Step 2 runs before step 3 because a component can mix the two sorts. A class member
+// body creates a value dependency, so `type:A` and `value:B` land in one component when
+// A's body calls B and B's field names `A<T>`. Inferring B's body first would leave the
+// name A unbound at the point B reads it.
 //
 // M2 does NOT generalize (M1 ships no schemes): step 3 freezes each binding at
 // its coalesced monomorphic type rather than wrapping it in a PolyScheme. The
@@ -205,6 +213,128 @@ func (c *checker) inferComponent(
 		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{monoScheme(v)}})
 	}
 
+	// Pre-bind every nominal identity in this component — each class handle and each enum
+	// union type — before any enum body resolves a variant parameter, so a group of
+	// mutually-recursive classes AND enums resolves each other. A class's variant-holding
+	// enum and an enum's field-holding class land in one type-key SCC component; binding
+	// all their identities first lets `enum Json { Arr(items: JsonArray) }` /
+	// `class JsonArray { head: Json }` each resolve the sibling.
+	//
+	//   - A class is pre-bound to its nominal identity (M5 B2) and left for its value key,
+	//     which infers the body and marks the decl handled. Leaving it unhandled here lets
+	//     the reconciliation pass find it through that key.
+	//   - An enum is pre-bound to its union type (preBindEnum) and marked handled, then
+	//     completed by inferEnumBody once every sibling is bound; its value key is then a
+	//     no-op whose pre-bound value var is retracted in phase 3.
+	var enumShells []*enumShell
+	var aliasShells []*aliasShell
+	var classDecls []*ast.ClassDecl
+	var classNamespaces []string
+	for _, key := range component {
+		if _, isValue := bindings[key]; isValue {
+			continue
+		}
+		for _, d := range g.GetDecls(key) {
+			if handled.Contains(d) {
+				continue
+			}
+			switch decl := d.(type) {
+			case *ast.EnumDecl:
+				enumShells = append(enumShells, c.preBindEnum(scope, inner, decl, g.GetNamespace(key)))
+				handled.Add(d)
+			case *ast.ClassDecl:
+				// A type-key component is the SCC condensation of mutually-recursive classes,
+				// so registering every class's type binding and empty ClassDef here lets a
+				// sibling resolve a forward reference — `class A { b: B }` / `class B { a: A }`.
+				// The returned handle and def are discarded here; inferClassDecl reuses them,
+				// keyed by the same qualified name the shared namespace reconstructs. The
+				// class's type parameters are resolved in the loop below, once every sibling
+				// identity in the component is registered.
+				c.getOrCreateClass(scope, decl, g.GetNamespace(key))
+				classDecls = append(classDecls, decl)
+				classNamespaces = append(classNamespaces, g.GetNamespace(key))
+			case *ast.TypeDecl:
+				// A `type X = Body` alias infers at its type key and is marked handled, so its
+				// value key is a no-op. preBindAlias registers the alias identity and binds its
+				// name; inferAliasBody resolves the body below, once every sibling identity in
+				// the component is bound. Pre-binding the identity first lets a self or mutual
+				// reference — `type List<T> = {tail: List<T> | Null}`, or a mutual `type A =
+				// {b: B}` / `type B = {a: A}` pair — find its target already bound.
+				// preBindAlias returns nil for a reserved built-in name it rejected, which is not
+				// bound and has no body to resolve, so skip appending it.
+				if sh := c.preBindAlias(scope, inner, decl, g.GetNamespace(key)); sh != nil {
+					aliasShells = append(aliasShells, sh)
+				}
+				handled.Add(d)
+			}
+		}
+	}
+	// The loops below run while sibling alias and enum bodies are still nil, so a bound check
+	// inside them is queued rather than run against a half-built sibling. Do not convert this
+	// to a defer, because a check queued after runDeferredArgBounds would never be replayed.
+	c.deferArgBounds = true
+	// Resolve each class's type parameters now that every class, enum, and alias identity in
+	// the component is registered, so a bound naming a sibling resolves. A class body waits
+	// for the class's value key, but the parameter list a reference reads — the defaults it
+	// fills omitted arguments from and the bounds its arguments are checked against — is
+	// final from here on.
+	for i, decl := range classDecls {
+		c.preBindClassTypeParams(scope, inner, decl, classNamespaces[i])
+	}
+	// Every enum body resolves its variant parameters against the fully pre-bound
+	// identities above, so a parameter naming a sibling enum or class resolves.
+	for _, sh := range enumShells {
+		c.inferEnumBody(sh)
+	}
+	// Each alias body resolves after every alias, enum, and class identity in the component
+	// is bound, so a body naming a sibling type — or the alias itself — resolves.
+	for _, sh := range aliasShells {
+		c.inferAliasBody(sh)
+	}
+	c.deferArgBounds = false
+	// Every body in the component is resolved, so the alias reference graph the productivity
+	// check and the phantom-parameter fixed point read is complete. Both run before any
+	// constraint reaches an alias in the component, which is what lets constrain trust the marks
+	// they leave on each AliasDef.
+	c.checkProductive(aliasShells)
+	markPhantomParams(aliasShells)
+	// The deferred bound comparisons run last, after the marks are in place. Each one goes
+	// through constrain, which interns an alias operand's canonical identity, and internAlias
+	// drops the arguments of phantom parameters when it renders that key. Interning a reference
+	// before its alias is marked would key it under its full arguments and keep that
+	// representative for the rest of the run, so the same type could hold two identities.
+	c.runDeferredArgBounds()
+
+	// Non-value keys such as type aliases are outside the M2 subset. Report each remaining
+	// contributing decl once as unsupported, skipping any already handled by a value key. A
+	// class or enum contributes both a value and a type key for the same decl, so one of the
+	// two keys is handled here and the other elsewhere.
+	//
+	// A class's type key is left to its value key, which infers the class and registers both
+	// the instance type and the constructor together (M5 B1). Its type key only pre-binds the
+	// nominal identity for recursion; reporting it as unsupported would mis-report the class
+	// and mark the decl handled, blocking the value key. So a class type key skips without
+	// marking handled and the value key does the work.
+	//
+	// An enum inverts the split (M5 D-Enum): its type key infers the whole enum — the union
+	// type binding and the variant-constructor namespace — and marks the decl handled, so its
+	// value key becomes a no-op and nothing of it remains to report here.
+	for _, key := range component {
+		if _, isValue := bindings[key]; isValue {
+			continue
+		}
+		for _, d := range g.GetDecls(key) {
+			if handled.Contains(d) {
+				continue
+			}
+			if _, ok := d.(*ast.ClassDecl); ok {
+				continue
+			}
+			handled.Add(d)
+			c.reportUnsupported(d)
+		}
+	}
+
 	// Phase 2: infer each declaration's definition and constrain it <: its var.
 	for _, key := range component {
 		// Each top-level binding is its own named-lifetime scope, mirroring inferFunc.
@@ -213,7 +343,7 @@ func (c *checker) inferComponent(
 		c.namedLifetimes = nil
 		b, isValue := bindings[key]
 		if !isValue {
-			continue // non-value keys handled below
+			continue // non-value keys handled above
 		}
 		if b.signatureBound {
 			// The schemes are already bound in scope from phase 1, so phase 2 does not
@@ -322,117 +452,6 @@ func (c *checker) inferComponent(
 				Previous: b.primary,
 				Name:     key.Name(),
 			})
-		}
-	}
-
-	// Non-value keys such as type aliases are outside the M2 subset. Report each
-	// contributing decl once, skipping any already handled by a value key. A class or
-	// enum contributes both a value and a type key for the same decl, so one of the two
-	// keys is handled here and the other elsewhere.
-	//
-	// A class's type key is left to its value key, which infers the class and registers
-	// both the instance type and the constructor together (M5 B1). Its type key here only
-	// pre-binds the nominal identity for recursion; reporting it as unsupported would
-	// mis-report the class and mark the decl handled, blocking the value key. So a class
-	// type key skips without marking handled and the value key does the work.
-	//
-	// An enum inverts the split (M5 D-Enum): its type key here infers the whole enum — the
-	// union type binding and the variant-constructor namespace — and marks the decl
-	// handled, so its value key becomes a no-op. The enum two-pass below runs first for
-	// exactly that reason.
-	// Pre-bind every nominal identity in this component — each class handle and each enum
-	// union type — before any enum body resolves a variant parameter, so a group of
-	// mutually-recursive classes AND enums resolves each other. A class's variant-holding
-	// enum and an enum's field-holding class land in one type-key SCC component; binding
-	// all their identities first lets `enum Json { Arr(items: JsonArray) }` /
-	// `class JsonArray { head: Json }` each resolve the sibling.
-	//
-	//   - A class is pre-bound to its nominal identity (M5 B2) and left for its value key,
-	//     which infers the body and marks the decl handled. Leaving it unhandled here lets
-	//     the reconciliation pass find it through that key.
-	//   - An enum is pre-bound to its union type (preBindEnum) and marked handled, then
-	//     completed by inferEnumBody once every sibling is bound; its value key is then a
-	//     no-op whose pre-bound value var is retracted in phase 3.
-	var enumShells []*enumShell
-	var aliasShells []*aliasShell
-	for _, key := range component {
-		if _, isValue := bindings[key]; isValue {
-			continue
-		}
-		for _, d := range g.GetDecls(key) {
-			if handled.Contains(d) {
-				continue
-			}
-			switch decl := d.(type) {
-			case *ast.EnumDecl:
-				enumShells = append(enumShells, c.preBindEnum(scope, inner, decl, g.GetNamespace(key)))
-				handled.Add(d)
-			case *ast.ClassDecl:
-				// A type-key component is the SCC condensation of mutually-recursive classes,
-				// so registering every class's type binding and empty ClassDef here lets a
-				// sibling resolve a forward reference — `class A { b: B }` / `class B { a: A }`.
-				// The returned handle and def are discarded here; inferClassDecl reuses them,
-				// keyed by the same qualified name the shared namespace reconstructs.
-				c.getOrCreateClass(scope, decl, g.GetNamespace(key))
-			case *ast.TypeDecl:
-				// A `type X = Body` alias infers at its type key and is marked handled, so its
-				// value key is a no-op. preBindAlias registers the alias identity and binds its
-				// name; inferAliasBody resolves the body below, once every sibling identity in
-				// the component is bound. Pre-binding the identity first lets a self or mutual
-				// reference — `type List<T> = {tail: List<T> | Null}`, or a mutual `type A =
-				// {b: B}` / `type B = {a: A}` pair — find its target already bound.
-				// preBindAlias returns nil for a reserved built-in name it rejected, which is not
-				// bound and has no body to resolve, so skip appending it.
-				if sh := c.preBindAlias(scope, inner, decl, g.GetNamespace(key)); sh != nil {
-					aliasShells = append(aliasShells, sh)
-				}
-				handled.Add(d)
-			}
-		}
-	}
-	// The two loops below fill bodies that are still nil, so a bound check inside them is queued
-	// rather than run against a half-built sibling. Do not convert this to a defer, because a
-	// check queued after runDeferredAliasBounds would never be replayed.
-	c.deferAliasBounds = true
-	// Every enum body resolves its variant parameters against the fully pre-bound
-	// identities above, so a parameter naming a sibling enum or class resolves.
-	for _, sh := range enumShells {
-		c.inferEnumBody(sh)
-	}
-	// Each alias body resolves after every alias, enum, and class identity in the component
-	// is bound, so a body naming a sibling type — or the alias itself — resolves.
-	for _, sh := range aliasShells {
-		c.inferAliasBody(sh)
-	}
-	c.deferAliasBounds = false
-	// Every body in the component is resolved, so the alias reference graph the productivity
-	// check and the phantom-parameter fixed point read is complete. Both run before any
-	// constraint reaches an alias in the component, which is what lets constrain trust the marks
-	// they leave on each AliasDef.
-	c.checkProductive(aliasShells)
-	markPhantomParams(aliasShells)
-	// The deferred bound comparisons run last, after the marks are in place. Each one goes
-	// through constrain, which interns an alias operand's canonical identity, and internAlias
-	// drops the arguments of phantom parameters when it renders that key. Interning a reference
-	// before its alias is marked would key it under its full arguments and keep that
-	// representative for the rest of the run, so the same type could hold two identities.
-	c.runDeferredAliasBounds()
-
-	// Report any remaining non-value decl as unsupported. A class was pre-bound above and
-	// is completed at its value key, so skip it rather than mis-reporting it.
-	for _, key := range component {
-		if _, isValue := bindings[key]; isValue {
-			continue
-		}
-		for _, d := range g.GetDecls(key) {
-			if handled.Contains(d) {
-				continue
-			}
-			if _, ok := d.(*ast.ClassDecl); ok {
-				continue
-			}
-			handled.Add(d)
-			c.reportUnsupported(d)
 		}
 	}
 

@@ -42,15 +42,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
-	// Resolve the class's type parameters into a child scope so the body resolves the
-	// class's T to one shared var, quantified at the class boundary and freshened per
-	// construction. A non-generic class reuses the enclosing scope.
-	declScope := scope
-	var typeParams []*soltype.TypeParam
-	if len(decl.TypeParams) > 0 {
-		declScope = scope.Child()
-		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
-	}
+	// The class's type parameters and the scope its body resolves in, taken from the module
+	// SCC pre-pass when there was one and resolved here when there was not.
+	declScope, typeParams := c.classDeclScope(scope, lvl, decl)
 
 	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
 	// the pair the SCC pre-pass registered for this class — an empty shell it minted
@@ -208,6 +202,51 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string)
 	return self, def
 }
 
+// classDeclScope returns the scope a class body resolves in and the class's resolved type
+// parameters, reusing what preBindClassTypeParams produced for this declaration. A generic
+// class gets a child scope holding its parameters, so the body reads each `T` as the one
+// shared var the ClassDef stores. A non-generic class reuses the enclosing scope.
+func (c *checker) classDeclScope(scope *Scope, lvl int, decl *ast.ClassDecl) (*Scope, []*soltype.TypeParam) {
+	if sh, ok := c.classShells[decl]; ok {
+		return sh.declScope, sh.typeParams
+	}
+	if len(decl.TypeParams) == 0 {
+		return scope, nil
+	}
+	declScope := scope.Child()
+	return declScope, c.resolveTypeParams(declScope, lvl, decl.TypeParams)
+}
+
+// preBindClassTypeParams resolves a class's type parameters and stores them on its ClassDef.
+// The module SCC pre-pass runs it over every class in a type-key component after every
+// identity in that component is registered, so a bound naming a sibling resolves.
+//
+// Resolving here rather than at the class's value key is what makes a reference's defaults and
+// bounds readable. A class body resolves at its value key, while a reference to a class depends
+// only on that class's type key, so at value-key time the referenced parameters may not be read
+// yet. ClassDef.Arity covers the count either way, but filling a default and checking a bound
+// both need the resolved parameters.
+func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassDecl, ns string) {
+	prevNS := c.classNamespace
+	c.classNamespace = ns
+	defer func() { c.classNamespace = prevNS }()
+
+	declScope := scope
+	var typeParams []*soltype.TypeParam
+	if len(decl.TypeParams) > 0 {
+		declScope = scope.Child()
+		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
+	}
+	if c.classShells == nil {
+		c.classShells = map[*ast.ClassDecl]*classShell{}
+	}
+	c.classShells[decl] = &classShell{declScope: declScope, typeParams: typeParams}
+
+	if def, ok := c.ctx.classDef(qualifyClassName(ns, decl)); ok {
+		def.TypeParams = typeParams
+	}
+}
+
 // qualifyClassName returns a class's dep_graph-qualified name — the namespace joined
 // to the local name with a dot, or the bare local name at the root namespace. This is
 // the same `CurrentNamespace + "." + name` rule dep_graph forms binding keys with, so
@@ -289,9 +328,11 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 }
 
 // buildClassInstance returns the handle a class reference resolves to, one argument per type
-// parameter, paired by resolveTypeArgs the way an alias's are. Arity is registered with the
-// class's identity but TypeParams lands later, so a reference resolved in between is still
-// counted and recovers an omitted argument to a fresh var instead of filling its default.
+// parameter, paired by resolveTypeArgs the way an alias's are. The pre-pass resolves every
+// class's parameters before any body runs, so a reference from a body fills an omitted argument
+// from its default and has each argument checked against its bound. A reference from a sibling's
+// own `<…>` clause is reached while the pre-pass is still walking, so it reads unfilled
+// TypeParams. Arity still counts it, and an omitted argument recovers to a fresh var.
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
 	var params []*soltype.TypeParam
 	// An unregistered name has no declared count to check against, so take the reference's own
@@ -308,6 +349,9 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 		// Either way the handle carries no arguments, so return the declaration's own.
 		return ct
 	}
+	// A class reference carries no lifetime arguments today, so the bound check substitutes
+	// the type sort only.
+	c.checkTypeArgBounds(params, args, nil, nil, ref)
 	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final, Variant: ct.Variant}
 }
 

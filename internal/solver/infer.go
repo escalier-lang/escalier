@@ -96,23 +96,36 @@ type checker struct {
 	// rejected even though the outer Extends is still being walked.
 	inCondExtends bool
 
-	// deferAliasBounds routes checkAliasArgBounds to deferredAliasBounds instead of
-	// constraining on the spot. inferComponent sets it around the enum and alias body
-	// loops, the window in which a sibling alias in the same dep_graph component is bound
-	// but its Body is still nil. Constraining an argument that names such a sibling would
-	// expand it to ErrorType, which absorbs, so `type A = {b: Box<A>}` would accept A
-	// against Box's `string` bound.
-	deferAliasBounds bool
+	// deferArgBounds routes checkTypeArgBounds to deferredArgBounds instead of constraining
+	// on the spot. inferComponent sets it around the class parameter, enum body, and alias
+	// body loops, where a sibling alias is bound but its Body is still nil. Constraining
+	// against one would expand it to ErrorType, which absorbs, so `type A = {b: Box<A>}`
+	// would accept A against Box's `string` bound.
+	deferArgBounds bool
 
-	// deferredAliasBounds holds the comparisons raised during that window, replayed by
-	// runDeferredAliasBounds once every body in the component is filled.
-	deferredAliasBounds []deferredAliasBound
+	// deferredArgBounds holds the comparisons raised during that window, replayed by
+	// runDeferredArgBounds once every body in the component is filled.
+	deferredArgBounds []deferredArgBound
+
+	// classShells holds the type parameters and declaration scope preBindClassTypeParams
+	// resolved for a class, keyed by its declaration. inferClassDecl reuses the entry rather
+	// than minting a second, unrelated set of parameter vars. A script class has no pre-pass,
+	// so it is absent here and inferClassDecl resolves its own.
+	classShells map[*ast.ClassDecl]*classShell
 }
 
-// deferredAliasBound is one `arg <: bound` comparison checkAliasArgBounds postponed until
+// classShell carries the state preBindClassTypeParams resolved for one class declaration.
+// declScope is where the class body resolves, so a `T` in a field reads the same var the
+// ClassDef stores. A non-generic class has nil typeParams and the enclosing scope.
+type classShell struct {
+	declScope  *Scope
+	typeParams []*soltype.TypeParam
+}
+
+// deferredArgBound is one `arg <: bound` comparison checkTypeArgBounds postponed until
 // the enclosing dep_graph component finished resolving its bodies. site is the node the
 // resulting diagnostic blames, the written type argument where there is one.
-type deferredAliasBound struct {
+type deferredArgBound struct {
 	arg   soltype.Type
 	bound soltype.Type
 	site  ast.Node
