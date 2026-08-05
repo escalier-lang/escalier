@@ -187,6 +187,18 @@ func TestInferAwaitJoinedRejections(t *testing.T) {
 			binding: "g",
 			want:    "fn (c: boolean, p1: Promise<number, string>, p2: Promise<number>) -> Promise<void, string>",
 		},
+		{
+			// Two members rejecting with different types contribute both, so the
+			// caller's rejection is their union.
+			name: "BranchesRejectingWithDifferentTypesUnion",
+			src: `
+				async fn g(c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) {
+					await (if c { p1 } else { p2 })
+				}
+			`,
+			binding: "g",
+			want:    `fn (c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) -> Promise<void, "a" | "b">`,
+		},
 	})
 }
 
