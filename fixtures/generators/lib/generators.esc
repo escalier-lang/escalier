@@ -1,30 +1,30 @@
 // Basic generator function
-export fn count() {
+export gen fn count() {
     yield 1
     yield 2
     yield 3
 }
 
 // Generator with a return value
-export fn countWithDone() {
+export gen fn countWithDone() {
     yield 1
     yield 2
     return "done"
 }
 
 // Generator that yields different types
-export fn mixed() {
+export gen fn mixed() {
     yield 1
     yield "hello"
 }
 
 // Yield delegation using yield from
-export fn inner() {
+export gen fn inner() {
     yield 1
     yield 2
 }
 
-export fn outer() {
+export gen fn outer() {
     yield from inner()
     yield 3
 }
@@ -48,7 +48,7 @@ export fn outerArray() {
 }
 
 // Async generator function
-export async fn fetchItems() {
+export async gen fn fetchItems() {
     yield 1
     yield 2
     yield 3

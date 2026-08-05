@@ -347,6 +347,9 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 		if e.Fn.Async {
 			p.writeString("async ")
 		}
+		if e.Fn.Gen {
+			p.writeString("gen ")
+		}
 		p.printObjKey(e.Name)
 		p.printMethodSig(&e.Fn.FuncSig, e.Receiver)
 		if e.Fn.Body != nil {

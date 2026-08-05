@@ -405,6 +405,15 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	//
 	// A generator takes its own arm ahead of the async one: an `async gen fn` faces
 	// callers as an AsyncGenerator, not a Promise, so the async wrap never applies to it.
+	//
+	// A generator keeps its body's raises on its own Throws for exactly the reason the
+	// async arm does, and with the same imprecision. Advancing the generator is what
+	// actually raises, so the raise belongs in a slot `soltype.GeneratorType` does not
+	// carry, and a caller that only obtains the generator is asked to handle an
+	// exception it cannot yet observe. Keeping the raise here over-approximates, which
+	// is the safe direction: moving it off the signature with nothing reading it in the
+	// generator's place would let the raise escape a clause-less caller that iterates.
+	// The Generator analogue of PR10c is what puts it in the right place.
 	if sig.Gen {
 		ret = c.genReturn(node, gen, retExprs, ret, hasBody)
 	} else if sig.Async {
@@ -427,21 +436,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		} else if !hasBody {
 			ret = &soltype.UnknownType{}
 		}
-	}
-	// Calling a generator function runs none of its body — it returns a generator
-	// object, and the body advances only at `.next()`. So what the body raises is not
-	// what a call raises, and the function's own Throws is `never`. `val it = f()` then
-	// needs no clause even when f's body throws.
-	//
-	// The clause still checks the body: the sink resolveGenSinks seeded is what each
-	// `throw` was constrained into, so a raise in a clause-less generator is rejected at
-	// the `throw`, and `throws T` on a generator names what `.next()` may raise. Only
-	// the destination moves. That raise belongs in a slot `soltype.GeneratorType` does
-	// not carry, for the reason the async arm above gives about `PromiseType`. Adding
-	// one now would be unread surface, since a generator carries no members and `.next()`
-	// resolves nowhere.
-	if sig.Gen {
-		throws = &soltype.NeverType{}
 	}
 	// A bare function value is exact (accept-set [required, len(Params)]): it rejects
 	// extra arguments. A trailing `...` in the signature (sig.Inexact) marks it
@@ -2767,6 +2761,20 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 		arg := c.inferExpr(scope, lvl, e.Value)
 		elem, res, ok := c.delegateElemType(arg)
 		if !ok {
+			// A delegate with no structure to read is the recursive case: walking
+			// `gen fn f() { yield from f() }` reaches the delegation while f's own return
+			// is still an unsolved variable, so no structural rule can apply. Synthesize
+			// the requirement instead of reading one, the way inferAwait constrains an
+			// awaited operand against `Promise<U>` rather than looking inside it. Yield is
+			// covariant, so the delegate's yields land in this body's sink, and Ret is the
+			// value the delegation produces once the delegate is exhausted.
+			if c.delegateIsUnsolved(arg) {
+				res := c.freshAt(lvl)
+				req := &soltype.GeneratorType{Yield: c.fn.yields, Ret: res, Next: c.fn.yieldNext, Async: c.fn.async}
+				c.constrain(e, arg, req)
+				c.recordType(e, res)
+				return res
+			}
 			// A delegate that already failed to infer is the ErrorType recovery
 			// placeholder; it absorbs rather than cascading a second diagnostic, the
 			// same rule inferForIn applies to a broken iterable.
@@ -2792,6 +2800,16 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 	t := c.fn.yieldNext
 	c.recordType(e, t)
 	return t
+}
+
+// delegateIsUnsolved reports whether a `yield from` delegate is an inference variable
+// the solve has not given a shape to. Such a delegate carries no structure for the
+// iteration rules to read, so the delegation states its requirement as a constraint
+// instead. A delegate that already failed to infer is the ErrorType placeholder rather
+// than a variable, so it is excluded and keeps absorbing.
+func (c *checker) delegateIsUnsolved(t soltype.Type) bool {
+	_, isVar := soltype.CarrierOf(t).(*soltype.TypeVarType)
+	return isVar
 }
 
 // delegateElemType resolves what a `yield from` delegate hands the delegating

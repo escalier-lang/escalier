@@ -98,16 +98,42 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 // other type is not iterable.
 func (c *checker) iterableElemType(await bool, t soltype.Type) (soltype.Type, bool) {
 	if await {
-		carrier := soltype.CarrierOf(t)
-		if _, isVar := carrier.(*soltype.TypeVarType); isVar {
-			carrier = soltype.CarrierOf(coalesce(carrier, soltype.Positive))
-		}
-		if g, ok := carrier.(*soltype.GeneratorType); ok && g.Async {
-			return g.Yield, true
-		}
-		return nil, false
+		return c.asyncElemType(t)
 	}
 	return c.syncElemType(t)
+}
+
+// asyncElemType resolves the element type of an asynchronously-iterable value, the
+// `for await` counterpart of syncElemType and structurally the same walk. A borrow is
+// peeled and an inference variable is coalesced to its lower-bound shape first. An
+// async generator yields its Yield slot, and a union yields the union of its branches'
+// element types, failing if any branch is not async-iterable, so a union of async
+// generators binds the loop variable at the union of what they yield. Inexactness
+// carries through the union for the reason syncElemType gives. A sync generator is not
+// an AsyncIterable, and neither is a tuple, so both are rejected here.
+func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
+	t = soltype.CarrierOf(t)
+	if _, isVar := t.(*soltype.TypeVarType); isVar {
+		t = soltype.CarrierOf(coalesce(t, soltype.Positive))
+	}
+	switch t := t.(type) {
+	case *soltype.GeneratorType:
+		if !t.Async {
+			return nil, false
+		}
+		return t.Yield, true
+	case *soltype.UnionType:
+		elems := make([]soltype.Type, 0, len(t.Types))
+		for _, branch := range t.Types {
+			e, ok := c.asyncElemType(branch)
+			if !ok {
+				return nil, false
+			}
+			elems = append(elems, e)
+		}
+		return newUnion(c.ctx, elems, t.Inexact), true
+	}
+	return nil, false
 }
 
 // syncElemType resolves the element type of a synchronously-iterable value

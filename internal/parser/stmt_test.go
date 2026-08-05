@@ -365,6 +365,16 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"GenFuncExpr": {
 			input: `val f = gen fn () { yield 1 }`,
 		},
+		"ClassWithGenMethod": {
+			input: `class C {
+				gen count(self) { yield 1 }
+			}`,
+		},
+		"ClassWithAsyncGenMethod": {
+			input: `class C {
+				async gen poll(self) { yield await x }
+			}`,
+		},
 		"AsyncGenFuncExpr": {
 			input: `val f = async gen fn () { yield await x }`,
 		},

@@ -149,6 +149,26 @@ func TestInferYieldFrom(t *testing.T) {
 			`,
 			want: `fn () -> Generator<1 | "a", "r", never>`,
 		},
+		{
+			// Tree-walk delegation is the main use of `yield from`, so a generator
+			// delegating to itself has to work. Its own return type is still unsolved at
+			// the delegation, so the rule states a Generator requirement rather than
+			// reading the operand's shape.
+			name: "SelfRecursiveDelegation",
+			src:  `gen fn f() { yield 1 yield from f() }`,
+			want: `fn () -> Generator<1, void, never>`,
+		},
+		{
+			// Two generators delegating to each other reach a fixed point, so both
+			// yield the union across the cycle.
+			name: "MutuallyRecursiveDelegation",
+			src: `
+				gen fn a() { yield 1 yield from b() }
+				gen fn b() { yield "x" yield from a() }
+			`,
+			binding: "a",
+			want:    `fn () -> Generator<1 | "x", void, never>`,
+		},
 	})
 }
 
@@ -171,6 +191,37 @@ func TestInferGenIteration(t *testing.T) {
 				async fn f() { for await x in g() { return x } }
 			`,
 			want: `fn () -> Promise<1>`,
+		},
+		{
+			// A union of async generators is async-iterable, binding the loop variable
+			// at the union of what its branches yield — the same branch-wise walk the
+			// sync path applies to a union of generators.
+			name: "ForAwaitOverAUnionOfAsyncGenerators",
+			src: `
+				async fn f(g: AsyncGenerator<number, undefined, never> | AsyncGenerator<string, undefined, never>) {
+					for await x in g { return x }
+				}
+			`,
+			want: `fn (g: AsyncGenerator<number, undefined, never> | AsyncGenerator<string, undefined, never>) -> Promise<number | string>`,
+		},
+		{
+			name: "ForInOverAUnionOfGenerators",
+			src: `
+				fn f(g: Generator<number, undefined, never> | Generator<string, undefined, never>) {
+					for x in g { return x }
+				}
+			`,
+			want: `fn (g: Generator<number, undefined, never> | Generator<string, undefined, never>) -> number | string`,
+		},
+		{
+			// A class method marked `gen` is a generator the same way a `gen fn` is, so
+			// iterating its result binds at what the body yields.
+			name: "GenMethodOnAClass",
+			src: `
+				class C { gen m(self) { yield 1 } }
+				fn f(c: C) { for x in c.m() { return x } }
+			`,
+			want: `fn (c: C) -> 1`,
 		},
 	})
 	runGenErrCases(t, []genErrCase{
@@ -208,6 +259,13 @@ func TestInferYieldRequiresGenContext(t *testing.T) {
 			wantErrs: []string{
 				"1:30-1:37: yield can only be used inside a generator function",
 			},
+		},
+		{
+			// `gen` is the marker, so a plain method whose body yields is rejected the
+			// way a plain function is. Writing `gen m(self)` is how a method opts in.
+			name:     "YieldInAPlainMethod",
+			src:      `class C { m(self) { yield 1 } }`,
+			wantErrs: []string{"1:21-1:28: yield can only be used inside a generator function"},
 		},
 	})
 }
@@ -252,10 +310,16 @@ func TestInferGenReturnAnnotationShape(t *testing.T) {
 	})
 }
 
-// The throws sink still checks a generator's body: a clause-less gen fn raises nothing,
-// so a throw in its body is rejected at the throw, exactly as in a plain function. What
-// changes is the destination — a generator's own Throws is `never`, because calling one
-// runs no body code.
+// The throws sink is untouched by generator-ness: a clause-less gen fn raises nothing,
+// so a throw in its body is rejected at the throw, exactly as in a plain function, and a
+// declared clause reaches the generator's own type.
+//
+// A generator carries its body's raises on its own signature, which over-approximates:
+// advancing the generator is what raises, so a caller that only obtains it is asked to
+// handle an exception it cannot yet observe. That is the same imprecision an `async fn`
+// carries until PR10c moves a rejection onto the promise, and it errs in the safe
+// direction — dropping the clause instead would let the raise escape a clause-less
+// caller that iterates.
 func TestInferGenThrowsStillChecked(t *testing.T) {
 	runGenErrCases(t, []genErrCase{
 		{
@@ -263,25 +327,25 @@ func TestInferGenThrowsStillChecked(t *testing.T) {
 			src:      `gen fn f() { yield 1 throw "boom" }`,
 			wantErrs: []string{`1:28-1:34: cannot constrain "boom" <: never`},
 		},
+		{
+			// Iterating a throwing generator is a `.next()` driver, so the raise must
+			// reach the enclosing clause. The over-approximation on the signature is
+			// what carries it there today.
+			name: "IteratingAThrowingGeneratorNeedsAClause",
+			src: `
+				gen fn g() throws "boom" { yield 1 throw "boom" }
+				fn f() { for x in g() { } }
+			`,
+			wantErrs: []string{`3:23-3:26: cannot constrain "boom" <: never`},
+		},
 	})
 	runGenCases(t, []genCase{
 		{
-			// The clause checks the body but does not reach the function's own type: a
-			// call returns a generator and raises nothing. The body always leaves along
-			// the exceptional edge, so its normal return — the Ret slot — is `never`.
-			name: "GenFnWithThrowsClauseRaisesNothingAtTheCall",
+			// The body always leaves along the exceptional edge, so its normal return —
+			// the Generator's Ret slot — is `never`.
+			name: "GenFnWithThrowsClause",
 			src:  `gen fn f() throws _ { yield 1 throw "boom" }`,
-			want: `fn () -> Generator<1, never, never>`,
-		},
-		{
-			// Obtaining the generator runs none of the body, so a clause-less caller
-			// needs no clause of its own even when the generator's body throws.
-			name: "ClauselessCallerMayObtainAThrowingGenerator",
-			src: `
-				gen fn g() throws "boom" { yield 1 throw "boom" }
-				fn f() { val it = g() }
-			`,
-			want: `fn () -> void`,
+			want: `fn () -> Generator<1, never, never> throws "boom"`,
 		},
 	})
 }

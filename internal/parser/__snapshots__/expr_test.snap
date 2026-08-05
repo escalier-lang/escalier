@@ -3878,3 +3878,41 @@
     },
 }
 ---
+
+[TestParseExprErrorHandling/GenWithoutFn - 1]
+&ast.ErrorExpr{
+    span: 1:5-1:6,
+}
+---
+
+[TestParseExprErrorHandling/GenWithoutFn - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: 1:1-1:4,
+        Message: "Expected 'fn' after 'gen'",
+    },
+    &parser.Error{
+        Span: 1:5-1:6,
+        Message: "Expected an expression",
+    },
+}
+---
+
+[TestParseExprErrorHandling/AsyncGenWithoutFn - 1]
+&ast.ErrorExpr{
+    span: 1:11-1:12,
+}
+---
+
+[TestParseExprErrorHandling/AsyncGenWithoutFn - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: 1:7-1:10,
+        Message: "Expected 'fn' after 'async gen'",
+    },
+    &parser.Error{
+        Span: 1:11-1:12,
+        Message: "Expected an expression",
+    },
+}
+---

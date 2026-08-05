@@ -5889,3 +5889,51 @@
     span: 2:5-4:6,
 }
 ---
+
+[TestClassConstructorErrors/GenConstructor - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Foo",
+            span: 2:11-2:14,
+        },
+        Body: []ast.ClassElem{
+            &ast.ConstructorElem{
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Params: []*ast.Param{
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "self",
+                                    Mutable: true,
+                                    span: 3:22-3:30,
+                                },
+                            },
+                        },
+                    },
+                    Body: &ast.Block{
+                        Span: 3:32-3:34,
+                    },
+                    span: 3:6-3:34,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mut: true,
+                    Span_: 3:22-3:30,
+                },
+                Span_: 3:6-3:34,
+            },
+        },
+        span: 2:5-4:6,
+    },
+    span: 2:5-4:6,
+}
+---
+
+[TestClassConstructorErrors/GenConstructor - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: 3:10-3:21,
+        Message: "constructors cannot be generators",
+    },
+}
+---

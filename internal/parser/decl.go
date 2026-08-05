@@ -599,13 +599,16 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 func (p *Parser) parseConstructorElem(
 	start ast.Location,
 	token *Token,
-	isStatic, isAsync, isPrivate, isReadonly, isGet, isSet bool,
+	isStatic, isAsync, isGen, isPrivate, isReadonly, isGet, isSet bool,
 ) ast.ClassElem {
 	if isStatic {
 		p.reportError(token.Span, "constructors cannot be static")
 	}
 	if isAsync {
 		p.reportError(token.Span, "constructors cannot be async")
+	}
+	if isGen {
+		p.reportError(token.Span, "constructors cannot be generators")
 	}
 	if isReadonly {
 		p.reportError(token.Span, "constructors cannot be readonly")
@@ -758,13 +761,14 @@ func (p *Parser) parseClassElemInner() ast.ClassElem {
 
 	isStatic := false
 	isAsync := false
+	isGen := false
 	isPrivate := false
 	isReadonly := false
 	isGet := false
 	isSet := false
 	start := token.Span.Start
 
-	// Parse modifiers: static, async, private, readonly (order-insensitive)
+	// Parse modifiers: static, async, gen, private, readonly (order-insensitive)
 	for {
 		// Check if context has been cancelled (timeout or cancellation)
 		select {
@@ -782,6 +786,9 @@ func (p *Parser) parseClassElemInner() ast.ClassElem {
 			p.lexer.consume()
 		case Async:
 			isAsync = true
+			p.lexer.consume()
+		case Gen:
+			isGen = true
 			p.lexer.consume()
 		case Private:
 			isPrivate = true
@@ -804,12 +811,19 @@ modifiers_done:
 	// `constructor` is a contextual keyword at the start of a class element.
 	// Anywhere else it is a regular identifier.
 	if token.Type == Identifier && token.Value == "constructor" {
-		return p.parseConstructorElem(start, token, isStatic, isAsync, isPrivate, isReadonly, isGet, isSet)
+		return p.parseConstructorElem(start, token, isStatic, isAsync, isGen, isPrivate, isReadonly, isGet, isSet)
 	}
 
 	name := p.objExprKey()
 	if name == nil {
 		return nil
+	}
+
+	// An accessor names what it reads or writes, so it has no generator form: a getter
+	// returns the property's value rather than a generator, and a setter yields nothing
+	// at all. Reject `gen` on either, the way a constructor rejects it.
+	if isGen && (isGet || isSet) {
+		p.reportError(token.Span, "getters and setters cannot be generators")
 	}
 
 	// Parse optional lifetime + type parameters for the method.
@@ -965,9 +979,11 @@ modifiers_done:
 		}
 
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		fn := ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span)
+		fn.Gen = isGen
 		return &ast.MethodElem{
 			Name:     name,
-			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span),
+			Fn:       fn,
 			Receiver: receiver,
 			Static:   isStatic,
 			Private:  isPrivate,

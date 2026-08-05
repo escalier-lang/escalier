@@ -440,8 +440,15 @@ func (p *Parser) primaryExpr() ast.Expr {
 			return fnExpr
 		case Async:
 			p.lexer.consume() // consume 'async'
+			// `gen` may follow `async`, so the blame span and the message track the last
+			// keyword actually consumed. Reporting `async` after `gen` was taken would
+			// point past the keyword the missing `fn` belongs to.
 			gen := false
+			kwSpan := token.Span
+			kw := "async"
 			if p.lexer.peek().Type == Gen {
+				kwSpan = p.lexer.peek().Span
+				kw = "async gen"
 				p.lexer.consume() // consume 'gen'
 				gen = true
 			}
@@ -449,7 +456,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 				fnExpr := p.fnExpr(token.Span.Start, true, gen)
 				return fnExpr
 			} else {
-				p.reportError(token.Span, "Expected 'fn' after 'async'")
+				p.reportError(kwSpan, "Expected 'fn' after '"+kw+"'")
 				return nil
 			}
 		case Gen:
