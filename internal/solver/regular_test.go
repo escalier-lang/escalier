@@ -10,10 +10,18 @@ import (
 // probeKnot infers src, reads the alias reference bound to `Probe`, and returns the μ-knot the
 // regular-tree check proves for it, or the empty string when it proves none. Every case below
 // declares the aliases under test and names the one reference it asks about as `Probe`.
-func probeKnot(t *testing.T, src string) string {
+//
+// wantDiags is what the declarations themselves report, which is empty for most cases. An alias
+// whose recursion carries its parameter only inside its own reference has a phantom parameter, and
+// the unused-type-parameter check warns about it at the declaration.
+func probeKnot(t *testing.T, src string, wantDiags []string) string {
 	t.Helper()
 	nodes, ctx, errs := inferTypeNodes(t, src)
-	require.Empty(t, Messages(errs))
+	if len(wantDiags) == 0 {
+		require.Empty(t, Messages(errs))
+	} else {
+		require.Equal(t, wantDiags, messagesWithSpan(errs))
+	}
 	ref, ok := nodes["Probe"].(*soltype.AliasType)
 	require.True(t, ok, "Probe must bind an alias reference, got %T", nodes["Probe"])
 	knot := ctx.muKnotFor(ref)
@@ -29,9 +37,10 @@ func probeKnot(t *testing.T, src string) string {
 // expansion.
 func TestMuKnotForSettlesRegularAlias(t *testing.T) {
 	tests := []struct {
-		name string
-		src  string
-		want string
+		name      string
+		src       string
+		want      string
+		wantDiags []string
 	}{
 		{
 			// The headline shape. `keyof {c: X}` is `"c"` whatever X is, so the argument stops
@@ -65,6 +74,10 @@ func TestMuKnotForSettlesRegularAlias(t *testing.T) {
 				type Probe = Deep<number>
 			`,
 			want: "μX0.{a: X0}",
+			wantDiags: []string{
+				"2:15-2:16: no argument passed to type parameter T can appear in the type, so " +
+					"Deep<number> and Deep<string> are the same type",
+			},
 		},
 		{
 			// Two recursive references growing the argument the same way emit one body, so one binder
@@ -188,6 +201,10 @@ func TestMuKnotForSettlesRegularAlias(t *testing.T) {
 				type Probe = Bare<number>
 			`,
 			want: "",
+			wantDiags: []string{
+				"2:15-2:16: no argument passed to type parameter T can appear in the type, so " +
+					"Bare<number> and Bare<string> are the same type",
+			},
 		},
 		{
 			// The same degeneracy behind a transparent alias, which unfolds to whatever it was handed.
@@ -198,11 +215,15 @@ func TestMuKnotForSettlesRegularAlias(t *testing.T) {
 				type Probe = Wrapped<number>
 			`,
 			want: "",
+			wantDiags: []string{
+				"3:18-3:19: no argument passed to type parameter T can appear in the type, so " +
+					"Wrapped<number> and Wrapped<string> are the same type",
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, probeKnot(t, tt.src))
+			require.Equal(t, tt.want, probeKnot(t, tt.src, tt.wantDiags))
 		})
 	}
 }
