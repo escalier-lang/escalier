@@ -966,11 +966,26 @@ type NotIterableError struct {
 // `-> Promise<_>` to let the checker infer the inner from the body.
 //
 // Like AwaitOutsideAsyncError it is a WALK rejection, not a type-rule failure:
-// born in inferFunc (asyncReturn) with the annotation and function nodes in hand,
+// born in inferFunc with the annotation and function nodes in hand,
 // so it self-blames from the annotation's span and relates the function via
 // Related() (the signature the user would fix).
 type AsyncReturnNotPromiseError struct {
 	Return ast.TypeAnn // the offending (non-Promise) return annotation
+	Fn     ast.Node    // the enclosing async function, surfaced via Related()
+}
+
+// AsyncThrowsClauseError fires when an `async fn` writes a `throws` clause. An async
+// function cannot raise — its body's throws are absorbed by the promise it returns —
+// so the rejection type is declared in the return annotation, `-> Promise<V, E>`,
+// and the clause form belongs to sync functions. Recovery ignores the clause: the
+// rejection is still read from the annotation or inferred from the body, so one
+// diagnostic covers the fault.
+//
+// Like AsyncReturnNotPromiseError it is a WALK rejection: born in inferFunc with the
+// clause and function nodes in hand, so it self-blames from the clause's span and
+// relates the function via Related() (the signature the user would fix).
+type AsyncThrowsClauseError struct {
+	Throws ast.TypeAnn // the clause's annotation (blame span)
 	Fn     ast.Node    // the enclosing async function, surfaced via Related()
 }
 
@@ -1079,6 +1094,7 @@ func (*ForAwaitOutsideAsyncError) isSolverError()           {}
 func (*NotIterableError) isSolverError()                    {}
 func (*ReturnOutsideFunctionError) isSolverError()          {}
 func (*AsyncReturnNotPromiseError) isSolverError()          {}
+func (*AsyncThrowsClauseError) isSolverError()              {}
 func (*NonExhaustiveMatchError) isSolverError()             {}
 func (*MissingCatchArmError) isSolverError()                {}
 func (*UnhandledRethrowError) isSolverError()               {}
@@ -2108,6 +2124,19 @@ func (e *AsyncReturnNotPromiseError) Message() string {
 	return "async function return type must be a Promise; write Promise<...> or Promise<_>"
 }
 
+func (e *AsyncThrowsClauseError) Span() ast.Span { return e.Throws.Span() }
+func (e *AsyncThrowsClauseError) Related() []ast.Span {
+	// Point at the enclosing async function (the signature to fix), guarding a nil Fn
+	// the way AsyncReturnNotPromiseError does.
+	if e.Fn == nil {
+		return nil
+	}
+	return []ast.Span{e.Fn.Span()}
+}
+func (e *AsyncThrowsClauseError) Message() string {
+	return "async function cannot have a throws clause; declare the rejection type in the return type as Promise<..., E> or Promise<_, _>"
+}
+
 func (e *CannotConstrainError) Message() string {
 	msg := fmt.Sprintf("cannot constrain %s <: %s", describe(e.Sub), describe(e.Super))
 	if e.commitUnion != nil {
@@ -2455,9 +2484,16 @@ func describe(t soltype.Type) string {
 	case *soltype.PromiseType:
 		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
 		// object above. That is deliberate and consistent with the Union/Intersection
-		// arms below, which also recurse: a Promise's single type argument is compact
+		// arms below, which also recurse: a Promise's type arguments are compact
 		// and informative (`Promise<number>`), whereas a function/tuple/record would
-		// be verbose spelled out, so those stay nominal.
+		// be verbose spelled out, so those stay nominal. A promise that can reject
+		// names its rejection type as a second argument, matching soltype.Print — unless
+		// the slot holds a bare unsolved variable. inferAwait's synthesized requirement
+		// carries the body's throws sink there, internal scaffolding that says nothing
+		// about why a constraint failed, so a variable slot keeps the one-argument form.
+		if _, isVar := t.Err.(*soltype.TypeVarType); t.Rejects() && !isVar {
+			return "Promise<" + describe(t.Inner) + ", " + describe(t.Err) + ">"
+		}
 		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.KeyofType:
 		// A `keyof` residual renders structurally, recursing like the Promise arm, so a

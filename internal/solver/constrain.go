@@ -1121,7 +1121,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// concretes (e.g. Promise<L> <: Tuple), fall through to the generic
 			// CannotConstrainError below, matching the function/tuple/record arms.
 			// A promise's payload is its own annotation context, so the flag resets.
-			return c.constrain(sub.Inner, sup.Inner, seen, false)
+			errs := c.constrain(sub.Inner, sup.Inner, seen, false)
+			// The rejection type is covariant like the payload, the same rule the
+			// function arm applies to Throws. A non-rejecting sub carries `never`,
+			// which constrain short-circuits, so it satisfies every super.
+			return append(errs, c.constrain(sub.ErrOrNever(), sup.ErrOrNever(), seen, false)...)
 		}
 	case *soltype.RefType:
 		// THE GATE (M4 C2): the single RefType <: RefType rule. The mut-driven inner

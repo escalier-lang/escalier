@@ -625,50 +625,6 @@
 }
 ---
 
-[TestParseModuleNoErrors/DeclareAsyncFuncDecl - 1]
-&ast.DeclStmt{
-    Decl: &ast.FuncDecl{
-        Name: &ast.Ident{
-            Name: "fetch",
-            span: 2:22-2:27,
-        },
-        FuncSig: ast.FuncSig{
-            Params: []*ast.Param{
-                &ast.Param{
-                    Pattern: &ast.IdentPat{
-                        Name: "url",
-                        span: 2:28-2:31,
-                    },
-                    TypeAnn: &ast.StringTypeAnn{
-                        span: 2:33-2:39,
-                    },
-                },
-            },
-            Return: &ast.TypeRefTypeAnn{
-                Name: &ast.Ident{
-                    Name: "Promise",
-                    span: 2:44-2:51,
-                },
-                TypeArgs: []ast.TypeAnn{
-                    &ast.TypeRefTypeAnn{
-                        Name: &ast.Ident{
-                            Name: "Response",
-                            span: 2:52-2:60,
-                        },
-                        span: 2:52-2:60,
-                    },
-                },
-                span: 2:44-2:61,
-            },
-            Async: true,
-        },
-        declare: true,
-        span: 2:5-2:61,
-    },
-    span: 2:5-2:61,
-}
----
-
 [TestParseModuleNoErrors/ExportAsyncFuncDecl - 1]
 &ast.DeclStmt{
     Decl: &ast.FuncDecl{

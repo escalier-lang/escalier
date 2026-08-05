@@ -170,7 +170,9 @@ func TestInferAwaitOutsideAsyncTopLevelNoRelated(t *testing.T) {
 
 // `await` of a non-Promise concrete fails through constrain — the rule
 // constrain(e <: Promise<U>) lowers `number <: Promise<U>` to a
-// CannotConstrainError because the concrete shapes don't match.
+// CannotConstrainError because the concrete shapes don't match. The requirement
+// also carries the body's rejection sink in its Err slot, but describe suppresses
+// an unsolved-variable slot, so the message keeps the one-argument form.
 func TestInferAwaitOfNonPromiseFails(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		async fn f(n: number) {

@@ -152,6 +152,32 @@ func TestAcceptFuncThrows(t *testing.T) {
 	require.Same(t, noThrows, noThrows.Accept(identityVisitor{}, Positive), "a nil throws walks nothing")
 }
 
+// A promise's rejection type walks at the same polarity as its payload, since both
+// describe an outcome the promise produces, and a rewrite of it forces a fresh parent the
+// same way a rewritten payload does. A nil Err is the `never` shorthand with nothing to
+// walk.
+func TestAcceptPromiseErr(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	str := &PrimType{Prim: StrPrim}
+	a := &TypeVarType{ID: 1}
+	b := &TypeVarType{ID: 2}
+
+	// Promise<a, b>, walked from Positive.
+	p := &PromiseType{Inner: a, Err: b}
+	r := &recorder{seen: map[Type]Polarity{}}
+	p.Accept(r, Positive)
+	require.Equal(t, Positive, r.seen[a], "the payload is covariant")
+	require.Equal(t, Positive, r.seen[b], "the rejection type is covariant, like the payload")
+
+	got := p.Accept(&replaceVar{target: b, repl: str}, Positive).(*PromiseType)
+	require.NotSame(t, p, got, "a changed rejection type forces a fresh parent")
+	require.Same(t, str, got.Err, "the changed rejection type took the replacement")
+	require.Same(t, a, got.Inner, "the unchanged payload keeps its pointer")
+
+	noErr := &PromiseType{Inner: num}
+	require.Same(t, noErr, noErr.Accept(identityVisitor{}, Positive), "a nil Err walks nothing")
+}
+
 // recordEntered logs every node EnterType reaches, replacing target with repl and
 // SKIPPING its children — so a skipped subtree is never entered.
 type recordEntered struct {

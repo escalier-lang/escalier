@@ -747,7 +747,34 @@ func (*RecursiveType) isRefInner()    {}
 // L <: R) and the `await` rule does NOT recursively flatten (so awaiting
 // `Promise<Promise<T>>` yields `Promise<T>`, matching the milestone's
 // no-auto-flatten contract — flattening is `Awaited<T>`, M9).
-type PromiseType struct{ Inner Type }
+//
+// Err is the type the promise rejects with, the twin of FuncType.Throws for the
+// asynchronous exceptional exit. What an `async fn`'s body throws lands here rather
+// than on the function's own Throws, since a caller observes the rejection only by
+// awaiting the promise. Like Inner it is covariant, and like FuncType.Throws a nil
+// Err is shorthand for `never`; ErrOrNever collapses nil and an explicit `never`
+// so no reader tells them apart. A promise that cannot reject is therefore the
+// zero value and renders as the one-argument `Promise<T>`.
+type PromiseType struct {
+	Inner Type
+	Err   Type
+}
+
+// ErrOrNever returns the type t may reject with, resolving the nil shorthand to the
+// `never` it stands for, so callers compare one canonical value.
+func (t *PromiseType) ErrOrNever() Type {
+	if t.Err == nil {
+		return &NeverType{}
+	}
+	return t.Err
+}
+
+// Rejects reports whether t can reject: its Err carries something other than the nil
+// shorthand or an explicit `never`. The printer and the solver's raised-tracking both
+// ask this question, so it lives here to keep their answers locked together.
+func (t *PromiseType) Rejects() bool {
+	return t.Err != nil && !isNever(t.Err)
+}
 
 // ArrayType is a homogeneous sequence of Elem, written `Array<T>`. It is a dedicated concrete
 // for the reason PromiseType is: one stdlib generic the milestone needs typed ahead of library
@@ -1324,7 +1351,10 @@ func LevelOf(t Type) int {
 		// level boundary intact: the body's variables are freshened and the binder is left alone.
 		return LevelOf(t.Body)
 	case *PromiseType:
-		return LevelOf(t.Inner)
+		// A promise's level is the max of its payload's and its rejection type's, so an
+		// out-of-level Err lifts the level and the freshener/extruder prune descends to
+		// freshen it, the same reason the FuncType arm folds in its Throws.
+		return max(LevelOf(t.Inner), throwsLevel(t.Err))
 	case *ArrayType:
 		// An array's level is its element's, the same single-child rule PromiseType follows.
 		return LevelOf(t.Elem)
@@ -1412,9 +1442,10 @@ func selfLevel(self *FuncParam) int {
 	return LevelOf(self.Type)
 }
 
-// throwsLevel returns the level of an accessor's throws position, 0 for the nil shorthand
-// that stands for `never`. `never` is a childless leaf at level 0, so the shorthand and an
-// explicit `never` agree without materializing one.
+// throwsLevel returns the level of an exceptional-exit position — an accessor's throws
+// or a promise's Err — 0 for the nil shorthand that stands for `never`. `never` is a
+// childless leaf at level 0, so the shorthand and an explicit `never` agree without
+// materializing one.
 func throwsLevel(throws Type) int {
 	if throws == nil {
 		return 0

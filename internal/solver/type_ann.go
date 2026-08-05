@@ -58,7 +58,7 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		// an `async fn () -> Promise<T>` annotation resolves here. Any other name or arity
 		// reports unsupported with a `never` placeholder so the caller can recover by
 		// keeping the inferred type.
-		if ast.QualIdentToString(ta.Name) == "Promise" && len(ta.TypeArgs) == 1 {
+		if ast.QualIdentToString(ta.Name) == "Promise" && (len(ta.TypeArgs) == 1 || len(ta.TypeArgs) == 2) {
 			// A lifetime-annotated Promise (`'a Promise<T>` or `Promise<'a, T>`) is not
 			// supported: M3's PromiseType carries no lifetime, so silently accepting it
 			// would drop the lifetime. Reject it as an unsupported feature rather than
@@ -87,7 +87,18 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 				// `Promise<T0>`) where ErrorType would freeze it to `Promise<error>`.
 				inner = c.freshAt(lvl)
 			}
-			t := &soltype.PromiseType{Inner: inner}
+			// The optional second argument names the rejection type, `Promise<T, E>`. An
+			// unwritten one leaves Err nil, the shorthand for a promise that cannot
+			// reject. A bad second argument recovers to a fresh var for the reason the
+			// payload does above.
+			var errT soltype.Type
+			if len(ta.TypeArgs) == 2 {
+				errT, ok = c.resolveTypeAnn(scope, ta.TypeArgs[1], lvl)
+				if !ok {
+					errT = c.freshAt(lvl)
+				}
+			}
+			t := &soltype.PromiseType{Inner: inner, Err: errT}
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
@@ -171,7 +182,7 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		}
 		// Everywhere else the value flowing in fills it, so `_` is an inference variable at the
 		// current level. `Promise<_>` on an async fn's return relies on this: the body's return
-		// flows into the variable, inferring the inner (asyncReturn).
+		// flows into the variable, inferring the inner.
 		t := c.freshAt(lvl)
 		c.recordProv(t, ta, WildcardAnnotation)
 		return t, true
