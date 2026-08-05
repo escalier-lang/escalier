@@ -940,12 +940,11 @@ func (c *checker) asyncReturn(node ast.Node, ann ast.TypeAnn, annPromise *soltyp
 }
 
 // wrapPromise mints the external `Promise<inner, errT>` face of an async function and
-// records its provenance (PromiseWrap) against the function node. A `never` errT is
-// stored as the nil shorthand so a promise that cannot reject stays the zero value.
+// records its provenance (PromiseWrap) against the function node. errT is the body's
+// throws sink, so it is nil for a body with no exceptional exit and an inference
+// variable otherwise; either way the rejection needs no normalizing here, and every
+// reader collapses nil and an explicit `never` through ErrOrNever.
 func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) soltype.Type {
-	if isNeverType(errT) {
-		errT = nil
-	}
 	wrapped := &soltype.PromiseType{Inner: inner, Err: errT}
 	c.recordProv(wrapped, node, PromiseWrap)
 	return wrapped
