@@ -776,6 +776,31 @@ func (t *PromiseType) Rejects() bool {
 	return t.Err != nil && !isNever(t.Err)
 }
 
+// GeneratorType is the external face of a `gen fn`: calling one returns a generator
+// object rather than the body's value. It is a dedicated concrete for the reason
+// PromiseType is: one stdlib generic the milestone needs typed ahead of library
+// ingestion in M7.5. Yield is the union of the types the body's `yield` expressions
+// produce, Ret is the body's return type, and Next is the type a `yield` expression
+// evaluates to, the value a caller passes back in through `next(v)`. Yield and Ret
+// are covariant; Next is contravariant, since it is an input the way a parameter is.
+// Async distinguishes an `async gen fn`'s AsyncGenerator from a sync Generator; the
+// two are unrelated under subtyping. All three type fields are always non-nil.
+type GeneratorType struct {
+	Yield Type
+	Ret   Type
+	Next  Type
+	Async bool
+}
+
+// Name returns the stdlib name t renders under, `Generator` or `AsyncGenerator`,
+// so the printer and diagnostics spell the async split the same way.
+func (t *GeneratorType) Name() string {
+	if t.Async {
+		return "AsyncGenerator"
+	}
+	return "Generator"
+}
+
 // ArrayType is a homogeneous sequence of Elem, written `Array<T>`. It is a dedicated concrete
 // for the reason PromiseType is: one stdlib generic the milestone needs typed ahead of library
 // ingestion. It exists to give a rest parameter an element type, the arity-and-element pair a
@@ -1229,6 +1254,7 @@ func (*TupleType) isType()           {}
 func (*ObjectType) isType()          {}
 func (*RefType) isType()             {}
 func (*PromiseType) isType()         {}
+func (*GeneratorType) isType()       {}
 func (*ArrayType) isType()           {}
 func (*Void) isType()                {}
 func (*NullType) isType()            {}
@@ -1355,6 +1381,11 @@ func LevelOf(t Type) int {
 		// out-of-level Err lifts the level and the freshener/extruder prune descends to
 		// freshen it, the same reason the FuncType arm folds in its Throws.
 		return max(LevelOf(t.Inner), throwsLevel(t.Err))
+	case *GeneratorType:
+		// A generator's level is the max over its three slots, so an out-of-level yield,
+		// return, or next type lifts the level and the freshener/extruder prune descends
+		// into all three, the three-child analogue of the PromiseType arm.
+		return max(max(LevelOf(t.Yield), LevelOf(t.Ret)), LevelOf(t.Next))
 	case *ArrayType:
 		// An array's level is its element's, the same single-child rule PromiseType follows.
 		return LevelOf(t.Elem)
