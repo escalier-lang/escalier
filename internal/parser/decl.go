@@ -181,7 +181,7 @@ func (p *Parser) lifetimeParam(nameTok *Token) *ast.LifetimeParam {
 	return ast.NewLifetimeParam(nameTok.Value, bounds, span)
 }
 
-// Decl = decorator* 'export'? 'override'? 'declare'? 'async'? (varDecl | fnDecl | ...)
+// Decl = decorator* 'export'? 'override'? 'declare'? 'async'? 'gen'? (varDecl | fnDecl | ...)
 //
 //	| 'override'? 'declare' 'module' StrLit '{' decl* '}'
 //	| 'override'? 'declare' 'global' '{' decl* '}'
@@ -194,6 +194,7 @@ func (p *Parser) Decl() ast.Decl {
 	override := false
 	declare := false
 	async := false
+	gen := false
 	final := false
 
 	decorators := p.parseDecorators()
@@ -251,8 +252,17 @@ func (p *Parser) Decl() ast.Decl {
 		token = p.lexer.next()
 	}
 
-	if async && token.Type != Fn {
+	if token.Type == Gen {
+		gen = true
+		token = p.lexer.next()
+	}
+
+	if async && !gen && token.Type != Fn {
 		p.reportError(token.Span, "async can only be used with functions")
+	}
+
+	if gen && token.Type != Fn {
+		p.reportError(token.Span, "gen can only be used with functions")
 	}
 
 	var finalSpan ast.Span
@@ -272,7 +282,7 @@ func (p *Parser) Decl() ast.Decl {
 	case Val, Var:
 		decl = p.varDecl(start, token, export, declare)
 	case Fn:
-		decl = p.fnDecl(start, export, declare, async)
+		decl = p.fnDecl(start, export, declare, async, gen)
 	case Type:
 		decl = p.typeDecl(start, export, declare)
 	case Interface:
@@ -1102,7 +1112,7 @@ func (p *Parser) varDecl(
 // fnDecl = 'fn' ident '<' typeParam* '>' '(' param* ')' block
 // NOTE: `block` is optional for fnDecl when `declare` is true.
 // TODO: dedupe with `fnExpr`
-func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async bool) ast.Decl {
+func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async bool, gen bool) ast.Decl {
 	token := p.lexer.peek()
 	var ident *ast.Ident
 	if token.Type == Identifier {
@@ -1134,6 +1144,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 				ident, lifetimeParams, typeParams, nil, nil, nil, nil, export, declare, async,
 				ast.NewSpan(start, end, p.lexer.source.ID),
 			)
+			fd.Gen = gen
 			return fd
 		}
 	} else {
@@ -1183,6 +1194,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		ident, lifetimeParams, typeParams, params, returnType, throwsType, body, export, declare, async,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
+	fd.Gen = gen
 	fd.Inexact = inexact
 	return fd
 }

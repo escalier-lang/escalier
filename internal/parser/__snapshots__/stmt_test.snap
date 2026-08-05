@@ -4638,3 +4638,202 @@
     },
 }
 ---
+
+[TestParseStmtNoErrors/GenFuncDecl - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "count",
+            span: 1:8-1:13,
+        },
+        FuncSig: ast.FuncSig{
+            Gen: true,
+        },
+        Body: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ExprStmt{
+                    Expr: &ast.YieldExpr{
+                        Value: &ast.LiteralExpr{
+                            Lit: &ast.NumLit{
+                                Value: 1,
+                                span: 1:24-1:25,
+                            },
+                            span: 1:24-1:25,
+                        },
+                        span: 1:18-1:25,
+                    },
+                    span: 1:18-1:25,
+                },
+            },
+            Span: 1:16-1:27,
+        },
+        span: 1:1-1:27,
+    },
+    span: 1:1-1:27,
+}
+---
+
+[TestParseStmtNoErrors/AsyncGenFuncExpr - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.IdentPat{
+            Name: "f",
+            span: 1:5-1:6,
+        },
+        Init: &ast.FuncExpr{
+            FuncSig: ast.FuncSig{
+                Async: true,
+                Gen: true,
+            },
+            Body: &ast.Block{
+                Stmts: []ast.Stmt{
+                    &ast.ExprStmt{
+                        Expr: &ast.YieldExpr{
+                            Value: &ast.AwaitExpr{
+                                Arg: &ast.IdentExpr{
+                                    Name: "x",
+                                    span: 1:39-1:40,
+                                },
+                                span: 1:33-1:40,
+                            },
+                            span: 1:27-1:40,
+                        },
+                        span: 1:27-1:40,
+                    },
+                },
+                Span: 1:25-1:42,
+            },
+            span: 1:9-1:42,
+        },
+        span: 1:1-1:42,
+    },
+    span: 1:1-1:42,
+}
+---
+
+[TestParseStmtNoErrors/AsyncGenFuncDecl - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "fetch",
+            span: 1:14-1:19,
+        },
+        FuncSig: ast.FuncSig{
+            Async: true,
+            Gen: true,
+        },
+        Body: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ExprStmt{
+                    Expr: &ast.YieldExpr{
+                        Value: &ast.AwaitExpr{
+                            Arg: &ast.IdentExpr{
+                                Name: "x",
+                                span: 1:36-1:37,
+                            },
+                            span: 1:30-1:37,
+                        },
+                        span: 1:24-1:37,
+                    },
+                    span: 1:24-1:37,
+                },
+            },
+            Span: 1:22-1:39,
+        },
+        span: 1:1-1:39,
+    },
+    span: 1:1-1:39,
+}
+---
+
+[TestParseStmtNoErrors/GenFuncDeclWithGeneratorReturnAnn - 1]
+&ast.DeclStmt{
+    Decl: &ast.FuncDecl{
+        Name: &ast.Ident{
+            Name: "count",
+            span: 1:8-1:13,
+        },
+        FuncSig: ast.FuncSig{
+            Return: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "Generator",
+                    span: 1:19-1:28,
+                },
+                TypeArgs: []ast.TypeAnn{
+                    &ast.NumberTypeAnn{
+                        span: 1:29-1:35,
+                    },
+                    &ast.LitTypeAnn{
+                        Lit: &ast.UndefinedLit{
+                            span: 1:37-1:46,
+                        },
+                        span: 1:37-1:46,
+                    },
+                    &ast.NeverTypeAnn{
+                        span: 1:48-1:53,
+                    },
+                },
+                span: 1:19-1:54,
+            },
+            Gen: true,
+        },
+        Body: &ast.Block{
+            Stmts: []ast.Stmt{
+                &ast.ExprStmt{
+                    Expr: &ast.YieldExpr{
+                        Value: &ast.LiteralExpr{
+                            Lit: &ast.NumLit{
+                                Value: 1,
+                                span: 1:63-1:64,
+                            },
+                            span: 1:63-1:64,
+                        },
+                        span: 1:57-1:64,
+                    },
+                    span: 1:57-1:64,
+                },
+            },
+            Span: 1:55-1:66,
+        },
+        span: 1:1-1:66,
+    },
+    span: 1:1-1:66,
+}
+---
+
+[TestParseStmtNoErrors/GenFuncExpr - 1]
+&ast.DeclStmt{
+    Decl: &ast.VarDecl{
+        Pattern: &ast.IdentPat{
+            Name: "f",
+            span: 1:5-1:6,
+        },
+        Init: &ast.FuncExpr{
+            FuncSig: ast.FuncSig{
+                Gen: true,
+            },
+            Body: &ast.Block{
+                Stmts: []ast.Stmt{
+                    &ast.ExprStmt{
+                        Expr: &ast.YieldExpr{
+                            Value: &ast.LiteralExpr{
+                                Lit: &ast.NumLit{
+                                    Value: 1,
+                                    span: 1:27-1:28,
+                                },
+                                span: 1:27-1:28,
+                            },
+                            span: 1:21-1:28,
+                        },
+                        span: 1:21-1:28,
+                    },
+                },
+                Span: 1:19-1:30,
+            },
+            span: 1:9-1:30,
+        },
+        span: 1:1-1:30,
+    },
+    span: 1:1-1:30,
+}
+---

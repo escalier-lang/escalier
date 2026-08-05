@@ -506,6 +506,10 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Body)
 		case *PromiseType:
 			walk(t.Inner)
+		case *GeneratorType:
+			walk(t.Yield)
+			walk(t.Ret)
+			walk(t.Next)
 		case *ArrayType:
 			walk(t.Elem)
 		case *RefType:
@@ -817,6 +821,8 @@ func (p *namedPrinter) printType(t Type) string {
 		return t.DisplayName()
 	case *PromiseType:
 		return "Promise<" + p.printType(t.Inner) + ">"
+	case *GeneratorType:
+		return t.Name() + "<" + p.printType(t.Yield) + ", " + p.printType(t.Ret) + ", " + p.printType(t.Next) + ">"
 	case *ArrayType:
 		return "Array<" + p.printType(t.Elem) + ">"
 	case *RefType:

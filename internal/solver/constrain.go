@@ -1123,6 +1123,19 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// A promise's payload is its own annotation context, so the flag resets.
 			return c.constrain(sub.Inner, sup.Inner, seen, false)
 		}
+	case *soltype.GeneratorType:
+		// Yield and Ret are covariant, what the generator hands out; Next is
+		// contravariant, the value a caller sends back in through next(v), so the
+		// constraint reverses like a function parameter's. A sync Generator and an
+		// AsyncGenerator are unrelated, so an async mismatch falls through to the
+		// generic CannotConstrainError below, as an unrelated concrete pair does.
+		// Each slot is its own annotation context, so the deep-mut flag resets.
+		if sup, ok := super.(*soltype.GeneratorType); ok && sub.Async == sup.Async {
+			errs := c.constrain(sub.Yield, sup.Yield, seen, false)
+			errs = append(errs, c.constrain(sub.Ret, sup.Ret, seen, false)...)
+			errs = append(errs, c.constrain(sup.Next, sub.Next, seen, false)...)
+			return errs
+		}
 	case *soltype.RefType:
 		// THE GATE (M4 C2): the single RefType <: RefType rule. The mut-driven inner
 		// invariance is the highest-risk encoding in the migration — see the M4 plan.

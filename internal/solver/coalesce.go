@@ -1333,6 +1333,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
 		return ok && equalTypeWith(a.Inner, b.Inner, ctx)
+	case *soltype.GeneratorType:
+		b, ok := b.(*soltype.GeneratorType)
+		return ok && a.Async == b.Async &&
+			equalTypeWith(a.Yield, b.Yield, ctx) &&
+			equalTypeWith(a.Ret, b.Ret, ctx) &&
+			equalTypeWith(a.Next, b.Next, ctx)
 	case *soltype.RefType:
 		b, ok := b.(*soltype.RefType)
 		// Mut must match — a mutable borrow never equals an immutable one — and the

@@ -53,3 +53,19 @@ export async fn fetchItems() {
     yield 2
     yield 3
 }
+
+// Generator declared with the `gen` keyword
+export gen fn genCount() {
+    yield 10
+    yield 20
+}
+
+// Async generator declared with `async gen`
+export async gen fn genFetch() {
+    yield 1
+}
+
+// Generator function expression
+export val genExpr = gen fn () {
+    yield "a"
+}

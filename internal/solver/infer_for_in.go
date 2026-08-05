@@ -85,16 +85,25 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 // iterableElemType resolves the element type T yielded by iterating a value of
 // type t, returning ok=false when t is not iterable in the current sense.
 //
-// For a `for await`, T must come from an AsyncIterable. No async iterable is
-// representable in the solver yet — the real AsyncIterable stdlib type and the
-// symbol-keyed protocol land in M7 — so a `for await` over any structural operand
-// returns false, which is how a sync iterable is rejected by the type rule.
+// For a `for await`, T must come from an AsyncIterable. The one async iterable the
+// solver can represent is an AsyncGenerator, whose Yield slot is its element type;
+// the real AsyncIterable stdlib type and the symbol-keyed protocol land with library
+// ingestion, so every other operand returns false, which is how a sync iterable is
+// rejected by the type rule.
 //
 // For a sync `for`, the resolution is structural (see syncElemType): a tuple
 // yields the union of its element types, a union yields the union of its
-// branches' element types, and every other type is not iterable.
+// branches' element types, a sync generator yields its Yield slot, and every
+// other type is not iterable.
 func (c *checker) iterableElemType(await bool, t soltype.Type) (soltype.Type, bool) {
 	if await {
+		carrier := soltype.CarrierOf(t)
+		if _, isVar := carrier.(*soltype.TypeVarType); isVar {
+			carrier = soltype.CarrierOf(coalesce(carrier, soltype.Positive))
+		}
+		if g, ok := carrier.(*soltype.GeneratorType); ok && g.Async {
+			return g.Yield, true
+		}
 		return nil, false
 	}
 	return c.syncElemType(t)
@@ -122,6 +131,14 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 		t = soltype.CarrierOf(coalesce(t, soltype.Positive))
 	}
 	switch t := t.(type) {
+	case *soltype.GeneratorType:
+		// A sync generator iterates its yields, so `for x in range(0, 10)` binds x at
+		// the Yield slot. An async generator needs a `for await`, whose arm lives in
+		// iterableElemType.
+		if t.Async {
+			return nil, false
+		}
+		return t.Yield, true
 	case *soltype.TupleType:
 		return newUnion(c.ctx, t.Elems, t.Inexact), true
 	case *soltype.UnionType:

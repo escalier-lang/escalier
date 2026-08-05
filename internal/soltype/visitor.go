@@ -186,6 +186,22 @@ func (t *PromiseType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *GeneratorType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	yield := cur.Yield.Accept(v, pol) // covariant, what the generator produces
+	ret := cur.Ret.Accept(v, pol)     // covariant, like a function's return
+	next := cur.Next.Accept(v, pol.Flip()) // contravariant, the value next(v) sends in
+	out := cur
+	if yield != cur.Yield || ret != cur.Ret || next != cur.Next {
+		out = &GeneratorType{Yield: yield, Ret: ret, Next: next, Async: cur.Async}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *KeyofType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {

@@ -423,6 +423,18 @@ func compareSameKind(a, b soltype.Type) int {
 		return compareObjectFields(a, b)
 	case *soltype.PromiseType:
 		return compareType(a.Inner, b.(*soltype.PromiseType).Inner)
+	case *soltype.GeneratorType:
+		b := b.(*soltype.GeneratorType)
+		if a.Async != b.Async {
+			return boolOrder(a.Async) - boolOrder(b.Async)
+		}
+		if c := compareType(a.Yield, b.Yield); c != 0 {
+			return c
+		}
+		if c := compareType(a.Ret, b.Ret); c != 0 {
+			return c
+		}
+		return compareType(a.Next, b.Next)
 	case *soltype.ArrayType:
 		return compareType(a.Elem, b.(*soltype.ArrayType).Elem)
 	case *soltype.FuncType:
@@ -642,20 +654,22 @@ func typeKindOrder(t soltype.Type) int {
 		return 8
 	case *soltype.PromiseType:
 		return 9
-	case *soltype.ArrayType:
+	case *soltype.GeneratorType:
 		return 10
-	case *soltype.FuncType:
+	case *soltype.ArrayType:
 		return 11
-	case *soltype.UnionType:
+	case *soltype.FuncType:
 		return 12
-	case *soltype.IntersectionType:
+	case *soltype.UnionType:
 		return 13
-	case *soltype.NullType:
+	case *soltype.IntersectionType:
 		return 14
-	case *soltype.Void:
+	case *soltype.NullType:
 		return 15
-	case *soltype.UndefinedType:
+	case *soltype.Void:
 		return 16
+	case *soltype.UndefinedType:
+		return 17
 	}
-	return 17
+	return 18
 }

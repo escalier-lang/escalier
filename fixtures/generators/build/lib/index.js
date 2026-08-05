@@ -16,6 +16,16 @@ export async function* fetchItems() {
   yield 2;
   yield 3;
 }
+export function* genCount() {
+  yield 10;
+  yield 20;
+}
+export const genExpr = function* () {
+  yield "a";
+};
+export async function* genFetch() {
+  yield 1;
+}
 export function* inner() {
   yield 1;
   yield 2;

@@ -924,6 +924,38 @@ type AwaitOutsideAsyncError struct {
 	EnclosingFn ast.Node
 }
 
+// YieldOutsideGenError fires when a `yield` or `yield from` expression appears
+// outside the body of a `gen fn`. Like AwaitOutsideAsyncError it is a WALK
+// rejection, not a type-rule failure: the operand is still walked so its own
+// errors surface, and the yield contributes the error placeholder so callers
+// don't cascade. A closure inside a generator body is rejected too, since the
+// closure itself is not a generator.
+//
+// EnclosingFn is the non-generator function the yield sits in, when there is
+// one — the function the user would mark `gen` to fix the error, surfaced via
+// Related(). It is nil when the yield is at module top-level.
+type YieldOutsideGenError struct {
+	Yield       *ast.YieldExpr
+	EnclosingFn ast.Node
+}
+
+// GenReturnNotGeneratorError fires when a `gen fn` declares a return annotation
+// that is not the matching Generator form. A generator function's external type
+// is always `Generator<Y, R, N>` — `AsyncGenerator<Y, R, N>` when the function
+// is also async — so the annotation NAMES that generator; a bare type
+// (`gen fn () -> number`) and a generator of the wrong async-ness are both
+// rejected. Async records the signature's async-ness so the message names the
+// form to write.
+//
+// Like AsyncReturnNotPromiseError it is a WALK rejection: born in inferFunc
+// (resolveGenSinks) with the annotation and function nodes in hand, so it
+// self-blames from the annotation's span and relates the function via Related().
+type GenReturnNotGeneratorError struct {
+	Return ast.TypeAnn // the offending return annotation
+	Fn     ast.Node    // the enclosing gen function, surfaced via Related()
+	Async  bool        // the signature's async-ness, selecting the expected form
+}
+
 // ReturnOutsideFunctionError fires when a `return` statement is reached outside
 // any function body — e.g. inside an `if` that is part of a top-level `val`
 // initializer. Symmetric to AwaitOutsideAsyncError: the walk rejects it rather
@@ -1078,6 +1110,8 @@ func (*ForAwaitOutsideAsyncError) isSolverError()           {}
 func (*NotIterableError) isSolverError()                    {}
 func (*ReturnOutsideFunctionError) isSolverError()          {}
 func (*AsyncReturnNotPromiseError) isSolverError()          {}
+func (*YieldOutsideGenError) isSolverError()                {}
+func (*GenReturnNotGeneratorError) isSolverError()          {}
 func (*NonExhaustiveMatchError) isSolverError()             {}
 func (*MissingCatchArmError) isSolverError()                {}
 func (*UnhandledRethrowError) isSolverError()               {}
@@ -1982,6 +2016,39 @@ func (e *ReturnOutsideFunctionError) Message() string {
 	return "return can only be used inside a function"
 }
 
+func (e *YieldOutsideGenError) Span() ast.Span { return e.Yield.Span() }
+func (e *YieldOutsideGenError) Related() []ast.Span {
+	// Point at the enclosing function (the one to mark `gen`) when there is one;
+	// empty at module top-level, mirroring AwaitOutsideAsyncError.
+	if e.EnclosingFn != nil {
+		return []ast.Span{e.EnclosingFn.Span()}
+	}
+	return nil
+}
+func (e *YieldOutsideGenError) Message() string {
+	if e.Yield.IsDelegate {
+		return "yield from can only be used inside a generator function"
+	}
+	return "yield can only be used inside a generator function"
+}
+
+func (e *GenReturnNotGeneratorError) Span() ast.Span { return e.Return.Span() }
+func (e *GenReturnNotGeneratorError) Related() []ast.Span {
+	// Point at the enclosing gen function (the signature to fix). Guard a nil Fn to
+	// uphold the "never panic on malformed AST" guarantee, even though inferFunc
+	// always supplies the function node.
+	if e.Fn == nil {
+		return nil
+	}
+	return []ast.Span{e.Fn.Span()}
+}
+func (e *GenReturnNotGeneratorError) Message() string {
+	if e.Async {
+		return "async generator function return type must be an AsyncGenerator; write AsyncGenerator<...>"
+	}
+	return "generator function return type must be a Generator; write Generator<...>"
+}
+
 func (e *ForAwaitOutsideAsyncError) Span() ast.Span { return e.Loop.Span() }
 func (e *ForAwaitOutsideAsyncError) Related() []ast.Span {
 	// Point at the enclosing function to mark `async` when there is one; empty at
@@ -2369,6 +2436,10 @@ func describe(t soltype.Type) string {
 		// and informative (`Promise<number>`), whereas a function/tuple/record would
 		// be verbose spelled out, so those stay nominal.
 		return "Promise<" + describe(t.Inner) + ">"
+	case *soltype.GeneratorType:
+		// Structural like the Promise arm, so a rejected constraint names the slot
+		// types: `Generator<number, void, never>`.
+		return t.Name() + "<" + describe(t.Yield) + ", " + describe(t.Ret) + ", " + describe(t.Next) + ">"
 	case *soltype.KeyofType:
 		// A `keyof` residual renders structurally, recursing like the Promise arm, so a
 		// rejected constraint names it `keyof <operand>` rather than the default `?`. The

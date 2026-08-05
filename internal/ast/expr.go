@@ -376,6 +376,7 @@ type FuncSig struct {
 	Return         TypeAnn // optional
 	Throws         TypeAnn // optional
 	Async          bool    // whether this is an async function
+	Gen            bool    // whether this is a generator function (`gen fn`)
 	Inexact        bool    // trailing `...` marker: fn(a, ...) tolerates extra args (#677 §4.1)
 }
 
