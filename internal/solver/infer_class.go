@@ -42,12 +42,15 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
-	// The window opens before the parameters resolve, so a diagnostic drawn by a bound or a
-	// default suppresses the unused warning the same way one drawn by the body does.
+	// This window covers the body. A class in an SCC component resolved its parameters in the
+	// module pre-pass, before this point, so a diagnostic drawn by a bound or a default is
+	// carried on the shell instead and both are consulted before the unused warning is
+	// reported.
 	quiet := c.errorWindow()
 
 	// The class's type parameters and the scope its body resolves in, taken from the module
 	// SCC pre-pass when there was one and resolved here when there was not.
+	paramsClean := c.classParamsClean(decl)
 	declScope, typeParams := c.classDeclScope(scope, lvl, decl)
 
 	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
@@ -119,7 +122,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// sits under.
 	def.Variance, def.MutVariance = c.inferVariance(def, decl)
 
-	if quiet() {
+	if quiet() && paramsClean {
 		c.reportUnusedTypeParams(typeParams, decl.TypeParams, func(v soltype.TypeVisitor) {
 			classDeclOccurrences(def, ctorType, v)
 		})
@@ -269,6 +272,16 @@ func (c *checker) classDeclScope(scope *Scope, lvl int, decl *ast.ClassDecl) (*S
 	return declScope, c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 }
 
+// classParamsClean reports whether the module pre-pass resolved this class's type parameters
+// with no diagnostic. A class the pre-pass never saw resolves them inside inferClassDecl, where
+// that function's own window covers them, so it counts as clean here.
+func (c *checker) classParamsClean(decl *ast.ClassDecl) bool {
+	if sh, ok := c.classShells[decl]; ok {
+		return sh.paramsClean
+	}
+	return true
+}
+
 // preBindClassTypeParams resolves a class's type parameters and stores them on its ClassDef.
 // The module SCC pre-pass runs it over every class in a type-key component after every
 // identity in that component is registered, so a bound naming a sibling resolves.
@@ -283,6 +296,7 @@ func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassD
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
+	quiet := c.errorWindow()
 	declScope := scope
 	var typeParams []*soltype.TypeParam
 	if len(decl.TypeParams) > 0 {
@@ -292,7 +306,7 @@ func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassD
 	if c.classShells == nil {
 		c.classShells = map[*ast.ClassDecl]*classShell{}
 	}
-	c.classShells[decl] = &classShell{declScope: declScope, typeParams: typeParams}
+	c.classShells[decl] = &classShell{declScope: declScope, typeParams: typeParams, paramsClean: quiet()}
 
 	if def, ok := c.ctx.classDef(qualifyClassName(ns, decl)); ok {
 		def.TypeParams = typeParams

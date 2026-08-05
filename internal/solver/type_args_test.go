@@ -495,7 +495,7 @@ func TestClassArityAcrossRemainingRefForms(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, "class `Box` expects 1 type arguments but got 0", errs[0].Message())
+			require.Equal(t, "class `Box` expects 1 type argument but got 0", errs[0].Message())
 		})
 	}
 }
@@ -563,7 +563,7 @@ func TestClassArityAcrossMixedComponent(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, "class `A` expects 1 type arguments but got 0", errs[0].Message())
+			require.Equal(t, "class `A` expects 1 type argument but got 0", errs[0].Message())
 			require.Equal(t, "{new (x: number, a: A<unknown>) -> B}", values["B"])
 		})
 	}

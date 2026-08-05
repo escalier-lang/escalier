@@ -120,6 +120,11 @@ type checker struct {
 type classShell struct {
 	declScope  *Scope
 	typeParams []*soltype.TypeParam
+	// paramsClean records that the parameters resolved with no diagnostic. The module SCC
+	// pre-pass resolves them, so a bad bound or default is reported before inferClassDecl
+	// opens its own window and only this carries that news forward. A parameter whose
+	// binder was rejected has lost the occurrences it wrote, so it would read as unused.
+	paramsClean bool
 }
 
 // deferredArgBound is one `arg <: bound` comparison checkTypeArgBounds postponed until

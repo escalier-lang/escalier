@@ -398,6 +398,23 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 			want: []string{"1:17-1:24: cannot find type `Nope`"},
 		},
 		{
+			// A class resolves its parameters in the module pre-pass, before inferClassDecl
+			// opens its window, so the rejected default's news reaches the warning through the
+			// shell rather than through that window. U is left with no default to be used at.
+			name: "ClassParameterWithAForwardDefault",
+			src:  `class Bad<T = U, U = number> { x: T, constructor(mut self) { self.x = 0 } }`,
+			want: []string{
+				"1:15-1:16: the default for type parameter `T` cannot reference `U`, " +
+					"which is declared after it",
+			},
+		},
+		{
+			// The same for a bound, the other position the pre-pass resolves.
+			name: "ClassParameterWithAnUnresolvableBound",
+			src:  `class Bad<T: Nope> { x: number, constructor(mut self) { self.x = 0 } }`,
+			want: []string{"1:14-1:18: cannot find type `Nope`"},
+		},
+		{
 			// A type parameter does not name a class, so the extends edge is dropped and the
 			// only occurrence of T goes with it.
 			name: "ClassExtendingATypeParameter",
