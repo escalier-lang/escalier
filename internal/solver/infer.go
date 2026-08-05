@@ -175,6 +175,21 @@ type funcCtx struct {
 	// declared sink cannot answer since constraining into it leaves no trace. A `throw`
 	// sets it; a call sets it unless the callee is resolved and provably non-throwing.
 	raised bool
+	// gen marks the body of a `gen fn`, the only place a `yield` is legal. A nested
+	// non-generator function opens its own funcCtx with gen false, so a yield inside a
+	// closure is rejected even when the closure sits in a generator's body.
+	gen bool
+	// yields is this body's yield SINK: the type every `yield` operand is constrained
+	// against, the generator twin of throws. inferFunc seeds it before the body is
+	// walked — the annotation's Yield slot when the return annotation is a Generator,
+	// a fresh variable otherwise — so each yield is blamed at its own site. Nil outside
+	// a generator body.
+	yields soltype.Type
+	// yieldNext is the type a `yield` expression evaluates to, the generator's Next
+	// slot: the value a caller passes back in through next(v). inferFunc seeds it from
+	// the annotation, or to `never` when there is none, matching the old checker's
+	// TNext. Nil outside a generator body.
+	yieldNext soltype.Type
 	// lvl is the level this body is walked at, so throwsSink mints the sink there rather
 	// than inside a `val` initializer, which is typed one level deeper. A sink minted deep
 	// gets extruded by a later exit, and the resulting cycle renders as a μ-knot.
@@ -598,6 +613,8 @@ func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 		return c.inferBorrow(scope, lvl, e)
 	case *ast.ThrowExpr:
 		return c.inferThrow(scope, lvl, e)
+	case *ast.YieldExpr:
+		return c.inferYield(scope, lvl, e)
 	case *ast.TryCatchExpr:
 		return c.inferTryCatch(scope, lvl, e)
 	case *ast.BinaryExpr:
