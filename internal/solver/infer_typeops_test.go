@@ -2084,8 +2084,8 @@ func TestInferCondInferConstraint(t *testing.T) {
 func TestInferCondCaptureNotInScopeInElse(t *testing.T) {
 	_, _, errs := inferSource(t, `type Result = if [number] : [infer U] { U } else { U }`)
 	require.Len(t, errs, 1)
-	require.IsType(t, &UnsupportedNodeError{}, errs[0])
-	require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
+	require.IsType(t, &UnknownTypeError{}, errs[0])
+	require.Equal(t, "cannot find type `U`", errs[0].Message())
 }
 
 // An alias whose Then branch re-instantiates itself with a capture terminates and resolves, one
@@ -2164,7 +2164,7 @@ func TestInferCondNestedCaptureShadowsOuter(t *testing.T) {
 func TestInferCondUnresolvedCheckIsNotDistributive(t *testing.T) {
 	nodes, _, errs := inferTypeNodes(t, `type Result = if Bogus : string { number } else { boolean }`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "Unsupported: TypeRefTypeAnn", errs[0].Message())
+	require.Equal(t, "cannot find type `Bogus`", errs[0].Message())
 	cond, ok := nodes["Result"].(*soltype.CondType)
 	require.True(t, ok)
 	require.False(t, cond.Distribute)

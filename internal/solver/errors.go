@@ -1225,10 +1225,27 @@ func (e *ExtractorPatternArityError) Message() string {
 type TypeDeclKind string
 
 const (
-	AliasDeclKind TypeDeclKind = "type alias"
-	ClassDeclKind TypeDeclKind = "class"
-	EnumDeclKind  TypeDeclKind = "enum"
+	AliasDeclKind   TypeDeclKind = "type alias"
+	ClassDeclKind   TypeDeclKind = "class"
+	EnumDeclKind    TypeDeclKind = "enum"
+	BuiltinDeclKind TypeDeclKind = "built-in type"
 )
+
+// UnknownTypeError fires on a type reference whose name resolves to no declaration: no alias,
+// class, enum, or type parameter in scope, and none of the built-in names. It names what the
+// source wrote, qualified as written, so `Foo.Bar` reports under that whole path rather than
+// under either half.
+type UnknownTypeError struct {
+	Ref  *ast.TypeRefTypeAnn
+	Name string
+}
+
+func (*UnknownTypeError) isSolverError()        {}
+func (e *UnknownTypeError) Span() ast.Span      { return e.Ref.Span() }
+func (e *UnknownTypeError) Related() []ast.Span { return nil }
+func (e *UnknownTypeError) Message() string {
+	return "cannot find type `" + e.Name + "`"
+}
 
 // TypeArgArityMismatchError fires when a generic reference `Name<…>` supplies fewer than the
 // required number of type arguments or more than the total parameter count. A trailing
@@ -1244,11 +1261,21 @@ type TypeArgArityMismatchError struct {
 	Got      int
 }
 
+// pluralArguments agrees the noun with the count an arity message states, so a declaration
+// taking one parameter reads "1 type argument" rather than "1 type arguments".
+func pluralArguments(n int) string {
+	if n == 1 {
+		return "argument"
+	}
+	return "arguments"
+}
+
 func (e *TypeArgArityMismatchError) Span() ast.Span      { return e.Ref.Span() }
 func (e *TypeArgArityMismatchError) Related() []ast.Span { return nil }
 func (e *TypeArgArityMismatchError) Message() string {
 	if e.Required == e.Total {
-		return fmt.Sprintf("%s `%s` expects %d type arguments but got %d", e.Kind, e.Name, e.Total, e.Got)
+		return fmt.Sprintf("%s `%s` expects %d type %s but got %d",
+			e.Kind, e.Name, e.Total, pluralArguments(e.Total), e.Got)
 	}
 	return fmt.Sprintf("%s `%s` expects between %d and %d type arguments but got %d", e.Kind, e.Name, e.Required, e.Total, e.Got)
 }

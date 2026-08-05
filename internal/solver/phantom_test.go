@@ -374,14 +374,14 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 			// occurrence of T is what went missing.
 			name: "AliasBodyWithARecoveredPropertyValue",
 			src:  `type M<T> = {a: Nope<T>}`,
-			want: []string{"1:17-1:24: Unsupported: TypeRefTypeAnn"},
+			want: []string{"1:17-1:24: cannot find type `Nope`"},
 		},
 		{
 			// The union member recovers to a fresh var, so the body is `t | number` and the T
 			// that member wrote is gone.
 			name: "AliasBodyWithAnUnresolvableReference",
 			src:  `type Foo<T> = number | Nope<T>`,
-			want: []string{"1:24-1:31: Unsupported: TypeRefTypeAnn"},
+			want: []string{"1:24-1:31: cannot find type `Nope`"},
 		},
 		{
 			// A bound that fails to resolve is left nil, so the T it wrote is lost along with
@@ -389,13 +389,13 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 			// warnings would land had preBindAlias not opened its own window.
 			name: "AliasParameterWithAnUnresolvableBound",
 			src:  `type Foo<T, U: Nope<T>> = number`,
-			want: []string{"1:16-1:23: Unsupported: TypeRefTypeAnn"},
+			want: []string{"1:16-1:23: cannot find type `Nope`"},
 		},
 		{
 			// The same for a default, which is the other position resolveTypeParams fills.
 			name: "AliasParameterWithAnUnresolvableDefault",
 			src:  `type Bar<T, U = Nope<T>> = {x: U}`,
-			want: []string{"1:17-1:24: Unsupported: TypeRefTypeAnn"},
+			want: []string{"1:17-1:24: cannot find type `Nope`"},
 		},
 		{
 			// A type parameter does not name a class, so the extends edge is dropped and the
