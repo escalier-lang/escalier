@@ -102,16 +102,20 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
-		// The built-in Generator<Y, R, N> and AsyncGenerator<Y, R, N>, the external face of a
-		// `gen fn` / `async gen fn`. Like Promise they resolve here only when no user binding
-		// shadows the prelude placeholder, and a lifetime annotation is rejected rather than
-		// silently dropped. All three arguments are required: Y is what the body yields, R what
-		// it returns, and N what a `yield` expression evaluates to.
-		if name := ast.QualIdentToString(ta.Name); (name == "Generator" || name == "AsyncGenerator") && len(ta.TypeArgs) == 3 {
+		// The built-in Generator and AsyncGenerator, the external face of a `gen fn` /
+		// `async gen fn`. Like Promise they resolve here only when no user binding shadows
+		// the prelude placeholder, and a lifetime annotation is rejected rather than silently
+		// dropped. Y is what the body yields, R what it returns, and N what a `yield`
+		// evaluates to; all three are required. The optional fourth argument names what
+		// advancing the generator may raise, `Generator<Y, R, N, E>`, the same shape
+		// `Promise<T, E>` takes. An unwritten one leaves Throws nil, the shorthand for a
+		// generator that cannot raise.
+		if name := ast.QualIdentToString(ta.Name); (name == "Generator" || name == "AsyncGenerator") &&
+			(len(ta.TypeArgs) == 3 || len(ta.TypeArgs) == 4) {
 			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
 				return c.reportUnsupportedFeature(ta, "lifetime annotation on "+name), false
 			}
-			slots := make([]soltype.Type, 3)
+			slots := make([]soltype.Type, len(ta.TypeArgs))
 			for i, arg := range ta.TypeArgs {
 				slot, ok := c.resolveTypeAnn(scope, arg, lvl)
 				if !ok {
@@ -123,7 +127,14 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 				}
 				slots[i] = slot
 			}
-			t := &soltype.GeneratorType{Yield: slots[0], Ret: slots[1], Next: slots[2], Async: name == "AsyncGenerator"}
+			var throws soltype.Type
+			if len(slots) == 4 {
+				throws = slots[3]
+			}
+			t := &soltype.GeneratorType{
+				Yield: slots[0], Ret: slots[1], Next: slots[2], Throws: throws,
+				Async: name == "AsyncGenerator",
+			}
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}

@@ -1338,10 +1338,13 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			equalTypeWith(a.ErrOrNever(), b.ErrOrNever(), ctx)
 	case *soltype.GeneratorType:
 		b, ok := b.(*soltype.GeneratorType)
+		// ThrowsOrNever reads both sides through the nil-is-never collapse, so two
+		// generators differing only in whether the raise slot was written compare equal.
 		return ok && a.Async == b.Async &&
 			equalTypeWith(a.Yield, b.Yield, ctx) &&
 			equalTypeWith(a.Ret, b.Ret, ctx) &&
-			equalTypeWith(a.Next, b.Next, ctx)
+			equalTypeWith(a.Next, b.Next, ctx) &&
+			equalTypeWith(a.ThrowsOrNever(), b.ThrowsOrNever(), ctx)
 	case *soltype.RefType:
 		b, ok := b.(*soltype.RefType)
 		// Mut must match — a mutable borrow never equals an immutable one — and the

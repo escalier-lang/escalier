@@ -440,7 +440,10 @@ func compareSameKind(a, b soltype.Type) int {
 		if c := compareType(a.Ret, b.Ret); c != 0 {
 			return c
 		}
-		return compareType(a.Next, b.Next)
+		if c := compareType(a.Next, b.Next); c != 0 {
+			return c
+		}
+		return compareType(a.ThrowsOrNever(), b.ThrowsOrNever())
 	case *soltype.ArrayType:
 		return compareType(a.Elem, b.(*soltype.ArrayType).Elem)
 	case *soltype.FuncType:
