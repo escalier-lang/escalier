@@ -10,16 +10,17 @@ import (
 // `xs <: Iterable<T>` and a `for await` needs `xs <: AsyncIterable<T>`, binding
 // the loop variable at the element type T. The full protocol resolves T through
 // the iterable's `[Symbol.iterator]()` method, which needs symbol-keyed members
-// and the real Iterable/Iterator stdlib types that both land in M7. Until then M5
-// resolves the element type STRUCTURALLY over the types the solver can
-// represent — a tuple, the solver's stand-in for an array, and a union of
-// tuples — and rejects everything else as non-iterable. See iterableElemType.
+// and the real Iterable/Iterator stdlib types that both land in M7. Until then
+// the element type resolves STRUCTURALLY over the types the solver can
+// represent — a tuple, the solver's stand-in for an array, a union of tuples,
+// and a generator — and everything else is rejected as non-iterable. See
+// iterableElemType.
 //
 // A `for await` outside an `async fn` is a WALK rejection symmetric to
 // AwaitOutsideAsyncError: the iterable and body are still walked so their own
-// errors surface. A `for await` over any structural operand is rejected by the
-// type rule, since no async iterable is representable yet. A sync iterable is not
-// an AsyncIterable.
+// errors surface. A `for await` accepts an AsyncGenerator, the one async iterable
+// the solver can represent, and rejects every other operand by the type rule. A
+// sync iterable is not an AsyncIterable.
 //
 // The loop contributes Void to its enclosing block — a loop is a statement, not a
 // value. The CFG builder already decomposes a ForInStmt into a header, a body
@@ -115,9 +116,9 @@ func (c *checker) iterableElemType(await bool, t soltype.Type) (soltype.Type, bo
 // lower-bound shape, the way inferMatch snapshots a variable scrutinee before
 // inspecting it. A tuple yields the union of its elements, so `[1, 2, 3]` yields
 // `1 | 2 | 3` and the empty tuple yields `never`. A union yields the union of its
-// branches' element types, failing if any branch is not iterable. Every other
-// type — a primitive, an object, a class instance without the M7 iterator
-// protocol — is not iterable.
+// branches' element types, failing if any branch is not iterable. A sync
+// generator yields its Yield slot. Every other type — a primitive, an object, a
+// class instance without the M7 iterator protocol — is not iterable.
 //
 // Inexactness carries through. An inexact tuple `[number, ...]` has an open tail
 // of unknown additional elements, and an inexact union `[number] | ...` an open
