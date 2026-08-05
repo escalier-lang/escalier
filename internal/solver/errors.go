@@ -925,6 +925,38 @@ type AwaitOutsideAsyncError struct {
 	EnclosingFn ast.Node
 }
 
+// YieldOutsideGenError fires when a `yield` or `yield from` expression appears
+// outside the body of a `gen fn`. Like AwaitOutsideAsyncError it is a WALK
+// rejection, not a type-rule failure: the operand is still walked so its own
+// errors surface, and the yield contributes the error placeholder so callers
+// don't cascade. A closure inside a generator body is rejected too, since the
+// closure itself is not a generator.
+//
+// EnclosingFn is the non-generator function the yield sits in, when there is
+// one — the function the user would mark `gen` to fix the error, surfaced via
+// Related(). It is nil when the yield is at module top-level.
+type YieldOutsideGenError struct {
+	Yield       *ast.YieldExpr
+	EnclosingFn ast.Node
+}
+
+// GenReturnNotGeneratorError fires when a `gen fn` declares a return annotation
+// that is not the matching Generator form. A generator function's external type
+// is always `Generator<Y, R, N>` — `AsyncGenerator<Y, R, N>` when the function
+// is also async — so the annotation NAMES that generator; a bare type
+// (`gen fn () -> number`) and a generator of the wrong async-ness are both
+// rejected. Async records the signature's async-ness so the message names the
+// form to write.
+//
+// Like AsyncReturnNotPromiseError it is a WALK rejection: born in inferFunc
+// (resolveGenSinks) with the annotation and function nodes in hand, so it
+// self-blames from the annotation's span and relates the function via Related().
+type GenReturnNotGeneratorError struct {
+	Return ast.TypeAnn // the offending return annotation
+	Fn     ast.Node    // the enclosing gen function, surfaced via Related()
+	Async  bool        // the signature's async-ness, selecting the expected form
+}
+
 // ReturnOutsideFunctionError fires when a `return` statement is reached outside
 // any function body — e.g. inside an `if` that is part of a top-level `val`
 // initializer. Symmetric to AwaitOutsideAsyncError: the walk rejects it rather
@@ -1095,6 +1127,8 @@ func (*NotIterableError) isSolverError()                    {}
 func (*ReturnOutsideFunctionError) isSolverError()          {}
 func (*AsyncReturnNotPromiseError) isSolverError()          {}
 func (*AsyncThrowsClauseError) isSolverError()              {}
+func (*YieldOutsideGenError) isSolverError()                {}
+func (*GenReturnNotGeneratorError) isSolverError()          {}
 func (*NonExhaustiveMatchError) isSolverError()             {}
 func (*MissingCatchArmError) isSolverError()                {}
 func (*UnhandledRethrowError) isSolverError()               {}
@@ -1891,6 +1925,34 @@ func (e *UnusedThrowsClauseError) Message() string {
 		"` is unreachable; drop the clause"
 }
 
+// GeneratorWithoutYieldError fires when a `gen fn` body contains no `yield` and no
+// `yield from`. The program is well-typed — the function returns a generator whose Yield
+// slot is `never` — but that generator finishes on the first `next()` without ever
+// producing a value, so the marker gives the caller nothing and costs them a generator to
+// unwrap. Fn is the function the marker sits on, which carries the blame span.
+//
+// It is the generator twin of UnusedThrowsClauseError: a declaration the body never uses,
+// reported as a warning rather than an error because the signature is still honest about
+// what it returns. Async selects the wording, since an `async gen fn` returns an
+// AsyncGenerator.
+type GeneratorWithoutYieldError struct {
+	Fn    ast.Node
+	Async bool
+}
+
+func (*GeneratorWithoutYieldError) isSolverError()        {}
+func (e *GeneratorWithoutYieldError) Span() ast.Span      { return e.Fn.Span() }
+func (e *GeneratorWithoutYieldError) Related() []ast.Span { return nil }
+func (e *GeneratorWithoutYieldError) IsWarning() bool     { return true }
+func (e *GeneratorWithoutYieldError) Message() string {
+	kind := "Generator"
+	if e.Async {
+		kind = "AsyncGenerator"
+	}
+	return "the body never yields, so this returns an empty " + kind +
+		"; add a `yield` or drop the `gen`"
+}
+
 // UnreachableReturnAnnotationError fires when a signature declares `-> R` but every path
 // through the body leaves along the exceptional edge, so the body's return type is `never`
 // and no caller can observe an R. The program is well-typed, since `never` is below every
@@ -2086,6 +2148,39 @@ func (e *ReturnOutsideFunctionError) Span() ast.Span      { return e.Return.Span
 func (e *ReturnOutsideFunctionError) Related() []ast.Span { return nil }
 func (e *ReturnOutsideFunctionError) Message() string {
 	return "return can only be used inside a function"
+}
+
+func (e *YieldOutsideGenError) Span() ast.Span { return e.Yield.Span() }
+func (e *YieldOutsideGenError) Related() []ast.Span {
+	// Point at the enclosing function (the one to mark `gen`) when there is one;
+	// empty at module top-level, mirroring AwaitOutsideAsyncError.
+	if e.EnclosingFn != nil {
+		return []ast.Span{e.EnclosingFn.Span()}
+	}
+	return nil
+}
+func (e *YieldOutsideGenError) Message() string {
+	if e.Yield.IsDelegate {
+		return "yield from can only be used inside a generator function"
+	}
+	return "yield can only be used inside a generator function"
+}
+
+func (e *GenReturnNotGeneratorError) Span() ast.Span { return e.Return.Span() }
+func (e *GenReturnNotGeneratorError) Related() []ast.Span {
+	// Point at the enclosing gen function (the signature to fix). Guard a nil Fn to
+	// uphold the "never panic on malformed AST" guarantee, even though inferFunc
+	// always supplies the function node.
+	if e.Fn == nil {
+		return nil
+	}
+	return []ast.Span{e.Fn.Span()}
+}
+func (e *GenReturnNotGeneratorError) Message() string {
+	if e.Async {
+		return "async generator function return type must be an AsyncGenerator; write AsyncGenerator<...>"
+	}
+	return "generator function return type must be a Generator; write Generator<...>"
 }
 
 func (e *ForAwaitOutsideAsyncError) Span() ast.Span { return e.Loop.Span() }

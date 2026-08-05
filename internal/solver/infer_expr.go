@@ -333,6 +333,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
+	// A generator's yield sink and `next` resolve before the body for the reason the
+	// throws clause does, so each `yield` is checked at its own site. The return
+	// annotation on a `gen fn` names the external Generator, and its slots seed the sinks.
+	var gen *genSinks
+	if sig.Gen {
+		gen = c.resolveGenSinks(declScope, node, sig, lvl)
+	}
+
 	var ret soltype.Type = &soltype.Void{}
 	var retExprs []ast.Expr
 	// bodyDiverges records that every path through the body left along the exceptional
@@ -340,6 +348,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// the walk to warn about a signature the body cannot deliver on.
 	bodyDiverges := false
 	raised := false
+	// yielded records whether a generator body actually yields, read after the walk to
+	// warn about a `gen` marker nothing uses.
+	yielded := false
 	// throws is what a caller sees on the exceptional edge. A bodyless `declare fn` has
 	// only its clause. A body-carrying function reads the sink back once the body is
 	// walked, which is the declared type when there was a clause and the inferred variable
@@ -352,6 +363,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// body opens its own context, so its returns never leak out here).
 		saved := c.pushFuncCtx(sig.Async, node, lvl)
 		c.fn.throws = declaredThrows
+		if gen != nil {
+			c.fn.gen = true
+			c.fn.yields = gen.yields
+			c.fn.yieldNext = gen.next
+		}
 		// M4 G1: run the liveness pre-pass before walking the body so mutability
 		// transitions are checked. It renames the body's variable nodes (writing the
 		// VarIDs DetermineAliasSource and the alias tracker read) and seeds the
@@ -375,6 +391,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
 		raised = c.fn.raised
+		yielded = c.fn.yielded
 		collected := c.popFuncCtx(saved)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `void` a fall-through body
@@ -394,6 +411,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// drew an AsyncThrowsClauseError.
 	if hasBody && !raised && sig.Throws != nil && !sig.Async && !isWildcardAnn(sig.Throws) {
 		c.report(&UnusedThrowsClauseError{Ann: sig.Throws, Declared: throws})
+	}
+	// A `gen fn` whose body never yields returns a generator that finishes on the first
+	// `next()` without producing a value, so the marker buys the caller nothing and costs
+	// them a generator to unwrap. A bodyless `declare gen fn` has no body to measure.
+	if hasBody && !yielded && sig.Gen {
+		c.report(&GeneratorWithoutYieldError{Fn: node, Async: sig.Async})
 	}
 	// Return-annotation handling diverges by async-ness.
 	//
@@ -418,10 +441,21 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// there is no body, since a synthetic Void would falsely signal "returns
 	// nothing").
 	//
-	// The async arm also moves the body's throws. An `async fn` rejects its promise
-	// rather than raising, so the body's throws become the promise's Err and the
-	// function's own Throws stays `never`.
-	if sig.Async {
+	// A generator takes its own arm ahead of the async one: an `async gen fn` faces
+	// callers as an AsyncGenerator, not a Promise, so the async wrap never applies.
+	//
+	// It keeps its body's raises on its own Throws, which over-approximates: advancing
+	// the generator is what raises, so a caller that only obtains one is asked to handle
+	// an exception it cannot yet observe. An `async fn` moves its raises into the
+	// promise's rejection slot just below, and a generator has no such slot. Keeping the
+	// raise here errs safe, since dropping it would let the raise escape a clause-less
+	// caller that iterates. Giving GeneratorType a rejection slot is the real fix.
+	if sig.Gen {
+		ret = c.genReturn(node, gen, retExprs, ret, hasBody)
+	} else if sig.Async {
+		// The async arm also moves the body's throws. An `async fn` rejects its promise
+		// rather than raising, so the body's throws become the promise's Err and the
+		// function's own Throws stays `never`.
 		if asyncPromise != nil {
 			// Only constrain when there IS a body, for the reason the non-async arm
 			// below spells out.
@@ -909,6 +943,80 @@ func sameObjectKeys(a, b *soltype.ObjectType) bool {
 func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) soltype.Type {
 	wrapped := &soltype.PromiseType{Inner: inner, Err: errT}
 	c.recordProv(wrapped, node, PromiseWrap)
+	return wrapped
+}
+
+// genSinks is the per-body generator state inferFunc seeds before walking a `gen fn`.
+// `yields` is the sink each `yield` operand is constrained into, the twin of the throws
+// sink. `next` is what a `yield` evaluates to, the value a caller sends back in through
+// `next(v)`. `ann` is the return annotation when it is a matching generator, which
+// genReturn presents as the external type; it is nil otherwise.
+type genSinks struct {
+	yields soltype.Type
+	next   soltype.Type
+	ann    *soltype.GeneratorType
+	// async records the signature's async-ness so wrapGenerator picks Generator or
+	// AsyncGenerator after popFuncCtx has already restored the enclosing context.
+	async bool
+}
+
+// resolveGenSinks seeds a generator body's sinks from its return annotation, before the
+// body is walked so each `yield` is checked at its own site.
+//
+// The annotation names the EXTERNAL generator, so it must be `Generator<Y, R, N>`, or
+// `AsyncGenerator<Y, R, N>` when the function is async. A matching one seeds the yield
+// sink from Y and `next` from N. Anything else draws a GenReturnNotGeneratorError and
+// falls back to the no-annotation seeding, where the yield sink is a fresh variable the
+// yields flow into and `next` is `never`, matching the old checker's `TNext`.
+func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, lvl int) *genSinks {
+	gs := &genSinks{yields: c.freshAt(lvl), next: &soltype.NeverType{}, async: sig.Async}
+	if sig.Return == nil {
+		return gs
+	}
+	annT, ok := c.resolveTypeAnn(scope, sig.Return, lvl)
+	if !ok {
+		// Unsupported annotation — already reported by resolveTypeAnn. Keep the
+		// no-annotation seeding.
+		return gs
+	}
+	g, isGen := annT.(*soltype.GeneratorType)
+	if !isGen || g.Async != sig.Async {
+		// A non-Generator annotation, or a Generator whose async-ness contradicts the
+		// signature (`gen fn () -> AsyncGenerator<…>` and the reverse). Reject it, then
+		// recover with the no-annotation seeding so the external face stays
+		// Generator-shaped and callers don't cascade.
+		c.report(&GenReturnNotGeneratorError{Return: sig.Return, Fn: node, Async: sig.Async})
+		return gs
+	}
+	gs.yields = g.Yield
+	gs.next = g.Next
+	gs.ann = g
+	return gs
+}
+
+// genReturn computes a `gen fn`'s external return type, always a generator, since
+// calling one returns a generator object rather than the body's value. A matching
+// annotation IS that type, with the body's return constrained against its `Ret` slot.
+// Otherwise the inferred pieces are wrapped. A bodyless `declare gen fn` wraps
+// `unknown` rather than the synthetic Void, which would signal that it returns nothing.
+func (c *checker) genReturn(node ast.Node, gs *genSinks, retExprs []ast.Expr, bodyType soltype.Type, hasBody bool) soltype.Type {
+	if gs.ann != nil {
+		if hasBody {
+			c.constrainReturnAgainstAnnotation(node, retExprs, bodyType, gs.ann.Ret) // body <: declared Ret
+		}
+		return gs.ann
+	}
+	if !hasBody {
+		bodyType = &soltype.UnknownType{}
+	}
+	return c.wrapGenerator(node, gs, bodyType)
+}
+
+// wrapGenerator mints the external `Generator<Y, R, N>` face of a generator function
+// and records its provenance (GeneratorWrap) against the function node.
+func (c *checker) wrapGenerator(node ast.Node, gs *genSinks, bodyType soltype.Type) soltype.Type {
+	wrapped := &soltype.GeneratorType{Yield: gs.yields, Ret: bodyType, Next: gs.next, Async: gs.async}
+	c.recordProv(wrapped, node, GeneratorWrap)
 	return wrapped
 }
 
@@ -2613,6 +2721,63 @@ func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Ty
 	// Recorded but given no provenance: every `&NeverType{}` shares one address, and Prov
 	// is pointer-keyed, so a second throw would trip recordProv's guard. Info is node-keyed.
 	t := &soltype.NeverType{}
+	c.recordType(e, t)
+	return t
+}
+
+// inferYield types `yield e` and `yield from g`. A yield outside a generator body is a
+// WALK rejection symmetric to AwaitOutsideAsyncError: the operand is still walked so its
+// own errors surface, and the enclosing function is related as the one to mark `gen`. A
+// closure opens its own funcCtx with `gen` clear, so a `yield` inside one is rejected
+// even within a generator, matching JavaScript.
+//
+// `yield e` constrains its operand into the yield sink and evaluates to the `Next` type,
+// the value a caller sends back in through `next(v)`. A bare `yield` yields `undefined`.
+//
+// `yield from g` is reported as unsupported, since forwarding a delegate's yields needs
+// the iteration rules. The delegate is still walked, so its own errors surface too.
+func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Type {
+	if c.fn == nil || !c.fn.gen {
+		if e.Value != nil {
+			c.inferExpr(scope, lvl, e.Value) // surface operand-side errors anyway
+		}
+		// When the yield sits in a non-generator function, point Related() at that
+		// function — it is the one to mark `gen`. At module top-level there is no
+		// enclosing function, so EnclosingFn stays nil and Related() is empty.
+		var enclosing ast.Node
+		if c.fn != nil {
+			enclosing = c.fn.node
+		}
+		// report returns the ErrorType recovery placeholder, so the rejected yield
+		// never cascades a downstream failure on top of this error.
+		t := c.report(&YieldOutsideGenError{Yield: e, EnclosingFn: enclosing})
+		c.recordType(e, t)
+		return t
+	}
+	// Recorded before the two forms split, so delegating counts as yielding: a body whose
+	// only yield is a `yield from` does produce values, and its `gen` marker is used.
+	c.fn.yielded = true
+	if e.IsDelegate {
+		// `yield from` forwards another iterable's yields into this body's sink, so it
+		// needs the iteration rules rather than the plain-yield rule below. Treating the
+		// delegate as an ordinary yielded value would put the iterable itself in the sink
+		// instead of its elements, so report it until those rules land.
+		if e.Value != nil {
+			c.inferExpr(scope, lvl, e.Value) // surface delegate-side errors anyway
+		}
+		t := c.reportUnsupportedFeature(e, "yield from")
+		c.recordType(e, t)
+		return t
+	}
+	var val soltype.Type = &soltype.UndefinedType{}
+	if e.Value != nil {
+		val = c.inferExpr(scope, lvl, e.Value)
+	}
+	c.constrain(e, val, c.fn.yields)
+	// Recorded but given no provenance: the Next type is one shared value seeded on the
+	// funcCtx, and Prov is pointer-keyed, so a second yield would trip recordProv's
+	// guard. Info is node-keyed.
+	t := c.fn.yieldNext
 	c.recordType(e, t)
 	return t
 }
