@@ -174,8 +174,10 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 	})
 }
 
-// A var joining several promises rejects when ANY member does, so an awaited join
-// propagates the rejecting member's Err whichever bound the join recorded first.
+// Every rejection an async body can observe accumulates in one sink, so the rejections
+// of several awaited promises union there. They reach it two ways. A single `await` over
+// a joined var rejects when ANY member does, whichever bound the join recorded first.
+// Separate `await` sites each contribute their own promise's Err.
 func TestInferAwaitJoinedRejections(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
@@ -209,6 +211,21 @@ func TestInferAwaitJoinedRejections(t *testing.T) {
 			`,
 			binding: "g",
 			want:    `fn (c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) -> Promise<void, "a" | "b">`,
+		},
+		{
+			// Two await sites reach the same sink, so their rejections union there even
+			// though no join brought the promises together. The payloads stay separate,
+			// each binding taking its own promise's value.
+			name: "SeparateAwaitsRejectingWithDifferentTypesUnion",
+			src: `
+				async fn g(p1: Promise<number, "a">, p2: Promise<string, "b">) {
+					val a = await p1
+					val b = await p2
+					return b
+				}
+			`,
+			binding: "g",
+			want:    `fn (p1: Promise<number, "a">, p2: Promise<string, "b">) -> Promise<string, "a" | "b">`,
 		},
 	})
 }
