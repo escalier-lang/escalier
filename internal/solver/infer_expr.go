@@ -333,9 +333,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
-	// A generator's yield sink and next type resolve before the body for the reason the
-	// throws clause does: each `yield` is checked at its own site. The return annotation
-	// on a `gen fn` names the external Generator, so its slots seed the sinks.
+	// A generator's yield sink and `next` resolve before the body for the reason the
+	// throws clause does, so each `yield` is checked at its own site. The return
+	// annotation on a `gen fn` names the external Generator, and its slots seed the sinks.
 	var gen *genSinks
 	if sig.Gen {
 		gen = c.resolveGenSinks(declScope, node, sig, lvl)
@@ -412,10 +412,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	if hasBody && !raised && sig.Throws != nil && !sig.Async && !isWildcardAnn(sig.Throws) {
 		c.report(&UnusedThrowsClauseError{Ann: sig.Throws, Declared: throws})
 	}
-	// A `gen fn` whose body never yields still returns a generator, but one that finishes
-	// on the first `next()` without producing a value. The marker then buys the caller
-	// nothing and costs them a generator to unwrap, so warn and let them drop it. A
-	// bodyless `declare gen fn` has no body to measure against, so it does not reach here.
+	// A `gen fn` whose body never yields returns a generator that finishes on the first
+	// `next()` without producing a value, so the marker buys the caller nothing and costs
+	// them a generator to unwrap. A bodyless `declare gen fn` has no body to measure.
 	if hasBody && !yielded && sig.Gen {
 		c.report(&GeneratorWithoutYieldError{Fn: node, Async: sig.Async})
 	}
@@ -443,17 +442,14 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// nothing").
 	//
 	// A generator takes its own arm ahead of the async one: an `async gen fn` faces
-	// callers as an AsyncGenerator, not a Promise, so the async wrap never applies to it.
+	// callers as an AsyncGenerator, not a Promise, so the async wrap never applies.
 	//
-	// A generator keeps its body's raises on its own Throws, which over-approximates.
-	// Advancing the generator is what actually raises, so a caller that only obtains one
-	// is asked to handle an exception it cannot yet observe. An `async fn` moves its
-	// raises into the promise's rejection slot just below, and a generator has no such
-	// slot to move them into. Keeping the raise on the signature errs in the safe
-	// direction: dropping it with nothing reading it in the generator's place would let
-	// the raise escape a clause-less caller that iterates, since iteration advances the
-	// generator. Giving GeneratorType a rejection slot, the way PromiseType has one, is
-	// what puts it in the right place.
+	// It keeps its body's raises on its own Throws, which over-approximates: advancing
+	// the generator is what raises, so a caller that only obtains one is asked to handle
+	// an exception it cannot yet observe. An `async fn` moves its raises into the
+	// promise's rejection slot just below, and a generator has no such slot. Keeping the
+	// raise here errs safe, since dropping it would let the raise escape a clause-less
+	// caller that iterates. Giving GeneratorType a rejection slot is the real fix.
 	if sig.Gen {
 		ret = c.genReturn(node, gen, retExprs, ret, hasBody)
 	} else if sig.Async {
@@ -950,14 +946,11 @@ func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) soltype.T
 	return wrapped
 }
 
-// genSinks carries the per-body generator state inferFunc seeds before walking a
-// `gen fn`'s body. yields is the sink each `yield` operand is constrained into, the
-// generator twin of the throws sink. next is the type a `yield` expression evaluates
-// to, the value a caller sends back in through next(v). ann is the resolved return
-// annotation when it is a Generator matching the function's async-ness, kept so
-// genReturn can present the annotation as the external type and constrain the body's
-// return against its Ret slot; it is nil when there is no annotation or the
-// annotation was rejected.
+// genSinks is the per-body generator state inferFunc seeds before walking a `gen fn`.
+// `yields` is the sink each `yield` operand is constrained into, the twin of the throws
+// sink. `next` is what a `yield` evaluates to, the value a caller sends back in through
+// `next(v)`. `ann` is the return annotation when it is a matching generator, which
+// genReturn presents as the external type; it is nil otherwise.
 type genSinks struct {
 	yields soltype.Type
 	next   soltype.Type
@@ -967,18 +960,14 @@ type genSinks struct {
 	async bool
 }
 
-// resolveGenSinks seeds a generator body's yield sink and next type from its return
-// annotation, resolved before the body is walked so each `yield` is checked at its
-// own site, the way the throws clause seeds the throws sink.
+// resolveGenSinks seeds a generator body's sinks from its return annotation, before the
+// body is walked so each `yield` is checked at its own site.
 //
-// A `gen fn`'s return annotation names the EXTERNAL Generator, not the body's value,
-// so it must be a `Generator<Y, R, N>` — or `AsyncGenerator<Y, R, N>` for an
-// `async gen fn`. A matching annotation seeds the yield sink with its Y slot and the
-// next type with its N slot. Any other annotation is a GenReturnNotGeneratorError;
-// recovery falls back to the no-annotation seeding so the body still checks. With no
-// annotation the yield sink is a fresh variable the yields flow into, inferring Y the
-// way `throws _` infers a clause, and next is `never`, matching the old checker's
-// TNext: a generator driven by a plain `for` loop is never sent a value.
+// The annotation names the EXTERNAL generator, so it must be `Generator<Y, R, N>`, or
+// `AsyncGenerator<Y, R, N>` when the function is async. A matching one seeds the yield
+// sink from Y and `next` from N. Anything else draws a GenReturnNotGeneratorError and
+// falls back to the no-annotation seeding, where the yield sink is a fresh variable the
+// yields flow into and `next` is `never`, matching the old checker's `TNext`.
 func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, lvl int) *genSinks {
 	gs := &genSinks{yields: c.freshAt(lvl), next: &soltype.NeverType{}, async: sig.Async}
 	if sig.Return == nil {
@@ -1005,14 +994,11 @@ func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, 
 	return gs
 }
 
-// genReturn computes a `gen fn`'s external return type, which always faces callers
-// as a Generator: calling a generator function returns a generator object, not the
-// body's value. With a matching annotation the annotation IS the external type — the
-// body's joined return is constrained against its Ret slot, granting the same
-// owned-mutable upgrade an ordinary return annotation grants. Otherwise the inferred
-// pieces are wrapped: the yield sink becomes Y, the body's joined return becomes R,
-// and next is `never`. A bodyless un-annotated `declare gen fn` wraps `unknown` rather
-// than the synthetic Void, which would falsely signal that it returns nothing.
+// genReturn computes a `gen fn`'s external return type, always a generator, since
+// calling one returns a generator object rather than the body's value. A matching
+// annotation IS that type, with the body's return constrained against its `Ret` slot.
+// Otherwise the inferred pieces are wrapped. A bodyless `declare gen fn` wraps
+// `unknown` rather than the synthetic Void, which would signal that it returns nothing.
 func (c *checker) genReturn(node ast.Node, gs *genSinks, retExprs []ast.Expr, bodyType soltype.Type, hasBody bool) soltype.Type {
 	if gs.ann != nil {
 		if hasBody {
@@ -2739,20 +2725,17 @@ func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Ty
 	return t
 }
 
-// inferYield types `yield e` and `yield from g`. A yield outside a generator body is
-// a WALK rejection symmetric to AwaitOutsideAsyncError: the operand is still walked so
-// its own errors surface, and the enclosing function — the one to mark `gen` — is
-// related. A closure inside a generator opens its own funcCtx with gen false, so a
-// yield inside it is rejected too, matching JavaScript, where an inner function is not
-// a generator.
+// inferYield types `yield e` and `yield from g`. A yield outside a generator body is a
+// WALK rejection symmetric to AwaitOutsideAsyncError: the operand is still walked so its
+// own errors surface, and the enclosing function is related as the one to mark `gen`. A
+// closure opens its own funcCtx with `gen` clear, so a `yield` inside one is rejected
+// even within a generator, matching JavaScript.
 //
-// `yield e` constrains the operand into the body's yield sink, the way a `throw`
-// reaches the throws sink, and evaluates to the generator's Next type — the value a
-// caller passes back in through next(v). A bare `yield` yields `undefined`.
+// `yield e` constrains its operand into the yield sink and evaluates to the `Next` type,
+// the value a caller sends back in through `next(v)`. A bare `yield` yields `undefined`.
 //
-// `yield from g` is reported as unsupported. It forwards a delegate's yields rather
-// than yielding the delegate itself, which needs the iteration rules. The delegate is
-// still walked first, so its own errors surface alongside the rejection.
+// `yield from g` is reported as unsupported, since forwarding a delegate's yields needs
+// the iteration rules. The delegate is still walked, so its own errors surface too.
 func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Type {
 	if c.fn == nil || !c.fn.gen {
 		if e.Value != nil {

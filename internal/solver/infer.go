@@ -176,7 +176,7 @@ type funcCtx struct {
 	// sets it; a call sets it unless the callee is resolved and provably non-throwing.
 	raised bool
 	// gen marks the body of a `gen fn`, the only place a `yield` is legal. A nested
-	// non-generator function opens its own funcCtx with gen false, so a yield inside a
+	// non-generator function opens its own funcCtx with `gen` clear, so a `yield` inside a
 	// closure is rejected even when the closure sits in a generator's body.
 	gen bool
 	// yields is this body's yield SINK: the type every `yield` operand is constrained
@@ -186,7 +186,7 @@ type funcCtx struct {
 	// a generator body.
 	yields soltype.Type
 	// yieldNext is the type a `yield` expression evaluates to, the generator's Next
-	// slot: the value a caller passes back in through next(v). inferFunc seeds it from
+	// slot: the value a caller passes back in through `next(v)`. inferFunc seeds it from
 	// the annotation, or to `never` when there is none, matching the old checker's
 	// TNext. Nil outside a generator body.
 	yieldNext soltype.Type

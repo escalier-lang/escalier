@@ -93,7 +93,7 @@ func TestInferGenExternalGeneratorFace(t *testing.T) {
 		},
 		{
 			// The annotation's Next slot is what a `yield` evaluates to, the value a
-			// caller passes back in through next(v).
+			// caller passes back in through `next(v)`.
 			name: "AnnotatedNextTypesTheYield",
 			src: `
 				gen fn f() -> Generator<number, "done", string> {
@@ -225,7 +225,7 @@ func TestInferGenThrowsStillChecked(t *testing.T) {
 }
 
 // Generator subtyping: Yield and Ret are covariant; Next is contravariant, since it is
-// the value a caller sends back in through next(v).
+// the value a caller sends back in through `next(v)`.
 func TestGeneratorSubtyping(t *testing.T) {
 	runGenCases(t, []genCase{
 		{
