@@ -508,7 +508,7 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		inferErrors := c.inferFuncBodyWithFuncSigType(
 			funcCtx, funcType, paramBindings,
 			expr.FuncSig.Params, expr.Body,
-			asyncModeFrom(expr.FuncSig.Async), nonConstructorBody,
+			asyncModeFrom(expr.FuncSig.Async), genModeFrom(expr.FuncSig.Gen), nonConstructorBody,
 		)
 		errors = slices.Concat(errors, inferErrors)
 

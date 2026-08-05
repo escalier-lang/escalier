@@ -790,7 +790,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			declare:    decl.Declare(),
 			export:     b.isModule && !prevInBlockScope,
 			async:      d.Async,
-			generator:  containsYield(d.Body.Stmts),
+			generator:  d.Gen || containsYield(d.Body.Stmts),
 			span:       nil,
 			source:     decl,
 		}
@@ -1189,10 +1189,10 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 		}
 	}
 
-	// Check if any overload contains yield - if so, the generated function must be a generator
+	// Check if any overload is a generator - if so, the generated function must be a generator
 	isGenerator := false
 	for _, overload := range implementedOverloads {
-		if overload.Body != nil && containsYield(overload.Body.Stmts) {
+		if overload.Gen || (overload.Body != nil && containsYield(overload.Body.Stmts)) {
 			isGenerator = true
 			break
 		}
@@ -1539,7 +1539,7 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			bodyStmts,
 			FuncExprOptions{
 				Async:     expr.Async,
-				Generator: containsYield(expr.Body.Stmts),
+				Generator: expr.Gen || containsYield(expr.Body.Stmts),
 			},
 			expr,
 		), []Stmt{}
@@ -2205,7 +2205,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 			name, nameStmts := b.buildObjKey(e.Name)
 			allStmts = slices.Concat(allStmts, nameStmts)
 
-			isGenerator := e.Fn.Body != nil && containsYield(e.Fn.Body.Stmts)
+			isGenerator := e.Fn.Gen || (e.Fn.Body != nil && containsYield(e.Fn.Body.Stmts))
 			methodElem := NewMethodElem(
 				name,
 				params,

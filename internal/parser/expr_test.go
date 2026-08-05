@@ -311,6 +311,14 @@ func TestParseExprErrorHandling(t *testing.T) {
 		"IncompleteBinaryExpr": {
 			input: "a - b +",
 		},
+		// The blame span and the message name the last keyword consumed, so a missing
+		// `fn` after `async gen` points at `gen` rather than back at `async`.
+		"AsyncGenWithoutFn": {
+			input: "async gen 5",
+		},
+		"GenWithoutFn": {
+			input: "gen 5",
+		},
 		"ExtraOperatorsInBinaryExpr": {
 			input: "a + * b",
 		},

@@ -1428,6 +1428,54 @@ func TestPrintAsyncFunction(t *testing.T) {
 	}
 }
 
+func TestPrintGenFunction(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			"gen function decl",
+			`gen fn count() { yield 1 }`,
+			"gen fn count() {\n    yield 1\n}",
+		},
+		{
+			"async gen function decl",
+			`async gen fn poll() { yield await x }`,
+			"async gen fn poll() {\n    yield await x\n}",
+		},
+		{
+			"gen function expr",
+			`val f = gen fn () { yield 1 }`,
+			"val f = gen fn () {\n    yield 1\n}",
+		},
+		{
+			// `yield from` keeps its delegating form, and the operand prints as an
+			// ordinary expression.
+			"yield from",
+			`gen fn outer() { yield from inner() }`,
+			"gen fn outer() {\n    yield from inner()\n}",
+		},
+		{
+			// A bare `yield` has no operand, so it prints the keyword with no trailing
+			// space.
+			"bare yield",
+			`gen fn bare() { yield }`,
+			"gen fn bare() {\n    yield\n}",
+		},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := parseDecl(t, tt.input)
+			result, err := Print(node, opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, result)
+		})
+	}
+}
+
 func TestPrintFunctionWithThrows(t *testing.T) {
 	input := `fn divide(a: number, b: number) -> number throws string {
 		if b == 0 {

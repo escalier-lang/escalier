@@ -436,16 +436,36 @@ func (p *Parser) primaryExpr() ast.Expr {
 			temp := p.templateLitExpr(token, nil)
 			expr = temp
 		case Fn:
-			fnExpr := p.fnExpr(token.Span.Start, false)
+			fnExpr := p.fnExpr(token.Span.Start, false, false)
 			return fnExpr
 		case Async:
 			p.lexer.consume() // consume 'async'
-			nextToken := p.lexer.peek()
-			if nextToken.Type == Fn {
-				fnExpr := p.fnExpr(token.Span.Start, true)
+			// `gen` may follow `async`, so the blame span and the message track the last
+			// keyword actually consumed. Reporting `async` after `gen` was taken would
+			// point past the keyword the missing `fn` belongs to.
+			gen := false
+			kwSpan := token.Span
+			kw := "async"
+			if p.lexer.peek().Type == Gen {
+				kwSpan = p.lexer.peek().Span
+				kw = "async gen"
+				p.lexer.consume() // consume 'gen'
+				gen = true
+			}
+			if p.lexer.peek().Type == Fn {
+				fnExpr := p.fnExpr(token.Span.Start, true, gen)
 				return fnExpr
 			} else {
-				p.reportError(token.Span, "Expected 'fn' after 'async'")
+				p.reportError(kwSpan, "Expected 'fn' after '"+kw+"'")
+				return nil
+			}
+		case Gen:
+			p.lexer.consume() // consume 'gen'
+			if p.lexer.peek().Type == Fn {
+				fnExpr := p.fnExpr(token.Span.Start, false, true)
+				return fnExpr
+			} else {
+				p.reportError(token.Span, "Expected 'fn' after 'gen'")
 				return nil
 			}
 		case Await:
@@ -532,7 +552,7 @@ func (p *Parser) primaryExpr() ast.Expr {
 
 // fnExpr = 'fn' '(' param (',' param)* ')' block
 // TODO: dedupe with `fnDecl`
-func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
+func (p *Parser) fnExpr(start ast.Location, async bool, gen bool) ast.Expr {
 	// TODO: allow an optional identifier
 	// token := parser.lexer.peek()
 	// _ident, ok := token.(*TIdentifier)
@@ -583,6 +603,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool) ast.Expr {
 		&body,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
+	fn.Gen = gen
 	fn.Inexact = inexact
 	return fn
 }
@@ -643,7 +664,7 @@ func canStartExpr(tt TokenType) bool {
 		// Grouping / collection starters
 		OpenParen, OpenBracket, OpenBrace,
 		// Expression-starting keywords
-		Fn, Async, Await, Yield, If, Match, Try, Throw, Do, Mut, LessThan:
+		Fn, Async, Gen, Await, Yield, If, Match, Try, Throw, Do, Mut, LessThan:
 		return true
 	default:
 		return false

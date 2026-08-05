@@ -347,6 +347,9 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 		if e.Fn.Async {
 			p.writeString("async ")
 		}
+		if e.Fn.Gen {
+			p.writeString("gen ")
+		}
 		p.printObjKey(e.Name)
 		p.printMethodSig(&e.Fn.FuncSig, e.Receiver)
 		if e.Fn.Body != nil {
@@ -576,6 +579,9 @@ func (p *Printer) printFuncDecl(decl *ast.FuncDecl) {
 	if decl.Async {
 		p.writeString("async ")
 	}
+	if decl.Gen {
+		p.writeString("gen ")
+	}
 	p.writeString("fn ")
 	p.writeString(decl.Name.Name)
 
@@ -718,6 +724,8 @@ func (p *Printer) printExpr(expr ast.Expr) {
 		p.printAwaitExpr(e)
 	case *ast.ThrowExpr:
 		p.printThrowExpr(e)
+	case *ast.YieldExpr:
+		p.printYieldExpr(e)
 	case *ast.TemplateLitExpr:
 		p.printTemplateLitExpr(e)
 	case *ast.TaggedTemplateLitExpr:
@@ -1027,6 +1035,29 @@ func (p *Printer) printThrowExpr(expr *ast.ThrowExpr) {
 	p.printExpr(expr.Arg)
 }
 
+// printYieldExpr renders `yield`, `yield e`, and the delegating `yield from g`. A bare
+// `yield` carries no operand, so it prints the keyword alone with no trailing space. The
+// operand is parenthesized on the same rule the `await` printer applies, so a looser
+// operand such as a binary expression keeps its grouping.
+func (p *Printer) printYieldExpr(expr *ast.YieldExpr) {
+	p.writeString("yield")
+	if expr.IsDelegate {
+		p.writeString(" from")
+	}
+	if expr.Value == nil {
+		return
+	}
+	p.writeString(" ")
+	needsParens := p.needsParens(expr, expr.Value)
+	if needsParens {
+		p.writeString("(")
+	}
+	p.printExpr(expr.Value)
+	if needsParens {
+		p.writeString(")")
+	}
+}
+
 func (p *Printer) printTemplateLitExpr(expr *ast.TemplateLitExpr) {
 	p.writeString("`")
 	for i, quasi := range expr.Quasis {
@@ -1071,6 +1102,9 @@ func (p *Printer) printTypeCastExpr(expr *ast.TypeCastExpr) {
 func (p *Printer) printFuncExpr(expr *ast.FuncExpr) {
 	if expr.Async {
 		p.writeString("async ")
+	}
+	if expr.Gen {
+		p.writeString("gen ")
 	}
 	p.writeString("fn ")
 	p.printFuncSig(&expr.FuncSig)

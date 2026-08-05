@@ -1267,6 +1267,13 @@ func TestClassConstructorErrors(t *testing.T) {
 				}
 			`,
 		},
+		"GenConstructor": {
+			input: `
+				class Foo {
+					gen constructor(mut self) {}
+				}
+			`,
+		},
 		"GetConstructor": {
 			input: `
 				class Foo {
@@ -1348,6 +1355,66 @@ func TestClassConstructorErrors(t *testing.T) {
 			}
 			assert.Greater(t, len(errors), 0, "Expected parsing errors but got none")
 			snaps.MatchSnapshot(t, snapshot.String(errors))
+		})
+	}
+}
+
+// `gen` marks a method as a generator. Only a method can carry it, so every
+// other kind of class element rejects it. A method keeps parsing cleanly.
+func TestClassGenModifierErrors(t *testing.T) {
+	tests := map[string]struct {
+		input          string
+		expectedErrors []string
+	}{
+		"GenField": {
+			input:          `class C { gen value: number }`,
+			expectedErrors: []string{"fields cannot be generators"},
+		},
+		"GenStaticField": {
+			input:          `class C { static gen value: number = 5 }`,
+			expectedErrors: []string{"fields cannot be generators"},
+		},
+		"GenOptionalField": {
+			input:          `class C { gen value?: number }`,
+			expectedErrors: []string{"fields cannot be generators"},
+		},
+		"GenGetter": {
+			input:          `class C { gen get value(self) -> number { return 1 } }`,
+			expectedErrors: []string{"getters and setters cannot be generators"},
+		},
+		"GenSetter": {
+			input:          `class C { gen set value(mut self, v: number) {} }`,
+			expectedErrors: []string{"getters and setters cannot be generators"},
+		},
+		"GenMethod": {
+			input:          `class C { gen count(self) { yield 1 } }`,
+			expectedErrors: nil,
+		},
+		"GenMethodWithTypeParams": {
+			input:          `class C { gen count<T>(self, x: T) { yield x } }`,
+			expectedErrors: nil,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{
+				ID:       0,
+				Path:     "input.esc",
+				Contents: test.input,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			parser := NewParser(ctx, source)
+			_, errors := parser.ParseScript()
+
+			var messages []string
+			for _, e := range errors {
+				messages = append(messages, e.Message)
+			}
+			require.Equal(t, test.expectedErrors, messages)
 		})
 	}
 }

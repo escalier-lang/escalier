@@ -485,7 +485,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			bodyErrors := c.inferFuncBodyWithFuncSigType(
 				methodCtx, methodSig, paramBindings,
 				bodyElem.Fn.Params, bodyElem.Fn.Body,
-				asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
+				asyncModeFrom(bodyElem.Fn.Async), genModeFrom(bodyElem.Fn.Gen), nonConstructorBody,
 			)
 			errors = slices.Concat(errors, bodyErrors)
 
@@ -551,7 +551,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				bodyErrors := c.inferFuncBodyWithFuncSigType(
 					getterCtx, getterType.Fn, paramBindings,
 					bodyElem.Fn.Params, bodyElem.Fn.Body,
-					asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
+					asyncModeFrom(bodyElem.Fn.Async), genModeFrom(bodyElem.Fn.Gen), nonConstructorBody,
 				)
 				errors = slices.Concat(errors, bodyErrors)
 			}
@@ -618,7 +618,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				bodyErrors := c.inferFuncBodyWithFuncSigType(
 					setterCtx, setterType.Fn, paramBindings,
 					bodyElem.Fn.Params, bodyElem.Fn.Body,
-					asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
+					asyncModeFrom(bodyElem.Fn.Async), genModeFrom(bodyElem.Fn.Gen), nonConstructorBody,
 				)
 				errors = slices.Concat(errors, bodyErrors)
 			}
@@ -666,7 +666,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 			bodyErrors := c.inferFuncBodyWithFuncSigType(
 				ctorBodyCtx, bodyFuncType, ctorBindings,
 				ctorCallableParams(bodyElem), bodyElem.Fn.Body,
-				syncFunc, constructorBody,
+				syncFunc, nonGenFunc, constructorBody,
 			)
 			errors = slices.Concat(errors, bodyErrors)
 			ctorFuncType.Throws = bodyFuncType.Throws

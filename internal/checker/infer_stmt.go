@@ -212,7 +212,7 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 		inferErrors := c.inferFuncBodyWithFuncSigType(
 			ctx, funcType, paramBindings,
 			decl.FuncSig.Params, decl.Body,
-			asyncModeFrom(decl.FuncSig.Async), nonConstructorBody,
+			asyncModeFrom(decl.FuncSig.Async), genModeFrom(decl.FuncSig.Gen), nonConstructorBody,
 		)
 		errors = slices.Concat(errors, inferErrors)
 	}
