@@ -202,11 +202,7 @@ func (c *checker) inferEnumBody(sh *enumShell) {
 	if !sh.preBindClean || !quiet() {
 		return
 	}
-	c.reportUnusedTypeParams(sh.typeParams, sh.decl.TypeParams, func(v soltype.TypeVisitor) {
-		for _, t := range declared {
-			t.Accept(v, soltype.Positive)
-		}
-	})
+	c.reportUnusedTypeParams(sh.typeParams, sh.decl.TypeParams, declared)
 }
 
 // variantConstructor builds one enum variant's constructor: a function taking the

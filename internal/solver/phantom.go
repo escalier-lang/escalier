@@ -201,9 +201,7 @@ func (c *checker) reportPhantomParams(shells []*aliasShell) {
 		if len(params) == 0 {
 			continue
 		}
-		inBody, inSibling := typeParamMentions(params, func(v soltype.TypeVisitor) {
-			sh.def.Body.Accept(v, soltype.Positive)
-		})
+		inBody, inSibling := typeParamMentions(params, []soltype.Type{sh.def.Body})
 		for i, p := range params {
 			// A parameter a sibling's bound or default mentions is doing work the body cannot
 			// show, so `type Foo<T, U: T> = {x: U}` warns about neither. markPhantomParams
@@ -238,18 +236,18 @@ func (c *checker) reportPhantomParams(shells []*aliasShell) {
 }
 
 // reportUnusedTypeParams warns about each type parameter of a class or enum the declaration
-// never mentions. walkBody visits every type the declaration writes, and decls are the binders
-// the warnings blame. Only the unused tier applies to the nominal sorts, whose arguments stay
+// never mentions. body is every type the declaration writes, and decls are the binders the
+// warnings blame. Only the unused tier applies to the nominal sorts, whose arguments stay
 // observable through recursion, so no parameter of one is ever unreachable.
 func (c *checker) reportUnusedTypeParams(
 	params []*soltype.TypeParam,
 	decls []*ast.TypeParam,
-	walkBody func(soltype.TypeVisitor),
+	body []soltype.Type,
 ) {
 	if len(params) == 0 || len(decls) < len(params) {
 		return
 	}
-	mentioned, inSibling := typeParamMentions(params, walkBody)
+	mentioned, inSibling := typeParamMentions(params, body)
 	for i, p := range params {
 		if strings.HasPrefix(p.Name, "_") || mentioned[i] || inSibling[i] {
 			continue
@@ -259,9 +257,9 @@ func (c *checker) reportUnusedTypeParams(
 }
 
 // typeParamMentions reports where each of a declaration's type parameters occurs: inBody for one
-// walkBody reaches, inSibling for one another parameter's bound or default writes. A parameter's
+// the body writes, inSibling for one another parameter's bound or default writes. A parameter's
 // own bound does not count, so the T an F-bound `<T: Foo<T>>` writes is not a use of T.
-func typeParamMentions(params []*soltype.TypeParam, walkBody func(soltype.TypeVisitor)) (inBody, inSibling []bool) {
+func typeParamMentions(params []*soltype.TypeParam, body []soltype.Type) (inBody, inSibling []bool) {
 	slots := map[*soltype.TypeVarType]int{}
 	for i, p := range params {
 		if p.Var != nil {
@@ -269,17 +267,13 @@ func typeParamMentions(params []*soltype.TypeParam, walkBody func(soltype.TypeVi
 		}
 	}
 	inBody = make([]bool, len(params))
-	walkBody(&paramOccurrenceWalker{slots: slots, found: inBody})
+	occurrences(slots, body, inBody)
 
 	inSibling = make([]bool, len(params))
 	onBinder := make([]bool, len(params))
 	for j, p := range params {
 		clear(onBinder)
-		for _, t := range []soltype.Type{p.Constraint, p.Default} {
-			if t != nil {
-				markOccurrences(slots, t, onBinder)
-			}
-		}
+		occurrences(slots, []soltype.Type{p.Constraint, p.Default}, onBinder)
 		onBinder[j] = false
 		for i, occurs := range onBinder {
 			inSibling[i] = inSibling[i] || occurs
@@ -288,12 +282,18 @@ func typeParamMentions(params []*soltype.TypeParam, walkBody func(soltype.TypeVi
 	return inBody, inSibling
 }
 
-// markOccurrences sets found[i] for each type parameter whose var occurs anywhere in t, leaving
-// the entries it does not reach alone so a caller may fold several types into one slice. slots
-// maps each parameter's var to its position. Position and reachability play no part here, unlike
+// occurrences sets found[i] for each type parameter whose var occurs anywhere in types, leaving
+// the entries it does not reach alone so a caller may fold several walks into one slice. slots
+// maps each parameter's var to its position, and a nil type is skipped so a caller can pass an
+// absent bound or default straight through. Position and reachability play no part here, unlike
 // in the phantom marks.
-func markOccurrences(slots map[*soltype.TypeVarType]int, t soltype.Type, found []bool) {
-	t.Accept(&paramOccurrenceWalker{slots: slots, found: found}, soltype.Positive)
+func occurrences(slots map[*soltype.TypeVarType]int, types []soltype.Type, found []bool) {
+	w := &paramOccurrenceWalker{slots: slots, found: found}
+	for _, t := range types {
+		if t != nil {
+			t.Accept(w, soltype.Positive)
+		}
+	}
 }
 
 // paramOccurrenceWalker records which of a fixed set of type variables a type mentions. It

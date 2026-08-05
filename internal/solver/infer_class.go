@@ -123,31 +123,33 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	def.Variance, def.MutVariance = c.inferVariance(def, decl)
 
 	if quiet() && paramsClean {
-		c.reportUnusedTypeParams(typeParams, decl.TypeParams, func(v soltype.TypeVisitor) {
-			classDeclOccurrences(def, ctorType, v)
-		})
+		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorType))
 	}
 
 	return c.classValue(ctorType, static), &ast.NodeProvenance{Node: decl}, true
 }
 
-// classDeclOccurrences visits every type a class declaration writes, so a walker over it
-// sees each position that could name one of the class's type parameters. That is the
-// instance and static members, the constructor's signature, and the `extends` and
-// `implements` targets.
+// classDeclTypes returns every type a class declaration writes, so a walk over them covers each
+// position that could name one of the class's type parameters. That is the instance and static
+// members, the constructor's signature, and the `extends` and `implements` targets.
 //
-// A method's `self` receiver is dropped, since every method names the class in it and
-// counting that would make each parameter look used. stripSelfReceiver is the same helper
-// variance inference uses for the same reason. Every other position of a member's signature
-// counts, `throws` included, because AcceptObjElem walks the whole of it.
-func classDeclOccurrences(def *ClassDef, ctor soltype.Type, v soltype.TypeVisitor) {
+// A method's `self` receiver is dropped, since every method names the class in it and counting
+// that would make each parameter look used. stripSelfReceiver is the same helper variance
+// inference uses for the same reason. Every other position of a member's signature counts,
+// `throws` included, since walking the object that holds them descends into the whole of each.
+func classDeclTypes(def *ClassDef, ctor soltype.Type) []soltype.Type {
+	var out []soltype.Type
+	// The stripped members are handed back inside an object rather than one by one, so the
+	// caller walks a type and the visitor's own member traversal reaches each position.
 	for _, obj := range []*soltype.ObjectType{def.Body, def.Static} {
 		if obj == nil {
 			continue
 		}
-		for _, elem := range obj.Elems {
-			soltype.AcceptObjElem(stripSelfReceiver(elem), v, soltype.Positive)
+		stripped := make([]soltype.ObjTypeElem, len(obj.Elems))
+		for i, elem := range obj.Elems {
+			stripped[i] = stripSelfReceiver(elem)
 		}
+		out = append(out, &soltype.ObjectType{Elems: stripped})
 	}
 	// The constructor is the class's value binding rather than a Static member, so a
 	// parameter written only in `constructor(v: T) throws E` is reached here and nowhere
@@ -163,14 +165,17 @@ func classDeclOccurrences(def *ClassDef, ctor soltype.Type, v soltype.TypeVisito
 		bare := *fn
 		bare.SelfParam = nil
 		bare.Ret = &soltype.NeverType{}
-		bare.Accept(v, soltype.Positive)
+		out = append(out, &bare)
 	}
+	// Appended one at a time, since Go does not spread a slice of a concrete type into a
+	// slice of the interface it satisfies.
 	for _, super := range def.Supers {
-		super.Accept(v, soltype.Positive)
+		out = append(out, super)
 	}
 	for _, iface := range def.Implements {
-		iface.Accept(v, soltype.Positive)
+		out = append(out, iface)
 	}
+	return out
 }
 
 // bindScriptClass infers a class declared at a script's top level (bin/) and binds its
