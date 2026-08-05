@@ -1011,7 +1011,7 @@ func (c *Checker) InferComponent(
 					inferErrors := c.inferFuncBodyWithFuncSigType(
 						declCtx, funcType, paramBindings,
 						decl.FuncSig.Params, decl.Body,
-						asyncModeFrom(decl.FuncSig.Async), nonConstructorBody,
+						asyncModeFrom(decl.FuncSig.Async), genModeFrom(decl.FuncSig.Gen), nonConstructorBody,
 					)
 					errors = slices.Concat(errors, inferErrors)
 				}
@@ -1468,7 +1468,7 @@ func (c *Checker) InferComponent(
 							bodyErrors := c.inferFuncBodyWithFuncSigType(
 								methodCtx, methodSig, paramBindings,
 								bodyElem.Fn.Params, bodyElem.Fn.Body,
-								asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
+								asyncModeFrom(bodyElem.Fn.Async), genModeFrom(bodyElem.Fn.Gen), nonConstructorBody,
 							)
 							errors = slices.Concat(errors, bodyErrors)
 						}
@@ -1557,7 +1557,7 @@ func (c *Checker) InferComponent(
 								bodyErrors := c.inferFuncBodyWithFuncSigType(
 									getterCtx, getterType.Fn, paramBindings,
 									bodyElem.Fn.Params, bodyElem.Fn.Body,
-									asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
+									asyncModeFrom(bodyElem.Fn.Async), genModeFrom(bodyElem.Fn.Gen), nonConstructorBody,
 								)
 								errors = slices.Concat(errors, bodyErrors)
 							}
@@ -1652,7 +1652,7 @@ func (c *Checker) InferComponent(
 								bodyErrors := c.inferFuncBodyWithFuncSigType(
 									setterCtx, setterType.Fn, paramBindings,
 									bodyElem.Fn.Params, bodyElem.Fn.Body,
-									asyncModeFrom(bodyElem.Fn.Async), nonConstructorBody,
+									asyncModeFrom(bodyElem.Fn.Async), genModeFrom(bodyElem.Fn.Gen), nonConstructorBody,
 								)
 								errors = slices.Concat(errors, bodyErrors)
 							}
@@ -1744,7 +1744,7 @@ func (c *Checker) InferComponent(
 						bodyErrors := c.inferFuncBodyWithFuncSigType(
 							ctorBodyCtx, bodyFuncType, ctorBindings,
 							ctorCallableParams(bodyElem), bodyElem.Fn.Body,
-							syncFunc, constructorBody,
+							syncFunc, nonGenFunc, constructorBody,
 						)
 						errors = slices.Concat(errors, bodyErrors)
 						ctorFuncType.Throws = bodyFuncType.Throws

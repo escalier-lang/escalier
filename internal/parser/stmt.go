@@ -13,7 +13,7 @@ func (p *Parser) isStatementInitiator(tt TokenType) bool {
 	// nolint: exhaustive
 	switch tt {
 	case Val, Var, Fn, Type, Interface, Enum, Class, Return, Throw,
-		For, If, Import, Export, Declare, Override, Async, Final, AtSign,
+		For, If, Import, Export, Declare, Override, Async, Gen, Final, AtSign,
 		EndOfFile:
 		return true
 	default:
@@ -31,7 +31,7 @@ func (p *Parser) skipToNextStatement(stopOn TokenType) {
 		case EndOfFile, stopOn:
 			return
 		case Val, Var, Fn, Type, Interface, Enum, Class, Return, Throw,
-			For, If, Import, Export, Declare, Override, Async, Final, AtSign:
+			For, If, Import, Export, Declare, Override, Async, Gen, Final, AtSign:
 			return
 		default:
 			p.lexer.consume()
@@ -143,7 +143,7 @@ func (p *Parser) stmt() ast.Stmt {
 	case token.Type == For:
 		stmt = p.parseForInStmt()
 	case isDataClass,
-		token.Type == Async, token.Type == Fn, token.Type == Var, token.Type == Val,
+		token.Type == Async, token.Type == Gen, token.Type == Fn, token.Type == Var, token.Type == Val,
 		token.Type == Type, token.Type == Interface, token.Type == Enum,
 		token.Type == Declare, token.Type == Export, token.Type == Override, token.Type == Class,
 		token.Type == Final, token.Type == AtSign:

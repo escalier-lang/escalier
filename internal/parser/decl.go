@@ -181,7 +181,7 @@ func (p *Parser) lifetimeParam(nameTok *Token) *ast.LifetimeParam {
 	return ast.NewLifetimeParam(nameTok.Value, bounds, span)
 }
 
-// Decl = decorator* 'export'? 'override'? 'declare'? 'async'? (varDecl | fnDecl | ...)
+// Decl = decorator* 'export'? 'override'? 'declare'? 'async'? 'gen'? (varDecl | fnDecl | ...)
 //
 //	| 'override'? 'declare' 'module' StrLit '{' decl* '}'
 //	| 'override'? 'declare' 'global' '{' decl* '}'
@@ -194,6 +194,7 @@ func (p *Parser) Decl() ast.Decl {
 	override := false
 	declare := false
 	async := false
+	gen := false
 	final := false
 
 	decorators := p.parseDecorators()
@@ -253,7 +254,12 @@ func (p *Parser) Decl() ast.Decl {
 		token = p.lexer.next()
 	}
 
-	if async && token.Type != Fn {
+	if token.Type == Gen {
+		gen = true
+		token = p.lexer.next()
+	}
+
+	if async && !gen && token.Type != Fn {
 		p.reportError(token.Span, "async can only be used with functions")
 	}
 
@@ -264,6 +270,10 @@ func (p *Parser) Decl() ast.Decl {
 	if async && declare {
 		p.reportError(asyncSpan, "'async' is not allowed on an ambient declaration")
 		async = false
+	}
+
+	if gen && token.Type != Fn {
+		p.reportError(token.Span, "gen can only be used with functions")
 	}
 
 	var finalSpan ast.Span
@@ -283,7 +293,7 @@ func (p *Parser) Decl() ast.Decl {
 	case Val, Var:
 		decl = p.varDecl(start, token, export, declare)
 	case Fn:
-		decl = p.fnDecl(start, export, declare, async)
+		decl = p.fnDecl(start, export, declare, async, gen)
 	case Type:
 		decl = p.typeDecl(start, export, declare)
 	case Interface:
@@ -600,13 +610,16 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 func (p *Parser) parseConstructorElem(
 	start ast.Location,
 	token *Token,
-	isStatic, isAsync, isPrivate, isReadonly, isGet, isSet bool,
+	isStatic, isAsync, isGen, isPrivate, isReadonly, isGet, isSet bool,
 ) ast.ClassElem {
 	if isStatic {
 		p.reportError(token.Span, "constructors cannot be static")
 	}
 	if isAsync {
 		p.reportError(token.Span, "constructors cannot be async")
+	}
+	if isGen {
+		p.reportError(token.Span, "constructors cannot be generators")
 	}
 	if isReadonly {
 		p.reportError(token.Span, "constructors cannot be readonly")
@@ -759,13 +772,14 @@ func (p *Parser) parseClassElemInner() ast.ClassElem {
 
 	isStatic := false
 	isAsync := false
+	isGen := false
 	isPrivate := false
 	isReadonly := false
 	isGet := false
 	isSet := false
 	start := token.Span.Start
 
-	// Parse modifiers: static, async, private, readonly (order-insensitive)
+	// Parse modifiers: static, async, gen, private, readonly (order-insensitive)
 	for {
 		// Check if context has been cancelled (timeout or cancellation)
 		select {
@@ -783,6 +797,9 @@ func (p *Parser) parseClassElemInner() ast.ClassElem {
 			p.lexer.consume()
 		case Async:
 			isAsync = true
+			p.lexer.consume()
+		case Gen:
+			isGen = true
 			p.lexer.consume()
 		case Private:
 			isPrivate = true
@@ -805,12 +822,19 @@ modifiers_done:
 	// `constructor` is a contextual keyword at the start of a class element.
 	// Anywhere else it is a regular identifier.
 	if token.Type == Identifier && token.Value == "constructor" {
-		return p.parseConstructorElem(start, token, isStatic, isAsync, isPrivate, isReadonly, isGet, isSet)
+		return p.parseConstructorElem(start, token, isStatic, isAsync, isGen, isPrivate, isReadonly, isGet, isSet)
 	}
 
 	name := p.objExprKey()
 	if name == nil {
 		return nil
+	}
+
+	// An accessor names what it reads or writes, so it has no generator form: a getter
+	// returns the property's value rather than a generator, and a setter yields nothing
+	// at all. Reject `gen` on either, the way a constructor rejects it.
+	if isGen && (isGet || isSet) {
+		p.reportError(token.Span, "getters and setters cannot be generators")
 	}
 
 	// Parse optional lifetime + type parameters for the method.
@@ -966,9 +990,11 @@ modifiers_done:
 		}
 
 		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		fn := ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span)
+		fn.Gen = isGen
 		return &ast.MethodElem{
 			Name:     name,
-			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span),
+			Fn:       fn,
 			Receiver: receiver,
 			Static:   isStatic,
 			Private:  isPrivate,
@@ -1113,7 +1139,7 @@ func (p *Parser) varDecl(
 // fnDecl = 'fn' ident '<' typeParam* '>' '(' param* ')' block
 // NOTE: `block` is optional for fnDecl when `declare` is true.
 // TODO: dedupe with `fnExpr`
-func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async bool) ast.Decl {
+func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async bool, gen bool) ast.Decl {
 	token := p.lexer.peek()
 	var ident *ast.Ident
 	if token.Type == Identifier {
@@ -1145,6 +1171,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 				ident, lifetimeParams, typeParams, nil, nil, nil, nil, export, declare, async,
 				ast.NewSpan(start, end, p.lexer.source.ID),
 			)
+			fd.Gen = gen
 			return fd
 		}
 	} else {
@@ -1194,6 +1221,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		ident, lifetimeParams, typeParams, params, returnType, throwsType, body, export, declare, async,
 		ast.NewSpan(start, end, p.lexer.source.ID),
 	)
+	fd.Gen = gen
 	fd.Inexact = inexact
 	return fd
 }

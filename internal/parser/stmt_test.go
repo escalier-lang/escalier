@@ -353,6 +353,31 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"AsyncGeneratorFuncDecl": {
 			input: `async fn fetch() { yield await x }`,
 		},
+		"GenFuncDecl": {
+			input: `gen fn count() { yield 1 }`,
+		},
+		"AsyncGenFuncDecl": {
+			input: `async gen fn fetch() { yield await x }`,
+		},
+		"GenFuncDeclWithGeneratorReturnAnn": {
+			input: `gen fn count() -> Generator<number, undefined, never> { yield 1 }`,
+		},
+		"GenFuncExpr": {
+			input: `val f = gen fn () { yield 1 }`,
+		},
+		"ClassWithGenMethod": {
+			input: `class C {
+				gen count(self) { yield 1 }
+			}`,
+		},
+		"ClassWithAsyncGenMethod": {
+			input: `class C {
+				async gen poll(self) { yield await x }
+			}`,
+		},
+		"AsyncGenFuncExpr": {
+			input: `val f = async gen fn () { yield await x }`,
+		},
 		"ValElseBareIdent": {
 			input: `val x = u else { return }`,
 		},

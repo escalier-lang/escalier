@@ -290,6 +290,29 @@ func asyncModeFrom(b bool) asyncMode {
 	return syncFunc
 }
 
+// genMode reports whether a body belongs to a generator function. A `gen fn`
+// is a generator whether or not its body yields, so the marker comes from the
+// signature rather than from finding a `yield`. An empty generator and one
+// that only returns are both legal, and codegen emits `function*` for them,
+// so the type must be a Generator too.
+type genMode int
+
+const (
+	nonGenFunc genMode = iota
+	genFunc
+)
+
+func (gm genMode) isGen() bool { return gm == genFunc }
+
+// genModeFrom converts an AST-level gen bool (ast.FuncSig.Gen) into the
+// corresponding genMode.
+func genModeFrom(b bool) genMode {
+	if b {
+		return genFunc
+	}
+	return nonGenFunc
+}
+
 // constructorBodyMode marks whether the body about to be inferred is the
 // top-level body of a constructor (relaxes readonly-init for `self.<field>`
 // writes) or any other function body. The flag is set on the body's own
@@ -311,6 +334,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	astParams []*ast.Param,
 	body *ast.Block,
 	async asyncMode,
+	gen genMode,
 	ctorBody constructorBodyMode,
 ) []Error {
 	isAsync := async.isAsync()
@@ -318,8 +342,9 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	errors := []Error{}
 
 	// Allocate fresh pointers for generator tracking — this function gets its own
-	// tracking independent of any enclosing function
-	containsYield := false
+	// tracking independent of any enclosing function. A `gen fn` seeds the flag from
+	// its signature, so a generator with no `yield` in its body is still typed as one.
+	containsYield := gen.isGen()
 	yieldedTypes := []type_system.Type{}
 
 	// Create context for the function body. `InConstructorBody` is set

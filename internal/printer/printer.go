@@ -347,6 +347,9 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 		if e.Fn.Async {
 			p.writeString("async ")
 		}
+		if e.Fn.Gen {
+			p.writeString("gen ")
+		}
 		p.printObjKey(e.Name)
 		p.printMethodSig(&e.Fn.FuncSig, e.Receiver)
 		if e.Fn.Body != nil {
@@ -575,6 +578,9 @@ func (p *Printer) printFuncDecl(decl *ast.FuncDecl) {
 
 	if decl.Async {
 		p.writeString("async ")
+	}
+	if decl.Gen {
+		p.writeString("gen ")
 	}
 	p.writeString("fn ")
 	p.writeString(decl.Name.Name)
@@ -1071,6 +1077,9 @@ func (p *Printer) printTypeCastExpr(expr *ast.TypeCastExpr) {
 func (p *Printer) printFuncExpr(expr *ast.FuncExpr) {
 	if expr.Async {
 		p.writeString("async ")
+	}
+	if expr.Gen {
+		p.writeString("gen ")
 	}
 	p.writeString("fn ")
 	p.printFuncSig(&expr.FuncSig)

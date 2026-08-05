@@ -1267,6 +1267,13 @@ func TestClassConstructorErrors(t *testing.T) {
 				}
 			`,
 		},
+		"GenConstructor": {
+			input: `
+				class Foo {
+					gen constructor(mut self) {}
+				}
+			`,
+		},
 		"GetConstructor": {
 			input: `
 				class Foo {
