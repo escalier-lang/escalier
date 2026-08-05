@@ -1336,6 +1336,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		// differing only in whether the rejection slot was written compare equal here.
 		return ok && equalTypeWith(a.Inner, b.Inner, ctx) &&
 			equalTypeWith(a.ErrOrNever(), b.ErrOrNever(), ctx)
+	case *soltype.GeneratorType:
+		b, ok := b.(*soltype.GeneratorType)
+		return ok && a.Async == b.Async &&
+			equalTypeWith(a.Yield, b.Yield, ctx) &&
+			equalTypeWith(a.Ret, b.Ret, ctx) &&
+			equalTypeWith(a.Next, b.Next, ctx)
 	case *soltype.RefType:
 		b, ok := b.(*soltype.RefType)
 		// Mut must match — a mutable borrow never equals an immutable one — and the

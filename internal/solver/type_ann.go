@@ -102,6 +102,31 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
+		// The built-in Generator<Y, R, N> and AsyncGenerator<Y, R, N>, the external face of a
+		// `gen fn` / `async gen fn`. Like Promise they resolve here only when no user binding
+		// shadows the prelude placeholder, and a lifetime annotation is rejected rather than
+		// silently dropped. All three arguments are required: Y is what the body yields, R what
+		// it returns, and N what a `yield` expression evaluates to.
+		if name := ast.QualIdentToString(ta.Name); (name == "Generator" || name == "AsyncGenerator") && len(ta.TypeArgs) == 3 {
+			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
+				return c.reportUnsupportedFeature(ta, "lifetime annotation on "+name), false
+			}
+			slots := make([]soltype.Type, 3)
+			for i, arg := range ta.TypeArgs {
+				slot, ok := c.resolveTypeAnn(scope, arg, lvl)
+				if !ok {
+					// Recover the slot to a fresh var and keep the Generator wrapper, for the
+					// reason the Promise arm above gives: the wrapper itself is supported, and
+					// a fresh var is cascade-safe where `never` or `unknown` would provoke a
+					// second failure.
+					slot = c.freshAt(lvl)
+				}
+				slots[i] = slot
+			}
+			t := &soltype.GeneratorType{Yield: slots[0], Ret: slots[1], Next: slots[2], Async: name == "AsyncGenerator"}
+			c.recordProv(t, ta, AnnotationType)
+			return t, true
+		}
 		// The built-in Array<T>, the element-typed sequence a rest parameter binds its trailing
 		// arguments into. It is minimal by design: it carries the element type and nothing else, so
 		// `xs.length` and `xs[0]` do not resolve. A local `Array` shadows the stub today, since

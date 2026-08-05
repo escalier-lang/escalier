@@ -2495,6 +2495,10 @@ func describe(t soltype.Type) string {
 			return "Promise<" + describe(t.Inner) + ", " + describe(t.Err) + ">"
 		}
 		return "Promise<" + describe(t.Inner) + ">"
+	case *soltype.GeneratorType:
+		// Structural like the Promise arm, so a rejected constraint names the slot
+		// types: `Generator<number, void, never>`.
+		return t.Name() + "<" + describe(t.Yield) + ", " + describe(t.Ret) + ", " + describe(t.Next) + ">"
 	case *soltype.KeyofType:
 		// A `keyof` residual renders structurally, recursing like the Promise arm, so a
 		// rejected constraint names it `keyof <operand>` rather than the default `?`. The
