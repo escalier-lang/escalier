@@ -974,6 +974,21 @@ type AsyncReturnNotPromiseError struct {
 	Fn     ast.Node    // the enclosing async function, surfaced via Related()
 }
 
+// AsyncThrowsClauseError fires when an `async fn` writes a `throws` clause. An async
+// function cannot raise — its body's throws are absorbed by the promise it returns —
+// so the rejection type is declared in the return annotation, `-> Promise<V, E>`,
+// and the clause form belongs to sync functions. Recovery ignores the clause: the
+// rejection is still read from the annotation or inferred from the body, so one
+// diagnostic covers the fault.
+//
+// Like AsyncReturnNotPromiseError it is a WALK rejection: born in inferFunc with the
+// clause and function nodes in hand, so it self-blames from the clause's span and
+// relates the function via Related() (the signature the user would fix).
+type AsyncThrowsClauseError struct {
+	Throws ast.TypeAnn // the clause's annotation (blame span)
+	Fn     ast.Node    // the enclosing async function, surfaced via Related()
+}
+
 // InvalidAssignmentTargetError fires when the left-hand side of an assignment
 // (`a = expr`) is not an assignable place. M3's only assignable target is an
 // IdentExpr resolving to a `var` binding; a literal, call, or any other non-place
@@ -1079,6 +1094,7 @@ func (*ForAwaitOutsideAsyncError) isSolverError()           {}
 func (*NotIterableError) isSolverError()                    {}
 func (*ReturnOutsideFunctionError) isSolverError()          {}
 func (*AsyncReturnNotPromiseError) isSolverError()          {}
+func (*AsyncThrowsClauseError) isSolverError()              {}
 func (*NonExhaustiveMatchError) isSolverError()             {}
 func (*MissingCatchArmError) isSolverError()                {}
 func (*UnhandledRethrowError) isSolverError()               {}
@@ -2106,6 +2122,19 @@ func (e *AsyncReturnNotPromiseError) Related() []ast.Span {
 }
 func (e *AsyncReturnNotPromiseError) Message() string {
 	return "async function return type must be a Promise; write Promise<...> or Promise<_>"
+}
+
+func (e *AsyncThrowsClauseError) Span() ast.Span { return e.Throws.Span() }
+func (e *AsyncThrowsClauseError) Related() []ast.Span {
+	// Point at the enclosing async function (the signature to fix), guarding a nil Fn
+	// the way AsyncReturnNotPromiseError does.
+	if e.Fn == nil {
+		return nil
+	}
+	return []ast.Span{e.Fn.Span()}
+}
+func (e *AsyncThrowsClauseError) Message() string {
+	return "async function cannot have a throws clause; declare the rejection type in the return type as Promise<..., E> or Promise<_, _>"
 }
 
 func (e *CannotConstrainError) Message() string {

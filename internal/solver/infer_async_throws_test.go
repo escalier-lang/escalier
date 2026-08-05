@@ -7,11 +7,12 @@ import (
 )
 
 // PR10c — async rejection. An `async fn` cannot raise: what its body throws is absorbed
-// by the promise's rejection slot, the E in `-> Promise<V, E>`, and the function's own
-// throws stays `never`. The return annotation's E is the rejection's declaration
-// surface — a written E is what the body's throws are checked against, `Promise<V>`
-// forbids them, and with no annotation the rejection is inferred. A `throws` clause on
-// an `async fn` also names the rejection and is checked against the annotation's E.
+// by the promise's rejection slot, so its signature is always `-> Promise<V, E>` and
+// the E in that annotation is the rejection's only declaration surface. A written E is
+// what the body's throws are checked against, `Promise<V>` forbids them, `Promise<_, _>`
+// infers both arguments, and with no annotation the whole promise is inferred. The
+// `throws` clause form belongs to sync functions; writing one on an `async fn` is
+// rejected.
 
 // A clause-less async body may throw; the throw is absorbed into the promise's inferred
 // or annotated rejection rather than rejected the way a sync body's would be.
@@ -44,40 +45,61 @@ func TestInferAsyncThrowsAbsorbedIntoRejection(t *testing.T) {
 	})
 }
 
-// A `throws` clause on an `async fn` names the rejection explicitly: `throws _` infers
-// it, `throws E` fixes it, and either way the function's external type carries no throws
-// clause of its own — calling it raises nothing.
-func TestInferAsyncThrowsClauseNamesTheRejection(t *testing.T) {
+// The annotation's two slots each accept the `_` placeholder, so `Promise<_, _>` reads
+// the payload off the body's returns and the rejection off its throws, and a written
+// argument beside a `_` fixes only its own slot.
+func TestInferAsyncRejectionAnnotated(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
-			name: "WildcardClauseInfersTheRejection",
-			src:  `async fn f() throws _ { throw "x" }`,
+			name: "WildcardSlotsInferBoth",
+			src:  `async fn f() -> Promise<_, _> { throw "x" }`,
 			want: `fn () -> Promise<never, "x">`,
 		},
 		{
-			// A wildcard sink nothing reached coalesces to `never`, so the promise
-			// renders its one-argument form — the same collapse an unused sync
-			// `throws _` gets.
-			name: "WildcardClauseNothingReachesCoalescesAway",
-			src:  `async fn f() throws _ { return 5 }`,
+			// A wildcard rejection slot nothing reached coalesces to `never`, so the
+			// promise renders its one-argument form.
+			name: "WildcardSlotsNothingThrownCoalescesAway",
+			src:  `async fn f() -> Promise<_, _> { return 5 }`,
 			want: "fn () -> Promise<5>",
 		},
 		{
-			name: "DeclaredClauseFixesTheRejection",
-			src:  `async fn f(c: boolean) throws string { if c { throw "boom" } return 5 }`,
+			name: "WrittenRejectionBesideAWildcardPayload",
+			src:  `async fn f(c: boolean) -> Promise<_, string> { if c { throw "boom" } return 5 }`,
 			want: `fn (c: boolean) -> Promise<5, string>`,
 		},
 		{
-			// The clause and the annotation's E name the rejection twice, so the clause
-			// is checked against the slot and the annotation stays the external face.
-			name: "DeclaredClauseBesideAnAnnotatedRejectionSlot",
-			src:  `async fn f(c: boolean) -> Promise<number, string> throws string { if c { throw "boom" } return 5 }`,
-			want: `fn (c: boolean) -> Promise<number, string>`,
+			name: "WrittenRejectionWithANeverPayload",
+			src:  `async fn f() -> Promise<never, string> { throw "boom" }`,
+			want: `fn () -> Promise<never, string>`,
+		},
+	})
+}
+
+// A `throws` clause on an `async fn` is rejected: the function cannot raise, so there
+// is no clause to declare. Recovery ignores the clause, so the rejection is still read
+// from the annotation or inferred from the body and one diagnostic covers the fault.
+func TestInferAsyncThrowsClauseRejected(t *testing.T) {
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			name: "DeclaredClause",
+			src:  `async fn f() throws string { throw "boom" }`,
+			wantErrs: []string{
+				"1:21-1:27: async function cannot have a throws clause; declare the rejection type in the return type as Promise<..., E> or Promise<_, _>",
+			},
 		},
 		{
-			name: "WildcardClauseFlowsIntoAnAnnotatedRejectionSlot",
-			src:  `async fn f() -> Promise<never, string> throws _ { throw "boom" }`,
-			want: `fn () -> Promise<never, string>`,
+			name: "WildcardClause",
+			src:  `async fn f() throws _ { return 5 }`,
+			wantErrs: []string{
+				"1:21-1:22: async function cannot have a throws clause; declare the rejection type in the return type as Promise<..., E> or Promise<_, _>",
+			},
+		},
+		{
+			name: "ClauseBesideAPromiseAnnotation",
+			src:  `async fn f() -> Promise<number> throws string { return 5 }`,
+			wantErrs: []string{
+				"1:40-1:46: async function cannot have a throws clause; declare the rejection type in the return type as Promise<..., E> or Promise<_, _>",
+			},
 		},
 	})
 }
@@ -90,9 +112,9 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 		{
 			// The caller only holds the promise, so its clause-less sync signature is
 			// fine.
-			name: "HoldingThePromiseNeedsNoClause",
+			name: "HoldingThePromiseRaisesNothing",
 			src: `
-				async fn f() throws string { throw "boom" }
+				async fn f() { throw "boom" }
 				fn g() { val p = f() }
 			`,
 			binding: "g",
@@ -104,11 +126,11 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 			// built on.
 			name: "AwaitedRejectionPropagatesIntoTheCallersRejection",
 			src: `
-				async fn f() throws string { throw "boom" }
+				async fn f() { throw "boom" }
 				async fn g() { await f() }
 			`,
 			binding: "g",
-			want:    "fn () -> Promise<void, string>",
+			want:    `fn () -> Promise<void, "boom">`,
 		},
 		{
 			name: "AwaitedRejectionPropagatesThroughAParameter",
@@ -123,7 +145,7 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 			// caller's own rejection slot — the join with PR10b.
 			name: "TryAroundAwaitCatchesTheRejection",
 			src: `
-				async fn f() throws string { throw "boom" }
+				async fn f() { throw "boom" }
 				async fn g() { try { await f() } catch { e => 0 } }
 			`,
 			binding: "g",
@@ -141,32 +163,14 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 	})
 }
 
-// The raised flag behind the unused-clause warning tracks awaits the way it tracks
-// calls: an await that provably cannot reject leaves a declared clause unused, and one
-// that may reject counts as using it. A var joining several promises rejects when ANY
-// member does, so the answer must not depend on which bound the join recorded first.
-func TestInferAwaitRaisedTracking(t *testing.T) {
-	runThrowsErrCases(t, []throwsErrCase{
-		{
-			// The awaited callee cannot reject, so the clause is unreachable — the
-			// async twin of a sync clause over a non-throwing call.
-			name: "AwaitingANonRejectingCalleeLeavesTheClauseUnused",
-			src: `
-				async fn f() { return 5 }
-				async fn g() throws string { await f() }
-			`,
-			wantErrs: []string{
-				"3:25-3:31: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
-			},
-		},
-	})
+// A var joining several promises rejects when ANY member does, so an awaited join
+// propagates the rejecting member's Err whichever bound the join recorded first.
+func TestInferAwaitJoinedRejections(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
-			// One branch rejects, so the join may reject and the clause is used —
-			// whichever branch the join recorded first.
-			name: "JoinWithARejectingBranchUsesTheClause",
+			name: "RejectingBranchSecond",
 			src: `
-				async fn g(c: boolean, p1: Promise<number>, p2: Promise<number, string>) throws string {
+				async fn g(c: boolean, p1: Promise<number>, p2: Promise<number, string>) {
 					await (if c { p1 } else { p2 })
 				}
 			`,
@@ -174,9 +178,9 @@ func TestInferAwaitRaisedTracking(t *testing.T) {
 			want:    "fn (c: boolean, p1: Promise<number>, p2: Promise<number, string>) -> Promise<void, string>",
 		},
 		{
-			name: "JoinWithARejectingBranchUsesTheClauseOrderSwapped",
+			name: "RejectingBranchFirst",
 			src: `
-				async fn g(c: boolean, p1: Promise<number, string>, p2: Promise<number>) throws string {
+				async fn g(c: boolean, p1: Promise<number, string>, p2: Promise<number>) {
 					await (if c { p1 } else { p2 })
 				}
 			`,
@@ -198,24 +202,13 @@ func TestInferAsyncThrowsHeldToTheAnnotation(t *testing.T) {
 		{
 			name: "AwaitUnderAOneArgumentPromiseAnnotation",
 			src: `
-				async fn f() throws string { throw "boom" }
+				async fn f() { throw "boom" }
 				async fn g() -> Promise<number> {
 					await f()
 					return 5
 				}
 			`,
-			wantErrs: []string{"4:6-4:15: cannot constrain string <: never"},
-		},
-		{
-			// A clause beside a one-argument annotation declares a rejection the
-			// annotation cannot deliver. The body raises nothing either, so the clause
-			// is flagged unused as well.
-			name: "ClauseBesideAOneArgumentPromiseAnnotation",
-			src:  `async fn f() -> Promise<number> throws string { return 5 }`,
-			wantErrs: []string{
-				"1:40-1:46: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
-				"1:40-1:46: cannot constrain string <: never",
-			},
+			wantErrs: []string{`4:6-4:15: cannot constrain "boom" <: never`},
 		},
 	})
 }

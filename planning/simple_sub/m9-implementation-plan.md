@@ -851,15 +851,15 @@ visitor, `LevelOf`, the printer, `equalType`, and `compareType` each grow the ar
   arm ([infer_expr.go](../../internal/solver/infer_expr.go)) moves the body's sink into
   the wrapped `PromiseType.Err` and leaves the function's own `Throws` at `never`,
   since calling an async function raises nothing — it returns a promise.
-- **The return annotation's E is the rejection's declaration surface.** An async body's
-  throws are absorbed by the promise rather than raised, so the rules PR10 ties to the
-  `throws` clause attach to the E in `-> Promise<V, E>` instead: a written E fixes the
-  rejection type and the body's exits are checked against it, `Promise<V>` reads the
-  missing E as `never` and forbids them, and no annotation infers the rejection the way
-  `throws _` infers a clause. A clause on an `async fn` still names the rejection
-  explicitly — `async fn f() throws string { … }` reads `fn () -> Promise<T, string>` —
-  and beside an annotated E it is checked `<:` that slot. A non-async function returning
-  a `Promise<V, E>` is untouched by all of this: its own throws still reach its own
+- **The return annotation's E is the rejection's only declaration surface.** An async
+  body's throws are absorbed by the promise rather than raised, so the rules PR10 ties
+  to the `throws` clause attach to the E in `-> Promise<V, E>` instead: a written E
+  fixes the rejection type and the body's exits are checked against it, `Promise<V>`
+  reads the missing E as `never` and forbids them, `Promise<_, _>` infers both
+  arguments, and no annotation infers the whole promise. The clause form belongs to
+  sync functions; writing one on an `async fn` draws an AsyncThrowsClauseError pointing
+  at the clause, and recovery ignores it. A non-async function returning a
+  `Promise<V, E>` is untouched by all of this: its own throws still reach its own
   clause, separate from the promise it returns.
 - **`await` is an exceptional exit.** `inferAwait` constrains the awaited promise's
   `Err` into the enclosing body's throws sink, so awaiting a rejecting promise needs a
