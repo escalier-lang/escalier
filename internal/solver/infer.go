@@ -96,12 +96,11 @@ type checker struct {
 	// rejected even though the outer Extends is still being walked.
 	inCondExtends bool
 
-	// deferArgBounds routes checkTypeArgBounds to deferredArgBounds instead of
-	// constraining on the spot. inferComponent sets it around the class parameter,
-	// enum body, and alias body loops, the window in which a sibling alias in the same
-	// dep_graph component is bound but its Body is still nil. Constraining an argument
-	// that names such a sibling would expand it to ErrorType, which absorbs, so
-	// `type A = {b: Box<A>}` would accept A against Box's `string` bound.
+	// deferArgBounds routes checkTypeArgBounds to deferredArgBounds instead of constraining
+	// on the spot. inferComponent sets it around the class parameter, enum body, and alias
+	// body loops, where a sibling alias is bound but its Body is still nil. Constraining
+	// against one would expand it to ErrorType, which absorbs, so `type A = {b: Box<A>}`
+	// would accept A against Box's `string` bound.
 	deferArgBounds bool
 
 	// deferredArgBounds holds the comparisons raised during that window, replayed by
@@ -109,19 +108,15 @@ type checker struct {
 	deferredArgBounds []deferredArgBound
 
 	// classShells holds the type parameters and declaration scope preBindClassTypeParams
-	// resolved for a class, keyed by the declaration inferClassDecl later walks. The module
-	// SCC pre-pass fills it so a class's parameter list, and the defaults and bounds hanging
-	// off it, are final before any body in the component resolves a reference to the class.
-	// inferClassDecl reuses the entry rather than minting a second, unrelated set of
-	// parameter vars. A script has no pre-pass, so its classes are absent here and
-	// inferClassDecl resolves their parameters itself.
+	// resolved for a class, keyed by its declaration. inferClassDecl reuses the entry rather
+	// than minting a second, unrelated set of parameter vars. A script class has no pre-pass,
+	// so it is absent here and inferClassDecl resolves its own.
 	classShells map[*ast.ClassDecl]*classShell
 }
 
 // classShell carries the state preBindClassTypeParams resolved for one class declaration.
-// declScope is the enclosing scope, or a child holding a generic class's type parameters, and
-// is the scope the class body resolves in so a `T` in a field reads the same var the def
-// stores. typeParams is nil for a non-generic class, whose declScope is the enclosing scope.
+// declScope is where the class body resolves, so a `T` in a field reads the same var the
+// ClassDef stores. A non-generic class has nil typeParams and the enclosing scope.
 type classShell struct {
 	declScope  *Scope
 	typeParams []*soltype.TypeParam
