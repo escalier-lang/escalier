@@ -2458,8 +2458,11 @@ func describe(t soltype.Type) string {
 		// arms below, which also recurse: a Promise's type arguments are compact
 		// and informative (`Promise<number>`), whereas a function/tuple/record would
 		// be verbose spelled out, so those stay nominal. A promise that can reject
-		// names its rejection type as a second argument, matching soltype.Print.
-		if !isNeverType(t.ErrOrNever()) {
+		// names its rejection type as a second argument, matching soltype.Print — unless
+		// the slot holds a bare unsolved variable. inferAwait's synthesized requirement
+		// carries the body's throws sink there, internal scaffolding that says nothing
+		// about why a constraint failed, so a variable slot keeps the one-argument form.
+		if _, isVar := t.Err.(*soltype.TypeVarType); t.Rejects() && !isVar {
 			return "Promise<" + describe(t.Inner) + ", " + describe(t.Err) + ">"
 		}
 		return "Promise<" + describe(t.Inner) + ">"

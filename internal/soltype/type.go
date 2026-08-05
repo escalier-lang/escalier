@@ -769,6 +769,13 @@ func (t *PromiseType) ErrOrNever() Type {
 	return t.Err
 }
 
+// Rejects reports whether t can reject: its Err carries something other than the nil
+// shorthand or an explicit `never`. The printer and the solver's raised-tracking both
+// ask this question, so it lives here to keep their answers locked together.
+func (t *PromiseType) Rejects() bool {
+	return t.Err != nil && !isNever(t.Err)
+}
+
 // ArrayType is a homogeneous sequence of Elem, written `Array<T>`. It is a dedicated concrete
 // for the reason PromiseType is: one stdlib generic the milestone needs typed ahead of library
 // ingestion. It exists to give a rest parameter an element type, the arity-and-element pair a

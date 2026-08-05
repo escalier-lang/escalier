@@ -141,6 +141,51 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 	})
 }
 
+// The raised flag behind the unused-clause warning tracks awaits the way it tracks
+// calls: an await that provably cannot reject leaves a declared clause unused, and one
+// that may reject counts as using it. A var joining several promises rejects when ANY
+// member does, so the answer must not depend on which bound the join recorded first.
+func TestInferAwaitRaisedTracking(t *testing.T) {
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			// The awaited callee cannot reject, so the clause is unreachable — the
+			// async twin of a sync clause over a non-throwing call.
+			name: "AwaitingANonRejectingCalleeLeavesTheClauseUnused",
+			src: `
+				async fn f() { return 5 }
+				async fn g() throws string { await f() }
+			`,
+			wantErrs: []string{
+				"3:25-3:31: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
+			},
+		},
+	})
+	runThrowsCases(t, []throwsCase{
+		{
+			// One branch rejects, so the join may reject and the clause is used —
+			// whichever branch the join recorded first.
+			name: "JoinWithARejectingBranchUsesTheClause",
+			src: `
+				async fn g(c: boolean, p1: Promise<number>, p2: Promise<number, string>) throws string {
+					await (if c { p1 } else { p2 })
+				}
+			`,
+			binding: "g",
+			want:    "fn (c: boolean, p1: Promise<number>, p2: Promise<number, string>) -> Promise<void, string>",
+		},
+		{
+			name: "JoinWithARejectingBranchUsesTheClauseOrderSwapped",
+			src: `
+				async fn g(c: boolean, p1: Promise<number, string>, p2: Promise<number>) throws string {
+					await (if c { p1 } else { p2 })
+				}
+			`,
+			binding: "g",
+			want:    "fn (c: boolean, p1: Promise<number, string>, p2: Promise<number>) -> Promise<void, string>",
+		},
+	})
+}
+
 // `Promise<V>` reads its missing E as `never`, so an annotation without a rejection slot
 // holds the body to raising nothing, the way a clause-less sync signature does.
 func TestInferAsyncThrowsHeldToTheAnnotation(t *testing.T) {

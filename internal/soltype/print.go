@@ -823,7 +823,7 @@ func (p *namedPrinter) printType(t Type) string {
 		// `Promise<T, E>`. A promise that cannot reject resolves its Err to `never` and
 		// renders the one-argument `Promise<T>`, the same suppression printThrowsClause
 		// applies to a signature that raises nothing.
-		if !isNever(t.ErrOrNever()) {
+		if t.Rejects() {
 			return "Promise<" + p.printType(t.Inner) + ", " + p.printType(t.Err) + ">"
 		}
 		return "Promise<" + p.printType(t.Inner) + ">"
