@@ -182,7 +182,7 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		}
 		// Everywhere else the value flowing in fills it, so `_` is an inference variable at the
 		// current level. `Promise<_>` on an async fn's return relies on this: the body's return
-		// flows into the variable, inferring the inner (asyncReturn).
+		// flows into the variable, inferring the inner.
 		t := c.freshAt(lvl)
 		c.recordProv(t, ta, WildcardAnnotation)
 		return t, true

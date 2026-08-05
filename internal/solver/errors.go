@@ -966,7 +966,7 @@ type NotIterableError struct {
 // `-> Promise<_>` to let the checker infer the inner from the body.
 //
 // Like AwaitOutsideAsyncError it is a WALK rejection, not a type-rule failure:
-// born in inferFunc (asyncReturn) with the annotation and function nodes in hand,
+// born in inferFunc with the annotation and function nodes in hand,
 // so it self-blames from the annotation's span and relates the function via
 // Related() (the signature the user would fix).
 type AsyncReturnNotPromiseError struct {
