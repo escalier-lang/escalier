@@ -1437,17 +1437,31 @@ func TestPrintGenFunction(t *testing.T) {
 		{
 			"gen function decl",
 			`gen fn count() { yield 1 }`,
-			"gen fn ",
+			"gen fn count() {\n    yield 1\n}",
 		},
 		{
 			"async gen function decl",
 			`async gen fn poll() { yield await x }`,
-			"async gen fn ",
+			"async gen fn poll() {\n    yield await x\n}",
 		},
 		{
 			"gen function expr",
 			`val f = gen fn () { yield 1 }`,
-			"gen fn ",
+			"val f = gen fn () {\n    yield 1\n}",
+		},
+		{
+			// `yield from` keeps its delegating form, and the operand prints as an
+			// ordinary expression.
+			"yield from",
+			`gen fn outer() { yield from inner() }`,
+			"gen fn outer() {\n    yield from inner()\n}",
+		},
+		{
+			// A bare `yield` has no operand, so it prints the keyword with no trailing
+			// space.
+			"bare yield",
+			`gen fn bare() { yield }`,
+			"gen fn bare() {\n    yield\n}",
 		},
 	}
 
@@ -1457,7 +1471,7 @@ func TestPrintGenFunction(t *testing.T) {
 			node := parseDecl(t, tt.input)
 			result, err := Print(node, opts)
 			require.NoError(t, err)
-			require.Contains(t, result, tt.want)
+			require.Equal(t, tt.want, result)
 		})
 	}
 }

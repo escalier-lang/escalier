@@ -724,6 +724,8 @@ func (p *Printer) printExpr(expr ast.Expr) {
 		p.printAwaitExpr(e)
 	case *ast.ThrowExpr:
 		p.printThrowExpr(e)
+	case *ast.YieldExpr:
+		p.printYieldExpr(e)
 	case *ast.TemplateLitExpr:
 		p.printTemplateLitExpr(e)
 	case *ast.TaggedTemplateLitExpr:
@@ -1031,6 +1033,29 @@ func (p *Printer) printAwaitExpr(expr *ast.AwaitExpr) {
 func (p *Printer) printThrowExpr(expr *ast.ThrowExpr) {
 	p.writeString("throw ")
 	p.printExpr(expr.Arg)
+}
+
+// printYieldExpr renders `yield`, `yield e`, and the delegating `yield from g`. A bare
+// `yield` carries no operand, so it prints the keyword alone with no trailing space. The
+// operand is parenthesized on the same rule the `await` printer applies, so a looser
+// operand such as a binary expression keeps its grouping.
+func (p *Printer) printYieldExpr(expr *ast.YieldExpr) {
+	p.writeString("yield")
+	if expr.IsDelegate {
+		p.writeString(" from")
+	}
+	if expr.Value == nil {
+		return
+	}
+	p.writeString(" ")
+	needsParens := p.needsParens(expr, expr.Value)
+	if needsParens {
+		p.writeString("(")
+	}
+	p.printExpr(expr.Value)
+	if needsParens {
+		p.writeString(")")
+	}
 }
 
 func (p *Printer) printTemplateLitExpr(expr *ast.TemplateLitExpr) {
