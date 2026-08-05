@@ -907,15 +907,9 @@ func (c *checker) asyncReturn(node ast.Node, ann ast.TypeAnn, annPromise *soltyp
 	if annPromise == nil {
 		// A non-Promise annotation like `-> number` is rejected here; an unresolved one
 		// was already reported. Either way recover as the no-annotation case so the
-		// external face stays Promise-shaped and callers don't cascade. A bodyless fn
-		// has no body to recover from, so wrap unknown rather than the synthetic Void.
-		if ann != nil {
-			if annOK {
-				c.report(&AsyncReturnNotPromiseError{Return: ann, Fn: node})
-			}
-			if !hasBody {
-				bodyType = &soltype.UnknownType{}
-			}
+		// external face stays Promise-shaped and callers don't cascade.
+		if ann != nil && annOK {
+			c.report(&AsyncReturnNotPromiseError{Return: ann, Fn: node})
 		}
 		return c.wrapPromise(node, bodyType, throws)
 	}

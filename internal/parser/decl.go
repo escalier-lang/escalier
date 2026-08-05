@@ -246,13 +246,24 @@ func (p *Parser) Decl() ast.Decl {
 		p.reportError(overrideSpan, "'override' requires 'declare'")
 	}
 
+	var asyncSpan ast.Span
 	if token.Type == Async {
 		async = true
+		asyncSpan = token.Span
 		token = p.lexer.next()
 	}
 
 	if async && token.Type != Fn {
 		p.reportError(token.Span, "async can only be used with functions")
+	}
+
+	// `async` describes how a body computes its result, and an ambient declaration has
+	// no body — its return annotation already names the `Promise` callers see. Drop the
+	// modifier after reporting so the declaration types as the `declare fn` the author
+	// meant, rather than wrapping the annotation in a second Promise.
+	if async && declare {
+		p.reportError(asyncSpan, "'async' is not allowed on an ambient declaration")
+		async = false
 	}
 
 	var finalSpan ast.Span

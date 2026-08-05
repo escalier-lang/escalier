@@ -197,42 +197,11 @@ func (c *Checker) inferFuncDecl(ctx Context, decl *ast.FuncDecl) []Error {
 
 	// For declared functions, we don't have a body to infer from
 	if decl.Declare() && (decl.Body == nil || len(decl.Body.Stmts) == 0) {
-		// Phase 11: apply lifetime elision to body-less declarations.
+		// Phase 11: apply lifetime elision to body-less declarations. An ambient
+		// declaration cannot be `async` — the parser rejects the modifier — so its
+		// return annotation is the whole signature, with no Promise to rebuild.
 		elisionErrors := c.ApplyLifetimeElision(funcType)
 		errors = slices.Concat(errors, elisionErrors)
-
-		// For declared async functions, validate that the return type is a Promise
-		if decl.FuncSig.Async {
-			if promiseType, ok := funcType.Return.(*type_system.TypeRefType); ok &&
-				type_system.QualIdentToString(promiseType.Name) == "Promise" {
-				// Good, it's a Promise type. Ensure it has the right structure.
-				if len(promiseType.TypeArgs) == 1 {
-					// Promise<T> should become Promise<T, never>
-					promiseAlias := ctx.Scope.GetTypeAlias("Promise")
-					if promiseAlias != nil {
-						// Update the function type to have Promise<T, never>
-						newPromiseType := type_system.NewTypeRefType(
-							nil, "Promise", promiseAlias, promiseType.TypeArgs[0], type_system.NewNeverType(nil))
-						newPromiseType.Lifetime = promiseType.Lifetime
-						funcType.Return = newPromiseType
-					}
-				} else if len(promiseType.TypeArgs) >= 2 {
-					// Promise<T, E> is already correct
-				} else {
-					// Promise with no args, this shouldn't happen but let's handle it
-					errors = append(errors, &UnimplementedError{
-						message: "Promise type must have at least one type argument",
-						span:    decl.Span(),
-					})
-				}
-			} else {
-				// Declared async function must return a Promise type
-				errors = append(errors, &UnimplementedError{
-					message: "Declared async functions must return a Promise type",
-					span:    decl.Span(),
-				})
-			}
-		}
 	} else if decl.Body != nil {
 		// Allocate call-site maps so body inference and resolveCallSites share them.
 		callSites := make(map[int][]*type_system.FuncType)

@@ -76,11 +76,6 @@ func TestParseModuleNoErrors(t *testing.T) {
 				}
 			`,
 		},
-		"DeclareAsyncFuncDecl": {
-			input: `
-				declare async fn fetch(url: string) -> Promise<Response>
-			`,
-		},
 		"DecoratorOnDeclareVal": {
 			input: `
 				@js("Math.PI")
@@ -429,6 +424,14 @@ func TestParseDeclareBlockErrors(t *testing.T) {
 		"ExportOverrideDeclareGlobal": {
 			input:         `export override declare global { }`,
 			expectedError: "'export' is not allowed before 'declare global'",
+		},
+		"DeclareAsyncFn": {
+			input:         `declare async fn fetch(url: string) -> Promise<Response>`,
+			expectedError: "'async' is not allowed on an ambient declaration",
+		},
+		"ExportDeclareAsyncFn": {
+			input:         `export declare async fn fetch(url: string) -> Promise<Response>`,
+			expectedError: "'async' is not allowed on an ambient declaration",
 		},
 		"OverrideWithoutDeclareFn": {
 			input:         `override fn foo() -> number`,
