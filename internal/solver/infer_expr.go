@@ -2740,7 +2740,8 @@ func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Ty
 // caller passes back in through next(v). A bare `yield` yields `undefined`.
 //
 // `yield from g` is reported as unsupported. It forwards a delegate's yields rather
-// than yielding the delegate itself, which needs the iteration rules.
+// than yielding the delegate itself, which needs the iteration rules. The delegate is
+// still walked first, so its own errors surface alongside the rejection.
 func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Type {
 	if c.fn == nil || !c.fn.gen {
 		if e.Value != nil {
@@ -2764,6 +2765,9 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 		// needs the iteration rules rather than the plain-yield rule below. Treating the
 		// delegate as an ordinary yielded value would put the iterable itself in the sink
 		// instead of its elements, so report it until those rules land.
+		if e.Value != nil {
+			c.inferExpr(scope, lvl, e.Value) // surface delegate-side errors anyway
+		}
 		t := c.reportUnsupportedFeature(e, "yield from")
 		c.recordType(e, t)
 		return t

@@ -265,12 +265,23 @@ func TestGeneratorSubtyping(t *testing.T) {
 // `yield from` forwards a delegate's yields rather than yielding the delegate itself,
 // so it needs the iteration rules and is reported until those land. Treating it as a
 // plain yield would put the iterable in the sink instead of its elements.
+//
+// The delegate is still walked before the rejection is reported, so a mistake inside it
+// is diagnosed instead of being swallowed by the rejection.
 func TestInferYieldFromIsUnsupported(t *testing.T) {
 	runGenErrCases(t, []genErrCase{
 		{
 			name:     "DelegationReported",
 			src:      `gen fn f() { yield from [1, 2] }`,
 			wantErrs: []string{"1:14-1:31: Unsupported: yield from"},
+		},
+		{
+			name: "DelegateErrorsStillSurface",
+			src:  `gen fn f() { yield from missing() }`,
+			wantErrs: []string{
+				"1:25-1:32: Unknown identifier: missing",
+				"1:14-1:34: Unsupported: yield from",
+			},
 		},
 	})
 }
