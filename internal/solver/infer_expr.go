@@ -307,18 +307,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			declaredThrows = annT
 		}
 	}
-	// An async fn cannot raise — its body's throws are absorbed by the promise's
-	// rejection slot — so the E in a `-> Promise<V, E>` return annotation is the ONLY
-	// rejection declaration surface, and the annotation resolves before the body the
-	// way a sync clause does. Whether it resolved to a Promise is decided once, here,
-	// and asyncPromise carries the answer to every later consumer. A written E seeds
-	// the sink, so the body's throws are checked against it at each exit; `Promise<V>`
-	// reads E as `never` and forbids them, and `Promise<_, _>` infers both arguments.
-	// With no usable annotation the sink is left nil, so the rejection is inferred
-	// through throwsSink's lazy mint on the body's first exceptional exit and a body
-	// with none hands the nil shorthand straight to the wrap, where a sync body would
-	// be held to `never`. A written `throws` clause is rejected and then ignored, so
-	// the rejection the recovery infers is the one dropping the clause would produce.
+	// An async fn cannot raise: its body's throws become the promise's rejection, so a
+	// `-> Promise<V, E>` return annotation's E is the only surface that declares them.
+	// It resolves before the body the way a sync clause does, and asyncPromise carries
+	// that one classification to every later consumer. A written E seeds the sink and
+	// every exceptional exit is checked against it. A nil sink leaves the rejection to
+	// be inferred, minted lazily by throwsSink. A `throws` clause is rejected here.
 	var asyncAnnT soltype.Type
 	asyncAnnOK := false
 	var asyncPromise *soltype.PromiseType
@@ -396,8 +390,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// A declared `throws T` the body never uses obliges every caller to handle an
 	// exception that cannot occur, so warn and point at the clause. `throws _` asks for
 	// inference rather than declaring anything, and a bodyless `declare fn` has no body to
-	// measure against, so neither reaches here. An async fn's clause already drew an
-	// AsyncThrowsClauseError above, so it is not measured either.
+	// measure against, so neither reaches here. Nor does an async clause: it already
+	// drew an AsyncThrowsClauseError.
 	if hasBody && !raised && sig.Throws != nil && !sig.Async && !isWildcardAnn(sig.Throws) {
 		c.report(&UnusedThrowsClauseError{Ann: sig.Throws, Declared: throws})
 	}
@@ -420,9 +414,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// nothing").
 	//
 	// The async arm also moves the body's throws. An `async fn` rejects its promise
-	// rather than raising, so what the body throws becomes the promise's Err and the
-	// function's own Throws stays `never` — calling it returns a promise and raises
-	// nothing.
+	// rather than raising, so the body's throws become the promise's Err and the
+	// function's own Throws stays `never`.
 	if sig.Async {
 		ret = c.asyncReturn(node, sig.Return, asyncPromise, asyncAnnOK, ret, throws, hasBody)
 		throws = nil
@@ -905,22 +898,17 @@ func sameObjectKeys(a, b *soltype.ObjectType) bool {
 // that already returns a Promise still wraps: `async fn (p: Promise<T>) { return
 // await p }` is `Promise<Promise<T>>`; Awaited<T> is M9).
 //
-// throws is the body's exceptional exit read back from the sink — the annotation's
-// E when one was written, or the inferred variable the annotation-less form
-// minted — and it becomes the promise's Err. inferFunc has already resolved the
-// return annotation and classified it into annPromise ahead of the body walk, so
-// the annotation's rejection slot could seed the sink; asyncReturn reads that
-// result rather than resolving again. annPromise is nil
-// when there is no annotation, when it did not resolve (annOK false, already
-// reported by resolveTypeAnn), and when it resolved to something other than a
-// Promise — only the last of those draws a report here.
+// throws is the body's exceptional exit read back from the sink; it becomes the
+// promise's Err. inferFunc resolved the return annotation before the body walk so its
+// E could seed that sink, so asyncReturn reads annPromise instead of resolving again.
+// annPromise is nil for no annotation, for one that failed to resolve and was already
+// reported, and for a non-Promise annotation — only the last reports here.
 func (c *checker) asyncReturn(node ast.Node, ann ast.TypeAnn, annPromise *soltype.PromiseType, annOK bool, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
 	if annPromise == nil {
-		// A non-Promise annotation on an async fn (`-> number`) is rejected here; an
-		// unresolved one already reported. Either way recover as the no-annotation
-		// case: wrap the inferred body return so the external face stays
-		// Promise-shaped and callers don't cascade. A bodyless fn has no body to
-		// recover from, so wrap unknown rather than the synthetic Void.
+		// A non-Promise annotation like `-> number` is rejected here; an unresolved one
+		// was already reported. Either way recover as the no-annotation case so the
+		// external face stays Promise-shaped and callers don't cascade. A bodyless fn
+		// has no body to recover from, so wrap unknown rather than the synthetic Void.
 		if ann != nil {
 			if annOK {
 				c.report(&AsyncReturnNotPromiseError{Return: ann, Fn: node})
@@ -941,9 +929,8 @@ func (c *checker) asyncReturn(node ast.Node, ann ast.TypeAnn, annPromise *soltyp
 
 // wrapPromise mints the external `Promise<inner, errT>` face of an async function and
 // records its provenance (PromiseWrap) against the function node. errT is the body's
-// throws sink, so it is nil for a body with no exceptional exit and an inference
-// variable otherwise; either way the rejection needs no normalizing here, and every
-// reader collapses nil and an explicit `never` through ErrOrNever.
+// throws sink — nil when the body has no exceptional exit — and needs no normalizing
+// here, since readers collapse nil and an explicit `never` through ErrOrNever.
 func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) soltype.Type {
 	wrapped := &soltype.PromiseType{Inner: inner, Err: errT}
 	c.recordProv(wrapped, node, PromiseWrap)
@@ -2595,9 +2582,8 @@ func identPatName(pat ast.Pat) (string, bool) {
 // pins ("`await e` requires `e <: Promise<U>` for some `U` and produces `U`",
 // 01-milestones.md §M3). No auto-flatten: U may itself be a Promise, so
 // `await Promise<Promise<T>>` yields `Promise<T>` (Awaited<T> is M9). An await is
-// also an exceptional exit: the requirement's rejection slot is the enclosing
-// body's throws sink, so what the promise rejects with reaches the enclosing
-// body's own rejection the way a throwing call's throws does (M9 PR10c). `await`
+// also an exceptional exit: the requirement's rejection slot is the enclosing body's
+// throws sink, so what the promise rejects with reaches that body's rejection. `await`
 // outside an `async` function is rejected by the WALK (this function), not the
 // type rule — the argument is still walked so its own errors surface, and the
 // await contributes a `never` placeholder so a downstream consumer doesn't see a
@@ -2627,13 +2613,10 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 	// internal scaffolding for the constraint, not a user-authored type.
 	//
 	// The requirement's Err slot is this body's throws sink, so constrain's covariant
-	// rejection rule records what the awaited promise rejects with into it — an await
-	// is an exceptional exit the way a throwing call is, absorbed into the async
-	// body's own rejection, caught by an enclosing `try`, or checked against the
-	// annotation's E that seeded the sink. A non-rejecting promise carries `never`
-	// and records nothing. No raised flag is tracked here: the unused-clause warning
-	// it would feed measures a `throws` clause, and the async body an await sits in
-	// cannot have one.
+	// rejection rule records what the awaited promise rejects with into it. A
+	// non-rejecting promise carries `never` and records nothing. No raised flag is
+	// tracked here: it feeds the unused-clause warning, which measures a `throws`
+	// clause, and the async body an await sits in cannot have one.
 	//
 	// PR8: a failed argument is the ErrorType recovery placeholder, which absorbs in
 	// constrain, so `<unknown> <: Promise<U>` no longer cascades a spurious second
