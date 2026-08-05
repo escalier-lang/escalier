@@ -1715,7 +1715,7 @@ PR9e ✅ #943 (μ-knot representation)       ── needs M3 only; owed from M3,
 PR10 ✅ #963 (throws clause)                ── needs M3 only; parallel to everything
  ├─► PR10b (try/catch)                     ── also needs M4 E2 (pattern machinery)
  │    └─► PR10c (Promise<T, E> + async rejection)  ── also needs M7.5
- └─► PR11 (generators)                     ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
+ └─► PR11 🔄 #1001 (generators)             ── also needs M7.5 (+PR3b/PR12 for the async-gen accept case)
 
 PR13 ✅ #954 (TS utility-type suite)        ── needs PR2, PR3b, PR4, PR7, PR12
  ├─► PR14 ✅ #961 (rest params in fn type anns + Parameters<F>)  ── also needs PR3b
@@ -1736,10 +1736,10 @@ sets, #937 capped total alias expansion with a monotonic budget, #938 added the
 `{[K: Keys]: Value}` index-signature shorthand to PR4's mapped types, and #949 factored
 out the `alphaCtx` bijection that PR9e's knot comparison reuses.
 
-Everything still open is PR9f, PR10b, PR10c, PR11, PR15, PR19, and PR20; Track F's PR17
-and PR18 landed as #968 and #993. PR8 landed in two steps: #922 threaded an object's
-exactness through `keyof`, and #953 carried it through the remaining operators and added the
-`Exact` / `Inexact` intrinsics.
+Everything still open is PR9f, PR10b, PR10c, PR15, PR19, and PR20; Track F's PR17
+and PR18 landed as #968 and #993, and PR11 is up for review as #1001. PR8 landed in two
+steps: #922 threaded an object's exactness through `keyof`, and #953 carried it through the
+remaining operators and added the `Exact` / `Inexact` intrinsics.
 
 The same graph in mermaid, with the operator-track critical path
 (PR1a → PR1b → PR3a → PR3b → PR4 → PR8) highlighted, merged PRs outlined in green, the
@@ -1770,7 +1770,7 @@ graph TD
     PR10b["PR10b (try/catch)"]
     PR10c["PR10c (Promise<T, E> + async rejection)"]
     M4E2["M4 E2 (pattern matching)"]
-    PR11["PR11 (generators)"]
+    PR11["PR11 🔄 #1001 (generators)"]
     PR12["PR12 ✅ #952 (Awaited<T>)"]
     PR13["PR13 ✅ #954 (TS utility-type suite)"]
     PR14["PR14 ✅ #961 (rest params in fn type anns + Parameters<F>)"]
@@ -1852,6 +1852,7 @@ graph TD
     style PR14 stroke:#2e7d32,stroke-width:4px
     style PR17 stroke:#2e7d32,stroke-width:4px
     style PR18 stroke:#2e7d32,stroke-width:4px
+    style PR11 stroke:#ef6c00,stroke-width:4px,stroke-dasharray:5 3
 ```
 
 ### Parallelism
