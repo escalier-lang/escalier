@@ -104,6 +104,17 @@ func TestInferAsyncThrowsClauseRejected(t *testing.T) {
 	})
 }
 
+// The async-clause error blames the clause's annotation and relates the enclosing
+// function, the signature the user would fix, the way the bare-return error does.
+func TestInferAsyncThrowsClauseBlame(t *testing.T) {
+	src := `async fn f() throws string { throw "boom" }`
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs,
+		"1:21-1:27: async function cannot have a throws clause; declare the rejection type in the return type as Promise<..., E> or Promise<_, _>",
+		"string",
+		`async fn f() throws string { throw "boom" }`)
+}
+
 // Calling an async function raises nothing — it returns a promise — so only awaiting the
 // promise is the exceptional exit. The await constrains the promise's Err into the
 // enclosing body's sink the way a throwing call constrains the callee's throws.
