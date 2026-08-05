@@ -26,6 +26,9 @@ export const genExpr = function* () {
 export async function* genFetch() {
   yield 1;
 }
+export function* genNoYield() {
+  return 1;
+}
 export function* inner() {
   yield 1;
   yield 2;

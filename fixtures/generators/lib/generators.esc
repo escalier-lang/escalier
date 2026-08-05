@@ -69,3 +69,8 @@ export async gen fn genFetch() {
 export val genExpr = gen fn () {
     yield "a"
 }
+
+// A `gen fn` whose body never yields is still a generator
+export gen fn genNoYield() {
+    return 1
+}

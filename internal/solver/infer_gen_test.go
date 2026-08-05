@@ -252,8 +252,10 @@ func TestInferGenReturnAnnotationShape(t *testing.T) {
 	})
 }
 
-// The throws sink is untouched by generator-ness: a clause-less gen fn raises nothing,
-// so a throw in its body is rejected at the throw, exactly as in a plain function.
+// The throws sink still checks a generator's body: a clause-less gen fn raises nothing,
+// so a throw in its body is rejected at the throw, exactly as in a plain function. What
+// changes is the destination — a generator's own Throws is `never`, because calling one
+// runs no body code.
 func TestInferGenThrowsStillChecked(t *testing.T) {
 	runGenErrCases(t, []genErrCase{
 		{
@@ -264,11 +266,22 @@ func TestInferGenThrowsStillChecked(t *testing.T) {
 	})
 	runGenCases(t, []genCase{
 		{
-			// The body always leaves along the exceptional edge, so its normal return —
-			// the Generator's Ret slot — is `never`.
-			name: "GenFnWithThrowsClause",
+			// The clause checks the body but does not reach the function's own type: a
+			// call returns a generator and raises nothing. The body always leaves along
+			// the exceptional edge, so its normal return — the Ret slot — is `never`.
+			name: "GenFnWithThrowsClauseRaisesNothingAtTheCall",
 			src:  `gen fn f() throws _ { yield 1 throw "boom" }`,
-			want: `fn () -> Generator<1, never, never> throws "boom"`,
+			want: `fn () -> Generator<1, never, never>`,
+		},
+		{
+			// Obtaining the generator runs none of the body, so a clause-less caller
+			// needs no clause of its own even when the generator's body throws.
+			name: "ClauselessCallerMayObtainAThrowingGenerator",
+			src: `
+				gen fn g() throws "boom" { yield 1 throw "boom" }
+				fn f() { val it = g() }
+			`,
+			want: `fn () -> void`,
 		},
 	})
 }

@@ -428,6 +428,21 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			ret = &soltype.UnknownType{}
 		}
 	}
+	// Calling a generator function runs none of its body — it returns a generator
+	// object, and the body advances only at `.next()`. So what the body raises is not
+	// what a call raises, and the function's own Throws is `never`. `val it = f()` then
+	// needs no clause even when f's body throws.
+	//
+	// The clause still checks the body: the sink resolveGenSinks seeded is what each
+	// `throw` was constrained into, so a raise in a clause-less generator is rejected at
+	// the `throw`, and `throws T` on a generator names what `.next()` may raise. Only
+	// the destination moves. That raise belongs in a slot `soltype.GeneratorType` does
+	// not carry, for the reason the async arm above gives about `PromiseType`. Adding
+	// one now would be unread surface, since a generator carries no members and `.next()`
+	// resolves nowhere.
+	if sig.Gen {
+		throws = &soltype.NeverType{}
+	}
 	// A bare function value is exact (accept-set [required, len(Params)]): it rejects
 	// extra arguments. A trailing `...` in the signature (sig.Inexact) marks it
 	// inexact — it tolerates extra args when used as a callback (#677 §4.1), accept
