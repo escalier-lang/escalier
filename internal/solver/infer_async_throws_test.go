@@ -271,6 +271,40 @@ func TestInferAsyncFetchJSONExample(t *testing.T) {
 		values["process"])
 }
 
+// A rejecting promise renders its rejection type in diagnostics and in a canonical
+// union, matching the printer's two-argument form.
+func TestInferPromiseErrRendering(t *testing.T) {
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			// describe names the rejection type when the slot holds a concrete type,
+			// so the mismatch reads as the promise the user wrote.
+			name:     "DiagnosticNamesTheRejectingPromise",
+			src:      `fn f(p: Promise<number, string>) { val x: number = p }`,
+			wantErrs: []string{"1:52-1:53: cannot constrain Promise<number, string> <: number"},
+		},
+		{
+			// A bad second argument reports once and recovers the slot to a fresh var,
+			// keeping the Promise wrapper the way a bad payload does.
+			name:     "BadRejectionArgumentRecoversTheWrapper",
+			src:      `fn f(p: Promise<number, Bogus>) { }`,
+			wantErrs: []string{"1:25-1:30: cannot find type `Bogus`"},
+		},
+	})
+	runThrowsCases(t, []throwsCase{
+		{
+			// Two promises differing only in their rejection stay distinct union
+			// members, so the canonical member order consults the rejection slot.
+			name: "PromisesDifferingOnlyInRejectionStayDistinct",
+			src: `
+				fn f(c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) {
+					return if c { p1 } else { p2 }
+				}
+			`,
+			want: `fn (c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) -> Promise<number, "a"> | Promise<number, "b">`,
+		},
+	})
+}
+
 // A `Promise<T, E>` annotation resolves its second argument into the rejection slot, and
 // the promise arms are covariant in it: a rejecting promise fits a wider rejection slot
 // but not a narrower one.

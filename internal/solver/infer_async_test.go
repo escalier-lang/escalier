@@ -104,6 +104,15 @@ func TestInferAsyncBareReturnAnnotationRejected(t *testing.T) {
 	require.Equal(t, "fn () -> Promise<5>", values["f"])
 }
 
+// A bodyless declare with a bare annotation recovers by wrapping `unknown` rather
+// than the synthetic Void, since there is no body to read a return from.
+func TestInferAsyncBareReturnAnnotationOnADeclare(t *testing.T) {
+	values, _, errs := inferSource(t, `declare async fn f() -> number`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "1:25-1:31: async function return type must be a Promise; write Promise<...> or Promise<_>", msgWithSpan(errs[0]))
+	require.Equal(t, "fn () -> Promise<unknown>", values["f"])
+}
+
 // The bare-async-return error blames the offending annotation and relates the
 // enclosing function (the signature to fix).
 func TestInferAsyncBareReturnAnnotationBlame(t *testing.T) {
