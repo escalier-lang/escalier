@@ -977,14 +977,12 @@ type ForAwaitOutsideAsyncError struct {
 	EnclosingFn ast.Node
 }
 
-// NotIterableError fires when the operand of `for (x in xs)` is not iterable, or
-// the operand of `for await (x in xs)` is not async-iterable. M5 resolves the
-// iteration protocol structurally over the types the solver can represent: a
-// tuple yields the union of its elements, and a union of tuples yields the union
-// of their element types. Array<T> and the `[Symbol.iterator]` protocol land in
-// M7, so every other operand is reported here, as is every operand of a
-// `for await` since no async iterable is representable yet. Await selects the
-// message.
+// NotIterableError fires when the operand of `for (x in xs)` or `yield from xs` is not
+// iterable, or the operand of `for await (x in xs)` is not async-iterable. Iterability
+// resolves structurally over a tuple, a union, and a generator. Each of syncElemType,
+// asyncElemType, and delegateElemType states its own rule. Array<T> and the
+// `[Symbol.iterator]` protocol land in M7, so every other operand is reported here.
+// Await selects the message.
 type NotIterableError struct {
 	Iterable ast.Expr
 	Type     soltype.Type

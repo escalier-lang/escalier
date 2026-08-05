@@ -2734,8 +2734,8 @@ func (c *checker) inferThrow(scope *Scope, lvl int, e *ast.ThrowExpr) soltype.Ty
 // `yield e` constrains its operand into the yield sink and evaluates to the `Next` type,
 // the value a caller sends back in through `next(v)`. A bare `yield` yields `undefined`.
 //
-// `yield from g` is reported as unsupported, since forwarding a delegate's yields needs
-// the iteration rules. The delegate is still walked, so its own errors surface too.
+// `yield from g` forwards the delegate's yields into the sink and evaluates to the
+// delegate's return type, what the delegating generator sees once it is exhausted.
 func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Type {
 	if c.fn == nil || !c.fn.gen {
 		if e.Value != nil {
@@ -2758,16 +2758,41 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 	// only yield is a `yield from` does produce values, and its `gen` marker is used.
 	c.fn.yielded = true
 	if e.IsDelegate {
-		// `yield from` forwards another iterable's yields into this body's sink, so it
-		// needs the iteration rules rather than the plain-yield rule below. Treating the
-		// delegate as an ordinary yielded value would put the iterable itself in the sink
-		// instead of its elements, so report it until those rules land.
-		if e.Value != nil {
-			c.inferExpr(scope, lvl, e.Value) // surface delegate-side errors anyway
+		// A `yield from` with no operand is a parse error the parser already reported;
+		// recover with the error placeholder rather than walking nothing.
+		if e.Value == nil {
+			t := &soltype.ErrorType{}
+			c.recordType(e, t)
+			return t
 		}
-		t := c.reportUnsupportedFeature(e, "yield from")
-		c.recordType(e, t)
-		return t
+		arg := c.inferExpr(scope, lvl, e.Value)
+		elem, res, ok := c.delegateElemType(arg)
+		if !ok {
+			// A delegate with no structure is the recursive case: `gen fn f() { yield from
+			// f() }` reaches the delegation while f's own return is unsolved. State the
+			// requirement instead of reading one, the way inferAwait constrains against
+			// `Promise<U>`. Yield is covariant, so the delegate's yields land in this
+			// body's sink and Ret is what the delegation produces.
+			if c.delegateIsUnsolved(arg) {
+				res := c.freshAt(lvl)
+				req := &soltype.GeneratorType{Yield: c.fn.yields, Ret: res, Next: c.fn.yieldNext, Async: c.fn.async}
+				c.constrain(e, arg, req)
+				c.recordType(e, res)
+				return res
+			}
+			// A delegate that already failed to infer is the ErrorType recovery
+			// placeholder; it absorbs rather than cascading a second diagnostic, the
+			// same rule inferForIn applies to a broken iterable.
+			var t soltype.Type = &soltype.ErrorType{}
+			if _, brokenDelegate := soltype.CarrierOf(arg).(*soltype.ErrorType); !brokenDelegate {
+				t = c.report(&NotIterableError{Iterable: e.Value, Type: arg, Await: false})
+			}
+			c.recordType(e, t)
+			return t
+		}
+		c.constrain(e, elem, c.fn.yields)
+		c.recordType(e, res)
+		return res
 	}
 	var val soltype.Type = &soltype.UndefinedType{}
 	if e.Value != nil {
@@ -2780,6 +2805,59 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 	t := c.fn.yieldNext
 	c.recordType(e, t)
 	return t
+}
+
+// delegateIsUnsolved reports whether a `yield from` delegate is an inference variable
+// the solve has not shaped, so the delegation must state its requirement rather than
+// read one. A failed delegate is the ErrorType placeholder, not a variable, so it is
+// excluded and keeps absorbing.
+func (c *checker) delegateIsUnsolved(t soltype.Type) bool {
+	_, isVar := soltype.CarrierOf(t).(*soltype.TypeVarType)
+	return isVar
+}
+
+// delegateElemType resolves what a `yield from` delegate hands back: the element type
+// its iteration yields, and the value the delegation evaluates to once the delegate is
+// exhausted. A generator forwards its Yield and Ret slots, and an async one is a legal
+// delegate only from an async generator body. A union resolves each branch the same way
+// and unions both results. Any other operand goes through syncElemType, where a tuple
+// carries no return value and so finishes with `undefined`.
+func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, bool) {
+	carrier := soltype.CarrierOf(t)
+	// An inference-variable delegate is coalesced to its structural lower-bound shape,
+	// the same snapshot syncElemType takes before inspecting a variable operand.
+	if _, isVar := carrier.(*soltype.TypeVarType); isVar {
+		carrier = soltype.CarrierOf(coalesce(carrier, soltype.Positive))
+	}
+	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
+		// syncElemType walks a union too, but reports only element types. Recursing here
+		// keeps each branch's Ret slot and lets an async branch through under the same
+		// async-body rule a lone async delegate gets. A union is a legal delegate only
+		// when every branch is. Inexactness carries to both results, since the unlisted
+		// branches yield and return something unknown.
+		elems := make([]soltype.Type, 0, len(u.Types))
+		rets := make([]soltype.Type, 0, len(u.Types))
+		for _, branch := range u.Types {
+			elem, ret, ok := c.delegateElemType(branch)
+			if !ok {
+				return nil, nil, false
+			}
+			elems = append(elems, elem)
+			rets = append(rets, ret)
+		}
+		return newUnion(c.ctx, elems, u.Inexact), newUnion(c.ctx, rets, u.Inexact), true
+	}
+	if g, isGen := carrier.(*soltype.GeneratorType); isGen {
+		if g.Async && (c.fn == nil || !c.fn.async) {
+			return nil, nil, false
+		}
+		return g.Yield, g.Ret, true
+	}
+	elem, ok := c.syncElemType(t)
+	if !ok {
+		return nil, nil, false
+	}
+	return elem, &soltype.UndefinedType{}, true
 }
 
 // inferIfElse types `if cond { cons } else { alt }`. The condition is
