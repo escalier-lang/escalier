@@ -80,13 +80,6 @@ func TestInferGenExternalGeneratorFace(t *testing.T) {
 			want: `fn () -> Generator<undefined, void, never>`,
 		},
 		{
-			// A generator with no yield at all still faces callers as a Generator; its
-			// unconstrained yield variable coalesces to `never`.
-			name: "NoYield",
-			src:  `gen fn f() { return "done" }`,
-			want: `fn () -> Generator<never, "done", never>`,
-		},
-		{
 			name: "GenFuncExpr",
 			src:  `val f = gen fn () { yield 1 }`,
 			want: `fn () -> Generator<1, void, never>`,
@@ -147,10 +140,14 @@ func TestInferYieldRequiresGenContext(t *testing.T) {
 			wantErrs: []string{"1:10-1:27: yield from can only be used inside a generator function"},
 		},
 		{
+			// The closure opens its own function context with the marker clear, so its
+			// `yield` is rejected. That same scoping means the yield does not count for
+			// the enclosing `gen fn`, which therefore never yields and warns as well.
 			name: "YieldInAClosureInsideAGenBody",
 			src:  `gen fn f() { val g = fn () { yield 1 } }`,
 			wantErrs: []string{
 				"1:30-1:37: yield can only be used inside a generator function",
+				"1:1-1:41: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`",
 			},
 		},
 		{
@@ -284,4 +281,53 @@ func TestInferYieldFromIsUnsupported(t *testing.T) {
 			},
 		},
 	})
+}
+
+// A `gen fn` whose body never yields still returns a generator, but one that finishes on
+// the first `next()` without producing a value, so the marker gives the caller nothing.
+// The warning says so while the function still types as the generator it returns — it is
+// well-typed, just pointless, which is why it warns rather than errors.
+func TestInferGenWithoutYieldWarns(t *testing.T) {
+	runGenErrCases(t, []genErrCase{
+		{
+			name:     "SyncGenNeverYields",
+			src:      `gen fn f() { return "done" }`,
+			wantErrs: []string{"1:1-1:29: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`"},
+		},
+		{
+			// An `async gen fn` returns an AsyncGenerator, so the message names that form.
+			name:     "AsyncGenNeverYields",
+			src:      `async gen fn f() { return 1 }`,
+			wantErrs: []string{"1:1-1:30: the body never yields, so this returns an empty AsyncGenerator; add a `yield` or drop the `gen`"},
+		},
+		{
+			// A `gen` method is measured the same way, blamed at the member.
+			name:     "GenMethodNeverYields",
+			src:      `class C { gen m(self) { return 1 } }`,
+			wantErrs: []string{"1:11-1:35: the body never yields, so this returns an empty Generator; add a `yield` or drop the `gen`"},
+		},
+	})
+
+	// The warning does not change the type: a yield-less generator still faces callers as
+	// a Generator whose Yield slot coalesces to `never`.
+	values, _, errs := inferSource(t, `gen fn f() { return "done" }`)
+	require.Len(t, errs, 1)
+	require.True(t, isWarning(errs[0]))
+	require.Equal(t, `fn () -> Generator<never, "done", never>`, values["f"])
+
+	// A body that yields reports nothing at all.
+	_, _, yielding := inferSource(t, `gen fn f() { yield 1 }`)
+	require.Empty(t, yielding)
+
+	// Delegating counts as yielding, so a body whose only yield is a `yield from` does not
+	// draw this warning. It still draws the staged unsupported report, since delegation
+	// itself lands later, so the assertion is that the warning is absent rather than that
+	// nothing is reported.
+	_, _, delegating := inferSource(t, `gen fn f() { yield from [1, 2] }`)
+	require.Len(t, delegating, 1)
+	require.Equal(t, "1:14-1:31: Unsupported: yield from", msgWithSpan(delegating[0]))
+
+	// A bodyless `declare gen fn` has no body to measure, so it is never flagged.
+	_, _, declared := inferSource(t, `declare gen fn f() -> Generator<number, undefined, never>`)
+	require.Empty(t, declared)
 }

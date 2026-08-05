@@ -190,6 +190,11 @@ type funcCtx struct {
 	// the annotation, or to `never` when there is none, matching the old checker's
 	// TNext. Nil outside a generator body.
 	yieldNext soltype.Type
+	// yielded records whether the body has a `yield` at all, which the sink cannot
+	// answer on its own: a body that never yields leaves the sink unconstrained, and so
+	// does one that yields `never`. inferFunc reads it to warn about a `gen` marker the
+	// body never uses. It is the generator twin of raised.
+	yielded bool
 	// lvl is the level this body is walked at, so throwsSink mints the sink there rather
 	// than inside a `val` initializer, which is typed one level deeper. A sink minted deep
 	// gets extruded by a later exit, and the resulting cycle renders as a μ-knot.

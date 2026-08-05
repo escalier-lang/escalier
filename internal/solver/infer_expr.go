@@ -348,6 +348,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// the walk to warn about a signature the body cannot deliver on.
 	bodyDiverges := false
 	raised := false
+	// yielded records whether a generator body actually yields, read after the walk to
+	// warn about a `gen` marker nothing uses.
+	yielded := false
 	// throws is what a caller sees on the exceptional edge. A bodyless `declare fn` has
 	// only its clause. A body-carrying function reads the sink back once the body is
 	// walked, which is the declared type when there was a clause and the inferred variable
@@ -388,6 +391,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
 		raised = c.fn.raised
+		yielded = c.fn.yielded
 		collected := c.popFuncCtx(saved)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `void` a fall-through body
@@ -407,6 +411,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// drew an AsyncThrowsClauseError.
 	if hasBody && !raised && sig.Throws != nil && !sig.Async && !isWildcardAnn(sig.Throws) {
 		c.report(&UnusedThrowsClauseError{Ann: sig.Throws, Declared: throws})
+	}
+	// A `gen fn` whose body never yields still returns a generator, but one that finishes
+	// on the first `next()` without producing a value. The marker then buys the caller
+	// nothing and costs them a generator to unwrap, so warn and let them drop it. A
+	// bodyless `declare gen fn` has no body to measure against, so it does not reach here.
+	if hasBody && !yielded && sig.Gen {
+		c.report(&GeneratorWithoutYieldError{Fn: node, Async: sig.Async})
 	}
 	// Return-annotation handling diverges by async-ness.
 	//
@@ -2760,6 +2771,9 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 		c.recordType(e, t)
 		return t
 	}
+	// Recorded before the two forms split, so delegating counts as yielding: a body whose
+	// only yield is a `yield from` does produce values, and its `gen` marker is used.
+	c.fn.yielded = true
 	if e.IsDelegate {
 		// `yield from` forwards another iterable's yields into this body's sink, so it
 		// needs the iteration rules rather than the plain-yield rule below. Treating the

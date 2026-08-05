@@ -1925,6 +1925,34 @@ func (e *UnusedThrowsClauseError) Message() string {
 		"` is unreachable; drop the clause"
 }
 
+// GeneratorWithoutYieldError fires when a `gen fn` body contains no `yield` and no
+// `yield from`. The program is well-typed — the function returns a generator whose Yield
+// slot is `never` — but that generator finishes on the first `next()` without ever
+// producing a value, so the marker gives the caller nothing and costs them a generator to
+// unwrap. Fn is the function the marker sits on, which carries the blame span.
+//
+// It is the generator twin of UnusedThrowsClauseError: a declaration the body never uses,
+// reported as a warning rather than an error because the signature is still honest about
+// what it returns. Async selects the wording, since an `async gen fn` returns an
+// AsyncGenerator.
+type GeneratorWithoutYieldError struct {
+	Fn    ast.Node
+	Async bool
+}
+
+func (*GeneratorWithoutYieldError) isSolverError()        {}
+func (e *GeneratorWithoutYieldError) Span() ast.Span      { return e.Fn.Span() }
+func (e *GeneratorWithoutYieldError) Related() []ast.Span { return nil }
+func (e *GeneratorWithoutYieldError) IsWarning() bool     { return true }
+func (e *GeneratorWithoutYieldError) Message() string {
+	kind := "Generator"
+	if e.Async {
+		kind = "AsyncGenerator"
+	}
+	return "the body never yields, so this returns an empty " + kind +
+		"; add a `yield` or drop the `gen`"
+}
+
 // UnreachableReturnAnnotationError fires when a signature declares `-> R` but every path
 // through the body leaves along the exceptional edge, so the body's return type is `never`
 // and no caller can observe an R. The program is well-typed, since `never` is below every
