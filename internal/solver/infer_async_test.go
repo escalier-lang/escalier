@@ -170,7 +170,9 @@ func TestInferAwaitOutsideAsyncTopLevelNoRelated(t *testing.T) {
 
 // `await` of a non-Promise concrete fails through constrain — the rule
 // constrain(e <: Promise<U>) lowers `number <: Promise<U>` to a
-// CannotConstrainError because the concrete shapes don't match.
+// CannotConstrainError because the concrete shapes don't match. The requirement's
+// second argument is the clause-less body's rejection sink, still an unsolved
+// variable when the message renders.
 func TestInferAwaitOfNonPromiseFails(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		async fn f(n: number) {
@@ -178,7 +180,7 @@ func TestInferAwaitOfNonPromiseFails(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:4-3:11: cannot constrain number <: Promise<t1>", msgWithSpan(errs[0]))
+	require.Equal(t, "3:4-3:11: cannot constrain number <: Promise<t2, t1>", msgWithSpan(errs[0]))
 }
 
 // `await` inside an async fn nested under a non-async outer must still resolve

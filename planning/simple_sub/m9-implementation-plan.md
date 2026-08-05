@@ -851,13 +851,16 @@ visitor, `LevelOf`, the printer, `equalType`, and `compareType` each grow the ar
   arm ([infer_expr.go](../../internal/solver/infer_expr.go)) moves the body's sink into
   the wrapped `PromiseType.Err` and leaves the function's own `Throws` at `never`,
   since calling an async function raises nothing — it returns a promise.
-- **A clause on an `async fn` names the rejection, not what a call raises.** The
-  signature is still where the body's exits are checked, so PR10's rules carry over
-  unchanged: no clause means the body may not throw at all, `throws E` fixes the
-  rejection type, and `throws _` infers it. Only the destination moves, from the
-  function's own `Throws` to the promise's `Err`. So `async fn f() throws string { … }`
-  reads `fn () -> Promise<T, string>`, and an async body that throws with no clause is
-  rejected exactly as a sync one is.
+- **The return annotation's E is the rejection's declaration surface.** An async body's
+  throws are absorbed by the promise rather than raised, so the rules PR10 ties to the
+  `throws` clause attach to the E in `-> Promise<V, E>` instead: a written E fixes the
+  rejection type and the body's exits are checked against it, `Promise<V>` reads the
+  missing E as `never` and forbids them, and no annotation infers the rejection the way
+  `throws _` infers a clause. A clause on an `async fn` still names the rejection
+  explicitly — `async fn f() throws string { … }` reads `fn () -> Promise<T, string>` —
+  and beside an annotated E it is checked `<:` that slot. A non-async function returning
+  a `Promise<V, E>` is untouched by all of this: its own throws still reach its own
+  clause, separate from the promise it returns.
 - **`await` is an exceptional exit.** `inferAwait` constrains the awaited promise's
   `Err` into the enclosing body's throws sink, so awaiting a rejecting promise needs a
   clause or a `try` the same way a throwing call does. This is the join with PR10b: a
@@ -870,10 +873,11 @@ visitor, `LevelOf`, the printer, `equalType`, and `compareType` each grow the ar
 - **Async generators.** `AsyncGenerator<…>` is the same question one level out and
   rides on whatever PR11 lands for `Generator`.
 
-**Accept.** `async fn f() throws _ { throw "x" }` renders `fn () -> Promise<never, "x">`
-with no `throws` clause of its own, and the same body without the clause is rejected at
-the `throw`. A caller that only holds the promise needs no clause. A caller that awaits
-it needs `throws "x"` or a `try` around the `await`. The `fetchJSON` example from
+**Accept.** `async fn f() { throw "x" }` renders `fn () -> Promise<never, "x">` with no
+`throws` clause of its own, and the same body under `-> Promise<never>` is rejected at
+the `throw`. A caller that only holds the promise needs no clause. An async caller that
+awaits it absorbs `"x"` into its own rejection, or catches it with a `try` around the
+`await`. The `fetchJSON` example from
 [06_error_handling.md](../../docs/06_error_handling.md) type-checks, including its catch
 arms narrowing the rejection union.
 
