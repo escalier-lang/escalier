@@ -11,9 +11,9 @@ import (
 //
 // Like projectedMember it reports a miss here rather than letting it fall through to the
 // structural `{name: fieldVar}` requirement in valueProp. That requirement constrains the
-// receiver `<: object`, and constrain has no rule taking a generator to an object, so a miss
-// left to fall through would surface as `cannot constrain Generator <: object` instead of
-// naming the member that does not exist.
+// receiver `<: object`, and constrain has no rule taking a generator to an object. A miss
+// left to fall through would therefore surface as `cannot constrain Generator <: object`
+// rather than naming the member that does not exist.
 func (c *checker) generatorMember(lvl int, blame, provNode ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
 	g, ok := generatorCarrier(carrier)
 	if !ok {
@@ -73,22 +73,25 @@ func (c *checker) generatorBody(g *soltype.GeneratorType) *soltype.ObjectType {
 }
 
 // generatorNext declares the `next` method that advances g, as an overload set of up to two
-// arms. Both return the iteration result and both carry g's raise, so a caller that drives a
-// generator by hand handles what its body throws the way an iterating caller does.
+// arms. Y, R, and N below are g's Yield, Ret, and Next slots. N is the type a `yield`
+// expression in the body evaluates to, the value a caller sends back in.
 //
 //	next() -> {value: Y | R, done: boolean}
 //	next(value: N) -> {value: Y | R, done: boolean}
 //
-// The no-argument arm is offered only when `undefined` is assignable to N, the type a `yield`
-// expression in the body evaluates to. Omitting the argument sends `undefined` at runtime, so
-// an unconditional no-argument arm would let a body that reads its sent value as a string
-// receive `undefined` instead. An inferred N is `unknown`, which accepts `undefined`, so the
-// argumentless call stays available for every generator that does not declare a narrower N.
-// A generator that declares one, such as `Generator<number, string, string>`, offers only the
-// one-argument arm, and a bare `it.next()` on it is reported as a call missing an argument.
+// Both arms carry g's raise, so a caller that drives a generator by hand handles what its
+// body throws the way an iterating caller does.
 //
-// Note that declaring the parameter optional, `next(value?: N)`, would not close that hole:
-// an optional parameter lets `undefined` arrive for exactly the same reason.
+// The no-argument arm is offered only when `undefined` is assignable to N. Omitting the
+// argument sends `undefined` at runtime, so an unconditional no-argument arm would let a body
+// that reads its sent value as a string receive `undefined` instead. An inferred N is
+// `unknown`, which accepts `undefined`, so the argumentless call stays available for every
+// generator that does not declare a narrower N. A generator that declares one, such as
+// `Generator<number, string, string>`, offers only the one-argument arm, and a bare
+// `it.next()` on it is reported as a call missing an argument.
+//
+// Declaring the parameter optional, `next(value?: N)`, would not close that hole, because an
+// optional parameter lets `undefined` arrive for exactly the same reason.
 func (c *checker) generatorNext(g *soltype.GeneratorType) *soltype.MethodElem {
 	result := c.iterationResult(g)
 	sigs := make([]*soltype.FuncType, 0, 2)
@@ -104,9 +107,9 @@ func (c *checker) generatorNext(g *soltype.GeneratorType) *soltype.MethodElem {
 // advanceSig builds one signature of a method that advances g and evaluates to result.
 //
 // A sync generator runs its body during the call, so the call is where the body's raise
-// escapes: the signature's Throws is g's own raise slot, and constrain's covariant throws
-// rule records it into the calling body's sink. A nil slot is the shorthand for `never`, so a
-// generator that cannot raise contributes nothing.
+// escapes. The signature's Throws is therefore g's own raise slot, and constrain's covariant
+// throws rule records it into the calling body's sink. A nil slot is the shorthand for
+// `never`, so a generator that cannot raise contributes nothing.
 //
 // An async generator returns a promise instead, and its body's raise surfaces as that
 // promise's rejection. Putting the slot in the promise's Err rather than on the signature
@@ -120,10 +123,10 @@ func advanceSig(g *soltype.GeneratorType, result soltype.Type, params []*soltype
 }
 
 // iterationResult builds the object an advance of g evaluates to, `{value: Y | R, done:
-// boolean}`. It stands in for the standard library's `IteratorResult<Y, R>`, which is still
-// one of the opaque prelude placeholders until library type ingestion lands. A running
-// generator reports the type it yields and a finished one the type it returns, so the value
-// slot is the union of both.
+// boolean}`. It stands in for the standard library's `IteratorResult<Y, R>`, one of the
+// opaque prelude placeholders until library type ingestion lands. A running generator reports
+// the type it yields and a finished one the type it returns, so the value slot is the union
+// of both.
 //
 // The precise form is the discriminated union `{value: Y, done: false} | {value: R, done:
 // true}`, which lets a reader recover Y alone after testing `done`. This wider object is a
