@@ -135,11 +135,16 @@ split r {
 
 A **rest pattern** adds no tag. It relaxes its split to an inexact prefix, and the
 prefix relaxation — a tuple "at least this long" or an object "has at least these
-fields" — is the part that works today. The remainder *binding* is the M9 piece,
-and it differs by container, so `bind` needs two projection kinds, not one.
+fields" — already works. The remainder *binding* needs a type for the leftover.
+M9 has since shipped that machinery for both containers, so the types now exist.
+The one open piece is wiring `bindPattern`'s `ObjRestPat` and tuple-`RestPat` cases
+to produce them; both still report unsupported today
+([internal/solver/pattern.go](../../internal/solver/pattern.go)). The two
+containers differ, so `bind` needs two projection kinds, not one.
 
 A **tuple rest** binds a positional suffix. `xs[1..]` is the tuple of elements past
-the fixed prefix.
+the fixed prefix, typed by M9's tuple spread `soltype.RestSpreadType` — `[first,
+...rest]` reads `rest` as the `...` tail.
 
 ```
 match xs {
@@ -148,20 +153,19 @@ match xs {
 ```
 
 ```
-# normalized form (the rest binding rides M9)
+# normalized form
 split xs {
     [_, ...] => bind first = xs.0, rest = xs[1..]; leaf first
 } default ✗
 ```
 
 An **object rest** has no positional slice. `rest` must bind an object of exactly
-the fields the pattern did not name, which is "the scrutinee minus a key set," not
-a suffix. Represent it with a fresh row variable `ρ`: the split already needs
-`p <: {x: βx, ...ρ}` to read `x` inexactly, and `rest` then binds `{...ρ}`, the
-object over that residual row. This is the inverse of object spread `{...rest, x}`
-and reuses the `RestSpreadElem` row variable the row-types work introduces, so M9
-supplies the type without new machinery. The notation below writes it `p \ {x}`,
-the scrutinee with the named keys removed.
+the fields the pattern did not name — "the scrutinee minus a key set," not a
+suffix. M9 expresses that as `Omit<typeof p, "x">`: a mapped type whose key
+remapping drops the named keys, the same reduction `typeops.go` runs for `Omit`
+and `Pick`. It stays a residual operator while the scrutinee is abstract and
+reduces once it is a concrete object. The notation below writes it `p \ {x}`, the
+scrutinee with the named keys removed.
 
 ```
 match p {
@@ -170,16 +174,15 @@ match p {
 ```
 
 ```
-# normalized form (the rest binding rides M9)
+# normalized form
 split p {
     {x, ...} => bind x = p.x, rest = p \ {x}; leaf rest
 } default ✗
 ```
 
-Here `p \ {x}` resolves to an object over the residual row variable `ρ` from
-`p <: {x: βx, ...ρ}`. The excluded key set is exactly the keys named at this
-object pattern, so a key matched by a deeper nested split does not remove it from a
-shallower `rest`.
+Here `p \ {x}` resolves to `Omit<typeof p, "x">` under M9's operators. The excluded
+key set is exactly the keys named at this object pattern, so a key matched by a
+deeper nested split does not remove it from a shallower `rest`.
 
 For coverage, the instance and extractor tags cover nominal union members the same
 way `unionMatchExhaustive` already does, and a rest-relaxed inexact split needs a
@@ -257,15 +260,16 @@ split p {                       split p {
   dispatches every pattern kind, including `InstancePat`, `ExtractorPat`, and
   `RestPat` through `bindInstancePat` / `bindExtractorPat`. The IR decides *which*
   scrutinee a leaf binds against; `bindPattern` still does the member-lookup
-  constraints and the borrow-mode projection. Its two interim gates come along
-  unchanged: the extractor path narrows to the constructor return type until the
-  `[Symbol.customMatcher]` protocol lands in M7, and rest bindings stay untyped
-  until M9. Today a rest element only relaxes the split to inexact and binds no
-  name. M9 gives it a type: a suffix tuple for a tuple rest, and an object over a
-  fresh residual row variable for an object rest, as
-  [the worked example](#instance-extractor-and-rest-patterns) spells out. The IR
-  names both projections now so the normalized form is ready when those types
-  arrive. Neither gate is introduced or worsened by this work.
+  constraints and the borrow-mode projection. Its two gates come along
+  unchanged. The extractor path narrows to the constructor return type until the
+  `[Symbol.customMatcher]` protocol lands in M7, still open. Rest bindings still
+  bind no name — `bindPattern`'s `ObjRestPat` and tuple-`RestPat` cases report
+  unsupported today. M9 has since shipped the types they need — tuple spread
+  (`RestSpreadType`) for a tuple rest and an `Omit`-style mapped type for an object
+  rest — so wiring those two cases is now a small self-contained task rather than a
+  blocked one, as [the worked example](#instance-extractor-and-rest-patterns)
+  spells out. The IR names both projections regardless. Neither gate is introduced
+  or worsened by this work.
 
 ### Out of scope
 
@@ -347,8 +351,9 @@ into nothing.
   inexact-prefix marker a rest pattern sets. A projection path segment must be able
   to name a field, a tuple index, an extractor's positional result, a tuple suffix
   for a tuple rest, and an object remainder excluding a key set for an object rest.
-  The last two carry no bound type until M9, but the IR must name them now so the
-  normalized form is shaped correctly before the M9 types land.
+  M9 has shipped the types the last two resolve to — tuple spread and an
+  `Omit`-style mapped type — but their `bindPattern` wiring is still open, so the IR
+  names both projections and the real binding lands when that wiring does.
 - Define the normalized-form ADT: a split whose branches each test one tag-level
   and whose sub-scrutinees are projection paths into the matched value, plus a
   default / fallthrough tail.
