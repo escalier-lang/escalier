@@ -24,7 +24,6 @@ func TestPrintTypeRoundTrip(t *testing.T) {
 		{name: "any", input: "any"},
 		{name: "unknown", input: "unknown"},
 		{name: "never", input: "never"},
-		{name: "void", input: "void"},
 
 		// --- literal types ---
 		{name: "string literal", input: `"hello"`},

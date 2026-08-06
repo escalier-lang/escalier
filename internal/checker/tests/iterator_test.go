@@ -346,7 +346,7 @@ func TestMakeGeneratorType(t *testing.T) {
 		assert.NotNil(t, genType.TypeAlias, "TypeAlias should be set")
 	})
 
-	t.Run("AsyncGenerator<number, void, undefined>", func(t *testing.T) {
+	t.Run("AsyncGenerator<number, undefined, undefined>", func(t *testing.T) {
 		// AsyncGenerator alias is not loaded (requires ES2018+), so pass nil
 		genType := type_system.NewTypeRefType(nil, "AsyncGenerator", nil,
 			type_system.NewNumPrimType(nil),
@@ -356,7 +356,7 @@ func TestMakeGeneratorType(t *testing.T) {
 		assert.Equal(t, "AsyncGenerator", type_system.QualIdentToString(genType.Name))
 		require.Len(t, genType.TypeArgs, 3)
 		assert.Equal(t, "number", genType.TypeArgs[0].String())
-		assert.Equal(t, "void", genType.TypeArgs[1].String())
+		assert.Equal(t, "undefined", genType.TypeArgs[1].String())
 		assert.Equal(t, "undefined", genType.TypeArgs[2].String())
 	})
 }
@@ -410,7 +410,7 @@ func TestGetIteratorReturnType(t *testing.T) {
 		)
 		returnType := c.GetIteratorReturnType(inferCtx, tupleType)
 		require.NotNil(t, returnType, "tuple should have an iterator return type")
-		assert.Equal(t, "void", returnType.String())
+		assert.Equal(t, "undefined", returnType.String())
 	})
 
 	t.Run("UnionOfIterables", func(t *testing.T) {
@@ -584,7 +584,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> Generator<1 | 2 | 3, void, never>",
+			"fn () -> Generator<1 | 2 | 3, undefined, never>",
 			types["count"])
 	})
 
@@ -611,7 +611,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<1 | "hello", void, never>`,
+			`fn () -> Generator<1 | "hello", undefined, never>`,
 			types["mixed"])
 	})
 
@@ -624,7 +624,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> Generator<number, void, never>",
+			"fn () -> Generator<number, undefined, never>",
 			types["delegating"])
 	})
 
@@ -673,7 +673,7 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 	t.Run("AnnotatedGeneratorReturnTypeMismatch", func(t *testing.T) {
 		// Annotated as Generator<string, ...> but yields numbers — should error.
 		_, errors := inferScript(t, `
-			fn count() -> Generator<string, void, never> {
+			fn count() -> Generator<string, undefined, never> {
 				yield 1
 				yield 2
 			}
@@ -705,7 +705,7 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> fn () -> Generator<1, void, never>",
+			"fn () -> fn () -> Generator<1, undefined, never>",
 			types["outer"])
 	})
 }

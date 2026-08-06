@@ -1278,7 +1278,7 @@ func TestDefaultMutabilityFromClass(t *testing.T) {
 			input: `
 				class Config {
 					host: string,
-					setHost(mut self, h: string) -> void {}
+					setHost(mut self, h: string) -> undefined {}
 				}
 				val cfg = Config("localhost")
 			`,

@@ -1333,7 +1333,7 @@ func TestComponentWrongPropType(t *testing.T) {
 		},
 		"WrongFunctionType": {
 			input: `
-				fn MyComponent(props: {onClick: fn() -> void}) {
+				fn MyComponent(props: {onClick: fn() -> undefined}) {
 					return <button onClick={props.onClick}>Click</button>
 				}
 				val elem = <MyComponent onClick="not a function" />

@@ -184,7 +184,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<mut 'a {x: number}, void, never>",
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<mut 'a {x: number}, undefined, never>",
 			},
 		},
 		"GeneratorReturnAliasParam": {
@@ -241,12 +241,12 @@ func TestInferLifetimeTypes(t *testing.T) {
 			// delegate borrows from iter, so its lifetime is bounded
 			// by iter's.
 			input: `
-				fn relay(g: Generator<mut {x: number}, void, never>) {
+				fn relay(g: Generator<mut {x: number}, undefined, never>) {
 					yield from g
 				}
 			`,
 			expectedTypes: map[string]string{
-				"relay": "fn <'a>(g: 'a Generator<mut 'a {x: number}, void, never>) -> Generator<mut 'a {x: number}, void, never>",
+				"relay": "fn <'a>(g: 'a Generator<mut 'a {x: number}, undefined, never>) -> Generator<mut 'a {x: number}, undefined, never>",
 			},
 		},
 		"AsyncGeneratorYieldsAliasParam": {
@@ -261,7 +261,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"iter": "fn <'a>(p: mut 'a {x: number}) -> AsyncGenerator<mut 'a {x: number}, void, never>",
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> AsyncGenerator<mut 'a {x: number}, undefined, never>",
 			},
 		},
 		"GeneratorYieldEscapingReturnAliasing": {
@@ -427,12 +427,12 @@ func TestInferLifetimeTypes(t *testing.T) {
 			// Generator<T,_,_> reference at both positions, NOT to the
 			// inner yield type T.
 			input: `
-				fn forwardIter(g: Generator<mut {x: number}, void, never>) -> Generator<mut {x: number}, void, never> {
+				fn forwardIter(g: Generator<mut {x: number}, undefined, never>) -> Generator<mut {x: number}, undefined, never> {
 					return g
 				}
 			`,
 			expectedTypes: map[string]string{
-				"forwardIter": "fn <'a>(g: 'a Generator<mut {x: number}, void, never>) -> 'a Generator<mut {x: number}, void, never>",
+				"forwardIter": "fn <'a>(g: 'a Generator<mut {x: number}, undefined, never>) -> 'a Generator<mut {x: number}, undefined, never>",
 			},
 		},
 		"TupleRestParamReturnsRestElement": {

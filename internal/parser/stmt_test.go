@@ -112,7 +112,7 @@ func TestParseStmtNoErrors(t *testing.T) {
 			input: `class Mixed {
 				foo(self) { return 1 },
 				async bar(self) -> Promise<number> { return 2 },
-				static async baz() -> Promise<void> {},
+				static async baz() -> Promise<undefined> {},
 			}`,
 		},
 		"GenericClass": {

@@ -30,9 +30,6 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 		"UnknownTypeAnn": {
 			input: "unknown",
 		},
-		"VoidTypeAnn": {
-			input: "void",
-		},
 		"NumberLiteralTypeAnn": {
 			input: "5",
 		},
@@ -343,6 +340,12 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 		},
 		"ConditionalTypeMissingThen": {
 			input: "if A : B { } else { D }",
+		},
+		// Escalier has no `void` type. The keyword is still lexed so the parser can name
+		// `undefined` as the replacement, and it recovers to that type, so the snapshot
+		// shows an `undefined` annotation alongside the error.
+		"VoidIsNotAType": {
+			input: "void",
 		},
 	}
 

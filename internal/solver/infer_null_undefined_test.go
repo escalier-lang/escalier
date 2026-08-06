@@ -224,72 +224,26 @@ func TestInferMatchBothAtomArmsCoverUnion(t *testing.T) {
 	require.Equal(t, "fn (x: null | undefined) -> 0 | 1", values["f"])
 }
 
-// --- `void` as a second spelling of `undefined` ---
+// --- the `undefined` a valueless function returns ---
 
-// A `void` annotation resolves to the same atom the `undefined` annotation resolves to, so
-// the two spellings are interchangeable wherever a type is written. Each case renders as
-// `undefined`, since the printer has one name for the atom.
-func TestInferVoidAnnotationIsUndefined(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-		want string
-	}{
-		{
-			// A function whose body returns no value satisfies a `-> void` return annotation.
-			name: "ReturnAnnotationOnAValuelessBody",
-			src:  `fn f() -> void {}`,
-			want: "fn () -> undefined",
-		},
-		{
-			// The two spellings meet in both directions. The body's `undefined` result
-			// satisfies `-> void`, and a `-> void` function satisfies `-> undefined`.
-			name: "VoidAndUndefinedReturnsAreInterchangeable",
-			src: `
-				fn g() -> void {}
-				val f: fn() -> undefined = g
-			`,
-			want: "fn () -> undefined",
-		},
-		{
-			name: "CallbackParameterAnnotation",
-			src:  `declare fn f(cb: fn() -> void) -> undefined`,
-			want: "fn (cb: fn () -> undefined) -> undefined",
-		},
-		{
-			// `void` composes inside a union like any other member, and sorts last with the
-			// other absence marker.
-			name: "UnionMember",
-			src:  `declare fn f() -> number | void`,
-			want: "fn () -> number | undefined",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			values, _, errs := inferSource(t, tt.src)
-			require.Empty(t, errs)
-			require.Equal(t, tt.want, values["f"])
-		})
-	}
+// A function whose body returns no value satisfies an `-> undefined` return annotation,
+// and a valueless body and the annotation describe the same function.
+func TestInferUndefinedReturnAnnotationOnAValuelessBody(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn g() -> undefined {}
+		val f: fn() -> undefined = g
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn () -> undefined", values["f"])
 }
 
 // An `if` with no `else` folds the missing alt's `undefined` into the result, and that
-// union is writable — `number | undefined` and `number | void` both name it.
+// union is writable, which closes the gap where the checker inferred a type no annotation
+// could name.
 func TestInferIfWithoutElseIsAnnotatable(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-	}{
-		{"Undefined", `val x: number | undefined = if true { 5 }`},
-		{"Void", `val x: number | void = if true { 5 }`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			values, _, errs := inferSource(t, tt.src)
-			require.Empty(t, errs)
-			require.Equal(t, "number | undefined", values["x"])
-		})
-	}
+	values, _, errs := inferSource(t, `val x: number | undefined = if true { 5 }`)
+	require.Empty(t, errs)
+	require.Equal(t, "number | undefined", values["x"])
 }
 
 // The `undefined` a valueless block produces is the atom an `undefined` match arm names, so
@@ -308,58 +262,56 @@ func TestInferMatchUndefinedArmCoversAValuelessBlockResult(t *testing.T) {
 	require.Equal(t, `fn (c: boolean) -> "five" | "none"`, values["f"])
 }
 
-// A body that leaves along every path delivers `never`, not the annotation, so the
-// declared return is unreachable and gets flagged. The rule is over every annotation
-// other than `never`, and `void` is one more spelling reaching it — `-> undefined` is
-// rejected identically. A function that diverges on purpose writes `-> never`.
-func TestInferVoidReturnAnnotationOverADivergingBody(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-		want string
-	}{
-		{
-			name: "Void",
-			src:  `fn fail(msg: string) -> void throws string { throw msg }`,
-			want: "1:25-1:29: every path through the body throws, so the declared return type `undefined` is unreachable; the body returns `never`",
-		},
-		{
-			name: "Undefined",
-			src:  `fn fail(msg: string) -> undefined throws string { throw msg }`,
-			want: "1:25-1:34: every path through the body throws, so the declared return type `undefined` is unreachable; the body returns `never`",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, errs := inferSource(t, tt.src)
-			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
-		})
-	}
+// A body that leaves along every path delivers `never`, not the annotation, so the declared
+// return is unreachable and gets flagged. The rule is over every annotation other than
+// `never`. A function that diverges on purpose writes `-> never`.
+func TestInferUndefinedReturnAnnotationOverADivergingBody(t *testing.T) {
+	_, _, errs := inferSource(t, `fn fail(msg: string) -> undefined throws string { throw msg }`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		"1:25-1:34: every path through the body throws, so the declared return type `undefined` is unreachable; the body returns `never`",
+		msgWithSpan(errs[0]))
+
 	// `-> never` is what the body delivers, so it is not flagged.
-	_, _, errs := inferSource(t, `fn fail(msg: string) -> never throws string { throw msg }`)
+	_, _, errs = inferSource(t, `fn fail(msg: string) -> never throws string { throw msg }`)
 	require.Empty(t, errs)
 }
 
-// A `-> void` return position is checked like any other: the argument's return type must
-// be a subtype of it, so only a lambda that itself produces no value is accepted.
-// TypeScript instead treats a `void` return position as bivariant and accepts a lambda
+// An `-> undefined` return position is checked like any other: the argument's return type
+// must be a subtype of it, so only a lambda that itself produces no value is accepted.
+// TypeScript instead treats its `void` return position as bivariant and accepts a lambda
 // returning anything, discarding the value. The solver does not implement that rule, and
-// `void` naming the `undefined` type is what fixes the strict reading in place — a
-// bivariant `void` would need a return type distinct from `undefined`, since
-// `fn () -> number` must never satisfy `fn () -> undefined`.
+// merging `void` into `undefined` fixes the strict reading in place — a bivariant marker
+// would need a return type distinct from `undefined`, since `fn () -> number` must never
+// satisfy `fn () -> undefined`.
 //
-// This is reachable from a hand-written annotation today. It also decides what a `.d.ts`
-// callback slot means once the solver consumes interop output, since interop lowers
-// TypeScript's `void` to ast.VoidTypeAnn (internal/interop/helper.go). Under this rule
-// `xs.forEach((x) => x.trim())` would be rejected for returning a value the callee drops.
-func TestInferVoidCallbackReturnIsInvariant(t *testing.T) {
+// A `.d.ts` callback slot does not land here. Interop reads TypeScript's `void` by
+// position: a return becomes `unknown` and everything else becomes `undefined`, so
+// `xs.forEach((x) => x.trim())` meets the permissive `-> unknown` rather than this arm.
+// See convertReturnTypeAnn in internal/interop/helper.go.
+func TestInferUndefinedCallbackReturnIsInvariant(t *testing.T) {
 	src := `
-		declare fn each(cb: fn() -> void) -> undefined
+		declare fn each(cb: fn() -> undefined) -> undefined
 		val ok = each(fn () { })
 		val bad = each(fn () { return 5 })
 	`
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "4:33-4:34: cannot constrain 5 <: undefined", msgWithSpan(errs[0]))
+}
+
+// A `-> unknown` return position accepts a callback returning anything, since every type
+// is a subtype of `unknown` and the value is never read. This is the shape interop gives a
+// TypeScript `void` return, so `xs.forEach((x) => x.trim())` type-checks rather than being
+// rejected for returning a value the callee drops. `-> undefined` is the invariant
+// reading, which only a valueless body satisfies.
+func TestInferUnknownReturnAcceptsAnyCallbackResult(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare fn each(cb: fn() -> unknown) -> undefined
+		val a = each(fn () { return 5 })
+		val b = each(fn () { })
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "undefined", values["a"])
+	require.Equal(t, "undefined", values["b"])
 }

@@ -144,7 +144,12 @@ func printTypeInner(t Type, config PrintConfig) string {
 		return "<error>"
 
 	case *VoidType:
-		return "void"
+		// PrintType renders Escalier, which has no `void` type, so the result a function
+		// with no return produces is named `undefined` — the type a user can actually
+		// write. VoidType survives as a distinct kind because `.d.ts` emission renders it
+		// as TypeScript's `void`, and that goes through codegen's own printer rather than
+		// this one.
+		return "undefined"
 
 	case *AnyType:
 		return "any"

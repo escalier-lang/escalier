@@ -1281,8 +1281,6 @@ func (p *Printer) printTypeAnn(typ ast.TypeAnn) {
 		p.writeString("unknown")
 	case *ast.NeverTypeAnn:
 		p.writeString("never")
-	case *ast.VoidTypeAnn:
-		p.writeString("void")
 	case *ast.ObjectTypeAnn:
 		p.printObjectTypeAnn(t)
 	case *ast.TupleTypeAnn:

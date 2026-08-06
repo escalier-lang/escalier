@@ -107,7 +107,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: string}) -> void",
+				"foo": "fn (obj: mut {bar: string}) -> undefined",
 			},
 		},
 		"ReadAndWrite": {
@@ -118,7 +118,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> void",
+				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> undefined",
 			},
 		},
 		"NestedAccess": {
@@ -138,7 +138,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {foo: mut {bar: number}}) -> void",
+				"foo": "fn (obj: mut {foo: mut {bar: number}}) -> undefined",
 			},
 		},
 		"MultipleParams": {
@@ -199,7 +199,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: string}) -> void",
+				"foo": "fn (obj: mut {bar: string}) -> undefined",
 			},
 		},
 		"StringLiteralIndexReadAndWrite": {
@@ -210,7 +210,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> void",
+				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> undefined",
 			},
 		},
 		"MixedDotAndBracketAccess": {
@@ -231,7 +231,7 @@ func TestRowTypesPropertyAccess(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> void",
+				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> undefined",
 			},
 		},
 		"MultipleNumericIndexes": {
@@ -506,7 +506,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {bar: string}) -> string",
-				"foo": "fn (obj: {bar: string}) -> void",
+				"foo": "fn (obj: {bar: string}) -> undefined",
 			},
 		},
 		"PropertiesSurviveFunctionCall": {
@@ -519,7 +519,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {z: boolean, bar: string, w: string}) -> void",
+				"foo": "fn (obj: mut {z: boolean, bar: string, w: string}) -> undefined",
 			},
 		},
 		"MultipleCallsMerge": {
@@ -532,7 +532,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: {x: number, y: string}) -> void",
+				"foo": "fn (obj: {x: number, y: string}) -> undefined",
 			},
 		},
 		"NonObjectBinding": {
@@ -541,7 +541,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				fn foo(obj) { takes_num(obj) }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: number) -> void",
+				"foo": "fn (obj: number) -> undefined",
 			},
 		},
 		"MultipleParameters": {
@@ -554,7 +554,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (a: {a: number}, b: {b: string}) -> void",
+				"foo": "fn (a: {a: number}, b: {b: string}) -> undefined",
 			},
 		},
 		"OpenVsClosedSharedProperty": {
@@ -566,7 +566,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {name: string}) -> void",
+				"foo": "fn (obj: mut {name: string}) -> undefined",
 			},
 		},
 		"OpenVsClosedExtraPropertiesInOpen": {
@@ -579,7 +579,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {a: number, b: string}) -> void",
+				"foo": "fn (obj: mut {a: number, b: string}) -> undefined",
 			},
 		},
 		"Aliasing": {
@@ -591,7 +591,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {x: number, y: string}) -> void",
+				"foo": "fn (obj: mut {x: number, y: string}) -> undefined",
 			},
 		},
 		// TODO: `val alias = obj` binds tvObj.Instance = tvAlias, making
@@ -624,7 +624,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: mut {a: number}) -> number",
-				"foo": "fn (obj: mut {a: number, b: string}) -> void",
+				"foo": "fn (obj: mut {a: number, b: string}) -> undefined",
 			},
 		},
 		"PassToMutableTypedFunctionNoLocalWrite": {
@@ -636,7 +636,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: mut {a: number}) -> number",
-				"foo": "fn (obj: {a: number}) -> void",
+				"foo": "fn (obj: {a: number}) -> undefined",
 			},
 		},
 		"OpenVsOpenViaFunctionCall": {
@@ -649,7 +649,7 @@ func TestRowTypesPassToTypedFunction(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {a: number}) -> number",
-				"foo": "fn (obj: mut {b: string, a: number}) -> void",
+				"foo": "fn (obj: mut {b: string, a: number}) -> undefined",
 			},
 		},
 	}
@@ -686,7 +686,7 @@ func TestRowTypesWriteAfterPass(t *testing.T) {
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {name: string}) -> string",
 				// bar's annotation provides the concrete type; "hi" is compatible
-				"foo": "fn (obj: mut {name: string}) -> void",
+				"foo": "fn (obj: mut {name: string}) -> undefined",
 			},
 		},
 		"WriteNewPropertyAfterPass": {
@@ -699,7 +699,7 @@ func TestRowTypesWriteAfterPass(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {a: number}) -> number",
-				"foo": "fn (obj: mut {a: number, b: string}) -> void",
+				"foo": "fn (obj: mut {a: number, b: string}) -> undefined",
 			},
 		},
 		"WrittenFlagDoesNotLeakAcrossFunctions": {
@@ -720,9 +720,9 @@ func TestRowTypesWriteAfterPass(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"bar": "fn (x: {name: string}) -> string",
-				"foo": "fn (obj: mut {name: string}) -> void",
+				"foo": "fn (obj: mut {name: string}) -> undefined",
 				// Neither param is mut — baz never writes to a or b directly
-				"baz": "fn (a: {name: string}, b: {name: string}) -> void",
+				"baz": "fn (a: {name: string}, b: {name: string}) -> undefined",
 			},
 		},
 	}
@@ -798,7 +798,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				fn foo(obj) { val r = obj.process(42, "hello") }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: {process: fn (arg0: 42, arg1: \"hello\") -> T0}) -> void",
+				"foo": "fn <T0>(obj: {process: fn (arg0: 42, arg1: \"hello\") -> T0}) -> undefined",
 			},
 		},
 		"MethodParameterIntersection": {
@@ -809,7 +809,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {process: (fn (arg0: 42) -> T0) & (fn (arg0: \"hello\") -> T1)}) -> void",
+				"foo": "fn <T0, T1>(obj: {process: (fn (arg0: 42) -> T0) & (fn (arg0: \"hello\") -> T1)}) -> undefined",
 			},
 		},
 		"MethodReturnTypeIntersection": {
@@ -820,7 +820,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: {getValue: (fn () -> number) & (fn () -> string)}) -> void",
+				"foo": "fn (obj: {getValue: (fn () -> number) & (fn () -> string)}) -> undefined",
 			},
 		},
 		"MethodAndPropertyOnSameObject": {
@@ -831,7 +831,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {x: number, process: fn (arg0: number) -> T0}) -> void",
+				"foo": "fn <T0>(obj: mut {x: number, process: fn (arg0: number) -> T0}) -> undefined",
 			},
 		},
 		"ZeroArgMethod": {
@@ -839,7 +839,7 @@ func TestRowTypesMethodCallInference(t *testing.T) {
 				fn foo(obj) { val r = obj.getData() }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: {getData: fn () -> T0}) -> void",
+				"foo": "fn <T0>(obj: {getData: fn () -> T0}) -> undefined",
 			},
 		},
 	}
@@ -870,7 +870,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				fn foo(obj) { obj.bar = "hello" }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: string}) -> void",
+				"foo": "fn (obj: mut {bar: string}) -> undefined",
 			},
 		},
 		"LiteralWideningNumber": {
@@ -878,7 +878,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				fn foo(obj) { obj.bar = 42 }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: number}) -> void",
+				"foo": "fn (obj: mut {bar: number}) -> undefined",
 			},
 		},
 		"LiteralWideningBoolean": {
@@ -886,7 +886,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				fn foo(obj) { obj.bar = true }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: boolean}) -> void",
+				"foo": "fn (obj: mut {bar: boolean}) -> undefined",
 			},
 		},
 		"SameKindLiteralsCollapse": {
@@ -897,7 +897,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: string}) -> void",
+				"foo": "fn (obj: mut {bar: string}) -> undefined",
 			},
 		},
 		"DifferentKindLiteralsProduceUnion": {
@@ -908,7 +908,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: string | number}) -> void",
+				"foo": "fn (obj: mut {bar: string | number}) -> undefined",
 			},
 		},
 		"ThreeWayWidening": {
@@ -920,7 +920,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: string | number | boolean}) -> void",
+				"foo": "fn (obj: mut {bar: string | number | boolean}) -> undefined",
 			},
 		},
 		"BranchWidening": {
@@ -930,7 +930,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: string | number}, cond: boolean) -> void",
+				"foo": "fn (obj: mut {bar: string | number}, cond: boolean) -> undefined",
 			},
 		},
 		"NonLiteralTypesNotWidened": {
@@ -938,7 +938,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				fn foo(obj, s: string) { obj.bar = s }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: string}, s: string) -> void",
+				"foo": "fn (obj: mut {bar: string}, s: string) -> undefined",
 			},
 		},
 		"DeepWidenObjectLiteral": {
@@ -949,7 +949,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {loc: {x: number, y: number}, col: string}) -> void",
+				"foo": "fn (obj: mut {loc: {x: number, y: number}, col: string}) -> undefined",
 			},
 		},
 		"DeepWidenNestedLiterals": {
@@ -959,7 +959,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {prop: {a: {b: {c: string, d: number}}}}) -> void",
+				"foo": "fn (obj: mut {prop: {a: {b: {c: string, d: number}}}}) -> undefined",
 			},
 		},
 		"DeepWidenTupleLiterals": {
@@ -969,7 +969,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {pair: [number, string]}) -> void",
+				"foo": "fn (obj: mut {pair: [number, string]}) -> undefined",
 			},
 		},
 		"DeepWidenNestedTupleInObject": {
@@ -979,7 +979,7 @@ func TestRowTypesPropertyWidening(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {data: {coords: [number, number], label: string}}) -> void",
+				"foo": "fn (obj: mut {data: {coords: [number, number], label: string}}) -> undefined",
 			},
 		},
 		"NormalTypeVarConflictStillErrors": {
@@ -1078,7 +1078,7 @@ func TestRowTypesClosing(t *testing.T) {
 				fn foo(obj) { obj.bar = 5 }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {bar: number}) -> void",
+				"foo": "fn (obj: mut {bar: number}) -> undefined",
 			},
 		},
 		"ClosedWithoutMut": {
@@ -1087,7 +1087,7 @@ func TestRowTypesClosing(t *testing.T) {
 				fn foo(obj) { val x = obj.bar }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: {bar: T0}) -> void",
+				"foo": "fn <T0>(obj: {bar: T0}) -> undefined",
 			},
 		},
 		"MixedReadsAndWrites": {
@@ -1099,7 +1099,7 @@ func TestRowTypesClosing(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> void",
+				"foo": "fn <T0>(obj: mut {bar: T0, baz: number}) -> undefined",
 			},
 		},
 		"RestSpreadPreservedWhenInReturnType": {
@@ -1123,7 +1123,7 @@ func TestRowTypesClosing(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (a: mut {x: number}, b: mut {y: string}) -> void",
+				"foo": "fn (a: mut {x: number}, b: mut {y: string}) -> undefined",
 			},
 		},
 		"NestedFunctionClosedIndependently": {
@@ -1136,7 +1136,7 @@ func TestRowTypesClosing(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"outer": "fn (a: mut {y: string}) -> fn (b: mut {x: number}) -> void",
+				"outer": "fn (a: mut {y: string}) -> fn (b: mut {x: number}) -> undefined",
 			},
 		},
 		"ArrayElementWriteAccess": {
@@ -1146,7 +1146,7 @@ func TestRowTypesClosing(t *testing.T) {
 				fn foo(arr) { arr[0].x = 1 }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (arr: [mut {x: number}]) -> void",
+				"foo": "fn (arr: [mut {x: number}]) -> undefined",
 			},
 		},
 		"ArrayElementReadAccess": {
@@ -1214,8 +1214,8 @@ func TestRowTypesRowPolymorphism(t *testing.T) {
 				val r = foo({x: 1, y: 2})
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: mut {x: number}) -> void",
-				"r":   "void",
+				"foo": "fn (obj: mut {x: number}) -> undefined",
+				"r":   "undefined",
 			},
 		},
 		"DerivedReturn_RowVarDoesNotEscape": {
@@ -1682,7 +1682,7 @@ func TestTupleArrayInference(t *testing.T) {
 				fn foo(items) { items[0] = 42 }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut [number]) -> void",
+				"foo": "fn (items: mut [number]) -> undefined",
 			},
 		},
 		"ArrayFromPush": {
@@ -1690,7 +1690,7 @@ func TestTupleArrayInference(t *testing.T) {
 				fn foo(items) { items.push(42) }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<number>) -> void",
+				"foo": "fn (items: mut Array<number>) -> undefined",
 			},
 		},
 		"ArrayFromLiteralIndexAndPush": {
@@ -1701,7 +1701,7 @@ func TestTupleArrayInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<string>) -> void",
+				"foo": "fn (items: mut Array<string>) -> undefined",
 			},
 		},
 		"MultiplePushDifferentTypes": {
@@ -1712,7 +1712,7 @@ func TestTupleArrayInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<number | string>) -> void",
+				"foo": "fn (items: mut Array<number | string>) -> undefined",
 			},
 		},
 		"MultiplePushSameType": {
@@ -1723,7 +1723,7 @@ func TestTupleArrayInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<number>) -> void",
+				"foo": "fn (items: mut Array<number>) -> undefined",
 			},
 		},
 		"PushAndUnshiftDifferentTypes": {
@@ -1734,7 +1734,7 @@ func TestTupleArrayInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<number | string>) -> void",
+				"foo": "fn (items: mut Array<number | string>) -> undefined",
 			},
 		},
 		"MultiplePushWithLiteralIndex": {
@@ -1746,7 +1746,7 @@ func TestTupleArrayInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<number | string>) -> void",
+				"foo": "fn (items: mut Array<number | string>) -> undefined",
 			},
 		},
 		"IndexAssignmentDifferentTypes": {
@@ -1758,7 +1758,7 @@ func TestTupleArrayInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut [number, string]) -> void",
+				"foo": "fn (items: mut [number, string]) -> undefined",
 			},
 		},
 		"PushThenPassToCallback": {
@@ -1772,7 +1772,7 @@ func TestTupleArrayInference(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(cb: fn (arg0: mut Array<number | string>) -> T0, items: mut Array<number | string>) -> void",
+				"foo": "fn <T0>(cb: fn (arg0: mut Array<number | string>) -> T0, items: mut Array<number | string>) -> undefined",
 			},
 		},
 	}
@@ -1801,7 +1801,7 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 				fn foo(items) { items[1] = 42 }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(items: mut [T0, number]) -> void",
+				"foo": "fn <T0>(items: mut [T0, number]) -> undefined",
 			},
 		},
 		"ObjectLiteralWidening": {
@@ -1810,7 +1810,7 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 				fn foo(items) { items[0] = {x: 5, y: 10} }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut [{x: number, y: number}]) -> void",
+				"foo": "fn (items: mut [{x: number, y: number}]) -> undefined",
 			},
 		},
 		"ReadAndWriteDifferentIndexes": {
@@ -1835,7 +1835,7 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut [number]) -> void",
+				"foo": "fn (items: mut [number]) -> undefined",
 			},
 		},
 		"SparseIndexes": {
@@ -1856,7 +1856,7 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<number>) -> void",
+				"foo": "fn (items: mut Array<number>) -> undefined",
 			},
 		},
 		"IndexAssignmentAndPushDifferentTypes": {
@@ -1868,7 +1868,7 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<string | number>) -> void",
+				"foo": "fn (items: mut Array<string | number>) -> undefined",
 			},
 		},
 		"SingleIndexReadOnly": {
@@ -1899,7 +1899,7 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 				fn foo(items) { items[0] = "hello" }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut [string]) -> void",
+				"foo": "fn (items: mut [string]) -> undefined",
 			},
 		},
 		"ArrayFromMapOnlyGeneric": {
@@ -1931,7 +1931,7 @@ func TestTupleArrayInferenceEdgeCases(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<number>) -> void",
+				"foo": "fn (items: mut Array<number>) -> undefined",
 			},
 		},
 		"LengthOnlyIsNotArray": {
@@ -1982,14 +1982,14 @@ func TestTupleArrayInferenceOnProperties(t *testing.T) {
 			// Calling .push() on a property → mut Array on the property.
 			input: `fn foo(obj) { obj.items.push(42) }`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: {items: mut Array<number>}) -> void",
+				"foo": "fn (obj: {items: mut Array<number>}) -> undefined",
 			},
 		},
 		"PropertyIndexAssignment": {
 			// Index assignment on a property → mut tuple on the property.
 			input: `fn foo(obj) { obj.items[0] = "hi" }`,
 			expectedTypes: map[string]string{
-				"foo": "fn (obj: {items: mut [string]}) -> void",
+				"foo": "fn (obj: {items: mut [string]}) -> undefined",
 			},
 		},
 		"PropertyMapInfersArray": {
@@ -2055,7 +2055,7 @@ func TestTupleArrayInferenceFixedBugs(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<number>, i: number) -> void",
+				"foo": "fn (items: mut Array<number>, i: number) -> undefined",
 			},
 		},
 		// A read-only gap index (no assignment) should produce an immutable
@@ -2109,7 +2109,7 @@ func TestTupleArrayInferenceFixedBugs(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(items: mut Array<T0>) -> void",
+				"foo": "fn <T0>(items: mut Array<T0>) -> undefined",
 			},
 		},
 	}
@@ -2139,7 +2139,7 @@ func TestTupleArrayPassToTypedFunction(t *testing.T) {
 				fn foo(items) { bar(items) }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: [number, string]) -> void",
+				"foo": "fn (items: [number, string]) -> undefined",
 			},
 		},
 		"PassToArrayParam": {
@@ -2149,17 +2149,17 @@ func TestTupleArrayPassToTypedFunction(t *testing.T) {
 				fn foo(items) { bar(items) }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: Array<number>) -> void",
+				"foo": "fn (items: Array<number>) -> undefined",
 			},
 		},
 		"PassToMutArrayParam": {
 			// Passing to a function with a mut Array parameter infers mut Array
 			input: `
-				fn bar(items: mut Array<number>) -> void { items[0] = 1 }
+				fn bar(items: mut Array<number>) -> undefined { items[0] = 1 }
 				fn foo(items) { bar(items) }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: mut Array<number>) -> void",
+				"foo": "fn (items: mut Array<number>) -> undefined",
 			},
 		},
 		"IndexThenPassToArrayParam": {
@@ -2173,7 +2173,7 @@ func TestTupleArrayPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: Array<number>) -> void",
+				"foo": "fn (items: Array<number>) -> undefined",
 			},
 		},
 		"IndexThenPassToTupleParam": {
@@ -2187,7 +2187,7 @@ func TestTupleArrayPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: [number, string]) -> void",
+				"foo": "fn (items: [number, string]) -> undefined",
 			},
 		},
 		"PassToMultipleTypedFunctions": {
@@ -2201,7 +2201,7 @@ func TestTupleArrayPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: Array<number>) -> void",
+				"foo": "fn (items: Array<number>) -> undefined",
 			},
 		},
 		"IndexThenPassToVariadicTupleParam": {
@@ -2214,7 +2214,7 @@ func TestTupleArrayPassToTypedFunction(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn (items: [number, ...Array<string>]) -> void",
+				"foo": "fn (items: [number, ...Array<string>]) -> undefined",
 			},
 		},
 	}
@@ -2257,7 +2257,7 @@ func TestTupleRowPolymorphism(t *testing.T) {
 				fn foo(items) { val x = items[0] }
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0>(items: [T0]) -> void",
+				"foo": "fn <T0>(items: [T0]) -> undefined",
 			},
 		},
 		"DerivedReturn_RestDoesNotEscape": {
@@ -2924,7 +2924,7 @@ func TestRowTypesOptionalChaining(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn <T0, T1>(obj: {bar: T0, baz: T1} | null | undefined) -> void",
+				"foo": "fn <T0, T1>(obj: {bar: T0, baz: T1} | null | undefined) -> undefined",
 			},
 		},
 		"OptionalChainingWithReturn": {

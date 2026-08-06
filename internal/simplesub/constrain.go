@@ -338,7 +338,7 @@ func describe(st SimpleType) string {
 	case *Mut:
 		return "mut " + describe(t.inner)
 	case *Void:
-		return "void"
+		return "undefined"
 	case *Alias:
 		return t.name
 	case *Union:

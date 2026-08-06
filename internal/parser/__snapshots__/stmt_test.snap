@@ -2115,21 +2115,24 @@
                                 span: 4:27-4:34,
                             },
                             TypeArgs: []ast.TypeAnn{
-                                &ast.VoidTypeAnn{
-                                    span: 4:35-4:39,
+                                &ast.LitTypeAnn{
+                                    Lit: &ast.UndefinedLit{
+                                        span: 4:35-4:44,
+                                    },
+                                    span: 4:35-4:44,
                                 },
                             },
-                            span: 4:27-4:40,
+                            span: 4:27-4:45,
                         },
                         Async: true,
                     },
                     Body: &ast.Block{
-                        Span: 4:41-4:43,
+                        Span: 4:46-4:48,
                     },
-                    span: 4:5-4:43,
+                    span: 4:5-4:48,
                 },
                 Static: true,
-                Span_: 4:5-4:43,
+                Span_: 4:5-4:48,
             },
         },
         span: 1:1-5:5,

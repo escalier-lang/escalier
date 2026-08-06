@@ -145,7 +145,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 				return nil, fmt.Errorf("converting call signature parameter: %w", err)
 			}
 		}
-		returnType, err := convertTypeAnn(m.ReturnType)
+		returnType, err := convertReturnTypeAnn(m.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting call signature return type: %w", err)
 		}
@@ -191,7 +191,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 				return nil, fmt.Errorf("converting method signature parameter: %w", err)
 			}
 		}
-		returnType, err := convertTypeAnn(m.ReturnType)
+		returnType, err := convertReturnTypeAnn(m.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting method signature return type: %w", err)
 		}
@@ -269,6 +269,23 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 	}
 }
 
+// convertReturnTypeAnn converts a return-type annotation, the one position where
+// TypeScript's `void` needs a reading of its own. A `void` return is bivariant in
+// TypeScript: the caller discards the value, so a function returning anything satisfies
+// the slot, which is what lets `xs.forEach((x) => x.trim())` type-check. Escalier has no
+// `void`, and lowering it to `undefined` would make the slot invariant and reject that
+// callback. `unknown` is the type that keeps the position permissive, since every type is
+// a subtype of it and the value is never read.
+//
+// Only a return position takes this reading. A `void` anywhere else lowers to `undefined`
+// through convertTypeAnn, so `Promise<void>` becomes `Promise<undefined>`.
+func convertReturnTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
+	if prim, ok := ta.(*dts_parser.PrimitiveType); ok && prim.Kind == dts_parser.PrimVoid {
+		return ast.NewUnknownTypeAnn(prim.Span()), nil
+	}
+	return convertTypeAnn(ta)
+}
+
 func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 	switch t := ta.(type) {
 	case *dts_parser.PrimitiveType:
@@ -279,7 +296,11 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		case dts_parser.PrimUnknown:
 			return ast.NewUnknownTypeAnn(span), nil
 		case dts_parser.PrimVoid:
-			return ast.NewVoidTypeAnn(span), nil
+			// TypeScript's `void` becomes `undefined`, the Escalier type for a function
+			// that returns no value. Escalier has no `void`, and the converter prints its
+			// output as Escalier source, so lowering to a `void` node would emit source
+			// the parser rejects.
+			return ast.NewLitTypeAnn(ast.NewUndefined(span), span), nil
 		case dts_parser.PrimNull:
 			return ast.NewLitTypeAnn(ast.NewNull(span), span), nil
 		case dts_parser.PrimUndefined:
@@ -402,7 +423,7 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 				return nil, fmt.Errorf("converting function parameter %d: %w", i, err)
 			}
 		}
-		returnType, err := convertTypeAnn(t.ReturnType)
+		returnType, err := convertReturnTypeAnn(t.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting function return type: %w", err)
 		}
@@ -656,7 +677,7 @@ func convertMethodDecl(cctx *convertCtx, md *dts_parser.MethodDecl, className st
 	// Convert return type
 	var returnType ast.TypeAnn
 	if md.ReturnType != nil {
-		returnType, err = convertTypeAnn(md.ReturnType)
+		returnType, err = convertReturnTypeAnn(md.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting method return type: %w", err)
 		}

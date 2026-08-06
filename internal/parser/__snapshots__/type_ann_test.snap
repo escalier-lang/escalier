@@ -2876,3 +2876,21 @@
     span: 1:1-1:47,
 }
 ---
+
+[TestParseTypeAnnErrorHandling/VoidIsNotAType - 1]
+&ast.LitTypeAnn{
+    Lit: &ast.UndefinedLit{
+        span: 1:1-1:5,
+    },
+    span: 1:1-1:5,
+}
+---
+
+[TestParseTypeAnnErrorHandling/VoidIsNotAType - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: 1:1-1:5,
+        Message: "`void` is not a type in Escalier; write `undefined` instead",
+    },
+}
+---

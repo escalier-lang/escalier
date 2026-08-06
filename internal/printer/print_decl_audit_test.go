@@ -45,12 +45,12 @@ func TestPrintDeclAudit_RoundTrip(t *testing.T) {
 		{"export declare var", `export declare var y: string`},
 
 		// --- declare fn ---
-		{"declare fn no params", `declare fn f() -> void`},
+		{"declare fn no params", `declare fn f() -> undefined`},
 		{"declare fn one param", `declare fn f(x: number) -> string`},
 		{"declare fn two params", `declare fn f(x: number, y: string) -> boolean`},
-		{"declare fn optional param", `declare fn f(x?: number) -> void`},
-		{"declare fn rest param", `declare fn f(...args: Array<number>) -> void`},
-		{"declare fn with throws", `declare fn f() -> void throws Error`},
+		{"declare fn optional param", `declare fn f(x?: number) -> undefined`},
+		{"declare fn rest param", `declare fn f(...args: Array<number>) -> undefined`},
+		{"declare fn with throws", `declare fn f() -> undefined throws Error`},
 		{"declare fn type param", `declare fn f<T>(x: T) -> T`},
 		{"declare fn constrained type param", `declare fn f<T: string>(x: T) -> T`},
 		{"export declare fn", `export declare fn f(x: number) -> string`},
