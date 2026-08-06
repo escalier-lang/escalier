@@ -868,6 +868,16 @@ func TestGeneratorNextCall(t *testing.T) {
 			`,
 			wantErrors: []string{"unknown cannot be assigned to string"},
 		},
+		"NeverSendTypeStillAllowsAnArgumentlessNext": {
+			// `[] | [TNext]` keeps its empty-tuple branch whatever TNext is, so a
+			// caller can still advance a generator that accepts nothing sent. Only the
+			// sending form is closed off.
+			input: `
+				declare val it: mut Generator<number, string, never>
+				val advanced = it.next()
+			`,
+			wantTypes: map[string]string{"advanced": "IteratorResult<number, string>"},
+		},
 		"NeverSendTypeRejectsEverySentValue": {
 			// `never` is uninhabited, so a generator declaring it cannot be sent
 			// anything. This is what an inferred TNext of `never` would impose on
