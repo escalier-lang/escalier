@@ -280,7 +280,8 @@ split p {                       split p {
 - **Codegen (M10).** The IR package is placed so `internal/codegen` can import it
   later, but no codegen consumer is written here. Sourcemaps ride that consumer; the
   [Sourcemaps](#sourcemaps) note records the span provenance M10 needs so it is not
-  dropped before then.
+  dropped before then, and the [Codegen efficiency](#codegen-efficiency) note
+  records the once-evaluation requirement likewise.
 - **Pattern alternatives / or-patterns.** An or-pattern lets one arm match several
   shapes and share a body, for example a `|`-separated alternative:
 
@@ -398,6 +399,32 @@ The synthetic marker from point 2 above is what M10 keys that policy off: map a
 synthetic node to the nearest enclosing real span, or emit no mapping for it,
 rather than inventing a position. Recording the marker now keeps that choice open
 instead of foreclosing it with a lost span.
+
+## Codegen efficiency
+
+Codegen (M10) is out of scope, but the normalized form is shaped so M10 emits
+efficient destructuring and dispatch. This note records the one requirement so it
+is not lost before then.
+
+- **The split form is a decision tree.** Successive one-tag-level splits lower
+  directly to `switch` / `if`, each scrutinee tested once, with no re-testing
+  because the form is backtracking-free. This is the shape efficient hand-written
+  matching takes, so M10 walks it rather than reconstructing it.
+- **Each `Scrutinee` node is materialized once.** A nested sub-scrutinee such as
+  `l.start` is one shared node that its inner split and every leaf under it
+  reference, not a path re-derived per leaf. M10 binds each `Scrutinee` to a local
+  once — `const _s = l.start` — then reads `_s.x` / `_s.y` and tests off `_s`. That
+  evaluates a shared prefix once and, crucially, evaluates a side-effecting
+  scrutinee like `match f() { … }` once, before any test. The `bind x = p.x`
+  notation in the worked examples names each leaf's source; it does not imply a
+  re-read, because the projections share the scrutinee node.
+
+Native `{x, y}` destructuring syntax is not emitted, but `const x = p.x; const y =
+p.y` is what it desugars to, so there is no runtime cost, only output form. One
+tradeoff is left to M10: a decision tree can duplicate a leaf body reachable by
+several paths. UCS bounds this by sharing the default tail and giving each arm one
+leaf; if blowup ever appears, the fix is to share join points as labeled
+continuations, not to change this IR.
 
 ## Pull requests
 
