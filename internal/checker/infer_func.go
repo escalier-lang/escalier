@@ -3,6 +3,7 @@ package checker
 import (
 	"maps"
 	"slices"
+	"unsafe"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -357,11 +358,16 @@ func declaredGeneratorNextType(returnType type_system.Type) type_system.Type {
 // A reference may reach the named type through an alias, as
 // `type G = Generator<number, string, string>` does, so a reference to some other
 // name is replaced by what aliasedType says it stands for and inspected again.
-// aliasHopLimit bounds the walk so an alias that refers to itself cannot spin.
+//
+// `seen` ends the walk on a cyclic chain, such as `type A = B` paired with
+// `type B = A`, which would otherwise hand back the same pair of aliases forever. It
+// records each alias with the arguments it was reached with, the same identity
+// expandTypeRefsCount's expansion uses, so a chain that passes through one alias at
+// two different instantiations still runs to its end.
 func nextTypeArg(t type_system.Type, names set.Set[string]) type_system.Type {
-	const aliasHopLimit = 16
+	seen := set.NewSet[expandSeenKey]()
 	current := t
-	for range aliasHopLimit {
+	for {
 		typeRef, isTypeRef := type_system.Prune(current).(*type_system.TypeRefType)
 		if !isTypeRef {
 			return nil
@@ -376,9 +382,16 @@ func nextTypeArg(t type_system.Type, names set.Set[string]) type_system.Type {
 		if aliased == nil {
 			return nil
 		}
+		key := expandSeenKey{
+			alias:    unsafe.Pointer(typeRef.TypeAlias),
+			typeArgs: typeArgKey(typeRef.TypeArgs),
+		}
+		if seen.Contains(key) {
+			return nil
+		}
+		seen.Add(key)
 		current = aliased
 	}
-	return nil
 }
 
 // delegatedNextType reads the send type of a `yield from` operand. A union operand
