@@ -658,13 +658,7 @@ func (c *Checker) collectPropsFromType(
 	case *type_system.TypeRefType:
 		// For TypeRefType, try to resolve the TypeAlias directly first
 		// This handles nominal interfaces that ExpandType won't expand
-		if typ.TypeAlias != nil {
-			// Substitute type parameters if there are type arguments
-			underlyingType := typ.TypeAlias.Type
-			if len(typ.TypeAlias.TypeParams) > 0 && len(typ.TypeArgs) > 0 {
-				substitutions := createTypeParamSubstitutions(typ.TypeArgs, typ.TypeAlias.TypeParams)
-				underlyingType = SubstituteTypeParams(underlyingType, substitutions)
-			}
+		if underlyingType := aliasedType(typ); underlyingType != nil {
 			c.collectPropsFromType(ctx, underlyingType, expectedProps, requiredProps)
 		} else {
 			// TypeAlias not set, try ExpandType to resolve it

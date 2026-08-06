@@ -584,7 +584,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> Generator<1 | 2 | 3, undefined, never>",
+			"fn () -> Generator<1 | 2 | 3, undefined, unknown>",
 			types["count"])
 	})
 
@@ -598,7 +598,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<1 | 2, "done", never>`,
+			`fn () -> Generator<1 | 2, "done", unknown>`,
 			types["myGen"])
 	})
 
@@ -611,7 +611,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<1 | "hello", undefined, never>`,
+			`fn () -> Generator<1 | "hello", undefined, unknown>`,
 			types["mixed"])
 	})
 
@@ -624,7 +624,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> Generator<number, undefined, never>",
+			"fn () -> Generator<number, undefined, unknown>",
 			types["delegating"])
 	})
 
@@ -684,7 +684,7 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 
 	t.Run("AnnotatedNonGeneratorReturnTypeMismatch", func(t *testing.T) {
 		// A generator with a return annotation of `number` should produce an error
-		// because the inferred type is Generator<number, void, never>, not number.
+		// because the inferred type is Generator<number, undefined, unknown>, not number.
 		_, errors := inferScript(t, `
 			fn g() -> number {
 				yield 1
@@ -705,9 +705,279 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> fn () -> Generator<1, undefined, never>",
+			"fn () -> fn () -> Generator<1, undefined, unknown>",
 			types["outer"])
 	})
+}
+
+// =============================================================================
+// Driving a generator through .next()
+// =============================================================================
+
+// The third type argument of `Generator<T, TReturn, TNext>` is the send slot: the type
+// `next(v)` accepts, and the type a `yield` expression evaluates to. TNext is inferred
+// as `unknown` so a caller may send any value, and a return annotation naming a
+// generator declares a narrower one.
+//
+// `next` is declared `next(...args: [] | [TNext])` and takes a `mut self`, so each case
+// binds the generator through a `mut` annotation before calling it.
+func TestGeneratorNextCall(t *testing.T) {
+	tests := map[string]struct {
+		input      string
+		wantTypes  map[string]string
+		wantErrors []string
+	}{
+		"NextOnInferredGenerator": {
+			// A caller that drives the generator without sending anything, then one
+			// that sends a string. Both are accepted because TNext is `unknown`.
+			input: `
+				gen fn count() {
+					yield 1
+					yield 2
+				}
+				val it: mut Generator<1 | 2, undefined, unknown> = count()
+				val first = it.next()
+				val second = it.next("resume")
+			`,
+			wantTypes: map[string]string{
+				"count":  "fn () -> Generator<1 | 2, undefined, unknown>",
+				"first":  "IteratorResult<1 | 2, undefined>",
+				"second": "IteratorResult<1 | 2, undefined>",
+			},
+		},
+		"YieldEvaluatesToTheInferredSendType": {
+			// The send slot is what `yield 1` evaluates to, so returning that value
+			// puts `unknown` in TReturn as well.
+			input: `
+				gen fn echo() {
+					val sent = yield 1
+					return sent
+				}
+			`,
+			wantTypes: map[string]string{
+				"echo": "fn () -> Generator<1, unknown, unknown>",
+			},
+		},
+		"DeclaredSendTypeNarrowsBothEnds": {
+			// A declared TNext types the `yield` inside the body and the argument
+			// `next(v)` accepts, so sending a number is rejected.
+			input: `
+				fn stringSink() -> Generator<number, string, string> {
+					val sent = yield 1
+					return sent
+				}
+				val it: mut Generator<number, string, string> = stringSink()
+				val accepted = it.next("go")
+				val rejected = it.next(42)
+			`,
+			wantTypes: map[string]string{
+				"stringSink": "fn () -> Generator<number, string, string>",
+				"accepted":   "IteratorResult<number, string>",
+			},
+			wantErrors: []string{"42 cannot be assigned to string"},
+		},
+		"NestedGeneratorDoesNotInheritTheDeclaredSendType": {
+			// A declared TNext reaches only the body that declares it. `inner` has no
+			// annotation, so its own yield falls back to the inferred `unknown` rather
+			// than picking up the `string` that `outer` declares.
+			input: `
+				fn outer() -> Generator<number, fn () -> Generator<1, unknown, unknown>, string> {
+					val sent = yield 1
+					fn inner() {
+						val nested = yield 1
+						return nested
+					}
+					return inner
+				}
+			`,
+			wantTypes: map[string]string{
+				"outer": "fn () -> Generator<number, fn () -> Generator<1, unknown, unknown>, string>",
+			},
+		},
+		"AliasedAnnotationDeclaresTheSendType": {
+			// An annotation may name the generator through an alias, so the alias is
+			// resolved before its TNext is read. Without that, `sent` would be the
+			// inferred `unknown` and returning it would not satisfy TReturn.
+			input: `
+				type G = Generator<number, string, string>
+				fn f() -> G {
+					val sent = yield 1
+					return sent
+				}
+			`,
+			wantTypes: map[string]string{"f": "fn () -> G"},
+		},
+		"GenericAliasedAnnotationDeclaresTheSendType": {
+			// Resolving the alias substitutes its type arguments, so a generic alias
+			// reads the N its use site supplied.
+			input: `
+				type G<N> = Generator<number, string, N>
+				fn f() -> G<string> {
+					val sent = yield 1
+					return sent
+				}
+			`,
+			wantTypes: map[string]string{"f": "fn () -> G<string>"},
+		},
+		"DelegationNarrowsTheInferredSendType": {
+			// `yield from` forwards a sent value into the delegate, so the delegating
+			// generator can only accept what the delegate accepts. Leaving TNext at
+			// `unknown` here would let a caller send a number into a body that typed
+			// it as a string.
+			input: `
+				gen fn inner() -> Generator<number, undefined, string> {
+					val sent = yield 1
+					return
+				}
+				gen fn outer() {
+					yield from inner()
+				}
+				val it: mut Generator<number, undefined, string> = outer()
+				val rejected = it.next(42)
+			`,
+			wantTypes: map[string]string{
+				"outer": "fn () -> Generator<number, undefined, string>",
+			},
+			wantErrors: []string{"42 cannot be assigned to string"},
+		},
+		"DelegationLeavesANonGeneratorIterableAlone": {
+			// An array's iterator ignores sent values, so delegating to one puts no
+			// requirement on the slot and TNext stays `unknown`.
+			input: `
+				gen fn outer() {
+					declare val nums: Array<number>
+					yield from nums
+				}
+			`,
+			wantTypes: map[string]string{
+				"outer": "fn () -> Generator<number, undefined, unknown>",
+			},
+		},
+		"DeclaredSendTypeMustReachEveryDelegate": {
+			// A declared TNext is checked at the delegation rather than collected. A
+			// generator promising to accept anything cannot forward into one that
+			// accepts only strings.
+			input: `
+				gen fn inner() -> Generator<number, undefined, string> {
+					val sent = yield 1
+					return
+				}
+				gen fn outer() -> Generator<number, undefined, unknown> {
+					yield from inner()
+				}
+			`,
+			wantErrors: []string{"unknown cannot be assigned to string"},
+		},
+		"NeverSendTypeStillAllowsAnArgumentlessNext": {
+			// `[] | [TNext]` keeps its empty-tuple branch whatever TNext is, so a
+			// caller can still advance a generator that accepts nothing sent. Only the
+			// sending form is closed off.
+			input: `
+				declare val it: mut Generator<number, string, never>
+				val advanced = it.next()
+			`,
+			wantTypes: map[string]string{"advanced": "IteratorResult<number, string>"},
+		},
+		"NeverSendTypeRejectsEverySentValue": {
+			// `never` is uninhabited, so a generator declaring it cannot be sent
+			// anything. This is what an inferred TNext of `never` would impose on
+			// every generator.
+			input: `
+				declare val it: mut Generator<number, string, never>
+				val r = it.next(1)
+			`,
+			wantErrors: []string{"1 cannot be assigned to never"},
+		},
+		"NextTakesAtMostOneArgument": {
+			// `[] | [TNext]` fixes the arity at zero or one, so a second argument is
+			// rejected on arity rather than on the type of the extra value.
+			input: `
+				declare val it: mut Generator<number, string, string>
+				val r = it.next("a", "b")
+			`,
+			wantErrors: []string{
+				`Invalid number of arguments for function: fn (...value: [] | [string]) -> IteratorResult<number, string>. Expected: 1, got: 2`,
+			},
+		},
+		"BranchesOfEqualArityResolveByArgumentType": {
+			// `next`'s `[] | [TNext]` has one branch per arity, but a rest parameter
+			// may offer several of the same length. Each argument picks the branch it
+			// satisfies rather than making the call ambiguous.
+			input: `
+				declare fn pick(...args: [string] | [number]) -> boolean
+				val fromFirst = pick("x")
+				val fromSecond = pick(42)
+			`,
+			wantTypes: map[string]string{
+				"fromFirst":  "boolean",
+				"fromSecond": "boolean",
+			},
+		},
+		"NoBranchAcceptsTheArgument": {
+			// An argument no branch accepts reports the type it failed against, not a
+			// bare arity complaint that would read as "Expected: 1, got: 1".
+			input: `
+				declare fn pick(...args: [string] | [number]) -> boolean
+				val r = pick(true)
+			`,
+			wantErrors: []string{"true cannot be assigned to string"},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			types, errors := inferScript(t, test.input)
+
+			messages := make([]string, len(errors))
+			for i, err := range errors {
+				messages[i] = err.Message()
+			}
+			wantErrors := test.wantErrors
+			if wantErrors == nil {
+				wantErrors = []string{}
+			}
+			require.Equal(t, wantErrors, messages)
+
+			for binding, want := range test.wantTypes {
+				require.Equal(t, want, types[binding], "unexpected type for %q", binding)
+			}
+		})
+	}
+}
+
+// A declared TNext is one type object shared by the signature's Generator and by
+// every `yield` in the body. inferExpr stamps the expression's provenance onto
+// whatever it returns, so a `yield` that returned that object directly would leave
+// the annotation blaming the body's last `yield` — and any later diagnostic about the
+// declared type would point at the wrong span.
+func TestDeclaredSendTypeKeepsItsOwnProvenance(t *testing.T) {
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: `
+		fn f() -> Generator<number, string, string> {
+			val a = yield 1
+			val b = yield 2
+			return a
+		}
+	`}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	script, parseErrors := parser.NewParser(ctx, source).ParseScript()
+	require.Len(t, parseErrors, 0, "expected no parse errors")
+
+	c := NewChecker(ctx)
+	scope, inferErrors := c.InferScript(Context{Scope: Prelude(c)}, script)
+	require.Empty(t, inferErrors)
+
+	fnType, isFunc := type_system.Prune(scope.Namespace.Values["f"].Type).(*type_system.FuncType)
+	require.True(t, isFunc)
+	genRef, isTypeRef := type_system.Prune(fnType.Return).(*type_system.TypeRefType)
+	require.True(t, isTypeRef)
+	require.Len(t, genRef.TypeArgs, 3)
+
+	declaredNext := genRef.TypeArgs[2]
+	require.Equal(t, "string", declaredNext.String())
+	nodeProv, isNodeProv := declaredNext.Provenance().(*ast.NodeProvenance)
+	require.True(t, isNodeProv)
+	require.IsType(t, &ast.StringTypeAnn{}, nodeProv.Node, "TNext should be blamed on its annotation, not a yield")
 }
 
 // =============================================================================

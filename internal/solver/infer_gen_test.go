@@ -52,37 +52,45 @@ func runGenErrCases(t *testing.T, tests []genErrCase) {
 	}
 }
 
-// A `gen fn` faces callers as a Generator: Y is the union of what the body yields, R is
-// the body's return type, and N is what a `yield` expression evaluates to — `never`
-// unless the annotation says otherwise, since a generator driven by a plain loop is
-// never sent a value.
+// A `gen fn` faces callers as a Generator. Y is the union of what the body yields, and
+// R is the body's return type. N is what a `yield` expression evaluates to, the value a
+// caller sends in through `next(v)`. An annotation declares N; otherwise it is
+// `unknown`, the neutral choice for that contravariant slot, so a caller may send any
+// value.
 func TestInferGenExternalGeneratorFace(t *testing.T) {
 	runGenCases(t, []genCase{
 		{
 			name: "SingleYield",
 			src:  `gen fn f() { yield 1 }`,
-			want: `fn () -> Generator<1, undefined, never>`,
+			want: `fn () -> Generator<1, undefined, unknown>`,
 		},
 		{
 			name: "TwoYieldsUnion",
 			src:  `gen fn f() { yield 1 yield "a" }`,
-			want: `fn () -> Generator<1 | "a", undefined, never>`,
+			want: `fn () -> Generator<1 | "a", undefined, unknown>`,
 		},
 		{
 			name: "YieldAndReturn",
 			src:  `gen fn f() { yield 1 return "done" }`,
-			want: `fn () -> Generator<1, "done", never>`,
+			want: `fn () -> Generator<1, "done", unknown>`,
 		},
 		{
 			// A bare `yield` yields `undefined`, matching JavaScript.
 			name: "BareYield",
 			src:  `gen fn f() { yield }`,
-			want: `fn () -> Generator<undefined, undefined, never>`,
+			want: `fn () -> Generator<undefined, undefined, unknown>`,
 		},
 		{
 			name: "GenFuncExpr",
 			src:  `val f = gen fn () { yield 1 }`,
-			want: `fn () -> Generator<1, undefined, never>`,
+			want: `fn () -> Generator<1, undefined, unknown>`,
+		},
+		{
+			// Without an annotation the Next slot is `unknown`, so a `yield` evaluates
+			// to `unknown`. Returning that value puts `unknown` in the Ret slot too.
+			name: "InferredNextTypesTheYield",
+			src:  `gen fn f() { val x = yield 1 return x }`,
+			want: `fn () -> Generator<1, unknown, unknown>`,
 		},
 		{
 			// The annotation names the external Generator; the body checks against its
@@ -106,6 +114,43 @@ func TestInferGenExternalGeneratorFace(t *testing.T) {
 	})
 }
 
+// An un-annotated Next slot is the concrete type `unknown`, not an inference variable,
+// so what the body does with a `yield` cannot narrow it. Writing `_` in the slot asks
+// for the variable instead, and then the body's uses do infer it.
+//
+// The default is deliberate. Seeding every generator's Next with a fresh variable would
+// infer `gen fn f() { val x = yield 1 return x }` as `fn <T0>() -> Generator<1, T0, T0>`,
+// a generic where a reader expects a plain generator. `_` keeps that available for an
+// author who wants it without imposing it on every `gen fn`.
+func TestInferGenNextSlotInference(t *testing.T) {
+	runGenCases(t, []genCase{
+		{
+			// The `_` is a fresh variable, so annotating the binding the yield feeds
+			// puts `string` in the slot.
+			name: "WildcardNextInfersFromABodyUse",
+			src:  `gen fn f() -> Generator<number, undefined, _> { val x: string = yield 1 return undefined }`,
+			want: `fn () -> Generator<number, undefined, string>`,
+		},
+		{
+			// A body that returns what it was sent relates the two slots, and with both
+			// written `_` the relation generalizes: whatever a caller sends comes back
+			// out.
+			name: "WildcardNextAndRetGeneralizeTogether",
+			src:  `gen fn f() -> Generator<number, _, _> { val x = yield 1 return x }`,
+			want: `fn <T0>() -> Generator<number, T0, T0>`,
+		},
+	})
+	runGenErrCases(t, []genErrCase{
+		{
+			// Without `_` the slot is `unknown`, so a body that wants a narrower type
+			// out of its `yield` has to say so in the annotation.
+			name:     "UnannotatedNextDoesNotInferFromABodyUse",
+			src:      `gen fn f() { val x: string = yield 1 }`,
+			wantErrs: []string{"1:30-1:37: cannot constrain unknown <: string"},
+		},
+	})
+}
+
 // An `async gen fn` faces callers as an AsyncGenerator, not a Promise: the async wrap
 // never applies to a generator, and `await` is legal in its body.
 func TestInferAsyncGen(t *testing.T) {
@@ -113,12 +158,12 @@ func TestInferAsyncGen(t *testing.T) {
 		{
 			name: "AsyncGenIsAsyncGenerator",
 			src:  `async gen fn f() { yield 1 }`,
-			want: `fn () -> AsyncGenerator<1, undefined, never>`,
+			want: `fn () -> AsyncGenerator<1, undefined, unknown>`,
 		},
 		{
 			name: "AwaitInsideAsyncGen",
 			src:  `async gen fn f(p: Promise<number>) { yield await p }`,
-			want: `fn (p: Promise<number>) -> AsyncGenerator<number, undefined, never>`,
+			want: `fn (p: Promise<number>) -> AsyncGenerator<number, undefined, unknown>`,
 		},
 	})
 }
@@ -132,7 +177,7 @@ func TestInferYieldFrom(t *testing.T) {
 		{
 			name: "DelegateToTuple",
 			src:  `gen fn f() { yield from [1, 2] }`,
-			want: `fn () -> Generator<1 | 2, undefined, never>`,
+			want: `fn () -> Generator<1 | 2, undefined, unknown>`,
 		},
 		{
 			name: "DelegateToGeneratorForwardsYieldsAndReturns",
@@ -140,7 +185,7 @@ func TestInferYieldFrom(t *testing.T) {
 				gen fn g() { yield 1 return "r" }
 				gen fn f() { yield "a" return yield from g() }
 			`,
-			want: `fn () -> Generator<1 | "a", "r", never>`,
+			want: `fn () -> Generator<1 | "a", "r", unknown>`,
 		},
 		{
 			// A union delegate is resolved branch by branch, so the delegation keeps
@@ -184,7 +229,7 @@ func TestInferYieldFrom(t *testing.T) {
 			// reading the operand's shape.
 			name: "SelfRecursiveDelegation",
 			src:  `gen fn f() { yield 1 yield from f() }`,
-			want: `fn () -> Generator<1, undefined, never>`,
+			want: `fn () -> Generator<1, undefined, unknown>`,
 		},
 		{
 			// Two generators delegating to each other reach a fixed point, so both
@@ -195,7 +240,44 @@ func TestInferYieldFrom(t *testing.T) {
 				gen fn b() { yield "x" yield from a() }
 			`,
 			binding: "a",
-			want:    `fn () -> Generator<1 | "x", undefined, never>`,
+			want:    `fn () -> Generator<1 | "x", undefined, unknown>`,
+		},
+		{
+			// Delegating forwards a sent value into the delegate, so the delegator can
+			// only accept what the delegate accepts. Its inferred Next is the
+			// delegate's rather than the `unknown` a non-delegating body gets.
+			name: "DelegationNarrowsTheInferredNext",
+			src: `
+				gen fn g() -> Generator<number, string, string> { yield 1 return "r" }
+				gen fn f() { return yield from g() }
+			`,
+			want: `fn () -> Generator<number, string, string>`,
+		},
+		{
+			// Two delegates must both accept whatever reaches them, so the Next slots
+			// meet. No value is both a `string` and a `number`, so nothing can be sent
+			// into this generator. TODO(#927) is what leaves the meet rendered as
+			// `number & string` instead of collapsing it to `never`.
+			name: "TwoDelegatesMeetTheirNextSlots",
+			src: `
+				gen fn a() -> Generator<number, string, string> { yield 1 return "r" }
+				gen fn b() -> Generator<number, string, number> { yield 2 return "r" }
+				gen fn f() { yield from a() yield from b() }
+			`,
+			want: `fn () -> Generator<number, undefined, number & string>`,
+		},
+	})
+	runGenErrCases(t, []genErrCase{
+		{
+			// A declared Next is checked at the delegation instead of collected. A
+			// generator promising to accept anything cannot forward into one that
+			// accepts only strings.
+			name: "DeclaredNextMustReachTheDelegate",
+			src: `
+				gen fn g() -> Generator<number, string, string> { yield 1 return "r" }
+				gen fn f() -> Generator<number, string, unknown> { return yield from g() }
+			`,
+			wantErrs: []string{`3:63-3:77: cannot constrain unknown <: string`},
 		},
 	})
 	runGenErrCases(t, []genErrCase{
@@ -376,7 +458,7 @@ func TestInferGenRaises(t *testing.T) {
 			// annotation-less `async fn` infers its rejection.
 			name: "RaiseInferredIntoTheSlot",
 			src:  `gen fn f() { yield 1 throw "boom" }`,
-			want: `fn () -> Generator<1, never, never, "boom">`,
+			want: `fn () -> Generator<1, never, unknown, "boom">`,
 		},
 		{
 			// A written fourth argument seeds the sink, so each `throw` is checked
@@ -390,7 +472,7 @@ func TestInferGenRaises(t *testing.T) {
 			// arguments, the same suppression `Promise<T>` gets.
 			name: "NonRaisingGeneratorRendersThreeArgs",
 			src:  `gen fn f() { yield 1 }`,
-			want: `fn () -> Generator<1, undefined, never>`,
+			want: `fn () -> Generator<1, undefined, unknown>`,
 		},
 		{
 			// Obtaining a generator runs none of its body, so a clause-less caller needs
@@ -418,7 +500,7 @@ func TestInferGenRaises(t *testing.T) {
 				gen fn g() { yield 1 throw "boom" }
 				gen fn f() { yield from g() }
 			`,
-			want: `fn () -> Generator<1, undefined, never, "boom">`,
+			want: `fn () -> Generator<1, undefined, unknown, "boom">`,
 		},
 	})
 	runGenErrCases(t, []genErrCase{
@@ -460,8 +542,29 @@ func TestGeneratorSubtyping(t *testing.T) {
 			`,
 			want: `fn () -> Generator<number, string, never>`,
 		},
+		{
+			// Next is contravariant, so an inferred `unknown` in that slot satisfies
+			// every annotation. A generator nobody sends values to fills a binding that
+			// promises to accept a string.
+			name: "ContravariantNextAcceptsANarrowerAnnotation",
+			src: `
+				gen fn g() { yield 1 return "done" }
+				val f: fn () -> Generator<number, string, string> = g
+			`,
+			want: `fn () -> Generator<number, string, string>`,
+		},
 	})
 	runGenErrCases(t, []genErrCase{
+		{
+			// The reverse direction is rejected. A generator whose body reads its sent
+			// value as a string cannot fill a binding that lets callers send anything.
+			name: "ContravariantNextRejectsAWiderAnnotation",
+			src: `
+				gen fn g() -> Generator<number, string, string> { yield 1 return "x" }
+				val f: fn () -> Generator<number, string, unknown> = g
+			`,
+			wantErrs: []string{`3:58-3:59: cannot constrain unknown <: string`},
+		},
 		{
 			name: "YieldSlotMismatchAtUse",
 			src: `
@@ -478,7 +581,7 @@ func TestGeneratorSubtyping(t *testing.T) {
 			`,
 			// The yield slot renders in describe's raw mid-constrain form, so g's
 			// still-unsolved yield variable shows as `t4`.
-			wantErrs: []string{"3:62-3:63: cannot constrain Generator<t4, true, never> <: AsyncGenerator<number, boolean, never>"},
+			wantErrs: []string{"3:62-3:63: cannot constrain Generator<t4, true, unknown> <: AsyncGenerator<number, boolean, never>"},
 		},
 	})
 }
@@ -513,7 +616,7 @@ func TestInferGenWithoutYieldWarns(t *testing.T) {
 	values, _, errs := inferSource(t, `gen fn f() { return "done" }`)
 	require.Len(t, errs, 1)
 	require.True(t, isWarning(errs[0]))
-	require.Equal(t, `fn () -> Generator<never, "done", never>`, values["f"])
+	require.Equal(t, `fn () -> Generator<never, "done", unknown>`, values["f"])
 
 	// A body that yields reports nothing at all.
 	_, _, yielding := inferSource(t, `gen fn f() { yield 1 }`)

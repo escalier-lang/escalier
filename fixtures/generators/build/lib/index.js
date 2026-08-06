@@ -11,6 +11,22 @@ export function* countWithDone() {
   yield 2;
   return "done";
 }
+export function drive() {
+  const it = count();
+  return it.next();
+}
+export function* resumable() {
+  const sent = yield 1;
+  return sent;
+}
+export function driveResumable() {
+  const it = resumable();
+  return it.next("go");
+}
+export function driveWithValue() {
+  const it = count();
+  return it.next("resume");
+}
 export async function* fetchItems() {
   yield 1;
   yield 2;
@@ -43,6 +59,9 @@ export function* outer() {
 }
 export function outerArray() {
   return [...outer()];
+}
+export function* relayResumable() {
+  yield* resumable();
 }
 export function sumOuter() {
   let total = 0;

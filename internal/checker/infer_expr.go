@@ -641,6 +641,21 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						ctx.AddYieldedType(elementType)
 					}
 
+					// Delegation forwards whatever a caller sends into the delegate, so
+					// this generator can only accept what the delegate accepts. A
+					// declared TNext is checked against the delegate's here, at the
+					// delegation. An inferred one is collected instead, and
+					// inferFuncBodyWithFuncSigType meets everything collected to get a
+					// TNext narrow enough for every delegate.
+					if delegateNext := delegatedNextType(valueType); delegateNext != nil {
+						if ctx.GeneratorNextType != nil {
+							sendErrors := c.Unify(ctx, ctx.GeneratorNextType, delegateNext)
+							errors = slices.Concat(errors, sendErrors)
+						} else {
+							ctx.AddDelegatedNextType(delegateNext)
+						}
+					}
+
 					// The yield from expression evaluates to TReturn of the delegated iterator
 					delegatedReturnType := c.GetIteratorReturnType(ctx, valueType)
 					if delegatedReturnType == nil {
@@ -660,14 +675,24 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					ctx.AddYieldedType(type_system.NewUndefinedType(provenance))
 				}
 
-				// The yield expression evaluates to TNext (value passed to .next()).
-				// Currently GeneratorNextType is always nil (see Context definition),
-				// so yield always evaluates to never. This is fine because most
-				// generators are consumed via for...in, not manual .next(value).
+				// A yield expression evaluates to TNext, the value a caller sends in
+				// through `.next(v)`. GeneratorNextType carries a declared TNext and is
+				// nil when TNext is inferred. Inference puts `unknown` in that slot, so
+				// in an unannotated generator `val x = yield 1` binds x to `unknown`.
+				//
+				// A declared TNext is copied because inferExpr stamps this expression's
+				// provenance onto whatever it returns. The declared type is one object
+				// shared with the signature's Generator, so returning it directly would
+				// leave the annotation blaming the body's last `yield`. A TypeVar keeps
+				// its identity instead, so a TNext the body still has to solve stays
+				// connected to the signature.
 				if ctx.GeneratorNextType != nil {
 					exprType = ctx.GeneratorNextType
+					if _, isTypeVar := type_system.Prune(exprType).(*type_system.TypeVarType); !isTypeVar {
+						exprType = exprType.Copy()
+					}
 				} else {
-					exprType = type_system.NewNeverType(provenance)
+					exprType = type_system.NewUnknownType(provenance)
 				}
 			}
 		}
@@ -1187,6 +1212,62 @@ func (c *Checker) instantiateGenericFunc(fnType *type_system.FuncType) *type_sys
 	return result
 }
 
+// restTupleCandidates reports the parameter lists a rest argument list could be checked
+// against when the rest parameter is a tuple rather than an `Array<T>`. TypeScript's
+// declaration files use that form to fix a variadic signature's arity per call, the way
+// `Generator.next`'s `next(...args: [] | [TNext])` does. Each returned list holds
+// argCount types, so a union contributes every branch of that length and
+// pickRestTupleCandidate chooses among them. Returning none leaves the caller to raise
+// InvalidNumberOfArgumentsError.
+func restTupleCandidates(restType type_system.Type, argCount int) [][]type_system.Type {
+	fixedTupleElems := func(t type_system.Type) ([]type_system.Type, bool) {
+		tuple, isTuple := type_system.Prune(t).(*type_system.TupleType)
+		if !isTuple || len(tuple.Elems) != argCount {
+			return nil, false
+		}
+		for _, elem := range tuple.Elems {
+			if _, isSpread := type_system.Prune(elem).(*type_system.RestSpreadType); isSpread {
+				return nil, false
+			}
+		}
+		return tuple.Elems, true
+	}
+
+	branches := []type_system.Type{restType}
+	if union, isUnion := type_system.Prune(restType).(*type_system.UnionType); isUnion {
+		branches = union.Types
+	}
+	candidates := [][]type_system.Type{}
+	for _, branch := range branches {
+		if elems, ok := fixedTupleElems(branch); ok {
+			candidates = append(candidates, elems)
+		}
+	}
+	return candidates
+}
+
+// pickRestTupleCandidate chooses which of restTupleCandidates' lists the rest arguments
+// are checked against. The first list every argument already satisfies wins, so
+// `pick("x")` against `[string] | [number]` picks `[string]`. The queries go through
+// Check, so a losing candidate commits no inference, and an argument still typed as an
+// unbound variable matches nothing. When no list matches, the first is returned so the
+// caller's unification reports a type error rather than a bare arity complaint.
+func (c *Checker) pickRestTupleCandidate(ctx Context, candidates [][]type_system.Type, argTypes []type_system.Type) []type_system.Type {
+	for _, candidate := range candidates {
+		matches := true
+		for i, paramType := range candidate {
+			if !c.Check(ctx, argTypes[i], paramType) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return candidate
+		}
+	}
+	return candidates[0]
+}
+
 func (c *Checker) handleFuncCall(
 	ctx Context,
 	fnType *type_system.FuncType,
@@ -1250,6 +1331,7 @@ func (c *Checker) handleFuncCall(
 		// Unify rest arguments with rest parameter type
 		if len(expr.Args) > restIndex {
 			restParam := fnType.Params[restIndex]
+			restArgCount := len(expr.Args) - restIndex
 			if arrayType, ok := restParam.Type.(*type_system.TypeRefType); ok && type_system.QualIdentToString(arrayType.Name) == "Array" && len(arrayType.TypeArgs) > 0 {
 				elementType := arrayType.TypeArgs[0]
 				for i := restIndex; i < len(expr.Args); i++ {
@@ -1258,6 +1340,21 @@ func (c *Checker) handleFuncCall(
 						argType = c.instantiateGenericFunc(ft)
 					}
 					paramErrors := c.Unify(ctx, argType, elementType)
+					errors = slices.Concat(errors, paramErrors)
+				}
+			} else if candidates := restTupleCandidates(restParam.Type, restArgCount); len(candidates) > 0 {
+				// Instantiate before choosing a candidate so the speculative queries
+				// and the committing unification see the same argument types.
+				restArgTypes := make([]type_system.Type, restArgCount)
+				for i := range restArgTypes {
+					argType := argTypes[restIndex+i]
+					if ft, ok := argType.(*type_system.FuncType); ok && (len(ft.TypeParams) > 0 || len(ft.LifetimeParams) > 0) {
+						argType = c.instantiateGenericFunc(ft)
+					}
+					restArgTypes[i] = argType
+				}
+				for i, elemType := range c.pickRestTupleCandidate(ctx, candidates, restArgTypes) {
+					paramErrors := c.Unify(ctx, restArgTypes[i], elemType)
 					errors = slices.Concat(errors, paramErrors)
 				}
 			} else {

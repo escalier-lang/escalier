@@ -184,7 +184,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<mut 'a {x: number}, undefined, never>",
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<mut 'a {x: number}, undefined, unknown>",
 			},
 		},
 		"GeneratorReturnAliasParam": {
@@ -240,6 +240,10 @@ func TestInferLifetimeTypes(t *testing.T) {
 			// parameter's lifetime — every value yielded through the
 			// delegate borrows from iter, so its lifetime is bounded
 			// by iter's.
+			//
+			// The delegation also fixes relay's own TNext. Sending a
+			// value into relay forwards it to g, which declares TNext
+			// as `never`, so relay accepts nothing either.
 			input: `
 				fn relay(g: Generator<mut {x: number}, undefined, never>) {
 					yield from g
@@ -261,7 +265,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"iter": "fn <'a>(p: mut 'a {x: number}) -> AsyncGenerator<mut 'a {x: number}, undefined, never>",
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> AsyncGenerator<mut 'a {x: number}, undefined, unknown>",
 			},
 		},
 		"GeneratorYieldEscapingReturnAliasing": {
