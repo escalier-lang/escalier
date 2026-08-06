@@ -524,7 +524,7 @@ func TestMutuallyRecursiveGenericClassesResolve(t *testing.T) {
 		class Tail<T> { node: Node<T> }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "<T0> {new (value: T0, tail: Tail<T0>) -> Node<T0>}", values["Node"])
+	require.Equal(t, "<T> {new (value: T, tail: Tail<T>) -> Node<T>}", values["Node"])
 }
 
 // TestClassArityAcrossMixedComponent covers a dep_graph component holding both sorts of key. A

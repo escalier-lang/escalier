@@ -673,6 +673,19 @@ func TestPrintScheme(t *testing.T) {
 		require.Equal(t, "fn <T0, U>(x: U, y: T0) -> [U, T0]", PrintAsScheme(ty))
 	})
 
+	t.Run("a generated name skips a source name from the same alphabet", func(t *testing.T) {
+		t0 := &TypeVarType{ID: 10, Level: 2}   // a parameter the source wrote as T0
+		free := &TypeVarType{ID: 20, Level: 1} // a captured scheme variable
+		// fn <T0>(x: T0, y: free) -> [T0, free]: naming free T0 as well would put two binders
+		// under one name, so the generated alphabet skips to T1.
+		ty := &FuncType{
+			TypeParams: []*TypeParam{{Name: "T0", Var: t0}},
+			Params:     []*FuncParam{identP("x", t0), identP("y", free)},
+			Ret:        &TupleType{Elems: []Type{t0, free}},
+		}
+		require.Equal(t, "fn <T1, T0>(x: T0, y: T1) -> [T0, T1]", PrintAsScheme(ty))
+	})
+
 	t.Run("distinct vars are named by first appearance", func(t *testing.T) {
 		a := &TypeVarType{ID: 1, Level: 1}
 		b := &TypeVarType{ID: 2, Level: 1}
@@ -745,8 +758,145 @@ func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
 		Params: []*FuncParam{identP("x", param)},
 		Ret:    &TupleType{Elems: []Type{param, leaked}},
 	}
-	got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 }, nil)
+	got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 }, nil, nil)
 	require.Equal(t, "fn <T0>(x: T0) -> [T0, t99]", got)
+}
+
+// A class, alias, or enum keeps its type parameters outside the type it binds, so
+// PrintAsSchemeWith renders them under their source names only when the caller passes them as
+// declared. The cases below build the shape a class VALUE binding takes: an object holding
+// the constructor, whose free variables are the class's own parameters.
+//
+// quantified is the predicate renderScheme uses for a generalized binding — a variable
+// deeper than the binding's level is one generalization quantified.
+func TestPrintSchemeDeclaredNames(t *testing.T) {
+	quantified := func(v *TypeVarType) bool { return v.Level > 1 }
+
+	t.Run("a class parameter renders under its source name", func(t *testing.T) {
+		// class Node<T> { value: T, tail: Node<T> }
+		tv := &TypeVarType{ID: 0, Level: 2}
+		node := &ClassType{Name: "Node", TypeArgs: []Type{tv}}
+		obj := ctorObj(&FuncType{
+			Params: []*FuncParam{identP("value", tv), identP("tail", node)},
+			Ret:    node,
+		})
+		got := PrintAsSchemeWith(obj, quantified, nil, []*TypeParam{{Name: "T", Var: tv}})
+		require.Equal(t, "<T> {new (value: T, tail: Node<T>) -> Node<T>}", got)
+	})
+
+	t.Run("binders follow declaration order, not first appearance", func(t *testing.T) {
+		// class Pair<K, V> { …, constructor(mut self, v: V, k: K) { … } }. The constructor
+		// takes v first, so first appearance would order the binders V, K.
+		k := &TypeVarType{ID: 0, Level: 2}
+		v := &TypeVarType{ID: 1, Level: 2}
+		pair := &ClassType{Name: "Pair", TypeArgs: []Type{k, v}}
+		obj := ctorObj(&FuncType{
+			Params: []*FuncParam{identP("v", v), identP("k", k)},
+			Ret:    pair,
+		})
+		got := PrintAsSchemeWith(obj, quantified, nil,
+			[]*TypeParam{{Name: "K", Var: k}, {Name: "V", Var: v}})
+		require.Equal(t, "<K, V> {new (v: V, k: K) -> Pair<K, V>}", got)
+	})
+
+	t.Run("a generated name skips one the source already wrote", func(t *testing.T) {
+		// class C<T0> declares the name the generated alphabet starts at, so the undeclared
+		// variable beside it takes T1.
+		declared := &TypeVarType{ID: 0, Level: 2}
+		extra := &TypeVarType{ID: 1, Level: 2}
+		obj := ctorObj(&FuncType{
+			Params: []*FuncParam{identP("a", declared), identP("b", extra)},
+			Ret:    &ClassType{Name: "C", TypeArgs: []Type{declared}},
+		})
+		got := PrintAsSchemeWith(obj, quantified, nil, []*TypeParam{{Name: "T0", Var: declared}})
+		require.Equal(t, "<T0, T1> {new (a: T0, b: T1) -> C<T0>}", got)
+	})
+
+	t.Run("a variable the predicate rejects keeps the leak anchor", func(t *testing.T) {
+		// A source name does not mask a variable coalescing failed to inline: leaked is
+		// declared, but the predicate rejects it, so it renders as t99 rather than as E.
+		tv := &TypeVarType{ID: 0, Level: 2}
+		leaked := &TypeVarType{ID: 99, Level: 0}
+		obj := ctorObj(&FuncType{
+			Params: []*FuncParam{identP("a", tv), identP("b", leaked)},
+			Ret:    &ClassType{Name: "C", TypeArgs: []Type{tv}},
+		})
+		got := PrintAsSchemeWith(obj, quantified, nil,
+			[]*TypeParam{{Name: "T", Var: tv}, {Name: "E", Var: leaked}})
+		require.Equal(t, "<T> {new (a: T, b: t99) -> C<T>}", got)
+	})
+
+	t.Run("a method parameter shadowing the class's stays distinct", func(t *testing.T) {
+		// class Shadow<T> { v: T, m<T>(x: T) -> T }. The class's T holds the source name, so
+		// the method's own parameter renders under a suffixed one and the two never collide.
+		outer := &TypeVarType{ID: 0, Level: 2}
+		inner := &TypeVarType{ID: 1, Level: 3}
+		obj := &ObjectType{Elems: []ObjTypeElem{
+			&PropertyElem{Name: "v", Type: outer},
+			&MethodElem{Name: "m", Signatures: []*FuncType{{
+				TypeParams: []*TypeParam{{Name: "T", Var: inner}},
+				Params:     []*FuncParam{identP("x", inner)},
+				Ret:        outer,
+			}}},
+		}}
+		got := PrintAsSchemeWith(obj, quantified, nil, []*TypeParam{{Name: "T", Var: outer}})
+		require.Equal(t, "<T> {v: T, m<T_2>(x: T_2) -> T}", got)
+	})
+}
+
+// A signature's own type parameters are visible only inside it, so two sibling signatures
+// each written `<T>` both render T. Without that scoping the second would be renamed to avoid
+// the first, which shares no scope with it.
+func TestPrintSiblingSignaturesReuseOneName(t *testing.T) {
+	a := &TypeVarType{ID: 1, Level: 2}
+	b := &TypeVarType{ID: 2, Level: 2}
+	obj := &ObjectType{Elems: []ObjTypeElem{&MethodElem{Name: "m", Signatures: []*FuncType{
+		{TypeParams: []*TypeParam{{Name: "T", Var: a}}, Params: []*FuncParam{identP("x", a)}, Ret: a},
+		{TypeParams: []*TypeParam{{Name: "T", Var: b}}, Params: []*FuncParam{identP("y", b)}, Ret: b},
+	}}}}
+	require.Equal(t, "{m<T>(x: T) -> T; m<T>(y: T) -> T}", Print(obj))
+}
+
+// PrintWithParams is the plain-Print path for a TYPE binding, which carries no quantifier
+// prefix to hang names on. `class Node<T>` binds the type Node<t0>; handing over the class's
+// parameters renders it Node<T>.
+func TestPrintWithParams(t *testing.T) {
+	tv := &TypeVarType{ID: 0, Level: 2}
+	declared := []*TypeParam{{Name: "T", Var: tv}}
+
+	t.Run("a class instance names its argument", func(t *testing.T) {
+		got := PrintWithParams(&ClassType{Name: "Node", TypeArgs: []Type{tv}}, declared)
+		require.Equal(t, "Node<T>", got)
+	})
+
+	t.Run("an alias body names the variable it holds", func(t *testing.T) {
+		// The rendered form of `type Alias<T> = {v: T}`, whose binding shows the body rather
+		// than the opaque alias name.
+		body := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "v", Type: tv}}}
+		require.Equal(t, "{v: T}", PrintWithParams(body, declared))
+	})
+
+	t.Run("an enum names its variants' arguments", func(t *testing.T) {
+		// The rendered form of `enum Opt<T> { Some(v: T), None }`, whose binding is the union
+		// of the variant handles.
+		body := &UnionType{Types: []Type{
+			&ClassType{Name: "Opt.Some", TypeArgs: []Type{tv}, Variant: true},
+			&ClassType{Name: "Opt.None", TypeArgs: []Type{tv}, Variant: true},
+		}}
+		require.Equal(t, "Opt.Some<T> | Opt.None<T>", PrintWithParams(body, declared))
+	})
+
+	t.Run("an undeclared variable keeps the raw debug form", func(t *testing.T) {
+		other := &TypeVarType{ID: 42, Level: 2}
+		got := PrintWithParams(&ClassType{Name: "Node", TypeArgs: []Type{other}}, declared)
+		require.Equal(t, "Node<t42>", got)
+	})
+}
+
+// ctorObj wraps a constructor signature in the object a class value binds to, the
+// `{new (…) -> C}` shape classValue builds in internal/solver.
+func ctorObj(fn *FuncType) *ObjectType {
+	return &ObjectType{Elems: []ObjTypeElem{&ConstructorElem{Fn: fn}}}
 }
 
 // PrintElided renders a type like Print but stops at maxDepth, standing in ElisionMark for every

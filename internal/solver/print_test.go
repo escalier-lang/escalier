@@ -22,3 +22,68 @@ func TestMultiBoundRenders(t *testing.T) {
 	got := soltype.Print(coalesce(a, soltype.Positive))
 	require.Equal(t, "number | string", got)
 }
+
+// A class, alias, or enum keeps its type parameters in the Context registry rather than in
+// the type it binds, so a binding renders them under the names the source wrote only when the
+// registry is consulted. These cover both binding sorts end to end, from Escalier source
+// through inference to the rendered string.
+func TestBindingsRenderSourceTypeParamNames(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		wantValues map[string]string
+		wantTypes  map[string]string
+	}{
+		{
+			name:       "ClassNamesItsOwnParameter",
+			src:        `class Node<T> { value: T, tail: Node<T> }`,
+			wantValues: map[string]string{"Node": "<T> {new (value: T, tail: Node<T>) -> Node<T>}"},
+			wantTypes:  map[string]string{"Node": "Node<T>"},
+		},
+		{
+			// The constructor takes v before k, so first appearance would order the binders
+			// V, K. The prefix follows the `<K, V>` clause the declaration wrote instead.
+			name: "ClassBindersFollowDeclarationOrder",
+			src: `
+				class Pair<K, V> {
+					k: K,
+					v: V,
+					constructor(mut self, v: V, k: K) {
+						self.v = v
+						self.k = k
+					},
+				}
+			`,
+			wantValues: map[string]string{"Pair": "<K, V> {new (v: V, k: K) -> Pair<K, V>}"},
+			wantTypes:  map[string]string{"Pair": "Pair<K, V>"},
+		},
+		{
+			name:       "AliasNamesItsOwnParameter",
+			src:        `type Alias<T> = {v: T}`,
+			wantValues: map[string]string{},
+			wantTypes:  map[string]string{"Alias": "{v: T}"},
+		},
+		{
+			name:       "EnumNamesItsOwnParameter",
+			src:        `enum Opt<T> { Some(v: T), None }`,
+			wantValues: map[string]string{},
+			wantTypes:  map[string]string{"Opt": "Opt.Some<T> | Opt.None<T>"},
+		},
+		{
+			// The regression guard on the path that already names its parameters: a FuncType
+			// carries its own TypeParams, so the printer reads the names off the type.
+			name:       "FunctionKeepsItsOwnParameter",
+			src:        `fn identity<T>(x: T) -> T { return x }`,
+			wantValues: map[string]string{"identity": "fn <T>(x: T) -> T"},
+			wantTypes:  map[string]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, types, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.wantValues, values)
+			require.Equal(t, tt.wantTypes, types)
+		})
+	}
+}

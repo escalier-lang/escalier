@@ -71,23 +71,29 @@ func inferModule(module *ast.Module) (values, types map[string]string, errs []So
 			values[name] = soltype.Print(&soltype.IntersectionType{Types: arms})
 			continue
 		}
-		// PR1: an ordinary binding holds exactly one scheme; renderScheme adds the
-		// <T0, …> quantifier prefix when generalization left type parameters behind.
-		values[name] = renderScheme(b.Schemes[0])
+		// PR1: an ordinary binding holds exactly one scheme; renderValueBinding adds the
+		// quantifier prefix when generalization left type parameters behind, naming each
+		// one the declaration wrote under its source name.
+		values[name] = c.renderValueBinding(b.Schemes[0])
 	}
 	// A type-alias binding renders as its definition body, not its opaque name, so a test
 	// asserts the structure the alias stands for. `type Point = {x: number}` shows
 	// `{x: number}`, not `Point`. Every other type binding, including a nominal class,
 	// renders as itself.
+	//
+	// The alias's own type parameters are read off the handle before the body replaces it,
+	// since the body carries their variables but not their names: `type Alias<T> = {v: T}`
+	// shows `{v: T}`.
 	types = make(map[string]string, len(scope.types))
 	for name, b := range scope.types {
 		ty := b.Type
+		params := c.declaredTypeParams(ty)
 		if alias, ok := ty.(*soltype.AliasType); ok {
 			if def, ok := c.ctx.aliasDef(alias.Name); ok {
 				ty = def.Body
 			}
 		}
-		types[name] = soltype.Print(ty)
+		types[name] = soltype.PrintWithParams(ty, params)
 	}
 	return values, types, c.errs
 }
