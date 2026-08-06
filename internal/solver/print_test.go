@@ -77,6 +77,21 @@ func TestBindingsRenderSourceTypeParamNames(t *testing.T) {
 			wantValues: map[string]string{"identity": "fn <T>(x: T) -> T"},
 			wantTypes:  map[string]string{},
 		},
+		{
+			// Binding the class value again instantiates it, which freshens the variable
+			// standing for T. The name is read off the argument position rather than matched
+			// on the declaration's own variable, so both bindings render alike.
+			name: "AnInstantiatedClassValueKeepsTheName",
+			src: `
+				class Box<T> { value: T }
+				val Alias = Box
+			`,
+			wantValues: map[string]string{
+				"Box":   "<T> {new (value: T) -> Box<T>}",
+				"Alias": "<T> {new (value: T) -> Box<T>}",
+			},
+			wantTypes: map[string]string{"Box": "Box<T>"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
