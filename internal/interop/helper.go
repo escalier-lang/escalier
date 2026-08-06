@@ -68,7 +68,7 @@ func convertParam(p *dts_parser.Param) (*ast.Param, error) {
 	var typeAnn ast.TypeAnn
 	if p.Type != nil {
 		var err error
-		typeAnn, err = convertTypeAnn(p.Type)
+		typeAnn, err = convertParamTypeAnn(p.Type)
 		if err != nil {
 			return nil, fmt.Errorf("converting parameter type: %w", err)
 		}
@@ -79,6 +79,25 @@ func convertParam(p *dts_parser.Param) (*ast.Param, error) {
 		Optional: p.Optional,
 		TypeAnn:  typeAnn,
 	}, nil
+}
+
+// convertParamTypeAnn converts a parameter's type annotation. A `void` parameter accepts
+// no useful argument in TypeScript, which rejects every call that passes a value. `never`
+// is the Escalier type with no values, so it rejects the same calls.
+//
+// One behavior is deliberately not carried over. TypeScript lets a `void` parameter go
+// unsupplied, so `f()` is legal for `declare function f(x: void)`, while a `never`
+// parameter is still required and makes that call an arity error. Marking the parameter
+// optional as well would reproduce it. The shape does not occur in the pinned TypeScript
+// corpus, whose only non-return `void` is the `declare const name: void` global.
+//
+// A `void` in any other input position lowers to `undefined` through convertTypeAnn, and a
+// return lowers to `unknown` through convertReturnTypeAnn.
+func convertParamTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
+	if prim, ok := ta.(*dts_parser.PrimitiveType); ok && prim.Kind == dts_parser.PrimVoid {
+		return ast.NewNeverTypeAnn(prim.Span()), nil
+	}
+	return convertTypeAnn(ta)
 }
 
 // convertExpr converts a dts_parser.Expr to an ast.Expr
