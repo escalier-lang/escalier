@@ -61,6 +61,9 @@ func InferScript(script *ast.Script) (*Scope, *Info, []SolverError) {
 	// here too. With the whole body walked, replay the recorded reads against the
 	// consumed lattice to report use-after-move.
 	c.checkUseAfterMoves()
+	// Every function expression the script wrote has been typed, so each one's return type is
+	// final. Report each function whose return type no finite value inhabits.
+	c.checkCanReturn()
 
 	return scope, c.info, c.errs
 }

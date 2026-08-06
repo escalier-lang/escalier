@@ -456,6 +456,11 @@ func (c *checker) inferComponent(
 		}
 	}
 
+	// Every body in the component has been walked, so a cycle running through two of its bindings
+	// is closed and coalescing a return type now yields the μ-knot that cycle implies. Report each
+	// function in the component whose return type no finite value inhabits.
+	c.checkCanReturn()
+
 	// Phase 3: rebind each value name to its coalesced monomorphic type. A binding
 	// whose declarations all failed to produce a definition (missing initializer,
 	// destructuring, unsupported kind) is removed rather than left as a `never`

@@ -107,6 +107,13 @@ type checker struct {
 	// runDeferredArgBounds once every body in the component is filled.
 	deferredArgBounds []deferredArgBound
 
+	// pendingReturns holds every body-carrying function inferFunc has typed since the last
+	// checkCanReturn, each waiting to have its return type checked for a finite inhabitant. The
+	// check is queued rather than run on the spot because a mutually-recursive group closes its
+	// cycle only once every body in it has been walked, so the μ-knot the check reads does not
+	// exist yet when the first body finishes.
+	pendingReturns []pendingReturn
+
 	// classShells holds the type parameters and declaration scope preBindClassTypeParams
 	// resolved for a class, keyed by its declaration. inferClassDecl reuses the entry rather
 	// than minting a second, unrelated set of parameter vars. A script class has no pre-pass,

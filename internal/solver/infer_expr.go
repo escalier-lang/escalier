@@ -514,6 +514,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// re-minted by coalescing at binding time, so the entry is exact for inline
 	// callees; M3's FromInstantiation makes named-callee blame precise.)
 	c.recordProv(ft, node, FuncInference)
+	// Queue the return type for the finite-inhabitant check. A `declare fn` adopts its annotation
+	// with no body to recurse through, so only a body-carrying function is queued. The check itself
+	// waits until the enclosing group's bound graph is complete, since a mutually-recursive knot is
+	// not tied until every body in the group has been walked.
+	if hasBody {
+		c.queueReturnCheck(node, ret)
+	}
 	// A body-carrying function must prove every lifetime bound its signature declares,
 	// so its bounds are checked against the inferred relation. A no-body `declare fn` has
 	// no body to prove them, so it lowers each declared bound into constrainLt instead.
