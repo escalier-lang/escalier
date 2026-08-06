@@ -166,8 +166,8 @@ type Context struct {
 	// value-copy keeps nested unifyInner calls in the same mode without
 	// any save/restore dance, and so that the field is structurally
 	// scoped to the query that turned it on.
-	QueryUnify bool
-	TypeRefsToUpdate       *Ref[[]*type_system.TypeRefType]
+	QueryUnify       bool
+	TypeRefsToUpdate *Ref[[]*type_system.TypeRefType]
 	// FileScopes maps SourceID to file-specific scope.
 	// Used for file-scoped imports in modules.
 	FileScopes map[int]*Scope
@@ -183,6 +183,14 @@ type Context struct {
 	// function. Nested functions allocate fresh pointers to isolate their state.
 	ContainsYield *bool
 	YieldedTypes  *[]type_system.Type
+	// DelegatedNextTypes collects the TNext of every iterator this body delegates to
+	// with `yield from`. Delegation forwards whatever a caller sends into the
+	// delegate, so an inferred TNext must be narrow enough for all of them, and
+	// inferFuncBodyWithFuncSigType meets the collected types to get it. It is a
+	// pointer for the same reason YieldedTypes is. Block scopes share one
+	// accumulator, so a delegation inside an if or a while reaches the enclosing
+	// function.
+	DelegatedNextTypes *[]type_system.Type
 	// GeneratorNextType is the TNext type for the current generator function.
 	// It controls what type a yield expression evaluates to. A return annotation
 	// naming a generator sets it to the declared TNext, so in
@@ -249,6 +257,12 @@ func (ctx *Context) AddYieldedType(t type_system.Type) {
 	}
 }
 
+func (ctx *Context) AddDelegatedNextType(t type_system.Type) {
+	if ctx.DelegatedNextTypes != nil {
+		*ctx.DelegatedNextTypes = append(*ctx.DelegatedNextTypes, t)
+	}
+}
+
 func (ctx *Context) WithNewScope() Context {
 	return Context{
 		Scope:                  ctx.Scope.WithNewScope(),
@@ -261,6 +275,7 @@ func (ctx *Context) WithNewScope() Context {
 		AwaitThrowTypes:        ctx.AwaitThrowTypes,
 		ContainsYield:          ctx.ContainsYield,
 		YieldedTypes:           ctx.YieldedTypes,
+		DelegatedNextTypes:     ctx.DelegatedNextTypes,
 		GeneratorNextType:      ctx.GeneratorNextType,
 		InFuncBody:             ctx.InFuncBody,
 		InConstructorBody:      ctx.InConstructorBody,
@@ -279,24 +294,25 @@ func (ctx *Context) WithNewScope() Context {
 // because callers manage those fields directly on the returned context.
 func (ctx *Context) WithNewScopeAndNamespace(ns *type_system.Namespace) Context {
 	return Context{
-		Scope:             ctx.Scope.WithNewScopeAndNamespace(ns),
-		IsAsync:           ctx.IsAsync,
-		IsPatMatch:        ctx.IsPatMatch,
-		FileScopes:        ctx.FileScopes,
-		Module:            ctx.Module,
-		AwaitThrowTypes:   ctx.AwaitThrowTypes,
-		ContainsYield:     ctx.ContainsYield,
-		YieldedTypes:      ctx.YieldedTypes,
-		GeneratorNextType: ctx.GeneratorNextType,
-		InFuncBody:        ctx.InFuncBody,
-		InConstructorBody: ctx.InConstructorBody,
-		CallSites:         ctx.CallSites,
-		CallSiteTypeVars:  ctx.CallSiteTypeVars,
-		Liveness:          ctx.Liveness,
-		Aliases:           ctx.Aliases,
-		StmtToRef:         ctx.StmtToRef,
-		VarIDNames:        ctx.VarIDNames,
-		CurrentStmt:       ctx.CurrentStmt,
+		Scope:              ctx.Scope.WithNewScopeAndNamespace(ns),
+		IsAsync:            ctx.IsAsync,
+		IsPatMatch:         ctx.IsPatMatch,
+		FileScopes:         ctx.FileScopes,
+		Module:             ctx.Module,
+		AwaitThrowTypes:    ctx.AwaitThrowTypes,
+		ContainsYield:      ctx.ContainsYield,
+		YieldedTypes:       ctx.YieldedTypes,
+		DelegatedNextTypes: ctx.DelegatedNextTypes,
+		GeneratorNextType:  ctx.GeneratorNextType,
+		InFuncBody:         ctx.InFuncBody,
+		InConstructorBody:  ctx.InConstructorBody,
+		CallSites:          ctx.CallSites,
+		CallSiteTypeVars:   ctx.CallSiteTypeVars,
+		Liveness:           ctx.Liveness,
+		Aliases:            ctx.Aliases,
+		StmtToRef:          ctx.StmtToRef,
+		VarIDNames:         ctx.VarIDNames,
+		CurrentStmt:        ctx.CurrentStmt,
 	}
 }
 
@@ -313,6 +329,7 @@ func (ctx *Context) WithScope(scope *Scope) Context {
 		AwaitThrowTypes:        ctx.AwaitThrowTypes,
 		ContainsYield:          ctx.ContainsYield,
 		YieldedTypes:           ctx.YieldedTypes,
+		DelegatedNextTypes:     ctx.DelegatedNextTypes,
 		GeneratorNextType:      ctx.GeneratorNextType,
 		InFuncBody:             ctx.InFuncBody,
 		InConstructorBody:      ctx.InConstructorBody,

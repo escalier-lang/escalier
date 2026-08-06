@@ -380,6 +380,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			c.fn.gen = true
 			c.fn.yields = gen.yields
 			c.fn.yieldNext = gen.next
+			c.fn.nextDeclared = gen.ann != nil
 		}
 		// M4 G1: run the liveness pre-pass before walking the body so mutability
 		// transitions are checked. It renames the body's variable nodes (writing the
@@ -405,6 +406,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		throws = c.fn.throws
 		raised = c.fn.raised
 		yielded = c.fn.yielded
+		if gen != nil {
+			gen.delegateNexts = c.fn.delegateNexts
+		}
 		collected := c.popFuncCtx(saved)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `undefined` a fall-through body
@@ -968,6 +972,9 @@ type genSinks struct {
 	yields soltype.Type
 	next   soltype.Type
 	ann    *soltype.GeneratorType
+	// delegateNexts is what the body's `yield from` operands accept, copied off the
+	// funcCtx before it is popped. wrapGenerator meets them to get the external Next.
+	delegateNexts []soltype.Type
 	// async records the signature's async-ness so wrapGenerator picks Generator or
 	// AsyncGenerator after popFuncCtx has already restored the enclosing context.
 	async bool
@@ -1033,9 +1040,19 @@ func (c *checker) genReturn(node ast.Node, gs *genSinks, retExprs []ast.Expr, bo
 // wrapGenerator mints the external generator face of a generator function and records
 // its provenance (GeneratorWrap) against the function node. A nil throws leaves the
 // Throws slot nil, the shorthand for a generator that cannot raise.
+//
+// Only an unannotated generator reaches here, so the Next slot is inferred. What the
+// body delegates to fixes it, since `yield from` forwards a sent value into the
+// delegate and so can only accept what the delegate accepts. A body with no delegation
+// puts no requirement on the slot and keeps gs.next, the `unknown` resolveGenSinks
+// seeded.
 func (c *checker) wrapGenerator(node ast.Node, gs *genSinks, bodyType, throws soltype.Type) soltype.Type {
+	next := c.meetNexts(gs.delegateNexts)
+	if next == nil {
+		next = gs.next
+	}
 	wrapped := &soltype.GeneratorType{
-		Yield: gs.yields, Ret: bodyType, Next: gs.next, Throws: throws, Async: gs.async,
+		Yield: gs.yields, Ret: bodyType, Next: next, Throws: throws, Async: gs.async,
 	}
 	c.recordProv(wrapped, node, GeneratorWrap)
 	return wrapped
@@ -2791,7 +2808,7 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 		// Delegating advances the delegate, so what it raises reaches this body's sink
 		// exactly as iterating it would.
 		c.constrainIterationRaise(e.Value, arg, lvl)
-		elem, res, ok := c.delegateElemType(arg)
+		elem, res, delegateNext, ok := c.delegateElemType(arg)
 		if !ok {
 			// A delegate with no structure is the recursive case: `gen fn f() { yield from
 			// f() }` reaches the delegation while f's own return is unsolved. State the
@@ -2816,6 +2833,18 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 			return t
 		}
 		c.constrain(e, elem, c.fn.yields)
+		// Delegating forwards whatever a caller sends into the delegate, so this body
+		// can only accept what the delegate accepts. A declared Next is checked against
+		// the delegate's here, at the delegation. An inferred one collects the
+		// delegate's instead, and inferFunc meets everything collected to get a Next
+		// narrow enough for every delegate.
+		if delegateNext != nil {
+			if c.fn.nextDeclared {
+				c.constrain(e, c.fn.yieldNext, delegateNext)
+			} else {
+				c.fn.delegateNexts = append(c.fn.delegateNexts, delegateNext)
+			}
+		}
 		c.recordType(e, res)
 		return res
 	}
@@ -2842,12 +2871,18 @@ func (c *checker) delegateIsUnsolved(t soltype.Type) bool {
 }
 
 // delegateElemType resolves what a `yield from` delegate hands back: the element type
-// its iteration yields, and the value the delegation evaluates to once the delegate is
-// exhausted. A generator forwards its Yield and Ret slots, and an async one is a legal
-// delegate only from an async generator body. A union resolves each branch the same way
-// and unions both results. Any other operand goes through syncElemType, where a tuple
-// carries no return value and so finishes with `undefined`.
-func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, bool) {
+// its iteration yields, the value the delegation evaluates to once the delegate is
+// exhausted, and the delegate's Next slot, which is what it accepts from a sent value.
+// A generator forwards its Yield, Ret, and Next slots, and an async one is a legal
+// delegate only from an async generator body. Any other operand goes through
+// syncElemType, where a tuple carries no return value and so finishes with `undefined`,
+// and no Next slot at all, reported as a nil third result.
+//
+// A union resolves each branch the same way. Yield and Ret are covariant, so those
+// results union. Next is contravariant and the delegation forwards into whichever
+// branch is live, so the Next results meet instead. Branches with no Next slot put no
+// requirement on the delegator and drop out of that meet.
+func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, soltype.Type, bool) {
 	carrier := soltype.CarrierOf(t)
 	// An inference-variable delegate is coalesced to its structural lower-bound shape,
 	// the same snapshot syncElemType takes before inspecting a variable operand.
@@ -2862,27 +2897,45 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 		// branches yield and return something unknown.
 		elems := make([]soltype.Type, 0, len(u.Types))
 		rets := make([]soltype.Type, 0, len(u.Types))
+		nexts := make([]soltype.Type, 0, len(u.Types))
 		for _, branch := range u.Types {
-			elem, ret, ok := c.delegateElemType(branch)
+			elem, ret, next, ok := c.delegateElemType(branch)
 			if !ok {
-				return nil, nil, false
+				return nil, nil, nil, false
 			}
 			elems = append(elems, elem)
 			rets = append(rets, ret)
+			if next != nil {
+				nexts = append(nexts, next)
+			}
 		}
-		return newUnion(c.ctx, elems, u.Inexact), newUnion(c.ctx, rets, u.Inexact), true
+		return newUnion(c.ctx, elems, u.Inexact), newUnion(c.ctx, rets, u.Inexact), c.meetNexts(nexts), true
 	}
 	if g, isGen := carrier.(*soltype.GeneratorType); isGen {
 		if g.Async && (c.fn == nil || !c.fn.async) {
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
-		return g.Yield, g.Ret, true
+		return g.Yield, g.Ret, g.Next, true
 	}
 	elem, ok := c.syncElemType(t)
 	if !ok {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
-	return elem, &soltype.UndefinedType{}, true
+	return elem, &soltype.UndefinedType{}, nil, true
+}
+
+// meetNexts combines the Next slots a generator must satisfy at once into the single
+// type its own Next slot carries. An empty list gives nil, which callers read as "no
+// requirement" and answer with their own default.
+func (c *checker) meetNexts(nexts []soltype.Type) soltype.Type {
+	switch len(nexts) {
+	case 0:
+		return nil
+	case 1:
+		return nexts[0]
+	default:
+		return newIntersection(c.ctx, nexts)
+	}
 }
 
 // inferIfElse types `if cond { cons } else { alt }`. The condition is

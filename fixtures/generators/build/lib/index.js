@@ -60,6 +60,9 @@ export function* outer() {
 export function outerArray() {
   return [...outer()];
 }
+export function* relayResumable() {
+  yield* resumable();
+}
 export function sumOuter() {
   let total = 0;
   for (const temp1 of outer()) {

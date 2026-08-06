@@ -794,6 +794,80 @@ func TestGeneratorNextCall(t *testing.T) {
 				"outer": "fn () -> Generator<number, fn () -> Generator<1, unknown, unknown>, string>",
 			},
 		},
+		"AliasedAnnotationDeclaresTheSendType": {
+			// An annotation may name the generator through an alias, so the alias is
+			// resolved before its TNext is read. Without that, `sent` would be the
+			// inferred `unknown` and returning it would not satisfy TReturn.
+			input: `
+				type G = Generator<number, string, string>
+				fn f() -> G {
+					val sent = yield 1
+					return sent
+				}
+			`,
+			wantTypes: map[string]string{"f": "fn () -> G"},
+		},
+		"GenericAliasedAnnotationDeclaresTheSendType": {
+			// Resolving the alias substitutes its type arguments, so a generic alias
+			// reads the N its use site supplied.
+			input: `
+				type G<N> = Generator<number, string, N>
+				fn f() -> G<string> {
+					val sent = yield 1
+					return sent
+				}
+			`,
+			wantTypes: map[string]string{"f": "fn () -> G<string>"},
+		},
+		"DelegationNarrowsTheInferredSendType": {
+			// `yield from` forwards a sent value into the delegate, so the delegating
+			// generator can only accept what the delegate accepts. Leaving TNext at
+			// `unknown` here would let a caller send a number into a body that typed
+			// it as a string.
+			input: `
+				gen fn inner() -> Generator<number, undefined, string> {
+					val sent = yield 1
+					return
+				}
+				gen fn outer() {
+					yield from inner()
+				}
+				val it: mut Generator<number, undefined, string> = outer()
+				val rejected = it.next(42)
+			`,
+			wantTypes: map[string]string{
+				"outer": "fn () -> Generator<number, undefined, string>",
+			},
+			wantErrors: []string{"42 cannot be assigned to string"},
+		},
+		"DelegationLeavesANonGeneratorIterableAlone": {
+			// An array's iterator ignores sent values, so delegating to one puts no
+			// requirement on the slot and TNext stays `unknown`.
+			input: `
+				gen fn outer() {
+					declare val nums: Array<number>
+					yield from nums
+				}
+			`,
+			wantTypes: map[string]string{
+				"outer": "fn () -> Generator<number, undefined, unknown>",
+			},
+		},
+		"DeclaredSendTypeMustReachEveryDelegate": {
+			// A declared TNext is checked at the delegation rather than collected. A
+			// generator promising to accept anything cannot forward into one that
+			// accepts only strings.
+			input: `
+				gen fn inner() -> Generator<number, undefined, string> {
+					val sent = yield 1
+					return
+				}
+				gen fn outer() -> Generator<number, undefined, unknown> {
+					yield from inner()
+				}
+			`,
+			wantErrors: []string{"unknown cannot be assigned to string"},
+		},
 		"NeverSendTypeRejectsEverySentValue": {
 			// `never` is uninhabited, so a generator declaring it cannot be sent
 			// anything. This is what an inferred TNext of `never` would impose on
@@ -814,6 +888,29 @@ func TestGeneratorNextCall(t *testing.T) {
 			wantErrors: []string{
 				`Invalid number of arguments for function: fn (...value: [] | [string]) -> IteratorResult<number, string>. Expected: 1, got: 2`,
 			},
+		},
+		"BranchesOfEqualArityResolveByArgumentType": {
+			// `next`'s `[] | [TNext]` has one branch per arity, but a rest parameter
+			// may offer several of the same length. Each argument picks the branch it
+			// satisfies rather than making the call ambiguous.
+			input: `
+				declare fn pick(...args: [string] | [number]) -> boolean
+				val fromFirst = pick("x")
+				val fromSecond = pick(42)
+			`,
+			wantTypes: map[string]string{
+				"fromFirst":  "boolean",
+				"fromSecond": "boolean",
+			},
+		},
+		"NoBranchAcceptsTheArgument": {
+			// An argument no branch accepts reports the type it failed against, not a
+			// bare arity complaint that would read as "Expected: 1, got: 1".
+			input: `
+				declare fn pick(...args: [string] | [number]) -> boolean
+				val r = pick(true)
+			`,
+			wantErrors: []string{"true cannot be assigned to string"},
 		},
 	}
 

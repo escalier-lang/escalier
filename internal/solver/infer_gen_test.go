@@ -161,7 +161,7 @@ func TestInferYieldFrom(t *testing.T) {
 					return yield from g
 				}
 			`,
-			want: `fn (g: Generator<number, string, never> | Generator<boolean, number, never>) -> Generator<number | boolean, number | string, unknown>`,
+			want: `fn (g: Generator<number, string, never> | Generator<boolean, number, never>) -> Generator<number | boolean, number | string, never>`,
 		},
 		{
 			// A tuple branch carries no return value, so it contributes `undefined` to
@@ -172,7 +172,7 @@ func TestInferYieldFrom(t *testing.T) {
 					return yield from g
 				}
 			`,
-			want: `fn (g: [boolean] | Generator<number, string, never>) -> Generator<number | boolean, string | undefined, unknown>`,
+			want: `fn (g: [boolean] | Generator<number, string, never>) -> Generator<number | boolean, string | undefined, never>`,
 		},
 		{
 			// An async generator is a legal delegate from an async generator body, and a
@@ -183,7 +183,7 @@ func TestInferYieldFrom(t *testing.T) {
 					return yield from g
 				}
 			`,
-			want: `fn (g: AsyncGenerator<number, string, never> | AsyncGenerator<boolean, number, never>) -> AsyncGenerator<number | boolean, number | string, unknown>`,
+			want: `fn (g: AsyncGenerator<number, string, never> | AsyncGenerator<boolean, number, never>) -> AsyncGenerator<number | boolean, number | string, never>`,
 		},
 		{
 			// Tree-walk delegation is the main use of `yield from`, so a generator
@@ -204,6 +204,43 @@ func TestInferYieldFrom(t *testing.T) {
 			`,
 			binding: "a",
 			want:    `fn () -> Generator<1 | "x", undefined, unknown>`,
+		},
+		{
+			// Delegating forwards a sent value into the delegate, so the delegator can
+			// only accept what the delegate accepts. Its inferred Next is the
+			// delegate's rather than the `unknown` a non-delegating body gets.
+			name: "DelegationNarrowsTheInferredNext",
+			src: `
+				gen fn g() -> Generator<number, string, string> { yield 1 return "r" }
+				gen fn f() { return yield from g() }
+			`,
+			want: `fn () -> Generator<number, string, string>`,
+		},
+		{
+			// Two delegates must both accept whatever reaches them, so the Next slots
+			// meet. No value is both a `string` and a `number`, so nothing can be sent
+			// into this generator. TODO(#927) is what leaves the meet rendered as
+			// `number & string` instead of collapsing it to `never`.
+			name: "TwoDelegatesMeetTheirNextSlots",
+			src: `
+				gen fn a() -> Generator<number, string, string> { yield 1 return "r" }
+				gen fn b() -> Generator<number, string, number> { yield 2 return "r" }
+				gen fn f() { yield from a() yield from b() }
+			`,
+			want: `fn () -> Generator<number, undefined, number & string>`,
+		},
+	})
+	runGenErrCases(t, []genErrCase{
+		{
+			// A declared Next is checked at the delegation instead of collected. A
+			// generator promising to accept anything cannot forward into one that
+			// accepts only strings.
+			name: "DeclaredNextMustReachTheDelegate",
+			src: `
+				gen fn g() -> Generator<number, string, string> { yield 1 return "r" }
+				gen fn f() -> Generator<number, string, unknown> { return yield from g() }
+			`,
+			wantErrs: []string{`3:63-3:77: cannot constrain unknown <: string`},
 		},
 	})
 	runGenErrCases(t, []genErrCase{

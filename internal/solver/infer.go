@@ -187,9 +187,19 @@ type funcCtx struct {
 	yields soltype.Type
 	// yieldNext is the type a `yield` expression evaluates to, the generator's Next
 	// slot: the value a caller passes back in through `next(v)`. inferFunc seeds it from
-	// the annotation, or to `never` when there is none, matching the old checker's
-	// TNext. Nil outside a generator body.
+	// the annotation's Next slot, or to `unknown` when there is none. Nil outside a
+	// generator body.
 	yieldNext soltype.Type
+	// nextDeclared records whether yieldNext came from the return annotation's Next slot
+	// rather than the inferred default. A `yield from` reads it to decide whether to
+	// CHECK the declared type against the delegate's Next or to collect the delegate's
+	// Next into delegateNexts for inference.
+	nextDeclared bool
+	// delegateNexts collects the Next slot of every generator this body delegates to
+	// with `yield from`, when Next is inferred. Delegation forwards a sent value into
+	// the delegate, so this body can only accept what all of its delegates accept, and
+	// inferFunc meets what is collected here to get the external Next.
+	delegateNexts []soltype.Type
 	// yielded records whether the body has a `yield` at all, which the sink cannot
 	// answer on its own: a body that never yields leaves the sink unconstrained, and so
 	// does one that yields `never`. inferFunc reads it to warn about a `gen` marker the

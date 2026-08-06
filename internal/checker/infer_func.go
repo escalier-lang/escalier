@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -327,6 +328,19 @@ const (
 
 func (m constructorBodyMode) isConstructor() bool { return m == constructorBody }
 
+// generatorTypeNames are the two type names a `gen fn` may name in its return
+// annotation. Both spell their send type as the third type argument.
+var generatorTypeNames = set.FromSlice([]string{"Generator", "AsyncGenerator"})
+
+// iteratorTypeNames are the stdlib types a `yield from` operand may name. Each takes
+// its send type as the third type argument, the same position `Generator` uses.
+var iteratorTypeNames = set.FromSlice([]string{
+	"Generator", "AsyncGenerator",
+	"Iterator", "AsyncIterator",
+	"Iterable", "AsyncIterable",
+	"IterableIterator", "AsyncIterableIterator",
+})
+
 // declaredGeneratorNextType reads the TNext type argument out of a return
 // annotation of the form `Generator<T, TReturn, TNext>` or
 // `AsyncGenerator<T, TReturn, TNext>`. Every other return type gives nil, which
@@ -334,15 +348,78 @@ func (m constructorBodyMode) isConstructor() bool { return m == constructorBody 
 // those, since a signature with no return annotation carries a fresh type
 // variable rather than a type reference.
 func declaredGeneratorNextType(returnType type_system.Type) type_system.Type {
-	typeRef, isTypeRef := type_system.Prune(returnType).(*type_system.TypeRefType)
-	if !isTypeRef || len(typeRef.TypeArgs) != 3 {
-		return nil
+	return nextTypeArg(returnType, generatorTypeNames)
+}
+
+// nextTypeArg reads the send type out of a type reference to one of `names`, all of
+// which take it as their third type argument. Anything else gives nil.
+//
+// A reference may reach the named type through an alias, as
+// `type G = Generator<number, string, string>` does, so a reference to some other
+// name is replaced by the type its alias stands for and inspected again.
+// Substituting the reference's type arguments along the way keeps a generic alias
+// such as `type G<N> = Generator<number, string, N>` reading its caller's N.
+// aliasHopLimit bounds the walk so an alias that refers to itself cannot spin.
+func nextTypeArg(t type_system.Type, names set.Set[string]) type_system.Type {
+	const aliasHopLimit = 16
+	current := t
+	for range aliasHopLimit {
+		typeRef, isTypeRef := type_system.Prune(current).(*type_system.TypeRefType)
+		if !isTypeRef {
+			return nil
+		}
+		if names.Contains(type_system.QualIdentToString(typeRef.Name)) {
+			if len(typeRef.TypeArgs) != 3 {
+				return nil
+			}
+			return typeRef.TypeArgs[2]
+		}
+		if typeRef.TypeAlias == nil {
+			return nil
+		}
+		aliased := typeRef.TypeAlias.Type
+		if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
+			subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
+			aliased = SubstituteTypeParams(aliased, subs)
+		}
+		current = aliased
 	}
-	switch type_system.QualIdentToString(typeRef.Name) {
-	case "Generator", "AsyncGenerator":
-		return typeRef.TypeArgs[2]
-	default:
+	return nil
+}
+
+// delegatedNextType reads the send type of a `yield from` operand. A union operand
+// forwards into whichever branch is live, so the result must be acceptable to every
+// branch, which is their meet. A branch whose send type cannot be read puts no
+// requirement on the delegating generator and drops out. All branches dropping out
+// gives nil, meaning the delegation constrains nothing.
+func delegatedNextType(t type_system.Type) type_system.Type {
+	t = type_system.Prune(t)
+	if mut, isMut := t.(*type_system.MutType); isMut {
+		t = type_system.Prune(mut.Type)
+	}
+	if union, isUnion := t.(*type_system.UnionType); isUnion {
+		branchNexts := []type_system.Type{}
+		for _, branch := range union.Types {
+			if branchNext := delegatedNextType(branch); branchNext != nil {
+				branchNexts = append(branchNexts, branchNext)
+			}
+		}
+		return meetNextTypes(branchNexts)
+	}
+	return nextTypeArg(t, iteratorTypeNames)
+}
+
+// meetNextTypes combines the send types a generator must satisfy at once into the
+// single type its TNext slot carries. An empty list gives nil, so a caller that
+// treats nil as "no requirement" keeps its own default.
+func meetNextTypes(nextTypes []type_system.Type) type_system.Type {
+	switch len(nextTypes) {
+	case 0:
 		return nil
+	case 1:
+		return nextTypes[0]
+	default:
+		return type_system.NewIntersectionType(nil, nextTypes...)
 	}
 }
 
@@ -365,6 +442,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	// its signature, so a generator with no `yield` in its body is still typed as one.
 	containsYield := gen.isGen()
 	yieldedTypes := []type_system.Type{}
+	delegatedNextTypes := []type_system.Type{}
 
 	// Create context for the function body. `InConstructorBody` is set
 	// from the explicit `isConstructorBody` argument, not inherited from
@@ -376,6 +454,7 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	bodyCtx.IsAsync = isAsync
 	bodyCtx.ContainsYield = &containsYield
 	bodyCtx.YieldedTypes = &yieldedTypes
+	bodyCtx.DelegatedNextTypes = &delegatedNextTypes
 
 	// A return annotation of `Generator<T, TReturn, TNext>` declares what callers
 	// send in through `next(v)`, which is also what a `yield` expression in this
@@ -426,10 +505,16 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 			yieldType = type_system.NewNeverType(nil)
 		}
 		// TNext is the value a caller sends in through `next(v)`. A return
-		// annotation naming a generator declares it. Otherwise it is inferred as
-		// `unknown`. That slot is contravariant, so the top type is the neutral
-		// choice for an inferred TNext, letting a caller send any value.
+		// annotation naming a generator declares it. Otherwise it is inferred from
+		// what the body delegates to, since `yield from` forwards a sent value into
+		// the delegate and so can only accept what the delegate accepts. A body with
+		// no delegation puts no requirement on the slot and infers `unknown`. That
+		// slot is contravariant, so the top type is the neutral choice there,
+		// letting a caller send any value.
 		nextType := declaredNextType
+		if nextType == nil {
+			nextType = meetNextTypes(delegatedNextTypes)
+		}
 		if nextType == nil {
 			nextType = type_system.NewUnknownType(nil)
 		}

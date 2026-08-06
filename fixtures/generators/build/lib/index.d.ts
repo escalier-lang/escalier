@@ -14,4 +14,5 @@ export declare function inner(): Generator<1 | 2, void, unknown>;
 export declare function mixed(): Generator<1 | "hello", void, unknown>;
 export declare function outer(): Generator<1 | 2 | 3, void, unknown>;
 export declare function outerArray(): Array<1 | 2 | 3>;
+export declare function relayResumable(): Generator<number, void, string>;
 export declare function sumOuter(): number;

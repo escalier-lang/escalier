@@ -99,3 +99,9 @@ export fn driveResumable() {
     val it: mut Generator<number, string, string> = resumable()
     return it.next("go")
 }
+
+// Delegating forwards a sent value into the delegate, so this generator's send type
+// narrows to the one `resumable` declares rather than staying `unknown`
+export gen fn relayResumable() {
+    yield from resumable()
+}

@@ -641,6 +641,21 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 						ctx.AddYieldedType(elementType)
 					}
 
+					// Delegation forwards whatever a caller sends into the delegate, so
+					// this generator can only accept what the delegate accepts. A
+					// declared TNext is checked against the delegate's here, at the
+					// delegation. An inferred one is collected instead, and
+					// inferFuncBodyWithFuncSigType meets everything collected to get a
+					// TNext narrow enough for every delegate.
+					if delegateNext := delegatedNextType(valueType); delegateNext != nil {
+						if ctx.GeneratorNextType != nil {
+							sendErrors := c.Unify(ctx, ctx.GeneratorNextType, delegateNext)
+							errors = slices.Concat(errors, sendErrors)
+						} else {
+							ctx.AddDelegatedNextType(delegateNext)
+						}
+					}
+
 					// The yield from expression evaluates to TReturn of the delegated iterator
 					delegatedReturnType := c.GetIteratorReturnType(ctx, valueType)
 					if delegatedReturnType == nil {
@@ -1187,21 +1202,22 @@ func (c *Checker) instantiateGenericFunc(fnType *type_system.FuncType) *type_sys
 	return result
 }
 
-// restTupleElems reports the parameter types a rest argument list is checked against
-// when the rest parameter is annotated with a tuple rather than an `Array<T>`.
-// argCount is how many arguments landed in the rest position, and the returned slice
-// has one type per argument, in order.
+// restTupleCandidates reports the parameter lists a rest argument list could be
+// checked against when the rest parameter is annotated with a tuple rather than an
+// `Array<T>`. argCount is how many arguments landed in the rest position, and each
+// returned list has one type per argument, in order.
 //
 // TypeScript's declaration files use this form to give a variadic signature a fixed
 // arity per call. `Generator.next` is declared `next(...args: [] | [TNext])`, so a
 // call with no argument matches the empty tuple and a call with one argument checks
 // that argument against TNext.
 //
-// A union matches when exactly one of its branches is a tuple of argCount elements.
-// Two branches of that length are ambiguous, so they report no match rather than
-// picking one. A tuple holding a RestSpreadType element has no fixed arity and never
-// matches. Every no-match leaves the caller to raise InvalidNumberOfArgumentsError.
-func restTupleElems(restType type_system.Type, argCount int) ([]type_system.Type, bool) {
+// A union contributes every branch that is a tuple of argCount elements, so a
+// declaration like `...args: [string] | [number]` offers two candidates for a
+// one-argument call and pickRestTupleCandidate chooses between them. A tuple holding
+// a RestSpreadType element has no fixed arity and is never a candidate. No candidates
+// at all leaves the caller to raise InvalidNumberOfArgumentsError.
+func restTupleCandidates(restType type_system.Type, argCount int) [][]type_system.Type {
 	fixedTupleElems := func(t type_system.Type) ([]type_system.Type, bool) {
 		tuple, isTuple := type_system.Prune(t).(*type_system.TupleType)
 		if !isTuple || len(tuple.Elems) != argCount {
@@ -1215,23 +1231,44 @@ func restTupleElems(restType type_system.Type, argCount int) ([]type_system.Type
 		return tuple.Elems, true
 	}
 
+	branches := []type_system.Type{restType}
 	if union, isUnion := type_system.Prune(restType).(*type_system.UnionType); isUnion {
-		var matched []type_system.Type
-		found := false
-		for _, branch := range union.Types {
-			elems, ok := fixedTupleElems(branch)
-			if !ok {
-				continue
-			}
-			if found {
-				return nil, false
-			}
-			matched, found = elems, true
-		}
-		return matched, found
+		branches = union.Types
 	}
+	candidates := [][]type_system.Type{}
+	for _, branch := range branches {
+		if elems, ok := fixedTupleElems(branch); ok {
+			candidates = append(candidates, elems)
+		}
+	}
+	return candidates
+}
 
-	return fixedTupleElems(restType)
+// pickRestTupleCandidate chooses which of restTupleCandidates' parameter lists the
+// rest arguments are checked against. The first list every argument already satisfies
+// wins, so `pick("x")` against `...args: [string] | [number]` is checked against
+// `[string]` and accepted.
+//
+// The queries run through Check, which commits no inference, so a losing candidate
+// leaves nothing behind. Check also answers false for an argument whose type is still
+// an unbound inference variable, so an unresolved argument matches no candidate. When
+// nothing matches, the first candidate is returned and the caller unifies against it,
+// turning what would be a bare arity complaint into a type error that names the types
+// involved.
+func (c *Checker) pickRestTupleCandidate(ctx Context, candidates [][]type_system.Type, argTypes []type_system.Type) []type_system.Type {
+	for _, candidate := range candidates {
+		matches := true
+		for i, paramType := range candidate {
+			if !c.Check(ctx, argTypes[i], paramType) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return candidate
+		}
+	}
+	return candidates[0]
 }
 
 func (c *Checker) handleFuncCall(
@@ -1308,13 +1345,19 @@ func (c *Checker) handleFuncCall(
 					paramErrors := c.Unify(ctx, argType, elementType)
 					errors = slices.Concat(errors, paramErrors)
 				}
-			} else if elemTypes, ok := restTupleElems(restParam.Type, restArgCount); ok {
-				for i, elemType := range elemTypes {
+			} else if candidates := restTupleCandidates(restParam.Type, restArgCount); len(candidates) > 0 {
+				// Instantiate before choosing a candidate so the speculative queries
+				// and the committing unification see the same argument types.
+				restArgTypes := make([]type_system.Type, restArgCount)
+				for i := range restArgTypes {
 					argType := argTypes[restIndex+i]
 					if ft, ok := argType.(*type_system.FuncType); ok && (len(ft.TypeParams) > 0 || len(ft.LifetimeParams) > 0) {
 						argType = c.instantiateGenericFunc(ft)
 					}
-					paramErrors := c.Unify(ctx, argType, elemType)
+					restArgTypes[i] = argType
+				}
+				for i, elemType := range c.pickRestTupleCandidate(ctx, candidates, restArgTypes) {
+					paramErrors := c.Unify(ctx, restArgTypes[i], elemType)
 					errors = slices.Concat(errors, paramErrors)
 				}
 			} else {
