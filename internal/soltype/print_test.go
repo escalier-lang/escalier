@@ -767,8 +767,8 @@ func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
 // declared. The cases below build the shape a class VALUE binding takes: an object holding
 // the constructor, whose free variables are the class's own parameters.
 //
-// quantified is the predicate renderScheme uses for a generalized binding — a variable
-// deeper than the binding's level is one generalization quantified.
+// quantified is the predicate renderScheme uses for a generalized binding: a variable minted
+// deeper than the binding's own level is one that generalization quantified.
 func TestPrintSchemeDeclaredNames(t *testing.T) {
 	quantified := func(v *TypeVarType) bool { return v.Level > 1 }
 
@@ -813,7 +813,7 @@ func TestPrintSchemeDeclaredNames(t *testing.T) {
 	})
 
 	t.Run("a variable the predicate rejects keeps the leak anchor", func(t *testing.T) {
-		// A source name does not mask a variable coalescing failed to inline: leaked is
+		// A source name does not mask a variable that coalescing failed to inline. leaked is
 		// declared, but the predicate rejects it, so it renders as t99 rather than as E.
 		tv := &TypeVarType{ID: 0, Level: 2}
 		leaked := &TypeVarType{ID: 99, Level: 0}

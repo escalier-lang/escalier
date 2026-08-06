@@ -174,8 +174,8 @@ func PrintAsScheme(t Type) string {
 // A class, alias, or enum keeps its type parameters in the checker's registry rather than
 // in the type it binds, so the type carries the parameter's variable and nothing else.
 // `class Node<T> {value: T}` binds the type Node<t0>, which Print renders with the raw
-// `t{ID}` debug form. Passing the class's parameters here renders it Node<T>. A variable no
-// entry of declared names keeps that `t{ID}` form, the fallback Print applies to every
+// `t{ID}` debug form. Passing the class's parameters here renders it Node<T>. A variable that
+// declared does not list keeps the `t{ID}` form, the fallback Print applies to every
 // variable.
 func PrintWithParams(t Type, declared []*TypeParam) string {
 	p := &namedPrinter{}
@@ -202,8 +202,8 @@ func PrintWithParams(t Type, declared []*TypeParam) string {
 // accepts renders under its source name and leads the quantifier prefix in declaration
 // order, ahead of the generated names. `class Pair<K, V>` whose constructor takes v before
 // k therefore renders `<K, V> {new (v: V, k: K) -> Pair<K, V>}` rather than a binder list
-// permuted by first appearance. Pass nil when there is no such declaration, which is every
-// function: a FuncType carries its own parameters and names them itself.
+// permuted by first appearance. Pass nil when there is no such declaration. That is every
+// function, since a FuncType carries its own parameters and names them itself.
 func PrintAsSchemeWith(
 	t Type,
 	isParam func(*TypeVarType) bool,
@@ -213,8 +213,7 @@ func PrintAsSchemeWith(
 	p := &namedPrinter{}
 	// A function's own type parameters claim their source names before anything else, so a
 	// generated T0 skips a name the source itself wrote. `fn <T0>` beside a free scheme
-	// variable renders `fn <T1, T0>`, with each binder naming one variable. The FuncType arm
-	// below reads these names back rather than binding them a second time.
+	// variable renders `fn <T1, T0>`, with each binder naming one variable.
 	if ft, ok := t.(*FuncType); ok {
 		p.bindTypeParams(ft.TypeParams)
 	}
@@ -233,7 +232,7 @@ func PrintAsSchemeWith(
 			continue
 		}
 		if _, bound := p.names[tp.Var]; bound {
-			continue // two parameters sharing one variable name it once
+			continue // one variable gets one binder, however many parameters point at it
 		}
 		labels = append(labels, p.bindTypeParam(tp.Var, tp.Name))
 	}
@@ -616,24 +615,25 @@ type namedPrinter struct {
 	// the nesting of the node being rendered, counted from 0 at the root.
 	maxDepth int
 	depth    int
-	// claimed holds every surface name currently bound to a type parameter in this render,
-	// across both alphabets — a source name such as `K` and a generated `T0`. A binder
-	// consults it so two parameters visible at once never render under one name. A
-	// signature's own parameters are unbound once it is rendered, so two sibling signatures
+	// claimed holds every surface name a type parameter in scope at this point renders
+	// under, across both alphabets — a source name such as `K` and a generated `T0`. A new
+	// binder consults it so two parameters in scope at once never share one name. A
+	// signature releases its own parameters' names on the way out, so two sibling signatures
 	// each written `<T>` both render `T`.
 	claimed set.Set[string]
 }
 
-// nameTaken reports whether a type parameter visible at this point already renders under
+// nameTaken reports whether a type parameter in scope at this point already renders under
 // name. Reading a nil set is safe, so plain Print needs no initialization.
 func (p *namedPrinter) nameTaken(name string) bool {
 	return p.claimed.Contains(name)
 }
 
-// bindTypeParam registers v under name for the rest of this render and returns the name it
-// was bound to. base is used as written when it is free. When another parameter already holds
-// it, a numeric suffix disambiguates: a method written `<T>` inside a class written `<T>`
-// renders its own parameter as `T_2`, so the two stay distinct wherever both are visible.
+// bindTypeParam registers v under a surface name derived from base and returns that name.
+// base is used as written when no parameter in scope holds it. When one does, a numeric
+// suffix disambiguates. A method written `<T>` inside a class written `<T>` renders its own
+// parameter as `T_2`, so the two read as different types everywhere in the method, which is
+// the whole region where both are in scope.
 func (p *namedPrinter) bindTypeParam(v *TypeVarType, base string) string {
 	if p.names == nil {
 		p.names = map[*TypeVarType]string{}
@@ -642,7 +642,7 @@ func (p *namedPrinter) bindTypeParam(v *TypeVarType, base string) string {
 		p.claimed = set.NewSet[string]()
 	}
 	name := base
-	for n := 2; p.claimed.Contains(name); n++ {
+	for n := 2; p.nameTaken(name); n++ {
 		name = base + "_" + strconv.Itoa(n)
 	}
 	p.claimed.Add(name)
@@ -652,8 +652,8 @@ func (p *namedPrinter) bindTypeParam(v *TypeVarType, base string) string {
 
 // bindTypeParams registers each type parameter's binding variable under its source name, so
 // a use of the parameter renders as that name rather than the raw t{ID} debug form. A
-// parameter with no source name is left unregistered and falls back to t{ID}. The bindings
-// last for the rest of the render; scopeTypeParams is the form that undoes them.
+// parameter with no source name is left unregistered and falls back to t{ID}. The names stay
+// in scope for the rest of the render; scopeTypeParams is the form that releases them.
 func (p *namedPrinter) bindTypeParams(tps []*TypeParam) {
 	for _, tp := range tps {
 		if tp.Name != "" {
@@ -662,39 +662,27 @@ func (p *namedPrinter) bindTypeParams(tps []*TypeParam) {
 	}
 }
 
-// scopeTypeParams binds tps for the duration of one signature and returns a function that
-// unbinds them. A signature's parameters are visible only inside it, so unbinding them frees
-// their names for the next signature: two overload arms each written `<T>` both render `T`,
-// while a `<T>` nested inside an enclosing `<T>` is still renamed by bindTypeParam.
+// scopeTypeParams binds tps like bindTypeParams and returns a function that releases their
+// names for the next signature to reuse. A signature's parameters are in scope only inside
+// it, so two overload arms each written `<T>` both render `T`. A `<T>` nested inside an
+// enclosing `<T>` is still renamed, because the enclosing binder holds its name across the
+// whole nested signature.
+//
+// The variable-to-name bindings themselves are left in place, so a variable that escaped its
+// binder still renders under the name its declaration gave it.
 func (p *namedPrinter) scopeTypeParams(tps []*TypeParam) func() {
 	if len(tps) == 0 {
 		return func() {}
 	}
-	type binding struct {
-		v     *TypeVarType
-		name  string
-		bound bool
-	}
-	restore := make([]binding, 0, len(tps))
 	claimed := make([]string, 0, len(tps))
 	for _, tp := range tps {
-		if tp.Name == "" {
-			continue
+		if tp.Name != "" {
+			claimed = append(claimed, p.bindTypeParam(tp.Var, tp.Name))
 		}
-		prev, bound := p.names[tp.Var]
-		restore = append(restore, binding{v: tp.Var, name: prev, bound: bound})
-		claimed = append(claimed, p.bindTypeParam(tp.Var, tp.Name))
 	}
 	return func() {
 		for _, name := range claimed {
 			p.claimed.Remove(name)
-		}
-		for _, b := range restore {
-			if b.bound {
-				p.names[b.v] = b.name
-				continue
-			}
-			delete(p.names, b.v)
 		}
 	}
 }
@@ -1220,8 +1208,8 @@ func (p *namedPrinter) printSelfReceiver(sp *FuncParam) string {
 // entry (`fn (x: T, ...) -> R`) so the exactness it carries round-trips to surface
 // syntax. An exact function with no receiver renders with no marker.
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
-	// The signature's own type parameters are visible only inside it, so they are unbound
-	// again on the way out and a sibling signature is free to reuse their names.
+	// The signature's own type parameters are in scope only inside it, so their names are
+	// released on the way out and a sibling signature is free to reuse them.
 	unbind := p.scopeTypeParams(t.TypeParams)
 	defer unbind()
 	p.nameLifetimeParams(t.LifetimeParams)
@@ -1292,8 +1280,9 @@ func isNever(t Type) bool {
 // constraint, `U = D` for a default, or `U: T = D` for both — without the surrounding
 // `<>`. The constraint is the parameter variable's upper bound. A variable with several
 // upper bounds renders them joined by ` & `. The parameters must be bound first, through
-// bindTypeParams or scopeTypeParams, so each binder renders under its own name and a binder
-// that references another parameter renders under that one's. Callers that build a
+// bindTypeParams or scopeTypeParams. Each binder then renders under its own name, and a
+// binder whose constraint or default names a sibling parameter renders that name too.
+// Callers that build a
 // combined quantifier prefix, such as PrintAsSchemeWith, join these with the scheme's
 // free variables and lifetimes into one list.
 func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
@@ -1493,4 +1482,3 @@ func printLit(lit Lit) string {
 	}
 	panic(fmt.Sprintf("printLit: unhandled Lit %T", lit))
 }
-

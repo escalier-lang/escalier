@@ -602,9 +602,8 @@ func schemeType(s TypeScheme) soltype.Type {
 // spurious type parameter. A MonoScheme coalesces to a var-free type, so plain
 // PrintAsScheme suffices.
 //
-// It names no parameter from the source, so a class value binding's parameters come out
-// positional. renderSchemeWithParams is the form that renders them under the names the
-// declaration wrote.
+// It passes the printer no source names, so a class value binding's parameters render
+// positionally. renderSchemeWithParams renders them under the names the declaration wrote.
 func renderScheme(s TypeScheme) string {
 	return renderSchemeWithParams(s, nil)
 }
@@ -613,8 +612,8 @@ func renderScheme(s TypeScheme) string {
 // type parameters the scheme's declaration wrote. declared is the class's, alias's, or
 // enum's own parameters, which live in the Context registry rather than in the type, so a
 // caller reads them from there and hands them over. Pass nil for a binding with no such
-// declaration, which is every function: a FuncType carries its own parameters and names them
-// itself.
+// declaration. That is every function, since a FuncType carries its own parameters and names
+// them itself.
 func renderSchemeWithParams(s TypeScheme, declared []*soltype.TypeParam) string {
 	switch sc := s.(type) {
 	case *MonoScheme:
@@ -637,12 +636,6 @@ func (c *checker) renderValueBinding(s TypeScheme) string {
 	return renderSchemeWithParams(s, c.declaredTypeParams(schemeType(s)))
 }
 
-// renderTypeBinding renders a type binding under the source type-parameter names of the
-// declaration it came from, so `class Node<T>` binds a type that renders `Node<T>`.
-func (c *checker) renderTypeBinding(t soltype.Type) string {
-	return soltype.PrintWithParams(t, c.declaredTypeParams(t))
-}
-
 // declaredTypeParams returns the type parameters written by the declaration a display type
 // stands for, or nil when it stands for none. A class, alias, or enum keeps its parameters
 // in the Context registry rather than in the type, so the printer cannot reach them from the
@@ -663,9 +656,14 @@ func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
 		}
 	case *soltype.ObjectType:
 		for _, elem := range t.Elems {
-			if ctor, ok := elem.(*soltype.ConstructorElem); ok {
-				return c.declaredTypeParams(ctor.Fn.Ret)
+			ctor, isCtor := elem.(*soltype.ConstructorElem)
+			if !isCtor {
+				continue
 			}
+			if cls, isClass := ctor.Fn.Ret.(*soltype.ClassType); isClass {
+				return c.declaredTypeParams(cls)
+			}
+			return nil
 		}
 	}
 	return nil
