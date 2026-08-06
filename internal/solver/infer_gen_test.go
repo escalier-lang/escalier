@@ -502,6 +502,36 @@ func TestInferGenRaises(t *testing.T) {
 			`,
 			want: `fn () -> Generator<1, undefined, unknown, "boom">`,
 		},
+		{
+			// Calling `next` advances the generator by hand, the third way to advance one,
+			// so it carries the raise the way iterating and delegating do.
+			name: "AdvancingWithNextCarriesTheRaiseToTheCaller",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				fn f() throws _ { val it = g() return it.next() }
+			`,
+			want: `fn () -> {value: 1, done: boolean} throws "boom"`,
+		},
+		{
+			// An async generator's advance returns a promise that rejects with what the
+			// body raises, so the raise reaches whoever awaits the result.
+			name: "AwaitingNextCarriesTheRaiseAsARejection",
+			src: `
+				async gen fn g() { yield 1 throw "boom" }
+				async fn f() { val it = g() return await it.next() }
+			`,
+			want: `fn () -> Promise<{value: 1, done: boolean}, "boom">`,
+		},
+		{
+			// The promise is what carries the rejection, so calling `next` without awaiting
+			// it raises nothing into the calling body.
+			name: "CallingNextOnAnAsyncGeneratorRaisesNothing",
+			src: `
+				async gen fn g() { yield 1 throw "boom" }
+				fn f() { val it = g() return it.next() }
+			`,
+			want: `fn () -> Promise<{value: 1, done: boolean}, "boom">`,
+		},
 	})
 	runGenErrCases(t, []genErrCase{
 		{
@@ -526,6 +556,86 @@ func TestInferGenRaises(t *testing.T) {
 				fn f() { for x in g() { } }
 			`,
 			wantErrs: []string{`3:23-3:26: cannot constrain "boom" <: never`},
+		},
+		{
+			// A clause-less caller that advances a raising generator by hand is asked to
+			// handle it too, so `next` is not a hole the other two advance paths close.
+			name: "AdvancingWithoutAClauseRejected",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				fn f() { val it = g() return it.next() }
+			`,
+			wantErrs: []string{`3:34-3:43: cannot constrain "boom" <: never`},
+		},
+	})
+}
+
+// A caller advances a generator by hand through `next`. It is declared as an overload set
+// of two arms, one taking the sent value and one omitting it, and the argumentless arm is
+// offered only when omitting the argument is sound.
+func TestInferGenNext(t *testing.T) {
+	runGenCases(t, []genCase{
+		{
+			// Advancing reports either the type the body yields or the type it returns, so
+			// the value slot is the union of both.
+			name: "NextResultUnionsYieldAndReturn",
+			src: `
+				gen fn g() { yield 1 return "done" }
+				fn f() { val it = g() return it.next() }
+			`,
+			want: `fn () -> {value: 1 | "done", done: boolean}`,
+		},
+		{
+			// The sent value is what a `yield` expression in the body evaluates to, so the
+			// one-argument arm takes the generator's Next slot.
+			name: "NextAcceptsTheSentValue",
+			src: `
+				gen fn g() -> Generator<number, string, string> { yield 1 return "x" }
+				fn f() { val it = g() return it.next("a") }
+			`,
+			want: `fn () -> {value: number | string, done: boolean}`,
+		},
+		{
+			// An inferred Next slot is `unknown`, which accepts `undefined`, so the
+			// argumentless arm stays available for a generator that declares no send type.
+			name: "ArgumentlessNextOnAnInferredSendType",
+			src: `
+				gen fn g() { yield 1 }
+				fn f() { val it = g() return it.next() }
+			`,
+			want: `fn () -> {value: 1 | undefined, done: boolean}`,
+		},
+		{
+			// A generator obtained without an intervening binding advances the same way.
+			name: "NextOnACallResult",
+			src: `
+				gen fn g() { yield 1 }
+				fn f() { return g().next() }
+			`,
+			want: `fn () -> {value: 1 | undefined, done: boolean}`,
+		},
+	})
+	runGenErrCases(t, []genErrCase{
+		{
+			// Omitting the argument sends `undefined` at runtime, so a generator whose body
+			// reads its sent value as a string does not offer the argumentless arm. Leaving
+			// it available would let that body receive `undefined`.
+			name: "ArgumentlessNextRejectedOnANarrowSendType",
+			src: `
+				gen fn g() -> Generator<number, string, string> { yield 1 return "x" }
+				fn f() { val it = g() return it.next() }
+			`,
+			wantErrs: []string{`3:34-3:43: Not enough arguments: expected at least 1, but got 0`},
+		},
+		{
+			// A generator carries `next` and nothing else, so any other member names the
+			// missing property rather than failing on the receiver.
+			name: "UnknownGeneratorMember",
+			src: `
+				gen fn g() { yield 1 }
+				fn f() { val it = g() return it.done }
+			`,
+			wantErrs: []string{`3:37-3:41: object is missing property: done`},
 		},
 	})
 }

@@ -67,6 +67,13 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			// inferCall's shape wires it.
 			if inst.Throws != nil {
 				c.constrain(call, inst.Throws, c.throwsSink(lvl))
+				// The call counts as an exceptional exit unless the winner declares it raises
+				// nothing, so an enclosing `throws` clause this call needs is not warned about
+				// as unused. An unsolved throws variable counts as raising, the same reading
+				// inferCall gives an unresolved callee.
+				if !isNeverType(inst.ThrowsOrNever()) {
+					c.markRaised()
+				}
 			}
 			return inst.Ret
 		}
