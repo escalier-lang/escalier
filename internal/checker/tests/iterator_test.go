@@ -935,6 +935,41 @@ func TestGeneratorNextCall(t *testing.T) {
 	}
 }
 
+// A declared TNext is one type object shared by the signature's Generator and by
+// every `yield` in the body. inferExpr stamps the expression's provenance onto
+// whatever it returns, so a `yield` that returned that object directly would leave
+// the annotation blaming the body's last `yield` — and any later diagnostic about the
+// declared type would point at the wrong span.
+func TestDeclaredSendTypeKeepsItsOwnProvenance(t *testing.T) {
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: `
+		fn f() -> Generator<number, string, string> {
+			val a = yield 1
+			val b = yield 2
+			return a
+		}
+	`}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	script, parseErrors := parser.NewParser(ctx, source).ParseScript()
+	require.Len(t, parseErrors, 0, "expected no parse errors")
+
+	c := NewChecker(ctx)
+	scope, inferErrors := c.InferScript(Context{Scope: Prelude(c)}, script)
+	require.Empty(t, inferErrors)
+
+	fnType, isFunc := type_system.Prune(scope.Namespace.Values["f"].Type).(*type_system.FuncType)
+	require.True(t, isFunc)
+	genRef, isTypeRef := type_system.Prune(fnType.Return).(*type_system.TypeRefType)
+	require.True(t, isTypeRef)
+	require.Len(t, genRef.TypeArgs, 3)
+
+	declaredNext := genRef.TypeArgs[2]
+	require.Equal(t, "string", declaredNext.String())
+	nodeProv, isNodeProv := declaredNext.Provenance().(*ast.NodeProvenance)
+	require.True(t, isNodeProv)
+	require.IsType(t, &ast.StringTypeAnn{}, nodeProv.Node, "TNext should be blamed on its annotation, not a yield")
+}
+
 // =============================================================================
 // Phase 0.5: Module-level iterator inference
 // =============================================================================

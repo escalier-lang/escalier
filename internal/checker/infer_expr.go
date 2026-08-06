@@ -679,8 +679,18 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 				// through `.next(v)`. GeneratorNextType carries a declared TNext and is
 				// nil when TNext is inferred. Inference puts `unknown` in that slot, so
 				// in an unannotated generator `val x = yield 1` binds x to `unknown`.
+				//
+				// A declared TNext is copied because inferExpr stamps this expression's
+				// provenance onto whatever it returns. The declared type is one object
+				// shared with the signature's Generator, so returning it directly would
+				// leave the annotation blaming the body's last `yield`. A TypeVar keeps
+				// its identity instead, so a TNext the body still has to solve stays
+				// connected to the signature.
 				if ctx.GeneratorNextType != nil {
 					exprType = ctx.GeneratorNextType
+					if _, isTypeVar := type_system.Prune(exprType).(*type_system.TypeVarType); !isTypeVar {
+						exprType = exprType.Copy()
+					}
 				} else {
 					exprType = type_system.NewUnknownType(provenance)
 				}
