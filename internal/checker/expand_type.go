@@ -1022,12 +1022,7 @@ func resolveToObjectType(t type_system.Type) *type_system.ObjectType {
 		return obj
 	}
 	if ref, ok := resolved.(*type_system.TypeRefType); ok {
-		if ref.TypeAlias != nil {
-			aliasType := ref.TypeAlias.Type
-			if len(ref.TypeAlias.TypeParams) > 0 && len(ref.TypeArgs) > 0 {
-				subs := createTypeParamSubstitutions(ref.TypeArgs, ref.TypeAlias.TypeParams)
-				aliasType = SubstituteTypeParams(aliasType, subs)
-			}
+		if aliasType := aliasedType(ref); aliasType != nil {
 			return resolveToObjectType(aliasType)
 		}
 	}
@@ -1276,12 +1271,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 			extendsType := type_system.Type(extendsTypeRef)
 
 			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
-				if typeRef.TypeAlias != nil {
-					resolved := typeRef.TypeAlias.Type
-					if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
-						subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
-						resolved = SubstituteTypeParams(resolved, subs)
-					}
+				if resolved := aliasedType(typeRef); resolved != nil {
 					extendsType = type_system.Prune(resolved)
 				}
 			}
@@ -1506,12 +1496,7 @@ func (c *Checker) getObjectAccess(objType *type_system.ObjectType, key MemberAcc
 		for _, extendsTypeRef := range objType.Extends {
 			extendsType := type_system.Type(extendsTypeRef)
 			if typeRef, ok := type_system.Prune(extendsType).(*type_system.TypeRefType); ok {
-				if typeRef.TypeAlias != nil {
-					resolved := typeRef.TypeAlias.Type
-					if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
-						subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
-						resolved = SubstituteTypeParams(resolved, subs)
-					}
+				if resolved := aliasedType(typeRef); resolved != nil {
 					extendsType = type_system.Prune(resolved)
 				}
 			}

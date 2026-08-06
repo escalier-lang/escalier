@@ -126,6 +126,28 @@ func createTypeParamSubstitutions(typeArgs []type_system.Type, typeParams []*typ
 	return substitutions
 }
 
+// aliasedType returns the type a reference stands for, with the reference's type
+// arguments substituted for the alias's type parameters, so `type G<N> = Generator<N>`
+// referenced as `G<string>` gives `Generator<string>`. It returns nil when the
+// reference carries no alias, which happens on an error-recovery path where
+// inferTypeAnn could not resolve the name and already reported an UnknownTypeError.
+//
+// This follows the alias the reference already points at rather than looking the name
+// up again. expandTypeRef resolves through the scope instead, which is what an
+// annotation being read in its own scope wants, but a type that arrived from another
+// module carries the authoritative link on the reference itself.
+func aliasedType(ref *type_system.TypeRefType) type_system.Type {
+	if ref.TypeAlias == nil {
+		return nil
+	}
+	resolved := ref.TypeAlias.Type
+	if len(ref.TypeAlias.TypeParams) > 0 && len(ref.TypeArgs) > 0 {
+		subs := createTypeParamSubstitutions(ref.TypeArgs, ref.TypeAlias.TypeParams)
+		resolved = SubstituteTypeParams(resolved, subs)
+	}
+	return resolved
+}
+
 // generateSubstitutionSets creates substitution maps for type parameters and type arguments,
 // handling cartesian products when union types are present in the type arguments.
 func (c *Checker) generateSubstitutionSets(

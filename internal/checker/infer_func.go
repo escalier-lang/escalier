@@ -356,9 +356,7 @@ func declaredGeneratorNextType(returnType type_system.Type) type_system.Type {
 //
 // A reference may reach the named type through an alias, as
 // `type G = Generator<number, string, string>` does, so a reference to some other
-// name is replaced by the type its alias stands for and inspected again.
-// Substituting the reference's type arguments along the way keeps a generic alias
-// such as `type G<N> = Generator<number, string, N>` reading its caller's N.
+// name is replaced by what aliasedType says it stands for and inspected again.
 // aliasHopLimit bounds the walk so an alias that refers to itself cannot spin.
 func nextTypeArg(t type_system.Type, names set.Set[string]) type_system.Type {
 	const aliasHopLimit = 16
@@ -374,13 +372,9 @@ func nextTypeArg(t type_system.Type, names set.Set[string]) type_system.Type {
 			}
 			return typeRef.TypeArgs[2]
 		}
-		if typeRef.TypeAlias == nil {
+		aliased := aliasedType(typeRef)
+		if aliased == nil {
 			return nil
-		}
-		aliased := typeRef.TypeAlias.Type
-		if len(typeRef.TypeAlias.TypeParams) > 0 && len(typeRef.TypeArgs) > 0 {
-			subs := createTypeParamSubstitutions(typeRef.TypeArgs, typeRef.TypeAlias.TypeParams)
-			aliased = SubstituteTypeParams(aliased, subs)
 		}
 		current = aliased
 	}
