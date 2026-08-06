@@ -139,8 +139,9 @@ A **rest pattern** adds no tag. It relaxes its split to an inexact prefix, and t
 prefix relaxation — a tuple "at least this long" or an object "has at least these
 fields" — already works. The remainder *binding* needs a type for the leftover.
 M9 has since shipped that machinery for both containers, so the types now exist.
-The one open piece is wiring `bindPattern`'s `ObjRestPat` and tuple-`RestPat` cases
-to produce them; both still report unsupported today
+Wiring `bindPattern`'s `ObjRestPat` and tuple-`RestPat` cases to produce them is
+the [PR0](#pr0--prerequisite-bind-rest-patterns-on-m9s-types) prerequisite; both
+report unsupported until it lands
 ([internal/solver/pattern.go](../../internal/solver/pattern.go)). The two
 containers differ, so `bind` needs two projection kinds, not one.
 
@@ -268,8 +269,9 @@ split p {                       split p {
   bind no name — `bindPattern`'s `ObjRestPat` and tuple-`RestPat` cases report
   unsupported today. M9 has since shipped the types they need — tuple spread
   (`RestSpreadType`) for a tuple rest and an `Omit`-style mapped type for an object
-  rest — so wiring those two cases is now a small self-contained task rather than a
-  blocked one, as [the worked example](#instance-extractor-and-rest-patterns)
+  rest — so wiring those two cases is the self-contained
+  [PR0](#pr0--prerequisite-bind-rest-patterns-on-m9s-types) prerequisite rather than
+  a blocked one, as [the worked example](#instance-extractor-and-rest-patterns)
   spells out. The IR names both projections regardless. Neither gate is introduced
   or worsened by this work.
 
@@ -399,9 +401,11 @@ instead of foreclosing it with a lost span.
 
 ## Pull requests
 
-Nine PRs, each ordered to merge without the next and sized so the diff and its
-regression surface stay reviewable in one sitting. Three concerns were split out of
-their first draft to keep the size down. Normalization became PR3 and PR4, since
+A prerequisite PR0 wires rest-pattern binding onto M9's types, then nine PRs build
+the IR, each ordered to merge without the next and sized so the diff and its
+regression surface stay reviewable in one sitting. PR0 is not UCS work — it is the
+one `bindPattern` gap the plan depends on — so it lands first and independently.
+Three concerns were split out of their first draft to keep the nine's size down. Normalization became PR3 and PR4, since
 same-scrutinee merging and nested flattening are separable and the second is the
 algorithmically hard half. The solver-side project-and-bind operation became its
 own PR5 ahead of the `match` rewrite, since it is a self-contained contract worth
@@ -412,6 +416,32 @@ and PR5 is an unwired helper. PR6 and PR7 flip type checking onto the IR. PR8 mo
 coverage. PR9 deletes the superseded code. The
 [dependency graph](#dependency-graph-and-parallelism) below marks the two windows
 where PRs can proceed in parallel.
+
+### PR0 — Prerequisite: bind rest patterns on M9's types
+
+Wire `bindPattern`'s rest cases to the types M9 shipped, so a `match`, `if val`, or
+`val … else` leaf that uses `...rest` binds a real name instead of reporting
+unsupported. This is not UCS IR work; it lands first because every walk PR binds
+leaves through `bindPattern`, and a rest pattern in an arm would otherwise hit the
+unsupported path.
+
+- Tuple rest: bind the `...rest` name to the tuple suffix, typed by M9's
+  `soltype.RestSpreadType`, replacing the `reportUnsupported` at the tuple
+  `RestPat` case in [internal/solver/pattern.go](../../internal/solver/pattern.go).
+- Object rest: bind `...rest` to `Omit<typeof scrutinee, K>` over the keys `K` the
+  pattern named, M9's mapped-type key removal, replacing the `reportUnsupported` at
+  the `ObjRestPat` case.
+- Remove the stale "needs … which arrive in M9" comments at both cases, now that
+  M9 has shipped the types they named.
+- Propagate borrow mode: a rest of a `&mut` scrutinee binds a `&mut` view of the
+  leftover, as the sibling leaves already do.
+
+**Tests.** Bind `[a, ...rest]` and `{x, ...rest}` in `val` destructuring, a
+function param, and a `match` arm, asserting the inferred `rest` type in Escalier
+annotation syntax; add a borrowed-scrutinee rest that binds as a borrow.
+
+**Depends on** M9, shipped. Independent of the UCS IR PRs; it feeds PR5, whose
+project-and-bind binds rest-containing leaves through `bindPattern`.
 
 ### PR1 — Core and normalized IR ADTs plus a printer
 
@@ -432,8 +462,8 @@ into nothing.
   to name a field, a tuple index, an extractor's positional result, a tuple suffix
   for a tuple rest, and an object remainder excluding a key set for an object rest.
   M9 has shipped the types the last two resolve to — tuple spread and an
-  `Omit`-style mapped type — but their `bindPattern` wiring is still open, so the IR
-  names both projections and the real binding lands when that wiring does.
+  `Omit`-style mapped type — and PR0 wires their `bindPattern` cases, so the IR
+  names both projections and PR5 onward bind them for real.
 - Define the normalized-form ADT: a split whose branches each test one tag-level
   and whose sub-scrutinees are projection paths into the matched value, plus a
   default / fallthrough tail.
@@ -632,11 +662,12 @@ code it supersedes.
 
 | PR | Depends on | Can run in parallel with |
 |----|------------|--------------------------|
-| PR1 — IR ADTs + printer | — | — |
-| PR2 — Desugar | PR1 | PR3, PR5 |
-| PR3 — Normalize: merge + tail | PR1 | PR2, PR5 |
-| PR4 — Normalize: nested flatten | PR3 | PR2, PR5 |
-| PR5 — Project-and-bind | PR1 | PR2, PR3, PR4 |
+| PR0 — Bind rest patterns | M9 (shipped) | PR1, PR2, PR3, PR4 |
+| PR1 — IR ADTs + printer | — | PR0 |
+| PR2 — Desugar | PR1 | PR0, PR3, PR5 |
+| PR3 — Normalize: merge + tail | PR1 | PR0, PR2, PR5 |
+| PR4 — Normalize: nested flatten | PR3 | PR0, PR2, PR5 |
+| PR5 — Project-and-bind | PR0, PR1 | PR2, PR3, PR4 |
 | PR6 — Type-check `match` | PR2, PR4, PR5 | — |
 | PR7 — Type-check `if val` / `else` | PR6 | PR8 |
 | PR8 — Coverage off the IR | PR6 | PR7 |
@@ -644,17 +675,22 @@ code it supersedes.
 
 Two parallel windows open up:
 
+- **From the start**, PR0 and PR1 are independent — PR0 wires `bindPattern` against
+  the shipped M9 types and needs nothing from the IR, so it runs alongside the whole
+  early IR fan-out.
 - **After PR1**, three lanes run independently: the desugarer (PR2), the
   normalizer chain (PR3 then PR4), and the project-and-bind operation (PR5). Each
   works against hand-built inputs — core IR for PR3, projection paths for PR5 — so
-  none waits on another. PR6 is the join point that first needs the desugarer, the
-  full normalizer, and project-and-bind together.
+  none waits on another. PR5 also folds in PR0's rest binding, since project-and-bind
+  binds rest-containing leaves through `bindPattern`. PR6 is the join point that
+  first needs the desugarer, the full normalizer, and project-and-bind together.
 - **After PR6**, migrating the remaining surface paths (PR7) and moving coverage
   onto the IR (PR8) touch different code and are independent. PR9 is the join
   point that waits on both.
 
 ```mermaid
 graph TD
+    PR0["PR0 · Bind rest patterns"]
     PR1["PR1 · IR ADTs + printer"]
     PR2["PR2 · Desugar"]
     PR3["PR3 · Normalize: merge + tail"]
@@ -665,6 +701,7 @@ graph TD
     PR8["PR8 · Coverage off the IR"]
     PR9["PR9 · Remove superseded helpers"]
 
+    PR0 --> PR5
     PR1 --> PR2
     PR1 --> PR3
     PR1 --> PR5
@@ -677,18 +714,21 @@ graph TD
     PR7 --> PR9
     PR8 --> PR9
 
+    classDef prereq fill:#e8f5e9,stroke:#4a9a5a,color:#12401c;
     classDef pure fill:#e6f0ff,stroke:#4a78c2,color:#12325c;
     classDef behavior fill:#fff2e0,stroke:#c2894a,color:#5c3a12;
     classDef cleanup fill:#eae6ff,stroke:#7a5cc2,color:#2f1c5c;
+    class PR0 prereq;
     class PR1,PR2,PR3,PR4,PR5 pure;
     class PR6,PR7,PR8 behavior;
     class PR9 cleanup;
 ```
 
-Blue is IR-only work that changes no inferred type — PR1 through PR4 build the IR
-and PR5 adds the unwired project-and-bind helper. Orange flips type checking or
-coverage onto the IR, purple is deletion. The two diamonds in the graph, PR6 and
-PR9, are the join points where a parallel window closes.
+Green is the PR0 prerequisite, on M9's types rather than the UCS IR. Blue is
+IR-only work that changes no inferred type — PR1 through PR4 build the IR and PR5
+adds the unwired project-and-bind helper. Orange flips type checking or coverage
+onto the IR, purple is deletion. The two diamonds in the graph, PR6 and PR9, are
+the join points where a parallel window closes.
 
 ## Handoff to Phase 2 (#883)
 
