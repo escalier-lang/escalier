@@ -320,6 +320,58 @@ This boundary lets `internal/codegen` import `internal/solver/ucs` for M10 witho
 a dependency on the solver engine, matching the acyclic layering the package doc
 in [internal/solver/doc.go](../../internal/solver/doc.go) already relies on.
 
+## Diagnostics
+
+Desugaring erases surface structure. Once `match`, `if val`, and `val … else` all
+lower to one `Split`, an error raised on the IR knows only "a pattern failed," not
+which flow-control form the user wrote. Left unaddressed, that regresses messages
+from "this `if val` binding may not match" to a generic "non-exhaustive pattern."
+The fix is to carry back, on the IR itself, exactly what a diagnostic needs to
+speak the user's language. Three pieces of provenance do that. This is the same
+move Rust's compiler makes with `MatchSource` / `DesugaringKind` after it lowers
+`if let` and `for` into `match`, and the codebase already distinguishes the three
+constructs for *type* provenance in
+[internal/solver/prov.go](../../internal/solver/prov.go) with `MatchBranch` /
+`IfValBranch` / `ValElseBranch`. This applies the same idea to diagnostics.
+
+1. **An `Origin` tag on every core and normalized node.** A sum —
+   `MatchArm`, `IfVal`, `ValElse`, `Guard`, extensible to `TryCatch` — plus the
+   originating `ast.Node`. A diagnostic reads the tag to choose wording: an
+   inexhaustive `match` says "add a catch-all branch"; an `if val` that cannot bind
+   says "this `if val` pattern may not match"; a `val … else` phrases around its
+   `else`. The tag rides the node, so it survives desugaring and normalization.
+
+2. **A synthetic marker on invented nodes.** The desugarer mints nodes the user
+   never wrote — the fallthrough tail, an implicit `else`. Each is marked synthetic
+   and records the construct it was synthesized for, so a diagnostic never anchors a
+   span the user cannot see. This is the most common way desugaring wrecks
+   messages, so the marker is mandatory, not optional.
+
+3. **An original-arm back-reference preserved through normalization.** When PR3
+   merges same-scrutinee branches and PR4 flattens nesting, a node is no longer
+   traceable to "the merged split." Each branch and leaf keeps a pointer to the
+   surface arm it came from, so "unreachable arm" or "missing field" blames the arm
+   the user typed. A guard's fall-through keeps the guard's own span, so a
+   guard-related note points at the guard, not the tail it falls into.
+
+Two rules make this stick rather than drift:
+
+- **Error wording is a function of `Origin`, not of node kind.** The error structs
+  such as `NonExhaustiveMatchError` take the origin and template `Message()` on it,
+  keeping construct-specific phrasing in one place instead of scattered kind
+  checks.
+- **Per-construct message tests are a PR requirement.** PR5, PR6, and PR7 each
+  assert not only full-message parity with today but that the message names the
+  right construct. "Diagnostics name the original flow-control form" is enforced by
+  a golden test, not left to hope.
+
+The same `Origin` tag is forward-compatible: it lets a future LSP code action be
+construct-aware — "add missing match arms" versus "add an `else` branch" — and lets
+Phase 2's free coverage witnesses be phrased per construct. Ownership across the
+PRs: PR1 adds the `Origin` tag and synthetic marker to the ADT, PR2 sets them while
+desugaring, PR3 and PR4 preserve the back-reference through their rewrites, and
+PR5 through PR7 add the origin-keyed wording and its tests.
+
 ## Pull requests
 
 Eight PRs, each ordered to merge without the next and sized so the diff and its
@@ -360,6 +412,10 @@ into nothing.
 - Define `Scrutinee` as either the root match target or a projection path
   relative to an enclosing scrutinee, so a nested split names its value without
   re-inferring it.
+- Add the diagnostics provenance from the [Diagnostics](#diagnostics) section to
+  every node: an `Origin` tag (`MatchArm` / `IfVal` / `ValElse` / `Guard`) with the
+  originating `ast.Node`, and a synthetic marker for a node the desugarer invents.
+  Later PRs read these; PR1 only defines and prints them.
 - Add a `String()` printer over both ADTs so tests can lock IR shape with
   `snaps.MatchInlineSnapshot` per the testing guidance in
   [CLAUDE.md](../../CLAUDE.md), rather than drilling into fields.
@@ -381,9 +437,14 @@ surface to the desugared core.
   branch and the diverging-or-fallback `else`.
 - Represent intermediate bindings introduced by desugaring as `Bind` nodes so
   later stages see them uniformly.
+- Set each node's `Origin` from the surface form it lowers — `MatchArm` for a match
+  arm, `IfVal` / `ValElse` for those two, `Guard` for a guard test — and mark the
+  invented fallthrough and implicit `else` synthetic, per the
+  [Diagnostics](#diagnostics) section.
 
-**Tests.** Snapshot the core IR for a representative source of each surface form.
-No typing yet; the desugarer is not called from `inferMatch` in this PR.
+**Tests.** Snapshot the core IR for a representative source of each surface form,
+including its `Origin` tags. No typing yet; the desugarer is not called from
+`inferMatch` in this PR.
 
 ### PR3 — Normalize: same-scrutinee merging and the default tail
 
@@ -397,10 +458,14 @@ merge and tail, no nested flattening yet. Patterns stay one level deep in this P
   branch.
 - Leave a nested pattern intact inside its branch for now; PR4 flattens it. The
   form is already correct for flat matches such as `1 => …, _ => …`.
+- Preserve each branch's original-arm back-reference and `Origin` when merging, per
+  the [Diagnostics](#diagnostics) section, so a merged split still blames the arm
+  the user wrote.
 
 **Tests.** Snapshot the normalized IR for flat matches, overlapping arms, and
-guarded arms. `normalize` runs on hand-built core IR, so this PR does not need the
-desugarer from PR2.
+guarded arms, asserting merged branches keep their original-arm back-reference.
+`normalize` runs on hand-built core IR, so this PR does not need the desugarer from
+PR2.
 
 ### PR4 — Normalize: flatten nested patterns into projection splits
 
@@ -417,9 +482,13 @@ scrutinee splits, one tag-level each.
 - Before finalizing the split and tail shape, confirm the details against the UCS
   paper's normalization section and the `hkust-taco/ucs` reference, per the issue's
   fourth task.
+- Carry the source pattern node onto each projection scrutinee so a flattened split
+  reports against the user's nested pattern, not the internal path, per the
+  [Diagnostics](#diagnostics) section.
 
 **Tests.** Snapshot the normalized IR for nested object and tuple patterns,
-asserting the one-tag-level-at-a-time shape and the projection scrutinee paths.
+asserting the one-tag-level-at-a-time shape, the projection scrutinee paths, and
+that each carries its source pattern node.
 
 ### PR5 — Type-check `match` off the normalized form
 
@@ -451,8 +520,9 @@ behavior-affecting PR.
 
 **Tests.** The match suites stay green: `infer_pattern_test.go`,
 `infer_pattern_nominal_test.go`, `infer_pattern_mut_test.go`, and the match cases
-in `infer_expr_test.go`. Run `go test ./...`; `UPDATE_SNAPS=true` only for intended
-IR-print snapshots.
+in `infer_expr_test.go`. Add a golden test that a `match` error names the `match`
+construct, per the [Diagnostics](#diagnostics) section. Run `go test ./...`;
+`UPDATE_SNAPS=true` only for intended IR-print snapshots.
 
 ### PR6 — Type-check `if val` and `val … else` off the IR
 
@@ -472,7 +542,9 @@ hand-written arm-walking bodies.
   escape into the enclosing block, as the core's binding-escape leaf models.
 
 **Tests.** `infer_if_val_test.go` and the `val … else` cases stay green with
-unchanged inferred types and messages.
+unchanged inferred types and messages. Add golden tests that an `if val` error
+names `if val` and a `val … else` error names its `else`, per the
+[Diagnostics](#diagnostics) section, so neither reverts to generic `match` wording.
 
 ### PR7 — Run the interim coverage check off the normalized form
 
@@ -491,8 +563,10 @@ on any current input.
   with `residual = scrutinee ∧ ¬covered ; exhaustive iff residual <: ⊥`.
 
 **Tests.** Every current `NonExhaustiveMatchError` case keeps its exact message,
-asserted in full per [CLAUDE.md](../../CLAUDE.md). The `matchShape` snapshot logic
-in `inferMatch` is removed once coverage reads the IR.
+asserted in full per [CLAUDE.md](../../CLAUDE.md), with the message keyed off the
+split's `Origin` per the [Diagnostics](#diagnostics) section rather than assuming a
+`match`. The `matchShape` snapshot logic in `inferMatch` is removed once coverage
+reads the IR.
 
 ### PR8 — Remove the superseded ad-hoc helpers
 
