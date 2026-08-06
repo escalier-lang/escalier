@@ -187,7 +187,7 @@ deeper nested split does not remove it from a shallower `rest`.
 For coverage, the instance and extractor tags cover nominal union members the same
 way `unionMatchExhaustive` already does, and a rest-relaxed inexact split needs a
 catch-all, matching today's `structuralInexact` rule. Neither changes the interim
-coverage semantics PR7 carries over.
+coverage semantics PR8 carries over.
 
 ### A guard
 
@@ -218,7 +218,7 @@ split p {                           split p {
 ### `if val` and `val … else` share the shape
 
 Neither is special-cased. Both lower to the same two-branch split a two-arm match
-produces, which is what lets PR5 and PR6 collapse the four ad-hoc paths into one
+produces, which is what lets PR6 and PR7 collapse the four ad-hoc paths into one
 walk.
 
 ```
@@ -226,7 +226,7 @@ if val {x, y} = p { cons } else { alt }
 ```
 
 ```
-# desugared core (PR2)          # normalized form (PR6)
+# desugared core (PR2)          # normalized form (PR7)
 split p {                       split p {
     pat {x, y} => leaf cons         {x, y} => bind x = p.x, y = p.y; leaf cons
     else       => leaf alt      } default leaf alt
@@ -360,7 +360,7 @@ Two rules make this stick rather than drift:
   such as `NonExhaustiveMatchError` take the origin and template `Message()` on it,
   keeping construct-specific phrasing in one place instead of scattered kind
   checks.
-- **Per-construct message tests are a PR requirement.** PR5, PR6, and PR7 each
+- **Per-construct message tests are a PR requirement.** PR6, PR7, and PR8 each
   assert not only full-message parity with today but that the message names the
   right construct. "Diagnostics name the original flow-control form" is enforced by
   a golden test, not left to hope.
@@ -370,19 +370,22 @@ construct-aware — "add missing match arms" versus "add an `else` branch" — a
 Phase 2's free coverage witnesses be phrased per construct. Ownership across the
 PRs: PR1 adds the `Origin` tag and synthetic marker to the ADT, PR2 sets them while
 desugaring, PR3 and PR4 preserve the back-reference through their rewrites, and
-PR5 through PR7 add the origin-keyed wording and its tests.
+PR6 through PR8 add the origin-keyed wording and its tests.
 
 ## Pull requests
 
-Eight PRs, each ordered to merge without the next and sized so the diff and its
-regression surface stay reviewable in one sitting. Two concerns were split out of
+Nine PRs, each ordered to merge without the next and sized so the diff and its
+regression surface stay reviewable in one sitting. Three concerns were split out of
 their first draft to keep the size down. Normalization became PR3 and PR4, since
 same-scrutinee merging and nested flattening are separable and the second is the
-algorithmically hard half. Retyping became PR5 and PR6, since rewriting all four
-ad-hoc paths at once put four entry points and their whole test surface in one
-review. PR1 through PR4 are pure IR with no behavior change. PR5 and PR6 flip type
-checking onto the IR. PR7 moves coverage. PR8 deletes the superseded code. The
-[dependency graph](#dependency-graph-and-parallelism) below marks the two points
+algorithmically hard half. The solver-side project-and-bind operation became its
+own PR5 ahead of the `match` rewrite, since it is a self-contained contract worth
+testing before anything calls it. Retyping split into PR6 and PR7, since rewiring
+all four ad-hoc paths at once put four entry points and their whole test surface in
+one review. PR1 through PR5 change no inferred type — PR1 through PR4 are pure IR
+and PR5 is an unwired helper. PR6 and PR7 flip type checking onto the IR. PR8 moves
+coverage. PR9 deletes the superseded code. The
+[dependency graph](#dependency-graph-and-parallelism) below marks the two windows
 where PRs can proceed in parallel.
 
 ### PR1 — Core and normalized IR ADTs plus a printer
@@ -397,7 +400,7 @@ into nothing.
   success path carries no body: it hands its bindings to the enclosing
   continuation, the rest of the block, so the leaf models a binding escape. Its
   `else` path is a divergence or a fallback value, kept distinct from a covering
-  arm so PR6 and PR7 do not treat it as one.
+  arm so PR7 and PR8 do not treat it as one.
 - Enumerate the branch-test kinds as a sum: a structural object or tuple shape, a
   literal, a nominal class tag for an instance pattern, an extractor tag, and an
   inexact-prefix marker a rest pattern sets. A projection path segment must be able
@@ -490,33 +493,44 @@ scrutinee splits, one tag-level each.
 asserting the one-tag-level-at-a-time shape, the projection scrutinee paths, and
 that each carries its source pattern node.
 
-### PR5 — Type-check `match` off the normalized form
+### PR5 — Solver-side project-and-bind over an IR path
 
-Rewrite `inferMatch` to desugar, normalize, then walk the normalized form,
-introducing the shared walk the other paths reuse. `if val`, `val … else`, and
-`bindRefutable` keep their current bodies until PR6. This is the first
-behavior-affecting PR.
+Add the one solver-side operation that resolves an IR projection path into a
+bound leaf, the contract every walk that follows depends on. It has no caller yet,
+so it changes no inferred type; it lands with its own unit tests, the same way the
+pure-IR PRs land unwired.
 
-- Add the walk over the normalized form: each split projects its scrutinee's type,
-  each leaf infers its body, and non-diverging bodies constrain into one fresh
-  branch-join var, as `inferMatch` already does.
-- Add a solver-side project-and-bind operation that resolves an IR projection
-  *path*, not a precomputed `soltype.Type`, into a bound leaf. It derives the
-  sub-scrutinee type through the existing machinery — `CarrierOf` to peel a borrow,
-  the member-lookup constraints, union narrowing, and borrow-mode propagation —
-  then binds through `bindPattern` / `bindPatternWith`. The `ucs` package supplies
-  only the ast-level path; every type is computed here in `internal/solver`. Cover
-  this contract with tests: a field, a tuple index, a union-narrowed arm, and a
-  borrowed scrutinee that must bind its leaves as borrows.
+- Resolve an IR projection *path*, not a precomputed `soltype.Type`, into a bound
+  leaf. Derive the sub-scrutinee type through the existing machinery — `CarrierOf`
+  to peel a borrow, the member-lookup constraints, union narrowing, and borrow-mode
+  propagation — then bind through `bindPattern` / `bindPatternWith`. The `ucs`
+  package supplies only the ast-level path; every type is computed here in
+  `internal/solver`.
+- Reproduce `narrowMatchArm`'s union narrowing at the path level: a path into one
+  union variant must resolve against only that variant's members, so PR6 inherits
+  variant-narrowing with no regression.
+
+**Tests.** Unit-test the contract against hand-built paths: a field, a tuple
+index, an extractor result, a union-narrowed arm, and a borrowed scrutinee that
+must bind its leaves as borrows. No inferred type or message changes, since nothing
+calls it yet.
+
+### PR6 — Type-check `match` off the normalized form
+
+Rewrite `inferMatch` to desugar, normalize, then walk the normalized form with the
+PR5 project-and-bind, introducing the shared walk the other paths reuse. `if val`,
+`val … else`, and `bindRefutable` keep their current bodies until PR7. This is the
+first behavior-affecting PR.
+
+- Add the walk over the normalized form: each split projects its scrutinee's type
+  through the PR5 operation, each leaf infers its body, and non-diverging bodies
+  constrain into one fresh branch-join var, as `inferMatch` already does.
 - Type each guard-test node as a boolean over its branch's bindings, matching the
   current inline guard constraint.
 - Preserve the `MatchBranch` provenance edge from
   [internal/solver/prov.go](../../internal/solver/prov.go), `checkUniformOwnership`
   ([internal/solver/infer_expr.go:514](../../internal/solver/infer_expr.go)), and
   the divergence-join where an all-diverging match coalesces to `never`.
-- Reproduce `narrowMatchArm`'s union narrowing through the split projection: an
-  arm that destructures one union variant must still bind against only that
-  variant's members, so no regression in variant-narrowing.
 
 **Tests.** The match suites stay green: `infer_pattern_test.go`,
 `infer_pattern_nominal_test.go`, `infer_pattern_mut_test.go`, and the match cases
@@ -524,13 +538,13 @@ in `infer_expr_test.go`. Add a golden test that a `match` error names the `match
 construct, per the [Diagnostics](#diagnostics) section. Run `go test ./...`;
 `UPDATE_SNAPS=true` only for intended IR-print snapshots.
 
-### PR6 — Type-check `if val` and `val … else` off the IR
+### PR7 — Type-check `if val` and `val … else` off the IR
 
-Migrate `inferIfVal` and `inferValElse` onto the PR5 walk, retiring their
+Migrate `inferIfVal` and `inferValElse` onto the PR6 walk, retiring their
 hand-written arm-walking bodies.
 
 - Route `inferIfVal` and `inferValElse` through desugar → normalize → walk, reusing
-  the PR5 walk. Do not rewrite `bindRefutable` as an IR walk. It stays a
+  the PR6 walk. Do not rewrite `bindRefutable` as an IR walk. It stays a
   solver-side binding adapter the walk calls for a refutable leaf, preserving the
   `IdentPat.TypeAnn` narrowing path through `bindNarrowedIdent`, the leaf `VarID`,
   and its caller-owned scope, none of which the IR models.
@@ -546,7 +560,7 @@ unchanged inferred types and messages. Add golden tests that an `if val` error
 names `if val` and a `val … else` error names its `else`, per the
 [Diagnostics](#diagnostics) section, so neither reverts to generic `match` wording.
 
-### PR7 — Run the interim coverage check off the normalized form
+### PR8 — Run the interim coverage check off the normalized form
 
 Move the top-level exhaustiveness check onto the IR without changing its verdict
 on any current input.
@@ -556,7 +570,7 @@ on any current input.
   in `inferMatch`. It reads the IR's split structure but keeps its type-dependent
   predicates in `internal/solver`: deciding exact-union membership, inexactness, and
   guarded-arm coverage needs `soltype`, so this is a typed coverage adapter, not
-  ast-only logic. It is the replacement PR8 deletes the old helpers in favor of.
+  ast-only logic. It is the replacement PR9 deletes the old helpers in favor of.
 - Keep the interim semantics identical: an inexact scrutinee needs a catch-all, an
   exact union is covered when every member has an unguarded covering branch, and a
   guarded branch covers nothing. This is the seam Phase 2 (#883) later replaces
@@ -568,21 +582,21 @@ split's `Origin` per the [Diagnostics](#diagnostics) section rather than assumin
 `match`. The `matchShape` snapshot logic in `inferMatch` is removed once coverage
 reads the IR.
 
-### PR8 — Remove the superseded ad-hoc helpers
+### PR9 — Remove the superseded ad-hoc helpers
 
 Cleanup only, no behavior change.
 
-- Delete only the helpers PR7's coverage walk has made truly dead:
+- Delete only the helpers PR8's coverage walk has made truly dead:
   `unionMatchExhaustive`, `armCoversShape`, `structuralInexact`, `narrowMatchArm`,
   and the pattern-shape branches of `isCatchAll`.
 - Do not move these into the `ucs` package. They inspect `soltype` — exact-union
   membership, inexact-scrutinee shape, guarded-arm coverage — and `ucs` is ast-only,
   so it cannot host type-dependent logic. Their replacement is the typed coverage
-  adapter PR7 already puts in `internal/solver`. If any predicate is still reachable
-  after PR7, it stays solver-side; nothing type-dependent folds into `ucs`.
+  adapter PR8 already puts in `internal/solver`. If any predicate is still reachable
+  after PR8, it stays solver-side; nothing type-dependent folds into `ucs`.
 
 **Tests.** `go test ./...` unchanged; this PR removes code with no reachable
-callers after PR6 and PR7.
+callers after PR7 and PR8.
 
 ## Dependency graph and parallelism
 
@@ -593,23 +607,24 @@ code it supersedes.
 | PR | Depends on | Can run in parallel with |
 |----|------------|--------------------------|
 | PR1 — IR ADTs + printer | — | — |
-| PR2 — Desugar | PR1 | PR3 |
-| PR3 — Normalize: merge + tail | PR1 | PR2 |
-| PR4 — Normalize: nested flatten | PR3 | PR2 |
-| PR5 — Type-check `match` | PR2, PR4 | — |
-| PR6 — Type-check `if val` / `else` | PR5 | PR7 |
-| PR7 — Coverage off the IR | PR5 | PR6 |
-| PR8 — Remove superseded helpers | PR6, PR7 | — |
+| PR2 — Desugar | PR1 | PR3, PR5 |
+| PR3 — Normalize: merge + tail | PR1 | PR2, PR5 |
+| PR4 — Normalize: nested flatten | PR3 | PR2, PR5 |
+| PR5 — Project-and-bind | PR1 | PR2, PR3, PR4 |
+| PR6 — Type-check `match` | PR2, PR4, PR5 | — |
+| PR7 — Type-check `if val` / `else` | PR6 | PR8 |
+| PR8 — Coverage off the IR | PR6 | PR7 |
+| PR9 — Remove superseded helpers | PR7, PR8 | — |
 
 Two parallel windows open up:
 
-- **After PR1**, the desugarer (PR2) and the shallow normalizer (PR3) are
-  independent. PR3 works against hand-built core IR, so it does not wait on PR2.
-  PR4 extends PR3 and can start as soon as PR3 lands, still in parallel with PR2.
-  PR5 is the join point that first needs both the desugarer and the full
-  normalizer.
-- **After PR5**, migrating the remaining surface paths (PR6) and moving coverage
-  onto the IR (PR7) touch different code and are independent. PR8 is the join
+- **After PR1**, three lanes run independently: the desugarer (PR2), the
+  normalizer chain (PR3 then PR4), and the project-and-bind operation (PR5). Each
+  works against hand-built inputs — core IR for PR3, projection paths for PR5 — so
+  none waits on another. PR6 is the join point that first needs the desugarer, the
+  full normalizer, and project-and-bind together.
+- **After PR6**, migrating the remaining surface paths (PR7) and moving coverage
+  onto the IR (PR8) touch different code and are independent. PR9 is the join
   point that waits on both.
 
 ```mermaid
@@ -618,32 +633,36 @@ graph TD
     PR2["PR2 · Desugar"]
     PR3["PR3 · Normalize: merge + tail"]
     PR4["PR4 · Normalize: nested flatten"]
-    PR5["PR5 · Type-check match"]
-    PR6["PR6 · Type-check if val / else"]
-    PR7["PR7 · Coverage off the IR"]
-    PR8["PR8 · Remove superseded helpers"]
+    PR5["PR5 · Project-and-bind"]
+    PR6["PR6 · Type-check match"]
+    PR7["PR7 · Type-check if val / else"]
+    PR8["PR8 · Coverage off the IR"]
+    PR9["PR9 · Remove superseded helpers"]
 
     PR1 --> PR2
     PR1 --> PR3
+    PR1 --> PR5
     PR3 --> PR4
-    PR2 --> PR5
-    PR4 --> PR5
+    PR2 --> PR6
+    PR4 --> PR6
     PR5 --> PR6
-    PR5 --> PR7
+    PR6 --> PR7
     PR6 --> PR8
-    PR7 --> PR8
+    PR7 --> PR9
+    PR8 --> PR9
 
     classDef pure fill:#e6f0ff,stroke:#4a78c2,color:#12325c;
     classDef behavior fill:#fff2e0,stroke:#c2894a,color:#5c3a12;
     classDef cleanup fill:#eae6ff,stroke:#7a5cc2,color:#2f1c5c;
-    class PR1,PR2,PR3,PR4 pure;
-    class PR5,PR6,PR7 behavior;
-    class PR8 cleanup;
+    class PR1,PR2,PR3,PR4,PR5 pure;
+    class PR6,PR7,PR8 behavior;
+    class PR9 cleanup;
 ```
 
-Blue is pure-IR work with no behavior change, orange flips type checking or
-coverage onto the IR, purple is deletion. The two diamonds in the graph, PR5 and
-PR8, are the join points where a parallel window closes.
+Blue is IR-only work that changes no inferred type — PR1 through PR4 build the IR
+and PR5 adds the unwired project-and-bind helper. Orange flips type checking or
+coverage onto the IR, purple is deletion. The two diamonds in the graph, PR6 and
+PR9, are the join points where a parallel window closes.
 
 ## Handoff to Phase 2 (#883)
 
@@ -673,7 +692,7 @@ with an ast-only dependency lets codegen import it later without a solver cycle.
   `if val` and a `val … else` does not. The IR must keep guard tests inside the
   bound branch and fallthroughs outside it, matching the current child-scope
   discipline.
-- **Snapshot churn.** PR5, PR6, and PR7 should not move any inferred type or error
+- **Snapshot churn.** PR6, PR7, and PR8 should not move any inferred type or error
   message. Land IR-print snapshots in PR1 through PR4 so each behavior-affecting
   PR's diff is limited to the walk, making an accidental behavior change visible in
   review.
