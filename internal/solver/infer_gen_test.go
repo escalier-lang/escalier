@@ -114,6 +114,43 @@ func TestInferGenExternalGeneratorFace(t *testing.T) {
 	})
 }
 
+// An un-annotated Next slot is the concrete type `unknown`, not an inference variable,
+// so what the body does with a `yield` cannot narrow it. Writing `_` in the slot asks
+// for the variable instead, and then the body's uses do infer it.
+//
+// The default is deliberate. Seeding every generator's Next with a fresh variable would
+// infer `gen fn f() { val x = yield 1 return x }` as `fn <T0>() -> Generator<1, T0, T0>`,
+// a generic where a reader expects a plain generator. `_` keeps that available for an
+// author who wants it without imposing it on every `gen fn`.
+func TestInferGenNextSlotInference(t *testing.T) {
+	runGenCases(t, []genCase{
+		{
+			// The `_` is a fresh variable, so annotating the binding the yield feeds
+			// puts `string` in the slot.
+			name: "WildcardNextInfersFromABodyUse",
+			src:  `gen fn f() -> Generator<number, undefined, _> { val x: string = yield 1 return undefined }`,
+			want: `fn () -> Generator<number, undefined, string>`,
+		},
+		{
+			// A body that returns what it was sent relates the two slots, and with both
+			// written `_` the relation generalizes: whatever a caller sends comes back
+			// out.
+			name: "WildcardNextAndRetGeneralizeTogether",
+			src:  `gen fn f() -> Generator<number, _, _> { val x = yield 1 return x }`,
+			want: `fn <T0>() -> Generator<number, T0, T0>`,
+		},
+	})
+	runGenErrCases(t, []genErrCase{
+		{
+			// Without `_` the slot is `unknown`, so a body that wants a narrower type
+			// out of its `yield` has to say so in the annotation.
+			name:     "UnannotatedNextDoesNotInferFromABodyUse",
+			src:      `gen fn f() { val x: string = yield 1 }`,
+			wantErrs: []string{"1:30-1:37: cannot constrain unknown <: string"},
+		},
+	})
+}
+
 // An `async gen fn` faces callers as an AsyncGenerator, not a Promise: the async wrap
 // never applies to a generator, and `await` is legal in its body.
 func TestInferAsyncGen(t *testing.T) {
