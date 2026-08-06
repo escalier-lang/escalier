@@ -2870,9 +2870,12 @@ func (c *checker) delegateIsUnsolved(t soltype.Type) bool {
 	return isVar
 }
 
-// delegateElemType resolves what a `yield from` delegate hands back: the element type
-// its iteration yields, the value the delegation evaluates to once the delegate is
-// exhausted, and the delegate's Next slot, which is what it accepts from a sent value.
+// delegateElemType resolves what a `yield from` delegate hands back:
+//
+//   - the element type its iteration yields
+//   - the value the delegation evaluates to once the delegate is exhausted
+//   - the delegate's Next slot, what it accepts from a sent value
+//
 // A generator forwards its Yield, Ret, and Next slots, and an async one is a legal
 // delegate only from an async generator body. Any other operand goes through
 // syncElemType, where a tuple carries no return value and so finishes with `undefined`,
