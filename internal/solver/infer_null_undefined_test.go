@@ -242,8 +242,8 @@ func TestInferVoidAnnotationIsUndefined(t *testing.T) {
 			want: "fn () -> undefined",
 		},
 		{
-			// The two spellings meet: the body's `undefined` result satisfies `-> void`, and a
-			// `-> void` function satisfies an `-> undefined` annotation.
+			// The two spellings meet in both directions. The body's `undefined` result
+			// satisfies `-> void`, and a `-> void` function satisfies `-> undefined`.
 			name: "VoidAndUndefinedReturnsAreInterchangeable",
 			src: `
 				fn g() -> void {}

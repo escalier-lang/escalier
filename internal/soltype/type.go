@@ -838,13 +838,16 @@ type ArrayType struct{ Elem Type }
 type NullType struct{}
 
 // UndefinedType is the type whose only inhabitant is `undefined`, the atomic
-// twin of NullType. It arises three ways. A statement block with no value
-// results in it, so a function whose body never returns a value returns
-// `undefined`. Reading a property off a union where only some members carry it
-// joins `undefined` for the members that lack it, so the read resolves to
-// `T | undefined`. An annotation naming either `undefined` or `void` resolves to it,
-// which is why `fn f() -> void {}` and `fn f() -> undefined {}` describe the same
-// function. It renders as `undefined`.
+// twin of NullType. It renders as `undefined`, and three things produce it.
+//
+//   - A statement block with no value results in it, so a function whose body
+//     never returns a value returns `undefined`.
+//   - Reading a property off a union where only some members carry it joins
+//     `undefined` for the members that lack it, so the read resolves to
+//     `T | undefined`.
+//   - An annotation naming either `undefined` or `void` resolves to it, which is
+//     why `fn f() -> void {}` and `fn f() -> undefined {}` describe the same
+//     function.
 type UndefinedType struct{}
 
 // NeverType (⊥) and UnknownType (⊤) are the bottom/top of the subtype lattice —

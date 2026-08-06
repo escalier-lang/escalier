@@ -12,8 +12,7 @@ import (
 // given — the caller establishes it (inferFunc passes the param scope, so
 // body-level val/var redeclarations overwrite alongside the params, per §3.2).
 // soltype.UndefinedType is the result of a block that ends in a declaration or a
-// value-free statement, matching the `undefined` such a block evaluates to at
-// runtime.
+// value-free statement, which is the value such a block evaluates to at runtime.
 //
 // The divergence flag is the single source of truth for "this block produces no
 // value": a VALUE-position caller (an if/else branch today; do/match arms when
