@@ -307,3 +307,59 @@ func TestInferMatchUndefinedArmCoversAValuelessBlockResult(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, `fn (c: boolean) -> "five" | "none"`, values["f"])
 }
+
+// A body that leaves along every path delivers `never`, not the annotation, so the
+// declared return is unreachable and gets flagged. The rule is over every annotation
+// other than `never`, and `void` is one more spelling reaching it — `-> undefined` is
+// rejected identically. A function that diverges on purpose writes `-> never`.
+func TestInferVoidReturnAnnotationOverADivergingBody(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "Void",
+			src:  `fn fail(msg: string) -> void throws string { throw msg }`,
+			want: "1:25-1:29: every path through the body throws, so the declared return type `undefined` is unreachable; the body returns `never`",
+		},
+		{
+			name: "Undefined",
+			src:  `fn fail(msg: string) -> undefined throws string { throw msg }`,
+			want: "1:25-1:34: every path through the body throws, so the declared return type `undefined` is unreachable; the body returns `never`",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
+	// `-> never` is what the body delivers, so it is not flagged.
+	_, _, errs := inferSource(t, `fn fail(msg: string) -> never throws string { throw msg }`)
+	require.Empty(t, errs)
+}
+
+// A `-> void` return position is checked like any other: the argument's return type must
+// be a subtype of it, so only a lambda that itself produces no value is accepted.
+// TypeScript instead treats a `void` return position as bivariant and accepts a lambda
+// returning anything, discarding the value. The solver does not implement that rule, and
+// `void` naming the `undefined` type is what fixes the strict reading in place — a
+// bivariant `void` would need a return type distinct from `undefined`, since
+// `fn () -> number` must never satisfy `fn () -> undefined`.
+//
+// This is reachable from a hand-written annotation today. It also decides what a `.d.ts`
+// callback slot means once the solver consumes interop output, since interop lowers
+// TypeScript's `void` to ast.VoidTypeAnn (internal/interop/helper.go). Under this rule
+// `xs.forEach((x) => x.trim())` would be rejected for returning a value the callee drops.
+func TestInferVoidCallbackReturnIsInvariant(t *testing.T) {
+	src := `
+		declare fn each(cb: fn() -> void) -> undefined
+		val ok = each(fn () { })
+		val bad = each(fn () { return 5 })
+	`
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, "4:33-4:34: cannot constrain 5 <: undefined", msgWithSpan(errs[0]))
+}
