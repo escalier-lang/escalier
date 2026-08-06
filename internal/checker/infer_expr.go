@@ -1212,21 +1212,13 @@ func (c *Checker) instantiateGenericFunc(fnType *type_system.FuncType) *type_sys
 	return result
 }
 
-// restTupleCandidates reports the parameter lists a rest argument list could be
-// checked against when the rest parameter is annotated with a tuple rather than an
-// `Array<T>`. argCount is how many arguments landed in the rest position, and each
-// returned list has one type per argument, in order.
-//
-// TypeScript's declaration files use this form to give a variadic signature a fixed
-// arity per call. `Generator.next` is declared `next(...args: [] | [TNext])`, so a
-// call with no argument matches the empty tuple and a call with one argument checks
-// that argument against TNext.
-//
-// A union contributes every branch that is a tuple of argCount elements, so a
-// declaration like `...args: [string] | [number]` offers two candidates for a
-// one-argument call and pickRestTupleCandidate chooses between them. A tuple holding
-// a RestSpreadType element has no fixed arity and is never a candidate. No candidates
-// at all leaves the caller to raise InvalidNumberOfArgumentsError.
+// restTupleCandidates reports the parameter lists a rest argument list could be checked
+// against when the rest parameter is a tuple rather than an `Array<T>`. TypeScript's
+// declaration files use that form to fix a variadic signature's arity per call, the way
+// `Generator.next`'s `next(...args: [] | [TNext])` does. Each returned list holds
+// argCount types, so a union contributes every branch of that length and
+// pickRestTupleCandidate chooses among them. Returning none leaves the caller to raise
+// InvalidNumberOfArgumentsError.
 func restTupleCandidates(restType type_system.Type, argCount int) [][]type_system.Type {
 	fixedTupleElems := func(t type_system.Type) ([]type_system.Type, bool) {
 		tuple, isTuple := type_system.Prune(t).(*type_system.TupleType)
@@ -1254,17 +1246,12 @@ func restTupleCandidates(restType type_system.Type, argCount int) [][]type_syste
 	return candidates
 }
 
-// pickRestTupleCandidate chooses which of restTupleCandidates' parameter lists the
-// rest arguments are checked against. The first list every argument already satisfies
-// wins, so `pick("x")` against `...args: [string] | [number]` is checked against
-// `[string]` and accepted.
-//
-// The queries run through Check, which commits no inference, so a losing candidate
-// leaves nothing behind. Check also answers false for an argument whose type is still
-// an unbound inference variable, so an unresolved argument matches no candidate. When
-// nothing matches, the first candidate is returned and the caller unifies against it,
-// turning what would be a bare arity complaint into a type error that names the types
-// involved.
+// pickRestTupleCandidate chooses which of restTupleCandidates' lists the rest arguments
+// are checked against. The first list every argument already satisfies wins, so
+// `pick("x")` against `[string] | [number]` picks `[string]`. The queries go through
+// Check, so a losing candidate commits no inference, and an argument still typed as an
+// unbound variable matches nothing. When no list matches, the first is returned so the
+// caller's unification reports a type error rather than a bare arity complaint.
 func (c *Checker) pickRestTupleCandidate(ctx Context, candidates [][]type_system.Type, argTypes []type_system.Type) []type_system.Type {
 	for _, candidate := range candidates {
 		matches := true
