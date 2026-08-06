@@ -276,7 +276,9 @@ split p {                       split p {
 ### Out of scope
 
 - **Codegen (M10).** The IR package is placed so `internal/codegen` can import it
-  later, but no codegen consumer is written here.
+  later, but no codegen consumer is written here. Sourcemaps ride that consumer; the
+  [Sourcemaps](#sourcemaps) note records the span provenance M10 needs so it is not
+  dropped before then.
 - **Pattern alternatives / or-patterns.** An or-pattern lets one arm match several
   shapes and share a body, for example a `|`-separated alternative:
 
@@ -373,6 +375,27 @@ Phase 2's free coverage witnesses be phrased per construct. Ownership across the
 PRs: PR1 adds the `Origin` tag and synthetic marker to the ADT, PR2 sets them while
 desugaring, PR3 and PR4 preserve the back-reference through their rewrites, and
 PR6 through PR8 add the origin-keyed wording and its tests.
+
+### Sourcemaps
+
+The same node-level provenance is what a future codegen needs for correct
+sourcemaps, so the two uses share one substrate rather than each carrying spans
+separately. Codegen itself is out of scope — sourcemap *emission* lives in
+[internal/codegen/source_map.go](../../internal/codegen/source_map.go), which maps
+generated-JS nodes back to `.esc` spans through the `Span` on codegen AST nodes,
+and M10 writes that consumer. This plan's job is only to not drop the spans before
+then. Because every core and normalized node already carries its originating
+`ast.Node`, M10 can attach the user's `match` / `if val` / `val … else` span to the
+JS it lowers, so a sourcemap points at the source the user wrote, not a desugared
+position.
+
+One decision is deferred to M10, not settled here: the **synthesized-node span
+policy**. The desugarer invents nodes with no source — the fallthrough tail, an
+implicit `else` — and a sourcemap must not point at a column the user cannot see.
+The synthetic marker from point 2 above is what M10 keys that policy off: map a
+synthetic node to the nearest enclosing real span, or emit no mapping for it,
+rather than inventing a position. Recording the marker now keeps that choice open
+instead of foreclosing it with a lost span.
 
 ## Pull requests
 
