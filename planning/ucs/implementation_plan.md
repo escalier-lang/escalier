@@ -9,8 +9,10 @@ graft that reuses this IR.
 
 ## What UCS gives us
 
-The design adopts the desugar-then-normalize pipeline from "The Ultimate
-Conditional Syntax" (Cheng & Parreaux, OOPSLA 2024). Three terms recur below:
+The design adopts the desugar-then-normalize pipeline from ["The Ultimate
+Conditional Syntax"](https://dl.acm.org/doi/10.1145/3689746) (Cheng & Parreaux,
+OOPSLA 2024; [artifact and demo](https://github.com/hkust-taco/ucs)). Three terms
+recur below:
 
 - **Desugared core.** A small term language the rich conditional surface lowers
   into. It has one `Split` node that tests a scrutinee against a sequence of
@@ -483,7 +485,8 @@ scrutinee splits, one tag-level each.
 - Recurse to arbitrary depth, keeping every split at one tag-level so the checker
   and Phase 2's coverage never see a deep shape at once.
 - Before finalizing the split and tail shape, confirm the details against the UCS
-  paper's normalization section and the `hkust-taco/ucs` reference, per the issue's
+  paper's normalization section and the [`hkust-taco/ucs`](https://github.com/hkust-taco/ucs)
+  reference, per the issue's
   fourth task.
 - Carry the source pattern node onto each projection scrutinee so a flattened split
   reports against the user's nested pattern, not the internal path, per the
