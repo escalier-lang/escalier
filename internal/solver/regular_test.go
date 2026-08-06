@@ -262,7 +262,7 @@ func TestConstrainRegularAliasClosesOnItsKnot(t *testing.T) {
 		fn use() -> H<{c: number}> { return node() }
 	`)
 	require.Equal(t,
-		[]string{nonReturningMsg("3:6-3:10", "node", `{a: "c", b: μX0.{a: "c", b: X0}}`)},
+		[]string{nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`)},
 		messagesWithSpan(errs))
 	require.Equal(t, `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`, values["node"])
 	require.Equal(t, "fn () -> H<{c: number}>", values["use"])
@@ -278,7 +278,7 @@ func TestConstrainRegularAliasChecksTheLapAboveTheKnot(t *testing.T) {
 		fn use() -> H<number> { return node() }
 	`)
 	require.Equal(t, []string{
-		nonReturningMsg("3:6-3:10", "node", `{a: "c", b: μX0.{a: "c", b: X0}}`),
+		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`),
 		`4:3-4:42: cannot constrain "c" <: never`,
 	}, messagesWithSpan(errs))
 }
@@ -296,7 +296,7 @@ func TestConstrainRegularAliasStillReportsAMismatch(t *testing.T) {
 		fn use() -> H<{c: number}> { return node() }
 	`)
 	require.Equal(t, []string{
-		nonReturningMsg("3:6-3:10", "node", `{a: "wrong", b: μX0.{a: "wrong", b: X0}}`),
+		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "wrong", b: μX0.{a: "wrong", b: X0}}`),
 		`4:3-4:47: cannot constrain "wrong" <: "c"`,
 		`4:3-4:47: cannot constrain "wrong" <: "c"`,
 	}, messagesWithSpan(errs))
@@ -356,7 +356,7 @@ func TestConstrainRegularAliasKeepsAReductionDiagnostic(t *testing.T) {
 		fn use() -> H<{c: number}> { return node() }
 	`)
 	require.Equal(t, []string{
-		nonReturningMsg("3:6-3:10", "node", `{a: "c", e: 1, b: μX0.{a: "c", e: 1, b: X0}}`),
+		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", e: 1, b: μX0.{a: "c", e: 1, b: X0}}`),
 		`4:3-4:47: object {x: number} has no property "z"`,
 	}, messagesWithSpan(errs))
 }

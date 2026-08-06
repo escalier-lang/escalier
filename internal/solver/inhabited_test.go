@@ -8,18 +8,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// nonReturningMsg builds the diagnostic checkCanReturn reports, so a test spells out the return type
+// nonReturningMsg builds the diagnostic checkCanReturn reports, so a test spells out the signature
 // it expects to see rather than the whole sentence around it. span is the blamed range, name is what
-// the source called the function, and ret is the rendered return type. An empty name is a function
-// expression, which the message calls "this function".
-func nonReturningMsg(span, name, ret string) string {
+// the source called the function, and fn is its rendered type. An empty name is a lambda, which the
+// message calls "this function".
+func nonReturningMsg(span, name, fn string) string {
 	subject := "this function"
 	if name != "" {
 		subject = "`" + name + "`"
 	}
-	return fmt.Sprintf("%s: %s returns `%s`, which no finite value inhabits, so a call to it never "+
-		"returns; give the recursion a base case, make the recursive property optional, or defer the "+
-		"recursive call behind a function or a Promise", span, subject, ret)
+	return fmt.Sprintf("%s: %s has type `%s`, and no finite value inhabits its return type, so a "+
+		"call to it never returns; give the recursion a base case, make the recursive property "+
+		"optional, or defer the recursive call behind a function or a Promise", span, subject, fn)
 }
 
 // TestNonReturningRecursionReported pins the diagnostic on the shapes that cannot return. In each
@@ -37,12 +37,12 @@ func TestNonReturningRecursionReported(t *testing.T) {
 			name: "recursion through an object property",
 			src:  `fn cons(x: number) { return {head: x, tail: cons(x)} }`,
 			want: []string{nonReturningMsg("1:4-1:8", "cons",
-				"{head: number, tail: μX0.{head: number, tail: X0}}")},
+				"fn (x: number) -> {head: number, tail: μX0.{head: number, tail: X0}}")},
 		},
 		{
 			name: "recursion through a tuple element",
 			src:  `fn f() { return [f()] }`,
-			want: []string{nonReturningMsg("1:4-1:5", "f", "[μX0.[X0]]")},
+			want: []string{nonReturningMsg("1:4-1:5", "f", "fn () -> [μX0.[X0]]")},
 		},
 		{
 			// Mutual recursion draws one diagnostic per participant. coalesce closes the cycle at
@@ -54,9 +54,9 @@ func TestNonReturningRecursionReported(t *testing.T) {
 			`,
 			want: []string{
 				nonReturningMsg("3:8-3:12", "stmt",
-					`{kind: "exprStmt", inner: μX0.{kind: "call", args: [{kind: "exprStmt", inner: X0}]}}`),
+					`fn () -> {kind: "exprStmt", inner: μX0.{kind: "call", args: [{kind: "exprStmt", inner: X0}]}}`),
 				nonReturningMsg("2:8-2:12", "expr",
-					`{kind: "call", args: [μX0.{kind: "exprStmt", inner: {kind: "call", args: [X0]}}]}`),
+					`fn () -> {kind: "call", args: [μX0.{kind: "exprStmt", inner: {kind: "call", args: [X0]}}]}`),
 			},
 		},
 		{
@@ -68,8 +68,8 @@ func TestNonReturningRecursionReported(t *testing.T) {
 				fn g() { return f() }
 			`,
 			want: []string{
-				nonReturningMsg("2:8-2:9", "f", "{next: μX0.{next: X0}}"),
-				nonReturningMsg("3:8-3:9", "g", "{next: μX0.{next: X0}}"),
+				nonReturningMsg("2:8-2:9", "f", "fn () -> {next: μX0.{next: X0}}"),
+				nonReturningMsg("3:8-3:9", "g", "fn () -> {next: μX0.{next: X0}}"),
 			},
 		},
 		{
@@ -78,7 +78,29 @@ func TestNonReturningRecursionReported(t *testing.T) {
 			// function expression has no name, so the message says "this function".
 			name: "a lambda that cannot return is blamed on the lambda",
 			src:  `fn f() { return {go: fn () { return {next: f().go()} }} }`,
-			want: []string{nonReturningMsg("1:22-1:55", "", "{next: μX0.{next: X0}}")},
+			want: []string{nonReturningMsg("1:22-1:55", "", "fn () -> {next: μX0.{next: X0}}")},
+		},
+		{
+			// A class member reaches inferFunc as a bare *ast.FuncExpr, so its name arrives through
+			// checker.memberName instead of the node. Without that it would read "this function".
+			name: "a method is named in the diagnostic",
+			src: `
+				class Node {
+					grow(self) { return {next: self.grow()} },
+				}
+			`,
+			want: []string{nonReturningMsg("3:6-3:47", "grow", "fn (self) -> {next: μX0.{next: X0}}")},
+		},
+		{
+			// A lambda inside a member body must not inherit the member's name, which is why
+			// inferFunc clears memberName before walking the body.
+			name: "a lambda inside a method keeps no member name",
+			src: `
+				class Node {
+					grow(self) { return {go: fn () { return {next: self.grow().go()} }} },
+				}
+			`,
+			want: []string{nonReturningMsg("3:31-3:72", "", "fn () -> {next: μX0.{next: X0}}")},
 		},
 	}
 	for _, tt := range tests {
@@ -159,6 +181,36 @@ func TestNonReturningRecursionAccepts(t *testing.T) {
 			// rather than recursing. Rejecting it would flag every not-yet-implemented stub.
 			name: "a throwing stub is not a recursion",
 			src:  `fn todo() -> never throws string { throw "todo" }`,
+		},
+		{
+			// The base case is an UNANNOTATED parameter flowing straight to the return, which
+			// displays as `fn <T0>(x: T0) -> T0 | {next: T0}`. Reading the return alone through
+			// plain coalesce would render that arm `never`, the union constructor would drop it,
+			// and the base case would vanish. Annotating `x` gives the arm a concrete type, so
+			// only the unannotated form pins the retention checkCanReturn depends on.
+			name: "an unannotated parameter reaching the return is a base case",
+			src: `
+				declare fn cond() -> boolean
+				fn f(x) {
+					if cond() { return x }
+					return {next: f(x)}
+				}
+			`,
+		},
+		{
+			// The same base case through a class type parameter, which the member walk resolves
+			// rather than generalization.
+			name: "a class type parameter reaching the return is a base case",
+			src: `
+				declare fn cond() -> boolean
+				class Box<T> {
+					v: T,
+					grow(self) {
+						if cond() { return self.v }
+						return {next: self.grow()}
+					},
+				}
+			`,
 		},
 	}
 	for _, tt := range tests {

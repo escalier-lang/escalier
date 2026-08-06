@@ -51,25 +51,23 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 			src:      `fn f() { return {next: f()} }`,
 			binding:  "f",
 			want:     "fn () -> {next: μX0.{next: X0}}",
-			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "{next: μX0.{next: X0}}")},
+			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "fn () -> {next: μX0.{next: X0}}")},
 		},
 		{
 			name:     "recursion through a tuple element",
 			src:      `fn f() { return [f()] }`,
 			binding:  "f",
 			want:     "fn () -> [μX0.[X0]]",
-			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "[μX0.[X0]]")},
+			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "fn () -> [μX0.[X0]]")},
 		},
 		{
-			// The diagnostic reads the MONOMORPHIC coalescing of the return type, where a parameter
-			// var with no lower bound is `never`, so it renders `value: never` where the generalized
-			// display renders the quantified `value: T0`.
-			name:    "knot beside a retained type parameter",
-			src:     `fn f(x) { return {next: f(x), value: x} }`,
-			binding: "f",
-			want:    "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}",
-			wantErrs: []string{nonReturningMsg("1:4-1:5", "f",
-				"{next: μX0.{next: X0, value: never}, value: never}")},
+			// The diagnostic renders the same display type this case pins, quantifier and all, since
+			// checkCanReturn reads the whole signature through coalesceScheme.
+			name:     "knot beside a retained type parameter",
+			src:      `fn f(x) { return {next: f(x), value: x} }`,
+			binding:  "f",
+			want:     "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}",
+			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}")},
 		},
 		{
 			// Mutual recursion runs the same cycle through two bindings, so the knot closes one lap
@@ -83,8 +81,8 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 			binding: "ping",
 			want:    "fn () -> {p: μX0.{q: {p: X0}}}",
 			wantErrs: []string{
-				nonReturningMsg("3:8-3:12", "pong", "{q: μX0.{p: {q: X0}}}"),
-				nonReturningMsg("2:8-2:12", "ping", "{p: μX0.{q: {p: X0}}}"),
+				nonReturningMsg("3:8-3:12", "pong", "fn () -> {q: μX0.{p: {q: X0}}}"),
+				nonReturningMsg("2:8-2:12", "ping", "fn () -> {p: μX0.{q: {p: X0}}}"),
 			},
 		},
 	}
@@ -250,8 +248,8 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 			binding: "h",
 			want:    "fn () -> {next: μX0.{next: X0}}",
 			wantErrs: []string{
-				nonReturningMsg("2:8-2:9", "f", "{next: μX0.{next: X0}}"),
-				nonReturningMsg("3:8-3:9", "h", "{next: μX0.{next: X0}}"),
+				nonReturningMsg("2:8-2:9", "f", "fn () -> {next: μX0.{next: X0}}"),
+				nonReturningMsg("3:8-3:9", "h", "fn () -> {next: μX0.{next: X0}}"),
 			},
 		},
 		{
@@ -262,7 +260,7 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 			`,
 			binding:  "c",
 			want:     "μX0.{next: X0}",
-			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "{next: μX0.{next: X0}}")},
+			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "fn () -> {next: μX0.{next: X0}}")},
 		},
 		{
 			name: "a recursive result through a type parameter still renders a knot",
@@ -273,7 +271,7 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 			`,
 			binding:  "d",
 			want:     "{next: μX0.{next: X0}}",
-			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "{next: μX0.{next: X0}}")},
+			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "fn () -> {next: μX0.{next: X0}}")},
 		},
 		{
 			// The tuple shape reaches the same reassignment path, so a coalesced knot over a tuple
@@ -290,8 +288,8 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 			binding: "h",
 			want:    "fn () -> [μX0.[X0]]",
 			wantErrs: []string{
-				nonReturningMsg("2:8-2:9", "f", "[μX0.[X0]]"),
-				nonReturningMsg("3:8-3:9", "h", "[μX0.[X0]]"),
+				nonReturningMsg("2:8-2:9", "f", "fn () -> [μX0.[X0]]"),
+				nonReturningMsg("3:8-3:9", "h", "fn () -> [μX0.[X0]]"),
 			},
 		},
 		{
@@ -304,7 +302,7 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 			`,
 			binding:  "inner",
 			want:     "μX0.[X0]",
-			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "[μX0.[X0]]")},
+			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "fn () -> [μX0.[X0]]")},
 		},
 	}
 	for _, tt := range tests {

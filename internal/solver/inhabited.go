@@ -22,9 +22,9 @@ import (
 //
 // # What lets a value stop
 //
-// finitelyInhabited decides the question by reading the coalesced return type. A μ-knot has a finite
-// value when some path through its body reaches a leaf without reaching the binder. Four shapes
-// provide such a path, and each one appears in ordinary code.
+// finitelyInhabited decides the question by reading the return of the coalesced signature. A μ-knot
+// has a finite value when some path through its body reaches a leaf without reaching the binder.
+// Four shapes provide such a path, and each one appears in ordinary code.
 //
 // A union arm that does not mention the binder is what a base case produces, so
 // `μX0.({head: number, tail: undefined} | {head: number, tail: X0})` stops at the first arm.
@@ -56,36 +56,60 @@ import (
 // checkCanReturn reports every queued function that cannot return, and clears the queue so a later
 // group starts empty. It runs once a whole mutually-recursive group has been walked, since the cycle
 // that ties the knot is not closed while any body in the group is still outstanding.
+//
+// The display type comes from coalesceScheme rather than plain coalesce, and it is built from the
+// WHOLE function type rather than the return alone. coalesceScheme keeps a variable the caller
+// chooses symbolic instead of inlining it to its bounds, and it recognizes such a variable by its
+// occurring in both polarities. Only the parameter list shows the negative occurrence, which is why
+// the return alone is not enough.
+//
+// Both parts are load-bearing. Plain coalesce renders an unannotated parameter as `never` wherever
+// it reaches the return, and the union constructor drops a `never` arm, so this function would lose
+// the base case it plainly has and be rejected:
+//
+//	fn f(x) {
+//	    if cond() { return x }
+//	    return {next: f(x)}
+//	}
+//
+// It displays as `fn <T0>(x: T0) -> T0 | {next: T0}`, and the `T0` arm is what stops the recursion.
 func (c *checker) checkCanReturn() {
 	pending := c.pendingReturns
 	c.pendingReturns = nil
 	for _, p := range pending {
-		ret := coalesce(p.ret, soltype.Positive)
-		if finitelyInhabited(ret) {
+		display, isFunc := coalesceScheme(p.fn, p.genLevel).(*soltype.FuncType)
+		if !isFunc || finitelyInhabited(display.Ret) {
 			continue
 		}
-		c.report(&NonReturningRecursionError{Site: p.site, Name: p.name, Ret: ret})
+		c.report(&NonReturningRecursionError{Site: p.site, Name: p.name, Fn: display})
 	}
 }
 
-// pendingReturn is one function body waiting for checkCanReturn. ret is the return type the
-// function's FuncType carries, still holding inference variables; checkCanReturn coalesces it so the
-// knot the walk reads is the one the finished bound graph implies. site is the node the diagnostic
-// points at. name is what the source called the function, empty for a function expression.
+// pendingReturn is one function body waiting for checkCanReturn.
+//
+// fn is the function's inferred type, still holding inference variables. genLevel is the level the
+// binding this function belongs to generalizes at, so a variable minted above it becomes a
+// quantified type parameter and a caller chooses what it stands for. site is the node the diagnostic
+// points at. name is what the source called the function, empty when no name reached inferFunc.
 type pendingReturn struct {
-	site ast.Node
-	name string
-	ret  soltype.Type
+	site     ast.Node
+	name     string
+	fn       *soltype.FuncType
+	genLevel int
 }
 
 // queueReturnCheck queues one body-carrying function for checkCanReturn. node is the *ast.FuncDecl
-// or *ast.FuncExpr being typed, and ret is the return type its FuncType carries.
+// or *ast.FuncExpr being typed and ft is the type inferFunc built for it.
+//
+// A `fn` declaration is blamed at its name. Every other function reaches inferFunc as a bare
+// *ast.FuncExpr, so a lambda and a class member are blamed over their whole span. memberName is what
+// the class member is called, empty for a lambda and for a `fn` declaration.
 //
 // A queued entry is rolled back with the probe that recorded it, mirroring the errs snapshot
 // openProbe takes. A discarded trial must leave no diagnostic behind, and the queue turns into
 // diagnostics after the trial is over.
-func (c *checker) queueReturnCheck(node ast.Node, ret soltype.Type) {
-	site, name := node, ""
+func (c *checker) queueReturnCheck(node ast.Node, ft *soltype.FuncType, genLevel int, memberName string) {
+	site, name := node, memberName
 	if fd, isDecl := node.(*ast.FuncDecl); isDecl && fd.Name != nil {
 		site, name = fd.Name, fd.Name.Name
 	}
@@ -93,7 +117,8 @@ func (c *checker) queueReturnCheck(node ast.Node, ret soltype.Type) {
 		queueLen := len(c.pendingReturns)
 		probe.onRollback(func() { c.pendingReturns = c.pendingReturns[:queueLen] })
 	}
-	c.pendingReturns = append(c.pendingReturns, pendingReturn{site: site, name: name, ret: ret})
+	c.pendingReturns = append(c.pendingReturns,
+		pendingReturn{site: site, name: name, fn: ft, genLevel: genLevel})
 }
 
 // finitelyInhabited reports whether a finite value has type t. It reads a coalesced type, where a
@@ -106,9 +131,12 @@ func (c *checker) queueReturnCheck(node ast.Node, ret soltype.Type) {
 // the way, which is the one thing that makes this false.
 //
 // Every shape the walk cannot decide reads as inhabited, so an unfamiliar one never produces a
-// diagnostic. `never` is one of those. Nothing has that type, but a function returning it diverges
-// or throws rather than recursing, and `fn todo() -> never throws string { throw "todo" }` is a stub
-// anyone may write. An alias reference is another, since deciding one would mean expanding it.
+// diagnostic. Three reach it through the final arm. A quantified type parameter is one, since the
+// caller chooses what it stands for and may choose something inhabited, which is what makes a
+// parameter reaching the return count as a base case. `never` is another. Nothing has that type, but
+// a function returning it diverges or throws rather than recursing, and
+// `fn todo() -> never throws string { throw "todo" }` is a stub anyone may write. An alias reference
+// is the third, since deciding one would mean expanding it.
 //
 // It is a recursive switch rather than a soltype visitor, which the CLAUDE.md convention would
 // otherwise call for. Each kind folds its operands differently — an object needs every required

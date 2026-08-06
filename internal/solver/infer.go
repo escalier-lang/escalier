@@ -107,6 +107,13 @@ type checker struct {
 	// runDeferredArgBounds once every body in the component is filled.
 	deferredArgBounds []deferredArgBound
 
+	// memberName is the name of the class member whose body is about to be walked, set by
+	// inferMemberBodies and consumed by the inferFunc call that walks it. A member reaches
+	// inferFunc as a bare *ast.FuncExpr, which carries no name, so this is how the
+	// non-returning-recursion diagnostic learns what to call it. inferFunc reads and clears it on
+	// entry, so a lambda nested inside a member body is not blamed under the member's name.
+	memberName string
+
 	// pendingReturns holds every body-carrying function inferFunc has typed since the last
 	// checkCanReturn, each waiting to have its return type checked for a finite inhabitant. The
 	// check is queued rather than run on the spot because a mutually-recursive group closes its

@@ -1482,12 +1482,16 @@ func (e *NotProductiveAliasError) Message() string {
 // it.
 //
 // Site is the node the diagnostic points at, a `fn` declaration's name or a whole function
-// expression. Name is what the source called the function, empty for a function expression. Ret is
-// the coalesced return type, rendered in the message so the knot the check read is visible.
+// expression. Name is what the source called the function, empty for a lambda.
+//
+// Fn is the function's coalesced display type. The message renders the whole signature rather than
+// the return alone because the return can hold a quantified type parameter, and naming a `T0`
+// without the `<T0>` binder the signature carries would render a parameter with nothing to tie it
+// to.
 type NonReturningRecursionError struct {
 	Site ast.Node
 	Name string
-	Ret  soltype.Type
+	Fn   soltype.Type
 }
 
 func (*NonReturningRecursionError) isSolverError()        {}
@@ -1499,10 +1503,10 @@ func (e *NonReturningRecursionError) Message() string {
 		subject = "`" + e.Name + "`"
 	}
 	return fmt.Sprintf(
-		"%s returns `%s`, which no finite value inhabits, so a call to it never returns; give the "+
-			"recursion a base case, make the recursive property optional, or defer the recursive call "+
-			"behind a function or a Promise",
-		subject, soltype.Print(e.Ret))
+		"%s has type `%s`, and no finite value inhabits its return type, so a call to it never "+
+			"returns; give the recursion a base case, make the recursive property optional, or defer "+
+			"the recursive call behind a function or a Promise",
+		subject, soltype.PrintAsScheme(e.Fn))
 }
 
 // ExpansionLimitError fires when constrain evaluates more than maxUnwrapDepth type operators along
