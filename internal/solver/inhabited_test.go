@@ -225,9 +225,12 @@ func TestNonReturningRecursionAccepts(t *testing.T) {
 // reach the shapes no inference path mints. An object literal never produces an optional property,
 // and no inferred function returns a borrow of a knot, so those two arms are covered here rather
 // than through source.
+//
+// Each case leads with the type it builds, written the way soltype.Print renders it, since a tree of
+// constructor calls is hard to read as a type.
 func TestFinitelyInhabited(t *testing.T) {
-	// selfProp builds `μX0.{<name>: X0}` with the property optional or required, the two readings
-	// the object arm has to tell apart.
+	// selfProp builds `μX0.{<name>: X0}`, or `μX0.{<name>?: X0}` when optional, the two readings the
+	// object arm has to tell apart.
 	selfProp := func(name string, optional bool) soltype.Type {
 		return muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
 			return exactObj(&soltype.PropertyElem{Name: name, Type: ref, Optional: optional})
@@ -239,22 +242,27 @@ func TestFinitelyInhabited(t *testing.T) {
 		want bool
 	}{
 		{
+			// μX0.{tail: X0}
 			name: "a knot whose only property is required has no finite value",
 			t:    selfProp("tail", false),
 			want: false,
 		},
 		{
+			// μX0.{tail?: X0}
 			name: "an optional property lets the value stop",
 			t:    selfProp("tail", true),
 			want: true,
 		},
 		{
+			// {tail: μX0.{tail: X0}}
 			name: "a required property carrying a knot with no base case has no finite value",
 			t:    exactObj(propElem("tail", selfProp("tail", false))),
 			want: false,
 		},
 		{
-			// The base case as a union arm: one arm reaches a leaf without the binder.
+			// μX0.(undefined | {tail: X0})
+			//
+			// The base case as a union arm. The `undefined` arm reaches a leaf without the binder.
 			name: "a union arm without the binder lets the value stop",
 			t: muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
 				return &soltype.UnionType{Types: []soltype.Type{
@@ -265,7 +273,9 @@ func TestFinitelyInhabited(t *testing.T) {
 			want: true,
 		},
 		{
-			// Every arm of the union comes back to the binder, so no arm terminates.
+			// μX0.({head: X0} | {tail: X0})
+			//
+			// Every arm comes back to the binder, so no arm terminates.
 			name: "a union whose every arm reaches the binder has no finite value",
 			t: muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
 				return &soltype.UnionType{Types: []soltype.Type{
@@ -276,6 +286,7 @@ func TestFinitelyInhabited(t *testing.T) {
 			want: false,
 		},
 		{
+			// μX0.{rest: fn () -> X0}
 			name: "a thunk's return is not built with the value around it",
 			t: muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
 				return exactObj(propElem("rest", &soltype.FuncType{Ret: ref}))
@@ -283,6 +294,7 @@ func TestFinitelyInhabited(t *testing.T) {
 			want: true,
 		},
 		{
+			// μX0.Promise<X0>
 			name: "a Promise's payload is not built with the value around it",
 			t: muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
 				return &soltype.PromiseType{Inner: ref}
@@ -290,6 +302,8 @@ func TestFinitelyInhabited(t *testing.T) {
 			want: true,
 		},
 		{
+			// μX0.Array<X0>
+			//
 			// An array type is inhabited by the empty array, so a recursive element type imposes
 			// nothing on the value.
 			name: "an array of the binder is inhabited by the empty array",
@@ -299,6 +313,8 @@ func TestFinitelyInhabited(t *testing.T) {
 			want: true,
 		},
 		{
+			// μX0.[X0]
+			//
 			// A tuple has a fixed arity, so its positions are all built.
 			name: "a one-element tuple of the binder has no finite value",
 			t: muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
@@ -307,13 +323,19 @@ func TestFinitelyInhabited(t *testing.T) {
 			want: false,
 		},
 		{
+			// mut μX0.{tail: X0}
+			//
 			// A borrow points at a value someone else built, so it terminates exactly when its
-			// pointee does.
+			// pointee does. The borrow is owned-mutable because a shared one needs a lifetime that
+			// no hand-built type here carries, and a lifetime-less shared borrow renders as its bare
+			// pointee.
 			name: "a borrow of a knot with no base case has no finite value",
-			t:    &soltype.RefType{Inner: selfProp("tail", false).(*soltype.RecursiveType)},
+			t:    mutRef(selfProp("tail", false).(*soltype.RecursiveType)),
 			want: false,
 		},
 		{
+			// never
+			//
 			// `never` has no values at all, but nothing about it says a recursion runs forever, and
 			// a throwing stub returns it. The predicate reads it as inhabited so such a stub is not
 			// flagged.
@@ -322,12 +344,15 @@ func TestFinitelyInhabited(t *testing.T) {
 			want: true,
 		},
 		{
+			// List
+			//
 			// An alias reference would have to be expanded to be decided, so it reads as inhabited.
 			name: "an alias reference reads as inhabited",
 			t:    &soltype.AliasType{Name: "List"},
 			want: true,
 		},
 		{
+			// {}
 			name: "an object with no members is inhabited",
 			t:    exactObj(),
 			want: true,
