@@ -979,10 +979,14 @@ type genSinks struct {
 // The annotation names the EXTERNAL generator, so it must be `Generator<Y, R, N>`, or
 // `AsyncGenerator<Y, R, N>` when the function is async. A matching one seeds the yield
 // sink from Y and `next` from N. Anything else draws a GenReturnNotGeneratorError and
-// falls back to the no-annotation seeding, where the yield sink is a fresh variable the
-// yields flow into and `next` is `never`, matching the old checker's `TNext`.
+// falls back to the no-annotation seeding.
+//
+// Without an annotation the yield sink is a fresh variable the yields flow into, and
+// `next` is `unknown`. The Next slot is contravariant, so `unknown` is the neutral
+// choice there, accepting every value a caller sends through `next(v)`. Inside the
+// body a `yield` then evaluates to `unknown`, which needs narrowing before use.
 func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, lvl int) *genSinks {
-	gs := &genSinks{yields: c.freshAt(lvl), next: &soltype.NeverType{}, async: sig.Async}
+	gs := &genSinks{yields: c.freshAt(lvl), next: &soltype.UnknownType{}, async: sig.Async}
 	if sig.Return == nil {
 		return gs
 	}

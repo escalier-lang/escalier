@@ -660,14 +660,14 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 					ctx.AddYieldedType(type_system.NewUndefinedType(provenance))
 				}
 
-				// The yield expression evaluates to TNext (value passed to .next()).
-				// Currently GeneratorNextType is always nil (see Context definition),
-				// so yield always evaluates to never. This is fine because most
-				// generators are consumed via for...in, not manual .next(value).
+				// A yield expression evaluates to TNext, the value a caller sends in
+				// through `.next(v)`. GeneratorNextType carries a declared TNext and is
+				// nil when TNext is inferred. Inference puts `unknown` in that slot, so
+				// in an unannotated generator `val x = yield 1` binds x to `unknown`.
 				if ctx.GeneratorNextType != nil {
 					exprType = ctx.GeneratorNextType
 				} else {
-					exprType = type_system.NewNeverType(provenance)
+					exprType = type_system.NewUnknownType(provenance)
 				}
 			}
 		}
@@ -1187,6 +1187,53 @@ func (c *Checker) instantiateGenericFunc(fnType *type_system.FuncType) *type_sys
 	return result
 }
 
+// restTupleElems reports the parameter types a rest argument list is checked against
+// when the rest parameter is annotated with a tuple rather than an `Array<T>`.
+// argCount is how many arguments landed in the rest position, and the returned slice
+// has one type per argument, in order.
+//
+// TypeScript's declaration files use this form to give a variadic signature a fixed
+// arity per call. `Generator.next` is declared `next(...args: [] | [TNext])`, so a
+// call with no argument matches the empty tuple and a call with one argument checks
+// that argument against TNext.
+//
+// A union matches when exactly one of its branches is a tuple of argCount elements.
+// Two branches of that length are ambiguous, so they report no match rather than
+// picking one. A tuple holding a RestSpreadType element has no fixed arity and never
+// matches. Every no-match leaves the caller to raise InvalidNumberOfArgumentsError.
+func restTupleElems(restType type_system.Type, argCount int) ([]type_system.Type, bool) {
+	fixedTupleElems := func(t type_system.Type) ([]type_system.Type, bool) {
+		tuple, isTuple := type_system.Prune(t).(*type_system.TupleType)
+		if !isTuple || len(tuple.Elems) != argCount {
+			return nil, false
+		}
+		for _, elem := range tuple.Elems {
+			if _, isSpread := type_system.Prune(elem).(*type_system.RestSpreadType); isSpread {
+				return nil, false
+			}
+		}
+		return tuple.Elems, true
+	}
+
+	if union, isUnion := type_system.Prune(restType).(*type_system.UnionType); isUnion {
+		var matched []type_system.Type
+		found := false
+		for _, branch := range union.Types {
+			elems, ok := fixedTupleElems(branch)
+			if !ok {
+				continue
+			}
+			if found {
+				return nil, false
+			}
+			matched, found = elems, true
+		}
+		return matched, found
+	}
+
+	return fixedTupleElems(restType)
+}
+
 func (c *Checker) handleFuncCall(
 	ctx Context,
 	fnType *type_system.FuncType,
@@ -1250,6 +1297,7 @@ func (c *Checker) handleFuncCall(
 		// Unify rest arguments with rest parameter type
 		if len(expr.Args) > restIndex {
 			restParam := fnType.Params[restIndex]
+			restArgCount := len(expr.Args) - restIndex
 			if arrayType, ok := restParam.Type.(*type_system.TypeRefType); ok && type_system.QualIdentToString(arrayType.Name) == "Array" && len(arrayType.TypeArgs) > 0 {
 				elementType := arrayType.TypeArgs[0]
 				for i := restIndex; i < len(expr.Args); i++ {
@@ -1258,6 +1306,15 @@ func (c *Checker) handleFuncCall(
 						argType = c.instantiateGenericFunc(ft)
 					}
 					paramErrors := c.Unify(ctx, argType, elementType)
+					errors = slices.Concat(errors, paramErrors)
+				}
+			} else if elemTypes, ok := restTupleElems(restParam.Type, restArgCount); ok {
+				for i, elemType := range elemTypes {
+					argType := argTypes[restIndex+i]
+					if ft, ok := argType.(*type_system.FuncType); ok && (len(ft.TypeParams) > 0 || len(ft.LifetimeParams) > 0) {
+						argType = c.instantiateGenericFunc(ft)
+					}
+					paramErrors := c.Unify(ctx, argType, elemType)
 					errors = slices.Concat(errors, paramErrors)
 				}
 			} else {

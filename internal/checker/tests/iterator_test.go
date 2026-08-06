@@ -584,7 +584,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> Generator<1 | 2 | 3, undefined, never>",
+			"fn () -> Generator<1 | 2 | 3, undefined, unknown>",
 			types["count"])
 	})
 
@@ -598,7 +598,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<1 | 2, "done", never>`,
+			`fn () -> Generator<1 | 2, "done", unknown>`,
 			types["myGen"])
 	})
 
@@ -611,7 +611,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			`fn () -> Generator<1 | "hello", undefined, never>`,
+			`fn () -> Generator<1 | "hello", undefined, unknown>`,
 			types["mixed"])
 	})
 
@@ -624,7 +624,7 @@ func TestYieldExprInference(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> Generator<number, undefined, never>",
+			"fn () -> Generator<number, undefined, unknown>",
 			types["delegating"])
 	})
 
@@ -684,7 +684,7 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 
 	t.Run("AnnotatedNonGeneratorReturnTypeMismatch", func(t *testing.T) {
 		// A generator with a return annotation of `number` should produce an error
-		// because the inferred type is Generator<number, void, never>, not number.
+		// because the inferred type is Generator<number, undefined, unknown>, not number.
 		_, errors := inferScript(t, `
 			fn g() -> number {
 				yield 1
@@ -705,9 +705,137 @@ func TestGeneratorFunctionDetection(t *testing.T) {
 		`)
 		assert.Empty(t, errors)
 		assert.Equal(t,
-			"fn () -> fn () -> Generator<1, undefined, never>",
+			"fn () -> fn () -> Generator<1, undefined, unknown>",
 			types["outer"])
 	})
+}
+
+// =============================================================================
+// Driving a generator through .next()
+// =============================================================================
+
+// The third type argument of `Generator<T, TReturn, TNext>` is the send slot: the type
+// `next(v)` accepts, and the type a `yield` expression evaluates to. TNext is inferred
+// as `unknown` so a caller may send any value, and a return annotation naming a
+// generator declares a narrower one.
+//
+// `next` is declared `next(...args: [] | [TNext])` and takes a `mut self`, so each case
+// binds the generator through a `mut` annotation before calling it.
+func TestGeneratorNextCall(t *testing.T) {
+	tests := map[string]struct {
+		input      string
+		wantTypes  map[string]string
+		wantErrors []string
+	}{
+		"NextOnInferredGenerator": {
+			// A caller that drives the generator without sending anything, then one
+			// that sends a string. Both are accepted because TNext is `unknown`.
+			input: `
+				gen fn count() {
+					yield 1
+					yield 2
+				}
+				val it: mut Generator<1 | 2, undefined, unknown> = count()
+				val first = it.next()
+				val second = it.next("resume")
+			`,
+			wantTypes: map[string]string{
+				"count":  "fn () -> Generator<1 | 2, undefined, unknown>",
+				"first":  "IteratorResult<1 | 2, undefined>",
+				"second": "IteratorResult<1 | 2, undefined>",
+			},
+		},
+		"YieldEvaluatesToTheInferredSendType": {
+			// The send slot is what `yield 1` evaluates to, so returning that value
+			// puts `unknown` in TReturn as well.
+			input: `
+				gen fn echo() {
+					val sent = yield 1
+					return sent
+				}
+			`,
+			wantTypes: map[string]string{
+				"echo": "fn () -> Generator<1, unknown, unknown>",
+			},
+		},
+		"DeclaredSendTypeNarrowsBothEnds": {
+			// A declared TNext types the `yield` inside the body and the argument
+			// `next(v)` accepts, so sending a number is rejected.
+			input: `
+				fn stringSink() -> Generator<number, string, string> {
+					val sent = yield 1
+					return sent
+				}
+				val it: mut Generator<number, string, string> = stringSink()
+				val accepted = it.next("go")
+				val rejected = it.next(42)
+			`,
+			wantTypes: map[string]string{
+				"stringSink": "fn () -> Generator<number, string, string>",
+				"accepted":   "IteratorResult<number, string>",
+			},
+			wantErrors: []string{"42 cannot be assigned to string"},
+		},
+		"NestedGeneratorDoesNotInheritTheDeclaredSendType": {
+			// A declared TNext reaches only the body that declares it. `inner` has no
+			// annotation, so its own yield falls back to the inferred `unknown` rather
+			// than picking up the `string` that `outer` declares.
+			input: `
+				fn outer() -> Generator<number, fn () -> Generator<1, unknown, unknown>, string> {
+					val sent = yield 1
+					fn inner() {
+						val nested = yield 1
+						return nested
+					}
+					return inner
+				}
+			`,
+			wantTypes: map[string]string{
+				"outer": "fn () -> Generator<number, fn () -> Generator<1, unknown, unknown>, string>",
+			},
+		},
+		"NeverSendTypeRejectsEverySentValue": {
+			// `never` is uninhabited, so a generator declaring it cannot be sent
+			// anything. This is what an inferred TNext of `never` would impose on
+			// every generator.
+			input: `
+				declare val it: mut Generator<number, string, never>
+				val r = it.next(1)
+			`,
+			wantErrors: []string{"1 cannot be assigned to never"},
+		},
+		"NextTakesAtMostOneArgument": {
+			// `[] | [TNext]` fixes the arity at zero or one, so a second argument is
+			// rejected on arity rather than on the type of the extra value.
+			input: `
+				declare val it: mut Generator<number, string, string>
+				val r = it.next("a", "b")
+			`,
+			wantErrors: []string{
+				`Invalid number of arguments for function: fn (...value: [] | [string]) -> IteratorResult<number, string>. Expected: 1, got: 2`,
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			types, errors := inferScript(t, test.input)
+
+			messages := make([]string, len(errors))
+			for i, err := range errors {
+				messages[i] = err.Message()
+			}
+			wantErrors := test.wantErrors
+			if wantErrors == nil {
+				wantErrors = []string{}
+			}
+			require.Equal(t, wantErrors, messages)
+
+			for binding, want := range test.wantTypes {
+				require.Equal(t, want, types[binding], "unexpected type for %q", binding)
+			}
+		})
+	}
 }
 
 // =============================================================================

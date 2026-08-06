@@ -183,13 +183,13 @@ type Context struct {
 	// function. Nested functions allocate fresh pointers to isolate their state.
 	ContainsYield *bool
 	YieldedTypes  *[]type_system.Type
-	// GeneratorNextType is the TNext type for the current generator function,
-	// controlling what type yield expressions evaluate to. Currently always nil
-	// (yield evaluates to never, TNext is never) because most generators are
-	// consumed via for...in loops rather than manual .next(value) calls. If we
-	// later support explicit generator type annotations like
-	// fn foo(): Generator<number, void, string>, this field would be set to
-	// the annotated TNext so that yield expressions evaluate to that type.
+	// GeneratorNextType is the TNext type for the current generator function.
+	// It controls what type a yield expression evaluates to. A return annotation
+	// naming a generator sets it to the declared TNext, so in
+	// `fn f() -> Generator<number, void, string> { val x = yield 1 }` the
+	// binding x is a `string`. The field is nil when TNext is inferred instead,
+	// and then a yield expression evaluates to `unknown`, the same type
+	// inference puts in the generator's TNext slot.
 	GeneratorNextType type_system.Type
 	// InFuncBody is true when we're inside a function body. Used to suppress
 	// generalization of nested FuncExprs, which must defer generalization to

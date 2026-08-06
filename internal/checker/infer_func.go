@@ -327,6 +327,25 @@ const (
 
 func (m constructorBodyMode) isConstructor() bool { return m == constructorBody }
 
+// declaredGeneratorNextType reads the TNext type argument out of a return
+// annotation of the form `Generator<T, TReturn, TNext>` or
+// `AsyncGenerator<T, TReturn, TNext>`. Every other return type gives nil, which
+// means TNext is inferred rather than declared. An unannotated return is one of
+// those, since a signature with no return annotation carries a fresh type
+// variable rather than a type reference.
+func declaredGeneratorNextType(returnType type_system.Type) type_system.Type {
+	typeRef, isTypeRef := type_system.Prune(returnType).(*type_system.TypeRefType)
+	if !isTypeRef || len(typeRef.TypeArgs) != 3 {
+		return nil
+	}
+	switch type_system.QualIdentToString(typeRef.Name) {
+	case "Generator", "AsyncGenerator":
+		return typeRef.TypeArgs[2]
+	default:
+		return nil
+	}
+}
+
 func (c *Checker) inferFuncBodyWithFuncSigType(
 	ctx Context,
 	funcSigType *type_system.FuncType,
@@ -357,6 +376,15 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 	bodyCtx.IsAsync = isAsync
 	bodyCtx.ContainsYield = &containsYield
 	bodyCtx.YieldedTypes = &yieldedTypes
+
+	// A return annotation of `Generator<T, TReturn, TNext>` declares what callers
+	// send in through `next(v)`, which is also what a `yield` expression in this
+	// body evaluates to. The field is set before the body is walked so each yield
+	// is typed at its own site. It is assigned unconditionally, so a nested
+	// function without such an annotation clears the enclosing generator's TNext
+	// instead of inheriting it.
+	declaredNextType := declaredGeneratorNextType(funcSigType.Return)
+	bodyCtx.GeneratorNextType = declaredNextType
 
 	// Allocate fresh slice for collecting await throw types during inference
 	if isAsync {
@@ -397,8 +425,14 @@ func (c *Checker) inferFuncBodyWithFuncSigType(
 		} else {
 			yieldType = type_system.NewNeverType(nil)
 		}
-		// TNext is always never for now — see GeneratorNextType comment in Context.
-		nextType := type_system.NewNeverType(nil)
+		// TNext is the value a caller sends in through `next(v)`. A return
+		// annotation naming a generator declares it. Otherwise it is inferred as
+		// `unknown`. That slot is contravariant, so the top type is the neutral
+		// choice for an inferred TNext, letting a caller send any value.
+		nextType := declaredNextType
+		if nextType == nil {
+			nextType = type_system.NewUnknownType(nil)
+		}
 
 		var inferredGenType type_system.Type
 		if isAsync {

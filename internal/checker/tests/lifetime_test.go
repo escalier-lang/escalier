@@ -184,7 +184,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<mut 'a {x: number}, undefined, never>",
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> Generator<mut 'a {x: number}, undefined, unknown>",
 			},
 		},
 		"GeneratorReturnAliasParam": {
@@ -246,7 +246,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"relay": "fn <'a>(g: 'a Generator<mut 'a {x: number}, undefined, never>) -> Generator<mut 'a {x: number}, undefined, never>",
+				"relay": "fn <'a>(g: 'a Generator<mut 'a {x: number}, undefined, never>) -> Generator<mut 'a {x: number}, undefined, unknown>",
 			},
 		},
 		"AsyncGeneratorYieldsAliasParam": {
@@ -261,7 +261,7 @@ func TestInferLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"iter": "fn <'a>(p: mut 'a {x: number}) -> AsyncGenerator<mut 'a {x: number}, undefined, never>",
+				"iter": "fn <'a>(p: mut 'a {x: number}) -> AsyncGenerator<mut 'a {x: number}, undefined, unknown>",
 			},
 		},
 		"GeneratorYieldEscapingReturnAliasing": {
