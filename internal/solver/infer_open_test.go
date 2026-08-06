@@ -15,14 +15,14 @@ func TestInferOpenParam(t *testing.T) {
 		values, _, errs := inferSource(t, `fn dist(open p) { p.x
  p.y }`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn (p: {x: unknown, y: unknown, ...}) -> void", values["dist"])
+		require.Equal(t, "fn (p: {x: unknown, y: unknown, ...}) -> undefined", values["dist"])
 	})
 
 	t.Run("un-open peer renders exact", func(t *testing.T) {
 		values, _, errs := inferSource(t, `fn dist(p) { p.x
  p.y }`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn (p: {x: unknown, y: unknown}) -> void", values["dist"])
+		require.Equal(t, "fn (p: {x: unknown, y: unknown}) -> undefined", values["dist"])
 	})
 
 	t.Run("passing extra fields to an open param checks", func(t *testing.T) {
@@ -67,13 +67,13 @@ func TestInferOpenParamNested(t *testing.T) {
 	t.Run("open renders inexact at every level", func(t *testing.T) {
 		values, _, errs := inferSource(t, "fn foo(open p) { p.a.b }")
 		require.Empty(t, errs)
-		require.Equal(t, "fn (p: {a: {b: unknown, ...}, ...}) -> void", values["foo"])
+		require.Equal(t, "fn (p: {a: {b: unknown, ...}, ...}) -> undefined", values["foo"])
 	})
 
 	t.Run("closed seals every level to exact", func(t *testing.T) {
 		values, _, errs := inferSource(t, "fn foo(p) { p.a.b }")
 		require.Empty(t, errs)
-		require.Equal(t, "fn (p: {a: {b: unknown}}) -> void", values["foo"])
+		require.Equal(t, "fn (p: {a: {b: unknown}}) -> undefined", values["foo"])
 	})
 
 	t.Run("open accepts an extra field on the nested object", func(t *testing.T) {

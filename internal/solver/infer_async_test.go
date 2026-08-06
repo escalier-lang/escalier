@@ -31,16 +31,16 @@ func TestInferAsyncFnWrapsReturnInPromise(t *testing.T) {
 }
 
 // An async fn with no explicit return produces no value — a body's last
-// expression is NOT an implicit return — so the external wrap is Promise<void>,
-// not Promise<"hi">.
-func TestInferAsyncFnNoReturnIsPromiseVoid(t *testing.T) {
+// expression is NOT an implicit return — so the external wrap is
+// `Promise<undefined>`, not `Promise<"hi">`.
+func TestInferAsyncFnNoReturnIsPromiseUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		async fn greet() {
 			"hi"
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn () -> Promise<void>`, values["greet"])
+	require.Equal(t, `fn () -> Promise<undefined>`, values["greet"])
 }
 
 // --- await ---
@@ -294,17 +294,17 @@ func TestInferIfElseExprValueIsBranchJoin(t *testing.T) {
 	require.Equal(t, `fn (c: boolean) -> 1 | "x"`, values["pick"])
 }
 
-// An if without an else folds in void from the missing alt, so
-// `return if c { 5 }` returns `5 | void`. Void sorts last in M6 PR1's
+// An if without an else folds in `undefined` from the missing alt, so
+// `return if c { 5 }` returns `5 | undefined`. UndefinedType sorts last in M6 PR1's
 // canonical order, so the data member 5 leads.
-func TestInferIfElseExprMissingAltIsVoid(t *testing.T) {
+func TestInferIfElseExprMissingAltIsUndefined(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn pick(c: boolean) {
 			return if c { 5 }
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (c: boolean) -> 5 | void`, values["pick"])
+	require.Equal(t, `fn (c: boolean) -> 5 | undefined`, values["pick"])
 }
 
 // The if's condition must be boolean; a string condition is rejected.
@@ -320,9 +320,10 @@ func TestInferIfElseConditionMustBeBool(t *testing.T) {
 
 // --- Unit-level (against hand-built AST) ---
 
-// Bare `return` (no expr) inside async wraps Void: the external return is
-// Promise<void>. Exercises the funcCtx collection of a bare return.
-func TestInferAsyncBareReturnIsPromiseVoid(t *testing.T) {
+// Bare `return` with no operand inside an async fn wraps `undefined`, so the
+// external return is `Promise<undefined>`. Exercises the funcCtx collection of a
+// bare return.
+func TestInferAsyncBareReturnIsPromiseUndefined(t *testing.T) {
 	c := newChecker()
 	// async fn () { return }
 	e := ast.NewFuncExpr(nil, nil, nil, nil, nil, true,
@@ -330,11 +331,12 @@ func TestInferAsyncBareReturnIsPromiseVoid(t *testing.T) {
 
 	got := c.inferExpr(NewScope(), 0, e)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn () -> Promise<void>", render(got))
+	require.Equal(t, "fn () -> Promise<undefined>", render(got))
 }
 
-// Multiple bare returns + a void tail all join through one var, all void,
-// coalescing to plain `void` (no degenerate `void | void` union).
+// Multiple bare returns and an `undefined` tail all join through one var at the
+// same type, coalescing to plain `undefined` rather than a degenerate
+// `undefined | undefined` union.
 func TestInferFnMultipleBareReturnsCollapse(t *testing.T) {
 	c := newChecker()
 	// fn () { return; return; }
@@ -345,7 +347,7 @@ func TestInferFnMultipleBareReturnsCollapse(t *testing.T) {
 
 	got := c.inferExpr(NewScope(), 0, e)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn () -> void", render(got))
+	require.Equal(t, "fn () -> undefined", render(got))
 }
 
 // A nested return is collected on the INNER funcCtx, not the outer one. After

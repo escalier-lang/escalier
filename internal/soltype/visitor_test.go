@@ -63,7 +63,7 @@ func TestAcceptAtomPassThrough(t *testing.T) {
 	atoms := []Type{
 		&PrimType{Prim: NumPrim},
 		&LitType{Lit: &NumLit{Value: 5}},
-		&Void{},
+		&UndefinedType{},
 		&NeverType{},
 		&UnknownType{},
 		&TypeVarType{ID: 1},

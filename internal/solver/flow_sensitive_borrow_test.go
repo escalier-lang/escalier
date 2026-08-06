@@ -127,8 +127,8 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 			`,
 			want: []string{"7:12-7:13: borrowed value 'd' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (x: {peer: &mut {x: number}}) -> void",
-				"f":     "fn () -> void",
+				"store": "fn (x: {peer: &mut {x: number}}) -> undefined",
+				"f":     "fn () -> undefined",
 			},
 		},
 	}
@@ -165,8 +165,8 @@ func TestMutableGraphNode(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"read": "fn (x: &mut {peer: &mut {x: number}}) -> void",
-				"f":    "fn () -> void",
+				"read": "fn (x: &mut {peer: &mut {x: number}}) -> undefined",
+				"f":    "fn () -> undefined",
 			},
 		},
 		// The referent is writable through the node's borrow field: `b.peer.x = 5` mutates d
@@ -180,7 +180,7 @@ func TestMutableGraphNode(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn () -> void"},
+			types: map[string]string{"f": "fn () -> undefined"},
 		},
 	}
 	for name, tc := range tests {

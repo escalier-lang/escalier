@@ -46,7 +46,7 @@ func TestInferDistinctParamLifetimes(t *testing.T) {
 func TestInferFieldWriteThroughBorrowParam(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(p: mut {x: number}) { p.x = 10 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {x: number}) -> void", values["f"])
+	require.Equal(t, "fn (p: mut {x: number}) -> undefined", values["f"])
 }
 
 // Passing a borrow into a function whose parameter is an OWNED (bare) object is the
@@ -365,7 +365,7 @@ fn cache(p: &mut {x: number}) {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t, "{x: number}", values["sink"])
-	require.Equal(t, "fn (p: &'static mut {x: number}) -> void", values["cache"])
+	require.Equal(t, "fn (p: &'static mut {x: number}) -> undefined", values["cache"])
 }
 
 // An ordinary global write of a NON-borrow value is unaffected by the escape rule.
@@ -380,7 +380,7 @@ fn bump() {
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
 	require.Equal(t, "number", values["n"])
-	require.Equal(t, "fn () -> void", values["bump"])
+	require.Equal(t, "fn () -> undefined", values["bump"])
 }
 
 // --- Borrow-alias bindings ---
@@ -575,7 +575,7 @@ func TestInferMemberReadLocalElidesLifetime(t *testing.T) {
 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: &mut {a: {x: number}}) -> void", values["f"])
+	require.Equal(t, "fn (p: &mut {a: {x: number}}) -> undefined", values["f"])
 }
 
 // A field whose static type is itself an immutable borrow reads through as

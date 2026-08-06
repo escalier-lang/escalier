@@ -129,7 +129,7 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 				fn g() { val p = f() }
 			`,
 			binding: "g",
-			want:    "fn () -> void",
+			want:    "fn () -> undefined",
 		},
 		{
 			// An awaited rejection is absorbed into the awaiting async fn's own
@@ -141,7 +141,7 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 				async fn g() { await f() }
 			`,
 			binding: "g",
-			want:    `fn () -> Promise<void, "boom">`,
+			want:    `fn () -> Promise<undefined, "boom">`,
 		},
 		{
 			name: "AwaitedRejectionPropagatesThroughAParameter",
@@ -160,7 +160,7 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 				async fn g() { try { await f() } catch { e => 0 } }
 			`,
 			binding: "g",
-			want:    "fn () -> Promise<void>",
+			want:    "fn () -> Promise<undefined>",
 		},
 		{
 			name: "AwaitingANonRejectingPromiseAddsNothing",
@@ -169,7 +169,7 @@ func TestInferAsyncRejectionSurfacesAtAwait(t *testing.T) {
 				async fn g() { await f() }
 			`,
 			binding: "g",
-			want:    "fn () -> Promise<void>",
+			want:    "fn () -> Promise<undefined>",
 		},
 	})
 }
@@ -188,7 +188,7 @@ func TestInferAwaitJoinedRejections(t *testing.T) {
 				}
 			`,
 			binding: "g",
-			want:    "fn (c: boolean, p1: Promise<number>, p2: Promise<number, string>) -> Promise<void, string>",
+			want:    "fn (c: boolean, p1: Promise<number>, p2: Promise<number, string>) -> Promise<undefined, string>",
 		},
 		{
 			name: "RejectingBranchFirst",
@@ -198,7 +198,7 @@ func TestInferAwaitJoinedRejections(t *testing.T) {
 				}
 			`,
 			binding: "g",
-			want:    "fn (c: boolean, p1: Promise<number, string>, p2: Promise<number>) -> Promise<void, string>",
+			want:    "fn (c: boolean, p1: Promise<number, string>, p2: Promise<number>) -> Promise<undefined, string>",
 		},
 		{
 			// Two members rejecting with different types contribute both, so the
@@ -210,7 +210,7 @@ func TestInferAwaitJoinedRejections(t *testing.T) {
 				}
 			`,
 			binding: "g",
-			want:    `fn (c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) -> Promise<void, "a" | "b">`,
+			want:    `fn (c: boolean, p1: Promise<number, "a">, p2: Promise<number, "b">) -> Promise<undefined, "a" | "b">`,
 		},
 		{
 			// Two await sites reach the same sink, so their rejections union there even

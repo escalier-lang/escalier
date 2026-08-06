@@ -102,7 +102,7 @@ func TestInferFuncExprBodyValDecl(t *testing.T) {
 }
 
 // A bodyless (declare/ambient) function adopts its return annotation without
-// constraining a synthetic Void against it (which would error spuriously).
+// constraining a synthetic `undefined` against it (which would error spuriously).
 func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 	c := newChecker()
 	// declare fn now() -> number
@@ -119,7 +119,7 @@ func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 }
 
 // A bodyless function with an UNSUPPORTED return annotation recovers to `unknown`
-// (the honest "couldn't resolve the declared return"), not the synthetic `void`
+// (the honest "couldn't resolve the declared return"), not the synthetic `undefined`
 // (which would falsely signal "returns nothing" to callers). The annotation error
 // is still reported once. A `declare fn` is a no-body site, so inferFuncDecl types it
 // body-free and this recovery path runs; the decl here is built with a nil body to
@@ -166,7 +166,7 @@ func TestInferFuncExprDestructuringParam(t *testing.T) {
 
 	got := c.inferExpr(NewScope(), 0, e)
 	require.Empty(t, c.errs)
-	require.Equal(t, "fn ([a, b]: [unknown, unknown]) -> void", render(got))
+	require.Equal(t, "fn ([a, b]: [unknown, unknown]) -> undefined", render(got))
 }
 
 // A generic function `fn <T>(x: T) -> T` resolves its type-parameter list into the
@@ -281,12 +281,12 @@ func TestInferBlockResultIsLastStmt(t *testing.T) {
 	require.Equal(t, `"two"`, render(got))
 }
 
-func TestInferBlockEmptyIsVoid(t *testing.T) {
+func TestInferBlockEmptyIsUndefined(t *testing.T) {
 	c := newChecker()
 	got, diverges := c.inferBlock(NewScope(), 0, block())
 	require.Empty(t, c.errs)
 	require.False(t, diverges)
-	require.Equal(t, "void", render(got))
+	require.Equal(t, "undefined", render(got))
 }
 
 func TestInferBlockReturnStmt(t *testing.T) {
@@ -331,7 +331,7 @@ func TestInferStmtBodyDeclNotAllowed(t *testing.T) {
 	s := ast.NewDeclStmt(inner, testSpan())
 
 	got := c.inferStmt(NewScope(), 0, s)
-	require.IsType(t, &soltype.Void{}, got)
+	require.IsType(t, &soltype.UndefinedType{}, got)
 	require.Len(t, c.errs, 1)
 	require.Equal(t, "Declaration not allowed in function body: FuncDecl", c.errs[0].Message())
 	require.Equal(t, testSpan(), c.errs[0].Span())

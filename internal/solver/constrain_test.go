@@ -1000,11 +1000,11 @@ func TestConstrainRefInnerInvariantViaBounds(t *testing.T) {
 	require.True(t, equalType(num(), coalesce(b, soltype.Negative)), "upper bound (read view)")
 }
 
-func TestConstrainVoid(t *testing.T) {
+func TestConstrainUndefined(t *testing.T) {
 	c := &Context{}
-	require.Empty(t, c.Constrain(&soltype.Void{}, &soltype.Void{}))
-	require.Equal(t, []string{"cannot constrain void <: number"},
-		Messages(c.Constrain(&soltype.Void{}, num())))
+	require.Empty(t, c.Constrain(&soltype.UndefinedType{}, &soltype.UndefinedType{}))
+	require.Equal(t, []string{"cannot constrain undefined <: number"},
+		Messages(c.Constrain(&soltype.UndefinedType{}, num())))
 }
 
 // PR8: the ErrorType recovery sentinel ABSORBS in both directions — a constraint
@@ -1020,7 +1020,7 @@ func TestConstrainErrorTypeAbsorbs(t *testing.T) {
 		{"literal", numLit(5)},
 		{"function", exactFn(num(), identParam("x", num()))},
 		{"tuple", &soltype.TupleType{Elems: []soltype.Type{num()}}},
-		{"void", &soltype.Void{}},
+		{"undefined", &soltype.UndefinedType{}},
 		{"error", errT()},
 	}
 	for _, tc := range concretes {

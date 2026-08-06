@@ -830,21 +830,21 @@ func (t *GeneratorType) Name() string {
 // needs. The minimal form carries no members, so `xs.length` and `xs[0]` do not resolve.
 type ArrayType struct{ Elem Type }
 
-// Void is the result type of a statement block with no value.
-type Void struct{}
-
 // NullType is the type whose only inhabitant is the `null` literal. It
-// mirrors TypeScript's `null` type and sits alongside Void as a distinct
-// atomic kind. The canonical comparator sorts both kinds last so a union
-// such as `T | null | void` consistently renders with the data members
-// first.
+// mirrors TypeScript's `null` type and sits alongside UndefinedType as a
+// distinct atomic kind. The canonical comparator sorts both kinds last so a
+// union such as `T | null | undefined` consistently renders with the data
+// members first.
 type NullType struct{}
 
 // UndefinedType is the type whose only inhabitant is `undefined`, the atomic
-// twin of NullType. Reading a property off a union where only some members
-// carry it joins `undefined` for the members that lack it, so the read
-// resolves to `T | undefined` (M5 D4). No source syntax produces it yet; it is
-// minted internally by that join and renders as `undefined`.
+// twin of NullType. It arises three ways. A statement block with no value
+// results in it, so a function whose body never returns a value returns
+// `undefined`. Reading a property off a union where only some members carry it
+// joins `undefined` for the members that lack it, so the read resolves to
+// `T | undefined`. An annotation naming either `undefined` or `void` resolves to it,
+// which is why `fn f() -> void {}` and `fn f() -> undefined {}` describe the same
+// function. It renders as `undefined`.
 type UndefinedType struct{}
 
 // NeverType (⊥) and UnknownType (⊤) are the bottom/top of the subtype lattice —
@@ -1278,7 +1278,6 @@ func (*RefType) isType()             {}
 func (*PromiseType) isType()         {}
 func (*GeneratorType) isType()       {}
 func (*ArrayType) isType()           {}
-func (*Void) isType()                {}
 func (*NullType) isType()            {}
 func (*UndefinedType) isType()       {}
 func (*NeverType) isType()           {}
@@ -1440,7 +1439,7 @@ func LevelOf(t Type) int {
 	case *IntersectionType:
 		return maxMemberLevel(t.Types)
 	default:
-		// PrimType, LitType, Void, NullType, UndefinedType, NeverType, UnknownType,
+		// PrimType, LitType, NullType, UndefinedType, NeverType, UnknownType,
 		// ErrorType, InferType, MappedKeyType, RecursiveVarType: childless leaves. ErrorType is a
 		// sentinel at level 0. An InferType names a capture, a MappedKeyType names a mapped type's key,
 		// and a RecursiveVarType names an enclosing μ-knot's binder; each is substituted by the

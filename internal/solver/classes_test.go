@@ -169,7 +169,7 @@ func TestInferBodyVariance(t *testing.T) {
 		{
 			name: "method value parameter only is contravariant in both views",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
-				return exactObj(selfMethod("accept", "Consumer", tv, tv, &soltype.Void{})), nil
+				return exactObj(selfMethod("accept", "Consumer", tv, tv, &soltype.UndefinedType{})), nil
 			}),
 			want:    []Variance{Contravariant},
 			wantMut: []Variance{Contravariant},
@@ -179,7 +179,7 @@ func TestInferBodyVariance(t *testing.T) {
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(
 					propElem("value", tv),
-					selfMethod("accept", "Cell", tv, tv, &soltype.Void{}),
+					selfMethod("accept", "Cell", tv, tv, &soltype.UndefinedType{}),
 				), nil
 			}),
 			want:    []Variance{Invariant},

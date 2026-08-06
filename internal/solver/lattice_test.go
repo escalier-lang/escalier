@@ -316,20 +316,20 @@ func TestNewUnionSubsumptionSkipsLifetimeVar(t *testing.T) {
 	require.Len(t, got.(*soltype.UnionType).Types, 2)
 }
 
-// TestVoidAndNullSortLast pins the convention that the absence markers
-// NullType and Void appear after data members in canonical order, with
-// NullType before Void. A mixed union such as `number | null | void`
+// TestUndefinedAndNullSortLast pins the convention that the absence markers
+// NullType and UndefinedType appear after data members in canonical order, with
+// NullType before UndefinedType. A mixed union such as `number | null | undefined`
 // surfaces the data first and the absence markers last.
-func TestVoidAndNullSortLast(t *testing.T) {
+func TestUndefinedAndNullSortLast(t *testing.T) {
 	tests := []struct {
 		name  string
 		parts []soltype.Type
 		want  string
 	}{
 		{
-			name:  "void sorts after a data member",
-			parts: parseTypes(t, "void", "number"),
-			want:  "number | void",
+			name:  "undefined sorts after a data member",
+			parts: parseTypes(t, "undefined", "number"),
+			want:  "number | undefined",
 		},
 		{
 			name:  "null sorts after a data member",
@@ -337,14 +337,14 @@ func TestVoidAndNullSortLast(t *testing.T) {
 			want:  "number | null",
 		},
 		{
-			name:  "null sorts before void",
-			parts: parseTypes(t, "void", "null", "number"),
-			want:  "number | null | void",
+			name:  "null sorts before undefined",
+			parts: parseTypes(t, "undefined", "null", "number"),
+			want:  "number | null | undefined",
 		},
 		{
-			name:  "null before void independent of input order",
-			parts: parseTypes(t, "void", "null"),
-			want:  "null | void",
+			name:  "null before undefined independent of input order",
+			parts: parseTypes(t, "undefined", "null"),
+			want:  "null | undefined",
 		},
 	}
 	for _, tt := range tests {

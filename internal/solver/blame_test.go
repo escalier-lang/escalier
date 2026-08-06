@@ -171,18 +171,18 @@ val x = o?.a`
 
 // --- Site-fallback fixtures ---
 
-// A void result has no Prov entry — it is minted without an AST node — so a
-// constraint with void as its subject falls back to the constraint site, the use.
-// `fn f() {}` returns void, and `val x: number = f()` blames the `f()` call with
+// An `undefined` result has no Prov entry — it is minted without an AST node — so a
+// constraint with `undefined` as its subject falls back to the constraint site, the use.
+// `fn f() {}` returns `undefined`, and `val x: number = f()` blames the `f()` call with
 // the annotation as the related expected-source. (Replaces the hand-built
 // CannotConstrain "unrecorded operand → site" unit test; its operand-within-site
 // and operand-outside-site branches are already covered by TestBlameCallArgument
 // and TestBlameIdentifierUseNotDefinition above.)
-func TestBlameVoidSubjectFallsBackToCallSite(t *testing.T) {
+func TestBlameUndefinedSubjectFallsBackToCallSite(t *testing.T) {
 	src := `fn f() {}
 val x: number = f()`
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "2:17-2:20: cannot constrain void <: number", "f()", "number")
+	requireBlame(t, src, errs, "2:17-2:20: cannot constrain undefined <: number", "f()", "number")
 }
 
 // The too-many-args lint on an immediately-invoked function blames the call and

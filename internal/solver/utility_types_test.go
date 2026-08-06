@@ -50,7 +50,7 @@ import (
 // stays `string`. Escalier's `{...}` is the inexact OBJECT type, so it admits an object of any
 // shape and nothing else. `val a: {...} = 5` is rejected with "cannot constrain 5 <: object".
 // Writing `T & {...}` would therefore leave `NonNullable<string>` uninhabited instead of `string`,
-// and it would strip `void` alongside the two absence markers.
+// and it would strip `undefined` alongside the two absence markers.
 //
 // The second is that an intersection does not reduce. Nothing distributes one over a union or
 // detects an empty one, so `NonNullable<string | null>` would stall as the residual

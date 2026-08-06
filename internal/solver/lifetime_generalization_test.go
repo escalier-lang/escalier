@@ -237,7 +237,7 @@ func TestFreshenFuncLifetimeParamBound(t *testing.T) {
 			{Name: "'b", Var: lb, Bounds: []soltype.Lifetime{la}},
 		},
 		Params: []*soltype.FuncParam{{Type: mutObjAt(la)}, {Type: mutObjAt(lb)}},
-		Ret:    &soltype.Void{},
+		Ret:    &soltype.UndefinedType{},
 	}
 
 	out := c.freshenAbove(0, body, 1, map[*soltype.TypeVarType]*soltype.TypeVarType{}).(*soltype.FuncType)

@@ -22,8 +22,8 @@ import (
 // the solver can represent, and rejects every other operand by the type rule. A
 // sync iterable is not an AsyncIterable.
 //
-// The loop contributes Void to its enclosing block — a loop is a statement, not a
-// value. The CFG builder already decomposes a ForInStmt into a header, a body
+// The loop contributes `undefined` to its enclosing block, since a loop is a statement
+// rather than a value. The CFG builder already decomposes a ForInStmt into a header, a body
 // block carrying the loop-variable defs, and a back edge (liveness.processForIn),
 // so the move and borrow-edge dataflow over the loop body — including across the
 // back edge — is handled by the existing per-statement recording as inferBlock
@@ -67,12 +67,12 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 	// A `never` element type means no value can ever be bound to the loop variable,
 	// so the body is statically unreachable — iterating an empty tuple runs it zero
 	// times. Skip it: the loop contributes nothing and control falls through, so
-	// `for x in []` leaves the enclosing function returning void rather than folding
-	// an unreachable `return x` into its return type. Collecting that return would
-	// type the function as `never`, which is unsound: `fn f(xs: []) { for x in xs {
-	// return x } }` returns void at runtime.
+	// `for x in []` leaves the enclosing function returning `undefined` rather than
+	// folding an unreachable `return x` into its return type. Collecting that return
+	// would type the function as `never`, which is unsound. `fn f(xs: []) { for x in xs
+	// { return x } }` returns `undefined` at runtime.
 	if _, unreachable := elem.(*soltype.NeverType); unreachable {
-		return &soltype.Void{}
+		return &soltype.UndefinedType{}
 	}
 
 	// The loop body runs in its own scope so the loop variable is invisible after
@@ -84,7 +84,7 @@ func (c *checker) inferForIn(scope *Scope, lvl int, s *ast.ForInStmt) soltype.Ty
 	bodyScope := scope.Child()
 	c.bindPattern(bodyScope, lvl, s.Pattern, elem, nil)
 	c.inferBlock(bodyScope, lvl, &s.Body)
-	return &soltype.Void{}
+	return &soltype.UndefinedType{}
 }
 
 // constrainIterationRaise sends what advancing t may raise into the enclosing throws

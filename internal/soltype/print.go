@@ -79,7 +79,7 @@ func typePrec(t Type) int {
 		// a class or alias reference takes, so neither needs outer parens.
 		return precAtom
 	default:
-		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, Void, NullType,
+		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, NullType,
 		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType,
 		// ArrayType, and AliasType each render as a bare name or `Name<args>`, so none needs parens. A raw TypeVarType
 		// appears only when printing an un-coalesced type, see printType; it is also an
@@ -95,7 +95,7 @@ func typePrec(t Type) int {
 // shares NO code with type_system.PrintType but deliberately mirrors its surface
 // forms so the two checkers' rendered types stay string-comparable in M7's
 // differential harness. It renders the M1 coalesced type set only
-// (PrimType/LitType/FuncType/TupleType/Void/NeverType/UnknownType/UnionType/
+// (PrimType/LitType/FuncType/TupleType/UndefinedType/NeverType/UnknownType/UnionType/
 // IntersectionType). Print itself emits no <T0, ...> quantifier prefix — a
 // monotype has no parameters to name; PrintAsScheme renders the generalized form.
 //
@@ -623,7 +623,7 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 func isPrintLeaf(t Type) bool {
 	switch t.(type) {
 	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
-		*Void, *NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
+		*NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
 		*RecursiveVarType:
 		return true
 	}
@@ -667,8 +667,6 @@ func (p *namedPrinter) printType(t Type) string {
 		return "unknown"
 	case *ErrorType:
 		return "error"
-	case *Void:
-		return "void"
 	case *NullType:
 		return "null"
 	case *UndefinedType:

@@ -1285,17 +1285,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// Peeling an owned value into a bare destination is a covariant read; flag resets.
 			return c.constrain(sub.Inner, super, seen, false)
 		}
-	case *soltype.Void:
-		if _, ok := super.(*soltype.Void); ok {
-			return nil
-		}
 	case *soltype.UndefinedType:
 		if _, ok := super.(*soltype.UndefinedType); ok {
 			return nil
 		}
 	case *soltype.NullType:
 		// `null` relates only to itself, the twin of the UndefinedType arm above. It is
-		// unrelated to `undefined`, to `void`, and to every data type, matching TypeScript
+		// unrelated to `undefined` and to every data type, matching TypeScript
 		// under strict null checks. It still reaches the top of the lattice through the
 		// `_ <: unknown` rule. `NonNullable<T>` reduces through this arm. Its probe asks
 		// whether `null <: null | undefined`, which walks the union-super arm, and that arm

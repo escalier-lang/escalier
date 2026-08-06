@@ -14,7 +14,7 @@ func TestCoalesceAtomsPassThrough(t *testing.T) {
 	}{
 		{"number", num()},
 		{"literal 5", numLit(5)},
-		{"void", &soltype.Void{}},
+		{"undefined", &soltype.UndefinedType{}},
 		{"never", &soltype.NeverType{}},
 		{"unknown", &soltype.UnknownType{}},
 		{"error", &soltype.ErrorType{}}, // PR8 recovery sentinel: a childless atom
@@ -844,7 +844,7 @@ func TestEqualTypeLifetimeParams(t *testing.T) {
 			Ret:            borrowCounter(la),
 		}
 	}
-	// boundedFn is `fn <'a, 'b: 'a>(x: &'a Counter, y: &'b Counter) -> void`.
+	// boundedFn is `fn <'a, 'b: 'a>(x: &'a Counter, y: &'b Counter) -> undefined`.
 	boundedFn := func(idA, idB int) *soltype.FuncType {
 		la, lb := lv(idA), lv(idB)
 		return &soltype.FuncType{
@@ -856,7 +856,7 @@ func TestEqualTypeLifetimeParams(t *testing.T) {
 				{Pattern: &soltype.IdentPat{Name: "x"}, Type: borrowCounter(la)},
 				{Pattern: &soltype.IdentPat{Name: "y"}, Type: borrowCounter(lb)},
 			},
-			Ret: &soltype.Void{},
+			Ret: &soltype.UndefinedType{},
 		}
 	}
 
@@ -893,7 +893,7 @@ func TestEqualTypeLifetimeParams(t *testing.T) {
 						{Pattern: &soltype.IdentPat{Name: "x"}, Type: borrowCounter(la)},
 						{Pattern: &soltype.IdentPat{Name: "y"}, Type: borrowCounter(la)},
 					},
-					Ret: &soltype.Void{},
+					Ret: &soltype.UndefinedType{},
 				}
 			}(),
 			want: false,

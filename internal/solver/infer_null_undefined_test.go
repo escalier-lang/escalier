@@ -105,8 +105,8 @@ func TestResolveAtomAnnotationRecordsNoProvenance(t *testing.T) {
 	}
 }
 
-// Each atom relates only to itself. It is unrelated to the other atom, to `void`, and to every
-// data type, which is TypeScript's behavior under strict null checks.
+// Each atom relates only to itself. It is unrelated to the other atom and to every data
+// type, which is TypeScript's behavior under strict null checks.
 func TestInferNullUndefinedUnrelated(t *testing.T) {
 	tests := []struct {
 		name string
@@ -134,11 +134,12 @@ func TestInferNullUndefinedUnrelated(t *testing.T) {
 			want: "1:15-1:16: cannot constrain 5 <: null",
 		},
 		{
-			// `void` is the result of a statement block with no value, which the body of
-			// `g` below produces. It is a third atom, distinct from both absence markers.
-			name: "NullIsNotVoid",
+			// A statement block with no value results in `undefined`, so `g` below returns it.
+			// That result is the same atom the `undefined` annotation names, and it is just as
+			// unrelated to `null`.
+			name: "NullIsNotAValuelessBlockResult",
 			src:  "fn g() {}\nval n: null = g()",
-			want: "2:15-2:18: cannot constrain void <: null",
+			want: "2:15-2:18: cannot constrain undefined <: null",
 		},
 	}
 	for _, tt := range tests {
@@ -170,7 +171,7 @@ func TestInferOptionalPropertyReadAgainstWrittenUndefined(t *testing.T) {
 }
 
 // A union renders its data members before its absence markers, which typeKindOrder fixes as
-// NullType, then Void, then UndefinedType. The source order below is the reverse, so the render
+// NullType, then UndefinedType. The source order below is the reverse, so the render
 // shows the canonical order rather than the written one.
 func TestInferNullUndefinedUnionCanonicalOrder(t *testing.T) {
 	values, _, errs := inferSource(t, `val u: undefined | null | number = 5`)
@@ -221,4 +222,88 @@ func TestInferMatchBothAtomArmsCoverUnion(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (x: null | undefined) -> 0 | 1", values["f"])
+}
+
+// --- `void` as a second spelling of `undefined` ---
+
+// A `void` annotation resolves to the same atom the `undefined` annotation resolves to, so
+// the two spellings are interchangeable wherever a type is written. Each case renders as
+// `undefined`, since the printer has one name for the atom.
+func TestInferVoidAnnotationIsUndefined(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// A function whose body returns no value satisfies a `-> void` return annotation.
+			name: "ReturnAnnotationOnAValuelessBody",
+			src:  `fn f() -> void {}`,
+			want: "fn () -> undefined",
+		},
+		{
+			// The two spellings meet: the body's `undefined` result satisfies `-> void`, and a
+			// `-> void` function satisfies an `-> undefined` annotation.
+			name: "VoidAndUndefinedReturnsAreInterchangeable",
+			src: `
+				fn g() -> void {}
+				val f: fn() -> undefined = g
+			`,
+			want: "fn () -> undefined",
+		},
+		{
+			name: "CallbackParameterAnnotation",
+			src:  `declare fn f(cb: fn() -> void) -> undefined`,
+			want: "fn (cb: fn () -> undefined) -> undefined",
+		},
+		{
+			// `void` composes inside a union like any other member, and sorts last with the
+			// other absence marker.
+			name: "UnionMember",
+			src:  `declare fn f() -> number | void`,
+			want: "fn () -> number | undefined",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// An `if` with no `else` folds the missing alt's `undefined` into the result, and that
+// union is writable — `number | undefined` and `number | void` both name it.
+func TestInferIfWithoutElseIsAnnotatable(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"Undefined", `val x: number | undefined = if true { 5 }`},
+		{"Void", `val x: number | void = if true { 5 }`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, "number | undefined", values["x"])
+		})
+	}
+}
+
+// The `undefined` a valueless block produces is the atom an `undefined` match arm names, so
+// an arm covers it and the match needs no catch-all.
+func TestInferMatchUndefinedArmCoversAValuelessBlockResult(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(c: boolean) {
+			val u = if c { 5 }
+			return match u {
+				5 => "five",
+				undefined => "none"
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (c: boolean) -> "five" | "none"`, values["f"])
 }

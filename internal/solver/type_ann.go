@@ -43,6 +43,15 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		// soltype.UnknownType has no fields, so every `&soltype.UnknownType{}` shares one
 		// address and the pointer-keyed Prov table cannot tell two of them apart.
 		return &soltype.UnknownType{}, true
+	case *ast.VoidTypeAnn:
+		// `void` names the same type the `undefined` annotation names, since a function that
+		// returns no value returns `undefined` at runtime. Both spellings are accepted, so a
+		// signature can read `fn () -> void`, and both render as `undefined`.
+		//
+		// No provenance is recorded, for the reason the NeverTypeAnn arm above gives:
+		// soltype.UndefinedType has no fields, so every `&soltype.UndefinedType{}` shares
+		// one address and the pointer-keyed Prov table cannot tell two of them apart.
+		return &soltype.UndefinedType{}, true
 	case *ast.LitTypeAnn:
 		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:

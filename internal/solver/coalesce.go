@@ -1181,9 +1181,6 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.LitType:
 		b, ok := b.(*soltype.LitType)
 		return ok && a.Equal(b)
-	case *soltype.Void:
-		_, ok := b.(*soltype.Void)
-		return ok
 	case *soltype.NullType:
 		_, ok := b.(*soltype.NullType)
 		return ok

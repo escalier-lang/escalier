@@ -50,12 +50,12 @@ func TestInferIfValAndValElse(t *testing.T) {
 			want: "fn (u: number | string | boolean) -> number | string",
 		},
 		{
-			// No else contributes Void on the non-matching path.
-			name: "if-val without else joins with void",
+			// No else contributes `undefined` on the non-matching path.
+			name: "if-val without else joins with undefined",
 			src: `fn f(u: number | string) {
 				return if val x: number = u { x }
 			}`,
-			want: "fn (u: number | string) -> number | void",
+			want: "fn (u: number | string) -> number | undefined",
 		},
 		{
 			// Narrowing binds a fresh x and never re-types the scrutinee, so both the

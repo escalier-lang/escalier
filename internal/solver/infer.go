@@ -149,7 +149,7 @@ type fieldKey struct {
 // function's AST node, surfaced as the "make this async" related span on an
 // await-outside-async error; returns accumulates every ReturnStmt expression type
 // collected from the body (in source order, valued AND bare — bare returns
-// contribute Void) so inferFunc can join them into the function's return type
+// contribute `undefined`), so inferFunc can join them into the function's return type
 // before constraining against the return annotation.
 //
 // Nesting is handled by save/restore through the pointer pushFuncCtx returns, not a

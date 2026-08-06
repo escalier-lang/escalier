@@ -549,12 +549,12 @@ func TestInferKeyofAnnotationStaysSymbolic(t *testing.T) {
 		{
 			name: "InlineObject",
 			src:  `fn h(k: keyof {x: number, y: string}) {}`,
-			want: map[string]string{"h": "fn (k: keyof {x: number, y: string}) -> void"},
+			want: map[string]string{"h": "fn (k: keyof {x: number, y: string}) -> undefined"},
 		},
 		{
 			name: "UnionOperand",
 			src:  `fn g<T>(x: keyof (T | {a: number})) {}`,
-			want: map[string]string{"g": "fn <T>(x: keyof (T | {a: number})) -> void"},
+			want: map[string]string{"g": "fn <T>(x: keyof (T | {a: number})) -> undefined"},
 		},
 	}
 	for _, tt := range tests {
@@ -577,7 +577,7 @@ func TestInferKeyofNested(t *testing.T) {
 	t.Run("TypeParamInSignature", func(t *testing.T) {
 		values, _, errs := inferSource(t, `fn f<T>(k: keyof keyof T) {}`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn <T>(k: keyof keyof T) -> void", values["f"])
+		require.Equal(t, "fn <T>(k: keyof keyof T) -> undefined", values["f"])
 	})
 	t.Run("GroundObject", func(t *testing.T) {
 		nodes, ctx, errs := inferTypeNodes(t, `type Result = keyof keyof {a: number, b: string}`)
@@ -1156,12 +1156,12 @@ func TestInferIndexStaysSymbolic(t *testing.T) {
 		{
 			name: "InlineObjectTarget",
 			src:  `fn h(k: {x: number, y: string}["x"]) {}`,
-			want: map[string]string{"h": `fn (k: {x: number, y: string}["x"]) -> void`},
+			want: map[string]string{"h": `fn (k: {x: number, y: string}["x"]) -> undefined`},
 		},
 		{
 			name: "KeyofIndex",
 			src:  `fn g<T>(k: T[keyof T]) {}`,
-			want: map[string]string{"g": "fn <T>(k: T[keyof T]) -> void"},
+			want: map[string]string{"g": "fn <T>(k: T[keyof T]) -> undefined"},
 		},
 	}
 	for _, tt := range tests {
@@ -1616,7 +1616,7 @@ func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
 				// A signature-level case: assert the residual renders symbolically and does not crash.
 				values, _, errs := inferSource(t, tt.src)
 				require.Empty(t, errs)
-				require.Equal(t, "fn <T>(k: "+tt.wantSymbolic+") -> void", values["f"])
+				require.Equal(t, "fn <T>(k: "+tt.wantSymbolic+") -> undefined", values["f"])
 				return
 			}
 			nodes, ctx, errs := inferTypeNodes(t, tt.src)
@@ -1707,12 +1707,12 @@ func TestInferCondSignatureStaysSymbolic(t *testing.T) {
 		{
 			name: "TypeParamCheck",
 			src:  `fn f<T>(x: if T : number { string } else { boolean }) {}`,
-			want: map[string]string{"f": "fn <T>(x: if T : number { string } else { boolean }) -> void"},
+			want: map[string]string{"f": "fn <T>(x: if T : number { string } else { boolean }) -> undefined"},
 		},
 		{
 			name: "TypeParamExtends",
 			src:  `fn g<T>(x: if number : T { string } else { boolean }) {}`,
-			want: map[string]string{"g": "fn <T>(x: if number : T { string } else { boolean }) -> void"},
+			want: map[string]string{"g": "fn <T>(x: if number : T { string } else { boolean }) -> undefined"},
 		},
 	}
 	for _, tt := range tests {
@@ -2094,7 +2094,7 @@ func TestInferCondDistribution(t *testing.T) {
 func TestInferCondInferStaysSymbolic(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f<T>(x: if T : [infer U] { U } else { boolean }) {}`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T>(x: if T : [infer U] { U } else { boolean }) -> void", values["f"])
+	require.Equal(t, "fn <T>(x: if T : [infer U] { U } else { boolean }) -> undefined", values["f"])
 }
 
 // constrain reduces a capturing conditional at the constraint site, so a value is checked against
