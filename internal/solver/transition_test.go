@@ -324,7 +324,7 @@ func objWithBorrowField(borrow *soltype.RefType) *soltype.ObjectType {
 	}}
 }
 
-// escapeVarBothPolarities builds `{a: V, g: fn(V) -> void}` where the one type variable
+// escapeVarBothPolarities builds `{a: V, g: fn(V) -> undefined}` where the one type variable
 // V carries an escaped mut borrow in its UpperBounds. Field `a` reaches V covariantly
 // and field `g`'s parameter reaches it contravariantly, so the walk meets V at both
 // polarities and only the contravariant meeting follows the UpperBounds to the escape.
@@ -334,7 +334,7 @@ func escapeVarBothPolarities() *soltype.ObjectType {
 		&soltype.PropertyElem{Name: "a", Type: v},
 		&soltype.PropertyElem{Name: "g", Type: &soltype.FuncType{
 			Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "p"}, Type: v}},
-			Ret:    &soltype.Void{},
+			Ret:    &soltype.UndefinedType{},
 		}},
 	}}
 }

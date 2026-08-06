@@ -23,7 +23,7 @@ func TestInferMemberAssignTwoWrites(t *testing.T) {
 	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
  obj.y = 10 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number, y: number}) -> void", values["foo"])
+	require.Equal(t, "fn (obj: mut {x: number, y: number}) -> undefined", values["foo"])
 }
 
 // Read-after-write: a read of a field just written to the same receiver returns the
@@ -46,7 +46,7 @@ func TestInferMemberAssignMixedReadWrite(t *testing.T) {
 	values, _, errs := inferSource(t, `fn foo(obj) { val x = obj.bar
  obj.baz = 5 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: mut {bar: T0, baz: number}) -> void", values["foo"])
+	require.Equal(t, "fn <T0>(obj: mut {bar: T0, baz: number}) -> undefined", values["foo"])
 }
 
 // A compound written value widens recursively via the shared widen (B3): writing
@@ -54,7 +54,7 @@ func TestInferMemberAssignMixedReadWrite(t *testing.T) {
 func TestInferMemberAssignCompoundValueWidens(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(obj) { obj.p = {x: 0} }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {p: {x: number}}) -> void", values["foo"])
+	require.Equal(t, "fn (obj: mut {p: {x: number}}) -> undefined", values["foo"])
 }
 
 // The assignment expression evaluates to the value just stored, so its type is the
@@ -73,7 +73,7 @@ func TestInferMemberAssignSameFieldTwice(t *testing.T) {
 	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
  obj.x = 10 }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number}) -> void", values["foo"])
+	require.Equal(t, "fn (obj: mut {x: number}) -> undefined", values["foo"])
 }
 
 // A written field and a read-only field that ESCAPES (is returned) fold into one
@@ -109,7 +109,7 @@ func TestInferMemberAssignWriteAfterRead(t *testing.T) {
 func TestInferMemberAssignNestedReceiver(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(obj) { obj.p.x = 5 }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {p: {x: number}}) -> void", values["foo"])
+	require.Equal(t, "fn (obj: mut {p: {x: number}}) -> undefined", values["foo"])
 }
 
 // An `open` param's written object stays row-polymorphic: the C3 fold passes the
@@ -118,7 +118,7 @@ func TestInferMemberAssignNestedReceiver(t *testing.T) {
 func TestInferMemberAssignOpenParam(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(open obj) { obj.x = 5 }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number, ...}) -> void", values["foo"])
+	require.Equal(t, "fn (obj: mut {x: number, ...}) -> undefined", values["foo"])
 }
 
 // A written receiver that ESCAPES (the whole object is returned) is not sealed: it
@@ -136,12 +136,12 @@ func TestInferMemberAssignWrittenObjectEscapes(t *testing.T) {
 // `mut` — hence invariant — `v` occurs in BOTH polarities, so single-polarity
 // elimination retains it as a shared type parameter instead of inlining each
 // occurrence to `unknown`. So `fn foo(obj, v) { obj.x = v }` infers the tighter
-// `fn <T0>(obj: mut {x: T0}, v: T0) -> void`. The mut-field invariance reaches the
+// `fn <T0>(obj: mut {x: T0}, v: T0) -> undefined`. The mut-field invariance reaches the
 // occurrence analysis via recordMutWriteView (simplify.go).
 func TestInferMemberAssignVariableValueLinked(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(obj, v) { obj.x = v }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: mut {x: T0}, v: T0) -> void", values["foo"])
+	require.Equal(t, "fn <T0>(obj: mut {x: T0}, v: T0) -> undefined", values["foo"])
 }
 
 // Writing one field of a concretely-typed (annotated) mut object checks: the field
@@ -151,12 +151,12 @@ func TestInferMemberAssignVariableValueLinked(t *testing.T) {
 // "missing property: y" / "inexact <: exact" errors.
 //
 // The annotated `mut` param originates a borrow lifetime (D2), but it is unused in
-// the void result, so D4's display-time elision drops it and the param renders as
+// the `undefined` result, so D4's display-time elision drops it and the param renders as
 // plain owned-mutable `mut {…}`.
 func TestInferMemberAssignAnnotatedMutObject(t *testing.T) {
 	values, _, errs := inferSource(t, "fn f(obj: mut {x: number, y: string}) { obj.x = 5 }")
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number, y: string}) -> void", values["f"])
+	require.Equal(t, "fn (obj: mut {x: number, y: string}) -> undefined", values["f"])
 }
 
 // The named field stays invariant: storing a string into a number field of an
@@ -189,7 +189,7 @@ func TestInferMemberAssignConflictingWritesNoError(t *testing.T) {
 	values, _, errs := inferSource(t, `fn foo(obj) { obj.x = 5
  obj.x = "hi" }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number & string}) -> void", values["foo"])
+	require.Equal(t, "fn (obj: mut {x: number & string}) -> undefined", values["foo"])
 }
 
 // A field write through a `mut` reference to a CLASS instance projects the class body and

@@ -27,8 +27,8 @@ func TestLevelOf(t *testing.T) {
 			want: 0,
 		},
 		{
-			name: "void leaf is level 0",
-			ty:   &Void{},
+			name: "undefined leaf is level 0",
+			ty:   &UndefinedType{},
 			want: 0,
 		},
 		{

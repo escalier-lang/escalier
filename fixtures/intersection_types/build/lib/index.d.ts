@@ -3,6 +3,6 @@ declare const arr2: Array<number>;
 declare const genResult: string;
 declare const r1: string;
 declare const r2: number;
-declare const r3: void;
+declare const r3: undefined;
 declare const result1: string;
 declare const result2: string;

@@ -481,7 +481,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 		"FuncExprWithoutReturn": {
 			input: `val log = fn (msg) {}`,
 			expectedTypes: map[string]string{
-				"log": "fn <T0>(msg: T0) -> void",
+				"log": "fn <T0>(msg: T0) -> undefined",
 			},
 		},
 		"FuncExprMultipleReturns": {
@@ -524,8 +524,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"foo": "fn () -> void",
-				"bar": "fn () -> void",
+				"foo": "fn () -> undefined",
+				"bar": "fn () -> undefined",
 			},
 		},
 		// Issue #590: mutually recursive two-arm functions form a cyclic
@@ -599,15 +599,15 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			},
 		},
 		"FuncDeclRetVoid": {
-			input: `fn foo() -> void {}`,
+			input: `fn foo() -> undefined {}`,
 			expectedTypes: map[string]string{
-				"foo": "fn () -> void",
+				"foo": "fn () -> undefined",
 			},
 		},
 		"FuncDeclNoReturn": {
 			input: `fn foo() {}`,
 			expectedTypes: map[string]string{
-				"foo": "fn () -> void",
+				"foo": "fn () -> undefined",
 			},
 		},
 		// "FuncRecursion": {
@@ -1545,7 +1545,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 					getValue() -> number,
 				}
 				interface Derived extends Base {
-					setValue(value: number) -> void,
+					setValue(value: number) -> undefined,
 				}
 				declare val obj: Derived
 				val result = obj.getValue()

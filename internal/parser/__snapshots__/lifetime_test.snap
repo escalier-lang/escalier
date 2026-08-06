@@ -1088,10 +1088,13 @@
                                 },
                             },
                         },
-                        Return: &ast.VoidTypeAnn{
-                            span: 1:66-1:70,
+                        Return: &ast.LitTypeAnn{
+                            Lit: &ast.UndefinedLit{
+                                span: 1:66-1:75,
+                            },
+                            span: 1:66-1:75,
                         },
-                        span: 1:32-1:70,
+                        span: 1:32-1:75,
                     },
                     Receiver: &ast.MethodReceiver{
                         Mut: true,
@@ -1103,11 +1106,11 @@
                     },
                 },
             },
-            span: 1:19-1:72,
+            span: 1:19-1:77,
         },
-        span: 1:1-1:72,
+        span: 1:1-1:77,
     },
-    span: 1:1-1:72,
+    span: 1:1-1:77,
 }
 ---
 
@@ -1154,14 +1157,17 @@
                                 },
                             },
                         },
-                        Return: &ast.VoidTypeAnn{
-                            span: 1:64-1:68,
+                        Return: &ast.LitTypeAnn{
+                            Lit: &ast.UndefinedLit{
+                                span: 1:64-1:73,
+                            },
+                            span: 1:64-1:73,
                         },
                     },
                     Body: &ast.Block{
-                        Span: 1:69-1:72,
+                        Span: 1:74-1:77,
                     },
-                    span: 1:19-1:72,
+                    span: 1:19-1:77,
                 },
                 Receiver: &ast.MethodReceiver{
                     Mut: true,
@@ -1171,12 +1177,12 @@
                     },
                     Span_: 1:31-1:42,
                 },
-                Span_: 1:19-1:72,
+                Span_: 1:19-1:77,
             },
         },
-        span: 1:1-1:74,
+        span: 1:1-1:79,
     },
-    span: 1:1-1:74,
+    span: 1:1-1:79,
 }
 ---
 

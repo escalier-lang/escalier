@@ -513,7 +513,7 @@ export declare class Array<T> {
     length: number,
     push(mut self, ...items: mut Array<T>) -> number,
     concat(self, items: Array<T>) -> mut Array<T>,
-    readArr(mut self, items: Array<T>) -> void,
+    readArr(mut self, items: Array<T>) -> unknown,
     constructor(mut self),
     static readonly prototype: mut Array<any>
 }`))

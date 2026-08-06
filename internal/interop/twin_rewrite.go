@@ -296,7 +296,6 @@ func (r *twinRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		*ast.AnyTypeAnn,
 		*ast.UnknownTypeAnn,
 		*ast.NeverTypeAnn,
-		*ast.VoidTypeAnn,
 		*ast.TypeOfTypeAnn,
 		*ast.InferTypeAnn,
 		*ast.WildcardTypeAnn,

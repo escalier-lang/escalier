@@ -19,17 +19,17 @@ func TestDeepMutEnablesNestedWrite(t *testing.T) {
 		{
 			name: "owned mut, one level",
 			src:  "fn f(p: mut {a: {x: number}}) { p.a.x = 5 }",
-			want: "fn (p: mut {a: {x: number}}) -> void",
+			want: "fn (p: mut {a: {x: number}}) -> undefined",
 		},
 		{
 			name: "borrowed &mut, one level",
 			src:  "fn f(p: &mut {a: {x: number}}) { p.a.x = 5 }",
-			want: "fn (p: &mut {a: {x: number}}) -> void",
+			want: "fn (p: &mut {a: {x: number}}) -> undefined",
 		},
 		{
 			name: "owned mut, three levels",
 			src:  "fn f(p: mut {a: {b: {c: number}}}) { p.a.b.c = 5 }",
-			want: "fn (p: mut {a: {b: {c: number}}}) -> void",
+			want: "fn (p: mut {a: {b: {c: number}}}) -> undefined",
 		},
 	}
 	for _, tc := range cases {
@@ -100,7 +100,7 @@ func TestReadonlyPermitsValueMutationButNotReassignment(t *testing.T) {
 	t.Run("mutate the value", func(t *testing.T) {
 		values, _, errs := inferSource(t, "fn f(obj: mut {readonly a: {b: number}}) { obj.a.b = 5 }")
 		require.Empty(t, errs)
-		require.Equal(t, "fn (obj: mut {readonly a: {b: number}}) -> void", values["f"])
+		require.Equal(t, "fn (obj: mut {readonly a: {b: number}}) -> undefined", values["f"])
 	})
 	t.Run("reassign the field", func(t *testing.T) {
 		_, _, errs := inferSource(t, "fn f(obj: mut {readonly a: {b: number}}) { obj.a = {b: 9} }")
@@ -186,7 +186,7 @@ func TestDeepMutChainedReadsAllowDeepWrite(t *testing.T) {
 	src := "fn f(p: mut {a: {b: {c: number}}}) { p.a.b.c = 5 }"
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: mut {a: {b: {c: number}}}) -> void", values["f"])
+	require.Equal(t, "fn (p: mut {a: {b: {c: number}}}) -> undefined", values["f"])
 }
 
 // A readonly field on an immutable container still reports the readonly error,
@@ -211,7 +211,7 @@ func TestReadonlyFieldValueIsDeepMutable(t *testing.T) {
  obj.a.y = 6 }`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {readonly a: {x: number, y: number}}) -> void", values["f"])
+	require.Equal(t, "fn (obj: mut {readonly a: {x: number, y: number}}) -> undefined", values["f"])
 }
 
 // `readonly a: number` round-trips through the printer.
@@ -259,7 +259,7 @@ func TestBorrowFieldInImmutableContainerIsLegal(t *testing.T) {
 	t.Run("mutable borrow field", func(t *testing.T) {
 		values, _, errs := inferSource(t, "fn f(p: {a: &mut {x: number}}) { p.a.x = 5 }")
 		require.Empty(t, errs)
-		require.Equal(t, "fn (p: {a: &mut {x: number}}) -> void", values["f"])
+		require.Equal(t, "fn (p: {a: &mut {x: number}}) -> undefined", values["f"])
 	})
 }
 
@@ -276,12 +276,12 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 		{
 			name: "one level",
 			src:  "fn foo(obj) { obj.p.x = 5 }",
-			want: "fn (obj: mut {p: {x: number}}) -> void",
+			want: "fn (obj: mut {p: {x: number}}) -> undefined",
 		},
 		{
 			name: "three levels",
 			src:  "fn foo(obj) { obj.a.b.c = 5 }",
-			want: "fn (obj: mut {a: {b: {c: number}}}) -> void",
+			want: "fn (obj: mut {a: {b: {c: number}}}) -> undefined",
 		},
 	}
 	for _, tc := range cases {

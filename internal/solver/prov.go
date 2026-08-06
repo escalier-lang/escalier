@@ -86,7 +86,7 @@ type NodeResolver interface {
 }
 
 // NodeFor returns the AST node that minted t, when one was recorded. An
-// unrecorded operand (a Void result, a shared atom resolved elsewhere, or an
+// unrecorded operand (an `undefined` result, a shared atom resolved elsewhere, or an
 // M3+ synthesized type) is an honest miss.
 func (p Prov) NodeFor(t soltype.Type) (ast.Node, bool) {
 	if o, ok := p[t].(FromAST); ok {

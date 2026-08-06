@@ -34,8 +34,8 @@ func TestPrintMethodSelfReceiver(t *testing.T) {
 		},
 		{
 			"owned mutable mut self",
-			&ObjectType{Elems: []ObjTypeElem{method("inc", &FuncType{SelfParam: selfRecv(&RefType{Mut: true, Inner: &ClassType{Name: "Counter"}}), Ret: &Void{}})}},
-			"{inc(mut self) -> void}",
+			&ObjectType{Elems: []ObjTypeElem{method("inc", &FuncType{SelfParam: selfRecv(&RefType{Mut: true, Inner: &ClassType{Name: "Counter"}}), Ret: &UndefinedType{}})}},
+			"{inc(mut self) -> undefined}",
 		},
 		{
 			"immutable borrow &self",
@@ -44,8 +44,8 @@ func TestPrintMethodSelfReceiver(t *testing.T) {
 		},
 		{
 			"mutable borrow &mut self",
-			&ObjectType{Elems: []ObjTypeElem{method("edit", &FuncType{SelfParam: selfRecv(&RefType{Mut: true, Lt: Anon, Inner: &ClassType{Name: "Counter"}}), Ret: &Void{}})}},
-			"{edit(&mut self) -> void}",
+			&ObjectType{Elems: []ObjTypeElem{method("edit", &FuncType{SelfParam: selfRecv(&RefType{Mut: true, Lt: Anon, Inner: &ClassType{Name: "Counter"}}), Ret: &UndefinedType{}})}},
+			"{edit(&mut self) -> undefined}",
 		},
 		{
 			"self followed by ordinary params",

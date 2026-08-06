@@ -26,7 +26,7 @@ func TestInferAssignAnnotatedVar(t *testing.T) {
 		`)
 		require.Empty(t, errs)
 		require.Equal(t, "number", values["a"])
-		require.Equal(t, "fn () -> void", values["f"]) // no return, so the body produces no value
+		require.Equal(t, "fn () -> undefined", values["f"]) // no return, so the body produces no value
 	})
 	t.Run("mismatched type reports one subtype error", func(t *testing.T) {
 		src := `var a: number = 5
@@ -196,7 +196,7 @@ func TestInferAssignUnionTargetVarRHSWidensToUnion(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (c: boolean, x: 1 | 2) -> void", values["f"])
+	require.Equal(t, "fn (c: boolean, x: 1 | 2) -> undefined", values["f"])
 }
 
 // A namespace name as an assignment target reports NamespaceUsedAsValue, mirroring

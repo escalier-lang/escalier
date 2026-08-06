@@ -371,7 +371,7 @@ func singletonMethodToFuncDecl(m *dts_parser.MethodSignature) (*ast.FuncDecl, er
 	}
 	var ret ast.TypeAnn
 	if m.ReturnType != nil {
-		ret, err = convertTypeAnn(m.ReturnType)
+		ret, err = convertReturnTypeAnn(m.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("return: %w", err)
 		}
@@ -948,7 +948,7 @@ func interfaceMemberToClassElem(
 		}
 		var ret ast.TypeAnn
 		if m.ReturnType != nil {
-			ret, err = convertTypeAnn(m.ReturnType)
+			ret, err = convertReturnTypeAnn(m.ReturnType)
 			if err != nil {
 				return nil, fmt.Errorf("method %s: return: %w", propertyKeyName(m.Name), err)
 			}

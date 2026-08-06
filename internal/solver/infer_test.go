@@ -304,14 +304,14 @@ func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {
 // #720: a function body's last expression is NOT an implicit return — only an
 // explicit `return` produces the function's value, mirroring the old checker's
 // inferFuncBody. The bare tail is still walked for its checking side effects,
-// but its value is discarded and the body returns void.
+// but its value is discarded and the body returns `undefined`.
 func TestInferFuncBodyTailIsNotImplicitReturn(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f() { 5 }
 		fn g() { return 5 }
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn () -> void", values["f"])
+	require.Equal(t, "fn () -> undefined", values["f"])
 	require.Equal(t, "fn () -> 5", values["g"])
 }
 
@@ -322,7 +322,7 @@ func TestInferFuncBodyDiscardedTailStillChecked(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "1:10-1:17: Unknown identifier: missing", msgWithSpan(errs[0]))
-	require.Equal(t, "fn () -> void", values["f"])
+	require.Equal(t, "fn () -> undefined", values["f"])
 }
 
 // PR-5: dep_graph SCC ordering wires top-level FuncDecls into the module walk and

@@ -185,7 +185,7 @@ func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.
 // or a fresh var when un-annotated), types the body block in that scope, and
 // builds the n-ary soltype.FuncType. The return type is built solely from the
 // body's `return` statements (joinReturnPoints); a body with no return produces
-// void. When the signature carries a return annotation the inferred return is
+// `undefined`. When the signature carries a return annotation the inferred return is
 // constrained against it and the annotated type becomes the function's return
 // type. A bodyless (declare/ambient) function adopts its return annotation
 // without constraining anything. node supplies the span stamped onto a
@@ -354,7 +354,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 	}
 
-	var ret soltype.Type = &soltype.Void{}
+	var ret soltype.Type = &soltype.UndefinedType{}
 	var retExprs []ast.Expr
 	// bodyDiverges records that every path through the body left along the exceptional
 	// edge, and raised that some exceptional exit can actually raise. Both are read after
@@ -407,9 +407,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		yielded = c.fn.yielded
 		collected := c.popFuncCtx(saved)
 		// A body with no `return` that always leaves along the exceptional edge reaches
-		// no normal exit, so it produces `never`, not the `void` a fall-through body
+		// no normal exit, so it produces `never`, not the `undefined` a fall-through body
 		// produces. Without this `fn f() -> number { throw Error("no") }` would report
-		// `void <: number`.
+		// `undefined <: number`.
 		if len(collected) == 0 && blockDiverges(body) {
 			ret = &soltype.NeverType{}
 			bodyDiverges = true
@@ -451,7 +451,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// constrained `<: annotation` and the function returns the annotation (M2's
 	// rule). An unsupported annotation (ok=false) was already reported by
 	// resolveTypeAnn; recover by keeping the inferred body type (or unknown when
-	// there is no body, since a synthetic Void would falsely signal "returns
+	// there is no body, since a synthetic `undefined` would falsely signal "returns
 	// nothing").
 	//
 	// A generator takes its own arm ahead of the async one: an `async gen fn` faces
@@ -486,8 +486,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	} else if sig.Return != nil {
 		if annT, ok := c.resolveTypeAnn(declScope, sig.Return, lvl); ok {
 			// Only constrain the body when there IS one; a bodyless (declare/ambient)
-			// function simply adopts the annotation (constraining the synthetic Void
-			// would raise a spurious `void <: T`).
+			// function simply adopts the annotation (constraining the synthetic `undefined`
+			// would raise a spurious `undefined <: T`).
 			if hasBody {
 				c.constrainReturnAgainstAnnotation(node, retExprs, ret, annT) // body <: declared return
 				// No caller can observe an annotated return the body never reaches, so warn
@@ -620,7 +620,7 @@ func (c *checker) checkDeclaredLifetimeBounds(params []*ast.LifetimeParam, ft *s
 
 // joinReturnPoints builds a function's return type from the ReturnStmt types
 // collected while walking its body. No returns means the body produces no value,
-// so the function returns void. A return-less body that always diverges via
+// so the function returns `undefined`. A return-less body that always diverges via
 // `throw` is conceptually `never`. That case is deferred, because throw, do, and
 // match are not walked yet, so such a body cannot be recognized as diverging.
 // Recovery placeholders use the absorbing ErrorType sentinel rather than a raw
@@ -631,7 +631,7 @@ func (c *checker) checkDeclaredLifetimeBounds(params []*ast.LifetimeParam, ft *s
 func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.Type) soltype.Type {
 	switch len(collected) {
 	case 0:
-		return &soltype.Void{}
+		return &soltype.UndefinedType{}
 	case 1:
 		return collected[0]
 	default:
@@ -1012,7 +1012,7 @@ func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, 
 // annotation IS that type, with the body's return constrained against its `Ret` slot.
 // Otherwise the inferred pieces are wrapped, with what the body raises going in the
 // generator's Throws. A bodyless `declare gen fn` wraps `unknown` rather than the
-// synthetic Void, which would signal that it returns nothing.
+// synthetic `undefined`, which would signal that it returns nothing.
 func (c *checker) genReturn(node ast.Node, gs *genSinks, retExprs []ast.Expr, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
 	if gs.ann != nil {
 		if hasBody {
@@ -1595,9 +1595,9 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 // The assignment EXPRESSION evaluates to the value just stored, so its type is the
 // target binding's type — `val b = (a = 6)` for `var a: number` yields
 // `b: number`. On an error path (invalid / immutable / unknown target) no value is
-// stored, so it recovers to `void`.
+// stored, so it recovers to `undefined`.
 func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.Type {
-	voidT := soltype.Type(&soltype.Void{})
+	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	// Guard a malformed assignment node (the real parser substitutes ast.NewError for
 	// a missing operand, so this is unreachable from source — but a hand-built AST
 	// could have a nil operand). Blame the whole expression rather than dereferencing
@@ -1616,10 +1616,11 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		assignStmt = c.fn.currentStmt
 	}
 	sourceT := c.inferExpr(scope, lvl, e.Right)
-	// Record void on e up front as the recovery type: every error path below returns
-	// voidT without recording a type, so this guarantees the node is typed on failure.
-	// The success path overwrites it with the stored value's type (see end of function).
-	c.recordType(e, voidT)
+	// Record `undefined` on e up front as the recovery type. Every error path below
+	// returns undefinedT without recording a type, so this guarantees the node is typed
+	// on failure. The success path overwrites it with the stored value's type; see the
+	// end of this function.
+	c.recordType(e, undefinedT)
 
 	target, ok := e.Left.(*ast.IdentExpr)
 	if !ok {
@@ -1636,7 +1637,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		default:
 			c.report(&InvalidAssignmentTargetError{Target: e.Left})
 		}
-		return voidT
+		return undefinedT
 	}
 	b, found := scope.GetValue(target.Name)
 	if !found || len(b.Schemes) == 0 {
@@ -1648,7 +1649,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		} else {
 			c.report(&UnknownIdentifierError{Ident: target})
 		}
-		return voidT
+		return undefinedT
 	}
 	if b.Kind != ast.VarKind {
 		c.report(&CannotAssignToImmutableError{
@@ -1656,7 +1657,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			Name:   target.Name,
 			Decl:   bindingDecl(b),
 		})
-		return voidT
+		return undefinedT
 	}
 	// The source value must be a subtype of the target binding's type. Use the binding's
 	// COALESCED type (schemeType — what Info records and the printer renders), not a
@@ -1780,7 +1781,7 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 	// instantiate (the read face), NOT the coalesced write-face targetT: targetT is a
 	// display type that may be a Union/Intersection node, and re-injecting it into the
 	// constraint graph here would later crash the coalescer when this value flows on
-	// (e.g. through a `return`). This overwrites the `void` recorded for e above,
+	// (e.g. through a `return`). This overwrites the `undefined` recorded for e above,
 	// which now serves only as the error-path recovery value.
 	valueT := c.instantiate(b.Schemes[0], lvl)
 	c.recordType(e, valueT)
@@ -1815,17 +1816,17 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 // later read of the same field returns it (read-after-write; see valueProp). The
 // assignment evaluates to the value just stored, so its type is the widened source.
 func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m *ast.MemberExpr, source soltype.Type, assignStmt ast.Stmt) soltype.Type {
-	voidT := soltype.Type(&soltype.Void{})
+	undefinedT := soltype.Type(&soltype.UndefinedType{})
 	if m.OptChain {
 		// `recv?.prop = …` is not a meaningful assignment target; optional chaining is
 		// M6 regardless, so report the whole target as unsupported rather than typing it.
 		c.reportUnsupportedFeature(e.Left, "assignment to a member or index")
-		return voidT
+		return undefinedT
 	}
 	if m.Prop == nil || m.Prop.Name == "" {
 		// A malformed `recv. = …`: the parser already reported the missing property
-		// name, so emit nothing further and recover to void.
-		return voidT
+		// name, so emit nothing further and recover to `undefined`.
+		return undefinedT
 	}
 	recv := c.inferWriteReceiver(scope, lvl, m.Object)
 	// An accessor named prop resolves here rather than through the structural requirement
@@ -1897,7 +1898,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 		}
 	}
 	// The assignment evaluates to the value just stored. recordType overwrites the
-	// `void` recovery type inferAssign recorded on e before dispatching here.
+	// `undefined` recovery type inferAssign recorded on e before dispatching here.
 	c.recordType(e, w)
 	return w
 }
@@ -1944,7 +1945,7 @@ func (c *checker) inferAccessorAssign(
 	}
 	// The assignment evaluates to the value just written, widened the way a field write
 	// widens it, so `val b = (c.x = 5)` reads `number` whether `x` is a field or a setter.
-	// recordType overwrites the `void` recovery type inferAssign recorded on e before
+	// recordType overwrites the `undefined` recovery type inferAssign recorded on e before
 	// dispatching here.
 	w := widen(source)
 	c.recordType(e, w)
@@ -2415,7 +2416,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// under debugProv and mis-blame the other aliases). A later constraint failure on
 	// this value therefore blames its constraint site rather than this `.prop`, the
 	// same graceful site fallback a Prov-less type takes everywhere (see
-	// TestBlameVoidSubjectFallsBackToCallSite).
+	// TestBlameUndefinedSubjectFallsBackToCallSite).
 	if c.fn != nil {
 		if v, ok := recv.(*soltype.TypeVarType); ok {
 			if t, found := c.fn.written[fieldKey{recvID: v.ID, field: name}]; found {
@@ -2882,7 +2883,7 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 
 // inferIfElse types `if cond { cons } else { alt }`. The condition is
 // constrained `<: boolean`; each branch is typed (an empty / missing else
-// contributes Void); the result is a fresh join var with each NON-DIVERGING
+// contributes `undefined`); the result is a fresh join var with each NON-DIVERGING
 // branch as a lower bound, so the result coalesces to the union of the branches
 // that can actually produce a value.
 //
@@ -2913,7 +2914,7 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	// diagnostic — the M2-era isRecoveryPlaceholder guard this site used is gone.
 	c.constrain(e.Cond, cond, &soltype.PrimType{Prim: soltype.BoolPrim})
 	consT, consDiverges := c.inferBlock(scope.Child(), lvl, &e.Cons)
-	var altT soltype.Type = &soltype.Void{}
+	var altT soltype.Type = &soltype.UndefinedType{}
 	altDiverges := false
 	if e.Alt != nil {
 		altT, altDiverges = c.inferBlockOrExpr(scope, lvl, e.Alt)
@@ -2950,7 +2951,7 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 	consT, consDiverges := c.inferBlock(consScope, lvl, &e.Cons)
 	// The alternate runs in the original scope, so it sees the scrutinee at its full
 	// type without the narrowing the consequent's bindings carry.
-	var altT soltype.Type = &soltype.Void{}
+	var altT soltype.Type = &soltype.UndefinedType{}
 	altDiverges := false
 	if e.Alt != nil {
 		altT, altDiverges = c.inferBlockOrExpr(scope, lvl, e.Alt)
@@ -3734,7 +3735,7 @@ func blockOrExprDiverges(b *ast.BlockOrExpr) bool {
 // single expression (`else if ...` chains, which the parser desugars into Alt =
 // expr). It returns the arm's value together with whether the arm DIVERGES (so
 // inferIfElse drops it from the branch union, exactly as it drops a diverging
-// block branch). A nil-block-and-nil-expr alt is treated as a non-diverging Void
+// block branch). A nil-block-and-nil-expr alt is treated as a non-diverging `undefined`
 // (the only honest recovery for a malformed AST shape that shouldn't arise from
 // the real parser).
 //
@@ -3751,6 +3752,6 @@ func (c *checker) inferBlockOrExpr(scope *Scope, lvl int, b *ast.BlockOrExpr) (s
 	case b.Expr != nil:
 		return c.inferExpr(scope, lvl, b.Expr), exprDiverges(b.Expr)
 	default:
-		return &soltype.Void{}, false
+		return &soltype.UndefinedType{}, false
 	}
 }

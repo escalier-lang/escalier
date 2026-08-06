@@ -472,3 +472,13 @@ func printDecoratorArg(t *testing.T, dec *ast.Decorator) string {
 	require.True(t, ok, "decorator arg literal is a StrLit")
 	return str.Value
 }
+
+// TypeScript's `void` has no single Escalier counterpart, so the converter reads it by
+// position. This pins all three readings on one converted declaration.
+func TestStandalone_VoidLowersByPosition(t *testing.T) {
+	_, printed := convertSlice(t, `
+declare function f(x: void, p: Promise<void>, cb: (v: number) => void): void;
+`)
+	require.Contains(t, printed,
+		"fn f(x: never, p: Promise<undefined>, cb: fn (v: number) -> unknown) -> unknown")
+}

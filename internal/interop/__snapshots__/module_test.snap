@@ -26,7 +26,7 @@
                                     span: 3:18-3:21,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.VoidTypeAnn{
+                                    Return: &ast.UnknownTypeAnn{
                                         span: 3:25-3:29,
                                     },
                                 },
@@ -84,7 +84,7 @@
                                     span: 4:12-4:15,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.VoidTypeAnn{
+                                    Return: &ast.UnknownTypeAnn{
                                         span: 4:19-4:23,
                                     },
                                 },
@@ -187,7 +187,7 @@
                                     span: 8:18-8:28,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.VoidTypeAnn{
+                                    Return: &ast.UnknownTypeAnn{
                                         span: 8:32-8:36,
                                     },
                                 },
@@ -356,7 +356,7 @@
                                     span: 3:18-3:21,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.VoidTypeAnn{
+                                    Return: &ast.UnknownTypeAnn{
                                         span: 3:25-3:29,
                                     },
                                 },
@@ -586,7 +586,7 @@
                                     span: 4:12-4:15,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.VoidTypeAnn{
+                                    Return: &ast.UnknownTypeAnn{
                                         span: 4:19-4:23,
                                     },
                                 },
@@ -688,7 +688,7 @@
                                     span: 5:14-5:17,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.VoidTypeAnn{
+                                    Return: &ast.UnknownTypeAnn{
                                         span: 5:21-5:25,
                                     },
                                 },
@@ -736,7 +736,7 @@
                                     span: 3:18-3:21,
                                 },
                                 FuncSig: ast.FuncSig{
-                                    Return: &ast.VoidTypeAnn{
+                                    Return: &ast.UnknownTypeAnn{
                                         span: 3:25-3:29,
                                     },
                                 },

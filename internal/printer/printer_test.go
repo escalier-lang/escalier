@@ -1761,8 +1761,8 @@ func TestPrintObjectTypeElements(t *testing.T) {
 		},
 		{
 			"setter",
-			"{set value(v: number) -> void}",
-			"{\n    set value(mut self, v: number) -> void\n}",
+			"{set value(v: number) -> undefined}",
+			"{\n    set value(mut self, v: number) -> undefined\n}",
 		},
 		// {
 		// 	"callable",
@@ -1802,8 +1802,8 @@ func TestPrintObjectTypeElements(t *testing.T) {
 		},
 		{
 			"multiple elements",
-			"{x: number, readonly y: string, greet(name: string) -> void}",
-			"{\n    x: number,\n    readonly y: string,\n    greet(name: string) -> void\n}",
+			"{x: number, readonly y: string, greet(name: string) -> undefined}",
+			"{\n    x: number,\n    readonly y: string,\n    greet(name: string) -> undefined\n}",
 		},
 	}
 

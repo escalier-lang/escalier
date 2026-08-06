@@ -661,7 +661,7 @@ func TestParseTypeKeywordsAsIdentifiers(t *testing.T) {
 			input: `fn convertToBigint(bigint: string) -> bigint { return 0n }`,
 		},
 		"FunctionWithMultipleTypeKeywordParams": {
-			input: `fn convert(string: string, number: number, boolean: boolean) -> void {}`,
+			input: `fn convert(string: string, number: number, boolean: boolean) -> undefined {}`,
 		},
 		"DeclareFunction": {
 			input: `declare fn parseFloat(string: string) -> number`,

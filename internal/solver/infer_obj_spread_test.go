@@ -151,7 +151,7 @@ func TestInferObjectSpreadSignatureStaysSymbolic(t *testing.T) {
 		{
 			name: "InlineOperand",
 			src:  `fn g(x: {...{a: number}, b: string}) {}`,
-			want: map[string]string{"g": "fn (x: {...{a: number}, b: string}) -> void"},
+			want: map[string]string{"g": "fn (x: {...{a: number}, b: string}) -> undefined"},
 		},
 	}
 	for _, tt := range tests {
@@ -308,6 +308,6 @@ func TestInferObjectSpreadUnderOperators(t *testing.T) {
 	t.Run("KeyofAbstractSpreadStaysSymbolic", func(t *testing.T) {
 		values, _, errs := inferSource(t, `fn f<T>(k: keyof {...T, a: number}) {}`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn <T>(k: keyof {...T, a: number}) -> void", values["f"])
+		require.Equal(t, "fn <T>(k: keyof {...T, a: number}) -> undefined", values["f"])
 	})
 }

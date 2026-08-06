@@ -45,10 +45,10 @@ func TestPrintFuncLifetimeParam(t *testing.T) {
 						identP("x", &RefType{Lt: la, Inner: counterCls()}),
 						identP("y", &RefType{Lt: lb, Inner: counterCls()}),
 					},
-					Ret: &Void{},
+					Ret: &UndefinedType{},
 				}
 			},
-			want: "fn <'a, 'b: 'a>(x: &'a Counter, y: &'b Counter) -> void",
+			want: "fn <'a, 'b: 'a>(x: &'a Counter, y: &'b Counter) -> undefined",
 		},
 	}
 	for _, tt := range tests {
@@ -136,7 +136,7 @@ func TestFreeLifetimeVarsBoundLifetimeParam(t *testing.T) {
 		fn := &FuncType{
 			LifetimeParams: []*LifetimeParam{{Name: "'b", Var: lb, Bounds: []Lifetime{outer}}},
 			Params:         []*FuncParam{identP("x", &RefType{Lt: lb, Inner: counterCls()})},
-			Ret:            &Void{},
+			Ret:            &UndefinedType{},
 		}
 		require.Equal(t, []*LifetimeVar{outer}, freeLifetimeVars(fn))
 	})

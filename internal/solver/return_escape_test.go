@@ -215,7 +215,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				}
 			`,
 			want:  []string{"4:15-4:21: borrowed value 'b' does not live long enough to escape the function"},
-			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}) -> void"},
+			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}) -> undefined"},
 		},
 		// Storing a parameter borrow into a parameter's field is sound: the stored borrow
 		// carries the caller's lifetime, which outlives the frame.
@@ -226,7 +226,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}, q: &mut {value: number}) -> void"},
+			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}, q: &mut {value: number}) -> undefined"},
 		},
 		// Storing an owned carrier that holds a local borrow into a parameter's field is a
 		// connected-component move, not an escape: the stored `{peer: &mut b}` owns a
@@ -244,7 +244,7 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 				}
 			`,
 			want:  []string{"5:14-5:15: use of moved value 'b'"},
-			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> void"},
+			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> undefined"},
 		},
 		// Auto-borrowing a local into a `&mut` parameter is sound: the parameter borrows
 		// for the call rather than consuming, so the local outlives the borrow.
@@ -258,8 +258,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"read": "fn (x: &mut {value: number}) -> void",
-				"f":    "fn () -> void",
+				"read": "fn (x: &mut {value: number}) -> undefined",
+				"f":    "fn () -> undefined",
 			},
 		},
 		// A consuming argument that is a plain owned value carries no borrow, so it moves
@@ -274,8 +274,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"store": "fn (x: {value: number}) -> void",
-				"f":     "fn () -> void",
+				"store": "fn (x: {value: number}) -> undefined",
+				"f":     "fn () -> undefined",
 			},
 		},
 		// A borrow passed to an inner call is consumed by that call, not carried out by
@@ -295,8 +295,8 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 			want: nil,
 			types: map[string]string{
 				"read":  "fn (x: &mut {value: number}) -> {value: number}",
-				"store": "fn (y: {value: number}) -> void",
-				"f":     "fn () -> void",
+				"store": "fn (y: {value: number}) -> undefined",
+				"f":     "fn () -> undefined",
 			},
 		},
 	}
@@ -414,8 +414,8 @@ func TestConnectedComponentMove(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"store": "fn (x: {peer: &mut {value: number}}) -> void",
-				"f":     "fn () -> void",
+				"store": "fn (x: {peer: &mut {value: number}}) -> undefined",
+				"f":     "fn () -> undefined",
 			},
 		},
 		// The component move consumes the borrowed local, not just the carrier: after the
@@ -433,8 +433,8 @@ func TestConnectedComponentMove(t *testing.T) {
 			`,
 			want: []string{"7:14-7:15: use of moved value 'b'"},
 			types: map[string]string{
-				"store": "fn (x: {peer: &mut {value: number}}) -> void",
-				"f":     "fn () -> void",
+				"store": "fn (x: {peer: &mut {value: number}}) -> undefined",
+				"f":     "fn () -> undefined",
 			},
 		},
 		// An escape through a consuming call inside a return is a component move at the
@@ -538,8 +538,8 @@ func TestConnectedComponentMove(t *testing.T) {
 			`,
 			want: []string{"7:12-7:13: borrowed value 'd' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (x: {peer: &mut {x: number}}) -> void",
-				"f":     "fn () -> void",
+				"store": "fn (x: {peer: &mut {x: number}}) -> undefined",
+				"f":     "fn () -> undefined",
 			},
 		},
 		// Two mutable aliases of one node are fine when both live inside the moved component.
@@ -582,8 +582,8 @@ func TestConnectedComponentMove(t *testing.T) {
 			`,
 			want: []string{"9:14-9:15: use of moved value 'd'"},
 			types: map[string]string{
-				"store": "fn (x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) -> void",
-				"f":     "fn () -> void",
+				"store": "fn (x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) -> undefined",
+				"f":     "fn () -> undefined",
 			},
 		},
 		// A wider component with five borrowed locals moves out as one unit, the same as the
@@ -624,8 +624,8 @@ func TestConnectedComponentMove(t *testing.T) {
 			`,
 			want: []string{"9:14-9:15: use of moved value 'd'"},
 			types: map[string]string{
-				"store": "fn (x: {peer: &{peer: &{peer: &{value: number}}}}) -> void",
-				"f":     "fn () -> void",
+				"store": "fn (x: {peer: &{peer: &{peer: &{value: number}}}}) -> undefined",
+				"f":     "fn () -> undefined",
 			},
 		},
 		// A second borrow of a node that is dead by the escape point does not pin the
@@ -665,8 +665,8 @@ func TestConnectedComponentMove(t *testing.T) {
 			`,
 			want: []string{"7:12-7:13: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (x: {peer: &{value: number}}) -> void",
-				"f":     "fn () -> void",
+				"store": "fn (x: {peer: &{value: number}}) -> undefined",
+				"f":     "fn () -> undefined",
 			},
 		},
 	}

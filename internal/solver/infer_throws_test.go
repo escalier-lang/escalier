@@ -182,7 +182,7 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 				fn g() throws _ { f() }
 			`,
 			binding: "g",
-			want:    "fn () -> void throws string",
+			want:    "fn () -> undefined throws string",
 		},
 		{
 			name: "CallToNonThrowingCalleeAddsNothing",
@@ -207,7 +207,7 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 				fn c() throws _ { b() }
 			`,
 			binding: "c",
-			want:    "fn () -> void throws string",
+			want:    "fn () -> undefined throws string",
 		},
 		{
 			// `inner` raises, but `outer` only builds and returns it, so `outer` raises
@@ -221,7 +221,7 @@ func TestInferThrowsPropagateThroughCalls(t *testing.T) {
 				}
 			`,
 			binding: "outer",
-			want:    "fn () -> fn () -> void throws string",
+			want:    "fn () -> fn () -> undefined throws string",
 		},
 		{
 			name: "BodylessDeclareFnDeclaresThrows",
@@ -388,10 +388,10 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 func TestInferThrowsAnnotationRecovery(t *testing.T) {
 	runThrowsErrCases(t, []throwsErrCase{
 		{
-			// `void` stands in for any annotation resolveTypeAnn does not support.
+			// `symbol` stands in for any annotation resolveTypeAnn does not support.
 			name:     "UnsupportedAnnotationDoesNotCascade",
-			src:      `val f: fn() -> number throws void = fn () -> never throws _ { throw "x" }`,
-			wantErrs: []string{"1:30-1:34: Unsupported: VoidTypeAnn"},
+			src:      `val f: fn() -> number throws symbol = fn () -> never throws _ { throw "x" }`,
+			wantErrs: []string{"1:30-1:36: Unsupported: SymbolTypeAnn"},
 		},
 	})
 }
@@ -468,7 +468,7 @@ func TestInferThrowsOverDeclaredSignature(t *testing.T) {
 				fn a() throws string { throw "boom" }
 				fn f() throws string { a() }
 			`,
-			want: "fn () -> void throws string",
+			want: "fn () -> undefined throws string",
 		},
 		{
 			// A bodyless `declare fn` has no body to measure either declaration against.
@@ -573,7 +573,7 @@ func TestInferThrowsFromAnAccessor(t *testing.T) {
 				class C { m(self) throws string { throw "boom" } }
 				fn f(c: C) { val g = c.m }
 			`,
-			want: "fn (c: C) -> void",
+			want: "fn (c: C) -> undefined",
 		},
 		{
 			// An accessor that handles everything internally raises nothing, so it needs
@@ -715,7 +715,7 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			src: raisingGetterClass + `
 				fn f(c: C) throws _ { try { val n = c.x } catch { "boom" => 0 } }
 			`,
-			want: "fn (c: C) -> void throws string",
+			want: "fn (c: C) -> undefined throws string",
 		},
 		{
 			// `g` picks the raise up from the read and `f` picks it up from the call to
@@ -789,7 +789,7 @@ func TestInferThrowsThroughAGetterRead(t *testing.T) {
 			// the raise stays on the lambda and the enclosing `f` needs no clause.
 			name: "ReadInsideANestedLambdaDoesNotLeakOut",
 			src:  raisingGetterClass + `fn f(c: C) { val g = fn () -> number throws _ { return c.x } }`,
-			want: "fn (c: C) -> void",
+			want: "fn (c: C) -> undefined",
 		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{
@@ -838,13 +838,13 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 			// `throws _` on the writer infers from the write.
 			name: "WriterInfersTheSetterClause",
 			src:  raisingSetterClass + `fn f(c: mut C) throws _ { c.x = 5 }`,
-			want: "fn (c: mut C) -> void throws string",
+			want: "fn (c: mut C) -> undefined throws string",
 		},
 		{
 			// A catch-all around the write covers it, so the writer needs no clause.
 			name: "CatchAllAroundTheWriteClearsTheClause",
 			src:  raisingSetterClass + `fn f(c: mut C) { try { c.x = 5 } catch { e => 0 } }`,
-			want: "fn (c: mut C) -> void",
+			want: "fn (c: mut C) -> undefined",
 		},
 		{
 			// A method writes through `self` and carries the raise into its own signature,
@@ -859,7 +859,7 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 				}
 				fn f(c: mut C) throws _ { c.m() }
 			`,
-			want: "fn (c: mut C) -> void throws string",
+			want: "fn (c: mut C) -> undefined throws string",
 		},
 		{
 			// A setter that raises nothing leaves the writer's clause untouched, the same
@@ -869,7 +869,7 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 				class C { v: number, set x(mut self, n: number) { self.v = n } }
 				fn f(c: mut C) { c.x = 5 }
 			`,
-			want: "fn (c: mut C) -> void",
+			want: "fn (c: mut C) -> undefined",
 		},
 		{
 			// A plain field write is not an accessor call and raises nothing.
@@ -878,7 +878,7 @@ func TestInferThrowsThroughASetterWrite(t *testing.T) {
 				class C { v: number }
 				fn f(c: mut C) { c.v = 5 }
 			`,
-			want: "fn (c: mut C) -> void",
+			want: "fn (c: mut C) -> undefined",
 		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{

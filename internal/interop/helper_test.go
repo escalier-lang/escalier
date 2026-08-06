@@ -426,6 +426,17 @@ func TestConvertTypeAnn(t *testing.T) {
 		{"conditional with union", "T extends string | number ? true : false"},
 		{"indexed access of union", "(A | B)[K]"},
 		{"generic with multiple constraints", "<T extends string, U extends number>(x: T, y: U) => void"},
+
+		// TypeScript's `void` reads three ways, and the position decides which. A return
+		// is bivariant — the caller discards the value — so it lowers to `unknown`, which
+		// accepts a callback returning anything. A parameter accepts no useful argument,
+		// so it lowers to `never`, which rejects the same calls TypeScript rejects.
+		// Everywhere else it is the runtime `undefined`, so `Promise<void>` becomes
+		// `Promise<undefined>` and a `void` property keeps that type.
+		{"void return lowers to unknown", "() => void"},
+		{"void type argument lowers to undefined", "Promise<void>"},
+		{"void property lowers to undefined", "{ x: void }"},
+		{"void param lowers to never", "(x: void) => number"},
 	}
 
 	for _, tt := range tests {

@@ -58,7 +58,7 @@ func hasHardError(errs []SolverError) bool {
 // that keeps identifier-flow blame on the use, not the definition, §3.8) and falls
 // back to site otherwise. This is the only constraint kind that keeps a site
 // fallback: its actual-value operand can legitimately resolve outside the
-// constraint (an ident's definition) or not at all (a Void result).
+// constraint (an ident's definition) or not at all (an `undefined` result).
 type CannotConstrainError struct {
 	Sub, Super soltype.Type
 	prov       NodeResolver // M2.5: type→node index; assigned after Constrain returns (§3.5)
@@ -1359,7 +1359,7 @@ func (e *ReservedTypeNameError) Message() string {
 }
 
 // RestParamNotLastError fires when a function type annotation writes a `...xs: T` parameter
-// somewhere other than the final position, as `fn (...xs: [number], y: string) -> void` does.
+// somewhere other than the final position, as `fn (...xs: [number], y: string) -> undefined` does.
 // A rest parameter binds the arguments left over after the fixed ones, so it means something
 // only at the end. The parser accepts one in any position and acceptSet reads the Rest flag
 // off the last parameter only, so resolution is where the position is enforced.
@@ -1374,7 +1374,7 @@ func (e *RestParamNotLastError) Message() string {
 }
 
 // RestParamNeedsTypeError fires when a function type annotation writes a rest parameter with
-// no type annotation, as `fn (...xs) -> void` does. The slot's type is what says how many
+// no type annotation, as `fn (...xs) -> undefined` does. The slot's type is what says how many
 // arguments the parameter binds. A tuple binds one per element and an array binds zero or
 // more, so a rest parameter with no type declares no arity at all.
 type RestParamNeedsTypeError struct {
@@ -1388,7 +1388,7 @@ func (e *RestParamNeedsTypeError) Message() string {
 }
 
 // OptionalRestParamError fires when a function type annotation marks a rest parameter `?`,
-// as `fn (...xs?: [number]) -> void` does. The marker says a parameter may go unsupplied,
+// as `fn (...xs?: [number]) -> undefined` does. The marker says a parameter may go unsupplied,
 // which a rest parameter already settles through its type: an array-typed slot binds zero or
 // more arguments and is omittable on its own, and a tuple-typed slot fixes how many
 // arguments it binds. So the marker would change nothing on either shape.
@@ -2618,7 +2618,7 @@ func describe(t soltype.Type) string {
 		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.GeneratorType:
 		// Structural like the Promise arm, so a rejected constraint names the slot
-		// types: `Generator<number, void, never>`. The raise type joins them only when
+		// types: `Generator<number, undefined, never>`. The raise type joins them only when
 		// the generator can raise, matching the printer.
 		slots := describe(t.Yield) + ", " + describe(t.Ret) + ", " + describe(t.Next)
 		if t.Raises() {
@@ -2710,8 +2710,6 @@ func describe(t soltype.Type) string {
 			prefix = "mut "
 		}
 		return prefix + describe(t.Inner)
-	case *soltype.Void:
-		return "void"
 	case *soltype.NullType:
 		return "null"
 	case *soltype.UndefinedType:

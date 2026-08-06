@@ -6,12 +6,13 @@ import (
 )
 
 // inferBlock types a block's statements in source order and returns the block's
-// VALUE — the type of its last statement, or void for an empty block — together
-// with whether the block DIVERGES (always transfers control out before reaching
-// its tail, so it completes no value). The block runs in the scope it is given —
-// the caller establishes it (inferFunc passes the param scope, so body-level
-// val/var redeclarations overwrite alongside the params, per §3.2). soltype.Void
-// is the result of a block that ends in a declaration or a value-free statement.
+// VALUE — the type of its last statement, or `undefined` for an empty block —
+// together with whether the block DIVERGES (always transfers control out before
+// reaching its tail, so it completes no value). The block runs in the scope it is
+// given — the caller establishes it (inferFunc passes the param scope, so
+// body-level val/var redeclarations overwrite alongside the params, per §3.2).
+// soltype.UndefinedType is the result of a block that ends in a declaration or a
+// value-free statement, which is the value such a block evaluates to at runtime.
 //
 // The divergence flag is the single source of truth for "this block produces no
 // value": a VALUE-position caller (an if/else branch today; do/match arms when
@@ -25,12 +26,13 @@ import (
 // inferStmt routes every return into the enclosing funcCtx for inferFunc to
 // join into the function's return type. inferFunc IGNORES both the tail and the
 // divergence flag: a function body's last expression is NOT an implicit return
-// (mirroring the old checker's inferFuncBody), so `fn f() { 5 }` returns void
-// while `fn f() { return 5 }` returns `5` (the operand, collected and joined).
+// (mirroring the old checker's inferFuncBody), so `fn f() { 5 }` returns
+// `undefined` while `fn f() { return 5 }` returns `5` (the operand, collected
+// and joined).
 // Value-position consumers still use the tail: `val x = if c { return 5 } else
 // { 6 }` sees the cons branch diverge and binds `x : 6`.
 func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type, bool) {
-	var result soltype.Type = &soltype.Void{}
+	var result soltype.Type = &soltype.UndefinedType{}
 	for _, s := range b.Stmts {
 		result = c.inferStmt(scope, lvl, s)
 	}
@@ -38,8 +40,8 @@ func (c *checker) inferBlock(scope *Scope, lvl int, b *ast.Block) (soltype.Type,
 }
 
 // inferStmt types a single statement and returns the value it contributes to
-// the enclosing block (void for declarations and bare returns without an
-// operand). Body-level declarations are VarDecl-only: a DeclStmt wrapping any
+// the enclosing block, which is `undefined` for a declaration and for a bare return
+// with no operand. Body-level declarations are VarDecl-only: a DeclStmt wrapping any
 // other decl kind is a permanent BodyDeclNotAllowedError (§3.2), not the
 // temporary subset gate. Each val/var introduces a fresh, independent binding
 // and overwrites the name's binding in the current scope, so redeclaration rebinds
@@ -59,9 +61,9 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 	case *ast.ReturnStmt:
 		// A return contributes both as the block's tail value (consumed only by
 		// value-position blocks; inferFunc discards the tail) AND as one of the
-		// enclosing function's return points. Bare `return` contributes Void in
+		// enclosing function's return points. Bare `return` contributes `undefined` in
 		// both roles.
-		var t soltype.Type = &soltype.Void{}
+		var t soltype.Type = &soltype.UndefinedType{}
 		if s.Expr != nil {
 			t = c.inferExpr(scope, lvl, s.Expr)
 		}
@@ -103,22 +105,22 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 				// preBindEnum binds the enum's union type first so a self-recursive variant
 				// resolves, then inferEnumBody builds the constructors.
 				c.inferEnumBody(c.preBindEnum(scope, lvl+1, decl, ""))
-				return &soltype.Void{}
+				return &soltype.UndefinedType{}
 			}
 			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
-			return &soltype.Void{}
+			return &soltype.UndefinedType{}
 		case *ast.ClassDecl:
 			if c.inScript() {
 				c.bindScriptClass(scope, lvl, decl)
-				return &soltype.Void{}
+				return &soltype.UndefinedType{}
 			}
 			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
-			return &soltype.Void{}
+			return &soltype.UndefinedType{}
 		}
 		vd, ok := s.Decl.(*ast.VarDecl)
 		if !ok {
 			c.report(&BodyDeclNotAllowedError{Decl: s.Decl})
-			return &soltype.Void{}
+			return &soltype.UndefinedType{}
 		}
 		// A `let`-`else` binding is refutable: its pattern narrows the initializer and
 		// its `else` runs on a failed match, either diverging or supplying a fallback.
@@ -126,7 +128,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		// block, so it takes over from the ordinary irrefutable `val`/`var` paths below.
 		if vd.Else != nil {
 			c.inferValElse(scope, lvl, vd)
-			return &soltype.Void{}
+			return &soltype.UndefinedType{}
 		}
 		name, named := varName(vd)
 		if !named {
@@ -134,7 +136,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			// blames the decl, mirroring inferFunc — never a nil-node Span() panic.
 			if vd.Pattern == nil {
 				c.reportUnsupported(vd)
-				return &soltype.Void{}
+				return &soltype.UndefinedType{}
 			}
 			// M4 E1: a destructuring `val`/`var` such as `{x, y} = …` or `[a, b] = …`.
 			// Type the initializer, then bind the pattern's leaves against it as
@@ -145,7 +147,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 					c.flushBorrowDirty(ref)
 				}
 			}
-			return &soltype.Void{}
+			return &soltype.UndefinedType{}
 		}
 		// Unlike the module driver (inferComponent), a body-level redeclaration is
 		// allowed and overwrites the name's binding (§3.2). inferVarDecl reports a
@@ -172,7 +174,7 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 				}
 			}
 		}
-		return &soltype.Void{}
+		return &soltype.UndefinedType{}
 	default:
 		return c.reportUnsupported(s)
 	}

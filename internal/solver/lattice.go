@@ -383,7 +383,7 @@ func compareType(a, b soltype.Type) int {
 }
 
 // compareSameKind is the per-kind structural tie-breaker. The payload-free
-// kinds NeverType, UnknownType, ErrorType, and Void cannot reach this
+// kinds NeverType, UnknownType, ErrorType, and UndefinedType cannot reach this
 // function, because equalType already returned true for any two of them above.
 // The remaining kinds compare by their fields in declaration order, with
 // nested types recursing through compareType.
@@ -637,10 +637,9 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 // bounds and the error sentinel come first, then TypeVarType so quantified
 // parameters lead in a rendered union, then primitives and literals, then
 // the remaining structural kinds, then the lattice forms, and finally
-// NullType, Void, and UndefinedType. A union renders its parameters and data
-// members before its absence markers. NullType precedes Void, which precedes
-// UndefinedType, so `T0 | number | null | void | undefined` is the canonical
-// render.
+// NullType and UndefinedType. A union renders its parameters and data
+// members before its absence markers. NullType precedes UndefinedType, so
+// `T0 | number | null | undefined` is the canonical render.
 func typeKindOrder(t soltype.Type) int {
 	switch t.(type) {
 	case *soltype.NeverType:
@@ -675,10 +674,8 @@ func typeKindOrder(t soltype.Type) int {
 		return 14
 	case *soltype.NullType:
 		return 15
-	case *soltype.Void:
-		return 16
 	case *soltype.UndefinedType:
-		return 17
+		return 16
 	}
-	return 18
+	return 17
 }

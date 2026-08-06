@@ -16,7 +16,7 @@ func TestInferTryCatchHandlesWithACatchAll(t *testing.T) {
 		{
 			name: "CatchAllLetsAClauselessFunctionThrow",
 			src:  `fn f() { try { throw "boom" } catch { e => 0 } }`,
-			want: "fn () -> void",
+			want: "fn () -> undefined",
 		},
 		{
 			name: "CatchAllLetsAClauselessFunctionCallAThrowingCallee",
@@ -24,7 +24,7 @@ func TestInferTryCatchHandlesWithACatchAll(t *testing.T) {
 				fn a() throws string { throw "boom" }
 				fn f() { try { a() } catch { e => 0 } }
 			`,
-			want: "fn () -> void",
+			want: "fn () -> undefined",
 		},
 		{
 			// A catch arm body is walked against the enclosing sink, not the nested one, so
@@ -114,7 +114,7 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 					}
 				}
 			`,
-			want: `fn (c: boolean) -> void throws "boom"`,
+			want: `fn (c: boolean) -> undefined throws "boom"`,
 		},
 		{
 			// Nothing known escapes, so the clause is untouched and a caller with no clause
@@ -122,14 +122,14 @@ func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 			// declares: the handling is what removes the obligation.
 			name: "CoveringEveryKnownMemberLeavesNoClause",
 			src:  `fn f() { try { throw "boom" } catch { "boom" => 0 } }`,
-			want: "fn () -> void",
+			want: "fn () -> undefined",
 		},
 		{
 			// A guarded arm can always fail its guard, so it covers nothing and its member
 			// is rethrown.
 			name: "AGuardedArmCoversNothing",
 			src:  `fn f() throws _ { try { throw "boom" } catch { "boom" if true => 0 } }`,
-			want: `fn () -> void throws "boom"`,
+			want: `fn () -> undefined throws "boom"`,
 		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{
@@ -294,7 +294,7 @@ func TestInferTryCatchNests(t *testing.T) {
 					}
 				}
 			`,
-			want: "fn () -> void",
+			want: "fn () -> undefined",
 		},
 		{
 			// A nested function owns its own throws sink, so a `try` in the enclosing body
@@ -310,7 +310,7 @@ func TestInferTryCatchNests(t *testing.T) {
 					}
 				}
 			`,
-			want: "fn () -> void",
+			want: "fn () -> undefined",
 		},
 		{
 			// The nested sink is minted at the enclosing body's level, not at the deeper
@@ -342,7 +342,7 @@ func TestInferTryCatchOverClassErrors(t *testing.T) {
 				fn a() throws FooError | BarError { throw FooError("x") }
 				fn f() throws _ { try { a() } catch { FooError{msg} => msg } }
 			`,
-			want: "fn () -> void throws BarError",
+			want: "fn () -> undefined throws BarError",
 		},
 		{
 			// The arm binds the narrowed member, so `msg` is the named class's field rather
@@ -392,7 +392,7 @@ func TestInferTryCatchLeavesAnUnusedClauseUnused(t *testing.T) {
 	require.Equal(t,
 		"1:15-1:21: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
 		msgWithSpan(errs[0]))
-	require.Equal(t, "fn () -> void throws string", values["f"])
+	require.Equal(t, "fn () -> undefined throws string", values["f"])
 }
 
 // Coverage is decided against the type an alias stands for, not against the alias handle. A
@@ -409,7 +409,7 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 				fn a() throws "a" | "b" { throw "a" }
 				fn f() { try { a() } catch { "a" => 0, "b" => 1 } }
 			`,
-			want: "fn () -> void",
+			want: "fn () -> undefined",
 		},
 		{
 			// The same union behind a name has to reach the same verdict.
@@ -419,7 +419,7 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 				fn a() throws Err { throw "a" }
 				fn f() { try { a() } catch { "a" => 0, "b" => 1 } }
 			`,
-			want: "fn () -> void",
+			want: "fn () -> undefined",
 		},
 		{
 			// An enum registers as a transparent alias over its variant union, so its
@@ -430,7 +430,7 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 				fn a() throws Color { throw Color.Red() }
 				fn f() { try { a() } catch { Color.Red => 0, Color.Green => 1 } }
 			`,
-			want: "fn () -> void",
+			want: "fn () -> undefined",
 		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{

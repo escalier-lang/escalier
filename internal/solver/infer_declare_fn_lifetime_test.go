@@ -26,7 +26,7 @@ func TestInferDeclareFnLifetimeBounds(t *testing.T) {
 		want    string
 	}{
 		// A declare fn with no lifetimes adopts its return annotation. A no-body site must
-		// not constrain `void <: number`, which a body-carrying path would.
+		// not constrain `undefined <: number`, which a body-carrying path would.
 		{
 			name:    "no lifetimes adopts return",
 			src:     `declare fn now() -> number`,
@@ -86,7 +86,7 @@ func TestInferDeclareFnLifetimeBounds(t *testing.T) {
 }
 
 // A `declare fn` inside a fully-annotated overload set is a no-body site too. Its nil
-// body keeps a declare arm from constraining a synthetic `void` against its declared
+// body keeps a declare arm from constraining a synthetic `undefined` against its declared
 // return, the same spurious `void <: T` an overloaded regular function already avoids.
 //
 // The rendered arm strips its borrow lifetimes to bare `&`, e.g. `p: &{x: number}` rather

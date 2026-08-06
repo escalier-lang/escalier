@@ -721,7 +721,7 @@ func TestIntersectionMemberAccess(t *testing.T) {
 		},
 		"function intersection - access both Function method and custom property": {
 			input: `
-				type Tagged = (fn () -> void) & {tag: string}
+				type Tagged = (fn () -> undefined) & {tag: string}
 				declare val func: Tagged
 				val tag = func.tag
 				val call = func.call
@@ -827,7 +827,7 @@ func TestFunctionOverloads(t *testing.T) {
 			input: `
 				declare fn process(value: number) -> string
 				declare fn process(value: string) -> number
-				declare fn process(value: boolean) -> void
+				declare fn process(value: boolean) -> undefined
 				val r1 = process(42)
 				val r2 = process("hello")
 				val r3 = process(true)
@@ -835,7 +835,7 @@ func TestFunctionOverloads(t *testing.T) {
 			expectedVars: map[string]string{
 				"r1": "string",
 				"r2": "number",
-				"r3": "void",
+				"r3": "undefined",
 			},
 			wantErr: false,
 		},

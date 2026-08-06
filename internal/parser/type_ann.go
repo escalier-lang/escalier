@@ -351,8 +351,15 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			p.lexer.consume()
 			typeAnn = ast.NewNeverTypeAnn(token.Span)
 		case Void:
+			// Escalier has no `void` type. A function that returns no value returns
+			// `undefined`, which is the type to write. `void` stays a keyword so this
+			// message can name the replacement — dropping it from the keyword table would
+			// lex `void` as an identifier and report an unknown type instead. Recovery is
+			// the `undefined` the writer meant, so the rest of the signature checks
+			// normally and this is the only diagnostic.
 			p.lexer.consume()
-			typeAnn = ast.NewVoidTypeAnn(token.Span)
+			p.reportError(token.Span, "`void` is not a type in Escalier; write `undefined` instead")
+			typeAnn = ast.NewLitTypeAnn(ast.NewUndefined(token.Span), token.Span)
 		case Underscore:
 			p.lexer.consume()
 			typeAnn = ast.NewWildcardTypeAnn(token.Span)

@@ -85,7 +85,7 @@ func convertFuncDecl(df *dts_parser.FuncDecl) (*ast.FuncDecl, error) {
 	// Convert return type
 	var returnType ast.TypeAnn
 	if df.ReturnType != nil {
-		returnType, err = convertTypeAnn(df.ReturnType)
+		returnType, err = convertReturnTypeAnn(df.ReturnType)
 		if err != nil {
 			return nil, fmt.Errorf("converting return type for function %s: %w", df.Name.Name, err)
 		}

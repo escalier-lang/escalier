@@ -16,7 +16,7 @@ import (
 //
 // The converter handles the surface forms the lattice tests author: the prim
 // keywords number / string / boolean; the atomic keywords never / unknown /
-// void / null; literal types such as `5`, `"x"`, `true`; objects, tuples,
+// null / undefined; literal types such as `5`, `"x"`, `true`; objects, tuples,
 // owned-mutable `mut T`, unions, and intersections. It does not handle
 // generic references, function annotations, borrows with named lifetimes, or
 // type variables. Tests that need those continue to build the soltype value
@@ -63,8 +63,6 @@ func toSoltype(t *testing.T, ta ast.TypeAnn) soltype.Type {
 		return &soltype.NeverType{}
 	case *ast.UnknownTypeAnn:
 		return &soltype.UnknownType{}
-	case *ast.VoidTypeAnn:
-		return &soltype.Void{}
 	case *ast.LitTypeAnn:
 		return litToSoltype(t, ta.Lit)
 	case *ast.UnionTypeAnn:
@@ -111,6 +109,8 @@ func litToSoltype(t *testing.T, lit ast.Lit) soltype.Type {
 		return &soltype.LitType{Lit: &soltype.BoolLit{Value: l.Value}}
 	case *ast.NullLit:
 		return &soltype.NullType{}
+	case *ast.UndefinedLit:
+		return &soltype.UndefinedType{}
 	}
 	t.Fatalf("parseType: unsupported literal %T", lit)
 	return nil
@@ -152,7 +152,7 @@ func TestParseTypeHelperSmoke(t *testing.T) {
 		{"boolean", boolT()},
 		{"never", &soltype.NeverType{}},
 		{"unknown", &soltype.UnknownType{}},
-		{"void", &soltype.Void{}},
+		{"undefined", &soltype.UndefinedType{}},
 		{"null", &soltype.NullType{}},
 		{"5", numLit(5)},
 		{`"x"`, strLit("x")},

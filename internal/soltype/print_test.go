@@ -44,10 +44,10 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"str literal", &LitType{Lit: &StrLit{Value: "hello"}}, `"hello"`},
 		{"bool literal", &LitType{Lit: &BoolLit{Value: true}}, "true"},
 
-		// Lattice bounds, void, and the error-recovery sentinel.
+		// Lattice bounds, the absence atoms, and the error-recovery sentinel.
 		{"never", &NeverType{}, "never"},
 		{"unknown", &UnknownType{}, "unknown"},
-		{"void", &Void{}, "void"},
+		{"undefined", &UndefinedType{}, "undefined"},
 		{"error", &ErrorType{}, "error"}, // PR8 recovery sentinel
 
 		// Tuples.
@@ -171,7 +171,7 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"union triple", &UnionType{Types: []Type{numP(), strP(), boolP()}}, "number | string | boolean"},
 		// An inexact union renders a trailing `...` entry.
 		{"inexact union", &UnionType{Types: []Type{numP(), strP()}, Inexact: true}, "number | string | ..."},
-		// NullType renders as `null`. It is a distinct atomic kind from Void.
+		// NullType renders as `null`. It is a distinct atomic kind from UndefinedType.
 		{"null atom", &NullType{}, "null"},
 		{"intersection pair", &IntersectionType{Types: []Type{numP(), strP()}}, "number & string"},
 

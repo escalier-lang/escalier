@@ -1746,16 +1746,19 @@
                     },
                 },
             },
-            Return: &ast.VoidTypeAnn{
-                span: 1:65-1:69,
+            Return: &ast.LitTypeAnn{
+                Lit: &ast.UndefinedLit{
+                    span: 1:65-1:74,
+                },
+                span: 1:65-1:74,
             },
         },
         Body: &ast.Block{
-            Span: 1:70-1:72,
+            Span: 1:75-1:77,
         },
-        span: 1:1-1:72,
+        span: 1:1-1:77,
     },
-    span: 1:1-1:72,
+    span: 1:1-1:77,
 }
 ---
 
@@ -5352,13 +5355,16 @@
                             },
                         },
                     },
-                    Return: &ast.VoidTypeAnn{
-                        span: 50:54-50:58,
+                    Return: &ast.LitTypeAnn{
+                        Lit: &ast.UndefinedLit{
+                            span: 50:54-50:63,
+                        },
+                        span: 50:54-50:63,
                     },
                 },
                 declare: true,
                 override: true,
-                span: 50:5-50:58,
+                span: 50:5-50:63,
             },
         },
         override: true,

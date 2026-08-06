@@ -50,7 +50,9 @@ func TestPrintTypeAudit_RoundTrip(t *testing.T) {
 		{"any", type_system.NewAnyType(nil)},
 		{"unknown", type_system.NewUnknownType(nil)},
 		{"never", type_system.NewNeverType(nil)},
-		{"void", type_system.NewVoidType(nil)},
+		// VoidType has no `void` spelling in Escalier; it prints as `undefined`, which is
+		// what round-trips. `.d.ts` emission still renders it as TypeScript's `void`.
+		{"void type prints as undefined", type_system.NewVoidType(nil)},
 
 		// --- type ref ---
 		{"ref no args", type_system.NewTypeRefType(nil, "Foo", nil)},

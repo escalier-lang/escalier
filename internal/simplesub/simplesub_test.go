@@ -282,7 +282,7 @@ func TestInferMutFromWrites(t *testing.T) {
 	}}}
 	got, errs := Render(foo)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number, y: number}) -> void", got)
+	require.Equal(t, "fn (obj: mut {x: number, y: number}) -> undefined", got)
 }
 
 // TestWriteWidensLiteral isolates the widening rule: a single write of a literal
@@ -295,7 +295,7 @@ func TestWriteWidensLiteral(t *testing.T) {
 	}}}
 	got, errs := Render(foo)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: mut {x: number}) -> void", got)
+	require.Equal(t, "fn (obj: mut {x: number}) -> undefined", got)
 }
 
 // TestReadAndWriteSameField: reading and writing the same field of a parameter
@@ -418,7 +418,7 @@ func TestEscapingRefIntoStatic(t *testing.T) {
 	}
 	got, errs := Render(cache)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (item: mut 'static {x: number}) -> void", got)
+	require.Equal(t, "fn (item: mut 'static {x: number}) -> undefined", got)
 }
 
 // TestConstrainLtCycleTerminates guards against the lifetime-constraint

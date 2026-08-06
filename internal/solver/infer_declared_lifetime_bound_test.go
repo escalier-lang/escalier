@@ -110,7 +110,7 @@ func TestInferDeclaredStaticBoundSatisfiedByEscape(t *testing.T) {
 		var sink = {x: 0}
 		fn cache<'a: 'static>(p: &'a mut {x: number}) { sink = p }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (p: &'static mut {x: number}) -> void", values["cache"])
+	require.Equal(t, "fn (p: &'static mut {x: number}) -> undefined", values["cache"])
 }
 
 // A bare `<'a, 'b>` declares no bounds, so the check does nothing and the inferred join
@@ -159,7 +159,7 @@ func TestCheckDeclaredBoundLowerBoundStaticNotForced(t *testing.T) {
 			{Pattern: &soltype.IdentPat{Name: "p"}, Type: &soltype.RefType{Mut: true, Lt: a, Inner: c.freshAt(0)}},
 			{Pattern: &soltype.IdentPat{Name: "q"}, Type: &soltype.RefType{Mut: true, Lt: b, Inner: c.freshAt(0)}},
 		},
-		Ret: &soltype.Void{},
+		Ret: &soltype.UndefinedType{},
 	}
 	// <'a: 'b>: nothing relates 'a to 'b, so the bound is unfounded.
 	params := []*ast.LifetimeParam{

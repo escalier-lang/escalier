@@ -70,8 +70,8 @@ func TestInferForInElementType(t *testing.T) {
 		},
 		// The empty tuple has no elements, so nothing can be bound to the loop variable
 		// and the body is statically unreachable. The `return x` never runs, so the
-		// function falls through to void — not `never`, which would unsoundly claim the
-		// function never returns.
+		// function falls through to `undefined` — not `never`, which would unsoundly claim
+		// the function never returns.
 		"EmptyTupleBodyUnreachable": {
 			src: `
 				fn f(xs: []) {
@@ -80,7 +80,7 @@ func TestInferForInElementType(t *testing.T) {
 					}
 				}
 			`,
-			want: map[string]string{"f": "fn (xs: []) -> void"},
+			want: map[string]string{"f": "fn (xs: []) -> undefined"},
 		},
 		// A union of tuples yields the union of the branches' element types, since a
 		// union is iterable when every branch is.
@@ -129,7 +129,7 @@ func TestInferForInElementType(t *testing.T) {
 					}
 				}
 			`,
-			want: map[string]string{"f": "fn (xs: [number]) -> void"},
+			want: map[string]string{"f": "fn (xs: [number]) -> undefined"},
 		},
 	}
 	for name, tc := range tests {
