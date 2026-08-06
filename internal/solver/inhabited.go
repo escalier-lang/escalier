@@ -54,8 +54,15 @@ import (
 // to nothing, the value-level twin of `type Bad = Bad`, and they want a diagnostic of their own.
 
 // checkCanReturn reports every queued function that cannot return, and clears the queue so a later
-// group starts empty. It runs once a whole mutually-recursive group has been walked, since the cycle
-// that ties the knot is not closed while any body in the group is still outstanding.
+// group starts empty.
+//
+// It cannot run inside inferFunc, because the cycle that ties the knot does not exist yet when a
+// body finishes. A recursive call resolves through the binding var inferComponent pre-bound in phase
+// 1, and that var carries no bounds until phase 2 constrains the finished function type into it,
+// which happens after inferFunc has returned. Coalescing `fn f() { return {next: f()} }` the moment
+// its body is walked yields `fn () -> {next: never}`, with no μ-knot to read. A mutually-recursive
+// group needs the wait for a second reason on top: the cycle also runs through a sibling whose body
+// has not been walked at all.
 //
 // The display type comes from coalesceScheme rather than plain coalesce, and it is built from the
 // WHOLE function type rather than the return alone. coalesceScheme keeps a variable the caller

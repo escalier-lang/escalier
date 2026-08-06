@@ -116,9 +116,9 @@ type checker struct {
 
 	// pendingReturns holds every body-carrying function inferFunc has typed since the last
 	// checkCanReturn, each waiting to have its return type checked for a finite inhabitant. The
-	// check is queued rather than run on the spot because a mutually-recursive group closes its
-	// cycle only once every body in it has been walked, so the μ-knot the check reads does not
-	// exist yet when the first body finishes.
+	// check is queued rather than run on the spot because a recursive call resolves through a
+	// binding var that is still unbounded while the body is walked, so the μ-knot the check reads
+	// does not exist yet when inferFunc finishes. checkCanReturn spells the ordering out.
 	pendingReturns []pendingReturn
 
 	// classShells holds the type parameters and declaration scope preBindClassTypeParams
