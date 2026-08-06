@@ -31,6 +31,11 @@ func muKnot(id int, name string, body func(ref *soltype.RecursiveVarType) soltyp
 // The one unrolled level in front of each knot is a monomorphic-recursion artifact. Each call site
 // instantiates its own return variable, so the outer shape comes from the call and the knot from the
 // variable the body's recursive call flows through.
+//
+// Every source here puts nothing between the recursive call and the value the body builds, so none
+// of these functions returns when called. The types are right all the same, since no finite value
+// inhabits a knot with no base case, and what is being pinned is the rendering rather than a program
+// anyone runs. TestInferGuardedRecursionRendersMuKnot covers the shapes that do return.
 func TestInferRecursiveRendersMuKnot(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -66,6 +71,120 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 			`,
 			binding: "ping",
 			want:    "fn () -> {p: μX0.{q: {p: X0}}}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, Messages(errs))
+			require.Equal(t, tt.want, values[tt.binding])
+		})
+	}
+}
+
+// TestInferGuardedRecursionRendersMuKnot covers the recursive shapes a program actually runs.
+//
+// Every case in TestInferRecursiveRendersMuKnot puts nothing between the recursive call and the
+// value the body builds, so calling one of those functions never returns. Their knots are still the
+// right types, since no finite value inhabits `μX0.{next: X0}` either, but nobody writes such a
+// function to call it.
+//
+// A guarded recursion does return. Two guards appear in ordinary code. A branch with a base case
+// stops the recursion on some input, and the knot then binds the union of the two arms, so the
+// terminator sits inside the μ form rather than beside it. A lambda defers the recursive call until
+// something forces it, and the knot then closes through that lambda's return type.
+//
+// The rendering is what these pin. Without a μ form each recursive position collapses to the
+// polarity identity, so a linked list inferred from a builder reads `{head: number, tail: never}`
+// and says nothing about the list.
+func TestInferGuardedRecursionRendersMuKnot(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		binding string
+		want    string
+	}{
+		{
+			// A list builder with a base case, the canonical guarded shape. The knot binds the whole
+			// union, so one form covers both the terminated tail and the recursive one.
+			name: "list built by a recursion with a base case",
+			src: `
+				declare fn done(n: number) -> boolean
+				declare fn dec(n: number) -> number
+				fn count(n: number) {
+					return if done(n) { {head: n, tail: undefined} } else { {head: n, tail: count(dec(n))} }
+				}
+			`,
+			binding: "count",
+			want:    "fn (n: number) -> μX0.({head: number, tail: undefined} | {head: number, tail: X0})",
+		},
+		{
+			// The branching twin of the list: the recursive position sits in a tuple element, and the
+			// base case supplies the empty tuple.
+			name: "tree built by a recursion with a base case",
+			src: `
+				declare fn leaf(n: number) -> boolean
+				declare fn half(n: number) -> number
+				fn tree(n: number) {
+					return if leaf(n) { {value: n, kids: []} } else { {value: n, kids: [tree(half(n))]} }
+				}
+			`,
+			binding: "tree",
+			want:    "fn (n: number) -> μX0.({value: number, kids: []} | {value: number, kids: [X0]})",
+		},
+		{
+			// A lazy stream. The recursive call sits under a thunk, so the value is finite until
+			// something calls `rest`, and the knot closes through that thunk's return type.
+			name: "lazy stream behind a thunk",
+			src: `
+				declare fn inc(n: number) -> number
+				fn stream(n: number) { return {value: n, rest: fn () { return stream(inc(n)) }} }
+			`,
+			binding: "stream",
+			want:    "fn (n: number) -> {value: number, rest: fn () -> μX0.{value: number, rest: fn () -> X0}}",
+		},
+		{
+			// The JS iterator protocol, which combines both guards: the recursive call is behind the
+			// `next` thunk, and the `done: true` arm terminates the walk.
+			name: "iterator protocol",
+			src: `
+				declare fn more(n: number) -> boolean
+				declare fn inc(n: number) -> number
+				fn iter(n: number) {
+					return {next: fn () {
+						return if more(n) { {done: false, value: n, rest: iter(inc(n))} } else { {done: true} }
+					}}
+				}
+			`,
+			binding: "iter",
+			want: "fn (n: number) -> {next: fn () -> μX0.({done: true} | " +
+				"{done: false, value: number, rest: {next: fn () -> X0}})}",
+		},
+		{
+			// A fluent API whose chaining methods return the builder again. Every method is a lambda,
+			// so nothing recurses until a caller chains.
+			name: "fluent builder returning itself",
+			src: `
+				fn emitter() {
+					return {on: fn (name: string) { return emitter() }, emit: fn (name: string) { return 1 }}
+				}
+			`,
+			binding: "emitter",
+			want: "fn () -> {on: fn (name: string) -> μX0.{on: fn (name: string) -> X0, " +
+				"emit: fn (name: string) -> 1}, emit: fn (name: string) -> 1}",
+		},
+		{
+			// Mutual recursion between two bindings, the shape an AST walk takes. The knot closes one
+			// lap out at whichever binding is being rendered, and the base case rides inside it.
+			name: "mutually recursive AST builders",
+			src: `
+				declare fn atEnd() -> boolean
+				fn expr() { return {kind: "call", arg: if atEnd() { undefined } else { stmt() }} }
+				fn stmt() { return {kind: "stmt", inner: expr()} }
+			`,
+			binding: "expr",
+			want: `fn () -> {kind: "call", arg: μX0.({kind: "stmt", inner: {kind: "call", arg: X0}} ` +
+				`| undefined)}`,
 		},
 	}
 	for _, tt := range tests {

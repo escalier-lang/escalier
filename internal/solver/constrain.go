@@ -351,6 +351,18 @@ func (c *Context) peelTransparent(t soltype.Type) soltype.Type {
 func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Type, []SolverError, bool) {
 	switch t := t.(type) {
 	case *soltype.AliasType:
+		// An alias whose recursion grows its own argument reaches a fresh instantiation every lap, so
+		// unfolding it hands the seen-set a pair no earlier lap reached and nothing closes the
+		// comparison. When the tree it denotes is regular all the same, muKnotFor names that tree as a
+		// finite μ-knot and the comparison closes on the knot instead. See regular.go.
+		//
+		// The knot stands in only once this alias is already being unfolded further up the path, which
+		// is where a cycle can be. pushUnfoldingAlias explains what waiting buys.
+		if c.unfoldingAliases[t.Name] > 0 {
+			if knot := c.muKnotFor(t); knot != nil {
+				return knot, nil, true
+			}
+		}
 		return c.expandAlias(t), nil, true
 	case *soltype.TypeofType:
 		return t.Ty, nil, true
@@ -360,10 +372,32 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 		*soltype.TemplateLitType, *soltype.StringIntrinsicType, *soltype.ExactnessType:
 		return c.reduceResidual(t, seen)
 	case *soltype.TupleType:
+		// A plain tuple is handled structurally, not as a transparent operator. Only a residual
+		// tuple is reduced here, the positional twin of the ObjectType arm below. A tuple is
+		// residual when it carries a `...P` element whose operand may still splice.
 		if !tupleHasSpread(t) {
 			return nil, nil, false
 		}
-		return c.reduceResidual(t, seen)
+		e := newTypeEvaluator(c, seen)
+		reduced := e.reduce(t)
+		// A rest element whose operand grounds splices into the enclosing tuple, leaving a
+		// spread-free tuple. One that stays a rest element is inert, so leave it for the structural
+		// switch. The check is on the root rather than reduceResidual's containsResidualOp: a
+		// spliced tuple grounds even when one of its elements is itself a residual, which reduces
+		// where that element is compared. `[...[keyof {c: number}], boolean]` splices to
+		// `[keyof {c: number}, boolean]`, and the `keyof` reduces to `"c"` at the position it lands
+		// in. Reading the whole tree instead would call that tuple inert and compare it structurally
+		// against the value, which rejects a constraint that holds.
+		if tup, ok := reduced.(*soltype.TupleType); ok && hasRestSpread(tup.Elems) {
+			// A diagnostic still surfaces from a tuple that stayed residual, the same allowance the
+			// object arm makes. The caller returns on a non-empty errs without reading the reduced
+			// type.
+			if len(e.errs) == 0 {
+				return nil, nil, false
+			}
+			return reduced, e.errs, true
+		}
+		return reduced, e.errs, true
 	case *soltype.ObjectType:
 		// A plain object is handled structurally, not as a transparent operator. Only a residual
 		// object is reduced here, the object twin of the TupleType arm. An object is residual when it
@@ -400,6 +434,10 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 // that would re-expand without bound. The errs carry any diagnostic the reduction produced. seen is
 // the enclosing constraint's cycle-detection set, handed to the evaluator so a conditional's branch
 // probe closes a recursive alias through the same guard.
+//
+// It serves the operators whose value is a single node, where a residual anywhere in the result
+// means the operator itself did not settle. The object and tuple arms do not use it, since either
+// one grounds while still carrying a residual in a member or an element.
 func (c *Context) reduceResidual(t soltype.Type, seen *seenPairs) (soltype.Type, []SolverError, bool) {
 	e := newTypeEvaluator(c, seen)
 	reduced := e.reduce(t)
@@ -439,6 +477,33 @@ func (c *Context) constrainUnwrapped(sub, super soltype.Type, seen *seenPairs, m
 	errs := c.constrain(sub, super, seen, mutCtx)
 	c.unwrapDepth--
 	return errs
+}
+
+// pushUnfoldingAlias records that ref is being unfolded, and popUnfoldingAlias clears the record.
+// A caller brackets the constraint its unfolding produced between the two, so the record describes
+// the current path. They are the alias twin of constrainUnwrapped's own depth count, and a caller
+// with an operand that is not an alias reference skips them entirely.
+//
+// evalTypeOperator reads the record to decide whether to hand constrain the alias's μ-knot in place
+// of its expansion. Substituting a knot at the first unfolding would work too, but it would put the
+// knot everywhere the expansion goes, including the value types a member read pulls out and records
+// as a bound. `mk().b` over `type H<T> = {a: keyof T, b: H<{c: T}>}` would then infer
+// `μX0.{a: "c", b: X0}` where it used to infer `H<{c: {c: number}}>`. A knot is only ever needed to
+// close a cycle, and a cycle takes at least two unfoldings, so waiting for the second one keeps the
+// alias name on everything the first one produces.
+func (c *Context) pushUnfoldingAlias(ref *soltype.AliasType) {
+	if c.unfoldingAliases == nil {
+		c.unfoldingAliases = map[string]int{}
+	}
+	c.unfoldingAliases[ref.Name]++
+}
+
+// popUnfoldingAlias drops one unfolding of ref, removing the entry once the last one is done so the
+// map holds only the aliases the current path is inside.
+func (c *Context) popUnfoldingAlias(ref *soltype.AliasType) {
+	if c.unfoldingAliases[ref.Name]--; c.unfoldingAliases[ref.Name] == 0 {
+		delete(c.unfoldingAliases, ref.Name)
+	}
 }
 
 // constrain asserts sub <: super. mutCtx (PR 14) is the deep-mut context flag: true
@@ -574,6 +639,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if c.unwrapDepth >= maxUnwrapDepth {
 				return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}
 			}
+			if ref, isAlias := sub.(*soltype.AliasType); isAlias {
+				c.pushUnfoldingAlias(ref)
+				defer c.popUnfoldingAlias(ref)
+			}
 			return c.constrainUnwrapped(evaluated, super, seen, mutCtx)
 		}
 	}
@@ -584,6 +653,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			}
 			if c.unwrapDepth >= maxUnwrapDepth {
 				return []SolverError{&ExpansionLimitError{Sub: sub, Super: super}}
+			}
+			if ref, isAlias := super.(*soltype.AliasType); isAlias {
+				c.pushUnfoldingAlias(ref)
+				defer c.popUnfoldingAlias(ref)
 			}
 			return c.constrainUnwrapped(sub, evaluated, seen, mutCtx)
 		}
