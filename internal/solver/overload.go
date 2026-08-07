@@ -78,6 +78,10 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			return inst.Ret
 		}
 	}
+	// No arm accepted the call, so nothing here shows it cannot raise. Count it as an
+	// exceptional exit, the reading inferCall gives a callee it cannot resolve, so the no-match
+	// error is not joined by a spurious unused-clause warning against a clause the call needs.
+	c.markRaised()
 	return c.report(&NoMatchingOverloadError{Call: call, Candidates: b.Schemes})
 }
 

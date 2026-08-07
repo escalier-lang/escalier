@@ -15,7 +15,7 @@ import (
 // left to fall through would therefore surface as `cannot constrain Generator <: object`
 // rather than naming the member that does not exist.
 func (c *checker) generatorMember(lvl int, blame, provNode ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
-	g, ok := generatorCarrier(carrier)
+	g, ok := generatorCarrier(c.ctx, carrier)
 	if !ok {
 		return pathResult{}, false
 	}
@@ -37,32 +37,95 @@ func (c *checker) generatorMember(lvl int, blame, provNode ast.Node, name string
 	return c.memberValue(lvl, blame, member), true
 }
 
-// generatorCarrier reads the generator type a receiver denotes: the type itself, or the
-// single generator among an unresolved var's lower bounds. `val it = g()` types `it` as the
-// call's fresh result var, so the var arm is what an ordinary `it.next()` goes through. It
-// mirrors classCarrier and objectCarrier, and like them it declines a var whose bounds
-// disagree, since there is no one member list to read in that case.
-func generatorCarrier(t soltype.Type) (*soltype.GeneratorType, bool) {
+// generatorCarrier reads the generator a member access on t goes through.
+//
+// A receiver often stands for more than one generator. `val it = g()` types `it` as the call's
+// fresh result var, and a single call to a polymorphic generator leaves that var with two
+// lower bounds differing only in their fresh slot variables. Branching, as in `val it = if b
+// { g() } else { h() }`, leaves one bound per branch. joinGenerators folds whatever the
+// receiver stands for into the one generator every part has to satisfy, so all of these read
+// their members off a single type.
+//
+// A receiver standing for anything besides generators is declined, so `if b { g() } else { 5 }`
+// keeps the structural field-requirement path, where the non-generator part is rejected. A var
+// with no lower bound at all is declined too, since nothing yet says it holds a generator. That
+// is what an unannotated parameter is, so `fn f(it) { it.next() }` still infers the structural
+// receiver `{next: fn () -> T0}`.
+func generatorCarrier(c *Context, t soltype.Type) (*soltype.GeneratorType, bool) {
+	parts, ok := generatorParts(t)
+	if !ok || len(parts) == 0 {
+		return nil, false
+	}
+	return joinGenerators(c, parts)
+}
+
+// generatorParts collects the generators a receiver stands for, reporting false as soon as it
+// stands for anything else. A borrow is already peeled off by readCarrier before the receiver
+// reaches here, so `mut Generator<…>` arrives as the bare generator.
+func generatorParts(t soltype.Type) ([]*soltype.GeneratorType, bool) {
 	switch t := t.(type) {
 	case *soltype.GeneratorType:
-		return t, true
-	case *soltype.TypeVarType:
-		var found *soltype.GeneratorType
-		for _, lb := range t.LowerBounds {
-			g, ok := lb.(*soltype.GeneratorType)
+		return []*soltype.GeneratorType{t}, true
+	case *soltype.UnionType:
+		parts := make([]*soltype.GeneratorType, 0, len(t.Types))
+		for _, member := range t.Types {
+			g, ok := member.(*soltype.GeneratorType)
 			if !ok {
-				continue
-			}
-			if found != nil && !equalType(found, g) {
 				return nil, false
 			}
-			found = g
+			parts = append(parts, g)
 		}
-		if found != nil {
-			return found, true
+		return parts, true
+	case *soltype.TypeVarType:
+		parts := make([]*soltype.GeneratorType, 0, len(t.LowerBounds))
+		for _, lb := range t.LowerBounds {
+			if lb == soltype.Type(t) {
+				// A vacuous `v <: v` self-edge constrains nothing, so it says nothing about
+				// what the receiver holds. readCarrier drops the same bound.
+				continue
+			}
+			g, ok := lb.(*soltype.GeneratorType)
+			if !ok {
+				return nil, false
+			}
+			parts = append(parts, g)
 		}
+		return parts, true
 	}
 	return nil, false
+}
+
+// joinGenerators folds several generators into the one a member read goes through, the least
+// generator every input is a subtype of. Yield, Ret, and Throws are covariant, so the join
+// unions each of them. Next is contravariant, being the value a caller sends in, so the join
+// intersects it instead. A value the caller sends has to be acceptable to every generator the
+// receiver may hold. A single input is returned unchanged, which is the path an ordinary
+// `val it = g()` takes.
+//
+// A sync and an async generator are unrelated under subtyping, so a receiver mixing the two
+// has no join and is declined.
+func joinGenerators(c *Context, gs []*soltype.GeneratorType) (*soltype.GeneratorType, bool) {
+	if len(gs) == 1 {
+		return gs[0], true
+	}
+	yields := make([]soltype.Type, len(gs))
+	rets := make([]soltype.Type, len(gs))
+	nexts := make([]soltype.Type, len(gs))
+	throws := make([]soltype.Type, len(gs))
+	for i, g := range gs {
+		if g.Async != gs[0].Async {
+			return nil, false
+		}
+		yields[i], rets[i], nexts[i] = g.Yield, g.Ret, g.Next
+		throws[i] = g.ThrowsOrNever()
+	}
+	return &soltype.GeneratorType{
+		Yield:  newUnion(c, yields, false),
+		Ret:    newUnion(c, rets, false),
+		Next:   newIntersection(c, nexts),
+		Throws: newUnion(c, throws, false),
+		Async:  gs[0].Async,
+	}, true
 }
 
 // generatorBody builds the members a generator exposes to a caller driving it by hand. It
@@ -138,10 +201,25 @@ func (c *checker) iterationResult(g *soltype.GeneratorType) soltype.Type {
 	}}
 }
 
-// acceptsUndefined reports whether `undefined` is assignable to t, the question that decides
-// whether generatorNext offers its no-argument arm. The trial runs under a throwaway probe,
-// so a t that is still an unsolved variable picks up no bound from being asked.
+// acceptsUndefined reports whether `undefined` is assignable to t without narrowing t, the
+// question that decides whether generatorNext offers its no-argument arm. The trial runs under
+// a throwaway probe, so t picks up no bound from being asked.
+//
+// A trial that succeeds only by recording a bound does not count as accepting. Such a trial
+// says t is a variable the constraint would WIDEN to admit `undefined`, not a type that already
+// admits it, and the probe throws that widening away. A declared type parameter is the case
+// that matters. For `fn drive<T>(it: Generator<number, string, T>) { it.next() }`, T has to
+// stand for any type its caller picks, so sending `undefined` is exactly what the gate exists
+// to reject. Reading the trial's success alone would offer the no-argument arm there and let
+// `drive(g())`, for a `g` whose body reads its sent value as a string, send `undefined` into
+// that body.
+//
+// A declared parameter's var is an ordinary bounded inference var, and nothing at an access
+// site tells the two apart — checkTypeParamsProducible decides that afterwards from the bounds
+// the whole body recorded. So the mutation test also declines an ordinary unsolved variable,
+// which costs `Generator<1, undefined, _>` whose body never reads its sent value the
+// argumentless call. Writing that slot as `unknown` restores it.
 func (c *checker) acceptsUndefined(t soltype.Type) bool {
-	ok, _ := c.ctx.trialMutatesBounds(&soltype.UndefinedType{}, t, newSeenPairs(), false)
-	return ok
+	ok, mutated := c.ctx.trialMutatesBounds(&soltype.UndefinedType{}, t, newSeenPairs(), false)
+	return ok && !mutated
 }

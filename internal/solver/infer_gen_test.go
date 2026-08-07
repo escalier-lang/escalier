@@ -614,6 +614,39 @@ func TestInferGenNext(t *testing.T) {
 			`,
 			want: `fn () -> {value: 1 | undefined, done: boolean}`,
 		},
+		{
+			// Two calls to one generator leave the receiver holding two lower bounds that
+			// differ only in their fresh slot variables, so the member read goes through
+			// their join rather than declining for want of a single bound.
+			name: "NextOnTwoCallsOfOneGenerator",
+			src: `
+				gen fn g() { yield 1 }
+				fn f(b: boolean) { val it = if b { g() } else { g() } return it.next() }
+			`,
+			want: `fn (b: boolean) -> {value: 1 | undefined, done: boolean}`,
+		},
+		{
+			// A receiver holding two different generators advances through their join, so
+			// the result reports what either may yield.
+			name: "NextOnAJoinOfTwoGenerators",
+			src: `
+				gen fn g() { yield 1 }
+				gen fn h() { yield "a" }
+				fn f(b: boolean) { val it = if b { g() } else { h() } return it.next() }
+			`,
+			want: `fn (b: boolean) -> {value: 1 | "a" | undefined, done: boolean}`,
+		},
+		{
+			// The join's raise is the union of what either generator raises, so a caller
+			// that advances it needs a clause covering both.
+			name: "NextOnAJoinCarriesEitherRaise",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				gen fn h() { yield "a" throw 5 }
+				fn f(b: boolean) throws _ { val it = if b { g() } else { h() } return it.next() }
+			`,
+			want: `fn (b: boolean) -> {value: 1 | "a", done: boolean} throws 5 | "boom"`,
+		},
 	})
 	runGenErrCases(t, []genErrCase{
 		{
@@ -628,6 +661,17 @@ func TestInferGenNext(t *testing.T) {
 			wantErrs: []string{`3:34-3:43: Not enough arguments: expected at least 1, but got 0`},
 		},
 		{
+			// A declared send type has to stand for whatever a caller picks, so omitting the
+			// argument is rejected there too. `undefined` is assignable to the parameter's var
+			// only by narrowing it, which is not the same as the parameter already admitting
+			// `undefined`.
+			name: "ArgumentlessNextRejectedOnADeclaredSendTypeParam",
+			src: `
+				fn drive<T>(it: Generator<number, string, T>) { return it.next() }
+			`,
+			wantErrs: []string{`2:60-2:69: Not enough arguments: expected at least 1, but got 0`},
+		},
+		{
 			// A generator carries `next` and nothing else, so any other member names the
 			// missing property rather than failing on the receiver.
 			name: "UnknownGeneratorMember",
@@ -636,6 +680,35 @@ func TestInferGenNext(t *testing.T) {
 				fn f() { val it = g() return it.done }
 			`,
 			wantErrs: []string{`3:37-3:41: object is missing property: done`},
+		},
+		{
+			// A receiver that may hold something other than a generator is not advanced
+			// through the generator member list, so the non-generator part is still rejected
+			// rather than silently accepted.
+			name: "NextOnAReceiverThatMayNotBeAGenerator",
+			src: `
+				gen fn g() { yield 1 }
+				fn f(b: boolean) { val it = if b { g() } else { 5 } return it.next() }
+			`,
+			wantErrs: []string{
+				`3:64-3:71: cannot constrain Generator<t8, undefined, unknown> <: object`,
+				`3:64-3:71: cannot constrain 5 <: object`,
+			},
+		},
+		{
+			// A call no arm accepts is still an exceptional exit, since nothing shows it
+			// cannot raise. The no-match error stands alone rather than being joined by an
+			// unused-clause warning against the clause the call needs.
+			name: "NoMatchingNextArmReportsOnlyTheNoMatch",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				fn f() throws string { val it = g() return it.next(1, 2) }
+			`,
+			wantErrs: []string{
+				"3:48-3:61: No matching overload for this call\n" +
+					`  fn () -> {value: 1, done: boolean} throws "boom"` + "\n" +
+					`  fn (value: unknown) -> {value: 1, done: boolean} throws "boom"`,
+			},
 		},
 	})
 }
