@@ -86,3 +86,8 @@ func keys(names ...string) []ObjectKey {
 	}
 	return out
 }
+
+// matchCase builds a surface arm for a branch to point back at.
+func matchCase(pattern ast.Pat, guard ast.Expr, body ast.Expr, s ast.Span) *ast.MatchCase {
+	return ast.NewMatchCase(pattern, guard, exprBody(body), s)
+}
