@@ -477,7 +477,7 @@ func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scr
 	name := ast.QualIdentToString(p.ClassName)
 	ct, ok := c.instancePatClass(scope, name)
 	if !ok {
-		c.report(&InstancePatternNotClassError{Pat: p, Name: name})
+		c.report(&InstancePatternNotClassError{Node: p, Name: name})
 		// Bind the inner fields against a fresh var so a later reference to a bound leaf
 		// stays defined without a second cascade error against the real scrutinee.
 		obj, _ := c.bindPatMode(scope, lvl, p.Object, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit).(*soltype.ObjectPat)
@@ -515,7 +515,7 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 	name := ast.QualIdentToString(p.Name)
 	ctor, ok := c.extractorCtor(scope, lvl, p.Name)
 	if !ok {
-		c.report(&ExtractorPatternNotCtorError{Pat: p, Name: name})
+		c.report(&ExtractorPatternNotCtorError{Node: p, Name: name})
 		// Bind each argument against a fresh var so its leaves stay defined and a later
 		// reference does not cascade into an unknown-identifier error.
 		args := make([]soltype.Pat, len(p.Args))
@@ -536,7 +536,7 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 		}
 	}
 	if len(p.Args) != len(params) {
-		c.report(&ExtractorPatternArityError{Pat: p, Name: name, Expected: len(params), Got: len(p.Args)})
+		c.report(&ExtractorPatternArityError{Node: p, Name: name, Expected: len(params), Got: len(p.Args)})
 	}
 	args := make([]soltype.Pat, len(p.Args))
 	for i, a := range p.Args {
