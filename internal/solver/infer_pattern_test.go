@@ -430,9 +430,8 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 		want string
 	}{
 		{
-			// The `...Pair` element sits past the fixed prefix, so it lands in the suffix
-			// as written. The rest binds the spread rather than the elements it stands
-			// for.
+			// A `...P` spread splices before anything is read by index, so the rest binds
+			// the elements the spread stands for rather than the spread itself.
 			name: "TupleSpreadOverAlias",
 			src: `
 				type Pair = [string, boolean]
@@ -440,7 +439,55 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 					val [a, ...rest] = t
 					return rest
 				}`,
-			want: "fn (t: [number, ...Pair]) -> [...Pair]",
+			want: "fn (t: [number, ...Pair]) -> [string, boolean]",
+		},
+		{
+			// Splicing puts a real element at every index, so a fixed element may sit at a
+			// position the spread contributed. b reads `string` out of `...Pair` and the
+			// rest takes what is left of it.
+			name: "TupleFixedElementInsideSpread",
+			src: `
+				type Pair = [string, boolean]
+				fn f(t: [number, ...Pair]) {
+					val [a, b, ...rest] = t
+					return [a, b, rest]
+				}`,
+			want: "fn (t: [number, ...Pair]) -> [number, string, [boolean]]",
+		},
+		{
+			// A prefix consuming every spliced element leaves the empty tuple.
+			name: "TupleFixedPrefixConsumesSpread",
+			src: `
+				type Pair = [string, boolean]
+				fn f(t: [number, ...Pair]) {
+					val [a, b, c, ...rest] = t
+					return [c, rest]
+				}`,
+			want: "fn (t: [number, ...Pair]) -> [boolean, []]",
+		},
+		{
+			// Splicing recurses, so a spread whose operand itself spreads still resolves.
+			name: "TupleNestedSpreadOverAlias",
+			src: `
+				type Inner = [boolean]
+				type Pair = [string, ...Inner]
+				fn f(t: [number, ...Pair]) {
+					val [a, b, ...rest] = t
+					return rest
+				}`,
+			want: "fn (t: [number, ...Pair]) -> [boolean]",
+		},
+		{
+			// An inexact spread operand splices its known prefix and passes its open tail
+			// to the suffix.
+			name: "TupleInexactSpreadOperand",
+			src: `
+				type Open = [string, ...]
+				fn f(t: [number, ...Open]) {
+					val [a, ...rest] = t
+					return rest
+				}`,
+			want: "fn (t: [number, ...Open]) -> [string, ...]",
 		},
 		{
 			name: "ObjectAliasScrutinee",
@@ -694,34 +741,26 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 	})
 }
 
-// tupleRestType cuts the suffix out of the scrutinee's element list, so it guards two
-// shapes where that cut has no meaning and falls back to a bare variable instead.
+// tupleRestType cuts the suffix out of the scrutinee's spliced element list, so it falls
+// back to the `[...]`-bounded variable on the two shapes where that cut has no meaning.
 //
-//   - A `...P` spread inside the fixed prefix stands for a run of unknown length, so
-//     nothing past it sits at a fixed index.
 //   - A scrutinee shorter than the fixed prefix has no elements left to cut. The guard is
 //     what keeps the slice in range.
+//   - A tuple whose spread never splices, as a spread over a type parameter does not, is
+//     unreadable by index at all, so groundedTuple reports no shape.
 //
 // Neither case is diagnostic-free. The requirement the fixed prefix emits already rejects
-// both, so the bare variable is recovery on an erroring pattern rather than an inferred
+// both, so the bounded variable is recovery on an erroring pattern rather than an inferred
 // answer. Each case asserts that single error and confirms the rest still binds a name.
+//
+// A spread that DOES splice is not a fallback at all. It contributes real elements at real
+// indices, which TestInferRestPatternGroundsScrutinee covers.
 func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
 		want string
 	}{
-		{
-			// `[a, b, ...rest]` reads b at index 1, which the `...Pair` spread occupies.
-			name: "SpreadInsideFixedPrefix",
-			src: `
-				type Pair = [string, boolean]
-				fn f(t: [number, ...Pair]) {
-					val [a, b, ...rest] = t
-					return rest
-				}`,
-			want: "4:14-4:15: cannot constrain string <: ...Pair",
-		},
 		{
 			// A two-element prefix against a one-element scrutinee leaves nothing to cut.
 			name: "ScrutineeShorterThanFixedPrefix",
@@ -731,6 +770,17 @@ func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 					return rest
 				}`,
 			want: "2:13-2:21: cannot constrain tuple of length 1 <: tuple of length 2",
+		},
+		{
+			// `...P` over a type parameter never splices, so no position after it is fixed
+			// and the tuple cannot be read by index.
+			name: "SpreadOverTypeParamNeverSplices",
+			src: `
+				fn f<P>(t: [number, ...P]) {
+					val [a, ...rest] = t
+					return rest
+				}`,
+			want: "3:10-3:22: cannot constrain [number, ...t1] <: tuple",
 		},
 	}
 	for _, tt := range tests {
