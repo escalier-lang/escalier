@@ -1078,18 +1078,17 @@ func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {
 			return &soltype.LitPat{Lit: lt.Lit}
 		}
 		return nil
+	case *ast.RestPat:
+		return &soltype.RestPat{Pattern: c.mirrorParamPat(p.Pattern)}
 	case *ast.TuplePat:
 		elems := make([]soltype.Pat, 0, len(p.Elems))
 		for _, e := range p.Elems {
-			// soltype.TuplePat has no rest element, so a `...rest` is dropped.
-			if _, isRest := e.(*ast.RestPat); isRest {
-				continue
-			}
 			elems = append(elems, c.mirrorParamPat(e))
 		}
 		return &soltype.TuplePat{Elems: elems}
 	case *ast.ObjectPat:
 		fields := make([]*soltype.ObjectPatField, 0, len(p.Elems))
+		var rest soltype.Pat
 		for _, elem := range p.Elems {
 			switch e := elem.(type) {
 			case *ast.ObjShorthandPat:
@@ -1097,10 +1096,13 @@ func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: &soltype.IdentPat{Name: e.Key.Name}})
 			case *ast.ObjKeyValuePat:
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: c.mirrorParamPat(e.Value)})
+			case *ast.ObjRestPat:
+				// An object's rest has no position among the named fields, so it mirrors
+				// into ObjectPat.Rest rather than into the field list.
+				rest = c.mirrorParamPat(e.Pattern)
 			}
-			// ObjRestPat has no soltype counterpart and is dropped.
 		}
-		return &soltype.ObjectPat{Fields: fields}
+		return &soltype.ObjectPat{Fields: fields, Rest: rest}
 	case *ast.ExtractorPat:
 		args := make([]soltype.Pat, len(p.Args))
 		for i, a := range p.Args {

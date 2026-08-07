@@ -1376,20 +1376,34 @@ func printPat(pat Pat) (string, bool) {
 			parts[i] = s
 		}
 		return "[" + strings.Join(parts, ", ") + "]", true
+	case *RestPat:
+		s, ok := printPat(p.Pattern)
+		if !ok {
+			s = "_"
+		}
+		return "..." + s, true
 	case *ObjectPat:
-		parts := make([]string, len(p.Fields))
-		for i, f := range p.Fields {
+		parts := make([]string, 0, len(p.Fields)+1)
+		for _, f := range p.Fields {
 			// A shorthand `{x}` is a field whose value is the IdentPat `x`, so render
 			// it as the bare key. Any other sub-pattern renders `name: subpat`.
 			if ip, ok := f.Value.(*IdentPat); ok && ip.Name == f.Name {
-				parts[i] = printObjectKeyName(f.Name)
+				parts = append(parts, printObjectKeyName(f.Name))
 				continue
 			}
 			s, ok := printPat(f.Value)
 			if !ok {
 				s = "_"
 			}
-			parts[i] = printObjectKeyName(f.Name) + ": " + s
+			parts = append(parts, printObjectKeyName(f.Name)+": "+s)
+		}
+		// The rest renders last, the position the source must write it at.
+		if p.Rest != nil {
+			s, ok := printPat(p.Rest)
+			if !ok {
+				s = "_"
+			}
+			parts = append(parts, "..."+s)
 		}
 		return "{" + strings.Join(parts, ", ") + "}", true
 	case *ExtractorPat:

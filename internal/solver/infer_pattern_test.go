@@ -164,8 +164,7 @@ func TestInferObjectPatternLeafDefault(t *testing.T) {
 }
 
 // A trailing rest element relaxes the tuple requirement to an inexact prefix, so
-// the fixed elements bind without a spurious arity error. The rest element itself is
-// reported unsupported, since typed rest tuples are M9.
+// the fixed elements bind without a spurious arity error.
 func TestInferTuplePatternRestPrefix(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(t: [number, string, boolean]) {
@@ -173,9 +172,312 @@ func TestInferTuplePatternRestPrefix(t *testing.T) {
 			return a
 		}
 	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "3:12-3:19: Unsupported: RestPat", msgWithSpan(errs[0]))
+	require.Empty(t, errs)
 	require.Equal(t, "fn (t: [number, string, boolean]) -> number", values["f"])
+}
+
+// --- M9 rest patterns: a `...rest` element binds the leftover ---
+
+// A tuple rest binds the elements past the fixed prefix, gathered into a tuple, and an
+// object rest binds the properties the pattern's fields do not name. Each case returns
+// the bound rest, so the function's return type is the inferred rest type. The three
+// binding sites — a `val`, a destructuring parameter, and a `match` arm — share
+// bindPattern, so each one is covered here.
+func TestInferRestPatternBinds(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// The suffix of an exact tuple is exact: two elements remain past `a`.
+			name: "TupleValDestructure",
+			src: `
+				fn f(t: [number, string, boolean]) {
+					val [a, ...rest] = t
+					return rest
+				}`,
+			want: "fn (t: [number, string, boolean]) -> [string, boolean]",
+		},
+		{
+			// A destructuring parameter binds the same way and renders its `...rest`
+			// element back into the parameter's pattern.
+			name: "TupleParam",
+			src: `
+				fn f([a, ...rest]: [number, string, boolean]) {
+					return rest
+				}`,
+			want: "fn ([a, ...rest]: [number, string, boolean]) -> [string, boolean]",
+		},
+		{
+			// A `match` arm binds against the same scrutinee a `val` would. The arm is
+			// irrefutable over an exact tuple, so no catch-all is needed.
+			name: "TupleMatchArm",
+			src: `
+				fn f(t: [number, string, boolean]) {
+					return match t {
+						[a, ...rest] => rest
+					}
+				}`,
+			want: "fn (t: [number, string, boolean]) -> [string, boolean]",
+		},
+		{
+			// An inexact scrutinee hands its open `...` tail to the suffix, since the
+			// elements the tail hides are part of the leftover.
+			name: "TupleInexactScrutinee",
+			src: `
+				fn f(t: [number, string, ...]) {
+					val [a, ...rest] = t
+					return rest
+				}`,
+			want: "fn (t: [number, string, ...]) -> [string, ...]",
+		},
+		{
+			// A rest that consumes every remaining element binds the empty tuple.
+			name: "TupleRestBindsEmptySuffix",
+			src: `
+				fn f(t: [number]) {
+					val [a, ...rest] = t
+					return rest
+				}`,
+			want: "fn (t: [number]) -> []",
+		},
+		{
+			// The binding mode propagates into a nested pattern, so an inner rest binds
+			// the inner tuple's suffix.
+			name: "TupleNestedRest",
+			src: `
+				fn f(t: [number, [string, boolean, number]]) {
+					val [a, [b, ...rest]] = t
+					return rest
+				}`,
+			want: "fn (t: [number, [string, boolean, number]]) -> [boolean, number]",
+		},
+		{
+			// The rest's sub-pattern is bound through the same walk as a fixed element,
+			// so `...[b, c]` destructures the suffix in turn.
+			name: "TupleRestSubPatternDestructures",
+			src: `
+				fn f(t: [number, string, boolean]) {
+					val [a, ...[b, c]] = t
+					return [c, b]
+				}`,
+			want: "fn (t: [number, string, boolean]) -> [boolean, string]",
+		},
+		{
+			name: "ObjectValDestructure",
+			src: `
+				fn f(p: {x: number, y: string, z: boolean}) {
+					val {x, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: {x: number, y: string, z: boolean}) -> {y: string, z: boolean}",
+		},
+		{
+			name: "ObjectParam",
+			src: `
+				fn f({x, ...rest}: {x: number, y: string}) {
+					return rest
+				}`,
+			want: "fn ({x, ...rest}: {x: number, y: string}) -> {y: string}",
+		},
+		{
+			name: "ObjectMatchArm",
+			src: `
+				fn f(p: {x: number, y: string}) {
+					return match p {
+						{x, ...rest} => rest
+					}
+				}`,
+			want: "fn (p: {x: number, y: string}) -> {y: string}",
+		},
+		{
+			// A leftover member carries through untouched, so it keeps the `?` and
+			// `readonly` markers the scrutinee wrote.
+			name: "ObjectRestKeepsMarkers",
+			src: `
+				fn f(p: {x: number, y?: string, readonly z: boolean}) {
+					val {x, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: {x: number, y?: string, readonly z: boolean}) -> {y?: string, readonly z: boolean}",
+		},
+		{
+			// A key-value field names its key just as a shorthand does, so `{x: a}`
+			// removes x from the leftover even though the leaf is named a.
+			name: "ObjectKeyValueFieldNamesItsKey",
+			src: `
+				fn f(p: {x: number, y: string}) {
+					val {x: a, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: {x: number, y: string}) -> {y: string}",
+		},
+		{
+			// An inexact scrutinee passes its open `...` tail on, since the properties
+			// the tail hides belong to the leftover too.
+			name: "ObjectInexactScrutinee",
+			src: `
+				fn f(p: {x: number, y: string, ...}) {
+					val {x, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: {x: number, y: string, ...}) -> {y: string, ...}",
+		},
+		{
+			// A rest that names no leftover property binds the empty object.
+			name: "ObjectRestBindsEmptyLeftover",
+			src: `
+				fn f(p: {x: number}) {
+					val {x, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: {x: number}) -> {}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// A rest of a borrowed scrutinee is a borrow of the leftover, bounded by the
+// scrutinee's lifetime, the same projection the sibling leaves take. Each case pins the
+// rest against a borrow return annotation, so an owned or wrongly-mutable rest would
+// fail that constraint and acceptance confirms the projection. That is the same
+// technique TestDestructureMutBorrowLeafRendersBorrow uses, and for the same reason: a
+// returned `&mut` leaf does not survive the return-join cleanly enough to assert on its
+// rendered form.
+func TestInferRestPatternBorrowMode(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "MutBorrowTupleRest",
+			src: `
+				fn f(line: &mut [{x: number}, {y: number}, {z: number}]) -> &mut [{y: number}, {z: number}] {
+					val [a, ...rest] = line
+					return rest
+				}`,
+			want: "fn <'a>(line: &'a mut [{x: number}, {y: number}, {z: number}]) -> &'a mut [{y: number}, {z: number}]",
+		},
+		{
+			name: "SharedBorrowTupleRest",
+			src: `
+				fn f(line: &[{x: number}, {y: number}]) -> &[{y: number}] {
+					val [a, ...rest] = line
+					return rest
+				}`,
+			want: "fn <'a>(line: &'a [{x: number}, {y: number}]) -> &'a [{y: number}]",
+		},
+		{
+			name: "MutBorrowObjectRest",
+			src: `
+				fn f(pt: &mut {a: {x: number}, b: {y: number}}) -> &mut {b: {y: number}} {
+					val {a, ...rest} = pt
+					return rest
+				}`,
+			want: "fn <'a>(pt: &'a mut {a: {x: number}, b: {y: number}}) -> &'a mut {b: {y: number}}",
+		},
+		{
+			name: "SharedBorrowObjectRest",
+			src: `
+				fn f(pt: &{a: {x: number}, b: {y: number}}) -> &{b: {y: number}} {
+					val {a, ...rest} = pt
+					return rest
+				}`,
+			want: "fn <'a>(pt: &'a {a: {x: number}, b: {y: number}}) -> &'a {b: {y: number}}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// A `&mut` object rest is a MUTABLE borrow of the leftover, so a write through it
+// succeeds without any `mut` marker on the rest, following the same Rust match
+// ergonomics the sibling leaves follow.
+func TestInferRestPatternMutBorrowAcceptsWrite(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(pt: &mut {a: {x: number}, b: {y: number}}) {
+			val {a, ...rest} = pt
+			rest.b = {y: 5}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (pt: &mut {a: {x: number}, b: {y: number}}) -> undefined", values["f"])
+}
+
+// A scrutinee with no statically known shape leaves the leftover unknowable, so the
+// rest binds "some tuple" or "some object" rather than a definite one. The parameter
+// here is un-annotated, so its shape comes only from the pattern's fixed prefix.
+func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "Tuple",
+			src: `
+				fn f([a, ...rest]) {
+					return rest
+				}`,
+			want: "fn ([a, ...rest]: [unknown, ...]) -> [...]",
+		},
+		{
+			name: "Object",
+			src: `
+				fn f({x, ...rest}) {
+					return rest
+				}`,
+			want: "fn ({x, ...rest}: {x: unknown}) -> {...}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// Only a trailing rest has a suffix to bind. A rest at an earlier position stands for a
+// run of elements whose length nothing pins down, so it is reported and binds nothing.
+// The requirement still relaxes to an inexact prefix, so no arity error is layered on
+// top.
+func TestInferTuplePatternNonTrailingRest(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(t: [number, string, boolean]) {
+			val [...rest, b] = t
+			return b
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "3:9-3:16: Unsupported: RestPat", msgWithSpan(errs[0]))
+}
+
+// A second `...rest` in an object pattern has no leftover of its own: the first already
+// takes every property the fields do not name. It is reported and binds nothing.
+func TestInferObjectPatternSecondRest(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number, y: string}) {
+			val {x, ...rest, ...more} = p
+			return rest
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "3:21-3:28: Unsupported: ObjRestPat", msgWithSpan(errs[0]))
 }
 
 // A closure capturing a destructured leaf resolves the leaf's binding. This
