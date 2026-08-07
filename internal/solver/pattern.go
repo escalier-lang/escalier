@@ -326,12 +326,9 @@ func splitTupleRest(elems []ast.Pat) (fixed []ast.Pat, rest *ast.RestPat, recove
 	return elems, nil, nil
 }
 
-// bindRecoveredElem binds one tuple element the walk could not place at a known index,
-// reached only after a non-trailing `...rest` was reported. It binds against a fresh
-// variable so the leaves stay defined and a later reference resolves instead of cascading
-// into an unknown-identifier error, the same recovery bindInstancePat makes for an
-// unresolved class name. A rest is unwrapped and re-wrapped in the mirror, since
-// bindPatMode's arms reject a bare RestPat.
+// bindRecoveredElem binds a tuple element the walk could not place, reached only after a
+// non-trailing `...rest` was reported. A fresh variable keeps its leaves defined so a later
+// reference does not cascade. A rest is unwrapped, since bindPatMode rejects a bare one.
 func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
 	if r, isRest := e.(*ast.RestPat); isRest {
 		sub := c.bindPatMode(scope, lvl, r.Pattern, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
@@ -340,25 +337,11 @@ func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeM
 	return c.bindPatMode(scope, lvl, e, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
 }
 
-// tupleRestType resolves what a tuple pattern's trailing `...rest` binds: the scrutinee's
-// elements past the fixed prefix, gathered back into a tuple. `[a, ...rest]` against
-// `[number, string, boolean]` binds rest at `[string, boolean]`. An inexact scrutinee
-// hands its open tail on, so against `[number, string, ...]` rest is `[string, ...]`.
-//
-// prefix is the count of fixed elements before the rest. scrutTup and concreteTup are the
-// spliced shapes restTupleShape picks between. scrutinee is the raw type it falls back to
-// reading a variable's bounds off.
-//
-// With no tuple shape at all, as for an un-annotated parameter, the leftover's contents
-// are unknown but its kind is not: it is still some tuple. The rest then binds a fresh
-// variable bounded below by `[...]`, the tuple lattice's top, which is the join over every
-// leftover a caller could produce. `[]` would be unsound, since a caller's `[1, "x"]`
-// leaves `["x"]`. The bound is load-bearing, not cosmetic: without it the variable
-// coalesces to `never`, which claims the function does not return and lets a caller assign
-// the result to anything.
-//
-// bind is what the rest binds at. restConcrete is what an owned `mut` or borrowed rest
-// inspects to decide whether to wrap, nil for that bounded variable.
+// tupleRestType resolves what a trailing `...rest` binds: the scrutinee's elements past the
+// fixed prefix, re-gathered into a tuple. An inexact scrutinee hands its open tail on. With
+// no tuple shape, as for an un-annotated parameter, the leftover is still SOME tuple, so it
+// binds a variable bounded below by `[...]`. Unbounded it would coalesce to `never`, which
+// lets a caller assign the result to anything. restConcrete drives the borrow wrap.
 func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, scrutTup, concreteTup *soltype.TupleType, prefix int) (bind, restConcrete soltype.Type) {
 	tup, ok := c.restTupleShape(scrutinee, scrutTup, concreteTup)
 	if !ok || len(tup.Elems) < prefix {
@@ -373,12 +356,9 @@ func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, 
 	return suffix, suffix
 }
 
-// restTupleShape picks the tuple a rest reads its suffix out of. concreteTup carries it at
-// a nested level, where the scrutinee is only the parent's element variable. scrutTup
-// carries it at a top-level destructuring. Both are nil when the initializer references
-// another module-level binding, since that reference types as the binding's variable. That
-// variable is coalesced to the shape its bounds have fixed, so `val [a, ...r] = tup` reads
-// the same suffix at module scope that it reads inside a function.
+// restTupleShape picks the tuple a rest reads its suffix out of: concreteTup at a nested
+// level, scrutTup at a top-level destructuring. Both are nil when the initializer
+// references another module-level binding, whose variable is coalesced to its bound shape.
 func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *soltype.TupleType) (*soltype.TupleType, bool) {
 	if concreteTup != nil {
 		return concreteTup, true
@@ -392,14 +372,9 @@ func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *
 	return c.groundedTuple(soltype.CarrierOf(coalesce(scrutinee, soltype.Positive)))
 }
 
-// groundedTuple reports t's tuple shape with every `...P` spread spliced into position, so
-// its elements can be read by index. `[number, ...Pair]` over
-// `type Pair = [string, boolean]` grounds to `[number, string, boolean]`, which is what
-// lets `val [a, b, ...rest] = t` read b at `string` and bind rest at `[boolean]`.
-//
-// ok=false when t is not a tuple, and when a spread's operand stays abstract as one over a
-// type parameter does. Such an element stands for a run of unknown length, so no position
-// past it is fixed and the tuple is unreadable by index rather than readable up to it.
+// groundedTuple splices every `...P` spread into position so elements can be read by index,
+// grounding `[number, ...Pair]` over `type Pair = [string, boolean]` to
+// `[number, string, boolean]`. ok=false past an abstract spread, where no position is fixed.
 func (c *checker) groundedTuple(t soltype.Type) (*soltype.TupleType, bool) {
 	tup, ok := t.(*soltype.TupleType)
 	if !ok {
@@ -408,22 +383,12 @@ func (c *checker) groundedTuple(t soltype.Type) (*soltype.TupleType, bool) {
 	return newTypeEvaluator(c.ctx, newSeenPairs()).groundTuple(tup)
 }
 
-// objectRestType resolves what an object pattern's `...rest` binds: the scrutinee's
-// members minus the keys the pattern's fields name. `{x, ...rest}` against
-// `{x: number, y: string}` binds rest at `{y: string}`, the object `Omit<T, "x">` names,
-// read straight off the scrutinee rather than built as a mapped type over it.
-//
-// restObjectShape grounds the members through the same groundToObject an object spread's
-// operand uses, so an alias, a class instance, or a mapped type resolves. Each surviving
-// member carries through untouched, keeping its `?` and `readonly` markers, and a method
-// stays a method. An index signature names no single key, so it survives too. An inexact
-// source passes its open `...` tail on, since the properties it hides are leftover as well.
-//
-// With no ground object shape, as for an un-annotated parameter, the rest binds a fresh
-// variable bounded below by `{...}`, the object twin of tupleRestType's `[...]` fallback.
-// Such a parameter is not left uninformative: inferFunc marks its variable open when the
-// pattern names a rest, so callers may pass the very properties the rest collects. bind and
-// restConcrete follow tupleRestType's contract.
+// objectRestType resolves what an object pattern's `...rest` binds: the scrutinee's members
+// minus the keys its fields name, which is what `Omit<T, K>` names. Each surviving member
+// carries through untouched, so markers and methods survive and an inexact source passes
+// its open tail on. With no ground object shape it binds a variable bounded below by
+// `{...}`, tupleRestType's twin, and inferFunc opens such a parameter so a caller can fill
+// the rest.
 func (c *checker) objectRestType(lvl int, node ast.Node, scrutinee, concrete soltype.Type, named set.Set[string]) (bind, restConcrete soltype.Type) {
 	obj, ok := c.restObjectShape(scrutinee, concrete)
 	if !ok {
