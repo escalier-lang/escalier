@@ -601,19 +601,112 @@ func schemeType(s TypeScheme) soltype.Type {
 // not inlined) renders as the raw t{ID} debug form instead of being disguised as a
 // spurious type parameter. A MonoScheme coalesces to a var-free type, so plain
 // PrintAsScheme suffices.
+//
+// It passes the printer no source names, so a class value binding's parameters render
+// positionally. renderSchemeWith renders them under the names the declaration wrote.
 func renderScheme(s TypeScheme) string {
+	return renderSchemeWith(s, nil)
+}
+
+// renderSchemeWith renders a scheme like renderScheme, under the source names of the type
+// parameters the scheme's declaration wrote. A class, alias, or enum keeps those parameters
+// in the Context registry rather than in the type, so declaredFor looks them up from the
+// scheme's display type. It is called with that type once it is derived, since the lookup
+// reads the class or alias the type names. Pass nil to name nothing from the source, which
+// is right for every function: a FuncType carries its own parameters and names them itself.
+func renderSchemeWith(s TypeScheme, declaredFor func(soltype.Type) []*soltype.TypeParam) string {
+	var t soltype.Type
+	// A MonoScheme coalesces to a var-free type, so every free variable left in it is a
+	// parameter. A PolyScheme names only the variables generalization quantified — those with
+	// Level > sc.Level, the exact retention criterion coalesceScheme uses — so a variable that
+	// escaped coalescing renders as the raw t{ID} debug form instead of being disguised as a
+	// spurious type parameter.
+	var isParam func(*soltype.TypeVarType) bool
 	switch sc := s.(type) {
 	case *MonoScheme:
-		t := coalesce(sc.Ty, soltype.Positive)
-		return soltype.PrintAsSchemeWith(t, func(*soltype.TypeVarType) bool { return true },
-			displayLtBounds(t, soltype.Positive))
+		t = coalesce(sc.Ty, soltype.Positive)
+		isParam = func(*soltype.TypeVarType) bool { return true }
 	case *PolyScheme:
-		t := sc.display()
-		return soltype.PrintAsSchemeWith(t, func(v *soltype.TypeVarType) bool {
-			return v.Level > sc.Level
-		}, displayLtBounds(t, soltype.Positive))
+		t = sc.display()
+		isParam = func(v *soltype.TypeVarType) bool { return v.Level > sc.Level }
+	default:
+		panic(fmt.Sprintf("renderSchemeWith: unknown TypeScheme %T", s))
 	}
-	panic(fmt.Sprintf("renderScheme: unknown TypeScheme %T", s))
+	var declared []*soltype.TypeParam
+	if declaredFor != nil {
+		declared = declaredFor(t)
+	}
+	return soltype.PrintAsSchemeWith(t, isParam, displayLtBounds(t, soltype.Positive), declared)
+}
+
+// renderValueBinding renders a value binding's scheme under the source type-parameter names
+// of the declaration it came from, so `class Node<T> {value: T}` binds a value that renders
+// `<T> {new (value: T) -> Node<T>}`.
+func (c *checker) renderValueBinding(s TypeScheme) string {
+	return renderSchemeWith(s, c.declaredTypeParams)
+}
+
+// declaredTypeParams returns the type parameters written by the declaration a display type
+// stands for, or nil when it stands for none. A class, alias, or enum keeps its parameters
+// in the Context registry rather than in the type, so the printer cannot reach them from the
+// type alone and a caller reads them from here.
+//
+// A class VALUE binding is an object holding the constructor, whose return is the class's own
+// handle, so the class is reached through that return: `class Node<T>` binds the value
+// `{new (value: T) -> Node<T>}` and its parameters are found under Node.
+func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
+	switch t := t.(type) {
+	case *soltype.ClassType:
+		if def, ok := c.ctx.classDef(t.Name); ok {
+			return paramsForArgs(def.TypeParams, t.TypeArgs)
+		}
+	case *soltype.AliasType:
+		if def, ok := c.ctx.aliasDef(t.Name); ok {
+			return paramsForArgs(def.TypeParams, t.TypeArgs)
+		}
+	case *soltype.ObjectType:
+		for _, elem := range t.Elems {
+			ctor, isCtor := elem.(*soltype.ConstructorElem)
+			if !isCtor {
+				continue
+			}
+			if cls, isClass := ctor.Fn.Ret.(*soltype.ClassType); isClass {
+				return c.declaredTypeParams(cls)
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+// paramsForArgs returns tps with each parameter's variable replaced by the variable a
+// reference passes in that argument position. The printer names a variable by identity, and a
+// binding that holds an instantiated copy of a class value carries freshened variables rather
+// than the declaration's own. Reading the name off the argument position covers both:
+// `class Box<T> {value: T}` and a later `val Alias = Box` each render
+// `<T> {new (value: T) -> Box<T>}`, where matching on the declaration's variable would leave
+// the second positional.
+//
+// A position holding something other than a variable keeps the parameter as declared, so
+// `Box<5>` names nothing. So does a reference whose argument count does not match the
+// declaration's, which covers the argument-less handle an alias binds: `type Alias<T> = {v: T}`
+// renders its body under the declared variables.
+func paramsForArgs(tps []*soltype.TypeParam, args []soltype.Type) []*soltype.TypeParam {
+	if len(args) != len(tps) {
+		return tps
+	}
+	out := make([]*soltype.TypeParam, len(tps))
+	for i, tp := range tps {
+		v, isVar := args[i].(*soltype.TypeVarType)
+		if !isVar || v == tp.Var {
+			out[i] = tp
+			continue
+		}
+		cp := *tp
+		cp.Var = v
+		out[i] = &cp
+	}
+	return out
 }
 
 // hasEqualBounds reports whether v's lower and upper bound sets are non-empty and
