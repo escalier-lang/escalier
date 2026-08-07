@@ -67,10 +67,21 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			// inferCall's shape wires it.
 			if inst.Throws != nil {
 				c.constrain(call, inst.Throws, c.throwsSink(lvl))
+				// The call counts as an exceptional exit unless the winner declares it raises
+				// nothing, so an enclosing `throws` clause this call needs is not warned about
+				// as unused. An unsolved throws variable counts as raising, the same reading
+				// inferCall gives an unresolved callee.
+				if !isNeverType(inst.ThrowsOrNever()) {
+					c.markRaised()
+				}
 			}
 			return inst.Ret
 		}
 	}
+	// No arm accepted the call, so nothing here shows it cannot raise. Count it as an
+	// exceptional exit, the reading inferCall gives a callee it cannot resolve, so the no-match
+	// error is not joined by a spurious unused-clause warning against a clause the call needs.
+	c.markRaised()
 	return c.report(&NoMatchingOverloadError{Call: call, Candidates: b.Schemes})
 }
 

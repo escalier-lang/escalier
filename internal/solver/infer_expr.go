@@ -2493,6 +2493,13 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	if res, ok := c.objectMember(lvl, blame, name, recvCarrier); ok {
 		return res
 	}
+	// A generator receiver resolves through its own member list, which carries the `next`
+	// method a caller advances it with. The structural path below cannot serve it. constrain
+	// has no rule taking a generator to an object, so the field requirement that path builds
+	// would fail on the receiver rather than read a member.
+	if res, ok := c.generatorMember(lvl, blame, provNode, name, recvCarrier); ok {
+		return res
+	}
 	// A union receiver reaches the structural requirement below, whose result is joined
 	// per member inside constrain by constrainUnionFieldRead. That join runs with no
 	// access to the enclosing throws sink, so the getters it may read through are

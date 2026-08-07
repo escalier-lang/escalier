@@ -502,6 +502,36 @@ func TestInferGenRaises(t *testing.T) {
 			`,
 			want: `fn () -> Generator<1, undefined, unknown, "boom">`,
 		},
+		{
+			// Calling `next` advances the generator by hand, the third way to advance one,
+			// so it carries the raise the way iterating and delegating do.
+			name: "AdvancingWithNextCarriesTheRaiseToTheCaller",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				fn f() throws _ { val it = g() return it.next() }
+			`,
+			want: `fn () -> IteratorYieldResult<1> throws "boom"`,
+		},
+		{
+			// An async generator's advance returns a promise that rejects with what the
+			// body raises, so the raise reaches whoever awaits the result.
+			name: "AwaitingNextCarriesTheRaiseAsARejection",
+			src: `
+				async gen fn g() { yield 1 throw "boom" }
+				async fn f() { val it = g() return await it.next() }
+			`,
+			want: `fn () -> Promise<IteratorYieldResult<1>, "boom">`,
+		},
+		{
+			// The promise is what carries the rejection, so calling `next` without awaiting
+			// it raises nothing into the calling body.
+			name: "CallingNextOnAnAsyncGeneratorRaisesNothing",
+			src: `
+				async gen fn g() { yield 1 throw "boom" }
+				fn f() { val it = g() return it.next() }
+			`,
+			want: `fn () -> Promise<IteratorYieldResult<1>, "boom">`,
+		},
 	})
 	runGenErrCases(t, []genErrCase{
 		{
@@ -526,6 +556,242 @@ func TestInferGenRaises(t *testing.T) {
 				fn f() { for x in g() { } }
 			`,
 			wantErrs: []string{`3:23-3:26: cannot constrain "boom" <: never`},
+		},
+		{
+			// A clause-less caller that advances a raising generator by hand is asked to
+			// handle it too, so `next` is not a hole the other two advance paths close.
+			name: "AdvancingWithoutAClauseRejected",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				fn f() { val it = g() return it.next() }
+			`,
+			wantErrs: []string{`3:34-3:43: cannot constrain "boom" <: never`},
+		},
+	})
+}
+
+// A caller advances a generator by hand through `next`. It is declared as an overload set
+// of two arms, one taking the sent value and one omitting it, and the argumentless arm is
+// offered only when omitting the argument is sound.
+func TestInferGenNext(t *testing.T) {
+	runGenCases(t, []genCase{
+		{
+			// Advancing either produces a yielded value or reports the generator finished
+			// with its return value, and IteratorResult is the union of one arm per outcome
+			// tagged by `done`. Naming the two arms keeps the yield type and the return type
+			// distinct.
+			name: "NextResultNamesIteratorResult",
+			src: `
+				gen fn g() { yield 1 return "done" }
+				fn f() { val it = g() return it.next() }
+			`,
+			want: `fn () -> IteratorResult<1, "done">`,
+		},
+		{
+			// A generator that always throws never finishes normally, so `never` in its Ret
+			// slot names the yielded-value arm alone rather than a union whose finished arm
+			// no value inhabits.
+			name: "NextResultNamesTheYieldArmAlone",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				fn f() throws _ { val it = g() return it.next() }
+			`,
+			want: `fn () -> IteratorYieldResult<1> throws "boom"`,
+		},
+		{
+			// A caller may annotate against the result by name, since `next` returns a
+			// reference to the same built-in alias a source-level annotation resolves to.
+			name: "NextResultSatisfiesAnAnnotationNamingIt",
+			src: `
+				gen fn g() { yield 1 return "done" }
+				fn f() { val r: IteratorResult<1, "done"> = g().next() return r }
+			`,
+			want: `fn () -> IteratorResult<1, "done">`,
+		},
+		{
+			// `done` is optional on the yielded-value arm, matching the standard library, so
+			// an iterator written by hand may omit it while yielding.
+			name: "YieldArmAcceptsAResultWithoutDone",
+			src: `
+				fn f() { val r: IteratorYieldResult<5> = {value: 5} return r }
+			`,
+			want: `fn () -> IteratorYieldResult<5>`,
+		},
+		{
+			// Reading `value` off the result reaches both arms, since reducing the union to
+			// one arm by testing its `done` needs narrowing on a literal-tagged union.
+			name: "ReadingValueOffTheResultJoinsBothArms",
+			src: `
+				gen fn g() { yield 1 return "done" }
+				fn f() { val r = g().next() return r.value }
+			`,
+			want: `fn () -> 1 | "done"`,
+		},
+		{
+			// The sent value is what a `yield` expression in the body evaluates to, so the
+			// one-argument arm takes the generator's Next slot.
+			name: "NextAcceptsTheSentValue",
+			src: `
+				gen fn g() -> Generator<number, string, string> { yield 1 return "x" }
+				fn f() { val it = g() return it.next("a") }
+			`,
+			want: `fn () -> IteratorResult<number, string>`,
+		},
+		{
+			// An inferred Next slot is `unknown`, which accepts `undefined`, so the
+			// argumentless arm stays available for a generator that declares no send type.
+			name: "ArgumentlessNextOnAnInferredSendType",
+			src: `
+				gen fn g() { yield 1 }
+				fn f() { val it = g() return it.next() }
+			`,
+			want: `fn () -> IteratorResult<1, undefined>`,
+		},
+		{
+			// A generator obtained without an intervening binding advances the same way.
+			name: "NextOnACallResult",
+			src: `
+				gen fn g() { yield 1 }
+				fn f() { return g().next() }
+			`,
+			want: `fn () -> IteratorResult<1, undefined>`,
+		},
+		{
+			// Two calls to one generator leave the receiver holding two lower bounds that
+			// differ only in their fresh slot variables, so the member read goes through
+			// their join rather than declining for want of a single bound.
+			name: "NextOnTwoCallsOfOneGenerator",
+			src: `
+				gen fn g() { yield 1 }
+				fn f(b: boolean) { val it = if b { g() } else { g() } return it.next() }
+			`,
+			want: `fn (b: boolean) -> IteratorResult<1, undefined>`,
+		},
+		{
+			// A receiver holding two different generators advances through their join, so
+			// the result reports what either may yield.
+			name: "NextOnAJoinOfTwoGenerators",
+			src: `
+				gen fn g() { yield 1 }
+				gen fn h() { yield "a" }
+				fn f(b: boolean) { val it = if b { g() } else { h() } return it.next() }
+			`,
+			want: `fn (b: boolean) -> IteratorResult<1 | "a", undefined>`,
+		},
+		{
+			// The join's raise is the union of what either generator raises, so a caller
+			// that advances it needs a clause covering both.
+			name: "NextOnAJoinCarriesEitherRaise",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				gen fn h() { yield "a" throw 5 }
+				fn f(b: boolean) throws _ { val it = if b { g() } else { h() } return it.next() }
+			`,
+			want: `fn (b: boolean) -> IteratorYieldResult<1 | "a"> throws 5 | "boom"`,
+		},
+		{
+			// A callee whose return type is a union of generators lowers that union into the
+			// call's result var as one union-valued lower bound, rather than one bound per
+			// generator the way branching does. The bound is flattened so the receiver joins
+			// the same way.
+			name: "NextOnAUnionValuedLowerBound",
+			src: `
+				declare fn mk() -> Generator<1, undefined, unknown> | Generator<2, undefined, unknown>
+				fn f() { return mk().next() }
+			`,
+			want: `fn () -> IteratorResult<1 | 2, undefined>`,
+		},
+		{
+			// A generator that never yields only ever finishes, so it advances to the
+			// finished arm alone. Only an annotation reaches this: a `gen fn` whose body has
+			// no `yield` is already rejected for being an empty generator.
+			name: "NextResultNamesTheReturnArmAlone",
+			src: `
+				fn f(it: Generator<never, string, unknown>) { return it.next() }
+			`,
+			want: `fn (it: Generator<never, string, unknown>) -> IteratorReturnResult<string>`,
+		},
+		{
+			// A generator that can neither yield nor finish produces no result at all, so
+			// advancing it evaluates to `never`.
+			name: "NextResultIsNeverWhenNeitherOutcomeIsReachable",
+			src: `
+				fn f(it: Generator<never, never, unknown>) { return it.next() }
+			`,
+			want: `fn (it: Generator<never, never, unknown>) -> never`,
+		},
+	})
+	runGenErrCases(t, []genErrCase{
+		{
+			// Omitting the argument sends `undefined` at runtime, so a generator whose body
+			// reads its sent value as a string does not offer the argumentless arm. Leaving
+			// it available would let that body receive `undefined`.
+			name: "ArgumentlessNextRejectedOnANarrowSendType",
+			src: `
+				gen fn g() -> Generator<number, string, string> { yield 1 return "x" }
+				fn f() { val it = g() return it.next() }
+			`,
+			wantErrs: []string{`3:34-3:43: Not enough arguments: expected at least 1, but got 0`},
+		},
+		{
+			// A declared send type has to stand for whatever a caller picks, so omitting the
+			// argument is rejected there too. `undefined` is assignable to the parameter's var
+			// only by narrowing it, which is not the same as the parameter already admitting
+			// `undefined`.
+			name: "ArgumentlessNextRejectedOnADeclaredSendTypeParam",
+			src: `
+				fn drive<T>(it: Generator<number, string, T>) { return it.next() }
+			`,
+			wantErrs: []string{`2:60-2:69: Not enough arguments: expected at least 1, but got 0`},
+		},
+		{
+			// IteratorResult takes both its arguments, where TypeScript defaults the second
+			// to `any`. Escalier has no `any`, so a reference supplying one is an arity
+			// mismatch rather than a silent widening.
+			name: "IteratorResultRequiresBothArguments",
+			src: `
+				fn f(r: IteratorResult<1>) { return r }
+			`,
+			wantErrs: []string{"2:13-2:30: type alias `IteratorResult` expects 2 type arguments but got 1"},
+		},
+		{
+			// A generator carries `next` and nothing else, so any other member names the
+			// missing property rather than failing on the receiver.
+			name: "UnknownGeneratorMember",
+			src: `
+				gen fn g() { yield 1 }
+				fn f() { val it = g() return it.done }
+			`,
+			wantErrs: []string{`3:37-3:41: object is missing property: done`},
+		},
+		{
+			// A receiver that may hold something other than a generator is not advanced
+			// through the generator member list, so the non-generator part is still rejected
+			// rather than silently accepted.
+			name: "NextOnAReceiverThatMayNotBeAGenerator",
+			src: `
+				gen fn g() { yield 1 }
+				fn f(b: boolean) { val it = if b { g() } else { 5 } return it.next() }
+			`,
+			wantErrs: []string{
+				`3:64-3:71: cannot constrain Generator<t8, undefined, unknown> <: object`,
+				`3:64-3:71: cannot constrain 5 <: object`,
+			},
+		},
+		{
+			// A call no arm accepts is still an exceptional exit, since nothing shows it
+			// cannot raise. The no-match error stands alone rather than being joined by an
+			// unused-clause warning against the clause the call needs.
+			name: "NoMatchingNextArmReportsOnlyTheNoMatch",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				fn f() throws string { val it = g() return it.next(1, 2) }
+			`,
+			wantErrs: []string{
+				"3:48-3:61: No matching overload for this call\n" +
+					`  fn () -> IteratorYieldResult<1> throws "boom"` + "\n" +
+					`  fn (value: unknown) -> IteratorYieldResult<1> throws "boom"`,
+			},
 		},
 	})
 }

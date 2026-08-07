@@ -453,9 +453,13 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 }
 
 // newChecker returns a checker with a fresh Context, an empty Info table, and an
-// empty Prov side table.
+// empty Prov side table. The Context's alias registry starts seeded with the built-in
+// iterator-result aliases, which the prelude scope binds by name and a generator's `next`
+// method returns.
 func newChecker() *checker {
-	return &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, varIDCounter: 1}
+	c := &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, varIDCounter: 1}
+	registerIteratorResultAliases(c.ctx)
+	return c
 }
 
 // freshAt allocates a fresh inference variable at the given level. Provenance for
