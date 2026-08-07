@@ -510,7 +510,7 @@ func TestInferGenRaises(t *testing.T) {
 				gen fn g() { yield 1 throw "boom" }
 				fn f() throws _ { val it = g() return it.next() }
 			`,
-			want: `fn () -> {value: 1, done: false} throws "boom"`,
+			want: `fn () -> IteratorYieldResult<1> throws "boom"`,
 		},
 		{
 			// An async generator's advance returns a promise that rejects with what the
@@ -520,7 +520,7 @@ func TestInferGenRaises(t *testing.T) {
 				async gen fn g() { yield 1 throw "boom" }
 				async fn f() { val it = g() return await it.next() }
 			`,
-			want: `fn () -> Promise<{value: 1, done: false}, "boom">`,
+			want: `fn () -> Promise<IteratorYieldResult<1>, "boom">`,
 		},
 		{
 			// The promise is what carries the rejection, so calling `next` without awaiting
@@ -530,7 +530,7 @@ func TestInferGenRaises(t *testing.T) {
 				async gen fn g() { yield 1 throw "boom" }
 				fn f() { val it = g() return it.next() }
 			`,
-			want: `fn () -> Promise<{value: 1, done: false}, "boom">`,
+			want: `fn () -> Promise<IteratorYieldResult<1>, "boom">`,
 		},
 	})
 	runGenErrCases(t, []genErrCase{
@@ -577,24 +577,45 @@ func TestInferGenNext(t *testing.T) {
 	runGenCases(t, []genCase{
 		{
 			// Advancing either produces a yielded value or reports the generator finished
-			// with its return value, so the result is one arm per outcome tagged by `done`.
-			// The two arms keep the yield type and the return type distinct.
-			name: "NextResultTagsYieldAndReturnApart",
+			// with its return value, and IteratorResult is the union of one arm per outcome
+			// tagged by `done`. Naming the two arms keeps the yield type and the return type
+			// distinct.
+			name: "NextResultNamesIteratorResult",
 			src: `
 				gen fn g() { yield 1 return "done" }
 				fn f() { val it = g() return it.next() }
 			`,
-			want: `fn () -> {value: 1, done: false} | {value: "done", done: true}`,
+			want: `fn () -> IteratorResult<1, "done">`,
 		},
 		{
 			// A generator that always throws never finishes normally, so `never` in its Ret
-			// slot drops the finished arm rather than carrying one no value inhabits.
-			name: "NextResultDropsAnUninhabitedArm",
+			// slot names the yielded-value arm alone rather than a union whose finished arm
+			// no value inhabits.
+			name: "NextResultNamesTheYieldArmAlone",
 			src: `
 				gen fn g() { yield 1 throw "boom" }
 				fn f() throws _ { val it = g() return it.next() }
 			`,
-			want: `fn () -> {value: 1, done: false} throws "boom"`,
+			want: `fn () -> IteratorYieldResult<1> throws "boom"`,
+		},
+		{
+			// A caller may annotate against the result by name, since `next` returns a
+			// reference to the same built-in alias a source-level annotation resolves to.
+			name: "NextResultSatisfiesAnAnnotationNamingIt",
+			src: `
+				gen fn g() { yield 1 return "done" }
+				fn f() { val r: IteratorResult<1, "done"> = g().next() return r }
+			`,
+			want: `fn () -> IteratorResult<1, "done">`,
+		},
+		{
+			// `done` is optional on the yielded-value arm, matching the standard library, so
+			// an iterator written by hand may omit it while yielding.
+			name: "YieldArmAcceptsAResultWithoutDone",
+			src: `
+				fn f() { val r: IteratorYieldResult<5> = {value: 5} return r }
+			`,
+			want: `fn () -> IteratorYieldResult<5>`,
 		},
 		{
 			// Reading `value` off the result reaches both arms, since reducing the union to
@@ -614,7 +635,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn g() -> Generator<number, string, string> { yield 1 return "x" }
 				fn f() { val it = g() return it.next("a") }
 			`,
-			want: `fn () -> {value: number, done: false} | {value: string, done: true}`,
+			want: `fn () -> IteratorResult<number, string>`,
 		},
 		{
 			// An inferred Next slot is `unknown`, which accepts `undefined`, so the
@@ -624,7 +645,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn g() { yield 1 }
 				fn f() { val it = g() return it.next() }
 			`,
-			want: `fn () -> {value: 1, done: false} | {value: undefined, done: true}`,
+			want: `fn () -> IteratorResult<1, undefined>`,
 		},
 		{
 			// A generator obtained without an intervening binding advances the same way.
@@ -633,7 +654,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn g() { yield 1 }
 				fn f() { return g().next() }
 			`,
-			want: `fn () -> {value: 1, done: false} | {value: undefined, done: true}`,
+			want: `fn () -> IteratorResult<1, undefined>`,
 		},
 		{
 			// Two calls to one generator leave the receiver holding two lower bounds that
@@ -644,7 +665,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn g() { yield 1 }
 				fn f(b: boolean) { val it = if b { g() } else { g() } return it.next() }
 			`,
-			want: `fn (b: boolean) -> {value: 1, done: false} | {value: undefined, done: true}`,
+			want: `fn (b: boolean) -> IteratorResult<1, undefined>`,
 		},
 		{
 			// A receiver holding two different generators advances through their join, so
@@ -655,7 +676,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn h() { yield "a" }
 				fn f(b: boolean) { val it = if b { g() } else { h() } return it.next() }
 			`,
-			want: `fn (b: boolean) -> {value: 1 | "a", done: false} | {value: undefined, done: true}`,
+			want: `fn (b: boolean) -> IteratorResult<1 | "a", undefined>`,
 		},
 		{
 			// The join's raise is the union of what either generator raises, so a caller
@@ -666,7 +687,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn h() { yield "a" throw 5 }
 				fn f(b: boolean) throws _ { val it = if b { g() } else { h() } return it.next() }
 			`,
-			want: `fn (b: boolean) -> {value: 1 | "a", done: false} throws 5 | "boom"`,
+			want: `fn (b: boolean) -> IteratorYieldResult<1 | "a"> throws 5 | "boom"`,
 		},
 	})
 	runGenErrCases(t, []genErrCase{
@@ -691,6 +712,16 @@ func TestInferGenNext(t *testing.T) {
 				fn drive<T>(it: Generator<number, string, T>) { return it.next() }
 			`,
 			wantErrs: []string{`2:60-2:69: Not enough arguments: expected at least 1, but got 0`},
+		},
+		{
+			// IteratorResult takes both its arguments, where TypeScript defaults the second
+			// to `any`. Escalier has no `any`, so a reference supplying one is an arity
+			// mismatch rather than a silent widening.
+			name: "IteratorResultRequiresBothArguments",
+			src: `
+				fn f(r: IteratorResult<1>) { return r }
+			`,
+			wantErrs: []string{"2:13-2:30: type alias `IteratorResult` expects 2 type arguments but got 1"},
 		},
 		{
 			// A generator carries `next` and nothing else, so any other member names the
@@ -727,8 +758,8 @@ func TestInferGenNext(t *testing.T) {
 			`,
 			wantErrs: []string{
 				"3:48-3:61: No matching overload for this call\n" +
-					`  fn () -> {value: 1, done: false} throws "boom"` + "\n" +
-					`  fn (value: unknown) -> {value: 1, done: false} throws "boom"`,
+					`  fn () -> IteratorYieldResult<1> throws "boom"` + "\n" +
+					`  fn (value: unknown) -> IteratorYieldResult<1> throws "boom"`,
 			},
 		},
 	})

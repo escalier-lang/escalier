@@ -185,47 +185,43 @@ func advanceSig(g *soltype.GeneratorType, result soltype.Type, params []*soltype
 	return &soltype.FuncType{Params: params, Ret: result, Throws: g.Throws}
 }
 
-// iterationResult builds the type an advance of g evaluates to. It stands in for the standard
-// library's `IteratorResult<Y, R>`, one of the opaque prelude placeholders until library type
-// ingestion lands.
+// iterationResult builds the type an advance of g evaluates to, a reference to one of the
+// built-in iterator-result aliases at g's Yield and Ret slots. registerIteratorResultAliases in
+// prelude.go holds the three alias bodies, so the shape lives in one place and a caller may
+// annotate against it by name.
 //
 // An advance either produces a yielded value or reports that the generator finished with its
-// return value, so the result is a union of one arm per outcome, tagged by `done`:
+// return value, and `IteratorResult<Y, R>` is the union of one arm per outcome, tagged by
+// `done`. Naming the two arms keeps Y and R distinct. `gen fn g() { yield 1 return "done" }`
+// advances to `IteratorResult<1, "done">`, where one flat `{value: Y | R, done: boolean}` object
+// would merge both into `1 | "done"` and lose which value belongs to which outcome. Reducing a
+// result to one arm by testing its `done` needs narrowing on a literal-tagged union, which does
+// not reduce this union yet, so today a bare `r.value` reads the join of both arms.
 //
-//	{value: Y, done: false} | {value: R, done: true}
+// A generator that cannot reach one outcome names that outcome's arm alone rather than the
+// union, which is a strictly more precise result and one an annotation can be written against.
+// `gen fn g() { yield 1 throw "boom" }` has `never` in Ret, so it never finishes normally and
+// advances to `IteratorYieldResult<1>`. A generator that only ever finishes has `never` in Yield
+// and advances to `IteratorReturnResult<R>`. One that can do neither advances to `never`.
 //
-// Two arms keep Y and R distinct. `gen fn g() { yield 1 return "done" }` advances to
-// `{value: 1, done: false} | {value: "done", done: true}`, where a single
-// `{value: Y | R, done: boolean}` object would flatten both into `1 | "done"` and lose which
-// value belongs to which outcome. Reducing a result to one arm by testing its `done` needs
-// narrowing on a literal-tagged union, which does not reduce this union yet, so today a bare
-// `r.value` reads the join of both arms.
-//
-// An arm is dropped when its value type is the `never` no value inhabits. A generator that
-// always throws has `never` in Ret, so `gen fn g() { yield 1 throw "boom" }` advances to
-// `{value: 1, done: false}` alone rather than carrying an unreachable finished arm.
-//
-// The `done` slot is required in both arms, where TypeScript writes the yield arm's as
-// `done?: false`. An optional tag lets a hand-written iterator omit the field. Every generator
-// sets it, and a required tag is what a narrowing rule can read to pick an arm.
+// Every reference is interned, since a member access mints one per read and constrain keys its
+// cycle cache on pointer identity.
 func (c *checker) iterationResult(g *soltype.GeneratorType) soltype.Type {
-	arms := make([]soltype.Type, 0, 2)
-	if !isNeverType(g.Yield) {
-		arms = append(arms, iterationResultArm(g.Yield, false))
+	yields, returns := !isNeverType(g.Yield), !isNeverType(g.Ret)
+	switch {
+	case yields && returns:
+		return c.iterationResultRef(iteratorResultName, g.Yield, g.Ret)
+	case yields:
+		return c.iterationResultRef(iteratorYieldResultName, g.Yield)
+	case returns:
+		return c.iterationResultRef(iteratorReturnResultName, g.Ret)
 	}
-	if !isNeverType(g.Ret) {
-		arms = append(arms, iterationResultArm(g.Ret, true))
-	}
-	return newUnion(c.ctx, arms, false)
+	return &soltype.NeverType{}
 }
 
-// iterationResultArm builds one arm of the iteration-result union: the yielded-value arm when
-// done is false, and the finished arm carrying the generator's return value when it is true.
-func iterationResultArm(value soltype.Type, done bool) *soltype.ObjectType {
-	return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
-		&soltype.PropertyElem{Name: "value", Type: value},
-		&soltype.PropertyElem{Name: "done", Type: &soltype.LitType{Lit: &soltype.BoolLit{Value: done}}},
-	}}
+// iterationResultRef builds an interned reference to one of the iterator-result aliases.
+func (c *checker) iterationResultRef(name string, args ...soltype.Type) soltype.Type {
+	return c.ctx.internAlias(&soltype.AliasType{Name: name, TypeArgs: args})
 }
 
 // acceptsUndefined reports whether `undefined` is assignable to t without narrowing t, the
