@@ -819,8 +819,51 @@ func borrowExprArgNeedsParens(e ast.Expr) bool {
 	}
 }
 
+// printReceiver renders a receiver, the expression a call reads its callee from and the
+// one an index or a member access reads its object from. A receiver binds tighter than
+// every operator, so an operator expression left bare in that position names a different
+// expression than the tree holds. `(a + b).c` would print as `a + b.c`, which reads the
+// property off `b`, and `(-a).c` would print as `-a.c`, which negates the property.
+//
+// An argument, an index, and a tuple element are already delimited by their own brackets,
+// so those positions stay bare.
+func (p *Printer) printReceiver(expr ast.Expr) {
+	if !receiverNeedsParens(expr) {
+		p.printExpr(expr)
+		return
+	}
+	p.writeString("(")
+	p.printExpr(expr)
+	p.writeString(")")
+}
+
+// receiverNeedsParens reports whether an expression must be parenthesized to survive
+// being reparsed in receiver position. Three families qualify.
+//
+//  1. A prefix form such as `-a`, `&a`, `await a`, or `a: number` binds looser than the
+//     `.`, `[`, or `(` that follows it, so the receiver would attach to the operand
+//     rather than to the whole form.
+//  2. A form ending in a block, such as `if`, `match`, `do`, or a function expression,
+//     would let the receiver read as part of that block instead.
+//  3. A number literal takes the following `.` as its own decimal point, so `(5).toFixed()`
+//     printed bare would lex as the number `5.` followed by the identifier `toFixed`.
+func receiverNeedsParens(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.BinaryExpr, *ast.UnaryExpr, *ast.BorrowExpr, *ast.AwaitExpr,
+		*ast.ThrowExpr, *ast.YieldExpr, *ast.TypeCastExpr, *ast.ArraySpreadExpr,
+		*ast.IfElseExpr, *ast.IfValExpr, *ast.MatchExpr, *ast.TryCatchExpr,
+		*ast.DoExpr, *ast.FuncExpr:
+		return true
+	case *ast.LiteralExpr:
+		_, isNum := e.Lit.(*ast.NumLit)
+		return isNum
+	default:
+		return false
+	}
+}
+
 func (p *Printer) printCallExpr(expr *ast.CallExpr) {
-	p.printExpr(expr.Callee)
+	p.printReceiver(expr.Callee)
 	if expr.OptChain {
 		p.writeString("?(")
 	} else {
@@ -837,7 +880,7 @@ func (p *Printer) printCallExpr(expr *ast.CallExpr) {
 }
 
 func (p *Printer) printIndexExpr(expr *ast.IndexExpr) {
-	p.printExpr(expr.Object)
+	p.printReceiver(expr.Object)
 	if expr.OptChain {
 		p.writeString("?[")
 	} else {
@@ -848,7 +891,7 @@ func (p *Printer) printIndexExpr(expr *ast.IndexExpr) {
 }
 
 func (p *Printer) printMemberExpr(expr *ast.MemberExpr) {
-	p.printExpr(expr.Object)
+	p.printReceiver(expr.Object)
 	if expr.OptChain {
 		p.writeString("?.")
 	} else {
@@ -1072,7 +1115,7 @@ func (p *Printer) printTemplateLitExpr(expr *ast.TemplateLitExpr) {
 }
 
 func (p *Printer) printTaggedTemplateLitExpr(expr *ast.TaggedTemplateLitExpr) {
-	p.printExpr(expr.Tag)
+	p.printReceiver(expr.Tag)
 	p.writeString("`")
 	for i, quasi := range expr.Quasis {
 		p.writeString(quasi.Value)
@@ -1295,12 +1338,15 @@ func (p *Printer) printTypeAnn(typ ast.TypeAnn) {
 		p.printFuncTypeAnn(t)
 	case *ast.KeyOfTypeAnn:
 		p.writeString("keyof ")
-		p.printTypeAnn(t.Type)
+		p.printPrefixTypeAnnOperand(t.Type)
 	case *ast.TypeOfTypeAnn:
 		p.writeString("typeof ")
 		p.printQualIdent(t.Value)
 	case *ast.IndexTypeAnn:
-		p.printTypeAnn(t.Target)
+		// An indexed access reads from a target that binds as tightly as a type
+		// reference, so anything carrying an operator has to be wrapped. `(keyof A)[B]`
+		// printed bare would reparse as `keyof (A[B])`.
+		p.printTypeAnnAt(t.Target, precTypePrimary)
 		p.writeString("[")
 		p.printTypeAnn(t.Index)
 		p.writeString("]")
@@ -1345,7 +1391,7 @@ func (p *Printer) printTypeAnn(typ ast.TypeAnn) {
 		p.printMatchTypeAnn(t)
 	case *ast.MutableTypeAnn:
 		p.writeString("mut ")
-		p.printTypeAnn(t.Target)
+		p.printPrefixTypeAnnOperand(t.Target)
 	case *ast.RefTypeAnn:
 		p.printRefTypeAnn(t)
 	case *ast.ErrorTypeAnn:
@@ -1498,12 +1544,64 @@ func (p *Printer) printTupleTypeAnn(typ *ast.TupleTypeAnn) {
 	p.writeString("]")
 }
 
+// Binding power of an Escalier type operator. A larger number binds tighter, so
+// `A | B & C` groups as `A | (B & C)`. The scale ranks only the operators whose grouping
+// the surface syntax can change. A conditional type and a match type end in a closing
+// brace, so neither can be pulled apart and both rank as primary.
+const (
+	// precTypeOpenEnded covers the two forms that have no closing delimiter of their own,
+	// the function type `fn (a: A) -> B` and the rest spread `...A`. Each reaches as far
+	// right as the syntax allows, which is why `fn () -> A | B` reads as
+	// `fn () -> (A | B)` and either form inside a union or an intersection has to be
+	// wrapped.
+	precTypeOpenEnded    = 1
+	precTypeUnion        = 2
+	precTypeIntersection = 3
+	// precTypePrefix covers `keyof A`, `mut A`, `&A`, and `infer A`. Each takes the whole
+	// annotation that follows it.
+	precTypePrefix = 4
+	// precTypePrimary is for an annotation that nothing can regroup, such as a type
+	// reference, an object type, a tuple, or an indexed access.
+	precTypePrimary = 5
+)
+
+// typeAnnPrecedence returns the binding power of a type annotation's top-level operator.
+func typeAnnPrecedence(t ast.TypeAnn) int {
+	switch t.(type) {
+	case *ast.FuncTypeAnn, *ast.RestSpreadTypeAnn:
+		return precTypeOpenEnded
+	case *ast.UnionTypeAnn:
+		return precTypeUnion
+	case *ast.IntersectionTypeAnn:
+		return precTypeIntersection
+	case *ast.KeyOfTypeAnn, *ast.MutableTypeAnn, *ast.RefTypeAnn, *ast.InferTypeAnn:
+		return precTypePrefix
+	default:
+		return precTypePrimary
+	}
+}
+
+// printTypeAnnAt prints a type annotation, parenthesizing it when its own operator binds
+// looser than minPrec. Callers pass the binding power the surrounding position demands.
+// An intersection member demands precTypeIntersection, so `(number | string) & boolean`
+// keeps its parentheses rather than reprinting as `number | string & boolean`, which
+// reparses as `number | (string & boolean)`.
+func (p *Printer) printTypeAnnAt(t ast.TypeAnn, minPrec int) {
+	if typeAnnPrecedence(t) >= minPrec {
+		p.printTypeAnn(t)
+		return
+	}
+	p.writeString("(")
+	p.printTypeAnn(t)
+	p.writeString(")")
+}
+
 func (p *Printer) printUnionTypeAnn(typ *ast.UnionTypeAnn) {
 	for i, t := range typ.Types {
 		if i > 0 {
 			p.writeString(" | ")
 		}
-		p.printTypeAnn(t)
+		p.printTypeAnnAt(t, precTypeUnion)
 	}
 }
 
@@ -1512,7 +1610,7 @@ func (p *Printer) printIntersectionTypeAnn(typ *ast.IntersectionTypeAnn) {
 		if i > 0 {
 			p.writeString(" & ")
 		}
-		p.printTypeAnn(t)
+		p.printTypeAnnAt(t, precTypeIntersection)
 	}
 }
 
@@ -1570,9 +1668,11 @@ func borrowInnerNeedsParens(typ ast.TypeAnn) bool {
 }
 
 // needsTypeAnnParens reports whether a type annotation must be parenthesized
-// when it appears as the operand of a tighter-binding prefix such as a borrow
-// `&` or a type cast. Union and intersection bind looser than those prefixes,
-// so they are the cases that need wrapping.
+// when it appears as the operand of a prefix such as a borrow `&`, a `mut`, a
+// `keyof`, or a type cast. A prefix takes the whole annotation that follows it,
+// so only the two infix operators can be pulled apart by what surrounds the
+// prefix. `keyof A | B` reads as `(keyof A) | B`, which is why a union operand
+// needs wrapping, while `keyof fn () -> A` already reads the way the tree holds.
 func needsTypeAnnParens(typ ast.TypeAnn) bool {
 	switch typ.(type) {
 	case *ast.UnionTypeAnn, *ast.IntersectionTypeAnn:
@@ -1580,6 +1680,18 @@ func needsTypeAnnParens(typ ast.TypeAnn) bool {
 	default:
 		return false
 	}
+}
+
+// printPrefixTypeAnnOperand prints the operand of a `keyof` or a `mut` on the rule
+// needsTypeAnnParens states.
+func (p *Printer) printPrefixTypeAnnOperand(t ast.TypeAnn) {
+	if !needsTypeAnnParens(t) {
+		p.printTypeAnn(t)
+		return
+	}
+	p.writeString("(")
+	p.printTypeAnn(t)
+	p.writeString(")")
 }
 
 // printLifetimeAnn renders a lifetime annotation node, the `'a` in `'a Point`.
