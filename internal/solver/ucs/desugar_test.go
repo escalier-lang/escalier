@@ -18,10 +18,10 @@ import (
 // back-reference assertions read.
 //
 // A `match` arm's span starts where the token before it ended, so the first arm of
-// a multi-line `match` renders `arm=1:10-2:12` — from just past the opening brace to
-// the end of the arm. Parser.matchCase reads its start location before skipping the
-// whitespace ahead of the pattern. The desugarer copies whatever span the arm
-// carries, so the snapshots below show that start.
+// a multi-line `match` renders `arm=1:10-2:12`. That runs from just past the opening
+// brace to the end of the arm. Parser.matchCase reads its start location before
+// skipping the whitespace ahead of the pattern. The desugarer copies whatever span
+// the arm carries, so the snapshots below show that start.
 
 // parseScript parses an in-memory Escalier script. Test sources hold one conditional
 // each, so the finders below can take the first node of a kind and get the one the
@@ -180,13 +180,51 @@ func TestDesugarIfValInventsItsFallthrough(t *testing.T) {
   pat {x, y} [if val] arm=1:1-1:27 => leaf { cons } [if val] arm=1:1-1:27
 } else leaf undefined [synthetic if val] arm=none`))
 
-	// The invented leaf has no span of its own, so a diagnostic about it follows the
-	// cause chain back to the `if val` and underlines that.
+	// The invented leaf has no surface node of its own, so a diagnostic about it
+	// follows the cause chain back to the `if val` and underlines that.
 	invented := core.Else.Prov()
 	require.True(t, invented.Synthetic)
 	_, direct := invented.SourceSpan()
 	require.False(t, direct)
 	nearest, ok := invented.NearestSpan()
+	require.True(t, ok)
+	require.Equal(t, expr.Span(), nearest)
+
+	// The `undefined` body takes the same span. BodySpan reads a body's position
+	// without consulting Origin, so an empty span here would resolve to line 0 of
+	// source 0 rather than to the `if val`.
+	body, hasBody := BodySpan(core.Else.(*BodyLeaf).Body)
+	require.True(t, hasBody)
+	require.Equal(t, expr.Span(), body)
+}
+
+// A root scrutinee blames the target expression, which is narrower than the whole
+// construct, so a message about the value being tested underlines `f()` rather than
+// the entire `match f() { … }`.
+func TestDesugarScrutineeBlamesTheTarget(t *testing.T) {
+	expr := findExpr[*ast.MatchExpr](t, `match f() {
+	1 => "one",
+}`)
+
+	core := DesugarMatch(expr)
+
+	scrutinee, ok := core.Scrutinee.SourceSpan()
+	require.True(t, ok)
+	require.Equal(t, expr.Target.Span(), scrutinee)
+	require.NotEqual(t, expr.Span(), scrutinee)
+}
+
+// A `match` the parser left without a target has no expression for its scrutinee to
+// blame, so the scrutinee's origin is synthetic and names the `match` as its cause.
+// A diagnostic then still reaches a span the user can see.
+func TestDesugarScrutineeWithoutATargetFallsBackToTheConstruct(t *testing.T) {
+	expr := ast.NewMatch(nil, nil, span(1, 1, 12))
+
+	core := DesugarMatch(expr)
+
+	origin := core.Scrutinee.Prov()
+	require.True(t, origin.Synthetic)
+	nearest, ok := origin.NearestSpan()
 	require.True(t, ok)
 	require.Equal(t, expr.Span(), nearest)
 }
