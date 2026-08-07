@@ -1,0 +1,11 @@
+declare type A = {a: number};
+declare type B = {b: string};
+declare type C = {c: boolean};
+export declare const handler: number | ((x: number) => string);
+export declare const intersectionInUnion: A | B & C;
+export declare const keys: keyof (A | B);
+export declare function sumAsArgument(a: number, b: number): string;
+export declare function sumAsIndex(a: number, b: number, xs: Array<number>): number;
+export declare function sumThenFormat(a: number, b: number): string;
+export declare function sumThenFormatLength(a: number, b: number): number;
+export declare const unionInIntersection: (A | B) & C;
