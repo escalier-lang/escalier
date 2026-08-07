@@ -537,6 +537,46 @@ func TestPrintShowsSpans(t *testing.T) {
 } else leaf 0 at~1:1-1:40`))
 }
 
+// With both options on, an arm back-reference that repeats the node's own span
+// collapses to `arm=same`, and one that differs still prints in full. The second
+// branch below is what normalization produces when it merges two arms: the branch's
+// origin points at the merged split while its back-reference keeps the arm the user
+// typed, and a reader needs both spans to see that.
+func TestPrintCollapsesAnArmThatRepeatsTheNodeSpan(t *testing.T) {
+	one := matchCase(numPat(1), nil, str("one"), span(2, 5, 18))
+	two := matchCase(numPat(2), nil, str("two"), span(3, 5, 18))
+	target := ident("n")
+	expr := ast.NewMatch(target, []*ast.MatchCase{one, two}, span(1, 1, 40))
+	origin := At(OriginMatchArm, expr)
+
+	norm := &NormSplit{
+		Scrutinee: NewRoot(target, origin),
+		Branches: []*NormBranch{
+			{
+				Test:   &LitTest{Lit: ast.NewNumber(1, ast.Span{})},
+				Cont:   &BodyLeaf{Body: one.Body, Arm: one, Origin: At(OriginMatchArm, one)},
+				Arm:    one,
+				Origin: At(OriginMatchArm, one),
+			},
+			{
+				Test:   &LitTest{Lit: ast.NewNumber(2, ast.Span{})},
+				Cont:   &BodyLeaf{Body: two.Body, Arm: two, Origin: At(OriginMatchArm, two)},
+				Arm:    two,
+				Origin: origin,
+			},
+		},
+		Origin: origin,
+	}
+
+	opts := DefaultPrintOptions()
+	opts.ShowSpans = true
+	opts.ShowArms = true
+	snaps.MatchInlineSnapshot(t, Print(norm, opts), snaps.Inline(`split n at=1:1-1:40 {
+  1 at=2:5-2:18 arm=same => leaf "one" at=2:5-2:18 arm=same
+  2 at=1:1-1:40 arm=3:5-3:18 => leaf "two" at=3:5-3:18 arm=same
+} default ✗`))
+}
+
 // A node whose cause chain reaches no surface node at all names no position, so it
 // renders `at=none` rather than inventing one.
 func TestPrintShowsNoSpanForAnUncausedSyntheticNode(t *testing.T) {

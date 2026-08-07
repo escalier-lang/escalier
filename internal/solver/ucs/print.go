@@ -1,6 +1,10 @@
 package ucs
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+)
 
 // PrintOptions configures how Print renders a term.
 type PrintOptions struct {
@@ -15,6 +19,11 @@ type PrintOptions struct {
 	// `arm=1:5-1:14` from the arm's span, or `arm=none` when the node carries no
 	// back-reference. A test that asserts a merged or flattened split still blames
 	// the arm the user typed turns it on.
+	//
+	// With ShowSpans also on, an arm whose span matches the one ShowSpans wrote
+	// renders `arm=same` rather than repeating it. Desugaring gives a node the same
+	// surface node for both, so that is the usual rendering, and a printed pair of
+	// spans marks the case where normalization synthesized the origin.
 	ShowArms bool
 	// ShowSpans appends the span a node blames, written `at=2:12-2:17`. A synthetic
 	// node has no span of its own, so it renders the one its cause chain reaches with
@@ -115,14 +124,14 @@ func (p *printer) branches(count int, write func(i int)) {
 func (p *printer) core(n Core) {
 	switch n := n.(type) {
 	case *CoreSplit:
-		p.write("split " + scrutineeString(n.Scrutinee) + p.originTag(n.Origin) + p.spanTag(n.Origin))
+		p.write("split " + scrutineeString(n.Scrutinee) + p.tags(n.Origin))
 		p.branches(len(n.Branches), func(i int) { p.coreBranch(n.Branches[i]) })
 		if n.Else != nil {
 			p.write(" else ")
 			p.core(n.Else)
 		}
 	case *CoreGuard:
-		p.write("guard (" + exprString(n.Cond) + ")" + p.originTag(n.Origin) + p.spanTag(n.Origin) + " => ")
+		p.write("guard (" + exprString(n.Cond) + ")" + p.tags(n.Origin) + " => ")
 		p.core(n.Cont)
 	case *CoreBind:
 		// coreBinds writes the whole bind clause, so it must run before the
@@ -135,7 +144,7 @@ func (p *printer) core(n Core) {
 }
 
 func (p *printer) coreBranch(b *CoreBranch) {
-	p.write("pat " + patString(b.Pattern) + p.originTag(b.Origin) + p.spanTag(b.Origin) + p.armTag(b.Arm) + " => ")
+	p.write("pat " + patString(b.Pattern) + p.armTags(b.Origin, b.Arm) + " => ")
 	p.core(b.Cont)
 }
 
@@ -148,7 +157,7 @@ func (p *printer) coreBinds(n *CoreBind) Core {
 		if i > 0 {
 			p.write(", ")
 		}
-		p.write(n.Name + " = " + scrutineeString(n.Source) + p.originTag(n.Origin) + p.spanTag(n.Origin))
+		p.write(n.Name + " = " + scrutineeString(n.Source) + p.tags(n.Origin))
 		next, ok := n.Cont.(*CoreBind)
 		if !ok {
 			break
@@ -162,12 +171,12 @@ func (p *printer) coreBinds(n *CoreBind) Core {
 func (p *printer) norm(n Norm) {
 	switch n := n.(type) {
 	case *NormSplit:
-		p.write("split " + scrutineeString(n.Scrutinee) + p.originTag(n.Origin) + p.spanTag(n.Origin))
+		p.write("split " + scrutineeString(n.Scrutinee) + p.tags(n.Origin))
 		p.branches(len(n.Branches), func(i int) { p.normBranch(n.Branches[i]) })
 		p.write(" default ")
 		p.norm(n.Default)
 	case *NormGuard:
-		p.write("guard (" + exprString(n.Cond) + ")" + p.originTag(n.Origin) + p.spanTag(n.Origin))
+		p.write("guard (" + exprString(n.Cond) + ")" + p.tags(n.Origin))
 		p.branches(1, func(int) { p.norm(n.Cont) })
 		p.write(" default ")
 		p.norm(n.Default)
@@ -182,7 +191,7 @@ func (p *printer) norm(n Norm) {
 }
 
 func (p *printer) normBranch(b *NormBranch) {
-	p.write(testString(b.Test) + p.originTag(b.Origin) + p.spanTag(b.Origin) + p.armTag(b.Arm) + " => ")
+	p.write(testString(b.Test) + p.armTags(b.Origin, b.Arm) + " => ")
 	p.norm(b.Cont)
 }
 
@@ -194,7 +203,7 @@ func (p *printer) normBinds(n *NormBind) Norm {
 		if i > 0 {
 			p.write(", ")
 		}
-		p.write(n.Name + " = " + scrutineeString(n.Source) + p.originTag(n.Origin) + p.spanTag(n.Origin))
+		p.write(n.Name + " = " + scrutineeString(n.Source) + p.tags(n.Origin))
 		next, ok := n.Cont.(*NormBind)
 		if !ok {
 			break
@@ -212,11 +221,11 @@ func (p *printer) leaf(t Term) {
 	case nil:
 		p.write("✗")
 	case *BodyLeaf:
-		p.write("leaf " + bodyString(n.Body) + p.originTag(n.Origin) + p.spanTag(n.Origin) + p.armTag(n.Arm))
+		p.write("leaf " + bodyString(n.Body) + p.armTags(n.Origin, n.Arm))
 	case *EscapeLeaf:
-		p.write("escape" + p.originTag(n.Origin) + p.spanTag(n.Origin) + p.armTag(n.Arm))
+		p.write("escape" + p.armTags(n.Origin, n.Arm))
 	case *FallbackLeaf:
-		p.write("fallback " + bodyString(n.Body) + p.originTag(n.Origin) + p.spanTag(n.Origin) + p.armTag(n.Arm))
+		p.write("fallback " + bodyString(n.Body) + p.armTags(n.Origin, n.Arm))
 	default:
 		p.write(nodeKind(t))
 	}
@@ -252,14 +261,46 @@ func (p *printer) spanTag(o Origin) string {
 }
 
 // armTag renders a branch's or leaf's surface-arm back-reference as the arm's span,
-// or nothing when the caller did not ask for it.
-func (p *printer) armTag(arm Spanned) string {
+// or nothing when the caller did not ask for it. A node carrying no back-reference
+// renders `arm=none`.
+//
+// An arm whose span matches the one spanTag already wrote renders `arm=same` rather
+// than repeating the coordinates. That is the shape straight out of desugaring,
+// where a node's origin and its back-reference are the same surface node. The two
+// part ways once normalization synthesizes an origin over a merged or flattened
+// split, and then both spans print, which is the case a reader is looking for.
+func (p *printer) armTag(o Origin, arm Spanned) string {
 	if !p.opts.ShowArms {
 		return ""
 	}
-	s, ok := SpanOf(arm)
+	span, ok := SpanOf(arm)
 	if !ok {
 		return " arm=none"
 	}
-	return " arm=" + s.String()
+	if shown, wrote := p.shownSpan(o); wrote && shown == span {
+		return " arm=same"
+	}
+	return " arm=" + span.String()
+}
+
+// shownSpan returns the span spanTag wrote for o, and false when it wrote none.
+// NearestSpan yields a node's own span when it has one and the span its cause chain
+// reaches otherwise, which is the same order spanTag renders in.
+func (p *printer) shownSpan(o Origin) (ast.Span, bool) {
+	if !p.opts.ShowSpans {
+		return ast.Span{}, false
+	}
+	return o.NearestSpan()
+}
+
+// tags renders the annotations that follow a node with no surface-arm
+// back-reference: its origin and the span it blames.
+func (p *printer) tags(o Origin) string {
+	return p.originTag(o) + p.spanTag(o)
+}
+
+// armTags renders the same annotations for a branch or leaf, followed by its
+// surface-arm back-reference.
+func (p *printer) armTags(o Origin, arm Spanned) string {
+	return p.tags(o) + p.armTag(o, arm)
 }

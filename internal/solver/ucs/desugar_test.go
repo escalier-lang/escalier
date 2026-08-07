@@ -111,8 +111,8 @@ func TestDesugarMatchLiteralArms(t *testing.T) {
 
 	require.Nil(t, core.Else)
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split n [match arm] at=1:1-4:2 {
-  pat 1 [match arm] at=1:10-2:12 arm=1:10-2:12 => leaf "one" [match arm] at=1:10-2:12 arm=1:10-2:12
-  pat _ [match arm] at=2:13-3:14 arm=2:13-3:14 => leaf "other" [match arm] at=2:13-3:14 arm=2:13-3:14
+  pat 1 [match arm] at=1:10-2:12 arm=same => leaf "one" [match arm] at=1:10-2:12 arm=same
+  pat _ [match arm] at=2:13-3:14 arm=same => leaf "other" [match arm] at=2:13-3:14 arm=same
 }`))
 }
 
@@ -128,8 +128,8 @@ func TestDesugarMatchGuardedArm(t *testing.T) {
 	core := DesugarMatch(expr)
 
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split p [match arm] at=1:1-4:2 {
-  pat {x, y} [match arm] at=1:10-2:22 arm=1:10-2:22 => guard (x > y) [guard] at=2:12-2:17 => leaf x [match arm] at=1:10-2:22 arm=1:10-2:22
-  pat _ [match arm] at=2:23-3:8 arm=2:23-3:8 => leaf 0 [match arm] at=2:23-3:8 arm=2:23-3:8
+  pat {x, y} [match arm] at=1:10-2:22 arm=same => guard (x > y) [guard] at=2:12-2:17 => leaf x [match arm] at=1:10-2:22 arm=same
+  pat _ [match arm] at=2:23-3:8 arm=same => leaf 0 [match arm] at=2:23-3:8 arm=same
 }`))
 
 	// The guard carries no `arm=` tag, because ShowArms renders the Arm
@@ -175,8 +175,8 @@ func TestDesugarIfVal(t *testing.T) {
 	core := DesugarIfVal(expr)
 
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split p [if val] at=1:1-1:40 {
-  pat {x, y} [if val] at=1:1-1:40 arm=1:1-1:40 => leaf { cons } [if val] at=1:1-1:40 arm=1:1-1:40
-} else leaf { alt } [if val] at=1:1-1:40 arm=1:1-1:40`))
+  pat {x, y} [if val] at=1:1-1:40 arm=same => leaf { cons } [if val] at=1:1-1:40 arm=same
+} else leaf { alt } [if val] at=1:1-1:40 arm=same`))
 }
 
 // An `if val` with no `else` still falls through, evaluating to `undefined` when the
@@ -188,7 +188,7 @@ func TestDesugarIfValInventsItsFallthrough(t *testing.T) {
 	core := DesugarIfVal(expr)
 
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split p [if val] at=1:1-1:27 {
-  pat {x, y} [if val] at=1:1-1:27 arm=1:1-1:27 => leaf { cons } [if val] at=1:1-1:27 arm=1:1-1:27
+  pat {x, y} [if val] at=1:1-1:27 arm=same => leaf { cons } [if val] at=1:1-1:27 arm=same
 } else leaf undefined [synthetic if val] at~1:1-1:27 arm=none`))
 
 	// The invented leaf has no surface node of its own, so a diagnostic about it
@@ -250,8 +250,8 @@ func TestDesugarValElse(t *testing.T) {
 
 	require.True(t, ok)
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split p [val else] at=1:1-1:33 {
-  pat {x, y} [val else] at=1:1-1:33 arm=1:1-1:33 => escape [val else] at=1:1-1:33 arm=1:1-1:33
-} else fallback { fallback } [val else] at=1:1-1:33 arm=1:1-1:33`))
+  pat {x, y} [val else] at=1:1-1:33 arm=same => escape [val else] at=1:1-1:33 arm=same
+} else fallback { fallback } [val else] at=1:1-1:33 arm=same`))
 }
 
 // A narrowing annotation on a `val … else` sits on the declaration, not on the
