@@ -4,6 +4,16 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
+// span builds a single-line span in source 0, so a test that asserts an arm
+// back-reference has a stable, readable rendering.
+func span(line, start, end int) ast.Span {
+	return ast.NewSpan(
+		ast.Location{Line: line, Column: start},
+		ast.Location{Line: line, Column: end},
+		0,
+	)
+}
+
 func ident(name string) *ast.IdentExpr {
 	return ast.NewIdent(name, ast.Span{})
 }
@@ -14,6 +24,13 @@ func num(value float64) ast.Expr {
 
 func str(value string) ast.Expr {
 	return ast.NewLitExpr(ast.NewString(value, ast.Span{}))
+}
+
+// arm builds a `match` arm with the given span and a wildcard pattern, standing in
+// for the surface node a branch or leaf points back at.
+func arm(s ast.Span) *ast.MatchCase {
+	body := ast.BlockOrExpr{Expr: ident("body")}
+	return ast.NewMatchCase(ast.NewWildcardPat(ast.Span{}), nil, body, s)
 }
 
 func shorthandElem(key string) ast.ObjPatElem {
