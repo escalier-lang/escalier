@@ -1,0 +1,36 @@
+// An operator expression in receiver position has to stay grouped. Without the
+// parentheses `(a + b).toFixed(2)` reparses as `a + b.toFixed(2)`, which calls the
+// method on `b` and adds `a` to the string it returns.
+export fn sumThenFormat(a: number, b: number) {
+    return (a + b).toFixed(2)
+}
+
+// Only the sum needs grouping. Every later link in the chain is a call or a member
+// access, and those bind tightly enough to stand on their own.
+export fn sumThenFormatLength(a: number, b: number) {
+    return (a + b).toFixed(2).length
+}
+
+// An argument and an index are delimited by their own brackets, so an operator
+// expression in either position stays bare.
+export fn sumAsIndex(a: number, b: number, xs: Array<number>) {
+    return xs[a + b]
+}
+
+export fn sumAsArgument(a: number, b: number) {
+    return a.toFixed(a + b)
+}
+
+// `&` binds tighter than `|`, so a union inside an intersection has to stay grouped in
+// the emitted declaration file. An intersection inside a union needs nothing.
+type A = {a: number}
+type B = {b: string}
+type C = {c: boolean}
+
+export declare val unionInIntersection: (A | B) & C
+export declare val intersectionInUnion: A | (B & C)
+
+// A function type runs to the end of the enclosing type, so a union or an intersection
+// holding one has to wrap it. TypeScript rejects `number | (x: number) => string`.
+export declare val handler: number | fn (x: number) -> string
+export declare val keys: keyof (A | B)
