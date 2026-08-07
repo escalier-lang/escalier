@@ -285,6 +285,16 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// whose mismatch blame should point at the pattern.
 			if p.TypeAnn == nil {
 				c.recordProv(pt, p.Pattern, ParamBinding)
+				// A pattern naming a `...rest` binds the properties its fields do not, so
+				// the parameter has to admit an argument that carries them. Policy A would
+				// otherwise close the usage-inferred object to exact, which rejects every
+				// such argument and leaves the rest nothing to bind: `fn f({x, ...rest})`
+				// would infer the parameter `{x: T0}` and reject `f({x: 1, y: 2})` for the
+				// extra y. Marking the var open keeps the folded object inexact, the same
+				// row-polymorphic shape the written `open` marker produces.
+				if v, ok := pt.(*soltype.TypeVarType); ok && objectPatNamesRest(p.Pattern) {
+					v.Open = true
+				}
 			}
 			mirror := c.bindPattern(fnScope, lvl, p.Pattern, pt, paramTypes)
 			params[i] = &soltype.FuncParam{Pattern: mirror, Type: pt, Optional: p.Optional}
@@ -3678,12 +3688,18 @@ func armCoversShape(p ast.Pat, inexact bool) bool {
 // irrefutablePat reports whether a pattern matches every value of a compatible
 // type, so it can never fail at runtime. A wildcard or identifier binds
 // unconditionally. An object or tuple pattern is irrefutable only when all of its
-// sub-patterns are. A literal pattern can fail, and the constructor patterns deferred
-// to M5 are refutable, so both return false.
+// sub-patterns are. A `...rest` element binds whatever the pattern's fixed parts leave
+// behind. That leftover exists for every value of a compatible type, so a rest is
+// irrefutable exactly when its own sub-pattern is. Whether the pattern's fixed arity
+// fits the value at all is a separate question, answered by patternMatchesMemberShape.
+// A literal pattern can fail, and the constructor patterns deferred to M5 are refutable,
+// so both return false.
 func irrefutablePat(p ast.Pat) bool {
 	switch p := p.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
 		return true
+	case *ast.RestPat:
+		return irrefutablePat(p.Pattern)
 	case *ast.TuplePat:
 		for _, e := range p.Elems {
 			if !irrefutablePat(e) {
@@ -3700,8 +3716,11 @@ func irrefutablePat(p ast.Pat) bool {
 				if !irrefutablePat(e.Value) {
 					return false
 				}
+			case *ast.ObjRestPat:
+				if !irrefutablePat(e.Pattern) {
+					return false
+				}
 			default:
-				// ObjRestPat is M9; treat anything else as refutable.
 				return false
 			}
 		}

@@ -129,10 +129,26 @@ type TuplePat struct{ Elems []Pat }
 
 func (*TuplePat) isPat() {}
 
+// RestPat is a `...sub` element of a tuple destructuring pattern, the `...rest` of
+// `[a, ...rest]`. Pattern is the sub-pattern the leftover elements bind through, an
+// IdentPat for the plain `...rest` spelling. It stands as an element of TuplePat.Elems,
+// so it keeps the position the source wrote it at. An object's rest has no position
+// among the named fields, so ObjectPat carries it in a field of its own instead.
+type RestPat struct{ Pattern Pat }
+
+func (*RestPat) isPat() {}
+
 // ObjectPat is an object destructuring pattern (M4 E1). Each field names a
 // property and binds its value through a sub-pattern. A bare `{x}` shorthand is
 // an ObjectPatField whose Value is an IdentPat of the same name.
-type ObjectPat struct{ Fields []*ObjectPatField }
+//
+// Rest is the sub-pattern a `...rest` element binds through, or nil when the pattern
+// wrote none. It binds the properties Fields does not name, so `{x, ...rest}` has one
+// field for x and a Rest of the IdentPat `rest`.
+type ObjectPat struct {
+	Fields []*ObjectPatField
+	Rest   Pat
+}
 
 func (*ObjectPat) isPat() {}
 
