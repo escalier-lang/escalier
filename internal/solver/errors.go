@@ -1470,6 +1470,45 @@ func (e *NotProductiveAliasError) Message() string {
 		e.Name, through)
 }
 
+// NonReturningRecursionError fires when no finite value has a function's return type, because a
+// μ-knot in it has no base case. `fn cons(x: number) { return {head: x, tail: cons(x)} }` infers
+// `fn (x: number) -> {head: number, tail: μX0.{head: number, tail: X0}}`. Building the `tail` field
+// calls `cons` again before the object literal is finished, and every value of that knot is an
+// infinite chain, so the call recurses until the stack runs out. finitelyInhabited in inhabited.go
+// decides the question and lists what makes a knot terminate.
+//
+// It is the value-level twin of NotProductiveAliasError. That one fires on a recursion that emits no
+// structure at all. This one fires on a recursion that emits structure forever with nothing to stop
+// it.
+//
+// Site is the node the diagnostic points at, a `fn` declaration's name or a whole function
+// expression. Name is what the source called the function, empty for a lambda.
+//
+// Fn is the function's coalesced display type. The message renders the whole signature rather than
+// the return alone because the return can hold a quantified type parameter, and naming a `T0`
+// without the `<T0>` binder the signature carries would render a parameter with nothing to tie it
+// to.
+type NonReturningRecursionError struct {
+	Site ast.Node
+	Name string
+	Fn   soltype.Type
+}
+
+func (*NonReturningRecursionError) isSolverError()        {}
+func (e *NonReturningRecursionError) Span() ast.Span      { return e.Site.Span() }
+func (e *NonReturningRecursionError) Related() []ast.Span { return nil }
+func (e *NonReturningRecursionError) Message() string {
+	subject := "this function"
+	if e.Name != "" {
+		subject = "`" + e.Name + "`"
+	}
+	return fmt.Sprintf(
+		"%s has type `%s`, and no finite value inhabits its return type, so a call to it never "+
+			"returns; give the recursion a base case, make the recursive property optional, or defer "+
+			"the recursive call behind a function or a Promise",
+		subject, soltype.PrintAsScheme(e.Fn))
+}
+
 // ExpansionLimitError fires when constrain evaluates more than maxUnwrapDepth type operators along
 // one constraint path. Two shapes reach it. One is a comparison between two different
 // instantiations of a productive but non-regular alias, `Deep<number> <: Deep<string>` for

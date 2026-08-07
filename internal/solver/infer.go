@@ -107,6 +107,20 @@ type checker struct {
 	// runDeferredArgBounds once every body in the component is filled.
 	deferredArgBounds []deferredArgBound
 
+	// memberName is the name of the class member whose body is about to be walked, set by
+	// inferMemberBodies and consumed by the inferFunc call that walks it. A member reaches
+	// inferFunc as a bare *ast.FuncExpr, which carries no name, so this is how the
+	// non-returning-recursion diagnostic learns what to call it. inferFunc reads and clears it on
+	// entry, so a lambda nested inside a member body is not blamed under the member's name.
+	memberName string
+
+	// pendingReturns holds every body-carrying function inferFunc has typed since the last
+	// checkCanReturn, each waiting to have its return type checked for a finite inhabitant. The
+	// check is queued rather than run on the spot because a recursive call resolves through a
+	// binding var that is still unbounded while the body is walked, so the μ-knot the check reads
+	// does not exist yet when inferFunc finishes. checkCanReturn spells the ordering out.
+	pendingReturns []pendingReturn
+
 	// classShells holds the type parameters and declaration scope preBindClassTypeParams
 	// resolved for a class, keyed by its declaration. inferClassDecl reuses the entry rather
 	// than minting a second, unrelated set of parameter vars. A script class has no pre-pass,

@@ -18,6 +18,10 @@ import (
 // its own return variable, so the outer object comes from the call and the knot from the variable
 // the body's recursive call flows through.
 //
+// The recursion is unguarded, so `f` cannot return and checkCanReturn rejects it. What this test
+// pins is that coalescing TERMINATES on the cyclic graph, which it has to do before any diagnostic
+// can be reported at all.
+//
 // NOTE: a regression that bypasses the `seen` guard stack-overflows here, which
 // is a fatal (uncatchable) crash that takes down the whole package test binary
 // rather than failing this test in isolation. Tracked in
@@ -25,7 +29,7 @@ import (
 // ceiling to coalesce so a guard bypass fails cleanly instead of crashing).
 func TestInferModuleRecursiveRecordTerminates(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() { return {x: f()} }`)
-	require.Empty(t, errs, "unexpected inference errors")
+	require.Equal(t, []string{nonReturningMsg("1:4-1:5", "f", "fn () -> {x: μX0.{x: X0}}")}, messagesWithSpan(errs))
 	require.Equal(t, "fn () -> {x: μX0.{x: X0}}", values["f"])
 }
 

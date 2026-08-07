@@ -554,6 +554,7 @@ func (c *checker) buildFieldSigs(scope *Scope, lvl int, decl *ast.ClassDecl, bod
 // phase; apply installs the fully-inferred signature onto the stored element.
 type pendingMember struct {
 	fn     *ast.FuncExpr
+	name   string // the member's source name, which its own *ast.FuncExpr does not carry
 	recv   *ast.MethodReceiver
 	static bool
 	stub   *soltype.FuncType
@@ -591,7 +592,7 @@ func (c *checker) buildMemberSigs(
 				c.report(&MethodOverloadReceiverMismatchError{Name: name, Elem: elem})
 			}
 			pending = append(pending, pendingMember{
-				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, stub: stub,
+				fn: elem.Fn, name: name, recv: elem.Receiver, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) {
 					bodyFt.SelfParam = stub.SelfParam
 					method.Signatures[arm] = bodyFt
@@ -613,7 +614,7 @@ func (c *checker) buildMemberSigs(
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, getter)
 			pending = append(pending, pendingMember{
-				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, stub: stub,
+				fn: elem.Fn, name: name, recv: elem.Receiver, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) {
 					getter.Type = bodyFt.Ret
 					getter.Throws = bodyFt.Throws
@@ -654,7 +655,7 @@ func (c *checker) buildMemberSigs(
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, setter)
 			pending = append(pending, pendingMember{
-				fn: elem.Fn, recv: elem.Receiver, static: elem.Static, stub: stub,
+				fn: elem.Fn, name: name, recv: elem.Receiver, static: elem.Static, stub: stub,
 				apply: func(bodyFt *soltype.FuncType) {
 					if len(bodyFt.Params) > 0 {
 						setter.Param = bodyFt.Params[0].Type
@@ -672,6 +673,9 @@ func (c *checker) buildMemberSigs(
 // bound graph, then installs the real signature onto the stored element.
 func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectType, pending []pendingMember) {
 	for _, m := range pending {
+		// Hand the member's name to the inferFunc call below, which sees only the member's
+		// *ast.FuncExpr and so cannot recover it. inferFunc takes and clears it.
+		c.memberName = m.name
 		bodyFt := c.inferMemberFunc(scope, lvl, m.fn, m.recv, m.static, body)
 		c.linkMemberSig(m.fn, bodyFt, m.stub)
 		m.apply(bodyFt)

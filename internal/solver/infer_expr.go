@@ -199,6 +199,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	savedNamedLts := c.namedLifetimes
 	c.namedLifetimes = nil
 	defer func() { c.namedLifetimes = savedNamedLts }()
+	// Take the name inferMemberBodies left for this member, and clear it so a lambda nested in
+	// the body walked below is not blamed under the member's name. It is empty for every function
+	// that is not a class member.
+	memberName := c.memberName
+	c.memberName = ""
 	// Report any named lifetime the signature uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder. Run before resolving the params so the scan
 	// reads the written names, not what namedLifetime has since interned.
@@ -518,6 +523,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// re-minted by coalescing at binding time, so the entry is exact for inline
 	// callees; M3's FromInstantiation makes named-callee blame precise.)
 	c.recordProv(ft, node, FuncInference)
+	// Queue the return type for the finite-inhabitant check. A `declare fn` adopts its annotation
+	// with no body to recurse through, so only a body-carrying function is queued. The check itself
+	// waits until the enclosing group's bound graph is complete, since a mutually-recursive knot is
+	// not tied until every body in the group has been walked.
+	if hasBody {
+		c.queueReturnCheck(node, ft, lvl-1, memberName)
+	}
 	// A body-carrying function must prove every lifetime bound its signature declares,
 	// so its bounds are checked against the inferred relation. A no-body `declare fn` has
 	// no body to prove them, so it lowers each declared bound into constrainLt instead.

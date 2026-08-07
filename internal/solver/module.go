@@ -456,6 +456,11 @@ func (c *checker) inferComponent(
 		}
 	}
 
+	// Every definition in the component has been constrained into its binding var, which is what
+	// closes a recursive cycle, so coalescing a return type now yields the μ-knot that cycle
+	// implies. Report each function in the component whose return type no finite value inhabits.
+	c.checkCanReturn()
+
 	// Phase 3: rebind each value name to its coalesced monomorphic type. A binding
 	// whose declarations all failed to produce a definition (missing initializer,
 	// destructuring, unsupported kind) is removed rather than left as a `never`

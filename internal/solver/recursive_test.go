@@ -35,35 +35,44 @@ func muKnot(id int, name string, body func(ref *soltype.RecursiveVarType) soltyp
 // Every source here puts nothing between the recursive call and the value the body builds, so none
 // of these functions returns when called. The types are right all the same, since no finite value
 // inhabits a knot with no base case, and what is being pinned is the rendering rather than a program
-// anyone runs. TestInferGuardedRecursionRendersMuKnot covers the shapes that do return.
+// anyone runs. checkCanReturn rejects each source for that reason, so every case carries the
+// diagnostic it draws beside the type. TestInferGuardedRecursionRendersMuKnot covers the shapes that
+// do return.
 func TestInferRecursiveRendersMuKnot(t *testing.T) {
 	tests := []struct {
-		name    string
-		src     string
-		binding string
-		want    string
+		name     string
+		src      string
+		binding  string
+		want     string
+		wantErrs []string
 	}{
 		{
-			name:    "recursion through an object property",
-			src:     `fn f() { return {next: f()} }`,
-			binding: "f",
-			want:    "fn () -> {next: μX0.{next: X0}}",
+			name:     "recursion through an object property",
+			src:      `fn f() { return {next: f()} }`,
+			binding:  "f",
+			want:     "fn () -> {next: μX0.{next: X0}}",
+			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "fn () -> {next: μX0.{next: X0}}")},
 		},
 		{
-			name:    "recursion through a tuple element",
-			src:     `fn f() { return [f()] }`,
-			binding: "f",
-			want:    "fn () -> [μX0.[X0]]",
+			name:     "recursion through a tuple element",
+			src:      `fn f() { return [f()] }`,
+			binding:  "f",
+			want:     "fn () -> [μX0.[X0]]",
+			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "fn () -> [μX0.[X0]]")},
 		},
 		{
-			name:    "knot beside a retained type parameter",
-			src:     `fn f(x) { return {next: f(x), value: x} }`,
-			binding: "f",
-			want:    "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}",
+			// The diagnostic renders the same display type this case pins, quantifier and all, since
+			// checkCanReturn reads the whole signature through coalesceScheme.
+			name:     "knot beside a retained type parameter",
+			src:      `fn f(x) { return {next: f(x), value: x} }`,
+			binding:  "f",
+			want:     "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}",
+			wantErrs: []string{nonReturningMsg("1:4-1:5", "f", "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}")},
 		},
 		{
 			// Mutual recursion runs the same cycle through two bindings, so the knot closes one lap
-			// out at whichever binding is being rendered.
+			// out at whichever binding is being rendered. Each binding draws its own diagnostic, in
+			// the order the component's bodies were walked.
 			name: "mutual recursion closes the knot one lap out",
 			src: `
 				fn ping() { return {p: pong()} }
@@ -71,12 +80,16 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 			`,
 			binding: "ping",
 			want:    "fn () -> {p: μX0.{q: {p: X0}}}",
+			wantErrs: []string{
+				nonReturningMsg("3:8-3:12", "pong", "fn () -> {q: μX0.{p: {q: X0}}}"),
+				nonReturningMsg("2:8-2:12", "ping", "fn () -> {p: μX0.{q: {p: X0}}}"),
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
-			require.Empty(t, Messages(errs))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
 			require.Equal(t, tt.want, values[tt.binding])
 		})
 	}
@@ -210,12 +223,17 @@ func TestInferGuardedRecursionRendersMuKnot(t *testing.T) {
 // Body, not its coalesced display, so no knot exists while the member chain, the destructuring
 // pattern, or the type parameter is being solved. Those cases pin that the recursive shape survives
 // the round trip and still renders as a knot once the resulting binding is displayed.
+//
+// Building a knot needs an unguarded recursion, so every source here also draws checkCanReturn's
+// diagnostic. A case that wraps the knot in a second function draws a second one, since a function
+// that returns what `f` returns cannot return either.
 func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 	tests := []struct {
-		name    string
-		src     string
-		binding string
-		want    string
+		name     string
+		src      string
+		binding  string
+		want     string
+		wantErrs []string
 	}{
 		{
 			name: "reassigning a recursive binding compares two knots",
@@ -229,6 +247,10 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 			`,
 			binding: "h",
 			want:    "fn () -> {next: μX0.{next: X0}}",
+			wantErrs: []string{
+				nonReturningMsg("2:8-2:9", "f", "fn () -> {next: μX0.{next: X0}}"),
+				nonReturningMsg("3:8-3:9", "h", "fn () -> {next: μX0.{next: X0}}"),
+			},
 		},
 		{
 			name: "a member chain over a recursive result still renders a knot",
@@ -236,8 +258,9 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 				fn f() { return {next: f()} }
 				val c = f().next.next
 			`,
-			binding: "c",
-			want:    "μX0.{next: X0}",
+			binding:  "c",
+			want:     "μX0.{next: X0}",
+			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "fn () -> {next: μX0.{next: X0}}")},
 		},
 		{
 			name: "a recursive result through a type parameter still renders a knot",
@@ -246,8 +269,9 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 				fn id(x) { return x }
 				val d = id(f())
 			`,
-			binding: "d",
-			want:    "{next: μX0.{next: X0}}",
+			binding:  "d",
+			want:     "{next: μX0.{next: X0}}",
+			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "fn () -> {next: μX0.{next: X0}}")},
 		},
 		{
 			// The tuple shape reaches the same reassignment path, so a coalesced knot over a tuple
@@ -263,6 +287,10 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 			`,
 			binding: "h",
 			want:    "fn () -> [μX0.[X0]]",
+			wantErrs: []string{
+				nonReturningMsg("2:8-2:9", "f", "fn () -> [μX0.[X0]]"),
+				nonReturningMsg("3:8-3:9", "h", "fn () -> [μX0.[X0]]"),
+			},
 		},
 		{
 			// Destructuring is how a recursive tuple is read apart, since a value-level index
@@ -272,14 +300,15 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 				fn f() { return [f()] }
 				val [inner] = f()
 			`,
-			binding: "inner",
-			want:    "μX0.[X0]",
+			binding:  "inner",
+			want:     "μX0.[X0]",
+			wantErrs: []string{nonReturningMsg("2:8-2:9", "f", "fn () -> [μX0.[X0]]")},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
-			require.Empty(t, Messages(errs))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
 			require.Equal(t, tt.want, values[tt.binding])
 		})
 	}
