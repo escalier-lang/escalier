@@ -510,7 +510,7 @@ func TestInferGenRaises(t *testing.T) {
 				gen fn g() { yield 1 throw "boom" }
 				fn f() throws _ { val it = g() return it.next() }
 			`,
-			want: `fn () -> {value: 1, done: boolean} throws "boom"`,
+			want: `fn () -> {value: 1, done: false} throws "boom"`,
 		},
 		{
 			// An async generator's advance returns a promise that rejects with what the
@@ -520,7 +520,7 @@ func TestInferGenRaises(t *testing.T) {
 				async gen fn g() { yield 1 throw "boom" }
 				async fn f() { val it = g() return await it.next() }
 			`,
-			want: `fn () -> Promise<{value: 1, done: boolean}, "boom">`,
+			want: `fn () -> Promise<{value: 1, done: false}, "boom">`,
 		},
 		{
 			// The promise is what carries the rejection, so calling `next` without awaiting
@@ -530,7 +530,7 @@ func TestInferGenRaises(t *testing.T) {
 				async gen fn g() { yield 1 throw "boom" }
 				fn f() { val it = g() return it.next() }
 			`,
-			want: `fn () -> Promise<{value: 1, done: boolean}, "boom">`,
+			want: `fn () -> Promise<{value: 1, done: false}, "boom">`,
 		},
 	})
 	runGenErrCases(t, []genErrCase{
@@ -576,14 +576,35 @@ func TestInferGenRaises(t *testing.T) {
 func TestInferGenNext(t *testing.T) {
 	runGenCases(t, []genCase{
 		{
-			// Advancing reports either the type the body yields or the type it returns, so
-			// the value slot is the union of both.
-			name: "NextResultUnionsYieldAndReturn",
+			// Advancing either produces a yielded value or reports the generator finished
+			// with its return value, so the result is one arm per outcome tagged by `done`.
+			// The two arms keep the yield type and the return type distinct.
+			name: "NextResultTagsYieldAndReturnApart",
 			src: `
 				gen fn g() { yield 1 return "done" }
 				fn f() { val it = g() return it.next() }
 			`,
-			want: `fn () -> {value: 1 | "done", done: boolean}`,
+			want: `fn () -> {value: 1, done: false} | {value: "done", done: true}`,
+		},
+		{
+			// A generator that always throws never finishes normally, so `never` in its Ret
+			// slot drops the finished arm rather than carrying one no value inhabits.
+			name: "NextResultDropsAnUninhabitedArm",
+			src: `
+				gen fn g() { yield 1 throw "boom" }
+				fn f() throws _ { val it = g() return it.next() }
+			`,
+			want: `fn () -> {value: 1, done: false} throws "boom"`,
+		},
+		{
+			// Reading `value` off the result reaches both arms, since reducing the union to
+			// one arm by testing its `done` needs narrowing on a literal-tagged union.
+			name: "ReadingValueOffTheResultJoinsBothArms",
+			src: `
+				gen fn g() { yield 1 return "done" }
+				fn f() { val r = g().next() return r.value }
+			`,
+			want: `fn () -> 1 | "done"`,
 		},
 		{
 			// The sent value is what a `yield` expression in the body evaluates to, so the
@@ -593,7 +614,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn g() -> Generator<number, string, string> { yield 1 return "x" }
 				fn f() { val it = g() return it.next("a") }
 			`,
-			want: `fn () -> {value: number | string, done: boolean}`,
+			want: `fn () -> {value: number, done: false} | {value: string, done: true}`,
 		},
 		{
 			// An inferred Next slot is `unknown`, which accepts `undefined`, so the
@@ -603,7 +624,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn g() { yield 1 }
 				fn f() { val it = g() return it.next() }
 			`,
-			want: `fn () -> {value: 1 | undefined, done: boolean}`,
+			want: `fn () -> {value: 1, done: false} | {value: undefined, done: true}`,
 		},
 		{
 			// A generator obtained without an intervening binding advances the same way.
@@ -612,7 +633,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn g() { yield 1 }
 				fn f() { return g().next() }
 			`,
-			want: `fn () -> {value: 1 | undefined, done: boolean}`,
+			want: `fn () -> {value: 1, done: false} | {value: undefined, done: true}`,
 		},
 		{
 			// Two calls to one generator leave the receiver holding two lower bounds that
@@ -623,7 +644,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn g() { yield 1 }
 				fn f(b: boolean) { val it = if b { g() } else { g() } return it.next() }
 			`,
-			want: `fn (b: boolean) -> {value: 1 | undefined, done: boolean}`,
+			want: `fn (b: boolean) -> {value: 1, done: false} | {value: undefined, done: true}`,
 		},
 		{
 			// A receiver holding two different generators advances through their join, so
@@ -634,7 +655,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn h() { yield "a" }
 				fn f(b: boolean) { val it = if b { g() } else { h() } return it.next() }
 			`,
-			want: `fn (b: boolean) -> {value: 1 | "a" | undefined, done: boolean}`,
+			want: `fn (b: boolean) -> {value: 1 | "a", done: false} | {value: undefined, done: true}`,
 		},
 		{
 			// The join's raise is the union of what either generator raises, so a caller
@@ -645,7 +666,7 @@ func TestInferGenNext(t *testing.T) {
 				gen fn h() { yield "a" throw 5 }
 				fn f(b: boolean) throws _ { val it = if b { g() } else { h() } return it.next() }
 			`,
-			want: `fn (b: boolean) -> {value: 1 | "a", done: boolean} throws 5 | "boom"`,
+			want: `fn (b: boolean) -> {value: 1 | "a", done: false} throws 5 | "boom"`,
 		},
 	})
 	runGenErrCases(t, []genErrCase{
@@ -706,8 +727,8 @@ func TestInferGenNext(t *testing.T) {
 			`,
 			wantErrs: []string{
 				"3:48-3:61: No matching overload for this call\n" +
-					`  fn () -> {value: 1, done: boolean} throws "boom"` + "\n" +
-					`  fn (value: unknown) -> {value: 1, done: boolean} throws "boom"`,
+					`  fn () -> {value: 1, done: false} throws "boom"` + "\n" +
+					`  fn (value: unknown) -> {value: 1, done: false} throws "boom"`,
 			},
 		},
 	})

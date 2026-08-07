@@ -136,11 +136,11 @@ func (c *checker) generatorBody(g *soltype.GeneratorType) *soltype.ObjectType {
 }
 
 // generatorNext declares the `next` method that advances g, as an overload set of up to two
-// arms. Y, R, and N below are g's Yield, Ret, and Next slots. N is the type a `yield`
-// expression in the body evaluates to, the value a caller sends back in.
+// arms. N below is g's Next slot, the type a `yield` expression in the body evaluates to and so
+// the value a caller sends back in. iterationResult builds the shared result type.
 //
-//	next() -> {value: Y | R, done: boolean}
-//	next(value: N) -> {value: Y | R, done: boolean}
+//	next() -> {value: Y, done: false} | {value: R, done: true}
+//	next(value: N) -> {value: Y, done: false} | {value: R, done: true}
 //
 // Both arms carry g's raise, so a caller that drives a generator by hand handles what its
 // body throws the way an iterating caller does.
@@ -185,19 +185,46 @@ func advanceSig(g *soltype.GeneratorType, result soltype.Type, params []*soltype
 	return &soltype.FuncType{Params: params, Ret: result, Throws: g.Throws}
 }
 
-// iterationResult builds the object an advance of g evaluates to, `{value: Y | R, done:
-// boolean}`. It stands in for the standard library's `IteratorResult<Y, R>`, one of the
-// opaque prelude placeholders until library type ingestion lands. A running generator reports
-// the type it yields and a finished one the type it returns, so the value slot is the union
-// of both.
+// iterationResult builds the type an advance of g evaluates to. It stands in for the standard
+// library's `IteratorResult<Y, R>`, one of the opaque prelude placeholders until library type
+// ingestion lands.
 //
-// The precise form is the discriminated union `{value: Y, done: false} | {value: R, done:
-// true}`, which lets a reader recover Y alone after testing `done`. This wider object is a
-// supertype of it, so reading a result through it is sound but coarser.
+// An advance either produces a yielded value or reports that the generator finished with its
+// return value, so the result is a union of one arm per outcome, tagged by `done`:
+//
+//	{value: Y, done: false} | {value: R, done: true}
+//
+// Two arms keep Y and R distinct. `gen fn g() { yield 1 return "done" }` advances to
+// `{value: 1, done: false} | {value: "done", done: true}`, where a single
+// `{value: Y | R, done: boolean}` object would flatten both into `1 | "done"` and lose which
+// value belongs to which outcome. Reducing a result to one arm by testing its `done` needs
+// narrowing on a literal-tagged union, which does not reduce this union yet, so today a bare
+// `r.value` reads the join of both arms.
+//
+// An arm is dropped when its value type is the `never` no value inhabits. A generator that
+// always throws has `never` in Ret, so `gen fn g() { yield 1 throw "boom" }` advances to
+// `{value: 1, done: false}` alone rather than carrying an unreachable finished arm.
+//
+// The `done` slot is required in both arms, where TypeScript writes the yield arm's as
+// `done?: false`. An optional tag lets a hand-written iterator omit the field. Every generator
+// sets it, and a required tag is what a narrowing rule can read to pick an arm.
 func (c *checker) iterationResult(g *soltype.GeneratorType) soltype.Type {
+	arms := make([]soltype.Type, 0, 2)
+	if !isNeverType(g.Yield) {
+		arms = append(arms, iterationResultArm(g.Yield, false))
+	}
+	if !isNeverType(g.Ret) {
+		arms = append(arms, iterationResultArm(g.Ret, true))
+	}
+	return newUnion(c.ctx, arms, false)
+}
+
+// iterationResultArm builds one arm of the iteration-result union: the yielded-value arm when
+// done is false, and the finished arm carrying the generator's return value when it is true.
+func iterationResultArm(value soltype.Type, done bool) *soltype.ObjectType {
 	return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
-		&soltype.PropertyElem{Name: "value", Type: newUnion(c.ctx, []soltype.Type{g.Yield, g.Ret}, false)},
-		&soltype.PropertyElem{Name: "done", Type: &soltype.PrimType{Prim: soltype.BoolPrim}},
+		&soltype.PropertyElem{Name: "value", Type: value},
+		&soltype.PropertyElem{Name: "done", Type: &soltype.LitType{Lit: &soltype.BoolLit{Value: done}}},
 	}}
 }
 
