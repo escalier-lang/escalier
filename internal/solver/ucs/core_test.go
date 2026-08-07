@@ -25,8 +25,8 @@ func TestCoreNodesCarryProvenance(t *testing.T) {
 }
 
 // TestCoreSplitKeepsSourceOrder locks the core's first-match semantics. Branch order
-// is source order, and normalization in PR3 is what rewrites it into tests that
-// never backtrack.
+// is source order, and the first branch whose pattern matches wins. Removing the
+// backtracking that implies is normalization's job, not the core's.
 func TestCoreSplitKeepsSourceOrder(t *testing.T) {
 	origin := At(OriginMatchArm, arm(span(1, 1, 8)))
 	scrutinee := NewRoot(ident("p"), origin)

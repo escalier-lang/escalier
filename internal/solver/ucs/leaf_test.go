@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLeavesEndACoreTerm checks that all three leaf types terminate a core branch.
-// PR3 adds the normalized form and extends this to cover both.
+// TestLeavesEndACoreTerm checks that all three leaf types terminate a core branch,
+// which is what lets a split's continuation be a leaf as readily as another split.
 func TestLeavesEndACoreTerm(t *testing.T) {
 	leaves := []any{
 		&BodyLeaf{Body: exprBody(num(1))},
