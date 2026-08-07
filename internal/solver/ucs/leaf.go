@@ -2,10 +2,15 @@ package ucs
 
 import "github.com/escalier-lang/escalier/internal/ast"
 
-// The three leaf types end a branch of the core.
+// The three leaf types end a branch of either IR, so each implements both Core and
+// Norm. Normalization rewrites the splits around a leaf and leaves the leaf itself
+// alone, so there is one set of leaves rather than a parallel pair.
 func (*BodyLeaf) isCore()     {}
+func (*BodyLeaf) isNorm()     {}
 func (*EscapeLeaf) isCore()   {}
+func (*EscapeLeaf) isNorm()   {}
 func (*FallbackLeaf) isCore() {}
+func (*FallbackLeaf) isNorm() {}
 
 // BodyLeaf ends a branch with the body the user wrote for it: a `match` arm's body,
 // or the consequent or `else` of an `if val`. Its bindings are scoped to Body and do
