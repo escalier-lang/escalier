@@ -689,6 +689,37 @@ func TestInferGenNext(t *testing.T) {
 			`,
 			want: `fn (b: boolean) -> IteratorYieldResult<1 | "a"> throws 5 | "boom"`,
 		},
+		{
+			// A callee whose return type is a union of generators lowers that union into the
+			// call's result var as one union-valued lower bound, rather than one bound per
+			// generator the way branching does. The bound is flattened so the receiver joins
+			// the same way.
+			name: "NextOnAUnionValuedLowerBound",
+			src: `
+				declare fn mk() -> Generator<1, undefined, unknown> | Generator<2, undefined, unknown>
+				fn f() { return mk().next() }
+			`,
+			want: `fn () -> IteratorResult<1 | 2, undefined>`,
+		},
+		{
+			// A generator that never yields only ever finishes, so it advances to the
+			// finished arm alone. Only an annotation reaches this: a `gen fn` whose body has
+			// no `yield` is already rejected for being an empty generator.
+			name: "NextResultNamesTheReturnArmAlone",
+			src: `
+				fn f(it: Generator<never, string, unknown>) { return it.next() }
+			`,
+			want: `fn (it: Generator<never, string, unknown>) -> IteratorReturnResult<string>`,
+		},
+		{
+			// A generator that can neither yield nor finish produces no result at all, so
+			// advancing it evaluates to `never`.
+			name: "NextResultIsNeverWhenNeitherOutcomeIsReachable",
+			src: `
+				fn f(it: Generator<never, never, unknown>) { return it.next() }
+			`,
+			want: `fn (it: Generator<never, never, unknown>) -> never`,
+		},
 	})
 	runGenErrCases(t, []genErrCase{
 		{

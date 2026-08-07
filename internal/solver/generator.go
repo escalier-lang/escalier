@@ -76,11 +76,22 @@ func generatorParts(t soltype.Type) ([]*soltype.GeneratorType, bool) {
 				// what the receiver holds. readCarrier drops the same bound.
 				continue
 			}
-			g, ok := lb.(*soltype.GeneratorType)
-			if !ok {
+			switch lb.(type) {
+			case *soltype.GeneratorType, *soltype.UnionType:
+				// One bound may itself hold several generators. Calling a function whose
+				// return type is `Generator<1, …> | Generator<2, …>` lowers that union into
+				// the call's result var as a single union-valued bound, so flatten it rather
+				// than reading the bound as one generator. The recursion goes one level: the
+				// union arm above matches only a direct GeneratorType per member, and
+				// newUnion leaves no union nested inside a union.
+				members, ok := generatorParts(lb)
+				if !ok {
+					return nil, false
+				}
+				parts = append(parts, members...)
+			default:
 				return nil, false
 			}
-			parts = append(parts, g)
 		}
 		return parts, true
 	}
