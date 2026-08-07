@@ -12,9 +12,9 @@ import (
 
 // The tests below hand-build IR for the worked examples in
 // planning/ucs/implementation_plan.md, then lock the printer's rendering with an
-// inline snapshot. Nothing here calls a desugarer or a normalizer, because neither
-// exists yet. These snapshots are the shapes their output is checked against once
-// they do.
+// inline snapshot. They construct each term directly rather than running a desugarer
+// or a normalizer over source, so a snapshot pins the printer's output for a shape
+// the test states outright.
 
 // In a literal match the catch-all arm is still an ordinary branch of the core.
 // Only normalization moves it into the default tail.
@@ -518,6 +518,9 @@ func TestPrintDefaultsIndentWhenEmpty(t *testing.T) {
 		Origin: origin,
 	}
 
+	// String() renders through DefaultPrintOptions, so it is the reference the
+	// substitution has to reproduce. It is the expected value; the empty-Indent
+	// call is what this test exercises.
 	require.Equal(t, norm.String(), Print(norm, PrintOptions{}))
 }
 
