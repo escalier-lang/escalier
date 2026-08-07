@@ -50,7 +50,7 @@ func Print(t Term, opts PrintOptions) string {
 	if opts.Indent == "" {
 		opts.Indent = "  "
 	}
-	p := &printer{opts: opts}
+	p := &irPrinter{opts: opts}
 	p.term(t)
 	return p.sb.String()
 }
@@ -67,17 +67,17 @@ func (n *BodyLeaf) String() string     { return Print(n, DefaultPrintOptions()) 
 func (n *EscapeLeaf) String() string   { return Print(n, DefaultPrintOptions()) }
 func (n *FallbackLeaf) String() string { return Print(n, DefaultPrintOptions()) }
 
-// printer accumulates the rendered term. indent counts nesting levels, not
+// irPrinter accumulates the rendered term. indent counts nesting levels, not
 // characters. newline expands indent through opts.Indent.
-type printer struct {
+type irPrinter struct {
 	sb     strings.Builder
 	opts   PrintOptions
 	indent int
 }
 
-func (p *printer) write(s string) { p.sb.WriteString(s) }
+func (p *irPrinter) write(s string) { p.sb.WriteString(s) }
 
-func (p *printer) newline() {
+func (p *irPrinter) newline() {
 	p.sb.WriteString("\n")
 	p.sb.WriteString(strings.Repeat(p.opts.Indent, p.indent))
 }
@@ -85,7 +85,7 @@ func (p *printer) newline() {
 // term dispatches on which IR the node belongs to. The leaf types belong to both, so
 // the Core arm claims them. Both arms render a leaf the same way, so which arm wins
 // does not change the output.
-func (p *printer) term(t Term) {
+func (p *irPrinter) term(t Term) {
 	switch n := t.(type) {
 	case Core:
 		p.core(n)
@@ -105,7 +105,7 @@ func (p *printer) term(t Term) {
 // branches writes the braced, indented body of a split or a normalized guard. write
 // renders the entry at index i. A body with no entries collapses to `{}` so an
 // unreachable split does not spend two lines saying nothing.
-func (p *printer) branches(count int, write func(i int)) {
+func (p *irPrinter) branches(count int, write func(i int)) {
 	if count == 0 {
 		p.write(" {}")
 		return
@@ -121,7 +121,7 @@ func (p *printer) branches(count int, write func(i int)) {
 	p.write("}")
 }
 
-func (p *printer) core(n Core) {
+func (p *irPrinter) core(n Core) {
 	switch n := n.(type) {
 	case *CoreSplit:
 		p.write("split " + scrutineeString(n.Scrutinee) + p.tags(n.Origin))
@@ -143,7 +143,7 @@ func (p *printer) core(n Core) {
 	}
 }
 
-func (p *printer) coreBranch(b *CoreBranch) {
+func (p *irPrinter) coreBranch(b *CoreBranch) {
 	p.write("pat " + patString(b.Pattern) + p.armTags(b.Origin, b.Arm) + " => ")
 	p.core(b.Cont)
 }
@@ -151,7 +151,7 @@ func (p *printer) coreBranch(b *CoreBranch) {
 // coreBinds renders a run of consecutive binds as one `bind a = …, b = …;` clause
 // and returns what follows the run, so a branch that introduces several leaves
 // stays on one line.
-func (p *printer) coreBinds(n *CoreBind) Core {
+func (p *irPrinter) coreBinds(n *CoreBind) Core {
 	p.write("bind ")
 	for i := 0; ; i++ {
 		if i > 0 {
@@ -168,7 +168,7 @@ func (p *printer) coreBinds(n *CoreBind) Core {
 	return n.Cont
 }
 
-func (p *printer) norm(n Norm) {
+func (p *irPrinter) norm(n Norm) {
 	switch n := n.(type) {
 	case *NormSplit:
 		p.write("split " + scrutineeString(n.Scrutinee) + p.tags(n.Origin))
@@ -190,14 +190,14 @@ func (p *printer) norm(n Norm) {
 	}
 }
 
-func (p *printer) normBranch(b *NormBranch) {
+func (p *irPrinter) normBranch(b *NormBranch) {
 	p.write(testString(b.Test) + p.armTags(b.Origin, b.Arm) + " => ")
 	p.norm(b.Cont)
 }
 
 // normBinds renders a run of consecutive binds as one clause, the same way
 // coreBinds does, and returns what follows the run.
-func (p *printer) normBinds(n *NormBind) Norm {
+func (p *irPrinter) normBinds(n *NormBind) Norm {
 	p.write("bind ")
 	for i := 0; ; i++ {
 		if i > 0 {
@@ -216,7 +216,7 @@ func (p *printer) normBinds(n *NormBind) Norm {
 
 // leaf renders a terminal of either IR. A nil term is a split tail with no covering
 // continuation, written `✗`.
-func (p *printer) leaf(t Term) {
+func (p *irPrinter) leaf(t Term) {
 	switch n := t.(type) {
 	case nil:
 		p.write("✗")
@@ -233,7 +233,7 @@ func (p *printer) leaf(t Term) {
 
 // originTag renders a node's provenance, or nothing when the caller did not ask for
 // it.
-func (p *printer) originTag(o Origin) string {
+func (p *irPrinter) originTag(o Origin) string {
 	if !p.opts.ShowOrigins {
 		return ""
 	}
@@ -247,7 +247,7 @@ func (p *printer) originTag(o Origin) string {
 // it. A node with a surface node of its own renders that node's span after `at=`. A
 // synthetic node renders the span its cause chain reaches after `at~`, so a reader
 // can tell an inherited span from an owned one.
-func (p *printer) spanTag(o Origin) string {
+func (p *irPrinter) spanTag(o Origin) string {
 	if !p.opts.ShowSpans {
 		return ""
 	}
@@ -269,7 +269,7 @@ func (p *printer) spanTag(o Origin) string {
 // where a node's origin and its back-reference are the same surface node. The two
 // part ways once normalization synthesizes an origin over a merged or flattened
 // split, and then both spans print, which is the case a reader is looking for.
-func (p *printer) armTag(o Origin, arm Spanned) string {
+func (p *irPrinter) armTag(o Origin, arm Spanned) string {
 	if !p.opts.ShowArms {
 		return ""
 	}
@@ -286,7 +286,7 @@ func (p *printer) armTag(o Origin, arm Spanned) string {
 // shownSpan returns the span spanTag wrote for o, and false when it wrote none.
 // NearestSpan yields a node's own span when it has one and the span its cause chain
 // reaches otherwise, which is the same order spanTag renders in.
-func (p *printer) shownSpan(o Origin) (ast.Span, bool) {
+func (p *irPrinter) shownSpan(o Origin) (ast.Span, bool) {
 	if !p.opts.ShowSpans {
 		return ast.Span{}, false
 	}
@@ -295,12 +295,12 @@ func (p *printer) shownSpan(o Origin) (ast.Span, bool) {
 
 // tags renders the annotations that follow a node with no surface-arm
 // back-reference: its origin and the span it blames.
-func (p *printer) tags(o Origin) string {
+func (p *irPrinter) tags(o Origin) string {
 	return p.originTag(o) + p.spanTag(o)
 }
 
 // armTags renders the same annotations for a branch or leaf, followed by its
 // surface-arm back-reference.
-func (p *printer) armTags(o Origin, arm Spanned) string {
+func (p *irPrinter) armTags(o Origin, arm Spanned) string {
 	return p.tags(o) + p.armTag(o, arm)
 }

@@ -567,6 +567,102 @@ func TestPrintTypeAnnGrouping(t *testing.T) {
 	}
 }
 
+// TestPrintCompact pins the one-line rendering. A caller that embeds a fragment inside a
+// line of its own output cannot use the multi-line form, because the printer's indentation
+// would collide with the caller's nesting. Statements carry no separator of their own, so
+// compact mode divides them with a semicolon. Everything else already carries a comma and
+// takes a plain space.
+func TestPrintCompact(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"block with two statements", "val p = do {\n1\nreturn 2\n}", "val p = do { 1; return 2 }"},
+		{"empty block", "val p = do {}", "val p = do {}"},
+		{"function expression", "val p = fn (x: number) {\nreturn 2\n}", "val p = fn (x: number) { return 2 }"},
+		{"if-else", "val p = if c {\n1\n} else {\nreturn 2\n}", "val p = if c { 1 } else { return 2 }"},
+		{"match", "val p = match x {\n1 => 2,\n_ => 3\n}", "val p = match x { 1 => 2, _ => 3 }"},
+		{"object literal", "val p = {\na: 1,\nb: 2\n}", "val p = { a: 1, b: 2 }"},
+		{"object type", "type A = {\na: number,\nb: string\n}", "type A = { a: number, b: string }"},
+		{"class body", "class C {\nx: number\n}", "class C { x: number }"},
+		// A form that already fits on one line is unchanged.
+		{"binary expression", "val p = x > y", "val p = x > y"},
+		{"tuple", "val p = [1, 2, 3]", "val p = [1, 2, 3]"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decl := parseDecl(t, tt.input)
+			result, err := Print(decl, CompactOptions())
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+			require.NotContains(t, result, "\n")
+		})
+	}
+}
+
+// A template literal's text carries its own line endings. Compact mode escapes them so the
+// one-line guarantee holds for every node, not only the ones built out of line breaks the
+// printer itself emits. A carriage return counts, since a lone `\r` ends a line for a
+// terminal and for the tools that read the rendering.
+func TestPrintCompactEscapesTextLineEndings(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"newline", "val p = `one\ntwo`", `val p = ` + "`one\\ntwo`"},
+		{"carriage return", "val p = `one\rtwo`", `val p = ` + "`one\\rtwo`"},
+		{"crlf", "val p = `one\r\ntwo`", `val p = ` + "`one\\r\\ntwo`"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decl := parseDecl(t, tt.input)
+
+			compact, err := Print(decl, CompactOptions())
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, compact)
+			require.NotContains(t, compact, "\n")
+			require.NotContains(t, compact, "\r")
+
+			// The default rendering keeps the text as written.
+			full, err := Print(decl, DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, tt.input, full)
+		})
+	}
+}
+
+// Top-level statements carry no separator of their own either, so a compact script divides
+// them with a semicolon rather than running them together.
+func TestPrintCompactScript(t *testing.T) {
+	script := parseScript(t, "val a = 1\nval b = 2")
+	result, err := Print(script, CompactOptions())
+	require.NoError(t, err)
+	require.Equal(t, "val a = 1; val b = 2", result)
+}
+
+// PrintBlock reaches a block directly. A block carries no Span method, so it is not an
+// ast.Node and Print cannot dispatch on it.
+func TestPrintBlock(t *testing.T) {
+	decl := parseDecl(t, "fn f() {\n1\nreturn 2\n}")
+	funcDecl, isFunc := decl.(*ast.FuncDecl)
+	require.True(t, isFunc)
+
+	compact, err := PrintBlock(funcDecl.Body, CompactOptions())
+	require.NoError(t, err)
+	require.Equal(t, "{ 1; return 2 }", compact)
+
+	full, err := PrintBlock(funcDecl.Body, DefaultOptions())
+	require.NoError(t, err)
+	require.Equal(t, "{\n    1\n    return 2\n}", full)
+
+	_, err = PrintBlock(nil, CompactOptions())
+	require.EqualError(t, err, "cannot print a nil block")
+}
+
 func TestPrintFunctionExpressions(t *testing.T) {
 	tests := []struct {
 		name     string

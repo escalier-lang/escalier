@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
@@ -623,14 +624,32 @@ func TestPrintToleratesATypedNilArm(t *testing.T) {
 	require.Equal(t, "leaf 1 arm=none", Print(leaf, opts))
 }
 
-// A form the compact AST renderer does not spell out prints as its node kind, so an
-// unrecognized body still leaves the surrounding split readable.
-func TestPrintUnrenderedExpressionFallsBackToItsKind(t *testing.T) {
-	body := ast.NewDo(ast.Block{}, ast.Span{})
+// A body holding a block renders on one line, so the surrounding split stays readable.
+// The block needs more than one statement to show it, since the separator between two
+// statements is the only place the two rendering modes differ.
+func TestPrintBlockBodyRendersOnOneLine(t *testing.T) {
+	body := ast.NewDo(ast.Block{Stmts: []ast.Stmt{
+		ast.NewExprStmt(num(1), ast.Span{}),
+		ast.NewReturnStmt(num(2), ast.Span{}),
+	}}, ast.Span{})
 	armCase := matchCase(wildcardPat(), nil, body, span(2, 5, 20))
 	leaf := &BodyLeaf{Body: armCase.Body, Arm: armCase, Origin: At(OriginMatchArm, armCase)}
 
-	require.Equal(t, "leaf <DoExpr>", leaf.String())
+	require.Equal(t, "leaf do { 1; return 2 }", leaf.String())
+
+	// The same node spans four lines under the printer's default options, which is what
+	// the IR cannot embed in a line of its own nesting.
+	spread, err := printer.Print(body, printer.DefaultOptions())
+	require.NoError(t, err)
+	require.Equal(t, "do {\n    1\n    return 2\n}", spread)
+}
+
+// A node the source printer cannot render prints as its kind in angle brackets, so a
+// lowering bug shows up as a printable IR rather than a crash or an error return.
+func TestPrintUnrenderedExpressionFallsBackToItsKind(t *testing.T) {
+	require.Equal(t, "<nil>", exprString(nil))
+	require.Equal(t, "<nil>", patString(nil))
+	require.Equal(t, "<empty>", bodyString(ast.BlockOrExpr{Block: nil, Expr: nil}))
 }
 
 // A core branch can bind the leaves its pattern introduced, the same way a
