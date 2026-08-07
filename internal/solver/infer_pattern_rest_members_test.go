@@ -8,48 +8,64 @@ import (
 
 // --- Object rest over non-property members and over class instances ---
 
-// objectRestType copies each surviving member of the grounded scrutinee into the leftover
-// rather than rebuilding it as a property, so a member that is not a plain property keeps
-// its own kind. A getter stays a getter, a setter stays a setter, and a method stays a
-// method. That is what `Omit<T, K>` does not give you in TypeScript, where the mapped type
-// behind it flattens every member it keeps into a property.
-func TestInferObjectRestKeepsMemberKind(t *testing.T) {
+// An object rest builds a FRESH object at run time by reading each leftover name off the
+// scrutinee and storing the result, so the leftover's members are data properties rather
+// than the accessors the scrutinee declared. That is JavaScript's own rest semantics, and it
+// is where the leftover parts company with `Omit<T, K>`, which keeps a getter a getter.
+func TestInferObjectRestConvertsAccessors(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
 		want string
 	}{
 		{
-			name: "Getter",
+			// The getter is read once and its result stored, so the leftover holds a plain
+			// property at the getter's own type.
+			name: "GetterBecomesAProperty",
 			src: `
 				fn f(p: {x: number, get y(self) -> string}) {
 					val {x, ...rest} = p
 					return rest
 				}`,
-			want: "fn (p: {x: number, get y() -> string}) -> {get y() -> string}",
+			want: "fn (p: {x: number, get y() -> string}) -> {y: string}",
 		},
 		{
-			name: "Setter",
+			// Reading a name that has only a setter yields `undefined`, and that is what
+			// the copy stores. The name survives rather than being dropped.
+			name: "SetterOnlyBecomesUndefined",
 			src: `
 				fn f(p: {x: number, set y(mut self, v: string)}) {
 					val {x, ...rest} = p
 					return rest
 				}`,
-			want: "fn (p: {x: number, set y(value: string)}) -> {set y(value: string)}",
+			want: "fn (p: {x: number, set y(value: string)}) -> {y: undefined}",
 		},
 		{
-			// A getter and a setter under one name are two members, so both land in the
-			// leftover and the name stays read-write there.
-			name: "GetterAndSetterPair",
+			// A getter and setter sharing a name are one readable name, so the pair
+			// collapses to the single property the getter's type gives.
+			name: "GetterAndSetterPairCollapse",
 			src: `
 				fn f(p: {x: number, get y(self) -> string, set y(mut self, v: string)}) {
 					val {x, ...rest} = p
 					return rest
 				}`,
-			want: "fn (p: {x: number, get y() -> string, set y(value: string)}) -> {get y() -> string, set y(value: string)}",
+			want: "fn (p: {x: number, get y() -> string, set y(value: string)}) -> {y: string}",
 		},
 		{
-			name: "Method",
+			// A `throws` on the getter is raised by the destructuring itself, so the stored
+			// property does not carry it.
+			name: "GetterThrowsIsNotStored",
+			src: `
+				fn f(p: {x: number, get y(self) -> string throws boolean}) {
+					val {x, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: {x: number, get y() -> string throws boolean}) -> {y: string}",
+		},
+		{
+			// A method is a value the copy stores as-is, so it stays callable through the
+			// leftover rather than flattening.
+			name: "MethodCarriesThrough",
 			src: `
 				fn f(p: {x: number, m(self, a: number) -> string}) {
 					val {x, ...rest} = p
@@ -67,11 +83,10 @@ func TestInferObjectRestKeepsMemberKind(t *testing.T) {
 	}
 }
 
-// A member carried into the leftover stays usable through it, so the leftover is a real
-// object rather than a rendering of one. A getter reads at its result type and a method
-// calls at its signature, both through the bound `rest` name.
+// The leftover's members stay usable through the bound name, so the conversion produces a
+// real object rather than a rendering of one.
 func TestInferObjectRestMembersStayUsable(t *testing.T) {
-	t.Run("a getter in the leftover reads", func(t *testing.T) {
+	t.Run("a converted getter reads at its type", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
 			class Box {
 				v: number,
@@ -84,6 +99,35 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 		`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn (b: Box) -> number", values["f"])
+	})
+
+	t.Run("a converted setter-only name reads undefined", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			fn f(p: {x: number, set y(mut self, v: string)}) {
+				val {x, ...rest} = p
+				return rest.y
+			}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (p: {x: number, set y(value: string)}) -> undefined", values["f"])
+	})
+
+	t.Run("a converted getter is writable through a mut rest", func(t *testing.T) {
+		// The copy is a fresh object, so a write lands on it and never reaches the
+		// getter. The converted property is therefore not readonly.
+		values, _, errs := inferSource(t, `
+			class Box {
+				v: number,
+				get doubled(self) -> number { return self.v },
+			}
+			fn f(b: Box) {
+				val {v, ...mut rest} = b
+				rest.doubled = 5
+				return rest
+			}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (b: Box) -> mut {doubled: number, ...}", values["f"])
 	})
 
 	t.Run("a method in the leftover calls", func(t *testing.T) {
@@ -212,9 +256,11 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 			want: "fn (b: Box) -> {...}",
 		},
 		{
-			// An accessor declared on the class carries into the leftover with its
-			// receiver, the class-side twin of TestInferObjectRestKeepsMemberKind.
-			name: "InstanceGetterKeepsItsReceiver",
+			// An accessor declared on the class converts the same way one written on an
+			// object type does, receiver and all, so its `mut self` does not survive into
+			// the copied property. The class-side twin of
+			// TestInferObjectRestConvertsAccessors.
+			name: "InstanceGetterConverts",
 			src: `
 				class Box {
 					v: number,
@@ -224,7 +270,7 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 					val {v, ...rest} = b
 					return rest
 				}`,
-			want: "fn (b: Box) -> {get doubled(mut self) -> number, ...}",
+			want: "fn (b: Box) -> {doubled: number, ...}",
 		},
 		{
 			// A `match` arm binds an instance through the same walk a `val` does.

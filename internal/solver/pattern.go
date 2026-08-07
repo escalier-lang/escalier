@@ -384,11 +384,10 @@ func (c *checker) groundedTuple(t soltype.Type) (*soltype.TupleType, bool) {
 }
 
 // objectRestType resolves what an object pattern's `...rest` binds: the scrutinee's members
-// minus the keys its fields name, which is what `Omit<T, K>` names. Each surviving member
-// carries through untouched, so markers and methods survive and an inexact source passes
-// its open tail on. With no ground object shape it binds a variable bounded below by
-// `{...}`, tupleRestType's twin, and inferFunc opens such a parameter so a caller can fill
-// the rest.
+// minus the keys its fields name, typed as the fresh object JavaScript's rest builds at run
+// time rather than as `Omit<T, K>`. restMember decides each surviving member's form. With no
+// ground object shape it binds a variable bounded below by `{...}`, tupleRestType's twin,
+// and inferFunc opens such a parameter so a caller can fill the rest.
 func (c *checker) objectRestType(lvl int, node ast.Node, scrutinee, concrete soltype.Type, named set.Set[string]) (bind, restConcrete soltype.Type) {
 	obj, ok := c.restObjectShape(scrutinee, concrete)
 	if !ok {
@@ -396,15 +395,54 @@ func (c *checker) objectRestType(lvl int, node ast.Node, scrutinee, concrete sol
 		c.constrain(node, &soltype.ObjectType{Inexact: true}, v)
 		return v, nil
 	}
+	// A setter reads as `undefined` unless a getter shares its name, so the getter names
+	// are collected before any member is converted.
+	getters := set.NewSet[string]()
+	for _, el := range obj.Elems {
+		if g, isGetter := el.(*soltype.GetterElem); isGetter {
+			getters.Add(g.Name)
+		}
+	}
 	elems := make([]soltype.ObjTypeElem, 0, len(obj.Elems))
 	for _, el := range obj.Elems {
 		if named.Contains(soltype.ObjElemName(el)) {
 			continue
 		}
-		elems = append(elems, el)
+		if kept, keep := restMember(el, getters); keep {
+			elems = append(elems, kept)
+		}
 	}
 	leftover := &soltype.ObjectType{Elems: elems, Inexact: obj.Inexact}
 	return leftover, leftover
+}
+
+// restMember gives one leftover member the form it takes in the object a rest builds. A rest
+// READS each name off the scrutinee and stores the result, so the leftover holds data
+// properties rather than the accessors the scrutinee declared.
+//
+//   - A getter is read once and its result stored, so it becomes a plain property at the
+//     getter's own type. `{x, ...rest}` over `{x: number, get y(self) -> string}` binds rest
+//     at `{y: string}`. The property is writable, since a write after the copy mutates the
+//     fresh object and never reaches the getter. A `throws` the getter declares is raised at
+//     the destructuring itself, so the stored property does not carry it.
+//   - A setter whose name has no getter reads as `undefined`, which is what the copy stores,
+//     so it becomes a property at `undefined` rather than being dropped. getters holds the
+//     names that do have one; a setter listed there is dropped, since that getter's arm has
+//     already contributed the property.
+//
+// Every other member carries through unchanged. keep=false marks a dropped member.
+func restMember(el soltype.ObjTypeElem, getters set.Set[string]) (soltype.ObjTypeElem, bool) {
+	switch el := el.(type) {
+	case *soltype.GetterElem:
+		return &soltype.PropertyElem{Name: el.Name, Type: el.Type}, true
+	case *soltype.SetterElem:
+		if getters.Contains(el.Name) {
+			return nil, false
+		}
+		return &soltype.PropertyElem{Name: el.Name, Type: &soltype.UndefinedType{}}, true
+	default:
+		return el, true
+	}
 }
 
 // restObjectShape reports the object a rest reads its leftover members out of, the object
