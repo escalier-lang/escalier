@@ -6,40 +6,45 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-// Exactness records whether a rest pattern relaxed a structural test. `[first]` and
-// `{x}` name a fixed shape, while `[first, ...rest]` and `{x, ...rest}` name only a
-// prefix of one.
+// RestKind records whether the source pattern wrote a rest element. `[first]` and
+// `{x}` did not; `[first, ...rest]` and `{x, ...rest}` did.
 //
 // It is a marker on the structural tests rather than a test of its own, because a
 // rest pattern contributes no tag. All it does is relax the shape the enclosing
 // object or tuple pattern already names. The value a rest pattern binds is named
 // elsewhere, by a SuffixStep or a RemainderStep on the projection path.
 //
-// Exactness describes the pattern, not the constraint the solver derives from it.
-// Leaf binding runs through bindPattern, whose object requirement is inexact for
-// every object pattern. Its propReq helper builds `{name: t, ...}`, "the receiver has
-// at least this field", so a plain `{x, y}` arm already matches a value carrying
-// extra fields. A consumer that wants an Exact test to reject those extra fields
-// decides that for itself.
-type Exactness int
+// The marker is a fact about the pattern's syntax, not a claim about what the test
+// accepts, and the two do not line up. Leaf binding runs through bindPattern, whose
+// object requirement is inexact for every object pattern: its propReq helper builds
+// `{name: t, ...}`, "the receiver has at least this field". So a plain `{x, y}` arm
+// already matches a value carrying extra fields, and NoRest does not mean the derived
+// constraint rejects them. A consumer that wants extra fields rejected decides that
+// for itself.
+//
+// Naming the syntax also keeps this apart from soltype's exactness, which is a real
+// property of a type. There, ObjectType.Inexact and the `Exact<T>` and `Inexact<T>`
+// intrinsics do govern what a value satisfies.
+type RestKind int
 
 const (
-	// Exact is the shape a pattern with no rest element names.
-	Exact Exactness = iota
-	// InexactPrefix is the relaxed shape a rest element leaves: at least the fixed
-	// prefix the pattern names, with anything past it unconstrained.
-	InexactPrefix
+	// NoRest marks a pattern that named every element or field it matches.
+	NoRest RestKind = iota
+	// TrailingRest marks a pattern whose last element is a rest, so the fixed part
+	// the pattern names is a prefix and anything past it is unconstrained. Only a
+	// trailing rest is expressible; see SuffixStep for why an interior one is not.
+	TrailingRest
 )
 
-// String renders the exactness as the phrase used in a diagnostic.
-func (e Exactness) String() string {
-	switch e {
-	case Exact:
-		return "exact"
-	case InexactPrefix:
-		return "inexact prefix"
+// String renders the marker as the phrase used in a diagnostic.
+func (r RestKind) String() string {
+	switch r {
+	case NoRest:
+		return "no rest"
+	case TrailingRest:
+		return "trailing rest"
 	default:
-		return "unknown exactness"
+		return "unknown rest kind"
 	}
 }
 
@@ -72,18 +77,18 @@ type ObjectKey struct {
 // named at this level, in source order. A field's own sub-pattern is not part of the
 // test. It becomes a split over the projected field.
 type ObjectTest struct {
-	Keys      []ObjectKey
-	Exactness Exactness
+	Keys []ObjectKey
+	Rest RestKind
 }
 
 // TupleTest matches a structural tuple shape of Len elements. An element's
 // sub-pattern is not part of the test. It becomes a split over the projected
-// element. Under InexactPrefix, Len counts only the fixed prefix a tuple rest pattern
+// element. Under TrailingRest, Len counts only the fixed prefix a tuple rest pattern
 // leaves, so `[first, ...rest]` has Len 1. See SuffixStep for why only a trailing
 // rest is expressible.
 type TupleTest struct {
-	Len       int
-	Exactness Exactness
+	Len  int
+	Rest RestKind
 }
 
 // LitTest matches a literal value, the `1` of `match n { 1 => … }`.
@@ -126,7 +131,7 @@ func testString(t Test) string {
 				parts = append(parts, key.Name)
 			}
 		}
-		if t.Exactness == InexactPrefix {
+		if t.Rest == TrailingRest {
 			parts = append(parts, "...")
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
@@ -135,7 +140,7 @@ func testString(t Test) string {
 		for range t.Len {
 			parts = append(parts, "_")
 		}
-		if t.Exactness == InexactPrefix {
+		if t.Rest == TrailingRest {
 			parts = append(parts, "...")
 		}
 		return "[" + strings.Join(parts, ", ") + "]"

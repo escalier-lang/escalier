@@ -7,10 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExactnessString(t *testing.T) {
-	require.Equal(t, "exact", Exact.String())
-	require.Equal(t, "inexact prefix", InexactPrefix.String())
-	require.Equal(t, "unknown exactness", Exactness(99).String())
+func TestRestKindString(t *testing.T) {
+	require.Equal(t, "no rest", NoRest.String())
+	require.Equal(t, "trailing rest", TrailingRest.String())
+	require.Equal(t, "unknown rest kind", RestKind(99).String())
 }
 
 func TestTagTests(t *testing.T) {
@@ -30,16 +30,16 @@ func TestTagTests(t *testing.T) {
 		},
 		{
 			// `{x, ...rest}` tests an object with at least an `x` field.
-			"inexact object shape",
-			&ObjectTest{Keys: keys("x"), Exactness: InexactPrefix},
+			"object with a trailing rest",
+			&ObjectTest{Keys: keys("x"), Rest: TrailingRest},
 			"{x, ...}",
 		},
 		{"empty tuple", &TupleTest{}, "[]"},
 		{"tuple shape", &TupleTest{Len: 2}, "[_, _]"},
 		{
 			// `[first, ...rest]` tests a tuple at least one element long.
-			"inexact tuple shape",
-			&TupleTest{Len: 1, Exactness: InexactPrefix},
+			"tuple with a trailing rest",
+			&TupleTest{Len: 1, Rest: TrailingRest},
 			"[_, ...]",
 		},
 		{"number literal", &LitTest{Lit: ast.NewNumber(1, ast.Span{})}, "1"},
