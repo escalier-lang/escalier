@@ -3678,12 +3678,12 @@ func armCoversShape(p ast.Pat, inexact bool) bool {
 // irrefutablePat reports whether a pattern matches every value of a compatible
 // type, so it can never fail at runtime. A wildcard or identifier binds
 // unconditionally. An object or tuple pattern is irrefutable only when all of its
-// sub-patterns are. A `...rest` element binds the leftover the pattern's fixed parts
-// leave, which is a value of the compatible type whatever its shape, so it is
+// sub-patterns are. A `...rest` element binds whatever the pattern's fixed parts leave
+// behind. That leftover exists for every value of a compatible type, so a rest is
 // irrefutable exactly when its own sub-pattern is. Whether the pattern's fixed arity
-// fits the value it is checked against is a separate question, which
-// patternMatchesMemberShape answers. A literal pattern can fail, and the constructor
-// patterns deferred to M5 are refutable, so both return false.
+// fits the value at all is a separate question, answered by patternMatchesMemberShape.
+// A literal pattern can fail, and the constructor patterns deferred to M5 are refutable,
+// so both return false.
 func irrefutablePat(p ast.Pat) bool {
 	switch p := p.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:

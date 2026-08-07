@@ -417,6 +417,89 @@ func TestInferRestPatternMutBorrowAcceptsWrite(t *testing.T) {
 	require.Equal(t, "fn (pt: &mut {a: {x: number}, b: {y: number}}) -> undefined", values["f"])
 }
 
+// A scrutinee the pattern cannot read members off directly still yields a leftover. An
+// object rest grounds its scrutinee through the same groundToObject an object spread's
+// operand uses, so an alias, a class instance, or a mapped type resolves to the members
+// the leftover keeps. A tuple rest instead slices the elements it was given, so a `...P`
+// spread element in the suffix carries through unspliced.
+func TestInferRestPatternGroundsScrutinee(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// The `...Pair` element sits past the fixed prefix, so it lands in the suffix
+			// as written. The rest binds the spread rather than the elements it stands
+			// for.
+			name: "TupleSpreadOverAlias",
+			src: `
+				type Pair = [string, boolean]
+				fn f(t: [number, ...Pair]) {
+					val [a, ...rest] = t
+					return rest
+				}`,
+			want: "fn (t: [number, ...Pair]) -> [...Pair]",
+		},
+		{
+			name: "ObjectAliasScrutinee",
+			src: `
+				type Rec = {x: number, y: string, z: boolean}
+				fn f(p: Rec) {
+					val {x, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: Rec) -> {y: string, z: boolean}",
+		},
+		{
+			// A class instance grounds to its projected body, which is inexact, so the
+			// leftover keeps the open tail.
+			name: "ObjectClassInstanceScrutinee",
+			src: `
+				class Point {
+					x: number,
+					y: string,
+				}
+				fn f(p: Point) {
+					val {x, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: Point) -> {y: string, ...}",
+		},
+		{
+			// The scrutinee is a mapped type, which grounds to the members it computes,
+			// so the leftover keeps the `?` marker `Partial` added.
+			name: "ObjectMappedScrutinee",
+			src: `
+				type Point = {x: number, y: string}
+				type Partial<T> = {[K]?: T[K] for K in keyof T}
+				fn f(p: Partial<Point>) {
+					val {x, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: Partial<Point>) -> {y?: string}",
+		},
+		{
+			// A method member names a key, so it lands in the leftover as a method rather
+			// than flattening into a property.
+			name: "ObjectMethodMemberSurvives",
+			src: `
+				fn f(p: {x: number, m(a: number) -> string}) {
+					val {x, ...rest} = p
+					return rest
+				}`,
+			want: "fn (p: {x: number, m(a: number) -> string}) -> {m(a: number) -> string}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
 // A scrutinee with no statically known shape leaves the leftover unknowable, so the
 // rest binds "some tuple" or "some object" rather than a definite one. The parameter
 // here is un-annotated, so its shape comes only from the pattern's fixed prefix.

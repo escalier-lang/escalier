@@ -1397,7 +1397,8 @@ func printPat(pat Pat) (string, bool) {
 			}
 			parts = append(parts, printObjectKeyName(f.Name)+": "+s)
 		}
-		// The rest renders last, the position the source must write it at.
+		// A rest renders after the named fields, the only position the source may
+		// write it at.
 		if p.Rest != nil {
 			s, ok := printPat(p.Rest)
 			if !ok {

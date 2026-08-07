@@ -303,14 +303,15 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 //
 // concreteTup is the scrutinee's tuple shape when it is statically known, and prefix is
 // the number of fixed elements before the rest. The suffix is readable only when that
-// prefix holds one element per position. A `...P` spread inside it stands for a run of
-// unknown length, so nothing past it sits at a fixed index and the suffix cannot be cut
-// there. A scrutinee whose length is not known that way — an un-annotated parameter, or a
-// union of tuples — falls back to a fresh variable bounded below by the empty inexact
-// tuple, which renders `[...]` and reads as "some tuple".
+// prefix holds one element per position. A `...P` spread inside the prefix stands for a
+// run of unknown length, so nothing past it sits at a fixed index and there is no place
+// to cut. Two scrutinees fail that test: an un-annotated parameter, whose shape is still
+// an inference variable, and a union of tuples, which has no single length. Each falls
+// back to a fresh variable bounded below by the empty inexact tuple. That variable
+// renders `[...]` and reads as "some tuple".
 //
 // The returned bind is the type the rest binds at. The returned concrete is what an owned
-// `mut` or borrowed rest inspects to decide whether to wrap, and is nil for that fallback
+// `mut` or borrowed rest inspects to decide whether to wrap. It is nil for that fallback
 // variable, matching how a fixed element threads a nil concrete for an unknown shape.
 func (c *checker) tupleRestType(lvl int, node ast.Node, concreteTup *soltype.TupleType, prefix int) (bind, concrete soltype.Type) {
 	if concreteTup != nil && len(concreteTup.Elems) >= prefix && !hasRestSpread(concreteTup.Elems[:prefix]) {
@@ -331,23 +332,23 @@ func (c *checker) tupleRestType(lvl int, node ast.Node, concreteTup *soltype.Tup
 // `Omit<{x: number, y: string}, "x">` names, read straight off the scrutinee rather than
 // built as a mapped type over it.
 //
-// The scrutinee grounds to a concrete object through the same groundToObject an object
-// spread's operand uses, so an alias, a class instance, or a mapped type resolves to the
-// members the leftover keeps. Each surviving member carries through untouched, so it
-// keeps its `?` and `readonly` markers and a method stays a method. An index signature
-// names no single key, so it survives and the leftover still reads a key the fields did
-// not name. An inexact scrutinee passes its open `...` tail on, since the properties that
-// tail hides belong to the leftover too.
+// source is the scrutinee's shape at this level, and it grounds to a concrete object
+// through the same groundToObject an object spread's operand uses. So an alias, a class
+// instance, or a mapped type resolves to the members the leftover keeps. Each surviving
+// member carries through untouched, so it keeps its `?` and `readonly` markers and a
+// method stays a method. An index signature names no single key, so it survives and the
+// leftover still reads a key the fields did not name. An inexact source passes its open
+// `...` tail on, since the properties that tail hides belong to the leftover too.
 //
-// A scrutinee with no ground object shape, most often an un-annotated parameter's
-// inference variable, leaves the leftover unknowable. The rest then binds a fresh variable
-// bounded below by the empty inexact object, which renders `{...}` and reads as "some
-// object". The returned bind and concrete follow tupleRestType's contract.
-func (c *checker) objectRestType(lvl int, node ast.Node, scrutinee soltype.Type, named set.Set[string]) (bind, concrete soltype.Type) {
+// A source with no ground object shape, most often an un-annotated parameter's inference
+// variable, leaves the leftover unknowable. The rest then binds a fresh variable bounded
+// below by the empty inexact object, which renders `{...}` and reads as "some object".
+// The returned bind and concrete follow tupleRestType's contract.
+func (c *checker) objectRestType(lvl int, node ast.Node, source soltype.Type, named set.Set[string]) (bind, concrete soltype.Type) {
 	var obj *soltype.ObjectType
 	ground := false
-	if scrutinee != nil {
-		obj, ground = newTypeEvaluator(c.ctx, newSeenPairs()).groundToObject(scrutinee)
+	if source != nil {
+		obj, ground = newTypeEvaluator(c.ctx, newSeenPairs()).groundToObject(source)
 	}
 	if !ground {
 		v := c.freshAt(lvl)
