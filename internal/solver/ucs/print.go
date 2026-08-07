@@ -46,9 +46,8 @@ func (n *BodyLeaf) String() string     { return Print(n, DefaultPrintOptions()) 
 func (n *EscapeLeaf) String() string   { return Print(n, DefaultPrintOptions()) }
 func (n *FallbackLeaf) String() string { return Print(n, DefaultPrintOptions()) }
 
-// String renders the scrutinee's projection path, for example `l.start.x`.
 // printer accumulates the rendered term. indent counts nesting levels, not
-// characters; newline expands it through opts.Indent.
+// characters. newline expands indent through opts.Indent.
 type printer struct {
 	sb     strings.Builder
 	opts   PrintOptions
