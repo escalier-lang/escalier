@@ -30,6 +30,15 @@ func str(value string) ast.Expr {
 	return ast.NewLitExpr(ast.NewString(value, ast.Span{}))
 }
 
+// keys builds the required-field list of an object test.
+func keys(names ...string) []ObjectKey {
+	out := make([]ObjectKey, len(names))
+	for i, name := range names {
+		out[i] = ObjectKey{Name: name}
+	}
+	return out
+}
+
 // arm builds a `match` arm with the given span and a wildcard pattern, standing in
 // for the surface node a branch or leaf points back at.
 func arm(s ast.Span) *ast.MatchCase {
@@ -126,6 +135,100 @@ func TestLeavesBelongToBothForms(t *testing.T) {
 	}
 }
 
+// TestStepEqual covers the comparison every consumer must use. `==` on two Step
+// values panics as soon as either is a RemainderStep, since a set is a map, so Equal
+// is the only safe way to ask whether two projections match.
+func TestStepEqual(t *testing.T) {
+	tests := []struct {
+		name  string
+		left  Step
+		right Step
+		want  bool
+	}{
+		{"same field", FieldStep{Name: "x"}, FieldStep{Name: "x"}, true},
+		{"different field", FieldStep{Name: "x"}, FieldStep{Name: "y"}, false},
+		{"same index", IndexStep{Index: 1}, IndexStep{Index: 1}, true},
+		{"different index", IndexStep{Index: 0}, IndexStep{Index: 1}, false},
+		{"same result", ResultStep{Index: 0}, ResultStep{Index: 0}, true},
+		{
+			// A tuple element and an extractor result resolve through different
+			// machinery, so the same position is not the same projection.
+			"index is not a result",
+			IndexStep{Index: 0},
+			ResultStep{Index: 0},
+			false,
+		},
+		{"same suffix", SuffixStep{From: 1}, SuffixStep{From: 1}, true},
+		{"different suffix", SuffixStep{From: 1}, SuffixStep{From: 2}, false},
+		{
+			"same remainder",
+			RemainderStep{Exclude: set.FromSlice([]string{"x", "y"})},
+			RemainderStep{Exclude: set.FromSlice([]string{"y", "x"})},
+			true,
+		},
+		{
+			"different remainder",
+			RemainderStep{Exclude: set.FromSlice([]string{"x"})},
+			RemainderStep{Exclude: set.FromSlice([]string{"x", "y"})},
+			false,
+		},
+		{
+			"remainder is not a field",
+			RemainderStep{Exclude: set.FromSlice([]string{"x"})},
+			FieldStep{Name: "x"},
+			false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, test.left.Equal(test.right))
+			require.Equal(t, test.want, test.right.Equal(test.left))
+		})
+	}
+}
+
+// TestAtWithoutANodeIsSynthetic checks that a missing surface node produces a
+// synthetic origin rather than one that claims a node and panics on read. Both a
+// plain nil and a nil pointer stored in the interface are covered, since only the
+// first is caught by `== nil`.
+func TestAtWithoutANodeIsSynthetic(t *testing.T) {
+	var typedNil *ast.MatchCase
+
+	for name, origin := range map[string]Origin{
+		"untyped nil": At(OriginMatchArm, nil),
+		"typed nil":   At(OriginMatchArm, typedNil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.True(t, origin.Synthetic)
+			require.Nil(t, origin.Node)
+			_, ok := origin.SourceSpan()
+			require.False(t, ok)
+		})
+	}
+}
+
+func TestSourceSpanReadsTheSurfaceNode(t *testing.T) {
+	node := arm(span(4, 3, 21))
+	found, ok := At(OriginMatchArm, node).SourceSpan()
+
+	require.True(t, ok)
+	require.Equal(t, span(4, 3, 21), found)
+}
+
+// TestSpanOfToleratesATypedNil keeps the printer and any diagnostic reader total. A
+// nil *ast.MatchCase stored in a Spanned field compares non-nil, so a plain nil check
+// would let it through and panic inside Span().
+func TestSpanOfToleratesATypedNil(t *testing.T) {
+	var typedNil *ast.MatchCase
+
+	_, ok := SpanOf(typedNil)
+	require.False(t, ok)
+
+	_, ok = SpanOf(nil)
+	require.False(t, ok)
+}
+
 func TestBodySpan(t *testing.T) {
 	exprSpan := span(2, 14, 19)
 	blockSpan := span(3, 1, 12)
@@ -201,10 +304,11 @@ func TestScrutineePaths(t *testing.T) {
 			"xs.0",
 		},
 		{
-			// The `v` of `Ok(v)` is the extractor's first positional result.
+			// The `v` of `Ok(v)` is the extractor's first positional result. The `#`
+			// keeps it distinct from the tuple element `r.0` above.
 			"extractor result",
 			root("r").Project(ResultStep{Index: 0}, origin),
-			"r.0",
+			"r.#0",
 		},
 		{
 			// The `rest` of `[first, ...rest]` is the suffix past the fixed prefix.
@@ -245,11 +349,18 @@ func TestTagTests(t *testing.T) {
 		want string
 	}{
 		{"empty object", &ObjectTest{}, "{}"},
-		{"object shape", &ObjectTest{Keys: []string{"x", "y"}}, "{x, y}"},
+		{"object shape", &ObjectTest{Keys: keys("x", "y")}, "{x, y}"},
+		{
+			// A destructuring default makes the field optional, so `{x = 0}` matches a
+			// value with no `x` at all and must not test for one.
+			"optional key from a default",
+			&ObjectTest{Keys: []ObjectKey{{Name: "x", Optional: true}, {Name: "y"}}},
+			"{x?, y}",
+		},
 		{
 			// `{x, ...rest}` tests an object with at least an `x` field.
 			"inexact object shape",
-			&ObjectTest{Keys: []string{"x"}, Exactness: InexactPrefix},
+			&ObjectTest{Keys: keys("x"), Exactness: InexactPrefix},
 			"{x, ...}",
 		},
 		{"empty tuple", &TupleTest{}, "[]"},

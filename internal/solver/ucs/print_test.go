@@ -276,7 +276,7 @@ func TestPrintNormNestedPattern(t *testing.T) {
 			Cont: &NormSplit{
 				Scrutinee: start,
 				Branches: []*NormBranch{{
-					Test: &ObjectTest{Keys: []string{"x", "y"}},
+					Test: &ObjectTest{Keys: keys("x", "y")},
 					Cont: &NormBind{
 						Name:   "x",
 						Source: start.Project(FieldStep{Name: "x"}, armOrigin),
@@ -347,7 +347,7 @@ func TestPrintNormExtractorPattern(t *testing.T) {
 	}
 
 	snaps.MatchInlineSnapshot(t, norm.String(), snaps.Inline(`split r {
-  Ok(_) => bind v = r.0; leaf v
+  Ok(_) => bind v = r.#0; leaf v
   Err(_) => leaf 0
 } default ✗`))
 }
@@ -405,7 +405,7 @@ func TestPrintNormObjectRest(t *testing.T) {
 	norm := &NormSplit{
 		Scrutinee: root,
 		Branches: []*NormBranch{{
-			Test: &ObjectTest{Keys: []string{"x"}, Exactness: InexactPrefix},
+			Test: &ObjectTest{Keys: keys("x"), Exactness: InexactPrefix},
 			Cont: &NormBind{
 				Name:   "x",
 				Source: root.Project(FieldStep{Name: "x"}, armOrigin),
@@ -450,7 +450,7 @@ func TestPrintNormGuardedArm(t *testing.T) {
 	norm := &NormSplit{
 		Scrutinee: root,
 		Branches: []*NormBranch{{
-			Test: &ObjectTest{Keys: []string{"x", "y"}},
+			Test: &ObjectTest{Keys: keys("x", "y")},
 			Cont: &NormBind{
 				Name:   "x",
 				Source: root.Project(FieldStep{Name: "x"}, guardedOrigin),
@@ -568,6 +568,115 @@ func TestPrintDefaultsIndentWhenEmpty(t *testing.T) {
 	}
 
 	require.Equal(t, norm.String(), Print(norm, PrintOptions{}))
+}
+
+// An operator operand is parenthesized, so a guard's grouping survives into the
+// snapshot. Without it `!(x > y)` and `(!x) > y` would both render `!x > y`.
+func TestPrintParenthesizesOperatorOperands(t *testing.T) {
+	x, y := ident("x"), ident("y")
+	notGreater := ast.NewUnary(ast.LogicalNot, ast.NewBinary(x, y, ast.GreaterThan, ast.Span{}), ast.Span{})
+	greaterOfNot := ast.NewBinary(ast.NewUnary(ast.LogicalNot, x, ast.Span{}), y, ast.GreaterThan, ast.Span{})
+
+	tests := []struct {
+		name string
+		in   ast.Expr
+		want string
+	}{
+		{"negated comparison", notGreater, "!(x > y)"},
+		{"comparison of a negation", greaterOfNot, "(!x) > y"},
+		{
+			"right-nested conjunction",
+			ast.NewBinary(x, ast.NewBinary(y, ident("z"), ast.LogicalAnd, ast.Span{}), ast.LogicalOr, ast.Span{}),
+			"x || (y && z)",
+		},
+		{
+			"left-nested disjunction",
+			ast.NewBinary(ast.NewBinary(x, y, ast.LogicalOr, ast.Span{}), ident("z"), ast.LogicalAnd, ast.Span{}),
+			"(x || y) && z",
+		},
+		{
+			// A plain operand needs no parentheses, so the common guard stays readable.
+			"simple operands",
+			ast.NewBinary(x, y, ast.GreaterThan, ast.Span{}),
+			"x > y",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, exprString(test.in))
+		})
+	}
+}
+
+// A binding leaf renders its `mut` prefix, its type annotation, and its default. The
+// default is what makes a field optional, so dropping it would let `{x = 0}` and
+// `{x}` share a snapshot even though they match different values.
+func TestPrintPatternLeafExtras(t *testing.T) {
+	numberAnn := &ast.NumberTypeAnn{}
+	stringAnn := &ast.StringTypeAnn{}
+
+	tests := []struct {
+		name string
+		in   ast.Pat
+		want string
+	}{
+		{"plain shorthand", objPat("x"), "{x}"},
+		{
+			"shorthand with a default",
+			ast.NewObjectPat([]ast.ObjPatElem{
+				ast.NewObjShorthandPat(ast.NewIdentifier("x", ast.Span{}), false, nil, num(0), ast.Span{}),
+			}, ast.Span{}),
+			"{x = 0}",
+		},
+		{
+			"shorthand with an annotation",
+			ast.NewObjectPat([]ast.ObjPatElem{
+				ast.NewObjShorthandPat(ast.NewIdentifier("x", ast.Span{}), false, numberAnn, nil, ast.Span{}),
+			}, ast.Span{}),
+			"{x: number}",
+		},
+		{
+			"mutable shorthand with both",
+			ast.NewObjectPat([]ast.ObjPatElem{
+				ast.NewObjShorthandPat(ast.NewIdentifier("x", ast.Span{}), true, numberAnn, num(0), ast.Span{}),
+			}, ast.Span{}),
+			"{mut x: number = 0}",
+		},
+		{
+			"ident leaf with both",
+			ast.NewIdentPat("a", false, stringAnn, str("hi"), ast.Span{}),
+			`a: string = "hi"`,
+		},
+		{
+			"tuple element with a default",
+			ast.NewTuplePat([]ast.Pat{ast.NewIdentPat("a", false, nil, num(1), ast.Span{})}, ast.Span{}),
+			"[a = 1]",
+		},
+		{
+			// An annotation this renderer does not spell out still shows its presence.
+			"unrendered annotation",
+			ast.NewIdentPat("a", false, &ast.KeyOfTypeAnn{}, nil, ast.Span{}),
+			"a: <KeyOfTypeAnn>",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, patString(test.in))
+		})
+	}
+}
+
+// A typed-nil arm renders `arm=none` instead of panicking, so a lowering bug shows up
+// as a printable IR rather than a crash inside the printer.
+func TestPrintToleratesATypedNilArm(t *testing.T) {
+	var typedNil *ast.MatchCase
+	leaf := &BodyLeaf{Body: exprBody(num(1)), Arm: typedNil, Origin: Invented(OriginMatchArm)}
+
+	opts := DefaultPrintOptions()
+	opts.ShowArms = true
+	require.Equal(t, "leaf 1 arm=none", Print(leaf, opts))
 }
 
 // A form the compact AST renderer does not spell out prints as its node kind, so an

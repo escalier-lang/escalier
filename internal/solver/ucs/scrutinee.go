@@ -47,7 +47,15 @@ func (s *Scrutinee) IsRoot() bool { return s.Parent == nil }
 
 // Step is one segment of a projection path: how a sub-scrutinee is reached from the
 // scrutinee that encloses it.
-type Step interface{ isStep() }
+//
+// Compare two steps with Equal, never with ==. RemainderStep holds a set, which is a
+// map, so == on two Step values panics at runtime with "comparing uncomparable type"
+// the moment either side is a RemainderStep.
+type Step interface {
+	isStep()
+	// Equal reports whether other names the same projection.
+	Equal(other Step) bool
+}
 
 func (FieldStep) isStep()     {}
 func (IndexStep) isStep()     {}
@@ -58,19 +66,48 @@ func (RemainderStep) isStep() {}
 // FieldStep reaches an object field by name, the `x` of `p.x`.
 type FieldStep struct{ Name string }
 
+func (s FieldStep) Equal(other Step) bool {
+	o, ok := other.(FieldStep)
+	return ok && o.Name == s.Name
+}
+
 // IndexStep reaches a tuple element by position, the `0` of `xs.0`.
 type IndexStep struct{ Index int }
+
+func (s IndexStep) Equal(other Step) bool {
+	o, ok := other.(IndexStep)
+	return ok && o.Index == s.Index
+}
 
 // ResultStep reaches one of the positional values an extractor yields. The `v` of
 // `Ok(v)` is result 0 of the `Ok` extractor. It is a separate step from IndexStep
 // because the solver resolves it through the extractor rather than through tuple
-// indexing, even though both name a position.
+// indexing, even though both name a position. The printer keeps them apart too, so a
+// path that should go through an extractor cannot pass for a tuple index.
 type ResultStep struct{ Index int }
+
+func (s ResultStep) Equal(other Step) bool {
+	o, ok := other.(ResultStep)
+	return ok && o.Index == s.Index
+}
 
 // SuffixStep reaches the tuple elements past a fixed prefix, which is what `...rest`
 // binds in a tuple pattern. From is the index of the suffix's first element, so
 // `[first, ...rest]` reaches `rest` through SuffixStep{From: 1}.
+//
+// Only a trailing rest is expressible. The suffix a SuffixStep names runs to the end
+// of the tuple, so there is no way to say "and then two more fixed elements". The
+// parser does accept a rest anywhere in a tuple pattern, as in
+// `[first, ...mid, last]`, but nothing downstream supports one. bindPattern's
+// TuplePat case folds every rest element into a single inexact tail the same way. A
+// lowering pass must reject a non-trailing rest rather than emit a SuffixStep that
+// silently drops the elements after it.
 type SuffixStep struct{ From int }
+
+func (s SuffixStep) Equal(other Step) bool {
+	o, ok := other.(SuffixStep)
+	return ok && o.From == s.From
+}
 
 // RemainderStep reaches an object with a set of keys removed, which is what
 // `...rest` binds in an object pattern. Exclude holds exactly the keys the object
@@ -78,3 +115,8 @@ type SuffixStep struct{ From int }
 // appears in the remainder. In `{x, ...rest}` the step excludes `x` and `rest` binds
 // everything else.
 type RemainderStep struct{ Exclude set.Set[string] }
+
+func (s RemainderStep) Equal(other Step) bool {
+	o, ok := other.(RemainderStep)
+	return ok && o.Exclude.Equals(s.Exclude)
+}

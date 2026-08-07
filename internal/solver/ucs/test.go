@@ -2,21 +2,28 @@ package ucs
 
 import "github.com/escalier-lang/escalier/internal/ast"
 
-// Exactness records whether a structural test demands the exact shape its pattern
-// names or accepts any value that has at least that shape. A rest pattern sets
-// InexactPrefix. `[first, ...rest]` matches a tuple of at least one element and
-// `{x, ...rest}` matches an object with at least an `x` field.
+// Exactness records whether a rest pattern relaxed a structural test. `[first]` and
+// `{x}` name a fixed shape, while `[first, ...rest]` and `{x, ...rest}` name only a
+// prefix of one.
 //
-// Inexactness is a marker on the structural tests rather than a test of its own,
-// because a rest pattern contributes no tag. It only relaxes the tag the enclosing
-// object or tuple pattern already tests. The value a rest pattern binds is named
+// It is a marker on the structural tests rather than a test of its own, because a
+// rest pattern contributes no tag. All it does is relax the shape the enclosing
+// object or tuple pattern already names. The value a rest pattern binds is named
 // elsewhere, by a SuffixStep or a RemainderStep on the projection path.
+//
+// Exactness describes the pattern, not the constraint the solver derives from it.
+// Leaf binding runs through bindPattern, whose object requirement is inexact for
+// every object pattern. Its propReq helper builds `{name: t, ...}`, "the receiver has
+// at least this field", so a plain `{x, y}` arm already matches a value carrying
+// extra fields. A consumer that wants an Exact test to reject those extra fields
+// decides that for itself.
 type Exactness int
 
 const (
-	// Exact matches only a value of precisely the shape the pattern names.
+	// Exact is the shape a pattern with no rest element names.
 	Exact Exactness = iota
-	// InexactPrefix matches any value that has at least the shape the pattern names.
+	// InexactPrefix is the relaxed shape a rest element leaves: at least the fixed
+	// prefix the pattern names, with anything past it unconstrained.
 	InexactPrefix
 )
 
@@ -47,18 +54,29 @@ func (*LitTest) isTest()       {}
 func (*ClassTest) isTest()     {}
 func (*ExtractorTest) isTest() {}
 
+// ObjectKey is one field an object test names.
+type ObjectKey struct {
+	Name string
+	// Optional marks a field the pattern matches without, which a destructuring
+	// default produces. `{x = 0}` binds `x` to 0 when the field is absent, so a test
+	// that demanded `x` would send the value to the wrong branch. bindPattern already
+	// passes `e.Default != nil` through to propReq for exactly this reason.
+	Optional bool
+}
+
 // ObjectTest matches a structural object shape. Keys are the fields the pattern
 // named at this level, in source order. A field's own sub-pattern is not part of the
-// test; it becomes a split over the projected field.
+// test. It becomes a split over the projected field.
 type ObjectTest struct {
-	Keys      []string
+	Keys      []ObjectKey
 	Exactness Exactness
 }
 
 // TupleTest matches a structural tuple shape of Len elements. An element's
-// sub-pattern is not part of the test; it becomes a split over the projected
-// element. Under InexactPrefix, Len counts only the fixed prefix a tuple rest
-// pattern leaves, so `[first, ...rest]` has Len 1.
+// sub-pattern is not part of the test. It becomes a split over the projected
+// element. Under InexactPrefix, Len counts only the fixed prefix a tuple rest pattern
+// leaves, so `[first, ...rest]` has Len 1. See SuffixStep for why only a trailing
+// rest is expressible.
 type TupleTest struct {
 	Len       int
 	Exactness Exactness

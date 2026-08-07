@@ -42,11 +42,24 @@ func exprString(e ast.Expr) string {
 		}
 		return "[" + strings.Join(elems, ", ") + "]"
 	case *ast.BinaryExpr:
-		return exprString(e.Left) + " " + string(e.Op) + " " + exprString(e.Right)
+		return operandString(e.Left) + " " + string(e.Op) + " " + operandString(e.Right)
 	case *ast.UnaryExpr:
-		return unaryOpString(e.Op) + exprString(e.Arg)
+		return unaryOpString(e.Op) + operandString(e.Arg)
 	default:
 		return nodeKind(e)
+	}
+}
+
+// operandString renders an operand of a unary or binary operator, parenthesizing it
+// when it is itself an operator expression. Grouping is otherwise lost: `!(x > y)`
+// and `(!x) > y` both render `!x > y`, so two guards that test different things
+// would share one snapshot.
+func operandString(e ast.Expr) string {
+	switch e.(type) {
+	case *ast.BinaryExpr, *ast.UnaryExpr:
+		return "(" + exprString(e) + ")"
+	default:
+		return exprString(e)
 	}
 }
 
@@ -95,10 +108,7 @@ func patString(p ast.Pat) string {
 	case nil:
 		return "<nil>"
 	case *ast.IdentPat:
-		if p.Mutable {
-			return "mut " + p.Name
-		}
-		return p.Name
+		return leafPatString(p.Mutable, p.Name, p.TypeAnn, p.Default)
 	case *ast.WildcardPat:
 		return "_"
 	case *ast.LitPat:
@@ -137,11 +147,7 @@ func objPatString(p *ast.ObjectPat) string {
 		case *ast.ObjKeyValuePat:
 			elems = append(elems, e.Key.Name+": "+patString(e.Value))
 		case *ast.ObjShorthandPat:
-			if e.Mutable {
-				elems = append(elems, "mut "+e.Key.Name)
-			} else {
-				elems = append(elems, e.Key.Name)
-			}
+			elems = append(elems, leafPatString(e.Mutable, e.Key.Name, e.TypeAnn, e.Default))
 		case *ast.ObjRestPat:
 			elems = append(elems, "..."+patString(e.Pattern))
 		default:
@@ -149,6 +155,92 @@ func objPatString(p *ast.ObjectPat) string {
 		}
 	}
 	return "{" + strings.Join(elems, ", ") + "}"
+}
+
+// leafPatString renders a binding leaf, which is either an `IdentPat` or the
+// shorthand element of an object pattern. Both can carry a `mut` prefix, a type
+// annotation, and a default, and all three are rendered. The default is the one that
+// changes matching. It makes the field optional, so `{x = 0}` and `{x}` match
+// different values and must not share a snapshot.
+func leafPatString(mutable bool, name string, typeAnn ast.TypeAnn, dflt ast.Expr) string {
+	var b strings.Builder
+	if mutable {
+		b.WriteString("mut ")
+	}
+	b.WriteString(name)
+	if typeAnn != nil {
+		b.WriteString(": " + typeAnnString(typeAnn))
+	}
+	if dflt != nil {
+		b.WriteString(" = " + exprString(dflt))
+	}
+	return b.String()
+}
+
+// typeAnnString renders a type annotation on one line. It spells out the forms that
+// show up on a pattern leaf and falls back to the node kind for the rest, which is
+// enough to keep two arms that differ only in their annotation distinguishable.
+func typeAnnString(t ast.TypeAnn) string {
+	switch t := t.(type) {
+	case nil:
+		return "<nil>"
+	case *ast.NumberTypeAnn:
+		return "number"
+	case *ast.StringTypeAnn:
+		return "string"
+	case *ast.BooleanTypeAnn:
+		return "boolean"
+	case *ast.BigintTypeAnn:
+		return "bigint"
+	case *ast.SymbolTypeAnn:
+		return "symbol"
+	case *ast.AnyTypeAnn:
+		return "any"
+	case *ast.UnknownTypeAnn:
+		return "unknown"
+	case *ast.NeverTypeAnn:
+		return "never"
+	case *ast.WildcardTypeAnn:
+		return "_"
+	case *ast.LitTypeAnn:
+		return litString(t.Lit)
+	case *ast.TypeRefTypeAnn:
+		name := ast.QualIdentToString(t.Name)
+		if len(t.TypeArgs) == 0 {
+			return name
+		}
+		args := make([]string, len(t.TypeArgs))
+		for i, arg := range t.TypeArgs {
+			args[i] = typeAnnString(arg)
+		}
+		return name + "<" + strings.Join(args, ", ") + ">"
+	case *ast.TupleTypeAnn:
+		elems := make([]string, 0, len(t.Elems)+1)
+		for _, elem := range t.Elems {
+			elems = append(elems, typeAnnString(elem))
+		}
+		if t.Inexact {
+			elems = append(elems, "...")
+		}
+		return "[" + strings.Join(elems, ", ") + "]"
+	case *ast.UnionTypeAnn:
+		if t.Inexact {
+			return joinTypeAnns(t.Types, " | ") + " | ..."
+		}
+		return joinTypeAnns(t.Types, " | ")
+	case *ast.IntersectionTypeAnn:
+		return joinTypeAnns(t.Types, " & ")
+	default:
+		return nodeKind(t)
+	}
+}
+
+func joinTypeAnns(anns []ast.TypeAnn, sep string) string {
+	parts := make([]string, len(anns))
+	for i, ann := range anns {
+		parts[i] = typeAnnString(ann)
+	}
+	return strings.Join(parts, sep)
 }
 
 // bodyString renders an arm body on one line. A body written as a bare expression

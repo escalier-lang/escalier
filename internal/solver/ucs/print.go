@@ -243,10 +243,11 @@ func (p *printer) armTag(arm Spanned) string {
 	if !p.opts.ShowArms {
 		return ""
 	}
-	if arm == nil {
+	s, ok := SpanOf(arm)
+	if !ok {
 		return " arm=none"
 	}
-	return " arm=" + arm.Span().String()
+	return " arm=" + s.String()
 }
 
 // scrutineeString renders a scrutinee's projection path. A root renders its target
@@ -266,7 +267,10 @@ func scrutineeString(s *Scrutinee) string {
 	case IndexStep:
 		return base + "." + strconv.Itoa(step.Index)
 	case ResultStep:
-		return base + "." + strconv.Itoa(step.Index)
+		// The `#` keeps an extractor result apart from the tuple element `r.0`. The
+		// solver resolves the two through different lookups, so a snapshot must not
+		// let one stand in for the other.
+		return base + ".#" + strconv.Itoa(step.Index)
 	case SuffixStep:
 		return base + "[" + strconv.Itoa(step.From) + "..]"
 	case RemainderStep:
@@ -286,7 +290,15 @@ func testString(t Test) string {
 		return "<nil>"
 	case *ObjectTest:
 		parts := make([]string, 0, len(t.Keys)+1)
-		parts = append(parts, t.Keys...)
+		for _, key := range t.Keys {
+			// A trailing `?` marks a key the test tolerates being absent, matching how
+			// an optional property prints in a type.
+			if key.Optional {
+				parts = append(parts, key.Name+"?")
+			} else {
+				parts = append(parts, key.Name)
+			}
+		}
 		if t.Exactness == InexactPrefix {
 			parts = append(parts, "...")
 		}
