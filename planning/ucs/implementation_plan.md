@@ -396,9 +396,11 @@ One decision is deferred to M10, not settled here: the **synthesized-node span
 policy**. The desugarer invents nodes with no source — the fallthrough tail, an
 implicit `else` — and a sourcemap must not point at a column the user cannot see.
 The synthetic marker from point 2 above is what M10 keys that policy off: map a
-synthetic node to the nearest enclosing real span, or emit no mapping for it,
-rather than inventing a position. Recording the marker now keeps that choice open
-instead of foreclosing it with a lost span.
+synthetic node to the span its cause chain reaches, or emit no mapping for it,
+rather than inventing a position. `Origin.Cause` records what a synthetic node was
+minted from and `NearestSpan` walks that chain, so the span is recoverable from the
+node alone rather than by threading the enclosing origin down a walk. Recording
+both now keeps the choice open instead of foreclosing it with a lost span.
 
 ## Codegen efficiency
 
@@ -486,8 +488,9 @@ into nothing.
 - Enumerate the branch-test kinds as a sum: a structural object or tuple shape, a
   literal, a nominal class tag for an instance pattern, an extractor tag, and an
   inexact-prefix marker a rest pattern sets. A projection path segment must be able
-  to name a field, a tuple index, an extractor's positional result, a tuple suffix
-  for a tuple rest, and an object remainder excluding a key set for an object rest.
+  to name a field, a tuple index, a positional value an extractor yields, a tuple
+  suffix for a tuple rest, and an object remainder excluding a key set for an object
+  rest.
   M9 has shipped the types the last two resolve to — tuple spread and an
   `Omit`-style mapped type — and PR0 wires their `bindPattern` cases, so the IR
   names both projections and PR5 onward bind them for real.
