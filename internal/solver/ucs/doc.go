@@ -9,6 +9,11 @@
 // pipeline can point back at what the user typed. A Scrutinee names the value a test
 // examines, either a match target or a projection out of one.
 //
+// The desugared core is what the surface lowers into directly. A CoreSplit tests a
+// scrutinee against an ordered list of branches, a CoreBind names an intermediate
+// value, a CoreGuard tests a boolean over a branch's bindings, and a leaf ends a
+// branch. A core branch keeps its arm's source pattern whole, nesting and all.
+//
 // The package is pure IR with no behavior of its own. It imports internal/ast for
 // the surface nodes it points back at and internal/set for key sets. It never
 // imports internal/solver or internal/soltype, so the typing walk can import it and
