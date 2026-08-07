@@ -72,14 +72,20 @@ func normalizeSplit(s *CoreSplit, next Norm) Norm {
 	cands := make([]candidate, len(s.Branches))
 	for i, branch := range s.Branches {
 		test, binds := shallowTest(branch.Pattern, s.Scrutinee, branch.Origin)
-		cands[i] = candidate{index: i, branch: branch, test: test, binds: binds}
+		cands[i] = candidate{
+			index:  i,
+			branch: branch,
+			test:   test,
+			binds:  binds,
+			nested: hasUnflattenedBind(binds),
+		}
 	}
 
 	b := &splitBuilder{
 		scrutinee: s.Scrutinee,
 		tail:      tail,
 		origin:    s.Origin,
-		built:     map[int]Norm{},
+		built:     map[string]Norm{},
 	}
 	// A core split always becomes a split, even when no branch is left to test, because
 	// the split is what names the scrutinee. Collapsing `match f() { _ => 1 }` to its
@@ -100,13 +106,20 @@ func normalizeSplit(s *CoreSplit, next Norm) Norm {
 // analyzed a single time.
 type candidate struct {
 	// index is the branch's position in the core split, which identifies it while
-	// building.
+	// building. Two candidate lists holding the same branches build the same term.
 	index  int
 	branch *CoreBranch
-	// test is the tag the branch tests, and nil when the branch runs unconditionally,
-	// which is what a catch-all pattern reads to.
+	// test is the tag the branch tests, and nil when the branch runs
+	// unconditionally. A catch-all pattern has no tag, and specialize also clears the
+	// test of a branch an already-matched test guarantees.
 	test  Test
 	binds []bindSpec
+	// nested marks a branch holding a sub-pattern this stage does not flatten, which is
+	// matching the tag test does not account for. In `{x: 1}` the test names the key
+	// `x` and the literal `1` rides a nameless bind, so passing the test does not mean
+	// the branch matched. Such a branch is never made unconditional: a value that
+	// reaches it can still fall through to the arms below.
+	nested bool
 }
 
 // splitBuilder builds the branches of one core split. Everything it holds is fixed for
@@ -116,12 +129,11 @@ type splitBuilder struct {
 	scrutinee *Scrutinee
 	tail      Norm
 	origin    Origin
-	// built caches the fallthrough term for a run of candidates, keyed by the index of
-	// the first. A guarded branch falls into the branches after it, so without the
-	// cache a run of guarded branches would rebuild overlapping suffixes over and over.
-	// Each cached term is also shared rather than duplicated, so a consumer that walks
-	// the IR visits it once.
-	built map[int]Norm
+	// built caches the fallthrough term for a set of candidates. A guarded branch falls
+	// into the branches after it, so without the cache a run of guarded branches would
+	// rebuild overlapping subsets over and over. Each cached term is also shared rather
+	// than duplicated, so a consumer that walks the IR visits it once.
+	built map[string]Norm
 }
 
 // term is what a branch continues into when its own continuation fails. Unlike the
@@ -132,7 +144,8 @@ func (b *splitBuilder) term(cands []candidate) Norm {
 	if len(cands) == 0 {
 		return b.tail
 	}
-	if term, ok := b.built[cands[0].index]; ok {
+	key := candidatesKey(cands)
+	if term, ok := b.built[key]; ok {
 		return term
 	}
 
@@ -146,7 +159,7 @@ func (b *splitBuilder) term(cands []candidate) Norm {
 			Origin:    b.origin,
 		}
 	}
-	b.built[cands[0].index] = term
+	b.built[key] = term
 	return term
 }
 
@@ -161,7 +174,7 @@ func (b *splitBuilder) build(cands []candidate) ([]*NormBranch, Norm) {
 		// fallthrough would be dead weight.
 		var fallthru Norm
 		if mayFall(cand.branch.Cont) {
-			fallthru = b.term(cands[i+1:])
+			fallthru = b.term(specialize(cands[i+1:], cand.test))
 		}
 		cont := wrapBinds(cand.binds, normalizeTerm(cand.branch.Cont, fallthru))
 		if cand.test == nil {
