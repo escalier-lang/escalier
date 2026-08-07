@@ -4,6 +4,7 @@ import (
 	"reflect"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // OriginKind names the surface flow-control form a node lowered from. Desugaring
@@ -78,11 +79,6 @@ type Origin struct {
 	Cause *Origin
 }
 
-// maxCauseDepth bounds the cause walk. A chain the constructors build is a few links
-// long, so a longer one means Cause was assigned by hand into a cycle. Diagnostics
-// must stay total, so the walk gives up rather than spinning.
-const maxCauseDepth = 32
-
 // At builds the origin of a node lowered from the surface node n, which is what a
 // diagnostic about the node blames. Pass a real node; a node the desugarer invented
 // gets its origin from Invented instead.
@@ -130,13 +126,29 @@ func (o Origin) SourceSpan() (ast.Span, bool) {
 // lowering, which is wider than the node itself. Underlining the whole `val … else`
 // for its invented tail is the intended behavior: the tail has no text of its own, so
 // the declaration that produced it is the narrowest honest thing to point at.
+//
+// Cause is exported, so a caller can assign a chain that loops back on itself. The
+// walk records the links it follows and stops on one it has already seen, which keeps
+// a diagnostics path total. The set is keyed on the pointer rather than the Origin
+// value, because Origin holds a Spanned whose dynamic type need not be comparable and
+// `==` on two such values panics. It is allocated only once the walk follows a second
+// link, so the common chain of one or two links costs nothing.
 func (o Origin) NearestSpan() (ast.Span, bool) {
-	cur := &o
-	for depth := 0; cur != nil && depth < maxCauseDepth; depth++ {
+	var seen set.Set[*Origin]
+	for cur := &o; cur != nil; cur = cur.Cause {
 		if span, ok := SpanOf(cur.Node); ok {
 			return span, true
 		}
-		cur = cur.Cause
+		if cur.Cause == nil {
+			break
+		}
+		if seen == nil {
+			seen = set.NewSet[*Origin]()
+		}
+		if seen.Contains(cur.Cause) {
+			break
+		}
+		seen.Add(cur.Cause)
 	}
 	return ast.Span{}, false
 }

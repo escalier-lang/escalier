@@ -152,7 +152,7 @@ func TestNearestSpanOnARealOrigin(t *testing.T) {
 }
 
 // Cause is exported, so a caller can assign a cycle by hand. Diagnostics must stay
-// total, so the walk gives up at maxCauseDepth instead of spinning forever.
+// total, so the walk stops on a link it has already followed instead of spinning.
 func TestNearestSpanToleratesACauseCycle(t *testing.T) {
 	loop := Invented(OriginGuard)
 	loop.Cause = &loop
@@ -169,4 +169,30 @@ func TestNearestSpanToleratesACauseCycle(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("NearestSpan did not terminate on a cyclic cause chain")
 	}
+}
+
+// A long chain still resolves. Nothing bounds the walk by length, so a legitimate
+// chain does not lose its span for being deep — only a repeated link stops it.
+func TestNearestSpanFollowsALongChain(t *testing.T) {
+	origin := At(OriginMatchArm, arm(span(7, 2, 30)))
+	for range 200 {
+		origin = InventedFrom(OriginValElse, origin)
+	}
+
+	found, ok := origin.NearestSpan()
+	require.True(t, ok)
+	require.Equal(t, span(7, 2, 30), found)
+}
+
+// Two links sharing one *Origin are a diamond, not a cycle. A walk down a single
+// path visits each link once, so the seen set must not cut the chain short here.
+func TestNearestSpanToleratesASharedCause(t *testing.T) {
+	shared := At(OriginIfVal, arm(span(4, 1, 12)))
+	left := InventedFrom(OriginValElse, shared)
+	right := InventedFrom(OriginGuard, shared)
+	right.Cause = left.Cause // both links now point at the same *Origin
+
+	found, ok := right.NearestSpan()
+	require.True(t, ok)
+	require.Equal(t, span(4, 1, 12), found)
 }
