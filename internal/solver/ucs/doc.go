@@ -18,9 +18,9 @@
 // tests exactly one tag-level of one scrutinee. A tag-level is the outermost tag a
 // pattern names and nothing under it, so `Line { start: {x, y} }` contributes the
 // `Line` tag alone. A nested sub-pattern becomes a projected sub-scrutinee with a
-// split of its own, and a failed test falls to the split's default tail instead of
-// retrying an earlier branch. The typing walk, the coverage check, and a later
-// codegen consumer all read this form.
+// split of its own. When no branch's test matches, control falls to that split's
+// default tail rather than retrying a branch above it. The typing walk, the coverage
+// check, and a later codegen consumer will all read this form.
 //
 // The package is pure IR with no behavior of its own. It imports internal/ast for
 // the surface nodes it points back at and internal/set for key sets. It never

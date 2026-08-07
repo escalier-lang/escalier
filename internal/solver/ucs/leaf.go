@@ -2,8 +2,8 @@ package ucs
 
 import "github.com/escalier-lang/escalier/internal/ast"
 
-// The three leaf types end a branch of either IR, so each implements both Core and
-// Norm. Normalization rewrites the splits around a leaf and leaves the leaf itself
+// The three leaf types end a branch of either IR, so each implements both `Core` and
+// `Norm`. Normalization rewrites the splits around a leaf and leaves the leaf itself
 // alone, so there is one set of leaves rather than a parallel pair.
 func (*BodyLeaf) isCore()     {}
 func (*BodyLeaf) isNorm()     {}
