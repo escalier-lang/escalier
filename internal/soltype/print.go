@@ -652,38 +652,34 @@ func (p *namedPrinter) bindTypeParam(v *TypeVarType, base string) string {
 
 // bindTypeParams registers each type parameter's binding variable under its source name, so
 // a use of the parameter renders as that name rather than the raw t{ID} debug form. A
-// parameter with no source name is left unregistered and falls back to t{ID}. The names stay
-// in scope for the rest of the render; scopeTypeParams is the form that releases them.
-func (p *namedPrinter) bindTypeParams(tps []*TypeParam) {
+// parameter with no source name is left unregistered and falls back to t{ID}.
+//
+// It returns the surface names it bound. A caller whose parameters go out of scope partway
+// through the render hands them to releaseNames at that point; one whose parameters stay in
+// scope for the whole render discards them.
+func (p *namedPrinter) bindTypeParams(tps []*TypeParam) []string {
+	if len(tps) == 0 {
+		return nil
+	}
+	bound := make([]string, 0, len(tps))
 	for _, tp := range tps {
 		if tp.Name != "" {
-			p.bindTypeParam(tp.Var, tp.Name)
+			bound = append(bound, p.bindTypeParam(tp.Var, tp.Name))
 		}
 	}
+	return bound
 }
 
-// scopeTypeParams binds tps like bindTypeParams and returns a function that releases their
-// names for the next signature to reuse. A signature's parameters are in scope only inside
-// it, so two overload arms each written `<T>` both render `T`. A `<T>` nested inside an
-// enclosing `<T>` is still renamed, because the enclosing binder holds its name across the
-// whole nested signature.
+// releaseNames frees each name for a later binder to reuse. A signature's parameters are in
+// scope only inside it, so releasing them on the way out is what lets two overload arms each
+// written `<T>` both render `T`. A `<T>` nested inside an enclosing `<T>` is still renamed,
+// because the enclosing binder holds its name across the whole nested signature.
 //
 // The variable-to-name bindings themselves are left in place, so a variable that escaped its
 // binder still renders under the name its declaration gave it.
-func (p *namedPrinter) scopeTypeParams(tps []*TypeParam) func() {
-	if len(tps) == 0 {
-		return func() {}
-	}
-	claimed := make([]string, 0, len(tps))
-	for _, tp := range tps {
-		if tp.Name != "" {
-			claimed = append(claimed, p.bindTypeParam(tp.Var, tp.Name))
-		}
-	}
-	return func() {
-		for _, name := range claimed {
-			p.claimed.Remove(name)
-		}
+func (p *namedPrinter) releaseNames(names []string) {
+	for _, name := range names {
+		p.claimed.Remove(name)
 	}
 }
 
@@ -1210,8 +1206,8 @@ func (p *namedPrinter) printSelfReceiver(sp *FuncParam) string {
 func (p *namedPrinter) printFuncTail(t *FuncType) string {
 	// The signature's own type parameters are in scope only inside it, so their names are
 	// released on the way out and a sibling signature is free to reuse them.
-	unbind := p.scopeTypeParams(t.TypeParams)
-	defer unbind()
+	scoped := p.bindTypeParams(t.TypeParams)
+	defer p.releaseNames(scoped)
 	p.nameLifetimeParams(t.LifetimeParams)
 	binders := append(p.typeParamBinders(t.TypeParams), p.lifetimeParamBinders(t.LifetimeParams)...)
 	prefix := ""
@@ -1280,9 +1276,8 @@ func isNever(t Type) bool {
 // constraint, `U = D` for a default, or `U: T = D` for both — without the surrounding
 // `<>`. The constraint is the parameter variable's upper bound. A variable with several
 // upper bounds renders them joined by ` & `. The parameters must be bound first, through
-// bindTypeParams or scopeTypeParams. Each binder then renders under its own name, and a
-// binder whose constraint or default names a sibling parameter renders that name too.
-// Callers that build a
+// bindTypeParams. Each binder then renders under its own name, and a binder whose constraint
+// or default names a sibling parameter renders that name too. Callers that build a
 // combined quantifier prefix, such as PrintAsSchemeWith, join these with the scheme's
 // free variables and lifetimes into one list.
 func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
