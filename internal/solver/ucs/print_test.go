@@ -1,6 +1,7 @@
 package ucs
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -539,4 +540,111 @@ func TestPrintUnrenderedExpressionFallsBackToItsKind(t *testing.T) {
 	leaf := &BodyLeaf{Body: armCase.Body, Arm: armCase, Origin: At(OriginMatchArm, armCase)}
 
 	require.Equal(t, "leaf <DoExpr>", leaf.String())
+}
+
+// A core branch can bind the leaves its pattern introduced, the same way a
+// normalized branch does. A run of consecutive binds folds onto one `bind` clause so
+// a branch that names several fields stays on one line, and the guard after the run
+// reads what the run bound.
+func TestPrintCoreBindRun(t *testing.T) {
+	guardCond := ast.NewBinary(ident("x"), ident("y"), ast.GreaterThan, ast.Span{})
+	armCase := matchCase(objPat("x", "y"), guardCond, ident("x"), span(2, 5, 30))
+	target := ident("p")
+	origin := At(OriginMatchArm, armCase)
+	root := NewRoot(target, origin)
+
+	core := &CoreSplit{
+		Scrutinee: root,
+		Branches: []*CoreBranch{{
+			Pattern: armCase.Pattern,
+			Cont: &CoreBind{
+				Name:   "x",
+				Source: root.Project(FieldStep{Name: "x"}, origin),
+				Cont: &CoreBind{
+					Name:   "y",
+					Source: root.Project(FieldStep{Name: "y"}, origin),
+					Cont: &CoreGuard{
+						Cond:   guardCond,
+						Cont:   &BodyLeaf{Body: armCase.Body, Arm: armCase, Origin: origin},
+						Origin: At(OriginGuard, guardCond),
+					},
+					Origin: origin,
+				},
+				Origin: origin,
+			},
+			Arm:    armCase,
+			Origin: origin,
+		}},
+		Origin: origin,
+	}
+
+	snaps.MatchInlineSnapshot(t, core.String(), snaps.Inline(`split p {
+  pat {x, y} => bind x = p.x, y = p.y; guard (x > y) => leaf x
+}`))
+}
+
+// Every node renders through String(), so a failing require.Equal on any of them
+// prints the term rather than a struct address.
+func TestStringOnEveryNode(t *testing.T) {
+	origin := At(OriginMatchArm, arm(span(1, 1, 8)))
+	root := NewRoot(ident("p"), origin)
+	leaf := &BodyLeaf{Body: exprBody(num(1)), Arm: nil, Origin: origin}
+
+	tests := []struct {
+		name string
+		in   fmt.Stringer
+		want string
+	}{
+		{"CoreSplit", &CoreSplit{Scrutinee: root, Origin: origin}, "split p {}"},
+		{
+			"CoreBranch",
+			&CoreBranch{Pattern: wildcardPat(), Cont: leaf, Origin: origin},
+			"pat _ => leaf 1",
+		},
+		{
+			"CoreGuard",
+			&CoreGuard{Cond: ident("g"), Cont: leaf, Origin: origin},
+			"guard (g) => leaf 1",
+		},
+		{
+			"CoreBind",
+			&CoreBind{Name: "x", Source: root, Cont: leaf, Origin: origin},
+			"bind x = p; leaf 1",
+		},
+		{"NormSplit", &NormSplit{Scrutinee: root, Origin: origin}, "split p {} default ✗"},
+		{
+			"NormBranch",
+			&NormBranch{Test: &LitTest{Lit: ast.NewNumber(1, ast.Span{})}, Cont: leaf, Origin: origin},
+			"1 => leaf 1",
+		},
+		{
+			"NormGuard",
+			&NormGuard{Cond: ident("g"), Cont: leaf, Origin: origin},
+			"guard (g) {\n  leaf 1\n} default ✗",
+		},
+		{
+			"NormBind",
+			&NormBind{Name: "x", Source: root, Cont: leaf, Origin: origin},
+			"bind x = p; leaf 1",
+		},
+		{"BodyLeaf", leaf, "leaf 1"},
+		{"EscapeLeaf", &EscapeLeaf{Origin: origin}, "escape"},
+		{"FallbackLeaf", &FallbackLeaf{Body: exprBody(num(0)), Origin: origin}, "fallback 0"},
+		{"Scrutinee", root, "p"},
+		{"ObjectTest", &ObjectTest{Keys: keys("x")}, "{x}"},
+		{"TupleTest", &TupleTest{Len: 1}, "[_]"},
+		{"LitTest", &LitTest{Lit: ast.NewNumber(1, ast.Span{})}, "1"},
+		{"ClassTest", &ClassTest{Name: ast.NewIdentifier("Point", ast.Span{})}, "Point"},
+		{
+			"ExtractorTest",
+			&ExtractorTest{Name: ast.NewIdentifier("Ok", ast.Span{}), Arity: 1},
+			"Ok(_)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, test.in.String())
+		})
+	}
 }
