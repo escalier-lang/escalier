@@ -24,7 +24,10 @@ import (
 // A nested sub-pattern is left whole for now. Its branch keeps it as a NormBind with no
 // name, which says "still to be matched against this projection". Flattening those into
 // splits of their own is the next stage of the rewrite; see the PR4 section of
-// planning/ucs/implementation_plan.md.
+// planning/ucs/implementation_plan.md. Until then the form is backtracking-free only
+// for a flat match. A nameless bind names no continuation for the case where its
+// sub-pattern does not match, and there is nowhere to put one: the split that flattening
+// puts in its place is what carries that default.
 func Normalize(c Core) Norm {
 	return normalizeTerm(c, nil)
 }
@@ -74,7 +77,13 @@ func normalizeSplit(s *CoreSplit, next Norm) Norm {
 	cands := make([]candidate, len(s.Branches))
 	for i, branch := range s.Branches {
 		test, binds := shallowTest(branch.Pattern, s.Scrutinee, branch.Origin)
-		cands[i] = candidate{index: i, branch: branch, test: test, binds: binds}
+		cands[i] = candidate{
+			index:  i,
+			branch: branch,
+			test:   test,
+			binds:  binds,
+			nested: hasUnflattenedBind(binds),
+		}
 	}
 
 	b := &splitBuilder{
@@ -110,6 +119,12 @@ type candidate struct {
 	// test of a branch an already-matched test guarantees.
 	test  Test
 	binds []bindSpec
+	// nested marks a branch holding a sub-pattern this stage does not flatten, which is
+	// matching the tag test does not account for. In `{x: 1}` the test names the key
+	// `x` and the literal `1` rides a nameless bind, so passing the test does not mean
+	// the branch matched. Such a branch is never made unconditional: a value that
+	// reaches it can still fall through to the arms below.
+	nested bool
 }
 
 // splitBuilder builds the branches of one core split. Everything it holds is fixed for
@@ -184,17 +199,22 @@ func (b *splitBuilder) build(cands []candidate) ([]*NormBranch, Norm) {
 	return branches, dflt
 }
 
-// specialize returns the candidates that can still run once matched has succeeded, in
-// source order. This is what a branch whose guard fails continues into, and dropping
-// what cannot run is what keeps the continuation from re-testing a tag the value is
-// already known to fail.
+// specialize returns the candidates that can still run once the matched test has
+// succeeded, in source order. This is what a branch whose guard fails continues into,
+// and dropping what cannot run is what keeps the continuation from re-testing a tag the
+// value is already known to fail.
 //
 // Three things can happen to a later candidate. A test the matched one guarantees
-// becomes unconditional, since a value that passed the first passes the second too, so
-// it and nothing after it survives. A test that cannot hold of the same value is
-// dropped. Anything else survives with its test intact and is re-tested.
+// becomes unconditional, since a value that passed the first passes the second too. A
+// test that cannot hold of the same value is dropped. Anything else survives with its
+// test intact and is re-tested.
 //
-// A matched candidate with no test taught nothing, so every later candidate survives
+// An unconditional candidate does not end the list, because its own continuation can
+// still fail: `1 if f() => a, 1 if g() => b, _ => c` reaches `c` when both guards fail.
+// Truncating the branch list at an unconditional candidate is build's job, and it
+// truncates only the branches, not what that candidate falls into.
+//
+// A candidate that made no test taught nothing, so every later candidate survives
 // unchanged.
 func specialize(cands []candidate, matched Test) []candidate {
 	if matched == nil {
@@ -204,10 +224,10 @@ func specialize(cands []candidate, matched Test) []candidate {
 	for _, cand := range cands {
 		switch {
 		case cand.test == nil:
-			return append(out, cand)
-		case testImplies(matched, cand.test):
+			out = append(out, cand)
+		case testImplies(matched, cand.test) && !cand.nested:
 			cand.test = nil
-			return append(out, cand)
+			out = append(out, cand)
 		case testsDisjoint(matched, cand.test):
 			// Nothing to do: no value passes both tests, so this candidate cannot run.
 		default:
@@ -252,15 +272,28 @@ func mayFall(c Core) bool {
 	}
 }
 
-// bindSpec is one leaf a branch's pattern binds: the name, the pattern leaf the solver
-// binds through, and the projection the value comes from. A spec with no name holds a
-// sub-pattern this stage does not flatten, which its branch keeps whole until nested
-// patterns become splits of their own.
+// bindSpec is one leaf a branch's pattern binds. It holds the name, the pattern leaf or
+// shorthand element the solver binds through, and the projection the value comes from. A
+// spec with no name holds a sub-pattern this stage does not flatten, which its branch
+// keeps whole until nested patterns become splits of their own.
 type bindSpec struct {
 	name   string
 	pat    ast.Pat
+	elem   *ast.ObjShorthandPat
 	source *Scrutinee
 	origin Origin
+}
+
+// hasUnflattenedBind reports whether any of a branch's binds holds a sub-pattern that
+// is still to be matched. A branch with one can fail after its tag test passes, so the
+// test alone does not say whether the branch matched.
+func hasUnflattenedBind(binds []bindSpec) bool {
+	for _, bind := range binds {
+		if bind.name == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // wrapBinds nests a branch's binds around its continuation, so the leaves are in scope
@@ -271,6 +304,7 @@ func wrapBinds(binds []bindSpec, cont Norm) Norm {
 		cont = &NormBind{
 			Name:   bind.name,
 			Pat:    bind.pat,
+			Elem:   bind.elem,
 			Source: bind.source,
 			Cont:   cont,
 			Origin: bind.origin,
@@ -280,7 +314,7 @@ func wrapBinds(binds []bindSpec, cont Norm) Norm {
 }
 
 // shallowTest reads one tag-level off a pattern: the tag its branch tests, and the
-// leaves it binds out of scrutinee. The test is nil for a catch-all, which binds
+// leaves it binds out of the scrutinee. The test is nil for a catch-all, which binds
 // without testing.
 //
 // It goes exactly one level deep. A sub-pattern that is an identifier becomes a bind on
@@ -334,9 +368,10 @@ func shallowTest(p ast.Pat, scrutinee *Scrutinee, origin Origin) (Test, []bindSp
 // and a trailing rest relaxes the test to that prefix and binds the suffix past it.
 //
 // A rest anywhere but last names no suffix a SuffixStep can reach, as SuffixStep spells
-// out, so the test covers the prefix before it and nothing after it binds. The pattern
-// is already unsupported downstream; reporting it belongs to the pass that lowers the
-// surface, which sees the source the IR no longer holds.
+// out, so the test relaxes to the prefix before it and the elements from the rest on
+// bind nothing. Their leaves go unnamed by the IR, so the pass that lowers the surface
+// has to reject the pattern before a consumer binds names off the split. It is the pass
+// that can: it holds the source span a message points at, and the IR does not.
 func tupleTest(p *ast.TuplePat, scrutinee *Scrutinee, origin Origin) (Test, []bindSpec) {
 	fixed, rest := splitTrailingRest(p.Elems)
 	binds := make([]bindSpec, 0, len(fixed)+1)
@@ -394,11 +429,15 @@ func objectTest(p *ast.ObjectPat, scrutinee *Scrutinee, origin Origin) (Test, []
 			// demand it. The solver's pattern walk makes the same field optional.
 			objKeys = append(objKeys, ObjectKey{Name: e.Key.Name, Optional: e.Default != nil})
 			named.Add(e.Key.Name)
-			// A shorthand element is not an ast.Pat, so the bind names no pattern leaf.
+			// A shorthand element is not an ast.Pat, so it rides the bind's Elem field.
+			// The solver reads the annotation, default, and `mut` marker off it, none of
+			// which the name alone carries.
+			leaf := leafOrigin(origin, e)
 			binds = append(binds, bindSpec{
 				name:   e.Key.Name,
-				source: scrutinee.Project(FieldStep{Name: e.Key.Name}, leafOrigin(origin, e)),
-				origin: leafOrigin(origin, e),
+				elem:   e,
+				source: scrutinee.Project(FieldStep{Name: e.Key.Name}, leaf),
+				origin: leaf,
 			})
 		case *ast.ObjKeyValuePat:
 			objKeys = append(objKeys, ObjectKey{
@@ -409,8 +448,9 @@ func objectTest(p *ast.ObjectPat, scrutinee *Scrutinee, origin Origin) (Test, []
 			binds = appendBind(binds, e.Value, scrutinee, FieldStep{Name: e.Key.Name}, origin)
 		case *ast.ObjRestPat:
 			// One rest takes every property the pattern did not name, so a second has
-			// nothing left, and only a last one holds the whole remainder. The solver's
-			// pattern walk reports the other placements.
+			// nothing left, and only a last one holds the whole remainder. Any other
+			// placement binds nothing here, the same way a non-trailing tuple rest does
+			// and for the same reason, so the lowering pass has to reject it.
 			if rest == nil && i == len(p.Elems)-1 {
 				rest = e
 			}

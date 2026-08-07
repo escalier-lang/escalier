@@ -164,6 +164,52 @@ func TestNormalizeDropsArmsTheGuardedTestRulesOut(t *testing.T) {
 } default leaf "other"`))
 }
 
+// Two guarded arms of the same tag chain: the first proves the second's test, so the
+// second runs without re-testing, and its own guard still falls through to the arm
+// below. Making an arm unconditional must not cut off what it falls into.
+func TestNormalizeChainsGuardsOnOneTag(t *testing.T) {
+	core := coreMatch(
+		ident("n"),
+		matchCase(numPat(1), ident("f"), str("a"), span(2, 5, 24)),
+		matchCase(numPat(1), ident("g"), str("b"), span(3, 5, 24)),
+		matchCase(wildcardPat(), nil, str("c"), span(4, 5, 16)),
+	)
+
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
+  1 => guard (f) {
+    leaf "a"
+  } default guard (g) {
+    leaf "b"
+  } default leaf "c"
+  1 => guard (g) {
+    leaf "b"
+  } default leaf "c"
+} default leaf "c"`))
+}
+
+// A branch holding a sub-pattern this stage does not flatten is never made
+// unconditional. Passing the `{x}` test says nothing about whether the literal `2`
+// matched, so the arm below the second one stays reachable.
+func TestNormalizeKeepsATestWhoseBranchStillHasASubPattern(t *testing.T) {
+	first := ast.NewObjectPat([]ast.ObjPatElem{keyValueElem("x", numPat(1))}, ast.Span{})
+	second := ast.NewObjectPat([]ast.ObjPatElem{keyValueElem("x", numPat(2))}, ast.Span{})
+	core := coreMatch(
+		ident("p"),
+		matchCase(first, ident("g"), str("a"), span(2, 5, 26)),
+		matchCase(second, nil, str("b"), span(3, 5, 22)),
+		matchCase(wildcardPat(), nil, str("c"), span(4, 5, 16)),
+	)
+
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
+  {x} => bind 1 = p.x; guard (g) {
+    leaf "a"
+  } default split p {
+    {x} => bind 2 = p.x; leaf "b"
+  } default leaf "c"
+  {x} => bind 2 = p.x; leaf "b"
+} default leaf "c"`))
+}
+
 // An unguarded catch-all arm always runs, so it becomes the tail and every arm after it
 // is unreachable. The split stays, because it is what names the scrutinee.
 func TestNormalizeDropsArmsAfterACatchAll(t *testing.T) {
@@ -489,6 +535,24 @@ func TestNormalizeProjectionsPointAtTheirPatternLeaf(t *testing.T) {
 	require.Same(t, value, bind.Pat)
 	require.Same(t, value, bind.Source.Origin.Node)
 	require.Equal(t, OriginMatchArm, bind.Source.Origin.Kind)
+}
+
+// A shorthand element carries an annotation, a default, and a `mut` marker, none of
+// which the bound name holds. The bind points at the element so the solver can read
+// them when it binds the leaf.
+func TestNormalizeKeepsShorthandElements(t *testing.T) {
+	elem := ast.NewObjShorthandPat(
+		ast.NewIdentifier("x", ast.Span{}), true, ast.NewNumberTypeAnn(ast.Span{}), nil, span(2, 7, 20),
+	)
+	pattern := ast.NewObjectPat([]ast.ObjPatElem{elem}, ast.Span{})
+	core := coreMatch(ident("p"), matchCase(pattern, nil, ident("x"), span(2, 5, 30)))
+
+	split := Normalize(core).(*NormSplit)
+	bind := split.Branches[0].Cont.(*NormBind)
+	require.Equal(t, "x", bind.Name)
+	require.Nil(t, bind.Pat)
+	require.Same(t, elem, bind.Elem)
+	require.Same(t, elem, bind.Source.Origin.Node)
 }
 
 // A core split with no branches still becomes a split, so the scrutinee it tests stays
