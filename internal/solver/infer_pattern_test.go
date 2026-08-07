@@ -500,9 +500,71 @@ func TestInferRestPatternGroundsScrutinee(t *testing.T) {
 	}
 }
 
-// A scrutinee with no statically known shape leaves the leftover unknowable, so the
-// rest binds "some tuple" or "some object" rather than a definite one. The parameter
-// here is un-annotated, so its shape comes only from the pattern's fixed prefix.
+// A top-level destructuring reads the same leftover a body-level one does. Its
+// initializer is a reference to another module-level binding, which types as that
+// binding's variable rather than as the annotation, so the rest resolves the shape off
+// the variable's bounds. Each case checks the leaf types the module driver recorded.
+func TestInferRestPatternTopLevelDestructure(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "Tuple",
+			src: `
+				val tup: [number, string, boolean] = [1, "a", true]
+				val [a, ...r] = tup`,
+			want: map[string]string{"a": "number", "r": "[string, boolean]"},
+		},
+		{
+			// The rest's own sub-pattern destructures the suffix, so it needs the suffix
+			// resolved rather than a bare variable.
+			name: "TupleRestSubPattern",
+			src: `
+				val tup: [number, string, boolean] = [1, "a", true]
+				val [a, ...[b, c]] = tup`,
+			want: map[string]string{"a": "number", "b": "string", "c": "boolean"},
+		},
+		{
+			name: "Object",
+			src: `
+				val rec: {x: number, y: string} = {x: 1, y: "a"}
+				val {x, ...rest} = rec`,
+			want: map[string]string{"x": "number", "rest": "{y: string}"},
+		},
+		{
+			name: "MatchArm",
+			src: `
+				val tup: [number, string, boolean] = [1, "a", true]
+				val out = match tup {
+					[a, ...rest] => rest
+				}`,
+			want: map[string]string{"out": "[string, boolean]"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			for name, want := range tt.want {
+				require.Equal(t, want, values[name], "binding %s", name)
+			}
+		})
+	}
+}
+
+// A scrutinee with no statically known shape leaves the leftover unknowable. The rest
+// binds a bare variable with no bound at all, which coalesces to `never` when nothing
+// constrains it. The parameter below is un-annotated, so its shape comes only from the
+// pattern's fixed prefix and the leftover past that prefix is genuinely unknown.
+//
+// A bound such as the empty inexact tuple `[...]` would render better but would be a
+// claim the scrutinee does not support. `val [b, c] = rest` would then be rejected for
+// destructuring two elements out of a zero-length tuple, even though a caller passing a
+// three-element tuple makes that destructuring correct. Nothing connects the rest
+// variable to the scrutinee's requirement, so no bound can be both informative and sound
+// here. Annotating the parameter resolves the leftover; see TestInferRestPatternBinds.
 func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 	tests := []struct {
 		name string
@@ -515,7 +577,7 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 				fn f([a, ...rest]) {
 					return rest
 				}`,
-			want: "fn ([a, ...rest]: [unknown, ...]) -> [...]",
+			want: "fn ([a, ...rest]: [unknown, ...]) -> never",
 		},
 		{
 			name: "Object",
@@ -523,7 +585,20 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 				fn f({x, ...rest}) {
 					return rest
 				}`,
-			want: "fn ({x, ...rest}: {x: unknown}) -> {...}",
+			want: "fn ({x, ...rest}: {x: unknown}) -> never",
+		},
+		{
+			// Destructuring the unknown leftover is accepted rather than rejected against
+			// a bound the scrutinee never justified. The leaves carry no information, so
+			// they read `never`.
+			name: "TupleLeftoverDestructures",
+			src: `
+				fn f(p) {
+					val [a, ...rest] = p
+					val [b, c] = rest
+					return c
+				}`,
+			want: "fn (p: [unknown, ...]) -> never",
 		},
 	}
 	for _, tt := range tests {
@@ -535,32 +610,57 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 	}
 }
 
-// Only a trailing rest has a suffix to bind. A rest at an earlier position stands for a
-// run of elements whose length nothing pins down, so it is reported and binds nothing.
-// The requirement still relaxes to an inexact prefix, so no arity error is layered on
-// top.
-func TestInferTuplePatternNonTrailingRest(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(t: [number, string, boolean]) {
-			val [...rest, b] = t
-			return b
-		}
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "3:9-3:16: Unsupported: RestPat", msgWithSpan(errs[0]))
-}
-
-// A second `...rest` in an object pattern has no leftover of its own: the first already
-// takes every property the fields do not name. It is reported and binds nothing.
-func TestInferObjectPatternSecondRest(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(p: {x: number, y: string}) {
-			val {x, ...rest, ...more} = p
-			return rest
-		}
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "3:21-3:28: Unsupported: ObjRestPat", msgWithSpan(errs[0]))
+// A rest the walk cannot place is reported once and recovered against a fresh variable,
+// so its leaves stay defined and a later reference resolves rather than cascading into an
+// unknown-identifier error. Each case asserts the single reported error and reads a leaf
+// of the rejected rest back.
+func TestInferRestPatternRejectedPositions(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// A tuple rest before another element stands for a run of elements whose
+			// length nothing pins down, so no position after it names a fixed element.
+			name: "TupleNonTrailingRest",
+			src: `
+				fn f(t: [number, string, boolean]) {
+					val [...rest, b] = t
+					return [rest, b]
+				}`,
+			want: "3:11-3:18: Unsupported: RestPat",
+		},
+		{
+			// An object rest must come last, the position JavaScript's own destructuring
+			// requires, even though the leftover itself does not depend on the order.
+			name: "ObjectNonTrailingRest",
+			src: `
+				fn f(p: {x: number, y: string}) {
+					val {...rest, x} = p
+					return rest
+				}`,
+			want: "3:11-3:18: Unsupported: ObjRestPat",
+		},
+		{
+			// A second rest has no leftover of its own, since the first already takes every
+			// property the fields do not name. The non-final one is the rejected one.
+			name: "ObjectSecondRest",
+			src: `
+				fn f(p: {x: number, y: string}) {
+					val {x, ...rest, ...more} = p
+					return [rest, more]
+				}`,
+			want: "3:14-3:21: Unsupported: ObjRestPat",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
 }
 
 // A closure capturing a destructured leaf resolves the leaf's binding. This

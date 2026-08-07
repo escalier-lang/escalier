@@ -154,25 +154,16 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		// the fixed elements. Without a rest the requirement stays exact and a wrong
 		// arity is a TupleLengthMismatchError. The rest element binds the elements past
 		// that prefix; tupleRestType resolves their type.
-		fixed := make([]ast.Pat, 0, len(p.Elems))
-		var rest *ast.RestPat
-		inexact := false
-		for i, e := range p.Elems {
-			r, isRest := e.(*ast.RestPat)
-			if !isRest {
-				fixed = append(fixed, e)
-				continue
-			}
-			inexact = true
-			if i == len(p.Elems)-1 {
-				rest = r
-				continue
-			}
-			// Only a trailing rest has a suffix to bind. A rest at any earlier position
-			// stands for a run of elements whose length nothing pins down, so the
-			// positions after it name no fixed element. Report it and bind nothing.
-			c.reportUnsupported(e)
+		//
+		// Only a trailing rest has such a suffix. splitTupleRest hands back a
+		// non-trailing one, and every element after it, as recovered. That element is
+		// reported, and the recovered group binds against fresh variables so each leaf
+		// stays defined without pinning it to an index it does not sit at.
+		fixed, rest, recovered := splitTupleRest(p.Elems)
+		if len(recovered) > 0 {
+			c.reportUnsupported(recovered[0])
 		}
+		inexact := rest != nil || len(recovered) > 0
 		elemTypes := make([]soltype.Type, len(fixed))
 		for i := range fixed {
 			elemTypes[i] = c.freshAt(lvl)
@@ -209,9 +200,12 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			// The rest's sub-pattern binds against the suffix the same way a fixed element
 			// binds against its own, so it inherits the scrutinee's borrow through the
 			// shared walk and a nested `[a, ...[b, c]]` destructures the suffix in turn.
-			suffix, suffixConcrete := c.tupleRestType(lvl, rest, concreteTup, len(fixed))
+			suffix, suffixConcrete := c.tupleRestType(lvl, scrutinee, concrete, len(fixed))
 			sub := c.bindPatMode(scope, lvl, rest.Pattern, suffix, suffixConcrete, scrutineeMode, leafTypes, emit)
 			subs = append(subs, &soltype.RestPat{Pattern: sub})
+		}
+		for _, e := range recovered {
+			subs = append(subs, c.bindRecoveredElem(scope, lvl, e, scrutineeMode, leafTypes, emit))
 		}
 		c.recordType(p, scrutinee)
 		return &soltype.TuplePat{Elems: subs}
@@ -223,7 +217,8 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		// is complete.
 		named := set.NewSet[string]()
 		var rest *ast.ObjRestPat
-		for _, elem := range p.Elems {
+		var recovered []ast.Pat
+		for i, elem := range p.Elems {
 			switch e := elem.(type) {
 			case *ast.ObjShorthandPat:
 				// A default makes the field optional. `{x = 0}` binds even when x is
@@ -257,13 +252,14 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: sub})
 			case *ast.ObjRestPat:
-				if rest == nil {
+				// A rest takes every property the fields do not name, so a pattern admits
+				// exactly one and it must come last, the position JavaScript's own
+				// destructuring requires. Any other rest is reported and recovered.
+				if rest == nil && i == len(p.Elems)-1 {
 					rest = e
 				} else {
-					// A second `...rest` has no leftover of its own. The first already takes
-					// every property the fields do not name, so report this one and bind
-					// nothing.
 					c.reportUnsupported(elem)
+					recovered = append(recovered, e.Pattern)
 				}
 			default:
 				c.reportUnsupported(elem)
@@ -274,8 +270,13 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			// The rest's sub-pattern binds against the leftover object the same way a field
 			// binds against its own type, so it inherits the scrutinee's borrow through the
 			// shared walk.
-			leftover, leftoverConcrete := c.objectRestType(lvl, rest, concrete, named)
+			leftover, leftoverConcrete := c.objectRestType(lvl, scrutinee, concrete, named)
 			restPat = c.bindPatMode(scope, lvl, rest.Pattern, leftover, leftoverConcrete, scrutineeMode, leafTypes, emit)
+		}
+		// A reported rest still binds against a fresh variable, so a later reference to one
+		// of its leaves resolves instead of cascading into an unknown-identifier error.
+		for _, sub := range recovered {
+			c.bindPatMode(scope, lvl, sub, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
 		}
 		c.recordType(p, scrutinee)
 		return &soltype.ObjectPat{Fields: fields, Rest: restPat}
@@ -294,6 +295,41 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 	}
 }
 
+// splitTupleRest splits a tuple pattern's elements at its first `...rest`. fixed holds the
+// elements before it, which bind positionally against the scrutinee. rest is that element
+// when it is the pattern's last, the only position with a suffix to bind. Otherwise
+// recovered holds it and every element after it. None of those sits at a known index,
+// because the rest stands for a run of elements whose length nothing pins down. A pattern
+// with no rest returns every element as fixed.
+func splitTupleRest(elems []ast.Pat) (fixed []ast.Pat, rest *ast.RestPat, recovered []ast.Pat) {
+	for i, e := range elems {
+		r, isRest := e.(*ast.RestPat)
+		if !isRest {
+			continue
+		}
+		if i == len(elems)-1 {
+			return elems[:i], r, nil
+		}
+		return elems[:i], nil, elems[i:]
+	}
+	return elems, nil, nil
+}
+
+// bindRecoveredElem binds one tuple element the walk could not place at a known index,
+// which happens only after a non-trailing `...rest` has already been reported. The element
+// binds against a fresh variable, so its leaves stay defined and a later reference resolves
+// instead of cascading into an unknown-identifier error. That is the same recovery
+// bindInstancePat makes for a name that does not resolve to a class. A rest element is
+// unwrapped first and re-wrapped in the returned mirror, since bindPatMode's own arms
+// reject a bare RestPat.
+func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+	if r, isRest := e.(*ast.RestPat); isRest {
+		sub := c.bindPatMode(scope, lvl, r.Pattern, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
+		return &soltype.RestPat{Pattern: sub}
+	}
+	return c.bindPatMode(scope, lvl, e, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
+}
+
 // tupleRestType resolves what a tuple pattern's trailing `...rest` binds: the scrutinee's
 // elements past the fixed prefix, gathered back into a tuple. `[a, ...rest]` against
 // `[number, string, boolean]` binds rest at `[string, boolean]`. An inexact scrutinee
@@ -301,29 +337,51 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 // binds rest at `[string, ...]`. A `...P` spread element in the suffix carries through
 // unspliced, so the same pattern against `[number, ...P]` binds rest at `[...P]`.
 //
-// concreteTup is the scrutinee's tuple shape when it is statically known, and prefix is
-// the number of fixed elements before the rest. The suffix is readable only when that
-// prefix holds one element per position. A `...P` spread inside the prefix stands for a
-// run of unknown length, so nothing past it sits at a fixed index and there is no place
-// to cut. Two scrutinees fail that test: an un-annotated parameter, whose shape is still
-// an inference variable, and a union of tuples, which has no single length. Each falls
-// back to a fresh variable bounded below by the empty inexact tuple. That variable
-// renders `[...]` and reads as "some tuple".
+// prefix is the number of fixed elements before the rest. concrete is the scrutinee's
+// shape threaded down the walk, and scrutinee is what this level constrains against.
+// restTupleShape reads the tuple out of whichever of the two carries one.
+//
+// The suffix is readable only when the prefix holds one element per position. A `...P`
+// spread inside the prefix stands for a run of unknown length, so nothing past it sits at
+// a fixed index and there is no place to cut. When no tuple shape is available at all, as
+// for an un-annotated parameter, the rest binds a bare fresh variable. Nothing is known
+// about the leftover, so the surrounding uses are left to constrain it, the same way an
+// un-annotated fixed element's variable is filled by its uses.
 //
 // The returned bind is the type the rest binds at. The returned concrete is what an owned
-// `mut` or borrowed rest inspects to decide whether to wrap. It is nil for that fallback
+// `mut` or borrowed rest inspects to decide whether to wrap. It is nil for that bare
 // variable, matching how a fixed element threads a nil concrete for an unknown shape.
-func (c *checker) tupleRestType(lvl int, node ast.Node, concreteTup *soltype.TupleType, prefix int) (bind, concrete soltype.Type) {
-	if concreteTup != nil && len(concreteTup.Elems) >= prefix && !hasRestSpread(concreteTup.Elems[:prefix]) {
-		suffix := &soltype.TupleType{
-			Elems:   slices.Clone(concreteTup.Elems[prefix:]),
-			Inexact: concreteTup.Inexact,
-		}
-		return suffix, suffix
+func (c *checker) tupleRestType(lvl int, scrutinee, concrete soltype.Type, prefix int) (bind, restConcrete soltype.Type) {
+	tup, ok := restTupleShape(scrutinee, concrete)
+	if !ok || len(tup.Elems) < prefix || hasRestSpread(tup.Elems[:prefix]) {
+		return c.freshAt(lvl), nil
 	}
-	v := c.freshAt(lvl)
-	c.constrain(node, &soltype.TupleType{Inexact: true}, v)
-	return v, nil
+	suffix := &soltype.TupleType{
+		Elems:   slices.Clone(tup.Elems[prefix:]),
+		Inexact: tup.Inexact,
+	}
+	return suffix, suffix
+}
+
+// restTupleShape reports the tuple a rest reads its suffix out of. The threaded concrete
+// type carries it at a nested level, where the scrutinee is only the parent's element
+// variable. The scrutinee carries it at a top-level destructuring, where the concrete type
+// is the same tuple. Neither carries it when the initializer is a reference to another
+// module-level binding, since that reference types as the binding's variable; the variable
+// is coalesced to the shape its bounds have fixed so `val [a, ...r] = tup` reads the same
+// suffix at module scope that it reads inside a function.
+func restTupleShape(scrutinee, concrete soltype.Type) (*soltype.TupleType, bool) {
+	if tup, ok := concrete.(*soltype.TupleType); ok {
+		return tup, true
+	}
+	if tup, ok := scrutinee.(*soltype.TupleType); ok {
+		return tup, true
+	}
+	if _, isVar := scrutinee.(*soltype.TypeVarType); !isVar {
+		return nil, false
+	}
+	tup, ok := soltype.CarrierOf(coalesce(scrutinee, soltype.Positive)).(*soltype.TupleType)
+	return tup, ok
 }
 
 // objectRestType resolves what an object pattern's `...rest` binds: the scrutinee's
@@ -332,28 +390,22 @@ func (c *checker) tupleRestType(lvl int, node ast.Node, concreteTup *soltype.Tup
 // `Omit<{x: number, y: string}, "x">` names, read straight off the scrutinee rather than
 // built as a mapped type over it.
 //
-// source is the scrutinee's shape at this level, and it grounds to a concrete object
-// through the same groundToObject an object spread's operand uses. So an alias, a class
-// instance, or a mapped type resolves to the members the leftover keeps. Each surviving
-// member carries through untouched, so it keeps its `?` and `readonly` markers and a
-// method stays a method. An index signature names no single key, so it survives and the
-// leftover still reads a key the fields did not name. An inexact source passes its open
-// `...` tail on, since the properties that tail hides belong to the leftover too.
+// The members come from whichever of concrete and scrutinee grounds to an object, the same
+// two sources restTupleShape reads a tuple out of, and grounding runs through the
+// groundToObject an object spread's operand uses. So an alias, a class instance, or a
+// mapped type resolves to the members the leftover keeps. Each surviving member carries
+// through untouched, so it keeps its `?` and `readonly` markers and a method stays a
+// method. An index signature names no single key, so it survives and the leftover still
+// reads a key the fields did not name. An inexact source passes its open `...` tail on,
+// since the properties that tail hides belong to the leftover too.
 //
-// A source with no ground object shape, most often an un-annotated parameter's inference
-// variable, leaves the leftover unknowable. The rest then binds a fresh variable bounded
-// below by the empty inexact object, which renders `{...}` and reads as "some object".
-// The returned bind and concrete follow tupleRestType's contract.
-func (c *checker) objectRestType(lvl int, node ast.Node, source soltype.Type, named set.Set[string]) (bind, concrete soltype.Type) {
-	var obj *soltype.ObjectType
-	ground := false
-	if source != nil {
-		obj, ground = newTypeEvaluator(c.ctx, newSeenPairs()).groundToObject(source)
-	}
-	if !ground {
-		v := c.freshAt(lvl)
-		c.constrain(node, &soltype.ObjectType{Inexact: true}, v)
-		return v, nil
+// With no ground object shape at all, as for an un-annotated parameter, the rest binds a
+// bare fresh variable and its uses constrain it. The returned bind and concrete follow
+// tupleRestType's contract.
+func (c *checker) objectRestType(lvl int, scrutinee, concrete soltype.Type, named set.Set[string]) (bind, restConcrete soltype.Type) {
+	obj, ok := c.restObjectShape(scrutinee, concrete)
+	if !ok {
+		return c.freshAt(lvl), nil
 	}
 	elems := make([]soltype.ObjTypeElem, 0, len(obj.Elems))
 	for _, el := range obj.Elems {
@@ -364,6 +416,28 @@ func (c *checker) objectRestType(lvl int, node ast.Node, source soltype.Type, na
 	}
 	leftover := &soltype.ObjectType{Elems: elems, Inexact: obj.Inexact}
 	return leftover, leftover
+}
+
+// restObjectShape reports the object a rest reads its leftover members out of, the object
+// twin of restTupleShape. It grounds the threaded concrete type first, then the scrutinee,
+// then the scrutinee coalesced to the shape its bounds have fixed.
+func (c *checker) restObjectShape(scrutinee, concrete soltype.Type) (*soltype.ObjectType, bool) {
+	eval := newTypeEvaluator(c.ctx, newSeenPairs())
+	if concrete != nil {
+		if obj, ok := eval.groundToObject(concrete); ok {
+			return obj, true
+		}
+	}
+	if scrutinee == nil {
+		return nil, false
+	}
+	if obj, ok := eval.groundToObject(scrutinee); ok {
+		return obj, true
+	}
+	if _, isVar := scrutinee.(*soltype.TypeVarType); !isVar {
+		return nil, false
+	}
+	return eval.groundToObject(soltype.CarrierOf(coalesce(scrutinee, soltype.Positive)))
 }
 
 // bindInstancePat types a class-instance pattern `Name { x, y }`: it narrows the scrutinee
