@@ -63,11 +63,25 @@ type Origin struct {
 	Node Spanned
 	// Synthetic marks a node the desugarer minted rather than lowered from
 	// something the user wrote, such as a fallthrough tail or an implicit `else`.
-	// Kind still names the construct the node was minted for. A consumer that needs
-	// a span for a synthetic node takes it from the nearest enclosing real node or
-	// emits none, rather than inventing a position the user cannot see.
+	// Kind still names the construct the node was minted for. A synthetic node has
+	// no span of its own, so a consumer reads NearestSpan rather than inventing a
+	// position the user cannot see.
 	Synthetic bool
+	// Cause is the origin this one was minted from, which is what makes a synthetic
+	// node's provenance recoverable from the node alone. Following Cause reaches a
+	// real surface node without walking the enclosing IR, so a diagnostic about an
+	// implicit `else` can blame the `val … else` that produced it.
+	//
+	// It is set only on a synthetic origin, by InventedFrom, and is nil at the end
+	// of the chain. A chain ends either at a real origin, whose Node a message can
+	// blame, or at an Invented origin with no cause, which names no position at all.
+	Cause *Origin
 }
+
+// maxCauseDepth bounds the cause walk. A chain the constructors build is a few links
+// long, so a longer one means Cause was assigned by hand into a cycle. Diagnostics
+// must stay total, so the walk gives up rather than spinning.
+const maxCauseDepth = 32
 
 // At builds the origin of a node lowered from the surface node n, which is what a
 // diagnostic about the node blames. Pass a real node; a node the desugarer invented
@@ -80,20 +94,51 @@ func At(kind OriginKind, n Spanned) Origin {
 }
 
 // Invented builds the origin of a node the desugarer minted with no source of its
-// own. kind names the construct it was minted for.
+// own and nothing to trace it back to. kind names the construct it was minted for.
+// Prefer InventedFrom whenever the caller holds the origin it is minting from, since
+// an origin built here can never yield a span.
 func Invented(kind OriginKind) Origin {
 	return Origin{Kind: kind, Synthetic: true}
+}
+
+// InventedFrom builds the origin of a node the desugarer minted while lowering
+// cause. The node has no source text of its own, so it gets no Node, but cause keeps
+// a real surface node reachable: NearestSpan follows the chain and returns the first
+// span it finds. Lowering the implicit `else` of a `val … else` passes the
+// declaration's origin, so a message about the invented tail blames the declaration.
+func InventedFrom(kind OriginKind, cause Origin) Origin {
+	return Origin{Kind: kind, Synthetic: true, Cause: &cause}
 }
 
 // Prov returns the origin itself. Every core and normalized node embeds Origin, so
 // this method is what makes those nodes satisfy Term.
 func (o Origin) Prov() Origin { return o }
 
-// SourceSpan returns the span of the surface node the origin blames, and false when
-// there is none. A synthetic node has no span, so a consumer falls back to the
-// nearest enclosing real span or emits nothing rather than inventing a position.
+// SourceSpan returns the span of the surface node this origin itself blames, and
+// false when there is none. It does not follow the cause chain, so a synthetic origin
+// always misses. Use it to ask whether the node maps to source text the user wrote;
+// use NearestSpan to get a span to underline.
 func (o Origin) SourceSpan() (ast.Span, bool) {
 	return SpanOf(o.Node)
+}
+
+// NearestSpan returns the span of the closest real surface node this origin can
+// reach, following Cause when the origin is synthetic, and false when the chain
+// reaches its end without one. It is what a diagnostic underlines.
+//
+// The span it returns belongs to the construct the synthetic node was minted while
+// lowering, which is wider than the node itself. Underlining the whole `val … else`
+// for its invented tail is the intended behavior: the tail has no text of its own, so
+// the declaration that produced it is the narrowest honest thing to point at.
+func (o Origin) NearestSpan() (ast.Span, bool) {
+	cur := &o
+	for depth := 0; cur != nil && depth < maxCauseDepth; depth++ {
+		if span, ok := SpanOf(cur.Node); ok {
+			return span, true
+		}
+		cur = cur.Cause
+	}
+	return ast.Span{}, false
 }
 
 // SpanOf returns n's span, and false when n names no node. It is the nil-safe way to

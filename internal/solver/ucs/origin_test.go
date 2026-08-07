@@ -2,6 +2,7 @@ package ucs
 
 import (
 	"testing"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/stretchr/testify/require"
@@ -90,4 +91,82 @@ func TestScrutineeCarriesProvenance(t *testing.T) {
 	var term Term = NewRoot(ident("p"), origin)
 
 	require.Equal(t, origin, term.Prov())
+}
+
+// TestInventedFromKeepsAProvenanceChain covers the reason Cause exists. A synthetic
+// node carries no span, and the IR has no parent pointers, so without the chain a
+// diagnostic about an invented node could only recover a position by threading the
+// enclosing origin down a walk. Following Cause recovers it from the node alone.
+func TestInventedFromKeepsAProvenanceChain(t *testing.T) {
+	decl := arm(span(3, 1, 40))
+	declOrigin := At(OriginValElse, decl)
+	tail := InventedFrom(OriginValElse, declOrigin)
+
+	require.True(t, tail.Synthetic)
+	require.Nil(t, tail.Node)
+	require.NotNil(t, tail.Cause)
+	require.Equal(t, declOrigin, *tail.Cause)
+
+	// The synthetic node blames nothing itself.
+	_, ok := tail.SourceSpan()
+	require.False(t, ok)
+
+	// Following the chain reaches the declaration that produced it.
+	found, ok := tail.NearestSpan()
+	require.True(t, ok)
+	require.Equal(t, span(3, 1, 40), found)
+}
+
+// A chain several links long still resolves, which is what a tail minted while
+// lowering another minted node produces.
+func TestNearestSpanFollowsSeveralLinks(t *testing.T) {
+	outer := At(OriginMatchArm, arm(span(1, 1, 8)))
+	mid := InventedFrom(OriginGuard, outer)
+	inner := InventedFrom(OriginValElse, mid)
+
+	found, ok := inner.NearestSpan()
+	require.True(t, ok)
+	require.Equal(t, span(1, 1, 8), found)
+	require.Equal(t, OriginValElse, inner.Kind, "the chain carries a span, not the kind")
+}
+
+// A chain that ends at a causeless Invented names no position, rather than inventing
+// one the user cannot see.
+func TestNearestSpanMissesWhenTheChainHasNoRealNode(t *testing.T) {
+	root := Invented(OriginIfVal)
+	derived := InventedFrom(OriginValElse, root)
+
+	_, ok := derived.NearestSpan()
+	require.False(t, ok)
+
+	_, ok = root.NearestSpan()
+	require.False(t, ok)
+}
+
+// NearestSpan on a real origin is its own span, so a caller can read it uniformly
+// without first asking whether the origin is synthetic.
+func TestNearestSpanOnARealOrigin(t *testing.T) {
+	found, ok := At(OriginMatchArm, arm(span(2, 5, 18))).NearestSpan()
+	require.True(t, ok)
+	require.Equal(t, span(2, 5, 18), found)
+}
+
+// Cause is exported, so a caller can assign a cycle by hand. Diagnostics must stay
+// total, so the walk gives up at maxCauseDepth instead of spinning forever.
+func TestNearestSpanToleratesACauseCycle(t *testing.T) {
+	loop := Invented(OriginGuard)
+	loop.Cause = &loop
+
+	done := make(chan bool, 1)
+	go func() {
+		_, ok := loop.NearestSpan()
+		done <- ok
+	}()
+
+	select {
+	case ok := <-done:
+		require.False(t, ok)
+	case <-time.After(5 * time.Second):
+		t.Fatal("NearestSpan did not terminate on a cyclic cause chain")
+	}
 }

@@ -396,9 +396,11 @@ One decision is deferred to M10, not settled here: the **synthesized-node span
 policy**. The desugarer invents nodes with no source — the fallthrough tail, an
 implicit `else` — and a sourcemap must not point at a column the user cannot see.
 The synthetic marker from point 2 above is what M10 keys that policy off: map a
-synthetic node to the nearest enclosing real span, or emit no mapping for it,
-rather than inventing a position. Recording the marker now keeps that choice open
-instead of foreclosing it with a lost span.
+synthetic node to the span its cause chain reaches, or emit no mapping for it,
+rather than inventing a position. `Origin.Cause` records what a synthetic node was
+minted from and `NearestSpan` walks that chain, so the span is recoverable from the
+node alone rather than by threading the enclosing origin down a walk. Recording
+both now keeps the choice open instead of foreclosing it with a lost span.
 
 ## Codegen efficiency
 
