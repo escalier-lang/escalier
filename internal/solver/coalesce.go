@@ -630,7 +630,7 @@ func renderSchemeWith(s TypeScheme, declaredFor func(soltype.Type) []*soltype.Ty
 		t = sc.display()
 		isParam = func(v *soltype.TypeVarType) bool { return v.Level > sc.Level }
 	default:
-		panic(fmt.Sprintf("renderScheme: unknown TypeScheme %T", s))
+		panic(fmt.Sprintf("renderSchemeWith: unknown TypeScheme %T", s))
 	}
 	var declared []*soltype.TypeParam
 	if declaredFor != nil {

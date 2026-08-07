@@ -174,8 +174,8 @@ func PrintAsScheme(t Type) string {
 // A class, alias, or enum keeps its type parameters in the checker's registry rather than
 // in the type it binds, so the type carries the parameter's variable and nothing else.
 // `class Node<T> {value: T}` binds the type Node<t0>, which Print renders with the raw
-// `t{ID}` debug form. Passing the class's parameters here renders it Node<T>. A variable that
-// declared does not list keeps the `t{ID}` form, the fallback Print applies to every
+// `t{ID}` debug form. Passing the class's parameters here renders it Node<T>. A variable no
+// entry of `declared` points at keeps the `t{ID}` form, the fallback Print applies to every
 // variable.
 func PrintWithParams(t Type, declared []*TypeParam) string {
 	p := &namedPrinter{}
