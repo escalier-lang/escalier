@@ -499,6 +499,54 @@ func TestPrintShowsArmBackReferences(t *testing.T) {
 } default leaf undefined arm=none`))
 }
 
+// ShowSpans turns on the span each node itself blames, which is the only way to see
+// the span of a node that carries no arm back-reference. The guard here renders the
+// condition's span, `x > y` at 2:14-2:19, while its branch renders the whole arm's.
+//
+// A synthetic node owns no span, so it renders the one its cause chain reaches
+// behind `at~`. The invented fallthrough below was minted from the `match`, so it
+// renders that expression's span.
+func TestPrintShowsSpans(t *testing.T) {
+	guardCond := ast.NewBinary(ident("x"), ident("y"), ast.GreaterThan, span(2, 14, 19))
+	guarded := matchCase(objPat("x", "y"), guardCond, ident("x"), span(2, 5, 30))
+	target := ident("p")
+	expr := ast.NewMatch(target, []*ast.MatchCase{guarded}, span(1, 1, 40))
+	origin := At(OriginMatchArm, expr)
+	armOrigin := At(OriginMatchArm, guarded)
+
+	core := &CoreSplit{
+		Scrutinee: NewRoot(target, origin),
+		Branches: []*CoreBranch{{
+			Pattern: guarded.Pattern,
+			Cont: &CoreGuard{
+				Cond:   guardCond,
+				Cont:   &BodyLeaf{Body: guarded.Body, Arm: guarded, Origin: armOrigin},
+				Origin: At(OriginGuard, guardCond),
+			},
+			Arm:    guarded,
+			Origin: armOrigin,
+		}},
+		Else:   &BodyLeaf{Body: exprBody(num(0)), Origin: InventedFrom(OriginMatchArm, origin)},
+		Origin: origin,
+	}
+
+	opts := DefaultPrintOptions()
+	opts.ShowSpans = true
+	snaps.MatchInlineSnapshot(t, Print(core, opts), snaps.Inline(`split p at=1:1-1:40 {
+  pat {x, y} at=2:5-2:30 => guard (x > y) at=2:14-2:19 => leaf x at=2:5-2:30
+} else leaf 0 at~1:1-1:40`))
+}
+
+// A node whose cause chain reaches no surface node at all names no position, so it
+// renders `at=none` rather than inventing one.
+func TestPrintShowsNoSpanForAnUncausedSyntheticNode(t *testing.T) {
+	leaf := &BodyLeaf{Body: exprBody(num(0)), Origin: Invented(OriginIfVal)}
+
+	opts := DefaultPrintOptions()
+	opts.ShowSpans = true
+	require.Equal(t, "leaf 0 at=none", Print(leaf, opts))
+}
+
 // An empty Indent falls back to two spaces, so a zero-value PrintOptions still
 // renders nested splits readably.
 func TestPrintDefaultsIndentWhenEmpty(t *testing.T) {

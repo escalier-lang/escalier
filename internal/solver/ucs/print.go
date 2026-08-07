@@ -16,6 +16,18 @@ type PrintOptions struct {
 	// back-reference. A test that asserts a merged or flattened split still blames
 	// the arm the user typed turns it on.
 	ShowArms bool
+	// ShowSpans appends the span a node blames, written `at=2:12-2:17`. A synthetic
+	// node has no span of its own, so it renders the one its cause chain reaches with
+	// a `~` in place of the `=`, written `at~1:1-1:27`. A node that reaches no span at
+	// all renders `at=none`.
+	//
+	// It renders on the same nodes ShowOrigins tags, which is every core and
+	// normalized term. A scrutinee renders neither, so a test that needs a
+	// scrutinee's span reads Prov().SourceSpan() rather than the printed form.
+	//
+	// This is what shows the span of a node that carries no arm back-reference, such
+	// as a guard, whose origin points at the condition the user wrote.
+	ShowSpans bool
 }
 
 // DefaultPrintOptions renders shape alone, with two-space indentation.
@@ -103,14 +115,14 @@ func (p *printer) branches(count int, write func(i int)) {
 func (p *printer) core(n Core) {
 	switch n := n.(type) {
 	case *CoreSplit:
-		p.write("split " + scrutineeString(n.Scrutinee) + p.originTag(n.Origin))
+		p.write("split " + scrutineeString(n.Scrutinee) + p.originTag(n.Origin) + p.spanTag(n.Origin))
 		p.branches(len(n.Branches), func(i int) { p.coreBranch(n.Branches[i]) })
 		if n.Else != nil {
 			p.write(" else ")
 			p.core(n.Else)
 		}
 	case *CoreGuard:
-		p.write("guard (" + exprString(n.Cond) + ")" + p.originTag(n.Origin) + " => ")
+		p.write("guard (" + exprString(n.Cond) + ")" + p.originTag(n.Origin) + p.spanTag(n.Origin) + " => ")
 		p.core(n.Cont)
 	case *CoreBind:
 		// coreBinds writes the whole bind clause, so it must run before the
@@ -123,7 +135,7 @@ func (p *printer) core(n Core) {
 }
 
 func (p *printer) coreBranch(b *CoreBranch) {
-	p.write("pat " + patString(b.Pattern) + p.originTag(b.Origin) + p.armTag(b.Arm) + " => ")
+	p.write("pat " + patString(b.Pattern) + p.originTag(b.Origin) + p.spanTag(b.Origin) + p.armTag(b.Arm) + " => ")
 	p.core(b.Cont)
 }
 
@@ -136,7 +148,7 @@ func (p *printer) coreBinds(n *CoreBind) Core {
 		if i > 0 {
 			p.write(", ")
 		}
-		p.write(n.Name + " = " + scrutineeString(n.Source) + p.originTag(n.Origin))
+		p.write(n.Name + " = " + scrutineeString(n.Source) + p.originTag(n.Origin) + p.spanTag(n.Origin))
 		next, ok := n.Cont.(*CoreBind)
 		if !ok {
 			break
@@ -150,12 +162,12 @@ func (p *printer) coreBinds(n *CoreBind) Core {
 func (p *printer) norm(n Norm) {
 	switch n := n.(type) {
 	case *NormSplit:
-		p.write("split " + scrutineeString(n.Scrutinee) + p.originTag(n.Origin))
+		p.write("split " + scrutineeString(n.Scrutinee) + p.originTag(n.Origin) + p.spanTag(n.Origin))
 		p.branches(len(n.Branches), func(i int) { p.normBranch(n.Branches[i]) })
 		p.write(" default ")
 		p.norm(n.Default)
 	case *NormGuard:
-		p.write("guard (" + exprString(n.Cond) + ")" + p.originTag(n.Origin))
+		p.write("guard (" + exprString(n.Cond) + ")" + p.originTag(n.Origin) + p.spanTag(n.Origin))
 		p.branches(1, func(int) { p.norm(n.Cont) })
 		p.write(" default ")
 		p.norm(n.Default)
@@ -170,7 +182,7 @@ func (p *printer) norm(n Norm) {
 }
 
 func (p *printer) normBranch(b *NormBranch) {
-	p.write(testString(b.Test) + p.originTag(b.Origin) + p.armTag(b.Arm) + " => ")
+	p.write(testString(b.Test) + p.originTag(b.Origin) + p.spanTag(b.Origin) + p.armTag(b.Arm) + " => ")
 	p.norm(b.Cont)
 }
 
@@ -182,7 +194,7 @@ func (p *printer) normBinds(n *NormBind) Norm {
 		if i > 0 {
 			p.write(", ")
 		}
-		p.write(n.Name + " = " + scrutineeString(n.Source) + p.originTag(n.Origin))
+		p.write(n.Name + " = " + scrutineeString(n.Source) + p.originTag(n.Origin) + p.spanTag(n.Origin))
 		next, ok := n.Cont.(*NormBind)
 		if !ok {
 			break
@@ -200,11 +212,11 @@ func (p *printer) leaf(t Term) {
 	case nil:
 		p.write("✗")
 	case *BodyLeaf:
-		p.write("leaf " + bodyString(n.Body) + p.originTag(n.Origin) + p.armTag(n.Arm))
+		p.write("leaf " + bodyString(n.Body) + p.originTag(n.Origin) + p.spanTag(n.Origin) + p.armTag(n.Arm))
 	case *EscapeLeaf:
-		p.write("escape" + p.originTag(n.Origin) + p.armTag(n.Arm))
+		p.write("escape" + p.originTag(n.Origin) + p.spanTag(n.Origin) + p.armTag(n.Arm))
 	case *FallbackLeaf:
-		p.write("fallback " + bodyString(n.Body) + p.originTag(n.Origin) + p.armTag(n.Arm))
+		p.write("fallback " + bodyString(n.Body) + p.originTag(n.Origin) + p.spanTag(n.Origin) + p.armTag(n.Arm))
 	default:
 		p.write(nodeKind(t))
 	}
@@ -220,6 +232,23 @@ func (p *printer) originTag(o Origin) string {
 		return " [synthetic " + o.Kind.String() + "]"
 	}
 	return " [" + o.Kind.String() + "]"
+}
+
+// spanTag renders the span a node blames, or nothing when the caller did not ask for
+// it. A node with a surface node of its own renders that node's span after `at=`. A
+// synthetic node renders the span its cause chain reaches after `at~`, so a reader
+// can tell an inherited span from an owned one.
+func (p *printer) spanTag(o Origin) string {
+	if !p.opts.ShowSpans {
+		return ""
+	}
+	if span, ok := o.SourceSpan(); ok {
+		return " at=" + span.String()
+	}
+	if span, ok := o.NearestSpan(); ok {
+		return " at~" + span.String()
+	}
+	return " at=none"
 }
 
 // armTag renders a branch's or leaf's surface-arm back-reference as the arm's span,
