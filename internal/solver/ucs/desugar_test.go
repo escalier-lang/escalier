@@ -129,6 +129,16 @@ func TestDesugarMatchGuardedArm(t *testing.T) {
   pat {x, y} [match arm] arm=1:10-2:22 => guard (x > y) [guard] => leaf x [match arm] arm=1:10-2:22
   pat _ [match arm] arm=2:23-3:8 => leaf 0 [match arm] arm=2:23-3:8
 }`))
+
+	// The snapshot shows no `arm=` tag on the guard, because ShowArms renders the Arm
+	// back-reference and a guard carries none. Its span comes from its own origin
+	// instead, which points at the condition and so underlines `x > y` alone.
+	guard, isGuard := core.Branches[0].Cont.(*CoreGuard)
+	require.True(t, isGuard)
+	cond, ok := guard.Prov().SourceSpan()
+	require.True(t, ok)
+	require.Equal(t, expr.Cases[0].Guard.Span(), cond)
+	require.Equal(t, "2:12-2:17", cond.String())
 }
 
 // A nested pattern stays one deep shape on its branch. Flattening it into successive
