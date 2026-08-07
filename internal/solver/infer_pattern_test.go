@@ -555,21 +555,24 @@ func TestInferRestPatternTopLevelDestructure(t *testing.T) {
 	}
 }
 
-// A scrutinee with no statically known shape leaves the leftover unknowable. The rest
-// binds a bare variable with no bound at all, which coalesces to `never` when nothing
-// constrains it. The parameter below is un-annotated, so its shape comes only from the
-// pattern's fixed prefix and the leftover past that prefix is genuinely unknown.
+// A scrutinee with no statically known shape leaves the leftover's CONTENTS unknowable,
+// but not its kind. The rest of a tuple pattern is still some tuple, and the rest of an
+// object pattern still some object, so each binds a variable bounded below by that kind's
+// top: the empty inexact tuple `[...]` and the empty inexact object `{...}`. Every tuple
+// is a subtype of `[...]` and every object of `{...}`, so the bound is the join over every
+// leftover a caller could produce.
 //
-// A bound such as the empty inexact tuple `[...]` would render better but would be a
-// claim the scrutinee does not support. `val [b, c] = rest` would then be rejected for
-// destructuring two elements out of a zero-length tuple, even though a caller passing a
-// three-element tuple makes that destructuring correct. Nothing connects the rest
-// variable to the scrutinee's requirement, so no bound can be both informative and sound
-// here. Annotating the parameter resolves the leftover; see TestInferRestPatternBinds.
+// The bound is what the leftover reads as, not merely how it renders. Without it the
+// variable carries no bound at all and coalesces to `never` in a return position, which
+// claims the function does not return and lets a caller assign the result to anything.
+// `[...]` is also the tightest sound answer. The exact empty tuple `[]` would be wrong,
+// since a caller passing `[1, "x"]` makes the leftover `["x"]`, which is not a subtype of
+// `[]`. Naming the leftover exactly needs the parameter's arity, which only an annotation
+// supplies; see TestInferRestPatternBinds.
 //
-// Two more scrutinees reach the same bare variable, both of them already reported as
-// constraint errors by the requirement the fixed prefix emits. They are covered by
-// TestInferTuplePatternRestFallbackGuards below, which pins the recovery.
+// Two more scrutinees reach the same bounded variable, both already reported as constraint
+// errors by the requirement the fixed prefix emits. TestInferTuplePatternRestFallbackGuards
+// below pins that recovery.
 func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 	tests := []struct {
 		name string
@@ -582,28 +585,17 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 				fn f([a, ...rest]) {
 					return rest
 				}`,
-			want: "fn ([a, ...rest]: [unknown, ...]) -> never",
+			want: "fn ([a, ...rest]: [unknown, ...]) -> [...]",
 		},
 		{
+			// The parameter is inexact because the pattern names a rest. See
+			// TestInferRestPatternParamAdmitsExtraFields.
 			name: "Object",
 			src: `
 				fn f({x, ...rest}) {
 					return rest
 				}`,
-			want: "fn ({x, ...rest}: {x: unknown}) -> never",
-		},
-		{
-			// Destructuring the unknown leftover is accepted rather than rejected against
-			// a bound the scrutinee never justified. The leaves carry no information, so
-			// they read `never`.
-			name: "TupleLeftoverDestructures",
-			src: `
-				fn f(p) {
-					val [a, ...rest] = p
-					val [b, c] = rest
-					return c
-				}`,
-			want: "fn (p: [unknown, ...]) -> never",
+			want: "fn ({x, ...rest}: {x: unknown, ...}) -> {...}",
 		},
 	}
 	for _, tt := range tests {
@@ -613,6 +605,93 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 			require.Equal(t, tt.want, values["f"])
 		})
 	}
+}
+
+// The leftover's kind bound is load-bearing at the use site, not just in rendering. A
+// return of the unknown leftover is checked against the caller's expectation instead of
+// passing as `never`, and destructuring more elements out of it than its kind guarantees
+// is rejected. The rejection is correct rather than a limitation: nothing in
+// `fn f(p) { val [a, ...rest] = p }` stops a caller from passing `[1]`, which makes the
+// leftover empty, so `val [b, c] = rest` cannot be justified. Annotating the parameter
+// gives the leftover a length and the same destructuring checks.
+func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
+	t.Run("returning the leftover is checked against the caller", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			fn f([a, ...rest]) { return rest }
+			val bad: string = f([1, 2])
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "3:22-3:31: cannot constrain tuple <: string", msgWithSpan(errs[0]))
+	})
+
+	t.Run("destructuring past the leftover's guaranteed length is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			fn f(p) {
+				val [a, ...rest] = p
+				val [b, c] = rest
+				return c
+			}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "4:9-4:15: cannot constrain tuple of length 0 <: tuple of length 2", msgWithSpan(errs[0]))
+	})
+
+	t.Run("reading a field off the leftover is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			fn f(p) {
+				val {x, ...rest} = p
+				return rest.y
+			}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "4:17-4:18: object is missing property: y", msgWithSpan(errs[0]))
+	})
+
+	t.Run("an annotated scrutinee gives the leftover a length", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			fn f(p: [number, string, boolean]) {
+				val [a, ...rest] = p
+				val [b, c] = rest
+				return c
+			}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (p: [number, string, boolean]) -> boolean", values["f"])
+	})
+}
+
+// An un-annotated parameter whose pattern names a `...rest` stays row-polymorphic, so a
+// caller may pass an object carrying the properties the rest is there to collect. Policy A
+// closes a usage-inferred object to exact, which would reject every such argument and
+// leave the rest nothing to bind, so a rest opts the parameter out of that close the same
+// way the written `open` marker does. A pattern with no rest still closes to exact.
+func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
+	t.Run("a rest admits extra fields", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			fn f({x, ...rest}) { return x }
+			val r = f({x: 1, y: 2})
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn <T0>({x, ...rest}: {x: T0, ...}) -> T0", values["f"])
+	})
+
+	t.Run("no rest still closes to exact", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			fn f({x}) { return x }
+			val r = f({x: 1, y: 2})
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "3:24-3:25: object has extra property: y", msgWithSpan(errs[0]))
+	})
+
+	t.Run("a tuple rest already admits a longer tuple", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			fn f([a, ...rest]) { return a }
+			val r = f([1, 2, 3])
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn <T0>([a, ...rest]: [T0, ...]) -> T0", values["f"])
+	})
 }
 
 // tupleRestType cuts the suffix out of the scrutinee's element list, so it guards two

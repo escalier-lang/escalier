@@ -285,6 +285,16 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// whose mismatch blame should point at the pattern.
 			if p.TypeAnn == nil {
 				c.recordProv(pt, p.Pattern, ParamBinding)
+				// A pattern naming a `...rest` binds the properties its fields do not, so
+				// the parameter has to admit an argument that carries them. Policy A would
+				// otherwise close the usage-inferred object to exact, which rejects every
+				// such argument and leaves the rest nothing to bind: `fn f({x, ...rest})`
+				// would infer the parameter `{x: T0}` and reject `f({x: 1, y: 2})` for the
+				// extra y. Marking the var open keeps the folded object inexact, the same
+				// row-polymorphic shape the written `open` marker produces.
+				if v, ok := pt.(*soltype.TypeVarType); ok && objectPatNamesRest(p.Pattern) {
+					v.Open = true
+				}
 			}
 			mirror := c.bindPattern(fnScope, lvl, p.Pattern, pt, paramTypes)
 			params[i] = &soltype.FuncParam{Pattern: mirror, Type: pt, Optional: p.Optional}

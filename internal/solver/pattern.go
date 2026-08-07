@@ -200,7 +200,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			// The rest's sub-pattern binds against the suffix the same way a fixed element
 			// binds against its own, so it inherits the scrutinee's borrow through the
 			// shared walk and a nested `[a, ...[b, c]]` destructures the suffix in turn.
-			suffix, suffixConcrete := c.tupleRestType(lvl, scrutinee, concrete, len(fixed))
+			suffix, suffixConcrete := c.tupleRestType(lvl, rest, scrutinee, concrete, len(fixed))
 			sub := c.bindPatMode(scope, lvl, rest.Pattern, suffix, suffixConcrete, scrutineeMode, leafTypes, emit)
 			subs = append(subs, &soltype.RestPat{Pattern: sub})
 		}
@@ -270,7 +270,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			// The rest's sub-pattern binds against the leftover object the same way a field
 			// binds against its own type, so it inherits the scrutinee's borrow through the
 			// shared walk.
-			leftover, leftoverConcrete := c.objectRestType(lvl, scrutinee, concrete, named)
+			leftover, leftoverConcrete := c.objectRestType(lvl, rest, scrutinee, concrete, named)
 			restPat = c.bindPatMode(scope, lvl, rest.Pattern, leftover, leftoverConcrete, scrutineeMode, leafTypes, emit)
 		}
 		// A reported rest still binds against a fresh variable, so a later reference to one
@@ -293,6 +293,24 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		c.reportUnsupported(pat)
 		return &soltype.WildcardPat{}
 	}
+}
+
+// objectPatNamesRest reports whether a pattern is an object pattern carrying a `...rest`
+// element. Only an object pattern is asked about. A tuple pattern's rest already reaches
+// the parameter's type through the inexact tuple requirement its fixed prefix emits, so
+// `fn f([a, ...rest])` infers the parameter `[unknown, ...]` and accepts a longer tuple
+// without any further marking.
+func objectPatNamesRest(pat ast.Pat) bool {
+	obj, ok := pat.(*ast.ObjectPat)
+	if !ok {
+		return false
+	}
+	for _, elem := range obj.Elems {
+		if _, isRest := elem.(*ast.ObjRestPat); isRest {
+			return true
+		}
+	}
+	return false
 }
 
 // splitTupleRest splits a tuple pattern's elements at its first `...rest`. fixed holds the
@@ -344,17 +362,27 @@ func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeM
 // The suffix is readable only when the prefix holds one element per position. A `...P`
 // spread inside the prefix stands for a run of unknown length, so nothing past it sits at
 // a fixed index and there is no place to cut. When no tuple shape is available at all, as
-// for an un-annotated parameter, the rest binds a bare fresh variable. Nothing is known
-// about the leftover, so the surrounding uses are left to constrain it, the same way an
-// un-annotated fixed element's variable is filled by its uses.
+// for an un-annotated parameter, the leftover's contents are unknown but its kind is not:
+// it is still some tuple. The rest binds a fresh variable bounded below by the empty
+// inexact tuple `[...]`, the top of the tuple lattice, so the variable reads as "some
+// tuple" rather than coalescing to `never`.
+//
+// `[...]` is the tightest sound bound. It is the join over every leftover a caller could
+// produce, since every tuple is a subtype of it. The exact empty tuple `[]` would be
+// wrong: `[a, ...rest]` against a caller's `[1, "x"]` leaves `["x"]`, which is not a
+// subtype of `[]`. The bound is deliberately load-bearing rather than cosmetic. It lets a
+// return of the leftover be checked against the caller's expectation, and it rejects
+// `val [b, c] = rest`, which no argument shape justifies once the length is unknown.
 //
 // The returned bind is the type the rest binds at. The returned concrete is what an owned
-// `mut` or borrowed rest inspects to decide whether to wrap. It is nil for that bare
+// `mut` or borrowed rest inspects to decide whether to wrap. It is nil for that bounded
 // variable, matching how a fixed element threads a nil concrete for an unknown shape.
-func (c *checker) tupleRestType(lvl int, scrutinee, concrete soltype.Type, prefix int) (bind, restConcrete soltype.Type) {
+func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee, concrete soltype.Type, prefix int) (bind, restConcrete soltype.Type) {
 	tup, ok := restTupleShape(scrutinee, concrete)
 	if !ok || len(tup.Elems) < prefix || hasRestSpread(tup.Elems[:prefix]) {
-		return c.freshAt(lvl), nil
+		v := c.freshAt(lvl)
+		c.constrain(node, &soltype.TupleType{Inexact: true}, v)
+		return v, nil
 	}
 	suffix := &soltype.TupleType{
 		Elems:   slices.Clone(tup.Elems[prefix:]),
@@ -400,12 +428,20 @@ func restTupleShape(scrutinee, concrete soltype.Type) (*soltype.TupleType, bool)
 // since the properties that tail hides belong to the leftover too.
 //
 // With no ground object shape at all, as for an un-annotated parameter, the rest binds a
-// bare fresh variable and its uses constrain it. The returned bind and concrete follow
-// tupleRestType's contract.
-func (c *checker) objectRestType(lvl int, scrutinee, concrete soltype.Type, named set.Set[string]) (bind, restConcrete soltype.Type) {
+// fresh variable bounded below by the empty inexact object `{...}`, the object twin of the
+// `[...]` bound tupleRestType falls back to and the top of the object lattice. The
+// returned bind and concrete follow tupleRestType's contract.
+//
+// An un-annotated parameter reaches this fallback but is not left uninformative by it.
+// inferFunc marks such a parameter's variable open when its pattern names a rest, so the
+// parameter stays row-polymorphic and a caller may pass the very properties the rest
+// collects.
+func (c *checker) objectRestType(lvl int, node ast.Node, scrutinee, concrete soltype.Type, named set.Set[string]) (bind, restConcrete soltype.Type) {
 	obj, ok := c.restObjectShape(scrutinee, concrete)
 	if !ok {
-		return c.freshAt(lvl), nil
+		v := c.freshAt(lvl)
+		c.constrain(node, &soltype.ObjectType{Inexact: true}, v)
+		return v, nil
 	}
 	elems := make([]soltype.ObjTypeElem, 0, len(obj.Elems))
 	for _, el := range obj.Elems {
