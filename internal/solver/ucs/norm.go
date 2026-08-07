@@ -64,11 +64,17 @@ type NormGuard struct {
 // tests the `Point` tag and then binds `x` and `y` from the projections `p.x` and
 // `p.y`.
 type NormBind struct {
-	// Name is the bound identifier.
+	// Name is the bound identifier. It is empty on a bind that names no single
+	// identifier, which happens two ways. A sub-pattern normalization has not
+	// flattened into a split of its own is held here whole, so `{start: {x, y}}` keeps
+	// `{x, y}` as a nameless bind on the projection `p.start`. A shorthand object
+	// element does name an identifier but is not an ast.Pat, so its bind carries the
+	// name with no Pat.
 	Name string
 	// Pat is the pattern leaf the name came from, which the solver binds through so
 	// the leaf keeps its annotation and its borrow mode. It is nil for a name the
-	// desugarer invented, which has no pattern leaf behind it.
+	// desugarer invented, which has no pattern leaf behind it, and for a shorthand
+	// object element, which is an ObjPatElem rather than a pattern.
 	Pat ast.Pat
 	// Source is the projection the name binds to. Sibling binds under one branch
 	// share their parent *Scrutinee, so the parent is evaluated once.

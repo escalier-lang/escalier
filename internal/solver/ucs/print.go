@@ -1,6 +1,10 @@
 package ucs
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+)
 
 // PrintOptions configures how Print renders a term.
 type PrintOptions struct {
@@ -136,7 +140,7 @@ func (p *printer) coreBinds(n *CoreBind) Core {
 		if i > 0 {
 			p.write(", ")
 		}
-		p.write(n.Name + " = " + scrutineeString(n.Source) + p.originTag(n.Origin))
+		p.write(bindTarget(n.Name, n.Pat) + " = " + scrutineeString(n.Source) + p.originTag(n.Origin))
 		next, ok := n.Cont.(*CoreBind)
 		if !ok {
 			break
@@ -182,7 +186,7 @@ func (p *printer) normBinds(n *NormBind) Norm {
 		if i > 0 {
 			p.write(", ")
 		}
-		p.write(n.Name + " = " + scrutineeString(n.Source) + p.originTag(n.Origin))
+		p.write(bindTarget(n.Name, n.Pat) + " = " + scrutineeString(n.Source) + p.originTag(n.Origin))
 		next, ok := n.Cont.(*NormBind)
 		if !ok {
 			break
@@ -208,6 +212,20 @@ func (p *printer) leaf(t Term) {
 	default:
 		p.write(nodeKind(t))
 	}
+}
+
+// bindTarget renders what a bind introduces. A named bind writes its identifier. A
+// bind with no name holds a sub-pattern that is not flattened into a split yet, so it
+// writes the pattern: `bind {x, y} = l.start` says the branch has still to match
+// `{x, y}` against the projection `l.start`.
+func bindTarget(name string, pat ast.Pat) string {
+	if name != "" {
+		return name
+	}
+	if pat == nil {
+		return "_"
+	}
+	return patString(pat)
 }
 
 // originTag renders a node's provenance, or nothing when the caller did not ask for
