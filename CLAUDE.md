@@ -58,6 +58,10 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 ## GitHub issues
 
 - When creating issues with `gh`, do not escape strings or backticks in the Markdown body — `gh` passes the body through as-is, and escaping produces literal backslashes in the rendered issue.
+- Always set an issue type on a new issue. The repo has three: `Bug`, `Feature`, and `Task`. Pass it with `gh issue create --type <name>`.
+  - `Bug` — the compiler does the wrong thing on valid input, crashes, or accepts invalid input it should reject. This covers unsound checks and missing diagnostics.
+  - `Feature` — new language surface, new syntax, a new type-system construct, or a new tooling capability.
+  - `Task` — internal engineering work with no change to what the compiler accepts or rejects. Refactors, renames, cleanups, performance work, tests, docs, dependency bumps, and milestone plumbing.
 
 ## Pull requests
 
