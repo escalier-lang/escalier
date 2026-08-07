@@ -486,8 +486,9 @@ into nothing.
 - Enumerate the branch-test kinds as a sum: a structural object or tuple shape, a
   literal, a nominal class tag for an instance pattern, an extractor tag, and an
   inexact-prefix marker a rest pattern sets. A projection path segment must be able
-  to name a field, a tuple index, an extractor's positional result, a tuple suffix
-  for a tuple rest, and an object remainder excluding a key set for an object rest.
+  to name a field, a tuple index, a positional value an extractor yields, a tuple
+  suffix for a tuple rest, and an object remainder excluding a key set for an object
+  rest.
   M9 has shipped the types the last two resolve to — tuple spread and an
   `Omit`-style mapped type — and PR0 wires their `bindPattern` cases, so the IR
   names both projections and PR5 onward bind them for real.

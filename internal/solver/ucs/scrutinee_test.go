@@ -50,13 +50,13 @@ func TestStepEqual(t *testing.T) {
 		{"different field", FieldStep{Name: "x"}, FieldStep{Name: "y"}, false},
 		{"same index", IndexStep{Index: 1}, IndexStep{Index: 1}, true},
 		{"different index", IndexStep{Index: 0}, IndexStep{Index: 1}, false},
-		{"same result", ResultStep{Index: 0}, ResultStep{Index: 0}, true},
+		{"same extracted value", ExtractStep{Index: 0}, ExtractStep{Index: 0}, true},
 		{
-			// A tuple element and an extractor result resolve through different
+			// A tuple element and an extracted value resolve through different
 			// machinery, so the same position is not the same projection.
-			"index is not a result",
+			"index is not an extracted value",
 			IndexStep{Index: 0},
-			ResultStep{Index: 0},
+			ExtractStep{Index: 0},
 			false,
 		},
 		{"same suffix", SuffixStep{From: 1}, SuffixStep{From: 1}, true},
@@ -125,10 +125,10 @@ func TestScrutineePaths(t *testing.T) {
 			"xs.0",
 		},
 		{
-			// The `v` of `Ok(v)` is the extractor's first positional result. The `#`
+			// The `v` of `Ok(v)` is the extractor's first extracted value. The `#`
 			// keeps it distinct from the tuple element `r.0` above.
-			"extractor result",
-			root("r").Project(ResultStep{Index: 0}, origin),
+			"extracted value",
+			root("r").Project(ExtractStep{Index: 0}, origin),
 			"r.#0",
 		},
 		{

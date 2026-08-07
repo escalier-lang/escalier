@@ -63,7 +63,7 @@ type Step interface {
 
 func (FieldStep) isStep()     {}
 func (IndexStep) isStep()     {}
-func (ResultStep) isStep()    {}
+func (ExtractStep) isStep()   {}
 func (SuffixStep) isStep()    {}
 func (RemainderStep) isStep() {}
 
@@ -83,15 +83,15 @@ func (s IndexStep) Equal(other Step) bool {
 	return ok && o.Index == s.Index
 }
 
-// ResultStep reaches one of the positional values an extractor yields. The `v` of
-// `Ok(v)` is result 0 of the `Ok` extractor. It is a separate step from IndexStep
-// because the solver resolves it through the extractor rather than through tuple
-// indexing, even though both name a position. The printer keeps them apart too, so a
-// path that should go through an extractor cannot pass for a tuple index.
-type ResultStep struct{ Index int }
+// ExtractStep reaches one of the positional values an extractor yields. The `v` of
+// `Ok(v)` is extracted value 0 of the `Ok` extractor. It is a separate step from
+// IndexStep because the solver resolves it through the extractor rather than through
+// tuple indexing, even though both name a position. The printer keeps them apart too,
+// so a path that should go through an extractor cannot pass for a tuple index.
+type ExtractStep struct{ Index int }
 
-func (s ResultStep) Equal(other Step) bool {
-	o, ok := other.(ResultStep)
+func (s ExtractStep) Equal(other Step) bool {
+	o, ok := other.(ExtractStep)
 	return ok && o.Index == s.Index
 }
 
@@ -144,8 +144,8 @@ func scrutineeString(s *Scrutinee) string {
 		return base + "." + step.Name
 	case IndexStep:
 		return base + "." + strconv.Itoa(step.Index)
-	case ResultStep:
-		// The `#` keeps an extractor result apart from the tuple element `r.0`. The
+	case ExtractStep:
+		// The `#` keeps an extracted value apart from the tuple element `r.0`. The
 		// solver resolves the two through different lookups, so a snapshot must not
 		// let one stand in for the other.
 		return base + ".#" + strconv.Itoa(step.Index)
