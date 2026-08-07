@@ -112,6 +112,37 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 		require.Equal(t, "fn (p: {x: number, set y(value: string)}) -> undefined", values["f"])
 	})
 
+	t.Run("a class's converted setter-only name reads undefined too", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box {
+				v: number,
+				set value(mut self, x: number) { self.v = x },
+			}
+			fn f(b: Box) {
+				val {v, ...rest} = b
+				return rest.value
+			}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (b: Box) -> undefined", values["f"])
+	})
+
+	t.Run("a class's converted accessor pair reads at the getter's type", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box {
+				v: number,
+				get value(self) -> number { return self.v },
+				set value(mut self, x: number) { self.v = x },
+			}
+			fn f(b: Box) {
+				val {v, ...rest} = b
+				return rest.value
+			}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (b: Box) -> number", values["f"])
+	})
+
 	t.Run("a converted getter is writable through a mut rest", func(t *testing.T) {
 		// The copy is a fresh object, so a write lands on it and never reaches the
 		// getter. The converted property is therefore not readonly.
@@ -192,6 +223,41 @@ func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
 		`)
 		require.Len(t, errs, 1)
 		require.Equal(t, "7:10-7:17: object is missing property: doubled", msgWithSpan(errs[0]))
+		require.Equal(t, "fn (b: Box) -> {v: number, ...}", values["f"])
+	})
+
+	t.Run("a setter-only field on a class instance is reported missing", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box {
+				v: number,
+				set value(mut self, x: number) { self.v = x },
+			}
+			fn f(b: Box) {
+				val {value, ...rest} = b
+				return rest
+			}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "7:10-7:15: object is missing property: value", msgWithSpan(errs[0]))
+		require.Equal(t, "fn (b: Box) -> {v: number, ...}", values["f"])
+	})
+
+	t.Run("an accessor pair named as a field is reported missing", func(t *testing.T) {
+		// A readable name is still not a property, so naming the pair fails the same way
+		// naming a setter-only name does.
+		values, _, errs := inferSource(t, `
+			class Box {
+				v: number,
+				get value(self) -> number { return self.v },
+				set value(mut self, x: number) { self.v = x },
+			}
+			fn f(b: Box) {
+				val {value, ...rest} = b
+				return rest
+			}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "8:10-8:15: object is missing property: value", msgWithSpan(errs[0]))
 		require.Equal(t, "fn (b: Box) -> {v: number, ...}", values["f"])
 	})
 }
@@ -297,6 +363,84 @@ func TestInferObjectRestOnClassInstance(t *testing.T) {
 				}`,
 			want: "fn (p: Pt) -> {y: string, ...}",
 		},
+		{
+			// A class setter with no getter converts the way an object type's does: the
+			// name has nothing readable, so the copy stores `undefined` under it.
+			name: "InstanceSetterOnlyBecomesUndefined",
+			src: `
+				class Box {
+					v: number,
+					set value(mut self, x: number) { self.v = x },
+				}
+				fn f(b: Box) {
+					val {v, ...rest} = b
+					return rest
+				}`,
+			want: "fn (b: Box) -> {value: undefined, ...}",
+		},
+		{
+			// A getter and setter declared under one name on a class collapse to the one
+			// property the getter's type gives.
+			name: "InstanceAccessorPairCollapses",
+			src: `
+				class Box {
+					v: number,
+					get value(self) -> number { return self.v },
+					set value(mut self, x: number) { self.v = x },
+				}
+				fn f(b: Box) {
+					val {v, ...rest} = b
+					return rest
+				}`,
+			want: "fn (b: Box) -> {value: number, ...}",
+		},
+		{
+			// The pair's two halves may differ, since a setter may accept more than its
+			// getter returns. A rest READS, so the property takes the getter's type and
+			// the setter's wider parameter does not reach it.
+			name: "InstanceAccessorPairTakesTheGetterType",
+			src: `
+				class Box {
+					v: number,
+					get value(self) -> number { return self.v },
+					set value(mut self, x: number | string) { },
+				}
+				fn f(b: Box) {
+					val {v, ...rest} = b
+					return rest
+				}`,
+			want: "fn (b: Box) -> {value: number, ...}",
+		},
+		{
+			// A static setter belongs to the class value, so it is no more part of an
+			// instance's leftover than a static method is.
+			name: "StaticSetterIsNotAnInstanceMember",
+			src: `
+				class Box {
+					v: number,
+					static set cfg(x: number) { },
+				}
+				fn f(b: Box) {
+					val {v, ...rest} = b
+					return rest
+				}`,
+			want: "fn (b: Box) -> {...}",
+		},
+		{
+			// A `match` arm converts an instance's setter the same way a `val` does.
+			name: "InstanceSetterInMatchArm",
+			src: `
+				class Box {
+					v: number,
+					set value(mut self, x: number) { self.v = x },
+				}
+				fn f(b: Box) {
+					return match b {
+						{v, ...rest} => rest
+					}
+				}`,
+			want: "fn (b: Box) -> {value: undefined, ...}",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -320,4 +464,21 @@ func TestInferObjectRestOnBorrowedClassInstance(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn <'a>(p: &'a mut Pt) -> &'a mut {y: {b: number}, ...}", values["f"])
+}
+
+// A borrowed instance carrying a setter projects the borrow over the CONVERTED leftover, so
+// the `undefined` the setter's name reads as sits under the `&mut` just as a field would.
+func TestInferObjectRestOnBorrowedInstanceWithSetter(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class Box {
+			v: {a: number},
+			set value(mut self, x: {a: number}) { self.v = x },
+		}
+		fn f(b: &mut Box) -> &mut {value: undefined, ...} {
+			val {v, ...rest} = b
+			return rest
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(b: &'a mut Box) -> &'a mut {value: undefined, ...}", values["f"])
 }
