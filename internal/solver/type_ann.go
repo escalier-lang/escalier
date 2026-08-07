@@ -1098,8 +1098,15 @@ func (c *checker) mirrorParamPat(pat ast.Pat) soltype.Pat {
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: c.mirrorParamPat(e.Value)})
 			case *ast.ObjRestPat:
 				// An object's rest has no position among the named fields, so it mirrors
-				// into ObjectPat.Rest rather than into the field list.
+				// into ObjectPat.Rest rather than into the field list. A sub-pattern with
+				// no soltype counterpart mirrors to the wildcard rather than to nil, so
+				// the written `...` still renders. `{x, .../ab/}` reads back `{x, ..._}`,
+				// the same recovery the tuple path's `[a, ..._]` produces, instead of
+				// dropping the rest and reading back `{x}`.
 				rest = c.mirrorParamPat(e.Pattern)
+				if rest == nil {
+					rest = &soltype.WildcardPat{}
+				}
 			}
 		}
 		return &soltype.ObjectPat{Fields: fields, Rest: rest}

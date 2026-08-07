@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -565,6 +566,10 @@ func TestInferRestPatternTopLevelDestructure(t *testing.T) {
 // three-element tuple makes that destructuring correct. Nothing connects the rest
 // variable to the scrutinee's requirement, so no bound can be both informative and sound
 // here. Annotating the parameter resolves the leftover; see TestInferRestPatternBinds.
+//
+// Two more scrutinees reach the same bare variable, both of them already reported as
+// constraint errors by the requirement the fixed prefix emits. They are covered by
+// TestInferTuplePatternRestFallbackGuards below, which pins the recovery.
 func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 	tests := []struct {
 		name string
@@ -606,6 +611,57 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Empty(t, errs)
 			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// tupleRestType cuts the suffix out of the scrutinee's element list, so it guards two
+// shapes where that cut has no meaning and falls back to a bare variable instead.
+//
+//   - A `...P` spread inside the fixed prefix stands for a run of unknown length, so
+//     nothing past it sits at a fixed index.
+//   - A scrutinee shorter than the fixed prefix has no elements left to cut. The guard is
+//     what keeps the slice in range.
+//
+// Neither case is diagnostic-free. The requirement the fixed prefix emits already rejects
+// both, so the bare variable is recovery on an erroring pattern rather than an inferred
+// answer. Each case asserts that single error and confirms the rest still binds a name.
+func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// `[a, b, ...rest]` reads b at index 1, which the `...Pair` spread occupies.
+			name: "SpreadInsideFixedPrefix",
+			src: `
+				type Pair = [string, boolean]
+				fn f(t: [number, ...Pair]) {
+					val [a, b, ...rest] = t
+					return rest
+				}`,
+			want: "4:14-4:15: cannot constrain string <: ...Pair",
+		},
+		{
+			// A two-element prefix against a one-element scrutinee leaves nothing to cut.
+			name: "ScrutineeShorterThanFixedPrefix",
+			src: `
+				fn f(t: [number]) {
+					val [a, b, ...rest] = t
+					return rest
+				}`,
+			want: "2:13-2:21: cannot constrain tuple of length 1 <: tuple of length 2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			// The rest still binds, so `return rest` resolves the name rather than
+			// cascading into an unknown-identifier error on top of the constraint error.
+			require.NotContains(t, values["f"], "error")
 		})
 	}
 }
@@ -659,6 +715,53 @@ func TestInferRestPatternRejectedPositions(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
 			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
+}
+
+// A function-type annotation mirrors its parameter patterns into soltype so the type
+// reads back the way the source wrote it. A rest element survives that round trip in both
+// the tuple and the object form, and a rest whose sub-pattern has no soltype counterpart
+// still renders its `...` with the wildcard placeholder rather than disappearing. A regex
+// literal is such a sub-pattern: soltype has no LitType for one, so mirrorParamPat
+// returns nil for it.
+func TestMirrorParamPatRestRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "TupleRest",
+			src:  `type F = fn ([a, ...rest]: [number, string]) -> number`,
+			want: "fn ([a, ...rest]: [number, string]) -> number",
+		},
+		{
+			name: "ObjectRest",
+			src:  `type F = fn ({x, ...rest}: {x: number, y: string}) -> number`,
+			want: "fn ({x, ...rest}: {x: number, y: string}) -> number",
+		},
+		{
+			name: "ObjectRestDestructures",
+			src:  `type F = fn ({x, ...{y}}: {x: number, y: string}) -> number`,
+			want: "fn ({x, ...{y}}: {x: number, y: string}) -> number",
+		},
+		{
+			name: "TupleRestWithoutMirror",
+			src:  `type F = fn ([a, .../ab/]: [number, string]) -> number`,
+			want: "fn ([a, ..._]: [number, string]) -> number",
+		},
+		{
+			name: "ObjectRestWithoutMirror",
+			src:  `type F = fn ({x, .../ab/}: {x: number, y: string}) -> number`,
+			want: "fn ({x, ..._}: {x: number, y: string}) -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, _, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(nodes["F"]))
 		})
 	}
 }
