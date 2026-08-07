@@ -77,3 +77,12 @@ func blockBody(e ast.Expr) ast.BlockOrExpr {
 func exprBody(e ast.Expr) ast.BlockOrExpr {
 	return ast.BlockOrExpr{Expr: e}
 }
+
+// keys builds the required-field list of an object test.
+func keys(names ...string) []ObjectKey {
+	out := make([]ObjectKey, len(names))
+	for i, name := range names {
+		out[i] = ObjectKey{Name: name}
+	}
+	return out
+}

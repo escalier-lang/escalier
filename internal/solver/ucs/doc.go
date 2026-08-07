@@ -14,6 +14,14 @@
 // value, a CoreGuard tests a boolean over a branch's bindings, and a leaf ends a
 // branch. A core branch keeps its arm's source pattern whole, nesting and all.
 //
+// The normalized form is a backtracking-free rewrite of the core. Every NormSplit
+// tests exactly one tag-level of one scrutinee. A tag-level is the outermost tag a
+// pattern names and nothing under it, so `Line { start: {x, y} }` contributes the
+// `Line` tag alone. A nested sub-pattern becomes a projected sub-scrutinee with a
+// split of its own. When no branch's test matches, control falls to that split's
+// default tail rather than retrying a branch above it. The typing walk, the coverage
+// check, and a later codegen consumer will all read this form.
+//
 // The package is pure IR with no behavior of its own. It imports internal/ast for
 // the surface nodes it points back at and internal/set for key sets. It never
 // imports internal/solver or internal/soltype, so the typing walk can import it and

@@ -7,9 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLeavesEndACoreTerm checks that all three leaf types terminate a core branch,
-// which is what lets a split's continuation be a leaf as readily as another split.
-func TestLeavesEndACoreTerm(t *testing.T) {
+// TestLeavesBelongToBothForms checks that the three leaf types terminate a core term
+// and a normalized term alike, which is why there is one set of leaves rather than a
+// parallel pair.
+func TestLeavesBelongToBothForms(t *testing.T) {
 	leaves := []any{
 		&BodyLeaf{Body: exprBody(num(1))},
 		&EscapeLeaf{},
@@ -18,6 +19,7 @@ func TestLeavesEndACoreTerm(t *testing.T) {
 
 	for _, leaf := range leaves {
 		require.Implements(t, (*Core)(nil), leaf)
+		require.Implements(t, (*Norm)(nil), leaf)
 	}
 }
 
