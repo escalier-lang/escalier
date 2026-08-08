@@ -41,6 +41,33 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	return coalesceKeeping(t, pol, funcTypeParamVars(t), nil)
 }
 
+// groundedCarrier reports the shape of t, looking through any borrow and resolving t if it is
+// still an inference variable. That shape is what a type switch needs before it can dispatch
+// on t. A borrow is peeled, so `&xs` grounds to the shape of `xs`. An unsolved variable is
+// coalesced to the union of its lower bounds, and that union is peeled in turn.
+//
+// When a caller grounds a type is a decision of its own. Coalescing reads the variable's
+// bounds as they stand, and testing a literal against that variable adds the literal as a
+// further lower bound. A caller that inspects one scrutinee across several branches must
+// ground it once, before any branch binds. Grounding it again later reads the tested literal
+// back as a union member the user never wrote. inferMatch and newPathBinder ground up front
+// for that reason.
+func groundedCarrier(t soltype.Type) soltype.Type {
+	t = soltype.CarrierOf(t)
+	if carrierIsVar(t) {
+		t = soltype.CarrierOf(coalesce(t, soltype.Positive))
+	}
+	return t
+}
+
+// carrierIsVar reports whether t is an inference variable the solve has not shaped, looking
+// through a borrow so a `&x` over an unsolved `x` reports true. A caller that must keep the
+// borrow on the type it inspects asks this rather than calling groundedCarrier, which peels.
+func carrierIsVar(t soltype.Type) bool {
+	_, isVar := soltype.CarrierOf(t).(*soltype.TypeVarType)
+	return isVar
+}
+
 // coalesceKeeping is coalesce with a set of variables held symbolic rather than inlined to
 // their bounds, plus a kept-flow map naming the kept vars that flow into each other var
 // through the upper-bound graph. It is the generic-class analogue of coalesce: a class

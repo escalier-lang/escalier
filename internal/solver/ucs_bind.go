@@ -114,15 +114,12 @@ type pathBinder struct {
 func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, rootType soltype.Type) *pathBinder {
 	b := &pathBinder{c: c, lvl: lvl, blame: blame, views: map[*ucs.Scrutinee]scrutineeView{}}
 	carrier := soltype.CarrierOf(rootType)
-	shape := carrier
-	if _, isVar := carrier.(*soltype.TypeVarType); isVar {
-		// Snapshot the scrutinee's union structure before any branch binds. A literal test
-		// adds its literal as a lower bound on the scrutinee variable, so coalescing again
-		// under a later branch would read that literal back as an extra union member and
-		// narrow against a member the user never wrote. inferMatch takes the same snapshot
-		// for the same reason.
-		shape = soltype.CarrierOf(coalesce(rootType, soltype.Positive))
-	}
+	// Snapshot the scrutinee's union structure before any branch binds. A literal test
+	// adds its literal as a lower bound on the scrutinee variable, so grounding again
+	// under a later branch would read that literal back as an extra union member and
+	// narrow against a member the user never wrote. inferMatch takes the same snapshot
+	// for the same reason.
+	shape := groundedCarrier(carrier)
 	b.views[root] = scrutineeView{
 		ty:       carrier,
 		concrete: carrier,
@@ -352,9 +349,12 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, v scrutineeView, tes
 // pattern, and it keeps that function's rules so PR6 inherits variant-narrowing
 // unchanged.
 func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
+	// A borrowed shape is left wrapped rather than peeled the way groundedCarrier peels
+	// one. The narrowed result below replaces v.ty and v.concrete, and nothing here
+	// rewraps it, so peeling first would drop the borrow off a nested scrutinee.
 	shape := v.shape
 	if _, isVar := shape.(*soltype.TypeVarType); isVar {
-		shape = soltype.CarrierOf(coalesce(shape, soltype.Positive))
+		shape = groundedCarrier(shape)
 	}
 	narrowed, ok := narrowUnionMembers(shape, func(member soltype.Type) bool {
 		return testMatchesMemberShape(test, member)
