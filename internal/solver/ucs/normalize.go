@@ -1,5 +1,7 @@
 package ucs
 
+import "github.com/escalier-lang/escalier/internal/set"
+
 // Normalize rewrites a desugared core term into the normalized form. Two rewrites
 // happen here.
 //
@@ -72,14 +74,21 @@ func normalizeSplit(s *CoreSplit, next Norm) Norm {
 	cands := make([]candidate, len(s.Branches))
 	for i, branch := range s.Branches {
 		test, binds := shallowTest(branch.Pattern, s.Scrutinee, branch.Origin)
-		cands[i] = candidate{index: i, branch: branch, test: test, binds: binds}
+		cands[i] = candidate{
+			index:  i,
+			branch: branch,
+			test:   test,
+			binds:  binds,
+			nested: hasUnflattenedBind(binds),
+		}
 	}
 
 	b := &splitBuilder{
 		scrutinee: s.Scrutinee,
 		tail:      tail,
 		origin:    s.Origin,
-		built:     map[int]Norm{},
+		built:     map[string]Norm{},
+		inlined:   set.NewSet[int](),
 	}
 	// A core split always becomes a split, even when no branch is left to test, because
 	// the split is what names the scrutinee. Collapsing `match f() { _ => 1 }` to its
@@ -100,13 +109,20 @@ func normalizeSplit(s *CoreSplit, next Norm) Norm {
 // analyzed a single time.
 type candidate struct {
 	// index is the branch's position in the core split, which identifies it while
-	// building.
+	// building. Two candidate lists holding the same branches build the same term.
 	index  int
 	branch *CoreBranch
-	// test is the tag the branch tests, and nil when the branch runs unconditionally,
-	// which is what a catch-all pattern reads to.
+	// test is the tag the branch tests, and nil when the branch runs
+	// unconditionally. A catch-all pattern has no tag, and specialize also clears the
+	// test of a branch an already-matched test guarantees.
 	test  Test
 	binds []bindSpec
+	// nested marks a branch holding a sub-pattern this stage does not flatten, which is
+	// matching the tag test does not account for. In `{x: 1}` the test names the key
+	// `x` and the literal `1` rides a nameless bind, so passing the test does not mean
+	// the branch matched. Such a branch is never made unconditional: a value that
+	// reaches it can still fall through to the arms below.
+	nested bool
 }
 
 // splitBuilder builds the branches of one core split. Everything it holds is fixed for
@@ -116,12 +132,16 @@ type splitBuilder struct {
 	scrutinee *Scrutinee
 	tail      Norm
 	origin    Origin
-	// built caches the fallthrough term for a run of candidates, keyed by the index of
-	// the first. A guarded branch falls into the branches after it, so without the
-	// cache a run of guarded branches would rebuild overlapping suffixes over and over.
-	// Each cached term is also shared rather than duplicated, so a consumer that walks
-	// the IR visits it once.
-	built map[int]Norm
+	// built caches the fallthrough term for a set of candidates. A guarded branch falls
+	// into the branches after it, so without the cache a run of guarded branches would
+	// rebuild overlapping subsets over and over. Each cached term is also shared rather
+	// than duplicated, so a consumer that walks the IR visits it once.
+	built map[string]Norm
+	// inlined holds the index of every candidate whose continuation an already-built
+	// term runs unconditionally, which is what specializing a fallthrough does to a
+	// branch the matched test proved. A branch for one of those is a duplicate this
+	// rewrite introduced, and build drops it rather than emit a test that cannot pass.
+	inlined set.Set[int]
 }
 
 // term is what a branch continues into when its own continuation fails. Unlike the
@@ -132,7 +152,8 @@ func (b *splitBuilder) term(cands []candidate) Norm {
 	if len(cands) == 0 {
 		return b.tail
 	}
-	if term, ok := b.built[cands[0].index]; ok {
+	key := candidatesKey(cands)
+	if term, ok := b.built[key]; ok {
 		return term
 	}
 
@@ -146,7 +167,7 @@ func (b *splitBuilder) term(cands []candidate) Norm {
 			Origin:    b.origin,
 		}
 	}
-	b.built[cands[0].index] = term
+	b.built[key] = term
 	return term
 }
 
@@ -156,18 +177,36 @@ func (b *splitBuilder) build(cands []candidate) ([]*NormBranch, Norm) {
 	var branches []*NormBranch
 	dflt := b.tail
 	for i, cand := range cands {
+		if cand.test != nil && b.inlined.Contains(cand.index) && capturedBy(cands[:i], cand.test) {
+			// An earlier branch's fallthrough already runs this branch's continuation,
+			// and an earlier test already captured every value this one would match, so
+			// nothing can reach the branch. Emitting it would cost a test that always
+			// fails and a second copy of the arm's binds and body.
+			//
+			// capturedBy is what makes the drop sound rather than a guess. It is not
+			// separately observable while testImplies holds only between equal tags,
+			// since an inlined candidate is then always captured too, and it is what
+			// keeps the drop correct if that relation ever becomes one-directional.
+			//
+			// A branch nothing inlined is left alone even when it is unreachable. That
+			// is an arm the user wrote dead rather than one this rewrite duplicated, and
+			// dropping it would leave the coverage check nothing to report.
+			continue
+		}
 		// Only a branch whose continuation can fail needs to name where it continues.
 		// An unguarded arm ends in a leaf, so it never falls through and the
 		// fallthrough would be dead weight.
 		var fallthru Norm
 		if mayFall(cand.branch.Cont) {
-			fallthru = b.term(cands[i+1:])
+			fallthru = b.term(specialize(cands[i+1:], cand.test))
 		}
 		cont := wrapBinds(cand.binds, normalizeTerm(cand.branch.Cont, fallthru))
 		if cand.test == nil {
 			// The branch always runs, so it is the split's tail and every candidate
-			// after it is unreachable.
+			// after it is unreachable. Recording it is what lets an outer branch for the
+			// same candidate be dropped, since this term already runs its continuation.
 			dflt = cont
+			b.inlined.Add(cand.index)
 			break
 		}
 		branches = append(branches, &NormBranch{
