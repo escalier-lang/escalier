@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
@@ -229,6 +230,262 @@ func TestNormalizeValElse(t *testing.T) {
 } default fallback { return }`))
 }
 
+// A nested pattern becomes one split per tag-level, each over the projection the level
+// above it matched. This is the second worked example in
+// planning/ucs/implementation_plan.md: `l` splits on the `Line` tag, then `l.start`
+// splits on the `{x, y}` shape, so nothing sees the deep shape at once.
+func TestNormalizeFlattensANestedObjectPattern(t *testing.T) {
+	start := objPat("x", "y")
+	core := coreMatch(
+		ident("l"),
+		matchCase(instancePat("Line", fieldPat("start", start)), nil, ident("body"), span(2, 5, 34)),
+	)
+
+	// Before normalization the arm's pattern is one deep shape:
+	//
+	//   split l {
+	//     pat Line {start: {x, y}} => leaf body
+	//   }
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split l {
+  Line => split l.start {
+    {x, y} => bind x = l.start.x, y = l.start.y; leaf body
+  } default ✗
+} default ✗`))
+
+	// The projection the inner split tests points at the sub-pattern it came from, so a
+	// message about that split blames the `{x, y}` the user wrote rather than the
+	// internal path `l.start`.
+	outer := Normalize(core).(*NormSplit)
+	inner := outer.Branches[0].Cont.(*NormSplit)
+	require.Same(t, start, inner.Scrutinee.Origin.Node)
+	require.Same(t, start, inner.Origin.Node)
+}
+
+// A tuple element flattens the same way a field does, splitting on the element the outer
+// test projected. The outer test counts the elements and says nothing about their shapes.
+func TestNormalizeFlattensANestedTuplePattern(t *testing.T) {
+	core := coreMatch(
+		ident("xs"),
+		matchCase(
+			tuplePat(tuplePat(identPat("a"), identPat("b")), identPat("c")),
+			nil, ident("a"), span(2, 5, 30),
+		),
+	)
+
+	// Before normalization:
+	//
+	//   split xs {
+	//     pat [[a, b], c] => leaf a
+	//   }
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split xs {
+  [_, _] => split xs.0 {
+    [_, _] => bind a = xs.0.0, b = xs.0.1, c = xs.1; leaf a
+  } default ✗
+} default ✗`))
+}
+
+// Flattening recurses to whatever depth the pattern has, one tag-level per split, and
+// each split names the projection the one above it matched.
+func TestNormalizeFlattensToArbitraryDepth(t *testing.T) {
+	core := coreMatch(
+		ident("p"),
+		matchCase(fieldPat("a", fieldPat("b", fieldPat("c", numPat(1)))), nil, str("deep"), span(2, 5, 32)),
+	)
+
+	// Before normalization:
+	//
+	//   split p {
+	//     pat {a: {b: {c: 1}}} => leaf "deep"
+	//   }
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
+  {a} => split p.a {
+    {b} => split p.a.b {
+      {c} => split p.a.b.c {
+        1 => leaf "deep"
+      } default ✗
+    } default ✗
+  } default ✗
+} default ✗`))
+}
+
+// A projected split fails into the branch's fallthrough, the same continuation a failed
+// guard takes, so flattening adds no backtracking. Here that is the arm below, and the
+// projected split and the outer split reach the same node rather than two copies of it.
+func TestNormalizeNestedSplitFallsToTheArmBelow(t *testing.T) {
+	core := coreMatch(
+		ident("p"),
+		matchCase(fieldPat("x", numPat(1)), nil, str("one"), span(2, 5, 22)),
+		matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20)),
+	)
+
+	// Before normalization:
+	//
+	//   split p {
+	//     pat {x: 1} => leaf "one"
+	//     pat _ => leaf "other"
+	//   }
+	norm := Normalize(core)
+	snaps.MatchInlineSnapshot(t, Print(norm, DefaultPrintOptions()), snaps.Inline(`split p {
+  {x} => split p.x {
+    1 => leaf "one"
+  } default leaf "other"
+} default leaf "other"`))
+
+	outer := norm.(*NormSplit)
+	inner := outer.Branches[0].Cont.(*NormSplit)
+	require.Same(t, outer.Default, inner.Default)
+}
+
+// The names an arm binds sit under the splits its sub-patterns became, not over them. A
+// projected split's default runs the arm below, so a name in scope over that default
+// would put one arm's leaves in the scope of another arm's body.
+func TestNormalizeKeepsTheFallthroughOutOfTheArmsScope(t *testing.T) {
+	pattern := ast.NewObjectPat([]ast.ObjPatElem{
+		shorthandElem("x"),
+		keyValueElem("y", tuplePat(identPat("z"))),
+	}, ast.Span{})
+	core := coreMatch(
+		ident("p"),
+		matchCase(pattern, nil, str("one"), span(2, 5, 28)),
+		matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20)),
+	)
+
+	// Before normalization:
+	//
+	//   split p {
+	//     pat {x, y: [z]} => leaf "one"
+	//     pat _ => leaf "other"
+	//   }
+	norm := Normalize(core)
+	snaps.MatchInlineSnapshot(t, Print(norm, DefaultPrintOptions()), snaps.Inline(`split p {
+  {x, y} => split p.y {
+    [_] => bind z = p.y.0, x = p.x; leaf "one"
+  } default leaf "other"
+} default leaf "other"`))
+
+	// `x` is named at the outer tag-level and still binds below the split over `p.y`,
+	// which is what keeps that split's default clear of it.
+	_, isSplit := norm.(*NormSplit).Branches[0].Cont.(*NormSplit)
+	require.True(t, isSplit, "the branch continues into a split rather than a bind")
+}
+
+// pathNodes collects the distinct *Scrutinee nodes a normalized term names, keyed by the
+// projection path each one renders to. seen keeps a term the rewrite shared from being
+// walked twice.
+func pathNodes(t Norm, seen set.Set[Norm], out map[string]set.Set[*Scrutinee]) {
+	if t == nil || seen.Contains(t) {
+		return
+	}
+	seen.Add(t)
+	add := func(s *Scrutinee) {
+		path := scrutineeString(s)
+		if _, found := out[path]; !found {
+			out[path] = set.NewSet[*Scrutinee]()
+		}
+		out[path].Add(s)
+	}
+	switch n := t.(type) {
+	case *NormSplit:
+		add(n.Scrutinee)
+		for _, branch := range n.Branches {
+			pathNodes(branch.Cont, seen, out)
+		}
+		pathNodes(n.Default, seen, out)
+	case *NormGuard:
+		pathNodes(n.Cont, seen, out)
+		pathNodes(n.Default, seen, out)
+	case *NormBind:
+		add(n.Source)
+		pathNodes(n.Cont, seen, out)
+	}
+}
+
+// Merging copies a branch, and each copy names the same projections. Every path is one
+// node across the copies, which is what lets a consumer evaluate `p.y` once and read the
+// split over it and the binds under it off that one value.
+func TestNormalizeNamesOneScrutineePerPath(t *testing.T) {
+	core := coreMatch(
+		ident("p"),
+		matchCase(fieldPat("x", numPat(1)), nil, str("first"), span(2, 5, 22)),
+		matchCase(fieldPat("y", objPat("z")), nil, str("second"), span(3, 5, 26)),
+		matchCase(wildcardPat(), nil, str("other"), span(4, 5, 20)),
+	)
+
+	// The second arm is built twice, once for its own branch of the split over `p` and
+	// once inside the first arm's fallthrough, so its projections are the ones a
+	// per-copy read would duplicate.
+	nodes := map[string]set.Set[*Scrutinee]{}
+	pathNodes(Normalize(core), set.NewSet[Norm](), nodes)
+
+	require.Contains(t, nodes, "p.y.z")
+	for path, found := range nodes {
+		require.Equal(t, 1, found.Len(), "the term names one scrutinee node for %s", path)
+	}
+}
+
+// Two arms whose patterns nest under the same tag chain rather than sharing one projected
+// split. The second arm's `{a}` is already proved, so the first arm falls straight into a
+// second split over `p.a`.
+func TestNormalizeChainsArmsThatNestUnderOneTag(t *testing.T) {
+	core := coreMatch(
+		ident("p"),
+		matchCase(fieldPat("a", objPat("x")), nil, str("obj"), span(2, 5, 26)),
+		matchCase(fieldPat("a", tuplePat(identPat("y"))), nil, str("tuple"), span(3, 5, 26)),
+	)
+
+	// Before normalization:
+	//
+	//   split p {
+	//     pat {a: {x}} => leaf "obj"
+	//     pat {a: [y]} => leaf "tuple"
+	//   }
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
+  {a} => split p.a {
+    {x} => bind x = p.a.x; leaf "obj"
+  } default split p.a {
+    [_] => bind y = p.a.0; leaf "tuple"
+  } default ✗
+} default ✗`))
+}
+
+// The leaves a nested split binds are in scope for the guard below it, since the guard
+// sits inside the innermost split rather than above the ones that project its values.
+func TestNormalizeGuardReadsNestedBinds(t *testing.T) {
+	core := coreMatch(
+		ident("p"),
+		matchCase(fieldPat("start", objPat("x", "y")), greaterThan(), ident("x"), span(2, 5, 40)),
+		matchCase(wildcardPat(), nil, num(0), span(3, 5, 16)),
+	)
+
+	// Before normalization:
+	//
+	//   split p {
+	//     pat {start: {x, y}} guard (x > y) => leaf x
+	//     pat _ => leaf 0
+	//   }
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
+  {start} => split p.start {
+    {x, y} => bind x = p.start.x, y = p.start.y; guard (x > y) {
+      leaf x
+    } default leaf 0
+  } default leaf 0
+} default leaf 0`))
+}
+
+// A pattern that tests no tag of its own has no split to become. A bare rest is the only
+// one, and it stays a nameless bind that hands the pattern to the solver's walk.
+func TestNormalizeKeepsATagLessPatternWhole(t *testing.T) {
+	rest := ast.NewRestPat(identPat("rest"), ast.Span{})
+	core := coreMatch(ident("xs"), matchCase(rest, nil, ident("rest"), span(2, 5, 24)))
+
+	// Before normalization:
+	//
+	//   split xs {
+	//     pat ...rest => leaf rest
+	//   }
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split xs {} default bind ...rest = xs; leaf rest`))
+}
+
 // Merging must not cost a branch its provenance. Every branch of the merged split still
 // points at the arm the user wrote, and the origin tags still name the construct each
 // arm lowered from.
@@ -259,6 +516,37 @@ func TestNormalizeKeepsArmBackReferences(t *testing.T) {
     leaf "two" [match arm] arm=3:5-3:26
   } default leaf "other" [match arm] arm=4:5-4:20
 } default leaf "other" [match arm] arm=4:5-4:20`))
+}
+
+// A split flattening introduced blames the sub-pattern it tests and still points back at
+// the arm the user wrote. The `at=` span is the nested `{x, y}`, and `arm=` is the whole
+// arm, so a message about the projected split can name either.
+func TestNormalizeFlattenedSplitKeepsItsArmAndPattern(t *testing.T) {
+	x := ast.NewObjShorthandPat(ast.NewIdentifier("x", ast.Span{}), false, nil, nil, span(2, 20, 21))
+	y := ast.NewObjShorthandPat(ast.NewIdentifier("y", ast.Span{}), false, nil, nil, span(2, 23, 24))
+	start := ast.NewObjectPat([]ast.ObjPatElem{x, y}, span(2, 19, 25))
+	pattern := ast.NewObjectPat([]ast.ObjPatElem{keyValueElem("start", start)}, span(2, 5, 26))
+	armCase := matchCase(pattern, nil, ident("x"), span(2, 5, 31))
+	core := coreMatch(ident("p"), armCase)
+
+	// Before normalization:
+	//
+	//   split p {
+	//     pat {start: {x, y}} => leaf x
+	//   }
+	opts := DefaultPrintOptions()
+	opts.ShowArms = true
+	opts.ShowSpans = true
+	norm := Normalize(core)
+	snaps.MatchInlineSnapshot(t, Print(norm, opts), snaps.Inline(`split p at=1:1-1:40 {
+  {start} at=2:5-2:31 arm=same => split p.start at=2:19-2:25 {
+    {x, y} at=2:19-2:25 arm=2:5-2:31 => bind x = p.start.x at=2:20-2:21, y = p.start.y at=2:23-2:24; leaf x at=2:5-2:31 arm=same
+  } default ✗
+} default ✗`))
+
+	inner := norm.(*NormSplit).Branches[0].Cont.(*NormSplit)
+	require.Same(t, armCase, inner.Branches[0].Arm)
+	require.Same(t, start, inner.Scrutinee.Origin.Node)
 }
 
 // Normalization rewrites the splits around a leaf and leaves the leaf itself alone, so

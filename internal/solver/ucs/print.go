@@ -232,9 +232,10 @@ func (p *printer) leaf(t Term) {
 }
 
 // bindTarget renders what a bind introduces. A named bind writes its identifier. A
-// bind with no name holds a sub-pattern that is not flattened into a split yet, so it
-// writes the pattern: `bind {x, y} = l.start` says the branch has still to match
-// `{x, y}` against the projection `l.start`.
+// bind with no name holds a pattern rather than a name, so it writes that pattern:
+// `bind ...rest = xs` says the branch has still to match `...rest` against `xs`. A core
+// bind is where most of those appear, since normalization gives every sub-pattern that
+// makes a tag test a split of its own.
 func bindTarget(name string, pat ast.Pat) string {
 	if name != "" {
 		return name
