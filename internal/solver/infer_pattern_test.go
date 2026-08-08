@@ -153,6 +153,11 @@ func TestInferObjectPatternLeafTypeAnnAdopted(t *testing.T) {
 // A field default makes the field optional, so destructuring an absent field
 // that carries a default binds the default's type instead of reporting a missing
 // property.
+//
+// The scrutinee here cannot carry `z` at all, which #1053 argues should be a missing
+// property rather than a match. TestPathBinderDefaultedKeyBindsAgainstScrutineeWithoutTheField
+// in ucs_bind_test.go pins the same answer for the UCS IR path binder, so change the two
+// together.
 func TestInferObjectPatternLeafDefault(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(p: {x: number}) {

@@ -423,9 +423,10 @@ func TestPathBinderDefaultFillsOptionalProperty(t *testing.T) {
 // members disagree, so neither distinguishes it.
 //
 // Whether `{x = 0}` should match a scrutinee with no `x` at all is a question about
-// bindPattern rather than about the IR. TestInferObjectPatternLeafDefault in
-// infer_pattern_test.go pins the same answer for `val {z = 0} = p` over `{x: number}`, and
-// this case exists to hold the path binder to it. Change the two together or not at all.
+// bindPattern rather than about the IR, and #1053 argues it should not.
+// TestInferObjectPatternLeafDefault in infer_pattern_test.go pins the same answer for
+// `val {z = 0} = p` over `{x: number}`, and this case exists to hold the path binder to
+// it. Change the two together or not at all.
 func TestPathBinderDefaultedKeyBindsAgainstScrutineeWithoutTheField(t *testing.T) {
 	c, scope := newPathChecker(t, "")
 	root, binder := seedPath(c, parseType(t, "{y: string}"))
