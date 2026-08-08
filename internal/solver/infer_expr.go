@@ -3495,29 +3495,45 @@ func structuralMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
 func patternMatchesMemberShape(pat ast.Pat, member soltype.Type) bool {
 	switch p := pat.(type) {
 	case *ast.ObjectPat:
-		obj, ok := soltype.CarrierOf(member).(*soltype.ObjectType)
-		if !ok {
-			return false
-		}
-		for _, name := range objectPatFieldNames(p) {
-			if _, found := obj.Prop(name); !found {
-				return false
-			}
-		}
-		return true
+		return objectMemberHasKeys(member, objectPatFieldNames(p))
 	case *ast.TuplePat:
-		tup, ok := soltype.CarrierOf(member).(*soltype.TupleType)
-		if !ok {
-			return false
-		}
 		arity, hasRest := tuplePatArity(p)
-		if hasRest {
-			return len(tup.Elems) >= arity
-		}
-		return len(tup.Elems) == arity
+		return tupleMemberFitsArity(member, arity, hasRest)
 	default:
 		return false
 	}
+}
+
+// objectMemberHasKeys reports whether a union member is an object carrying every one of
+// names, which is what lets an object shape destructure that member. It is the shape rule
+// itself, shared by a written object pattern and the UCS IR's object test so the two cannot
+// disagree about which members a branch narrows to.
+func objectMemberHasKeys(member soltype.Type, names []string) bool {
+	obj, ok := soltype.CarrierOf(member).(*soltype.ObjectType)
+	if !ok {
+		return false
+	}
+	for _, name := range names {
+		if _, found := obj.Prop(name); !found {
+			return false
+		}
+	}
+	return true
+}
+
+// tupleMemberFitsArity reports whether a union member is a tuple a shape of the given fixed
+// arity can destructure. A trailing rest matches any tuple at least that long; without one
+// the arity must match exactly. It is the tuple twin of objectMemberHasKeys, shared for the
+// same reason.
+func tupleMemberFitsArity(member soltype.Type, arity int, hasRest bool) bool {
+	tup, ok := soltype.CarrierOf(member).(*soltype.TupleType)
+	if !ok {
+		return false
+	}
+	if hasRest {
+		return len(tup.Elems) >= arity
+	}
+	return len(tup.Elems) == arity
 }
 
 // objectPatFieldNames returns the field names an object pattern binds. A shorthand or
@@ -3572,36 +3588,11 @@ func narrowMatchArm(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 		return scrutinee
 	}
 	inner, mut, lt := soltype.UnwrapRef(shape)
-	u, ok := inner.(*soltype.UnionType)
+	narrowed, ok := narrowUnionMembers(inner, func(m soltype.Type) bool {
+		return patternMatchesMemberShape(pat, m)
+	})
 	if !ok {
 		return scrutinee
-	}
-	kept := make([]soltype.Type, 0, len(u.Types))
-	for _, m := range u.Types {
-		if patternMatchesMemberShape(pat, m) {
-			kept = append(kept, m)
-		}
-	}
-	// When the pattern matches no listed member, there is nothing to narrow to. When it
-	// matches every listed member, narrowing would reproduce the whole union, including an
-	// inexact union's open tail. Either way, bind against the original scrutinee and keep the
-	// whole-union behavior.
-	if len(kept) == 0 || len(kept) == len(u.Types) {
-		return scrutinee
-	}
-	// An inexact union keeps its open `...` tail through narrowing. A tail member may carry
-	// the pattern's fields at any type, so the tail is retained and the field-read rule (D4)
-	// reads a narrowed inexact member's fields as `... | unknown`, i.e. unknown. An exact
-	// union narrows to precisely the members the pattern matches.
-	var narrowed soltype.Type
-	if len(kept) == 1 && !u.Inexact {
-		narrowed = kept[0]
-	} else {
-		// Keep the structured inexact union rather than returning unknown: it is the bind target
-		// for the arm's pattern, and constrainUnionFieldRead needs the listed members to read
-		// each field before the tail widens it to unknown. Binding the pattern against bare
-		// unknown would leave nothing to destructure.
-		narrowed = &soltype.UnionType{Types: kept, Inexact: u.Inexact}
 	}
 	// A kept object or tuple member is a RefInner, as is a rebuilt union, so a borrowed
 	// scrutinee re-wraps its narrowed carrier under the same borrow. NewRef drops the
@@ -3610,6 +3601,43 @@ func narrowMatchArm(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 		return soltype.NewRef(mut, lt, ri)
 	}
 	return narrowed
+}
+
+// narrowUnionMembers drops the members of a union shape that keep rejects, returning the
+// narrowed type. ok=false means narrowing does not apply and the caller keeps the type it
+// started from: shape is not a union, keep accepted none of its members, or keep accepted
+// all of them, in which case the narrowed union would reproduce the original including an
+// inexact one's open tail.
+//
+// It is the narrowing rule itself, shared by narrowMatchArm and the UCS IR's structural
+// tests. shape must already be peeled of any borrow. Rewrapping is the caller's job,
+// because the IR carries the borrow in its binding mode rather than on the type.
+func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (soltype.Type, bool) {
+	u, isUnion := shape.(*soltype.UnionType)
+	if !isUnion {
+		return nil, false
+	}
+	kept := make([]soltype.Type, 0, len(u.Types))
+	for _, m := range u.Types {
+		if keep(m) {
+			kept = append(kept, m)
+		}
+	}
+	if len(kept) == 0 || len(kept) == len(u.Types) {
+		return nil, false
+	}
+	// An inexact union keeps its open `...` tail through narrowing. A tail member may carry
+	// the tested fields at any type, so the tail is retained and the field-read rule (D4)
+	// reads a narrowed inexact member's fields as `... | unknown`, i.e. `unknown`. An exact
+	// union narrows to precisely the members that matched.
+	if len(kept) == 1 && !u.Inexact {
+		return kept[0], true
+	}
+	// Keep the structured inexact union rather than returning `unknown`. It is the bind
+	// target for the branch's leaves, and constrainUnionFieldRead needs the listed members to
+	// read each field before the tail widens it. Binding against bare `unknown` would leave
+	// nothing to destructure.
+	return &soltype.UnionType{Types: kept, Inexact: u.Inexact}, true
 }
 
 // litMemberCovered reports whether some unguarded arm is a literal pattern equal to

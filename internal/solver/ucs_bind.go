@@ -356,32 +356,14 @@ func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 	if _, isVar := shape.(*soltype.TypeVarType); isVar {
 		shape = soltype.CarrierOf(coalesce(shape, soltype.Positive))
 	}
-	u, ok := shape.(*soltype.UnionType)
+	narrowed, ok := narrowUnionMembers(shape, func(member soltype.Type) bool {
+		return testMatchesMemberShape(test, member)
+	})
 	if !ok {
+		// Narrowing does not apply, so the scrutinee's own type stays the bind target. The
+		// borrow needs no rewrap the way narrowMatchArm's does, since it rides mode rather
+		// than the type.
 		return v
-	}
-	kept := make([]soltype.Type, 0, len(u.Types))
-	for _, member := range u.Types {
-		if testMatchesMemberShape(test, member) {
-			kept = append(kept, member)
-		}
-	}
-	// When the test matches no listed member there is nothing to narrow to. When it
-	// matches every listed member, narrowing would reproduce the whole union, including an
-	// inexact union's open tail. Either way the scrutinee's own type is the bind target.
-	if len(kept) == 0 || len(kept) == len(u.Types) {
-		return v
-	}
-	var narrowed soltype.Type
-	if len(kept) == 1 && !u.Inexact {
-		narrowed = kept[0]
-	} else {
-		// An inexact union keeps its open `...` tail through narrowing. A tail member may
-		// carry the test's fields at any type, so the tail is retained and a narrowed
-		// inexact member's fields read as `unknown`. Keeping the structured union rather
-		// than collapsing to bare `unknown` is what leaves the listed members for the field
-		// steps beneath to read.
-		narrowed = &soltype.UnionType{Types: kept, Inexact: u.Inexact}
 	}
 	v.ty, v.concrete, v.shape = narrowed, narrowed, narrowed
 	return v
@@ -397,25 +379,13 @@ func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 func testMatchesMemberShape(test ucs.Test, member soltype.Type) bool {
 	switch t := test.(type) {
 	case *ucs.ObjectTest:
-		obj, ok := soltype.CarrierOf(member).(*soltype.ObjectType)
-		if !ok {
-			return false
+		names := make([]string, len(t.Keys))
+		for i, key := range t.Keys {
+			names[i] = key.Name
 		}
-		for _, key := range t.Keys {
-			if _, found := obj.Prop(key.Name); !found {
-				return false
-			}
-		}
-		return true
+		return objectMemberHasKeys(member, names)
 	case *ucs.TupleTest:
-		tup, ok := soltype.CarrierOf(member).(*soltype.TupleType)
-		if !ok {
-			return false
-		}
-		if t.Rest == ucs.TrailingRest {
-			return len(tup.Elems) >= t.Len
-		}
-		return len(tup.Elems) == t.Len
+		return tupleMemberFitsArity(member, t.Len, t.Rest == ucs.TrailingRest)
 	default:
 		return false
 	}
