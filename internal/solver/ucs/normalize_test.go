@@ -56,6 +56,12 @@ func TestNormalizeFlatLiteralMatch(t *testing.T) {
 		matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20)),
 	)
 
+	// Before normalization:
+	//
+	//   split n {
+	//     pat 1 => leaf "one"
+	//     pat _ => leaf "other"
+	//   }
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
   1 => leaf "one"
 } default leaf "other"`))
@@ -72,6 +78,14 @@ func TestNormalizeMergesSameScrutineeArms(t *testing.T) {
 		matchCase(wildcardPat(), nil, str("other"), span(5, 5, 20)),
 	)
 
+	// Before normalization:
+	//
+	//   split n {
+	//     pat 1 => leaf "one"
+	//     pat 2 => leaf "two"
+	//     pat 3 => leaf "three"
+	//     pat _ => leaf "other"
+	//   }
 	norm := Normalize(core)
 	split, ok := norm.(*NormSplit)
 	require.True(t, ok, "the top-level term is a split")
@@ -93,6 +107,12 @@ func TestNormalizeGuardFallsToTheTail(t *testing.T) {
 		matchCase(wildcardPat(), nil, num(0), span(3, 5, 16)),
 	)
 
+	// Before normalization:
+	//
+	//   split p {
+	//     pat {x, y} => guard (x > y) => leaf x
+	//     pat _ => leaf 0
+	//   }
 	norm := Normalize(core)
 	snaps.MatchInlineSnapshot(t, Print(norm, DefaultPrintOptions()), snaps.Inline(`split p {
   {x, y} => bind x = p.x, y = p.y; guard (x > y) {
@@ -116,6 +136,12 @@ func TestNormalizeDropsArmsAfterACatchAll(t *testing.T) {
 		matchCase(numPat(1), nil, str("one"), span(3, 5, 18)),
 	)
 
+	// Before normalization:
+	//
+	//   split n {
+	//     pat all => leaf all
+	//     pat 1 => leaf "one"
+	//   }
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {} default bind all = n; leaf all`))
 }
 
@@ -128,6 +154,12 @@ func TestNormalizeKeepsArmsAfterAGuardedCatchAll(t *testing.T) {
 		matchCase(numPat(1), nil, str("one"), span(3, 5, 18)),
 	)
 
+	// Before normalization:
+	//
+	//   split n {
+	//     pat all => guard (x > y) => leaf all
+	//     pat 1 => leaf "one"
+	//   }
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {} default bind all = n; guard (x > y) {
   leaf all
 } default split n {
@@ -156,6 +188,12 @@ func TestNormalizeThreadsTheElseIntoTheTail(t *testing.T) {
 		Origin: origin,
 	}
 
+	// Before normalization, where the `else` is the split's fallthrough rather than a
+	// branch:
+	//
+	//   split p {
+	//     pat {x, y} => leaf { cons }
+	//   } else leaf { alt }
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
   {x, y} => bind x = p.x, y = p.y; leaf { cons }
 } default leaf { alt }`))
@@ -181,6 +219,11 @@ func TestNormalizeValElse(t *testing.T) {
 		Origin: origin,
 	}
 
+	// Before normalization:
+	//
+	//   split p {
+	//     pat {x, y} => escape
+	//   } else fallback { return }
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
   {x, y} => bind x = p.x, y = p.y; escape
 } default fallback { return }`))
@@ -195,6 +238,13 @@ func TestNormalizeKeepsArmBackReferences(t *testing.T) {
 	other := matchCase(wildcardPat(), nil, str("other"), span(4, 5, 20))
 	core := coreMatch(ident("n"), one, two, other)
 
+	// Before normalization:
+	//
+	//   split n {
+	//     pat 1 => leaf "one"
+	//     pat 2 => guard (x > y) => leaf "two"
+	//     pat _ => leaf "other"
+	//   }
 	norm := Normalize(core)
 	split := norm.(*NormSplit)
 	require.Same(t, one, split.Branches[0].Arm)
@@ -219,6 +269,13 @@ func TestNormalizeKeepsLeafNodes(t *testing.T) {
 		matchCase(numPat(1), nil, str("one"), span(2, 5, 18)),
 		matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20)),
 	)
+
+	// Before normalization:
+	//
+	//   split n {
+	//     pat 1 => leaf "one"
+	//     pat _ => leaf "other"
+	//   }
 	matched := core.Branches[0].Cont
 	tailLeaf := core.Branches[1].Cont
 
@@ -232,6 +289,8 @@ func TestNormalizeKeepsLeafNodes(t *testing.T) {
 func TestNormalizeEmptySplit(t *testing.T) {
 	core := coreMatch(ident("p"))
 
+	// Before normalization the split is empty too, written `split p {}`. It survives
+	// because it is what names the scrutinee.
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {} default ✗`))
 }
 
