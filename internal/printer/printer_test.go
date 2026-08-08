@@ -445,6 +445,128 @@ func TestPrintPrecedenceAndParentheses(t *testing.T) {
 	}
 }
 
+// TestPrintReceiverGrouping pins the parentheses the printer keeps around a receiver, the
+// expression a call reads its callee from and the one an index or a member access reads
+// its object from. The AST records grouping in its tree shape and has no parenthesis node,
+// so dropping them names a different expression than the tree holds. Each case parses
+// source and asserts the reprint reparses to the same tree.
+func TestPrintReceiverGrouping(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// A binary or unary receiver binds looser than the `.`, `[`, or `(` after it, so
+		// bare output would attach the receiver to the operand instead of the whole form.
+		{"sum as member object", "(a + b).c", "(a + b).c"},
+		{"sum as index object", "(a + b)[c]", "(a + b)[c]"},
+		{"sum as callee", "(a + b)(c)", "(a + b)(c)"},
+		{"sum as tagged-template tag", "(a + b)`x`", "(a + b)`x`"},
+		{"negation as member object", "(-a).c", "(-a).c"},
+		{"logical not as member object", "(!a).c", "(!a).c"},
+		{"comparison as member object", "(a > b).c", "(a > b).c"},
+		{"borrow as member object", "(&a).c", "(&a).c"},
+		{"await as member object", "(await a).c", "(await a).c"},
+		// A number literal takes the following `.` as its own decimal point, so a bare
+		// `5.toFixed()` would lex as the number `5.` followed by the identifier.
+		{"number as member object", "(5).toFixed(2)", "(5).toFixed(2)"},
+		{"number as callee", "(5)(a)", "(5)(a)"},
+		// A string or a boolean literal has no such reading, so it stays bare.
+		{"string as member object", `("a").length`, `"a".length`},
+		{"boolean as member object", "(true).c", "true.c"},
+		// A form ending in a block would let the receiver read as part of that block.
+		// The printer renders a block across lines, so the grouping shows up around the
+		// whole multi-line form.
+		{"if-else as member object", "(if a { b } else { c }).d", "(if a {\n    b\n} else {\n    c\n}).d"},
+		// A receiver carrying no operator of its own is already grouped.
+		{"member chain", "a.b.c", "a.b.c"},
+		{"call of member", "a.b(c)", "a.b(c)"},
+		{"index of call", "a(b)[c]", "a(b)[c]"},
+		{"tuple as member object", "[a, b].c", "[a, b].c"},
+		// An argument, an index, and a tuple element are delimited by their own brackets,
+		// so an operator expression in any of those positions stays bare.
+		{"sum as argument", "a(b + c)", "a(b + c)"},
+		{"sum as index", "a[b + c]", "a[b + c]"},
+		{"sum as tuple element", "[a + b, c]", "[a + b, c]"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := parseExpr(t, tt.input)
+			result, err := Print(expr, opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+
+			// Reparsing the printed form has to yield the same rendering, which it cannot
+			// do if the print dropped a grouping the tree depends on.
+			reparsed, err := Print(parseExpr(t, result), opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, reparsed)
+		})
+	}
+}
+
+// TestPrintTypeAnnGrouping pins the parentheses the type-annotation printer keeps. The
+// AST records grouping in its tree shape and has no parenthesis node, so a member that
+// binds looser than the position it sits in has to be wrapped. Each case parses an
+// annotation and asserts the reprint reparses to the same tree.
+func TestPrintTypeAnnGrouping(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// `&` binds tighter than `|`, so without the parentheses the two distinct trees
+		// `(number | string) & boolean` and `number | (string & boolean)` would share one
+		// rendering, and it would be the second of the two.
+		{"union in intersection", "(number | string) & boolean", "(number | string) & boolean"},
+		{"union as second member", "boolean & (number | string)", "boolean & (number | string)"},
+		// An intersection inside a union needs no parentheses, since the tighter operator
+		// already groups the way the tree does.
+		{"intersection in union", "number | (string & boolean)", "number | string & boolean"},
+		{"flat union", "number | string | boolean", "number | string | boolean"},
+		{"flat intersection", "number & string & boolean", "number & string & boolean"},
+		// A function type's return reaches as far right as the syntax allows, so a
+		// function type inside a union or an intersection has to be wrapped.
+		{"function type in union", "(fn () -> A) | B", "(fn () -> A) | B"},
+		{"function type returning union", "fn () -> A | B", "fn () -> A | B"},
+		{"function type in intersection", "(fn () -> A) & B", "(fn () -> A) & B"},
+		// A rest spread takes the whole annotation after it, so it needs the same
+		// wrapping. `[...A | B]` names a rest of the union, not a union of the rest.
+		{"rest spread in union", "[(...A) | B]", "[(...A) | B]"},
+		{"rest spread of union", "[...A | B]", "[...A | B]"},
+		// A conditional type ends in a closing brace, so nothing can pull it apart and it
+		// stays bare in either position.
+		{"conditional type in union", "A | if B : C { D } else { E }", "A | if B : C { D } else { E }"},
+		// A prefix takes the whole annotation that follows it, so `keyof A | B` reads as
+		// `(keyof A) | B` and an infix operand has to be wrapped.
+		{"union under keyof", "keyof (A | B)", "keyof (A | B)"},
+		{"keyof in union", "keyof A | B", "keyof A | B"},
+		{"union under mut", "mut (A | B)", "mut (A | B)"},
+		{"function type under keyof", "keyof fn () -> A", "keyof fn () -> A"},
+		// An indexed access reads from a target that binds as tightly as a type
+		// reference, so anything carrying an operator has to be wrapped.
+		{"union as index target", "(A | B)[C]", "(A | B)[C]"},
+		{"keyof as index target", "(keyof A)[B]", "(keyof A)[B]"},
+		{"index chain", "A[B][C]", "A[B][C]"},
+	}
+
+	opts := DefaultOptions()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeAnn := parseTypeAnn(t, tt.input)
+			result, err := Print(typeAnn, opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, result)
+
+			reparsed, err := Print(parseTypeAnn(t, result), opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, reparsed)
+		})
+	}
+}
+
 func TestPrintFunctionExpressions(t *testing.T) {
 	tests := []struct {
 		name     string
