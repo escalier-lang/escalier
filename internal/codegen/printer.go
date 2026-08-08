@@ -80,6 +80,45 @@ const (
 	precPrimary = 20
 )
 
+// Binding power of a TypeScript type operator. This is a separate scale from the
+// expression one above, and the two never mix. A larger number binds tighter, so
+// `A | B & C` groups as `A | (B & C)`.
+const (
+	// precTypeOpenEnded covers the forms that have no closing delimiter of their own: the
+	// function type `(a: A) => B`, the conditional type `A extends B ? C : D`, and the
+	// rest spread `...A`. Each reaches as far right as the syntax allows, so any of them
+	// inside a union or an intersection has to be wrapped. TypeScript refuses to guess a
+	// grouping for the function type and rejects an unwrapped one with TS1385. It reads
+	// an unwrapped conditional type differently instead, taking
+	// `number | A extends B ? C : D` as `(number | A) extends B ? C : D`.
+	precTypeOpenEnded    = 1
+	precTypeUnion        = 2
+	precTypeIntersection = 3
+	// precTypePrefix covers `keyof T` and `infer T`. Both bind tighter than `|` and `&`,
+	// which is why `keyof A | B` reads as `(keyof A) | B`.
+	precTypePrefix = 4
+	// precTypePrimary is for a type annotation that carries no operator of its own, such
+	// as a type reference, an object type, a tuple, or an indexed access. Nothing can
+	// regroup it, so it never needs parentheses.
+	precTypePrimary = 5
+)
+
+// typeAnnPrecedence returns the binding power of a type annotation's top-level operator.
+func typeAnnPrecedence(ta TypeAnn) int {
+	switch ta.(type) {
+	case *FuncTypeAnn, *CondTypeAnn, *RestSpreadTypeAnn:
+		return precTypeOpenEnded
+	case *UnionTypeAnn:
+		return precTypeUnion
+	case *IntersectionTypeAnn:
+		return precTypeIntersection
+	case *KeyOfTypeAnn, *InferTypeAnn:
+		return precTypePrefix
+	default:
+		return precTypePrimary
+	}
+}
+
 func binaryPrecedence(op BinaryOp) int {
 	switch op {
 	case Assign:
@@ -170,6 +209,62 @@ func (p *Printer) printBinaryOperand(expr Expr, parentOp BinaryOp, isRight bool)
 	p.printMaybeParens(expr, needsParens || mixesNullishAndLogical(parentOp, expr))
 }
 
+// printReceiver prints a receiver: the callee of a call or a `new`, the object of an index
+// or a member access, and the tag of a tagged template. A receiver binds tighter than every
+// operator, so an operator expression in that position needs parentheses to survive being
+// reparsed. Without them `(a + b).toFixed(2)` emits `a + b.toFixed(2)`, which calls the
+// method on `b` and adds `a` to the string it returns.
+//
+// A number literal needs them for a different reason. It takes the following `.` as its
+// own decimal point, so `(5).toFixed(2)` emitted bare would be a JavaScript syntax error.
+func (p *Printer) printReceiver(expr Expr) {
+	p.printMaybeParens(expr, exprPrecedence(expr) < precPrimary || isNumLitExpr(expr))
+}
+
+// startsAmbiguously reports whether an expression statement would emit a token JavaScript
+// reads as the start of something other than an expression. A statement beginning with
+// `function` starts a function declaration, and one beginning with `{` starts a block, so
+// `function () {}();` and `{}.x;` are both syntax errors. Wrapping the whole expression in
+// parentheses forces the expression reading.
+//
+// Only the leftmost token matters, so this walks the positions that emit first. Everything
+// else emits an operator, a keyword, or a bracket of its own, which already disambiguates.
+// `a + function () {}();` is legal exactly because the statement opens on `a`.
+func startsAmbiguously(expr Expr) bool {
+	for {
+		switch e := expr.(type) {
+		case *FuncExpr, *ObjectExpr:
+			return true
+		case *BinaryExpr:
+			expr = e.Left
+		case *CallExpr:
+			expr = e.Callee
+		case *IndexExpr:
+			expr = e.Object
+		case *MemberExpr:
+			expr = e.Object
+		case *CondExpr:
+			expr = e.Cond
+		case *TaggedTemplateLitExpr:
+			expr = e.Tag
+		case *TypeCastExpr:
+			expr = e.Expr
+		default:
+			return false
+		}
+	}
+}
+
+// isNumLitExpr reports whether an expression is a number literal.
+func isNumLitExpr(expr Expr) bool {
+	litExpr, isLit := expr.(*LitExpr)
+	if !isLit {
+		return false
+	}
+	_, isNum := litExpr.Lit.(*NumLit)
+	return isNum
+}
+
 func (p *Printer) printMaybeParens(expr Expr, needsParens bool) {
 	if !needsParens {
 		p.PrintExpr(expr)
@@ -249,7 +344,7 @@ func (p *Printer) PrintExpr(expr Expr) {
 		p.print(" : ")
 		p.PrintExpr(e.Alt)
 	case *CallExpr:
-		p.PrintExpr(e.Callee)
+		p.printReceiver(e.Callee)
 		if e.OptChain {
 			p.print("?")
 		}
@@ -263,7 +358,7 @@ func (p *Printer) PrintExpr(expr Expr) {
 		p.print(")")
 	case *NewExpr:
 		p.print("new ")
-		p.PrintExpr(e.Callee)
+		p.printReceiver(e.Callee)
 		p.print("(")
 		for i, arg := range e.Args {
 			if i > 0 {
@@ -297,7 +392,7 @@ func (p *Printer) PrintExpr(expr Expr) {
 		p.NewLine()
 		p.print("}")
 	case *IndexExpr:
-		p.PrintExpr(e.Object)
+		p.printReceiver(e.Object)
 		if e.OptChain {
 			p.print("?")
 		}
@@ -305,7 +400,7 @@ func (p *Printer) PrintExpr(expr Expr) {
 		p.PrintExpr(e.Index)
 		p.print("]")
 	case *MemberExpr:
-		p.PrintExpr(e.Object)
+		p.printReceiver(e.Object)
 		if e.OptChain {
 			p.print("?")
 		}
@@ -374,7 +469,7 @@ func (p *Printer) PrintExpr(expr Expr) {
 		}
 		p.print("`")
 	case *TaggedTemplateLitExpr:
-		p.PrintExpr(e.Tag)
+		p.printReceiver(e.Tag)
 		p.print("`")
 		for i, quasi := range e.Quasis {
 			p.print(quasi)
@@ -601,7 +696,6 @@ func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
 		panic(fmt.Sprintf("printObjTypeAnnElem: unknown object type annotation element type: %T", elem))
 	}
 }
-
 
 func (p *Printer) printIdent(id *Identifier) {
 	start := p.location
@@ -935,7 +1029,7 @@ func (p *Printer) PrintStmt(stmt Stmt) {
 
 	switch s := stmt.(type) {
 	case *ExprStmt:
-		p.PrintExpr(s.Expr)
+		p.printMaybeParens(s.Expr, startsAmbiguously(s.Expr))
 		p.print(";")
 	case *DeclStmt:
 		p.PrintDecl(s.Decl)
@@ -1054,22 +1148,18 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		}
 		p.print("]")
 	case *UnionTypeAnn:
-		// TODO: handle precedence of union types
-		// e.g. (A | B) & C vs A | (B & C)
 		for i, elem := range ta.Types {
 			if i > 0 {
 				p.print(" | ")
 			}
-			p.PrintTypeAnn(elem)
+			p.printTypeAnnAt(elem, precTypeUnion)
 		}
 	case *IntersectionTypeAnn:
-		// TODO: handle precedence of intersection types
-		// e.g. (A & B) | C vs A & (B | C)
 		for i, elem := range ta.Types {
 			if i > 0 {
 				p.print(" & ")
 			}
-			p.PrintTypeAnn(elem)
+			p.printTypeAnnAt(elem, precTypeIntersection)
 		}
 	case *TypeRefTypeAnn:
 		p.print(ta.Name)
@@ -1119,19 +1209,22 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.PrintTypeAnn(ta.Return)
 	case *KeyOfTypeAnn:
 		p.print("keyof ")
-		p.PrintTypeAnn(ta.Type)
+		p.printTypeAnnAt(ta.Type, precTypePrefix)
 	case *TypeOfTypeAnn:
 		p.print("typeof ")
 		p.printQualIdent(ta.Value)
 	case *IndexTypeAnn:
-		p.PrintTypeAnn(ta.Target)
+		p.printTypeAnnAt(ta.Target, precTypePrimary)
 		p.print("[")
 		p.PrintTypeAnn(ta.Index)
 		p.print("]")
 	case *CondTypeAnn:
-		p.PrintTypeAnn(ta.Check)
+		// A function type or a nested conditional on either side of `extends` would run
+		// past the `?`, so both sides demand at least union binding power. The branches
+		// are delimited by `?` and `:`, so they stay bare.
+		p.printTypeAnnAt(ta.Check, precTypeUnion)
 		p.print(" extends ")
-		p.PrintTypeAnn(ta.Extends)
+		p.printTypeAnnAt(ta.Extends, precTypeUnion)
 		p.print(" ? ")
 		p.PrintTypeAnn(ta.Cons)
 		p.print(" : ")
@@ -1159,6 +1252,22 @@ func (p *Printer) PrintTypeAnn(ta TypeAnn) {
 		p.print("...")
 		p.PrintTypeAnn(ta.Value)
 	}
+}
+
+// printTypeAnnAt prints a type annotation, parenthesizing it when its own operator binds
+// looser than minPrec. Callers pass the binding power the surrounding position demands.
+// A looser annotation left bare would be pulled apart by the operator around it, naming a
+// different type than the tree holds. An intersection member demands precTypeIntersection,
+// so `(number | string) & boolean` keeps its parentheses rather than reparsing as
+// `number | (string & boolean)`.
+func (p *Printer) printTypeAnnAt(ta TypeAnn, minPrec int) {
+	if typeAnnPrecedence(ta) >= minPrec {
+		p.PrintTypeAnn(ta)
+		return
+	}
+	p.print("(")
+	p.PrintTypeAnn(ta)
+	p.print(")")
 }
 
 func (p *Printer) PrintModule(mod *Module) string {
