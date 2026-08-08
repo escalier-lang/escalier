@@ -159,33 +159,10 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			c.reportUnsupported(recovered[0])
 		}
 		inexact := rest != nil || len(recovered) > 0
-		elemTypes := make([]soltype.Type, len(fixed))
-		for i := range fixed {
-			elemTypes[i] = c.freshAt(lvl)
-		}
-		// Each αi lowers from the scrutinee's matching element, so a sub-pattern binds
-		// at that element's type.
-		c.constrain(p, scrutinee, &soltype.TupleType{Elems: elemTypes, Inexact: inexact})
-		// Both shapes are spliced once, since every read below is by index. See
-		// groundedTuple.
-		scrutTup, _ := c.groundedTuple(scrutinee)
-		// Child concrete types come from the threaded concrete tuple, not from the
-		// scrutinee: at a nested level the scrutinee is the parent's element variable,
-		// so only the threaded concrete still carries the element shape a borrowed leaf
-		// must inspect to decide whether to borrow.
-		concreteTup, _ := c.groundedTuple(concrete)
-		// When the scrutinee is a concrete tuple, pin each αi's upper bound to the
-		// matching element. The constraint above gives αi the element only as a lower
-		// bound, which cannot reject a refutable literal sub-pattern of the wrong kind.
-		// The upper bound makes a nested literal flow against the real element type, so
-		// `[a, "hi"]` against `[number, number]` reports the mismatch.
-		if scrutTup != nil {
-			for i := range fixed {
-				if i < len(scrutTup.Elems) {
-					c.constrain(fixed[i], elemTypes[i], scrutTup.Elems[i])
-				}
-			}
-		}
+		// Each element sub-pattern blames its own node for the upper-bound pin, so
+		// `[a, "hi"]` against `[number, number]` underlines the literal rather than the
+		// whole pattern.
+		elemTypes, scrutTup, concreteTup := c.projectTuple(p, lvl, scrutinee, concrete, len(fixed), inexact, func(i int) ast.Node { return fixed[i] })
 		subs := make([]soltype.Pat, 0, len(p.Elems))
 		for i, e := range fixed {
 			var elemConcrete soltype.Type
@@ -233,25 +210,8 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			case *ast.ObjKeyValuePat:
 				// A default on the value sub-pattern, as in `{x: a = 0}`, likewise makes
 				// the field optional.
-				beta := c.freshAt(lvl)
-				c.constrain(e, scrutinee, propReq(e.Key.Name, beta, patternDefaultsField(e.Value)))
-				// When the scrutinee is a concrete object, pin beta's upper bound to the
-				// field type. propReq gives beta the field only as a lower bound, which
-				// cannot reject a refutable literal sub-pattern of the wrong kind. The
-				// upper bound makes a nested literal flow against the real field type, so
-				// `{x: "hi"}` against `{x: number}` reports the mismatch.
-				//
-				// An optional property gets no pin. Reading `x` off `{x?: number}` produces
-				// `number | undefined`, so a bound of `number` rejects the `undefined` half
-				// of the value the field actually holds. The shorthand arm above pins
-				// nothing at all, so without this `{x: a}` and `{x}` disagree on a legal
-				// destructuring.
-				if o, ok := scrutinee.(*soltype.ObjectType); ok {
-					if prop, found := o.Prop(e.Key.Name); found && !prop.Optional {
-						c.constrain(e, beta, prop.Type)
-					}
-				}
-				sub := c.bindPatMode(scope, lvl, e.Value, beta, fieldConcrete(concrete, e.Key.Name), scrutineeMode, leafTypes, emit)
+				beta, betaConcrete := c.projectField(e, lvl, scrutinee, concrete, e.Key.Name, patternDefaultsField(e.Value))
+				sub := c.bindPatMode(scope, lvl, e.Value, beta, betaConcrete, scrutineeMode, leafTypes, emit)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: sub})
 			case *ast.ObjRestPat:
@@ -294,6 +254,88 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		c.reportUnsupported(pat)
 		return &soltype.WildcardPat{}
 	}
+}
+
+// projectField lowers the scrutinee's `name` field into a fresh variable through the
+// member-lookup requirement, returning that variable and the concrete field type to thread
+// beside it. It is the one field projection, shared by an object pattern's key-value arm
+// and the UCS IR's field step, so the two cannot drift.
+//
+// optional relaxes the requirement to tolerate an absent field, which a destructuring
+// default asks for. blame is the node the requirement is anchored to.
+//
+// An object pattern's SHORTHAND arm does not call this. It binds the projection as the leaf
+// itself rather than handing it to a sub-pattern, so it needs neither the concrete field
+// type nor the upper bound below, and pinning there would make a `&mut` leaf invariantly
+// exact against the scrutinee's element. See applyBindMode's bmMut arm.
+func (c *checker) projectField(
+	blame ast.Node, lvl int, scrutinee, concrete soltype.Type, name string, optional bool,
+) (proj, projConcrete soltype.Type) {
+	beta := c.freshAt(lvl)
+	c.constrain(blame, scrutinee, propReq(name, beta, optional))
+	// When the scrutinee is a concrete object, pin beta's upper bound to the field type.
+	// propReq gives beta the field only as a lower bound, which cannot reject a refutable
+	// literal sub-pattern of the wrong kind. The upper bound makes a nested literal flow
+	// against the real field type, so `{x: "hi"}` against `{x: number}` reports the
+	// mismatch.
+	//
+	// An optional property gets no pin. Reading `x` off `{x?: number}` produces
+	// `number | undefined`, so a bound of `number` would reject the `undefined` half of the
+	// value the field actually holds.
+	if obj, ok := scrutinee.(*soltype.ObjectType); ok {
+		if prop, found := obj.Prop(name); found && !prop.Optional {
+			c.constrain(blame, beta, prop.Type)
+		}
+	}
+	return beta, fieldConcrete(concrete, name)
+}
+
+// projectTuple lowers the scrutinee's first count elements into fresh variables through one
+// whole-tuple requirement, returning those variables and the grounded scrutinee and concrete
+// tuples a `...rest` reads its suffix out of. It is the one tuple projection, shared by a
+// tuple pattern and the UCS IR's tuple test, so the two cannot drift.
+//
+// inexact relaxes the requirement to "a tuple at least this long", which a trailing rest
+// asks for. An exact requirement is what rejects a wrong arity. blame anchors the
+// requirement, and blameElem anchors each element's upper bound, so a caller holding
+// sub-patterns can underline the offending element rather than the whole shape. Pass nil for
+// blameElem to anchor every pin to blame.
+func (c *checker) projectTuple(
+	blame ast.Node, lvl int, scrutinee, concrete soltype.Type, count int, inexact bool, blameElem func(int) ast.Node,
+) (elems []soltype.Type, scrutTup, concreteTup *soltype.TupleType) {
+	elems = make([]soltype.Type, count)
+	for i := range elems {
+		elems[i] = c.freshAt(lvl)
+	}
+	// Each αi lowers from the scrutinee's matching element, so a sub-pattern binds at that
+	// element's type.
+	c.constrain(blame, scrutinee, &soltype.TupleType{Elems: elems, Inexact: inexact})
+	// Both shapes are spliced once, since every read by the caller is by index. See
+	// groundedTuple.
+	scrutTup, _ = c.groundedTuple(scrutinee)
+	// Child concrete types come from the threaded concrete tuple, not from the scrutinee. At
+	// a nested level the scrutinee is the parent's element variable, so only the threaded
+	// concrete still carries the element shape a borrowed leaf must inspect to decide
+	// whether to borrow.
+	concreteTup, _ = c.groundedTuple(concrete)
+	// When the scrutinee is a concrete tuple, pin each αi's upper bound to the matching
+	// element. The requirement above gives αi the element only as a lower bound, which
+	// cannot reject a refutable literal sub-pattern of the wrong kind. The upper bound makes
+	// a nested literal flow against the real element type, so `[a, "hi"]` against
+	// `[number, number]` reports the mismatch.
+	if scrutTup != nil {
+		for i := range elems {
+			if i >= len(scrutTup.Elems) {
+				continue
+			}
+			node := blame
+			if blameElem != nil {
+				node = blameElem(i)
+			}
+			c.constrain(node, elems[i], scrutTup.Elems[i])
+		}
+	}
+	return elems, scrutTup, concreteTup
 }
 
 // objectPatNamesRest reports whether pat is an object pattern carrying a `...rest`. Only
@@ -489,22 +531,35 @@ func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scr
 		obj, _ := c.bindPatMode(scope, lvl, p.Object, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit).(*soltype.ObjectPat)
 		return &soltype.InstancePat{ClassName: name, Object: obj}
 	}
+	target, targetConcrete := c.narrowToClass(lvl, p, ct, scrutinee, concrete)
+	obj, _ := c.bindPatMode(scope, lvl, p.Object, target, targetConcrete, scrutineeMode, leafTypes, emit).(*soltype.ObjectPat)
+	return &soltype.InstancePat{ClassName: ct.Name, Object: obj}
+}
+
+// narrowToClass narrows scrutinee to the class ct and returns the instance member view its
+// fields project out of, along with the concrete type to thread beside it. Both come back
+// as the scrutinee and concrete passed in when the class has no projectable body.
+//
+// It is the narrowing half of an instance pattern, shared with the UCS IR's class test so
+// the two cannot drift. blame is the node the narrowing constraint is anchored to: the
+// written pattern for bindInstancePat, the tag test's class name for the IR.
+func (c *checker) narrowToClass(
+	lvl int, blame ast.Node, ct *soltype.ClassType, scrutinee, concrete soltype.Type,
+) (target, targetConcrete soltype.Type) {
 	inst := c.freshClassInstance(ct, lvl)
 	// The pattern narrows the scrutinee to the named class. The instance flows into the
 	// scrutinee, so a scrutinee that cannot be this class is rejected here.
-	c.constrain(p, inst, scrutinee)
+	c.constrain(blame, inst, scrutinee)
 	// Project the scrutinee's own instance when it names the same class, so its concrete
 	// arguments give the field types directly; a downcast falls back to the asserted instance.
 	projected := inst
 	if sc, ok := classCarrier(scrutinee); ok && sc.Name == ct.Name {
 		projected = sc
 	}
-	target, targetConcrete := scrutinee, concrete
 	if body, ok := c.ctx.projectClassBody(projected); ok {
-		target, targetConcrete = body, body
+		return body, body
 	}
-	obj, _ := c.bindPatMode(scope, lvl, p.Object, target, targetConcrete, scrutineeMode, leafTypes, emit).(*soltype.ObjectPat)
-	return &soltype.InstancePat{ClassName: ct.Name, Object: obj}
+	return scrutinee, concrete
 }
 
 // bindExtractorPat types an extractor pattern `Name(a, b)`: it narrows the scrutinee to the
@@ -530,17 +585,7 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 		}
 		return &soltype.ExtractorPat{Name: name, Args: args}
 	}
-	// The extracted value is an instance of the constructor's return type. Narrow the
-	// scrutinee to it, the same assertion an instance pattern makes.
-	c.constrain(p, ctor.Ret, scrutinee)
-	// Read the parameters at the scrutinee's concrete arguments by substituting them
-	// directly, rather than relying on the narrowing constraint above to back-propagate them.
-	params := ctor.Params
-	if sc, ok := classCarrier(scrutinee); ok {
-		if ret, ok := ctor.Ret.(*soltype.ClassType); ok && ret.Name == sc.Name {
-			params = ctorParamsAt(ctor.Params, ret, sc)
-		}
-	}
+	params := c.narrowToExtractor(p, ctor, scrutinee)
 	if len(p.Args) != len(params) {
 		c.report(&ExtractorPatternArityError{Node: p, Name: name, Expected: len(params), Got: len(p.Args)})
 	}
@@ -553,6 +598,27 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 		args[i] = c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit)
 	}
 	return &soltype.ExtractorPat{Name: name, Args: args}
+}
+
+// narrowToExtractor narrows scrutinee to ctor's return type and returns the parameters the
+// extracted values bind against, read at the scrutinee's own type arguments.
+//
+// It is the narrowing half of an extractor pattern, shared with the UCS IR's extractor test
+// so the two cannot drift. blame is the node the narrowing constraint is anchored to: the
+// written pattern for bindExtractorPat, the tag test's name for the IR. The caller checks
+// the returned count against how many values its pattern takes.
+func (c *checker) narrowToExtractor(blame ast.Node, ctor *soltype.FuncType, scrutinee soltype.Type) []*soltype.FuncParam {
+	// The extracted value is an instance of the constructor's return type. Narrow the
+	// scrutinee to it, the same assertion an instance pattern makes.
+	c.constrain(blame, ctor.Ret, scrutinee)
+	// Read the parameters at the scrutinee's concrete arguments by substituting them
+	// directly, rather than relying on the narrowing constraint above to back-propagate them.
+	if sc, ok := classCarrier(scrutinee); ok {
+		if ret, isClass := ctor.Ret.(*soltype.ClassType); isClass && ret.Name == sc.Name {
+			return ctorParamsAt(ctor.Params, ret, sc)
+		}
+	}
+	return ctor.Params
 }
 
 // ctorParamsAt rewrites a constructor's parameter types from its return instance's argument

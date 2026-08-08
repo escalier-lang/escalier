@@ -218,28 +218,12 @@ func (b *pathBinder) project(scope *Scope, s *ucs.Scrutinee) scrutineeView {
 	}
 }
 
-// projectField resolves `parent.name`. The lookup is the same inexact one-property
-// requirement bindPatMode's object arm emits, so a field the scrutinee lacks surfaces
-// MissingPropertyError from the same rule a written `{name}` pattern does.
+// projectField resolves `parent.name` through the checker's one field projection, so a
+// field the scrutinee lacks surfaces MissingPropertyError from the same rule a written
+// `{name: sub}` pattern does.
 func (b *pathBinder) projectField(parent scrutineeView, node ast.Node, name string) scrutineeView {
-	beta := b.c.freshAt(b.lvl)
-	b.c.constrain(node, parent.ty, propReq(name, beta, parent.fieldOptional(name)))
-	// Pin beta's upper bound to the field's own type when the scrutinee is a concrete
-	// object. The requirement above gives beta the field only as a lower bound, which
-	// cannot reject a refutable literal sub-pattern of the wrong kind, so `{x: "hi"}`
-	// against `{x: number}` would go unreported. bindPatMode's key-value arm adds the same
-	// bound for the same reason.
-	//
-	// An optional property gets no pin. Reading `x` off `{x?: number}` produces
-	// `number | undefined`, so a bound of `number` would reject the `undefined` half of the
-	// value the field actually holds. bindPatMode's shorthand arm, which every `{x}` goes
-	// through, adds no pin at all for the same reason.
-	if obj, ok := parent.ty.(*soltype.ObjectType); ok {
-		if prop, found := obj.Prop(name); found && !prop.Optional {
-			b.c.constrain(node, beta, prop.Type)
-		}
-	}
-	return derive(parent, beta, fieldConcrete(parent.concrete, name))
+	proj, concrete := b.c.projectField(node, b.lvl, parent.ty, parent.concrete, name, parent.fieldOptional(name))
+	return derive(parent, proj, concrete)
 }
 
 // projectIndex resolves `parent.i`, the i-th element of a tuple. parentScrut names the
@@ -437,32 +421,11 @@ func testMatchesMemberShape(test ucs.Test, member soltype.Type) bool {
 	}
 }
 
-// tupleShapeReq mints one projection variable per element position and emits the
-// whole-tuple requirement that lowers the scrutinee's matching element into each. inexact
-// relaxes the requirement to "a tuple at least this long", which is what a trailing rest
-// asks for; an exact requirement is what rejects a wrong arity with
-// TupleLengthMismatchError. It resolves the grounded scrutinee and concrete tuples
-// alongside, which a suffix step reads its slice out of.
+// tupleShapeReq resolves what a tuple test leaves for the steps beneath it, through the
+// checker's one tuple projection. Every element's upper bound is anchored to node, since a
+// normalized test names no sub-pattern to underline the way a written tuple pattern does.
 func (b *pathBinder) tupleShapeReq(v scrutineeView, node ast.Node, count int, inexact bool) *testedTuple {
-	elems := make([]soltype.Type, count)
-	for i := range elems {
-		elems[i] = b.c.freshAt(b.lvl)
-	}
-	b.c.constrain(node, v.ty, &soltype.TupleType{Elems: elems, Inexact: inexact})
-	scrutTup, _ := b.c.groundedTuple(v.ty)
-	concreteTup, _ := b.c.groundedTuple(v.concrete)
-	// Pin each variable's upper bound to the scrutinee's own element when the scrutinee is
-	// a grounded tuple. The requirement above gives each one the element only as a lower
-	// bound, so without this a refutable literal sub-pattern of the wrong kind, `[a, "hi"]`
-	// against `[number, number]`, would go unreported. bindPatMode's tuple arm adds the
-	// same bound.
-	if scrutTup != nil {
-		for i := range elems {
-			if i < len(scrutTup.Elems) {
-				b.c.constrain(node, elems[i], scrutTup.Elems[i])
-			}
-		}
-	}
+	elems, scrutTup, concreteTup := b.c.projectTuple(node, b.lvl, v.ty, v.concrete, count, inexact, nil)
 	return &testedTuple{elems: elems, scrut: scrutTup, concrete: concreteTup}
 }
 
@@ -500,22 +463,8 @@ func (b *pathBinder) applyClassTest(scope *Scope, node ast.Node, v scrutineeView
 		v.ty, v.concrete, v.shape = fresh, nil, fresh
 		return v
 	}
-	inst := b.c.freshClassInstance(ct, b.lvl)
-	// The test narrows the scrutinee to the named class, so the instance flows into the
-	// scrutinee and a scrutinee that cannot be this class is rejected here.
-	b.c.constrain(blame, inst, v.ty)
-	// Project the scrutinee's own instance when it names the same class, so its concrete
-	// arguments give the field types directly. A downcast falls back to the asserted
-	// instance.
-	projected := inst
-	if sc, ok := classCarrier(v.ty); ok && sc.Name == ct.Name {
-		projected = sc
-	}
-	body, ok := b.c.ctx.projectClassBody(projected)
-	if !ok {
-		return v
-	}
-	v.ty, v.concrete, v.shape = body, body, body
+	target, targetConcrete := b.c.narrowToClass(b.lvl, blame, ct, v.ty, v.concrete)
+	v.ty, v.concrete, v.shape = target, targetConcrete, target
 	return v
 }
 
@@ -530,18 +479,7 @@ func (b *pathBinder) applyExtractorTest(scope *Scope, node ast.Node, v scrutinee
 		b.c.report(&ExtractorPatternNotCtorError{Node: blame, Name: name})
 		return v
 	}
-	// The extracted value is an instance of the constructor's return type. Narrow the
-	// scrutinee to it, the same assertion a class test makes.
-	b.c.constrain(blame, ctor.Ret, v.ty)
-	// Read the parameters at the scrutinee's concrete arguments by substituting them
-	// directly, rather than relying on the narrowing constraint above to back-propagate
-	// them.
-	params := ctor.Params
-	if sc, ok := classCarrier(v.ty); ok {
-		if ret, isClass := ctor.Ret.(*soltype.ClassType); isClass && ret.Name == sc.Name {
-			params = ctorParamsAt(ctor.Params, ret, sc)
-		}
-	}
+	params := b.c.narrowToExtractor(blame, ctor, v.ty)
 	if t.Arity != len(params) {
 		b.c.report(&ExtractorPatternArityError{Node: blame, Name: name, Expected: len(params), Got: t.Arity})
 	}
