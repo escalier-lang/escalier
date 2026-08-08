@@ -45,6 +45,24 @@ func specialize(cands []candidate, matched Test) []candidate {
 	return out
 }
 
+// capturedBy reports whether one of the earlier candidates already takes every value
+// test would match, which means control cannot reach the branch test belongs to. Those
+// candidates are the branches ahead of it in the same split, and reaching it means each
+// of their tests failed. A test the failed one takes every value of fails too.
+//
+// This is the opposite direction from the implication specialize uses. There the
+// question is what an already-matched test proves about a later one, so the matched test
+// is the narrower one. Here the later test has to be the narrower one for its branch to
+// be dead.
+func capturedBy(earlier []candidate, test Test) bool {
+	for _, cand := range earlier {
+		if cand.test != nil && testImplies(test, cand.test) {
+			return true
+		}
+	}
+	return false
+}
+
 // hasUnflattenedBind reports whether any of a branch's binds holds a sub-pattern that
 // is still to be matched. A branch with one can fail after its tag test passes, so the
 // test alone does not say whether the branch matched.

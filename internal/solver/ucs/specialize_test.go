@@ -12,6 +12,10 @@ import (
 // Two arms of the same shape overlap: the second matches whenever the first does. The
 // first's test already proved the second's, so the guard falls straight into the second
 // arm's continuation instead of testing `{x, y}` again.
+//
+// That leaves no branch for the second arm. One would be dead, since reaching it means
+// the identical test above it failed, and it would carry a second copy of the arm's
+// binds and body.
 func TestSpecializeOverlappingArmsOfTheSameShape(t *testing.T) {
 	core := coreMatch(
 		ident("p"),
@@ -23,7 +27,6 @@ func TestSpecializeOverlappingArmsOfTheSameShape(t *testing.T) {
   {x, y} => bind x = p.x, y = p.y; guard (x > y) {
     leaf x
   } default bind x = p.x, y = p.y; leaf 0
-  {x, y} => bind x = p.x, y = p.y; leaf 0
 } default ✗`))
 }
 
@@ -69,6 +72,9 @@ func TestSpecializeDropsArmsTheGuardedTestRulesOut(t *testing.T) {
 // Two guarded arms of the same tag chain: the first proves the second's test, so the
 // second runs without re-testing, and its own guard still falls through to the arm
 // below. Making an arm unconditional must not cut off what it falls into.
+//
+// The chain leaves one branch rather than two, since the second arm's continuation
+// already runs inside the first branch's fallthrough.
 func TestSpecializeChainsGuardsOnOneTag(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
@@ -83,10 +89,44 @@ func TestSpecializeChainsGuardsOnOneTag(t *testing.T) {
   } default guard (g) {
     leaf "b"
   } default leaf "c"
-  1 => guard (g) {
-    leaf "b"
-  } default leaf "c"
 } default leaf "c"`))
+}
+
+// Only a branch this rewrite duplicated is dropped. Two unguarded arms of the same tag
+// inline nothing, since the first cannot fail, so the second keeps its branch even
+// though nothing reaches it. That branch is the only record of an arm the user wrote
+// dead, and the coverage check is what reports it.
+func TestSpecializeKeepsAnArmNothingInlined(t *testing.T) {
+	core := coreMatch(
+		ident("n"),
+		matchCase(numPat(1), nil, str("a"), span(2, 5, 20)),
+		matchCase(numPat(1), nil, str("b"), span(3, 5, 20)),
+	)
+
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
+  1 => leaf "a"
+  1 => leaf "b"
+} default ✗`))
+}
+
+// The two rules meet on one split. The guarded arm's fallthrough takes the arm below it,
+// so that arm's branch goes. The third arm reaches nothing and nothing inlines it, since
+// the second arm cannot fail and ends the fallthrough, so its branch stays for the
+// coverage check to report.
+func TestSpecializeKeepsTheArmNoFallthroughCouldTake(t *testing.T) {
+	core := coreMatch(
+		ident("n"),
+		matchCase(numPat(1), ident("f"), str("a"), span(2, 5, 24)),
+		matchCase(numPat(1), nil, str("b"), span(3, 5, 20)),
+		matchCase(numPat(1), nil, str("c"), span(4, 5, 20)),
+	)
+
+	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
+  1 => guard (f) {
+    leaf "a"
+  } default leaf "b"
+  1 => leaf "c"
+} default ✗`))
 }
 
 // A branch holding a sub-pattern this stage does not flatten is never made
@@ -154,6 +194,40 @@ func TestTestRelations(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, test.implies, testImplies(test.a, test.b), "testImplies")
 			require.Equal(t, test.disjoint, testsDisjoint(test.a, test.b), "testsDisjoint")
+		})
+	}
+}
+
+// capturedBy asks the reverse of what specialize asks: whether an earlier test takes
+// every value of a later one, which is what makes the later branch unreachable. Getting
+// the direction wrong would drop a branch that can still run, so the wider-then-narrower
+// order is pinned here.
+func TestCapturedBy(t *testing.T) {
+	one := candidate{index: 0, test: &LitTest{Lit: ast.NewNumber(1, ast.Span{})}}
+	two := candidate{index: 1, test: &LitTest{Lit: ast.NewNumber(2, ast.Span{})}}
+	catchAll := candidate{index: 2}
+
+	tests := []struct {
+		name     string
+		earlier  []candidate
+		test     Test
+		captured bool
+	}{
+		{name: "no earlier branch", test: one.test},
+		{name: "the same tag", earlier: []candidate{one}, test: one.test, captured: true},
+		{name: "a different tag", earlier: []candidate{two}, test: one.test},
+		{
+			name:     "one of several earlier tags",
+			earlier:  []candidate{two, one},
+			test:     one.test,
+			captured: true,
+		},
+		{name: "an earlier branch with no test", earlier: []candidate{catchAll}, test: one.test},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.captured, capturedBy(test.earlier, test.test))
 		})
 	}
 }
