@@ -7,10 +7,9 @@ import (
 
 // This file reads a source pattern into the two things a normalized branch is made of:
 // the one tag-level test the branch makes, and the leaves it binds out of the value the
-// branch matched. It is the half of normalization that looks at patterns. The half that
-// merges branches into a split and threads the default tail through them consumes what
-// this produces and lands next; see the PR3 section of
-// planning/ucs/implementation_plan.md.
+// branch matched. It is the half of normalization that looks at patterns. The other half
+// merges the branches of a split and threads the default tail through them, and it reads
+// what this produces.
 
 // bindSpec is one leaf a branch's pattern binds. It holds the name, the pattern leaf or
 // shorthand element the solver binds through, and the projection the value comes from. A
