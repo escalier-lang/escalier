@@ -13,13 +13,13 @@ package ucs
 // and a guard's Default is what runs when its condition is false. Nothing retries a
 // branch above it.
 //
-// A nested sub-pattern is left whole for now. Its branch keeps it as a NormBind with no
-// name, which says "still to be matched against this projection". Flattening those into
-// splits of their own is the next stage of the rewrite; see the PR4 section of
-// planning/ucs/implementation_plan.md. Until then the form is backtracking-free only
-// for a flat match. A nameless bind names no continuation for the case where its
-// sub-pattern does not match, and there is nowhere to put one: the split that flattening
-// puts in its place is what carries that default.
+// A nested sub-pattern is left whole. Its branch keeps it as a NormBind with no name,
+// which says "still to be matched against this projection". Flattening those into splits
+// of their own is the next stage of the rewrite, the one the nested-pattern section of
+// planning/ucs/implementation_plan.md describes. So the form is backtracking-free for a
+// flat match and not yet for a nested one. A nameless bind names no continuation for the
+// case where its sub-pattern does not match, and there is nowhere to put one. The split
+// that flattening puts in its place is what carries that default.
 func Normalize(c Core) Norm {
 	return normalizeTerm(c, nil)
 }
