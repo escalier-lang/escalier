@@ -39,28 +39,54 @@ type scrutineeView struct {
 	// mode is the binding mode the root scrutinee's borrow fixed. It propagates
 	// unchanged down the path, the same match ergonomics bindPatMode follows.
 	mode bindMode
-	// test is the tag test the split over this scrutinee applied, and nil until one is.
-	// Only fieldOptional reads it, to ask an object test whether a key the pattern
-	// defaulted may be absent. Every other test kind leaves its result in a field of its
-	// own.
-	test ucs.Test
 	// shape is the type union narrowing reads its members off. It is the scrutinee's own
 	// type once that is concrete, and a coalesced snapshot of it while it is still an
 	// inference variable.
 	shape soltype.Type
-	// elems holds one projection variable per fixed element of a tuple test, minted when
-	// that test emitted its whole-tuple requirement. An index step reads its element out
-	// of this rather than emitting a requirement of its own.
-	elems []soltype.Type
-	// tuple and concreteTuple are the grounded tuple shapes the same tuple test
-	// resolved, which a suffix step reads its `...rest` slice out of. Each is nil when
-	// the corresponding type is not a grounded tuple.
-	tuple, concreteTuple *soltype.TupleType
-	// params holds the constructor parameters an extractor test resolved. An extract
-	// step reads its value's type out of this, the interim protocol bindExtractorPat
-	// also binds through until M7's `[Symbol.customMatcher]` lands.
-	params []*soltype.FuncParam
+	// tested is what the split's tag test left behind for the projections beneath this
+	// scrutinee. It is nil until a split tests it, and nil afterwards for a test that
+	// leaves nothing behind.
+	tested tested
 }
+
+// tested is what one branch's tag test resolved for the steps that project out of the
+// scrutinee it tested.
+//
+// It is a sum rather than a group of fields on scrutineeView because the alternatives are
+// disjoint. A scrutinee is tested against exactly one tag, and each tag kind resolves a
+// different thing. A tuple test mints element variables and an extractor test resolves
+// constructor parameters, so no one value ever carries both.
+//
+// A literal test and a class test resolve nothing and leave it nil. A class test narrows
+// the scrutinee's own type to the instance member view instead, so its field steps read
+// that view through the ordinary member lookup and need nothing carried here.
+type tested interface{ isTested() }
+
+func (*testedObject) isTested()    {}
+func (*testedTuple) isTested()     {}
+func (*testedExtractor) isTested() {}
+
+// testedObject carries the object test itself, which a field step consults to ask whether
+// the key the pattern defaulted may be absent. Nothing else about an object test is
+// resolved up front, since its keys are looked up one at a time by the steps beneath it.
+type testedObject struct{ test *ucs.ObjectTest }
+
+// testedTuple carries what a tuple test's whole-tuple requirement produced.
+type testedTuple struct {
+	// elems holds one projection variable per fixed element, minted when the requirement
+	// was emitted. An index step reads its element out of this rather than emitting a
+	// requirement of its own.
+	elems []soltype.Type
+	// scrut and concrete are the grounded tuple shapes the test resolved, which a suffix
+	// step reads its `...rest` slice out of. Each is nil when the corresponding type is
+	// not a grounded tuple.
+	scrut, concrete *soltype.TupleType
+}
+
+// testedExtractor carries the constructor parameters an extractor test resolved. An
+// extract step reads its value's type out of them, the interim protocol bindExtractorPat
+// also binds through until M7's `[Symbol.customMatcher]` lands.
+type testedExtractor struct{ params []*soltype.FuncParam }
 
 // pathBinder resolves IR projection paths into types and binds leaf patterns off them.
 // It is seeded with the root scrutinee's inferred type, which is the only type the IR
@@ -220,21 +246,23 @@ func (b *pathBinder) projectField(parent scrutineeView, node ast.Node, name stri
 // scrutinee `parent` is the view of, so a tuple shape minted here is written back onto it
 // and every later step off the same value reads that one shape.
 func (b *pathBinder) projectIndex(parentScrut *ucs.Scrutinee, parent scrutineeView, node ast.Node, i int) scrutineeView {
-	if i >= len(parent.elems) {
+	tup, ok := parent.tested.(*testedTuple)
+	if !ok || i >= len(tup.elems) {
 		// No tuple test fixed this scrutinee's arity, so nothing has minted a variable for
 		// position i yet. Emit an inexact requirement pinning the positions up to it —
 		// "the scrutinee is a tuple at least this long" — so any path resolves, not only one
 		// a split has already tested. A normalized index step always sits under a tuple
 		// test, so this runs only for a path built without one, and it mints another
 		// requirement if a still deeper index arrives afterwards.
-		parent.elems, parent.tuple, parent.concreteTuple = b.tupleShapeReq(parent, node, i+1, true)
+		tup = b.tupleShapeReq(parent, node, i+1, true)
+		parent.tested = tup
 		b.views[parentScrut] = parent
 	}
 	var concrete soltype.Type
-	if parent.concreteTuple != nil && i < len(parent.concreteTuple.Elems) {
-		concrete = parent.concreteTuple.Elems[i]
+	if tup.concrete != nil && i < len(tup.concrete.Elems) {
+		concrete = tup.concrete.Elems[i]
 	}
-	return derive(parent, parent.elems[i], concrete)
+	return derive(parent, tup.elems[i], concrete)
 }
 
 // projectExtract resolves the i-th positional value an extractor yields, the `v` of
@@ -243,21 +271,28 @@ func (b *pathBinder) projectIndex(parentScrut *ucs.Scrutinee, parent scrutineeVi
 // `[Symbol.customMatcher]`. Nothing is constrained here, so the step blames no node. The
 // extractor test already narrowed the scrutinee when it resolved the constructor.
 func (b *pathBinder) projectExtract(parent scrutineeView, i int) scrutineeView {
-	if i >= len(parent.params) {
+	ext, ok := parent.tested.(*testedExtractor)
+	if !ok || i >= len(ext.params) {
 		// Either no extractor test resolved a constructor for this scrutinee, or the
 		// pattern took more values than the constructor yields. The arity error is reported
 		// where the test is applied, so recovering with a fresh variable here keeps the
 		// leaves defined without a second diagnostic.
 		return derive(parent, b.c.freshAt(b.lvl), nil)
 	}
-	param := parent.params[i].Type
+	param := ext.params[i].Type
 	return derive(parent, param, param)
 }
 
 // projectSuffix resolves `parent[from..]`, the tuple elements past a fixed prefix, which
 // is what a tuple pattern's `...rest` binds.
 func (b *pathBinder) projectSuffix(parent scrutineeView, node ast.Node, from int) scrutineeView {
-	suffix, concrete := b.c.tupleRestType(b.lvl, node, parent.ty, parent.tuple, parent.concreteTuple, from)
+	// With no tuple test above it the grounded shapes are unknown, and tupleRestType falls
+	// back to grounding the scrutinee itself.
+	var scrutTup, concreteTup *soltype.TupleType
+	if tup, ok := parent.tested.(*testedTuple); ok {
+		scrutTup, concreteTup = tup.scrut, tup.concrete
+	}
+	suffix, concrete := b.c.tupleRestType(b.lvl, node, parent.ty, scrutTup, concreteTup, from)
 	return derive(parent, suffix, concrete)
 }
 
@@ -285,11 +320,11 @@ func derive(parent scrutineeView, ty, concrete soltype.Type) scrutineeView {
 // matches. Absent an object test the field is required, matching a pattern with no
 // default.
 func (v scrutineeView) fieldOptional(name string) bool {
-	obj, ok := v.test.(*ucs.ObjectTest)
+	obj, ok := v.tested.(*testedObject)
 	if !ok {
 		return false
 	}
-	for _, key := range obj.Keys {
+	for _, key := range obj.test.Keys {
 		if key.Name == name {
 			return key.Optional
 		}
@@ -300,16 +335,20 @@ func (v scrutineeView) fieldOptional(name string) bool {
 // applyTest narrows v by the tag test one branch of a split applies to it, and resolves
 // whatever that test leaves behind for the projections beneath it.
 func (b *pathBinder) applyTest(scope *Scope, node ast.Node, v scrutineeView, test ucs.Test) scrutineeView {
-	v.test = test
+	// A scrutinee is tested against one tag per branch, so whatever an earlier call left
+	// here belongs to a different branch's test and must not be read by this one's steps.
+	v.tested = nil
 	switch t := test.(type) {
 	case *ucs.ObjectTest:
 		// An object test emits nothing itself. Its keys are looked up one at a time, by the
 		// field steps beneath it, which is the same per-field dispatch bindPatMode's object
 		// arm makes.
-		return b.narrowUnion(v, test)
+		v = b.narrowUnion(v, test)
+		v.tested = &testedObject{test: t}
+		return v
 	case *ucs.TupleTest:
 		v = b.narrowUnion(v, test)
-		v.elems, v.tuple, v.concreteTuple = b.tupleShapeReq(v, node, t.Len, t.Rest == ucs.TrailingRest)
+		v.tested = b.tupleShapeReq(v, node, t.Len, t.Rest == ucs.TrailingRest)
 		return v
 	case *ucs.LitTest:
 		b.applyLitTest(node, v, t)
@@ -402,18 +441,16 @@ func testMatchesMemberShape(test ucs.Test, member soltype.Type) bool {
 // whole-tuple requirement that lowers the scrutinee's matching element into each. inexact
 // relaxes the requirement to "a tuple at least this long", which is what a trailing rest
 // asks for; an exact requirement is what rejects a wrong arity with
-// TupleLengthMismatchError. It returns the grounded scrutinee and concrete tuples
+// TupleLengthMismatchError. It resolves the grounded scrutinee and concrete tuples
 // alongside, which a suffix step reads its slice out of.
-func (b *pathBinder) tupleShapeReq(
-	v scrutineeView, node ast.Node, count int, inexact bool,
-) (elems []soltype.Type, scrutTup, concreteTup *soltype.TupleType) {
-	elems = make([]soltype.Type, count)
+func (b *pathBinder) tupleShapeReq(v scrutineeView, node ast.Node, count int, inexact bool) *testedTuple {
+	elems := make([]soltype.Type, count)
 	for i := range elems {
 		elems[i] = b.c.freshAt(b.lvl)
 	}
 	b.c.constrain(node, v.ty, &soltype.TupleType{Elems: elems, Inexact: inexact})
-	scrutTup, _ = b.c.groundedTuple(v.ty)
-	concreteTup, _ = b.c.groundedTuple(v.concrete)
+	scrutTup, _ := b.c.groundedTuple(v.ty)
+	concreteTup, _ := b.c.groundedTuple(v.concrete)
 	// Pin each variable's upper bound to the scrutinee's own element when the scrutinee is
 	// a grounded tuple. The requirement above gives each one the element only as a lower
 	// bound, so without this a refutable literal sub-pattern of the wrong kind, `[a, "hi"]`
@@ -426,7 +463,7 @@ func (b *pathBinder) tupleShapeReq(
 			}
 		}
 	}
-	return elems, scrutTup, concreteTup
+	return &testedTuple{elems: elems, scrut: scrutTup, concrete: concreteTup}
 }
 
 // applyLitTest asserts the branch's literal is an admissible value of the scrutinee, so
@@ -508,7 +545,7 @@ func (b *pathBinder) applyExtractorTest(scope *Scope, node ast.Node, v scrutinee
 	if t.Arity != len(params) {
 		b.c.report(&ExtractorPatternArityError{Node: blame, Name: name, Expected: len(params), Got: t.Arity})
 	}
-	v.params = params
+	v.tested = &testedExtractor{params: params}
 	return v
 }
 
