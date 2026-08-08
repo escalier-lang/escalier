@@ -63,6 +63,9 @@ func normalizeTerm(c Core, next Norm) Norm {
 func normalizeSplit(s *CoreSplit, next Norm) Norm {
 	tail := next
 	if s.Else != nil {
+		// next is not dropped here. It becomes the `else`'s own failure continuation. A
+		// leaf `else` cannot fail and ignores it, which is what an `if val` and a
+		// `val … else` both write. A guard or a nested split `else` falls into it.
 		tail = normalizeTerm(s.Else, next)
 	}
 
