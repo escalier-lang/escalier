@@ -208,6 +208,9 @@ func TestShallowTestKeepsShorthandElements(t *testing.T) {
 	pattern := ast.NewObjectPat([]ast.ObjPatElem{elem}, ast.Span{})
 	origin := At(OriginMatchArm, arm(span(2, 5, 30)))
 
+	// `{mut x: number}` reads to `{x} => bind x = p.x; leaf 0`. The rendering names the
+	// key and the bound leaf and stops there, so the assertions below read the element
+	// the bind points at, which is where the annotation and the `mut` marker live.
 	_, binds := shallowTest(pattern, NewRoot(ident("p"), origin), origin)
 	require.Len(t, binds, 1)
 	require.Equal(t, "x", binds[0].name)
@@ -221,6 +224,10 @@ func TestShallowTestSharesTheScrutinee(t *testing.T) {
 	origin := At(OriginMatchArm, arm(span(2, 5, 24)))
 	scrutinee := NewRoot(ast.NewCall(ident("f"), []ast.Expr{}, false, ast.Span{}), origin)
 
+	// `{x, y}` against `f()` reads to `{x, y} => bind x = f().x, y = f().y; leaf 0`. The
+	// rendering spells the call out once per projection, which is what it would look
+	// like if each projection re-derived it, so the assertions below read the pointers
+	// rather than the path.
 	_, binds := shallowTest(objPat("x", "y"), scrutinee, origin)
 	require.Len(t, binds, 2)
 	require.Same(t, scrutinee, binds[0].source.Parent)
@@ -238,6 +245,8 @@ func TestShallowTestPointsAtThePatternLeaf(t *testing.T) {
 	)}, ast.Span{})
 	origin := At(OriginMatchArm, arm(span(2, 5, 24)))
 
+	// `{x: a}` reads to `{x} => bind a = p.x; leaf 0`. A span never renders, so the
+	// assertions below read the node each part of the bind blames.
 	_, binds := shallowTest(pattern, NewRoot(ident("p"), origin), origin)
 	require.Len(t, binds, 1)
 	require.Same(t, value, binds[0].pat)
