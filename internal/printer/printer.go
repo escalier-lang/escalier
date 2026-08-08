@@ -7,19 +7,36 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/parser"
 )
 
 // Options contains configuration for the printer
 type Options struct {
 	Indent string // e.g., "  " or "\t"
+	// Compact renders the whole node on one line. Every line break becomes a separator on
+	// the same line, and all indentation is dropped. A `do` block holding the two
+	// statements `1` and `return 2` prints as `do { 1; return 2 }` rather than spanning
+	// four lines. Callers that embed a rendered fragment in a line of their own output
+	// need this.
+	//
+	// Text that carries its own newline, such as a multi-line template literal, is
+	// written with the newline escaped as `\n` so the one-line guarantee holds. Compact
+	// output is meant to be read, not reparsed.
+	Compact bool
 }
 
 // DefaultOptions returns default printer options
 func DefaultOptions() Options {
 	return Options{
-		Indent: "    ", // 4 spaces
+		Indent:  "    ", // 4 spaces
+		Compact: false,
 	}
+}
+
+// CompactOptions returns options that render a node on one line.
+func CompactOptions() Options {
+	opts := DefaultOptions()
+	opts.Compact = true
+	return opts
 }
 
 // Printer handles pretty-printing of AST nodes
@@ -29,6 +46,10 @@ type Printer struct {
 	indentLevel int
 	needIndent  bool
 	lastChar    byte
+	// pendingSep is the compact-mode separator a line break left behind, waiting to be
+	// resolved once the next token arrives. Holding it lets a separator before a closing
+	// brace soften to a space, so a block ends `return 2 }` rather than `return 2; }`.
+	pendingSep string
 }
 
 // NewPrinter creates a new printer with the given options
@@ -39,34 +60,84 @@ func NewPrinter(writer io.Writer, opts Options) *Printer {
 		indentLevel: 0,
 		needIndent:  true,
 		lastChar:    0,
+		pendingSep:  "",
 	}
 }
+
+// compactLineEndings rewrites the line endings source text can carry into their escaped
+// spellings. CRLF is listed first so it is rewritten as one unit rather than as two
+// separate escapes.
+var compactLineEndings = strings.NewReplacer(
+	"\r\n", `\r\n`,
+	"\n", `\n`,
+	"\r", `\r`,
+)
 
 // Helper methods for output management
 
 func (p *Printer) writeString(s string) {
-	if p.needIndent && len(s) > 0 && s[0] != '\n' {
-		indent := strings.Repeat(p.opts.Indent, p.indentLevel)
-		_, err := io.WriteString(p.writer, indent)
-		if err != nil {
-			panic(fmt.Sprintf("Printer write error: %v", err))
+	// In compact mode lineBreak never emits a line ending, so any line ending reaching
+	// here came from source text such as a template literal's quasi. Escaping it keeps
+	// the whole rendering on one line. A carriage return counts, since a lone `\r` ends a
+	// line for a terminal and for the tools that read the rendering.
+	if p.opts.Compact && strings.ContainsAny(s, "\n\r") {
+		s = compactLineEndings.Replace(s)
+	}
+
+	if len(s) > 0 && p.pendingSep != "" {
+		sep := p.pendingSep
+		p.pendingSep = ""
+		// A closing delimiter ends the group the separator was meant to divide, so it
+		// takes a plain space instead.
+		if s[0] == '}' || s[0] == ')' || s[0] == ']' {
+			sep = " "
 		}
+		if p.lastChar != ' ' && p.lastChar != 0 {
+			p.write(sep)
+		}
+	}
+
+	if p.needIndent && len(s) > 0 && s[0] != '\n' {
+		p.write(strings.Repeat(p.opts.Indent, p.indentLevel))
 		p.needIndent = false
 	}
 
-	_, err := io.WriteString(p.writer, s)
-	if err != nil {
+	p.write(s)
+}
+
+// write sends a string to the writer without consulting the pending separator or the
+// indentation state, and records the last byte for space() and the separator logic.
+func (p *Printer) write(s string) {
+	if _, err := io.WriteString(p.writer, s); err != nil {
 		panic(fmt.Sprintf("Printer write error: %v", err))
 	}
-
 	if len(s) > 0 {
 		p.lastChar = s[len(s)-1]
 	}
 }
 
+// newline ends a line between two parts of the same construct, such as the elements of an
+// object literal, which carry their own comma. Compact mode separates them with a space.
 func (p *Printer) newline() {
-	p.writeString("\n")
-	p.needIndent = true
+	p.lineBreak(" ")
+}
+
+// newlineStmt ends a line between two statements, which carry no separator of their own.
+// Compact mode divides them with a semicolon, so `1 return 2` prints as `1; return 2`.
+func (p *Printer) newlineStmt() {
+	p.lineBreak("; ")
+}
+
+func (p *Printer) lineBreak(compactSep string) {
+	if !p.opts.Compact {
+		p.writeString("\n")
+		p.needIndent = true
+		return
+	}
+	// A semicolon carries more than a space, so it wins when both land in the same gap.
+	if p.pendingSep == "" || compactSep != " " {
+		p.pendingSep = compactSep
+	}
 }
 
 func (p *Printer) space() {
@@ -95,7 +166,7 @@ func (p *Printer) PrintScript(script *ast.Script) error {
 			continue
 		}
 		if !first {
-			p.newline()
+			p.newlineStmt()
 		}
 		p.printStmt(stmt)
 		first = false
@@ -118,7 +189,7 @@ func (p *Printer) PrintModule(module *ast.Module) error {
 		for i, decl := range ns.Decls {
 			p.printDecl(decl)
 			if i < len(ns.Decls)-1 {
-				p.newline()
+				p.newlineStmt()
 			}
 		}
 
@@ -1194,7 +1265,7 @@ func (p *Printer) printBlock(block *ast.Block) {
 				continue
 			}
 			p.printStmt(stmt)
-			p.newline()
+			p.newlineStmt()
 		}
 
 		p.dedent()
@@ -1913,8 +1984,8 @@ func (p *Printer) needsParens(parent ast.Expr, child ast.Expr) bool {
 	case *ast.BinaryExpr:
 		// If parent is also a binary expression, compare precedence
 		if parentBinary, ok := parent.(*ast.BinaryExpr); ok {
-			parentPrec := parser.Precedence[parentBinary.Op]
-			childPrec := parser.Precedence[childExpr.Op]
+			parentPrec := ast.Precedence[parentBinary.Op]
+			childPrec := ast.Precedence[childExpr.Op]
 
 			// Need parens if child has lower precedence than parent
 			if childPrec < parentPrec {
@@ -2001,6 +2072,17 @@ func Print(node ast.Node, opts Options) (string, error) {
 		return "", fmt.Errorf("unsupported node type: %T", node)
 	}
 
+	return builder.String(), nil
+}
+
+// PrintBlock prints a block, braces included. A block carries no Span method, so it is not
+// an ast.Node and Print cannot reach it.
+func PrintBlock(block *ast.Block, opts Options) (string, error) {
+	if block == nil {
+		return "", fmt.Errorf("cannot print a nil block")
+	}
+	var builder strings.Builder
+	NewPrinter(&builder, opts).printBlock(block)
 	return builder.String(), nil
 }
 
