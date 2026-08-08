@@ -153,6 +153,11 @@ func TestInferObjectPatternLeafTypeAnnAdopted(t *testing.T) {
 // A field default makes the field optional, so destructuring an absent field
 // that carries a default binds the default's type instead of reporting a missing
 // property.
+//
+// The scrutinee here cannot carry `z` at all, which #1053 argues should be a missing
+// property rather than a match. TestPathBinderDefaultedKeyBindsAgainstScrutineeWithoutTheField
+// in ucs_bind_test.go pins the same answer for the UCS IR path binder, so change the two
+// together.
 func TestInferObjectPatternLeafDefault(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(p: {x: number}) {
@@ -162,6 +167,33 @@ func TestInferObjectPatternLeafDefault(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: {x: number}) -> 0", values["f"])
+}
+
+// An optional property reads as `T | undefined`, and both object-pattern forms bind that
+// whole type. The key-value form used to pin its projection's upper bound to the declared
+// `T` even for an optional property, which rejected the `undefined` half and reported
+// `cannot constrain undefined <: number` on a legal destructuring. The shorthand form
+// pins nothing, so the two disagreed on the same field.
+func TestInferObjectPatternOptionalProperty(t *testing.T) {
+	tests := map[string]string{
+		"Shorthand": `
+			fn f(p: {x?: number}) {
+				val {x} = p
+				return x
+			}`,
+		"KeyValue": `
+			fn f(p: {x?: number}) {
+				val {x: a} = p
+				return a
+			}`,
+	}
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, src)
+			require.Empty(t, messagesWithSpan(errs))
+			require.Equal(t, "fn (p: {x?: number}) -> number | undefined", values["f"])
+		})
+	}
 }
 
 // A trailing rest element relaxes the tuple requirement to an inexact prefix, so

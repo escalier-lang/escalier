@@ -1223,12 +1223,16 @@ func (e *ReadOnlyPropertyError) Message() string {
 // resolves to no class — either the name is unbound or it names a value or type parameter
 // rather than a class. An instance pattern deconstructs a class instance through the named
 // class's member view, so the name must be a class.
+//
+// Node is the node the message underlines. A written pattern blames the whole
+// `Name { ... }`. A branch of the UCS IR, whose tag test names the class without keeping
+// the pattern that produced it, blames the class name alone.
 type InstancePatternNotClassError struct {
-	Pat  *ast.InstancePat
+	Node ast.Node
 	Name string
 }
 
-func (e *InstancePatternNotClassError) Span() ast.Span      { return e.Pat.Span() }
+func (e *InstancePatternNotClassError) Span() ast.Span      { return e.Node.Span() }
 func (e *InstancePatternNotClassError) Related() []ast.Span { return nil }
 func (e *InstancePatternNotClassError) Message() string {
 	return "`" + e.Name + "` does not name a class and cannot be used as an instance pattern."
@@ -1238,12 +1242,14 @@ func (e *InstancePatternNotClassError) Message() string {
 // resolves to no constructor — the name is unbound, or its value is not callable as a
 // constructor. An extractor pattern deconstructs a value through the named constructor's
 // parameters, so the name must resolve to a constructor.
+// Node is the node the message underlines, the same choice
+// InstancePatternNotClassError makes.
 type ExtractorPatternNotCtorError struct {
-	Pat  *ast.ExtractorPat
+	Node ast.Node
 	Name string
 }
 
-func (e *ExtractorPatternNotCtorError) Span() ast.Span      { return e.Pat.Span() }
+func (e *ExtractorPatternNotCtorError) Span() ast.Span      { return e.Node.Span() }
 func (e *ExtractorPatternNotCtorError) Related() []ast.Span { return nil }
 func (e *ExtractorPatternNotCtorError) Message() string {
 	return "`" + e.Name + "` is not a constructor and cannot be used as an extractor pattern."
@@ -1252,14 +1258,16 @@ func (e *ExtractorPatternNotCtorError) Message() string {
 // ExtractorPatternArityError fires when an extractor pattern `Name(a, b, ...)` supplies
 // a different number of sub-patterns than the constructor has parameters. Each sub-pattern
 // binds one constructor parameter, so the counts must match.
+// Node is the node the message underlines, the same choice
+// InstancePatternNotClassError makes.
 type ExtractorPatternArityError struct {
-	Pat      *ast.ExtractorPat
+	Node     ast.Node
 	Name     string
 	Expected int
 	Got      int
 }
 
-func (e *ExtractorPatternArityError) Span() ast.Span      { return e.Pat.Span() }
+func (e *ExtractorPatternArityError) Span() ast.Span      { return e.Node.Span() }
 func (e *ExtractorPatternArityError) Related() []ast.Span { return nil }
 func (e *ExtractorPatternArityError) Message() string {
 	return fmt.Sprintf("extractor pattern `%s` expects %d arguments but got %d", e.Name, e.Expected, e.Got)
