@@ -82,6 +82,29 @@ const (
 	Assign            BinaryOp = "="
 )
 
+// Precedence is the binding power of each binary operator. A larger number binds tighter,
+// so `a + b * c` groups as `a + (b * c)`. The parser consults it to shape the tree, and
+// the printer consults it to decide when an operand needs parentheses to survive being
+// reparsed.
+var Precedence = map[BinaryOp]int{
+	Times:             12,
+	Divide:            12,
+	Modulo:            12,
+	Plus:              11,
+	Minus:             11,
+	Concatenation:     11,
+	Assign:            10,
+	LessThan:          9,
+	LessThanEqual:     9,
+	GreaterThan:       9,
+	GreaterThanEqual:  9,
+	Equal:             8,
+	NotEqual:          8,
+	LogicalAnd:        4,
+	LogicalOr:         3,
+	NullishCoalescing: 3,
+}
+
 type BinaryExpr struct {
 	Left         Expr
 	Op           BinaryOp

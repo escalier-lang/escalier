@@ -8,25 +8,6 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-var Precedence = map[ast.BinaryOp]int{
-	ast.Times:             12,
-	ast.Divide:            12,
-	ast.Modulo:            12,
-	ast.Plus:              11,
-	ast.Minus:             11,
-	ast.Concatenation:     11,
-	ast.Assign:            10,
-	ast.LessThan:          9,
-	ast.LessThanEqual:     9,
-	ast.GreaterThan:       9,
-	ast.GreaterThanEqual:  9,
-	ast.Equal:             8,
-	ast.NotEqual:          8,
-	ast.LogicalAnd:        4,
-	ast.LogicalOr:         3,
-	ast.NullishCoalescing: 3,
-}
-
 func (p *Parser) expr() ast.Expr {
 	expr := p.exprWithoutErrorCheck()
 	if expr == nil {
@@ -112,7 +93,7 @@ loop:
 		p.lexer.consume()
 
 		if !ops.IsEmpty() {
-			if Precedence[ops.Peek()] >= Precedence[nextOp] {
+			if ast.Precedence[ops.Peek()] >= ast.Precedence[nextOp] {
 				// get the last operator and remove it from the list
 				op := ops.Pop()
 				right := values.Pop()
