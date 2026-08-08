@@ -1,0 +1,14 @@
+{
+  "name": "webidl-to-esc-extract",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Stage 1 of the WebIDL->.esc pipeline: parse @webref/idl into JSON IR artifacts.",
+  "scripts": {
+    "extract": "node extract.mjs"
+  },
+  "dependencies": {
+    "@webref/idl": "^3",
+    "webidl2": "^24"
+  }
+}
