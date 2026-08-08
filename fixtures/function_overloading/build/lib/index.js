@@ -16,7 +16,7 @@ export function combine(param0, param1) {
   if (typeof param0 === "number" && typeof param1 === "number") {
     const a = param0;
     const b = param1;
-    return "Numbers: " + a + b.toString();
+    return "Numbers: " + (a + b).toString();
   } else if (typeof param0 === "string" && typeof param1 === "string") {
     const a = param0;
     const b = param1;
