@@ -45,6 +45,11 @@ so the option stays cheap to exercise when the decision point arrives.
   against MLscript, recording/enforcing the `¬Ref` exclusion invariant, and
   reconciling overload codegen with first-class arrow intersections. Investigation
   deferred; this is the record of next steps.
+- **[07-implementation-plan.md](07-implementation-plan.md)** — the ordered PR
+  breakdown that takes `internal/solver/` to MLstruct: 12 PRs across representation,
+  normal forms, constraint solving, coalescing, feature threading, operators, and
+  rollout, each with its data structures and algorithms, plus a dependency graph
+  and mermaid diagram.
 
 ## TL;DR of the strategy
 
