@@ -44,6 +44,13 @@ func leafPat(name string) *ast.IdentPat {
 	return ast.NewIdentPat(name, false, nil, nil, builderSpan())
 }
 
+// defaultedLeafPat builds the leaf a `{x = 0}` shorthand introduces: an identifier whose
+// default supplies a value when the field is absent. An object test marks such a key
+// optional, which is what relaxes the field lookup.
+func defaultedLeafPat(name string) *ast.IdentPat {
+	return ast.NewIdentPat(name, false, nil, numExpr(0), builderSpan())
+}
+
 // projectPath applies each step in turn from root, sharing one *ucs.Scrutinee per level
 // the way normalization does, and returns the scrutinee the last step reaches.
 func projectPath(root *ucs.Scrutinee, steps ...ucs.Step) *ucs.Scrutinee {
@@ -393,17 +400,39 @@ func TestPathBinderBranchesNarrowIndependently(t *testing.T) {
 	require.Equal(t, "string", boundType(t, c, secondScope, "y"))
 }
 
-// A field an object test marked optional is looked up with an optional requirement, so a
-// leaf that carries a destructuring default still binds against a scrutinee that lacks
-// the field. `{x = 0}` is the pattern that produces the marker.
-func TestPathBinderOptionalKeyToleratesAbsentField(t *testing.T) {
+// A destructuring default replaces the `undefined` an optional property reads as, so
+// `{x = 0}` over `{x?: number}` binds the property type joined with the default's, where
+// the same field with no default binds `number | undefined`. The OptionalField case above
+// pins the undefaulted half. This is the meaningful use of the marker an object test
+// carries, and binding the same leaf through bindPattern renders the same `number | 0`.
+func TestPathBinderDefaultFillsOptionalProperty(t *testing.T) {
+	c, scope := newPathChecker(t, "")
+	root, binder := seedPath(c, exactObj(&soltype.PropertyElem{Name: "x", Type: num(), Optional: true}))
+	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x", Optional: true}}})
+
+	armScope := scope.Child()
+	binder.bindAt(armScope, projectPath(root, ucs.FieldStep{Name: "x"}), defaultedLeafPat("x"))
+	require.Empty(t, messagesWithSpan(c.errs))
+	require.Equal(t, "number | 0", boundType(t, c, armScope, "x"))
+}
+
+// A scrutinee that cannot carry the field at all still binds the default rather than
+// reporting a missing property, because the marker relaxes the lookup to an optional
+// requirement. This is the one scrutinee shape the marker is observable on: a required
+// requirement already succeeds against an optional property and against a union whose
+// members disagree, so neither distinguishes it.
+//
+// Whether `{x = 0}` should match a scrutinee with no `x` at all is a question about
+// bindPattern rather than about the IR. TestInferObjectPatternLeafDefault in
+// infer_pattern_test.go pins the same answer for `val {z = 0} = p` over `{x: number}`, and
+// this case exists to hold the path binder to it. Change the two together or not at all.
+func TestPathBinderDefaultedKeyBindsAgainstScrutineeWithoutTheField(t *testing.T) {
 	c, scope := newPathChecker(t, "")
 	root, binder := seedPath(c, parseType(t, "{y: string}"))
 	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x", Optional: true}}})
 
 	armScope := scope.Child()
-	leaf := ast.NewIdentPat("x", false, nil, numExpr(0), builderSpan())
-	binder.bindAt(armScope, projectPath(root, ucs.FieldStep{Name: "x"}), leaf)
+	binder.bindAt(armScope, projectPath(root, ucs.FieldStep{Name: "x"}), defaultedLeafPat("x"))
 	require.Empty(t, messagesWithSpan(c.errs))
 	require.Equal(t, "0", boundType(t, c, armScope, "x"))
 }
