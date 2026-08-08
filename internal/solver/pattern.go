@@ -417,7 +417,7 @@ func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *
 	if _, isVar := scrutinee.(*soltype.TypeVarType); !isVar {
 		return nil, false
 	}
-	return c.groundedTuple(soltype.CarrierOf(coalesce(scrutinee, soltype.Positive)))
+	return c.groundedTuple(groundedCarrier(scrutinee))
 }
 
 // groundedTuple splices every `...P` spread into position so elements can be read by index,
@@ -512,7 +512,7 @@ func (c *checker) restObjectShape(scrutinee, concrete soltype.Type) (*soltype.Ob
 	if _, isVar := scrutinee.(*soltype.TypeVarType); !isVar {
 		return nil, false
 	}
-	return eval.groundToObject(soltype.CarrierOf(coalesce(scrutinee, soltype.Positive)))
+	return eval.groundToObject(groundedCarrier(scrutinee))
 }
 
 // bindInstancePat types a class-instance pattern `Name { x, y }`: it narrows the scrutinee

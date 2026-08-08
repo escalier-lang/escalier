@@ -2050,7 +2050,7 @@ func (c *checker) mutFieldRead(lvl int, blame ast.Node, provNode ast.Node, name 
 			}
 		}
 	}
-	if _, isVar := soltype.CarrierOf(recv).(*soltype.TypeVarType); !isVar {
+	if !carrierIsVar(recv) {
 		// Concrete receiver: a plain read composes the chain correctly.
 		return c.valueProp(lvl, blame, provNode, name, recv).value
 	}
@@ -2895,8 +2895,7 @@ func (c *checker) inferYield(scope *Scope, lvl int, e *ast.YieldExpr) soltype.Ty
 // read one. A failed delegate is the ErrorType placeholder, not a variable, so it is
 // excluded and keeps absorbing.
 func (c *checker) delegateIsUnsolved(t soltype.Type) bool {
-	_, isVar := soltype.CarrierOf(t).(*soltype.TypeVarType)
-	return isVar
+	return carrierIsVar(t)
 }
 
 // delegateElemType resolves what a `yield from` delegate hands back:
@@ -2915,12 +2914,7 @@ func (c *checker) delegateIsUnsolved(t soltype.Type) bool {
 // branch is live, so the Next results meet instead. Branches with no Next slot put no
 // requirement on the delegator and drop out of that meet.
 func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, soltype.Type, bool) {
-	carrier := soltype.CarrierOf(t)
-	// An inference-variable delegate is coalesced to its structural lower-bound shape,
-	// the same snapshot syncElemType takes before inspecting a variable operand.
-	if _, isVar := carrier.(*soltype.TypeVarType); isVar {
-		carrier = soltype.CarrierOf(coalesce(carrier, soltype.Positive))
-	}
+	carrier := groundedCarrier(t)
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
 		// syncElemType walks a union too, but reports only element types. Recursing here
 		// keeps each branch's Ret slot and lets an async branch through under the same
@@ -3157,9 +3151,12 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	// Snapshot the scrutinee for the exhaustiveness check before any arm binds. A
 	// literal pattern adds its literal as a lower bound, which would otherwise leak
-	// a phantom member into the coalesced union read after the arm loop.
+	// a phantom member into the coalesced union read after the arm loop. The borrow
+	// stays on the snapshot rather than being peeled the way groundedCarrier peels
+	// one. narrowMatchArm unwraps the shape itself and re-wraps the narrowed carrier
+	// under the same borrow.
 	matchShape := scrutinee
-	if _, isVar := soltype.CarrierOf(scrutinee).(*soltype.TypeVarType); isVar {
+	if carrierIsVar(scrutinee) {
 		matchShape = coalesce(scrutinee, soltype.Positive)
 	}
 	res := c.freshAt(lvl)

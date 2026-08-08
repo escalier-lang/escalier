@@ -105,10 +105,7 @@ func (c *checker) constrainIterationRaise(site ast.Expr, t soltype.Type, lvl int
 // is peeled and an inference variable coalesced first, the same normalization the
 // element-type walk applies.
 func (c *checker) iterationRaise(t soltype.Type) (soltype.Type, bool) {
-	t = soltype.CarrierOf(t)
-	if _, isVar := t.(*soltype.TypeVarType); isVar {
-		t = soltype.CarrierOf(coalesce(t, soltype.Positive))
-	}
+	t = groundedCarrier(t)
 	switch t := t.(type) {
 	case *soltype.GeneratorType:
 		if !t.Raises() {
@@ -155,10 +152,7 @@ func (c *checker) iterableElemType(await bool, t soltype.Type) (soltype.Type, bo
 // failing when any branch is not async-iterable. A sync generator is not an
 // AsyncIterable, and neither is a tuple, so both are rejected here.
 func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
-	t = soltype.CarrierOf(t)
-	if _, isVar := t.(*soltype.TypeVarType); isVar {
-		t = soltype.CarrierOf(coalesce(t, soltype.Positive))
-	}
+	t = groundedCarrier(t)
 	switch t := t.(type) {
 	case *soltype.GeneratorType:
 		if !t.Async {
@@ -196,10 +190,7 @@ func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 // `number | ...` rather than a bare `number`. The precise type of the tail needs
 // the Array<T> the tuple approximates, which lands in M7.
 func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
-	t = soltype.CarrierOf(t)
-	if _, isVar := t.(*soltype.TypeVarType); isVar {
-		t = soltype.CarrierOf(coalesce(t, soltype.Positive))
-	}
+	t = groundedCarrier(t)
 	switch t := t.(type) {
 	case *soltype.GeneratorType:
 		// A sync generator iterates its yields. An async one needs a `for await`, whose
