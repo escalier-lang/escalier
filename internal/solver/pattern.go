@@ -240,8 +240,14 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				// cannot reject a refutable literal sub-pattern of the wrong kind. The
 				// upper bound makes a nested literal flow against the real field type, so
 				// `{x: "hi"}` against `{x: number}` reports the mismatch.
+				//
+				// An optional property gets no pin. Reading `x` off `{x?: number}` produces
+				// `number | undefined`, so a bound of `number` rejects the `undefined` half
+				// of the value the field actually holds. The shorthand arm above pins
+				// nothing at all, so without this `{x: a}` and `{x}` disagree on a legal
+				// destructuring.
 				if o, ok := scrutinee.(*soltype.ObjectType); ok {
-					if prop, found := o.Prop(e.Key.Name); found {
+					if prop, found := o.Prop(e.Key.Name); found && !prop.Optional {
 						c.constrain(e, beta, prop.Type)
 					}
 				}
