@@ -145,21 +145,28 @@ func TestShallowTestKeepsANestedPatternWhole(t *testing.T) {
 // A field with a default is optional: `{x = 0}` binds even when the field is absent, so
 // the test must not demand it. The two spellings of a default, on a shorthand element
 // and on a renamed field's value, both mark the key optional.
+//
+// Optionality is all the rendering says about a default. The value a leaf takes when its
+// field is absent stays on the leaf node the bind points at, which is why the assertions
+// below read that node rather than the printed form.
 func TestShallowTestMarksDefaultedFieldsOptional(t *testing.T) {
 	shorthand := ast.NewObjShorthandPat(
 		ast.NewIdentifier("x", ast.Span{}), false, nil, num(0), ast.Span{},
 	)
-	renamed := ast.NewObjKeyValuePat(
-		ast.NewIdentifier("y", ast.Span{}),
-		ast.NewIdentPat("b", false, nil, num(1), ast.Span{}),
-		ast.Span{},
-	)
+	defaulted := ast.NewIdentPat("b", false, nil, num(1), ast.Span{})
+	renamed := ast.NewObjKeyValuePat(ast.NewIdentifier("y", ast.Span{}), defaulted, ast.Span{})
 	pattern := ast.NewObjectPat([]ast.ObjPatElem{shorthand, renamed}, ast.Span{})
 
 	require.Equal(t,
 		"{x?, y?} => bind x = p.x, b = p.y; leaf 0",
 		readPattern(pattern, "p"),
 	)
+
+	origin := At(OriginMatchArm, arm(span(2, 5, 30)))
+	_, binds := shallowTest(pattern, NewRoot(ident("p"), origin), origin)
+	require.Len(t, binds, 2)
+	require.Same(t, shorthand, binds[0].elem)
+	require.Same(t, defaulted, binds[1].pat)
 }
 
 // A rest anywhere but last names no suffix a projection can reach, so the test relaxes
