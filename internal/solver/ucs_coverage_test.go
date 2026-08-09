@@ -33,19 +33,61 @@ func TestMatchCoverageReadsArmsBelowAGuardedCatchAll(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number} | {y: string}, b: boolean) -> number", values["f"])
 }
 
-// A guarded arm covers nothing on its own, and a guarded catch-all does not save an inexact
-// scrutinee. The open tail still holds values no structural arm can see.
-func TestMatchCoverageGuardedCatchAllLeavesInexactUncovered(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(p: {x: number, ...}, b: boolean) {
-			return match p {
-				_ if b => 0,
-				{x} => x
-			}
-		}
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+// Each form below leaves a value matching no arm, and each reports one error naming the
+// `match`. The span runs from `match` to the closing brace of its arms.
+func TestMatchCoverageNonExhaustive(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		// A guarded arm covers nothing on its own, and a guarded catch-all does not save an
+		// inexact scrutinee. The open tail still holds values no structural arm can see.
+		"GuardedCatchAllOverInexact": {
+			src: `
+				fn f(p: {x: number, ...}, b: boolean) {
+					return match p {
+						_ if b => 0,
+						{x} => x
+					}
+				}
+			`,
+			want: "3:13-6:7: match is not exhaustive; add a catch-all branch",
+		},
+		// A literal below a field is refutable and the plain arm below it reaches only the
+		// values the scrutinee's fields describe, so the open tail stays uncovered.
+		"LiteralFieldArmsOverInexact": {
+			src: `
+				fn f(p: {x: number, ...}) {
+					return match p {
+						{x: 1} => "one",
+						{x} => "other"
+					}
+				}
+			`,
+			want: "3:13-6:7: match is not exhaustive; add a catch-all branch",
+		},
+		// A literal arm covers only its own value, so a union member no literal names is
+		// uncovered however many arms the form has.
+		"UncoveredLiteralMember": {
+			src: `
+				fn f(n: 1 | 2 | 3) {
+					return match n {
+						1 => "one",
+						2 => "two"
+					}
+				}
+			`,
+			want: "3:13-6:7: match is not exhaustive; add a catch-all branch",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
 }
 
 // A failed guard falls into the arms below it, so an unguarded catch-all below a guarded one
@@ -110,21 +152,6 @@ func TestMatchCoverageLiteralFieldArmFallsIntoThePlainArm(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, `fn (p: {x: number}) -> "one" | "other"`, values["f"])
-}
-
-// The same two arms over an inexact scrutinee stay non-exhaustive. Neither reaches the open
-// tail's values, so the form still takes a catch-all.
-func TestMatchCoverageLiteralFieldArmsLeaveInexactUncovered(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(p: {x: number, ...}) {
-			return match p {
-				{x: 1} => "one",
-				{x} => "other"
-			}
-		}
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
 
 // An arm below a fallible branch is copied into that branch's fallthrough, specialized
@@ -223,19 +250,4 @@ func TestNonExhaustiveMessageNamesTheConstruct(t *testing.T) {
 			require.Equal(t, tt.want, err.Message())
 		})
 	}
-}
-
-// A literal arm covers only its own value, so a union member no literal names is uncovered
-// however many arms the form has.
-func TestMatchCoverageUncoveredLiteralMember(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(n: 1 | 2 | 3) {
-			return match n {
-				1 => "one",
-				2 => "two"
-			}
-		}
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
