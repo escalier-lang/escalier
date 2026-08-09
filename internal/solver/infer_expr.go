@@ -3177,14 +3177,9 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	// the same per-arm path a `try`'s catch clauses take, so a fault inside dead code is
 	// found rather than left for whoever deletes the arm above it.
 	//
-	// Its body joins a variable of its own rather than the match's. The arm cannot run, so
-	// its value is not one the match produces, and constraining it into res would
-	// contradict the diagnostic and pile a second error onto code already reported.
-	//
-	// It stays out of the ownership check for the same reason. checkUniformOwnership asks
-	// whether the values the match joins are all owned or all borrowed, and a value no
-	// execution produces is not one of them. Passing it would report a mix the match cannot
-	// reach, on top of the diagnostic that already names the arm.
+	// Its value is not one the match produces, so it joins neither res nor the ownership
+	// check. Both would report against a value no execution reaches, on top of the
+	// diagnostic that already names the arm.
 	unreachable := c.reportUnreachableArms(e.Cases, w.arms)
 	c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, c.freshAt(lvl))
 	c.checkUniformOwnership(e, w.bodies)
@@ -3193,18 +3188,15 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	return res
 }
 
-// reportUnreachableArms reports every arm the walk left untyped that an unguarded
-// catch-all above it covers, and returns all the untyped arms in source order so the
-// caller can still type them.
+// reportUnreachableArms reports every untyped arm an unguarded catch-all above it covers,
+// and returns all the untyped arms in source order so the caller can still type them.
 //
-// Normalization ends a split at the first arm with no tag to test, and that truncation is
-// what keeps an arm out of the form the walk sees. The last arm the walk did type is
-// therefore the one the rest sit below, which the message points at.
+// A split ends at the first arm with no tag to test, which is what keeps the arms below it
+// out of the form the walk sees. The last arm the walk typed is the one they sit below,
+// and the message points at it.
 //
-// That arm covers the rest only when it is a catch-all. A pattern the lowering cannot read
-// a tag off also ends the split, and a bare `...rest` is one: it is already reported
-// unsupported, and calling the arms below it unreachable would follow that with advice
-// that does not fit the input.
+// Only a catch-all covers them. A bare `...rest` ends a split too and is already reported
+// unsupported, so calling the arms below it unreachable would add advice that does not fit.
 func (c *checker) reportUnreachableArms(arms []*ast.MatchCase, walked set.Set[ucs.Spanned]) []*ast.MatchCase {
 	var covering *ast.MatchCase
 	var unreachable []*ast.MatchCase
