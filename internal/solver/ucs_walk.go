@@ -101,14 +101,12 @@ func (w *condWalk) walkNorm(cur, fall condState, matched *pathBinder, term ucs.N
 	}
 }
 
-// walkSplit types each branch of a split under the tag test that branch makes, then the
-// tail control reaches when no test matched.
+// walkSplit types each branch under the tag test it makes, then the tail control reaches
+// when no test matched.
 //
-// The tail is a fallthrough rather than part of the split, so it continues from the state
-// the enclosing branch matched in. A split reached from inside a branch is one
-// normalization built by flattening a nested pattern, and its tail is that branch's own
-// fallthrough. In `Line { start: {x, y} } => body` the split over `l.start` falls to
-// whatever the `Line` branch falls to, not back into the `Line` branch.
+// The tail is a fallthrough, so it continues from the state the enclosing branch matched
+// in. In `Line { start: {x, y} } => body` the split over `l.start` is one flattening the
+// nested pattern produced, and its tail is whatever the `Line` branch falls to.
 func (w *condWalk) walkSplit(cur, fall condState, matched *pathBinder, split *ucs.NormSplit) {
 	for _, branch := range split.Branches {
 		if w.walked(branch.Cont) {
@@ -154,13 +152,12 @@ func (w *condWalk) walkGuard(cur, fall condState, matched *pathBinder, guard *uc
 }
 
 // walkFallthrough types where a failed test or a false guard continues. The names the
-// branch bound are out of scope again, so the continuation runs in fall's scope.
+// branch bound are out of scope again, so it runs in fall's scope.
 //
-// It keeps the enclosing branch's tag test unless term is a join point. A join point runs
-// both when that test matched and when it did not, so only what holds on both paths may
-// be assumed of it. In `match p { {x, y} if g => x, other => other }` the `other` arm is
-// the join point: the failed guard reaches it, and so does a `p` that is not a `{x, y}`
-// at all, and its one body cannot be typed as though the shape had matched.
+// It keeps the enclosing branch's tag test unless term is a join point. In
+// `match p { {x, y} if g => x, other => other }` the `other` arm is one. The failed guard
+// reaches it and so does a `p` that is no `{x, y}`, so its one body cannot assume the
+// shape matched.
 func (w *condWalk) walkFallthrough(fall condState, matched *pathBinder, term ucs.Norm) {
 	next := condState{scope: fall.scope, binder: matched}
 	if w.graph.reachesJoin(term) {
@@ -175,18 +172,15 @@ func (w *condWalk) walked(term ucs.Norm) bool {
 	return term == nil || w.seen.Contains(term) || w.typedAlready(term)
 }
 
-// typedAlready reports whether every arm body term can reach has been typed, which means
-// term is a copy of work the walk has done and re-running it would report the same
-// diagnostics twice.
+// typedAlready reports whether every arm body term can reach has already been typed, which
+// makes term a copy of work the walk has done.
 //
-// Normalization emits an arm both as a branch of its split and as part of what each
-// earlier fallible branch falls into, and the two are separate nodes over one shared arm
-// body. `match p { {x} if b => 1, {y} => 2 }` produces the `{y}` branch twice, so without
-// this the `{y}` test and its leaf would each run twice. The shared body is what identifies
-// the copies, since the nodes above it are not shared.
+// Normalization emits an arm as a branch of its split and again inside each earlier
+// fallible branch's fallthrough. The copies are separate nodes over one shared arm body, so
+// the body is what identifies them. `match p { {x} if b => 1, {y} => 2 }` produces the
+// `{y}` branch twice, and without this its test and its leaf would each run twice.
 //
-// A term reaching no body at all is not a copy of anything. That is a `✗` tail, which
-// carries no work to skip.
+// A term reaching no body is not a copy. That is a `✗` tail, with no work to skip.
 func (w *condWalk) typedAlready(term ucs.Norm) bool {
 	reached := w.graph.bodiesUnder(term)
 	if len(reached) == 0 {
