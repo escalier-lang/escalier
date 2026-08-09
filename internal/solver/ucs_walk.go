@@ -218,9 +218,10 @@ func (w *condWalk) walkBody(cur condState, leaf *ucs.BodyLeaf) {
 // separate terms over one shared arm body, which is why neither question can be answered
 // by identity alone.
 type normGraph struct {
-	// indeg counts the edges into each term. A term one edge reaches runs under exactly
-	// one set of matched tests.
-	indeg map[ucs.Norm]int
+	// edgesInto counts the continuations that reach each term. A term reached by one edge
+	// runs under exactly one set of matched tests. A term reached by more can assume only
+	// what holds on every path into it.
+	edgesInto map[ucs.Norm]int
 	// joins memoizes reachesJoin per term, since a fallthrough shared by several branches
 	// is asked about once per branch.
 	joins map[ucs.Norm]bool
@@ -231,9 +232,9 @@ type normGraph struct {
 // newNormGraph counts the edges of the normalized form rooted at norm.
 func newNormGraph(norm ucs.Norm) *normGraph {
 	g := &normGraph{
-		indeg:  map[ucs.Norm]int{},
-		joins:  map[ucs.Norm]bool{},
-		bodies: map[ucs.Norm][]ucs.Norm{},
+		edgesInto: map[ucs.Norm]int{},
+		joins:     map[ucs.Norm]bool{},
+		bodies:    map[ucs.Norm][]ucs.Norm{},
 	}
 	g.countEdges(norm, set.NewSet[ucs.Norm]())
 	return g
@@ -243,7 +244,7 @@ func newNormGraph(norm ucs.Norm) *normGraph {
 // shared subterm's own edges are not counted twice.
 func (g *normGraph) countEdges(term ucs.Norm, walked set.Set[ucs.Norm]) {
 	for _, next := range continuations(term) {
-		g.indeg[next]++
+		g.edgesInto[next]++
 		if walked.Contains(next) {
 			continue
 		}
@@ -271,7 +272,7 @@ func (g *normGraph) reachesJoin(term ucs.Norm) bool {
 	// no cycle, so no caller ever reads the seed. It is there to bound the walk should a
 	// later rewrite introduce one.
 	g.joins[term] = false
-	got := g.indeg[term] > 1
+	got := g.edgesInto[term] > 1
 	for _, next := range underMatchedTest(term) {
 		if g.reachesJoin(next) {
 			got = true
