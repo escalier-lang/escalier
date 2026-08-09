@@ -258,9 +258,11 @@ func (g *normGraph) countEdges(term ucs.Norm, walked set.Set[ucs.Norm]) {
 // produces two `bind other = p` terms over a single `leaf other`, and both binds answer
 // true through that body.
 //
-// The walk below term is the one underMatchedTest describes. A term this one falls
-// through to is left out, since walkFallthrough asks about it separately, and counting it
-// here would answer true for a term whose own arm nothing else reaches.
+// It recurses through underMatchedTest rather than continuations, so it stops at a
+// fallthrough edge. walkFallthrough decides that edge on its own, and following it here
+// would answer true for a term nothing else reaches only because the tail it falls through
+// to is shared. In `{x} if b => x, {x} if c => x, _ => 0` the second arm is such a term,
+// and the `_ => 0` both guards fall into is the shared tail.
 func (g *normGraph) reachesJoin(term ucs.Norm) bool {
 	if term == nil {
 		return false
@@ -269,8 +271,8 @@ func (g *normGraph) reachesJoin(term ucs.Norm) bool {
 		return got
 	}
 	// Seed the memo before recursing. The normalized form is a tree of shared subterms with
-	// no cycle, so no caller ever reads the seed. It is there to bound the walk should a
-	// later rewrite introduce one.
+	// no cycle, so no caller ever reads the seed. It is there to bound the recursion should
+	// a later rewrite introduce one.
 	g.joins[term] = false
 	got := g.edgesInto[term] > 1
 	for _, next := range underMatchedTest(term) {
