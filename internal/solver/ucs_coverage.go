@@ -49,12 +49,10 @@ type coverageWalk struct {
 
 // readCoverage collects what the arms of the form rooted at split cover.
 //
-// Every split over the root scrutinee is read, not the top-level one alone. Normalization
-// emits an arm again inside each earlier fallible branch's fallthrough, and it drops the
-// top-level branch of an arm whose continuation such a copy already runs. An arm's tag test
-// can therefore live only in a copy. `match x { 1 if g => a, 1 => b }` is one such form: the
-// unguarded `1` survives as what the guard falls into, and its own branch is dropped as a
-// duplicate.
+// More than the top-level split is read. A guarded arm whose pattern makes no test takes the
+// whole split's tail, so the arms after it are branches of a split inside that tail and of no
+// other. `match v { _ if g => 0, {x} => 1, {y} => 2 }` is one such form, and reading its
+// top-level split alone would find no covering branch at all.
 func readCoverage(split *ucs.NormSplit) coverage {
 	w := &coverageWalk{
 		root:    split.Scrutinee,
@@ -67,21 +65,50 @@ func readCoverage(split *ucs.NormSplit) coverage {
 	return coverage{catchAll: catchAll, tags: w.tags}
 }
 
-// collect records the covering tag tests of every split over the root scrutinee.
+// collect records the covering tag tests every value of the scrutinee is offered. It walks
+// the terms such a value reaches before it has passed a tag test, following default tails
+// down from the top-level split.
+//
+// A branch's continuation is left out, and that is what keeps the credit sound. Normalization
+// copies the arms below a branch into its fallthrough, specialized against the tag that
+// branch tested, so a covering branch inside one is offered only to values that already
+// passed that tag. `match v { {a} if g => 0, {b} if g => 1, {a} => 2 }` puts a covering `{b}`
+// branch inside the `{a}` branch's fallthrough. A `{b: string}` value never reaches it. It
+// takes the top-level `{b}` branch, whose guard falls into a tail that covers nothing, so the
+// form is not exhaustive.
+//
+// A guard's failure continuation stays on the walk. Whether a condition holds is no fact
+// about the value's tag, so a value reaching the guard reaches that continuation with nothing
+// yet passed. Its success continuation is left out along with every other branch, since it
+// runs the arm's own body rather than offering a test to anything else.
 func (w *coverageWalk) collect(term ucs.Norm) {
-	if term == nil || w.seen.Contains(term) {
-		return
-	}
-	w.seen.Add(term)
-	if split, ok := term.(*ucs.NormSplit); ok && split.Scrutinee == w.root {
-		for _, branch := range split.Branches {
-			if branch.Test != nil && w.alwaysMatches(branch.Cont) {
-				w.tags = append(w.tags, branch.Test)
-			}
+	for term != nil && !w.seen.Contains(term) {
+		w.seen.Add(term)
+		switch n := term.(type) {
+		case *ucs.NormSplit:
+			w.creditBranches(n)
+			term = n.Default
+		case *ucs.NormGuard:
+			term = n.Default
+		case *ucs.NormBind:
+			term = n.Cont
+		default:
+			return
 		}
 	}
-	for _, next := range continuations(term) {
-		w.collect(next)
+}
+
+// creditBranches records the tag of every branch of split that covers what it tests. A split
+// over a projection tests a value reached through the scrutinee rather than the scrutinee
+// itself, so its tags say nothing about which of the scrutinee's own values are covered.
+func (w *coverageWalk) creditBranches(split *ucs.NormSplit) {
+	if split.Scrutinee != w.root {
+		return
+	}
+	for _, branch := range split.Branches {
+		if branch.Test != nil && w.alwaysMatches(branch.Cont) {
+			w.tags = append(w.tags, branch.Test)
+		}
 	}
 }
 

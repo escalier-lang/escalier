@@ -127,6 +127,50 @@ func TestMatchCoverageLiteralFieldArmsLeaveInexactUncovered(t *testing.T) {
 	require.Equal(t, "3:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
 
+// An arm below a fallible branch is copied into that branch's fallthrough, specialized
+// against the tag the branch tested. A branch inside such a copy covers only values that
+// already passed that tag, so its test is no coverage claim about the scrutinee's other
+// values. Each form below leaves a member uncovered behind a copy that reads as covering.
+func TestMatchCoverageIgnoresBranchesUnderAnotherTag(t *testing.T) {
+	// A `{b: string}` value takes the second arm, whose guard can fail into a tail no arm
+	// covers. The `{b}` branch that does cover sits inside the first arm's fallthrough, which
+	// only a `{a: number}` value reaches.
+	t.Run("ObjectUnion", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			fn f(v: {a: number} | {b: string}, g: boolean) {
+				return match v {
+					{a} if g => 0,
+					{b} if g => 1,
+					{a} => 2
+				}
+			}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "3:12-7:6: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	})
+
+	// The same shape on the nominal path. `Color.RGB(0, g, b)` matches only when the first
+	// field is 0, so it covers no variant, and the covering `Color.Hex` branch sits inside the
+	// first arm's fallthrough. `Color.RGB(1, 2, 3)` matches no arm.
+	t.Run("EnumVariants", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			enum Color {
+				RGB(r: number, g: number, b: number),
+				Hex(code: string),
+			}
+			fn f(c: Color) {
+				return match c {
+					Color.Hex("x") => 0,
+					Color.RGB(0, g, b) => 1,
+					Color.Hex(code) => 2
+				}
+			}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "7:12-11:6: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	})
+}
+
 // A bare `...rest` arm is reported unsupported by the pass that binds it, and the coverage
 // check adds nothing on top. The arm binds every value, so asking for a catch-all would name
 // a branch the user already wrote, and the arms below it are out of the split entirely.
