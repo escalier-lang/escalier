@@ -3334,7 +3334,7 @@ func (c *checker) caughtType(collected soltype.Type) soltype.Type {
 // throws sink. A value matching no arm is re-raised at runtime, so uncovered members draw a
 // rethrow rather than the non-exhaustiveness error the equivalent `match` would draw.
 // Coverage comes from ast.HasUnguardedCatchAll and unionMemberCovered, so it agrees with
-// checkMatchExhaustive, and a guarded arm can fail its guard and covers nothing. Only the
+// checkCondExhaustive, and a guarded arm can fail its guard and covers nothing. Only the
 // MEMBERS are rethrown: every throws type is open already, and only `unknown` could carry
 // the tail, so adding it would erase the named types the clause had.
 func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, enclosing soltype.Type) {
@@ -3352,7 +3352,7 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 			// alias rather than the type it stands for. unionMemberCovered has no arm for
 			// one, so an unexpanded alias reads as uncovered however many arms name its
 			// members, and `type Err = "a" | "b"` would behave unlike the union spelled
-			// inline. checkMatchExhaustive expands for the same reason.
+			// inline. checkCondExhaustive expands for the same reason.
 			for _, part := range unionParts(c.expandAliasChain(m)) {
 				if !c.unionMemberCovered(scope, part, e.Catch) {
 					uncovered = append(uncovered, part)

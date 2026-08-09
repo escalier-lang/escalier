@@ -93,6 +93,12 @@ func (w *coverageWalk) collect(term ucs.Norm) {
 // continuation, so a branch holding one covers its tag only when that continuation reaches
 // a body too. A lone `{x} if b => x` does not, which is what makes a guarded arm cover
 // nothing.
+//
+// A bind names a value and tests nothing, so it matches whenever what runs below it does.
+// That covers the identifier arm of `match p { other => 1 }`, and it covers a bare `...rest`
+// arm too, which normalization keeps whole as a nameless bind rather than flattening into a
+// split. Such an arm binds every value, so a coverage error would ask for a catch-all the
+// arm already is, on top of the unsupported-pattern error the pass that binds it reports.
 func (w *coverageWalk) alwaysMatches(term ucs.Norm) bool {
 	if term == nil {
 		return false
@@ -109,7 +115,7 @@ func (w *coverageWalk) alwaysMatches(term ucs.Norm) bool {
 	case *ucs.BodyLeaf:
 		got = true
 	case *ucs.NormBind:
-		got = bindsEveryValue(n) && w.alwaysMatches(n.Cont)
+		got = w.alwaysMatches(n.Cont)
 	case *ucs.NormGuard:
 		got = w.alwaysMatches(n.Cont) && w.alwaysMatches(n.Default)
 	case *ucs.NormSplit:
@@ -155,16 +161,6 @@ func (w *coverageWalk) branchesAlwaysMatch(split *ucs.NormSplit) bool {
 		}
 	}
 	return true
-}
-
-// bindsEveryValue reports whether a bind names its projection without testing it, which is
-// what a wildcard or identifier pattern does. A nameless bind instead holds a pattern
-// normalization kept whole rather than flattening into a split. A bare rest is the only such
-// pattern flattening leaves, the `...rest` of `match p { ...rest => 1 }`, and it covers
-// nothing. ast.IsCatchAllPat gives it the same verdict, and the pass that lowers the surface
-// reports it unsupported on its own.
-func bindsEveryValue(bind *ucs.NormBind) bool {
-	return bind.Name != "" || bind.Pat == nil
 }
 
 // checkCondExhaustive reports a NonExhaustiveMatchError when the arms of one conditional

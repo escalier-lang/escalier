@@ -127,6 +127,37 @@ func TestMatchCoverageLiteralFieldArmsLeaveInexactUncovered(t *testing.T) {
 	require.Equal(t, "3:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
 }
 
+// A bare `...rest` arm is reported unsupported by the pass that binds it, and the coverage
+// check adds nothing on top. The arm binds every value, so asking for a catch-all would name
+// a branch the user already wrote, and the arms below it are out of the split entirely.
+func TestMatchCoverageBareRestArmReportsOnlyTheUnsupportedPattern(t *testing.T) {
+	tests := map[string]string{
+		"Alone": `
+			fn f(p: {x: number}) {
+				return match p {
+					...rest => 0
+				}
+			}
+		`,
+		"AboveACatchAll": `
+			fn f(n: 1 | 2) {
+				return match n {
+					...rest => 0,
+					_ => 1
+				}
+			}
+		`,
+	}
+
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Len(t, errs, 1)
+			require.Equal(t, "4:6-4:13: Unsupported: RestPat", msgWithSpan(errs[0]))
+		})
+	}
+}
+
 // The wording is a function of the split's origin rather than of the node the error holds.
 // Lowering erases the difference between `match`, `if val`, and `val … else`, so a message
 // keyed off anything else would name the wrong construct once a second form reports this.

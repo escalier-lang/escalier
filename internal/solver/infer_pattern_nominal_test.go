@@ -304,7 +304,7 @@ func TestInferMatchEnumExhaustiveness(t *testing.T) {
 
 // TestInferMatchGenericEnumExhaustiveness checks that a match over a generic enum value is
 // exhaustive through the alias. The scrutinee `o: MyOption<number>` carries the enum's alias
-// handle with a `number` argument, and checkMatchExhaustive expands it to the substituted
+// handle with a `number` argument, and checkCondExhaustive expands it to the substituted
 // variant union `MyOption.Some<number> | MyOption.None<number>`. An arm per variant covers
 // that union without a catch-all.
 func TestInferMatchGenericEnumExhaustiveness(t *testing.T) {

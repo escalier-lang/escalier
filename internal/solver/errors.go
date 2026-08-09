@@ -1780,6 +1780,11 @@ func (e *MixedOwnershipError) Message() string {
 
 // Span underlines the construct the origin blames. A synthetic origin has no span of its
 // own, so NearestSpan follows its cause chain to the construct it was minted while lowering.
+//
+// An origin whose chain reaches no surface node at all yields the zero span, which points at
+// line 0 of whichever file holds source ID 0. Every construct the coverage check runs on
+// lowers from a node the user wrote, so the miss is recovery rather than a position any
+// diagnostic reaches.
 func (e *NonExhaustiveMatchError) Span() ast.Span {
 	span, _ := e.Origin.NearestSpan()
 	return span
