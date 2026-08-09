@@ -3154,9 +3154,8 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	// Snapshot the scrutinee for the exhaustiveness check before any arm binds. A
 	// literal pattern adds its literal as a lower bound, which would otherwise leak
 	// a phantom member into the coalesced union read after the walk. The borrow stays
-	// on the snapshot rather than being peeled the way groundedCarrier peels one.
-	// narrowMatchArm unwraps the shape itself and re-wraps the narrowed carrier under
-	// the same borrow.
+	// on the snapshot rather than being peeled the way groundedCarrier peels one, since
+	// checkMatchExhaustive reads its own carrier off it.
 	matchShape := scrutinee
 	if carrierIsVar(scrutinee) {
 		matchShape = coalesce(scrutinee, soltype.Positive)

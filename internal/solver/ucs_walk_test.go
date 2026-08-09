@@ -85,21 +85,65 @@ func TestInferMatchGuardFallsIntoTheNextArm(t *testing.T) {
 	require.Equal(t, `fn (p: {x: number}, b: boolean) -> "guarded" | "plain"`, values["f"])
 }
 
-// A catch-all arm below a guarded arm is reached two ways: the guard falls into it, and
-// the split falls into it when the pattern above did not match. The walk types it once,
-// so the arm body contributes one member to the result rather than two and reports
-// anything wrong with it once.
+// An arm below a guarded arm is reached two ways: the guard falls into it, and the split
+// falls into it when the pattern above did not match. Normalization emits the arm once per
+// way, so the walk has to recognize the second as a copy of the first. Each case below
+// puts a fault in the copied arm and asserts it is reported once.
 func TestInferMatchTypesAFallthroughArmOnce(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(p: {x: number}, b: boolean) {
-			return match p {
-				{x} if b => 1,
-				other => other.missing
-			}
-		}
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "5:20-5:27: object is missing property: missing", msgWithSpan(errs[0]))
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		// The copied arm is a catch-all, which normalization emits as the split's tail and
+		// again as what the guard falls into. Its fault is in the body.
+		"CatchAllBody": {
+			src: `
+				fn f(p: {x: number}, b: boolean) {
+					return match p {
+						{x} if b => 1,
+						other => other.missing
+					}
+				}
+			`,
+			want: "5:22-5:29: object is missing property: missing",
+		},
+		// The copied arm makes a test of its own, so its fault is in the test rather than
+		// below it. The test is asked about before the arm's continuation is walked, so
+		// recognizing the copy at the body alone would report it twice.
+		"CopiedTest": {
+			src: `
+				fn f(p: {x: number}, b: boolean) {
+					return match p {
+						{x} if b => 1,
+						{y} => 2
+					}
+				}
+			`,
+			want: "2:13-2:24: object is missing property: y",
+		},
+		// A tuple test's fault is the whole-tuple requirement the arity mismatch fails,
+		// which the copy would emit a second time.
+		"CopiedTupleArity": {
+			src: `
+				fn f(t: [number, string], b: boolean) {
+					return match t {
+						[a, c] if b => 1,
+						[a, c, d] => 2,
+						_ => 3
+					}
+				}
+			`,
+			want: "2:13-2:29: cannot constrain tuple of length 2 <: tuple of length 3",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
 }
 
 // A name an arm binds is scoped to that arm, including a name bound by the arm the
