@@ -3180,6 +3180,11 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	// Its body joins a variable of its own rather than the match's. The arm cannot run, so
 	// its value is not one the match produces, and constraining it into res would
 	// contradict the diagnostic and pile a second error onto code already reported.
+	//
+	// It stays out of the ownership check for the same reason. checkUniformOwnership asks
+	// whether the values the match joins are all owned or all borrowed, and a value no
+	// execution produces is not one of them. Passing it would report a mix the match cannot
+	// reach, on top of the diagnostic that already names the arm.
 	unreachable := c.reportUnreachableArms(e.Cases, w.arms)
 	c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, c.freshAt(lvl))
 	c.checkUniformOwnership(e, w.bodies)

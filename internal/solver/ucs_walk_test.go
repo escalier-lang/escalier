@@ -7,11 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// UCS IR PR6: `match` types off the normalized form. The match suites in
-// infer_pattern_test.go, infer_pattern_nominal_test.go, infer_pattern_mut_test.go, and
-// infer_expr_test.go pin the inferred types and messages that must not move. The cases
-// here pin what the walk itself is responsible for: first-match order, arm scoping, and
-// typing an arm exactly once however many paths the normalized form reaches it by.
+// These cases pin what the walk over the normalized form is responsible for: first-match
+// order, arm scoping, and typing each arm exactly once however many paths the normalized
+// form reaches it by. The inferred types and messages a `match` produces are pinned by the
+// pattern suites instead, in infer_pattern_test.go, infer_pattern_nominal_test.go,
+// infer_pattern_mut_test.go, and the match cases in infer_expr_test.go.
 
 // A `match` diagnostic names the `match` the user wrote, not a desugared form. Lowering
 // erases the difference between `match`, `if val`, and `val … else`, so without the
@@ -272,17 +272,27 @@ func TestInferMatchNarrowsUnionAtEachLevel(t *testing.T) {
 // An unguarded catch-all arm always runs, so normalization makes it the split's tail and
 // leaves the arms below it out of the form the walk sees. Each one is reported unreachable
 // and typed anyway, but its value stays out of the result, since the arm cannot run.
+// Every arm below the catch-all is reported, and each blames the catch-all rather than the
+// dead arm directly above it, so the second one still names the arm that covers it.
 func TestInferMatchTypesArmsAfterACatchAll(t *testing.T) {
-	values, _, errs := inferSource(t, `
+	src := `
 		fn f(n: number) {
 			return match n {
 				all => all,
-				1 => "one"
+				1 => "one",
+				2 => "two"
 			}
 		}
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, unreachableArm(5, 5, 15), msgWithSpan(errs[0]))
+	`
+	values, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		unreachableArm(5, 5, 15),
+		unreachableArm(6, 5, 15),
+	}, messagesWithSpan(errs))
+	for _, e := range errs {
+		require.Len(t, e.Related(), 1)
+		require.Equal(t, "all => all", spanText(src, e.Related()[0]))
+	}
 	require.Equal(t, "fn (n: number) -> number", values["f"])
 }
 
