@@ -46,6 +46,22 @@ func objPat(keys ...string) *ast.ObjectPat {
 	return ast.NewObjectPat(elems, ast.Span{})
 }
 
+// fieldPat builds `{key: value}`, an object pattern of one named field whose value is a
+// sub-pattern.
+func fieldPat(key string, value ast.Pat) *ast.ObjectPat {
+	return ast.NewObjectPat([]ast.ObjPatElem{keyValueElem(key, value)}, ast.Span{})
+}
+
+// tuplePat builds a tuple pattern of the given elements, the `[a, b]` form.
+func tuplePat(elems ...ast.Pat) *ast.TuplePat {
+	return ast.NewTuplePat(elems, ast.Span{})
+}
+
+// instancePat builds `Name { … }`, the pattern that tests a nominal class tag.
+func instancePat(name string, object *ast.ObjectPat) *ast.InstancePat {
+	return ast.NewInstancePat(ast.NewIdentifier(name, ast.Span{}), object, ast.Span{})
+}
+
 func identPat(name string) *ast.IdentPat {
 	return ast.NewIdentPat(name, false, nil, nil, ast.Span{})
 }

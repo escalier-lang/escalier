@@ -5,16 +5,16 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// This file reads a source pattern into the two things a normalized branch is made of:
-// the one tag-level test the branch makes, and the leaves it binds out of the value the
-// branch matched. It is the half of normalization that looks at patterns. The other half
-// merges the branches of a split and threads the default tail through them, and it reads
-// what this produces.
+// This file reads a source pattern into what a normalized branch is made of: the one
+// tag-level test the branch makes, the leaves it binds out of the value the branch
+// matched, and the splits its nested sub-patterns become. It is the half of
+// normalization that looks at patterns. The other half merges the branches of a split
+// and threads the default tail through them, and it reads what this produces.
 
 // bindSpec is one leaf a branch's pattern binds. It holds the name, the pattern leaf or
 // shorthand element the solver binds through, and the projection the value comes from. A
-// spec with no name holds a sub-pattern this stage does not flatten, which its branch
-// keeps whole until nested patterns become splits of their own.
+// spec with no name holds a sub-pattern the branch has still to match, which binder.wrap
+// turns into a split over that projection.
 type bindSpec struct {
 	name   string
 	pat    ast.Pat
@@ -23,21 +23,127 @@ type bindSpec struct {
 	origin Origin
 }
 
-// wrapBinds nests a branch's binds around its continuation, so the leaves are in scope
-// for everything the branch runs, a guard condition included.
-func wrapBinds(binds []bindSpec, cont Norm) Norm {
-	for i := len(binds) - 1; i >= 0; i-- {
-		bind := binds[i]
-		cont = &NormBind{
-			Name:   bind.name,
-			Pat:    bind.pat,
-			Elem:   bind.elem,
-			Source: bind.source,
-			Cont:   cont,
-			Origin: bind.origin,
+// projection is the one tag-level read of a nameless bind's sub-pattern: the tag its
+// split tests, and the binds under that tag.
+type projection struct {
+	test  Test
+	binds []bindSpec
+}
+
+// projections memoizes those reads for one core split, keyed by the sub-scrutinee the
+// bind names. A branch is built more than once, since an earlier branch's fallthrough
+// holds a copy of it, and every copy reads the same sub-patterns. Without the memo each
+// copy would mint its own *Scrutinee for a path they all name. One node per path is what
+// lets a consumer evaluate a projection once and read every test and bind under it off
+// that one value, as the Scrutinee doc explains.
+//
+// The sub-scrutinee identifies the read because Project mints one per nameless bind, and
+// a branch derives its binds once and shares them with its copies. Two arms that name the
+// same path get two keys, since each points its projection at its own sub-pattern.
+type projections map[*Scrutinee]projection
+
+// read returns the tag-level read of one nameless bind, deriving it on first use.
+func (p projections) read(bind bindSpec) projection {
+	if got, ok := p[bind.source]; ok {
+		return got
+	}
+	test, binds := shallowTest(bind.pat, bind.source, bind.origin)
+	got := projection{test: test, binds: binds}
+	p[bind.source] = got
+	return got
+}
+
+// hasSplit reports whether any of a branch's binds becomes a split of its own, which is a
+// nameless bind whose sub-pattern tests a tag. Such a split can fail, so the branch's own
+// tag test passing does not say whether the branch matched, and the branch needs a
+// fallthrough. A nameless bind that tests nothing binds unconditionally and adds no way
+// for the branch to fail.
+func (p projections) hasSplit(binds []bindSpec) bool {
+	for _, bind := range binds {
+		if bind.name == "" && p.read(bind).test != nil {
+			return true
 		}
 	}
-	return cont
+	return false
+}
+
+// binder builds what one branch runs once its tag test matches. Every field is fixed for
+// that branch. fallthru is where control goes when a sub-pattern below the tag fails to
+// match, which is the same continuation the branch's guard falls into. arm is the surface
+// arm each split it emits points back at, so a message about a projected split still
+// names the arm the user typed. reads is the memo the branch's sub-patterns are read
+// through, shared with the other branches of the same core split.
+type binder struct {
+	fallthru Norm
+	arm      Spanned
+	reads    projections
+}
+
+// wrap nests a branch's binds around its continuation, so the leaves are in scope for
+// everything the branch runs, a guard condition included. A nameless bind holds a
+// sub-pattern the branch has still to match, and wrap puts a split over that
+// sub-pattern's projection in its place.
+//
+// The splits go outside the names. A split's Default is the branch's fallthrough, which
+// runs the arms below this one, so a name left in scope over that default would put one
+// arm's leaves in the scope of another arm's body. A tag test reads no bound name, so
+// sinking the names below the splits costs nothing.
+func (b binder) wrap(binds []bindSpec, cont Norm) Norm {
+	term := cont
+	for i := len(binds) - 1; i >= 0; i-- {
+		if binds[i].name != "" {
+			term = bindNode(binds[i], term)
+		}
+	}
+	// A sub-pattern's split holds everything the branch runs below it, so the splits
+	// build from the last one back and each becomes the continuation of the one before.
+	for i := len(binds) - 1; i >= 0; i-- {
+		if binds[i].name == "" {
+			term = b.flatten(binds[i], term)
+		}
+	}
+	return term
+}
+
+// flatten turns a nameless bind into a split over the projection it names. The
+// sub-pattern's own tag-level becomes that split's single branch, the leaves under the
+// tag bind inside it, and a value that fails the tag falls to the branch's fallthrough.
+//
+// This is what keeps every split at one tag-level. `Line { start: {x, y} }` tests the
+// `Line` tag on `l`, then the `{x, y}` tag on the projection `l.start`, then binds
+// `l.start.x` and `l.start.y`, rather than handing a consumer one deep shape.
+//
+// A sub-pattern that makes no test of its own has no split to become. A bare rest is the
+// only pattern that reaches here, and it stays a nameless bind, which hands the pattern
+// whole to the solver's pattern walk.
+func (b binder) flatten(bind bindSpec, cont Norm) Norm {
+	read := b.reads.read(bind)
+	if read.test == nil {
+		return bindNode(bind, cont)
+	}
+	return &NormSplit{
+		Scrutinee: bind.source,
+		Branches: []*NormBranch{{
+			Test:   read.test,
+			Cont:   b.wrap(read.binds, cont),
+			Arm:    b.arm,
+			Origin: bind.origin,
+		}},
+		Default: b.fallthru,
+		Origin:  bind.origin,
+	}
+}
+
+// bindNode names one projection for the term underneath it.
+func bindNode(bind bindSpec, cont Norm) Norm {
+	return &NormBind{
+		Name:   bind.name,
+		Pat:    bind.pat,
+		Elem:   bind.elem,
+		Source: bind.source,
+		Cont:   cont,
+		Origin: bind.origin,
+	}
 }
 
 // shallowTest reads one tag-level off a pattern: the tag its branch tests, and the
@@ -46,8 +152,8 @@ func wrapBinds(binds []bindSpec, cont Norm) Norm {
 //
 // It goes exactly one level deep. A sub-pattern that is an identifier becomes a bind on
 // its projection, and any other sub-pattern becomes a nameless bind that keeps the
-// sub-pattern whole. Turning those into splits over their projections is the stage of
-// the rewrite that flattens nesting.
+// sub-pattern whole. binder.wrap is what reads a level off each of those in turn, so the
+// recursion that flattens a nested pattern lives there rather than here.
 func shallowTest(p ast.Pat, scrutinee *Scrutinee, origin Origin) (Test, []bindSpec) {
 	switch p := p.(type) {
 	case nil, *ast.WildcardPat:
@@ -203,8 +309,8 @@ func valueDefaultsField(p ast.Pat) bool {
 
 // appendBind adds what a sub-pattern contributes at the projection step reaches. A
 // wildcard binds nothing and needs no test, so it adds nothing at all. An identifier
-// binds the projection. Any other sub-pattern is kept whole as a nameless bind for the
-// stage that flattens nesting.
+// binds the projection. Any other sub-pattern is kept whole as a nameless bind, which
+// binder.wrap turns into a split over that projection.
 func appendBind(binds []bindSpec, p ast.Pat, parent *Scrutinee, step Step, origin Origin) []bindSpec {
 	if p == nil {
 		return binds

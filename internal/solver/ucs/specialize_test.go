@@ -129,10 +129,14 @@ func TestSpecializeKeepsTheArmNoFallthroughCouldTake(t *testing.T) {
 } default ✗`))
 }
 
-// A branch holding a sub-pattern this stage does not flatten is never made
-// unconditional. Passing the `{x}` test says nothing about whether the literal `2`
-// matched, so the arm below the second one stays reachable.
-func TestSpecializeKeepsATestWhoseBranchStillHasASubPattern(t *testing.T) {
+// A tag the matched test proved is not re-tested, and a branch whose pattern nests below
+// that tag is no exception. The second arm's `{x}` is cleared in the first arm's
+// fallthrough, leaving only the split over `p.x` to run there, and the arm's branch in
+// the outer split goes with it, since that fallthrough already runs its continuation.
+//
+// Clearing the test does not make the arm cover what reaches it. Its split over `p.x`
+// matches 2 alone, so `"c"` still runs when the guard fails and `p.x` is neither literal.
+func TestSpecializeClearsANestedBranchsTest(t *testing.T) {
 	first := ast.NewObjectPat([]ast.ObjPatElem{keyValueElem("x", numPat(1))}, ast.Span{})
 	second := ast.NewObjectPat([]ast.ObjPatElem{keyValueElem("x", numPat(2))}, ast.Span{})
 	core := coreMatch(
@@ -143,12 +147,15 @@ func TestSpecializeKeepsATestWhoseBranchStillHasASubPattern(t *testing.T) {
 	)
 
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
-  {x} => bind 1 = p.x; guard (g) {
-    leaf "a"
-  } default split p {
-    {x} => bind 2 = p.x; leaf "b"
+  {x} => split p.x {
+    1 => guard (g) {
+      leaf "a"
+    } default split p.x {
+      2 => leaf "b"
+    } default leaf "c"
+  } default split p.x {
+    2 => leaf "b"
   } default leaf "c"
-  {x} => bind 2 = p.x; leaf "b"
 } default leaf "c"`))
 }
 

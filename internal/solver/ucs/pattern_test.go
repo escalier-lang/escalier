@@ -10,6 +10,10 @@ import (
 // readPattern renders what a pattern reads to: the tag its branch tests, then the binds
 // it introduces wrapped around a stand-in leaf. A pattern that tests nothing renders
 // `no test`, which is what a catch-all reads to.
+//
+// The binds nest as they come, so the rendering shows the one level shallowTest read.
+// binder.wrap is what turns a nameless bind into a split of its own, and the tests that
+// assert flattening go through Normalize.
 func readPattern(p ast.Pat, target string) string {
 	origin := At(OriginMatchArm, arm(span(2, 5, 20)))
 	scrutinee := NewRoot(ident(target), origin)
@@ -19,13 +23,16 @@ func readPattern(p ast.Pat, target string) string {
 	if test != nil {
 		tag = testString(test)
 	}
-	leaf := &BodyLeaf{Body: exprBody(num(0)), Origin: origin}
-	return tag + " => " + Print(wrapBinds(binds, leaf), DefaultPrintOptions())
+	var cont Norm = &BodyLeaf{Body: exprBody(num(0)), Origin: origin}
+	for i := len(binds) - 1; i >= 0; i-- {
+		cont = bindNode(binds[i], cont)
+	}
+	return tag + " => " + Print(cont, DefaultPrintOptions())
 }
 
 // Every pattern kind reads to one tag and a bind per leaf, each on a projection off the
 // scrutinee. The cases are the worked examples in planning/ucs/implementation_plan.md,
-// minus the nested flattening a later stage adds.
+// minus the flattening normalization wraps around them.
 func TestShallowTestPatternKinds(t *testing.T) {
 	tests := []struct {
 		name    string

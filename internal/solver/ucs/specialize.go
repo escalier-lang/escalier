@@ -12,15 +12,18 @@ import (
 // and dropping what cannot run is what keeps the continuation from re-testing a tag the
 // value is already known to fail.
 //
-// Three things can happen to a later candidate. A test the matched one guarantees
-// becomes unconditional, since a value that passed the first passes the second too. A
-// test that cannot hold of the same value is dropped. Anything else survives with its
-// test intact and is re-tested.
+// Three things can happen to a later candidate. A test the matched one guarantees is
+// cleared, since a value that passed the first passes the second too. A test that cannot
+// hold of the same value is dropped. Anything else survives with its test intact and is
+// re-tested.
 //
-// An unconditional candidate does not end the list, because its own continuation can
-// still fail: `1 if f() => a, 1 if g() => b, _ => c` reaches `c` when both guards fail.
-// Truncating the branch list at an unconditional candidate is build's job, and it
-// truncates only the branches, not what that candidate falls into.
+// Clearing a test says the tag needs no re-testing, not that the candidate's branch
+// matched. A candidate with no test still fails when its guard's condition is false or
+// when a split over a projection below its tag matches nothing, and both continue into
+// the candidates after it. `1 if f() => a, 1 if g() => b, _ => c` reaches `c` when both
+// guards fail, and `{x: 1} => a, {x: 2} => b, _ => c` reaches `c` when `p.x` is neither.
+// Truncating the branch list at a cleared candidate is build's job, and it truncates only
+// the branches, not what that candidate falls into.
 //
 // A candidate that made no test taught nothing, so every later candidate survives
 // unchanged.
@@ -33,7 +36,7 @@ func specialize(cands []candidate, matched Test) []candidate {
 		switch {
 		case cand.test == nil:
 			out = append(out, cand)
-		case testImplies(matched, cand.test) && !cand.nested:
+		case testImplies(matched, cand.test):
 			cand.test = nil
 			out = append(out, cand)
 		case testsDisjoint(matched, cand.test):
@@ -57,18 +60,6 @@ func specialize(cands []candidate, matched Test) []candidate {
 func capturedBy(earlier []candidate, test Test) bool {
 	for _, cand := range earlier {
 		if cand.test != nil && testImplies(test, cand.test) {
-			return true
-		}
-	}
-	return false
-}
-
-// hasUnflattenedBind reports whether any of a branch's binds holds a sub-pattern that
-// is still to be matched. A branch with one can fail after its tag test passes, so the
-// test alone does not say whether the branch matched.
-func hasUnflattenedBind(binds []bindSpec) bool {
-	for _, bind := range binds {
-		if bind.name == "" {
 			return true
 		}
 	}

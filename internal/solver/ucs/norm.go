@@ -65,9 +65,9 @@ type NormGuard struct {
 // `p.y`.
 type NormBind struct {
 	// Name is the bound identifier. It is empty when the bind names no identifier,
-	// which is how a sub-pattern normalization has not flattened into a split of its
-	// own is held: `{start: {x, y}}` keeps `{x, y}` whole as a nameless bind on the
-	// projection `p.start`.
+	// which is how a pattern that makes no tag test of its own is held. A bare rest is
+	// the only one left after flattening, since every other sub-pattern becomes a split
+	// over the projection it matches.
 	Name string
 	// Pat is the pattern leaf the name came from, which the solver binds through so
 	// the leaf keeps its annotation and its borrow mode. It is nil for a name the
