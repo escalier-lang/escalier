@@ -111,8 +111,8 @@ func TestDesugarMatchLiteralArms(t *testing.T) {
 
 	require.Nil(t, core.Else)
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split n [match arm] at=1:1-4:2 {
-  pat 1 [match arm] at=1:10-2:12 arm=same => leaf "one" [match arm] at=1:10-2:12 arm=same
-  pat _ [match arm] at=2:13-3:14 arm=same => leaf "other" [match arm] at=2:13-3:14 arm=same
+  pat 1 [match arm] at=2:2-2:3 arm=1:10-2:12 => leaf "one" [match arm] at=1:10-2:12 arm=same
+  pat _ [match arm] at=3:2-3:3 arm=2:13-3:14 => leaf "other" [match arm] at=2:13-3:14 arm=same
 }`))
 }
 
@@ -128,8 +128,8 @@ func TestDesugarMatchGuardedArm(t *testing.T) {
 	core := DesugarMatch(expr)
 
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split p [match arm] at=1:1-4:2 {
-  pat {x, y} [match arm] at=1:10-2:22 arm=same => guard (x > y) [guard] at=2:12-2:17 => leaf x [match arm] at=1:10-2:22 arm=same
-  pat _ [match arm] at=2:23-3:8 arm=same => leaf 0 [match arm] at=2:23-3:8 arm=same
+  pat {x, y} [match arm] at=2:2-2:8 arm=1:10-2:22 => guard (x > y) [guard] at=2:12-2:17 => leaf x [match arm] at=1:10-2:22 arm=same
+  pat _ [match arm] at=3:2-3:3 arm=2:23-3:8 => leaf 0 [match arm] at=2:23-3:8 arm=same
 }`))
 
 	// The guard carries no `arm=` tag, because ShowArms renders the Arm
@@ -175,7 +175,7 @@ func TestDesugarIfVal(t *testing.T) {
 	core := DesugarIfVal(expr)
 
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split p [if val] at=1:1-1:40 {
-  pat {x, y} [if val] at=1:1-1:40 arm=same => leaf { cons } [if val] at=1:1-1:40 arm=same
+  pat {x, y} [if val] at=1:8-1:14 arm=1:1-1:40 => leaf { cons } [if val] at=1:1-1:40 arm=same
 } else leaf { alt } [if val] at=1:1-1:40 arm=same`))
 }
 
@@ -188,7 +188,7 @@ func TestDesugarIfValInventsItsFallthrough(t *testing.T) {
 	core := DesugarIfVal(expr)
 
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split p [if val] at=1:1-1:27 {
-  pat {x, y} [if val] at=1:1-1:27 arm=same => leaf { cons } [if val] at=1:1-1:27 arm=same
+  pat {x, y} [if val] at=1:8-1:14 arm=1:1-1:27 => leaf { cons } [if val] at=1:1-1:27 arm=same
 } else leaf undefined [synthetic if val] at~1:1-1:27 arm=none`))
 
 	// The invented leaf has no surface node of its own, so a diagnostic about it
@@ -240,6 +240,22 @@ func TestDesugarScrutineeWithoutATargetFallsBackToTheConstruct(t *testing.T) {
 	require.Equal(t, expr.Span(), nearest)
 }
 
+// A branch blames the pattern it tests, while its arm back-reference still names the
+// whole arm. A diagnostic about the branch is about the tag it tests, so it underlines
+// `Point(x)` rather than the entire `Point(x) => x`, and a diagnostic that wants the arm
+// reads Arm instead.
+func TestDesugarBranchBlamesItsPattern(t *testing.T) {
+	expr := findExpr[*ast.MatchExpr](t, `match p {
+	Point(x) => x,
+}`)
+
+	core := DesugarMatch(expr)
+
+	branch := core.Branches[0]
+	require.Same(t, expr.Cases[0].Pattern, branch.Prov().Node)
+	require.Same(t, expr.Cases[0], branch.Arm)
+}
+
 // `val pat = init else { … }` lowers to the same split, but its success path carries
 // no body. The bindings escape into the enclosing block, and the `else` is a fallback
 // rather than an arm that covers the scrutinee.
@@ -250,7 +266,7 @@ func TestDesugarValElse(t *testing.T) {
 
 	require.True(t, ok)
 	snaps.MatchInlineSnapshot(t, showProvenance(core), snaps.Inline(`split p [val else] at=1:1-1:33 {
-  pat {x, y} [val else] at=1:1-1:33 arm=same => escape [val else] at=1:1-1:33 arm=same
+  pat {x, y} [val else] at=1:5-1:11 arm=1:1-1:33 => escape [val else] at=1:1-1:33 arm=same
 } else fallback { fallback } [val else] at=1:1-1:33 arm=same`))
 }
 

@@ -137,14 +137,21 @@ func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, ro
 // mints the element variables an index step reads, a class test projects the instance
 // member view a field step reads, and an extractor test resolves the constructor
 // parameters an extract step reads.
-func (b *pathBinder) narrowedBy(scope *Scope, s *ucs.Scrutinee, test ucs.Test) *pathBinder {
+//
+// blame is the surface node a diagnostic about the test anchors to, which is the pattern
+// the branch lowered from. A blame that names no node falls back to s's own origin.
+func (b *pathBinder) narrowedBy(scope *Scope, s *ucs.Scrutinee, test ucs.Test, blame ucs.Spanned) *pathBinder {
 	// Resolve s on the receiver, before the clone, so the memo lands in the binder every
 	// branch of the split shares. Resolving it on the clone instead would project the
 	// scrutinee once per branch, minting a second variable and a second member lookup for
 	// one value.
 	v := b.viewOf(scope, s)
+	node, ok := blamableNode(blame)
+	if !ok {
+		node = b.blameFor(s)
+	}
 	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views)}
-	next.views[s] = next.applyTest(scope, b.blameFor(s), v, test)
+	next.views[s] = next.applyTest(scope, node, v, test)
 	return next
 }
 
@@ -167,6 +174,43 @@ func (b *pathBinder) bindAtWith(
 ) soltype.Pat {
 	v := b.viewOf(scope, s)
 	return b.c.bindPatMode(scope, b.lvl, pat, v.ty, v.concrete, v.mode, leafTypes, emit)
+}
+
+// bindElemAt binds the leaf an object pattern's shorthand element introduces, the `x` of
+// `{mut x}`. A shorthand is not an ast.Pat, so it cannot go through bindAt, and it carries
+// the annotation, default, and `mut` marker the name alone does not.
+//
+// It resolves the field itself rather than through viewOf, because a shorthand's field
+// lookup takes no upper bound. bindPatMode's shorthand arm takes none either. The leaf is
+// the projection rather than a value handed to a sub-pattern, and pinning it would make a
+// `&mut` leaf invariantly exact against the scrutinee's field, which applyBindMode's bmMut
+// arm spells out. Reading the same field through projectField would add that pin and
+// reject a `mut` leaf the written pattern accepts.
+func (b *pathBinder) bindElemAt(scope *Scope, s *ucs.Scrutinee, elem *ast.ObjShorthandPat) {
+	v := b.shorthandView(scope, s, elem)
+	t := b.c.applyLeafExtras(scope, b.lvl, elem, v.ty, elem.TypeAnn, elem.Default)
+	t = b.c.applyBindMode(b.lvl, elem, elem.Mutable, t, b.c.concreteLeaf(v.concrete, elem.TypeAnn), v.mode)
+	b.c.bindLeaf(scope, elem.Key.Name, t, elem, nil, defineLeafMono)
+}
+
+// shorthandView resolves the field a shorthand element names into the variable its leaf
+// binds at, memoizing it on s the way viewOf memoizes every other projection. A default
+// relaxes the lookup to tolerate an absent field, since `{x = 0}` binds `x` either way.
+//
+// The relaxation is wrong for a scrutinee that cannot carry the field at all, which is
+// #1053. This decides the flag itself rather than through bindPattern's shorthand arm, so
+// the two sites move together when the rule does.
+func (b *pathBinder) shorthandView(scope *Scope, s *ucs.Scrutinee, elem *ast.ObjShorthandPat) scrutineeView {
+	if v, ok := b.views[s]; ok {
+		return v
+	}
+	parent := b.viewOf(scope, s.Parent)
+	name := elem.Key.Name
+	beta := b.c.freshAt(b.lvl)
+	b.c.constrain(elem, parent.ty, propReq(name, beta, elem.Default != nil))
+	v := derive(parent, beta, fieldConcrete(parent.concrete, name))
+	b.views[s] = v
+	return v
 }
 
 // viewOf returns s's view, resolving and memoizing it on first use. Memoizing is what
@@ -422,18 +466,17 @@ func (b *pathBinder) applyLitTest(node ast.Node, v scrutineeView, t *ucs.LitTest
 // member view its field steps read. It is bindInstancePat's narrowing read off the test,
 // with the fields left to the projections rather than bound here.
 func (b *pathBinder) applyClassTest(scope *Scope, node ast.Node, v scrutineeView, t *ucs.ClassTest) scrutineeView {
-	blame := blameName(t.Name, node)
 	name := ast.QualIdentToString(t.Name)
 	ct, ok := b.c.instancePatClass(scope, name)
 	if !ok {
-		b.c.report(&InstancePatternNotClassError{Node: blame, Name: name})
+		b.c.report(&InstancePatternNotClassError{Node: node, Name: name})
 		// Resolve the fields against a fresh variable so a leaf beneath the test stays
 		// defined without a second cascade against the real scrutinee.
 		fresh := b.c.freshAt(b.lvl)
 		v.ty, v.concrete, v.shape = fresh, nil, fresh
 		return v
 	}
-	target, targetConcrete := b.c.narrowToClass(b.lvl, blame, ct, v.ty, v.concrete)
+	target, targetConcrete := b.c.narrowToClass(b.lvl, node, ct, v.ty, v.concrete)
 	v.ty, v.concrete, v.shape = target, targetConcrete, target
 	return v
 }
@@ -442,16 +485,15 @@ func (b *pathBinder) applyClassTest(scope *Scope, node ast.Node, v scrutineeView
 // the parameters its extract steps read. It is bindExtractorPat's narrowing read off the
 // test, with the extracted values left to the projections rather than bound here.
 func (b *pathBinder) applyExtractorTest(scope *Scope, node ast.Node, v scrutineeView, t *ucs.ExtractorTest) scrutineeView {
-	blame := blameName(t.Name, node)
 	name := ast.QualIdentToString(t.Name)
 	ctor, ok := b.c.extractorCtor(scope, b.lvl, t.Name)
 	if !ok {
-		b.c.report(&ExtractorPatternNotCtorError{Node: blame, Name: name})
+		b.c.report(&ExtractorPatternNotCtorError{Node: node, Name: name})
 		return v
 	}
-	params := b.c.narrowToExtractor(blame, ctor, v.ty)
+	params := b.c.narrowToExtractor(node, ctor, v.ty)
 	if t.Arity != len(params) {
-		b.c.report(&ExtractorPatternArityError{Node: blame, Name: name, Expected: len(params), Got: t.Arity})
+		b.c.report(&ExtractorPatternArityError{Node: node, Name: name, Expected: len(params), Got: t.Arity})
 	}
 	v.tested = &testedExtractor{params: params}
 	return v
@@ -469,16 +511,6 @@ func (b *pathBinder) blameFor(s *ucs.Scrutinee) ast.Node {
 		}
 	}
 	return b.blame
-}
-
-// blameName returns the node to blame for a test's class or extractor name, falling back
-// to the caller's node. An ast.QualIdent is guaranteed only to carry a span, so a form
-// that is not also an ast.Node names nothing a diagnostic can anchor to.
-func blameName(qi ast.QualIdent, fallback ast.Node) ast.Node {
-	if n, ok := blamableNode(qi); ok {
-		return n
-	}
-	return fallback
 }
 
 // blamableNode returns n as an ast.Node a diagnostic can anchor to, and false when it is

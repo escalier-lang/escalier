@@ -8,6 +8,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/escalier-lang/escalier/internal/solver/ucs"
 )
 
 // SolverError is the sealed interface for constraint-solving failures. Each
@@ -1063,6 +1064,27 @@ type NonExhaustiveMatchError struct {
 	Match *ast.MatchExpr
 }
 
+// UnreachableMatchArmError fires when a `match` arm can never run, because an arm above it
+// already matches every value the scrutinee can take. An unguarded wildcard `_` or
+// identifier pattern is such an arm. A guarded one is not, since its condition can be
+// false, so the arms below it stay reachable.
+//
+// The arm is still type-checked. Dead code is code the user can get wrong, and reporting
+// only its position would leave a fault inside it to surface later, when the arm above it
+// is deleted.
+//
+// It blames the unreachable arm and carries the covering arm as its related span, so an
+// IDE can show both ends of the overlap. Covering is nil when nothing above the arm ran,
+// which leaves the error with no related span rather than a wrong one.
+//
+// Each span runs from the arm's pattern to the end of its body. An ast.MatchCase's own
+// span starts where the arm before it ended, so underlining it would reach back onto the
+// previous line.
+type UnreachableMatchArmError struct {
+	Arm      *ast.MatchCase
+	Covering *ast.MatchCase
+}
+
 // MissingCatchArmError fires when a `try` carries no catch arms. The arms are what catch
 // an exception, so a `try` without them changes nothing about the block it wraps. Either
 // resolution is fine. Dropping the `try` keeps the block saying what it already says, and
@@ -1128,6 +1150,7 @@ func (*AsyncThrowsClauseError) isSolverError()              {}
 func (*YieldOutsideGenError) isSolverError()                {}
 func (*GenReturnNotGeneratorError) isSolverError()          {}
 func (*NonExhaustiveMatchError) isSolverError()             {}
+func (*UnreachableMatchArmError) isSolverError()            {}
 func (*MissingCatchArmError) isSolverError()                {}
 func (*UnhandledRethrowError) isSolverError()               {}
 func (*MixedOwnershipError) isSolverError()                 {}
@@ -1758,6 +1781,29 @@ func (e *NonExhaustiveMatchError) Span() ast.Span      { return e.Match.Span() }
 func (e *NonExhaustiveMatchError) Related() []ast.Span { return nil }
 func (e *NonExhaustiveMatchError) Message() string {
 	return "match is not exhaustive; add a catch-all branch"
+}
+
+func (e *UnreachableMatchArmError) Span() ast.Span { return matchArmSpan(e.Arm) }
+func (e *UnreachableMatchArmError) Related() []ast.Span {
+	if e.Covering == nil {
+		return nil
+	}
+	return []ast.Span{matchArmSpan(e.Covering)}
+}
+
+// matchArmSpan returns the span running from an arm's pattern to the end of its body,
+// which is the text the user reads as the arm. An arm whose body is neither an expression
+// nor a block underlines its pattern alone.
+func matchArmSpan(arm *ast.MatchCase) ast.Span {
+	pattern := arm.Pattern.Span()
+	body, ok := ucs.BodySpan(arm.Body)
+	if !ok {
+		return pattern
+	}
+	return ast.MergeSpans(pattern, body)
+}
+func (e *UnreachableMatchArmError) Message() string {
+	return "this match arm is unreachable because an arm above it matches every value; drop it, or move it above that arm"
 }
 
 func (e *MissingCatchArmError) Span() ast.Span       { return e.Try.Span() }

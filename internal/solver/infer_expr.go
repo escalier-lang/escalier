@@ -11,6 +11,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/escalier-lang/escalier/internal/solver/ucs"
 )
 
 // inferLiteral types a literal expression and records it in Info. A number, string, or
@@ -3138,34 +3139,78 @@ func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	c.bindRefutable(scope, lvl, d.Pattern, source)
 }
 
-// inferMatch types a `match` expression. The scrutinee is inferred once. Each arm
-// then types its pattern against the scrutinee in a child scope carrying the arm's
-// bindings, the same E1 bindPattern path `val` destructuring uses. An optional `if`
-// guard is typed as a boolean, then the arm body is inferred. Every non-diverging
-// arm body is constrained into one fresh branch-join var, exactly as inferIfElse
-// joins its two branches. A diverging arm contributes `never`, so when every arm
-// diverges the result coalesces to `never`.
+// inferMatch types a `match` expression off the UCS normalized form. The scrutinee is
+// inferred once, then the arms are lowered by ucs.DesugarMatch and ucs.Normalize into
+// splits over that one value, and condWalk types the result. Each split narrows the
+// scrutinee by the tag its branch tests, each leaf of a matched pattern binds against
+// the projection the IR names for it, and an optional `if` guard is typed as a boolean
+// over those leaves. Every non-diverging arm body is constrained into one fresh
+// branch-join var, exactly as inferIfElse joins its two branches. A diverging arm
+// contributes `never`, so when every arm diverges the result coalesces to `never`.
 //
 // Exhaustiveness is checked from structural exactness by checkMatchExhaustive.
 func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
 	// Snapshot the scrutinee for the exhaustiveness check before any arm binds. A
 	// literal pattern adds its literal as a lower bound, which would otherwise leak
-	// a phantom member into the coalesced union read after the arm loop. The borrow
-	// stays on the snapshot rather than being peeled the way groundedCarrier peels
-	// one. narrowMatchArm unwraps the shape itself and re-wraps the narrowed carrier
-	// under the same borrow.
+	// a phantom member into the coalesced union read after the walk. The borrow stays
+	// on the snapshot rather than being peeled the way groundedCarrier peels one, since
+	// checkMatchExhaustive reads its own carrier off it.
 	matchShape := scrutinee
 	if carrierIsVar(scrutinee) {
 		matchShape = coalesce(scrutinee, soltype.Positive)
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, MatchBranch)
-	armBodies := c.inferMatchArms(scope, lvl, e, e.Cases, matchShape, scrutinee, res)
-	c.checkUniformOwnership(e, armBodies)
+	core := ucs.DesugarMatch(e)
+	norm := ucs.Normalize(core)
+	// The binder is seeded with the type inferred above, so the walk never re-infers the
+	// target and a side-effecting one such as `match f() { … }` runs its call once.
+	start := condState{scope: scope, binder: c.newPathBinder(lvl, e, core.Scrutinee, scrutinee)}
+	w := newCondWalk(c, lvl, e, res, norm)
+	// No test has matched at the top of a `match`, so the walk starts with nothing
+	// refined: the state it runs in, the state a fallthrough returns to, and the binder a
+	// fallthrough inherits are all the state the `match` itself started from.
+	w.walkNorm(start, start, start.binder, norm)
+	// An arm below an unguarded catch-all can never run, so normalization leaves it out of
+	// the split and the walk never reaches it. Report each one, then type it anyway through
+	// the same per-arm path a `try`'s catch clauses take, so a fault inside dead code is
+	// found rather than left for whoever deletes the arm above it.
+	//
+	// Its value is not one the match produces, so it joins neither res nor the ownership
+	// check. Both would report against a value no execution reaches, on top of the
+	// diagnostic that already names the arm.
+	unreachable := c.reportUnreachableArms(e.Cases, w.arms)
+	c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, c.freshAt(lvl))
+	c.checkUniformOwnership(e, w.bodies)
 	c.checkMatchExhaustive(scope, e, matchShape)
 	c.recordType(e, res)
 	return res
+}
+
+// reportUnreachableArms reports every untyped arm an unguarded catch-all above it covers,
+// and returns all the untyped arms in source order so the caller can still type them.
+//
+// A split ends at the first arm with no tag to test, which is what keeps the arms below it
+// out of the form the walk sees. The last arm the walk typed is the one they sit below,
+// and the message points at it.
+//
+// Only a catch-all covers them. A bare `...rest` ends a split too and is already reported
+// unsupported, so calling the arms below it unreachable would add advice that does not fit.
+func (c *checker) reportUnreachableArms(arms []*ast.MatchCase, walked set.Set[ucs.Spanned]) []*ast.MatchCase {
+	var covering *ast.MatchCase
+	var unreachable []*ast.MatchCase
+	for _, arm := range arms {
+		if walked.Contains(arm) {
+			covering = arm
+			continue
+		}
+		unreachable = append(unreachable, arm)
+		if covering != nil && covering.Guard == nil && ast.IsCatchAllPat(covering.Pattern) {
+			c.report(&UnreachableMatchArmError{Arm: arm, Covering: covering})
+		}
+	}
+	return unreachable
 }
 
 // inferMatchArms types each arm of a `match` or of a `try`'s catch clause, constrains every
