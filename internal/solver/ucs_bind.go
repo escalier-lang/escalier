@@ -195,7 +195,11 @@ func (b *pathBinder) bindElemAt(scope *Scope, s *ucs.Scrutinee, elem *ast.ObjSho
 
 // shorthandView resolves the field a shorthand element names into the variable its leaf
 // binds at, memoizing it on s the way viewOf memoizes every other projection. A default
-// relaxes the lookup to tolerate an absent field, since `{x = 0}` binds x either way.
+// relaxes the lookup to tolerate an absent field, since `{x = 0}` binds `x` either way.
+//
+// The relaxation is wrong for a scrutinee that cannot carry the field at all, which is
+// #1053. This decides the flag itself rather than through bindPattern's shorthand arm, so
+// the two sites move together when the rule does.
 func (b *pathBinder) shorthandView(scope *Scope, s *ucs.Scrutinee, elem *ast.ObjShorthandPat) scrutineeView {
 	if v, ok := b.views[s]; ok {
 		return v
