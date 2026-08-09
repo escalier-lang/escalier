@@ -3148,14 +3148,15 @@ func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 // branch-join var, exactly as inferIfElse joins its two branches. A diverging arm
 // contributes `never`, so when every arm diverges the result coalesces to `never`.
 //
-// Exhaustiveness is checked from structural exactness by checkMatchExhaustive.
+// Exhaustiveness is checked off the same normalized form by checkCondExhaustive.
 func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
-	// Snapshot the scrutinee for the exhaustiveness check before any arm binds. A
-	// literal pattern adds its literal as a lower bound, which would otherwise leak
-	// a phantom member into the coalesced union read after the walk. The borrow stays
-	// on the snapshot rather than being peeled the way groundedCarrier peels one, since
-	// checkMatchExhaustive reads its own carrier off it.
+	// Snapshot the scrutinee before any arm binds. A literal pattern adds its literal as a
+	// lower bound, which would otherwise leak a phantom member into the coalesced union read
+	// after the walk. Both the coverage check and the arms below a catch-all read their union
+	// structure off this. The borrow stays on the snapshot rather than being peeled the way
+	// groundedCarrier peels one, since narrowMatchArm rewraps what it narrows and
+	// checkCondExhaustive reads its own carrier.
 	matchShape := scrutinee
 	if carrierIsVar(scrutinee) {
 		matchShape = coalesce(scrutinee, soltype.Positive)
@@ -3183,7 +3184,7 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	unreachable := c.reportUnreachableArms(e.Cases, w.arms)
 	c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, c.freshAt(lvl))
 	c.checkUniformOwnership(e, w.bodies)
-	c.checkMatchExhaustive(scope, e, matchShape)
+	c.checkCondExhaustive(scope, norm, matchShape)
 	c.recordType(e, res)
 	return res
 }
@@ -3399,55 +3400,6 @@ func unionParts(t soltype.Type) []soltype.Type {
 		return u.Types
 	}
 	return []soltype.Type{t}
-}
-
-// checkMatchExhaustive reports a NonExhaustiveMatchError when no arm covers every
-// value the coalesced scrutinee can take, dispatching on its union or object/tuple shape.
-func (c *checker) checkMatchExhaustive(scope *Scope, e *ast.MatchExpr, scrutinee soltype.Type) {
-	// A transparent alias scrutinee, an enum handle or a user `type` reference, carries the
-	// alias rather than the type it stands for. Expand it to that type before dispatching, the
-	// same unfold constrain performs, so `match c { Color.RGB(..) => .., Color.Hex(..) => .. }`
-	// over `val c: Color` covers the variant union without a default arm.
-	carrier := c.expandAliasChain(soltype.CarrierOf(scrutinee))
-	if u, ok := carrier.(*soltype.UnionType); ok {
-		if !c.unionMatchExhaustive(scope, e, u) {
-			c.report(&NonExhaustiveMatchError{Match: e})
-		}
-		return
-	}
-	inexact, isStructural := structuralInexact(carrier)
-	if !isStructural {
-		return
-	}
-	for _, arm := range e.Cases {
-		// A guarded arm can always fail its guard, so it never makes a match
-		// exhaustive. Only an unguarded covering arm does.
-		if arm.Guard == nil && armCoversShape(arm.Pattern, inexact) {
-			return
-		}
-	}
-	c.report(&NonExhaustiveMatchError{Match: e})
-}
-
-// unionMatchExhaustive reports whether the unguarded arms cover a union scrutinee. An
-// inexact union needs a catch-all. An exact one is exhaustive when every member is
-// covered. A literal member is covered by an equal literal pattern. A nominal member, an
-// enum variant or class handle, is covered by an instance or extractor pattern naming that
-// class. A structural object or tuple member is covered by an irrefutable object or tuple
-// pattern of the member's shape. A member no arm covers leaves the match non-exhaustive.
-func (c *checker) unionMatchExhaustive(scope *Scope, e *ast.MatchExpr, u *soltype.UnionType) bool {
-	if ast.HasUnguardedCatchAll(e.Cases) {
-		return true
-	}
-	if u.Inexact {
-		return false
-	}
-	for _, member := range u.Types {
-		if !c.unionMemberCovered(scope, member, e.Cases) {
-			return false
-		}
-	}
-	return true
 }
 
 // unionMemberCovered reports whether some unguarded arm covers a single union member,
@@ -3732,26 +3684,6 @@ func structuralInexact(t soltype.Type) (inexact bool, ok bool) {
 		return t.Inexact, true
 	default:
 		return false, false
-	}
-}
-
-// armCoversShape reports whether an unguarded arm makes the match exhaustive for a
-// scrutinee of the given exactness. A wildcard or identifier pattern binds
-// unconditionally, so it covers any value. An object or tuple pattern covers an
-// exact scrutinee only when it is irrefutable. Every sub-pattern must itself be
-// irrefutable, so a nested literal such as `{x: 1}` does not count. Such a pattern
-// never covers an inexact scrutinee. An inexact scrutinee's open tail may hold
-// values the pattern cannot see, so it still needs a true catch-all. A literal
-// pattern is refutable and never covers.
-func armCoversShape(p ast.Pat, inexact bool) bool {
-	if ast.IsCatchAllPat(p) {
-		return true
-	}
-	switch p.(type) {
-	case *ast.ObjectPat, *ast.TuplePat:
-		return !inexact && irrefutablePat(p)
-	default:
-		return false
 	}
 }
 

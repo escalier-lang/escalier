@@ -1050,18 +1050,19 @@ type CannotAssignToImmutableError struct {
 	Decl   ast.Node        // the introducing decl, related; nil for prelude bindings
 }
 
-// NonExhaustiveMatchError fires when a `match` expression does not cover every
-// value its scrutinee can take, so a value could fall through every arm. In M4 the
-// coverage decision reads only the scrutinee's structural exactness. An exact object
-// or tuple scrutinee is covered by a structural arm matching its shape. An inexact
-// scrutinee carries an open tail of unknown values, so it requires a catch-all arm.
-// A catch-all is an unguarded wildcard `_` or identifier pattern. Union-scrutinee
-// exhaustiveness is M6 and enum exhaustiveness is M5, and both extend this same form.
+// NonExhaustiveMatchError fires when a conditional form does not cover every value its
+// scrutinee can take, so a value could fall through every arm. The coverage decision reads
+// the scrutinee's union structure and its structural exactness. An exact object or tuple
+// scrutinee is covered by a branch matching its shape, and an exact union by a branch per
+// member. An inexact scrutinee carries an open tail of unknown values, so it requires a
+// catch-all arm, which is an unguarded wildcard `_` or identifier pattern.
 //
-// It is a bridge error born in inferMatch with the match node in hand, so it
-// self-blames the whole match through Span and carries no related node.
+// It carries the origin of the split whose arms leave the value uncovered. The origin names
+// the surface construct the message speaks about and the node it blames, so the wording
+// follows the form the user wrote rather than assuming a `match`. The error self-blames that
+// whole construct through Span and carries no related node.
 type NonExhaustiveMatchError struct {
-	Match *ast.MatchExpr
+	Origin ucs.Origin
 }
 
 // UnreachableMatchArmError fires when a `match` arm can never run, because an arm above it
@@ -1777,10 +1778,37 @@ func (e *MixedOwnershipError) Message() string {
 	return "a union or intersection mixes owned and borrowed members. Make ownership uniform first. Clone the borrowed member to own it, or borrow the owned member."
 }
 
-func (e *NonExhaustiveMatchError) Span() ast.Span      { return e.Match.Span() }
+// Span underlines the construct the origin blames. A synthetic origin has no span of its
+// own, so NearestSpan follows its cause chain to the construct it was minted while lowering.
+func (e *NonExhaustiveMatchError) Span() ast.Span {
+	span, _ := e.Origin.NearestSpan()
+	return span
+}
 func (e *NonExhaustiveMatchError) Related() []ast.Span { return nil }
+
+// Message names the surface construct the uncovered split lowered from. Only a `match`
+// reports this today. An `if val` and a `val … else` each write an `else` path, so no value
+// falls through either one.
 func (e *NonExhaustiveMatchError) Message() string {
-	return "match is not exhaustive; add a catch-all branch"
+	return constructName(e.Origin.Kind) + " is not exhaustive; add a catch-all branch"
+}
+
+// constructName renders an origin kind as the phrase a message uses to name the surface
+// construct. It is distinct from OriginKind.String, which names the part of the construct a
+// node lowered from: an arm of a `match` rather than the `match` itself.
+func constructName(kind ucs.OriginKind) string {
+	switch kind {
+	case ucs.OriginMatchArm:
+		return "match"
+	case ucs.OriginIfVal:
+		return "if val"
+	case ucs.OriginValElse:
+		return "val ... else"
+	case ucs.OriginGuard:
+		return "guard"
+	default:
+		return "conditional"
+	}
 }
 
 func (e *UnreachableMatchArmError) Span() ast.Span { return matchArmSpan(e.Arm) }
