@@ -3173,24 +3173,36 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	// fallthrough inherits are all the state the `match` itself started from.
 	w.walkNorm(start, start, start.binder, norm)
 	// An arm below an unguarded catch-all can never run, so normalization leaves it out of
-	// the split and the walk never reaches it. Type it anyway, through the same per-arm
-	// path a `try`'s catch clauses take, so a fault in dead code is still reported.
-	bodies := append(w.bodies, c.inferMatchArms(scope, lvl, e, unwalkedArms(e.Cases, w.arms), matchShape, scrutinee, res)...)
+	// the split and the walk never reaches it. Report each one, then type it anyway through
+	// the same per-arm path a `try`'s catch clauses take, so a fault inside dead code is
+	// found rather than left for whoever deletes the arm above it.
+	unreachable := c.reportUnreachableArms(e.Cases, w.arms)
+	bodies := append(w.bodies, c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, res)...)
 	c.checkUniformOwnership(e, bodies)
 	c.checkMatchExhaustive(scope, e, matchShape)
 	c.recordType(e, res)
 	return res
 }
 
-// unwalkedArms returns the arms the walk did not type, in source order.
-func unwalkedArms(arms []*ast.MatchCase, walked set.Set[ucs.Spanned]) []*ast.MatchCase {
-	var left []*ast.MatchCase
+// reportUnreachableArms reports every arm the walk left untyped and returns them in source
+// order, so the caller can still type them.
+//
+// An untyped arm is an unreachable one. Normalization ends a split at the first arm that
+// matches every value, and that truncation is the only thing that keeps an arm out of the
+// form the walk sees. The last arm the walk did type is therefore the one that covers the
+// rest, which the message points at.
+func (c *checker) reportUnreachableArms(arms []*ast.MatchCase, walked set.Set[ucs.Spanned]) []*ast.MatchCase {
+	var covering *ast.MatchCase
+	var unreachable []*ast.MatchCase
 	for _, arm := range arms {
-		if !walked.Contains(arm) {
-			left = append(left, arm)
+		if walked.Contains(arm) {
+			covering = arm
+			continue
 		}
+		unreachable = append(unreachable, arm)
+		c.report(&UnreachableMatchArmError{Arm: arm, Covering: covering})
 	}
-	return left
+	return unreachable
 }
 
 // inferMatchArms types each arm of a `match` or of a `try`'s catch clause, constrains every

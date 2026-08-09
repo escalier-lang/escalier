@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -269,8 +270,8 @@ func TestInferMatchNarrowsUnionAtEachLevel(t *testing.T) {
 }
 
 // An unguarded catch-all arm always runs, so normalization makes it the split's tail and
-// leaves the arms below it out of the form the walk sees. Those arms are still typed and
-// still join the result, because dead code the user wrote is code they can get wrong.
+// leaves the arms below it out of the form the walk sees. Each one is reported unreachable
+// and typed anyway, so it still joins the result.
 func TestInferMatchTypesArmsAfterACatchAll(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(n: number) {
@@ -280,12 +281,13 @@ func TestInferMatchTypesArmsAfterACatchAll(t *testing.T) {
 			}
 		}
 	`)
-	require.Empty(t, errs)
+	require.Len(t, errs, 1)
+	require.Equal(t, unreachableArm(5, 5, 15), msgWithSpan(errs[0]))
 	require.Equal(t, `fn (n: number) -> number | "one"`, values["f"])
 }
 
-// The fault in such an arm is reported, rather than going unchecked because the arm never
-// reached the IR.
+// A fault inside an unreachable arm is reported alongside the unreachable diagnostic,
+// rather than going unchecked because the arm never reached the IR.
 func TestInferMatchReportsFaultsAfterACatchAll(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(n: number) {
@@ -295,8 +297,43 @@ func TestInferMatchReportsFaultsAfterACatchAll(t *testing.T) {
 			}
 		}
 	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "5:10-5:14: Unknown identifier: nope", msgWithSpan(errs[0]))
+	require.Equal(t, []string{
+		unreachableArm(5, 5, 14),
+		"5:10-5:14: Unknown identifier: nope",
+	}, messagesWithSpan(errs))
+}
+
+// The unreachable diagnostic blames the dead arm and points at the arm that covers it, so
+// both ends of the overlap are on the message.
+func TestInferMatchUnreachableArmBlamesTheCoveringArm(t *testing.T) {
+	src := "fn f(n: number) { return match n { all => all, 1 => 2 } }"
+	_, _, errs := inferSource(t, src)
+	requireBlame(t, src, errs, unreachableArm(1, 48, 54), "1 => 2", "all => all")
+}
+
+// A guarded catch-all can fail its condition, so it covers nothing and the arms below it
+// stay reachable. Neither is reported.
+func TestInferMatchGuardedCatchAllLeavesLaterArmsReachable(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(n: number, b: boolean) {
+			return match n {
+				all if b => all,
+				1 => "one",
+				_ => 0
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `fn (n: number, b: boolean) -> number | "one"`, values["f"])
+}
+
+// unreachableArm renders the unreachable-arm message prefixed by the span of the arm it
+// blames, which runs from startCol to endCol on line.
+func unreachableArm(line, startCol, endCol int) string {
+	return fmt.Sprintf(
+		"%d:%d-%d:%d: this match arm is unreachable because an arm above it matches every value; drop it, or move it above that arm",
+		line, startCol, line, endCol,
+	)
 }
 
 // A nested pattern flattens into one split per tag-level, and each level's leaves bind
