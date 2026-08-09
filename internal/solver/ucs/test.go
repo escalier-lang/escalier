@@ -62,6 +62,7 @@ func (*TupleTest) isTest()     {}
 func (*LitTest) isTest()       {}
 func (*ClassTest) isTest()     {}
 func (*ExtractorTest) isTest() {}
+func (*AnnTest) isTest()       {}
 
 // ObjectKey is one field an object test names.
 type ObjectKey struct {
@@ -107,12 +108,24 @@ type ExtractorTest struct {
 	Arity int
 }
 
+// AnnTest matches a narrowing type annotation, the `number` of `if val x: number = u`.
+// A value passes when it is one of the annotation's, so a `u` holding a `string` fails
+// the test and takes the `else`. This is what makes an annotated binding refutable: with
+// no annotation the same identifier matches every value and writes no failure path.
+//
+// The tag comes from what the surface wrote rather than from a pattern's shape, and each
+// form writes it in a different place. An `if val` puts it on the pattern and a
+// `val … else` on the declaration, so lowering reads it off whichever node holds it.
+// A `match` arm never produces this test.
+type AnnTest struct{ Ann ast.TypeAnn }
+
 // String renders the tag test.
 func (t *ObjectTest) String() string    { return testString(t) }
 func (t *TupleTest) String() string     { return testString(t) }
 func (t *LitTest) String() string       { return testString(t) }
 func (t *ClassTest) String() string     { return testString(t) }
 func (t *ExtractorTest) String() string { return testString(t) }
+func (t *AnnTest) String() string       { return testString(t) }
 
 // testString renders a branch's tag test. A structural test relaxed by a rest
 // pattern renders a trailing `...`, matching how an inexact type prints.
@@ -154,6 +167,10 @@ func testString(t Test) string {
 			args[i] = "_"
 		}
 		return ast.QualIdentToString(t.Name) + "(" + strings.Join(args, ", ") + ")"
+	case *AnnTest:
+		// The leading colon is the syntax the annotation is written with, so the test
+		// reads as the tail of the binding it came from: `: number`.
+		return ": " + annString(t.Ann)
 	default:
 		return nodeKind(t)
 	}

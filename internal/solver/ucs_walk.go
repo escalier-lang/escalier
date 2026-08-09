@@ -13,9 +13,16 @@ import (
 // splits, binds, guards, and leaves. A term is one node of that tree, which is what
 // `ucs.Term` names. The bare word `node` is kept for an `ast.Node`, the surface node a
 // diagnostic blames, so neither has to be read from context. This file types the tree for
-// a `match`. A split applies its branch's tag test to the path binder, a bind resolves its
-// projection and defines the leaf, a guard is an ordinary boolean condition over the names
-// above it, and a leaf infers the body the user wrote for its arm.
+// all three surface forms. A split applies its branch's tag test to the path binder, a
+// bind resolves its projection and defines the leaf, a guard is an ordinary boolean
+// condition over the names above it, and a leaf infers the body the user wrote for its
+// arm.
+//
+// The three leaf kinds are what the forms differ by. A `match` arm and each half of an
+// `if val` end in a body leaf, whose value joins the form's result. A `val … else` ends
+// its success path in a binding-escape leaf, which carries no body because the rest of the
+// enclosing block is its continuation, and its `else` in a fallback leaf, whose value the
+// declaration binds rather than the form evaluating to it.
 //
 // The walk carries three states rather than one, because a term's continuation does not
 // run in the state the term itself runs in.
@@ -60,6 +67,19 @@ type condWalk struct {
 	// typed once. Typing it twice would infer the arm body twice and report anything
 	// wrong with it twice.
 	seen set.Set[ucs.Norm]
+	// narrowed is the type an annotation test's leaf bound at, which a `val … else` reads
+	// to pin the type its `else` has to produce. It is nil until such a leaf binds, and
+	// stays nil for every form that writes no narrowing annotation.
+	narrowed soltype.Type
+	// escaped is the innermost scope the success path of a `val … else` bound its leaves
+	// into, and nil until the walk reaches the binding-escape leaf. The caller installs
+	// those leaves in the enclosing block; installEscaped says why the walk does not.
+	escaped *Scope
+	// fallbackT and fallbackDiverges are what the `else` of a `val … else` produced, read
+	// through fallback. They stay zero for every other form, none of which mints a
+	// fallback leaf.
+	fallbackT        soltype.Type
+	fallbackDiverges bool
 	// graph answers what the walk needs to know about the form's shape: whether a
 	// continuation is one of those shared terms, and which arm bodies a term can reach.
 	graph *normGraph
@@ -67,7 +87,8 @@ type condWalk struct {
 
 // newCondWalk builds the walk over norm, the normalized form of one conditional. node is
 // the construct each body's join is blamed on, and res the branch-join variable those
-// bodies constrain into.
+// bodies constrain into. res may be nil for a form whose normalized shape holds no body
+// leaf, which is what a `val … else` lowers to.
 func newCondWalk(c *checker, lvl int, node ast.Node, res soltype.Type, norm ucs.Norm) *condWalk {
 	return &condWalk{
 		c:     c,
@@ -96,10 +117,10 @@ func (w *condWalk) walkNorm(cur, fall condState, matched *pathBinder, term ucs.N
 		w.walkGuard(cur, fall, matched, n)
 	case *ucs.BodyLeaf:
 		w.walkBody(cur, n)
-	case *ucs.EscapeLeaf, *ucs.FallbackLeaf:
-		// The two leaves of a `val pat = init else { … }`. Its success path carries no body
-		// at all. Its `else` carries one, but binding it needs the declaration's rules rather
-		// than an arm's. Neither is typed here, and `ucs.DesugarMatch` mints neither.
+	case *ucs.EscapeLeaf:
+		w.walkEscape(cur)
+	case *ucs.FallbackLeaf:
+		w.walkFallback(cur, n)
 	}
 }
 
@@ -136,9 +157,25 @@ func (w *condWalk) walkBind(cur, fall condState, matched *pathBinder, bind *ucs.
 	case bind.Elem != nil:
 		cur.binder.bindElemAt(scope, bind.Source, bind.Elem)
 	case bind.Pat != nil:
-		cur.binder.bindAt(scope, bind.Source, bind.Pat)
+		w.bindPat(scope, cur.binder, bind)
 	}
 	w.walkNorm(condState{scope: scope, binder: cur.binder}, fall, matched, bind.Cont)
+}
+
+// bindPat defines the leaf one bind names, choosing between the two ways the solver binds
+// against a value the IR pointed at.
+//
+// A leaf under an annotation test goes through bindRefutable, which binds the name at the
+// member the annotation picks and carries the rename-assigned VarID onto the binding. The
+// IR models neither, since both come from the annotation the surface wrote rather than
+// from the branch's shape. Every other leaf binds through the path binder's projection.
+func (w *condWalk) bindPat(scope *Scope, binder *pathBinder, bind *ucs.NormBind) {
+	ann, narrows := binder.narrowingAnn(bind.Source)
+	if !narrows {
+		binder.bindAt(scope, bind.Source, bind.Pat)
+		return
+	}
+	w.narrowed = w.c.bindRefutable(scope, w.lvl, bind.Pat, ann, binder.typeAt(scope, bind.Source))
 }
 
 // walkGuard types a guard's condition as a boolean over the names its branch bound, then
@@ -207,6 +244,56 @@ func (w *condWalk) walkBody(cur condState, leaf *ucs.BodyLeaf) {
 	}
 	w.c.constrain(w.node, bodyT, w.res)
 	w.bodies = append(w.bodies, bodyT)
+}
+
+// walkEscape records where the success path of a `val pat = init else { … }` left its
+// bindings. That path carries no body: the rest of the enclosing block is its
+// continuation, so the names it bound have to outlive the walk.
+//
+// They are recorded rather than defined into the block's own scope, because the `else` has
+// still to be typed and it runs in that scope. Defining them now would put the
+// declaration's names in scope for a block that runs precisely when the pattern bound
+// none of them.
+func (w *condWalk) walkEscape(cur condState) {
+	w.escaped = cur.scope
+}
+
+// walkFallback types the `else` of a `val pat = init else { … }` and records what it
+// produced. Its value is not one the form evaluates to, the way an arm body's is. It is
+// the value the declaration binds when the pattern did not match, so the caller
+// constrains it into the binding rather than into a branch-join var.
+func (w *condWalk) walkFallback(cur condState, leaf *ucs.FallbackLeaf) {
+	w.fallbackT, w.fallbackDiverges = w.c.inferBlockOrExpr(cur.scope, w.lvl, &leaf.Body)
+}
+
+// fallback returns the value the `else` of a `val … else` produced, and false when it
+// produces none. An `else` that diverges is one such case. So is a form whose lowering
+// minted no fallback leaf, which is every form but a `val … else`.
+func (w *condWalk) fallback() (soltype.Type, bool) {
+	if w.fallbackT == nil || w.fallbackDiverges {
+		return nil, false
+	}
+	return w.fallbackT, true
+}
+
+// installEscaped defines in scope every binding the walk left in the chain of child scopes
+// below it, which is how a `val pat = init else { … }` sends its leaves into the enclosing
+// block. from is the innermost of those scopes and scope is the block's own, so the walk
+// stops there. It runs after the walk, once the `else` has been typed in a scope that
+// still holds none of these names.
+//
+// The chain is applied outermost first, so a name an inner scope rebound wins, matching
+// what a reference inside the walk would have resolved to.
+func installEscaped(scope, from *Scope) {
+	var chain []*Scope
+	for s := from; s != nil && s != scope; s = s.parent {
+		chain = append(chain, s)
+	}
+	for i := len(chain) - 1; i >= 0; i-- {
+		for name, binding := range chain[i].bindings() {
+			scope.defineValue(name, binding)
+		}
+	}
 }
 
 // normGraph is what the walk reads off the shape of one normalized form before typing it:

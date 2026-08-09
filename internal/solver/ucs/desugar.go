@@ -100,6 +100,9 @@ func branchOrigin(kind OriginKind, pat ast.Pat, arm Origin) Origin {
 // two-branch split a two-arm `match` produces. The pattern branch carries the
 // consequent, and the `else` becomes the split's fallthrough rather than a second
 // branch.
+//
+// An `if val` writes its narrowing annotation inside the pattern, as the `number` of
+// `if val x: number = u`, so the branch reads it from there.
 func DesugarIfVal(e *ast.IfValExpr) *CoreSplit {
 	origin := At(OriginIfVal, e)
 	return &CoreSplit{
@@ -108,11 +111,24 @@ func DesugarIfVal(e *ast.IfValExpr) *CoreSplit {
 			Pattern: e.Pattern,
 			Cont:    &BodyLeaf{Body: ast.BlockOrExpr{Block: &e.Cons}, Arm: e, Origin: origin},
 			Arm:     e,
+			Ann:     patternNarrowingAnn(e.Pattern),
 			Origin:  branchOrigin(OriginIfVal, e.Pattern, origin),
 		}},
 		Else:   ifValElse(e, origin),
 		Origin: origin,
 	}
+}
+
+// patternNarrowingAnn returns the narrowing annotation a pattern carries, and nil when it
+// carries none. Only a bare identifier can carry one. Distributing an annotation across a
+// destructuring pattern's leaves, as `[a, b]: [number, string]` would need, is not
+// supported, so a branch over such a pattern tests its own shape and nothing else.
+func patternNarrowingAnn(p ast.Pat) ast.TypeAnn {
+	ident, ok := p.(*ast.IdentPat)
+	if !ok {
+		return nil
+	}
+	return ident.TypeAnn
 }
 
 // ifValElse builds the fallthrough of an `if val`. One that wrote an `else` gets a
@@ -151,9 +167,9 @@ func ifValElse(e *ast.IfValExpr, origin Origin) Core {
 // the rest of that block is the continuation.
 //
 // A narrowing annotation such as the `number` of `val x: number = u else { … }` sits
-// on the declaration rather than on the pattern, so the branch pattern does not
-// carry it. A consumer that needs it reads TypeAnn off the arm back-reference, which
-// is the declaration itself.
+// on the declaration rather than on the pattern, so the branch reads it from the
+// declaration and records it on Ann. Everything downstream then finds the annotation in
+// one place whichever form wrote it.
 func DesugarValElse(d *ast.VarDecl) (*CoreSplit, bool) {
 	if d.Else == nil || d.Init == nil {
 		return nil, false
@@ -165,6 +181,7 @@ func DesugarValElse(d *ast.VarDecl) (*CoreSplit, bool) {
 			Pattern: d.Pattern,
 			Cont:    &EscapeLeaf{Arm: d, Origin: origin},
 			Arm:     d,
+			Ann:     declNarrowingAnn(d),
 			Origin:  branchOrigin(OriginValElse, d.Pattern, origin),
 		}},
 		Else: &FallbackLeaf{
@@ -174,4 +191,16 @@ func DesugarValElse(d *ast.VarDecl) (*CoreSplit, bool) {
 		},
 		Origin: origin,
 	}, true
+}
+
+// declNarrowingAnn returns the narrowing annotation a `val … else` declaration carries,
+// and nil when it carries none. A declaration's annotation applies to the whole binding,
+// so it narrows only a bare identifier, the same restriction patternNarrowingAnn spells
+// out. A destructuring pattern keeps its own shape as the branch's tag, and the consumer
+// reports the annotation it cannot distribute.
+func declNarrowingAnn(d *ast.VarDecl) ast.TypeAnn {
+	if _, ok := d.Pattern.(*ast.IdentPat); !ok {
+		return nil
+	}
+	return d.TypeAnn
 }

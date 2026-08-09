@@ -212,3 +212,231 @@ func TestInferIfValAndValElse(t *testing.T) {
 		})
 	}
 }
+
+// --- The walk over the normalized form ---
+//
+// The cases below pin what routing `if val` and `val … else` through the UCS IR is
+// responsible for: the scope each half runs in, the projections a nested pattern binds
+// through, and typing each half once. The types and messages the two forms produce are
+// pinned by TestInferIfValAndValElse above.
+
+// A diagnostic from either form names the construct the user wrote. Lowering erases the
+// difference between `match`, `if val`, and `val … else`, so without the origin the IR
+// carries, a message about a failed pattern could name the wrong one. This is the golden
+// test for that: every case blames a span inside the construct it came from, and none
+// reaches for a `match`'s wording.
+func TestIfValAndValElseDiagnosticsNameTheirConstruct(t *testing.T) {
+	tests := map[string]struct {
+		src     string
+		want    string
+		blame   string
+		related []string
+	}{
+		// An annotation that is no member of the scrutinee's union underlines the
+		// annotation the `if val` wrote.
+		"IfValNarrowRejectsNonMember": {
+			src:     `fn f(u: number | string) { return if val x: boolean = u { x } else { 0 } }`,
+			want:    "1:45-1:52: cannot constrain boolean <: number | string",
+			blame:   "boolean",
+			related: []string{"number | string"},
+		},
+		// A fault inside the consequent blames the consequent, not the whole `if val`.
+		"IfValConsequentFault": {
+			src:   `fn f(u: number | string) { return if val x: number = u { x.nope } else { 0 } }`,
+			want:  "1:58-1:64: cannot constrain number <: object",
+			blame: "x.nope",
+		},
+		// A `val … else` names its `else`: the fallback that does not fit the annotated
+		// binding underlines the value the `else` produced.
+		"ValElseFallbackDoesNotFit": {
+			src:     "fn f(u: number | string) {\n\tval x: number = u else { \"no\" }\n\treturn x\n}",
+			want:    `2:27-2:31: cannot constrain "no" <: number`,
+			blame:   `"no"`,
+			related: []string{"number"},
+		},
+		// A name the `else` cannot see is reported against the `else`'s own reference.
+		"ValElseCannotSeeTheBinding": {
+			src:   "fn f(u: number | string) {\n\tval x: number = u else { return x }\n\treturn x\n}",
+			want:  "2:34-2:35: Unknown identifier: x",
+			blame: "x",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			requireBlame(t, tt.src, errs, tt.want, tt.blame, tt.related...)
+			require.NotContains(t, errs[0].Message(), "match")
+		})
+	}
+}
+
+// Union narrowing applies to both refutable forms, at every tag-level rather than only
+// the outermost. Each level's test picks the members it can destructure, so the leaf reads
+// the field of the member the pattern matched. Without narrowing the leaf would read the
+// field off both members and pick up the `undefined` the other one leaves.
+func TestInferRefutableFormsNarrowUnions(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		"IfValOuterLevel": {
+			src:  `fn f(p: {x: number} | {y: string}) { return if val {x} = p { x } else { 0 } }`,
+			want: "fn (p: {x: number} | {y: string}) -> number",
+		},
+		"IfValNestedLevel": {
+			src:  `fn f(p: {a: {x: number}} | {a: {y: string}}) { return if val {a: {x}} = p { x } else { 0 } }`,
+			want: "fn (p: {a: {x: number}} | {a: {y: string}}) -> number",
+		},
+		// A diverging `else` produces no value, so the declaration's leaves read only the
+		// initializer and narrowing applies to them the same way.
+		"ValElseWithADivergingElse": {
+			src:  "fn f(p: {x: number} | {y: string}) {\n\tval {x} = p else { return 0 }\n\treturn x\n}",
+			want: "fn (p: {x: number} | {y: string}) -> number",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// A `val … else` whose `else` supplies a fallback binds its leaves off the initializer
+// joined with that fallback, so the fallback has to satisfy the pattern too. No tag test
+// ever admitted it, so nothing narrows the value the leaves read: narrowing to the member
+// the pattern matched would leave the fallback unchecked and the leaves reading only the
+// initializer's half.
+func TestInferValElseChecksTheFallbackAgainstThePattern(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		// The fallback is an object of the union's other shape, which the pattern cannot
+		// destructure.
+		"FallbackMissesAField": {
+			src:  "fn f(p: {x: number} | {y: string}) {\n\tval {x} = p else { {y: 1} }\n\treturn x\n}",
+			want: "2:21-2:27: object is missing property: x",
+		},
+		// The fallback is not an object at all.
+		"FallbackIsNotAnObject": {
+			src:  "fn f(p: {x: number} | {y: string}) {\n\tval {x} = p else { 5 }\n\treturn x\n}",
+			want: "2:21-2:22: cannot constrain 5 <: object",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
+}
+
+// A fallback the pattern can destructure contributes its own leaf types, so the bound name
+// reads either source rather than the initializer's alone. The `undefined` comes from the
+// same rule: the union is left whole, so `x` is read off the `{y: string}` member too,
+// which carries no such field.
+func TestInferValElseLeavesReadTheFallback(t *testing.T) {
+	values, _, errs := inferSource(t, "fn f(p: {x: number} | {y: string}) {\n\tval {x} = p else { {x: \"s\"} }\n\treturn x\n}")
+	require.Empty(t, errs)
+	require.Equal(t, `fn (p: {x: number} | {y: string}) -> number | "s" | undefined`, values["f"])
+}
+
+// A nested pattern flattens into one split per tag-level, and each level's leaves bind off
+// the projection the level above matched. The bound names read the nested field types, so
+// the walk's projections agree with what one whole pattern would have bound.
+func TestInferRefutableFormsBindThroughProjections(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		"IfVal": {
+			src:  `fn f(l: {start: {x: number, y: string}}) { return if val {start: {x, y}} = l { [x, y] } else { [0, ""] } }`,
+			want: `fn (l: {start: {x: number, y: string}}) -> [number, string]`,
+		},
+		"ValElse": {
+			src:  "fn f(l: {start: {x: number, y: string}}) {\n\tval {start: {x, y}} = l else { return [0, \"\"] }\n\treturn [x, y]\n}",
+			want: `fn (l: {start: {x: number, y: string}}) -> [number, string]`,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// The names an `if val` binds are scoped to its consequent. The walk puts every bind in a
+// child scope, so `x` is gone by the statement after the form.
+func TestInferIfValBindingDoesNotEscape(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: {x: number}) {
+			if val {x} = p { x } else { 0 }
+			return x
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "4:11-4:12: Unknown identifier: x", msgWithSpan(errs[0]))
+}
+
+// The target expression is inferred once, before the walk, and the pattern binds against
+// that one type. The ill-typed argument below is the probe: inferring `g(2)` emits one
+// constraint failure, so a walk that re-inferred the target would report it twice.
+func TestInferRefutableFormsInferTheTargetOnce(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		"IfVal": {
+			src:  "fn g(s: string) { return {x: 1} }\nfn f() { return if val {x} = g(2) { x } else { 0 } }",
+			want: "2:32-2:33: cannot constrain 2 <: string",
+		},
+		"ValElse": {
+			src:  "fn g(s: string) { return {x: 1} }\nfn f() {\n\tval {x} = g(2) else { return 0 }\n\treturn x\n}",
+			want: "3:14-3:15: cannot constrain 2 <: string",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
+}
+
+// A pattern that tests nothing always binds, so normalization drops the `else` below it as
+// a path nothing reaches. Both forms type that `else` anyway, so a fault inside it is
+// still reported rather than going unchecked until the pattern gains an annotation.
+func TestInferRefutableFormsTypeAnUnreachableElse(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		"IfVal": {
+			src:  `fn f(u: number | string) { return if val x = u { x } else { nope } }`,
+			want: "1:61-1:65: Unknown identifier: nope",
+		},
+		"ValElse": {
+			src:  "fn f(u: number | string) {\n\tval n = u else { nope }\n\treturn n\n}",
+			want: "2:19-2:23: Unknown identifier: nope",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
+}

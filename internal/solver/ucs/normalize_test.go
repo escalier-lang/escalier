@@ -599,3 +599,63 @@ func TestNormalizeBareTerms(t *testing.T) {
 	}
 	require.Equal(t, "bind x = p; leaf 1", normalized(bind))
 }
+
+// A narrowing annotation is a tag the branch tests, so the branch it sits on can fail and
+// the `else` below it stays reachable. `if val x: number = u` runs its consequent only for
+// a `u` holding a `number`.
+func TestNormalizeAnnotationIsARefutableTag(t *testing.T) {
+	tests := map[string]struct {
+		core *CoreSplit
+		want string
+	}{
+		// An `if val` writes the annotation inside its pattern.
+		"IfVal": {
+			core: DesugarIfVal(findExpr[*ast.IfValExpr](t, `if val x: number = u { cons } else { alt }`)),
+			want: `split u {
+  : number => bind x = u; leaf { cons }
+} default leaf { alt }`,
+		},
+		// A `val … else` writes it on the declaration. Both reach the same tag.
+		"ValElse": {
+			core: mustDesugarValElse(t, `val x: number = u else { 0 }`),
+			want: `split u {
+  : number => bind x = u; escape
+} default fallback { 0 }`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, test.want, normalized(test.core))
+		})
+	}
+}
+
+// A pattern with no annotation names no tag at all, so its branch always runs and becomes
+// the split's tail. The `else` below it is then unreachable and normalization drops it,
+// which is what tells a consumer the failure path can never be taken.
+func TestNormalizeUnannotatedBindingDropsTheElse(t *testing.T) {
+	core := DesugarIfVal(findExpr[*ast.IfValExpr](t, `if val x = u { cons } else { alt }`))
+
+	require.Equal(t, "split u {} default bind x = u; leaf { cons }", normalized(core))
+}
+
+// A destructuring pattern keeps its own shape as the branch's tag. The declaration's
+// annotation is left off the branch, since it cannot be distributed across the pattern's
+// leaves, so no branch ends up carrying two tags.
+func TestNormalizeDestructuringKeepsItsOwnTag(t *testing.T) {
+	core := mustDesugarValElse(t, `val [a, b]: [number, string] = u else { return }`)
+
+	require.Equal(t, `split u {
+  [_, _] => bind a = u.0, b = u.1; escape
+} default fallback { return }`, normalized(core))
+}
+
+// mustDesugarValElse lowers the first declaration of src, which the tests above write as a
+// `val … else` so the lowering applies.
+func mustDesugarValElse(t *testing.T, src string) *CoreSplit {
+	t.Helper()
+	core, ok := DesugarValElse(findVarDecl(t, src))
+	require.True(t, ok)
+	return core
+}

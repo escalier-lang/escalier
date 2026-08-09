@@ -271,9 +271,10 @@ func TestDesugarValElse(t *testing.T) {
 }
 
 // A narrowing annotation on a `val … else` sits on the declaration, not on the
-// pattern, so the branch pattern renders without it. A consumer that needs the
-// annotation reads it off the arm back-reference, which is the declaration.
-func TestDesugarValElseLeavesTheAnnotationOnTheDeclaration(t *testing.T) {
+// pattern, so the branch pattern renders without it. The branch reads it off the
+// declaration and records it on Ann, which is where every form's annotation ends up
+// however the surface wrote it.
+func TestDesugarValElseReadsTheAnnotationOffTheDeclaration(t *testing.T) {
 	decl := findVarDecl(t, `val x: number = u else { 0 }`)
 
 	core, ok := DesugarValElse(decl)
@@ -281,6 +282,32 @@ func TestDesugarValElseLeavesTheAnnotationOnTheDeclaration(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "split u {\n  pat x => escape\n} else fallback { 0 }", core.String())
 	require.Same(t, decl, core.Branches[0].Arm)
+	require.Same(t, decl.TypeAnn, core.Branches[0].Ann)
+}
+
+// An `if val` writes its annotation inside the pattern, so the branch reads it from
+// there. Both forms therefore hand the same annotation to normalization, which is what
+// lets one test kind cover them.
+func TestDesugarIfValReadsTheAnnotationOffThePattern(t *testing.T) {
+	expr := findExpr[*ast.IfValExpr](t, `if val x: number = u { cons } else { alt }`)
+
+	core := DesugarIfVal(expr)
+
+	ident, ok := expr.Pattern.(*ast.IdentPat)
+	require.True(t, ok)
+	require.Same(t, ident.TypeAnn, core.Branches[0].Ann)
+}
+
+// A narrowing annotation applies to the whole binding, so it narrows only a bare
+// identifier. A destructuring pattern's branch carries none, and the consumer reports
+// the annotation it cannot distribute across the pattern's leaves.
+func TestDesugarLeavesADestructuringAnnotationOffTheBranch(t *testing.T) {
+	decl := findVarDecl(t, `val [a, b]: [number, string] = u else { return }`)
+
+	core, ok := DesugarValElse(decl)
+
+	require.True(t, ok)
+	require.Nil(t, core.Branches[0].Ann)
 	require.NotNil(t, decl.TypeAnn)
 }
 

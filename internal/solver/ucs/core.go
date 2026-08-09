@@ -37,6 +37,16 @@ type CoreBranch struct {
 	// Cont is what runs once Pattern matches. A guarded arm puts a CoreGuard here so
 	// the guard reads the bindings the pattern introduced.
 	Cont Core
+	// Ann is the narrowing type annotation the branch tests, the `number` of
+	// `if val x: number = u` and of `val x: number = u else { … }`. It is nil on every
+	// `match` arm and on any branch whose surface form wrote no annotation.
+	//
+	// The two refutable forms put the annotation in different places, on the pattern
+	// for an `if val` and on the declaration for a `val … else`, so lowering reads it
+	// off whichever node holds it and records it here. Normalization turns it into the
+	// branch's AnnTest, which is what makes the branch refutable and so keeps the
+	// split's `else` reachable.
+	Ann ast.TypeAnn
 	// Arm is the surface arm this branch came from. It survives the merging and
 	// flattening that normalization does, so a diagnostic blames the arm the user
 	// typed. Origin.Node can point at a synthesized node after those rewrites; Arm
