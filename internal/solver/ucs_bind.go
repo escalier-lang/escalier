@@ -181,11 +181,11 @@ func (b *pathBinder) bindAtWith(
 // the annotation, default, and `mut` marker the name alone does not.
 //
 // It resolves the field itself rather than through viewOf, because a shorthand's field
-// lookup takes no upper bound. bindPatMode's shorthand arm takes none either: the leaf IS
+// lookup takes no upper bound. bindPatMode's shorthand arm takes none either. The leaf is
 // the projection rather than a value handed to a sub-pattern, and pinning it would make a
 // `&mut` leaf invariantly exact against the scrutinee's field, which applyBindMode's bmMut
-// arm spells out. Reading the same field through projectField would add that pin and make
-// the IR walk reject a `mut` leaf the written pattern accepts.
+// arm spells out. Reading the same field through projectField would add that pin and
+// reject a `mut` leaf the written pattern accepts.
 func (b *pathBinder) bindElemAt(scope *Scope, s *ucs.Scrutinee, elem *ast.ObjShorthandPat) {
 	v := b.shorthandView(scope, s, elem)
 	t := b.c.applyLeafExtras(scope, b.lvl, elem, v.ty, elem.TypeAnn, elem.Default)

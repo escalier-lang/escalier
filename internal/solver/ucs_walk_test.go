@@ -216,6 +216,24 @@ func TestInferMatchFallthroughKeepsTheMatchedTest(t *testing.T) {
 	require.Equal(t, "fn (p: Point, b: boolean) -> number", values["f"])
 }
 
+// A term reached by one path keeps the matched test even when the arms below it are
+// shared. Here the second arm is reached only through the first guard's failure, so its
+// `x` narrows to the member the `{x}` test picked, while the `_ => 0` both guards fall
+// into is the shared term and takes no test.
+func TestInferMatchFallthroughKeepsTheTestPastAJoin(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(p: {x: number} | {y: string}, b: boolean, c: boolean) {
+			return match p {
+				{x} if b => x,
+				{x} if c => x,
+				_ => 0
+			}
+		}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x: number} | {y: string}, b: boolean, c: boolean) -> number", values["f"])
+}
+
 // A continuation both a failed guard and a failed test reach runs whether or not the
 // shape matched, so it inherits no matched test. Here the `other` arm runs on a `p` that
 // is not a `{x}` at all, and its body must read the whole union rather than the member
@@ -251,9 +269,9 @@ func TestInferMatchNarrowsUnionAtEachLevel(t *testing.T) {
 }
 
 // An unguarded catch-all arm always runs, so normalization makes it the split's tail and
-// the arms below it are unreachable. The walk types what the normalized form holds, so an
-// unreachable arm's body contributes nothing to the result.
-func TestInferMatchDropsArmsAfterACatchAll(t *testing.T) {
+// leaves the arms below it out of the form the walk sees. Those arms are still typed and
+// still join the result, because dead code the user wrote is code they can get wrong.
+func TestInferMatchTypesArmsAfterACatchAll(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(n: number) {
 			return match n {
@@ -263,7 +281,22 @@ func TestInferMatchDropsArmsAfterACatchAll(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn (n: number) -> number", values["f"])
+	require.Equal(t, `fn (n: number) -> number | "one"`, values["f"])
+}
+
+// The fault in such an arm is reported, rather than going unchecked because the arm never
+// reached the IR.
+func TestInferMatchReportsFaultsAfterACatchAll(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(n: number) {
+			return match n {
+				all => all,
+				1 => nope
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "5:10-5:14: Unknown identifier: nope", msgWithSpan(errs[0]))
 }
 
 // A nested pattern flattens into one split per tag-level, and each level's leaves bind

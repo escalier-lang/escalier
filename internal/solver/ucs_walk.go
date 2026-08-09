@@ -10,10 +10,10 @@ import (
 // The typing walk over the UCS normalized form.
 //
 // A conditional form is lowered by `ucs.Desugar*` and `ucs.Normalize` into a tree of
-// splits, binds, guards, and leaves. This file types that tree. A split applies its
-// branch's tag test to the path binder, a bind resolves its projection and defines the
-// leaf, a guard is an ordinary boolean condition over the names above it, and a leaf
-// infers the body the user wrote for its arm.
+// splits, binds, guards, and leaves. This file types that tree for a `match`. A split
+// applies its branch's tag test to the path binder, a bind resolves its projection and
+// defines the leaf, a guard is an ordinary boolean condition over the names above it, and
+// a leaf infers the body the user wrote for its arm.
 //
 // The walk carries three states rather than one, because a term's continuation does not
 // run in the state the term itself runs in.
@@ -21,10 +21,10 @@ import (
 //   - cur is where the term being typed runs.
 //   - fall is where the whole form started. Its scope holds none of the names an arm
 //     bound, and its binder has no branch's tag test applied.
-//   - matched is fall's scope with the enclosing branch's tag test applied. Control that
-//     falls out of a branch reaches the arms below it knowing that branch's test held, so
-//     `Ok(v) if g => v, Ok(v) => v` types the second arm's `v` through the `Ok` the first
-//     arm tested. Normalization drops the second `Ok` test for exactly that reason.
+//   - matched is fall's binder with the enclosing branch's tag test applied. Control that
+//     falls out of a branch reaches the arms below it knowing that branch's test held. In
+//     `Ok(v) if g => v, Ok(v) => v` that is what resolves the second arm's `v`, since
+//     normalization drops the second `Ok` test as one the first already proved.
 //
 // A continuation more than one path reaches takes fall rather than matched, per normGraph
 // below.
@@ -49,6 +49,10 @@ type condWalk struct {
 	// checkUniformOwnership. A diverging body produces no value, so it joins neither res
 	// nor this slice.
 	bodies []soltype.Type
+	// arms holds the surface arm behind each body the walk typed. Normalization leaves an
+	// arm below an unguarded catch-all out of the split, so a caller reads this to find
+	// the arms it has to type some other way.
+	arms set.Set[ucs.Spanned]
 	// seen holds every term the walk has already typed, so a term two edges reach is
 	// typed once. Typing it twice would infer the arm body twice and report anything
 	// wrong with it twice.
@@ -67,13 +71,14 @@ func newCondWalk(c *checker, lvl int, node ast.Node, res soltype.Type, norm ucs.
 		lvl:   lvl,
 		node:  node,
 		res:   res,
+		arms:  set.NewSet[ucs.Spanned](),
 		seen:  set.NewSet[ucs.Norm](),
 		graph: newNormGraph(norm),
 	}
 }
 
 // walkNorm types term. cur is the state term runs in, fall the state the whole form
-// started in, and matched fall with the enclosing branch's tag test applied.
+// started in, and matched fall's binder with the enclosing branch's tag test applied.
 func (w *condWalk) walkNorm(cur, fall condState, matched *pathBinder, term ucs.Norm) {
 	if w.walked(term) {
 		return
@@ -88,17 +93,21 @@ func (w *condWalk) walkNorm(cur, fall condState, matched *pathBinder, term ucs.N
 		w.walkGuard(cur, fall, matched, n)
 	case *ucs.BodyLeaf:
 		w.walkBody(cur, n)
+	case *ucs.EscapeLeaf, *ucs.FallbackLeaf:
+		// The two leaves of a `val pat = init else { … }`. Its success path carries no body
+		// at all. Its `else` carries one, but binding it needs the declaration's rules rather
+		// than an arm's. Neither is typed here, and `ucs.DesugarMatch` mints neither.
 	}
 }
 
 // walkSplit types each branch of a split under the tag test that branch makes, then the
 // tail control reaches when no test matched.
 //
-// The tail is a fallthrough rather than part of the split. A split reached from inside a
-// branch is one normalization built by flattening a nested pattern, and its tail is the
-// fallthrough of the branch that encloses it. In `Line { start: {x, y} } => body` the
-// split over `l.start` falls to whatever the `Line` branch falls to, not back into the
-// `Line` branch, so the tail continues from the state the enclosing branch matched in.
+// The tail is a fallthrough rather than part of the split, so it continues from the state
+// the enclosing branch matched in. A split reached from inside a branch is one
+// normalization built by flattening a nested pattern, and its tail is that branch's own
+// fallthrough. In `Line { start: {x, y} } => body` the split over `l.start` falls to
+// whatever the `Line` branch falls to, not back into the `Line` branch.
 func (w *condWalk) walkSplit(cur, fall condState, matched *pathBinder, split *ucs.NormSplit) {
 	for _, branch := range split.Branches {
 		if w.walked(branch.Cont) {
@@ -194,6 +203,7 @@ func (w *condWalk) typedAlready(term ucs.Norm) bool {
 // produces no value, so when every body diverges nothing is constrained into res and it
 // coalesces to `never`.
 func (w *condWalk) walkBody(cur condState, leaf *ucs.BodyLeaf) {
+	w.arms.Add(leaf.Arm)
 	bodyT, diverges := w.c.inferBlockOrExpr(cur.scope, w.lvl, &leaf.Body)
 	if diverges {
 		return
@@ -245,9 +255,14 @@ func (g *normGraph) countEdges(term ucs.Norm, walked set.Set[ucs.Norm]) {
 	}
 }
 
-// reachesJoin reports whether term is reached by more than one edge, or can reach a term
-// that is. `match p { {x, y} if g => x, other => other }` produces two `bind other = p`
-// nodes over a single `leaf other`, and both binds answer true through that body.
+// reachesJoin reports whether term is reached by more than one edge, or reaches such a
+// term without falling through again. `match p { {x, y} if g => x, other => other }`
+// produces two `bind other = p` nodes over a single `leaf other`, and both binds answer
+// true through that body.
+//
+// The walk below term is the one underMatchedTest describes. A term this one falls
+// through to is left out, since walkFallthrough asks about it separately, and counting it
+// here would answer true for a term whose own arm nothing else reaches.
 func (g *normGraph) reachesJoin(term ucs.Norm) bool {
 	if term == nil {
 		return false
@@ -255,18 +270,39 @@ func (g *normGraph) reachesJoin(term ucs.Norm) bool {
 	if got, walked := g.joins[term]; walked {
 		return got
 	}
-	// Seed the memo before recursing. The normalized form is a tree of shared subterms
-	// with no cycle, so the seed is never the answer a caller reads; it bounds the walk if
-	// a later rewrite ever introduces one.
+	// Seed the memo before recursing. The normalized form is a tree of shared subterms with
+	// no cycle, so no caller ever reads the seed. It is there to bound the walk should a
+	// later rewrite introduce one.
 	g.joins[term] = false
 	got := g.indeg[term] > 1
-	for _, next := range continuations(term) {
+	for _, next := range underMatchedTest(term) {
 		if g.reachesJoin(next) {
 			got = true
 		}
 	}
 	g.joins[term] = got
 	return got
+}
+
+// underMatchedTest returns the terms control reaches from term while the tag test that
+// admitted term still holds: a split's branches, a guard's admitted continuation, and a
+// bind's. A split's tail and a guard's failure continuation are left out, because each is
+// a fallthrough that walkFallthrough decides the test of on its own.
+func underMatchedTest(term ucs.Norm) []ucs.Norm {
+	switch n := term.(type) {
+	case *ucs.NormSplit:
+		next := make([]ucs.Norm, 0, len(n.Branches))
+		for _, branch := range n.Branches {
+			next = appendTerm(next, branch.Cont)
+		}
+		return next
+	case *ucs.NormGuard:
+		return appendTerm(nil, n.Cont)
+	case *ucs.NormBind:
+		return appendTerm(nil, n.Cont)
+	default:
+		return nil
+	}
 }
 
 // bodiesUnder returns the arm bodies control can reach from term, each listed once.
@@ -298,8 +334,9 @@ func (g *normGraph) bodiesUnder(term ucs.Norm) []ucs.Norm {
 	return found
 }
 
-// isLeaf reports whether term ends a branch rather than continuing into another term. The
-// three leaf kinds are the arm bodies the walk types, and no other term carries one.
+// isLeaf reports whether term ends a branch rather than continuing into another term. A
+// leaf stands for one arm of the surface form, which is what makes it the unit
+// bodiesUnder counts.
 func isLeaf(term ucs.Norm) bool {
 	switch term.(type) {
 	case *ucs.BodyLeaf, *ucs.EscapeLeaf, *ucs.FallbackLeaf:
@@ -309,21 +346,21 @@ func isLeaf(term ucs.Norm) bool {
 	}
 }
 
-// continuations returns the terms control can reach from term in one step. A nil
-// continuation is left out, which is what a split with no covering branch carries and
-// what a guard with nothing to fall into carries. A leaf continues nowhere.
+// continuations returns every term control can reach from term in one step, which is what
+// it reaches with its test still holding plus what it falls through to.
 func continuations(term ucs.Norm) []ucs.Norm {
+	return appendTerm(underMatchedTest(term), fallthroughOf(term))
+}
+
+// fallthroughOf returns where term continues when its own test fails. A split falls to its
+// tail and a guard to its failure continuation. Every other term returns nil, as does a
+// split with no covering branch, which the printer renders `✗`.
+func fallthroughOf(term ucs.Norm) ucs.Norm {
 	switch n := term.(type) {
 	case *ucs.NormSplit:
-		next := make([]ucs.Norm, 0, len(n.Branches)+1)
-		for _, branch := range n.Branches {
-			next = appendTerm(next, branch.Cont)
-		}
-		return appendTerm(next, n.Default)
+		return n.Default
 	case *ucs.NormGuard:
-		return appendTerm(appendTerm(nil, n.Cont), n.Default)
-	case *ucs.NormBind:
-		return appendTerm(nil, n.Cont)
+		return n.Default
 	default:
 		return nil
 	}

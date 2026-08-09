@@ -3172,10 +3172,25 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	// refined: the state it runs in, the state a fallthrough returns to, and the binder a
 	// fallthrough inherits are all the state the `match` itself started from.
 	w.walkNorm(start, start, start.binder, norm)
-	c.checkUniformOwnership(e, w.bodies)
+	// An arm below an unguarded catch-all can never run, so normalization leaves it out of
+	// the split and the walk never reaches it. Type it anyway, through the same per-arm
+	// path a `try`'s catch clauses take, so a fault in dead code is still reported.
+	bodies := append(w.bodies, c.inferMatchArms(scope, lvl, e, unwalkedArms(e.Cases, w.arms), matchShape, scrutinee, res)...)
+	c.checkUniformOwnership(e, bodies)
 	c.checkMatchExhaustive(scope, e, matchShape)
 	c.recordType(e, res)
 	return res
+}
+
+// unwalkedArms returns the arms the walk did not type, in source order.
+func unwalkedArms(arms []*ast.MatchCase, walked set.Set[ucs.Spanned]) []*ast.MatchCase {
+	var left []*ast.MatchCase
+	for _, arm := range arms {
+		if !walked.Contains(arm) {
+			left = append(left, arm)
+		}
+	}
+	return left
 }
 
 // inferMatchArms types each arm of a `match` or of a `try`'s catch clause, constrains every
