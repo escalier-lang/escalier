@@ -51,6 +51,13 @@ func defaultedLeafPat(name string) *ast.IdentPat {
 	return ast.NewIdentPat(name, false, nil, numExpr(0), builderSpan())
 }
 
+// shorthandElem builds the object-pattern element a `{x}` writes, optionally marked `mut`
+// or carrying a default. It takes no annotation, since every case that needs one goes
+// through bindAt's identifier leaf instead.
+func shorthandElem(name string, mutable bool, def ast.Expr) *ast.ObjShorthandPat {
+	return ast.NewObjShorthandPat(ast.NewIdentifier(name, builderSpan()), mutable, nil, def, builderSpan())
+}
+
 // projectPath applies each step in turn from root, sharing one *ucs.Scrutinee per level
 // the way normalization does, and returns the scrutinee the last step reaches.
 func projectPath(root *ucs.Scrutinee, steps ...ucs.Step) *ucs.Scrutinee {
@@ -308,7 +315,7 @@ func TestPathBinderProjectsAndBinds(t *testing.T) {
 			c, scope := newPathChecker(t, tt.src)
 			root, binder := seedPath(c, tt.rootType(t, c, scope))
 			if tt.test != nil {
-				binder = binder.narrowedBy(scope, root, tt.test)
+				binder = binder.narrowedBy(scope, root, tt.test, nil)
 			}
 			// The leaves of one branch bind in a child scope, so a name one branch binds is
 			// invisible to the next, exactly as inferMatchArms scopes an arm.
@@ -327,7 +334,7 @@ func TestPathBinderProjectsAndBinds(t *testing.T) {
 func TestPathBinderMaterializesEachScrutineeOnce(t *testing.T) {
 	c, scope := newPathChecker(t, "")
 	root, binder := seedPath(c, parseType(t, "{a: {x: number, y: string}}"))
-	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "a"}}})
+	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "a"}}}, nil)
 
 	inner := projectPath(root, ucs.FieldStep{Name: "a"})
 	first := binder.typeAt(scope, inner)
@@ -335,7 +342,7 @@ func TestPathBinderMaterializesEachScrutineeOnce(t *testing.T) {
 	require.Same(t, first, second)
 
 	// Both leaves of the inner split project out of that one shared scrutinee.
-	binder = binder.narrowedBy(scope, inner, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x"}, {Name: "y"}}})
+	binder = binder.narrowedBy(scope, inner, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x"}, {Name: "y"}}}, nil)
 	armScope := scope.Child()
 	binder.bindAt(armScope, projectPath(inner, ucs.FieldStep{Name: "x"}), leafPat("x"))
 	binder.bindAt(armScope, projectPath(inner, ucs.FieldStep{Name: "y"}), leafPat("y"))
@@ -352,11 +359,11 @@ func TestPathBinderSiblingBranchesShareOneProjection(t *testing.T) {
 	// The root has no `a`, so resolving `p.a` reports a missing property. Counting that
 	// report is how the test sees whether the projection ran once or once per branch.
 	root, binder := seedPath(c, parseType(t, "{b: number}"))
-	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "a"}}})
+	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "a"}}}, nil)
 	inner := projectPath(root, ucs.FieldStep{Name: "a"})
 
-	first := binder.narrowedBy(scope, inner, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x"}}})
-	second := binder.narrowedBy(scope, inner, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "y"}}})
+	first := binder.narrowedBy(scope, inner, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x"}}}, nil)
+	second := binder.narrowedBy(scope, inner, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "y"}}}, nil)
 
 	require.Equal(t, []string{"1:1-1:2: object is missing property: a"}, messagesWithSpan(c.errs))
 	// Neither test narrows a non-union scrutinee, so both branches still hold the one
@@ -387,8 +394,8 @@ func TestPathBinderBranchesNarrowIndependently(t *testing.T) {
 	c, scope := newPathChecker(t, "")
 	root, binder := seedPath(c, parseType(t, "{x: number} | {y: string}"))
 
-	first := binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x"}}})
-	second := binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "y"}}})
+	first := binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x"}}}, nil)
+	second := binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "y"}}}, nil)
 
 	firstScope := scope.Child()
 	first.bindAt(firstScope, projectPath(root, ucs.FieldStep{Name: "x"}), leafPat("x"))
@@ -408,7 +415,7 @@ func TestPathBinderBranchesNarrowIndependently(t *testing.T) {
 func TestPathBinderDefaultFillsOptionalProperty(t *testing.T) {
 	c, scope := newPathChecker(t, "")
 	root, binder := seedPath(c, exactObj(&soltype.PropertyElem{Name: "x", Type: num(), Optional: true}))
-	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x", Optional: true}}})
+	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x", Optional: true}}}, nil)
 
 	armScope := scope.Child()
 	binder.bindAt(armScope, projectPath(root, ucs.FieldStep{Name: "x"}), defaultedLeafPat("x"))
@@ -430,7 +437,7 @@ func TestPathBinderDefaultFillsOptionalProperty(t *testing.T) {
 func TestPathBinderDefaultedKeyBindsAgainstScrutineeWithoutTheField(t *testing.T) {
 	c, scope := newPathChecker(t, "")
 	root, binder := seedPath(c, parseType(t, "{y: string}"))
-	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x", Optional: true}}})
+	binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x", Optional: true}}}, nil)
 
 	armScope := scope.Child()
 	binder.bindAt(armScope, projectPath(root, ucs.FieldStep{Name: "x"}), defaultedLeafPat("x"))
@@ -438,9 +445,73 @@ func TestPathBinderDefaultedKeyBindsAgainstScrutineeWithoutTheField(t *testing.T
 	require.Equal(t, "0", boundType(t, c, armScope, "x"))
 }
 
-// A test whose name resolves to no class or constructor reports against the name it
-// wrote, and the leaves beneath it still bind so a later reference does not cascade into
-// an unknown-identifier error.
+// An object pattern's shorthand element is not an ast.Pat, so it binds through bindElemAt
+// rather than bindAt, and it carries the annotation, default, and `mut` marker the name
+// alone does not. Each case renders the type the shorthand's leaf lands at.
+func TestPathBinderBindsShorthandElements(t *testing.T) {
+	// A borrow needs a lifetime to be a real reference rather than an owned-mutable cell.
+	lt := &soltype.LifetimeVar{ID: 0, Level: 0}
+
+	tests := map[string]struct {
+		rootType func(t *testing.T) soltype.Type
+		elem     *ast.ObjShorthandPat
+		want     string
+	}{
+		// A plain `{x}` binds the field at its type.
+		"Plain": {
+			rootType: func(t *testing.T) soltype.Type { return parseType(t, "{x: number}") },
+			elem:     shorthandElem("x", false, nil),
+			want:     "number",
+		},
+		// A default relaxes the field lookup, so `{x = 0}` over an optional property binds
+		// the property type joined with the default's rather than with `undefined`.
+		"Defaulted": {
+			rootType: func(_ *testing.T) soltype.Type {
+				return exactObj(&soltype.PropertyElem{Name: "x", Type: num(), Optional: true})
+			},
+			elem: shorthandElem("x", false, numExpr(0)),
+			want: "number | 0",
+		},
+		// A `mut` leaf moved out of an owned scrutinee thaws into an owned-mutable cell,
+		// the same thaw bindPatMode's shorthand arm performs.
+		"MutLeaf": {
+			rootType: func(t *testing.T) soltype.Type { return parseType(t, "{x: {a: number}}") },
+			elem:     shorthandElem("x", true, nil),
+			want:     "mut {a: number}",
+		},
+		// A leaf of a `&mut` scrutinee is a mutable borrow bounded by the scrutinee's
+		// lifetime. The projection takes no upper bound, which is what leaves the borrowed
+		// shape free to absorb an inexact write requirement.
+		"MutBorrowedScrutinee": {
+			rootType: func(t *testing.T) soltype.Type {
+				return &soltype.RefType{Mut: true, Lt: lt, Inner: parseType(t, "{x: {a: number}}").(soltype.RefInner)}
+			},
+			elem: shorthandElem("x", false, nil),
+			want: "&mut {a: number}",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			c, scope := newPathChecker(t, "")
+			root, binder := seedPath(c, tt.rootType(t))
+			key := tt.elem.Key.Name
+			binder = binder.narrowedBy(scope, root, &ucs.ObjectTest{
+				Keys: []ucs.ObjectKey{{Name: key, Optional: tt.elem.Default != nil}},
+			}, nil)
+
+			armScope := scope.Child()
+			binder.bindElemAt(armScope, projectPath(root, ucs.FieldStep{Name: key}), tt.elem)
+			require.Empty(t, messagesWithSpan(c.errs))
+			require.Equal(t, tt.want, boundType(t, c, armScope, key))
+		})
+	}
+}
+
+// A test whose name resolves to no class or constructor reports against the node the
+// caller blames, which is the branch's pattern once a walk applies the test and the
+// scrutinee's own origin here. The leaves beneath it still bind, so a later reference does
+// not cascade into an unknown-identifier error.
 func TestPathBinderUnresolvedTagNames(t *testing.T) {
 	tests := map[string]struct {
 		test ucs.Test
@@ -462,7 +533,7 @@ func TestPathBinderUnresolvedTagNames(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c, scope := newPathChecker(t, "")
 			root, binder := seedPath(c, parseType(t, "{x: number}"))
-			binder = binder.narrowedBy(scope, root, tt.test)
+			binder = binder.narrowedBy(scope, root, tt.test, nil)
 			armScope := scope.Child()
 			binder.bindAt(armScope, projectPath(root, tt.step), leafPat("x"))
 			require.Equal(t, []string{tt.want}, messagesWithSpan(c.errs))
@@ -476,7 +547,7 @@ func TestPathBinderUnresolvedTagNames(t *testing.T) {
 func TestPathBinderExtractorArityMismatch(t *testing.T) {
 	c, scope := newPathChecker(t, `class Point { x: number, y: number }`)
 	root, binder := seedPath(c, classType(t, c, scope, "Point"))
-	binder = binder.narrowedBy(scope, root, &ucs.ExtractorTest{Name: ast.NewIdentifier("Point", builderSpan()), Arity: 3})
+	binder = binder.narrowedBy(scope, root, &ucs.ExtractorTest{Name: ast.NewIdentifier("Point", builderSpan()), Arity: 3}, nil)
 
 	armScope := scope.Child()
 	binder.bindAt(armScope, projectPath(root, ucs.ExtractStep{Index: 0}), leafPat("a"))
@@ -506,7 +577,7 @@ func TestPathBinderLiteralTest(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c, scope := newPathChecker(t, "")
 			root, binder := seedPath(c, parseType(t, tt.rootType))
-			binder.narrowedBy(scope, root, &ucs.LitTest{Lit: tt.lit})
+			binder.narrowedBy(scope, root, &ucs.LitTest{Lit: tt.lit}, nil)
 			require.Equal(t, tt.wantErrs, messagesWithSpan(c.errs))
 		})
 	}

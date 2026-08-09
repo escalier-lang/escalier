@@ -77,8 +77,23 @@ func desugarMatchCase(matchCase *ast.MatchCase) *CoreBranch {
 		Pattern: matchCase.Pattern,
 		Cont:    cont,
 		Arm:     matchCase,
-		Origin:  origin,
+		Origin:  branchOrigin(OriginMatchArm, matchCase.Pattern, origin),
 	}
+}
+
+// branchOrigin builds the origin of a branch, which blames the pattern the branch tests
+// rather than the whole arm. A branch's own diagnostic is about its tag test, so
+// `Point(x)` is the narrowest honest span for "extractor pattern `Point` expects 2
+// arguments but got 1". The arm the user typed stays reachable through the branch's Arm
+// back-reference, so nothing that wants the wider span loses it.
+//
+// A construct the parser left without a pattern has nothing to blame, so the branch falls
+// back to the origin of the construct it lowered from.
+func branchOrigin(kind OriginKind, pat ast.Pat, arm Origin) Origin {
+	if _, ok := SpanOf(pat); !ok {
+		return arm
+	}
+	return At(kind, pat)
 }
 
 // DesugarIfVal lowers `if val pat = target { cons } else { alt }` into the same
@@ -93,7 +108,7 @@ func DesugarIfVal(e *ast.IfValExpr) *CoreSplit {
 			Pattern: e.Pattern,
 			Cont:    &BodyLeaf{Body: ast.BlockOrExpr{Block: &e.Cons}, Arm: e, Origin: origin},
 			Arm:     e,
-			Origin:  origin,
+			Origin:  branchOrigin(OriginIfVal, e.Pattern, origin),
 		}},
 		Else:   ifValElse(e, origin),
 		Origin: origin,
@@ -150,7 +165,7 @@ func DesugarValElse(d *ast.VarDecl) (*CoreSplit, bool) {
 			Pattern: d.Pattern,
 			Cont:    &EscapeLeaf{Arm: d, Origin: origin},
 			Arm:     d,
-			Origin:  origin,
+			Origin:  branchOrigin(OriginValElse, d.Pattern, origin),
 		}},
 		Else: &FallbackLeaf{
 			Body:   ast.BlockOrExpr{Block: d.Else},
