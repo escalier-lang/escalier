@@ -3176,21 +3176,30 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	// the split and the walk never reaches it. Report each one, then type it anyway through
 	// the same per-arm path a `try`'s catch clauses take, so a fault inside dead code is
 	// found rather than left for whoever deletes the arm above it.
+	//
+	// Its body joins a variable of its own rather than the match's. The arm cannot run, so
+	// its value is not one the match produces, and constraining it into res would
+	// contradict the diagnostic and pile a second error onto code already reported.
 	unreachable := c.reportUnreachableArms(e.Cases, w.arms)
-	bodies := append(w.bodies, c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, res)...)
-	c.checkUniformOwnership(e, bodies)
+	c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, c.freshAt(lvl))
+	c.checkUniformOwnership(e, w.bodies)
 	c.checkMatchExhaustive(scope, e, matchShape)
 	c.recordType(e, res)
 	return res
 }
 
-// reportUnreachableArms reports every arm the walk left untyped and returns them in source
-// order, so the caller can still type them.
+// reportUnreachableArms reports every arm the walk left untyped that an unguarded
+// catch-all above it covers, and returns all the untyped arms in source order so the
+// caller can still type them.
 //
-// An untyped arm is an unreachable one. Normalization ends a split at the first arm that
-// matches every value, and that truncation is the only thing that keeps an arm out of the
-// form the walk sees. The last arm the walk did type is therefore the one that covers the
-// rest, which the message points at.
+// Normalization ends a split at the first arm with no tag to test, and that truncation is
+// what keeps an arm out of the form the walk sees. The last arm the walk did type is
+// therefore the one the rest sit below, which the message points at.
+//
+// That arm covers the rest only when it is a catch-all. A pattern the lowering cannot read
+// a tag off also ends the split, and a bare `...rest` is one: it is already reported
+// unsupported, and calling the arms below it unreachable would follow that with advice
+// that does not fit the input.
 func (c *checker) reportUnreachableArms(arms []*ast.MatchCase, walked set.Set[ucs.Spanned]) []*ast.MatchCase {
 	var covering *ast.MatchCase
 	var unreachable []*ast.MatchCase
@@ -3200,7 +3209,9 @@ func (c *checker) reportUnreachableArms(arms []*ast.MatchCase, walked set.Set[uc
 			continue
 		}
 		unreachable = append(unreachable, arm)
-		c.report(&UnreachableMatchArmError{Arm: arm, Covering: covering})
+		if covering != nil && covering.Guard == nil && ast.IsCatchAllPat(covering.Pattern) {
+			c.report(&UnreachableMatchArmError{Arm: arm, Covering: covering})
+		}
 	}
 	return unreachable
 }

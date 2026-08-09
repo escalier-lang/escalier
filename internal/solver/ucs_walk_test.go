@@ -271,7 +271,7 @@ func TestInferMatchNarrowsUnionAtEachLevel(t *testing.T) {
 
 // An unguarded catch-all arm always runs, so normalization makes it the split's tail and
 // leaves the arms below it out of the form the walk sees. Each one is reported unreachable
-// and typed anyway, so it still joins the result.
+// and typed anyway, but its value stays out of the result, since the arm cannot run.
 func TestInferMatchTypesArmsAfterACatchAll(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(n: number) {
@@ -283,7 +283,7 @@ func TestInferMatchTypesArmsAfterACatchAll(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t, unreachableArm(5, 5, 15), msgWithSpan(errs[0]))
-	require.Equal(t, `fn (n: number) -> number | "one"`, values["f"])
+	require.Equal(t, "fn (n: number) -> number", values["f"])
 }
 
 // A fault inside an unreachable arm is reported alongside the unreachable diagnostic,
@@ -309,6 +309,22 @@ func TestInferMatchUnreachableArmBlamesTheCoveringArm(t *testing.T) {
 	src := "fn f(n: number) { return match n { all => all, 1 => 2 } }"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, unreachableArm(1, 48, 54), "1 => 2", "all => all")
+}
+
+// Only a catch-all covers the arms below it. A bare `...rest` also ends the split, since
+// the lowering reads no tag off it, but it is reported unsupported rather than treated as
+// an arm that matches everything, so the arms below it draw no second message.
+func TestInferMatchBareRestDoesNotCoverLaterArms(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(n: number) {
+			return match n {
+				...rest => 1,
+				2 => 3
+			}
+		}
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "4:5-4:12: Unsupported: RestPat", msgWithSpan(errs[0]))
 }
 
 // A guarded catch-all can fail its condition, so it covers nothing and the arms below it
