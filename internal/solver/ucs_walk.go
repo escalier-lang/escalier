@@ -10,10 +10,12 @@ import (
 // The typing walk over the UCS normalized form.
 //
 // A conditional form is lowered by `ucs.Desugar*` and `ucs.Normalize` into a tree of
-// splits, binds, guards, and leaves. This file types that tree for a `match`. A split
-// applies its branch's tag test to the path binder, a bind resolves its projection and
-// defines the leaf, a guard is an ordinary boolean condition over the names above it, and
-// a leaf infers the body the user wrote for its arm.
+// splits, binds, guards, and leaves. A term is one node of that tree, which is what
+// `ucs.Term` names. The bare word `node` is kept for an `ast.Node`, the surface node a
+// diagnostic blames, so neither has to be read from context. This file types the tree for
+// a `match`. A split applies its branch's tag test to the path binder, a bind resolves its
+// projection and defines the leaf, a guard is an ordinary boolean condition over the names
+// above it, and a leaf infers the body the user wrote for its arm.
 //
 // The walk carries three states rather than one, because a term's continuation does not
 // run in the state the term itself runs in.
@@ -176,7 +178,7 @@ func (w *condWalk) walked(term ucs.Norm) bool {
 // makes term a copy of work the walk has done.
 //
 // Normalization emits an arm as a branch of its split and again inside each earlier
-// fallible branch's fallthrough. The copies are separate nodes over one shared arm body, so
+// fallible branch's fallthrough. The copies are separate terms over one shared arm body, so
 // the body is what identifies them. `match p { {x} if b => 1, {y} => 2 }` produces the
 // `{y}` branch twice, and without this its test and its leaf would each run twice.
 //
@@ -213,8 +215,8 @@ func (w *condWalk) walkBody(cur condState, leaf *ucs.BodyLeaf) {
 // Both questions exist because normalization emits an arm more than once. A branch that
 // can fail falls into a copy of everything below it, so an arm is a branch of its own
 // split and again inside each earlier fallible branch's fallthrough. The copies are
-// separate nodes over one shared arm body, which is why neither question can be answered
-// by node identity alone.
+// separate terms over one shared arm body, which is why neither question can be answered
+// by identity alone.
 type normGraph struct {
 	// indeg counts the edges into each term. A term one edge reaches runs under exactly
 	// one set of matched tests.
@@ -252,7 +254,7 @@ func (g *normGraph) countEdges(term ucs.Norm, walked set.Set[ucs.Norm]) {
 
 // reachesJoin reports whether term is reached by more than one edge, or reaches such a
 // term without falling through again. `match p { {x, y} if g => x, other => other }`
-// produces two `bind other = p` nodes over a single `leaf other`, and both binds answer
+// produces two `bind other = p` terms over a single `leaf other`, and both binds answer
 // true through that body.
 //
 // The walk below term is the one underMatchedTest describes. A term this one falls
