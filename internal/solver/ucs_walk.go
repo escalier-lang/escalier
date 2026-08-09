@@ -26,8 +26,9 @@ import (
 //     `Ok(v) if g => v, Ok(v) => v` that is what resolves the second arm's `v`, since
 //     normalization drops the second `Ok` test as one the first already proved.
 //
-// A continuation more than one path reaches takes fall rather than matched, per normGraph
-// below.
+// Some continuations are reached by more than one path. Such a continuation runs whether
+// or not the enclosing branch's test matched, so it inherits no test. It runs in fall
+// rather than in matched, and normGraph below is what identifies those continuations.
 
 // condState is the scope and path binder one point of the walk runs in. A branch derives
 // a new state from the state of the split it belongs to, so two branches of one split
