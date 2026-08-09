@@ -3056,6 +3056,9 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 	if alt, ok := core.Else.(*ucs.BodyLeaf); ok && !w.seen.Contains(alt) {
 		w.walkBody(start, alt)
 	}
+	// The two halves join into one value, so they have to agree on ownership, exactly as
+	// inferIfElse's do. A diverging half produces no value and is left out of the check.
+	c.checkUniformOwnership(e, w.bodies)
 	c.recordType(e, res)
 	return res
 }
@@ -3139,17 +3142,22 @@ func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 		c.reportUnsupportedFeature(d.Pattern, "narrowing type annotation on a destructuring pattern")
 	}
 
+	// A declaration is pinned when its annotation narrows a bare identifier. The annotation
+	// then fixes the binding's type on its own. An annotation on a destructuring pattern is
+	// the one reported above, and it pins nothing.
+	pinned := d.TypeAnn != nil && identPat
+
 	// `root` is the value the pattern's leaves are projected out of, and `bound` the type a
-	// non-diverging `else`'s fallback value has to fit. With no annotation and a fallback to
-	// join, both are one fresh var carrying the matched initializer and that fallback, so a
-	// leaf reads either source. An `else` that diverges produces no value to join, and an
-	// annotated binding is pinned by its annotation instead, so each of those projects off
-	// the initializer alone.
+	// non-diverging `else`'s fallback value has to fit. Where there is a fallback to join
+	// and no pin, both are one fresh var carrying the matched initializer and that fallback,
+	// so a leaf reads either source. A pinned declaration and one whose `else` diverges each
+	// project off the initializer alone: the first has its type already, and the second has
+	// no fallback value at all.
 	//
 	// Divergence is a syntactic property of the block, so it is settled here rather than
 	// after the walk types the `else`.
 	root, bound := initType, initType
-	joins := d.TypeAnn == nil && !blockDiverges(d.Else)
+	joins := !pinned && !blockDiverges(d.Else)
 	if joins {
 		res := c.freshAt(lvl)
 		c.recordProv(res, d, ValElseBranch)

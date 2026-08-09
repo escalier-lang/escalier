@@ -337,6 +337,22 @@ func TestInferValElseChecksTheFallbackAgainstThePattern(t *testing.T) {
 	}
 }
 
+// An annotation fixes the binding's type only where it narrows a bare identifier. One on a
+// destructuring pattern is unsupported and pins nothing, so that declaration joins its
+// fallback like an unannotated one: the fallback is checked against the pattern, and the
+// leaves read it. Treating the unsupported annotation as a pin would leave the fallback
+// checked against the initializer alone, which it satisfies, and infer `x: number` off a
+// declaration that can bind no `x` at all.
+func TestInferValElseJoinsPastAnUnsupportedAnnotation(t *testing.T) {
+	values, _, errs := inferSource(t,
+		"fn f(p: {x: number} | {y: string}) {\n\tval {x}: {x: number} = p else { {y: \"s\"} }\n\treturn x\n}")
+	require.Equal(t, []string{
+		"2:6-2:9: Unsupported: narrowing type annotation on a destructuring pattern",
+		"2:34-2:42: object is missing property: x",
+	}, messagesWithSpan(errs))
+	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number | undefined", values["f"])
+}
+
 // A fallback the pattern can destructure contributes its own leaf types, so the bound name
 // reads either source rather than the initializer's alone. The `undefined` comes from the
 // same rule: the union is left whole, so `x` is read off the `{y: string}` member too,

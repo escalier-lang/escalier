@@ -71,6 +71,16 @@ func TestInferRefUnion(t *testing.T) {
 			wantErrs: []string{"2:11-5:4: " + mixedOwnershipMsg},
 		},
 		{
+			// An `if val` joins its two halves into one value the same way an `if/else`
+			// does, so the same ownership rule applies to it.
+			name: "mixed ownership across an if val",
+			src: `fn f(p: &mut {x: number}, u: number | string) {
+  val r = if val n: number = u { p } else { {x: 5} }
+  return r
+}`,
+			wantErrs: []string{"2:10-2:53: " + mixedOwnershipMsg},
+		},
+		{
 			name: "uniform owned union",
 			src: `fn f() {
   if true { return {x: 5} } else { return {x: 6} }
