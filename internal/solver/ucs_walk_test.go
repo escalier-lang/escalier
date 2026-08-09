@@ -164,10 +164,14 @@ func TestInferMatchArmBindingDoesNotEscape(t *testing.T) {
 	require.Equal(t, "7:11-7:16: Unknown identifier: other", msgWithSpan(errs[0]))
 }
 
-// The scrutinee is inferred once and the walk binds against that one type, so a
-// side-effecting target is not re-evaluated per arm. A call target whose argument does
-// not fit its parameter would report once per evaluation.
-func TestInferMatchEvaluatesTheTargetOnce(t *testing.T) {
+// The target expression is inferred once, before the walk, and every arm binds against
+// that one type. The ill-typed argument below is the probe: inferring `g(2)` emits one
+// constraint failure, so a walk that re-inferred the target would report it once per arm.
+//
+// This says nothing about how many times the target runs. Evaluating it once is a
+// property of the shared *ucs.Scrutinee node every projection hangs off, which
+// TestPathBinderMaterializesEachScrutineeOnce pins on the solver side.
+func TestInferMatchInfersTheTargetOnce(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn g(s: string) { return {x: 1} }
 		fn f(b: boolean) {
