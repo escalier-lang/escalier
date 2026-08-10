@@ -48,7 +48,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 			want: "3:13-5:7: match is not exhaustive; add a catch-all branch",
 		},
 		// An exact union takes an arm per member. The uncovered member leaves the match
-		// non-exhaustive, and the message still names the `match`.
+		// non-exhaustive, and the message names the `match` as well as that member.
 		"UnionMemberUncovered": {
 			src: `
 				fn f(p: {x: number} | {y: string}) {
@@ -57,7 +57,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-5:7: match is not exhaustive; add a catch-all branch",
+			want: "3:13-5:7: match is not exhaustive; add a branch for `{y: string}`",
 		},
 	}
 

@@ -1138,7 +1138,7 @@ func TestInferMatchExactUnionCoversMembers(t *testing.T) {
 }
 
 // An exact union scrutinee with a member left uncovered is non-exhaustive. The
-// arms match `"a"` only, so `"b"` escapes and a catch-all is required.
+// arms match `"a"` only, so `"b"` escapes and the message names it.
 func TestInferMatchExactUnionMissingMember(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(b: boolean) {
@@ -1149,7 +1149,7 @@ func TestInferMatchExactUnionMissingMember(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "4:11-6:5: match is not exhaustive; add a branch for `\"b\"`", msgWithSpan(errs[0]))
 }
 
 // A guarded arm binds its pattern before its guard runs, so a literal pattern in a
@@ -1252,8 +1252,9 @@ func TestInferMatchGuardMustBeBoolean(t *testing.T) {
 }
 
 // An arm whose only structural pattern is refutable does not cover an exact
-// scrutinee. A nested literal such as `{x: 1}` can fail, so a match with no
-// catch-all is non-exhaustive.
+// scrutinee. A nested literal such as `{x: 1}` can fail, so the match is
+// non-exhaustive, and the message asks for a branch binding the same shape
+// irrefutably rather than for a catch-all.
 func TestInferMatchRefutableArmNonExhaustive(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(p: {x: number}) {
@@ -1263,7 +1264,7 @@ func TestInferMatchRefutableArmNonExhaustive(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably", msgWithSpan(errs[0]))
 }
 
 // A nested literal pattern flows against the scrutinee's concrete field type, so a

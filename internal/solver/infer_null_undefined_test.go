@@ -207,7 +207,7 @@ func TestInferMatchNullArmMissingUndefinedMember(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; add a branch for `undefined`", msgWithSpan(errs[0]))
 }
 
 // Naming both atoms covers a scrutinee made of nothing else.
