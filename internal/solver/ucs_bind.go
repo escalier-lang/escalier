@@ -91,8 +91,8 @@ type testedExtractor struct{ params []*soltype.FuncParam }
 
 // testedAnn carries the narrowing annotation a refutable form tested, which the leaf beneath
 // reads through narrowingAnn. Applying the test resolves nothing itself. bindNarrowedIdent
-// both picks out the part of the scrutinee the annotation admits and binds the identifier at
-// it, so resolving it here too would report an unsupported one twice.
+// both resolves the annotation and binds the identifier at it, so resolving it here too would
+// report an unsupported one twice.
 type testedAnn struct{ ann ast.TypeAnn }
 
 // pathBinder resolves IR projection paths into types and binds leaf patterns off them.

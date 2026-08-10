@@ -288,8 +288,9 @@ func (c *checker) annTypes(scope *Scope, lvl int, tags []ucs.Test) []soltype.Typ
 // that test covers t. The `number` of `x: number => x` admits the `number` member of a
 // `number | string` scrutinee and no other member.
 //
-// It asks typeAdmits, the same question bindNarrowedIdent asks to decide what the arm binds,
-// so the type a covered member binds at and the credit it earns here come from one rule.
+// It asks typeAdmits, the same predicate bindNarrowedIdent asks to decide whether an arm's
+// annotation is reachable at all, so one rule settles which members an annotation matches.
+// What that arm's name binds at is a separate question, answered by the annotation itself.
 func (c *checker) annAdmits(t soltype.Type, cov coverage) bool {
 	for _, ann := range cov.anns {
 		if c.typeAdmits(ann, t) {

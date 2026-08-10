@@ -558,15 +558,18 @@ func TestInferUnreachableArmAnnotationStillNarrows(t *testing.T) {
 }
 
 // A narrowing annotation picks out the part of the scrutinee it admits, so an annotation
-// wider than a member still narrows to that member rather than being rejected. Every value of
-// a `1 | 2` is a number, so `x: number` matches all of them and binds `x` at `1 | 2`. The
-// annotation is not the type the name takes; the part of the scrutinee it admits is.
+// wider than a member is accepted rather than rejected. Every value of a `1 | 2` is a number,
+// so `x: number` matches both members and the arm runs.
 //
-// The three forms share bindNarrowedIdent, so each accepts and rejects the same annotations.
-// The `binding` column is the name whose inferred type is checked, since the two declaration
-// forms below join their fallback value into what `f` returns and the arm's own type is the
-// one worth reading.
-func TestInferAnnotationWiderThanAMemberNarrowsToIt(t *testing.T) {
+// The name takes the annotated type, not the members the test let through. `x: number` binds
+// `x` at `number`, so an arm returning `x` contributes `number` to the form's type and never
+// `1 | 2`. That is the ordinary declaration rule, where `val x: number = 5` types `x` as
+// `number` rather than as `5`, and it is why the annotation reads as a declaration of the
+// binding rather than only as a test of the value.
+//
+// The three forms share bindNarrowedIdent, so each accepts and rejects the same annotations
+// and binds at the same type.
+func TestInferAnnotationWiderThanAMemberBindsTheAnnotation(t *testing.T) {
 	tests := map[string]struct {
 		src string
 		// binding is the name whose printed type is checked.
@@ -576,52 +579,55 @@ func TestInferAnnotationWiderThanAMemberNarrowsToIt(t *testing.T) {
 		// wantErr, when non-empty, is the one message expected.
 		wantErr string
 	}{
-		// The whole scrutinee fits the annotation, so the test is irrefutable and the arm
-		// binds every member.
+		// Both members fit the annotation, so the arm runs for either and `x` is a `number`.
+		// The literal members do not reach the return type.
 		"MatchArm": {
 			src:     "fn f(u: 1 | 2) {\n\treturn match u {\n\t\tx: number => x,\n\t}\n}",
 			binding: "f",
-			want:    "fn (u: 1 | 2) -> 1 | 2",
+			want:    "fn (u: 1 | 2) -> number",
 		},
+		// The `else`'s 0 is subsumed into the `number` the consequent contributes.
 		"IfVal": {
 			src:     `fn f(u: 1 | 2) { return if val x: number = u { x } else { 0 } }`,
 			binding: "f",
-			want:    "fn (u: 1 | 2) -> 0 | 1 | 2",
+			want:    "fn (u: 1 | 2) -> number",
 		},
 		"ValElse": {
 			src:     "fn f(u: 1 | 2) {\n\tval x: number = u else { return 0 }\n\treturn x\n}",
 			binding: "f",
-			want:    "fn (u: 1 | 2) -> 0 | 1 | 2",
+			want:    "fn (u: 1 | 2) -> number",
 		},
-		// `unknown` is the top of the lattice, so it admits every value of any scrutinee.
+		// `unknown` is the top of the lattice, so it admits every value of any scrutinee, and
+		// the name it binds is an `unknown`.
 		"Unknown": {
 			src:     "fn f(u: number | string) {\n\treturn match u {\n\t\tx: unknown => x,\n\t}\n}",
 			binding: "f",
-			want:    "fn (u: number | string) -> number | string",
+			want:    "fn (u: number | string) -> unknown",
 		},
-		// Only some members fit, so the arm binds those and the arm below it takes the rest.
+		// Only the two literal members fit, so the first arm runs for those and the second
+		// takes the rest. Each arm's name is its own annotation.
 		"WiderThanSomeMembers": {
 			src:     "fn f(u: 1 | 2 | string) {\n\treturn match u {\n\t\tx: number => x,\n\t\ts: string => s,\n\t}\n}",
 			binding: "f",
-			want:    "fn (u: string | 1 | 2) -> string | 1 | 2",
+			want:    "fn (u: string | 1 | 2) -> number | string",
 		},
 		// A transparent alias carries the alias rather than the union it stands for, so the
 		// members are reached by expanding it first. Without that the annotation would be
-		// measured against the alias as a single shape and admit nothing.
+		// measured against the alias as a single shape and fit nothing.
 		"AliasedUnion": {
 			src:     "type U = 1 | 2 | string\nfn f(u: U) {\n\treturn match u {\n\t\tx: number => x,\n\t\ts: string => 0,\n\t}\n}",
 			binding: "f",
-			want:    "fn (u: U) -> 0 | 1 | 2",
+			want:    "fn (u: U) -> number",
 		},
-		// An annotation narrower than every member admits none of them, so the union-super
-		// exists rule decides and the name takes the annotation itself.
+		// An annotation narrower than every member fits none of them, so the union-super
+		// exists rule decides instead. The name takes the annotation either way.
 		"NarrowerThanEveryMember": {
 			src:     `fn f(u: number | string) { return if val x: 1 = u { x } else { 0 } }`,
 			binding: "f",
 			want:    "fn (u: number | string) -> 0 | 1",
 		},
-		// No value of the scrutinee is a number and no member holds one, so the annotation
-		// picks out nothing and the arm can never run.
+		// No value of the scrutinee is a number and no member holds one, so neither rule
+		// accepts the annotation and the arm can never run.
 		"AdmitsNothing": {
 			src:     "fn f(s: string) {\n\treturn match s {\n\t\tx: number => x,\n\t}\n}",
 			binding: "f",

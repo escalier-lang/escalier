@@ -3058,7 +3058,7 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 // ann is the narrowing annotation the surface wrote. A `match` arm and an `if val` write it
 // on the pattern, and a `val … else` on the declaration. The IR carries it on the branch's
 // test and passes it here, so no caller has to know which node holds it. A bare identifier
-// binds at the part of the scrutinee the annotation admits, through bindNarrowedIdent.
+// binds at the type the annotation names, through bindNarrowedIdent.
 //
 // Any other pattern destructures through the shared structural path. Normalization mints
 // no annotation test over such a pattern, so that arm recovers from a lowering that pairs
@@ -3073,23 +3073,31 @@ func (c *checker) bindRefutable(
 	return scrutinee
 }
 
-// bindNarrowedIdent binds a single identifier at the part of the scrutinee the narrowing
-// annotation `ann` picks out, and returns it. It is the shared core of the refutable
-// identifier-narrowing path. All three refutable forms pass the annotation in directly, a
-// `match` arm and an `if val` from the pattern and a `val … else` from the decl, so the
-// annotation never moves between AST nodes.
+// bindNarrowedIdent binds a single identifier at the type its narrowing annotation `ann`
+// names, and returns it. It is the shared core of the refutable identifier-narrowing path.
+// All three refutable forms pass the annotation in directly, a `match` arm and an `if val`
+// from the pattern and a `val … else` from the decl, so the annotation never moves between
+// AST nodes.
+//
+// The annotation does two jobs and they have different answers. It tests the value, which is
+// what decides whether the branch runs, and it declares the binding's type, which is the
+// annotation itself. `x: number => x` over a `1 | 2` runs for both members and binds `x` at
+// `number`, so an arm returning `x` contributes `number`. That matches the ordinary
+// declaration rule, where `val x: number = 5` types `x` as `number` rather than as `5`.
+// admitsPartOf answers only the first job, so it gates the constraint below and never the
+// type the name takes.
 func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	narrowed, resolved := c.resolveTypeAnn(scope, ann, lvl)
-	switch admitted, picks := c.admittedPart(scrutinee, narrowed); {
+	switch {
 	case !resolved:
 		// The annotation was unsupported and already reported. Bind the name to the
 		// whole scrutinee so the body still type-checks against a real type rather
 		// than cascading a second error off a `never` placeholder.
 		narrowed = scrutinee
-	case picks:
-		// The annotation admits part of the scrutinee, so the branch binds that part and
-		// the annotation itself constrains nothing.
-		narrowed = admitted
+	case c.admitsPartOf(scrutinee, narrowed):
+		// Some value of the scrutinee fits the annotation, so the test can pass and nothing
+		// needs constraining. The name keeps the annotated type set below, which is what the
+		// test proved about every value reaching the body.
 	default:
 		// The annotation admits nothing the scrutinee holds. It may still name something
 		// narrower than a member, the `1` of `if val x: 1 = u` over a `number | string`, so
@@ -3108,66 +3116,37 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 	return narrowed
 }
 
-// admittedPart returns the part of the scrutinee a narrowing annotation admits, and false
-// when the annotation admits none of it. A value takes the annotated branch when it fits the
-// annotation, so the part that fits is what the branch binds.
+// admitsPartOf reports whether some value of the scrutinee fits the annotation, so the
+// branch's test can pass and the binding it introduces is reachable.
 //
-// A union is answered member by member. `x: number` over a `1 | 2 | string` admits `1` and
-// `2`, so the branch binds `1 | 2`. An annotation admitting every member returns the scrutinee
-// itself, var identity and borrow intact, since the test is then irrefutable and narrows
-// nothing. `x: number` over a `1 | 2` is that case. A union reached through a transparent
-// alias is expanded first, the same unfold constrain performs, so `type U = 1 | 2 | string`
-// narrows the way the union written inline does.
+// A union is answered member by member, since a value of the union is a value of one member.
+// `x: number` over a `1 | 2 | string` finds `1`, so the arm can run. A union reached through
+// a transparent alias is expanded first, the same unfold constrain performs, so
+// `type U = 1 | 2 | string` answers the way the union written inline does.
 //
-// Three shapes are left to the caller's fallback. An annotation naming something narrower
-// than every member admits no member, which is the `1` of `x: 1` over a `number | string`. An
-// inexact union's listed members do not describe its open tail, for the reason the u.Inexact
-// arm below gives. An unsolved scrutinee has no members to test at all, and trialling one
-// would record a bound the probe then rolls back.
-func (c *checker) admittedPart(scrutinee, ann soltype.Type) (soltype.Type, bool) {
+// Two shapes answer false and take the caller's fallback. An annotation naming something
+// narrower than every member fits none of them, which is the `1` of `x: 1` over a
+// `number | string`, and the union-super exists rule accepts it instead. An unsolved
+// scrutinee has no members to test at all, and trialling one would record a bound the probe
+// then rolls back.
+func (c *checker) admitsPartOf(scrutinee, ann soltype.Type) bool {
 	if carrierIsVar(scrutinee) {
-		return nil, false
+		return false
 	}
-	inner, mut, lt := soltype.UnwrapRef(scrutinee)
-	u, isUnion := c.expandAliasChain(inner).(*soltype.UnionType)
-	switch {
-	case !isUnion:
-		if c.typeAdmits(ann, inner) {
-			return scrutinee, true
-		}
-		return nil, false
-	case u.Inexact:
-		// An inexact union's open tail holds values no listed member describes, so its members
-		// do not say what the annotation admits. Rebuilding the union around the tail would
-		// bind a `string | ...` where the annotation proved a `string`, and every read off
-		// that name would then fail against the tail. The caller's fallback accepts through
-		// the tail and binds at the annotation, which is what the test proved.
-		return nil, false
+	inner := c.expandAliasChain(soltype.CarrierOf(scrutinee))
+	u, isUnion := inner.(*soltype.UnionType)
+	if !isUnion {
+		return c.typeAdmits(ann, inner)
 	}
-	kept := make([]soltype.Type, 0, len(u.Types))
+	// An inexact union's open tail holds values no listed member describes, so finding no
+	// member proves nothing about the tail. That is why a false answer only sends the caller
+	// to the union-super exists rule, which accepts through the tail, rather than reporting.
 	for _, member := range u.Types {
 		if c.typeAdmits(ann, member) {
-			kept = append(kept, member)
+			return true
 		}
 	}
-	if len(kept) == 0 {
-		return nil, false
-	}
-	if len(kept) == len(u.Types) {
-		return scrutinee, true
-	}
-	var narrowed soltype.Type = &soltype.UnionType{Types: kept}
-	if len(kept) == 1 {
-		narrowed = kept[0]
-	}
-	// A kept member is a RefInner, as is a rebuilt union, so a borrowed scrutinee re-wraps its
-	// narrowed carrier under the same borrow. This is narrowArmScrutinee's rewrap, kept here so
-	// the borrow survives narrowing rather than being dropped by the peel above. NewRef drops
-	// the wrapper when the scrutinee was owned.
-	if ri, isInner := narrowed.(soltype.RefInner); isInner {
-		return soltype.NewRef(mut, lt, ri), true
-	}
-	return narrowed, true
+	return false
 }
 
 // typeAdmits reports whether every value of t fits ann, which is the question the runtime
