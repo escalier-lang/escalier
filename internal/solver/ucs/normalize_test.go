@@ -658,3 +658,43 @@ func mustDesugarValElse(t *testing.T, src string) *CoreSplit {
 	require.True(t, ok)
 	return core
 }
+
+// A type annotation on a pattern leaf is not a tag the branch tests. Only the annotation a
+// refutable form writes on its whole binding becomes an AnnTest. A leaf's own annotation
+// stays on the bind, where the solver reads it off the pattern node, so the branch's tag is
+// the container's shape as it would be without any annotation.
+func TestNormalizeNestedAnnotationIsNotATag(t *testing.T) {
+	// `{a: x: string}` annotates a key-value pattern's value, and `{b::number}` a shorthand
+	// element. The two carry their annotation on different nodes, so both are checked.
+	core := DesugarIfVal(findExpr[*ast.IfValExpr](t, `if val {a: x: string, b::number} = p { cons } else { alt }`))
+
+	require.Nil(t, core.Branches[0].Ann)
+	branch := Normalize(core).(*NormSplit).Branches[0]
+	require.IsType(t, &ObjectTest{}, branch.Test)
+
+	value := branch.Cont.(*NormBind)
+	require.Equal(t, "x", value.Name)
+	require.NotNil(t, value.Pat.(*ast.IdentPat).TypeAnn)
+
+	shorthand := value.Cont.(*NormBind)
+	require.Equal(t, "b", shorthand.Name)
+	require.NotNil(t, shorthand.Elem.TypeAnn)
+}
+
+// A tuple element's annotation behaves the same way: the branch tests the tuple's arity and
+// each annotated element is an ordinary bind on its projection.
+func TestNormalizeNestedTupleAnnotationIsNotATag(t *testing.T) {
+	core := DesugarIfVal(findExpr[*ast.IfValExpr](t, `if val [a: string, b: number] = p { cons } else { alt }`))
+
+	require.Nil(t, core.Branches[0].Ann)
+	branch := Normalize(core).(*NormSplit).Branches[0]
+	require.IsType(t, &TupleTest{}, branch.Test)
+
+	first := branch.Cont.(*NormBind)
+	require.Equal(t, "a", first.Name)
+	require.NotNil(t, first.Pat.(*ast.IdentPat).TypeAnn)
+
+	second := first.Cont.(*NormBind)
+	require.Equal(t, "b", second.Name)
+	require.NotNil(t, second.Pat.(*ast.IdentPat).TypeAnn)
+}

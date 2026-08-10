@@ -456,3 +456,104 @@ func TestInferRefutableFormsTypeAnUnreachableElse(t *testing.T) {
 		})
 	}
 }
+
+// A type annotation on a pattern leaf asserts rather than narrows, which is the opposite of
+// what the same syntax does on a whole binding. A top-level `if val x: number = u` picks the
+// member of `u` the annotation names, so a `u` that is a `string` takes the `else`. A leaf's
+// annotation names no tag the branch tests: the leaf binds at the annotated type and the
+// projection has to fit it, so `[a: string, …]` over `[number, …]` is rejected outright
+// rather than sending control to the `else`.
+//
+// The three nested spellings each hang the annotation off a different node — a tuple
+// element and an object key-value's value are `IdentPat.TypeAnn`, an object shorthand is
+// `ObjShorthandPat.TypeAnn` written with `::` — and all three reach the same rule.
+func TestInferNestedLeafAnnotations(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// want is the printed type of `f`, checked when wantErrs is nil.
+		want string
+		// wantErrs, when non-nil, is the full set of expected messages.
+		wantErrs []string
+	}{
+		{
+			name: "match arm tuple leaves",
+			src:  "fn f(p: [number, string]) { return match p {\n\t[a: number, b: string] => [a, b],\n} }",
+			want: "fn (p: [number, string]) -> [number, string]",
+		},
+		{
+			name: "if val tuple leaves",
+			src:  `fn f(p: [number, string]) { return if val [a: number, b: string] = p { [a, b] } else { [0, ""] } }`,
+			want: "fn (p: [number, string]) -> [number, string]",
+		},
+		{
+			name: "val else tuple leaves",
+			src:  "fn f(p: [number, string]) {\n\tval [a: number, b: string] = p else { return [0, \"\"] }\n\treturn [a, b]\n}",
+			want: "fn (p: [number, string]) -> [number, string]",
+		},
+		{
+			name: "if val object key-value leaves",
+			src:  `fn f(p: {a: number, b: string}) { return if val {a: x: number, b: y: string} = p { [x, y] } else { [0, ""] } }`,
+			want: "fn (p: {a: number, b: string}) -> [number, string]",
+		},
+		{
+			name: "if val object shorthand leaves",
+			src:  `fn f(p: {a: number, b: string}) { return if val {a::number, b::string} = p { [a, b] } else { [0, ""] } }`,
+			want: "fn (p: {a: number, b: string}) -> [number, string]",
+		},
+		{
+			name: "val else object shorthand leaf",
+			src:  "fn f(p: {a: number, b: string}) {\n\tval {a::number} = p else { return 0 }\n\treturn a\n}",
+			want: "fn (p: {a: number, b: string}) -> number",
+		},
+		{
+			// The leaf binds at the annotation, so a wider one widens the name. A `5` element
+			// read through `a: number` binds `a` at `number` rather than at the literal.
+			name: "a leaf annotation widens the name",
+			src:  `fn f(p: [5, string]) { return if val [a: number, b: string] = p { a } else { 0 } }`,
+			want: "fn (p: [5, string]) -> number",
+		},
+		{
+			// The element is a `number` and the annotation says `string`, so the projection
+			// does not fit. Control does not fall to the `else` the way a failed tag test
+			// would send it.
+			name:     "if val tuple leaf annotation must fit",
+			src:      `fn f(p: [number, string]) { return if val [a: string, b: string] = p { [a, b] } else { ["", ""] } }`,
+			wantErrs: []string{"1:44-1:53: cannot constrain number <: string"},
+		},
+		{
+			name:     "val else tuple leaf annotation must fit",
+			src:      "fn f(p: [number, string]) {\n\tval [a: string, b: string] = p else { return [\"\", \"\"] }\n\treturn [a, b]\n}",
+			wantErrs: []string{"2:7-2:16: cannot constrain number <: string"},
+		},
+		{
+			name:     "if val object shorthand annotation must fit",
+			src:      `fn f(p: {a: number, b: string}) { return if val {a::string} = p { a } else { "" } }`,
+			wantErrs: []string{"1:50-1:59: cannot constrain number <: string"},
+		},
+		{
+			name:     "if val object key-value annotation must fit",
+			src:      `fn f(p: {a: number, b: string}) { return if val {a: x: string} = p { x } else { "" } }`,
+			wantErrs: []string{"1:53-1:62: cannot constrain number <: string"},
+		},
+		{
+			// The branch's own tag still narrows the scrutinee, so the leaf's annotation is
+			// checked against the member the object test picked rather than the whole union.
+			name: "a leaf annotation reads the narrowed member",
+			src:  `fn f(p: {a: number} | {b: string}) { return if val {a: x: number} = p { x } else { 0 } }`,
+			want: "fn (p: {a: number} | {b: string}) -> number",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+				return
+			}
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
