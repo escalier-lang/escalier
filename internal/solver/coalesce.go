@@ -163,20 +163,18 @@ func muBinderName(i int) string {
 	return "X" + strconv.Itoa(i)
 }
 
-// skipChildren is the EnterResult that keeps a node as it stands and stops soltype.Accept from
-// descending into it. Every arm of a var walk hands it back, since a var's bounds are a side
-// graph the arm walks itself rather than children Accept could rebuild.
-func skipChildren() soltype.EnterResult { return soltype.EnterResult{SkipChildren: true} }
-
 // coalescer is the soltype-visitor form of coalesce. The structural arms and the variance flip
 // come from soltype.Accept, the shared rewriting visitor. The var node is the whole content
 // here and is handled in EnterType, because its bounds are a side graph rather than tree
-// children. seen holds the variables currently being inlined and nothing else. set.OnPath adds
-// a variable before descending into its bounds and removes it on the way back up, so seen holds
-// only the variables on the current recursion path. A variable reached again through an
-// independent branch is therefore walked again, which is what the identity function needs: its
-// shared variable is reached once negatively through the parameter and once positively through
-// the return. Only re-entering a variable already on the path is a genuine cycle.
+// children.
+//
+// set.OnPath adds a variable to seen before descending into its bounds and removes it on the way
+// back up, so seen holds only the variables on the current recursion path. A variable reached
+// again through an independent branch is therefore walked again. The identity function needs
+// exactly that. Inference gives `val id = fn (x) { return x }` one variable standing for both
+// the parameter and the return, so the walk reaches it twice, negatively through the parameter
+// and positively through the return. Both arrivals have to be walked, and neither is a cycle.
+// Only re-entering a variable already on the path is one.
 type coalescer struct {
 	seen set.Set[*soltype.TypeVarType]
 	// mu holds the μ-binder open for each variable on that same path, so a cycle back to one
@@ -425,6 +423,12 @@ type typeParamCollector struct {
 	seen set.Set[*soltype.TypeVarType]
 }
 
+// keepVarNode is the answer typeParamCollector gives at a var node. A nil Type keeps the node as
+// it stands, and SkipChildren stops Accept from descending, since this visitor only reads the
+// var and walks its bounds itself. It is the wrong answer for a visitor that rewrites the node.
+// That is why the two coalescers spell out their own EnterResult with a replacement Type set.
+func keepVarNode() soltype.EnterResult { return soltype.EnterResult{SkipChildren: true} }
+
 func (tc *typeParamCollector) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	switch t := t.(type) {
 	case *soltype.FuncType:
@@ -433,16 +437,17 @@ func (tc *typeParamCollector) EnterType(t soltype.Type, pol soltype.Polarity) so
 		}
 		return soltype.EnterResult{} // descend into params, return, and type-param bounds
 	case *soltype.TypeVarType:
-		// A second arrival at the same var would add the same entries to keep, so the entry
-		// stays in seen and only buys an exponential re-walk of a shared subgraph if popped.
-		return set.Once(tc.seen, t, skipChildren, func() soltype.EnterResult {
+		// A second arrival at the same var adds the same entries to keep, so re-walking it
+		// produces nothing new. The entry therefore stays in seen for good. Popping it would
+		// only buy an exponential re-walk of a shared subgraph.
+		return set.Once(tc.seen, t, keepVarNode, func() soltype.EnterResult {
 			for _, b := range t.LowerBounds {
 				b.Accept(tc, pol)
 			}
 			for _, b := range t.UpperBounds {
 				b.Accept(tc, pol)
 			}
-			return skipChildren()
+			return keepVarNode()
 		})
 	}
 	return soltype.EnterResult{}

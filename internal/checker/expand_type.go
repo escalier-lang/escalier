@@ -28,14 +28,15 @@ type expandSeenKey struct {
 	typeArgs string         // typeArgKey(typeArgs)
 }
 
-// expandSeen records one alias instantiation per key while a single expansion pass runs. An
-// instantiation asked for again while its own expansion is still running is a cycle and comes
-// back unexpanded. One that finished replays its result rather than being expanded twice.
+// expandSeen is one expansion pass's record of the alias instantiations it has expanded, keyed
+// by the alias and its type arguments. An instantiation asked for again while its own expansion
+// is still running is a cycle, and the inner ask gets the reference back unexpanded. An
+// instantiation whose expansion finished replays the stored result instead of expanding twice.
 type expandSeen = set.Table[expandSeenKey, type_system.Type]
 
-// expandResultCache maps an alias instantiation to a finished type, with no in-progress state to
-// track. It backs the two cross-call caches on Checker, which are populated only after the work
-// they memoize has returned.
+// expandResultCache maps an alias instantiation to a finished type. It backs the two cross-call
+// caches on Checker. Both store an entry only after the work they memoize has returned, so
+// neither needs the in-progress state expandSeen tracks.
 type expandResultCache map[expandSeenKey]type_system.Type
 
 // memberCacheKey identifies a specific property on a specific instantiation of
@@ -543,10 +544,10 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 			}
 		}
 
-		// This alias instantiation is the key its own expansion is recorded under. Reaching it
-		// again from inside that expansion is a cycle, and the inner ask returns the reference
-		// unexpanded so the outer one still gets to finish. Reaching it after the expansion
-		// finished replays the stored result.
+		// Key this expansion by the alias and its type arguments, so a self-referential alias
+		// closes as a cycle rather than expanding forever. Do runs the body below on the first
+		// ask. A cycle that re-enters this key gets nil, leaving the reference unexpanded, and
+		// an ask arriving after the body returned replays the stored result.
 		key := expandSeenKey{
 			alias:    unsafe.Pointer(typeAlias),
 			typeArgs: typeArgKey(t.TypeArgs),
