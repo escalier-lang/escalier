@@ -449,3 +449,31 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 		},
 	})
 }
+
+// A catch arm is a refutable context, so a structural pattern over a union of caught types
+// binds against only the members it can destructure. `[a, b]` keeps `[number, number]` and
+// drops `[string]`, which is what stops the arm from reporting a length mismatch against a
+// member it was never meant to match. One diagnostic remains. It comes from the open `...`
+// tail caughtType puts on every caught type, not from the dropped member. A fixed-arity tuple
+// pattern cannot destructure that tail, so `[a, b]` still fails against
+// `[number, number] | ...`.
+func TestInferTryCatchArmNarrowsItsScrutinee(t *testing.T) {
+	runThrowsErrCases(t, []throwsErrCase{
+		{
+			name: "TuplePatternKeepsOnlyTheMembersItDestructures",
+			src: `
+				fn f(b: boolean) {
+					return try {
+						if b { throw [1, 2] } else { throw ["a"] }
+					} catch {
+						[a, b] => a,
+						e => 0
+					}
+				}
+			`,
+			wantErrs: []string{
+				"6:7-6:13: cannot constrain tuple | ... <: tuple",
+			},
+		},
+	})
+}

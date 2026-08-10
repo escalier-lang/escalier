@@ -473,8 +473,8 @@ func TestInferMatchTupleRestPattern(t *testing.T) {
 	require.Equal(t, "fn (p: [string] | [number, number]) -> number | string", values["f"])
 }
 
-// An inexact union's open `...` tail survives match-arm narrowing. narrowMatchArm keeps the
-// tail, so `{x}` over `{x: number} | {y: string} | ...` narrows to `{x: number} | ...`. The
+// An inexact union's open `...` tail survives match-arm narrowing. The `{x}` branch's object
+// test narrows `{x: number} | {y: string} | ...` to `{x: number} | ...`, keeping the tail. The
 // field-read rule (M5 D4) then reads `x` off that narrowed inexact union as `number | unknown`,
 // which collapses to `unknown`, so the arm type-checks and `x` binds `unknown`. The `_` arm
 // keeps the match exhaustive, which an inexact union still requires.
