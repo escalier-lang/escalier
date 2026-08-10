@@ -110,14 +110,7 @@ type pathBinder struct {
 	// carries no origin the solver can blame. A match arm, for one, has a span but is
 	// not an ast.Node.
 	blame ast.Node
-	// joined marks a binder whose root holds more than the value the splits test, which is
-	// what a `val pat = init else { … }` binds off: the matched initializer joined with the
-	// `else`'s fallback value, a half no tag test ever admitted. Narrowing such a root to
-	// the member a test matched would drop that half, so nothing under this binder narrows.
-	// The mark sits on the binder rather than on one view because every sub-scrutinee is a
-	// projection of the root and carries both halves too.
-	joined bool
-	views  map[*ucs.Scrutinee]scrutineeView
+	views map[*ucs.Scrutinee]scrutineeView
 }
 
 // newPathBinder builds the binder for one conditional form. root is the IR's root
@@ -164,7 +157,7 @@ func (b *pathBinder) narrowedBy(scope *Scope, s *ucs.Scrutinee, test ucs.Test, b
 	if !ok {
 		node = b.blameFor(s)
 	}
-	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, joined: b.joined, views: maps.Clone(b.views)}
+	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views)}
 	next.views[s] = next.applyTest(scope, node, v, test)
 	return next
 }
@@ -187,7 +180,7 @@ func (b *pathBinder) bindAtWith(
 	scope *Scope, s *ucs.Scrutinee, pat ast.Pat, leafTypes map[string]soltype.Type, emit leafEmit,
 ) soltype.Pat {
 	v := b.viewOf(scope, s)
-	return b.c.bindPatMode(scope, b.lvl, pat, v.ty, v.concrete, v.mode, leafTypes, emit)
+	return b.c.bindPatMode(scope, b.lvl, pat, v.ty, v.concrete, v.mode, leafTypes, emit, forBinding)
 }
 
 // bindElemAt binds the leaf an object pattern's shorthand element introduces, the `x` of
@@ -204,7 +197,7 @@ func (b *pathBinder) bindElemAt(scope *Scope, s *ucs.Scrutinee, elem *ast.ObjSho
 	v := b.shorthandView(scope, s, elem)
 	t := b.c.applyLeafExtras(scope, b.lvl, elem, v.ty, elem.TypeAnn, elem.Default)
 	t = b.c.applyBindMode(b.lvl, elem, elem.Mutable, t, b.c.concreteLeaf(v.concrete, elem.TypeAnn), v.mode)
-	b.c.bindLeaf(scope, elem.Key.Name, t, elem, nil, defineLeafMono)
+	b.c.bindLeaf(scope, elem.Key.Name, t, elem, nil, defineLeafMono, forBinding)
 }
 
 // shorthandView resolves the field a shorthand element names into the variable its leaf
@@ -421,11 +414,6 @@ func (b *pathBinder) narrowingAnn(s *ucs.Scrutinee) (ast.TypeAnn, bool) {
 // test instead of off the source pattern, so a reachable arm and an arm typed outside the
 // walk agree on which members a branch keeps.
 func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
-	if b.joined {
-		// The value the leaves read holds a half no test admitted, so no member can be
-		// ruled out and the leaves stay bound against the whole of it. See pathBinder.joined.
-		return v
-	}
 	// A borrowed shape is left wrapped rather than peeled the way groundedCarrier peels
 	// one. The narrowed result below replaces v.ty and v.concrete, and nothing here
 	// rewraps it, so peeling first would drop the borrow off a nested scrutinee.
