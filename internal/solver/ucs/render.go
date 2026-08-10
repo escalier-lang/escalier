@@ -27,6 +27,9 @@ func exprString(e ast.Expr) string { return renderNode(e) }
 // patString renders a pattern on one line.
 func patString(p ast.Pat) string { return renderNode(p) }
 
+// annString renders a type annotation on one line.
+func annString(a ast.TypeAnn) string { return renderNode(a) }
+
 // litString renders a literal on one line. A literal is not an ast.Node, so it reaches the
 // printer wrapped in the expression form that holds one.
 func litString(lit ast.Lit) string {

@@ -3024,43 +3024,50 @@ func (c *checker) inferIfElse(scope *Scope, lvl int, e *ast.IfElseExpr) soltype.
 	return res
 }
 
-// inferIfVal types `if val pat = target { cons }` with an optional `else { alt }`.
-// The pattern's names are bound ONLY in the consequent, at the narrowed member type;
-// the alternate runs in the enclosing scope and never sees them. The result joins the
-// consequent and alternate like inferIfElse, each non-diverging branch a lower bound.
+// inferIfVal types `if val pat = target { cons }` with an optional `else { alt }` off the
+// UCS normalized form. The target is inferred once, then ucs.DesugarIfVal and
+// ucs.Normalize lower the form into a split over that one value and condWalk types the
+// result.
+//
+// The pattern's names are bound ONLY in the consequent, at the narrowed member type. The
+// alternate is the split's fallthrough, which the walk types in the scope the form
+// started in, so it reads the scrutinee at its full type and never sees those names. Each
+// non-diverging half constrains into one fresh branch-join var, exactly as inferIfElse
+// joins its two branches.
 func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Type {
 	scrutinee := c.inferExpr(scope, lvl, e.Target)
-	consScope := scope.Child()
-	c.bindRefutable(consScope, lvl, e.Pattern, scrutinee)
-	consT, consDiverges := c.inferBlock(consScope, lvl, &e.Cons)
-	// The alternate runs in the original scope, so it sees the scrutinee at its full
-	// type without the narrowing the consequent's bindings carry.
-	var altT soltype.Type = &soltype.UndefinedType{}
-	altDiverges := false
-	if e.Alt != nil {
-		altT, altDiverges = c.inferBlockOrExpr(scope, lvl, e.Alt)
-	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, IfValBranch)
-	if !consDiverges {
-		c.constrain(e, consT, res)
-	}
-	if !altDiverges {
-		c.constrain(e, altT, res)
-	}
+	core := ucs.DesugarIfVal(e)
+	// The binder is seeded with the type inferred above, so the walk never re-infers the
+	// target and a side-effecting one such as `if val x = f() { … }` runs its call once.
+	binder := c.newPathBinder(lvl, e, core.Scrutinee, scrutinee)
+	w := c.walkCond(scope, lvl, e, core, binder, res)
+	// The two halves join into one value, so they have to agree on ownership, exactly as
+	// inferIfElse's do. A diverging half produces no value and is left out of the check.
+	c.checkUniformOwnership(e, w.bodies)
 	c.recordType(e, res)
 	return res
 }
 
-// bindRefutable binds a refutable pattern's names against a scrutinee, returning the
-// bound type. A bare identifier pattern carrying a narrowing annotation, as in
-// `if val x: number = u`, binds the name at the narrowed member through
-// bindNarrowedIdent. Every other pattern destructures the scrutinee through the shared
-// structural path. The annotation is read from the pattern's own IdentPat.TypeAnn, which
-// the if-val parser fills in.
-func (c *checker) bindRefutable(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type) soltype.Type {
-	if ip, ok := pat.(*ast.IdentPat); ok && ip.TypeAnn != nil {
-		return c.bindNarrowedIdent(scope, lvl, ip, ip.TypeAnn, scrutinee)
+// bindRefutable binds a refutable pattern's names against a scrutinee, returning the type
+// it bound at. The typing walk calls it for a leaf under an annotation test. It holds the
+// parts of a refutable binding the IR does not model: the narrowing rule, the leaf's
+// VarID, and the caller's own scope.
+//
+// ann is the narrowing annotation the surface wrote. An `if val` writes it on the pattern
+// and a `val … else` on the declaration. The IR carries it on the branch's test and passes
+// it here, so neither caller has to know which node holds it. A bare identifier binds at
+// the member the annotation picks, through bindNarrowedIdent.
+//
+// Any other pattern destructures through the shared structural path. Normalization mints
+// no annotation test over such a pattern, so that arm recovers from a lowering that pairs
+// one with a pattern anyway.
+func (c *checker) bindRefutable(
+	scope *Scope, lvl int, pat ast.Pat, ann ast.TypeAnn, scrutinee soltype.Type,
+) soltype.Type {
+	if ip, ok := pat.(*ast.IdentPat); ok && ann != nil {
+		return c.bindNarrowedIdent(scope, lvl, ip, ann, scrutinee)
 	}
 	c.bindPattern(scope, lvl, pat, scrutinee, nil)
 	return scrutinee
@@ -3092,51 +3099,76 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 	return narrowed
 }
 
-// inferValElse types a `val pat = init else { … }` binding. The pattern narrows the
-// initializer and binds for the rest of the block; the `else` runs on a failed match
-// and either diverges or supplies the binding's fallback value, which must fit it.
+// inferValElse types a `val pat = init else { … }` binding off the UCS normalized form.
+// The initializer is inferred once, then ucs.DesugarValElse and ucs.Normalize lower the
+// declaration into a split whose one branch is the success path and whose fallthrough is
+// the `else`, and condWalk types the result.
+//
+// The success path ends in the binding-escape leaf, which carries no body because the rest
+// of the block is its continuation. Its leaves are installed in the block's scope once the
+// walk is done. The `else` runs precisely when the pattern bound none of them, so it is
+// typed first and never sees them. A non-diverging `else` supplies the binding's fallback
+// value, which has to fit the type the binding takes.
 func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
-	if d.Init == nil {
+	core, ok := ucs.DesugarValElse(d)
+	if !ok {
+		// A declaration the parser left without an initializer. There is no value to bind
+		// the pattern against and no failure for the `else` to cover.
 		c.reportUnsupported(d)
 		return
 	}
 	initType := c.inferExpr(scope, lvl, d.Init)
-	// The else runs only on a failed match, so it cannot see the pattern's bindings.
-	// Type it in a child scope BEFORE binding the pattern into the enclosing scope.
-	elseT, elseDiverges := c.inferBlock(scope.Child(), lvl, d.Else)
-
-	if d.TypeAnn != nil {
-		// A val-else annotation lives on the decl. A bare identifier narrows to it through
-		// bindNarrowedIdent, pinning the binding so a non-diverging else's fallback value
-		// must fit the pinned type. A destructuring pattern cannot distribute the
-		// annotation across its leaves, as in `val [a, b]: [number, string] = u else { … }`,
-		// so report it unsupported and bind structurally.
-		var bound soltype.Type
-		if ip, ok := d.Pattern.(*ast.IdentPat); ok {
-			bound = c.bindNarrowedIdent(scope, lvl, ip, d.TypeAnn, initType)
-		} else {
-			c.reportUnsupportedFeature(d.Pattern, "narrowing type annotation on a destructuring pattern")
-			c.bindPattern(scope, lvl, d.Pattern, initType, nil)
-			bound = initType
-		}
-		if !elseDiverges {
-			c.constrain(d, elseT, bound)
-		}
-		return
+	// A `val … else` annotation lives on the declaration. A bare identifier narrows to it
+	// through the split's annotation test. A destructuring pattern cannot distribute the
+	// annotation across its leaves, as in `val [a, b]: [number, string] = u else { … }`, so
+	// the lowering leaves that annotation out of the IR and it is reported here.
+	_, identPat := d.Pattern.(*ast.IdentPat)
+	if d.TypeAnn != nil && !identPat {
+		c.reportUnsupportedFeature(d.Pattern, "narrowing type annotation on a destructuring pattern")
 	}
 
-	// With no annotation the binding's type is inferred. The pattern binds against the
-	// matched initializer joined with a non-diverging else's fallback value, so the
-	// leaves read either source.
-	source := initType
-	if !elseDiverges {
+	// A declaration is pinned when its annotation narrows a bare identifier. The annotation
+	// then fixes the binding's type on its own. An annotation on a destructuring pattern is
+	// the one reported above, and it pins nothing.
+	pinned := d.TypeAnn != nil && identPat
+
+	// `root` is the value the pattern's leaves are projected out of, and `bound` the type a
+	// non-diverging `else`'s fallback value has to fit. Where there is a fallback to join
+	// and no pin, both are one fresh var carrying the matched initializer and that fallback,
+	// so a leaf reads either source. A pinned declaration and one whose `else` diverges each
+	// project off the initializer alone: the first has its type already, and the second has
+	// no fallback value at all.
+	//
+	// Divergence is a syntactic property of the block, so it is settled here rather than
+	// after the walk types the `else`.
+	root, bound := initType, initType
+	joins := !pinned && !blockDiverges(d.Else)
+	if joins {
 		res := c.freshAt(lvl)
 		c.recordProv(res, d, ValElseBranch)
 		c.constrain(d, initType, res)
-		c.constrain(d, elseT, res)
-		source = res
+		root, bound = res, res
 	}
-	c.bindRefutable(scope, lvl, d.Pattern, source)
+
+	// The binder is seeded with the type above, so the walk never re-infers the initializer
+	// and a side-effecting one such as `val x = f() else { … }` runs its call once. Marking
+	// it joined is what keeps the fallback checked against the pattern, since no tag test
+	// admitted that half of `root`. It is why `val {x} = p else { {y: 1} }` is an error
+	// rather than a leaf reading the initializer's half alone.
+	binder := c.newPathBinder(lvl, d, core.Scrutinee, root)
+	binder.joined = joins
+	// A `val … else` holds no arm body, so the walk joins nothing and takes no branch-join
+	// var.
+	w := c.walkCond(scope, lvl, d, core, binder, nil)
+	if w.narrowed != nil {
+		// A narrowed identifier pins the binding, so the fallback has to fit the annotated
+		// type rather than the initializer's.
+		bound = w.narrowed
+	}
+	if elseT, produces := w.fallback(); produces {
+		c.constrain(d, elseT, bound)
+	}
+	installEscaped(scope, w.escaped)
 }
 
 // inferMatch types a `match` expression off the UCS normalized form. The scrutinee is
@@ -3164,15 +3196,10 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, MatchBranch)
 	core := ucs.DesugarMatch(e)
-	norm := ucs.Normalize(core)
 	// The binder is seeded with the type inferred above, so the walk never re-infers the
 	// target and a side-effecting one such as `match f() { … }` runs its call once.
-	start := condState{scope: scope, binder: c.newPathBinder(lvl, e, core.Scrutinee, scrutinee)}
-	w := newCondWalk(c, lvl, e, res, norm)
-	// No test has matched at the top of a `match`, so the walk starts with nothing
-	// refined: the state it runs in, the state a fallthrough returns to, and the binder a
-	// fallthrough inherits are all the state the `match` itself started from.
-	w.walkNorm(start, start, start.binder, norm)
+	binder := c.newPathBinder(lvl, e, core.Scrutinee, scrutinee)
+	w := c.walkCond(scope, lvl, e, core, binder, res)
 	// An arm below an unguarded catch-all can never run, so normalization leaves it out of
 	// the split and the walk never reaches it. Report each one, then type it anyway through
 	// the same per-arm path a `try`'s catch clauses take, so a fault inside dead code is
@@ -3184,7 +3211,7 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	unreachable := c.reportUnreachableArms(e.Cases, w.arms)
 	c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, c.freshAt(lvl))
 	c.checkUniformOwnership(e, w.bodies)
-	c.checkCondExhaustive(scope, norm, matchShape)
+	c.checkCondExhaustive(scope, w.norm, matchShape)
 	c.recordType(e, res)
 	return res
 }

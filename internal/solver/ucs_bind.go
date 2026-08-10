@@ -65,6 +65,7 @@ type tested interface{ isTested() }
 func (*testedObject) isTested()    {}
 func (*testedTuple) isTested()     {}
 func (*testedExtractor) isTested() {}
+func (*testedAnn) isTested()       {}
 
 // testedObject carries the object test itself, which a field step consults to ask whether
 // the key the pattern defaulted may be absent. Nothing else about an object test is
@@ -88,6 +89,12 @@ type testedTuple struct {
 // also binds through until M7's `[Symbol.customMatcher]` lands.
 type testedExtractor struct{ params []*soltype.FuncParam }
 
+// testedAnn carries the narrowing annotation an `if val` or a `val … else` tested, which
+// the leaf beneath reads through narrowingAnn. Applying the test resolves nothing itself:
+// bindNarrowedIdent both picks the member the annotation names and binds the identifier at
+// it, so resolving it here too would report an unsupported one twice.
+type testedAnn struct{ ann ast.TypeAnn }
+
 // pathBinder resolves IR projection paths into types and binds leaf patterns off them.
 // It is seeded with the root scrutinee's inferred type, which is the only type the IR
 // itself cannot supply.
@@ -103,7 +110,14 @@ type pathBinder struct {
 	// carries no origin the solver can blame. A match arm, for one, has a span but is
 	// not an ast.Node.
 	blame ast.Node
-	views map[*ucs.Scrutinee]scrutineeView
+	// joined marks a binder whose root holds more than the value the splits test, which is
+	// what a `val pat = init else { … }` binds off: the matched initializer joined with the
+	// `else`'s fallback value, a half no tag test ever admitted. Narrowing such a root to
+	// the member a test matched would drop that half, so nothing under this binder narrows.
+	// The mark sits on the binder rather than on one view because every sub-scrutinee is a
+	// projection of the root and carries both halves too.
+	joined bool
+	views  map[*ucs.Scrutinee]scrutineeView
 }
 
 // newPathBinder builds the binder for one conditional form. root is the IR's root
@@ -150,7 +164,7 @@ func (b *pathBinder) narrowedBy(scope *Scope, s *ucs.Scrutinee, test ucs.Test, b
 	if !ok {
 		node = b.blameFor(s)
 	}
-	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, views: maps.Clone(b.views)}
+	next := &pathBinder{c: b.c, lvl: b.lvl, blame: b.blame, joined: b.joined, views: maps.Clone(b.views)}
 	next.views[s] = next.applyTest(scope, node, v, test)
 	return next
 }
@@ -382,9 +396,23 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, v scrutineeView, tes
 		return b.applyClassTest(scope, node, v, t)
 	case *ucs.ExtractorTest:
 		return b.applyExtractorTest(scope, node, v, t)
+	case *ucs.AnnTest:
+		v.tested = &testedAnn{ann: t.Ann}
+		return v
 	default:
 		return v
 	}
+}
+
+// narrowingAnn returns the annotation the split over s tested it against, and false when
+// no annotation test applies to s. The typing walk reads it to bind the leaf beneath the
+// test through bindRefutable rather than through the ordinary projection.
+func (b *pathBinder) narrowingAnn(s *ucs.Scrutinee) (ast.TypeAnn, bool) {
+	tested, ok := b.views[s].tested.(*testedAnn)
+	if !ok {
+		return nil, false
+	}
+	return tested.ann, true
 }
 
 // narrowUnion drops the union members the test cannot destructure, so a branch that
@@ -393,6 +421,11 @@ func (b *pathBinder) applyTest(scope *Scope, node ast.Node, v scrutineeView, tes
 // pattern, and it keeps that function's rules so PR6 inherits variant-narrowing
 // unchanged.
 func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
+	if b.joined {
+		// The value the leaves read holds a half no test admitted, so no member can be
+		// ruled out and the leaves stay bound against the whole of it. See pathBinder.joined.
+		return v
+	}
 	// A borrowed shape is left wrapped rather than peeled the way groundedCarrier peels
 	// one. The narrowed result below replaces v.ty and v.concrete, and nothing here
 	// rewraps it, so peeling first would drop the borrow off a nested scrutinee.

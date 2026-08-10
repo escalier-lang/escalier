@@ -129,6 +129,13 @@ func (s *Scope) defineValue(name string, b ValueBinding) {
 	s.values[name] = b
 }
 
+// bindings returns THIS scope's own value bindings, without a parent's. The walk over a
+// `val pat = init else { … }` reads them to send the declaration's leaves into the
+// enclosing block once the `else` has been typed without them.
+func (s *Scope) bindings() map[string]ValueBinding {
+	return s.values
+}
+
 // removeValue deletes name from THIS scope's value map (a no-op if absent). The
 // SCC driver uses it to retract a value binding it pre-bound to a fresh var but
 // whose declaration then failed to produce a definition, so the mutation goes
