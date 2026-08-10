@@ -57,6 +57,9 @@ type condWalk struct {
 	lvl  int
 	node ast.Node
 	res  soltype.Type
+	// norm is the form this walk typed. A caller reads it to run a second pass over the
+	// same form, which is what checkCondExhaustive does for coverage.
+	norm ucs.Norm
 	// bodies collects the type of each non-diverging body, which the caller hands to
 	// checkUniformOwnership. A diverging body produces no value, so it joins neither res
 	// nor this slice.
@@ -97,6 +100,7 @@ func newCondWalk(c *checker, lvl int, node ast.Node, res soltype.Type, norm ucs.
 		lvl:   lvl,
 		node:  node,
 		res:   res,
+		norm:  norm,
 		arms:  set.NewSet[ucs.Spanned](),
 		seen:  set.NewSet[ucs.Norm](),
 		graph: newNormGraph(norm),

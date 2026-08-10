@@ -188,8 +188,8 @@ key set is exactly the keys named at this object pattern, so a key matched by a
 deeper nested split does not remove it from a shallower `rest`.
 
 For coverage, the instance and extractor tags cover nominal union members the same
-way `unionMatchExhaustive` already does, and a rest-relaxed inexact split needs a
-catch-all, matching today's `structuralInexact` rule. Neither changes the interim
+way `unionTagsExhaustive` does, and a rest-relaxed inexact split needs a
+catch-all, matching the `structuralInexact` rule. Neither changes the interim
 coverage semantics PR8 carries over.
 
 ### A guard
@@ -254,8 +254,10 @@ split p {                       split p {
 - **Interim coverage stays.** The existing top-level exhaustiveness check moves
   onto the normalized form with its semantics unchanged. No new coverage
   algorithm is written here — that is Phase 2's residual-based check. The interim
-  helpers are `checkMatchExhaustive`, `unionMatchExhaustive`, `armCoversShape`,
-  `structuralInexact`, `narrowMatchArm`, and `isCatchAll`, all in
+  check is `checkCondExhaustive` in
+  [internal/solver/ucs_coverage.go](../../internal/solver/ucs_coverage.go), and the
+  typed predicates it and the arms below a catch-all lean on — `structuralInexact`,
+  `narrowMatchArm`, and `isCatchAll` — are in
   [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go).
 - **Reuse the shared pattern path.** Leaf binding keeps going through
   `bindPattern` / `bindPatternWith` in
@@ -651,9 +653,9 @@ names `if val` and a `val … else` error names its `else`, per the
 Move the top-level exhaustiveness check onto the IR without changing its verdict
 on any current input.
 
-- Reimplement `checkMatchExhaustive` to read the normalized form's top-level
-  split and its default tail instead of the `matchShape` scrutinee snapshot taken
-  in `inferMatch`. It reads the IR's split structure but keeps its type-dependent
+- Reimplement the check as `checkCondExhaustive`, reading the normalized form's
+  top-level split and its default tail instead of the arms of the surface
+  `match`. It reads the IR's split structure but keeps its type-dependent
   predicates in `internal/solver`: deciding exact-union membership, inexactness, and
   guarded-arm coverage needs `soltype`, so this is a typed coverage adapter, not
   ast-only logic. It is the replacement PR9 deletes the old helpers in favor of.
@@ -665,16 +667,18 @@ on any current input.
 **Tests.** Every current `NonExhaustiveMatchError` case keeps its exact message,
 asserted in full per [CLAUDE.md](../../CLAUDE.md), with the message keyed off the
 split's `Origin` per the [Diagnostics](#diagnostics) section rather than assuming a
-`match`. The `matchShape` snapshot logic in `inferMatch` is removed once coverage
-reads the IR.
+`match`. The `matchShape` snapshot in `inferMatch` stays, since `inferMatchArms`
+reads it to narrow the arms below a catch-all and needs the borrow the coverage
+carrier peels.
 
 ### PR9 — Remove the superseded ad-hoc helpers
 
 Cleanup only, no behavior change.
 
-- Delete only the helpers PR8's coverage walk has made truly dead:
-  `unionMatchExhaustive`, `armCoversShape`, `structuralInexact`, `narrowMatchArm`,
-  and the pattern-shape branches of `isCatchAll`.
+- Delete only the helpers PR8's coverage walk has made truly dead: `narrowMatchArm`
+  and the pattern-shape branches of `isCatchAll`. PR8 removed `unionMatchExhaustive`
+  and `armCoversShape` along with the arm-walking check that called them, and its
+  own carrier dispatch still calls `structuralInexact`.
 - Do not move these into the `ucs` package. They inspect `soltype` — exact-union
   membership, inexact-scrutinee shape, guarded-arm coverage — and `ucs` is ast-only,
   so it cannot host type-dependent logic. Their replacement is the typed coverage
@@ -767,7 +771,7 @@ Phase 2 plugs into two seams this plan creates:
 - **The normalized form IR** is what `#883`'s residual coverage check consumes.
   `residual = scrutinee ∧ ¬covered` is computed over the same splits, and the
   residual's DNF is the uncovered witness set.
-- **`checkMatchExhaustive`** is the function `#883` supersedes. Phase 1 leaves it
+- **`checkCondExhaustive`** is the function `#883` supersedes. Phase 1 leaves it
   reading off the IR so Phase 2 swaps the body for the algebra without touching
   the surface lowering.
 
