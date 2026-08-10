@@ -338,9 +338,8 @@ type inferDeclFinder struct {
 }
 
 func (f *inferDeclFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
-	if iv, ok := t.(*soltype.InferType); ok && !f.seen.Contains(iv.ID) {
-		f.seen.Add(iv.ID)
-		f.ids = append(f.ids, iv.ID)
+	if iv, ok := t.(*soltype.InferType); ok {
+		set.OnceDo(f.seen, iv.ID, func() { f.ids = append(f.ids, iv.ID) })
 	}
 	return soltype.EnterResult{}
 }

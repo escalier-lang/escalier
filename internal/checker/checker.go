@@ -24,8 +24,8 @@ type Checker struct {
 	PackageRegistry       *PackageRegistry           // Registry for package namespaces (separate from scope chain)
 	GlobalScope           *Scope                     // Explicit reference to global scope (contains globals like Array, Promise, etc.)
 	FileScopes            map[int]*Scope             // Populated by InferModule: SourceID → file-specific scope
-	expandCache           expandSeen                 // Cross-call cache for getMemberType's expansion loop (#453)
-	substCache            expandSeen                 // Cross-call cache for expandTypeRef's SubstituteTypeParams (#461)
+	expandCache           expandResultCache          // Cross-call cache for getMemberType's expansion loop (#453)
+	substCache            expandResultCache          // Cross-call cache for expandTypeRef's SubstituteTypeParams (#461)
 	memberCache           memberCache                // Per-property cache for lazy member substitution (#461)
 
 	// loadingExternalTypes is true while ingesting TypeScript types
@@ -78,8 +78,8 @@ func NewChecker(ctx context.Context) *Checker {
 		OverloadDecls:         make(map[string][]*ast.FuncDecl),
 		PackageRegistry:       NewPackageRegistry(),
 		GlobalScope:           nil, // Will be set by initializeGlobalScope() during prelude loading
-		expandCache:           make(expandSeen),
-		substCache:            make(expandSeen),
+		expandCache:           make(expandResultCache),
+		substCache:            make(expandResultCache),
 		memberCache:           make(memberCache),
 		stdlibNextSourceID:    1 << 20, // 1,048,576 — well above any plausible user source ID
 	}

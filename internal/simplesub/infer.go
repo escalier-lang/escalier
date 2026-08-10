@@ -3,6 +3,7 @@ package simplesub
 import (
 	"fmt"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -384,9 +385,9 @@ func inferWith(in *Inferer, term Term) (type_system.Type, []error) {
 	// Occurrence + co-occurrence analysis, then merge variables that always
 	// co-occur.
 	occurrences := map[int]map[Polarity]bool{}
-	analyze(st, Positive, occurrences, map[polKey]bool{})
+	analyze(st, Positive, occurrences, set.NewSet[polKey]())
 	coOcc := map[polKey]map[int]bool{}
-	collectCoOcc(st, Positive, coOcc, map[polKey]bool{})
+	collectCoOcc(st, Positive, coOcc, set.NewSet[polKey]())
 	uf := mergeCoOccurring(vars, occurrences, coOcc)
 
 	mergedOccurrences := map[int]map[Polarity]bool{}

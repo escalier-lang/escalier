@@ -163,15 +163,20 @@ func muBinderName(i int) string {
 	return "X" + strconv.Itoa(i)
 }
 
-// coalescer is the soltype-visitor form of coalesce. The structural arms and the
-// variance flip come from soltype.Accept (the shared rewriting visitor); the var
-// node — whose bounds are a side graph, not tree children — is the whole content
-// here, handled in EnterType. seen is the path-scoped set of variables currently
-// being inlined: it holds only the variables on the *current* recursion path
-// (added before descending into bounds, removed after), so a variable reused in
-// independent branches — e.g. the identity function's shared param (negative) and
-// return (positive) var — is unaffected; only re-entering a variable already on
-// the path is a genuine cycle.
+// skipChildren is the EnterResult that keeps a node as it stands and stops soltype.Accept from
+// descending into it. Every arm of a var walk hands it back, since a var's bounds are a side
+// graph the arm walks itself rather than children Accept could rebuild.
+func skipChildren() soltype.EnterResult { return soltype.EnterResult{SkipChildren: true} }
+
+// coalescer is the soltype-visitor form of coalesce. The structural arms and the variance flip
+// come from soltype.Accept, the shared rewriting visitor. The var node is the whole content
+// here and is handled in EnterType, because its bounds are a side graph rather than tree
+// children. seen holds the variables currently being inlined and nothing else. set.OnPath adds
+// a variable before descending into its bounds and removes it on the way back up, so seen holds
+// only the variables on the current recursion path. A variable reached again through an
+// independent branch is therefore walked again, which is what the identity function needs: its
+// shared variable is reached once negatively through the parameter and once positively through
+// the return. Only re-entering a variable already on the path is a genuine cycle.
 type coalescer struct {
 	seen set.Set[*soltype.TypeVarType]
 	// mu holds the μ-binder open for each variable on that same path, so a cycle back to one
@@ -207,37 +212,37 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 	// binder cannot cover, meaning one reached at the opposite polarity, collapses to the polarity
 	// identity instead. See muBinders.ref. That is the same value the position takes when its
 	// bounds are empty.
-	if c.seen.Contains(v) {
+	onCycle := func() soltype.EnterResult {
 		if ref := c.mu.ref(v, pol); ref != nil {
 			return soltype.EnterResult{Type: ref, SkipChildren: true}
 		}
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	c.seen.Add(v)
-	defer c.seen.Remove(v) // path-scoped: pop on the way back up (panic-safe)
-	binder := c.mu.push(v, pol)
-	defer c.mu.pop(v) // path-scoped like `seen`, so a binder is open only while v is on the path
-	// Uniform inline: drop the variable, keep only its (recursively coalesced)
-	// bounds in the current polarity.
-	bs := v.BoundsAt(pol)
-	bounds := make([]soltype.Type, 0, len(bs))
-	for _, b := range bs {
-		bounds = append(bounds, b.Accept(c, pol))
-	}
-	// A kept type-parameter var flowing into v is a lower-bound contribution the var-var
-	// edge stored on the parameter's side rather than on v (see keptFlowMap). It is a
-	// positive-position value, so add it only in Positive position and recurse so a kept
-	// var stays symbolic through the keep check above.
-	if pol == soltype.Positive {
-		for _, kv := range c.flow[v] {
-			bounds = append(bounds, kv.Accept(c, pol))
+	return set.OnPath(c.seen, v, onCycle, func() soltype.EnterResult {
+		binder := c.mu.push(v, pol)
+		defer c.mu.pop(v) // path-scoped like `seen`, so a binder is open only while v is on the path
+		// Uniform inline: drop the variable, keep only its bounds in the current polarity,
+		// each one coalesced by the same walk.
+		bs := v.BoundsAt(pol)
+		bounds := make([]soltype.Type, 0, len(bs))
+		for _, b := range bs {
+			bounds = append(bounds, b.Accept(c, pol))
 		}
-	}
-	if len(bounds) == 0 {
-		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
-	}
-	inlined := widenVar(v, pol, combine(pol, dedup(bounds), v.Open))
-	return soltype.EnterResult{Type: binder.tie(pol, inlined), SkipChildren: true}
+		// A kept type-parameter var flowing into v is a lower-bound contribution the var-var
+		// edge stored on the parameter's side rather than on v. See keptFlowMap. It is a
+		// positive-position value, so add it only in Positive position and recurse so a kept
+		// var stays symbolic through the keep check above.
+		if pol == soltype.Positive {
+			for _, kv := range c.flow[v] {
+				bounds = append(bounds, kv.Accept(c, pol))
+			}
+		}
+		if len(bounds) == 0 {
+			return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
+		}
+		inlined := widenVar(v, pol, combine(pol, dedup(bounds), v.Open))
+		return soltype.EnterResult{Type: binder.tie(pol, inlined), SkipChildren: true}
+	})
 }
 
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
@@ -428,17 +433,17 @@ func (tc *typeParamCollector) EnterType(t soltype.Type, pol soltype.Polarity) so
 		}
 		return soltype.EnterResult{} // descend into params, return, and type-param bounds
 	case *soltype.TypeVarType:
-		if tc.seen.Contains(t) {
-			return soltype.EnterResult{SkipChildren: true}
-		}
-		tc.seen.Add(t)
-		for _, b := range t.LowerBounds {
-			b.Accept(tc, pol)
-		}
-		for _, b := range t.UpperBounds {
-			b.Accept(tc, pol)
-		}
-		return soltype.EnterResult{SkipChildren: true}
+		// A second arrival at the same var would add the same entries to keep, so the entry
+		// stays in seen and only buys an exponential re-walk of a shared subgraph if popped.
+		return set.Once(tc.seen, t, skipChildren, func() soltype.EnterResult {
+			for _, b := range t.LowerBounds {
+				b.Accept(tc, pol)
+			}
+			for _, b := range t.UpperBounds {
+				b.Accept(tc, pol)
+			}
+			return skipChildren()
+		})
 	}
 	return soltype.EnterResult{}
 }
@@ -495,13 +500,13 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 	// display copy, so an artifact reached in a structural position reads as the declared
 	// parameter rather than a second name for the same type.
 	rep = c.displayBinder(rep)
-	if c.seen.Contains(rep) {
-		// A cycle back to a variable already on the path. A retained type parameter keeps its name.
-		// The quantifier already binds it, so the name IS the recursive reference and no separate
-		// binder is needed. An inlined variable has no name to come back to, so the cycle renders
-		// as a reference to the μ-binder minted for it and the finished body closes over the loop
-		// as a knot. A cycle the binder cannot cover, meaning one reached at the opposite polarity,
-		// collapses to the polarity identity. See muBinders.ref.
+	// A cycle back to a variable already on the path. A retained type parameter keeps its name.
+	// The quantifier already binds it, so the name IS the recursive reference and no separate
+	// binder is needed. An inlined variable has no name to come back to, so the cycle renders
+	// as a reference to the μ-binder minted for it and the finished body closes over the loop
+	// as a knot. A cycle the binder cannot cover, meaning one reached at the opposite polarity,
+	// collapses to the polarity identity. See muBinders.ref.
+	onCycle := func() soltype.EnterResult {
 		if retain {
 			return soltype.EnterResult{Type: rep, SkipChildren: true}
 		}
@@ -510,43 +515,43 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 		}
 		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
 	}
-	c.seen.Add(rep)
-	defer c.seen.Remove(rep) // path-scoped: pop on the way back up (panic-safe)
-	binder := c.mu.push(rep, pol)
-	defer c.mu.pop(rep) // path-scoped like `seen`, so a binder is open only while rep is on the path
+	return set.OnPath(c.seen, rep, onCycle, func() soltype.EnterResult {
+		binder := c.mu.push(rep, pol)
+		defer c.mu.pop(rep) // path-scoped like `seen`, so a binder is open only while rep is on the path
 
-	// v's own bounds, not the representative's.
-	bs := v.BoundsAt(pol)
+		// v's own bounds, not the representative's.
+		bs := v.BoundsAt(pol)
 
-	// Pre-size parts with rep at index 0 when retaining, rather than appending then
-	// prepending. At the front, rep appears first in the union or intersection combine
-	// builds, and dedup keeps it distinct from any bound that cycles back to it.
-	n := len(bs)
-	if retain {
-		n++
-	}
-	parts := make([]soltype.Type, 0, n)
-	if retain {
-		parts = append(parts, rep)
-	}
-	// Recursively coalesce each bound. When a bound is another member of v's class
-	// whose rep is already on the path, the seen guard short-circuits it to the name
-	// and its own bounds go unwalked. No information is lost. constrain copies a
-	// concrete bound to every variable along a var↔var subtyping chain, so the class's
-	// reachable concrete bounds already sit on v, the first member reached. This holds
-	// because the body is propagation-closed, meaning every variable already carries
-	// the bounds propagated to it. coalesceScheme renders a component only after it is
-	// fully constrained, so that is always true here.
-	for _, b := range bs {
-		parts = append(parts, b.Accept(c, pol))
-	}
-	if len(parts) == 0 {
-		// Only reachable with !retain and no bounds — empty bounds under retain
-		// already leave parts=[rep]. Collapse to the polarity identity.
-		return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
-	}
-	inlined := widenVar(v, pol, combine(pol, dedup(parts), v.Open))
-	return soltype.EnterResult{Type: binder.tie(pol, inlined), SkipChildren: true}
+		// Pre-size parts with rep at index 0 when retaining, rather than appending then
+		// prepending. At the front, rep appears first in the union or intersection combine
+		// builds, and dedup keeps it distinct from any bound that cycles back to it.
+		n := len(bs)
+		if retain {
+			n++
+		}
+		parts := make([]soltype.Type, 0, n)
+		if retain {
+			parts = append(parts, rep)
+		}
+		// Recursively coalesce each bound. When a bound is another member of v's class
+		// whose rep is already on the path, the seen guard short-circuits it to the name
+		// and its own bounds go unwalked. No information is lost. constrain copies a
+		// concrete bound to every variable along a var↔var subtyping chain, so the class's
+		// reachable concrete bounds already sit on v, the first member reached. This holds
+		// because the body is propagation-closed, meaning every variable already carries
+		// the bounds propagated to it. coalesceScheme renders a component only after it is
+		// fully constrained, so that is always true here.
+		for _, b := range bs {
+			parts = append(parts, b.Accept(c, pol))
+		}
+		if len(parts) == 0 {
+			// Only reachable with !retain and no bounds — empty bounds under retain
+			// already leave parts=[rep]. Collapse to the polarity identity.
+			return soltype.EnterResult{Type: emptyOf(pol), SkipChildren: true}
+		}
+		inlined := widenVar(v, pol, combine(pol, dedup(parts), v.Open))
+		return soltype.EnterResult{Type: binder.tie(pol, inlined), SkipChildren: true}
+	})
 }
 
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {

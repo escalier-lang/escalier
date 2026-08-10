@@ -598,14 +598,12 @@ func (c *checker) collectAllFrom(
 	out, seen set.Set[liveness.VarID],
 	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
 ) {
-	if seen.Contains(node) {
-		return
-	}
-	seen.Add(node)
-	for _, edge := range fieldBorrowGraph[node] {
-		out.Add(edge.referent)
-		c.collectAllFrom(edge.referent, out, seen, fieldBorrowGraph)
-	}
+	set.OnceDo(seen, node, func() {
+		for _, edge := range fieldBorrowGraph[node] {
+			out.Add(edge.referent)
+			c.collectAllFrom(edge.referent, out, seen, fieldBorrowGraph)
+		}
+	})
 }
 
 // appendSeg returns base with one more named field segment appended, copying the path so

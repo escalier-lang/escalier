@@ -1,6 +1,10 @@
 package simplesub
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/escalier-lang/escalier/internal/set"
+)
 
 // ---- Occurrence analysis ----
 
@@ -11,21 +15,18 @@ type polKey struct {
 
 // analyze records, for each variable, the polarities it occurs in (following
 // bounds in the relevant direction). This drives single-polarity elimination.
-func analyze(st SimpleType, pol Polarity, occurrences map[int]map[Polarity]bool, seen map[polKey]bool) {
+func analyze(st SimpleType, pol Polarity, occurrences map[int]map[Polarity]bool, seen set.Set[polKey]) {
 	switch t := st.(type) {
 	case *Variable:
 		if occurrences[t.id] == nil {
 			occurrences[t.id] = map[Polarity]bool{}
 		}
 		occurrences[t.id][pol] = true
-		pk := polKey{t.id, pol}
-		if seen[pk] {
-			return
-		}
-		seen[pk] = true
-		for _, b := range t.boundsAt(pol) {
-			analyze(b, pol, occurrences, seen)
-		}
+		set.OnceDo(seen, polKey{t.id, pol}, func() {
+			for _, b := range t.boundsAt(pol) {
+				analyze(b, pol, occurrences, seen)
+			}
+		})
 	case *Function:
 		for _, p := range t.params {
 			analyze(p, pol.flip(), occurrences, seen)
@@ -173,7 +174,7 @@ func gatherGroup(v *Variable, pol Polarity, g map[int]bool) {
 
 // collectCoOcc records, per (variable, polarity), the set of variables that
 // co-occur with it (share a union/intersection node).
-func collectCoOcc(st SimpleType, pol Polarity, coOcc map[polKey]map[int]bool, seen map[polKey]bool) {
+func collectCoOcc(st SimpleType, pol Polarity, coOcc map[polKey]map[int]bool, seen set.Set[polKey]) {
 	switch t := st.(type) {
 	case *Variable:
 		g := map[int]bool{}
@@ -189,14 +190,11 @@ func collectCoOcc(st SimpleType, pol Polarity, coOcc map[polKey]map[int]bool, se
 				}
 			}
 		}
-		pk := polKey{t.id, pol}
-		if seen[pk] {
-			return
-		}
-		seen[pk] = true
-		for _, b := range t.boundsAt(pol) {
-			collectCoOcc(b, pol, coOcc, seen)
-		}
+		set.OnceDo(seen, polKey{t.id, pol}, func() {
+			for _, b := range t.boundsAt(pol) {
+				collectCoOcc(b, pol, coOcc, seen)
+			}
+		})
 	case *Function:
 		for _, p := range t.params {
 			collectCoOcc(p, pol.flip(), coOcc, seen)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -27,10 +28,15 @@ type expandSeenKey struct {
 	typeArgs string         // typeArgKey(typeArgs)
 }
 
-// expandSeen tracks type alias expansions in progress and caches completed results.
-// A nil value means the expansion is in progress (re-encounter = cycle).
-// A non-nil value is the cached expansion result (re-encounter = reuse).
-type expandSeen map[expandSeenKey]type_system.Type
+// expandSeen records one alias instantiation per key while a single expansion pass runs. An
+// instantiation asked for again while its own expansion is still running is a cycle and comes
+// back unexpanded. One that finished replays its result rather than being expanded twice.
+type expandSeen = set.Table[expandSeenKey, type_system.Type]
+
+// expandResultCache maps an alias instantiation to a finished type, with no in-progress state to
+// track. It backs the two cross-call caches on Checker, which are populated only after the work
+// they memoize has returned.
+type expandResultCache map[expandSeenKey]type_system.Type
 
 // memberCacheKey identifies a specific property on a specific instantiation of
 // a generic type alias. Used by lazyMemberLookup to cache per-property
@@ -161,10 +167,10 @@ func (c *Checker) canExpandTypeRef(ctx Context, t *type_system.TypeRefType) bool
 // TODO(#452): Extract a separate ExpandNonRefTypes helper for the count=0 case
 // to make call sites self-documenting.
 func (c *Checker) ExpandType(ctx Context, t type_system.Type, expandTypeRefsCount int) (type_system.Type, []Error) {
-	return c.expandTypeWithConfig(ctx, t, expandTypeRefsCount, make(expandSeen))
+	return c.expandTypeWithConfig(ctx, t, expandTypeRefsCount, set.NewTable[expandSeenKey, type_system.Type]())
 }
 
-func (c *Checker) expandTypeWithConfig(ctx Context, t type_system.Type, expandTypeRefsCount int, seen expandSeen) (type_system.Type, []Error) {
+func (c *Checker) expandTypeWithConfig(ctx Context, t type_system.Type, expandTypeRefsCount int, seen *expandSeen) (type_system.Type, []Error) {
 	t = type_system.Prune(t)
 	visitor := NewTypeExpansionVisitor(c, ctx, expandTypeRefsCount)
 	visitor.seen = seen
@@ -180,7 +186,7 @@ type TypeExpansionVisitor struct {
 	errors              []Error
 	skipTypeRefsCount   int // if > 0, skip expanding TypeRefTypes
 	expandTypeRefsCount int // if > 0, number of TypeRefTypes expanded, if -1 then unlimited
-	seen                expandSeen
+	seen                *expandSeen
 }
 
 // NewTypeExpansionVisitor creates a new visitor for expanding type references
@@ -537,84 +543,75 @@ func (v *TypeExpansionVisitor) ExitType(t type_system.Type) type_system.Type {
 			}
 		}
 
-		// Cycle detection: check if we're already expanding this alias+typeArgs.
+		// This alias instantiation is the key its own expansion is recorded under. Reaching it
+		// again from inside that expansion is a cycle, and the inner ask returns the reference
+		// unexpanded so the outer one still gets to finish. Reaching it after the expansion
+		// finished replays the stored result.
 		key := expandSeenKey{
 			alias:    unsafe.Pointer(typeAlias),
 			typeArgs: typeArgKey(t.TypeArgs),
 		}
-		if cached, exists := v.seen[key]; exists {
-			if cached == nil {
-				// In progress — this is a cycle. Return unexpanded.
-				return nil
-			}
-			// Completed — reuse the cached expansion.
-			return cached
-		}
-		v.seen[key] = nil // mark as in progress
-
-		// TODO(#475): Handle default type params, then ensure the number of type
-		// args matches the number of type params unless there are type params with
-		// defaults, in which case the number of type args can be fewer as long as
-		// there are enough for the required type params.
-		if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
-			// Do not perform distributions if the conditional type is the child
-			// of any other type.
-			switch prunedType := type_system.Prune(expandedType).(type) {
-			case *type_system.CondType:
-				// generateSubstitutionSets expands each arg internally to check
-				// whether it's a union for distribution purposes, so we don't
-				// need to pre-expand args here.
-				substitutionSets, subSetErrors := v.checker.generateSubstitutionSets(v.ctx, typeAlias.TypeParams, t.TypeArgs)
-				if len(subSetErrors) > 0 {
-					v.errors = slices.Concat(v.errors, subSetErrors)
-				}
-
-				// If there are more than one substitution sets, distribute the
-				// type arguments across the conditional type.
-				if len(substitutionSets) > 1 {
-					expandedTypes := make([]type_system.Type, len(substitutionSets))
-					for i, substitutionSet := range substitutionSets {
-						expandedTypes[i] = SubstituteTypeParams(prunedType, substitutionSet)
+		return v.seen.Do(key, func() type_system.Type { return nil }, func() type_system.Type {
+			// TODO(#475): Handle default type params, then ensure the number of type
+			// args matches the number of type params unless there are type params with
+			// defaults, in which case the number of type args can be fewer as long as
+			// there are enough for the required type params.
+			if len(typeAlias.TypeParams) > 0 && len(t.TypeArgs) > 0 {
+				// Do not perform distributions if the conditional type is the child
+				// of any other type.
+				switch prunedType := type_system.Prune(expandedType).(type) {
+				case *type_system.CondType:
+					// generateSubstitutionSets expands each arg internally to check
+					// whether it's a union for distribution purposes, so we don't
+					// need to pre-expand args here.
+					substitutionSets, subSetErrors := v.checker.generateSubstitutionSets(v.ctx, typeAlias.TypeParams, t.TypeArgs)
+					if len(subSetErrors) > 0 {
+						v.errors = slices.Concat(v.errors, subSetErrors)
 					}
-					// Create a union type of all expanded types
-					expandedType = type_system.NewUnionType(nil, expandedTypes...)
-				} else {
+
+					// If there are more than one substitution sets, distribute the
+					// type arguments across the conditional type.
+					if len(substitutionSets) > 1 {
+						expandedTypes := make([]type_system.Type, len(substitutionSets))
+						for i, substitutionSet := range substitutionSets {
+							expandedTypes[i] = SubstituteTypeParams(prunedType, substitutionSet)
+						}
+						// Create a union type of all expanded types
+						expandedType = type_system.NewUnionType(nil, expandedTypes...)
+					} else {
+						substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+						expandedType = SubstituteTypeParams(prunedType, substitutions)
+					}
+				case *type_system.ObjectType:
+					// Expand any MappedElem elements in the object type
+					substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
+					objType := SubstituteTypeParams(prunedType, substitutions)
+					expandedType = v.expandMappedElems(objType)
+				default:
+					// Use raw type args — the recursive expansion at the end of
+					// this block will expand any TypeRefs in the substituted body.
+					// This avoids eagerly expanding args that resolve to large
+					// types when their structure isn't needed for the substitution.
 					substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
 					expandedType = SubstituteTypeParams(prunedType, substitutions)
 				}
-			case *type_system.ObjectType:
-				// Expand any MappedElem elements in the object type
-				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
-				objType := SubstituteTypeParams(prunedType, substitutions)
-				expandedType = v.expandMappedElems(objType)
-			default:
-				// Use raw type args — the recursive expansion at the end of
-				// this block will expand any TypeRefs in the substituted body.
-				// This avoids eagerly expanding args that resolve to large
-				// types when their structure isn't needed for the substitution.
-				substitutions := createTypeParamSubstitutions(t.TypeArgs, typeAlias.TypeParams)
-				expandedType = SubstituteTypeParams(prunedType, substitutions)
+			} else if len(typeAlias.TypeParams) == 0 && len(t.TypeArgs) == 0 {
+				// Expand MappedElems in ObjectTypes even if there are no type params/args
+				// `{[P]: string for P in "foo" | "bar"}` should be expanded to
+				// `{foo: string, bar: string}`
+				if objType, ok := type_system.Prune(expandedType).(*type_system.ObjectType); ok {
+					expandedType = v.expandMappedElems(objType)
+				}
 			}
-		} else if len(typeAlias.TypeParams) == 0 && len(t.TypeArgs) == 0 {
-			// Expand MappedElems in ObjectTypes even if there are no type params/args
-			// `{[P]: string for P in "foo" | "bar"}` should be expanded to
-			// `{foo: string, bar: string}`
-			if objType, ok := type_system.Prune(expandedType).(*type_system.ObjectType); ok {
-				expandedType = v.expandMappedElems(objType)
+
+			// Recursively expand the resolved type using the same visitor to maintain state
+			if v.expandTypeRefsCount == -1 {
+				result, _ := v.checker.expandTypeWithConfig(v.ctx, expandedType, -1, v.seen)
+				return result
 			}
-		}
-
-		// Recursively expand the resolved type using the same visitor to maintain state
-		var result type_system.Type
-		if v.expandTypeRefsCount == -1 {
-			result, _ = v.checker.expandTypeWithConfig(v.ctx, expandedType, -1, v.seen)
-		} else {
-			result, _ = v.checker.expandTypeWithConfig(v.ctx, expandedType, v.expandTypeRefsCount-1, v.seen)
-		}
-
-		// Cache the expanded result for reuse
-		v.seen[key] = result
-		return result
+			result, _ := v.checker.expandTypeWithConfig(v.ctx, expandedType, v.expandTypeRefsCount-1, v.seen)
+			return result
+		})
 	case *type_system.TemplateLitType:
 		// Expand template literal types by generating all possible string combinations
 		// from the cartesian product of the union types in the template
