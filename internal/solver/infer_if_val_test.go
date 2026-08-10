@@ -363,6 +363,10 @@ func TestInferValElseJoinsPastAnUnsupportedAnnotation(t *testing.T) {
 // `number | undefined` for the same reason. What the join decides is only that the union is
 // still whole at the read: the fallback is a half no tag test admitted, so nothing narrows
 // `{y: string}` away the way an `if val` over the same `p` does.
+//
+// That `undefined` is wrong, and #1076 removes it. A `p` holding `{y: string}` fails the
+// `{x}` test and takes the `else`, so the leaf is never absent at run time. What this
+// asserts is today's type rather than the intended one.
 func TestInferValElseLeavesReadTheFallback(t *testing.T) {
 	values, _, errs := inferSource(t, "fn f(p: {x: number} | {y: string}) {\n\tval {x} = p else { {x: \"s\"} }\n\treturn x\n}")
 	require.Empty(t, errs)
