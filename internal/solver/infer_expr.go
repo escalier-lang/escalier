@@ -3119,20 +3119,29 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 // alias is expanded first, the same unfold constrain performs, so `type U = 1 | 2 | string`
 // narrows the way the union written inline does.
 //
-// Two shapes are left to the caller's fallback. An annotation naming something narrower than
-// every member admits no member, which is the `1` of `x: 1` over a `number | string`. An
-// unsolved scrutinee has no members to test at all, and trialling one would record a bound
-// the probe then rolls back.
+// Three shapes are left to the caller's fallback. An annotation naming something narrower
+// than every member admits no member, which is the `1` of `x: 1` over a `number | string`. An
+// inexact union's listed members do not describe its open tail, for the reason the u.Inexact
+// arm below gives. An unsolved scrutinee has no members to test at all, and trialling one
+// would record a bound the probe then rolls back.
 func (c *checker) admittedPart(scrutinee, ann soltype.Type) (soltype.Type, bool) {
 	if carrierIsVar(scrutinee) {
 		return nil, false
 	}
 	inner, mut, lt := soltype.UnwrapRef(scrutinee)
 	u, isUnion := c.expandAliasChain(inner).(*soltype.UnionType)
-	if !isUnion {
+	switch {
+	case !isUnion:
 		if c.typeAdmits(ann, inner) {
 			return scrutinee, true
 		}
+		return nil, false
+	case u.Inexact:
+		// An inexact union's open tail holds values no listed member describes, so its members
+		// do not say what the annotation admits. Rebuilding the union around the tail would
+		// bind a `string | ...` where the annotation proved a `string`, and every read off
+		// that name would then fail against the tail. The caller's fallback accepts through
+		// the tail and binds at the annotation, which is what the test proved.
 		return nil, false
 	}
 	kept := make([]soltype.Type, 0, len(u.Types))
@@ -3144,19 +3153,15 @@ func (c *checker) admittedPart(scrutinee, ann soltype.Type) (soltype.Type, bool)
 	if len(kept) == 0 {
 		return nil, false
 	}
-	// An inexact union carries an open tail holding values no listed member describes, so the
-	// annotation admits no more of it than the members it admitted. Such a union narrows even
-	// when every listed member survived, and the narrowed type keeps the tail. That is the
-	// rule narrowUnionMembers applies to a tag test's narrowing.
-	if !u.Inexact && len(kept) == len(u.Types) {
+	if len(kept) == len(u.Types) {
 		return scrutinee, true
 	}
-	var narrowed soltype.Type = &soltype.UnionType{Types: kept, Inexact: u.Inexact}
-	if len(kept) == 1 && !u.Inexact {
+	var narrowed soltype.Type = &soltype.UnionType{Types: kept}
+	if len(kept) == 1 {
 		narrowed = kept[0]
 	}
 	// A kept member is a RefInner, as is a rebuilt union, so a borrowed scrutinee re-wraps its
-	// narrowed carrier under the same borrow. This is narrowMatchArm's rewrap, kept here so
+	// narrowed carrier under the same borrow. This is narrowArmScrutinee's rewrap, kept here so
 	// the borrow survives narrowing rather than being dropped by the peel above. NewRef drops
 	// the wrapper when the scrutinee was owned.
 	if ri, isInner := narrowed.(soltype.RefInner); isInner {
@@ -3330,7 +3335,13 @@ func (c *checker) inferMatchArms(
 	for _, arm := range arms {
 		armScope := scope.Child()
 		armScrut := narrowArmScrutinee(shape, scrutinee, arm.Pattern)
-		c.bindPattern(armScope, lvl, arm.Pattern, armScrut, nil)
+		// A top-level annotation narrows the arm rather than asserting against what it binds,
+		// so it goes through bindRefutable, the same helper the walk's live arms use. Binding
+		// it as an ordinary pattern would assert the annotation on the whole scrutinee and
+		// report `cannot constrain string <: number` for an `x: number` arm over a
+		// `number | string`. That is a second diagnostic on an arm already reported dead.
+		// Every other pattern form has no such annotation and destructures unchanged.
+		c.bindRefutable(armScope, lvl, arm.Pattern, ucs.PatternNarrowingAnn(arm.Pattern), armScrut)
 		if arm.Guard != nil {
 			// A guard is an ordinary boolean condition over the arm's bindings. As in
 			// inferIfElse, the synthesized boolean requirement is left out of Prov. It

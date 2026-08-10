@@ -539,6 +539,24 @@ func TestInferMatchArmAnnotationNarrows(t *testing.T) {
 	}
 }
 
+// An arm below an unguarded catch-all never runs, so the walk leaves it out and
+// inferMatchArms types it separately. A top-level annotation narrows there too, so the dead
+// arm earns the one diagnostic naming it dead and no second one from its annotation.
+func TestInferUnreachableArmAnnotationStillNarrows(t *testing.T) {
+	tests := map[string]string{
+		"BelowAWildcard": "fn f(u: number | string) {\n\treturn match u {\n\t\t_ => 0,\n\t\tx: number => x,\n\t}\n}",
+		"BelowABareIdent": "fn f(u: number | string) {\n\treturn match u {\n\t\tother => 0,\n\t\tx: number => x,\n\t}\n}",
+	}
+	want := "4:3-4:17: this match arm is unreachable because an arm above it matches every value; drop it, or move it above that arm"
+
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Equal(t, []string{want}, messagesWithSpan(errs))
+		})
+	}
+}
+
 // A narrowing annotation picks out the part of the scrutinee it admits, so an annotation
 // wider than a member still narrows to that member rather than being rejected. Every value of
 // a `1 | 2` is a number, so `x: number` matches all of them and binds `x` at `1 | 2`. The
