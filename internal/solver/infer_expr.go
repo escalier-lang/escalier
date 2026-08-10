@@ -3113,9 +3113,11 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 // annotation, so the part that fits is what the branch binds.
 //
 // A union is answered member by member. `x: number` over a `1 | 2 | string` admits `1` and
-// `2`, so the branch binds `1 | 2`. An annotation admitting every member keeps the scrutinee
-// whole, borrow and all, since the test is then irrefutable and narrows nothing. `x: number`
-// over a `1 | 2` is that case.
+// `2`, so the branch binds `1 | 2`. An annotation admitting every member returns the scrutinee
+// itself, var identity and borrow intact, since the test is then irrefutable and narrows
+// nothing. `x: number` over a `1 | 2` is that case. A union reached through a transparent
+// alias is expanded first, the same unfold constrain performs, so `type U = 1 | 2 | string`
+// narrows the way the union written inline does.
 //
 // Two shapes are left to the caller's fallback. An annotation naming something narrower than
 // every member admits no member, which is the `1` of `x: 1` over a `number | string`. An
@@ -3125,10 +3127,10 @@ func (c *checker) admittedPart(scrutinee, ann soltype.Type) (soltype.Type, bool)
 	if carrierIsVar(scrutinee) {
 		return nil, false
 	}
-	shape := soltype.CarrierOf(scrutinee)
-	u, isUnion := shape.(*soltype.UnionType)
+	inner, mut, lt := soltype.UnwrapRef(scrutinee)
+	u, isUnion := c.expandAliasChain(inner).(*soltype.UnionType)
 	if !isUnion {
-		if c.typeAdmits(ann, shape) {
+		if c.typeAdmits(ann, inner) {
 			return scrutinee, true
 		}
 		return nil, false
@@ -3139,21 +3141,28 @@ func (c *checker) admittedPart(scrutinee, ann soltype.Type) (soltype.Type, bool)
 			kept = append(kept, member)
 		}
 	}
-	// An inexact union carries an open tail holding values no listed member describes, so the
-	// annotation admits no more of it than the members it admitted. The narrowed type keeps
-	// the tail and stays a union however few members survived, which is the rule
-	// narrowUnionMembers applies to a tag test's narrowing.
-	switch {
-	case len(kept) == 0:
+	if len(kept) == 0 {
 		return nil, false
-	case u.Inexact:
-		return &soltype.UnionType{Types: kept, Inexact: true}, true
-	case len(kept) == len(u.Types):
-		return scrutinee, true
-	case len(kept) == 1:
-		return kept[0], true
 	}
-	return &soltype.UnionType{Types: kept, Inexact: false}, true
+	// An inexact union carries an open tail holding values no listed member describes, so the
+	// annotation admits no more of it than the members it admitted. Such a union narrows even
+	// when every listed member survived, and the narrowed type keeps the tail. That is the
+	// rule narrowUnionMembers applies to a tag test's narrowing.
+	if !u.Inexact && len(kept) == len(u.Types) {
+		return scrutinee, true
+	}
+	var narrowed soltype.Type = &soltype.UnionType{Types: kept, Inexact: u.Inexact}
+	if len(kept) == 1 && !u.Inexact {
+		narrowed = kept[0]
+	}
+	// A kept member is a RefInner, as is a rebuilt union, so a borrowed scrutinee re-wraps its
+	// narrowed carrier under the same borrow. This is narrowMatchArm's rewrap, kept here so
+	// the borrow survives narrowing rather than being dropped by the peel above. NewRef drops
+	// the wrapper when the scrutinee was owned.
+	if ri, isInner := narrowed.(soltype.RefInner); isInner {
+		return soltype.NewRef(mut, lt, ri), true
+	}
+	return narrowed, true
 }
 
 // typeAdmits reports whether every value of t fits ann, which is the question the runtime

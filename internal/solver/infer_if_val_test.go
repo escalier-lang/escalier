@@ -587,6 +587,14 @@ func TestInferAnnotationWiderThanAMemberNarrowsToIt(t *testing.T) {
 			binding: "f",
 			want:    "fn (u: string | 1 | 2) -> string | 1 | 2",
 		},
+		// A transparent alias carries the alias rather than the union it stands for, so the
+		// members are reached by expanding it first. Without that the annotation would be
+		// measured against the alias as a single shape and admit nothing.
+		"AliasedUnion": {
+			src:     "type U = 1 | 2 | string\nfn f(u: U) {\n\treturn match u {\n\t\tx: number => x,\n\t\ts: string => 0,\n\t}\n}",
+			binding: "f",
+			want:    "fn (u: U) -> 0 | 1 | 2",
+		},
 		// An annotation narrower than every member admits none of them, so the union-super
 		// exists rule decides and the name takes the annotation itself.
 		"NarrowerThanEveryMember": {
