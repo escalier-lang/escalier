@@ -108,15 +108,13 @@ type ExtractorTest struct {
 	Arity int
 }
 
-// AnnTest matches a narrowing type annotation, the `number` of `if val x: number = u`.
-// A value passes when it is one of the annotation's, so a `u` holding a `string` fails
-// the test and takes the `else`. This is what makes an annotated binding refutable: with
-// no annotation the same identifier matches every value and writes no failure path.
+// AnnTest matches a narrowing type annotation, the `number` of `if val x: number = u`. A
+// value passes when it is one of the annotation's, so a `u` holding a `string` fails and
+// takes the `else`. That is what makes an annotated binding refutable, where the same
+// identifier without one matches every value.
 //
-// The tag comes from what the surface wrote rather than from a pattern's shape, and each
-// form writes it in a different place. An `if val` puts it on the pattern and a
-// `val … else` on the declaration, so lowering reads it off whichever node holds it.
-// A `match` arm never produces this test.
+// The tag comes from what the surface wrote rather than from a pattern's shape, so only
+// `if val` and `val … else` produce it and never a `match` arm.
 type AnnTest struct{ Ann ast.TypeAnn }
 
 // String renders the tag test.

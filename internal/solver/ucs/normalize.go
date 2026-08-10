@@ -78,10 +78,8 @@ func normalizeSplit(s *CoreSplit, next Norm) Norm {
 		if test == nil && branch.Ann != nil {
 			// The pattern names no tag, so the branch's narrowing annotation is what it
 			// tests. `if val x: number = u` runs its consequent only for a `u` holding a
-			// `number`, which is what keeps the `else` below reachable. A pattern that does
-			// name a tag keeps it: an annotation over such a pattern cannot be distributed
-			// across its leaves, and the consumer reports that rather than the IR carrying
-			// two tags on one branch.
+			// `number`, which is what keeps the `else` below reachable. A pattern that
+			// names a tag of its own keeps it, so no branch ever carries two.
 			test = &AnnTest{Ann: branch.Ann}
 		}
 		cands[i] = candidate{

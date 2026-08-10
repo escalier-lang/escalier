@@ -120,9 +120,8 @@ func DesugarIfVal(e *ast.IfValExpr) *CoreSplit {
 }
 
 // patternNarrowingAnn returns the narrowing annotation a pattern carries, and nil when it
-// carries none. Only a bare identifier can carry one. Distributing an annotation across a
-// destructuring pattern's leaves, as `[a, b]: [number, string]` would need, is not
-// supported, so a branch over such a pattern tests its own shape and nothing else.
+// carries none. Only a bare identifier can carry one: distributing an annotation across a
+// destructuring pattern's leaves, as `[a, b]: [number, string]` would need, is unsupported.
 func patternNarrowingAnn(p ast.Pat) ast.TypeAnn {
 	ident, ok := p.(*ast.IdentPat)
 	if !ok {
@@ -194,10 +193,8 @@ func DesugarValElse(d *ast.VarDecl) (*CoreSplit, bool) {
 }
 
 // declNarrowingAnn returns the narrowing annotation a `val … else` declaration carries,
-// and nil when it carries none. A declaration's annotation applies to the whole binding,
-// so it narrows only a bare identifier, the same restriction patternNarrowingAnn spells
-// out. A destructuring pattern keeps its own shape as the branch's tag, and the consumer
-// reports the annotation it cannot distribute.
+// and nil when it carries none. It narrows only a bare identifier, under the restriction
+// patternNarrowingAnn spells out.
 func declNarrowingAnn(d *ast.VarDecl) ast.TypeAnn {
 	if _, ok := d.Pattern.(*ast.IdentPat); !ok {
 		return nil

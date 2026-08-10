@@ -270,10 +270,9 @@ func TestDesugarValElse(t *testing.T) {
 } else fallback { fallback } [val else] at=1:1-1:33 arm=same`))
 }
 
-// A narrowing annotation on a `val … else` sits on the declaration, not on the
-// pattern, so the branch pattern renders without it. The branch reads it off the
-// declaration and records it on Ann, which is where every form's annotation ends up
-// however the surface wrote it.
+// A narrowing annotation on a `val … else` sits on the declaration, not on the pattern, so
+// the branch pattern renders without it. The branch records it on Ann, where every form's
+// annotation ends up however the surface wrote it.
 func TestDesugarValElseReadsTheAnnotationOffTheDeclaration(t *testing.T) {
 	decl := findVarDecl(t, `val x: number = u else { 0 }`)
 

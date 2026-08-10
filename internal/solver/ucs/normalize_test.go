@@ -641,8 +641,7 @@ func TestNormalizeUnannotatedBindingDropsTheElse(t *testing.T) {
 }
 
 // A destructuring pattern keeps its own shape as the branch's tag. The declaration's
-// annotation is left off the branch, since it cannot be distributed across the pattern's
-// leaves, so no branch ends up carrying two tags.
+// annotation is left off the branch, so no branch ends up carrying two tags.
 func TestNormalizeDestructuringKeepsItsOwnTag(t *testing.T) {
 	core := mustDesugarValElse(t, `val [a, b]: [number, string] = u else { return }`)
 

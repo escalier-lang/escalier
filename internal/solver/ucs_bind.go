@@ -90,11 +90,9 @@ type testedTuple struct {
 type testedExtractor struct{ params []*soltype.FuncParam }
 
 // testedAnn carries the narrowing annotation an `if val` or a `val … else` tested, which
-// the leaf beneath reads through narrowingAnn.
-//
-// Applying the test resolves nothing on its own. bindNarrowedIdent both picks the member
-// the annotation names and binds the identifier at it, so resolving the annotation here as
-// well would report an unsupported one twice and record its type twice.
+// the leaf beneath reads through narrowingAnn. Applying the test resolves nothing itself:
+// bindNarrowedIdent both picks the member the annotation names and binds the identifier at
+// it, so resolving it here too would report an unsupported one twice.
 type testedAnn struct{ ann ast.TypeAnn }
 
 // pathBinder resolves IR projection paths into types and binds leaf patterns off them.
@@ -112,13 +110,12 @@ type pathBinder struct {
 	// carries no origin the solver can blame. A match arm, for one, has a span but is
 	// not an ast.Node.
 	blame ast.Node
-	// joined marks a binder whose root holds more than the value the splits test. A
-	// `val pat = init else { … }` binds its leaves off the matched initializer joined with
-	// the `else`'s fallback value, and no tag test ever admitted that fallback. Narrowing
-	// such a root to the member a test matched would drop the fallback half, so nothing
-	// under this binder narrows. Every sub-scrutinee is a projection of the root and
-	// carries both halves too, which is why the mark sits on the binder rather than on one
-	// view.
+	// joined marks a binder whose root holds more than the value the splits test, which is
+	// what a `val pat = init else { … }` binds off: the matched initializer joined with the
+	// `else`'s fallback value, a half no tag test ever admitted. Narrowing such a root to
+	// the member a test matched would drop that half, so nothing under this binder narrows.
+	// The mark sits on the binder rather than on one view because every sub-scrutinee is a
+	// projection of the root and carries both halves too.
 	joined bool
 	views  map[*ucs.Scrutinee]scrutineeView
 }

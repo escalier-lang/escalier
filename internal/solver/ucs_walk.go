@@ -13,10 +13,12 @@ import (
 // splits, binds, guards, and leaves. A term is one node of that tree, which is what
 // `ucs.Term` names. The bare word `node` is kept for an `ast.Node`, the surface node a
 // diagnostic blames, so neither has to be read from context. This file types the tree for
-// all three surface forms. A split applies its branch's tag test to the path binder, a
-// bind resolves its projection and defines the leaf, a guard is an ordinary boolean
-// condition over the names above it, and a leaf infers the body the user wrote for its
-// arm.
+// all three surface forms.
+//
+//   - A split applies its branch's tag test to the path binder.
+//   - A bind resolves its projection and defines the leaf.
+//   - A guard is an ordinary boolean condition over the names above it.
+//   - A leaf infers the body the user wrote for its arm.
 //
 // The three leaf kinds are what the forms differ by. A `match` arm and each half of an
 // `if val` end in a body leaf, whose value joins the form's result. A `val … else` ends

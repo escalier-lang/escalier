@@ -3064,20 +3064,18 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 }
 
 // bindRefutable binds a refutable pattern's names against a scrutinee, returning the type
-// it bound at. It is the solver-side adapter the typing walk calls for a leaf under an
-// annotation test, and it is where the parts of a refutable binding the IR does not model
-// live: the narrowing rule, the leaf's VarID, and the caller's own scope.
+// it bound at. The typing walk calls it for a leaf under an annotation test. It holds the
+// parts of a refutable binding the IR does not model: the narrowing rule, the leaf's
+// VarID, and the caller's own scope.
 //
-// ann is the narrowing annotation the surface wrote. Each form writes it somewhere else —
-// on the pattern for an `if val`, on the declaration for a `val … else` — so the IR
-// carries it on the branch's test and hands it here rather than leaving each caller to
-// find it. A bare identifier binds at the member the annotation picks, through
-// bindNarrowedIdent.
+// ann is the narrowing annotation the surface wrote. An `if val` writes it on the pattern
+// and a `val … else` on the declaration. The IR carries it on the branch's test and passes
+// it here, so neither caller has to know which node holds it. A bare identifier binds at
+// the member the annotation picks, through bindNarrowedIdent.
 //
-// Any other pattern destructures through the shared structural path. Normalization
-// flattens such a pattern into splits and binds and mints no annotation test over it, so
-// this arm is reached only by a lowering that pairs one with a pattern, and it recovers by
-// binding the pattern as written.
+// Any other pattern destructures through the shared structural path. Normalization mints
+// no annotation test over such a pattern, so that arm recovers from a lowering that pairs
+// one with a pattern anyway.
 func (c *checker) bindRefutable(
 	scope *Scope, lvl int, pat ast.Pat, ann ast.TypeAnn, scrutinee soltype.Type,
 ) soltype.Type {

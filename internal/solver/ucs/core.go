@@ -39,13 +39,10 @@ type CoreBranch struct {
 	Cont Core
 	// Ann is the narrowing type annotation the branch tests, the `number` of
 	// `if val x: number = u` and of `val x: number = u else { … }`. It is nil on every
-	// `match` arm and on any branch whose surface form wrote no annotation.
-	//
-	// The two refutable forms put the annotation in different places, on the pattern
-	// for an `if val` and on the declaration for a `val … else`, so lowering reads it
-	// off whichever node holds it and records it here. Normalization turns it into the
-	// branch's AnnTest, which is what makes the branch refutable and so keeps the
-	// split's `else` reachable.
+	// `match` arm and wherever the surface wrote no annotation. Lowering reads it off
+	// whichever node holds it, since an `if val` writes it on the pattern and a
+	// `val … else` on the declaration. Normalization turns it into the branch's AnnTest,
+	// which is what makes the branch refutable and keeps the split's `else` reachable.
 	Ann ast.TypeAnn
 	// Arm is the surface arm this branch came from. It survives the merging and
 	// flattening that normalization does, so a diagnostic blames the arm the user
